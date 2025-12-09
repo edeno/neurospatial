@@ -914,17 +914,18 @@ def graph_turn_sequence(
     if len(valid_transitions) == 0:
         return ""
 
-    unique_bins_ordered = []
-    for bin_idx in trajectory_bins:
-        if bin_idx not in unique_bins_ordered:
-            unique_bins_ordered.append(bin_idx)
+    # Get unique bins preserving order (first occurrence)
+    _, unique_indices = np.unique(trajectory_bins, return_index=True)
+    unique_bins_ordered = trajectory_bins[np.sort(unique_indices)]
 
+    # Build set of valid bins from transitions
     valid_bins = set()
     for u, v in valid_transitions:
         valid_bins.add(u)
         valid_bins.add(v)
 
-    path_bins = [b for b in unique_bins_ordered if b in valid_bins]
+    # Filter to valid bins
+    path_bins = np.array([b for b in unique_bins_ordered if b in valid_bins])
 
     if len(path_bins) < 3:
         return ""
@@ -932,43 +933,55 @@ def graph_turn_sequence(
     bin_centers = env.bin_centers
     n_dims = bin_centers.shape[1]
 
+    # Vectorized turn angle computation
+    # Get positions for all path bins
+    positions = bin_centers[path_bins]  # Shape: (n_path, n_dims)
+
+    # Compute consecutive vectors: vec1[i] = pos[i+1] - pos[i]
+    vec1 = np.diff(positions, axis=0)  # Shape: (n_path-1, n_dims)
+    vec2 = vec1[1:]  # vec2[i] = pos[i+2] - pos[i+1], Shape: (n_path-2, n_dims)
+    vec1 = vec1[:-1]  # Align: vec1[i] = pos[i+1] - pos[i], Shape: (n_path-2, n_dims)
+
+    # Compute norms
+    vec1_norms = np.linalg.norm(vec1, axis=1)
+    vec2_norms = np.linalg.norm(vec2, axis=1)
+
+    # Mask for valid vectors (non-zero length)
+    valid_mask = (vec1_norms >= 1e-10) & (vec2_norms >= 1e-10)
+
+    if not np.any(valid_mask):
+        return ""
+
+    # Normalize vectors
+    vec1_norm_safe = np.where(
+        vec1_norms[:, np.newaxis] > 0, vec1_norms[:, np.newaxis], 1.0
+    )
+    vec2_norm_safe = np.where(
+        vec2_norms[:, np.newaxis] > 0, vec2_norms[:, np.newaxis], 1.0
+    )
+    vec1_normalized = vec1 / vec1_norm_safe
+    vec2_normalized = vec2 / vec2_norm_safe
+
+    # Compute 2D cross product (z-component of 3D cross)
+    # cross = vec1_x * vec2_y - vec1_y * vec2_x
+    if n_dims >= 2:
+        cross = (
+            vec1_normalized[:, 0] * vec2_normalized[:, 1]
+            - vec1_normalized[:, 1] * vec2_normalized[:, 0]
+        )
+    else:
+        return ""
+
+    # Filter to significant turns (|cross| > 0.1) and valid vectors
+    significant_mask = valid_mask & (np.abs(cross) > 0.1)
+
+    # Build turns list
     turns = []
-
-    for i in range(len(path_bins) - 2):
-        bin_a = path_bins[i]
-        bin_b = path_bins[i + 1]
-        bin_c = path_bins[i + 2]
-
-        pos_a = bin_centers[bin_a]
-        pos_b = bin_centers[bin_b]
-        pos_c = bin_centers[bin_c]
-
-        vec1 = pos_b - pos_a
-        vec2 = pos_c - pos_b
-
-        vec1_norm = np.linalg.norm(vec1)
-        vec2_norm = np.linalg.norm(vec2)
-
-        if vec1_norm < 1e-10 or vec2_norm < 1e-10:
-            continue
-
-        vec1 = vec1 / vec1_norm
-        vec2 = vec2 / vec2_norm
-
-        if n_dims == 2:
-            cross = vec1[0] * vec2[1] - vec1[1] * vec2[0]
-        elif n_dims >= 3:
-            vec1_2d = vec1[:2]
-            vec2_2d = vec2[:2]
-            cross = vec1_2d[0] * vec2_2d[1] - vec1_2d[1] * vec2_2d[0]
+    for i in np.where(significant_mask)[0]:
+        if cross[i] < 0:
+            turns.append("left")
         else:
-            continue
-
-        if abs(cross) > 0.1:
-            if cross < 0:
-                turns.append("left")
-            else:
-                turns.append("right")
+            turns.append("right")
 
     return "-".join(turns)
 

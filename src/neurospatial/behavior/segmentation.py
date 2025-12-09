@@ -293,24 +293,35 @@ def detect_region_crossings(
     # Check which trajectory samples are in region
     in_region = region_mask[trajectory_bins]
 
-    # Detect transitions
+    # Detect transitions using vectorized diff operation
+    # Convert bool to int: in_region[i] - in_region[i-1]
+    # +1 = entry (False -> True), -1 = exit (True -> False)
+    transitions = np.diff(in_region.astype(np.int8))
+
+    # Find entry and exit indices
     crossings = []
 
-    for i in range(1, len(in_region)):
-        was_in = in_region[i - 1]
-        is_in = in_region[i]
-
-        # Entry: transition from outside to inside
-        if not was_in and is_in and direction in ["both", "entry"]:
+    if direction in ["both", "entry"]:
+        entry_indices = np.where(transitions == 1)[0] + 1  # +1 because diff shifts by 1
+        for idx in entry_indices:
             crossings.append(
-                Crossing(time=times[i], direction="entry", bin_index=trajectory_bins[i])
+                Crossing(
+                    time=times[idx], direction="entry", bin_index=trajectory_bins[idx]
+                )
             )
 
-        # Exit: transition from inside to outside
-        elif was_in and not is_in and direction in ["both", "exit"]:
+    if direction in ["both", "exit"]:
+        exit_indices = np.where(transitions == -1)[0] + 1
+        for idx in exit_indices:
             crossings.append(
-                Crossing(time=times[i], direction="exit", bin_index=trajectory_bins[i])
+                Crossing(
+                    time=times[idx], direction="exit", bin_index=trajectory_bins[idx]
+                )
             )
+
+    # Sort by time if we collected both entry and exit
+    if direction == "both" and len(crossings) > 1:
+        crossings.sort(key=lambda c: c.time)
 
     return crossings
 

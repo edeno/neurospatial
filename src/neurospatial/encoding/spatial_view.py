@@ -407,48 +407,58 @@ def compute_spatial_view_field(
         field[~sufficient_occupancy] = np.nan
 
     else:  # gaussian_kde
-        # Standard Gaussian KDE with Euclidean distance
+        # Standard Gaussian KDE with Euclidean distance - fully vectorized
         two_sigma_sq = 2 * bandwidth**2
+        bin_centers = env.bin_centers  # Shape: (n_bins, n_dims)
+        n_bins = len(bin_centers)
 
-        for i, bin_center in enumerate(env.bin_centers):
-            # Spike density: weight by distance to viewed locations at spike times
-            if len(valid_spike_times) > 0:
-                spike_frame_idx = (
-                    np.searchsorted(times, valid_spike_times, side="right") - 1
-                )
-                spike_frame_idx = np.clip(spike_frame_idx, 0, n_time - 1)
-                spike_viewed = viewed_locations[spike_frame_idx]
+        # Compute spike density for all bins at once
+        spike_density = np.zeros(n_bins, dtype=np.float64)
+        if len(valid_spike_times) > 0:
+            spike_frame_idx = (
+                np.searchsorted(times, valid_spike_times, side="right") - 1
+            )
+            spike_frame_idx = np.clip(spike_frame_idx, 0, n_time - 1)
+            spike_viewed = viewed_locations[spike_frame_idx]
 
-                # Only include spikes with valid views
-                valid_spike_mask_local = np.all(np.isfinite(spike_viewed), axis=1)
-                if np.any(valid_spike_mask_local):
-                    spike_viewed_valid = spike_viewed[valid_spike_mask_local]
-                    spike_distances_sq = np.sum(
-                        (spike_viewed_valid - bin_center) ** 2, axis=1
+            # Only include spikes with valid views
+            valid_spike_mask_local = np.all(np.isfinite(spike_viewed), axis=1)
+            if np.any(valid_spike_mask_local):
+                spike_viewed_valid = spike_viewed[valid_spike_mask_local]
+                # Vectorized: compute distances from all spikes to all bins
+                # spike_viewed_valid: (n_valid_spikes, n_dims)
+                # bin_centers: (n_bins, n_dims)
+                # Result: (n_bins, n_valid_spikes)
+                spike_distances_sq = np.sum(
+                    (
+                        bin_centers[:, np.newaxis, :]
+                        - spike_viewed_valid[np.newaxis, :, :]
                     )
-                    spike_weights = np.exp(-spike_distances_sq / two_sigma_sq)
-                    spike_density = np.sum(spike_weights)
-                else:
-                    spike_density = 0.0
-            else:
-                spike_density = 0.0
-
-            # View occupancy density: weight trajectory by distance from view to bin
-            valid_viewed_local = viewed_locations[valid_view_mask]
-            if len(valid_viewed_local) > 0:
-                view_distances_sq = np.sum(
-                    (valid_viewed_local - bin_center) ** 2, axis=1
+                    ** 2,
+                    axis=2,
                 )
-                view_weights = np.exp(-view_distances_sq / two_sigma_sq)
-                view_dens = np.sum(view_weights) * dt
-            else:
-                view_dens = 0.0
+                spike_weights = np.exp(-spike_distances_sq / two_sigma_sq)
+                spike_density = np.sum(spike_weights, axis=1)  # Sum over spikes
 
-            # Normalize
-            if view_dens > 0:
-                field[i] = spike_density / view_dens
-            else:
-                field[i] = np.nan
+        # Compute view occupancy density for all bins at once
+        view_density = np.zeros(n_bins, dtype=np.float64)
+        valid_viewed_local = viewed_locations[valid_view_mask]
+        if len(valid_viewed_local) > 0:
+            # Vectorized: compute distances from all view positions to all bins
+            # valid_viewed_local: (n_valid_views, n_dims)
+            # bin_centers: (n_bins, n_dims)
+            # Result: (n_bins, n_valid_views)
+            view_distances_sq = np.sum(
+                (bin_centers[:, np.newaxis, :] - valid_viewed_local[np.newaxis, :, :])
+                ** 2,
+                axis=2,
+            )
+            view_weights = np.exp(-view_distances_sq / two_sigma_sq)
+            view_density = np.sum(view_weights, axis=1) * dt  # Sum over views
+
+        # Normalize: field = spike_density / view_density
+        with np.errstate(divide="ignore", invalid="ignore"):
+            field = np.where(view_density > 0, spike_density / view_density, np.nan)
 
     return SpatialViewFieldResult(
         field=field,

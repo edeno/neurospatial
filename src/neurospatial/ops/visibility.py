@@ -1183,6 +1183,8 @@ def visibility_occupancy(
     dt = np.diff(times)
     dt = np.append(dt, dt[-1] if len(dt) > 0 else 0.0)  # Repeat last dt
 
+    # Loop over frames (viewshed computation is inherently per-frame)
+    # Use np.add.at for safe accumulation with repeated indices
     for i in range(n_time):
         result = compute_viewshed(
             env,
@@ -1191,6 +1193,6 @@ def visibility_occupancy(
             fov=fov,
             n_rays=n_rays,
         )
-        occupancy[result.visible_bins] += dt[i]
+        np.add.at(occupancy, result.visible_bins, dt[i])
 
     return occupancy

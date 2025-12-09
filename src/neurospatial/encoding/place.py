@@ -1816,19 +1816,19 @@ def skaggs_information(
     if mean_rate == 0 or np.isnan(mean_rate):
         return 0.0
 
-    # Compute information (suppress expected warnings from edge cases)
-    # The np.log() can produce warnings for edge cases that are handled by the if-condition
-    information = 0.0
+    # Compute information using vectorized operations
+    # Mask for valid bins: positive occupancy, positive finite firing rate
     with np.errstate(divide="ignore", invalid="ignore"):
-        for i in range(len(firing_rate)):
-            # Skip NaN bins
-            if (
-                occupancy_prob[i] > 0
-                and firing_rate[i] > 0
-                and not np.isnan(firing_rate[i])
-            ):
-                ratio = firing_rate[i] / mean_rate
-                information += occupancy_prob[i] * ratio * np.log(ratio) / np.log(base)
+        valid_mask = (occupancy_prob > 0) & (firing_rate > 0) & np.isfinite(firing_rate)
+
+        if not np.any(valid_mask):
+            return 0.0
+
+        # Extract valid values and compute vectorized
+        occ_valid = occupancy_prob[valid_mask]
+        rate_valid = firing_rate[valid_mask]
+        ratio = rate_valid / mean_rate
+        information = np.sum(occ_valid * ratio * np.log(ratio)) / np.log(base)
 
     # Ensure non-negative result (floating point errors can produce tiny negative values)
     # Mathematically, information is always >= 0, but uniform firing with floating
@@ -2783,11 +2783,10 @@ def field_shape_metrics(
     # Compute rate-weighted centroid
     centroid = np.sum(rate_weights[:, np.newaxis] * positions_valid, axis=0)
 
-    # Compute rate-weighted covariance matrix
+    # Compute rate-weighted covariance matrix using einsum (vectorized outer product)
+    # cov[j,k] = sum_i rate_weights[i] * centered[i,j] * centered[i,k]
     centered = positions_valid - centroid  # shape (n_valid, 2)
-    cov = np.zeros((2, 2))
-    for i in range(len(centered)):
-        cov += rate_weights[i] * np.outer(centered[i], centered[i])
+    cov = np.einsum("i,ij,ik->jk", rate_weights, centered, centered)
 
     # Eigenvalue decomposition
     eigenvalues, eigenvectors = np.linalg.eigh(cov)
@@ -3231,58 +3230,38 @@ def compute_field_emd(
 
     # Compute distance matrix between active bins
     if metric == "euclidean":
-        # Euclidean distance between bin centers
+        # Euclidean distance between bin centers using scipy (vectorized)
+        from scipy.spatial.distance import pdist, squareform
+
         positions = env.bin_centers[active_bins]
-        n = len(active_bins)
-        dist_matrix = np.zeros((n, n))
-        for i in range(n):
-            for j in range(i + 1, n):
-                d: float = float(np.linalg.norm(positions[i] - positions[j]))
-                dist_matrix[i, j] = d
-                dist_matrix[j, i] = d
+        # pdist computes condensed distance matrix, squareform converts to full
+        dist_matrix = squareform(pdist(positions, metric="euclidean"))
 
     else:  # metric == "geodesic"
-        # Geodesic distance using environment's connectivity graph
-        n = len(active_bins)
-        dist_matrix = np.zeros((n, n))
+        # Geodesic distance using precomputed full distance matrix (vectorized)
+        from scipy.spatial.distance import pdist, squareform
 
-        # Count disconnected pairs for aggregated warning
-        disconnected_count = 0
+        from neurospatial.ops.distance import geodesic_distance_matrix
 
-        for i in range(n):
-            for j in range(i + 1, n):
-                try:
-                    # Use bin centers (coordinates), not bin indices
-                    d = float(
-                        cast("EnvironmentProtocol", env).distance_between(
-                            env.bin_centers[active_bins[i]],
-                            env.bin_centers[active_bins[j]],
-                        )
-                    )
-                    if np.isnan(d) or np.isinf(d):
-                        # No path exists - fall back to Euclidean
-                        d = float(
-                            np.linalg.norm(
-                                env.bin_centers[active_bins[i]]
-                                - env.bin_centers[active_bins[j]]
-                            )
-                        )
-                        disconnected_count += 1
-                except Exception:
-                    # Fallback to Euclidean on any error
-                    d = float(
-                        np.linalg.norm(
-                            env.bin_centers[active_bins[i]]
-                            - env.bin_centers[active_bins[j]]
-                        )
-                    )
-                    disconnected_count += 1
+        # Compute full geodesic distance matrix once
+        full_geodesic = geodesic_distance_matrix(
+            env.connectivity, env.n_bins, weight="distance"
+        )
 
-                dist_matrix[i, j] = d
-                dist_matrix[j, i] = d
+        # Extract submatrix for active bins (vectorized indexing)
+        dist_matrix = full_geodesic[np.ix_(active_bins, active_bins)]
 
-        # Warn once about disconnected pairs instead of spamming
+        # Find disconnected pairs (inf distances) and replace with Euclidean
+        disconnected_mask = np.isinf(dist_matrix)
+        disconnected_count = np.sum(disconnected_mask) // 2  # Count unique pairs
+
         if disconnected_count > 0:
+            # Compute Euclidean fallback distances for disconnected pairs
+            positions = env.bin_centers[active_bins]
+            euclidean_dist = squareform(pdist(positions, metric="euclidean"))
+            dist_matrix = np.where(disconnected_mask, euclidean_dist, dist_matrix)
+
+            n = len(active_bins)
             warnings.warn(
                 f"Found {disconnected_count} disconnected bin pairs out of {n * (n - 1) // 2} total pairs. "
                 f"Using Euclidean distance for disconnected pairs.",

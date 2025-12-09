@@ -934,11 +934,15 @@ def compute_object_vector_field(
             axis=2,
         )
     else:
-        # Geodesic distance using allocentric environment
+        # Geodesic distance using allocentric environment - vectorized
         from neurospatial.ops.distance import distance_field as compute_distance_field
 
         assert allocentric_env is not None
-        distances = np.zeros((n_time, len(object_positions)), dtype=np.float64)
+        distances = np.full((n_time, len(object_positions)), np.nan, dtype=np.float64)
+
+        # Vectorized: compute all position bins at once (outside object loop)
+        pos_bins = allocentric_env.bin_at(positions)  # Shape: (n_time,)
+        valid_pos_mask = (pos_bins >= 0) & (pos_bins < allocentric_env.n_bins)
 
         for i, obj_pos in enumerate(object_positions):
             # Find bin containing object
@@ -946,22 +950,16 @@ def compute_object_vector_field(
             obj_bin = int(obj_bins[0])
 
             if obj_bin < 0:
-                distances[:, i] = np.nan
-                continue
+                continue  # distances[:, i] already initialized to NaN
 
             # Get distance field from this object
             dist_field = compute_distance_field(
                 allocentric_env.connectivity, sources=[obj_bin]
             )
 
-            # Get distance at each animal position
-            for t in range(n_time):
-                pos_bins = allocentric_env.bin_at(positions[t].reshape(1, -1))
-                bin_idx = int(pos_bins[0])
-                if 0 <= bin_idx < len(dist_field):
-                    distances[t, i] = float(dist_field[bin_idx])
-                else:
-                    distances[t, i] = np.nan
+            # Vectorized lookup: get distances for all valid positions at once
+            valid_bins = pos_bins[valid_pos_mask]
+            distances[valid_pos_mask, i] = dist_field[valid_bins]
 
     # bearings: (n_time, n_objects)
     bearings = compute_egocentric_bearing(object_positions, positions, headings)

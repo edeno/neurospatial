@@ -770,23 +770,25 @@ def detect_boundary_crossings(
     # Get label for each trajectory point
     trajectory_labels = voronoi_labels[trajectory_bins]
 
-    crossing_times: list[float] = []
-    crossing_directions: list[tuple[int, int]] = []
+    # Vectorized crossing detection
+    # Find where labels change between consecutive frames
+    prev_labels = trajectory_labels[:-1]
+    curr_labels = trajectory_labels[1:]
 
-    for i in range(1, len(trajectory_labels)):
-        prev_label = trajectory_labels[i - 1]
-        curr_label = trajectory_labels[i]
+    # Valid crossings: both labels are reachable (!= -1) and different
+    valid_mask = (
+        (prev_labels != -1) & (curr_labels != -1) & (prev_labels != curr_labels)
+    )
+    crossing_indices = np.where(valid_mask)[0]
 
-        # Skip if either is unreachable (-1)
-        if prev_label == -1 or curr_label == -1:
-            continue
+    # Compute crossing times (midpoint between frames)
+    crossing_times_arr = (times[crossing_indices] + times[crossing_indices + 1]) / 2
+    crossing_times = crossing_times_arr.tolist()
 
-        # Check for crossing
-        if prev_label != curr_label:
-            # Interpolate crossing time (assume it happened at midpoint)
-            crossing_time = (times[i - 1] + times[i]) / 2
-            crossing_times.append(float(crossing_time))
-            crossing_directions.append((int(prev_label), int(curr_label)))
+    # Get crossing directions
+    crossing_directions = [
+        (int(prev_labels[idx]), int(curr_labels[idx])) for idx in crossing_indices
+    ]
 
     return crossing_times, crossing_directions
 

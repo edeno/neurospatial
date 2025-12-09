@@ -575,29 +575,27 @@ def mean_square_displacement(
     msd_values = np.zeros(n_lags, dtype=np.float64)
 
     if distance_type == "euclidean":
-        # Vectorized Euclidean MSD computation (fast)
+        # Fully vectorized Euclidean MSD computation
         for i, tau in enumerate(tau_values):
             # Find all pairs of time points separated by approximately tau
-            # For each starting time t_idx, find future indices at t + tau
-            squared_displacements = []
+            # Vectorized: compute time differences for all pairs at once
+            # time_diffs[j] = times[j] - (times[:] + tau) for matching
+            target_times = times + tau
+            # For each target time, find the closest actual time index
+            # Using searchsorted for efficient matching
+            future_idx = np.searchsorted(times, target_times)
+            future_idx = np.clip(future_idx, 0, n_samples - 1)
 
-            for t_idx in range(n_samples):
-                t = times[t_idx]
-                # Find indices where times are approximately t + tau
-                future_idx = np.where(np.abs(times - (t + tau)) < dt / 2)[0]
+            # Check which pairs are within tolerance
+            time_errors = np.abs(times[future_idx] - target_times)
+            valid_pairs = time_errors < dt / 2
 
-                if len(future_idx) > 0:
-                    # Compute squared Euclidean distance to all matching future positions
-                    pos_current = positions[t_idx]
-                    pos_future = positions[future_idx]
-                    # Vectorized distance computation
-                    displacements = pos_future - pos_current
-                    sq_dists = np.sum(displacements**2, axis=1)
-                    squared_displacements.extend(sq_dists)
-
-            # Average squared displacements
-            if len(squared_displacements) > 0:
-                msd_values[i] = np.mean(squared_displacements)
+            if np.any(valid_pairs):
+                # Compute squared displacements for valid pairs (vectorized)
+                current_pos = positions[valid_pairs]
+                future_pos = positions[future_idx[valid_pairs]]
+                sq_dists = np.sum((future_pos - current_pos) ** 2, axis=1)
+                msd_values[i] = np.mean(sq_dists)
             else:
                 msd_values[i] = 0.0
 
@@ -614,32 +612,29 @@ def mean_square_displacement(
             env.connectivity, env.n_bins, weight="distance"
         )
 
-        # Compute MSD for each lag time using precomputed distances
+        # Fully vectorized geodesic MSD computation
         for i, tau in enumerate(tau_values):
-            # Find all pairs of time points separated by approximately tau
-            squared_displacements = []
+            # Find matching time pairs using searchsorted (vectorized)
+            target_times = times + tau
+            future_idx = np.searchsorted(times, target_times)
+            future_idx = np.clip(future_idx, 0, n_samples - 1)
 
-            for t_idx in range(n_samples):
-                t = times[t_idx]
-                # Find indices where times are approximately t + tau
-                future_idx = np.where(np.abs(times - (t + tau)) < dt / 2)[0]
+            # Check which pairs are within tolerance
+            time_errors = np.abs(times[future_idx] - target_times)
+            valid_pairs = time_errors < dt / 2
 
-                for f_idx in future_idx:
-                    if f_idx < n_samples:
-                        # Look up distance from precomputed matrix
-                        bin_i = trajectory_bins[t_idx]
-                        bin_j = trajectory_bins[f_idx]
-                        distance = dist_matrix[bin_i, bin_j]
+            if np.any(valid_pairs):
+                # Vectorized distance lookup from precomputed matrix
+                current_bins = trajectory_bins[valid_pairs]
+                future_bins = trajectory_bins[future_idx[valid_pairs]]
+                distances = dist_matrix[current_bins, future_bins]
 
-                        # Skip disconnected bins (inf distance)
-                        if np.isinf(distance):
-                            continue
-
-                        squared_displacements.append(distance**2)
-
-            # Average squared displacements
-            if len(squared_displacements) > 0:
-                msd_values[i] = np.mean(squared_displacements)
+                # Filter out disconnected bins (inf distance)
+                finite_mask = np.isfinite(distances)
+                if np.any(finite_mask):
+                    msd_values[i] = np.mean(distances[finite_mask] ** 2)
+                else:
+                    msd_values[i] = 0.0
             else:
                 msd_values[i] = 0.0
 

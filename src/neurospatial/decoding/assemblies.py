@@ -556,19 +556,21 @@ def detect_assemblies(
     else:
         raise ValueError(f"Unknown method: {method}. Use 'ica', 'pca', or 'nmf'.")
 
-    # Create AssemblyPattern objects
+    # Create AssemblyPattern objects - vectorized z-score computation
+    # Compute z-scores for all patterns at once: shape (n_comp, n_neurons)
+    abs_patterns = np.abs(patterns)
+    # stats.zscore along axis=1 normalizes each row (pattern) independently
+    weights_z_all = stats.zscore(abs_patterns, axis=1)
+
+    # Find member masks for all patterns at once
+    member_masks = weights_z_all > z_threshold  # Shape: (n_comp, n_neurons)
+
     assembly_patterns = []
     for i in range(n_comp):
-        weights = patterns[i]
-
-        # Z-score weights to find significant members
-        weights_z = stats.zscore(np.abs(weights))
-        member_mask = weights_z > z_threshold
-        member_indices = np.where(member_mask)[0].astype(np.int64)
-
+        member_indices = np.where(member_masks[i])[0].astype(np.int64)
         assembly_patterns.append(
             AssemblyPattern(
-                weights=weights,
+                weights=patterns[i],
                 member_indices=member_indices,
                 explained_variance_ratio=explained_var[i],
             )

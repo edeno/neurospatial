@@ -334,26 +334,38 @@ def credible_region(
     if not 0 < level < 1:
         raise ValueError(f"level must be between 0 and 1 (exclusive), got {level}")
 
-    n_time_bins = posterior.shape[0]
+    n_time_bins, n_bins = posterior.shape
     result: list[NDArray[np.int64]] = []
 
+    # Vectorized sorting: sort all rows at once (descending order)
+    # argsort returns ascending, so we use [:, ::-1] to reverse
+    sorted_indices = np.argsort(posterior, axis=1)[:, ::-1]
+
+    # Gather sorted probabilities using advanced indexing
+    # sorted_probs[t, i] = posterior[t, sorted_indices[t, i]]
+    row_indices = np.arange(n_time_bins)[:, np.newaxis]
+    sorted_probs = posterior[row_indices, sorted_indices]
+
+    # Vectorized cumulative sum across bins
+    cumsum = np.cumsum(sorted_probs, axis=1)
+
+    # For each row, find how many bins needed to reach level
+    # searchsorted works row-by-row with apply_along_axis
+    # But more efficient: use boolean comparison
+    # reached_level[t, i] = cumsum[t, i] >= level
+    reached_level = cumsum >= level
+
+    # n_bins_needed = first True index + 1 (argmax finds first True)
+    # If no True found (shouldn't happen for valid posterior), default to all bins
+    n_bins_needed = np.argmax(reached_level, axis=1) + 1
+
+    # Handle edge case where cumsum never reaches level (use all bins)
+    never_reached = ~np.any(reached_level, axis=1)
+    n_bins_needed[never_reached] = n_bins
+
+    # Build result list (variable-length arrays require Python loop)
     for t in range(n_time_bins):
-        row = posterior[t]
-
-        # Sort bins by probability (descending)
-        sorted_indices = np.argsort(row)[::-1]
-        sorted_probs = row[sorted_indices]
-
-        # Find cumulative sum
-        cumsum = np.cumsum(sorted_probs)
-
-        # Find how many bins needed to reach level
-        # Use >= to ensure we include enough mass
-        n_bins_needed = int(np.searchsorted(cumsum, level, side="right") + 1)
-
-        # Get the HPD bin indices
-        hpd_indices = sorted_indices[:n_bins_needed].astype(np.int64)
-
+        hpd_indices = sorted_indices[t, : n_bins_needed[t]].astype(np.int64)
         result.append(hpd_indices)
 
     return result
