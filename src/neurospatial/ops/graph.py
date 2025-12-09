@@ -339,10 +339,9 @@ def graph_convolve(
             env.connectivity, env.n_bins, weight="distance"
         )
 
-        # Apply kernel function to each row of distances
-        kernel_matrix = np.zeros((env.n_bins, env.n_bins), dtype=np.float64)
-        for i in range(env.n_bins):
-            kernel_matrix[i, :] = kernel(dist_matrix[i, :])
+        # Apply kernel function to entire distance matrix (vectorized)
+        # Most kernel functions (e.g., Gaussian, exponential) are ufunc-compatible
+        kernel_matrix = kernel(dist_matrix)
     else:
         # Precomputed kernel matrix
         kernel_matrix = kernel
@@ -356,23 +355,15 @@ def graph_convolve(
     valid_mask = ~np.isnan(field)
     field_clean = np.where(valid_mask, field, 0.0)
 
-    # Normalize kernel weights per bin if requested
+    # Normalize kernel weights per bin if requested (vectorized)
     if normalize:
         # For each bin (row), normalize weights to sum to 1
         # But only over valid (non-NaN) source bins
-        kernel_normalized = np.zeros_like(kernel_matrix)
-        for i in range(env.n_bins):
-            # Get weights for bin i (row i)
-            weights = kernel_matrix[i, :]
-            # Only consider weights where field is valid
-            valid_weights = weights * valid_mask
-            weight_sum = valid_weights.sum()
-            if weight_sum > 0:
-                kernel_normalized[i, :] = valid_weights / weight_sum
-            else:
-                # No valid neighbors - result will be 0
-                kernel_normalized[i, :] = 0.0
-        kernel_matrix = kernel_normalized
+        # valid_mask has shape (n_bins,), kernel_matrix has shape (n_bins, n_bins)
+        valid_weights = kernel_matrix * valid_mask[np.newaxis, :]  # broadcast mask
+        weight_sums = valid_weights.sum(axis=1, keepdims=True)  # shape (n_bins, 1)
+        # Avoid division by zero: where sum is 0, keep as 0
+        kernel_matrix = np.where(weight_sums > 0, valid_weights / weight_sums, 0.0)
 
     # Perform convolution: result[i] = sum_j kernel[i, j] * field[j]
     result: NDArray[np.float64] = kernel_matrix @ field_clean

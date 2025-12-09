@@ -157,9 +157,17 @@ class EnvironmentTransforms:
         grid_shape = layout.grid_shape
         grid_edges = layout.grid_edges
 
-        # Assert non-None (RegularGridLayout always has these)
-        assert grid_shape is not None, "RegularGridLayout must have grid_shape"
-        assert grid_edges is not None, "RegularGridLayout must have grid_edges"
+        # Validate grid attributes (RegularGridLayout always has these)
+        if grid_shape is None:
+            raise RuntimeError(
+                "RegularGridLayout missing grid_shape. "
+                "This is an internal error - please report this bug."
+            )
+        if grid_edges is None:
+            raise RuntimeError(
+                "RegularGridLayout missing grid_edges. "
+                "This is an internal error - please report this bug."
+            )
 
         n_dims = len(grid_shape)
 

@@ -441,8 +441,55 @@ class VideoReader:
             ),
         )
 
-    def __del__(self) -> None:
-        """Clean up prefetch executor on deletion."""
+    def close(self) -> None:
+        """Release resources held by the VideoReader.
+
+        Shuts down the prefetch thread pool executor if active. Safe to call
+        multiple times. After closing, the reader can still be used but
+        prefetching will be disabled.
+
+        Examples
+        --------
+        >>> reader = VideoReader("video.mp4")  # doctest: +SKIP
+        >>> frame = reader[0]  # doctest: +SKIP
+        >>> reader.close()  # Release resources  # doctest: +SKIP
+        """
         if hasattr(self, "_prefetch_executor") and self._prefetch_executor is not None:
             self._prefetch_executor.shutdown(wait=False)
             self._prefetch_executor = None
+
+    def __enter__(self) -> VideoReader:
+        """Enter context manager.
+
+        Returns
+        -------
+        VideoReader
+            Self for use in with statement.
+
+        Examples
+        --------
+        >>> with VideoReader("video.mp4") as reader:  # doctest: +SKIP
+        ...     frame = reader[0]
+        ...     # Resources automatically released on exit
+        """
+        return self
+
+    def __exit__(
+        self, exc_type: type | None, exc_val: Exception | None, exc_tb: object
+    ) -> None:
+        """Exit context manager, releasing resources.
+
+        Parameters
+        ----------
+        exc_type : type or None
+            Exception type if an exception was raised.
+        exc_val : Exception or None
+            Exception instance if an exception was raised.
+        exc_tb : object
+            Traceback if an exception was raised.
+        """
+        self.close()
+
+    def __del__(self) -> None:
+        """Clean up prefetch executor on deletion."""
+        self.close()

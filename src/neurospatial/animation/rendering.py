@@ -534,6 +534,12 @@ def field_to_rgb_for_napari(
         normalized = (field - vmin) / value_range
         normalized = np.clip(normalized, 0, 1)
 
+    # Handle NaN values - set to 0 before integer conversion
+    # NaN values pass through np.clip unchanged, which causes issues with astype
+    nan_mask = np.isnan(normalized)
+    if np.any(nan_mask):
+        normalized = np.where(nan_mask, 0.0, normalized)
+
     # Map to colormap indices [0, 255]
     indices = (normalized * 255).astype(np.uint8)
 

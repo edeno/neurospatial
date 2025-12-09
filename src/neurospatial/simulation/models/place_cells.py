@@ -298,9 +298,11 @@ class PlaceCellModel:
                 bin_indices[~inside_mask] = np.argmin(distances, axis=1)
 
             # Lookup distances from precomputed field
-            assert (
-                self._distance_field is not None
-            )  # Set in __init__ for geodesic metric
+            if self._distance_field is None:
+                raise RuntimeError(
+                    "Distance field not initialized for geodesic metric. "
+                    "This is an internal error - please report this bug."
+                )
             distances = self._distance_field[bin_indices]
 
         # Note: No else needed - Literal type ensures all cases covered

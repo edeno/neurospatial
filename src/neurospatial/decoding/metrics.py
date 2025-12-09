@@ -115,26 +115,61 @@ def decoding_error(
                 "Provide an Environment instance for graph-based distance computation."
             )
 
+        from neurospatial.ops.distance import geodesic_distance_matrix
+
         n_time_bins = decoded_positions.shape[0]
+
+        # Identify NaN positions (vectorized)
+        nan_mask = np.any(np.isnan(decoded_positions), axis=1) | np.any(
+            np.isnan(actual_positions), axis=1
+        )
+
+        # Initialize errors array
         errors = np.empty(n_time_bins, dtype=np.float64)
+        errors[nan_mask] = np.nan
 
-        for t in range(n_time_bins):
-            decoded_point = decoded_positions[t]
-            actual_point = actual_positions[t]
+        # Process non-NaN positions
+        valid_mask = ~nan_mask
+        if np.any(valid_mask):
+            valid_decoded = decoded_positions[valid_mask]
+            valid_actual = actual_positions[valid_mask]
 
-            # Check for NaN - propagate to output
-            if np.any(np.isnan(decoded_point)) or np.any(np.isnan(actual_point)):
-                errors[t] = np.nan
-            else:
-                # Use environment's distance_between method
-                try:
-                    errors[t] = env.distance_between(  # type: ignore[misc]
-                        decoded_point, actual_point
-                    )
-                except (ValueError, KeyError):
-                    # If points are outside environment, fall back to Euclidean
-                    diff = decoded_point - actual_point
-                    errors[t] = float(np.linalg.norm(diff))
+            # Map positions to bins (vectorized)
+            decoded_bins = env.bin_at(valid_decoded)
+            actual_bins = env.bin_at(valid_actual)
+
+            # Identify positions outside environment (bin_at returns -1)
+            outside_mask = (decoded_bins < 0) | (actual_bins < 0)
+            inside_mask = ~outside_mask
+
+            # For positions inside environment, use graph distance
+            if np.any(inside_mask):
+                # Compute geodesic distance matrix (cached per environment)
+                dist_matrix = geodesic_distance_matrix(
+                    env.connectivity,
+                    env.n_bins,
+                    weight="distance",
+                )
+                # Look up graph distances (vectorized)
+                inside_decoded = decoded_bins[inside_mask]
+                inside_actual = actual_bins[inside_mask]
+                graph_errors = dist_matrix[inside_decoded, inside_actual]
+
+                # Assign to valid positions that are inside
+                valid_indices = np.where(valid_mask)[0]
+                errors[valid_indices[inside_mask]] = graph_errors
+
+            # For positions outside environment, fall back to Euclidean
+            if np.any(outside_mask):
+                outside_decoded = valid_decoded[outside_mask]
+                outside_actual = valid_actual[outside_mask]
+                euclidean_errors = np.linalg.norm(
+                    outside_decoded - outside_actual, axis=1
+                )
+
+                # Assign to valid positions that are outside
+                valid_indices = np.where(valid_mask)[0]
+                errors[valid_indices[outside_mask]] = euclidean_errors
 
     else:
         raise ValueError(f"Invalid metric '{metric}'. Must be 'euclidean' or 'graph'.")
@@ -424,7 +459,6 @@ def decoding_correlation(
         )
 
     n_time_bins = decoded_positions.shape[0]
-    n_dims = decoded_positions.shape[1] if decoded_positions.ndim > 1 else 1
 
     # Handle 1D case: reshape to (n_time_bins, 1)
     if decoded_positions.ndim == 1:
@@ -464,32 +498,24 @@ def decoding_correlation(
         return float(np.nan)
     w = weights_valid / weight_sum
 
-    # Compute correlation for each dimension, then average
-    correlations = np.empty(n_dims, dtype=np.float64)
+    # Compute correlation for each dimension, then average (vectorized)
+    # Weighted means for all dimensions at once: shape (n_dims,)
+    mean_decoded = np.average(decoded_valid, axis=0, weights=w)
+    mean_actual = np.average(actual_valid, axis=0, weights=w)
 
-    for dim in range(n_dims):
-        x = decoded_valid[:, dim]
-        y = actual_valid[:, dim]
+    # Center the data: shape (n_valid, n_dims)
+    decoded_centered = decoded_valid - mean_decoded
+    actual_centered = actual_valid - mean_actual
 
-        # Weighted means (stable via np.average)
-        mean_x = np.average(x, weights=w)
-        mean_y = np.average(y, weights=w)
+    # Weighted covariance and variances for all dims: shape (n_dims,)
+    # w has shape (n_valid,), so we broadcast: w[:, None] has shape (n_valid, 1)
+    cov_xy = np.sum(w[:, np.newaxis] * decoded_centered * actual_centered, axis=0)
+    var_decoded = np.sum(w[:, np.newaxis] * decoded_centered**2, axis=0)
+    var_actual = np.sum(w[:, np.newaxis] * actual_centered**2, axis=0)
 
-        # Center the data
-        x_centered = x - mean_x
-        y_centered = y - mean_y
-
-        # Weighted covariance and variances
-        cov_xy = np.sum(w * x_centered * y_centered)
-        var_x = np.sum(w * x_centered**2)
-        var_y = np.sum(w * y_centered**2)
-
-        # Correlation with zero-variance check
-        denom = np.sqrt(var_x * var_y)
-        if denom > 0:
-            correlations[dim] = cov_xy / denom
-        else:
-            correlations[dim] = np.nan
+    # Correlation with zero-variance check (vectorized)
+    denom = np.sqrt(var_decoded * var_actual)
+    correlations = np.where(denom > 0, cov_xy / denom, np.nan)
 
     # Return mean correlation across dimensions
     # If any dimension is NaN, result is NaN

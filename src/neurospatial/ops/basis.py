@@ -551,13 +551,20 @@ def geodesic_rbf_basis(
     # Compute RBF for each (center, sigma) combination
     # Rows ordered by (center, sigma): all sigmas for center 0, then center 1, etc.
     # Shape: (n_centers * n_sigmas, n_bins)
-    basis = np.zeros((n_centers_actual * n_sigmas, n_bins), dtype=np.float64)
+    #
+    # Vectorized computation using broadcasting:
+    # distances: (n_centers, n_bins)
+    # sigmas: (n_sigmas,)
+    # Result: (n_centers, n_sigmas, n_bins) -> reshape to (n_centers * n_sigmas, n_bins)
+    sigmas_arr = np.asarray(sigmas)
+    two_sigma_sq = 2.0 * sigmas_arr**2  # (n_sigmas,)
 
-    for c_idx in range(n_centers_actual):
-        for s_idx, s in enumerate(sigmas):
-            row_idx = c_idx * n_sigmas + s_idx
-            two_sigma_sq = 2.0 * s * s
-            basis[row_idx] = np.exp(-(distances[c_idx] ** 2) / two_sigma_sq)
+    # Broadcast: (n_centers, 1, n_bins) / (1, n_sigmas, 1) -> (n_centers, n_sigmas, n_bins)
+    basis_3d = np.exp(
+        -(distances[:, np.newaxis, :] ** 2) / two_sigma_sq[np.newaxis, :, np.newaxis]
+    )
+    # Reshape to (n_centers * n_sigmas, n_bins) with (center, sigma) ordering
+    basis = basis_3d.reshape(n_centers_actual * n_sigmas, n_bins)
 
     # Normalize
     basis = _normalize_basis(basis, normalize)
@@ -725,18 +732,24 @@ def heat_kernel_wavelet_basis(
     # Compute heat kernel wavelets using expm_multiply
     # Rows ordered by (center, scale): all scales for center 0, then center 1, etc.
     # Shape: (n_centers * n_scales, n_bins)
-    basis = np.zeros((n_centers_actual * n_scales, n_bins), dtype=np.float64)
+    #
+    # We collect wavelets for all scales first, then reorder.
+    # Each scale produces (n_bins, n_centers) -> we need (n_centers * n_scales, n_bins)
+    # with ordering: [center0_scale0, center0_scale1, ..., center1_scale0, ...]
 
     # Compute exp(-s * L) @ delta for each scale
     # expm_multiply computes exp(A) @ B efficiently without forming exp(A)
-    for s_idx, s in enumerate(scales_arr):
-        wavelets = expm_multiply(
-            -s * laplacian, delta_mat
-        )  # Shape: (n_bins, n_centers)
-        # Place in output array with (center, scale) ordering
-        for c_idx in range(n_centers_actual):
-            row_idx = c_idx * n_scales + s_idx
-            basis[row_idx] = wavelets[:, c_idx]
+    # Collect wavelets: shape (n_scales, n_bins, n_centers)
+    wavelets_all = np.stack(
+        [expm_multiply(-s * laplacian, delta_mat) for s in scales_arr], axis=0
+    )
+
+    # Reorder from (n_scales, n_bins, n_centers) to (n_centers, n_scales, n_bins)
+    # then reshape to (n_centers * n_scales, n_bins)
+    wavelets_reordered = wavelets_all.transpose(
+        2, 0, 1
+    )  # (n_centers, n_scales, n_bins)
+    basis = wavelets_reordered.reshape(n_centers_actual * n_scales, n_bins)
 
     # Normalize
     basis = _normalize_basis(basis, normalize)
@@ -913,26 +926,31 @@ def chebyshev_filter_basis(
     #   T_{k+1}(x) = 2x * T_k(x) - T_{k-1}(x)
     #
     # Rows ordered by (center, degree): all degrees for center 0, then center 1
+    #
+    # Vectorized: collect all Chebyshev polynomials in a list, then reorder at the end
 
-    basis = np.zeros((n_centers_actual * n_degrees, n_bins), dtype=np.float64)
+    # Collect Chebyshev results: list of (n_bins, n_centers) arrays for each degree
+    cheby_results = []
 
     cheby_prev = delta.copy()  # T_0 @ delta = delta (identity)
-    # Store degree 0 for each center
-    for c_idx in range(n_centers_actual):
-        basis[c_idx * n_degrees + 0] = cheby_prev[:, c_idx]
+    cheby_results.append(cheby_prev)
 
     if max_degree >= 1:
         cheby_curr = laplacian_scaled @ delta  # T_1 @ delta = L_scaled @ delta
-        # Store degree 1 for each center
-        for c_idx in range(n_centers_actual):
-            basis[c_idx * n_degrees + 1] = cheby_curr[:, c_idx]
+        cheby_results.append(cheby_curr)
 
-        for k in range(2, n_degrees):
+        for _k in range(2, n_degrees):
             cheby_next = 2.0 * (laplacian_scaled @ cheby_curr) - cheby_prev
-            # Store degree k for each center
-            for c_idx in range(n_centers_actual):
-                basis[c_idx * n_degrees + k] = cheby_next[:, c_idx]
+            cheby_results.append(cheby_next)
             cheby_prev, cheby_curr = cheby_curr, cheby_next
+
+    # Stack results: (n_degrees, n_bins, n_centers)
+    cheby_stacked = np.stack(cheby_results, axis=0)
+
+    # Reorder from (n_degrees, n_bins, n_centers) to (n_centers, n_degrees, n_bins)
+    # then reshape to (n_centers * n_degrees, n_bins)
+    cheby_reordered = cheby_stacked.transpose(2, 0, 1)  # (n_centers, n_degrees, n_bins)
+    basis = cheby_reordered.reshape(n_centers_actual * n_degrees, n_bins)
 
     # Normalize
     basis = _normalize_basis(basis, normalize)

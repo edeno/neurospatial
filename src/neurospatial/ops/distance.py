@@ -151,20 +151,25 @@ def _validate_source_nodes(
     """
     import warnings
 
-    valid_sources = []
-    invalid_sources = []
+    # Vectorized membership check using numpy
+    sources_arr = np.asarray(sources)
+    graph_nodes = np.array(list(G.nodes))
 
-    for src in sources:
-        if src not in G.nodes:
-            invalid_sources.append(int(src))
+    # Use np.isin for efficient membership testing
+    valid_mask = np.isin(sources_arr, graph_nodes)
+    valid_sources: list[int] = sources_arr[valid_mask].astype(int).tolist()
+    invalid_sources: list[int] = sources_arr[~valid_mask].astype(int).tolist()
+
+    # Issue warnings for invalid sources (preserves original behavior)
+    if invalid_sources:
+        min_node = min(G.nodes) if G.nodes else "none"
+        max_node = max(G.nodes) if G.nodes else "none"
+        for src in invalid_sources:
             warnings.warn(
                 f"Source node {src} not in graph (valid node IDs: "
-                f"{min(G.nodes) if G.nodes else 'none'} to "
-                f"{max(G.nodes) if G.nodes else 'none'}), skipping",
+                f"{min_node} to {max_node}), skipping",
                 stacklevel=3,
             )
-        else:
-            valid_sources.append(int(src))
 
     if len(valid_sources) == 0:
         raise ValueError(
@@ -462,10 +467,12 @@ def pairwise_distances(
     # Extract distances to only the nodes we care about (vectorized)
     # dist_from_sources[i, :] has distances from valid_nodes[i] to all graph nodes
     # We need dist_from_sources[i, valid_nodes[j]] for all valid i, j
-    for i, src_pos in enumerate(valid_positions):
-        # dist_from_sources row i has distances from valid_nodes[i] to all graph nodes
-        # We want distances to nodes in valid_nodes
-        dist_matrix[src_pos, valid_positions] = dist_from_sources[i, valid_nodes]
+    #
+    # Use advanced indexing: extract submatrix and assign to output positions
+    # dist_from_sources[:, valid_nodes] gives (n_valid, n_valid) submatrix
+    dist_matrix[np.ix_(valid_positions, valid_positions)] = dist_from_sources[
+        :, valid_nodes
+    ]
 
     return dist_matrix
 

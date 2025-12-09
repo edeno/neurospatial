@@ -303,11 +303,8 @@ def compute_step_lengths(
             env.connectivity, env.n_bins, weight="distance"
         )
 
-        # Look up distances from precomputed matrix
-        for i in range(n_steps):
-            bin_i = trajectory_bins[i]
-            bin_j = trajectory_bins[i + 1]
-            step_lengths[i] = dist_matrix[bin_i, bin_j]
+        # Look up distances from precomputed matrix (vectorized)
+        step_lengths = dist_matrix[trajectory_bins[:-1], trajectory_bins[1:]]
 
     return step_lengths
 

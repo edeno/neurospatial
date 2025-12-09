@@ -295,9 +295,10 @@ def population_coverage(
     for neuron_fields in all_fields:
         if len(neuron_fields) > 0:
             n_place_cells += 1
-        for field_bins in neuron_fields:
-            field_count[field_bins] += 1
-            n_fields += 1
+            n_fields += len(neuron_fields)
+            # Concatenate all field bins for this neuron and use np.add.at for vectorized increment
+            all_bins = np.concatenate(neuron_fields)
+            np.add.at(field_count, all_bins, 1)
 
     # Compute coverage
     is_covered = field_count > 0

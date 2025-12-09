@@ -269,7 +269,11 @@ class BoundaryCellModel:
                 bin_indices[~inside_mask] = np.argmin(distances_to_bins, axis=1)
 
             # Lookup distances from precomputed field
-            assert self._distance_field is not None
+            if self._distance_field is None:
+                raise RuntimeError(
+                    "Distance field not initialized for geodesic metric. "
+                    "This is an internal error - please report this bug."
+                )
             distances = self._distance_field[bin_indices]
 
         else:  # euclidean

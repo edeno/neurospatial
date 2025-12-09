@@ -1322,12 +1322,13 @@ def estimate_transform(
         # Build design matrix: [x1, x2, ..., xn, 1] for each point
         X = np.c_[src, np.ones(n_points)]  # (N, n_dims+1)
 
-        # Solve for each output dimension independently
+        # Solve for all output dimensions at once using vectorized lstsq
+        # X @ A_partial.T = dst, where A_partial is (n_dims, n_dims+1)
+        # lstsq with multiple RHS: X @ result = dst, result shape (n_dims+1, n_dims)
         A = np.eye(n_dims + 1)
-        for dim in range(n_dims):
-            # Solve: params = argmin ||X @ params - dst[:, dim]||^2
-            params = np.linalg.lstsq(X, dst[:, dim], rcond=None)[0]
-            A[dim, :] = params
+        result, _, _, _ = np.linalg.lstsq(X, dst, rcond=None)
+        # result has shape (n_dims+1, n_dims), we need to transpose for A[dim, :]
+        A[:n_dims, :] = result.T
 
         return AffineND(A)
 

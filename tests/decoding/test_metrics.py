@@ -12,12 +12,12 @@ import pytest
 class TestDecodingError:
     """Test decoding_error function."""
 
-    def test_decoding_error_shape(self, small_2d_env):
+    def test_decoding_error_shape(self):
         """decoding_error should return (n_time_bins,) array of distances."""
         from neurospatial.decoding.metrics import decoding_error
 
         n_time_bins = 10
-        n_dims = small_2d_env.n_dims
+        n_dims = 2  # Test with 2D positions
         rng = np.random.default_rng(42)
 
         decoded = rng.uniform(0, 10, (n_time_bins, n_dims))
@@ -28,12 +28,12 @@ class TestDecodingError:
         assert result.shape == (n_time_bins,)
         assert result.dtype == np.float64
 
-    def test_decoding_error_identical_positions_is_zero(self, small_2d_env):
+    def test_decoding_error_identical_positions_is_zero(self):
         """decoding_error should be zero when decoded equals actual."""
         from neurospatial.decoding.metrics import decoding_error
 
         n_time_bins = 5
-        n_dims = small_2d_env.n_dims
+        n_dims = 2  # Test with 2D positions
         rng = np.random.default_rng(42)
 
         positions = rng.uniform(0, 10, (n_time_bins, n_dims))
@@ -82,12 +82,12 @@ class TestDecodingError:
 
         np.testing.assert_array_almost_equal(result, expected)
 
-    def test_decoding_error_non_negative(self, small_2d_env):
+    def test_decoding_error_non_negative(self):
         """decoding_error should always return non-negative values."""
         from neurospatial.decoding.metrics import decoding_error
 
         n_time_bins = 20
-        n_dims = small_2d_env.n_dims
+        n_dims = 2  # Test with 2D positions
         rng = np.random.default_rng(42)
 
         decoded = rng.uniform(-10, 10, (n_time_bins, n_dims))
@@ -97,12 +97,12 @@ class TestDecodingError:
 
         assert np.all(result >= 0)
 
-    def test_decoding_error_symmetry(self, small_2d_env):
+    def test_decoding_error_symmetry(self):
         """decoding_error(a, b) should equal decoding_error(b, a)."""
         from neurospatial.decoding.metrics import decoding_error
 
         n_time_bins = 10
-        n_dims = small_2d_env.n_dims
+        n_dims = 2  # Test with 2D positions
         rng = np.random.default_rng(42)
 
         positions_a = rng.uniform(0, 10, (n_time_bins, n_dims))
