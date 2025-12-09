@@ -571,6 +571,7 @@ def _points_to_regular_grid_bin_ind(
     grid_edges: tuple[NDArray[np.float64], ...],
     grid_shape: tuple[int, ...],
     active_mask: NDArray[np.bool_] | None = None,
+    inverse_map: NDArray[np.intp] | None = None,
 ) -> NDArray[np.int_]:
     """Map N-D points to their corresponding bin indices in a regular grid.
 
@@ -591,6 +592,11 @@ def _points_to_regular_grid_bin_ind(
         If provided, an N-D boolean mask indicating active bins in the full
         grid. Output indices will be relative to these active bins.
         If None (default), output indices are flat indices of the full grid.
+    inverse_map : Optional[NDArray[np.intp]], shape (active_mask.size,), optional
+        Pre-computed inverse mapping from flat grid index to active bin index.
+        If provided with active_mask, avoids recomputing the inverse map on
+        each call. Should satisfy: inverse_map[flat_idx] = active_bin_idx
+        for active bins, -1 otherwise.
 
     Returns
     -------
@@ -671,21 +677,31 @@ def _points_to_regular_grid_bin_ind(
     )
 
     if active_mask is not None:
-        # Create mapping from original_full_grid_flat_index to active_bin_id (0 to N-1)
-        # This should only be created once if possible, e.g., stored on the layout object
-        active_original_flat_indices = np.flatnonzero(active_mask)
-        original_flat_to_active_id_map: dict[int, int] = {
-            original_idx: new_idx
-            for new_idx, original_idx in enumerate(active_original_flat_indices)
-        }
+        # Vectorized mapping from original_full_grid_flat_index to active_bin_id (0 to N-1)
+        active_mask_flat = active_mask.ravel()
 
-        for i, orig_flat_idx in enumerate(original_bin_flat_idx_for_valid_points):
-            # If it was a valid original flat index and corresponds to an active bin
-            if orig_flat_idx != -1 and active_mask.ravel()[orig_flat_idx]:
-                final_mapped_indices_for_valid_points[i] = (
-                    original_flat_to_active_id_map[orig_flat_idx]
-                )
-                # else it remains -1 (was in grid, but not in active_mask or out of grid bounds)
+        # Use provided inverse_map if available, otherwise compute it
+        if inverse_map is None:
+            # Create inverse lookup array: inverse_map[original_flat_idx] = active_bin_id
+            # For inactive bins, inverse_map contains -1
+            inverse_map = np.full(active_mask_flat.size, -1, dtype=np.intp)
+            active_indices = np.flatnonzero(active_mask_flat)
+            inverse_map[active_indices] = np.arange(len(active_indices), dtype=np.intp)
+
+        # Vectorized lookup: find points with valid flat indices that are also in active bins
+        valid_flat_mask = original_bin_flat_idx_for_valid_points != -1
+
+        # For valid flat indices, check if they're in active bins and map them
+        # Use clip to avoid out-of-bounds indexing (clipped values will have valid_flat_mask=False)
+        safe_indices = np.clip(
+            original_bin_flat_idx_for_valid_points, 0, active_mask_flat.size - 1
+        )
+        in_active_mask = valid_flat_mask & active_mask_flat[safe_indices]
+
+        # Map valid active indices using the inverse lookup
+        final_mapped_indices_for_valid_points[in_active_mask] = inverse_map[
+            original_bin_flat_idx_for_valid_points[in_active_mask]
+        ]
     else:
         # No active_mask, so original_bin_flat_idx_for_valid_points are the final indices
         # (where -1 means out of bounds)

@@ -318,9 +318,8 @@ def compute_object_vector_tuning(
     dist_bin_idx = np.clip(dist_bin_idx, 0, n_distance_bins - 1)
     dir_bin_idx = np.clip(dir_bin_idx, 0, n_direction_bins - 1)
 
-    # Accumulate occupancy
-    for t in range(n_time):
-        occupancy[dist_bin_idx[t], dir_bin_idx[t]] += dt
+    # Accumulate occupancy (vectorized)
+    np.add.at(occupancy, (dist_bin_idx, dir_bin_idx), dt)
 
     # Count spikes in each bin
     spike_counts = np.zeros((n_distance_bins, n_direction_bins), dtype=np.float64)
@@ -345,9 +344,8 @@ def compute_object_vector_tuning(
         spike_dist_bins = np.clip(spike_dist_bins, 0, n_distance_bins - 1)
         spike_dir_bins = np.clip(spike_dir_bins, 0, n_direction_bins - 1)
 
-        # Count spikes per bin
-        for i in range(len(valid_spike_times)):
-            spike_counts[spike_dist_bins[i], spike_dir_bins[i]] += 1
+        # Count spikes per bin (vectorized)
+        np.add.at(spike_counts, (spike_dist_bins, spike_dir_bins), 1.0)
 
     # Compute firing rate (Hz) = spike count / occupancy
     tuning_curve = np.zeros((n_distance_bins, n_direction_bins), dtype=np.float64)

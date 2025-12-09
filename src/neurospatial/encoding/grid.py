@@ -477,6 +477,8 @@ def _spatial_autocorrelation_graph(
     correlations : NDArray[np.float64], shape (n_distance_bins,)
         Autocorrelation at each distance.
     """
+    from scipy.sparse.csgraph import dijkstra
+
     # Filter out NaN bins
     valid_bins = np.where(np.isfinite(firing_rate))[0]
 
@@ -484,78 +486,89 @@ def _spatial_autocorrelation_graph(
         raise ValueError("Need at least 2 valid (non-NaN) bins")
 
     valid_rates = firing_rate[valid_bins]
+    n_valid = len(valid_bins)
 
-    # Compute pairwise geodesic distances between valid bins
-    # For efficiency, compute all-pairs shortest path distances
-    try:
-        # Get subgraph of valid bins
-        valid_bin_set = set(valid_bins.tolist())
-        subgraph = env.connectivity.subgraph(valid_bin_set)
+    # Compute pairwise geodesic distances using scipy (much faster than networkx)
+    adj_matrix = nx.adjacency_matrix(
+        env.connectivity, nodelist=range(env.n_bins), weight="distance"
+    ).tocsr()
 
-        # Compute all-pairs shortest path lengths
-        distances_dict = dict(
-            nx.all_pairs_dijkstra_path_length(subgraph, weight="distance")
-        )
-    except Exception as e:
-        raise ValueError(f"Failed to compute graph distances: {e}") from e
+    dist_matrix = dijkstra(
+        adj_matrix,
+        directed=False,
+        indices=valid_bins,
+        return_predecessors=False,
+    )[:, valid_bins]  # Shape: (n_valid, n_valid)
 
-    # Build pairwise distance and rate difference arrays
-    pairwise_distances_list: list[float] = []
-    rate_pairs_i_list: list[float] = []
-    rate_pairs_j_list: list[float] = []
+    # Vectorized extraction of upper triangle (avoid nested loops)
+    triu_indices = np.triu_indices(n_valid, k=1)
+    pairwise_distances = dist_matrix[triu_indices]
+    rates_i = valid_rates[triu_indices[0]]
+    rates_j = valid_rates[triu_indices[1]]
 
-    for i, bin_i in enumerate(valid_bins):
-        for j, bin_j in enumerate(valid_bins):
-            if i >= j:  # Avoid duplicate pairs and self-pairs
-                continue
+    # Filter out infinite distances (disconnected pairs)
+    finite_mask = np.isfinite(pairwise_distances)
+    pairwise_distances = pairwise_distances[finite_mask]
+    rates_i = rates_i[finite_mask]
+    rates_j = rates_j[finite_mask]
 
-            if int(bin_j) in distances_dict.get(int(bin_i), {}):
-                dist = distances_dict[int(bin_i)][int(bin_j)]
-                pairwise_distances_list.append(dist)
-                rate_pairs_i_list.append(float(valid_rates[i]))
-                rate_pairs_j_list.append(float(valid_rates[j]))
-
-    if len(pairwise_distances_list) == 0:
+    if len(pairwise_distances) == 0:
         raise ValueError("No valid bin pairs found (graph may be disconnected)")
-
-    pairwise_distances_array = np.array(pairwise_distances_list, dtype=np.float64)
-    rate_pairs_i = np.array(rate_pairs_i_list, dtype=np.float64)
-    rate_pairs_j = np.array(rate_pairs_j_list, dtype=np.float64)
 
     # Determine max distance
     if max_distance is None:
-        max_distance = float(np.max(pairwise_distances_array))
+        max_distance = float(np.max(pairwise_distances))
 
     # Create distance bins
     distance_bin_edges = np.linspace(0, max_distance, n_distance_bins + 1)
     distance_bin_centers = (distance_bin_edges[:-1] + distance_bin_edges[1:]) / 2
 
-    # Compute correlation for each distance bin
+    # Vectorized bin assignment using searchsorted
+    # Match original behavior: d_min <= d < d_max (excludes values at exactly max_distance)
+    bin_indices = (
+        np.searchsorted(distance_bin_edges, pairwise_distances, side="right") - 1
+    )
+    # Values at or beyond last edge get bin_indices >= n_distance_bins, mark as invalid
+    bin_indices = np.where(bin_indices >= n_distance_bins, -1, bin_indices)
+    # Values below first edge also invalid
+    bin_indices = np.where(bin_indices < 0, -1, bin_indices)
+
+    # Compute correlation for each distance bin using optimized grouped approach
+    # Sort by bin index for efficient contiguous memory access
+    valid_bin_mask = bin_indices >= 0
+    if not np.any(valid_bin_mask):
+        return distance_bin_centers, np.full(n_distance_bins, np.nan)
+
+    sort_idx = np.argsort(bin_indices[valid_bin_mask])
+    sorted_bins = bin_indices[valid_bin_mask][sort_idx]
+    sorted_rates_i = rates_i[valid_bin_mask][sort_idx]
+    sorted_rates_j = rates_j[valid_bin_mask][sort_idx]
+
+    # Find bin boundaries using unique (sorted data makes this efficient)
+    unique_bins, bin_counts = np.unique(sorted_bins, return_counts=True)
+    bin_starts = np.concatenate([[0], np.cumsum(bin_counts)[:-1]])
+
     correlations = np.full(n_distance_bins, np.nan)
-
-    for d_idx in range(n_distance_bins):
-        d_min = distance_bin_edges[d_idx]
-        d_max = distance_bin_edges[d_idx + 1]
-
-        # Find pairs in this distance bin
-        in_bin = (pairwise_distances_array >= d_min) & (
-            pairwise_distances_array < d_max
-        )
-
-        if np.sum(in_bin) < 2:
+    for b, start, count in zip(unique_bins, bin_starts, bin_counts, strict=True):
+        if count < 2:
             # Not enough pairs for correlation
             continue
+        end = start + count
+        ri = sorted_rates_i[start:end]
+        rj = sorted_rates_j[start:end]
 
-        rates_i_bin = rate_pairs_i[in_bin]
-        rates_j_bin = rate_pairs_j[in_bin]
-
-        # Compute Pearson correlation between rates at distance d
-        if np.std(rates_i_bin) == 0 or np.std(rates_j_bin) == 0:
+        # Check for zero variance
+        if np.std(ri) == 0 or np.std(rj) == 0:
             # No variance, correlation undefined
             continue
 
-        corr, _ = stats.pearsonr(rates_i_bin, rates_j_bin)
-        correlations[d_idx] = corr
+        # Inline Pearson correlation (faster than scipy.stats.pearsonr for small arrays)
+        ri_centered = ri - ri.mean()
+        rj_centered = rj - rj.mean()
+        corr = np.dot(ri_centered, rj_centered) / (
+            np.linalg.norm(ri_centered) * np.linalg.norm(rj_centered)
+        )
+        correlations[b] = corr
 
     return distance_bin_centers, correlations
 

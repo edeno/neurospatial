@@ -404,14 +404,19 @@ def shuffle_place_fields_circular(
     generator = _ensure_rng(rng)
     n_neurons, n_bins = encoding_models.shape
 
+    # Pre-compute column indices for vectorized roll
+    col_indices = np.arange(n_bins)
+
     for _ in range(n_shuffles):
         # Generate random shift amounts for each neuron
-        shifts = generator.integers(0, n_bins, size=n_neurons)
-        # Apply circular shifts to each row independently
-        shuffled = np.empty_like(encoding_models)
-        for i in range(n_neurons):
-            shift_amount: int = int(shifts[i])  # type: ignore[index]
-            shuffled[i, :] = np.roll(encoding_models[i, :], shift_amount)
+        shifts = np.asarray(generator.integers(0, n_bins, size=n_neurons))
+
+        # Vectorized circular shift using advanced indexing
+        # For each row i, we want columns (col_indices - shifts[i]) % n_bins
+        # Shape: (n_neurons, n_bins)
+        shifted_indices = (col_indices - shifts[:, np.newaxis]) % n_bins
+        shuffled = encoding_models[np.arange(n_neurons)[:, np.newaxis], shifted_indices]
+
         yield shuffled
 
 
@@ -509,26 +514,37 @@ def shuffle_place_fields_circular_2d(
     generator = _ensure_rng(rng)
     n_neurons = encoding_models.shape[0]
 
+    # Pre-compute indices for vectorized 2D roll
+    # Create meshgrid of indices
+    rows, cols = np.arange(grid_shape[0]), np.arange(grid_shape[1])
+
     for _ in range(n_shuffles):
         # Generate random shift amounts for each neuron in each dimension
-        shifts_x = generator.integers(0, grid_shape[0], size=n_neurons)
-        shifts_y = generator.integers(0, grid_shape[1], size=n_neurons)
+        shifts_x = np.asarray(generator.integers(0, grid_shape[0], size=n_neurons))
+        shifts_y = np.asarray(generator.integers(0, grid_shape[1], size=n_neurons))
 
-        # Apply 2D circular shifts to each neuron
-        shuffled = np.empty_like(encoding_models)
-        for i in range(n_neurons):
-            shift_x: int = int(shifts_x[i])  # type: ignore[index]
-            shift_y: int = int(shifts_y[i])  # type: ignore[index]
-            # Reshape to 2D grid
-            field_2d = encoding_models[i, :].reshape(grid_shape)
-            # Apply circular shift in both dimensions
-            shifted_2d = np.roll(
-                np.roll(field_2d, shift_x, axis=0),
-                shift_y,
-                axis=1,
-            )
-            # Flatten back to 1D
-            shuffled[i, :] = shifted_2d.ravel()
+        # Reshape all fields to 2D grids: (n_neurons, grid_shape[0], grid_shape[1])
+        fields_2d = encoding_models.reshape(n_neurons, grid_shape[0], grid_shape[1])
+
+        # Vectorized 2D circular shift using advanced indexing
+        # For each neuron i, we want:
+        #   row_indices = (rows - shifts_x[i]) % grid_shape[0]
+        #   col_indices = (cols - shifts_y[i]) % grid_shape[1]
+        # Shape: (n_neurons, grid_shape[0])
+        shifted_row_indices = (rows - shifts_x[:, np.newaxis]) % grid_shape[0]
+        # Shape: (n_neurons, grid_shape[1])
+        shifted_col_indices = (cols - shifts_y[:, np.newaxis]) % grid_shape[1]
+
+        # Apply shifts using advanced indexing
+        # fields_2d[n, shifted_row_indices[n, :, None], shifted_col_indices[n, None, :]]
+        neuron_indices = np.arange(n_neurons)[:, np.newaxis, np.newaxis]
+        row_idx = shifted_row_indices[:, :, np.newaxis]
+        col_idx = shifted_col_indices[:, np.newaxis, :]
+
+        shifted_2d = fields_2d[neuron_indices, row_idx, col_idx]
+
+        # Flatten back to 1D: (n_neurons, n_bins)
+        shuffled = shifted_2d.reshape(n_neurons, -1)
 
         yield shuffled
 
@@ -611,14 +627,19 @@ def shuffle_posterior_circular(
     generator = _ensure_rng(rng)
     n_time_bins, n_bins = posterior.shape
 
+    # Pre-compute column indices for vectorized roll
+    col_indices = np.arange(n_bins)
+
     for _ in range(n_shuffles):
         # Generate random shift amounts for each time bin
-        shifts = generator.integers(0, n_bins, size=n_time_bins)
-        # Apply circular shifts to each row independently
-        shuffled = np.empty_like(posterior)
-        for i in range(n_time_bins):
-            shift_amount: int = int(shifts[i])  # type: ignore[index]
-            shuffled[i, :] = np.roll(posterior[i, :], shift_amount)
+        shifts = np.asarray(generator.integers(0, n_bins, size=n_time_bins))
+
+        # Vectorized circular shift using advanced indexing
+        # For each row i, we want columns (col_indices - shifts[i]) % n_bins
+        # Shape: (n_time_bins, n_bins)
+        shifted_indices = (col_indices - shifts[:, np.newaxis]) % n_bins
+        shuffled = posterior[np.arange(n_time_bins)[:, np.newaxis], shifted_indices]
+
         yield shuffled
 
 

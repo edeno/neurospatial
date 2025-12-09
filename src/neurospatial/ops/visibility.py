@@ -697,6 +697,57 @@ def _line_of_sight_clear(
     return bool(np.all(bin_indices >= 0))
 
 
+def _batch_line_of_sight_clear(
+    env: Environment,
+    observer: NDArray[np.float64],
+    targets: NDArray[np.float64],
+    n_samples: int = 20,
+) -> NDArray[np.bool_]:
+    """Check line of sight between observer and multiple targets (vectorized).
+
+    Parameters
+    ----------
+    env : Environment
+        The environment.
+    observer : NDArray[np.float64], shape (2,)
+        Observer position.
+    targets : NDArray[np.float64], shape (n_targets, 2)
+        Target positions.
+    n_samples : int
+        Number of points to sample along each line.
+
+    Returns
+    -------
+    NDArray[np.bool_], shape (n_targets,)
+        True if line of sight is clear for each target.
+    """
+    n_targets = len(targets)
+    if n_targets == 0:
+        return np.array([], dtype=bool)
+
+    # Create parameter array for line sampling: shape (n_samples,)
+    t = np.linspace(0, 1, n_samples)
+
+    # Vectorized line sampling for all targets at once
+    # observer: (2,), targets: (n_targets, 2)
+    # line_points shape: (n_targets, n_samples, 2)
+    diff = targets - observer  # (n_targets, 2)
+    line_points = observer + t[:, np.newaxis, np.newaxis] * diff[np.newaxis, :, :]
+    # Transpose to (n_targets, n_samples, 2)
+    line_points = np.transpose(line_points, (1, 0, 2))
+
+    # Reshape for batch bin_at query: (n_targets * n_samples, 2)
+    flat_points = line_points.reshape(-1, 2)
+    bin_indices = env.bin_at(flat_points)
+
+    # Reshape back to (n_targets, n_samples)
+    bin_indices_2d = bin_indices.reshape(n_targets, n_samples)
+
+    # Check if ALL points along each line are inside (bin_idx >= 0)
+    result: NDArray[np.bool_] = np.all(bin_indices_2d >= 0, axis=1)
+    return result
+
+
 def compute_viewshed(
     env: Environment,
     position: NDArray[np.float64],
@@ -770,75 +821,119 @@ def compute_viewshed(
     # Convert to allocentric
     ray_angles_allo = ray_angles_ego + heading
 
-    # Cast rays and track visible bins
-    visible_bin_set = set()
+    # Vectorized ray casting setup
+    max_distance = 200.0
+    n_steps = 100
+
+    # Pre-compute direction vectors for all rays: shape (n_rays, 2)
+    dx = np.cos(ray_angles_allo)
+    dy = np.sin(ray_angles_allo)
+    directions = np.column_stack([dx, dy])  # (n_rays, 2)
+
+    # Create ray sample points: distances along ray
+    distances = np.linspace(0, max_distance, n_steps)  # (n_steps,)
+
+    # Generate all ray points at once: (n_rays, n_steps, 2)
+    # position: (2,), directions: (n_rays, 2), distances: (n_steps,)
+    ray_points_all = (
+        position[np.newaxis, np.newaxis, :]
+        + directions[:, np.newaxis, :] * distances[np.newaxis, :, np.newaxis]
+    )
+
+    # Reshape for batch bin_at query: (n_rays * n_steps, 2)
+    flat_ray_points = ray_points_all.reshape(-1, 2)
+    flat_bin_indices = env.bin_at(flat_ray_points)
+
+    # Reshape back: (n_rays, n_steps)
+    bin_indices_2d = flat_bin_indices.reshape(n_rays, n_steps)
+    inside_2d = bin_indices_2d >= 0
+
+    # Find boundary points for each ray (first exit from environment)
+    # For each ray, find the last consecutive "inside" point
     occlusion_scores = np.zeros(env.n_bins, dtype=np.float64)
     ray_counts = np.zeros(env.n_bins, dtype=np.float64)
+    visible_bin_mask = np.zeros(env.n_bins, dtype=bool)
 
-    for angle in ray_angles_allo:
-        # Cast ray
-        boundary_point = _ray_cast_to_boundary(
-            env, position, angle, max_distance=200.0, n_steps=100
-        )
+    for ray_idx in range(n_rays):
+        inside_mask = inside_2d[ray_idx]
 
-        if boundary_point is None:
+        if not np.any(inside_mask):
+            # Ray starts outside - skip
             continue
 
-        # Mark bins along ray as visible
-        distance = np.linalg.norm(boundary_point - position)
-        # Use minimum bin size for sampling resolution
-        min_bin_size = float(np.min(env.bin_sizes))
-        n_samples = max(int(distance / min_bin_size) * 2, 10)
+        # Find transition points (inside -> outside)
+        transitions = np.diff(inside_mask.astype(np.int8))
+        exit_indices = np.where(transitions == -1)[0]
 
-        t = np.linspace(0, 1, n_samples)
-        ray_x = position[0] + t * (boundary_point[0] - position[0])
-        ray_y = position[1] + t * (boundary_point[1] - position[1])
-        ray_points = np.column_stack([ray_x, ray_y])
+        if len(exit_indices) > 0:
+            # Use first exit point as boundary
+            boundary_idx = exit_indices[0]
+        elif inside_mask[-1]:
+            # Ray ends inside - use last point
+            boundary_idx = n_steps - 1
+        else:
+            # Ray starts inside but immediately exits - use first inside point
+            first_inside = np.argmax(inside_mask)
+            boundary_idx = first_inside
 
-        bin_indices = env.bin_at(ray_points)
-        valid_bins = bin_indices[bin_indices >= 0]
+        # Get valid bins along this ray up to boundary
+        valid_bins = bin_indices_2d[ray_idx, : boundary_idx + 1]
+        valid_bins = valid_bins[valid_bins >= 0]
 
-        for bin_idx in valid_bins:
-            visible_bin_set.add(int(bin_idx))
-            occlusion_scores[bin_idx] += 1.0
-            ray_counts[bin_idx] += 1.0
+        # Use numpy's unique and bincount for fast accumulation
+        unique_bins, counts = np.unique(valid_bins, return_counts=True)
+        visible_bin_mask[unique_bins] = True
+        occlusion_scores[unique_bins] += counts.astype(np.float64)
+        ray_counts[unique_bins] += counts.astype(np.float64)
 
-    visible_bins = np.array(sorted(visible_bin_set), dtype=np.intp)
+    visible_bins = np.where(visible_bin_mask)[0].astype(np.intp)
 
     # Normalize occlusion scores
     max_count = np.max(ray_counts) if np.max(ray_counts) > 0 else 1.0
     occlusion_map = np.where(ray_counts > 0, occlusion_scores / max_count, 0.0)
 
-    # Check cue visibility
+    # Check cue visibility (vectorized)
     if cue_positions is not None:
         cue_positions = np.asarray(cue_positions, dtype=np.float64)
         n_cues = len(cue_positions)
 
-        visible_cue_list = []
-        cue_distances_list = []
-        cue_bearings_list = []
+        if n_cues > 0:
+            # Compute bearings (already vectorized)
+            bearings = compute_egocentric_bearing(
+                cue_positions, position.reshape(1, -1), np.array([heading])
+            )[0]
 
-        # Compute bearings
-        bearings = compute_egocentric_bearing(
-            cue_positions, position.reshape(1, -1), np.array([heading])
-        )[0]
+            # Compute distances (vectorized)
+            cue_dists = np.linalg.norm(cue_positions - position, axis=1)
 
-        for i in range(n_cues):
-            cue_pos = cue_positions[i]
+            # Check FOV (vectorized) - FieldOfView.contains_angle handles arrays
+            if fov_obj is not None:
+                in_fov = fov_obj.contains_angle(bearings)
+            else:
+                in_fov = np.ones(n_cues, dtype=bool)
 
-            # Check if in FOV
-            if fov_obj is not None and not fov_obj.contains_angle(bearings[i]):
-                continue
+            # Only check line of sight for cues in FOV (vectorized batch check)
+            fov_indices = np.where(in_fov)[0]
+            if len(fov_indices) > 0:
+                los_clear = _batch_line_of_sight_clear(
+                    env, position, cue_positions[fov_indices]
+                )
+                # Build visibility mask
+                visible_mask = np.zeros(n_cues, dtype=bool)
+                visible_mask[fov_indices] = los_clear
 
-            # Check line of sight
-            if _line_of_sight_clear(env, position, cue_pos):
-                visible_cue_list.append(i)
-                cue_distances_list.append(np.linalg.norm(cue_pos - position))
-                cue_bearings_list.append(bearings[i])
-
-        visible_cues = np.array(visible_cue_list, dtype=np.intp)
-        cue_distances = np.array(cue_distances_list, dtype=np.float64)
-        cue_bearings = np.array(cue_bearings_list, dtype=np.float64)
+                visible_cue_indices = np.where(visible_mask)[0]
+                visible_cues = visible_cue_indices.astype(np.intp)
+                cue_distances = cue_dists[visible_cue_indices]
+                cue_bearings = bearings[visible_cue_indices]
+            else:
+                visible_cues = np.array([], dtype=np.intp)
+                cue_distances = np.array([], dtype=np.float64)
+                cue_bearings = np.array([], dtype=np.float64)
+        else:
+            visible_cues = np.array([], dtype=np.intp)
+            cue_distances = np.array([], dtype=np.float64)
+            cue_bearings = np.array([], dtype=np.float64)
     else:
         visible_cues = np.array([], dtype=np.intp)
         cue_distances = np.array([], dtype=np.float64)
@@ -953,6 +1048,13 @@ def visible_cues(
     cue_positions = np.asarray(cue_positions, dtype=np.float64)
     n_cues = len(cue_positions)
 
+    if n_cues == 0:
+        return (
+            np.array([], dtype=bool),
+            np.array([], dtype=np.float64),
+            np.array([], dtype=np.float64),
+        )
+
     # Parse FOV
     if fov is None:
         fov_obj = None
@@ -961,22 +1063,27 @@ def visible_cues(
     else:
         fov_obj = fov
 
-    # Compute distances and bearings
+    # Compute distances and bearings (vectorized)
     distances = np.linalg.norm(cue_positions - position, axis=1)
     bearings = compute_egocentric_bearing(
         cue_positions, position.reshape(1, -1), np.array([heading])
     )[0]
 
+    # Check FOV (vectorized) - FieldOfView.contains_angle handles arrays
+    if fov_obj is not None:
+        in_fov = fov_obj.contains_angle(bearings)
+    else:
+        in_fov = np.ones(n_cues, dtype=bool)
+
+    # Only check line of sight for cues in FOV (vectorized batch check)
     visible = np.zeros(n_cues, dtype=bool)
+    fov_indices = np.where(in_fov)[0]
 
-    for i in range(n_cues):
-        # Check FOV
-        if fov_obj is not None and not fov_obj.contains_angle(bearings[i]):
-            continue
-
-        # Check line of sight
-        if _line_of_sight_clear(env, position, cue_positions[i]):
-            visible[i] = True
+    if len(fov_indices) > 0:
+        los_clear = _batch_line_of_sight_clear(
+            env, position, cue_positions[fov_indices]
+        )
+        visible[fov_indices] = los_clear
 
     # Set NaN for non-visible
     result_distances = np.where(visible, distances, np.nan)

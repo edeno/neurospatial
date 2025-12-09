@@ -131,35 +131,36 @@ def compute_turn_angles(
     # Compute movement vectors (differences between consecutive positions)
     vectors = np.diff(unique_positions, axis=0)  # shape (n_unique-1, n_dims)
 
-    # Compute turn angles from consecutive vectors
-    # For each pair of consecutive vectors, compute the angle between them
-    n_angles = len(vectors) - 1
-    angles = np.zeros(n_angles, dtype=np.float64)
+    # Need at least 2 vectors to compute turn angles
+    if len(vectors) < 2:
+        return np.array([], dtype=np.float64)
 
-    for i in range(n_angles):
-        v1 = vectors[i]
-        v2 = vectors[i + 1]
+    # Vectorized turn angle computation
+    v1 = vectors[:-1]  # shape (n_angles, n_dims)
+    v2 = vectors[1:]  # shape (n_angles, n_dims)
 
-        # Check for zero-length vectors (should not occur after duplicate removal, but be safe)
-        if np.linalg.norm(v1) == 0 or np.linalg.norm(v2) == 0:
-            angles[i] = 0.0
-            continue
+    # Compute vector norms
+    norms1 = np.linalg.norm(v1, axis=1)
+    norms2 = np.linalg.norm(v2, axis=1)
 
-        # Use atan2 for proper quadrant handling
-        # For 2D: angle = atan2(cross product, dot product)
-        # For higher dims: use first 2 dimensions
-        if len(v1) >= 2:
-            # 2D cross product (scalar)
-            cross = v1[0] * v2[1] - v1[1] * v2[0]
-            dot = np.dot(v1, v2)
-            angles[i] = np.arctan2(cross, dot)
-        else:
-            # 1D: no turn angles (always 0 or π)
-            # Check if vectors point in same direction
-            if v1[0] * v2[0] > 0:
-                angles[i] = 0.0
-            else:
-                angles[i] = np.pi
+    # Handle zero-length vectors
+    zero_mask = (norms1 == 0) | (norms2 == 0)
+
+    n_dims = vectors.shape[1]
+    angles: NDArray[np.float64]
+    if n_dims >= 2:
+        # 2D cross product (scalar): v1[0]*v2[1] - v1[1]*v2[0]
+        cross = v1[:, 0] * v2[:, 1] - v1[:, 1] * v2[:, 0]
+        # Dot product
+        dot = np.sum(v1 * v2, axis=1)
+        angles = np.arctan2(cross, dot)
+    else:
+        # 1D: angle is 0 if same direction, π if opposite
+        same_direction = v1[:, 0] * v2[:, 0] > 0
+        angles = np.asarray(np.where(same_direction, 0.0, np.pi))
+
+    # Set zero-length vector pairs to 0
+    angles[zero_mask] = 0.0
 
     return angles
 

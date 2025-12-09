@@ -305,8 +305,8 @@ def confusion_matrix(
 
     else:  # method == "expected"
         # Accumulate posterior mass: cm[actual, :] += posterior[t, :]
-        for t in range(n_time_bins):
-            cm[actual_bins[t], :] += posterior[t, :]
+        # Vectorized using np.add.at with row indices
+        np.add.at(cm, actual_bins, posterior)
 
     return cm
 

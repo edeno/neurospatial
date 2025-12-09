@@ -243,16 +243,25 @@ def border_score(
         except Exception:
             return np.nan
 
-        # For each field bin, get distance to nearest boundary (already computed above)
-        distances_to_boundary = []
-        for field_bin in field_bins:
-            if int(field_bin) in distances_from_boundary:
-                distances_to_boundary.append(distances_from_boundary[int(field_bin)])
+        # For each field bin, get distance to nearest boundary (vectorized lookup)
+        # Convert dict to array for fast indexing
+        max_bin = max(distances_from_boundary.keys())
+        dist_array = np.full(max_bin + 1, np.nan)
+        for k, v in distances_from_boundary.items():
+            dist_array[k] = v
+
+        # Vectorized lookup for all field bins at once
+        field_bins_int = field_bins.astype(int)
+        valid_mask = field_bins_int <= max_bin
+        distances_to_boundary = dist_array[field_bins_int[valid_mask]]
+        distances_to_boundary = distances_to_boundary[
+            np.isfinite(distances_to_boundary)
+        ]
 
         if len(distances_to_boundary) == 0:
             return np.nan
 
-        mean_distance = np.mean(distances_to_boundary)
+        mean_distance = float(np.mean(distances_to_boundary))
 
     else:  # distance_metric == "euclidean"
         # Compute Euclidean distances in physical space (vectorized)

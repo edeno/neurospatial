@@ -1118,29 +1118,27 @@ def heading_direction_labels(
             "Neither was provided."
         )
 
-    labels = np.empty(n_samples, dtype=object)
-
     bin_edges_rad = np.linspace(-np.pi, np.pi, n_directions + 1)
     bin_edges_deg = np.linspace(-180.0, 180.0, n_directions + 1)
 
-    bin_labels = []
-    for i in range(n_directions):
-        start_deg = round(bin_edges_deg[i])
-        end_deg = round(bin_edges_deg[i + 1])
-        label = f"{start_deg:.0f}\u2013{end_deg:.0f}\u00b0"
-        bin_labels.append(label)
+    # Build bin labels
+    bin_labels = [
+        f"{round(bin_edges_deg[i]):.0f}\u2013{round(bin_edges_deg[i + 1]):.0f}\u00b0"
+        for i in range(n_directions)
+    ]
+    bin_labels_arr = np.array(bin_labels, dtype=object)
 
-    for i in range(n_samples):
-        if speed_arr[i] < min_speed:
-            labels[i] = "stationary"
-        else:
-            h = heading_arr[i]
-            h = np.arctan2(np.sin(h), np.cos(h))
+    # Vectorized label assignment
+    # Normalize headings to [-π, π]
+    heading_normalized = np.arctan2(np.sin(heading_arr), np.cos(heading_arr))
 
-            bin_idx = np.digitize(h, bin_edges_rad[1:], right=False)
-            bin_idx = min(bin_idx, n_directions - 1)
+    # Digitize all headings at once
+    bin_indices = np.digitize(heading_normalized, bin_edges_rad[1:], right=False)
+    bin_indices = np.clip(bin_indices, 0, n_directions - 1)
 
-            labels[i] = bin_labels[bin_idx]
+    # Assign labels: stationary where speed < min_speed, else use bin label
+    stationary_mask = speed_arr < min_speed
+    labels = np.where(stationary_mask, "stationary", bin_labels_arr[bin_indices])
 
     return labels
 

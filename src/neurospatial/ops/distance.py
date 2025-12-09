@@ -282,6 +282,7 @@ def distance_field(
     neighbors_within : Find all neighbors within radius
 
     """
+    from scipy.sparse.csgraph import dijkstra
     from scipy.spatial import cKDTree
 
     # Validate inputs
@@ -351,16 +352,27 @@ def distance_field(
         return np.asarray(distances, dtype=np.float64)
 
     # Geodesic metric - use consistent validation
-    distances = np.full(n_nodes, np.inf, dtype=np.float64)
     valid_sources = _validate_source_nodes(sources_array, G)
 
-    # Run Dijkstra from each source and keep minimum distance
-    for src in valid_sources:
-        lengths = nx.single_source_dijkstra_path_length(
-            G, src, weight=weight, cutoff=cutoff
-        )
-        for node, length in lengths.items():
-            distances[node] = min(distances[node], float(length))
+    # Use scipy's vectorized multi-source Dijkstra for better performance
+    # Convert graph to sparse adjacency matrix
+    adjacency = nx.to_scipy_sparse_array(G, weight=weight, format="csr")
+
+    # Run Dijkstra from all sources at once (vectorized)
+    # Returns shape (n_sources, n_nodes)
+    dist_from_sources = dijkstra(
+        csgraph=adjacency,
+        directed=False,
+        indices=valid_sources,
+        limit=cutoff if cutoff is not None else np.inf,
+        return_predecessors=False,
+    )
+
+    # Take minimum distance across all sources (vectorized)
+    if len(valid_sources) == 1:
+        distances = dist_from_sources.ravel()
+    else:
+        distances = np.min(dist_from_sources, axis=0)
 
     return np.asarray(distances, dtype=np.float64)
 
@@ -410,26 +422,50 @@ def pairwise_distances(
     distance_field : Compute distance to nearest source
 
     """
+    from scipy.sparse.csgraph import dijkstra
+
     nodes_array = np.asarray(nodes, dtype=int)
     n = len(nodes_array)
 
     if n == 0:
         return np.empty((0, 0), dtype=np.float64)
 
+    if G.number_of_nodes() == 0:
+        return np.full((n, n), np.inf, dtype=np.float64)
+
+    # Validate which nodes exist in the graph
+    valid_mask = np.array([node in G.nodes for node in nodes_array])
+
+    if not np.any(valid_mask):
+        # No valid nodes - return all inf
+        return np.full((n, n), np.inf, dtype=np.float64)
+
+    # Get valid node indices (positions in nodes_array)
+    valid_positions = np.where(valid_mask)[0]
+    valid_nodes = nodes_array[valid_positions]
+
+    # Convert graph to sparse matrix (vectorized approach)
+    adjacency = nx.to_scipy_sparse_array(G, weight=weight, format="csr")
+
+    # Run Dijkstra from all valid source nodes at once
+    # Returns shape (n_valid_sources, n_all_nodes_in_graph)
+    dist_from_sources = dijkstra(
+        csgraph=adjacency,
+        directed=False,
+        indices=valid_nodes,
+        return_predecessors=False,
+    )
+
+    # Build result matrix
     dist_matrix = np.full((n, n), np.inf, dtype=np.float64)
 
-    # Compute distances
-    for i, src in enumerate(nodes_array):
-        if src not in G.nodes:
-            continue
-
-        # Set self-distance to 0 for valid nodes
-        dist_matrix[i, i] = 0.0
-
-        lengths = nx.single_source_dijkstra_path_length(G, src, weight=weight)
-        for j, dst in enumerate(nodes_array):
-            if dst in lengths:
-                dist_matrix[i, j] = float(lengths[dst])
+    # Extract distances to only the nodes we care about (vectorized)
+    # dist_from_sources[i, :] has distances from valid_nodes[i] to all graph nodes
+    # We need dist_from_sources[i, valid_nodes[j]] for all valid i, j
+    for i, src_pos in enumerate(valid_positions):
+        # dist_from_sources row i has distances from valid_nodes[i] to all graph nodes
+        # We want distances to nodes in valid_nodes
+        dist_matrix[src_pos, valid_positions] = dist_from_sources[i, valid_nodes]
 
     return dist_matrix
 

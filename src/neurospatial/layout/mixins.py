@@ -210,6 +210,29 @@ class _GridMixin:
     connectivity: nx.Graph | None = None
     dimension_ranges: Sequence[tuple[float, float]] | None = None
     _layout_type_tag: str = "_Grid_Layout"
+    _active_mask_inverse_map: NDArray[np.intp] | None = None
+
+    @property
+    def active_mask_inverse_map(self) -> NDArray[np.intp] | None:
+        """Cached inverse mapping from flat grid index to active bin index.
+
+        Returns None if no active_mask is set. Otherwise returns an array where
+        inverse_map[flat_idx] = active_bin_idx (or -1 if not active).
+
+        This is computed once and cached for efficient repeated lookups.
+        """
+        if self.active_mask is None:
+            return None
+
+        # Compute and cache on first access
+        if self._active_mask_inverse_map is None:
+            active_mask_flat = self.active_mask.ravel()
+            inverse_map = np.full(active_mask_flat.size, -1, dtype=np.intp)
+            active_indices = np.flatnonzero(active_mask_flat)
+            inverse_map[active_indices] = np.arange(len(active_indices), dtype=np.intp)
+            self._active_mask_inverse_map = inverse_map
+
+        return self._active_mask_inverse_map
 
     def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.int_]:
         """Map N-D points to active bin indices based on grid structure.
@@ -241,6 +264,7 @@ class _GridMixin:
             grid_edges=self.grid_edges,
             grid_shape=self.grid_shape,
             active_mask=self.active_mask,
+            inverse_map=self.active_mask_inverse_map,
         )
 
     def plot(
