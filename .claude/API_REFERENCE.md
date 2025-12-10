@@ -6,6 +6,167 @@ Import patterns organized by feature area.
 
 ---
 
+## Function Argument Conventions
+
+### Canonical Argument Names
+
+Use these standardized names consistently across all modules:
+
+| Concept | Canonical Name | NOT | Notes |
+|---------|----------------|-----|-------|
+| Continuous coordinates | `positions` | `trajectory`, `coords`, `xy` | Shape: (n_time, n_dims) |
+| Discretized bin indices | `position_bins` | `trajectory_bins`, `bins`, `bin_idx` | Shape: (n_time,), dtype=int64 |
+| Sample timestamps | `times` | `timestamps`, `t`, `time_array` | Shape: (n_time,), in seconds |
+| Spike event times | `spike_times` | `spikes`, `spike_train` | Shape: (n_spikes,), in seconds |
+| Animal heading | `headings` | `heading`, `head_direction`, `hd` | Shape: (n_time,), in radians |
+| Target locations | `targets` | `target_positions`, `objects` | For egocentric operations |
+| Object locations | `object_positions` | `objects`, `landmarks` | For encoding functions |
+| Smoothing kernel size | `bandwidth` | `sigma`, `smoothing` | In physical units (e.g., cm) |
+| Estimation algorithm | `smoothing_method` | `method`, `estimator` | For place field computation |
+| Distance algorithm | `distance_metric` | `metric`, `distance_type` | "euclidean" or "geodesic" |
+
+### Canonical Argument Order by Function Type
+
+#### Neural Encoding Functions (place fields, object-vector, spatial view)
+
+```python
+func(
+    env,                    # 1. Environment (spatial context)
+    spike_times,            # 2. Neural data (what fired)
+    times,                  # 3. Timestamps (when sampled)
+    positions,              # 4. Position coordinates (where animal was)
+    headings,               # 5. Head direction (which way facing) - if egocentric
+    object_positions,       # 6. External targets - if relevant
+    *,                      # 7. Keyword-only separator
+    smoothing_method=...,   # 8. Algorithm parameters
+    bandwidth=...,
+    min_occupancy_seconds=...,
+)
+```
+
+**Examples:**
+
+- `compute_place_field(env, spike_times, times, positions, *, smoothing_method=...)`
+- `compute_object_vector_tuning(env, spike_times, times, positions, headings, object_positions, *, ...)`
+- `compute_spatial_view_field(env, spike_times, times, positions, headings, *, ...)`
+
+#### Egocentric Operations (bearing, distance to targets)
+
+```python
+func(
+    positions,              # 1. Animal positions (where animal is)
+    headings,               # 2. Animal headings (which way facing)
+    targets,                # 3. Target locations (what animal relates to)
+)
+```
+
+**Examples:**
+
+- `compute_egocentric_bearing(positions, headings, targets)`
+- `allocentric_to_egocentric(points, positions, headings)`
+
+#### Behavioral Segmentation (laps, trials, crossings)
+
+```python
+func(
+    position_bins,          # 1. Discretized position indices
+    times,                  # 2. Timestamps
+    env,                    # 3. Environment (for graph/region lookups)
+    *,                      # 4. Keyword-only separator
+    region_params...,       # 5. Region specifications
+)
+```
+
+**Alternative for functions requiring continuous positions:**
+
+```python
+func(
+    positions,              # 1. Continuous position coordinates
+    times,                  # 2. Timestamps
+    env,                    # 3. Environment
+    *,                      # 4. Keyword-only separator
+    source=...,             # 5. Region parameters
+    target=...,
+)
+```
+
+**Examples:**
+
+- `segment_trials(position_bins, times, env, *, start_region=..., end_regions=...)`
+- `detect_laps(position_bins, times, env, *, method=..., min_overlap=...)`
+- `detect_runs_between_regions(positions, times, env, *, source=..., target=...)`
+
+#### Head Direction Functions
+
+Head direction functions are an exception - they don't require `env` because head direction is independent of spatial discretization:
+
+```python
+func(
+    spike_times,            # 1. Spike times
+    times,                  # 2. Sample timestamps
+    head_directions,        # 3. HD at each timepoint
+    *,                      # 4. Keyword-only separator
+    bin_size=...,           # 5. Angular bin size
+    angle_unit=...,
+)
+```
+
+**Examples:**
+
+- `head_direction_tuning_curve(spike_times, times, head_directions, *, bin_size=...)`
+- `is_head_direction_cell(spike_times, times, head_directions, **kwargs)`
+
+#### Events/Peri-Event Functions
+
+Event functions analyze temporal alignment without spatial context:
+
+```python
+func(
+    spike_times,            # 1. Spike times
+    event_times,            # 2. Event timestamps
+    window,                 # 3. Time window around events
+    *,                      # 4. Keyword-only separator
+    bin_size=...,           # 5. Temporal bin size
+)
+```
+
+**Examples:**
+
+- `peri_event_histogram(spike_times, event_times, window, *, bin_size=...)`
+- `align_spikes_to_events(spike_times, event_times, window)`
+
+### Keyword-Only Separator (`*`) Guidelines
+
+Use `*` to force keyword-only arguments when:
+
+1. Function has more than 3-4 positional arguments
+2. Optional parameters follow required ones
+3. Parameters control algorithm behavior (smoothing_method, bandwidth)
+4. Parameters specify thresholds or ranges
+
+**Good:**
+
+```python
+def compute_place_field(
+    env, spike_times, times, positions,
+    *,  # Force keyword-only after core data
+    smoothing_method="diffusion_kde",
+    bandwidth=5.0,
+): ...
+```
+
+**Avoid:**
+
+```python
+def compute_place_field(
+    env, spike_times, times, positions,
+    smoothing_method="diffusion_kde",  # Can be passed positionally - error-prone
+    bandwidth=5.0,
+): ...
+```
+
+---
+
 ## Core Classes
 
 ```python

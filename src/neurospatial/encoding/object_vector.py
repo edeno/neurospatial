@@ -436,6 +436,7 @@ def _compute_direction_selectivity(
 
 def object_vector_score(
     tuning_curve: NDArray[np.float64],
+    *,
     max_distance_selectivity: float = 10.0,
 ) -> float:
     """Compute combined object-vector selectivity score.
@@ -533,6 +534,7 @@ def object_vector_score(
 def is_object_vector_cell(
     tuning_curve: NDArray[np.float64],
     peak_rate: float,
+    *,
     score_threshold: float = 0.3,
     min_peak_rate: float = 5.0,
 ) -> bool:

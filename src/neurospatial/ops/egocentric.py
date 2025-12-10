@@ -580,6 +580,7 @@ def compute_egocentric_distance(
 def heading_from_velocity(
     positions: NDArray[np.float64],
     dt: float,
+    *,
     min_speed: float = 0.0,
     smoothing_sigma: float = 0.0,
 ) -> NDArray[np.float64]:

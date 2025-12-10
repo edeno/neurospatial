@@ -305,19 +305,19 @@ ego_landmarks = allocentric_to_egocentric(landmarks, positions, headings)
 # ego_landmarks[t, i, :] = landmark i in animal's reference frame at time t
 
 # Compute bearing (angle) to targets
-bearings = compute_egocentric_bearing(landmarks, positions, headings)
+bearings = compute_egocentric_bearing(positions, headings, landmarks)
 # bearings shape: (n_time, n_landmarks)
 # 0=ahead, pi/2=left, -pi/2=right, +/-pi=behind
 
 # Compute distances (Euclidean or geodesic)
 distances = compute_egocentric_distance(
-    landmarks, positions, headings,
+    positions, landmarks,
     metric="euclidean"  # or "geodesic" with env parameter
 )
 
 # For geodesic distances (respects walls/obstacles)
 distances = compute_egocentric_distance(
-    landmarks, positions, headings,
+    positions, landmarks,
     metric="geodesic", env=env
 )
 ```
@@ -403,7 +403,10 @@ print(f"OVC score: {metrics.object_vector_score:.3f}")
 print(f"Peak rate: {metrics.peak_rate:.1f} Hz")
 
 # Classify
-if is_object_vector_cell(metrics, threshold=0.3, min_peak_rate=5.0):
+if is_object_vector_cell(
+    metrics.tuning_curve, metrics.peak_rate,
+    score_threshold=0.3, min_peak_rate=5.0
+):
     print("This is an object-vector cell!")
 
 # Plot polar tuning curve

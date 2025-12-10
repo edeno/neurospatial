@@ -234,7 +234,8 @@ from neurospatial.ops.egocentric import (
 )
 
 # Compute heading from movement direction (min_speed in cm/s)
-headings = heading_from_velocity(positions, times, min_speed=5.0)  # cm/s
+dt = times[1] - times[0]  # time step in seconds
+headings = heading_from_velocity(positions, dt, min_speed=5.0)  # cm/s
 
 # Compute egocentric bearing to objects (0=ahead, π/2=left, -π/2=right)
 object_positions = np.array([[50, 50], [75, 25]])  # 2 objects, coordinates in cm

@@ -100,7 +100,8 @@ class HeadDirectionCellModel:
     >>> positions, times = simulate_trajectory_ou(env, duration=10.0, seed=42)
     >>>
     >>> # Compute heading from velocity
-    >>> headings = heading_from_velocity(positions, times, min_speed=1.0)
+    >>> dt = times[1] - times[0]
+    >>> headings = heading_from_velocity(positions, dt, min_speed=1.0)
     >>>
     >>> # Compute HD cell firing
     >>> hd_cell = HeadDirectionCellModel(preferred_direction=0.0)
