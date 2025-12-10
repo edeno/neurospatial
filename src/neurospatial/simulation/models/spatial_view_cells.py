@@ -360,9 +360,9 @@ class SpatialViewCellModel:
                     from neurospatial.ops.egocentric import compute_egocentric_bearing
 
                     bearing = compute_egocentric_bearing(
-                        self.preferred_view_location[None, :],
                         positions[i : i + 1],
                         headings[i : i + 1],
+                        self.preferred_view_location[None, :],
                     )[0, 0]
 
                     if not self.fov.contains_angle(bearing):
@@ -386,9 +386,9 @@ class SpatialViewCellModel:
 
                 # Compute bearing to viewed location
                 bearing = compute_egocentric_bearing(
-                    viewed_locations[i : i + 1],
                     positions[i : i + 1],
                     headings[i : i + 1],
+                    viewed_locations[i : i + 1],
                 )[0, 0]
 
                 if not self.fov.contains_angle(bearing):

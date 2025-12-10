@@ -37,6 +37,48 @@ West----+----East                 Back----+----Ahead
 - Allocentric bearing to object: π/4 (45° from East toward North)
 - Egocentric bearing to object: π/4 (45° left of ahead)
 
+### Canonical Argument Order
+
+All public functions follow a consistent argument order pattern:
+
+```python
+# Neural encoding functions (place fields, object-vector, spatial view, etc.)
+func(
+    env,                    # 1. Environment (spatial context)
+    spike_times,            # 2. Neural data (what fired)
+    times,                  # 3. Timestamps (when sampled)
+    positions,              # 4. Position coordinates (where animal was)
+    headings,               # 5. Head direction (which way facing) - if egocentric
+    object_positions,       # 6. External targets - if relevant
+    *,                      # 7. Keyword-only separator
+    method_params,          # 8. Algorithm parameters (bandwidth, smoothing_method, etc.)
+)
+
+# Egocentric operations (bearing, distance to targets)
+func(
+    positions,              # 1. Animal positions (where animal is)
+    headings,               # 2. Animal headings (which way facing)
+    targets,                # 3. Target locations (what animal is relating to)
+)
+
+# Behavioral segmentation (laps, trials, crossings)
+func(
+    position_bins,          # 1. Discretized position indices
+    times,                  # 2. Timestamps
+    env,                    # 3. Environment (for graph/region lookups)
+    *,                      # 4. Keyword-only separator
+    region_params,          # 5. Region specifications (start_region, end_regions, etc.)
+)
+```
+
+**Key principles:**
+
+- **Environment first** for encoding functions (establishes spatial context)
+- **Animal state before targets** for egocentric ops (positions, headings, then targets)
+- **Data before metadata** (spike_times before times, positions before headings)
+- **Use `positions`** not `trajectory` for coordinate arrays (consistency)
+- **Use `position_bins`** not `trajectory_bins` for discretized indices
+
 ---
 
 ## 📦 Package Management
@@ -213,7 +255,7 @@ from neurospatial.encoding.object_vector import compute_object_vector_field
 
 # Compute firing field in egocentric polar coordinates
 result = compute_object_vector_field(
-    spike_times, times, positions, headings, object_positions,
+    env, spike_times, times, positions, headings, object_positions,
     distance_range=(0, 50),  # cm from object
     angle_range=(-np.pi, np.pi),  # full circle
     distance_bin_size=5.0,  # 5 cm bins

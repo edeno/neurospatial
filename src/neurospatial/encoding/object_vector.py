@@ -28,7 +28,7 @@ Typical Workflow
 1. Compute tuning curve from spike times and behavioral data::
 
     >>> metrics = compute_object_vector_tuning(  # doctest: +SKIP
-    ...     spike_times, times, positions, headings, object_positions, env
+    ...     env, spike_times, times, positions, headings, object_positions
     ... )
 
 2. Inspect metrics and classify::
@@ -184,12 +184,12 @@ class ObjectVectorMetrics:
 
 
 def compute_object_vector_tuning(
+    env: Environment,
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     object_positions: NDArray[np.float64],
-    env: Environment,
     *,
     max_distance: float = 50.0,
     n_distance_bins: int = 10,
@@ -203,6 +203,8 @@ def compute_object_vector_tuning(
 
     Parameters
     ----------
+    env : Environment
+        The spatial environment (used for distance calculations).
     spike_times : NDArray[np.float64], shape (n_spikes,)
         Times of spikes in the same units as ``times``.
     times : NDArray[np.float64], shape (n_time,)
@@ -213,8 +215,6 @@ def compute_object_vector_tuning(
         Animal heading at each time (radians).
     object_positions : NDArray[np.float64], shape (n_objects, 2)
         Positions of objects in allocentric coordinates.
-    env : Environment
-        The spatial environment (used for distance calculations).
     max_distance : float, default=50.0
         Maximum distance to include in tuning curve.
     n_distance_bins : int, default=10
@@ -252,7 +252,7 @@ def compute_object_vector_tuning(
     >>> object_positions = np.array([[50.0, 50.0]])
     >>> spike_times = rng.choice(times, size=100, replace=False)
     >>> metrics = compute_object_vector_tuning(
-    ...     spike_times, times, positions, headings, object_positions, env
+    ...     env, spike_times, times, positions, headings, object_positions
     ... )
     >>> metrics.tuning_curve.shape
     (10, 12)
@@ -300,7 +300,7 @@ def compute_object_vector_tuning(
     )
 
     # bearings: (n_time, n_objects)
-    bearings = compute_egocentric_bearing(object_positions, positions, headings)
+    bearings = compute_egocentric_bearing(positions, headings, object_positions)
 
     # Find nearest object at each timepoint
     nearest_obj_idx = np.argmin(distances, axis=1)
@@ -745,6 +745,7 @@ class ObjectVectorFieldResult:
 
 
 def compute_object_vector_field(
+    env: Environment | None,
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -757,7 +758,6 @@ def compute_object_vector_field(
     min_occupancy_seconds: float = 0.1,
     smoothing_method: Literal["binned", "diffusion_kde"] = "binned",
     bandwidth: float = 5.0,
-    allocentric_env: Environment | None = None,
     distance_metric: Literal["euclidean", "geodesic"] = "euclidean",
 ) -> ObjectVectorFieldResult:
     """Compute object-vector field in egocentric polar coordinates.
@@ -768,6 +768,9 @@ def compute_object_vector_field(
 
     Parameters
     ----------
+    env : Environment or None
+        Allocentric environment. Required when ``distance_metric="geodesic"``
+        for geodesic distance calculation. Can be None for Euclidean distances.
     spike_times : NDArray[np.float64], shape (n_spikes,)
         Times of spikes in the same units as ``times``.
     times : NDArray[np.float64], shape (n_time,)
@@ -795,13 +798,10 @@ def compute_object_vector_field(
     bandwidth : float, default=5.0
         Smoothing bandwidth for diffusion_kde smoothing_method. Units should match
         the position coordinates (e.g., centimeters).
-    allocentric_env : Environment, optional
-        Allocentric environment for geodesic distance calculation.
-        Required when ``distance_metric="geodesic"``.
     distance_metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric:
         - "euclidean": Straight-line distance
-        - "geodesic": Path distance respecting environment boundaries
+        - "geodesic": Path distance respecting environment boundaries (requires env)
 
     Returns
     -------
@@ -812,7 +812,7 @@ def compute_object_vector_field(
     ------
     ValueError
         If spike_times is empty, arrays have mismatched lengths,
-        smoothing_method is invalid, or geodesic requires allocentric_env.
+        smoothing_method is invalid, or geodesic requires env.
 
     Examples
     --------
@@ -825,8 +825,10 @@ def compute_object_vector_field(
     >>> headings = rng.uniform(-np.pi, np.pi, n_time)
     >>> object_positions = np.array([[50.0, 50.0]])
     >>> spike_times = rng.choice(times, size=100, replace=False)
+    >>> from neurospatial import Environment
+    >>> env_alloc = Environment.from_samples(positions, bin_size=5.0)
     >>> result = compute_object_vector_field(
-    ...     spike_times, times, positions, headings, object_positions
+    ...     env_alloc, spike_times, times, positions, headings, object_positions
     ... )
     >>> len(result.field) == result.ego_env.n_bins
     True
@@ -894,19 +896,20 @@ def compute_object_vector_field(
             f"WHY: These are the supported distance algorithms\n\n"
             f"HOW to choose:\n"
             f"1. 'euclidean' - Straight-line distances (default, faster)\n"
-            f"2. 'geodesic' - Boundary-respecting distances (requires allocentric_env)"
+            f"2. 'geodesic' - Boundary-respecting distances (requires env)"
         )
 
     # Then validate parameter dependencies
-    if distance_metric == "geodesic" and allocentric_env is None:
+    if distance_metric == "geodesic" and env is None:
         raise ValueError(
             "Cannot compute geodesic distances: missing environment.\n\n"
-            "WHAT: distance_metric='geodesic' requires allocentric_env parameter\n"
+            "WHAT: distance_metric='geodesic' requires env parameter\n"
             "WHY: Geodesic distances follow paths that respect environment boundaries\n\n"
             "HOW to fix:\n"
             "1. Pass the environment:\n"
             "   result = compute_object_vector_field(\n"
-            "       ..., distance_metric='geodesic', allocentric_env=env\n"
+            "       env, spike_times, times, positions, headings, object_positions,\n"
+            "       distance_metric='geodesic'\n"
             "   )\n"
             "2. Or use Euclidean distances (straight-line):\n"
             "   result = compute_object_vector_field(..., distance_metric='euclidean')"
@@ -934,35 +937,33 @@ def compute_object_vector_field(
             axis=2,
         )
     else:
-        # Geodesic distance using allocentric environment - vectorized
+        # Geodesic distance using environment - vectorized
         from neurospatial.ops.distance import distance_field as compute_distance_field
 
-        assert allocentric_env is not None
+        assert env is not None
         distances = np.full((n_time, len(object_positions)), np.nan, dtype=np.float64)
 
         # Vectorized: compute all position bins at once (outside object loop)
-        pos_bins = allocentric_env.bin_at(positions)  # Shape: (n_time,)
-        valid_pos_mask = (pos_bins >= 0) & (pos_bins < allocentric_env.n_bins)
+        pos_bins = env.bin_at(positions)  # Shape: (n_time,)
+        valid_pos_mask = (pos_bins >= 0) & (pos_bins < env.n_bins)
 
         for i, obj_pos in enumerate(object_positions):
             # Find bin containing object
-            obj_bins = allocentric_env.bin_at(obj_pos.reshape(1, -1))
+            obj_bins = env.bin_at(obj_pos.reshape(1, -1))
             obj_bin = int(obj_bins[0])
 
             if obj_bin < 0:
                 continue  # distances[:, i] already initialized to NaN
 
             # Get distance field from this object
-            dist_field = compute_distance_field(
-                allocentric_env.connectivity, sources=[obj_bin]
-            )
+            dist_field = compute_distance_field(env.connectivity, sources=[obj_bin])
 
             # Vectorized lookup: get distances for all valid positions at once
             valid_bins = pos_bins[valid_pos_mask]
             distances[valid_pos_mask, i] = dist_field[valid_bins]
 
     # bearings: (n_time, n_objects)
-    bearings = compute_egocentric_bearing(object_positions, positions, headings)
+    bearings = compute_egocentric_bearing(positions, headings, object_positions)
 
     # Find nearest object at each timepoint
     nearest_obj_idx = np.argmin(distances, axis=1)

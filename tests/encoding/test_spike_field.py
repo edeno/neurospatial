@@ -800,10 +800,10 @@ class TestComputePlaceField:
 class TestPrecomputedData:
     """Test suite for precomputed data parameters in compute_place_field."""
 
-    def test_precomputed_trajectory_bins_diffusion_kde(
+    def test_precomputed_position_bins_diffusion_kde(
         self, spike_field_env_random: Environment, spike_field_random_trajectory
     ):
-        """Test that precomputed trajectory_bins produces same result as computing fresh."""
+        """Test that precomputed position_bins produces same result as computing fresh."""
         env = spike_field_env_random
         times, positions = spike_field_random_trajectory
         rng = np.random.default_rng(42)
@@ -820,9 +820,9 @@ class TestPrecomputedData:
         )
 
         # Precompute trajectory bins
-        trajectory_bins = env.bin_at(positions)
+        position_bins = env.bin_at(positions)
 
-        # Compute with precomputed trajectory_bins
+        # Compute with precomputed position_bins
         field_precomputed = compute_place_field(
             env,
             spike_times,
@@ -830,7 +830,7 @@ class TestPrecomputedData:
             positions,
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
-            trajectory_bins=trajectory_bins,
+            position_bins=position_bins,
         )
 
         assert_array_almost_equal(field_fresh, field_precomputed)
@@ -929,12 +929,12 @@ class TestPrecomputedData:
         )
 
         # Precompute occupancy density manually
-        trajectory_bins = env.bin_at(positions)
+        position_bins = env.bin_at(positions)
         dt = np.diff(times, prepend=times[0])
         kernel = env.compute_kernel(bandwidth, mode="density", cache=False)
 
-        valid_mask = trajectory_bins >= 0
-        traj_bins_valid = trajectory_bins[valid_mask]
+        valid_mask = position_bins >= 0
+        traj_bins_valid = position_bins[valid_mask]
         dt_valid = dt[valid_mask]
         occupancy_counts = np.bincount(
             traj_bins_valid, weights=dt_valid, minlength=env.n_bins
@@ -977,12 +977,12 @@ class TestPrecomputedData:
         )
 
         # Precompute all data
-        trajectory_bins = env.bin_at(positions)
+        position_bins = env.bin_at(positions)
         dt = np.diff(times, prepend=times[0])
         kernel = env.compute_kernel(bandwidth, mode="density", cache=False)
 
-        valid_mask = trajectory_bins >= 0
-        traj_bins_valid = trajectory_bins[valid_mask]
+        valid_mask = position_bins >= 0
+        traj_bins_valid = position_bins[valid_mask]
         dt_valid = dt[valid_mask]
         occupancy_counts = np.bincount(
             traj_bins_valid, weights=dt_valid, minlength=env.n_bins
@@ -997,7 +997,7 @@ class TestPrecomputedData:
             positions,
             smoothing_method="diffusion_kde",
             bandwidth=bandwidth,
-            trajectory_bins=trajectory_bins,
+            position_bins=position_bins,
             dt=dt,
             occupancy_density=occupancy_density,
             kernel=kernel,
@@ -1097,12 +1097,12 @@ class TestPrecomputedData:
         bandwidth = 5.0
 
         # Precompute shared data once
-        trajectory_bins = env.bin_at(positions)
+        position_bins = env.bin_at(positions)
         dt = np.diff(times, prepend=times[0])
         kernel = env.compute_kernel(bandwidth, mode="density", cache=False)
 
-        valid_mask = trajectory_bins >= 0
-        traj_bins_valid = trajectory_bins[valid_mask]
+        valid_mask = position_bins >= 0
+        traj_bins_valid = position_bins[valid_mask]
         dt_valid = dt[valid_mask]
         occupancy_counts = np.bincount(
             traj_bins_valid, weights=dt_valid, minlength=env.n_bins
@@ -1122,7 +1122,7 @@ class TestPrecomputedData:
                 positions,
                 smoothing_method="diffusion_kde",
                 bandwidth=bandwidth,
-                trajectory_bins=trajectory_bins,
+                position_bins=position_bins,
                 dt=dt,
                 occupancy_density=occupancy_density,
                 kernel=kernel,
@@ -1143,16 +1143,16 @@ class TestPrecomputedData:
                     "Fields should differ for different neurons"
                 )
 
-    def test_invalid_trajectory_bins_shape(
+    def test_invalid_position_bins_shape(
         self, spike_field_env_random: Environment, spike_field_random_trajectory
     ):
-        """Test that invalid trajectory_bins shape raises ValueError."""
+        """Test that invalid position_bins shape raises ValueError."""
         env = spike_field_env_random
         times, positions = spike_field_random_trajectory
         spike_times = np.array([1.0, 2.0, 3.0])
 
         # Wrong length
-        bad_trajectory_bins = np.zeros(100, dtype=np.int64)
+        bad_position_bins = np.zeros(100, dtype=np.int64)
 
         with pytest.raises(ValueError, match="must have same length as positions"):
             compute_place_field(
@@ -1162,7 +1162,7 @@ class TestPrecomputedData:
                 positions,
                 smoothing_method="diffusion_kde",
                 bandwidth=5.0,
-                trajectory_bins=bad_trajectory_bins,
+                position_bins=bad_position_bins,
             )
 
     def test_invalid_dt_shape(

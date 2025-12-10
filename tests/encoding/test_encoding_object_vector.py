@@ -270,7 +270,7 @@ class TestObjectVectorFieldFunctionality:
         spike_times = rng.choice(times, size=100, replace=False)
 
         result = compute_object_vector_field(
-            spike_times, times, positions, headings, object_positions
+            None, spike_times, times, positions, headings, object_positions
         )
 
         # Check result structure
@@ -373,7 +373,7 @@ class TestObjectVectorMetricsFunctionality:
         spike_times = rng.choice(times, size=100, replace=False)
 
         metrics = compute_object_vector_tuning(
-            spike_times, times, positions, headings, object_positions, env
+            env, spike_times, times, positions, headings, object_positions
         )
 
         # Check result structure

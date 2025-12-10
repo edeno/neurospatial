@@ -43,7 +43,7 @@ from neurospatial import Environment
 from neurospatial import spikes_to_field
 
 # Create environment from trajectory data
-env = Environment.from_samples(trajectory_positions, bin_size=2.5)
+env = Environment.from_samples(positions, bin_size=2.5)
 
 # Spike times (seconds)
 spike_times = np.array([1.2, 3.5, 5.1, 7.8, ...])

@@ -52,7 +52,7 @@ class TestFullTrajectoryAnalysisWorkflow:
         times = np.linspace(0, 30, n_samples)  # 30 seconds, 10s per lap
 
         # Map to bins
-        trajectory_bins = env.bin_at(traj_positions)
+        position_bins = env.bin_at(traj_positions)
 
         # Step 1: Detect laps
         # Create circular start region at x=16, y=10 (radius point)
@@ -60,7 +60,7 @@ class TestFullTrajectoryAnalysisWorkflow:
             "start", polygon=Point(center[0] + radius, center[1]).buffer(1.5)
         )
         laps = detect_laps(
-            trajectory_bins,
+            position_bins,
             times,
             env,
             method="region",
@@ -78,7 +78,7 @@ class TestFullTrajectoryAnalysisWorkflow:
         for lap in laps[:2]:  # Analyze first 2 complete laps
             # Get lap segment
             lap_mask = (times >= lap.start_time) & (times <= lap.end_time)
-            lap_bins = trajectory_bins[lap_mask]
+            lap_bins = position_bins[lap_mask]
             lap_positions = traj_positions[lap_mask]  # Use continuous positions!
 
             # Compute metrics (both functions expect continuous positions, not bins)
@@ -103,7 +103,7 @@ class TestFullTrajectoryAnalysisWorkflow:
             assert similarity > 0.5, "Consecutive laps should have high similarity"
 
         # Step 4: Compute home range (should be annular region)
-        home_range = compute_home_range(trajectory_bins, percentile=95.0)
+        home_range = compute_home_range(position_bins, percentile=95.0)
         assert len(home_range) > 10, "Home range should include multiple bins"
 
         # Step 5: Compute MSD (should show ballistic movement within laps)
@@ -159,11 +159,11 @@ class TestFullTrajectoryAnalysisWorkflow:
         # Combine all trials
         traj_positions = np.vstack(trial_trajs)
         times = np.concatenate(times_list)
-        trajectory_bins = env.bin_at(traj_positions)
+        position_bins = env.bin_at(traj_positions)
 
         # Step 1: Segment into trials
         trials = segment_trials(
-            trajectory_bins,
+            position_bins,
             times,
             env,
             start_region="start",
@@ -184,10 +184,10 @@ class TestFullTrajectoryAnalysisWorkflow:
 
         # Step 2: Detect region crossings
         left_crossings = detect_region_crossings(
-            trajectory_bins, times, "left", env, direction="entry"
+            position_bins, times, "left", env, direction="entry"
         )
         right_crossings = detect_region_crossings(
-            trajectory_bins, times, "right", env, direction="entry"
+            position_bins, times, "right", env, direction="entry"
         )
 
         assert len(left_crossings) >= 1, "Should detect left entries"
@@ -197,7 +197,7 @@ class TestFullTrajectoryAnalysisWorkflow:
         if len(trials) > 0:
             trial = trials[0]
             trial_mask = (times >= trial.start_time) & (times <= trial.end_time)
-            trial_bins = trajectory_bins[trial_mask]
+            trial_bins = position_bins[trial_mask]
             trial_times = times[trial_mask]
 
             # Detect goal-directed behavior toward trial end_region
@@ -224,8 +224,8 @@ class TestFullTrajectoryAnalysisWorkflow:
             mask1 = (times >= trial1.start_time) & (times <= trial1.end_time)
             mask2 = (times >= trial2.start_time) & (times <= trial2.end_time)
 
-            bins1 = trajectory_bins[mask1]
-            bins2 = trajectory_bins[mask2]
+            bins1 = position_bins[mask1]
+            bins2 = position_bins[mask2]
 
             # Compute similarity
             similarity = trajectory_similarity(bins1, bins2, env, method="jaccard")
@@ -267,11 +267,11 @@ class TestFullTrajectoryAnalysisWorkflow:
         # Combine phases
         all_positions = np.vstack([explore_positions, goal_positions])
         all_times = np.concatenate([explore_times, goal_times])
-        trajectory_bins = env.bin_at(all_positions)
+        position_bins = env.bin_at(all_positions)
 
         # Step 1: Detect goal-directed runs (should only find in phase 2)
         goal_runs = detect_goal_directed_runs(
-            trajectory_bins,
+            position_bins,
             all_times,
             env,
             goal_region="goal",
@@ -287,8 +287,8 @@ class TestFullTrajectoryAnalysisWorkflow:
             assert all(run.start_time >= 30 for run in goal_runs)
 
         # Step 2: Compare exploration vs goal-directed similarity
-        explore_bins = trajectory_bins[:100]
-        goal_bins = trajectory_bins[100:]
+        explore_bins = position_bins[:100]
+        goal_bins = position_bins[100:]
 
         # Should have low overlap (different spatial regions)
         similarity = trajectory_similarity(

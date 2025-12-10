@@ -631,7 +631,7 @@ def _diffusion_kde(
     positions: NDArray[np.float64],
     bandwidth: float,
     *,
-    trajectory_bins: NDArray[np.int64] | None = None,
+    position_bins: NDArray[np.int64] | None = None,
     dt: NDArray[np.float64] | None = None,
     occupancy_density: NDArray[np.float64] | None = None,
     kernel: NDArray[np.float64] | None = None,
@@ -659,7 +659,7 @@ def _diffusion_kde(
         Position trajectory.
     bandwidth : float
         Smoothing bandwidth in environment units.
-    trajectory_bins : NDArray[np.int64] | None, optional
+    position_bins : NDArray[np.int64] | None, optional
         Precomputed bin indices for positions.
     dt : NDArray[np.float64] | None, optional
         Precomputed time intervals between position samples.
@@ -705,10 +705,7 @@ def _diffusion_kde(
     # === OCCUPANCY DENSITY ===
     if occupancy_density is None:
         # Map trajectory to bins (use precomputed if provided)
-        if trajectory_bins is None:
-            traj_bins = env.bin_at(positions)
-        else:
-            traj_bins = trajectory_bins
+        traj_bins = env.bin_at(positions) if position_bins is None else position_bins
         valid_traj_mask = traj_bins >= 0
         traj_bins_valid = traj_bins[valid_traj_mask]
 
@@ -740,7 +737,7 @@ def _gaussian_kde(
     positions: NDArray[np.float64],
     bandwidth: float,
     *,
-    trajectory_bins: NDArray[np.int64] | None = None,
+    position_bins: NDArray[np.int64] | None = None,
     dt: NDArray[np.float64] | None = None,
     occupancy_density: NDArray[np.float64] | None = None,
 ) -> NDArray[np.float64]:
@@ -768,7 +765,7 @@ def _gaussian_kde(
         Position trajectory.
     bandwidth : float
         Smoothing bandwidth in environment units.
-    trajectory_bins : NDArray[np.int64] | None, optional
+    position_bins : NDArray[np.int64] | None, optional
         Precomputed bin indices for positions. Not used by this method
         (included for API consistency).
     dt : NDArray[np.float64] | None, optional
@@ -776,9 +773,9 @@ def _gaussian_kde(
     occupancy_density : NDArray[np.float64] | None, optional
         Precomputed occupancy density for each bin.
     """
-    # Silence unused parameter warning - trajectory_bins not used for gaussian_kde
+    # Silence unused parameter warning - position_bins not used for gaussian_kde
     # as we need actual positions for Euclidean distance calculation
-    _ = trajectory_bins
+    _ = position_bins
 
     # Normalize positions to 2D
     if positions.ndim == 1:
@@ -923,7 +920,7 @@ def compute_place_field(
     ] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_occupancy_seconds: float = 0.0,
-    trajectory_bins: NDArray[np.int64] | None = None,
+    position_bins: NDArray[np.int64] | None = None,
     dt: NDArray[np.float64] | None = None,
     occupancy_density: NDArray[np.float64] | None = None,
     kernel: NDArray[np.float64] | None = None,
@@ -975,7 +972,7 @@ def compute_place_field(
         gaussian_kde, this parameter is ignored as low occupancy is handled
         naturally by the normalization. For binned method, 0.5 seconds is
         typical for place field analysis.
-    trajectory_bins : NDArray[np.int64] | None, default=None
+    position_bins : NDArray[np.int64] | None, default=None
         Precomputed bin indices for positions. If provided, skips the
         `env.bin_at(positions)` call. Useful when computing multiple place
         fields from the same trajectory. Shape: (n_timepoints,).
@@ -1104,10 +1101,10 @@ def compute_place_field(
         )
 
     # Validate precomputed parameter shapes
-    if trajectory_bins is not None and len(trajectory_bins) != len(positions):
+    if position_bins is not None and len(position_bins) != len(positions):
         raise ValueError(
-            f"trajectory_bins must have same length as positions, "
-            f"got {len(trajectory_bins)} and {len(positions)}"
+            f"position_bins must have same length as positions, "
+            f"got {len(position_bins)} and {len(positions)}"
         )
 
     if dt is not None and len(dt) != len(times):
@@ -1136,7 +1133,7 @@ def compute_place_field(
                 times,
                 positions,
                 bandwidth,
-                trajectory_bins=trajectory_bins,
+                position_bins=position_bins,
                 dt=dt,
                 occupancy_density=occupancy_density,
                 kernel=kernel,
@@ -1148,7 +1145,7 @@ def compute_place_field(
                 times,
                 positions,
                 bandwidth,
-                trajectory_bins=trajectory_bins,
+                position_bins=position_bins,
                 dt=dt,
                 occupancy_density=occupancy_density,
             )

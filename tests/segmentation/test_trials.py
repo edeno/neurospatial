@@ -72,13 +72,13 @@ class TestSegmentTrials:
         y_traj = np.array(trial1_y + trial2_y + trial3_y)
         trajectory = np.column_stack([x_traj, y_traj])
 
-        trajectory_bins = env.bin_at(trajectory)
+        position_bins = env.bin_at(trajectory)
         times = np.arange(len(trajectory), dtype=float)
 
         from neurospatial.behavior.segmentation import segment_trials
 
         trials = segment_trials(
-            trajectory_bins,
+            position_bins,
             times,
             env,
             start_region="start",
@@ -122,14 +122,14 @@ class TestSegmentTrials:
         x_traj = np.linspace(20, 80, 5)
         y_traj = np.linspace(20, 80, 5)
         trajectory = np.column_stack([x_traj, y_traj])
-        trajectory_bins = env.bin_at(trajectory)
+        position_bins = env.bin_at(trajectory)
         times = np.arange(len(trajectory), dtype=float)
 
         from neurospatial.behavior.segmentation import segment_trials
 
         # With min_duration=10.0, should exclude this short trial
         trials = segment_trials(
-            trajectory_bins,
+            position_bins,
             times,
             env,
             start_region="start",
@@ -158,14 +158,14 @@ class TestSegmentTrials:
         )  # Meander  # Back and forth
         y_traj = np.concatenate([np.linspace(20, 40, 50), np.linspace(40, 30, 50)])
         trajectory = np.column_stack([x_traj, y_traj])
-        trajectory_bins = env.bin_at(trajectory)
+        position_bins = env.bin_at(trajectory)
         times = np.arange(len(trajectory), dtype=float)
 
         from neurospatial.behavior.segmentation import segment_trials
 
         # With max_duration=20.0, this 99-second trial should timeout
         trials = segment_trials(
-            trajectory_bins,
+            position_bins,
             times,
             env,
             start_region="start",
@@ -197,13 +197,13 @@ class TestSegmentTrials:
         x_traj = np.linspace(20, 80, 30)
         y_traj = np.linspace(20, 80, 30)
         trajectory = np.column_stack([x_traj, y_traj])
-        trajectory_bins = env.bin_at(trajectory)
+        position_bins = env.bin_at(trajectory)
         times = np.arange(len(trajectory), dtype=float)
 
         from neurospatial.behavior.segmentation import segment_trials
 
         trials = segment_trials(
-            trajectory_bins,
+            position_bins,
             times,
             env,
             start_region="start",
@@ -230,13 +230,13 @@ class TestSegmentTrials:
         env.regions.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
         env.regions.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
 
-        trajectory_bins = np.array([], dtype=int)
+        position_bins = np.array([], dtype=int)
         times = np.array([], dtype=float)
 
         from neurospatial.behavior.segmentation import segment_trials
 
         trials = segment_trials(
-            trajectory_bins,
+            position_bins,
             times,
             env,
             start_region="start",
@@ -260,13 +260,13 @@ class TestSegmentTrials:
         x_traj = np.linspace(20, 50, 50)
         y_traj = np.linspace(20, 50, 50)
         trajectory = np.column_stack([x_traj, y_traj])
-        trajectory_bins = env.bin_at(trajectory)
+        position_bins = env.bin_at(trajectory)
         times = np.arange(len(trajectory), dtype=float)
 
         from neurospatial.behavior.segmentation import segment_trials
 
         trials = segment_trials(
-            trajectory_bins,
+            position_bins,
             times,
             env,
             start_region="start",
@@ -290,7 +290,7 @@ class TestSegmentTrials:
         env.regions.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
         env.regions.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
 
-        trajectory_bins = np.arange(10)
+        position_bins = np.arange(10)
         times = np.arange(10, dtype=float)
 
         from neurospatial.behavior.segmentation import segment_trials
@@ -298,7 +298,7 @@ class TestSegmentTrials:
         # Missing start_region
         with pytest.raises(ValueError, match=r"start_region.*must be provided"):
             segment_trials(
-                trajectory_bins,
+                position_bins,
                 times,
                 env,
                 start_region=None,
@@ -308,7 +308,7 @@ class TestSegmentTrials:
         # Missing end_regions
         with pytest.raises(ValueError, match=r"end_regions.*must be provided"):
             segment_trials(
-                trajectory_bins,
+                position_bins,
                 times,
                 env,
                 start_region="start",
@@ -318,7 +318,7 @@ class TestSegmentTrials:
         # Empty end_regions
         with pytest.raises(ValueError, match=r"end_regions.*cannot be empty"):
             segment_trials(
-                trajectory_bins,
+                position_bins,
                 times,
                 env,
                 start_region="start",
@@ -328,7 +328,7 @@ class TestSegmentTrials:
         # Nonexistent start_region
         with pytest.raises(ValueError, match=r"start_region.*not found"):
             segment_trials(
-                trajectory_bins,
+                position_bins,
                 times,
                 env,
                 start_region="nonexistent",
@@ -338,7 +338,7 @@ class TestSegmentTrials:
         # Nonexistent end_region
         with pytest.raises(ValueError, match=r"end_regions.*not found"):
             segment_trials(
-                trajectory_bins,
+                position_bins,
                 times,
                 env,
                 start_region="start",
@@ -348,7 +348,7 @@ class TestSegmentTrials:
         # start_region in end_regions (not allowed)
         with pytest.raises(ValueError, match=r"start_region.*cannot be in end_regions"):
             segment_trials(
-                trajectory_bins,
+                position_bins,
                 times,
                 env,
                 start_region="start",
@@ -358,7 +358,7 @@ class TestSegmentTrials:
         # Negative min_duration
         with pytest.raises(ValueError, match=r"min_duration.*must be positive"):
             segment_trials(
-                trajectory_bins,
+                position_bins,
                 times,
                 env,
                 start_region="start",
@@ -371,7 +371,7 @@ class TestSegmentTrials:
             ValueError, match=r"max_duration.*must be greater than min_duration"
         ):
             segment_trials(
-                trajectory_bins,
+                position_bins,
                 times,
                 env,
                 start_region="start",
@@ -391,14 +391,14 @@ class TestSegmentTrials:
         env.regions.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
         env.regions.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
 
-        trajectory_bins = np.arange(10)
+        position_bins = np.arange(10)
         times = np.arange(10, dtype=float)
 
         from neurospatial.behavior.segmentation import segment_trials
 
         # Should work with positional args in correct order
         trials = segment_trials(
-            trajectory_bins, times, env, start_region="start", end_regions=["goal"]
+            position_bins, times, env, start_region="start", end_regions=["goal"]
         )
 
         assert isinstance(trials, list)
@@ -433,13 +433,13 @@ class TestSegmentTrials:
             ]
         )
         trajectory = np.column_stack([x_traj, y_traj])
-        trajectory_bins = env.bin_at(trajectory)
+        position_bins = env.bin_at(trajectory)
         times = np.arange(len(trajectory), dtype=float)
 
         from neurospatial.behavior.segmentation import segment_trials
 
         trials = segment_trials(
-            trajectory_bins,
+            position_bins,
             times,
             env,
             start_region="start",

@@ -1690,7 +1690,7 @@ class TestBearingProperties:
     - Bearing left is +pi/2
     - Bearing always in [-pi, pi]
 
-    Note: compute_egocentric_bearing takes (targets, positions, headings)
+    Note: compute_egocentric_bearing takes (positions, headings, targets)
     """
 
     @given(
@@ -1714,8 +1714,8 @@ class TestBearingProperties:
             [[x + distance * np.cos(heading), y + distance * np.sin(heading)]]
         )
 
-        # API: compute_egocentric_bearing(targets, positions, headings)
-        bearing = compute_egocentric_bearing(point_ahead, position, headings)
+        # API: compute_egocentric_bearing(positions, headings, targets)
+        bearing = compute_egocentric_bearing(position, headings, point_ahead)
 
         np.testing.assert_allclose(
             bearing[0, 0],
@@ -1746,8 +1746,8 @@ class TestBearingProperties:
             [[x + distance * np.cos(left_heading), y + distance * np.sin(left_heading)]]
         )
 
-        # API: compute_egocentric_bearing(targets, positions, headings)
-        bearing = compute_egocentric_bearing(point_left, position, headings)
+        # API: compute_egocentric_bearing(positions, headings, targets)
+        bearing = compute_egocentric_bearing(position, headings, point_left)
 
         np.testing.assert_allclose(
             bearing[0, 0],
@@ -1776,8 +1776,8 @@ class TestBearingProperties:
         rng = np.random.default_rng(seed)
         objects = rng.uniform(-100, 100, size=(10, 2))
 
-        # API: compute_egocentric_bearing(targets, positions, headings)
-        bearings = compute_egocentric_bearing(objects, position, headings)
+        # API: compute_egocentric_bearing(positions, headings, targets)
+        bearings = compute_egocentric_bearing(position, headings, objects)
 
         assert np.all(bearings >= -np.pi), "Found bearing < -pi"
         assert np.all(bearings <= np.pi), "Found bearing > pi"

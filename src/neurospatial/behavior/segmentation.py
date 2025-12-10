@@ -191,7 +191,7 @@ class Trial:
 
 
 def detect_region_crossings(
-    trajectory_bins: NDArray[np.int64],
+    position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
     region_name: str,
     env: Environment,
@@ -206,10 +206,10 @@ def detect_region_crossings(
 
     Parameters
     ----------
-    trajectory_bins : NDArray[np.int64], shape (n_samples,)
+    position_bins : NDArray[np.int64], shape (n_samples,)
         Sequence of bin indices representing the trajectory.
     times : NDArray[np.float64], shape (n_samples,)
-        Time stamps corresponding to trajectory bins (seconds).
+        Time stamps corresponding to position bins (seconds).
     region_name : str
         Name of region to detect crossings for. Must exist in env.regions.
     env : Environment
@@ -231,7 +231,7 @@ def detect_region_crossings(
     ValueError
         If region_name not in env.regions.
     ValueError
-        If trajectory_bins and times have different lengths.
+        If position_bins and times have different lengths.
 
     See Also
     --------
@@ -259,11 +259,11 @@ def detect_region_crossings(
     >>> traj_x = np.array([10.0, 30.0, 50.0, 70.0, 50.0, 30.0])
     >>> traj_y = np.array([50.0, 50.0, 50.0, 50.0, 50.0, 50.0])
     >>> trajectory = np.column_stack([traj_x, traj_y])
-    >>> trajectory_bins = env.bin_at(trajectory)
+    >>> position_bins = env.bin_at(trajectory)
     >>> times = np.arange(len(trajectory), dtype=float)
     >>> # Detect crossings
     >>> crossings = detect_region_crossings(
-    ...     trajectory_bins, times, "goal", env, direction="both"
+    ...     position_bins, times, "goal", env, direction="both"
     ... )
     >>> len(crossings) > 0  # Should detect entries and exits
     True
@@ -276,13 +276,13 @@ def detect_region_crossings(
             f"Available regions: {available}"
         )
 
-    if len(trajectory_bins) != len(times):
+    if len(position_bins) != len(times):
         raise ValueError(
-            f"trajectory_bins and times must have same length. "
-            f"Got {len(trajectory_bins)} and {len(times)}"
+            f"position_bins and times must have same length. "
+            f"Got {len(position_bins)} and {len(times)}"
         )
 
-    if len(trajectory_bins) == 0:
+    if len(position_bins) == 0:
         return []
 
     # Get bins in region using existing regions_to_mask functionality
@@ -291,7 +291,7 @@ def detect_region_crossings(
     region_mask = regions_to_mask(env, [region_name])
 
     # Check which trajectory samples are in region
-    in_region = region_mask[trajectory_bins]
+    in_region = region_mask[position_bins]
 
     # Detect transitions using vectorized diff operation
     # Convert bool to int: in_region[i] - in_region[i-1]
@@ -306,7 +306,7 @@ def detect_region_crossings(
         for idx in entry_indices:
             crossings.append(
                 Crossing(
-                    time=times[idx], direction="entry", bin_index=trajectory_bins[idx]
+                    time=times[idx], direction="entry", bin_index=position_bins[idx]
                 )
             )
 
@@ -315,7 +315,7 @@ def detect_region_crossings(
         for idx in exit_indices:
             crossings.append(
                 Crossing(
-                    time=times[idx], direction="exit", bin_index=trajectory_bins[idx]
+                    time=times[idx], direction="exit", bin_index=position_bins[idx]
                 )
             )
 
@@ -327,7 +327,7 @@ def detect_region_crossings(
 
 
 def detect_runs_between_regions(
-    trajectory_positions: NDArray[np.float64],
+    positions: NDArray[np.float64],
     times: NDArray[np.float64],
     env: Environment,
     *,
@@ -346,7 +346,7 @@ def detect_runs_between_regions(
 
     Parameters
     ----------
-    trajectory_positions : NDArray[np.float64], shape (n_samples, n_dims)
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
         Continuous position samples (e.g., in cm).
     times : NDArray[np.float64], shape (n_samples,)
         Time stamps corresponding to positions (seconds).
@@ -380,7 +380,7 @@ def detect_runs_between_regions(
     ValueError
         If source or target regions not in env.regions.
     ValueError
-        If trajectory_positions and times have different lengths.
+        If positions and times have different lengths.
 
     See Also
     --------
@@ -448,17 +448,17 @@ def detect_runs_between_regions(
             f"Target region '{target}' not found. Available regions: {available}"
         )
 
-    if len(trajectory_positions) != len(times):
+    if len(positions) != len(times):
         raise ValueError(
-            f"trajectory_positions and times must have same length. "
-            f"Got {len(trajectory_positions)} and {len(times)}"
+            f"positions and times must have same length. "
+            f"Got {len(positions)} and {len(times)}"
         )
 
-    if len(trajectory_positions) == 0:
+    if len(positions) == 0:
         return []
 
     # Map positions to bins
-    trajectory_bins = env.bin_at(trajectory_positions)
+    position_bins = env.bin_at(positions)
 
     # Get region masks
     from neurospatial.ops.binning import regions_to_mask
@@ -467,8 +467,8 @@ def detect_runs_between_regions(
     target_mask = regions_to_mask(env, [target])
 
     # Check which samples are in each region
-    in_source = source_mask[trajectory_bins]
-    in_target = target_mask[trajectory_bins]
+    in_source = source_mask[position_bins]
+    in_target = target_mask[position_bins]
 
     # Detect source exits
     source_exits = []
@@ -481,20 +481,20 @@ def detect_runs_between_regions(
 
     for exit_idx in source_exits:
         start_time = times[exit_idx]
-        run_bins = [trajectory_bins[exit_idx]]
+        run_bins = [position_bins[exit_idx]]
 
         # Track trajectory
         reached_target = False
         end_idx = exit_idx
 
-        for j in range(exit_idx + 1, len(trajectory_bins)):
+        for j in range(exit_idx + 1, len(position_bins)):
             elapsed = times[j] - start_time
 
             # Check timeout
             if elapsed > max_duration:
                 break
 
-            run_bins.append(trajectory_bins[j])
+            run_bins.append(position_bins[j])
 
             # Check if reached target
             if in_target[j]:
@@ -514,7 +514,7 @@ def detect_runs_between_regions(
         # Optional velocity filter
         if velocity_threshold is not None:
             # Compute velocity during run
-            run_positions = trajectory_positions[exit_idx : end_idx + 1]
+            run_positions = positions[exit_idx : end_idx + 1]
             run_times = times[exit_idx : end_idx + 1]
 
             if len(run_times) > 1:
@@ -541,7 +541,7 @@ def detect_runs_between_regions(
 
 
 def segment_by_velocity(
-    trajectory_positions: NDArray[np.float64],
+    positions: NDArray[np.float64],
     times: NDArray[np.float64],
     threshold: float,
     *,
@@ -559,7 +559,7 @@ def segment_by_velocity(
 
     Parameters
     ----------
-    trajectory_positions : NDArray[np.float64], shape (n_samples, n_dims)
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
         Continuous position samples (e.g., in cm).
     times : NDArray[np.float64], shape (n_samples,)
         Time stamps corresponding to positions (seconds).
@@ -587,7 +587,7 @@ def segment_by_velocity(
     Raises
     ------
     ValueError
-        If trajectory_positions and times have different lengths.
+        If positions and times have different lengths.
     ValueError
         If threshold <= 0 or hysteresis <= 1.
 
@@ -634,10 +634,10 @@ def segment_by_velocity(
     ...     assert duration >= 0.5  # min_duration enforced
     """
     # Validate inputs
-    if len(trajectory_positions) != len(times):
+    if len(positions) != len(times):
         raise ValueError(
-            f"trajectory_positions and times must have same length. "
-            f"Got {len(trajectory_positions)} and {len(times)}"
+            f"positions and times must have same length. "
+            f"Got {len(positions)} and {len(times)}"
         )
 
     if threshold <= 0:
@@ -646,11 +646,11 @@ def segment_by_velocity(
     if hysteresis <= 1.0:
         raise ValueError(f"hysteresis must be > 1.0 for stability. Got {hysteresis}")
 
-    if len(trajectory_positions) < 2:
+    if len(positions) < 2:
         return []
 
     # Compute velocities
-    displacements = np.diff(trajectory_positions, axis=0)
+    displacements = np.diff(positions, axis=0)
     distances = np.linalg.norm(displacements, axis=1)
     dt = np.diff(times)
     velocities = distances / dt
@@ -799,7 +799,7 @@ def _detect_lap_direction(
 
 
 def detect_laps(
-    trajectory_bins: NDArray[np.int64],
+    position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
     env: Environment,
     *,
@@ -817,10 +817,10 @@ def detect_laps(
 
     Parameters
     ----------
-    trajectory_bins : NDArray[np.int64], shape (n_samples,)
+    position_bins : NDArray[np.int64], shape (n_samples,)
         Sequence of bin indices representing the trajectory.
     times : NDArray[np.float64], shape (n_samples,)
-        Time stamps corresponding to trajectory bins (seconds).
+        Time stamps corresponding to position bins (seconds).
     env : Environment
         Environment containing spatial structure.
     method : {'auto', 'reference', 'region'}, optional
@@ -902,17 +902,17 @@ def detect_laps(
     >>> y = 50 + 30 * np.sin(theta)  # doctest: +SKIP
     >>> positions = np.column_stack([x, y])  # doctest: +SKIP
     >>> env = Environment.from_samples(positions, bin_size=3.0)  # doctest: +SKIP
-    >>> trajectory_bins = env.bin_at(positions)  # doctest: +SKIP
+    >>> position_bins = env.bin_at(positions)  # doctest: +SKIP
     >>> times = np.linspace(0, 40, 200)  # doctest: +SKIP
-    >>> laps = detect_laps(trajectory_bins, times, env, method="auto")  # doctest: +SKIP
+    >>> laps = detect_laps(position_bins, times, env, method="auto")  # doctest: +SKIP
     >>> len(laps) >= 1  # doctest: +SKIP
     True
 
     Detect laps with user-provided reference:
 
-    >>> reference = trajectory_bins[:50]  # doctest: +SKIP
+    >>> reference = position_bins[:50]  # doctest: +SKIP
     >>> laps = detect_laps(  # doctest: +SKIP
-    ...     trajectory_bins,
+    ...     position_bins,
     ...     times,
     ...     env,
     ...     method="reference",
@@ -924,10 +924,10 @@ def detect_laps(
     Filter laps by direction:
 
     >>> laps_cw = detect_laps(
-    ...     trajectory_bins, times, env, direction="clockwise"
+    ...     position_bins, times, env, direction="clockwise"
     ... )  # doctest: +SKIP
     >>> laps_ccw = detect_laps(  # doctest: +SKIP
-    ...     trajectory_bins,
+    ...     position_bins,
     ...     times,
     ...     env,
     ...     direction="counter-clockwise",  # doctest: +SKIP
@@ -964,7 +964,7 @@ def detect_laps(
             )
 
     # Handle empty trajectory
-    if len(trajectory_bins) == 0:
+    if len(position_bins) == 0:
         return []
 
     # Initialize laps list (type annotation here for all branches)
@@ -977,7 +977,7 @@ def detect_laps(
         assert start_region is not None
 
         crossings = detect_region_crossings(
-            trajectory_bins, times, start_region, env, direction="entry"
+            position_bins, times, start_region, env, direction="entry"
         )
 
         if len(crossings) < 2:
@@ -989,7 +989,7 @@ def detect_laps(
             end_idx = int(np.searchsorted(times, crossings[i + 1].time))
 
             if end_idx > start_idx:
-                lap_bins = trajectory_bins[start_idx:end_idx]
+                lap_bins = position_bins[start_idx:end_idx]
                 lap_direction = _detect_lap_direction(env.bin_centers, lap_bins)
 
                 # Filter by direction
@@ -1010,8 +1010,8 @@ def detect_laps(
     # For 'auto' and 'reference' methods, use sliding window with overlap
     if method == "auto":
         # Extract template from first 10% of trajectory
-        template_size = max(1, len(trajectory_bins) // 10)
-        template = trajectory_bins[:template_size]
+        template_size = max(1, len(position_bins) // 10)
+        template = position_bins[:template_size]
         search_start = template_size
     else:  # method == 'reference'
         template = reference_lap  # type: ignore[assignment]
@@ -1022,17 +1022,17 @@ def detect_laps(
     # Sliding window to find laps
     i = int(search_start)
 
-    while i < len(trajectory_bins):
+    while i < len(position_bins):
         # Try different window sizes around template length
         best_overlap = 0.0
         best_end = i
 
         for window_size in range(
             max(1, int(template_length * 0.7)),
-            min(len(trajectory_bins) - i, int(template_length * 1.3)) + 1,
+            min(len(position_bins) - i, int(template_length * 1.3)) + 1,
         ):
-            end_idx = int(min(i + window_size, len(trajectory_bins)))
-            window = trajectory_bins[i:end_idx]
+            end_idx = int(min(i + window_size, len(position_bins)))
+            window = position_bins[i:end_idx]
 
             overlap = _compute_overlap_jaccard(template, window)
 
@@ -1042,7 +1042,7 @@ def detect_laps(
 
         # If overlap exceeds threshold, we found a lap
         if best_overlap >= min_overlap:
-            lap_bins = trajectory_bins[i:best_end]
+            lap_bins = position_bins[i:best_end]
             lap_direction = _detect_lap_direction(env.bin_centers, lap_bins)
 
             # Filter by direction
@@ -1071,7 +1071,7 @@ def detect_laps(
 
 
 def segment_trials(
-    trajectory_bins: NDArray[np.int64],
+    position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
     env: Environment,
     *,
@@ -1096,10 +1096,10 @@ def segment_trials(
 
     Parameters
     ----------
-    trajectory_bins : NDArray[np.int64], shape (n_samples,)
+    position_bins : NDArray[np.int64], shape (n_samples,)
         Sequence of bin indices representing the trajectory.
     times : NDArray[np.float64], shape (n_samples,)
-        Time stamps corresponding to trajectory bins (seconds).
+        Time stamps corresponding to position bins (seconds).
     env : Environment
         Environment containing region definitions.
     start_region : str, optional
@@ -1132,7 +1132,7 @@ def segment_trials(
     ValueError
         If end_regions is None, empty, or any region not in env.regions.
     ValueError
-        If trajectory_bins and times have different lengths.
+        If position_bins and times have different lengths.
     ValueError
         If min_duration is not positive.
     ValueError
@@ -1203,11 +1203,11 @@ def segment_trials(
     ...     ]
     ... )
     >>> trajectory = np.column_stack([x_traj, y_traj])
-    >>> trajectory_bins = env.bin_at(trajectory)
+    >>> position_bins = env.bin_at(trajectory)
     >>> times = np.arange(len(trajectory), dtype=float)
     >>> # Segment into trials
     >>> trials = segment_trials(
-    ...     trajectory_bins,
+    ...     position_bins,
     ...     times,
     ...     env,
     ...     start_region="start",
@@ -1265,10 +1265,10 @@ def segment_trials(
             f"Start and end regions must be spatially distinct for trial segmentation."
         )
 
-    if len(trajectory_bins) != len(times):
+    if len(position_bins) != len(times):
         raise ValueError(
-            f"trajectory_bins and times must have same length. "
-            f"Got {len(trajectory_bins)} and {len(times)}"
+            f"position_bins and times must have same length. "
+            f"Got {len(position_bins)} and {len(times)}"
         )
 
     if min_duration <= 0:
@@ -1280,7 +1280,7 @@ def segment_trials(
             f"Got max_duration={max_duration}, min_duration={min_duration}"
         )
 
-    if len(trajectory_bins) == 0:
+    if len(position_bins) == 0:
         return []
 
     # Get region masks using existing functionality
@@ -1290,17 +1290,15 @@ def segment_trials(
     end_masks = {region: regions_to_mask(env, [region]) for region in end_regions}
 
     # Check which trajectory samples are in which regions
-    in_start = start_mask[trajectory_bins]
-    in_end_regions = {
-        region: mask[trajectory_bins] for region, mask in end_masks.items()
-    }
+    in_start = start_mask[position_bins]
+    in_end_regions = {region: mask[position_bins] for region, mask in end_masks.items()}
 
     # Segment into trials
     trials: list[Trial] = []
     trial_start_idx: int | None = None
     trial_start_time: float | None = None
 
-    for i in range(len(trajectory_bins)):
+    for i in range(len(position_bins)):
         # Check if entering start region (trial initiation)
         if in_start[i] and (i == 0 or not in_start[i - 1]):
             # If we had a previous trial in progress, it timed out
@@ -1390,8 +1388,8 @@ def segment_trials(
 
 
 def trajectory_similarity(
-    trajectory1_bins: NDArray[np.int64],
-    trajectory2_bins: NDArray[np.int64],
+    position_bins1: NDArray[np.int64],
+    position_bins2: NDArray[np.int64],
     env: Environment,
     *,
     method: Literal["jaccard", "correlation", "hausdorff", "dtw"] = "jaccard",
@@ -1404,9 +1402,9 @@ def trajectory_similarity(
 
     Parameters
     ----------
-    trajectory1_bins : NDArray[np.int64], shape (n_samples1,)
+    position_bins1 : NDArray[np.int64], shape (n_samples1,)
         First trajectory as sequence of bin indices.
-    trajectory2_bins : NDArray[np.int64], shape (n_samples2,)
+    position_bins2 : NDArray[np.int64], shape (n_samples2,)
         Second trajectory as sequence of bin indices.
     env : Environment
         Spatial environment containing bin information.
@@ -1492,7 +1490,7 @@ def trajectory_similarity(
            Hippocampal replay of extended experience. *Neuron*, 63(4), 497-507.
     """
     # Input validation
-    if len(trajectory1_bins) == 0 or len(trajectory2_bins) == 0:
+    if len(position_bins1) == 0 or len(position_bins2) == 0:
         raise ValueError("Trajectories cannot be empty")
 
     valid_methods = ["jaccard", "correlation", "hausdorff", "dtw"]
@@ -1501,8 +1499,8 @@ def trajectory_similarity(
 
     if method == "jaccard":
         # Spatial overlap (set-based)
-        set1 = set(trajectory1_bins)
-        set2 = set(trajectory2_bins)
+        set1 = set(position_bins1)
+        set2 = set(position_bins2)
         intersection = set1 & set2
         union = set1 | set2
         if len(union) == 0:
@@ -1512,15 +1510,15 @@ def trajectory_similarity(
     elif method == "correlation":
         # Sequential correlation
         # Align to same length using indices modulo shorter length
-        if len(trajectory1_bins) < len(trajectory2_bins):
-            shorter, longer = trajectory1_bins, trajectory2_bins
+        if len(position_bins1) < len(position_bins2):
+            shorter, longer = position_bins1, position_bins2
         else:
-            shorter, longer = trajectory2_bins, trajectory1_bins
+            shorter, longer = position_bins2, position_bins1
 
         # Sample longer trajectory at same rate as shorter
         if len(shorter) < 2:
             # Can't compute correlation with < 2 points
-            return 1.0 if np.array_equal(trajectory1_bins, trajectory2_bins) else 0.0
+            return 1.0 if np.array_equal(position_bins1, position_bins2) else 0.0
 
         indices = np.linspace(0, len(longer) - 1, len(shorter), dtype=int)
         longer_sampled = longer[indices]
@@ -1537,8 +1535,8 @@ def trajectory_similarity(
     elif method == "hausdorff":
         # Hausdorff distance between paths
         # Get positions from bin indices
-        pos1 = env.bin_centers[trajectory1_bins]
-        pos2 = env.bin_centers[trajectory2_bins]
+        pos1 = env.bin_centers[position_bins1]
+        pos2 = env.bin_centers[position_bins2]
 
         # Compute Hausdorff distance
         d_hausdorff = max(
@@ -1559,8 +1557,8 @@ def trajectory_similarity(
 
     elif method == "dtw":
         # Dynamic time warping
-        pos1 = env.bin_centers[trajectory1_bins]
-        pos2 = env.bin_centers[trajectory2_bins]
+        pos1 = env.bin_centers[position_bins1]
+        pos2 = env.bin_centers[position_bins2]
 
         # Compute DTW distance using dynamic programming
         dtw_distance = _dtw_distance(pos1, pos2)
@@ -1617,7 +1615,7 @@ def _dtw_distance(seq1: NDArray[np.float64], seq2: NDArray[np.float64]) -> float
 
 
 def detect_goal_directed_runs(
-    trajectory_bins: NDArray[np.int64],
+    position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
     env: Environment,
     *,
@@ -1633,10 +1631,10 @@ def detect_goal_directed_runs(
 
     Parameters
     ----------
-    trajectory_bins : NDArray[np.int64], shape (n_samples,)
+    position_bins : NDArray[np.int64], shape (n_samples,)
         Sequence of bin indices representing the trajectory.
     times : NDArray[np.float64], shape (n_samples,)
-        Time stamps corresponding to trajectory bins (seconds).
+        Time stamps corresponding to position bins (seconds).
     env : Environment
         Environment containing the goal region definition.
     goal_region : str
@@ -1704,10 +1702,10 @@ def detect_goal_directed_runs(
     >>> goal_center = env.bin_centers[-1]  # doctest: +SKIP
     >>> goal_polygon = Point(float(goal_center[0]), 0.0).buffer(5.0)  # doctest: +SKIP
     >>> env.regions.add("goal", polygon=goal_polygon)  # doctest: +SKIP
-    >>> trajectory_bins = np.arange(0, 40, dtype=np.int64)  # doctest: +SKIP
-    >>> times = np.linspace(0, 10, len(trajectory_bins))  # doctest: +SKIP
+    >>> position_bins = np.arange(0, 40, dtype=np.int64)  # doctest: +SKIP
+    >>> times = np.linspace(0, 10, len(position_bins))  # doctest: +SKIP
     >>> runs = detect_goal_directed_runs(  # doctest: +SKIP
-    ...     trajectory_bins,  # doctest: +SKIP
+    ...     position_bins,  # doctest: +SKIP
     ...     times,  # doctest: +SKIP
     ...     env,  # doctest: +SKIP
     ...     goal_region="goal",  # doctest: +SKIP
@@ -1740,7 +1738,7 @@ def detect_goal_directed_runs(
         raise ValueError(f"min_progress must be non-negative, got {min_progress}")
 
     # Handle empty trajectory
-    if len(trajectory_bins) == 0:
+    if len(position_bins) == 0:
         return []
 
     # Get goal region mask
@@ -1768,8 +1766,8 @@ def detect_goal_directed_runs(
         distances_to_goal[bin_idx] = min_dist
 
     # Get start and end positions
-    start_bin = trajectory_bins[0]
-    end_bin = trajectory_bins[-1]
+    start_bin = position_bins[0]
+    end_bin = position_bins[-1]
 
     d_start = distances_to_goal[start_bin]
     d_end = distances_to_goal[end_bin]
@@ -1782,12 +1780,12 @@ def detect_goal_directed_runs(
 
     # Compute path length (sum of graph distances between consecutive bins)
     path_length = 0.0
-    for i in range(len(trajectory_bins) - 1):
+    for i in range(len(position_bins) - 1):
         try:
             segment_dist = nx.shortest_path_length(
                 env.connectivity,
-                int(trajectory_bins[i]),
-                int(trajectory_bins[i + 1]),
+                int(position_bins[i]),
+                int(position_bins[i + 1]),
                 weight="distance",
             )
             path_length += segment_dist
@@ -1807,7 +1805,7 @@ def detect_goal_directed_runs(
         run = Run(
             start_time=float(times[0]),
             end_time=float(times[-1]),
-            bins=trajectory_bins.copy(),
+            bins=position_bins.copy(),
             success=True,  # Reached goal or progressed significantly
         )
         runs.append(run)

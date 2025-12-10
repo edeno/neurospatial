@@ -230,15 +230,15 @@ def test_path_progress_single_trial_geodesic(simple_environment_with_regions):
     goal_bin = env.bins_in_region("goal1")[0]
 
     # Create simulated trajectory from start to goal
-    # For testing, use actual trajectory_bins that progress toward goal
-    trajectory_bins = np.array([start_bin, start_bin, goal_bin, goal_bin])
+    # For testing, use actual position_bins that progress toward goal
+    position_bins = np.array([start_bin, start_bin, goal_bin, goal_bin])
 
     # Constant start and goal for single trial
     start_bins = np.full(4, start_bin)
     goal_bins = np.full(4, goal_bin)
 
     # Compute progress
-    progress = path_progress(env, trajectory_bins, start_bins, goal_bins)
+    progress = path_progress(env, position_bins, start_bins, goal_bins)
 
     # Check output shape and type
     assert progress.shape == (4,)
@@ -280,7 +280,7 @@ def test_path_progress_multiple_trials(simple_environment_with_regions):
     # Create trajectory with 10 timepoints
     # Trial 1: t=0-4 going to goal1
     # Trial 2: t=5-9 going to goal2
-    trajectory_bins = np.array(
+    position_bins = np.array(
         [
             start_bin,
             start_bin,
@@ -313,7 +313,7 @@ def test_path_progress_multiple_trials(simple_environment_with_regions):
     )
 
     # Compute progress
-    progress = path_progress(env, trajectory_bins, start_bins, goal_bins)
+    progress = path_progress(env, position_bins, start_bins, goal_bins)
 
     # Check output
     assert progress.shape == (10,)
@@ -334,13 +334,13 @@ def test_path_progress_euclidean(simple_environment_with_regions):
     goal_bin = env.bins_in_region("goal1")[0]
 
     # Simple trajectory
-    trajectory_bins = np.array([start_bin, goal_bin])
+    position_bins = np.array([start_bin, goal_bin])
     start_bins = np.array([start_bin, start_bin])
     goal_bins = np.array([goal_bin, goal_bin])
 
     # Compute with euclidean metric
     progress = path_progress(
-        env, trajectory_bins, start_bins, goal_bins, metric="euclidean"
+        env, position_bins, start_bins, goal_bins, metric="euclidean"
     )
 
     # Check output
@@ -361,11 +361,11 @@ def test_path_progress_edge_case_same_start_goal(simple_environment_with_regions
     start_bin = env.bins_in_region("start")[0]
 
     # Start and goal are the same
-    trajectory_bins = np.array([start_bin, start_bin])
+    position_bins = np.array([start_bin, start_bin])
     start_bins = np.array([start_bin, start_bin])
     goal_bins = np.array([start_bin, start_bin])  # Same as start
 
-    progress = path_progress(env, trajectory_bins, start_bins, goal_bins)
+    progress = path_progress(env, position_bins, start_bins, goal_bins)
 
     # When start == goal, progress should be 1.0 (already at goal)
     assert np.all(progress == 1.0)
@@ -380,11 +380,11 @@ def test_path_progress_edge_case_invalid_bins(simple_environment_with_regions):
     start_bin = env.bins_in_region("start")[0]
 
     # Mix of valid and invalid bins
-    trajectory_bins = np.array([start_bin, -1, start_bin])
+    position_bins = np.array([start_bin, -1, start_bin])
     start_bins = np.array([start_bin, start_bin, -1])  # Invalid start for last point
     goal_bins = np.array([start_bin, start_bin, start_bin])
 
-    progress = path_progress(env, trajectory_bins, start_bins, goal_bins)
+    progress = path_progress(env, position_bins, start_bins, goal_bins)
 
     # Invalid bins should produce NaN
     assert np.isnan(progress[2])  # Invalid start_bin
@@ -415,11 +415,11 @@ def test_path_progress_edge_case_disconnected():
     goal_bin = env.bins_in_region("goal")[0]
 
     # Try to compute progress between disconnected components
-    trajectory_bins = np.array([start_bin, start_bin])
+    position_bins = np.array([start_bin, start_bin])
     start_bins = np.array([start_bin, start_bin])
     goal_bins = np.array([goal_bin, goal_bin])
 
-    progress = path_progress(env, trajectory_bins, start_bins, goal_bins)
+    progress = path_progress(env, position_bins, start_bins, goal_bins)
 
     # Disconnected paths should return NaN
     assert np.all(np.isnan(progress))
@@ -449,12 +449,12 @@ def test_path_progress_large_environment():
     goal_bin = env.bins_in_region("goal")[0]
 
     # Simple trajectory
-    trajectory_bins = np.array([start_bin, goal_bin])
+    position_bins = np.array([start_bin, goal_bin])
     start_bins = np.array([start_bin, start_bin])
     goal_bins = np.array([goal_bin, goal_bin])
 
     # This should use the fallback strategy for large environments
-    progress = path_progress(env, trajectory_bins, start_bins, goal_bins)
+    progress = path_progress(env, position_bins, start_bins, goal_bins)
 
     # Check it still works correctly
     assert progress.shape == (2,)
@@ -478,10 +478,10 @@ def test_distance_to_region_scalar_target(simple_environment_with_regions):
     goal_bin = env.bins_in_region("goal1")[0]
 
     # Create trajectory from start to goal
-    trajectory_bins = np.array([start_bin, goal_bin])
+    position_bins = np.array([start_bin, goal_bin])
 
     # Compute distance to scalar target (goal_bin)
-    distances = distance_to_region(env, trajectory_bins, goal_bin)
+    distances = distance_to_region(env, position_bins, goal_bin)
 
     # Check shape
     assert distances.shape == (2,)
@@ -492,7 +492,7 @@ def test_distance_to_region_scalar_target(simple_environment_with_regions):
 
     # Test euclidean metric
     distances_euclidean = distance_to_region(
-        env, trajectory_bins, goal_bin, metric="euclidean"
+        env, position_bins, goal_bin, metric="euclidean"
     )
     assert distances_euclidean.shape == (2,)
     assert distances_euclidean[0] > 0
@@ -517,13 +517,13 @@ def test_distance_to_region_dynamic_target(simple_environment_with_regions):
     goal2_bin = goal2_bins[0]
 
     # Create trajectory: start → goal1
-    trajectory_bins = np.array([start_bin, goal1_bin])
+    position_bins = np.array([start_bin, goal1_bin])
 
     # Dynamic targets: first timepoint targets goal1, second targets goal2
     target_bins = np.array([goal1_bin, goal2_bin])
 
     # Compute distances with dynamic targets
-    distances = distance_to_region(env, trajectory_bins, target_bins)
+    distances = distance_to_region(env, position_bins, target_bins)
 
     # Check shape
     assert distances.shape == (2,)
@@ -544,21 +544,21 @@ def test_distance_to_region_invalid_bins(simple_environment_with_regions):
     goal_bin = env.bins_in_region("goal1")[0]
 
     # Test 1: Invalid trajectory bins
-    trajectory_bins = np.array([0, -1, 2])  # -1 is invalid
-    distances = distance_to_region(env, trajectory_bins, goal_bin)
+    position_bins = np.array([0, -1, 2])  # -1 is invalid
+    distances = distance_to_region(env, position_bins, goal_bin)
     assert distances.shape == (3,)
     assert not np.isnan(distances[0])  # Valid bin
     assert np.isnan(distances[1])  # Invalid bin → NaN
     assert not np.isnan(distances[2])  # Valid bin
 
     # Test 2: Invalid target bin (scalar)
-    trajectory_bins = np.array([0, 1, 2])
-    distances = distance_to_region(env, trajectory_bins, -1)
+    position_bins = np.array([0, 1, 2])
+    distances = distance_to_region(env, position_bins, -1)
     assert np.all(np.isnan(distances))  # All should be NaN with invalid target
 
     # Test 3: Dynamic targets with some invalid
     target_bins = np.array([goal_bin, -1, goal_bin])
-    distances = distance_to_region(env, trajectory_bins, target_bins)
+    distances = distance_to_region(env, position_bins, target_bins)
     assert not np.isnan(distances[0])  # Valid target
     assert np.isnan(distances[1])  # Invalid target → NaN
     assert not np.isnan(distances[2])  # Valid target
@@ -594,10 +594,10 @@ def test_distance_to_region_multiple_goal_bins():
     target_bin = goal_bins[0]
 
     # Trajectory from start
-    trajectory_bins = np.array([start_bin])
+    position_bins = np.array([start_bin])
 
     # Compute distance - should be to nearest goal bin
-    distances = distance_to_region(env, trajectory_bins, target_bin)
+    distances = distance_to_region(env, position_bins, target_bin)
 
     # Distance should be positive
     assert distances[0] > 0
@@ -627,15 +627,15 @@ def test_distance_to_region_large_environment():
     goal_bin = env.bins_in_region("goal")[0]
 
     # Test 1: Scalar target (uses existing env.distance_to())
-    trajectory_bins = np.array([start_bin, goal_bin])
-    distances_scalar = distance_to_region(env, trajectory_bins, goal_bin)
+    position_bins = np.array([start_bin, goal_bin])
+    distances_scalar = distance_to_region(env, position_bins, goal_bin)
     assert distances_scalar.shape == (2,)
     assert distances_scalar[0] > 0
     assert np.isclose(distances_scalar[1], 0.0, atol=1e-6)
 
     # Test 2: Dynamic targets (uses per-target fallback strategy)
     target_bins = np.array([goal_bin, start_bin])  # Different target each timepoint
-    distances_dynamic = distance_to_region(env, trajectory_bins, target_bins)
+    distances_dynamic = distance_to_region(env, position_bins, target_bins)
     assert distances_dynamic.shape == (2,)
     assert distances_dynamic[0] > 0
     assert distances_dynamic[1] > 0
@@ -1109,13 +1109,13 @@ def test_cost_to_goal_uniform(simple_environment_with_regions):
     goal_bin = env.bins_in_region("goal1")[0]
 
     # Create simple trajectory: start → intermediate → goal
-    trajectory_bins = np.array([start_bin, 5, goal_bin])
+    position_bins = np.array([start_bin, 5, goal_bin])
 
     # Compute cost with uniform cost (no cost_map or terrain_difficulty)
-    cost = cost_to_goal(env, trajectory_bins, goal_bin)
+    cost = cost_to_goal(env, position_bins, goal_bin)
 
     # Compute geodesic distance for comparison
-    distance = distance_to_region(env, trajectory_bins, goal_bin, metric="geodesic")
+    distance = distance_to_region(env, position_bins, goal_bin, metric="geodesic")
 
     # With uniform cost, cost should equal geodesic distance
     np.testing.assert_array_almost_equal(cost, distance)
@@ -1142,13 +1142,13 @@ def test_cost_to_goal_with_cost_map(simple_environment_with_regions):
     cost_map[punishment_bins] = 10.0
 
     # Trajectory through punishment zone
-    trajectory_bins = np.array([start_bin, 4, goal_bin])
+    position_bins = np.array([start_bin, 4, goal_bin])
 
     # Compute cost with cost map
-    cost_with_map = cost_to_goal(env, trajectory_bins, goal_bin, cost_map=cost_map)
+    cost_with_map = cost_to_goal(env, position_bins, goal_bin, cost_map=cost_map)
 
     # Compute cost without map
-    cost_uniform = cost_to_goal(env, trajectory_bins, goal_bin)
+    cost_uniform = cost_to_goal(env, position_bins, goal_bin)
 
     # Cost with punishment zone should be higher than uniform cost
     assert cost_with_map[0] > cost_uniform[0]
@@ -1173,15 +1173,15 @@ def test_cost_to_goal_terrain_difficulty(simple_environment_with_regions):
     terrain_difficulty[easy_bins] = 1.0
 
     # Trajectory
-    trajectory_bins = np.array([start_bin, 5, goal_bin])
+    position_bins = np.array([start_bin, 5, goal_bin])
 
     # Compute cost with terrain difficulty
     cost_with_terrain = cost_to_goal(
-        env, trajectory_bins, goal_bin, terrain_difficulty=terrain_difficulty
+        env, position_bins, goal_bin, terrain_difficulty=terrain_difficulty
     )
 
     # Compute cost without terrain
-    cost_uniform = cost_to_goal(env, trajectory_bins, goal_bin)
+    cost_uniform = cost_to_goal(env, position_bins, goal_bin)
 
     # Cost with terrain difficulty should be higher (most bins are 2x harder)
     assert cost_with_terrain[0] > cost_uniform[0]
@@ -1210,12 +1210,12 @@ def test_cost_to_goal_combined(simple_environment_with_regions):
     terrain_difficulty[4] = 2.0  # 2x difficulty at bin 4
 
     # Trajectory
-    trajectory_bins = np.array([start_bin, 3, 4, goal_bin])
+    position_bins = np.array([start_bin, 3, 4, goal_bin])
 
     # Compute with combined cost
     cost_combined = cost_to_goal(
         env,
-        trajectory_bins,
+        position_bins,
         goal_bin,
         cost_map=cost_map,
         terrain_difficulty=terrain_difficulty,
@@ -1248,13 +1248,13 @@ def test_cost_to_goal_dynamic_goal(simple_environment_with_regions):
     goal2_bin = goal2_bins[0]
 
     # Create trajectory with dynamic goals
-    trajectory_bins = np.array([start_bin, 5, goal1_bin])
+    position_bins = np.array([start_bin, 5, goal1_bin])
     goal_bins_array = np.array(
         [goal1_bin, goal1_bin, goal2_bin]
     )  # Goal changes at last step
 
     # Compute cost with dynamic goals
-    cost = cost_to_goal(env, trajectory_bins, goal_bins_array)
+    cost = cost_to_goal(env, position_bins, goal_bins_array)
 
     # Check shape
     assert cost.shape == (3,)
@@ -1275,21 +1275,21 @@ def test_cost_to_goal_invalid_bins(simple_environment_with_regions):
     goal_bin = env.bins_in_region("goal1")[0]
 
     # Test 1: Invalid trajectory bins
-    trajectory_bins = np.array([0, -1, 2])  # -1 is invalid
-    cost = cost_to_goal(env, trajectory_bins, goal_bin)
+    position_bins = np.array([0, -1, 2])  # -1 is invalid
+    cost = cost_to_goal(env, position_bins, goal_bin)
     assert cost.shape == (3,)
     assert not np.isnan(cost[0])  # Valid bin
     assert np.isnan(cost[1])  # Invalid bin → NaN
     assert not np.isnan(cost[2])  # Valid bin
 
     # Test 2: Invalid goal bin (scalar)
-    trajectory_bins = np.array([0, 1, 2])
-    cost = cost_to_goal(env, trajectory_bins, -1)
+    position_bins = np.array([0, 1, 2])
+    cost = cost_to_goal(env, position_bins, -1)
     assert np.all(np.isnan(cost))  # All should be NaN with invalid goal
 
     # Test 3: Dynamic goals with some invalid
     goal_bins_array = np.array([goal_bin, -1, goal_bin])
-    cost = cost_to_goal(env, trajectory_bins, goal_bins_array)
+    cost = cost_to_goal(env, position_bins, goal_bins_array)
     assert not np.isnan(cost[0])  # Valid goal
     assert np.isnan(cost[1])  # Invalid goal → NaN
     assert not np.isnan(cost[2])  # Valid goal
@@ -1328,7 +1328,7 @@ def test_graph_turn_sequence_ymaze_left(ymaze_env):
 
     # Create trajectory with 3 segments, each with sufficient samples
     n_samples_per_segment = 40
-    trajectory_bins = np.concatenate(
+    position_bins = np.concatenate(
         [
             np.full(n_samples_per_segment, straight_bin, dtype=np.int_),
             np.full(n_samples_per_segment, center_bin, dtype=np.int_),
@@ -1339,7 +1339,7 @@ def test_graph_turn_sequence_ymaze_left(ymaze_env):
     # Call function
     turn_seq = graph_turn_sequence(
         env,
-        trajectory_bins,
+        position_bins,
         start_bin=straight_bin,
         end_bin=left_bin,
         min_samples_per_edge=10,
@@ -1377,7 +1377,7 @@ def test_graph_turn_sequence_ymaze_right(ymaze_env):
 
     # Create trajectory with 3 segments, each with sufficient samples
     n_samples_per_segment = 40
-    trajectory_bins = np.concatenate(
+    position_bins = np.concatenate(
         [
             np.full(n_samples_per_segment, straight_bin, dtype=np.int_),
             np.full(n_samples_per_segment, center_bin, dtype=np.int_),
@@ -1388,7 +1388,7 @@ def test_graph_turn_sequence_ymaze_right(ymaze_env):
     # Call function
     turn_seq = graph_turn_sequence(
         env,
-        trajectory_bins,
+        position_bins,
         start_bin=straight_bin,
         end_bin=right_bin,
         min_samples_per_edge=10,
@@ -1430,15 +1430,15 @@ def test_graph_turn_sequence_grid_multiple(small_2d_env):
 
     # Create trajectory with sufficient samples per segment
     n_samples_per_segment = 60
-    trajectory_bins = []
+    position_bins = []
     for bin_idx in path_bins:
-        trajectory_bins.extend([bin_idx] * n_samples_per_segment)
-    trajectory_bins = np.array(trajectory_bins, dtype=np.int_)
+        position_bins.extend([bin_idx] * n_samples_per_segment)
+    position_bins = np.array(position_bins, dtype=np.int_)
 
     # Call function
     turn_seq = graph_turn_sequence(
         env,
-        trajectory_bins,
+        position_bins,
         start_bin=path_bins[0],
         end_bin=path_bins[-1],
         min_samples_per_edge=20,
@@ -1473,13 +1473,13 @@ def test_graph_turn_sequence_straight(ymaze_env):
 
     # Create trajectory: center → straight (no turn)
     n_samples = 100
-    trajectory_bins = np.full(n_samples, center_bin, dtype=np.int_)
-    trajectory_bins[50:] = straight_bin
+    position_bins = np.full(n_samples, center_bin, dtype=np.int_)
+    position_bins[50:] = straight_bin
 
     # Call function
     turn_seq = graph_turn_sequence(
         env,
-        trajectory_bins,
+        position_bins,
         start_bin=center_bin,
         end_bin=straight_bin,
         min_samples_per_edge=10,
@@ -1513,7 +1513,7 @@ def test_graph_turn_sequence_min_samples_filter(ymaze_env):
 
     # Create trajectory with brief crossing (< min_samples_per_edge)
     # Only 5 samples on the transition, but min_samples_per_edge=50
-    trajectory_bins = np.concatenate(
+    position_bins = np.concatenate(
         [
             np.full(10, center_bin, dtype=np.int_),
             np.full(5, left_bin, dtype=np.int_),  # Brief crossing
@@ -1523,7 +1523,7 @@ def test_graph_turn_sequence_min_samples_filter(ymaze_env):
     # Call function with default min_samples_per_edge=50
     turn_seq = graph_turn_sequence(
         env,
-        trajectory_bins,
+        position_bins,
         start_bin=center_bin,
         end_bin=left_bin,
         min_samples_per_edge=50,
@@ -1551,12 +1551,12 @@ def test_graph_turn_sequence_3d(simple_3d_env):
 
     # Create trajectory
     n_samples = 100
-    trajectory_bins = np.linspace(start_bin, end_bin, n_samples, dtype=np.int_)
+    position_bins = np.linspace(start_bin, end_bin, n_samples, dtype=np.int_)
 
     # Call function
     turn_seq = graph_turn_sequence(
         env,
-        trajectory_bins,
+        position_bins,
         start_bin=start_bin,
         end_bin=end_bin,
         min_samples_per_edge=5,  # Lower threshold for 3D
@@ -1628,7 +1628,7 @@ def test_path_progress_unfitted_environment():
     with pytest.raises(EnvironmentNotFittedError, match="path_progress"):
         path_progress(
             env,
-            trajectory_bins=np.array([0, 1, 2]),
+            position_bins=np.array([0, 1, 2]),
             start_bins=np.array([0, 0, 0]),
             goal_bins=np.array([2, 2, 2]),
         )
@@ -1650,7 +1650,7 @@ def test_path_progress_array_length_mismatch():
     with pytest.raises(ValueError, match="Array length mismatch"):
         path_progress(
             env,
-            trajectory_bins=np.array([0, 1, 2]),
+            position_bins=np.array([0, 1, 2]),
             start_bins=np.array([0, 0]),  # Wrong length!
             goal_bins=np.array([2, 2, 2]),
         )
@@ -1674,7 +1674,7 @@ def test_distance_to_region_unfitted_environment():
     with pytest.raises(EnvironmentNotFittedError, match="distance_to_region"):
         distance_to_region(
             env,
-            trajectory_bins=np.array([0, 1, 2]),
+            position_bins=np.array([0, 1, 2]),
             target_bins=5,
         )
 
@@ -1697,7 +1697,7 @@ def test_graph_turn_sequence_unfitted_environment():
     with pytest.raises(EnvironmentNotFittedError, match="graph_turn_sequence"):
         graph_turn_sequence(
             env,
-            trajectory_bins=np.array([0, 1, 2]),
+            position_bins=np.array([0, 1, 2]),
             start_bin=0,
             end_bin=2,
         )
@@ -1725,7 +1725,7 @@ def test_cost_to_goal_dynamic_goal_with_cost_map(simple_environment_with_regions
     env = simple_environment_with_regions
 
     # Create trajectory visiting multiple bins
-    trajectory_bins = np.array([0, 5, 10, 15, 20])
+    position_bins = np.array([0, 5, 10, 15, 20])
 
     # Dynamic goals (changes over time)
     goal_bins = np.array([20, 20, 20, 10, 10])  # Goal switches
@@ -1737,7 +1737,7 @@ def test_cost_to_goal_dynamic_goal_with_cost_map(simple_environment_with_regions
     # Compute cost with dynamic goals
     costs = cost_to_goal(
         env,
-        trajectory_bins,
+        position_bins,
         goal_bins,
         cost_map=cost_map,
     )
@@ -1761,10 +1761,10 @@ def test_distance_to_region_invalid_scalar_target():
     positions = np.column_stack([xx.ravel(), yy.ravel()])
     env = Environment.from_samples(positions, bin_size=2.0)
 
-    trajectory_bins = np.array([0, 1, 2, 3, 4])
+    position_bins = np.array([0, 1, 2, 3, 4])
 
     # Invalid scalar target
-    distances = distance_to_region(env, trajectory_bins, target_bins=-1)
+    distances = distance_to_region(env, position_bins, target_bins=-1)
 
     # Should return all NaN
     assert distances.shape == (5,)

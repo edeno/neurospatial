@@ -93,14 +93,14 @@ class TestVTEDecisionAnalysisIntegration:
         ]
 
         # Find entry time using decision_analysis
-        trajectory_bins = env.bin_at(trajectory)
+        position_bins = env.bin_at(trajectory)
 
         # Skip if trajectory doesn't have valid bins (environment coverage issue)
-        if np.all(trajectory_bins < 0):
+        if np.all(position_bins < 0):
             pytest.skip("Trajectory does not have valid bins in environment")
 
         entry_from_analysis = decision_region_entry_time(
-            trajectory_bins, times, env, "decision"
+            position_bins, times, env, "decision"
         )
 
         # Run VTE session - should use same entry detection
@@ -285,9 +285,9 @@ class TestPathEfficiencyPathProgressConsistency:
             ]
         )
 
-        trajectory_bins = env.bin_at(trajectory)
-        start_bin = trajectory_bins[0]
-        goal_bin = trajectory_bins[-1]
+        position_bins = env.bin_at(trajectory)
+        start_bin = position_bins[0]
+        goal_bin = position_bins[-1]
 
         # Skip if bins are invalid
         if start_bin < 0 or goal_bin < 0:
@@ -295,9 +295,9 @@ class TestPathEfficiencyPathProgressConsistency:
 
         progress = path_progress(
             env,
-            trajectory_bins,
-            start_bins=np.full(len(trajectory_bins), start_bin),
-            goal_bins=np.full(len(trajectory_bins), goal_bin),
+            position_bins,
+            start_bins=np.full(len(position_bins), start_bin),
+            goal_bins=np.full(len(position_bins), goal_bin),
             metric="geodesic",  # Use geodesic for connected environment
         )
 

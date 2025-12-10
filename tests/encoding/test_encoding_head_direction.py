@@ -159,14 +159,14 @@ class TestFunctionality:
 
         # Create sample data: 10 seconds at 30 Hz
         rng = np.random.default_rng(42)
-        position_times = np.linspace(0, 10, 300)
+        times = np.linspace(0, 10, 300)
         head_directions = rng.uniform(0, 360, 300)
         spike_times = rng.uniform(0, 10, 50)
 
         bin_centers, firing_rates = head_direction_tuning_curve(
-            head_directions,
             spike_times,
-            position_times,
+            times,
+            head_directions,
             bin_size=30.0,
             angle_unit="deg",
         )
@@ -205,12 +205,12 @@ class TestFunctionality:
 
         # Create non-HD cell data (uniform firing)
         rng = np.random.default_rng(42)
-        position_times = np.linspace(0, 10, 300)
+        times = np.linspace(0, 10, 300)
         head_directions = rng.uniform(0, 2 * np.pi, 300)
         spike_times = rng.uniform(0, 10, 50)
 
         result = is_head_direction_cell(
-            head_directions, spike_times, position_times, bin_size=0.1
+            spike_times, times, head_directions, bin_size=0.1
         )
 
         assert isinstance(result, bool)

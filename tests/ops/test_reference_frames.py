@@ -241,7 +241,7 @@ class TestComputeEgocentricBearing:
         position = np.array([[0.0, 0.0]])
         heading = np.array([0.0])
 
-        bearing = compute_egocentric_bearing(target, position, heading)
+        bearing = compute_egocentric_bearing(position, heading, target)
         assert_allclose(bearing, [[0.0]], atol=1e-10)
 
     def test_bearing_pi_half_when_target_left(self):
@@ -254,7 +254,7 @@ class TestComputeEgocentricBearing:
         position = np.array([[0.0, 0.0]])
         heading = np.array([0.0])
 
-        bearing = compute_egocentric_bearing(target, position, heading)
+        bearing = compute_egocentric_bearing(position, heading, target)
         assert_allclose(bearing, [[np.pi / 2]], atol=1e-10)
 
     def test_bearing_negative_pi_half_when_target_right(self):
@@ -266,7 +266,7 @@ class TestComputeEgocentricBearing:
         position = np.array([[0.0, 0.0]])
         heading = np.array([0.0])
 
-        bearing = compute_egocentric_bearing(target, position, heading)
+        bearing = compute_egocentric_bearing(position, heading, target)
         assert_allclose(bearing, [[-np.pi / 2]], atol=1e-10)
 
     def test_bearing_behind_target(self):
@@ -278,7 +278,7 @@ class TestComputeEgocentricBearing:
         position = np.array([[0.0, 0.0]])
         heading = np.array([0.0])
 
-        bearing = compute_egocentric_bearing(target, position, heading)
+        bearing = compute_egocentric_bearing(position, heading, target)
         # Should be π or -π (both valid)
         assert np.abs(np.abs(bearing[0, 0]) - np.pi) < 1e-10
 
@@ -292,8 +292,8 @@ class TestComputeEgocentricBearing:
         position = np.array([[0.0, 0.0]])
         heading = np.array([0.0])
 
-        bearing1 = compute_egocentric_bearing(target1, position, heading)
-        bearing2 = compute_egocentric_bearing(target2, position, heading)
+        bearing1 = compute_egocentric_bearing(position, heading, target1)
+        bearing2 = compute_egocentric_bearing(position, heading, target2)
 
         # Both should be close to π in absolute value
         assert np.abs(bearing1[0, 0]) > 0.99 * np.pi
@@ -312,7 +312,7 @@ class TestComputeEgocentricBearing:
         positions = np.zeros((5, 2))
         headings = np.array([0.0, np.pi / 4, np.pi / 2, np.pi, -np.pi / 2])
 
-        bearing = compute_egocentric_bearing(targets, positions, headings)
+        bearing = compute_egocentric_bearing(positions, headings, targets)
 
         assert bearing.shape == (5, 3)
 
@@ -326,11 +326,8 @@ class TestComputeEgocentricDistance:
 
         targets = np.array([[10.0, 0.0], [0.0, 10.0]])
         position = np.array([[0.0, 0.0]])
-        heading = np.array([0.0])  # Heading doesn't affect distance
 
-        distances = compute_egocentric_distance(
-            targets, position, heading, metric="euclidean"
-        )
+        distances = compute_egocentric_distance(position, targets, metric="euclidean")
 
         assert distances.shape == (1, 2)
         assert_allclose(distances, [[10.0, 10.0]], atol=1e-10)
@@ -348,10 +345,9 @@ class TestComputeEgocentricDistance:
         # Targets and position within the environment
         targets = np.array([[50.0, 50.0], [80.0, 80.0]])
         position = np.array([[10.0, 10.0]])
-        heading = np.array([0.0])
 
         distances = compute_egocentric_distance(
-            targets, position, heading, metric="geodesic", env=env
+            position, targets, metric="geodesic", env=env
         )
 
         assert distances.shape == (1, 2)
@@ -370,10 +366,9 @@ class TestComputeEgocentricDistance:
 
         targets = np.array([[10.0, 0.0]])
         position = np.array([[0.0, 0.0]])
-        heading = np.array([0.0])
 
         with pytest.raises(ValueError, match="metric"):
-            compute_egocentric_distance(targets, position, heading, metric="invalid")
+            compute_egocentric_distance(position, targets, metric="invalid")
 
     def test_geodesic_without_env_raises(self):
         """Geodesic metric without environment raises error."""
@@ -381,10 +376,9 @@ class TestComputeEgocentricDistance:
 
         targets = np.array([[10.0, 0.0]])
         position = np.array([[0.0, 0.0]])
-        heading = np.array([0.0])
 
         with pytest.raises(ValueError, match="env"):
-            compute_egocentric_distance(targets, position, heading, metric="geodesic")
+            compute_egocentric_distance(position, targets, metric="geodesic")
 
 
 class TestHeadingFromVelocity:
@@ -583,11 +577,8 @@ class TestComputeEgocentricDistanceFunctions:
         # Single target, multiple animal positions
         targets = np.array([[50.0, 50.0]])
         positions = np.array([[0.0, 0.0], [25.0, 25.0], [50.0, 50.0]])
-        headings = np.zeros(3)
 
-        distances = compute_egocentric_distance(
-            targets, positions, headings, metric="euclidean"
-        )
+        distances = compute_egocentric_distance(positions, targets, metric="euclidean")
 
         assert distances.shape == (3, 1)
         expected = [

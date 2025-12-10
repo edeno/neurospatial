@@ -378,9 +378,9 @@ def egocentric_to_allocentric(
 
 
 def compute_egocentric_bearing(
-    targets: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
+    targets: NDArray[np.float64],
 ) -> NDArray[np.float64]:
     """Compute bearing angle to targets in egocentric coordinates.
 
@@ -389,12 +389,12 @@ def compute_egocentric_bearing(
 
     Parameters
     ----------
-    targets : NDArray, shape (n_targets, 2) or (n_time, n_targets, 2)
-        Target positions in allocentric coordinates.
     positions : NDArray, shape (n_time, 2)
         Animal position at each time.
     headings : NDArray, shape (n_time,)
         Animal heading at each time (radians).
+    targets : NDArray, shape (n_targets, 2) or (n_time, n_targets, 2)
+        Target positions in allocentric coordinates.
 
     Returns
     -------
@@ -412,14 +412,14 @@ def compute_egocentric_bearing(
     >>> target = np.array([[10.0, 0.0]])
     >>> position = np.array([[0.0, 0.0]])
     >>> heading = np.array([0.0])  # Facing East
-    >>> bearing = compute_egocentric_bearing(target, position, heading)
+    >>> bearing = compute_egocentric_bearing(position, heading, target)
     >>> np.allclose(bearing, [[0.0]])
     True
 
     Target to the left has bearing pi/2:
 
     >>> target = np.array([[0.0, 10.0]])
-    >>> bearing = compute_egocentric_bearing(target, position, heading)
+    >>> bearing = compute_egocentric_bearing(position, heading, target)
     >>> np.allclose(bearing, [[np.pi / 2]])
     True
     """
@@ -452,9 +452,10 @@ def _wrap_angle(angle: NDArray[np.float64]) -> NDArray[np.float64]:
 
 
 def compute_egocentric_distance(
-    targets: NDArray[np.float64],
     positions: NDArray[np.float64],
-    headings: NDArray[np.float64],
+    targets: NDArray[np.float64],
+    *,
+    headings: NDArray[np.float64] | None = None,
     metric: str = "euclidean",
     env: Environment | None = None,
 ) -> NDArray[np.float64]:
@@ -462,11 +463,11 @@ def compute_egocentric_distance(
 
     Parameters
     ----------
-    targets : NDArray, shape (n_targets, 2) or (n_time, n_targets, 2)
-        Target positions in allocentric coordinates.
     positions : NDArray, shape (n_time, 2)
         Animal position at each time.
-    headings : NDArray, shape (n_time,)
+    targets : NDArray, shape (n_targets, 2) or (n_time, n_targets, 2)
+        Target positions in allocentric coordinates.
+    headings : NDArray, shape (n_time,), optional
         Animal heading at each time (radians). Not used for distance
         calculation but included for API consistency.
     metric : str, default "euclidean"
@@ -498,7 +499,7 @@ def compute_egocentric_distance(
     >>> position = np.array([[0.0, 0.0]])
     >>> heading = np.array([0.0])
     >>> distances = compute_egocentric_distance(
-    ...     targets, position, heading, metric="euclidean"
+    ...     position, targets, headings=heading, metric="euclidean"
     ... )
     >>> np.allclose(distances, [[10.0, 10.0]])
     True

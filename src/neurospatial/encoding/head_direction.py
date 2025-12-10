@@ -28,7 +28,7 @@ Typical Workflow
 1. Compute tuning curve from spike times and head directions::
 
     >>> bin_centers, firing_rates = head_direction_tuning_curve(  # doctest: +SKIP
-    ...     head_directions, spike_times, position_times,
+    ...     spike_times, times, head_directions,
     ...     bin_size=6.0, angle_unit='deg'
     ... )
 
@@ -207,9 +207,9 @@ class HeadDirectionMetrics:
 
 
 def head_direction_tuning_curve(
-    head_directions: NDArray[np.float64],
     spike_times: NDArray[np.float64],
-    position_times: NDArray[np.float64],
+    times: NDArray[np.float64],
+    head_directions: NDArray[np.float64],
     *,
     bin_size: float = 6.0,
     angle_unit: Literal["rad", "deg"] = "rad",
@@ -227,13 +227,13 @@ def head_direction_tuning_curve(
 
     Parameters
     ----------
-    head_directions : ndarray of shape (n_frames,)
-        Head direction at each time point. Units determined by ``angle_unit``.
     spike_times : ndarray of shape (n_spikes,)
-        Times of spikes in the same units as ``position_times``.
-    position_times : ndarray of shape (n_frames,)
+        Times of spikes in the same units as ``times``.
+    times : ndarray of shape (n_frames,)
         Timestamps corresponding to each head direction sample.
         Must be monotonically increasing.
+    head_directions : ndarray of shape (n_frames,)
+        Head direction at each time point. Units determined by ``angle_unit``.
     bin_size : float, default=6.0
         Width of angular bins. Units match ``angle_unit`` (radians by default).
     angle_unit : {'rad', 'deg'}, default='rad'
@@ -254,8 +254,8 @@ def head_direction_tuning_curve(
     Raises
     ------
     ValueError
-        If head_directions and position_times have different lengths.
-        If position_times are not monotonically increasing.
+        If head_directions and times have different lengths.
+        If times are not monotonically increasing.
         If fewer than 3 samples provided.
 
     See Also
@@ -266,7 +266,7 @@ def head_direction_tuning_curve(
     Notes
     -----
     **Occupancy calculation**: Uses actual time deltas between frames
-    (``np.diff(position_times)``) rather than assuming uniform sampling.
+    (``np.diff(times)``) rather than assuming uniform sampling.
     This correctly handles dropped frames and variable sampling rates.
     The last frame is excluded from occupancy since we don't know how
     long the animal stayed at that position.
@@ -289,13 +289,13 @@ def head_direction_tuning_curve(
     >>> import numpy as np
     >>> from neurospatial.encoding.head_direction import head_direction_tuning_curve
     >>> # Create sample data: 10 seconds at 30 Hz
-    >>> position_times = np.linspace(0, 10, 300)
+    >>> times = np.linspace(0, 10, 300)
     >>> head_directions = np.random.default_rng(42).uniform(0, 360, 300)
     >>> spike_times = np.random.default_rng(42).uniform(0, 10, 50)
     >>> bin_centers, firing_rates = head_direction_tuning_curve(
-    ...     head_directions,
     ...     spike_times,
-    ...     position_times,
+    ...     times,
+    ...     head_directions,
     ...     bin_size=30.0,
     ...     angle_unit="deg",
     ... )
@@ -305,32 +305,32 @@ def head_direction_tuning_curve(
     (12,)
     """
     # Convert inputs to arrays
-    head_directions = np.asarray(head_directions, dtype=np.float64).ravel()
     spike_times = np.asarray(spike_times, dtype=np.float64).ravel()
-    position_times = np.asarray(position_times, dtype=np.float64).ravel()
+    times = np.asarray(times, dtype=np.float64).ravel()
+    head_directions = np.asarray(head_directions, dtype=np.float64).ravel()
 
     # Validate inputs
-    if len(head_directions) != len(position_times):
+    if len(head_directions) != len(times):
         raise ValueError(
-            f"head_directions and position_times must have the same length. "
+            f"head_directions and times must have the same length. "
             f"Got head_directions: {len(head_directions)}, "
-            f"position_times: {len(position_times)}.\n"
+            f"times: {len(times)}.\n"
             f"Fix: Ensure both arrays represent the same time series."
         )
 
-    if len(position_times) < 3:
+    if len(times) < 3:
         raise ValueError(
             f"Need at least 3 samples to compute tuning curve. "
-            f"Got {len(position_times)} samples.\n"
+            f"Got {len(times)} samples.\n"
             f"Fix: Provide more data points."
         )
 
     # Check strict monotonicity (no duplicates, no decreasing)
-    time_diffs = np.diff(position_times)
+    time_diffs = np.diff(times)
     if np.any(time_diffs <= 0):
         n_problems = np.sum(time_diffs <= 0)
         raise ValueError(
-            f"position_times must be strictly increasing (no duplicates). "
+            f"times must be strictly increasing (no duplicates). "
             f"Found {n_problems} non-increasing time steps.\n"
             f"Fix: Remove duplicate timestamps or check for timestamp errors."
         )
@@ -350,7 +350,7 @@ def head_direction_tuning_curve(
     # Compute occupancy using actual time deltas
     # Each frame i contributes the time until frame i+1
     # The last frame is excluded (we don't know how long the animal stayed there)
-    time_deltas = np.diff(position_times)
+    time_deltas = np.diff(times)
 
     # Assign each frame (except last) to a bin
     # head_directions_wrapped[:-1] has n-1 elements, matching time_deltas
@@ -368,18 +368,14 @@ def head_direction_tuning_curve(
 
     if len(spike_times) > 0:
         # Filter spikes to valid time range
-        valid_mask = (spike_times >= position_times[0]) & (
-            spike_times <= position_times[-1]
-        )
+        valid_mask = (spike_times >= times[0]) & (spike_times <= times[-1])
         valid_spike_times = spike_times[valid_mask]
 
         if len(valid_spike_times) > 0:
             # Use nearest-neighbor assignment to avoid circular interpolation issues
             # np.interp would give wrong results when head direction crosses 0/2pi
             # (e.g., 350° to 10° would interpolate to 180° instead of ~0°)
-            spike_indices = (
-                np.searchsorted(position_times, valid_spike_times, side="right") - 1
-            )
+            spike_indices = np.searchsorted(times, valid_spike_times, side="right") - 1
             spike_indices = np.clip(spike_indices, 0, len(head_directions_wrapped) - 1)
             spike_hd = head_directions_wrapped[spike_indices]
 
@@ -474,7 +470,7 @@ def head_direction_metrics(
     ...     head_direction_tuning_curve,
     ...     head_direction_metrics,
     ... )
-    >>> bins, rates = head_direction_tuning_curve(hd, spikes, times)  # doctest: +SKIP
+    >>> bins, rates = head_direction_tuning_curve(spikes, times, hd)  # doctest: +SKIP
     >>> metrics = head_direction_metrics(bins, rates)  # doctest: +SKIP
     >>> print(metrics)  # doctest: +SKIP
 
@@ -547,9 +543,9 @@ def head_direction_metrics(
 
 
 def is_head_direction_cell(
-    head_directions: NDArray[np.float64],
     spike_times: NDArray[np.float64],
-    position_times: NDArray[np.float64],
+    times: NDArray[np.float64],
+    head_directions: NDArray[np.float64],
     **kwargs: Any,
 ) -> bool:
     """
@@ -560,12 +556,12 @@ def is_head_direction_cell(
 
     Parameters
     ----------
+    spike_times : ndarray of shape (n_spikes,)
+        Times of spikes (same time units as times).
+    times : ndarray of shape (n_frames,)
+        Timestamps corresponding to each head direction sample.
     head_directions : ndarray of shape (n_frames,)
         Head direction at each time point.
-    spike_times : ndarray of shape (n_spikes,)
-        Times of spikes (same time units as position_times).
-    position_times : ndarray of shape (n_frames,)
-        Timestamps corresponding to each head direction sample.
     **kwargs : dict
         Additional arguments passed to ``head_direction_tuning_curve``.
 
@@ -578,13 +574,13 @@ def is_head_direction_cell(
     --------
     >>> from neurospatial.encoding.head_direction import is_head_direction_cell
     >>> # Screen many neurons
-    >>> for i, (hd, spikes, times) in enumerate(all_neurons):  # doctest: +SKIP
-    ...     if is_head_direction_cell(hd, spikes, times):
+    >>> for i, (spikes, times, hd) in enumerate(all_neurons):  # doctest: +SKIP
+    ...     if is_head_direction_cell(spikes, times, hd):
     ...         print(f"Neuron {i} is an HD cell")
     """
     try:
         bins, rates = head_direction_tuning_curve(
-            head_directions, spike_times, position_times, **kwargs
+            spike_times, times, head_directions, **kwargs
         )
         metrics = head_direction_metrics(bins, rates)
         return metrics.is_hd_cell
@@ -672,7 +668,7 @@ def plot_head_direction_tuning(
     ...     head_direction_metrics,
     ...     plot_head_direction_tuning,
     ... )
-    >>> bins, rates = head_direction_tuning_curve(hd, spikes, times)  # doctest: +SKIP
+    >>> bins, rates = head_direction_tuning_curve(spikes, times, hd)  # doctest: +SKIP
     >>> metrics = head_direction_metrics(bins, rates)  # doctest: +SKIP
     >>> ax = plot_head_direction_tuning(bins, rates, metrics)  # doctest: +SKIP
     """

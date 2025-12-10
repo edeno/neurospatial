@@ -166,8 +166,8 @@ class TestTrajectorySimilarity:
 
         # Should work with keyword args
         result2 = trajectory_similarity(
-            trajectory1_bins=trajectory,
-            trajectory2_bins=trajectory,
+            position_bins1=trajectory,
+            position_bins2=trajectory,
             env=env,
             method="jaccard",
         )
@@ -203,7 +203,7 @@ class TestDetectGoalDirectedRuns:
 
         # Create a somewhat direct path (not perfectly straight, but progressing)
         # Use a simple heuristic: move toward goal in steps
-        trajectory_bins_list = [start_bin_idx]
+        position_bins_list = [start_bin_idx]
         current_bin = start_bin_idx
 
         for _ in range(15):  # Take 15 steps
@@ -221,13 +221,13 @@ class TestDetectGoalDirectedRuns:
             # Move to neighbor closest to goal
             best_neighbor_idx = int(np.argmin(neighbor_distances))
             current_bin = neighbors[best_neighbor_idx]
-            trajectory_bins_list.append(current_bin)
+            position_bins_list.append(current_bin)
 
-        trajectory_bins = np.array(trajectory_bins_list, dtype=np.int64)
-        times = np.linspace(0, 10, len(trajectory_bins))
+        position_bins = np.array(position_bins_list, dtype=np.int64)
+        times = np.linspace(0, 10, len(position_bins))
 
         runs = detect_goal_directed_runs(
-            trajectory_bins,
+            position_bins,
             times,
             env,
             goal_region="goal",
@@ -258,11 +258,11 @@ class TestDetectGoalDirectedRuns:
 
         # Random walk (inefficient path) with local RNG
         rng = np.random.default_rng(123)
-        trajectory_bins = rng.integers(0, env.n_bins, 100, dtype=np.int64)
-        times = np.linspace(0, 100, len(trajectory_bins))
+        position_bins = rng.integers(0, env.n_bins, 100, dtype=np.int64)
+        times = np.linspace(0, 100, len(position_bins))
 
         runs = detect_goal_directed_runs(
-            trajectory_bins,
+            position_bins,
             times,
             env,
             goal_region="goal",
@@ -290,11 +290,11 @@ class TestDetectGoalDirectedRuns:
         env.regions.add("goal", polygon=goal_polygon)
 
         # Very short trajectory (minimal progress)
-        trajectory_bins = np.array([0, 1, 2], dtype=np.int64)
+        position_bins = np.array([0, 1, 2], dtype=np.int64)
         times = np.array([0.0, 1.0, 2.0])
 
         runs = detect_goal_directed_runs(
-            trajectory_bins,
+            position_bins,
             times,
             env,
             goal_region="goal",
@@ -313,13 +313,13 @@ class TestDetectGoalDirectedRuns:
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=5.0)
 
-        trajectory_bins = np.array([0, 1, 2], dtype=np.int64)
+        position_bins = np.array([0, 1, 2], dtype=np.int64)
         times = np.array([0.0, 1.0, 2.0])
 
         # Missing goal region
         with pytest.raises(KeyError, match=r"Region.*not found"):
             detect_goal_directed_runs(
-                trajectory_bins,
+                position_bins,
                 times,
                 env,
                 goal_region="nonexistent",
@@ -337,7 +337,7 @@ class TestDetectGoalDirectedRuns:
             ValueError, match=r"directedness_threshold must be in \[0, 1\]"
         ):
             detect_goal_directed_runs(
-                trajectory_bins,
+                position_bins,
                 times,
                 env,
                 goal_region="goal",
@@ -348,7 +348,7 @@ class TestDetectGoalDirectedRuns:
         # Negative min_progress
         with pytest.raises(ValueError, match=r"min_progress must be non-negative"):
             detect_goal_directed_runs(
-                trajectory_bins,
+                position_bins,
                 times,
                 env,
                 goal_region="goal",
@@ -369,17 +369,15 @@ class TestDetectGoalDirectedRuns:
         goal_polygon = Point(env.bin_centers[-1]).buffer(10.0)
         env.regions.add("goal", polygon=goal_polygon)
 
-        trajectory_bins = np.array([0, 5, 10, 15], dtype=np.int64)
+        position_bins = np.array([0, 5, 10, 15], dtype=np.int64)
         times = np.array([0.0, 1.0, 2.0, 3.0])
 
         # Should work with positional args
-        runs1 = detect_goal_directed_runs(
-            trajectory_bins, times, env, goal_region="goal"
-        )
+        runs1 = detect_goal_directed_runs(position_bins, times, env, goal_region="goal")
 
         # Should work with keyword args
         runs2 = detect_goal_directed_runs(
-            trajectory_bins=trajectory_bins,
+            position_bins=position_bins,
             times=times,
             env=env,
             goal_region="goal",

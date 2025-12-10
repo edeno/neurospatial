@@ -248,12 +248,12 @@ class TestComputeObjectVectorTuning:
         spike_times = rng.choice(times, size=100, replace=False)
 
         metrics = compute_object_vector_tuning(
+            env=env,
             spike_times=spike_times,
             times=times,
             positions=positions,
             headings=headings,
             object_positions=object_positions,
-            env=env,
         )
 
         assert isinstance(metrics, ObjectVectorMetrics)
@@ -359,12 +359,12 @@ class TestComputeObjectVectorTuning:
         spike_times = times[::10]  # Regular spikes
 
         metrics = compute_object_vector_tuning(
+            env=env,
             spike_times=spike_times,
             times=times,
             positions=positions,
             headings=headings,
             object_positions=object_positions,
-            env=env,
         )
 
         # Firing rate should be finite and reasonable
@@ -428,12 +428,12 @@ class TestComputeObjectVectorTuning:
         spike_times = rng.choice(times, size=100, replace=False)
 
         metrics = compute_object_vector_tuning(
+            env=env,
             spike_times=spike_times,
             times=times,
             positions=positions,
             headings=headings,
             object_positions=object_positions,
-            env=env,
         )
 
         # Should produce valid metrics
@@ -461,12 +461,12 @@ class TestComputeObjectVectorTuning:
 
         with pytest.raises(ValueError, match="spike"):
             compute_object_vector_tuning(
+                env=env,
                 spike_times=spike_times,
                 times=times,
                 positions=positions,
                 headings=headings,
                 object_positions=object_positions,
-                env=env,
             )
 
     def test_validation_times_positions_mismatch(self) -> None:
@@ -488,12 +488,12 @@ class TestComputeObjectVectorTuning:
 
         with pytest.raises(ValueError, match="length"):
             compute_object_vector_tuning(
+                env=env,
                 spike_times=spike_times,
                 times=times,
                 positions=positions,
                 headings=headings,
                 object_positions=object_positions,
-                env=env,
             )
 
 
@@ -952,12 +952,12 @@ class TestRecoverGroundTruthFromSimulation:
 
         # Compute metrics
         metrics = compute_object_vector_tuning(
+            env=env,
             spike_times=spike_times,
             times=times,
             positions=positions,
             headings=headings,
             object_positions=object_positions,
-            env=env,
         )
 
         # Should recover approximate preferred direction
@@ -1010,12 +1010,12 @@ class TestRecoverGroundTruthFromSimulation:
             pytest.skip("Not enough spikes generated")
 
         metrics = compute_object_vector_tuning(
+            env=env,
             spike_times=spike_times,
             times=times,
             positions=positions,
             headings=headings,
             object_positions=object_positions,
-            env=env,
         )
 
         # Should be classified as OVC

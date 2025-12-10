@@ -292,7 +292,7 @@ def compute_step_lengths(
     else:  # distance_type == "geodesic"
         # Map positions to bins
         assert env is not None  # Already checked above, but satisfy type checker
-        trajectory_bins = env.bin_at(positions)
+        position_bins = env.bin_at(positions)
 
         # Optimization: Precompute geodesic distance matrix
         # This is O(V*E*log(V)) once vs O(n_steps * V*log(V)) per-step Dijkstra
@@ -304,13 +304,13 @@ def compute_step_lengths(
         )
 
         # Look up distances from precomputed matrix (vectorized)
-        step_lengths = dist_matrix[trajectory_bins[:-1], trajectory_bins[1:]]
+        step_lengths = dist_matrix[position_bins[:-1], position_bins[1:]]
 
     return step_lengths
 
 
 def compute_home_range(
-    trajectory_bins: NDArray[np.int_],
+    position_bins: NDArray[np.int_],
     *,
     percentile: float = 95.0,
 ) -> NDArray[np.int_]:
@@ -324,7 +324,7 @@ def compute_home_range(
 
     Parameters
     ----------
-    trajectory_bins : NDArray[np.int_], shape (n_samples,)
+    position_bins : NDArray[np.int_], shape (n_samples,)
         Sequence of bin indices representing the trajectory.
     percentile : float, default=95.0
         Percentile of time to include in home range (0 to 100). Common values:
@@ -357,7 +357,7 @@ def compute_home_range(
     >>> import numpy as np
     >>> from neurospatial.behavior.trajectory import compute_home_range
     >>> # Trajectory with known distribution
-    >>> trajectory_bins = np.concatenate(
+    >>> position_bins = np.concatenate(
     ...     [
     ...         np.repeat(0, 50),  # Bin 0: 50 visits
     ...         np.repeat(1, 30),  # Bin 1: 30 visits
@@ -365,7 +365,7 @@ def compute_home_range(
     ...         np.repeat(3, 5),  # Bin 3: 5 visits
     ...     ]
     ... )
-    >>> home_range = compute_home_range(trajectory_bins, percentile=95.0)
+    >>> home_range = compute_home_range(position_bins, percentile=95.0)
     >>> set(home_range) == {0, 1, 2}  # 95% includes bins 0, 1, 2
     True
 
@@ -378,7 +378,7 @@ def compute_home_range(
            Ecology, 75(6), 1393-1405.
     """
     # Compute occupancy (visit counts)
-    unique_bins, counts = np.unique(trajectory_bins, return_counts=True)
+    unique_bins, counts = np.unique(position_bins, return_counts=True)
 
     # Sort bins by occupancy (descending)
     sort_idx = np.argsort(counts)[::-1]
@@ -602,7 +602,7 @@ def mean_square_displacement(
     else:  # distance_type == "geodesic"
         # Map positions to bins for geodesic distance
         assert env is not None  # Already checked above
-        trajectory_bins = env.bin_at(positions)
+        position_bins = env.bin_at(positions)
 
         # Optimization: Precompute geodesic distance matrix ONCE
         # This is O(V*E*log(V)) once vs O(n_lags * n_samples * V*log(V)) per lookup
@@ -625,8 +625,8 @@ def mean_square_displacement(
 
             if np.any(valid_pairs):
                 # Vectorized distance lookup from precomputed matrix
-                current_bins = trajectory_bins[valid_pairs]
-                future_bins = trajectory_bins[future_idx[valid_pairs]]
+                current_bins = position_bins[valid_pairs]
+                future_bins = position_bins[future_idx[valid_pairs]]
                 distances = dist_matrix[current_bins, future_bins]
 
                 # Filter out disconnected bins (inf distance)
@@ -642,7 +642,7 @@ def mean_square_displacement(
 
 
 def compute_trajectory_curvature(
-    trajectory_positions: NDArray[np.float64],
+    positions: NDArray[np.float64],
     times: NDArray[np.float64] | None = None,
     *,
     smooth_window: float | None = 0.2,
@@ -654,7 +654,7 @@ def compute_trajectory_curvature(
 
     Parameters
     ----------
-    trajectory_positions : NDArray[np.float64], shape (n_samples, n_dims)
+    positions : NDArray[np.float64], shape (n_samples, n_dims)
         Position coordinates over time in any dimensional space.
     times : NDArray[np.float64], shape (n_samples,), optional
         Timestamps for temporal smoothing. If None, assumes uniform sampling.
@@ -699,23 +699,23 @@ def compute_trajectory_curvature(
     >>> from neurospatial.behavior.trajectory import compute_trajectory_curvature
     >>>
     >>> # 2D trajectory on any environment (grid, graph, continuous)
-    >>> trajectory_positions = np.column_stack([np.linspace(0, 100, 20), np.zeros(20)])
-    >>> curvature = compute_trajectory_curvature(trajectory_positions)
+    >>> positions = np.column_stack([np.linspace(0, 100, 20), np.zeros(20)])
+    >>> curvature = compute_trajectory_curvature(positions)
     >>>
     >>> # Detect sharp turns (> 45 degrees)
     >>> sharp_left = np.where(curvature > np.pi / 4)[0]
     >>> sharp_right = np.where(curvature < -np.pi / 4)[0]
     >>>
     >>> # 3D trajectory (e.g., climbing, flying)
-    >>> trajectory_3d = np.column_stack(
+    >>> positions_3d = np.column_stack(
     ...     [np.linspace(0, 100, 20), np.zeros(20), np.linspace(0, 10, 20)]
     ... )
-    >>> curvature_3d = compute_trajectory_curvature(trajectory_3d)
+    >>> curvature_3d = compute_trajectory_curvature(positions_3d)
     >>>
     >>> # Smooth for noisy tracking data
     >>> times = np.linspace(0, 10, 20)
     >>> curvature_smooth = compute_trajectory_curvature(
-    ...     trajectory_positions, times, smooth_window=0.5
+    ...     positions, times, smooth_window=0.5
     ... )
 
     See Also
@@ -725,12 +725,12 @@ def compute_trajectory_curvature(
     # 1. Compute turn angles using existing function
     # Returns length (n_angles,) where n_angles <= n_samples - 2
     # Filters stationary periods automatically
-    angles = compute_turn_angles(trajectory_positions)
+    angles = compute_turn_angles(positions)
 
     # 2. Pad to match input length (n_samples)
     # compute_turn_angles returns variable length due to duplicate filtering
     # Pad with 0 at start and end to reach n_samples
-    n_samples = len(trajectory_positions)
+    n_samples = len(positions)
     n_angles = len(angles)
 
     # Calculate padding needed

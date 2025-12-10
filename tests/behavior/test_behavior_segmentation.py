@@ -191,10 +191,10 @@ class TestDetectRegionCrossingsBasic:
         env = Environment.from_samples(positions, bin_size=2.0)
         env.regions.add("test", polygon=Point(50.0, 0.0).buffer(10.0))
 
-        trajectory_bins = np.array([], dtype=np.int64)
+        position_bins = np.array([], dtype=np.int64)
         times = np.array([], dtype=np.float64)
 
-        crossings = detect_region_crossings(trajectory_bins, times, "test", env)
+        crossings = detect_region_crossings(position_bins, times, "test", env)
 
         assert crossings == []
 
@@ -206,11 +206,11 @@ class TestDetectRegionCrossingsBasic:
         positions = np.linspace(0, 100, 50)[:, None]
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        trajectory_bins = np.array([0, 1, 2], dtype=np.int64)
+        position_bins = np.array([0, 1, 2], dtype=np.int64)
         times = np.array([0.0, 1.0, 2.0])
 
         with pytest.raises(ValueError, match="not found"):
-            detect_region_crossings(trajectory_bins, times, "nonexistent", env)
+            detect_region_crossings(position_bins, times, "nonexistent", env)
 
 
 class TestSegmentByVelocityBasic:
@@ -259,10 +259,10 @@ class TestDetectLapsBasic:
         positions = rng.random((100, 2)) * 100
         env = Environment.from_samples(positions, bin_size=3.0)
 
-        trajectory_bins = np.array([], dtype=np.int64)
+        position_bins = np.array([], dtype=np.int64)
         times = np.array([], dtype=np.float64)
 
-        laps = detect_laps(trajectory_bins, times, env)
+        laps = detect_laps(position_bins, times, env)
 
         assert laps == []
 
@@ -274,11 +274,11 @@ class TestDetectLapsBasic:
         positions = rng.random((100, 2)) * 100
         env = Environment.from_samples(positions, bin_size=3.0)
 
-        trajectory_bins = np.array([0, 1, 2, 3], dtype=np.int64)
+        position_bins = np.array([0, 1, 2, 3], dtype=np.int64)
         times = np.array([0.0, 1.0, 2.0, 3.0])
 
         with pytest.raises(ValueError, match="method"):
-            detect_laps(trajectory_bins, times, env, method="invalid")
+            detect_laps(position_bins, times, env, method="invalid")
 
 
 class TestSegmentTrialsBasic:
@@ -297,12 +297,12 @@ class TestSegmentTrialsBasic:
         positions = rng.random((100, 2)) * 100
         env = Environment.from_samples(positions, bin_size=3.0)
 
-        trajectory_bins = np.array([0, 1, 2], dtype=np.int64)
+        position_bins = np.array([0, 1, 2], dtype=np.int64)
         times = np.array([0.0, 1.0, 2.0])
 
         with pytest.raises(ValueError, match="start_region"):
             segment_trials(
-                trajectory_bins,
+                position_bins,
                 times,
                 env,
                 start_region=None,  # Missing
@@ -318,12 +318,12 @@ class TestSegmentTrialsBasic:
         env = Environment.from_samples(positions, bin_size=3.0)
         env.regions.add("start", polygon=Point(50.0, 50.0).buffer(10.0))
 
-        trajectory_bins = np.array([0, 1, 2], dtype=np.int64)
+        position_bins = np.array([0, 1, 2], dtype=np.int64)
         times = np.array([0.0, 1.0, 2.0])
 
         with pytest.raises(ValueError, match="end_regions"):
             segment_trials(
-                trajectory_bins,
+                position_bins,
                 times,
                 env,
                 start_region="start",
@@ -380,12 +380,10 @@ class TestDetectGoalDirectedRunsBasic:
         env = Environment.from_samples(positions, bin_size=2.0)
         env.regions.add("goal", polygon=Point(90.0, 0.0).buffer(5.0))
 
-        trajectory_bins = np.array([], dtype=np.int64)
+        position_bins = np.array([], dtype=np.int64)
         times = np.array([], dtype=np.float64)
 
-        runs = detect_goal_directed_runs(
-            trajectory_bins, times, env, goal_region="goal"
-        )
+        runs = detect_goal_directed_runs(position_bins, times, env, goal_region="goal")
 
         assert runs == []
 
@@ -397,10 +395,10 @@ class TestDetectGoalDirectedRunsBasic:
         positions = np.linspace(0, 100, 50)[:, None]
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        trajectory_bins = np.array([0, 1, 2], dtype=np.int64)
+        position_bins = np.array([0, 1, 2], dtype=np.int64)
         times = np.array([0.0, 1.0, 2.0])
 
         with pytest.raises(KeyError, match="not found"):
             detect_goal_directed_runs(
-                trajectory_bins, times, env, goal_region="nonexistent"
+                position_bins, times, env, goal_region="nonexistent"
             )

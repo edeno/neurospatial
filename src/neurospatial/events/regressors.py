@@ -654,7 +654,7 @@ def distance_to_reward(
         )
 
     # Map positions to bins
-    trajectory_bins = env.bin_at(positions)
+    position_bins = env.bin_at(positions)
 
     # Map reward positions to bins
     reward_bins = env.bin_at(reward_positions)
@@ -740,7 +740,7 @@ def distance_to_reward(
         )
 
         # Look up distances for trajectory bins
-        sample_bins = trajectory_bins[mask]
+        sample_bins = position_bins[mask]
         valid_bins = sample_bins >= 0
         distances[mask] = np.where(
             valid_bins,
@@ -752,7 +752,7 @@ def distance_to_reward(
     distances[no_reward] = np.nan
 
     # Set NaN for invalid trajectory bins
-    distances[trajectory_bins < 0] = np.nan
+    distances[position_bins < 0] = np.nan
 
     # Set NaN for invalid reward bins
     invalid_reward_mask = target_bins < 0
@@ -925,12 +925,12 @@ def distance_to_boundary(
     )
 
     # Map positions to bins
-    trajectory_bins = env.bin_at(positions)
+    position_bins = env.bin_at(positions)
 
     # Look up distances
     distances = np.full(n_samples, np.nan, dtype=np.float64)
-    valid_bins = trajectory_bins >= 0
-    distances[valid_bins] = dist_field[trajectory_bins[valid_bins]]
+    valid_bins = position_bins >= 0
+    distances[valid_bins] = dist_field[position_bins[valid_bins]]
 
     return distances
 

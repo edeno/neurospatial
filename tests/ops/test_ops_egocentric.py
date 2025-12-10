@@ -102,7 +102,7 @@ class TestComputeEgocentricBearing:
         target = np.array([[10.0, 0.0]])
         position = np.array([[0.0, 0.0]])
         heading = np.array([0.0])  # Facing East
-        bearing = compute_egocentric_bearing(target, position, heading)
+        bearing = compute_egocentric_bearing(position, heading, target)
         np.testing.assert_allclose(bearing, [[0.0]], atol=1e-10)
 
     def test_left_bearing_pi_half(self):
@@ -110,7 +110,7 @@ class TestComputeEgocentricBearing:
         target = np.array([[0.0, 10.0]])
         position = np.array([[0.0, 0.0]])
         heading = np.array([0.0])  # Facing East
-        bearing = compute_egocentric_bearing(target, position, heading)
+        bearing = compute_egocentric_bearing(position, heading, target)
         np.testing.assert_allclose(bearing, [[np.pi / 2]], atol=1e-10)
 
     def test_right_bearing_negative_pi_half(self):
@@ -118,7 +118,7 @@ class TestComputeEgocentricBearing:
         target = np.array([[0.0, -10.0]])
         position = np.array([[0.0, 0.0]])
         heading = np.array([0.0])  # Facing East
-        bearing = compute_egocentric_bearing(target, position, heading)
+        bearing = compute_egocentric_bearing(position, heading, target)
         np.testing.assert_allclose(bearing, [[-np.pi / 2]], atol=1e-10)
 
 
@@ -131,7 +131,7 @@ class TestComputeEgocentricDistance:
         position = np.array([[0.0, 0.0]])
         heading = np.array([0.0])
         distances = compute_egocentric_distance(
-            targets, position, heading, metric="euclidean"
+            position, targets, headings=heading, metric="euclidean"
         )
         np.testing.assert_allclose(distances, [[10.0, 10.0]])
 
@@ -141,7 +141,9 @@ class TestComputeEgocentricDistance:
         position = np.array([[0.0, 0.0]])
         heading = np.array([0.0])
         with pytest.raises(ValueError, match="Invalid distance metric"):
-            compute_egocentric_distance(targets, position, heading, metric="invalid")
+            compute_egocentric_distance(
+                position, targets, headings=heading, metric="invalid"
+            )
 
     def test_geodesic_without_env(self):
         """Test error when geodesic metric used without environment."""
@@ -149,7 +151,9 @@ class TestComputeEgocentricDistance:
         position = np.array([[0.0, 0.0]])
         heading = np.array([0.0])
         with pytest.raises(ValueError, match="missing environment"):
-            compute_egocentric_distance(targets, position, heading, metric="geodesic")
+            compute_egocentric_distance(
+                position, targets, headings=heading, metric="geodesic"
+            )
 
 
 class TestHeadingFromVelocity:

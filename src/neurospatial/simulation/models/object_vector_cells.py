@@ -441,7 +441,7 @@ class ObjectVectorCellModel:
             # Compute bearing to each object
             # Shape: (n_time, n_objects)
             bearings = compute_egocentric_bearing(
-                self.object_positions, positions, headings
+                positions, headings, self.object_positions
             )
 
             # Apply von Mises directional tuning

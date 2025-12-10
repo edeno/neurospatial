@@ -149,6 +149,7 @@ class TestComputeObjectVectorField:
         spike_times = rng.choice(times, size=100, replace=False)
 
         result = compute_object_vector_field(
+            env=None,
             spike_times=spike_times,
             times=times,
             positions=positions,
@@ -172,6 +173,7 @@ class TestComputeObjectVectorField:
         spike_times = rng.choice(times, size=100, replace=False)
 
         result = compute_object_vector_field(
+            env=None,
             spike_times=spike_times,
             times=times,
             positions=positions,
@@ -200,6 +202,7 @@ class TestComputeObjectVectorField:
         spike_times = rng.choice(times, size=100, replace=False)
 
         result = compute_object_vector_field(
+            env=None,
             spike_times=spike_times,
             times=times,
             positions=positions,
@@ -229,6 +232,7 @@ class TestComputeObjectVectorField:
         spike_times = rng.choice(times, size=100, replace=False)
 
         result = compute_object_vector_field(
+            env=None,
             spike_times=spike_times,
             times=times,
             positions=positions,
@@ -260,6 +264,7 @@ class TestComputeObjectVectorField:
         spike_times = rng.choice(times, size=100, replace=False)
 
         result = compute_object_vector_field(
+            env=None,
             spike_times=spike_times,
             times=times,
             positions=positions,
@@ -285,6 +290,7 @@ class TestComputeObjectVectorField:
         spike_times = rng.choice(times, size=100, replace=False)
 
         result = compute_object_vector_field(
+            env=None,
             spike_times=spike_times,
             times=times,
             positions=positions,
@@ -310,6 +316,7 @@ class TestComputeObjectVectorField:
         spike_times = rng.choice(times, size=100, replace=False)
 
         result = compute_object_vector_field(
+            env=None,
             spike_times=spike_times,
             times=times,
             positions=positions,
@@ -337,6 +344,7 @@ class TestComputeObjectVectorField:
         spike_times = rng.choice(times, size=10, replace=False)
 
         result = compute_object_vector_field(
+            env=None,
             spike_times=spike_times,
             times=times,
             positions=positions,
@@ -363,6 +371,7 @@ class TestComputeObjectVectorField:
 
         with pytest.raises(ValueError, match="spike"):
             compute_object_vector_field(
+                env=None,
                 spike_times=spike_times,
                 times=times,
                 positions=positions,
@@ -383,6 +392,7 @@ class TestComputeObjectVectorField:
 
         with pytest.raises(ValueError, match="length"):
             compute_object_vector_field(
+                env=None,
                 spike_times=spike_times,
                 times=times,
                 positions=positions,
@@ -403,6 +413,7 @@ class TestComputeObjectVectorField:
 
         with pytest.raises(ValueError, match="length"):
             compute_object_vector_field(
+                env=None,
                 spike_times=spike_times,
                 times=times,
                 positions=positions,
@@ -424,6 +435,7 @@ class TestComputeObjectVectorField:
 
         with pytest.raises(ValueError, match="smoothing_method"):
             compute_object_vector_field(
+                env=None,
                 spike_times=spike_times,
                 times=times,
                 positions=positions,
@@ -455,12 +467,12 @@ class TestGeodesicDistanceSupport:
         spike_times = rng.choice(times, size=100, replace=False)
 
         result = compute_object_vector_field(
+            env=alloc_env,
             spike_times=spike_times,
             times=times,
             positions=positions,
             headings=headings,
             object_positions=object_positions,
-            allocentric_env=alloc_env,
             distance_metric="geodesic",
         )
 
@@ -479,15 +491,15 @@ class TestGeodesicDistanceSupport:
         object_positions = np.array([[50.0, 50.0]])
         spike_times = np.array([1.0, 2.0, 3.0])
 
-        with pytest.raises(ValueError, match="allocentric_env"):
+        with pytest.raises(ValueError, match="env"):
             compute_object_vector_field(
+                env=None,
                 spike_times=spike_times,
                 times=times,
                 positions=positions,
                 headings=headings,
                 object_positions=object_positions,
                 distance_metric="geodesic",
-                allocentric_env=None,
             )
 
 
@@ -538,6 +550,7 @@ class TestRecoverGroundTruthFromSimulation:
 
         # Compute field
         result = compute_object_vector_field(
+            env=None,
             spike_times=spike_times,
             times=times,
             positions=positions,
@@ -601,6 +614,7 @@ class TestRecoverGroundTruthFromSimulation:
             pytest.skip("Not enough spikes generated")
 
         result = compute_object_vector_field(
+            env=None,
             spike_times=spike_times,
             times=times,
             positions=positions,
