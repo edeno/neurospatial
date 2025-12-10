@@ -122,7 +122,7 @@ class SpatialViewCellModel:
     max_rate : float, optional
         Peak firing rate in Hz (default: 20.0).
     baseline_rate : float, optional
-        Baseline firing rate when not viewing preferred location (default: 0.001 Hz).
+        Baseline firing rate when not viewing preferred location (default: 0.01 Hz).
     require_visibility : bool, optional
         If True, returns baseline rate when view is blocked (default: False).
     fov : FieldOfView | None, optional
@@ -213,7 +213,7 @@ class SpatialViewCellModel:
             "fixed_distance", "ray_cast", "boundary"
         ] = "fixed_distance",
         max_rate: float = 20.0,
-        baseline_rate: float = 0.001,
+        baseline_rate: float = 0.01,
         require_visibility: bool = False,
         fov: FieldOfView | None = None,
     ) -> None:

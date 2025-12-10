@@ -647,6 +647,19 @@ def shuffle_posterior_weighted_circular(
         When the MAP position is within ``edge_buffer`` bins of either edge,
         the shift is restricted to keep the MAP position within bounds
         (not wrapping to the other end).
+
+        **Default justification (5 bins)**: For typical 1D track decoding with
+        2-5 cm spatial bins, 5 bins = 10-25 cm buffer region. This prevents
+        unrealistic position jumps (e.g., rat at start wrapping to end) while
+        allowing sufficient shift variability. Recommended values:
+
+        - Short tracks (<1m): edge_buffer = 3-5 bins
+        - Medium tracks (1-2m): edge_buffer = 5-10 bins
+        - Long tracks (>2m): edge_buffer = 10-15 bins
+        - Adaptive: edge_buffer = max(5, n_bins // 20)
+
+        For 2D environments or circular tracks, use ``shuffle_posterior_circular``
+        instead (no edge restriction needed).
     n_shuffles : int, default=1000
         Number of shuffled versions to generate.
     rng : np.random.Generator | int | None, default=None

@@ -118,7 +118,7 @@ class ObjectVectorCellModel:
     max_rate : float, optional
         Peak firing rate in Hz (default: 20.0).
     baseline_rate : float, optional
-        Baseline firing rate outside tuned region (default: 0.001 Hz).
+        Baseline firing rate outside tuned region (default: 0.01 Hz).
     object_selectivity : {'any', 'nearest', 'specific'}, optional
         How to aggregate responses across objects (default: 'nearest').
 
@@ -221,7 +221,7 @@ class ObjectVectorCellModel:
         preferred_direction: float | None = None,
         direction_kappa: float = 4.0,
         max_rate: float = 20.0,
-        baseline_rate: float = 0.001,
+        baseline_rate: float = 0.01,
         object_selectivity: Literal["any", "nearest", "specific"] = "nearest",
         specific_object_index: int | None = None,
         distance_metric: Literal["euclidean", "geodesic"] = "euclidean",

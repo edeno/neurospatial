@@ -787,23 +787,36 @@ class EventOverlay:
 
     See Also
     --------
+    EventOverlay.from_fixed_positions : Create overlay with events at fixed locations (Mode A).
+    EventOverlay.from_trajectory : Create overlay with events at animal position (Mode B).
     SpikeOverlay : Convenience alias for EventOverlay for neural spike visualization.
     PositionOverlay : Trajectory visualization overlay.
 
     Notes
     -----
-    **Position Modes:**
+    **Position Modes (mutually exclusive):**
 
-    Mode A (explicit positions) is used when events occur at known fixed locations,
-    independent of animal position. Examples: reward delivery at feeder, zone entry
-    at boundary, stimulus presentation at screen location.
+    EventOverlay supports two mutually exclusive modes for determining where events
+    appear in space:
 
-    Mode B (trajectory interpolation) is used when events occur "at the animal",
-    and position should be interpolated from the animal's trajectory at event time.
-    Examples: neural spikes, licks, lever presses.
+    **Mode A - Fixed Positions** (use ``event_positions``):
+      Events occur at known fixed locations, independent of animal position.
 
-    The two modes are mutually exclusive - provide either ``event_positions`` OR
-    ``positions`` + ``position_times``, but not both.
+      - Use case: Reward delivery at feeder, zone entry at boundary, stimulus at screen
+      - Factory: ``EventOverlay.from_fixed_positions()``
+      - Parameters: ``event_positions`` (provide), ``positions`` (omit), ``position_times`` (omit)
+      - Position shape: (n_events, n_dims) or (1, n_dims) to broadcast
+
+    **Mode B - Trajectory Interpolation** (use ``positions`` + ``position_times``):
+      Events occur "at the animal", position interpolated from trajectory at event time.
+
+      - Use case: Neural spikes, licks, lever presses at animal location
+      - Factory: ``EventOverlay.from_trajectory()``
+      - Parameters: ``positions`` (provide), ``position_times`` (provide), ``event_positions`` (omit)
+      - Requires both trajectory and timestamps for temporal interpolation
+
+    **ERROR if both provided:** You cannot provide ``event_positions`` AND
+    (``positions`` + ``position_times``) simultaneously - choose one mode.
 
     **Coordinate Convention:**
 
@@ -812,14 +825,28 @@ class EventOverlay:
 
     Examples
     --------
-    Reward delivery at fixed feeder location (explicit positions)::
+    **RECOMMENDED: Use factory methods for clearer intent:**
 
-        events = EventOverlay(
+    Reward delivery at fixed feeder location::
+
+        events = EventOverlay.from_fixed_positions(
             event_times=reward_times,
             event_positions=np.array([[50.0, 25.0]]),  # Feeder location (broadcast)
             colors="gold",
             markers="s",
         )
+
+    Neural spikes at animal position::
+
+        events = EventOverlay.from_trajectory(
+            event_times=spike_times,
+            positions=trajectory,  # Shape: (n_samples, 2)
+            position_times=timestamps,  # Shape: (n_samples,)
+            colors="red",
+            size=10.0,
+        )
+
+    **Direct constructor usage (advanced):**
 
     Zone entry events at zone boundaries (explicit positions per event)::
 
@@ -829,18 +856,7 @@ class EventOverlay:
             colors="cyan",
         )
 
-    Neural spikes at animal position (trajectory interpolation)::
-
-        events = EventOverlay(
-            event_times=spike_times,  # Shape: (n_spikes,)
-            positions=trajectory,  # Shape: (n_samples, 2)
-            position_times=timestamps,  # Shape: (n_samples,)
-            colors="red",
-            size=10.0,
-        )
-        env.animate_fields(fields, overlays=[events])
-
-    Multiple neurons with auto-colors::
+    Multiple neurons with auto-colors (trajectory interpolation)::
 
         events = EventOverlay(
             event_times={
@@ -997,6 +1013,215 @@ class EventOverlay:
                     "alignment.\n\n"
                     "HOW: Remove or interpolate NaN/Inf values before creating overlay."
                 )
+
+    @classmethod
+    def from_fixed_positions(
+        cls,
+        event_times: NDArray[np.float64] | dict[str, NDArray[np.float64]],
+        event_positions: NDArray[np.float64] | dict[str, NDArray[np.float64]],
+        *,
+        colors: str | dict[str, str] | None = None,
+        size: float = 8.0,
+        opacity: float = 0.7,
+        decay_frames: int | None = None,
+        markers: str | dict[str, str] | None = None,
+        border_color: str = "white",
+        border_width: float = 0.05,
+    ) -> EventOverlay:
+        """Create EventOverlay with events at fixed spatial locations.
+
+        Use this factory when events occur at known fixed locations, independent
+        of animal position. Examples: reward delivery at feeder, zone entry at
+        boundary, stimulus presentation at screen location.
+
+        Parameters
+        ----------
+        event_times : NDArray[np.float64] | dict[str, NDArray[np.float64]]
+            Event timestamps in seconds. Either:
+
+            - Single event type: 1D array of event times
+            - Multiple event types: dict mapping event names to time arrays
+
+        event_positions : NDArray[np.float64] | dict[str, NDArray[np.float64]]
+            Explicit event positions in environment coordinates.
+
+            - Shape: (n_events, n_dims) for per-event positions
+            - Shape: (1, n_dims) to broadcast single position to all events
+            - dict: Mapping event names to position arrays
+
+        colors : str | dict[str, str] | None, optional
+            Colors for event markers. See EventOverlay for details. Default is None.
+        size : float, optional
+            Marker size in points. Default is 8.0.
+        opacity : float, optional
+            Base opacity for visible events (0.0-1.0). Default is 0.7.
+        decay_frames : int | None, optional
+            Number of frames over which event markers persist and fade.
+            Default is None (instant).
+        markers : str | dict[str, str] | None, optional
+            Marker style(s). Default is None.
+        border_color : str, optional
+            Border color for markers. Default is "white".
+        border_width : float, optional
+            Border width as fraction of point size. Default is 0.05.
+
+        Returns
+        -------
+        EventOverlay
+            Configured overlay with fixed event positions.
+
+        Examples
+        --------
+        Reward delivery at fixed feeder location::
+
+            overlay = EventOverlay.from_fixed_positions(
+                event_times=reward_times,
+                event_positions=np.array([[50.0, 25.0]]),  # Feeder location (broadcast)
+                colors="gold",
+                markers="s",
+            )
+
+        Zone entry events at zone boundaries::
+
+            overlay = EventOverlay.from_fixed_positions(
+                event_times=zone_entry_times,
+                event_positions=zone_entry_locations,  # (n_events, 2)
+                colors="cyan",
+            )
+
+        Multiple zones with different colors::
+
+            overlay = EventOverlay.from_fixed_positions(
+                event_times={"start": start_times, "goal": goal_times},
+                event_positions={"start": start_pos, "goal": goal_pos},
+                colors={"start": "green", "goal": "red"},
+            )
+        """
+        return cls(
+            event_times=event_times,
+            event_positions=event_positions,
+            colors=colors,
+            size=size,
+            opacity=opacity,
+            decay_frames=decay_frames,
+            markers=markers,
+            border_color=border_color,
+            border_width=border_width,
+        )
+
+    @classmethod
+    def from_trajectory(
+        cls,
+        event_times: NDArray[np.float64] | dict[str, NDArray[np.float64]],
+        positions: NDArray[np.float64],
+        position_times: NDArray[np.float64],
+        *,
+        interp: Literal["linear", "nearest"] = "linear",
+        colors: str | dict[str, str] | None = None,
+        size: float = 8.0,
+        opacity: float = 0.7,
+        decay_frames: int | None = None,
+        markers: str | dict[str, str] | None = None,
+        border_color: str = "white",
+        border_width: float = 0.05,
+    ) -> EventOverlay:
+        """Create EventOverlay with events at animal position (interpolated from trajectory).
+
+        Use this factory when events occur "at the animal", and position should be
+        interpolated from the animal's trajectory at event time. Examples: neural
+        spikes, licks, lever presses.
+
+        Parameters
+        ----------
+        event_times : NDArray[np.float64] | dict[str, NDArray[np.float64]]
+            Event timestamps in seconds. Either:
+
+            - Single event type: 1D array of event times
+            - Multiple event types: dict mapping event names to time arrays
+
+        positions : NDArray[np.float64]
+            Animal position trajectory with shape (n_samples, n_dims) in environment
+            (x, y) coordinates.
+        position_times : NDArray[np.float64]
+            Timestamps for position samples in seconds. Must be monotonically
+            increasing. Shape: (n_samples,).
+        interp : {"linear", "nearest"}, optional
+            Interpolation for position lookup at event times. "linear" for smooth
+            trajectory-based positions, "nearest" to snap to exact samples.
+            Default is "linear".
+        colors : str | dict[str, str] | None, optional
+            Colors for event markers. See EventOverlay for details. Default is None.
+        size : float, optional
+            Marker size in points. Default is 8.0.
+        opacity : float, optional
+            Base opacity for visible events (0.0-1.0). Default is 0.7.
+        decay_frames : int | None, optional
+            Number of frames over which event markers persist and fade.
+            Default is None (instant).
+        markers : str | dict[str, str] | None, optional
+            Marker style(s). Default is None.
+        border_color : str, optional
+            Border color for markers. Default is "white".
+        border_width : float, optional
+            Border width as fraction of point size. Default is 0.05.
+
+        Returns
+        -------
+        EventOverlay
+            Configured overlay with trajectory-interpolated positions.
+
+        Examples
+        --------
+        Neural spikes at animal position::
+
+            overlay = EventOverlay.from_trajectory(
+                event_times=spike_times,
+                positions=trajectory,  # Shape: (n_samples, 2)
+                position_times=timestamps,  # Shape: (n_samples,)
+                colors="red",
+                size=10.0,
+            )
+
+        Multiple neurons with auto-colors::
+
+            overlay = EventOverlay.from_trajectory(
+                event_times={
+                    "cell_001": spikes_1,
+                    "cell_002": spikes_2,
+                    "cell_003": spikes_3,
+                },
+                positions=trajectory,
+                position_times=timestamps,
+                # colors=None -> auto-assign from tab10
+            )
+
+        Behavioral events with different markers::
+
+            overlay = EventOverlay.from_trajectory(
+                event_times={
+                    "lick": lick_times,
+                    "reward": reward_times,
+                    "lever_press": press_times,
+                },
+                positions=trajectory,
+                position_times=timestamps,
+                colors={"lick": "cyan", "reward": "gold", "lever_press": "magenta"},
+                markers={"lick": "o", "reward": "s", "lever_press": "^"},
+            )
+        """
+        return cls(
+            event_times=event_times,
+            positions=positions,
+            position_times=position_times,
+            interp=interp,
+            colors=colors,
+            size=size,
+            opacity=opacity,
+            decay_frames=decay_frames,
+            markers=markers,
+            border_color=border_color,
+            border_width=border_width,
+        )
 
     def convert_to_data(
         self,

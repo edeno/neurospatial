@@ -35,7 +35,7 @@ class BoundaryCellModel:
     max_rate : float, optional
         Peak firing rate in Hz (default: 15.0).
     baseline_rate : float, optional
-        Baseline firing rate away from preferred distance (default: 0.001 Hz).
+        Baseline firing rate away from preferred distance (default: 0.01 Hz).
     distance_metric : {'geodesic', 'euclidean'}, optional
         Distance calculation method (default: 'geodesic').
 
@@ -145,7 +145,7 @@ class BoundaryCellModel:
         preferred_direction: float | None = None,
         direction_tolerance: float = np.pi / 4,
         max_rate: float = 15.0,
-        baseline_rate: float = 0.001,
+        baseline_rate: float = 0.01,
         distance_metric: Literal["geodesic", "euclidean"] = "geodesic",
     ) -> None:
         # Validate parameters

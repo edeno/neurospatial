@@ -453,23 +453,28 @@ def _wrap_angle(angle: NDArray[np.float64]) -> NDArray[np.float64]:
 
 def compute_egocentric_distance(
     positions: NDArray[np.float64],
+    headings: NDArray[np.float64] | None,
     targets: NDArray[np.float64],
     *,
-    headings: NDArray[np.float64] | None = None,
     metric: str = "euclidean",
     env: Environment | None = None,
 ) -> NDArray[np.float64]:
     """Compute distance to targets from animal position.
 
+    Distance is symmetric (does not depend on heading), but headings parameter
+    is included as a positional parameter to maintain API consistency with other
+    egocentric functions like compute_egocentric_bearing().
+
     Parameters
     ----------
     positions : NDArray, shape (n_time, 2)
         Animal position at each time.
-    targets : NDArray, shape (n_targets, 2) or (n_time, n_targets, 2)
-        Target positions in allocentric coordinates.
     headings : NDArray, shape (n_time,), optional
         Animal heading at each time (radians). Not used for distance
-        calculation but included for API consistency.
+        calculation but included for API consistency with canonical argument
+        order (positions, headings, targets).
+    targets : NDArray, shape (n_targets, 2) or (n_time, n_targets, 2)
+        Target positions in allocentric coordinates.
     metric : str, default "euclidean"
         Distance metric. Options:
         - "euclidean": Straight-line distance
@@ -499,7 +504,7 @@ def compute_egocentric_distance(
     >>> position = np.array([[0.0, 0.0]])
     >>> heading = np.array([0.0])
     >>> distances = compute_egocentric_distance(
-    ...     position, targets, headings=heading, metric="euclidean"
+    ...     position, heading, targets, metric="euclidean"
     ... )
     >>> np.allclose(distances, [[10.0, 10.0]])
     True

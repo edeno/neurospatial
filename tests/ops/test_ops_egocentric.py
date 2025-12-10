@@ -131,7 +131,7 @@ class TestComputeEgocentricDistance:
         position = np.array([[0.0, 0.0]])
         heading = np.array([0.0])
         distances = compute_egocentric_distance(
-            position, targets, headings=heading, metric="euclidean"
+            position, heading, targets, metric="euclidean"
         )
         np.testing.assert_allclose(distances, [[10.0, 10.0]])
 
@@ -141,9 +141,7 @@ class TestComputeEgocentricDistance:
         position = np.array([[0.0, 0.0]])
         heading = np.array([0.0])
         with pytest.raises(ValueError, match="Invalid distance metric"):
-            compute_egocentric_distance(
-                position, targets, headings=heading, metric="invalid"
-            )
+            compute_egocentric_distance(position, heading, targets, metric="invalid")
 
     def test_geodesic_without_env(self):
         """Test error when geodesic metric used without environment."""
@@ -151,9 +149,7 @@ class TestComputeEgocentricDistance:
         position = np.array([[0.0, 0.0]])
         heading = np.array([0.0])
         with pytest.raises(ValueError, match="missing environment"):
-            compute_egocentric_distance(
-                position, targets, headings=heading, metric="geodesic"
-            )
+            compute_egocentric_distance(position, heading, targets, metric="geodesic")
 
 
 class TestHeadingFromVelocity:

@@ -285,7 +285,7 @@ def validate_simulation(
                 center=true_center,
                 width=gt["width"],
                 max_rate=gt["max_rate"],
-                baseline_rate=gt.get("baseline_rate", 0.001),
+                baseline_rate=gt.get("baseline_rate", 0.01),
             )
 
             # Compute true firing rate at bin centers

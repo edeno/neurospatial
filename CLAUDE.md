@@ -243,7 +243,7 @@ bearings = compute_egocentric_bearing(positions, headings, object_positions)
 
 # Compute egocentric distance (Euclidean or geodesic)
 distances = compute_egocentric_distance(
-    positions, object_positions, metric="euclidean"
+    positions, headings, object_positions, metric="euclidean"
 )
 ```
 

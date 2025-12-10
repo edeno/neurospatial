@@ -311,13 +311,13 @@ bearings = compute_egocentric_bearing(positions, headings, landmarks)
 
 # Compute distances (Euclidean or geodesic)
 distances = compute_egocentric_distance(
-    positions, landmarks,
+    positions, headings, landmarks,
     metric="euclidean"  # or "geodesic" with env parameter
 )
 
 # For geodesic distances (respects walls/obstacles)
 distances = compute_egocentric_distance(
-    positions, landmarks,
+    positions, headings, landmarks,
     metric="geodesic", env=env
 )
 ```

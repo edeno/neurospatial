@@ -139,7 +139,7 @@ class TestDetectAssemblies:
     ) -> None:
         """Should detect embedded assemblies."""
         result = detect_assemblies(
-            spike_counts_with_assemblies, method="ica", random_state=42
+            spike_counts_with_assemblies, algorithm="ica", random_state=42
         )
 
         # Should detect 2-5 assemblies (depends on threshold)
@@ -155,7 +155,7 @@ class TestDetectAssemblies:
 
     def test_pca_method(self, small_spike_counts: np.ndarray) -> None:
         """PCA method should work and return valid results."""
-        result = detect_assemblies(small_spike_counts, method="pca")
+        result = detect_assemblies(small_spike_counts, algorithm="pca")
 
         assert result.method == "pca"
         assert len(result.patterns) >= 1
@@ -163,14 +163,14 @@ class TestDetectAssemblies:
 
     def test_ica_method(self, small_spike_counts: np.ndarray) -> None:
         """ICA method should work and return valid results."""
-        result = detect_assemblies(small_spike_counts, method="ica", random_state=42)
+        result = detect_assemblies(small_spike_counts, algorithm="ica", random_state=42)
 
         assert result.method == "ica"
         assert len(result.patterns) >= 1
 
     def test_nmf_method(self, small_spike_counts: np.ndarray) -> None:
         """NMF method should work and return valid results."""
-        result = detect_assemblies(small_spike_counts, method="nmf", random_state=42)
+        result = detect_assemblies(small_spike_counts, algorithm="nmf", random_state=42)
 
         assert result.method == "nmf"
         assert len(result.patterns) >= 1
@@ -273,8 +273,8 @@ class TestDetectAssemblies:
 
     def test_invalid_method(self, small_spike_counts: np.ndarray) -> None:
         """Should raise ValueError for unknown method."""
-        with pytest.raises(ValueError, match="Unknown method"):
-            detect_assemblies(small_spike_counts, method="unknown")  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="Unknown algorithm"):
+            detect_assemblies(small_spike_counts, algorithm="unknown")  # type: ignore[arg-type]
 
     def test_invalid_n_components(self, small_spike_counts: np.ndarray) -> None:
         """Should raise ValueError for invalid n_components."""

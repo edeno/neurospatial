@@ -35,7 +35,7 @@ class GridCellModel:
     max_rate : float, optional
         Peak firing rate in Hz (default: 20.0).
     baseline_rate : float, optional
-        Baseline firing rate outside peaks (default: 0.1 Hz).
+        Baseline firing rate outside peaks (default: 0.01 Hz).
 
     Attributes
     ----------
@@ -136,7 +136,7 @@ class GridCellModel:
         grid_orientation: float = 0.0,
         phase_offset: NDArray[np.float64] | None = None,
         max_rate: float = 20.0,
-        baseline_rate: float = 0.1,
+        baseline_rate: float = 0.01,
     ) -> None:
         """Initialize grid cell model."""
         # Validate 2D environment

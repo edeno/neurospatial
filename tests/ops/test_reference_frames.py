@@ -327,7 +327,9 @@ class TestComputeEgocentricDistance:
         targets = np.array([[10.0, 0.0], [0.0, 10.0]])
         position = np.array([[0.0, 0.0]])
 
-        distances = compute_egocentric_distance(position, targets, metric="euclidean")
+        distances = compute_egocentric_distance(
+            position, None, targets, metric="euclidean"
+        )
 
         assert distances.shape == (1, 2)
         assert_allclose(distances, [[10.0, 10.0]], atol=1e-10)
@@ -347,7 +349,7 @@ class TestComputeEgocentricDistance:
         position = np.array([[10.0, 10.0]])
 
         distances = compute_egocentric_distance(
-            position, targets, metric="geodesic", env=env
+            position, None, targets, metric="geodesic", env=env
         )
 
         assert distances.shape == (1, 2)
@@ -368,7 +370,7 @@ class TestComputeEgocentricDistance:
         position = np.array([[0.0, 0.0]])
 
         with pytest.raises(ValueError, match="metric"):
-            compute_egocentric_distance(position, targets, metric="invalid")
+            compute_egocentric_distance(position, None, targets, metric="invalid")
 
     def test_geodesic_without_env_raises(self):
         """Geodesic metric without environment raises error."""
@@ -378,7 +380,7 @@ class TestComputeEgocentricDistance:
         position = np.array([[0.0, 0.0]])
 
         with pytest.raises(ValueError, match="env"):
-            compute_egocentric_distance(position, targets, metric="geodesic")
+            compute_egocentric_distance(position, None, targets, metric="geodesic")
 
 
 class TestHeadingFromVelocity:
@@ -578,7 +580,9 @@ class TestComputeEgocentricDistanceFunctions:
         targets = np.array([[50.0, 50.0]])
         positions = np.array([[0.0, 0.0], [25.0, 25.0], [50.0, 50.0]])
 
-        distances = compute_egocentric_distance(positions, targets, metric="euclidean")
+        distances = compute_egocentric_distance(
+            positions, None, targets, metric="euclidean"
+        )
 
         assert distances.shape == (3, 1)
         expected = [

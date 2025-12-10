@@ -290,7 +290,7 @@ class TestSegmentTrialsBasic:
         return np.random.default_rng(42)
 
     def test_missing_start_region_raises_error(self, rng):
-        """Test that missing start_region raises ValueError."""
+        """Test that missing start_region raises TypeError."""
         from neurospatial import Environment
         from neurospatial.behavior.segmentation import segment_trials
 
@@ -300,17 +300,16 @@ class TestSegmentTrialsBasic:
         position_bins = np.array([0, 1, 2], dtype=np.int64)
         times = np.array([0.0, 1.0, 2.0])
 
-        with pytest.raises(ValueError, match="start_region"):
+        with pytest.raises(TypeError, match="start_region"):
             segment_trials(
                 position_bins,
                 times,
                 env,
-                start_region=None,  # Missing
                 end_regions=["goal"],
             )
 
     def test_missing_end_regions_raises_error(self, rng):
-        """Test that missing end_regions raises ValueError."""
+        """Test that missing end_regions raises TypeError."""
         from neurospatial import Environment
         from neurospatial.behavior.segmentation import segment_trials
 
@@ -321,13 +320,12 @@ class TestSegmentTrialsBasic:
         position_bins = np.array([0, 1, 2], dtype=np.int64)
         times = np.array([0.0, 1.0, 2.0])
 
-        with pytest.raises(ValueError, match="end_regions"):
+        with pytest.raises(TypeError, match="end_regions"):
             segment_trials(
                 position_bins,
                 times,
                 env,
                 start_region="start",
-                end_regions=None,  # Missing
             )
 
 

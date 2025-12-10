@@ -9,7 +9,7 @@ anterodorsal thalamus, and lateral mammillary nucleus.
 Which Function Should I Use?
 ----------------------------
 **Computing tuning curve from raw data?**
-    Use ``head_direction_tuning_curve()`` to compute firing rate as a function
+    Use ``compute_head_direction_tuning_curve()`` to compute firing rate as a function
     of head direction from spike times and head direction time series.
 
 **Analyzing tuning curve properties?**
@@ -25,10 +25,10 @@ Which Function Should I Use?
 
 Typical Workflow
 ----------------
-1. Compute tuning curve from spike times and head directions::
+1. Compute tuning curve from spike times and headings::
 
-    >>> bin_centers, firing_rates = head_direction_tuning_curve(  # doctest: +SKIP
-    ...     spike_times, times, head_directions,
+    >>> bin_centers, firing_rates = compute_head_direction_tuning_curve(  # doctest: +SKIP
+    ...     spike_times, times, headings,
     ...     bin_size=6.0, angle_unit='deg'
     ... )
 
@@ -84,8 +84,8 @@ from neurospatial.stats.circular import (
 __all__: list[str] = [
     "HeadDirectionMetrics",
     "circular_mean",
+    "compute_head_direction_tuning_curve",
     "head_direction_metrics",
-    "head_direction_tuning_curve",
     "is_head_direction_cell",
     "mean_resultant_length",
     "plot_head_direction_tuning",
@@ -206,13 +206,14 @@ class HeadDirectionMetrics:
         return self.interpretation()
 
 
-def head_direction_tuning_curve(
+def compute_head_direction_tuning_curve(
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
-    head_directions: NDArray[np.float64],
+    headings: NDArray[np.float64],
     *,
     bin_size: float = 6.0,
     angle_unit: Literal["rad", "deg"] = "rad",
+    smoothing_method: Literal["gaussian", "none"] = "gaussian",
     smoothing_window: int = 5,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """
@@ -232,17 +233,21 @@ def head_direction_tuning_curve(
     times : ndarray of shape (n_frames,)
         Timestamps corresponding to each head direction sample.
         Must be monotonically increasing.
-    head_directions : ndarray of shape (n_frames,)
+    headings : ndarray of shape (n_frames,)
         Head direction at each time point. Units determined by ``angle_unit``.
     bin_size : float, default=6.0
         Width of angular bins. Units match ``angle_unit`` (radians by default).
     angle_unit : {'rad', 'deg'}, default='rad'
-        Unit of ``head_directions`` and ``bin_size``.
+        Unit of ``headings`` and ``bin_size``.
         Note: HD research commonly uses degrees. If your data is in degrees,
         use ``angle_unit='deg'``.
+    smoothing_method : {'gaussian', 'none'}, default='gaussian'
+        Smoothing method to apply to the tuning curve.
+        - 'gaussian': Apply Gaussian smoothing with circular boundary handling
+        - 'none': No smoothing (raw bin counts)
     smoothing_window : int, default=5
         Standard deviation of Gaussian smoothing kernel in bins.
-        Set to 0 to disable smoothing.
+        Only used when smoothing_method='gaussian'.
 
     Returns
     -------
@@ -254,9 +259,10 @@ def head_direction_tuning_curve(
     Raises
     ------
     ValueError
-        If head_directions and times have different lengths.
+        If headings and times have different lengths.
         If times are not monotonically increasing.
         If fewer than 3 samples provided.
+        If smoothing_method is not 'gaussian' or 'none'.
 
     See Also
     --------
@@ -287,15 +293,17 @@ def head_direction_tuning_curve(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.encoding.head_direction import head_direction_tuning_curve
+    >>> from neurospatial.encoding.head_direction import (
+    ...     compute_head_direction_tuning_curve,
+    ... )
     >>> # Create sample data: 10 seconds at 30 Hz
     >>> times = np.linspace(0, 10, 300)
-    >>> head_directions = np.random.default_rng(42).uniform(0, 360, 300)
+    >>> headings = np.random.default_rng(42).uniform(0, 360, 300)
     >>> spike_times = np.random.default_rng(42).uniform(0, 10, 50)
-    >>> bin_centers, firing_rates = head_direction_tuning_curve(
+    >>> bin_centers, firing_rates = compute_head_direction_tuning_curve(
     ...     spike_times,
     ...     times,
-    ...     head_directions,
+    ...     headings,
     ...     bin_size=30.0,
     ...     angle_unit="deg",
     ... )
@@ -307,13 +315,13 @@ def head_direction_tuning_curve(
     # Convert inputs to arrays
     spike_times = np.asarray(spike_times, dtype=np.float64).ravel()
     times = np.asarray(times, dtype=np.float64).ravel()
-    head_directions = np.asarray(head_directions, dtype=np.float64).ravel()
+    headings = np.asarray(headings, dtype=np.float64).ravel()
 
     # Validate inputs
-    if len(head_directions) != len(times):
+    if len(headings) != len(times):
         raise ValueError(
-            f"head_directions and times must have the same length. "
-            f"Got head_directions: {len(head_directions)}, "
+            f"headings and times must have the same length. "
+            f"Got headings: {len(headings)}, "
             f"times: {len(times)}.\n"
             f"Fix: Ensure both arrays represent the same time series."
         )
@@ -335,8 +343,14 @@ def head_direction_tuning_curve(
             f"Fix: Remove duplicate timestamps or check for timestamp errors."
         )
 
+    # Validate smoothing_method
+    if smoothing_method not in ("gaussian", "none"):
+        raise ValueError(
+            f"smoothing_method must be 'gaussian' or 'none', got '{smoothing_method}'"
+        )
+
     # Convert to radians if needed
-    head_directions_rad = _to_radians(head_directions, angle_unit)
+    headings_rad = _to_radians(headings, angle_unit)
     bin_size_rad = np.radians(bin_size) if angle_unit == "deg" else bin_size
 
     # Compute bin edges and centers
@@ -344,8 +358,8 @@ def head_direction_tuning_curve(
     bin_edges = np.linspace(0, 2 * np.pi, n_bins + 1)
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
 
-    # Wrap head directions to [0, 2*pi)
-    head_directions_wrapped = head_directions_rad % (2 * np.pi)
+    # Wrap headings to [0, 2*pi)
+    headings_wrapped = headings_rad % (2 * np.pi)
 
     # Compute occupancy using actual time deltas
     # Each frame i contributes the time until frame i+1
@@ -353,8 +367,8 @@ def head_direction_tuning_curve(
     time_deltas = np.diff(times)
 
     # Assign each frame (except last) to a bin
-    # head_directions_wrapped[:-1] has n-1 elements, matching time_deltas
-    frame_bins = np.digitize(head_directions_wrapped[:-1], bin_edges) - 1
+    # headings_wrapped[:-1] has n-1 elements, matching time_deltas
+    frame_bins = np.digitize(headings_wrapped[:-1], bin_edges) - 1
     # Handle edge case: value exactly at 2*pi goes to bin n_bins, wrap to 0
     frame_bins[frame_bins >= n_bins] = 0
 
@@ -376,8 +390,8 @@ def head_direction_tuning_curve(
             # np.interp would give wrong results when head direction crosses 0/2pi
             # (e.g., 350° to 10° would interpolate to 180° instead of ~0°)
             spike_indices = np.searchsorted(times, valid_spike_times, side="right") - 1
-            spike_indices = np.clip(spike_indices, 0, len(head_directions_wrapped) - 1)
-            spike_hd = head_directions_wrapped[spike_indices]
+            spike_indices = np.clip(spike_indices, 0, len(headings_wrapped) - 1)
+            spike_hd = headings_wrapped[spike_indices]
 
             # Assign spikes to bins
             spike_bins = np.digitize(spike_hd, bin_edges) - 1
@@ -392,7 +406,7 @@ def head_direction_tuning_curve(
         firing_rates = np.where(occupancy > 0, spike_counts / occupancy, 0.0)
 
     # Apply Gaussian smoothing with circular boundary
-    if smoothing_window > 0:
+    if smoothing_method == "gaussian" and smoothing_window > 0:
         firing_rates = gaussian_filter1d(firing_rates, smoothing_window, mode="wrap")
 
     return bin_centers, firing_rates
@@ -447,7 +461,7 @@ def head_direction_metrics(
 
     See Also
     --------
-    head_direction_tuning_curve : Compute tuning curve.
+    compute_head_direction_tuning_curve : Compute tuning curve.
     is_head_direction_cell : Quick boolean check.
 
     Notes
@@ -467,10 +481,12 @@ def head_direction_metrics(
     Examples
     --------
     >>> from neurospatial.encoding.head_direction import (
-    ...     head_direction_tuning_curve,
+    ...     compute_head_direction_tuning_curve,
     ...     head_direction_metrics,
     ... )
-    >>> bins, rates = head_direction_tuning_curve(spikes, times, hd)  # doctest: +SKIP
+    >>> bins, rates = compute_head_direction_tuning_curve(
+    ...     spikes, times, hd
+    ... )  # doctest: +SKIP
     >>> metrics = head_direction_metrics(bins, rates)  # doctest: +SKIP
     >>> print(metrics)  # doctest: +SKIP
 
@@ -545,14 +561,14 @@ def head_direction_metrics(
 def is_head_direction_cell(
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
-    head_directions: NDArray[np.float64],
+    headings: NDArray[np.float64],
     **kwargs: Any,
 ) -> bool:
     """
     Quick check: Is this a head direction cell?
 
     Convenience function for fast screening.
-    For detailed metrics, use ``head_direction_tuning_curve`` + ``head_direction_metrics``.
+    For detailed metrics, use ``compute_head_direction_tuning_curve`` + ``head_direction_metrics``.
 
     Parameters
     ----------
@@ -560,10 +576,10 @@ def is_head_direction_cell(
         Times of spikes (same time units as times).
     times : ndarray of shape (n_frames,)
         Timestamps corresponding to each head direction sample.
-    head_directions : ndarray of shape (n_frames,)
+    headings : ndarray of shape (n_frames,)
         Head direction at each time point.
     **kwargs : dict
-        Additional arguments passed to ``head_direction_tuning_curve``.
+        Additional arguments passed to ``compute_head_direction_tuning_curve``.
 
     Returns
     -------
@@ -579,8 +595,8 @@ def is_head_direction_cell(
     ...         print(f"Neuron {i} is an HD cell")
     """
     try:
-        bins, rates = head_direction_tuning_curve(
-            spike_times, times, head_directions, **kwargs
+        bins, rates = compute_head_direction_tuning_curve(
+            spike_times, times, headings, **kwargs
         )
         metrics = head_direction_metrics(bins, rates)
         return metrics.is_hd_cell
@@ -664,11 +680,13 @@ def plot_head_direction_tuning(
     --------
     >>> import numpy as np
     >>> from neurospatial.encoding.head_direction import (
-    ...     head_direction_tuning_curve,
+    ...     compute_head_direction_tuning_curve,
     ...     head_direction_metrics,
     ...     plot_head_direction_tuning,
     ... )
-    >>> bins, rates = head_direction_tuning_curve(spikes, times, hd)  # doctest: +SKIP
+    >>> bins, rates = compute_head_direction_tuning_curve(
+    ...     spikes, times, hd
+    ... )  # doctest: +SKIP
     >>> metrics = head_direction_metrics(bins, rates)  # doctest: +SKIP
     >>> ax = plot_head_direction_tuning(bins, rates, metrics)  # doctest: +SKIP
     """

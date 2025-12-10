@@ -474,7 +474,7 @@ print(f"\nDecoding correlation: {corr:.3f}")
 # %%
 # Compute confusion matrix
 actual_bins = env.bin_at(actual_positions)
-cm = confusion_matrix(env, result.posterior, actual_bins, method="map")
+cm = confusion_matrix(env, result.posterior, actual_bins, summary_method="map")
 
 # Plot
 fig, ax = plt.subplots(figsize=(8, 7))

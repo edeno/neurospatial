@@ -33,7 +33,7 @@ class HeadDirectionCellModel:
     max_rate : float, optional
         Peak firing rate in Hz (default: 40.0). Typical HD cells fire 20-100 Hz.
     baseline_rate : float, optional
-        Baseline firing rate outside preferred direction (default: 1.0 Hz).
+        Baseline firing rate outside preferred direction (default: 0.01 Hz).
     seed : int | None, optional
         Random seed for reproducible random direction selection.
 
@@ -64,7 +64,7 @@ class HeadDirectionCellModel:
     >>>
     >>> # Generate head directions (full rotation)
     >>> headings = np.linspace(-np.pi, np.pi, 100)
-    >>> rates = hd_cell.firing_rate(headings=headings)
+    >>> rates = hd_cell.firing_rate(headings)
     >>>
     >>> # Peak should be near π/2
     >>> peak_idx = np.argmax(rates)
@@ -83,7 +83,7 @@ class HeadDirectionCellModel:
     >>> # Compute population response
     >>> headings = np.random.uniform(-np.pi, np.pi, 1000)
     >>> population_rates = np.column_stack(
-    ...     [cell.firing_rate(headings=headings) for cell in hd_cells]
+    ...     [cell.firing_rate(headings) for cell in hd_cells]
     ... )
     >>> population_rates.shape
     (1000, 8)
@@ -105,7 +105,7 @@ class HeadDirectionCellModel:
     >>>
     >>> # Compute HD cell firing
     >>> hd_cell = HeadDirectionCellModel(preferred_direction=0.0)
-    >>> rates = hd_cell.firing_rate(headings=headings)
+    >>> rates = hd_cell.firing_rate(headings)
     >>> len(rates) == len(headings)
     True
 
@@ -151,7 +151,7 @@ class HeadDirectionCellModel:
         preferred_direction: float | None = None,
         concentration: float = 2.0,
         max_rate: float = 40.0,
-        baseline_rate: float = 1.0,
+        baseline_rate: float = 0.01,
         seed: int | None = None,
     ) -> None:
         # Initialize random number generator
@@ -195,41 +195,29 @@ class HeadDirectionCellModel:
 
     def firing_rate(
         self,
+        headings: NDArray[np.float64],
         positions: NDArray[np.float64] | None = None,
         times: NDArray[np.float64] | None = None,
-        *,
-        headings: NDArray[np.float64] | None = None,
     ) -> NDArray[np.float64]:
         """Compute von Mises head direction firing rate.
 
         Parameters
         ----------
+        headings : NDArray[np.float64], shape (n_time,)
+            Head direction in radians at each time point.
+            **Required for all HeadDirectionCellModel computations.**
+            Convention: 0 = East, π/2 = North (counterclockwise positive).
         positions : NDArray[np.float64], shape (n_time, n_dims), optional
             Position coordinates. Not used for HD cells but accepted for
-            compatibility with NeuralModel protocol. If headings is None,
-            headings will be computed from position velocity.
+            compatibility. Kept for optional validation or extension.
         times : NDArray[np.float64], shape (n_time,), optional
-            Time points in seconds. Used for computing headings from positions.
-        headings : NDArray[np.float64], shape (n_time,), optional
-            Head direction in radians at each time point.
-            If None and positions/times provided, computed from velocity.
-            Convention: 0 = East, π/2 = North (counterclockwise positive).
+            Time points in seconds. Not used for HD cells but accepted for
+            compatibility.
 
         Returns
         -------
         firing_rate : NDArray[np.float64], shape (n_time,)
             Firing rate in Hz at each time point.
-
-        Raises
-        ------
-        ValueError
-            If neither headings nor positions are provided.
-            If positions provided without times.
-
-        Warnings
-        --------
-        When computing headings from positions, assumes uniform time sampling.
-        For non-uniform sampling, compute headings externally and pass directly.
 
         Notes
         -----
@@ -241,25 +229,12 @@ class HeadDirectionCellModel:
 
         - rate = max_rate when θ = θ_pref (since cos(0) - 1 = 0)
         - rate → baseline as θ moves away from θ_pref
+
+        **Semantics**: Head direction cells require heading information to compute
+        firing rates. Position is irrelevant for HD cells - they respond purely
+        to directional information. This makes ``headings`` a required first parameter,
+        unlike place cells where ``positions`` is required.
         """
-        # Get headings from input
-        if headings is None:
-            if positions is None:
-                raise ValueError(
-                    "Either headings or positions must be provided. "
-                    "For HD cells, headings is preferred."
-                )
-            if times is None:
-                raise ValueError(
-                    "times must be provided when computing headings from positions."
-                )
-            # Compute headings from velocity
-            from neurospatial.ops.egocentric import heading_from_velocity
-
-            # Compute dt from times (assumes uniform sampling)
-            dt = float(np.median(np.diff(times)))
-            headings = heading_from_velocity(positions, dt, min_speed=0.0)
-
         headings = np.asarray(headings, dtype=np.float64).ravel()
 
         # Compute angular difference (handles circular wraparound)

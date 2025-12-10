@@ -113,8 +113,8 @@ func(
 
 **Examples:**
 
-- `head_direction_tuning_curve(spike_times, times, head_directions, *, bin_size=...)`
-- `is_head_direction_cell(spike_times, times, head_directions, **kwargs)`
+- `compute_head_direction_tuning_curve(spike_times, times, headings, *, bin_size=...)`
+- `is_head_direction_cell(spike_times, times, headings, **kwargs)`
 
 #### Events/Peri-Event Functions
 
@@ -303,7 +303,7 @@ from neurospatial.encoding.grid import (
 
 ```python
 from neurospatial.encoding.head_direction import (
-    head_direction_tuning_curve,            # HD tuning curve
+    compute_head_direction_tuning_curve,    # HD tuning curve (renamed from head_direction_tuning_curve)
     head_direction_metrics,                 # Comprehensive HD metrics
     is_head_direction_cell,                 # HD cell classification
     plot_head_direction_tuning,             # Polar plot
@@ -314,6 +314,7 @@ from neurospatial.encoding.head_direction import (
     mean_resultant_length,
     circular_mean,
 )
+# Note: parameter 'head_directions' renamed to 'headings' for consistency
 ```
 
 ### Border/Boundary Cells
@@ -323,6 +324,7 @@ from neurospatial.encoding.border import (
     border_score,                           # Border score
     compute_region_coverage,                # Region coverage stats
 )
+# Note: border_score parameter order changed to (env, firing_rate, ...) for consistency
 ```
 
 ### Object-Vector Cells

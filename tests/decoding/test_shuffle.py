@@ -1412,57 +1412,52 @@ class TestGeneratePoissonSurrogates:
         # Generate realistic spike counts (Poisson-like)
         return rng.poisson(lam=2.0, size=(10, 5)).astype(np.int64)
 
-    @pytest.fixture
-    def dt(self) -> float:
-        """Time bin width in seconds."""
-        return 0.025  # 25 ms
+    # NOTE: dt fixture removed - no longer used by generate_poisson_surrogates()
+    # @pytest.fixture
+    # def dt(self) -> float:
+    #     """Time bin width in seconds."""
+    #     return 0.025  # 25 ms
 
     def test_yields_correct_number_of_surrogates(
-        self, spike_counts: np.ndarray, dt: float
+        self, spike_counts: np.ndarray
     ) -> None:
         """Should yield exactly n_surrogates arrays."""
         from neurospatial.stats.shuffle import generate_poisson_surrogates
 
         n_surrogates = 10
         surrogates = list(
-            generate_poisson_surrogates(
-                spike_counts, dt, n_surrogates=n_surrogates, rng=42
-            )
+            generate_poisson_surrogates(spike_counts, n_surrogates=n_surrogates, rng=42)
         )
         assert len(surrogates) == n_surrogates
 
-    def test_yields_correct_shape(self, spike_counts: np.ndarray, dt: float) -> None:
+    def test_yields_correct_shape(self, spike_counts: np.ndarray) -> None:
         """Each surrogate should have same shape as input."""
         from neurospatial.stats.shuffle import generate_poisson_surrogates
 
         for surrogate in generate_poisson_surrogates(
-            spike_counts, dt, n_surrogates=5, rng=42
+            spike_counts, n_surrogates=5, rng=42
         ):
             assert surrogate.shape == spike_counts.shape
 
-    def test_yields_correct_dtype(self, spike_counts: np.ndarray, dt: float) -> None:
+    def test_yields_correct_dtype(self, spike_counts: np.ndarray) -> None:
         """Surrogate arrays should be int64."""
         from neurospatial.stats.shuffle import generate_poisson_surrogates
 
         for surrogate in generate_poisson_surrogates(
-            spike_counts, dt, n_surrogates=5, rng=42
+            spike_counts, n_surrogates=5, rng=42
         ):
             assert surrogate.dtype == np.int64
 
-    def test_yields_non_negative_counts(
-        self, spike_counts: np.ndarray, dt: float
-    ) -> None:
+    def test_yields_non_negative_counts(self, spike_counts: np.ndarray) -> None:
         """Surrogate spike counts should be non-negative."""
         from neurospatial.stats.shuffle import generate_poisson_surrogates
 
         for surrogate in generate_poisson_surrogates(
-            spike_counts, dt, n_surrogates=10, rng=42
+            spike_counts, n_surrogates=10, rng=42
         ):
             assert (surrogate >= 0).all()
 
-    def test_preserves_mean_rate_approximately(
-        self, spike_counts: np.ndarray, dt: float
-    ) -> None:
+    def test_preserves_mean_rate_approximately(self, spike_counts: np.ndarray) -> None:
         """Mean firing rates should be preserved (statistically).
 
         Surrogates are generated from mean rates, so average across many
@@ -1476,7 +1471,7 @@ class TestGeneratePoissonSurrogates:
         # Collect mean rates from many surrogates
         surrogate_means = []
         for surrogate in generate_poisson_surrogates(
-            spike_counts, dt, n_surrogates=500, rng=42
+            spike_counts, n_surrogates=500, rng=42
         ):
             surrogate_means.append(surrogate.mean(axis=0))
 
@@ -1489,9 +1484,7 @@ class TestGeneratePoissonSurrogates:
             f"surrogate avg={avg_surrogate_mean}"
         )
 
-    def test_destroys_temporal_structure(
-        self, spike_counts: np.ndarray, dt: float
-    ) -> None:
+    def test_destroys_temporal_structure(self, spike_counts: np.ndarray) -> None:
         """Surrogates should have destroyed temporal autocorrelation.
 
         Each time bin is independently sampled, so temporal patterns are lost.
@@ -1501,55 +1494,51 @@ class TestGeneratePoissonSurrogates:
         # This is a statistical property test - surrogates should not replicate
         # the exact temporal pattern of the original
         for surrogate in generate_poisson_surrogates(
-            spike_counts, dt, n_surrogates=5, rng=42
+            spike_counts, n_surrogates=5, rng=42
         ):
             # Surrogates should be different from original in most cases
             # (exact match is extremely unlikely)
             assert not np.array_equal(surrogate, spike_counts)
 
-    def test_reproducibility_with_seed_int(
-        self, spike_counts: np.ndarray, dt: float
-    ) -> None:
+    def test_reproducibility_with_seed_int(self, spike_counts: np.ndarray) -> None:
         """Same seed should produce same surrogates."""
         from neurospatial.stats.shuffle import generate_poisson_surrogates
 
         surrogates1 = list(
-            generate_poisson_surrogates(spike_counts, dt, n_surrogates=5, rng=42)
+            generate_poisson_surrogates(spike_counts, n_surrogates=5, rng=42)
         )
         surrogates2 = list(
-            generate_poisson_surrogates(spike_counts, dt, n_surrogates=5, rng=42)
+            generate_poisson_surrogates(spike_counts, n_surrogates=5, rng=42)
         )
         for s1, s2 in zip(surrogates1, surrogates2, strict=True):
             assert_array_equal(s1, s2)
 
-    def test_reproducibility_with_generator(
-        self, spike_counts: np.ndarray, dt: float
-    ) -> None:
+    def test_reproducibility_with_generator(self, spike_counts: np.ndarray) -> None:
         """Same generator state should produce same surrogates."""
         from neurospatial.stats.shuffle import generate_poisson_surrogates
 
         rng1 = np.random.default_rng(42)
         rng2 = np.random.default_rng(42)
         surrogates1 = list(
-            generate_poisson_surrogates(spike_counts, dt, n_surrogates=5, rng=rng1)
+            generate_poisson_surrogates(spike_counts, n_surrogates=5, rng=rng1)
         )
         surrogates2 = list(
-            generate_poisson_surrogates(spike_counts, dt, n_surrogates=5, rng=rng2)
+            generate_poisson_surrogates(spike_counts, n_surrogates=5, rng=rng2)
         )
         for s1, s2 in zip(surrogates1, surrogates2, strict=True):
             assert_array_equal(s1, s2)
 
     def test_different_seeds_produce_different_surrogates(
-        self, spike_counts: np.ndarray, dt: float
+        self, spike_counts: np.ndarray
     ) -> None:
         """Different seeds should produce different surrogates."""
         from neurospatial.stats.shuffle import generate_poisson_surrogates
 
         surrogates1 = list(
-            generate_poisson_surrogates(spike_counts, dt, n_surrogates=5, rng=42)
+            generate_poisson_surrogates(spike_counts, n_surrogates=5, rng=42)
         )
         surrogates2 = list(
-            generate_poisson_surrogates(spike_counts, dt, n_surrogates=5, rng=123)
+            generate_poisson_surrogates(spike_counts, n_surrogates=5, rng=123)
         )
         any_different = any(
             not np.array_equal(s1, s2)
@@ -1557,79 +1546,71 @@ class TestGeneratePoissonSurrogates:
         )
         assert any_different
 
-    def test_none_rng_produces_surrogates(
-        self, spike_counts: np.ndarray, dt: float
-    ) -> None:
+    def test_none_rng_produces_surrogates(self, spike_counts: np.ndarray) -> None:
         """rng=None should still produce valid surrogates."""
         from neurospatial.stats.shuffle import generate_poisson_surrogates
 
         surrogates = list(
-            generate_poisson_surrogates(spike_counts, dt, n_surrogates=5, rng=None)
+            generate_poisson_surrogates(spike_counts, n_surrogates=5, rng=None)
         )
         assert len(surrogates) == 5
         for surrogate in surrogates:
             assert surrogate.shape == spike_counts.shape
 
-    def test_generator_is_lazy(self, spike_counts: np.ndarray, dt: float) -> None:
+    def test_generator_is_lazy(self, spike_counts: np.ndarray) -> None:
         """Generator should be lazy - not all surrogates computed at once."""
         from neurospatial.stats.shuffle import generate_poisson_surrogates
 
-        gen = generate_poisson_surrogates(spike_counts, dt, n_surrogates=1000, rng=42)
+        gen = generate_poisson_surrogates(spike_counts, n_surrogates=1000, rng=42)
         first_three = [next(gen) for _ in range(3)]
         assert len(first_three) == 3
 
-    def test_empty_spike_counts(self, dt: float) -> None:
+    def test_empty_spike_counts(self) -> None:
         """Should handle empty spike counts gracefully."""
         from neurospatial.stats.shuffle import generate_poisson_surrogates
 
         empty = np.zeros((0, 3), dtype=np.int64)
-        surrogates = list(
-            generate_poisson_surrogates(empty, dt, n_surrogates=5, rng=42)
-        )
+        surrogates = list(generate_poisson_surrogates(empty, n_surrogates=5, rng=42))
         assert len(surrogates) == 5
         for s in surrogates:
             assert s.shape == (0, 3)
 
-    def test_single_time_bin(self, dt: float) -> None:
+    def test_single_time_bin(self) -> None:
         """Should handle single time bin."""
         from neurospatial.stats.shuffle import generate_poisson_surrogates
 
         single = np.array([[5, 3, 2]], dtype=np.int64)
-        for surrogate in generate_poisson_surrogates(
-            single, dt, n_surrogates=5, rng=42
-        ):
+        for surrogate in generate_poisson_surrogates(single, n_surrogates=5, rng=42):
             assert surrogate.shape == single.shape
             assert (surrogate >= 0).all()
 
-    def test_single_neuron(self, dt: float) -> None:
+    def test_single_neuron(self) -> None:
         """Should work with single neuron."""
         from neurospatial.stats.shuffle import generate_poisson_surrogates
 
         single_neuron = np.array([[1], [2], [3], [4], [5]], dtype=np.int64)
         for surrogate in generate_poisson_surrogates(
-            single_neuron, dt, n_surrogates=5, rng=42
+            single_neuron, n_surrogates=5, rng=42
         ):
             assert surrogate.shape == single_neuron.shape
             assert (surrogate >= 0).all()
 
-    def test_zero_spike_counts(self, dt: float) -> None:
+    def test_zero_spike_counts(self) -> None:
         """Should handle all-zero spike counts (silent neurons)."""
         from neurospatial.stats.shuffle import generate_poisson_surrogates
 
         zeros = np.zeros((5, 3), dtype=np.int64)
-        for surrogate in generate_poisson_surrogates(zeros, dt, n_surrogates=5, rng=42):
+        for surrogate in generate_poisson_surrogates(zeros, n_surrogates=5, rng=42):
             # With zero mean rate, Poisson should produce mostly zeros
             assert surrogate.shape == zeros.shape
             assert (surrogate >= 0).all()
 
-    def test_high_firing_rate(self, dt: float) -> None:
+    def test_high_firing_rate(self) -> None:
         """Should handle high firing rates."""
         from neurospatial.stats.shuffle import generate_poisson_surrogates
 
         high_rate = np.full((5, 3), 50, dtype=np.int64)  # 50 spikes per bin
-        for surrogate in generate_poisson_surrogates(
-            high_rate, dt, n_surrogates=5, rng=42
-        ):
+        for surrogate in generate_poisson_surrogates(high_rate, n_surrogates=5, rng=42):
             assert surrogate.shape == high_rate.shape
             assert (surrogate >= 0).all()
 
@@ -1655,13 +1636,14 @@ class TestGenerateInhomogeneousPoissonSurrogates:
         expected_rates = np.outer(time_modulation, base_rates) * 3
         return rng.poisson(expected_rates).astype(np.int64)
 
-    @pytest.fixture
-    def dt(self) -> float:
-        """Time bin width in seconds."""
-        return 0.025  # 25 ms
+    # NOTE: dt fixture removed - no longer used by generate_inhomogeneous_poisson_surrogates()
+    # @pytest.fixture
+    # def dt(self) -> float:
+    #     """Time bin width in seconds."""
+    #     return 0.025  # 25 ms
 
     def test_yields_correct_number_of_surrogates(
-        self, spike_counts: np.ndarray, dt: float
+        self, spike_counts: np.ndarray
     ) -> None:
         """Should yield exactly n_surrogates arrays."""
         from neurospatial.stats.shuffle import (
@@ -1671,48 +1653,46 @@ class TestGenerateInhomogeneousPoissonSurrogates:
         n_surrogates = 10
         surrogates = list(
             generate_inhomogeneous_poisson_surrogates(
-                spike_counts, dt, n_surrogates=n_surrogates, rng=42
+                spike_counts, n_surrogates=n_surrogates, rng=42
             )
         )
         assert len(surrogates) == n_surrogates
 
-    def test_yields_correct_shape(self, spike_counts: np.ndarray, dt: float) -> None:
+    def test_yields_correct_shape(self, spike_counts: np.ndarray) -> None:
         """Each surrogate should have same shape as input."""
         from neurospatial.stats.shuffle import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
         for surrogate in generate_inhomogeneous_poisson_surrogates(
-            spike_counts, dt, n_surrogates=5, rng=42
+            spike_counts, n_surrogates=5, rng=42
         ):
             assert surrogate.shape == spike_counts.shape
 
-    def test_yields_correct_dtype(self, spike_counts: np.ndarray, dt: float) -> None:
+    def test_yields_correct_dtype(self, spike_counts: np.ndarray) -> None:
         """Surrogate arrays should be int64."""
         from neurospatial.stats.shuffle import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
         for surrogate in generate_inhomogeneous_poisson_surrogates(
-            spike_counts, dt, n_surrogates=5, rng=42
+            spike_counts, n_surrogates=5, rng=42
         ):
             assert surrogate.dtype == np.int64
 
-    def test_yields_non_negative_counts(
-        self, spike_counts: np.ndarray, dt: float
-    ) -> None:
+    def test_yields_non_negative_counts(self, spike_counts: np.ndarray) -> None:
         """Surrogate spike counts should be non-negative."""
         from neurospatial.stats.shuffle import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
         for surrogate in generate_inhomogeneous_poisson_surrogates(
-            spike_counts, dt, n_surrogates=10, rng=42
+            spike_counts, n_surrogates=10, rng=42
         ):
             assert (surrogate >= 0).all()
 
     def test_preserves_time_varying_rates_approximately(
-        self, spike_counts: np.ndarray, dt: float
+        self, spike_counts: np.ndarray
     ) -> None:
         """Time-varying firing rates should be preserved (with smoothing).
 
@@ -1732,7 +1712,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
         # Collect rates from many surrogates
         surrogate_rates = []
         for surrogate in generate_inhomogeneous_poisson_surrogates(
-            spike_counts, dt, smoothing_window=3, n_surrogates=500, rng=42
+            spike_counts, smoothing_window=3, n_surrogates=500, rng=42
         ):
             surrogate_rates.append(surrogate.mean(axis=1))  # Mean across neurons
 
@@ -1744,9 +1724,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
         corr = np.corrcoef(avg_surrogate_rate, avg_original_smoothed)[0, 1]
         assert corr > 0.7, f"Temporal modulation not preserved: correlation={corr:.3f}"
 
-    def test_reproducibility_with_seed_int(
-        self, spike_counts: np.ndarray, dt: float
-    ) -> None:
+    def test_reproducibility_with_seed_int(self, spike_counts: np.ndarray) -> None:
         """Same seed should produce same surrogates."""
         from neurospatial.stats.shuffle import (
             generate_inhomogeneous_poisson_surrogates,
@@ -1754,20 +1732,18 @@ class TestGenerateInhomogeneousPoissonSurrogates:
 
         surrogates1 = list(
             generate_inhomogeneous_poisson_surrogates(
-                spike_counts, dt, n_surrogates=5, rng=42
+                spike_counts, n_surrogates=5, rng=42
             )
         )
         surrogates2 = list(
             generate_inhomogeneous_poisson_surrogates(
-                spike_counts, dt, n_surrogates=5, rng=42
+                spike_counts, n_surrogates=5, rng=42
             )
         )
         for s1, s2 in zip(surrogates1, surrogates2, strict=True):
             assert_array_equal(s1, s2)
 
-    def test_reproducibility_with_generator(
-        self, spike_counts: np.ndarray, dt: float
-    ) -> None:
+    def test_reproducibility_with_generator(self, spike_counts: np.ndarray) -> None:
         """Same generator state should produce same surrogates."""
         from neurospatial.stats.shuffle import (
             generate_inhomogeneous_poisson_surrogates,
@@ -1777,19 +1753,19 @@ class TestGenerateInhomogeneousPoissonSurrogates:
         rng2 = np.random.default_rng(42)
         surrogates1 = list(
             generate_inhomogeneous_poisson_surrogates(
-                spike_counts, dt, n_surrogates=5, rng=rng1
+                spike_counts, n_surrogates=5, rng=rng1
             )
         )
         surrogates2 = list(
             generate_inhomogeneous_poisson_surrogates(
-                spike_counts, dt, n_surrogates=5, rng=rng2
+                spike_counts, n_surrogates=5, rng=rng2
             )
         )
         for s1, s2 in zip(surrogates1, surrogates2, strict=True):
             assert_array_equal(s1, s2)
 
     def test_different_seeds_produce_different_surrogates(
-        self, spike_counts: np.ndarray, dt: float
+        self, spike_counts: np.ndarray
     ) -> None:
         """Different seeds should produce different surrogates."""
         from neurospatial.stats.shuffle import (
@@ -1798,12 +1774,12 @@ class TestGenerateInhomogeneousPoissonSurrogates:
 
         surrogates1 = list(
             generate_inhomogeneous_poisson_surrogates(
-                spike_counts, dt, n_surrogates=5, rng=42
+                spike_counts, n_surrogates=5, rng=42
             )
         )
         surrogates2 = list(
             generate_inhomogeneous_poisson_surrogates(
-                spike_counts, dt, n_surrogates=5, rng=123
+                spike_counts, n_surrogates=5, rng=123
             )
         )
         any_different = any(
@@ -1812,9 +1788,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
         )
         assert any_different
 
-    def test_none_rng_produces_surrogates(
-        self, spike_counts: np.ndarray, dt: float
-    ) -> None:
+    def test_none_rng_produces_surrogates(self, spike_counts: np.ndarray) -> None:
         """rng=None should still produce valid surrogates."""
         from neurospatial.stats.shuffle import (
             generate_inhomogeneous_poisson_surrogates,
@@ -1822,28 +1796,26 @@ class TestGenerateInhomogeneousPoissonSurrogates:
 
         surrogates = list(
             generate_inhomogeneous_poisson_surrogates(
-                spike_counts, dt, n_surrogates=5, rng=None
+                spike_counts, n_surrogates=5, rng=None
             )
         )
         assert len(surrogates) == 5
         for surrogate in surrogates:
             assert surrogate.shape == spike_counts.shape
 
-    def test_generator_is_lazy(self, spike_counts: np.ndarray, dt: float) -> None:
+    def test_generator_is_lazy(self, spike_counts: np.ndarray) -> None:
         """Generator should be lazy."""
         from neurospatial.stats.shuffle import (
             generate_inhomogeneous_poisson_surrogates,
         )
 
         gen = generate_inhomogeneous_poisson_surrogates(
-            spike_counts, dt, n_surrogates=1000, rng=42
+            spike_counts, n_surrogates=1000, rng=42
         )
         first_three = [next(gen) for _ in range(3)]
         assert len(first_three) == 3
 
-    def test_smoothing_window_parameter(
-        self, spike_counts: np.ndarray, dt: float
-    ) -> None:
+    def test_smoothing_window_parameter(self, spike_counts: np.ndarray) -> None:
         """Different smoothing windows should produce different rate estimates."""
         from neurospatial.stats.shuffle import (
             generate_inhomogeneous_poisson_surrogates,
@@ -1853,12 +1825,12 @@ class TestGenerateInhomogeneousPoissonSurrogates:
         # Larger window = more smoothed (closer to homogeneous)
         surrogates_small = list(
             generate_inhomogeneous_poisson_surrogates(
-                spike_counts, dt, smoothing_window=1, n_surrogates=5, rng=42
+                spike_counts, smoothing_window=1, n_surrogates=5, rng=42
             )
         )
         surrogates_large = list(
             generate_inhomogeneous_poisson_surrogates(
-                spike_counts, dt, smoothing_window=7, n_surrogates=5, rng=42
+                spike_counts, smoothing_window=7, n_surrogates=5, rng=42
             )
         )
         # With different smoothing, at least some surrogates should differ
@@ -1880,7 +1852,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
         sig = inspect.signature(generate_inhomogeneous_poisson_surrogates)
         assert sig.parameters["smoothing_window"].default == 3
 
-    def test_empty_spike_counts(self, dt: float) -> None:
+    def test_empty_spike_counts(self) -> None:
         """Should handle empty spike counts gracefully."""
         from neurospatial.stats.shuffle import (
             generate_inhomogeneous_poisson_surrogates,
@@ -1888,13 +1860,13 @@ class TestGenerateInhomogeneousPoissonSurrogates:
 
         empty = np.zeros((0, 3), dtype=np.int64)
         surrogates = list(
-            generate_inhomogeneous_poisson_surrogates(empty, dt, n_surrogates=5, rng=42)
+            generate_inhomogeneous_poisson_surrogates(empty, n_surrogates=5, rng=42)
         )
         assert len(surrogates) == 5
         for s in surrogates:
             assert s.shape == (0, 3)
 
-    def test_single_time_bin(self, dt: float) -> None:
+    def test_single_time_bin(self) -> None:
         """Should handle single time bin (smoothing has no effect)."""
         from neurospatial.stats.shuffle import (
             generate_inhomogeneous_poisson_surrogates,
@@ -1902,12 +1874,12 @@ class TestGenerateInhomogeneousPoissonSurrogates:
 
         single = np.array([[5, 3, 2]], dtype=np.int64)
         for surrogate in generate_inhomogeneous_poisson_surrogates(
-            single, dt, n_surrogates=5, rng=42
+            single, n_surrogates=5, rng=42
         ):
             assert surrogate.shape == single.shape
             assert (surrogate >= 0).all()
 
-    def test_single_neuron(self, dt: float) -> None:
+    def test_single_neuron(self) -> None:
         """Should work with single neuron."""
         from neurospatial.stats.shuffle import (
             generate_inhomogeneous_poisson_surrogates,
@@ -1915,12 +1887,12 @@ class TestGenerateInhomogeneousPoissonSurrogates:
 
         single_neuron = np.array([[1], [2], [3], [4], [5]], dtype=np.int64)
         for surrogate in generate_inhomogeneous_poisson_surrogates(
-            single_neuron, dt, n_surrogates=5, rng=42
+            single_neuron, n_surrogates=5, rng=42
         ):
             assert surrogate.shape == single_neuron.shape
             assert (surrogate >= 0).all()
 
-    def test_zero_spike_counts(self, dt: float) -> None:
+    def test_zero_spike_counts(self) -> None:
         """Should handle all-zero spike counts (silent neurons)."""
         from neurospatial.stats.shuffle import (
             generate_inhomogeneous_poisson_surrogates,
@@ -1928,7 +1900,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
 
         zeros = np.zeros((5, 3), dtype=np.int64)
         for surrogate in generate_inhomogeneous_poisson_surrogates(
-            zeros, dt, n_surrogates=5, rng=42
+            zeros, n_surrogates=5, rng=42
         ):
             assert surrogate.shape == zeros.shape
             assert (surrogate >= 0).all()

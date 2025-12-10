@@ -31,7 +31,7 @@ class PlaceCellModel:
     max_rate : float, optional
         Peak firing rate in Hz (default: 20.0).
     baseline_rate : float, optional
-        Baseline firing rate outside field (default: 0.001 Hz).
+        Baseline firing rate outside field (default: 0.01 Hz).
     distance_metric : {'euclidean', 'geodesic'}, optional
         Method for computing distance from positions to field center.
 
@@ -162,7 +162,7 @@ class PlaceCellModel:
         center: NDArray[np.float64] | None = None,
         width: float | NDArray[np.float64] | None = None,
         max_rate: float = 20.0,
-        baseline_rate: float = 0.001,
+        baseline_rate: float = 0.01,
         distance_metric: Literal["euclidean", "geodesic"] = "euclidean",
         condition: Callable[
             [NDArray[np.float64], NDArray[np.float64] | None], NDArray[np.bool_]

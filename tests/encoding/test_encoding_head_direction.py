@@ -22,11 +22,13 @@ class TestImportsFromEncodingHeadDirection:
 
         assert HeadDirectionMetrics is not None
 
-    def test_import_head_direction_tuning_curve(self) -> None:
-        """Test that head_direction_tuning_curve is importable from encoding.head_direction."""
-        from neurospatial.encoding.head_direction import head_direction_tuning_curve
+    def test_import_compute_head_direction_tuning_curve(self) -> None:
+        """Test that compute_head_direction_tuning_curve is importable from encoding.head_direction."""
+        from neurospatial.encoding.head_direction import (
+            compute_head_direction_tuning_curve,
+        )
 
-        assert callable(head_direction_tuning_curve)
+        assert callable(compute_head_direction_tuning_curve)
 
     def test_import_head_direction_metrics(self) -> None:
         """Test that head_direction_metrics is importable from encoding.head_direction."""
@@ -78,11 +80,11 @@ class TestImportsFromEncodingInit:
 
         assert HeadDirectionMetrics is not None
 
-    def test_import_head_direction_tuning_curve_from_encoding(self) -> None:
-        """Test that head_direction_tuning_curve is importable from encoding."""
-        from neurospatial.encoding import head_direction_tuning_curve
+    def test_import_compute_head_direction_tuning_curve_from_encoding(self) -> None:
+        """Test that compute_head_direction_tuning_curve is importable from encoding."""
+        from neurospatial.encoding import compute_head_direction_tuning_curve
 
-        assert callable(head_direction_tuning_curve)
+        assert callable(compute_head_direction_tuning_curve)
 
     def test_import_head_direction_metrics_from_encoding(self) -> None:
         """Test that head_direction_metrics is importable from encoding."""
@@ -139,7 +141,7 @@ class TestModuleStructure:
             # From metrics/head_direction.py
             "HeadDirectionMetrics",
             "head_direction_metrics",
-            "head_direction_tuning_curve",
+            "compute_head_direction_tuning_curve",
             "is_head_direction_cell",
             "plot_head_direction_tuning",
             # Re-exports from stats/circular.py
@@ -153,20 +155,22 @@ class TestModuleStructure:
 class TestFunctionality:
     """Test basic functionality works through re-exports."""
 
-    def test_head_direction_tuning_curve_basic(self) -> None:
-        """Test head_direction_tuning_curve returns correct shapes."""
-        from neurospatial.encoding.head_direction import head_direction_tuning_curve
+    def test_compute_head_direction_tuning_curve_basic(self) -> None:
+        """Test compute_head_direction_tuning_curve returns correct shapes."""
+        from neurospatial.encoding.head_direction import (
+            compute_head_direction_tuning_curve,
+        )
 
         # Create sample data: 10 seconds at 30 Hz
         rng = np.random.default_rng(42)
         times = np.linspace(0, 10, 300)
-        head_directions = rng.uniform(0, 360, 300)
+        headings = rng.uniform(0, 360, 300)
         spike_times = rng.uniform(0, 10, 50)
 
-        bin_centers, firing_rates = head_direction_tuning_curve(
+        bin_centers, firing_rates = compute_head_direction_tuning_curve(
             spike_times,
             times,
-            head_directions,
+            headings,
             bin_size=30.0,
             angle_unit="deg",
         )
@@ -206,12 +210,10 @@ class TestFunctionality:
         # Create non-HD cell data (uniform firing)
         rng = np.random.default_rng(42)
         times = np.linspace(0, 10, 300)
-        head_directions = rng.uniform(0, 2 * np.pi, 300)
+        headings = rng.uniform(0, 2 * np.pi, 300)
         spike_times = rng.uniform(0, 10, 50)
 
-        result = is_head_direction_cell(
-            spike_times, times, head_directions, bin_size=0.1
-        )
+        result = is_head_direction_cell(spike_times, times, headings, bin_size=0.1)
 
         assert isinstance(result, bool)
 

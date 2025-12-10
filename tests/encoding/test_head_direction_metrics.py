@@ -5,7 +5,7 @@ These tests verify:
 1. Module can be imported
 2. __all__ exports are correct
 3. Module docstring exists and is informative
-4. head_direction_tuning_curve() computes correct firing rates
+4. compute_head_direction_tuning_curve() computes correct firing rates
 """
 
 from __future__ import annotations
@@ -84,31 +84,35 @@ class TestModuleSetup:
 
 
 class TestHeadDirectionTuningCurve:
-    """Tests for head_direction_tuning_curve() function (Milestone 3.2)."""
+    """Tests for compute_head_direction_tuning_curve() function (Milestone 3.2)."""
 
     def test_function_exists(self) -> None:
-        """Test that head_direction_tuning_curve can be imported."""
-        from neurospatial.encoding.head_direction import head_direction_tuning_curve
+        """Test that compute_head_direction_tuning_curve can be imported."""
+        from neurospatial.encoding.head_direction import (
+            compute_head_direction_tuning_curve,
+        )
 
-        assert callable(head_direction_tuning_curve)
+        assert callable(compute_head_direction_tuning_curve)
 
     def test_returns_bin_centers_and_firing_rates(self) -> None:
         """Test that function returns bin_centers and firing_rates arrays."""
-        from neurospatial.encoding.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import (
+            compute_head_direction_tuning_curve,
+        )
 
         # Create simple test data: 10 seconds at 30 Hz
         rng = np.random.default_rng(42)
         n_samples = 300
         times = np.linspace(0, 10, n_samples)
-        head_directions = rng.uniform(0, 360, n_samples)
+        headings = rng.uniform(0, 360, n_samples)
 
         # Spikes throughout recording
         spike_times = rng.uniform(0, 10, 50)
 
-        bin_centers, firing_rates = head_direction_tuning_curve(
+        bin_centers, firing_rates = compute_head_direction_tuning_curve(
             spike_times,
             times,
-            head_directions,
+            headings,
             bin_size=30.0,
             angle_unit="deg",
         )
@@ -119,20 +123,22 @@ class TestHeadDirectionTuningCurve:
 
     def test_bin_centers_correct(self) -> None:
         """Test that bin centers are correctly computed."""
-        from neurospatial.encoding.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import (
+            compute_head_direction_tuning_curve,
+        )
 
         # Create simple test data
         rng = np.random.default_rng(42)
         n_samples = 300
         times = np.linspace(0, 10, n_samples)
-        head_directions = rng.uniform(0, 360, n_samples)
+        headings = rng.uniform(0, 360, n_samples)
         spike_times = rng.uniform(0, 10, 50)
 
         # 30 degree bins -> 12 bins
-        bin_centers, _ = head_direction_tuning_curve(
+        bin_centers, _ = compute_head_direction_tuning_curve(
             spike_times,
             times,
-            head_directions,
+            headings,
             bin_size=30.0,
             angle_unit="deg",
         )
@@ -144,21 +150,23 @@ class TestHeadDirectionTuningCurve:
 
     def test_firing_rate_units_hz(self) -> None:
         """Test that firing rates are returned in Hz."""
-        from neurospatial.encoding.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import (
+            compute_head_direction_tuning_curve,
+        )
 
         # Create data where we know the expected firing rate
         # Animal faces 0 degrees (bin 0) for 5 seconds, 30 spikes -> 6 Hz
         n_samples = 500
         times = np.linspace(0, 10, n_samples)
-        head_directions = np.zeros(n_samples)  # Always facing 0 degrees
+        headings = np.zeros(n_samples)  # Always facing 0 degrees
 
         # 30 spikes in 10 seconds facing 0 deg -> 3 Hz
         spike_times = np.linspace(0.1, 9.9, 30)
 
-        _bin_centers, firing_rates = head_direction_tuning_curve(
+        _bin_centers, firing_rates = compute_head_direction_tuning_curve(
             spike_times,
             times,
-            head_directions,
+            headings,
             bin_size=30.0,
             angle_unit="deg",
             smoothing_window=0,
@@ -170,21 +178,23 @@ class TestHeadDirectionTuningCurve:
 
     def test_handles_non_uniform_sampling(self) -> None:
         """Test that occupancy uses actual time deltas (handles dropped frames)."""
-        from neurospatial.encoding.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import (
+            compute_head_direction_tuning_curve,
+        )
 
         # Non-uniform sampling: some frames are longer than others
         times = np.array(
             [0.0, 0.1, 0.2, 0.3, 0.5, 1.0, 1.1, 1.2]
         )  # Gap at 0.3-0.5 and 0.5-1.0
-        head_directions = np.zeros(8)  # Always facing 0 degrees
+        headings = np.zeros(8)  # Always facing 0 degrees
 
         # One spike at t=0.15
         spike_times = np.array([0.15])
 
-        _bin_centers, firing_rates = head_direction_tuning_curve(
+        _bin_centers, firing_rates = compute_head_direction_tuning_curve(
             spike_times,
             times,
-            head_directions,
+            headings,
             bin_size=30.0,
             angle_unit="deg",
             smoothing_window=0,
@@ -197,31 +207,33 @@ class TestHeadDirectionTuningCurve:
 
     def test_gaussian_smoothing_applied(self) -> None:
         """Test that Gaussian smoothing is applied correctly."""
-        from neurospatial.encoding.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import (
+            compute_head_direction_tuning_curve,
+        )
 
         # Create spiky tuning curve (all spikes in one direction)
         n_samples = 600
         times = np.linspace(0, 10, n_samples)
-        head_directions = np.linspace(0, 360, n_samples)  # Uniform coverage
+        headings = np.linspace(0, 360, n_samples)  # Uniform coverage
 
         # All spikes at 0 degrees
         spike_times = np.full(20, 0.1)  # 20 spikes at start when facing 0 deg
 
         # No smoothing
-        _, rates_unsmoothed = head_direction_tuning_curve(
+        _, rates_unsmoothed = compute_head_direction_tuning_curve(
             spike_times,
             times,
-            head_directions,
+            headings,
             bin_size=30.0,
             angle_unit="deg",
             smoothing_window=0,
         )
 
         # With smoothing
-        _, rates_smoothed = head_direction_tuning_curve(
+        _, rates_smoothed = compute_head_direction_tuning_curve(
             spike_times,
             times,
-            head_directions,
+            headings,
             bin_size=30.0,
             angle_unit="deg",
             smoothing_window=3,
@@ -233,22 +245,24 @@ class TestHeadDirectionTuningCurve:
 
     def test_circular_boundary_smoothing(self) -> None:
         """Test that smoothing wraps correctly at circular boundary."""
-        from neurospatial.encoding.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import (
+            compute_head_direction_tuning_curve,
+        )
 
         # Create data with activity at 350-360 degrees
         n_samples = 600
         times = np.linspace(0, 10, n_samples)
-        head_directions = np.linspace(0, 360, n_samples)
+        headings = np.linspace(0, 360, n_samples)
 
         # Spikes only when head direction is near 355 degrees
-        spike_mask = (head_directions > 350) & (head_directions < 360)
+        spike_mask = (headings > 350) & (headings < 360)
         spike_indices = np.where(spike_mask)[0]
         spike_times = times[spike_indices][:10]
 
-        _, firing_rates = head_direction_tuning_curve(
+        _, firing_rates = compute_head_direction_tuning_curve(
             spike_times,
             times,
-            head_directions,
+            headings,
             bin_size=30.0,
             angle_unit="deg",
             smoothing_window=3,
@@ -262,20 +276,22 @@ class TestHeadDirectionTuningCurve:
 
     def test_radians_input(self) -> None:
         """Test that function works with radian input."""
-        from neurospatial.encoding.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import (
+            compute_head_direction_tuning_curve,
+        )
 
         rng = np.random.default_rng(42)
         n_samples = 300
         times = np.linspace(0, 10, n_samples)
-        head_directions = rng.uniform(0, 2 * np.pi, n_samples)  # Radians
+        headings = rng.uniform(0, 2 * np.pi, n_samples)  # Radians
         spike_times = rng.uniform(0, 10, 50)
 
         # bin_size in radians when angle_unit='rad'
         bin_size_rad = np.radians(30)
-        bin_centers, firing_rates = head_direction_tuning_curve(
+        bin_centers, firing_rates = compute_head_direction_tuning_curve(
             spike_times,
             times,
-            head_directions,
+            headings,
             bin_size=bin_size_rad,
             angle_unit="rad",
         )
@@ -285,86 +301,96 @@ class TestHeadDirectionTuningCurve:
 
     def test_minimum_samples_validation(self) -> None:
         """Test that function validates minimum samples."""
-        from neurospatial.encoding.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import (
+            compute_head_direction_tuning_curve,
+        )
 
         # Too few samples
         times = np.array([0.0, 0.1])
-        head_directions = np.array([0.0, 90.0])
+        headings = np.array([0.0, 90.0])
         spike_times = np.array([0.05])
 
         with pytest.raises(ValueError, match=r"[Mm]inimum|samples"):
-            head_direction_tuning_curve(
+            compute_head_direction_tuning_curve(
                 spike_times,
                 times,
-                head_directions,
+                headings,
                 bin_size=30.0,
                 angle_unit="deg",
             )
 
     def test_length_mismatch_validation(self) -> None:
         """Test that function validates head_directions and times match."""
-        from neurospatial.encoding.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import (
+            compute_head_direction_tuning_curve,
+        )
 
         times = np.linspace(0, 10, 100)
-        head_directions = np.zeros(50)  # Wrong length
+        headings = np.zeros(50)  # Wrong length
         spike_times = np.array([0.5, 1.0, 1.5])
 
         with pytest.raises(ValueError, match=r"[Ll]ength|[Ss]ame"):
-            head_direction_tuning_curve(
+            compute_head_direction_tuning_curve(
                 spike_times,
                 times,
-                head_directions,
+                headings,
                 bin_size=30.0,
                 angle_unit="deg",
             )
 
     def test_non_monotonic_timestamps_validation(self) -> None:
         """Test that function validates timestamps are monotonic."""
-        from neurospatial.encoding.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import (
+            compute_head_direction_tuning_curve,
+        )
 
         times = np.array([0.0, 0.1, 0.05, 0.2, 0.3])  # Non-monotonic
-        head_directions = np.zeros(5)
+        headings = np.zeros(5)
         spike_times = np.array([0.05])
 
         with pytest.raises(ValueError, match=r"[Ss]trictly|increasing"):
-            head_direction_tuning_curve(
+            compute_head_direction_tuning_curve(
                 spike_times,
                 times,
-                head_directions,
+                headings,
                 bin_size=30.0,
                 angle_unit="deg",
             )
 
     def test_duplicate_timestamps_rejected(self) -> None:
         """Test that duplicate timestamps are rejected."""
-        from neurospatial.encoding.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import (
+            compute_head_direction_tuning_curve,
+        )
 
         times = np.array([0.0, 0.1, 0.1, 0.2, 0.3])  # Duplicate at 0.1
-        head_directions = np.zeros(5)
+        headings = np.zeros(5)
         spike_times = np.array([0.15])
 
         with pytest.raises(ValueError, match=r"[Dd]uplicate|[Ss]trictly"):
-            head_direction_tuning_curve(
+            compute_head_direction_tuning_curve(
                 spike_times,
                 times,
-                head_directions,
+                headings,
                 bin_size=30.0,
                 angle_unit="deg",
             )
 
     def test_no_spikes_returns_zero_rates(self) -> None:
         """Test that function handles case with no spikes."""
-        from neurospatial.encoding.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import (
+            compute_head_direction_tuning_curve,
+        )
 
         n_samples = 300
         times = np.linspace(0, 10, n_samples)
-        head_directions = np.linspace(0, 360, n_samples)
+        headings = np.linspace(0, 360, n_samples)
         spike_times = np.array([])  # No spikes
 
-        _bin_centers, firing_rates = head_direction_tuning_curve(
+        _bin_centers, firing_rates = compute_head_direction_tuning_curve(
             spike_times,
             times,
-            head_directions,
+            headings,
             bin_size=30.0,
             angle_unit="deg",
         )
@@ -373,20 +399,22 @@ class TestHeadDirectionTuningCurve:
 
     def test_spikes_outside_time_range_handled(self) -> None:
         """Test that spikes outside times range are handled."""
-        from neurospatial.encoding.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import (
+            compute_head_direction_tuning_curve,
+        )
 
         n_samples = 300
         times = np.linspace(0, 10, n_samples)
-        head_directions = np.linspace(0, 360, n_samples)
+        headings = np.linspace(0, 360, n_samples)
 
         # Some spikes outside recording window
         spike_times = np.array([-1.0, 0.5, 1.0, 15.0])
 
         # Should not raise, but should only count valid spikes
-        _bin_centers, firing_rates = head_direction_tuning_curve(
+        _bin_centers, firing_rates = compute_head_direction_tuning_curve(
             spike_times,
             times,
-            head_directions,
+            headings,
             bin_size=30.0,
             angle_unit="deg",
         )
@@ -395,18 +423,20 @@ class TestHeadDirectionTuningCurve:
 
     def test_known_tuning_curve(self) -> None:
         """Test with known preferential direction - all time at one angle."""
-        from neurospatial.encoding.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import (
+            compute_head_direction_tuning_curve,
+        )
 
         # Animal always facing 90 degrees, spikes uniformly
         n_samples = 1000
         times = np.linspace(0, 10, n_samples)
-        head_directions = np.full(n_samples, 90.0)  # Always 90 degrees
+        headings = np.full(n_samples, 90.0)  # Always 90 degrees
         spike_times = np.linspace(0.1, 9.9, 100)  # 100 spikes in 10 seconds
 
-        _bin_centers, firing_rates = head_direction_tuning_curve(
+        _bin_centers, firing_rates = compute_head_direction_tuning_curve(
             spike_times,
             times,
-            head_directions,
+            headings,
             bin_size=30.0,
             angle_unit="deg",
             smoothing_window=0,
@@ -424,19 +454,21 @@ class TestHeadDirectionTuningCurve:
 
     def test_division_by_zero_handling(self) -> None:
         """Test that bins with zero occupancy don't cause division by zero."""
-        from neurospatial.encoding.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import (
+            compute_head_direction_tuning_curve,
+        )
 
         # Animal only faces 0-90 degrees, never other directions
         n_samples = 500
         times = np.linspace(0, 10, n_samples)
-        head_directions = np.linspace(0, 60, n_samples)  # Only 0-60 degrees
+        headings = np.linspace(0, 60, n_samples)  # Only 0-60 degrees
         spike_times = np.linspace(0.1, 9.9, 50)
 
         # This should not raise (bins with zero occupancy get zero rate)
-        _bin_centers, firing_rates = head_direction_tuning_curve(
+        _bin_centers, firing_rates = compute_head_direction_tuning_curve(
             spike_times,
             times,
-            head_directions,
+            headings,
             bin_size=30.0,
             angle_unit="deg",
             smoothing_window=0,
@@ -447,21 +479,23 @@ class TestHeadDirectionTuningCurve:
 
     def test_spike_assignment_at_circular_boundary(self) -> None:
         """Test spikes are correctly assigned when HD crosses 0/360 boundary."""
-        from neurospatial.encoding.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import (
+            compute_head_direction_tuning_curve,
+        )
 
         # Animal faces 350° then 10° (20° clockwise turn)
         # With linear interpolation, t=0.25 would interpolate to 180° (wrong!)
         # With nearest-neighbor, t=0.25 should be assigned to 350° (correct)
         times = np.array([0.0, 0.5, 1.0])
-        head_directions = np.array([350.0, 10.0, 10.0])
+        headings = np.array([350.0, 10.0, 10.0])
 
         # Spike at t=0.25 should use head direction from t=0.0 (nearest-neighbor)
         spike_times = np.array([0.25])
 
-        _, firing_rates = head_direction_tuning_curve(
+        _, firing_rates = compute_head_direction_tuning_curve(
             spike_times,
             times,
-            head_directions,
+            headings,
             bin_size=30.0,
             angle_unit="deg",
             smoothing_window=0,
@@ -476,7 +510,9 @@ class TestHeadDirectionTuningCurve:
 
     def test_firing_rate_accounts_for_occupancy(self) -> None:
         """Test that bins with more occupancy contribute correctly."""
-        from neurospatial.encoding.head_direction import head_direction_tuning_curve
+        from neurospatial.encoding.head_direction import (
+            compute_head_direction_tuning_curve,
+        )
 
         # Spend 9s at 0° and 1s at 90°, same spike rate (1 spike/sec)
         # Use endpoint=False to avoid duplicate at t=9
@@ -486,7 +522,7 @@ class TestHeadDirectionTuningCurve:
         )  # 1 second at 90° (include endpoint)
 
         times = np.concatenate([position_times_0deg, position_times_90deg])
-        head_directions = np.concatenate(
+        headings = np.concatenate(
             [
                 np.zeros(900),  # 0°
                 np.full(101, 90.0),  # 90°
@@ -501,10 +537,10 @@ class TestHeadDirectionTuningCurve:
             ]
         )
 
-        _, firing_rates = head_direction_tuning_curve(
+        _, firing_rates = compute_head_direction_tuning_curve(
             spike_times,
             times,
-            head_directions,
+            headings,
             bin_size=30.0,
             angle_unit="deg",
             smoothing_window=0,
@@ -871,12 +907,10 @@ class TestIsHeadDirectionCell:
         n_samples = 1000
         times = np.linspace(0, 100, n_samples)
         # Animal always faces same direction
-        head_directions = np.full(n_samples, 90.0)
+        headings = np.full(n_samples, 90.0)
         spike_times = np.linspace(1, 99, 200)
 
-        result = is_head_direction_cell(
-            spike_times, times, head_directions, angle_unit="deg"
-        )
+        result = is_head_direction_cell(spike_times, times, headings, angle_unit="deg")
         assert isinstance(result, bool)
 
     def test_detects_hd_cell(self) -> None:
@@ -889,11 +923,11 @@ class TestIsHeadDirectionCell:
         times = np.linspace(0, 100, n_samples)
 
         # Animal rotates through all directions
-        head_directions = np.mod(times * 36, 360)  # Full rotation every 10s
+        headings = np.mod(times * 36, 360)  # Full rotation every 10s
 
         # Spikes preferentially when facing 0 degrees (± 30 degrees)
         spike_times_list = []
-        for t, hd in zip(times, head_directions, strict=False):
+        for t, hd in zip(times, headings, strict=False):
             # Higher spike probability when facing north
             if hd < 30 or hd > 330:
                 if rng.random() < 0.5:  # 50% spike probability
@@ -904,9 +938,7 @@ class TestIsHeadDirectionCell:
 
         spike_times = np.array(spike_times_list)
 
-        result = is_head_direction_cell(
-            spike_times, times, head_directions, angle_unit="deg"
-        )
+        result = is_head_direction_cell(spike_times, times, headings, angle_unit="deg")
         assert result is True
 
     def test_rejects_non_hd_cell(self) -> None:
@@ -917,12 +949,10 @@ class TestIsHeadDirectionCell:
         rng = np.random.default_rng(42)
         n_samples = 3000
         times = np.linspace(0, 100, n_samples)
-        head_directions = rng.uniform(0, 360, n_samples)
+        headings = rng.uniform(0, 360, n_samples)
         spike_times = rng.uniform(0, 100, 200)  # Random spikes
 
-        result = is_head_direction_cell(
-            spike_times, times, head_directions, angle_unit="deg"
-        )
+        result = is_head_direction_cell(spike_times, times, headings, angle_unit="deg")
         assert result is False
 
     def test_returns_false_on_error(self) -> None:
@@ -931,30 +961,28 @@ class TestIsHeadDirectionCell:
 
         # Invalid data that would cause ValueError
         times = np.array([0.0, 0.1])  # Too few samples
-        head_directions = np.array([0.0, 90.0])
+        headings = np.array([0.0, 90.0])
         spike_times = np.array([0.05])
 
         # Should return False, not raise
-        result = is_head_direction_cell(
-            spike_times, times, head_directions, angle_unit="deg"
-        )
+        result = is_head_direction_cell(spike_times, times, headings, angle_unit="deg")
         assert result is False
 
     def test_passes_kwargs_to_tuning_curve(self) -> None:
-        """Test that kwargs are passed to head_direction_tuning_curve."""
+        """Test that kwargs are passed to compute_head_direction_tuning_curve."""
         from neurospatial.encoding.head_direction import is_head_direction_cell
 
         # Create simple data
         n_samples = 500
         times = np.linspace(0, 10, n_samples)
-        head_directions = np.full(n_samples, 90.0)
+        headings = np.full(n_samples, 90.0)
         spike_times = np.linspace(0.1, 9.9, 100)
 
         # Should work with different bin_size
         result = is_head_direction_cell(
             spike_times,
             times,
-            head_directions,
+            headings,
             bin_size=15.0,  # Different bin size
             angle_unit="deg",
         )

@@ -38,8 +38,8 @@ from neurospatial.encoding.grid import (
 from neurospatial.encoding.head_direction import (
     HeadDirectionMetrics,
     circular_mean,
+    compute_head_direction_tuning_curve,
     head_direction_metrics,
-    head_direction_tuning_curve,
     is_head_direction_cell,
     mean_resultant_length,
     plot_head_direction_tuning,
@@ -139,8 +139,8 @@ __all__ = [  # noqa: RUF022 - organized by category
     # Head direction cell analysis
     "HeadDirectionMetrics",
     "circular_mean",
+    "compute_head_direction_tuning_curve",
     "head_direction_metrics",
-    "head_direction_tuning_curve",
     "is_head_direction_cell",
     "mean_resultant_length",
     "plot_head_direction_tuning",

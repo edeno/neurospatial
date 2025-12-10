@@ -197,7 +197,7 @@ def fit_isotonic_trajectory(
     times: NDArray[np.float64],
     *,
     increasing: bool | None = None,
-    method: Literal["map", "expected"] = "expected",
+    estimate_method: Literal["map", "expected"] = "expected",
 ) -> IsotonicFitResult:
     """Fit monotonic trajectory using isotonic regression.
 
@@ -218,7 +218,7 @@ def fit_isotonic_trajectory(
         - True: Fit increasing (non-decreasing) monotonic function
         - False: Fit decreasing (non-increasing) monotonic function
         - None (default): Try both directions and return the one with higher R²
-    method : {"map", "expected"}, optional
+    estimate_method : {"map", "expected"}, optional
         How to extract position from the posterior for fitting:
         - "map": Use argmax (maximum a posteriori) bin index
         - "expected" (default): Use weighted mean (expected) bin index
@@ -231,7 +231,7 @@ def fit_isotonic_trajectory(
     Raises
     ------
     ValueError
-        If method is not "map" or "expected".
+        If estimate_method is not "map" or "expected".
 
     See Also
     --------
@@ -268,14 +268,16 @@ def fit_isotonic_trajectory(
     """
     from sklearn.isotonic import IsotonicRegression
 
-    if method not in ("map", "expected"):
-        raise ValueError(f"method must be 'map' or 'expected', got {method!r}")
+    if estimate_method not in ("map", "expected"):
+        raise ValueError(
+            f"estimate_method must be 'map' or 'expected', got {estimate_method!r}"
+        )
 
     # Extract positions from posterior
     n_bins = posterior.shape[1]
     bin_indices = np.arange(n_bins)
 
-    if method == "map":
+    if estimate_method == "map":
         # Use argmax positions
         positions = np.argmax(posterior, axis=1).astype(np.float64)
     else:
@@ -356,7 +358,7 @@ def fit_linear_trajectory(
     times: NDArray[np.float64],
     *,
     n_samples: int = 1000,
-    method: Literal["map", "sample"] = "sample",
+    fitting_method: Literal["map", "sample"] = "sample",
     rng: np.random.Generator | int | None = None,
 ) -> LinearFitResult:
     """Fit linear trajectory to posterior using linear regression.
@@ -377,14 +379,14 @@ def fit_linear_trajectory(
         in the regression. Need not be uniformly spaced.
     n_samples : int, optional
         Number of Monte Carlo samples from the posterior for uncertainty
-        estimation (only used when method="sample"). Default is 1000.
-    method : {"map", "sample"}, optional
+        estimation (only used when fitting_method="sample"). Default is 1000.
+    fitting_method : {"map", "sample"}, optional
         How to fit the linear trajectory:
         - "map": Use argmax positions directly. Fast but ignores uncertainty.
         - "sample" (default): Sample from posterior, fit to each sample,
           average coefficients. Provides uncertainty estimate via slope_std.
     rng : np.random.Generator | int | None, optional
-        Random number generator for reproducibility (method="sample" only).
+        Random number generator for reproducibility (fitting_method="sample" only).
         - If Generator: Use directly
         - If int: Seed for np.random.default_rng()
         - If None: Use default RNG (not reproducible)
@@ -393,12 +395,12 @@ def fit_linear_trajectory(
     -------
     LinearFitResult
         Container with slope, intercept, r_squared, and slope_std.
-        slope_std is None when method="map".
+        slope_std is None when fitting_method="map".
 
     Raises
     ------
     ValueError
-        If method is not "map" or "sample".
+        If fitting_method is not "map" or "sample".
         If posterior is not 2D.
         If times length doesn't match posterior shape.
 
@@ -416,7 +418,7 @@ def fit_linear_trajectory(
 
         speed_cm_s = result.slope * env.bin_size  # for regular grids
 
-    **Sampling implementation** (for method="sample"):
+    **Sampling implementation** (for fitting_method="sample"):
 
     Sampling is performed in cumulative-sum space to handle peaky posteriors:
 
@@ -451,12 +453,14 @@ def fit_linear_trajectory(
     ...     posterior[t, t * 2] = 1.0  # Linear trajectory
     >>> times = np.linspace(0, 1, n_time_bins)
     >>>
-    >>> result = fit_linear_trajectory(env, posterior, times, method="map")
+    >>> result = fit_linear_trajectory(env, posterior, times, fitting_method="map")
     >>> print(f"slope = {result.slope:.2f} bins/s, R² = {result.r_squared:.3f}")
     slope = 38.00 bins/s, R² = 1.000
     """
-    if method not in ("map", "sample"):
-        raise ValueError(f"method must be 'map' or 'sample', got {method!r}")
+    if fitting_method not in ("map", "sample"):
+        raise ValueError(
+            f"fitting_method must be 'map' or 'sample', got {fitting_method!r}"
+        )
 
     # Input validation
     if posterior.ndim != 2:
@@ -469,7 +473,7 @@ def fit_linear_trajectory(
             f"times length ({len(times)}) must match posterior shape[0] ({n_time_bins})"
         )
 
-    if method == "map":
+    if fitting_method == "map":
         # Use argmax positions directly
         positions = np.argmax(posterior, axis=1).astype(np.float64)
 
@@ -485,7 +489,7 @@ def fit_linear_trajectory(
             slope_std=None,
         )
 
-    # method == "sample"
+    # fitting_method == "sample"
     # Set up RNG using shared helper for consistency
     from neurospatial.stats._utils import _ensure_rng
 

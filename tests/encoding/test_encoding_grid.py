@@ -142,7 +142,7 @@ class TestEncodingGridFunctionality:
         from neurospatial.encoding.grid import spatial_autocorrelation
 
         env, firing_rate = env_and_data
-        result = spatial_autocorrelation(firing_rate, env, method="fft")
+        result = spatial_autocorrelation(env, firing_rate, method="fft")
 
         assert result.ndim == 2
         assert result.shape == env.layout.grid_shape
@@ -153,7 +153,7 @@ class TestEncodingGridFunctionality:
 
         env, firing_rate = env_and_data
         result = spatial_autocorrelation(
-            firing_rate, env, method="graph", n_distance_bins=30
+            env, firing_rate, method="graph", n_distance_bins=30
         )
 
         assert isinstance(result, tuple)

@@ -32,7 +32,7 @@ def test_original_implementation(grid_cell_setup):
     env, rate_map = grid_cell_setup
 
     distances, correlations = _spatial_autocorrelation_graph(
-        rate_map, env, n_distance_bins=30
+        env, rate_map, n_distance_bins=30
     )
 
     # Basic checks
@@ -278,10 +278,10 @@ def test_production_implementation_consistency(grid_cell_setup):
 
     # Run twice and verify results are identical
     distances1, correlations1 = _spatial_autocorrelation_graph(
-        rate_map, env, n_distance_bins=30
+        env, rate_map, n_distance_bins=30
     )
     distances2, correlations2 = _spatial_autocorrelation_graph(
-        rate_map, env, n_distance_bins=30
+        env, rate_map, n_distance_bins=30
     )
 
     assert_allclose(distances1, distances2, rtol=1e-10)

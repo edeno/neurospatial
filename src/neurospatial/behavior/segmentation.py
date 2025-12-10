@@ -1075,8 +1075,8 @@ def segment_trials(
     times: NDArray[np.float64],
     env: Environment,
     *,
-    start_region: str | None = None,
-    end_regions: list[str] | None = None,
+    start_region: str,
+    end_regions: list[str],
     min_duration: float = 1.0,
     max_duration: float = 15.0,
 ) -> list[Trial]:
@@ -1102,12 +1102,11 @@ def segment_trials(
         Time stamps corresponding to position bins (seconds).
     env : Environment
         Environment containing region definitions.
-    start_region : str, optional
+    start_region : str
         Name of start region. Must exist in env.regions.
-        Required parameter (must be provided).
-    end_regions : list[str], optional
+    end_regions : list[str]
         List of end region names (e.g., ['left', 'right'] for T-maze).
-        Must all exist in env.regions. Required parameter (must be provided).
+        Must all exist in env.regions.
     min_duration : float, optional
         Minimum trial duration in seconds. Default: 1.0.
         Trials shorter than this are excluded.
@@ -1234,18 +1233,12 @@ def segment_trials(
            27(3), 623-633.
     """
     # Validate inputs
-    if start_region is None:
-        raise ValueError("start_region must be provided")
-
     if start_region not in env.regions:
         available = list(env.regions.keys())
         raise ValueError(
             f"start_region '{start_region}' not found in environment. "
             f"Available regions: {available}"
         )
-
-    if end_regions is None:
-        raise ValueError("end_regions must be provided")
 
     if len(end_regions) == 0:
         raise ValueError("end_regions cannot be empty")

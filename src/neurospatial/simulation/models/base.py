@@ -12,8 +12,25 @@ class NeuralModel(Protocol):
 
     All neural models must implement:
 
-    - ``firing_rate(positions, times)`` → rates
+    - ``firing_rate(...)`` → rates (signature varies by model type)
     - ``ground_truth`` property (returns dict with model parameters)
+
+    **Firing Rate Signatures**:
+
+    Most models follow the standard signature::
+
+        firing_rate(positions, times=None) → rates
+
+    However, models requiring directional information have different signatures:
+
+    - **HeadDirectionCellModel**: ``firing_rate(headings, positions=None, times=None)``
+      Headings are the primary input; positions are irrelevant for HD cells.
+
+    - **SpatialViewCellModel**: ``firing_rate(positions, times=None, headings=None)``
+      Headings are required but passed as optional for protocol compatibility.
+
+    - **ObjectVectorCellModel**: ``firing_rate(positions, times=None, headings=None)``
+      Headings are required only when ``preferred_direction`` is set.
 
     The structure of ground_truth dict depends on model type:
 
@@ -102,6 +119,8 @@ class NeuralModel(Protocol):
         ----------
         positions : NDArray[np.float64], shape (n_time, n_dims)
             Position coordinates in the same units as the environment.
+            **Note**: For HeadDirectionCellModel, the first parameter is ``headings``
+            instead of ``positions``. See class docstring for signature variants.
         times : NDArray[np.float64], shape (n_time,), optional
             Time points in seconds. Used for time-varying models (e.g., theta phase
             precession, speed modulation). If None, assumes stationary firing rate.
@@ -115,6 +134,10 @@ class NeuralModel(Protocol):
         -----
         Firing rates should be non-negative. Implementations should handle edge
         cases gracefully (e.g., positions outside environment bounds).
+
+        **Signature Variants**: The protocol defines a baseline signature, but
+        individual models may extend it with additional parameters (e.g., headings
+        for directional models). Check the specific model documentation for details.
         """
         ...
 
