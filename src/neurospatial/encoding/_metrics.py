@@ -7,8 +7,12 @@ The functions in this module operate on dense arrays:
 - Single neuron: firing_rate (n_bins,), occupancy (n_bins,)
 - Batch: firing_rates (n_neurons, n_bins), occupancy (n_bins,)
 
-These are backend-aware implementations: NumPy in → NumPy out, JAX in → JAX out.
-For host-only operations, use `_to_numpy()` from `_base.py` first.
+**Current status**: NumPy-only. JAX backend support will be added in Milestone 6.
+When JAX support is implemented, these functions will become backend-aware
+(NumPy in → NumPy out, JAX in → JAX out). For now, all inputs are coerced to
+NumPy via ``np.asarray()``.
+
+For host-only operations, use ``_to_numpy()`` from ``_base.py`` first.
 
 References
 ----------

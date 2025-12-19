@@ -351,11 +351,20 @@ class SpatialRateResult(SpatialResultMixin):
         from neurospatial.encoding.grid import spatial_autocorrelation
 
         firing_rate = _to_numpy(self.firing_rate)
-        autocorr = spatial_autocorrelation(self.env, firing_rate, method="fft")
-        # FFT method always returns 2D array, not tuple
-        if isinstance(autocorr, tuple):
-            raise RuntimeError("FFT autocorrelation should return array, not tuple")
-        return gs_func(autocorr)
+
+        try:
+            # Use "auto" method like batch_grid_scores for consistency
+            autocorr = spatial_autocorrelation(self.env, firing_rate, method="auto")
+
+            # spatial_autocorrelation returns 2D array for FFT, tuple for graph
+            if isinstance(autocorr, tuple):
+                # Graph-based method not compatible with grid_score
+                return np.nan
+
+            return gs_func(autocorr)
+        except (ValueError, RuntimeError):
+            # Handle errors gracefully (e.g., non-2D grid, constant firing, all NaN)
+            return np.nan
 
     def grid_properties(self) -> GridProperties:
         """Full grid cell metrics (score, scale, orientation).
@@ -1138,6 +1147,11 @@ class SpatialRatesResult(SpatialResultMixin):
             neuron_ids_list: list[str | int] = list(range(n_neurons))
         else:
             neuron_ids_list = list(neuron_ids)
+            if len(neuron_ids_list) != n_neurons:
+                raise ValueError(
+                    f"neuron_ids has {len(neuron_ids_list)} elements but "
+                    f"result contains {n_neurons} neurons"
+                )
 
         # Compute peak locations
         peaks = self.peak_locations()

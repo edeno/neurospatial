@@ -360,6 +360,280 @@ class DirectionalRateResult:
         rates = np.asarray(self.firing_rate, dtype=np.float64)
         return float(np.nanmax(rates))
 
+    def mean_vector_length(self) -> float:
+        """Compute the mean vector length (Rayleigh MVL) of the tuning curve.
+
+        The mean vector length quantifies the concentration of directional tuning.
+        It ranges from 0 (uniform firing) to 1 (all firing at one direction).
+        This is the standard measure of head direction cell tuning strength.
+
+        Returns
+        -------
+        float
+            Mean vector length in [0, 1]. Higher values indicate sharper tuning.
+
+        Notes
+        -----
+        The mean vector length is computed as the resultant of unit vectors
+        at each direction, weighted by the firing rate:
+
+            R = |Σ(r_i * exp(i * θ_i))| / Σ(r_i)
+
+        This is equivalent to:
+
+            R = sqrt(Σ(r_i * cos(θ_i))² + Σ(r_i * sin(θ_i))²) / Σ(r_i)
+
+        where r_i is the firing rate and θ_i is the bin center.
+
+        **Interpretation guidelines (Taube et al., 1990)**:
+
+        - MVL < 0.2: Weak or no directional tuning
+        - MVL 0.2-0.4: Moderate tuning
+        - MVL > 0.4: Strong tuning (typical HD cell threshold)
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.encoding.directional import DirectionalRateResult
+        >>> n_bins = 60
+        >>> bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        >>> # Sharply tuned neuron
+        >>> firing_rate = 10.0 * np.exp(5.0 * (np.cos(bin_centers - np.pi / 2) - 1))
+        >>> result = DirectionalRateResult(
+        ...     firing_rate=firing_rate,
+        ...     occupancy=np.ones(n_bins) * 0.5,
+        ...     bin_centers=bin_centers,
+        ...     bin_size=np.pi / 30,
+        ...     smoothing_sigma=None,
+        ... )
+        >>> mvl = result.mean_vector_length()
+        >>> mvl > 0.5  # Sharply tuned neuron has high MVL
+        True
+
+        See Also
+        --------
+        preferred_direction : Direction of peak firing
+        rayleigh_pvalue : Statistical test for non-uniformity
+        neurospatial.stats.circular.mean_resultant_length : Underlying function
+        """
+        from neurospatial.stats.circular import mean_resultant_length
+
+        rates = np.asarray(self.firing_rate, dtype=np.float64)
+        centers = np.asarray(self.bin_centers, dtype=np.float64)
+
+        return mean_resultant_length(centers, weights=rates)
+
+    def tuning_width(self) -> float:
+        """Compute the tuning width (half-width at half-maximum) in radians.
+
+        The tuning width is the angular distance from the peak at which the
+        firing rate drops to half of its maximum value. This is computed as
+        the half-width at half-maximum (HWHM) of the tuning curve.
+
+        Returns
+        -------
+        float
+            Tuning width in radians, range (0, π]. Returns NaN if the tuning
+            curve is flat (uniform firing) or if HWHM cannot be determined.
+
+        Notes
+        -----
+        The algorithm finds the peak location, then searches outward in both
+        directions to find where the firing rate drops below half-maximum.
+        The tuning width is the average of the left and right half-widths.
+
+        For a von Mises tuning curve with concentration κ, the theoretical
+        HWHM is approximately:
+
+            HWHM ≈ arccos(1 - (1/κ) * ln(2))
+
+        **Interpretation guidelines**:
+
+        - Width < 30° (π/6): Very sharp tuning
+        - Width 30-60° (π/6 to π/3): Sharp tuning (typical HD cell)
+        - Width 60-90° (π/3 to π/2): Moderate tuning
+        - Width > 90° (> π/2): Broad tuning
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.encoding.directional import DirectionalRateResult
+        >>> n_bins = 60
+        >>> bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        >>> # Sharply tuned neuron (kappa=5)
+        >>> firing_rate = 10.0 * np.exp(5.0 * (np.cos(bin_centers - np.pi / 2) - 1))
+        >>> result = DirectionalRateResult(
+        ...     firing_rate=firing_rate,
+        ...     occupancy=np.ones(n_bins) * 0.5,
+        ...     bin_centers=bin_centers,
+        ...     bin_size=np.pi / 30,
+        ...     smoothing_sigma=None,
+        ... )
+        >>> width = result.tuning_width()
+        >>> width < np.pi / 3  # Sharp tuning < 60 degrees
+        True
+
+        See Also
+        --------
+        tuning_width_deg : Same result in degrees
+        mean_vector_length : Alternative tuning strength measure
+        """
+        rates = np.asarray(self.firing_rate, dtype=np.float64)
+
+        # Find peak
+        peak_idx = np.nanargmax(rates)
+        peak_rate = rates[peak_idx]
+        half_max = peak_rate / 2.0
+
+        # Check for flat tuning curve
+        if np.nanmin(rates) >= half_max:
+            # All rates are above half-max, can't compute HWHM
+            return float(np.nan)
+
+        n_bins = len(rates)
+
+        # Search for half-max crossings on both sides
+        # Use circular indexing
+
+        # Search right (increasing index)
+        right_width = 0.0
+        for offset in range(1, n_bins // 2 + 1):
+            idx = (peak_idx + offset) % n_bins
+            if rates[idx] < half_max:
+                # Interpolate to find exact crossing
+                prev_idx = (peak_idx + offset - 1) % n_bins
+                frac = (half_max - rates[prev_idx]) / (rates[idx] - rates[prev_idx])
+                right_width = (offset - 1 + frac) * self.bin_size
+                break
+        else:
+            # Never crossed half-max (shouldn't happen if we passed the check above)
+            return float(np.nan)
+
+        # Search left (decreasing index)
+        left_width = 0.0
+        for offset in range(1, n_bins // 2 + 1):
+            idx = (peak_idx - offset) % n_bins
+            if rates[idx] < half_max:
+                # Interpolate to find exact crossing
+                prev_idx = (peak_idx - offset + 1) % n_bins
+                frac = (half_max - rates[prev_idx]) / (rates[idx] - rates[prev_idx])
+                left_width = (offset - 1 + frac) * self.bin_size
+                break
+        else:
+            # Never crossed half-max
+            return float(np.nan)
+
+        # Return average of left and right half-widths
+        return float((left_width + right_width) / 2.0)
+
+    def tuning_width_deg(self) -> float:
+        """Compute the tuning width (half-width at half-maximum) in degrees.
+
+        This is a convenience method that returns the tuning width
+        converted to degrees.
+
+        Returns
+        -------
+        float
+            Tuning width in degrees, range (0, 180]. Returns NaN if
+            tuning width cannot be determined.
+
+        See Also
+        --------
+        tuning_width : Same result in radians
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.encoding.directional import DirectionalRateResult
+        >>> n_bins = 60
+        >>> bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        >>> firing_rate = 10.0 * np.exp(5.0 * (np.cos(bin_centers - np.pi / 2) - 1))
+        >>> result = DirectionalRateResult(
+        ...     firing_rate=firing_rate,
+        ...     occupancy=np.ones(n_bins) * 0.5,
+        ...     bin_centers=bin_centers,
+        ...     bin_size=np.pi / 30,
+        ...     smoothing_sigma=None,
+        ... )
+        >>> width_deg = result.tuning_width_deg()
+        >>> width_deg < 60  # Sharp tuning < 60 degrees
+        True
+        """
+        return float(np.degrees(self.tuning_width()))
+
+    def rayleigh_pvalue(self) -> float:
+        """Compute the Rayleigh test p-value for directional non-uniformity.
+
+        The Rayleigh test evaluates whether the directional tuning is
+        statistically significant (i.e., the firing rate distribution is
+        non-uniform across directions).
+
+        Returns
+        -------
+        float
+            P-value from the Rayleigh test in [0, 1]. Small values (< 0.05)
+            indicate significant directional tuning.
+
+        Notes
+        -----
+        The Rayleigh test uses the mean vector length (R) to compute a
+        test statistic. For a sample weighted by firing rates:
+
+            z = n_eff * R²
+
+        where n_eff is the effective sample size (related to total spikes).
+
+        **Interpretation**:
+
+        - p < 0.001: Very strong evidence for directional tuning
+        - p < 0.01: Strong evidence
+        - p < 0.05: Significant evidence
+        - p >= 0.05: No significant directional tuning
+
+        **Caveats**:
+
+        - The test assumes unimodal tuning. For bimodal cells (rare), it may
+          fail to detect significant tuning.
+        - With many bins and high spike counts, even weak tuning may be
+          statistically significant but biologically meaningless. Always
+          check mean_vector_length() as well.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.encoding.directional import DirectionalRateResult
+        >>> n_bins = 60
+        >>> bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        >>> # Sharply tuned neuron
+        >>> firing_rate = 10.0 * np.exp(5.0 * (np.cos(bin_centers - np.pi / 2) - 1))
+        >>> result = DirectionalRateResult(
+        ...     firing_rate=firing_rate,
+        ...     occupancy=np.ones(n_bins) * 0.5,
+        ...     bin_centers=bin_centers,
+        ...     bin_size=np.pi / 30,
+        ...     smoothing_sigma=None,
+        ... )
+        >>> pval = result.rayleigh_pvalue()
+        >>> pval < 0.05  # Significant non-uniformity
+        True
+
+        See Also
+        --------
+        mean_vector_length : Tuning strength measure
+        is_hd_cell : Classification combining MVL and p-value
+        neurospatial.stats.circular.rayleigh_test : Underlying test function
+        """
+        from neurospatial.stats.circular import rayleigh_test
+
+        rates = np.asarray(self.firing_rate, dtype=np.float64)
+        centers = np.asarray(self.bin_centers, dtype=np.float64)
+
+        # The rayleigh_test uses the bin centers as angles and firing rates as weights
+        _, pval = rayleigh_test(centers, weights=rates)
+
+        return pval
+
 
 @dataclass(frozen=True)
 class DirectionalRatesResult:

@@ -973,3 +973,413 @@ class TestDirectionalRateResultPeakFiringRate:
 
         peak = result.peak_firing_rate()
         assert peak >= 0
+
+
+# ==============================================================================
+# DirectionalRateResult Tuning Metrics Tests - Task 3.3
+# ==============================================================================
+
+
+class TestDirectionalRateResultMeanVectorLength:
+    """Test DirectionalRateResult.mean_vector_length() method."""
+
+    def test_mean_vector_length_returns_float(
+        self,
+        single_firing_rate: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """mean_vector_length() returns a float."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        result = DirectionalRateResult(
+            firing_rate=single_firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        mvl = result.mean_vector_length()
+        assert isinstance(mvl, float)
+
+    def test_mean_vector_length_in_valid_range(
+        self,
+        single_firing_rate: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """mean_vector_length() returns value in [0, 1]."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        result = DirectionalRateResult(
+            firing_rate=single_firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        mvl = result.mean_vector_length()
+        assert 0 <= mvl <= 1
+
+    def test_mean_vector_length_tuned_neuron_higher(
+        self,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+        n_bins: int,
+    ) -> None:
+        """mean_vector_length() is higher for tuned than untuned neurons."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        # Sharply tuned neuron (kappa=5)
+        preferred_dir = np.pi / 2
+        tuned_rate = 10.0 * np.exp(5.0 * (np.cos(bin_centers - preferred_dir) - 1))
+
+        tuned_result = DirectionalRateResult(
+            firing_rate=tuned_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        # Uniform firing rate (untuned)
+        uniform_rate = np.ones(n_bins) * 5.0
+
+        uniform_result = DirectionalRateResult(
+            firing_rate=uniform_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        assert tuned_result.mean_vector_length() > uniform_result.mean_vector_length()
+
+    def test_mean_vector_length_uniform_firing(
+        self,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+        n_bins: int,
+    ) -> None:
+        """mean_vector_length() is low for uniform firing."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        # Uniform firing rate
+        firing_rate = np.ones(n_bins) * 5.0
+
+        result = DirectionalRateResult(
+            firing_rate=firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        mvl = result.mean_vector_length()
+        # Uniform firing should have near-zero MVL (weighted by equal rates)
+        # With uniform weights (bins evenly spaced), MVL should be near 0
+        assert mvl < 0.1
+
+    def test_mean_vector_length_sharply_tuned(
+        self,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """mean_vector_length() is high for sharply tuned neurons."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        # Very sharply tuned neuron (kappa=10)
+        preferred_dir = 0.0
+        firing_rate = 20.0 * np.exp(10.0 * (np.cos(bin_centers - preferred_dir) - 1))
+
+        result = DirectionalRateResult(
+            firing_rate=firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        mvl = result.mean_vector_length()
+        # Sharply tuned should have high MVL (typically > 0.5)
+        assert mvl > 0.5
+
+
+class TestDirectionalRateResultTuningWidth:
+    """Test DirectionalRateResult.tuning_width() method."""
+
+    def test_tuning_width_returns_float(
+        self,
+        single_firing_rate: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """tuning_width() returns a float."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        result = DirectionalRateResult(
+            firing_rate=single_firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        width = result.tuning_width()
+        assert isinstance(width, float)
+
+    def test_tuning_width_in_valid_range(
+        self,
+        single_firing_rate: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """tuning_width() returns value in (0, π]."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        result = DirectionalRateResult(
+            firing_rate=single_firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        width = result.tuning_width()
+        # HWHM should be at most π (half circle)
+        # Could be NaN for edge cases, so check if valid
+        if not np.isnan(width):
+            assert 0 < width <= np.pi
+
+    def test_tuning_width_sharper_tuning_smaller_width(
+        self,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """tuning_width() is smaller for sharper tuning."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        preferred_dir = np.pi / 2
+
+        # Sharply tuned (kappa=5)
+        sharp_rate = 10.0 * np.exp(5.0 * (np.cos(bin_centers - preferred_dir) - 1))
+        sharp_result = DirectionalRateResult(
+            firing_rate=sharp_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        # Broadly tuned (kappa=1)
+        broad_rate = 10.0 * np.exp(1.0 * (np.cos(bin_centers - preferred_dir) - 1))
+        broad_result = DirectionalRateResult(
+            firing_rate=broad_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        assert sharp_result.tuning_width() < broad_result.tuning_width()
+
+    def test_tuning_width_uniform_returns_nan(
+        self,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+        n_bins: int,
+    ) -> None:
+        """tuning_width() returns NaN for uniform firing (no tuning)."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        # Uniform firing - no tuning curve
+        firing_rate = np.ones(n_bins) * 5.0
+
+        result = DirectionalRateResult(
+            firing_rate=firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        width = result.tuning_width()
+        # Uniform firing has no peak, so HWHM is undefined
+        assert np.isnan(width)
+
+
+class TestDirectionalRateResultTuningWidthDeg:
+    """Test DirectionalRateResult.tuning_width_deg() method."""
+
+    def test_tuning_width_deg_returns_float(
+        self,
+        single_firing_rate: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """tuning_width_deg() returns a float."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        result = DirectionalRateResult(
+            firing_rate=single_firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        width_deg = result.tuning_width_deg()
+        assert isinstance(width_deg, float)
+
+    def test_tuning_width_deg_conversion(
+        self,
+        single_firing_rate: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """tuning_width_deg() equals degrees conversion of tuning_width()."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        result = DirectionalRateResult(
+            firing_rate=single_firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        width_rad = result.tuning_width()
+        width_deg = result.tuning_width_deg()
+        np.testing.assert_allclose(width_deg, np.degrees(width_rad))
+
+    def test_tuning_width_deg_valid_range(
+        self,
+        single_firing_rate: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """tuning_width_deg() returns value in (0, 180]."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        result = DirectionalRateResult(
+            firing_rate=single_firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        width_deg = result.tuning_width_deg()
+        # Should be at most 180 degrees
+        if not np.isnan(width_deg):
+            assert 0 < width_deg <= 180
+
+
+class TestDirectionalRateResultRayleighPvalue:
+    """Test DirectionalRateResult.rayleigh_pvalue() method."""
+
+    def test_rayleigh_pvalue_returns_float(
+        self,
+        single_firing_rate: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """rayleigh_pvalue() returns a float."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        result = DirectionalRateResult(
+            firing_rate=single_firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        pval = result.rayleigh_pvalue()
+        assert isinstance(pval, float)
+
+    def test_rayleigh_pvalue_in_valid_range(
+        self,
+        single_firing_rate: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """rayleigh_pvalue() returns value in [0, 1]."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        result = DirectionalRateResult(
+            firing_rate=single_firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        pval = result.rayleigh_pvalue()
+        assert 0 <= pval <= 1
+
+    def test_rayleigh_pvalue_tuned_neuron_low(
+        self,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """rayleigh_pvalue() is low for sharply tuned neurons."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        # Sharply tuned neuron
+        preferred_dir = np.pi / 2
+        firing_rate = 10.0 * np.exp(5.0 * (np.cos(bin_centers - preferred_dir) - 1))
+
+        result = DirectionalRateResult(
+            firing_rate=firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        pval = result.rayleigh_pvalue()
+        # Tuned neuron should have low p-value (significant non-uniformity)
+        assert pval < 0.05
+
+    def test_rayleigh_pvalue_uniform_high(
+        self,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+        n_bins: int,
+    ) -> None:
+        """rayleigh_pvalue() is high for uniform firing."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        # Uniform firing rate
+        firing_rate = np.ones(n_bins) * 5.0
+
+        result = DirectionalRateResult(
+            firing_rate=firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        pval = result.rayleigh_pvalue()
+        # Uniform firing should have high p-value (non-significant)
+        assert pval > 0.5

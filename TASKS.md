@@ -178,11 +178,11 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Implement `preferred_direction_deg()` → converts to degrees
   - [x] Implement `peak_firing_rate()` → max of firing_rate
 
-- [ ] **3.3** Implement `DirectionalRateResult` tuning metrics
-  - [ ] Implement `mean_vector_length()` → Rayleigh MVL via `stats.circular`
-  - [ ] Implement `tuning_width()` → half-width at half-maximum (radians)
-  - [ ] Implement `tuning_width_deg()` → converts to degrees
-  - [ ] Implement `rayleigh_pvalue()` → Rayleigh test via `stats.circular`
+- [x] **3.3** Implement `DirectionalRateResult` tuning metrics
+  - [x] Implement `mean_vector_length()` → Rayleigh MVL via `stats.circular`
+  - [x] Implement `tuning_width()` → half-width at half-maximum (radians)
+  - [x] Implement `tuning_width_deg()` → converts to degrees
+  - [x] Implement `rayleigh_pvalue()` → Rayleigh test via `stats.circular`
 
 - [ ] **3.4** Implement `DirectionalRateResult` classification
   - [ ] Implement `is_hd_cell(min_mvl, alpha)` → boolean based on MVL and p-value
@@ -218,12 +218,6 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [ ] Precompute shared quantities (occupancy, heading bins)
   - [ ] Add `n_jobs` parameter for parallelization
   - [ ] Return `DirectionalRatesResult`
-
-- [ ] **3.10** Add deprecated shim for backwards compatibility
-  - [ ] Implement `compute_head_direction_tuning_curve()` in `directional.py`
-  - [ ] Emit DeprecationWarning pointing to new function
-  - [ ] Return legacy `(bin_centers, firing_rate)` tuple
-  - [ ] Default to `angle_unit="deg"` for legacy behavior
 
 - [ ] **3.11** Write comprehensive tests for directional encoding
   - [ ] Test single neuron computation

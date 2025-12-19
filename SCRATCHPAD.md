@@ -3,10 +3,70 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 3.2 - Implement `DirectionalRateResult` convenience methods
-**Next Task**: Task 3.3 - Implement `DirectionalRateResult` tuning metrics
+**Last Completed**: Task 3.3 - Implement `DirectionalRateResult` tuning metrics
+**Next Task**: Task 3.4 - Implement `DirectionalRateResult` classification
 
 ## Session Notes
+
+### Task 3.3: Implement `DirectionalRateResult` Tuning Metrics [COMPLETED]
+
+**Goal**: Add tuning metric methods to `DirectionalRateResult` for quantifying head direction cell tuning.
+
+**Approach**: TDD - wrote 16 tests first, then implemented.
+
+**Result**:
+
+- Added 4 tuning metric methods to `DirectionalRateResult` in `src/neurospatial/encoding/directional.py`
+- Added 16 new tests in `tests/encoding/test_encoding_directional.py` (total now 55, all pass)
+- All mypy and ruff checks pass
+- Code review passed with APPROVE
+
+**Key Implementation Details**:
+
+- `mean_vector_length()`: Rayleigh mean vector length
+  - Returns float in [0, 1], higher = sharper tuning
+  - Delegates to `mean_resultant_length()` from `neurospatial.stats.circular`
+  - Uses firing rates as weights for bin centers
+  - Interpretation: MVL < 0.2 weak, 0.2-0.4 moderate, > 0.4 strong (Taube et al., 1990)
+
+- `tuning_width()`: Half-width at half-maximum (HWHM) in radians
+  - Returns float in (0, π], or NaN for flat tuning curves
+  - Custom algorithm: finds peak, searches both directions for half-max crossing
+  - Uses linear interpolation for precise crossing location
+  - Circular indexing for wraparound handling
+
+- `tuning_width_deg()`: Convenience wrapper returning degrees
+  - Returns float in (0, 180], or NaN
+  - Simple conversion: `np.degrees(self.tuning_width())`
+
+- `rayleigh_pvalue()`: Rayleigh test p-value for non-uniformity
+  - Returns float in [0, 1], lower = more significant tuning
+  - Delegates to `rayleigh_test()` from `neurospatial.stats.circular`
+  - Uses firing rates as weights
+  - Interpretation: p < 0.05 = significant directional tuning
+
+**Test coverage (16 tests in 4 classes)**:
+
+- `TestDirectionalRateResultMeanVectorLength`: 5 tests (returns float, valid range, tuned vs uniform, uniform low, sharply tuned high)
+- `TestDirectionalRateResultTuningWidth`: 4 tests (returns float, valid range, sharp < broad, uniform NaN)
+- `TestDirectionalRateResultTuningWidthDeg`: 3 tests (returns float, conversion, valid range)
+- `TestDirectionalRateResultRayleighPvalue`: 4 tests (returns float, valid range, tuned low, uniform high)
+
+**Documentation**:
+
+- All methods have complete NumPy-style docstrings
+- Include algorithm descriptions and formulas
+- Include interpretation guidelines with specific thresholds
+- Include See Also cross-references to related methods and stats.circular
+
+**Code review feedback**: APPROVE
+
+- Excellent integration with `stats.circular` module
+- Comprehensive docstrings with biological context
+- Edge case handling (NaN for flat curves)
+- Correct circular indexing for HWHM computation
+
+---
 
 ### Task 3.2: Implement `DirectionalRateResult` Convenience Methods [COMPLETED]
 

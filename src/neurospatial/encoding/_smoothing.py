@@ -16,6 +16,18 @@ The key difference between methods is the order of operations:
 - diffusion_kde/gaussian_kde: Smooth counts → Smooth occupancy → Normalize
 - binned: Normalize → Smooth result
 
+**Performance Warning**:
+
+``gaussian_kde`` computes a full pairwise distance matrix between all bins,
+resulting in O(n_bins²) memory and O(n_bins²) time complexity per neuron.
+For batch operations with ``smooth_rate_maps_batch``, the weight matrix is
+recomputed for each neuron (no precomputation), making batch gaussian_kde
+O(n_neurons × n_bins²).
+
+For environments with more than a few thousand bins, ``gaussian_kde`` may be
+prohibitively slow. Prefer ``diffusion_kde`` which uses sparse graph operations
+and precomputes the kernel once per environment.
+
 References
 ----------
 .. [1] Skaggs, W. E., McNaughton, B. L., & Gothard, K. M. (1993).
@@ -108,17 +120,22 @@ def smooth_rate_map(
     -----
     **Method Comparison**:
 
-    +--------------+----------------+------------+--------------+
-    | Method       | Boundaries     | Speed      | Artifacts    |
-    +==============+================+============+==============+
-    | diffusion_kde| Respects       | Medium     | None         |
-    +--------------+----------------+------------+--------------+
-    | gaussian_kde | Ignores        | Slow       | Wall bleed   |
-    +--------------+----------------+------------+--------------+
-    | binned       | Respects*      | Fast       | Discretization|
-    +--------------+----------------+------------+--------------+
+    +--------------+----------------+----------------------+--------------+
+    | Method       | Boundaries     | Complexity           | Artifacts    |
+    +==============+================+======================+==============+
+    | diffusion_kde| Respects       | O(n_bins) per neuron | None         |
+    +--------------+----------------+----------------------+--------------+
+    | gaussian_kde | Ignores        | O(n_bins²) per neuron| Wall bleed   |
+    +--------------+----------------+----------------------+--------------+
+    | binned       | Respects*      | O(n_bins) per neuron | Discretization|
+    +--------------+----------------+----------------------+--------------+
 
     *binned uses graph smoothing but applies it after normalization.
+
+    **Performance recommendation**: For environments with >1000 bins, use
+    ``diffusion_kde`` (default). ``gaussian_kde`` recomputes a dense
+    n_bins × n_bins weight matrix for each neuron, which is slow for large
+    environments or large populations.
 
     **Algorithm Details**:
 
@@ -189,8 +206,7 @@ def smooth_rate_maps_batch(
     """Compute smoothed firing rate maps for multiple neurons.
 
     Batch version of smooth_rate_map that efficiently processes multiple
-    neurons sharing the same occupancy. The kernel is computed once and
-    reused for all neurons.
+    neurons using vectorized matrix operations (BLAS Level 3).
 
     Parameters
     ----------
@@ -220,31 +236,6 @@ def smooth_rate_maps_batch(
         If spike_counts is not 2D.
         If spike_counts.shape[1] != occupancy.shape[0].
         If spike_counts.shape[1] != env.n_bins.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from neurospatial import Environment
-    >>> from neurospatial.encoding._smoothing import smooth_rate_maps_batch
-
-    >>> # Create environment
-    >>> positions = np.random.rand(1000, 2) * 100
-    >>> env = Environment.from_samples(positions, bin_size=5.0)
-
-    >>> # Simulate spike counts for 10 neurons
-    >>> spike_counts = np.random.poisson(5, (10, env.n_bins)).astype(float)
-    >>> occupancy = np.ones(env.n_bins) * 1.0
-
-    >>> # Compute smoothed rate maps
-    >>> rate_maps = smooth_rate_maps_batch(
-    ...     env, spike_counts, occupancy, method="diffusion_kde", bandwidth=10.0
-    ... )
-    >>> rate_maps.shape
-    (10, 400)
-
-    See Also
-    --------
-    smooth_rate_map : Single-neuron version
     """
     # Validate batch-specific requirements
     spike_counts = np.asarray(spike_counts)
@@ -267,30 +258,23 @@ def smooth_rate_maps_batch(
             f"env has {env.n_bins} bins (n_bins mismatch)"
         )
 
-    n_neurons = spike_counts.shape[0]
-
-    # For diffusion_kde, precompute kernel once and reuse
-    if method == "diffusion_kde" and kernel is None:
-        kernel = cast("EnvironmentProtocol", env).compute_kernel(
-            bandwidth, mode="density", cache=True
+    # Dispatch to vectorized implementations
+    if method == "diffusion_kde":
+        if kernel is None:
+            kernel = cast("EnvironmentProtocol", env).compute_kernel(
+                bandwidth, mode="density", cache=True
+            )
+        return _diffusion_kde_batch(
+            spike_counts, occupancy, bandwidth, min_occupancy, kernel
         )
-
-    # Process each neuron
-    # Note: Could be parallelized with joblib, but kept simple for now
-    # JAX backend can use vmap for efficient batch processing
-    result = np.zeros_like(spike_counts, dtype=np.float64)
-    for i in range(n_neurons):
-        result[i] = smooth_rate_map(
-            env,
-            spike_counts[i],
-            occupancy,
-            method=method,
-            bandwidth=bandwidth,
-            min_occupancy=min_occupancy,
-            kernel=kernel,
+    elif method == "gaussian_kde":
+        return _gaussian_kde_batch(
+            env, spike_counts, occupancy, bandwidth, min_occupancy
         )
-
-    return result
+    elif method == "binned":
+        return _binned_batch(env, spike_counts, occupancy, bandwidth, min_occupancy)
+    else:
+        raise ValueError(f"Unknown method: {method}")
 
 
 # =============================================================================
@@ -499,3 +483,117 @@ def _binned(
         )
 
     return firing_rate.astype(np.float64)
+
+
+def _diffusion_kde_batch(
+    spike_counts: NDArray[np.float64],
+    occupancy: NDArray[np.float64],
+    bandwidth: float,
+    min_occupancy: float,
+    kernel: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Apply diffusion KDE smoothing for multiple neurons."""
+    spike_counts = np.asarray(spike_counts, dtype=np.float64)
+    occupancy = np.asarray(occupancy, dtype=np.float64)
+    kernel = np.asarray(kernel, dtype=np.float64)
+
+    spike_density = (kernel @ spike_counts.T).T
+    occupancy_density = kernel @ occupancy
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        firing_rates = np.where(
+            occupancy_density > 0,
+            spike_density / occupancy_density,
+            np.nan,
+        )
+
+    if min_occupancy > 0:
+        firing_rates = np.where(occupancy >= min_occupancy, firing_rates, np.nan)
+
+    return firing_rates.astype(np.float64)
+
+
+def _gaussian_kde_batch(
+    env: Environment,
+    spike_counts: NDArray[np.float64],
+    occupancy: NDArray[np.float64],
+    bandwidth: float,
+    min_occupancy: float,
+) -> NDArray[np.float64]:
+    """Apply Gaussian KDE smoothing for multiple neurons."""
+    spike_counts = np.asarray(spike_counts, dtype=np.float64)
+    occupancy = np.asarray(occupancy, dtype=np.float64)
+
+    bin_centers = env.bin_centers
+    two_sigma_sq = 2.0 * bandwidth**2
+
+    bin_sq_norm = np.sum(bin_centers**2, axis=1, keepdims=True)
+    dist_sq = bin_sq_norm + bin_sq_norm.T - 2 * (bin_centers @ bin_centers.T)
+    dist_sq = np.maximum(dist_sq, 0)
+
+    weights = np.exp(-dist_sq / two_sigma_sq)
+    spike_density = spike_counts @ weights.T
+    occupancy_density = weights @ occupancy
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        firing_rates = np.where(
+            occupancy_density > 0,
+            spike_density / occupancy_density,
+            np.nan,
+        )
+
+    if min_occupancy > 0:
+        firing_rates = np.where(occupancy >= min_occupancy, firing_rates, np.nan)
+
+    return firing_rates.astype(np.float64)
+
+
+def _binned_batch(
+    env: Environment,
+    spike_counts: NDArray[np.float64],
+    occupancy: NDArray[np.float64],
+    bandwidth: float,
+    min_occupancy: float,
+) -> NDArray[np.float64]:
+    """Apply binned smoothing for multiple neurons."""
+    spike_counts = np.asarray(spike_counts, dtype=np.float64)
+    occupancy = np.asarray(occupancy, dtype=np.float64)
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        raw_rates = np.where(occupancy > 0, spike_counts / occupancy, np.nan)
+
+    if min_occupancy > 0:
+        raw_rates = np.where(occupancy >= min_occupancy, raw_rates, np.nan)
+
+    if bandwidth <= 0:
+        return raw_rates.astype(np.float64)
+
+    n_neurons = raw_rates.shape[0]
+    result = np.empty_like(raw_rates, dtype=np.float64)
+    env_protocol = cast("EnvironmentProtocol", env)
+
+    for i in range(n_neurons):
+        raw_rate = raw_rates[i]
+        nan_mask = np.isnan(raw_rate)
+
+        if np.all(nan_mask):
+            result[i] = raw_rate
+            continue
+
+        rate_filled = raw_rate.copy()
+        rate_filled[nan_mask] = 0.0
+
+        weights = np.ones_like(raw_rate)
+        weights[nan_mask] = 0.0
+
+        rate_smoothed = env_protocol.smooth(rate_filled, bandwidth=bandwidth)
+        weights_smoothed = env_protocol.smooth(weights, bandwidth=bandwidth)
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            result[i] = np.where(
+                weights_smoothed > 0,
+                rate_smoothed / weights_smoothed,
+                np.nan,
+            )
+
+    return result.astype(np.float64)
