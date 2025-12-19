@@ -3,10 +3,39 @@
 ## Current Status
 
 **Date**: 2025-12-18
-**Last Completed**: Task 0.2 - Create `encoding/_spikes.py` with spike format normalization
-**Next Task**: Task 0.3 - Create `encoding/_backend.py` with backend selection
+**Last Completed**: Task 0.3 - Create `encoding/_backend.py` with backend selection
+**Next Task**: Task 0.4 - Create `encoding/_core_numpy.py` with stubs
 
 ## Session Notes
+
+### Task 0.3: `encoding/_backend.py` [COMPLETED]
+
+**Goal**: Create backend selection infrastructure for NumPy/JAX computation backends.
+
+**Approach**: TDD - wrote tests first (`test_encoding_backend.py`), then implemented.
+
+**Result**:
+
+- Created `src/neurospatial/encoding/_backend.py` with backend selection functions
+- Created `tests/encoding/test_encoding_backend.py` with 26 tests (21 passed, 5 skipped for JAX)
+- All mypy and ruff checks pass
+- Code review passed with APPROVE
+
+**Key Implementation Details**:
+
+- `SUPPORTED_BACKENDS`: Tuple of valid backend names ("numpy", "jax", "auto")
+- `is_jax_available()`: Checks platform (Windows → False) and JAX installation
+- `get_backend(name)`: Returns numpy or jax.numpy module based on selection
+- `get_backend_name(name)`: Resolves "auto" to actual backend name used
+- Error messages include platform-specific guidance (e.g., "JAX is not supported on Windows")
+
+**Backend behavior**:
+
+1. `"numpy"` - Always returns numpy module, works everywhere
+2. `"jax"` - Returns jax.numpy module, raises ImportError if unavailable
+3. `"auto"` - Uses JAX if available, falls back to NumPy silently
+
+---
 
 ### Task 0.2: `encoding/_spikes.py` [COMPLETED]
 

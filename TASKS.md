@@ -29,11 +29,11 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Reject ragged object arrays with clear error message
   - [x] Add unit tests for all input formats
 
-- [ ] **0.3** Create `encoding/_backend.py` with backend selection
-  - [ ] Implement `get_backend(name: str)` function
-  - [ ] Add platform detection for JAX availability (Linux/macOS only)
-  - [ ] Define `"auto"` behavior: use JAX if available, NumPy otherwise
-  - [ ] Force NumPy silently on Windows when `"auto"`
+- [x] **0.3** Create `encoding/_backend.py` with backend selection
+  - [x] Implement `get_backend(name: str)` function
+  - [x] Add platform detection for JAX availability (Linux/macOS only)
+  - [x] Define `"auto"` behavior: use JAX if available, NumPy otherwise
+  - [x] Force NumPy silently on Windows when `"auto"`
 
 - [ ] **0.4** Create `encoding/_core_numpy.py` with stubs
   - [ ] Define function signatures for core array operations
