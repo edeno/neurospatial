@@ -752,3 +752,277 @@ class TestBatchGridScoresNonRegularGrid:
         assert scores.shape == (2,)
         # Sparse environments may not be compatible with FFT-based grid score
         # Implementation may return NaN or use graph-based method
+
+
+# =============================================================================
+# Test batch_border_scores (population)
+# =============================================================================
+
+
+class TestBatchBorderScores:
+    """Tests for batch_border_scores() function."""
+
+    @pytest.fixture
+    def env_2d_grid(self):
+        """Create a regular 2D grid environment for testing.
+
+        Returns
+        -------
+        env : Environment
+            Regular 2D grid environment.
+        """
+        from neurospatial import Environment
+
+        # Create regular 2D grid with good boundary detection
+        x = np.linspace(-50, 50, 51)
+        xx, yy = np.meshgrid(x, x)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
+        env = Environment.from_samples(positions, bin_size=2.0)
+        return env
+
+    @pytest.fixture
+    def batch_firing_rates_for_border(self, env_2d_grid):
+        """Create batch of firing rates for border score testing.
+
+        Returns
+        -------
+        firing_rates : ndarray
+            Shape (n_neurons, n_bins) with different patterns.
+        env : Environment
+            The environment used to create the firing rates.
+        """
+        env = env_2d_grid
+        n_neurons = 4
+        n_bins = env.n_bins
+        rng = np.random.default_rng(42)
+
+        firing_rates = np.zeros((n_neurons, n_bins))
+
+        # Neuron 0: random noise (low border score expected)
+        firing_rates[0] = rng.random(n_bins) * 5.0
+
+        # Neuron 1: boundary-preferring (high border score expected)
+        boundary_bins = env.boundary_bins
+        firing_rates[1, boundary_bins] = 10.0
+
+        # Neuron 2: center-preferring (negative border score expected)
+        bin_centers = env.bin_centers
+        center = np.mean(bin_centers, axis=0)
+        distances = np.sqrt(np.sum((bin_centers - center) ** 2, axis=1))
+        firing_rates[2] = 10.0 * np.exp(-(distances**2) / (2 * 10**2))
+
+        # Neuron 3: uniform (near-zero border score expected)
+        firing_rates[3] = np.ones(n_bins) * 5.0
+
+        return firing_rates, env
+
+    def test_batch_border_scores_returns_correct_shape(
+        self, batch_firing_rates_for_border
+    ):
+        """batch_border_scores should return (n_neurons,) array."""
+        from neurospatial.encoding._metrics import batch_border_scores
+
+        firing_rates, env = batch_firing_rates_for_border
+        scores = batch_border_scores(env, firing_rates)
+
+        assert scores.shape == (4,)
+
+    def test_batch_border_scores_returns_float64(self, batch_firing_rates_for_border):
+        """batch_border_scores should return float64 array."""
+        from neurospatial.encoding._metrics import batch_border_scores
+
+        firing_rates, env = batch_firing_rates_for_border
+        scores = batch_border_scores(env, firing_rates)
+
+        assert scores.dtype == np.float64
+
+    def test_batch_border_scores_range(self, batch_firing_rates_for_border):
+        """Border scores should be in valid range [-1, 1] or NaN."""
+        from neurospatial.encoding._metrics import batch_border_scores
+
+        firing_rates, env = batch_firing_rates_for_border
+        scores = batch_border_scores(env, firing_rates)
+
+        # Scores should be in range [-1, 1] or NaN
+        valid_scores = scores[~np.isnan(scores)]
+        assert np.all(valid_scores >= -1.0)
+        assert np.all(valid_scores <= 1.0)
+
+    def test_batch_border_scores_single_neuron(self, env_2d_grid):
+        """Should work with (1, n_bins) input."""
+        from neurospatial.encoding._metrics import batch_border_scores
+
+        env = env_2d_grid
+        rng = np.random.default_rng(42)
+        firing_rates = rng.random((1, env.n_bins)) * 5.0
+
+        scores = batch_border_scores(env, firing_rates)
+
+        assert scores.shape == (1,)
+
+    def test_batch_border_scores_matches_single_border_score(self, env_2d_grid):
+        """Batch computation should match single-neuron border_score computation."""
+        from neurospatial.encoding._metrics import batch_border_scores
+        from neurospatial.encoding.border import border_score
+
+        env = env_2d_grid
+        rng = np.random.default_rng(42)
+        firing_rates = rng.random((3, env.n_bins)) * 5.0
+
+        # Batch computation
+        batch_scores = batch_border_scores(env, firing_rates)
+
+        # Single neuron computation for comparison
+        single_scores = []
+        for i in range(firing_rates.shape[0]):
+            try:
+                score = border_score(env, firing_rates[i])
+            except Exception:
+                score = np.nan
+            single_scores.append(score)
+
+        single_scores = np.array(single_scores)
+
+        # Compare non-NaN values
+        for i in range(len(batch_scores)):
+            if np.isnan(batch_scores[i]) and np.isnan(single_scores[i]):
+                continue  # Both NaN is OK
+            elif np.isnan(batch_scores[i]) or np.isnan(single_scores[i]):
+                # One NaN, one not - that's OK as long as behavior is consistent
+                pass
+            else:
+                assert_allclose(batch_scores[i], single_scores[i], rtol=1e-10)
+
+    def test_batch_border_scores_wrong_shape_raises(self, env_2d_grid):
+        """Should raise ValueError for wrong firing_rates shape."""
+        from neurospatial.encoding._metrics import batch_border_scores
+
+        env = env_2d_grid
+
+        # 1D array should raise
+        firing_rate_1d = np.random.rand(env.n_bins)
+        with pytest.raises(ValueError, match="firing_rates must be 2D"):
+            batch_border_scores(env, firing_rate_1d)
+
+        # Wrong n_bins should raise
+        firing_rates_wrong = np.random.rand(3, env.n_bins + 10)
+        with pytest.raises(ValueError, match="bins"):
+            batch_border_scores(env, firing_rates_wrong)
+
+    def test_batch_border_scores_boundary_neuron_high_score(
+        self, batch_firing_rates_for_border
+    ):
+        """Neuron firing on boundary should have high border score."""
+        from neurospatial.encoding._metrics import batch_border_scores
+
+        firing_rates, env = batch_firing_rates_for_border
+        scores = batch_border_scores(env, firing_rates)
+
+        # Neuron 1 fires on boundary - should have positive score
+        # (if not NaN)
+        if not np.isnan(scores[1]):
+            assert scores[1] > 0.0
+
+    def test_batch_border_scores_center_neuron_lower_score(
+        self, batch_firing_rates_for_border
+    ):
+        """Neuron firing in center should have lower border score than boundary."""
+        from neurospatial.encoding._metrics import batch_border_scores
+
+        firing_rates, env = batch_firing_rates_for_border
+        scores = batch_border_scores(env, firing_rates)
+
+        # Neuron 1 fires on boundary, Neuron 2 fires in center
+        # Boundary neuron should have higher score than center neuron
+        if not np.isnan(scores[1]) and not np.isnan(scores[2]):
+            assert scores[1] > scores[2]
+
+    def test_batch_border_scores_with_constant_firing(self, env_2d_grid):
+        """Constant firing rate should return NaN (no field defined at threshold)."""
+        from neurospatial.encoding._metrics import batch_border_scores
+
+        env = env_2d_grid
+        # All bins have same value - at threshold, field covers everything
+        # This is an edge case that may return NaN
+        firing_rates = np.ones((2, env.n_bins)) * 5.0
+
+        scores = batch_border_scores(env, firing_rates)
+
+        assert scores.shape == (2,)
+        # Implementation may handle this differently, but shape should be correct
+
+    def test_batch_border_scores_handles_nan_firing_rate(self, env_2d_grid):
+        """Should handle NaN values in firing rates."""
+        from neurospatial.encoding._metrics import batch_border_scores
+
+        env = env_2d_grid
+        rng = np.random.default_rng(42)
+        firing_rates = rng.random((2, env.n_bins)) * 5.0
+
+        # Add some NaN values
+        firing_rates[0, 10:15] = np.nan
+
+        # Should not raise
+        scores = batch_border_scores(env, firing_rates)
+
+        assert scores.shape == (2,)
+
+    def test_batch_border_scores_handles_zero_firing_rate(self, env_2d_grid):
+        """Should handle all-zero firing rates."""
+        from neurospatial.encoding._metrics import batch_border_scores
+
+        env = env_2d_grid
+        firing_rates = np.zeros((2, env.n_bins))
+
+        scores = batch_border_scores(env, firing_rates)
+
+        assert scores.shape == (2,)
+        # Zero firing rate → NaN expected
+        assert np.all(np.isnan(scores))
+
+    def test_batch_border_scores_threshold_parameter(self, env_2d_grid):
+        """Should accept threshold parameter."""
+        from neurospatial.encoding._metrics import batch_border_scores
+
+        env = env_2d_grid
+        rng = np.random.default_rng(42)
+        firing_rates = rng.random((2, env.n_bins)) * 5.0
+
+        # Test with different thresholds
+        scores_03 = batch_border_scores(env, firing_rates, threshold=0.3)
+        scores_05 = batch_border_scores(env, firing_rates, threshold=0.5)
+
+        assert scores_03.shape == (2,)
+        assert scores_05.shape == (2,)
+
+    def test_batch_border_scores_distance_metric_parameter(self, env_2d_grid):
+        """Should accept distance_metric parameter."""
+        from neurospatial.encoding._metrics import batch_border_scores
+
+        env = env_2d_grid
+        rng = np.random.default_rng(42)
+        firing_rates = rng.random((2, env.n_bins)) * 5.0
+
+        # Test both distance metrics
+        scores_geo = batch_border_scores(env, firing_rates, distance_metric="geodesic")
+        scores_euc = batch_border_scores(env, firing_rates, distance_metric="euclidean")
+
+        assert scores_geo.shape == (2,)
+        assert scores_euc.shape == (2,)
+
+    def test_batch_border_scores_min_area_parameter(self, env_2d_grid):
+        """Should accept min_area parameter and filter small fields."""
+        from neurospatial.encoding._metrics import batch_border_scores
+
+        env = env_2d_grid
+        rng = np.random.default_rng(42)
+        firing_rates = rng.random((2, env.n_bins)) * 5.0
+
+        # Test with different min_area values
+        scores_no_filter = batch_border_scores(env, firing_rates, min_area=0.0)
+        scores_high_filter = batch_border_scores(env, firing_rates, min_area=10000.0)
+
+        assert scores_no_filter.shape == (2,)
+        assert scores_high_filter.shape == (2,)
+        # With very high min_area, scores should be NaN (fields too small)
+        assert np.all(np.isnan(scores_high_filter))

@@ -23,15 +23,17 @@ References
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from neurospatial import Environment
+    from neurospatial.environment._protocols import EnvironmentProtocol
 
 __all__ = [
+    "batch_border_scores",
     "batch_grid_scores",
     "batch_sparsity",
     "batch_spatial_information",
@@ -550,6 +552,130 @@ def batch_grid_scores(
                 )
         except (ValueError, RuntimeError):
             # Handle errors gracefully (e.g., constant firing, all NaN)
+            scores[i] = np.nan
+
+    return scores
+
+
+def batch_border_scores(
+    env: Environment,
+    firing_rates: NDArray[np.float64],
+    *,
+    threshold: float = 0.3,
+    min_area: float = 0.0,
+    distance_metric: str = "geodesic",
+) -> NDArray[np.float64]:
+    """Compute border scores for multiple neurons.
+
+    Computes border score (boundary proximity tuning) for each neuron's firing
+    rate map. Border score quantifies how much a cell's firing field is aligned
+    with environmental boundaries.
+
+    Parameters
+    ----------
+    env : Environment
+        Spatial environment containing bin centers and connectivity.
+    firing_rates : ndarray, shape (n_neurons, n_bins)
+        Firing rate maps for each neuron in Hz.
+    threshold : float, default=0.3
+        Fraction of peak firing rate used to segment the field.
+        Follows Solstad et al. (2008). Must be in (0, 1).
+    min_area : float, default=0.0
+        Minimum field area (in physical units) to compute border score.
+        Fields smaller than this return NaN. For rat hippocampal data,
+        Solstad et al. (2008) used 200 cm². Adjust based on bin size
+        and environment scale.
+    distance_metric : {"geodesic", "euclidean"}, default="geodesic"
+        Distance metric for computing distance from field bins to boundary bins.
+        - "geodesic": Graph shortest path distance. Respects environment
+          connectivity, appropriate for irregular environments or those with obstacles.
+        - "euclidean": Straight-line distance in physical space. Generally faster
+          for large environments.
+
+    Returns
+    -------
+    ndarray, shape (n_neurons,)
+        Border scores in range [-1, 1] for each neuron. Returns NaN for neurons
+        where border score cannot be computed (zero firing, invalid field, etc.).
+
+    Raises
+    ------
+    ValueError
+        If firing_rates is not 2D.
+        If firing_rates.shape[1] != env.n_bins.
+
+    Notes
+    -----
+    For each neuron, this function delegates to
+    :func:`~neurospatial.encoding.border.border_score`.
+
+    **Interpretation**:
+
+    - **score > 0.5**: Strong border cell (field aligned with boundary)
+    - **score ≈ 0**: No boundary preference (uniform or mixed)
+    - **score < 0**: Anti-border (field in center, far from boundaries)
+
+    References
+    ----------
+    .. [1] Solstad, T., Boccara, C. N., Kropff, E., Moser, M. B., & Moser, E. I.
+           (2008). Representation of geometric borders in the entorhinal cortex.
+           Science, 322(5909), 1865-1868.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding._metrics import batch_border_scores
+
+    >>> # Create environment
+    >>> x = np.linspace(-50, 50, 51)
+    >>> xx, yy = np.meshgrid(x, x)
+    >>> positions = np.column_stack([xx.ravel(), yy.ravel()])
+    >>> env = Environment.from_samples(positions, bin_size=2.0)
+
+    >>> # Random firing patterns (5 neurons)
+    >>> rng = np.random.default_rng(42)
+    >>> firing_rates = rng.random((5, env.n_bins)) * 10
+    >>> scores = batch_border_scores(env, firing_rates)
+    >>> scores.shape
+    (5,)
+
+    See Also
+    --------
+    neurospatial.encoding.border.border_score : Single-neuron border score
+    """
+    from neurospatial.encoding.border import border_score
+
+    firing_rates = np.asarray(firing_rates)
+
+    # Validate shapes
+    if firing_rates.ndim != 2:
+        raise ValueError(
+            f"firing_rates must be 2D (n_neurons, n_bins), got shape {firing_rates.shape}"
+        )
+
+    if firing_rates.shape[1] != env.n_bins:
+        raise ValueError(
+            f"firing_rates has {firing_rates.shape[1]} bins but "
+            f"env has {env.n_bins} bins"
+        )
+
+    n_neurons = firing_rates.shape[0]
+    scores = np.empty(n_neurons, dtype=np.float64)
+
+    for i in range(n_neurons):
+        firing_rate = firing_rates[i]
+
+        try:
+            scores[i] = border_score(
+                cast("EnvironmentProtocol", env),
+                firing_rate,
+                threshold=threshold,
+                min_area=min_area,
+                distance_metric=distance_metric,  # type: ignore[arg-type]
+            )
+        except (ValueError, RuntimeError):
+            # Handle errors gracefully (e.g., all NaN, no field bins)
             scores[i] = np.nan
 
     return scores

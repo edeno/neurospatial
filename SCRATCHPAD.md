@@ -3,10 +3,54 @@
 ## Current Status
 
 **Date**: 2025-12-18
-**Last Completed**: Task 1.3 - Implement batch grid score computation in `_metrics.py`
-**Next Task**: Task 1.4 - Implement batch border score computation in `_metrics.py`
+**Last Completed**: Task 1.4 - Implement batch border score computation in `_metrics.py`
+**Next Task**: Task 2.1 - Create `encoding/spatial.py` with result class definitions
 
 ## Session Notes
+
+### Task 1.4: `encoding/_metrics.py` - batch_border_scores [COMPLETED]
+
+**Goal**: Add `batch_border_scores()` function to compute border scores for multiple neurons.
+
+**Approach**: TDD - wrote tests first (`test_encoding_metrics.py`), then implemented.
+
+**Result**:
+
+- Added `batch_border_scores(env, firing_rates, ...)` to `src/neurospatial/encoding/_metrics.py`
+- Added 14 new tests in `tests/encoding/test_encoding_metrics.py` (all pass, total now 61)
+- All mypy and ruff checks pass
+- Code review passed with APPROVE
+
+**Key Implementation Details**:
+
+- `batch_border_scores(env, firing_rates, ...)`: Batch border score computation for populations
+- Delegates to `border.border_score()` for each neuron
+- Returns `(n_neurons,)` array of border scores in range [-1, 1] or NaN
+
+**Parameters**:
+
+- `env`: Environment (spatial context with bin centers and connectivity)
+- `firing_rates`: Shape `(n_neurons, n_bins)`
+- `threshold`: Default 0.3 (passed to border_score)
+- `min_area`: Default 0.0 (passed to border_score, filters small fields)
+- `distance_metric`: Default "geodesic" (or "euclidean")
+
+**Edge case handling**:
+
+- Zero firing rate: Returns NaN
+- NaN values in firing rate: Handled gracefully
+- All-NaN firing: Returns NaN
+- Wrong input shape: Raises ValueError
+- Computation errors: Caught and returns NaN for that neuron
+
+**Code review notes**:
+
+- Follows same pattern as `batch_grid_scores()` and `batch_spatial_information()`
+- Graceful error handling prevents batch failure from single problematic neuron
+- Complete NumPy docstring with interpretation guidelines and Solstad et al. reference
+- Used `cast("EnvironmentProtocol", env)` pattern for method calls to satisfy mypy
+
+---
 
 ### Task 1.3: `encoding/_metrics.py` - batch_grid_scores [COMPLETED]
 

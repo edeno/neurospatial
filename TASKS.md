@@ -74,10 +74,10 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Verify delegation to `grid.py` utilities
   - [x] Add unit tests
 
-- [ ] **1.4** Implement batch border score computation in `_metrics.py`
-  - [ ] Implement `batch_border_scores(env, firing_rates, ...)` → `(n_neurons,)`
-  - [ ] Verify delegation to `border.py` utilities
-  - [ ] Add unit tests
+- [x] **1.4** Implement batch border score computation in `_metrics.py`
+  - [x] Implement `batch_border_scores(env, firing_rates, ...)` → `(n_neurons,)`
+  - [x] Verify delegation to `border.py` utilities
+  - [x] Add unit tests
 
 ---
 
