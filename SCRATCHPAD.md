@@ -3,10 +3,70 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 3.1 - Create `encoding/directional.py` with result class definitions
-**Next Task**: Task 3.2 - Implement `DirectionalRateResult` convenience methods
+**Last Completed**: Task 3.2 - Implement `DirectionalRateResult` convenience methods
+**Next Task**: Task 3.3 - Implement `DirectionalRateResult` tuning metrics
 
 ## Session Notes
+
+### Task 3.2: Implement `DirectionalRateResult` Convenience Methods [COMPLETED]
+
+**Goal**: Add convenience methods to `DirectionalRateResult` for plotting and basic metrics.
+
+**Approach**: TDD - wrote 16 tests first, then implemented.
+
+**Result**:
+
+- Added 4 convenience methods to `DirectionalRateResult` in `src/neurospatial/encoding/directional.py`
+- Added 16 new tests in `tests/encoding/test_encoding_directional.py` (total now 39, all pass)
+- All mypy and ruff checks pass
+- Code review passed with APPROVE
+
+**Key Implementation Details**:
+
+- `plot(ax, polar, **kwargs)`: Plot directional tuning curve
+  - Default: polar plot (circular representation)
+  - `polar=False`: Cartesian plot (direction on x-axis, rate on y-axis)
+  - Closes the curve by appending first point to end
+  - Accepts optional `ax` argument and passes through all kwargs
+  - Uses lazy import for matplotlib
+
+- `preferred_direction()`: Circular mean weighted by firing rate
+  - Returns float in radians, range [-π, π]
+  - Delegates to `circular_mean()` from `neurospatial.stats.circular`
+  - Handles uniform firing gracefully (returns value, though not meaningful)
+
+- `preferred_direction_deg()`: Convenience wrapper returning degrees
+  - Returns float in degrees, range [-180, 180]
+  - Simple conversion: `np.degrees(self.preferred_direction())`
+
+- `peak_firing_rate()`: Maximum firing rate
+  - Returns float (maximum value in firing_rate array)
+  - Uses `np.nanmax()` to handle NaN values
+
+**Test coverage (16 tests in 5 classes)**:
+
+- `TestDirectionalRateResultPlot`: 5 tests (returns axes, polar default, cartesian, existing axes, kwargs)
+- `TestDirectionalRateResultPreferredDirection`: 4 tests (returns float, valid range, near expected, uniform firing)
+- `TestDirectionalRateResultPreferredDirectionDeg`: 3 tests (returns float, conversion, valid range)
+- `TestDirectionalRateResultPeakFiringRate`: 4 tests (returns float, correct value, handles NaN, non-negative)
+
+**Documentation**:
+
+- All methods have complete NumPy-style docstrings
+- Include algorithm descriptions and formulas
+- Include interpretation guidelines
+- Include See Also cross-references
+
+**Code review feedback**: APPROVE - Ready to merge
+
+- All 16 tests pass
+- Zero mypy errors
+- Clean separation of concerns
+- Comprehensive documentation
+- Proper use of `circular_mean()` from `stats.circular`
+- Correct curve closing logic for polar plots
+
+---
 
 ### Task 3.1: Create `encoding/directional.py` with Result Class Definitions [COMPLETED]
 

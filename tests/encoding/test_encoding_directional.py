@@ -579,3 +579,397 @@ class TestDirectionalRatesResultEdgeCases:
 
         assert len(result) == 0
         assert list(result) == []
+
+
+# ==============================================================================
+# DirectionalRateResult Convenience Methods Tests - Task 3.2
+# ==============================================================================
+
+
+class TestDirectionalRateResultPlot:
+    """Test DirectionalRateResult.plot() method."""
+
+    def test_plot_returns_axes(
+        self,
+        single_firing_rate: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """plot() returns matplotlib Axes object."""
+        pytest.importorskip("matplotlib")
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        result = DirectionalRateResult(
+            firing_rate=single_firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        ax = result.plot()
+        assert ax is not None
+        # Check that it's an Axes-like object
+        assert hasattr(ax, "plot")
+
+    def test_plot_polar_default(
+        self,
+        single_firing_rate: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """plot() creates polar plot by default."""
+        pytest.importorskip("matplotlib")
+        from matplotlib.projections.polar import PolarAxes
+
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        result = DirectionalRateResult(
+            firing_rate=single_firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        ax = result.plot(polar=True)
+        assert isinstance(ax, PolarAxes)
+
+    def test_plot_cartesian(
+        self,
+        single_firing_rate: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """plot(polar=False) creates Cartesian plot."""
+        pytest.importorskip("matplotlib")
+        from matplotlib.projections.polar import PolarAxes
+
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        result = DirectionalRateResult(
+            firing_rate=single_firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        ax = result.plot(polar=False)
+        # Not a polar plot
+        assert not isinstance(ax, PolarAxes)
+
+    def test_plot_with_ax(
+        self,
+        single_firing_rate: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """plot() accepts existing axes."""
+        plt = pytest.importorskip("matplotlib.pyplot")
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        result = DirectionalRateResult(
+            firing_rate=single_firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        _, ax_provided = plt.subplots(subplot_kw={"projection": "polar"})
+        ax_returned = result.plot(ax=ax_provided)
+        assert ax_returned is ax_provided
+
+    def test_plot_with_kwargs(
+        self,
+        single_firing_rate: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """plot() passes through kwargs."""
+        pytest.importorskip("matplotlib")
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        result = DirectionalRateResult(
+            firing_rate=single_firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        # Should not raise an error with valid kwargs
+        ax = result.plot(color="red", linewidth=2)
+        assert ax is not None
+
+
+class TestDirectionalRateResultPreferredDirection:
+    """Test DirectionalRateResult.preferred_direction() method."""
+
+    def test_preferred_direction_returns_float(
+        self,
+        single_firing_rate: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """preferred_direction() returns a float."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        result = DirectionalRateResult(
+            firing_rate=single_firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        pref_dir = result.preferred_direction()
+        assert isinstance(pref_dir, float)
+
+    def test_preferred_direction_in_valid_range(
+        self,
+        single_firing_rate: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """preferred_direction() returns value in [-π, π]."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        result = DirectionalRateResult(
+            firing_rate=single_firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        pref_dir = result.preferred_direction()
+        assert -np.pi <= pref_dir <= np.pi
+
+    def test_preferred_direction_near_expected(
+        self,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+        n_bins: int,
+    ) -> None:
+        """preferred_direction() is near the tuning curve peak."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        # Create tuning curve with clear peak at π (180 degrees)
+        expected_dir = np.pi
+        angles = bin_centers
+        kappa = 5.0  # High concentration for clear peak
+        firing_rate = 10.0 * np.exp(kappa * (np.cos(angles - expected_dir) - 1))
+
+        result = DirectionalRateResult(
+            firing_rate=firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        pref_dir = result.preferred_direction()
+        # Should be close to expected direction (within ~15 degrees)
+        # Note: circular_mean returns [-π, π], so expected_dir (π) should be close
+        # to either π or -π (they're the same direction on a circle)
+        angular_diff = np.abs(np.angle(np.exp(1j * (pref_dir - expected_dir))))
+        assert angular_diff < np.pi / 12  # Within 15 degrees
+
+    def test_preferred_direction_uniform_firing(
+        self,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+        n_bins: int,
+    ) -> None:
+        """preferred_direction() handles uniform firing rate (returns NaN or value)."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        # Uniform firing rate - no clear preferred direction
+        firing_rate = np.ones(n_bins) * 5.0
+
+        result = DirectionalRateResult(
+            firing_rate=firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        # For uniform firing, circular_mean with uniform weights should return
+        # a value (though it may not be meaningful)
+        pref_dir = result.preferred_direction()
+        # Should return a float (either NaN or a value)
+        assert isinstance(pref_dir, float)
+
+
+class TestDirectionalRateResultPreferredDirectionDeg:
+    """Test DirectionalRateResult.preferred_direction_deg() method."""
+
+    def test_preferred_direction_deg_returns_float(
+        self,
+        single_firing_rate: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """preferred_direction_deg() returns a float."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        result = DirectionalRateResult(
+            firing_rate=single_firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        pref_dir_deg = result.preferred_direction_deg()
+        assert isinstance(pref_dir_deg, float)
+
+    def test_preferred_direction_deg_conversion(
+        self,
+        single_firing_rate: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """preferred_direction_deg() equals degrees conversion of preferred_direction()."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        result = DirectionalRateResult(
+            firing_rate=single_firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        pref_dir_rad = result.preferred_direction()
+        pref_dir_deg = result.preferred_direction_deg()
+        np.testing.assert_allclose(pref_dir_deg, np.degrees(pref_dir_rad))
+
+    def test_preferred_direction_deg_in_valid_range(
+        self,
+        single_firing_rate: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """preferred_direction_deg() returns value in [-180, 180]."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        result = DirectionalRateResult(
+            firing_rate=single_firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        pref_dir_deg = result.preferred_direction_deg()
+        assert -180 <= pref_dir_deg <= 180
+
+
+class TestDirectionalRateResultPeakFiringRate:
+    """Test DirectionalRateResult.peak_firing_rate() method."""
+
+    def test_peak_firing_rate_returns_float(
+        self,
+        single_firing_rate: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """peak_firing_rate() returns a float."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        result = DirectionalRateResult(
+            firing_rate=single_firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        peak = result.peak_firing_rate()
+        assert isinstance(peak, float)
+
+    def test_peak_firing_rate_correct_value(
+        self,
+        single_firing_rate: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """peak_firing_rate() returns maximum of firing_rate."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        result = DirectionalRateResult(
+            firing_rate=single_firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        peak = result.peak_firing_rate()
+        expected = float(np.max(single_firing_rate))
+        np.testing.assert_allclose(peak, expected)
+
+    def test_peak_firing_rate_with_nan(
+        self,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+        n_bins: int,
+    ) -> None:
+        """peak_firing_rate() handles NaN values correctly."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        # Create firing rate with some NaN values
+        firing_rate = np.ones(n_bins) * 5.0
+        firing_rate[0] = np.nan
+        firing_rate[10] = 15.0  # Peak
+
+        result = DirectionalRateResult(
+            firing_rate=firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        peak = result.peak_firing_rate()
+        assert peak == 15.0
+
+    def test_peak_firing_rate_nonnegative(
+        self,
+        single_firing_rate: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """peak_firing_rate() returns non-negative value."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        result = DirectionalRateResult(
+            firing_rate=single_firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        peak = result.peak_firing_rate()
+        assert peak >= 0

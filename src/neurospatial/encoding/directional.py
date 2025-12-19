@@ -50,9 +50,14 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
+
+if TYPE_CHECKING:
+    from matplotlib.axes import Axes
+    from matplotlib.projections.polar import PolarAxes
 
 __all__ = [
     "DirectionalRateResult",
@@ -146,6 +151,214 @@ class DirectionalRateResult:
     bin_centers: ArrayLike
     bin_size: float
     smoothing_sigma: float | None
+
+    def plot(
+        self,
+        ax: Axes | PolarAxes | None = None,
+        polar: bool = True,
+        **kwargs: Any,
+    ) -> Axes | PolarAxes:
+        """Plot the directional tuning curve.
+
+        Creates a visualization of the firing rate as a function of direction.
+        By default, creates a polar plot which provides an intuitive circular
+        representation of head direction tuning.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes or matplotlib.projections.polar.PolarAxes, optional
+            Axes to plot on. If None, creates a new figure with appropriate
+            projection (polar or Cartesian based on the ``polar`` parameter).
+        polar : bool, default=True
+            If True, create a polar plot (circular representation).
+            If False, create a Cartesian plot (angle on x-axis, rate on y-axis).
+        **kwargs : dict
+            Additional keyword arguments passed to matplotlib's plot function.
+            Common options include:
+            - color: Line color (default: matplotlib default)
+            - linewidth: Line width
+            - linestyle: Line style ('-', '--', ':', etc.)
+            - label: Legend label
+
+        Returns
+        -------
+        matplotlib.axes.Axes or matplotlib.projections.polar.PolarAxes
+            The axes object containing the plot. Returns PolarAxes if
+            ``polar=True``, otherwise regular Axes.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.encoding.directional import DirectionalRateResult
+        >>> n_bins = 60
+        >>> bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        >>> firing_rate = 10.0 * np.exp(2.0 * (np.cos(bin_centers - np.pi / 2) - 1))
+        >>> result = DirectionalRateResult(
+        ...     firing_rate=firing_rate,
+        ...     occupancy=np.ones(n_bins) * 0.5,
+        ...     bin_centers=bin_centers,
+        ...     bin_size=np.pi / 30,
+        ...     smoothing_sigma=None,
+        ... )
+        >>> ax = result.plot()  # Creates polar plot  # doctest: +SKIP
+
+        See Also
+        --------
+        matplotlib.pyplot.polar : Underlying polar plot function
+        """
+        import matplotlib.pyplot as plt
+
+        # Convert to numpy for plotting
+        rates = np.asarray(self.firing_rate, dtype=np.float64)
+        centers = np.asarray(self.bin_centers, dtype=np.float64)
+
+        # Close the curve by appending first point to end
+        rates_closed = np.concatenate([rates, [rates[0]]])
+        centers_closed = np.concatenate([centers, [centers[0] + 2 * np.pi]])
+
+        if ax is None:
+            if polar:
+                _, ax = plt.subplots(subplot_kw={"projection": "polar"})
+            else:
+                _, ax = plt.subplots()
+
+        ax.plot(centers_closed, rates_closed, **kwargs)
+
+        if not polar:
+            ax.set_xlabel("Direction (rad)")
+            ax.set_ylabel("Firing rate (Hz)")
+            ax.set_xlim(0, 2 * np.pi)
+
+        return ax
+
+    def preferred_direction(self) -> float:
+        """Compute the preferred direction (circular mean weighted by firing rate).
+
+        The preferred direction is the circular mean of the bin centers weighted
+        by the firing rate, representing the direction at which the neuron fires
+        most strongly on average.
+
+        Returns
+        -------
+        float
+            Preferred direction in radians, range [-π, π].
+
+        Notes
+        -----
+        Uses the circular mean formula:
+
+            θ_pref = arctan2(Σ(r_i * sin(θ_i)), Σ(r_i * cos(θ_i)))
+
+        where r_i is the firing rate and θ_i is the bin center.
+
+        This is a more robust measure than simply taking the bin with maximum
+        firing rate, as it accounts for the overall shape of the tuning curve.
+
+        For neurons with uniform firing (no directional preference), the result
+        may not be meaningful, but a value will still be returned.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.encoding.directional import DirectionalRateResult
+        >>> n_bins = 60
+        >>> bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        >>> # Create tuning curve with peak at π/2 (90 degrees)
+        >>> firing_rate = 10.0 * np.exp(5.0 * (np.cos(bin_centers - np.pi / 2) - 1))
+        >>> result = DirectionalRateResult(
+        ...     firing_rate=firing_rate,
+        ...     occupancy=np.ones(n_bins) * 0.5,
+        ...     bin_centers=bin_centers,
+        ...     bin_size=np.pi / 30,
+        ...     smoothing_sigma=None,
+        ... )
+        >>> pref = result.preferred_direction()
+        >>> np.abs(pref - np.pi / 2) < 0.1  # Close to 90 degrees
+        True
+
+        See Also
+        --------
+        preferred_direction_deg : Same result in degrees
+        mean_vector_length : Strength of directional tuning
+        neurospatial.stats.circular.circular_mean : Underlying circular mean function
+        """
+        from neurospatial.stats.circular import circular_mean
+
+        rates = np.asarray(self.firing_rate, dtype=np.float64)
+        centers = np.asarray(self.bin_centers, dtype=np.float64)
+
+        return circular_mean(centers, weights=rates)
+
+    def preferred_direction_deg(self) -> float:
+        """Compute the preferred direction in degrees.
+
+        This is a convenience method that returns the preferred direction
+        converted to degrees.
+
+        Returns
+        -------
+        float
+            Preferred direction in degrees, range [-180, 180].
+
+        See Also
+        --------
+        preferred_direction : Same result in radians
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.encoding.directional import DirectionalRateResult
+        >>> n_bins = 60
+        >>> bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        >>> firing_rate = 10.0 * np.exp(5.0 * (np.cos(bin_centers - np.pi / 2) - 1))
+        >>> result = DirectionalRateResult(
+        ...     firing_rate=firing_rate,
+        ...     occupancy=np.ones(n_bins) * 0.5,
+        ...     bin_centers=bin_centers,
+        ...     bin_size=np.pi / 30,
+        ...     smoothing_sigma=None,
+        ... )
+        >>> pref_deg = result.preferred_direction_deg()
+        >>> np.abs(pref_deg - 90) < 6  # Close to 90 degrees
+        True
+        """
+        return float(np.degrees(self.preferred_direction()))
+
+    def peak_firing_rate(self) -> float:
+        """Get the maximum firing rate.
+
+        Returns the peak (maximum) firing rate across all directional bins.
+        NaN values are ignored when computing the maximum.
+
+        Returns
+        -------
+        float
+            Maximum firing rate in Hz.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.encoding.directional import DirectionalRateResult
+        >>> n_bins = 60
+        >>> bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        >>> firing_rate = 10.0 * np.exp(2.0 * (np.cos(bin_centers - np.pi / 2) - 1))
+        >>> result = DirectionalRateResult(
+        ...     firing_rate=firing_rate,
+        ...     occupancy=np.ones(n_bins) * 0.5,
+        ...     bin_centers=bin_centers,
+        ...     bin_size=np.pi / 30,
+        ...     smoothing_sigma=None,
+        ... )
+        >>> peak = result.peak_firing_rate()
+        >>> peak > 0
+        True
+
+        See Also
+        --------
+        preferred_direction : Direction of peak firing
+        """
+        rates = np.asarray(self.firing_rate, dtype=np.float64)
+        return float(np.nanmax(rates))
 
 
 @dataclass(frozen=True)

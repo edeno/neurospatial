@@ -172,11 +172,11 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Define `DirectionalRatesResult` dataclass (frozen=True)
   - [x] Note: No Environment dependency, only bin_centers
 
-- [ ] **3.2** Implement `DirectionalRateResult` convenience methods
-  - [ ] Implement `plot(ax, polar, **kwargs)` → polar or Cartesian tuning curve
-  - [ ] Implement `preferred_direction()` → circular mean in radians
-  - [ ] Implement `preferred_direction_deg()` → converts to degrees
-  - [ ] Implement `peak_firing_rate()` → max of firing_rate
+- [x] **3.2** Implement `DirectionalRateResult` convenience methods
+  - [x] Implement `plot(ax, polar, **kwargs)` → polar or Cartesian tuning curve
+  - [x] Implement `preferred_direction()` → circular mean in radians
+  - [x] Implement `preferred_direction_deg()` → converts to degrees
+  - [x] Implement `peak_firing_rate()` → max of firing_rate
 
 - [ ] **3.3** Implement `DirectionalRateResult` tuning metrics
   - [ ] Implement `mean_vector_length()` → Rayleigh MVL via `stats.circular`
