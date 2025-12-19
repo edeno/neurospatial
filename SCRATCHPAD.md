@@ -3,10 +3,57 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 2.3 - Implement `SpatialRateResult` cell type metrics
-**Next Task**: Task 2.4 - Implement `SpatialRatesResult` batch methods
+**Last Completed**: Task 2.4 - Implement `SpatialRatesResult` batch methods
+**Next Task**: Task 2.5 - Implement `SpatialRatesResult` batch metrics
 
 ## Session Notes
+
+### Task 2.4: `SpatialRatesResult` Batch Methods [COMPLETED]
+
+**Goal**: Implement batch convenience methods for the SpatialRatesResult class.
+
+**Approach**: TDD - wrote 18 tests first, then implemented.
+
+**Result**:
+
+- Added 3 batch methods to `SpatialRatesResult` in `src/neurospatial/encoding/spatial.py`
+- Added 18 new tests in `tests/encoding/test_encoding_spatial.py` (total now 87, all pass)
+- All mypy and ruff checks pass
+- Code review passed with APPROVE
+
+**Key Implementation Details**:
+
+- `plot(idx, ax, **kwargs)`: Plot rate map for a specific neuron
+  - Requires `idx` parameter (0-indexed)
+  - Delegates to `env.plot_field()` for visualization
+  - Uses `_to_numpy()` for JAX compatibility
+  - Accepts optional `ax` argument and passes through all kwargs
+
+- `spatial_information()`: Batch spatial information → returns `(n_neurons,)` array
+  - Delegates to `batch_spatial_information()` from `_metrics.py`
+  - Uses `_to_numpy()` for JAX compatibility
+  - All values are non-negative
+
+- `sparsity()`: Batch sparsity → returns `(n_neurons,)` array
+  - Delegates to `batch_sparsity()` from `_metrics.py`
+  - Uses `_to_numpy()` for JAX compatibility
+  - All values in range [0, 1]
+
+**Documentation**:
+
+- All methods have complete NumPy-style docstrings
+- Include algorithm formulas (Skaggs et al. 1993, 1996)
+- Include interpretation guidelines
+- Include practical examples
+
+**Code review feedback**: APPROVE - Ready to merge
+
+- Excellent adherence to project patterns
+- Complete and accurate NumPy-style documentation
+- Comprehensive test coverage (18 tests)
+- Proper delegation to existing utilities
+
+---
 
 ### Task 2.3: `SpatialRateResult` Cell Type Metrics [COMPLETED]
 

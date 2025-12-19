@@ -1571,3 +1571,404 @@ class TestSpatialRateResultRegionCoverage:
         coverage = result.region_coverage(threshold=threshold)
         for region in expected:
             assert coverage[region] == pytest.approx(expected[region])
+
+
+# ==============================================================================
+# Test SpatialRatesResult batch methods (Task 2.4)
+# ==============================================================================
+
+
+class TestSpatialRatesResultPlot:
+    """Tests for SpatialRatesResult.plot() method."""
+
+    def test_has_plot_method(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """SpatialRatesResult should have a plot() method."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        assert hasattr(result, "plot")
+        assert callable(result.plot)
+
+    def test_plot_requires_idx_argument(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """plot() should require an idx argument for batch results."""
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        # Should work with idx
+        ax = result.plot(idx=0)
+        assert ax is not None
+        plt.close("all")
+
+    def test_plot_returns_axes(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """plot() should return matplotlib Axes."""
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        ax = result.plot(idx=2)
+        assert ax is not None
+        plt.close("all")
+
+    def test_plot_accepts_ax_argument(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """plot() should accept an optional ax argument."""
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        _fig, ax = plt.subplots()
+        returned_ax = result.plot(idx=1, ax=ax)
+        assert returned_ax is ax or returned_ax is not None
+        plt.close("all")
+
+    def test_plot_different_neurons(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """plot() should plot different neurons when idx changes."""
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        # Should not raise for any valid index
+        for idx in range(len(result)):
+            ax = result.plot(idx=idx)
+            assert ax is not None
+            plt.close("all")
+
+
+class TestSpatialRatesResultSpatialInformation:
+    """Tests for SpatialRatesResult.spatial_information() method."""
+
+    def test_has_spatial_information_method(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """SpatialRatesResult should have a spatial_information() method."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        assert hasattr(result, "spatial_information")
+        assert callable(result.spatial_information)
+
+    def test_spatial_information_returns_array(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """spatial_information() should return an ndarray for batch."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        info = result.spatial_information()
+        assert isinstance(info, np.ndarray)
+
+    def test_spatial_information_correct_shape(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """spatial_information() should return (n_neurons,) array."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        info = result.spatial_information()
+        n_neurons = firing_rates_batch.shape[0]
+        assert info.shape == (n_neurons,)
+
+    def test_spatial_information_delegates_to_metrics(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """spatial_information() should match batch_spatial_information()."""
+        from neurospatial.encoding._metrics import batch_spatial_information
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        expected = batch_spatial_information(firing_rates_batch, occupancy)
+        info = result.spatial_information()
+        np.testing.assert_array_almost_equal(info, expected)
+
+    def test_spatial_information_all_nonnegative(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """spatial_information() should always be non-negative."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        info = result.spatial_information()
+        assert np.all(info >= 0.0)
+
+    def test_spatial_information_uniform_firing_is_zero(
+        self, simple_env: Environment
+    ) -> None:
+        """Uniform firing should have ~zero spatial information for all neurons."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        n_bins = simple_env.n_bins
+        n_neurons = 3
+        firing_rates = np.ones((n_neurons, n_bins), dtype=np.float64) * 5.0
+        occupancy = np.ones(n_bins, dtype=np.float64)
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        info = result.spatial_information()
+        np.testing.assert_array_almost_equal(info, np.zeros(n_neurons), decimal=6)
+
+
+class TestSpatialRatesResultSparsity:
+    """Tests for SpatialRatesResult.sparsity() method."""
+
+    def test_has_sparsity_method(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """SpatialRatesResult should have a sparsity() method."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        assert hasattr(result, "sparsity")
+        assert callable(result.sparsity)
+
+    def test_sparsity_returns_array(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """sparsity() should return an ndarray for batch."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        spars = result.sparsity()
+        assert isinstance(spars, np.ndarray)
+
+    def test_sparsity_correct_shape(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """sparsity() should return (n_neurons,) array."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        spars = result.sparsity()
+        n_neurons = firing_rates_batch.shape[0]
+        assert spars.shape == (n_neurons,)
+
+    def test_sparsity_delegates_to_metrics(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """sparsity() should match batch_sparsity()."""
+        from neurospatial.encoding._metrics import batch_sparsity
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        expected = batch_sparsity(firing_rates_batch, occupancy)
+        spars = result.sparsity()
+        np.testing.assert_array_almost_equal(spars, expected)
+
+    def test_sparsity_all_in_valid_range(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """sparsity() values should all be in range [0, 1]."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        spars = result.sparsity()
+        assert np.all(spars >= 0.0)
+        assert np.all(spars <= 1.0)
+
+    def test_sparsity_uniform_firing_is_one(self, simple_env: Environment) -> None:
+        """Uniform firing should have sparsity close to 1 for all neurons."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        n_bins = simple_env.n_bins
+        n_neurons = 3
+        firing_rates = np.ones((n_neurons, n_bins), dtype=np.float64) * 5.0
+        occupancy = np.ones(n_bins, dtype=np.float64)
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        spars = result.sparsity()
+        np.testing.assert_array_almost_equal(spars, np.ones(n_neurons), decimal=6)
+
+    def test_sparsity_selective_firing_is_low(self, simple_env: Environment) -> None:
+        """Selective firing (single bin) should have low sparsity."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        n_bins = simple_env.n_bins
+        n_neurons = 3
+        firing_rates = np.zeros((n_neurons, n_bins), dtype=np.float64)
+        # Each neuron fires in different single bins
+        for i in range(n_neurons):
+            firing_rates[i, i * 4 + 2] = 30.0
+        occupancy = np.ones(n_bins, dtype=np.float64)
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        spars = result.sparsity()
+        # Sparsity should be 1/n_bins for single-bin firing with uniform occupancy
+        expected = np.full(n_neurons, 1.0 / n_bins)
+        np.testing.assert_array_almost_equal(spars, expected)

@@ -108,11 +108,11 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Implement `border_score(threshold, min_area, distance_metric)` → delegates to `border.py`
   - [x] Implement `region_coverage(threshold, regions)` → delegates to `border.py`
 
-- [ ] **2.4** Implement `SpatialRatesResult` batch methods
+- [x] **2.4** Implement `SpatialRatesResult` batch methods
   - [x] Implement `__len__`, `__getitem__`, `__iter__` for iteration
-  - [ ] Implement `plot(idx, ax, **kwargs)`
-  - [ ] Implement `spatial_information()` → returns `(n_neurons,)`
-  - [ ] Implement `sparsity()` → returns `(n_neurons,)`
+  - [x] Implement `plot(idx, ax, **kwargs)`
+  - [x] Implement `spatial_information()` → returns `(n_neurons,)`
+  - [x] Implement `sparsity()` → returns `(n_neurons,)`
 
 - [ ] **2.5** Implement `SpatialRatesResult` batch metrics
   - [ ] Implement `grid_scores()` → delegates to `batch_grid_scores()`

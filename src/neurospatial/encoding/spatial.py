@@ -728,3 +728,119 @@ class SpatialRatesResult(SpatialResultMixin):
         """
         for i in range(len(self)):
             yield self[i]
+
+    def plot(self, idx: int, ax: Axes | None = None, **kwargs: Any) -> Axes:
+        """Plot the spatial rate map for a specific neuron.
+
+        Delegates to the environment's plot_field method for consistent
+        visualization across the codebase.
+
+        Parameters
+        ----------
+        idx : int
+            Index of the neuron to plot (0-indexed).
+        ax : matplotlib.axes.Axes, optional
+            Axes to plot on. If None, creates a new figure and axes.
+        **kwargs
+            Additional keyword arguments passed to env.plot_field().
+            Common options include:
+            - cmap : str or Colormap, default="viridis"
+            - vmin, vmax : float, colorbar limits
+            - add_colorbar : bool, default=True
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+            The axes containing the plot.
+
+        Examples
+        --------
+        >>> result = SpatialRatesResult(...)
+        >>> ax = result.plot(idx=0)
+        >>> plt.show()
+
+        >>> fig, ax = plt.subplots()
+        >>> result.plot(idx=2, ax=ax, cmap="hot", vmax=20.0)
+        """
+        rates: NDArray[np.float64] = np.asarray(self.firing_rates)
+        return self.env.plot_field(_to_numpy(rates[idx]), ax=ax, **kwargs)
+
+    def spatial_information(self) -> NDArray[np.float64]:
+        """Skaggs spatial information (bits per spike) for all neurons.
+
+        Quantifies how much information each spike conveys about the
+        animal's spatial location. Higher values indicate more spatially
+        selective firing.
+
+        Returns
+        -------
+        ndarray, shape (n_neurons,)
+            Spatial information in bits/spike for each neuron.
+            Always non-negative. Returns 0.0 for uniform firing.
+
+        Notes
+        -----
+        Uses the Skaggs et al. (1993) formula:
+
+        .. math::
+
+            I = \\sum_i p_i \\frac{r_i}{\\bar{r}} \\log_2 \\left( \\frac{r_i}{\\bar{r}} \\right)
+
+        **Interpretation**:
+
+        - Place cells typically have 1-3 bits/spike
+        - Higher values indicate more spatially selective firing
+        - Zero means uniform firing (no spatial selectivity)
+
+        References
+        ----------
+        .. [1] Skaggs, W. E., McNaughton, B. L., & Gothard, K. M. (1993).
+               An information-theoretic approach to deciphering the hippocampal code.
+
+        Examples
+        --------
+        >>> result = SpatialRatesResult(...)
+        >>> info = result.spatial_information()
+        >>> print(f"Mean spatial information: {info.mean():.2f} bits/spike")
+        """
+        from neurospatial.encoding._metrics import batch_spatial_information
+
+        return batch_spatial_information(
+            _to_numpy(self.firing_rates), _to_numpy(self.occupancy)
+        )
+
+    def sparsity(self) -> NDArray[np.float64]:
+        """Sparsity of spatial firing for all neurons.
+
+        Measures what fraction of the environment elicits significant
+        firing. Lower values indicate sparser, more selective place fields.
+
+        Returns
+        -------
+        ndarray, shape (n_neurons,)
+            Sparsity values in range [0, 1] for each neuron.
+            - Low (0.1-0.3): Sparse, selective place field
+            - High (~1.0): Uniform firing throughout environment
+
+        Notes
+        -----
+        Uses the Skaggs et al. (1996) formula:
+
+        .. math::
+
+            S = \\frac{\\left( \\sum_i p_i r_i \\right)^2}{\\sum_i p_i r_i^2}
+
+        References
+        ----------
+        .. [1] Skaggs, W. E., McNaughton, B. L., et al. (1996). Theta phase
+               precession in hippocampal neuronal populations.
+
+        Examples
+        --------
+        >>> result = SpatialRatesResult(...)
+        >>> spars = result.sparsity()
+        >>> print(f"Mean sparsity: {spars.mean():.2f}")
+        """
+        from neurospatial.encoding._metrics import batch_sparsity
+
+        return batch_sparsity(_to_numpy(self.firing_rates), _to_numpy(self.occupancy))
