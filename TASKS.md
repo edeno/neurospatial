@@ -202,10 +202,10 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Include mean_vector_length, tuning_width, tuning_width_deg columns
   - [x] Include peak_rate, is_hd_cell columns
 
-- [ ] **3.7** Implement binning layer for directional encoding
-  - [ ] Create helper to convert (spike_times, times, headings, bin_size) → (spike_counts, occupancy)
-  - [ ] Handle circular binning (0 to 2π)
-  - [ ] Support `angle_unit` parameter for input conversion
+- [x] **3.7** Implement binning layer for directional encoding
+  - [x] Create helper to convert (spike_times, times, headings, bin_size) → (spike_counts, occupancy)
+  - [x] Handle circular binning (0 to 2π)
+  - [x] Support `angle_unit` parameter for input conversion
 
 - [ ] **3.8** Implement `compute_directional_rate()` function
   - [ ] Accept single spike_times array

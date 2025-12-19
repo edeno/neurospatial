@@ -3,10 +3,82 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 3.6 - Implement `DirectionalRatesResult.to_dataframe()`
-**Next Task**: Task 3.7 - Implement binning layer for directional encoding
+**Last Completed**: Task 3.7 - Implement binning layer for directional encoding
+**Next Task**: Task 3.8 - Implement `compute_directional_rate()` function
 
 ## Session Notes
+
+### Task 3.7: Implement Binning Layer for Directional Encoding [COMPLETED]
+
+**Goal**: Create helper functions to convert (spike_times, times, headings, bin_size) → (spike_counts, occupancy) for directional encoding.
+
+**Approach**: TDD - wrote 36 tests first, then implemented.
+
+**Result**:
+
+- Created `src/neurospatial/encoding/_directional_binning.py` with 3 functions
+- Created `tests/encoding/test_encoding_directional_binning.py` with 36 tests (all pass)
+- All mypy and ruff checks pass
+- Code review passed with APPROVE
+
+**Key Implementation Details**:
+
+- `bin_directional_spike_train(spike_times, times, headings, bin_size, angle_unit)`: Single neuron spike binning
+  - Assigns spikes to angular bins using nearest-neighbor lookup (not interpolation)
+  - Handles circular 0/2π boundary correctly
+  - Returns `(n_bins,)` float64 array of spike counts
+  - Supports `angle_unit` parameter ('rad' or 'deg')
+
+- `compute_directional_occupancy(times, headings, bin_size, angle_unit)`: Compute time spent at each direction
+  - Uses actual time deltas between frames (handles variable sampling)
+  - Returns tuple: `(occupancy, bin_centers)`
+    - occupancy: `(n_bins,)` float64 in seconds
+    - bin_centers: `(n_bins,)` float64 in radians [0, 2π)
+  - Validates input shapes, monotonicity, and minimum sample count
+
+- `bin_directional_spike_trains(spike_times, times, headings, bin_size, angle_unit, n_jobs)`: Batch version
+  - Normalizes spike times via `normalize_spike_times()` for flexible input formats
+  - Returns tuple: `(spike_counts, occupancy, bin_centers)`
+    - spike_counts: `(n_neurons, n_bins)` float64
+    - occupancy: `(n_bins,)` float64 (shared across neurons)
+    - bin_centers: `(n_bins,)` float64 in radians
+  - Supports parallelization via joblib `n_jobs` parameter
+
+**Design differences from spatial binning**:
+
+- No `env` parameter (head direction is 1D circular, not spatial)
+- Returns `bin_centers` in radians (not coordinate bins)
+- Uses nearest-neighbor spike assignment (not interpolation) to handle circular discontinuity
+- Input headings can be in radians or degrees (via `angle_unit` parameter)
+
+**Test coverage (36 tests in 8 classes)**:
+
+- `TestBinDirectionalSpikeTrain`: 7 tests (basic, shape, non-negative, count, empty, outside range)
+- `TestBinDirectionalSpikeTrainAngleUnit`: 3 tests (rad default, deg, equivalence)
+- `TestComputeDirectionalOccupancy`: 8 tests (tuple return, shapes, range, dtype, non-negative, duration, angle_unit)
+- `TestBinDirectionalSpikeTrains`: 10 tests (tuple return, shapes, dtype, empty neuron, consistency, n_jobs, single neuron, normalization)
+- `TestDirectionalBinningEdgeCases`: 3 tests (all spikes at one direction, uniform heading, wrap-around)
+- `TestDirectionalBinningInputValidation`: 4 tests (mismatched lengths, insufficient samples, non-monotonic times, invalid angle_unit)
+
+**Documentation**:
+
+- Complete NumPy-style docstrings with parameter descriptions
+- Module docstring explains output shapes and layer purpose
+- Examples show typical usage patterns
+- Notes explain circular binning and spike assignment algorithms
+
+**Code review feedback addressed**:
+
+1. Added validation for `angle_unit` in `bin_directional_spike_train()` (was only in `compute_directional_occupancy()`)
+2. Added test `test_invalid_angle_unit_spike_train` to cover this validation
+
+**Circular binning correctness**:
+
+- Headings wrapped to [0, 2π) before binning
+- Nearest-neighbor lookup for spikes avoids circular interpolation issues (e.g., 350° to 10° would incorrectly interpolate to 180° with linear interpolation)
+- Edge case: value exactly at 2π is wrapped to bin 0
+
+---
 
 ### Task 3.6: Implement `DirectionalRatesResult.to_dataframe()` [COMPLETED]
 
