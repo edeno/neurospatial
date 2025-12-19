@@ -669,3 +669,355 @@ class TestEgocentricRatesResultIter:
 
         for i, single in enumerate(result):
             np.testing.assert_array_equal(single.firing_rate, batch_firing_rates[i])
+
+
+# =============================================================================
+# EgocentricRateResult Convenience Methods Tests (Task 5.2)
+# =============================================================================
+
+
+class TestEgocentricRateResultPlot:
+    """Test plot() method of EgocentricRateResult."""
+
+    def test_plot_returns_axes(
+        self,
+        sample_ego_env: Environment,
+        single_neuron_firing_rate: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that plot() returns a matplotlib Axes object."""
+        from matplotlib.axes import Axes
+
+        from neurospatial.encoding.egocentric import EgocentricRateResult
+
+        result = EgocentricRateResult(
+            firing_rate=single_neuron_firing_rate,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        ax = result.plot()
+        assert isinstance(ax, Axes)
+
+    def test_plot_accepts_ax_parameter(
+        self,
+        sample_ego_env: Environment,
+        single_neuron_firing_rate: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that plot() accepts an ax parameter."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.encoding.egocentric import EgocentricRateResult
+
+        result = EgocentricRateResult(
+            firing_rate=single_neuron_firing_rate,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        fig, ax = plt.subplots()
+        returned_ax = result.plot(ax=ax)
+        assert returned_ax is ax
+        plt.close(fig)
+
+    def test_plot_accepts_kwargs(
+        self,
+        sample_ego_env: Environment,
+        single_neuron_firing_rate: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that plot() accepts keyword arguments passed to env.plot_field."""
+        from neurospatial.encoding.egocentric import EgocentricRateResult
+
+        result = EgocentricRateResult(
+            firing_rate=single_neuron_firing_rate,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        # Should not raise - kwargs are passed through
+        ax = result.plot(cmap="hot", vmax=30.0)
+        assert ax is not None
+
+
+class TestEgocentricRateResultPreferredDistance:
+    """Test preferred_distance() method of EgocentricRateResult."""
+
+    def test_preferred_distance_returns_float(
+        self,
+        sample_ego_env: Environment,
+        single_neuron_firing_rate: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that preferred_distance() returns a float."""
+        from neurospatial.encoding.egocentric import EgocentricRateResult
+
+        result = EgocentricRateResult(
+            firing_rate=single_neuron_firing_rate,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        dist = result.preferred_distance()
+        assert isinstance(dist, float)
+
+    def test_preferred_distance_is_nonnegative(
+        self,
+        sample_ego_env: Environment,
+        single_neuron_firing_rate: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that preferred_distance() returns a non-negative value."""
+        from neurospatial.encoding.egocentric import EgocentricRateResult
+
+        result = EgocentricRateResult(
+            firing_rate=single_neuron_firing_rate,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        dist = result.preferred_distance()
+        assert dist >= 0.0
+
+    def test_preferred_distance_within_range(
+        self,
+        sample_ego_env: Environment,
+        single_neuron_firing_rate: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that preferred_distance() is within distance_range."""
+        from neurospatial.encoding.egocentric import EgocentricRateResult
+
+        distance_range = (0.0, 50.0)
+        result = EgocentricRateResult(
+            firing_rate=single_neuron_firing_rate,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=distance_range,
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        dist = result.preferred_distance()
+        # Should be approximately within distance range (accounting for bin centers)
+        assert dist >= distance_range[0] - 5.0  # Allow some margin for bin centers
+        assert dist <= distance_range[1] + 5.0
+
+    def test_preferred_distance_corresponds_to_peak_bin(
+        self,
+        sample_ego_env: Environment,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that preferred_distance() corresponds to peak firing bin."""
+        from neurospatial.encoding.egocentric import EgocentricRateResult
+
+        # Create firing rate with known peak
+        n_bins = sample_ego_env.n_bins
+        firing_rate = np.zeros(n_bins)
+        peak_idx = n_bins // 2
+        firing_rate[peak_idx] = 20.0
+
+        result = EgocentricRateResult(
+            firing_rate=firing_rate,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        dist = result.preferred_distance()
+        # Distance is first component (index 0) of bin_centers
+        expected_dist = float(sample_ego_env.bin_centers[peak_idx, 0])
+        assert dist == expected_dist
+
+
+class TestEgocentricRateResultPreferredDirection:
+    """Test preferred_direction() method of EgocentricRateResult."""
+
+    def test_preferred_direction_returns_float(
+        self,
+        sample_ego_env: Environment,
+        single_neuron_firing_rate: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that preferred_direction() returns a float."""
+        from neurospatial.encoding.egocentric import EgocentricRateResult
+
+        result = EgocentricRateResult(
+            firing_rate=single_neuron_firing_rate,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        direction = result.preferred_direction()
+        assert isinstance(direction, float)
+
+    def test_preferred_direction_in_valid_range(
+        self,
+        sample_ego_env: Environment,
+        single_neuron_firing_rate: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that preferred_direction() is in [-pi, pi] range.
+
+        Note: The sample_ego_env fixture creates positions from -pi to slightly
+        past +pi to cover 12 direction bins. After binning, bin_centers may
+        slightly exceed [-pi, pi] range. We allow a 1.0 radian margin to
+        account for this.
+        """
+        from neurospatial.encoding.egocentric import EgocentricRateResult
+
+        result = EgocentricRateResult(
+            firing_rate=single_neuron_firing_rate,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        direction = result.preferred_direction()
+        # Should be in valid angle range (allowing margin for bin centers from fixture)
+        # Fixture creates directions from -pi to +pi with 12 bins, bin_centers may be offset
+        assert direction >= -np.pi - 1.0
+        assert direction <= np.pi + 1.0
+
+    def test_preferred_direction_corresponds_to_peak_bin(
+        self,
+        sample_ego_env: Environment,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that preferred_direction() corresponds to peak firing bin."""
+        from neurospatial.encoding.egocentric import EgocentricRateResult
+
+        # Create firing rate with known peak
+        n_bins = sample_ego_env.n_bins
+        firing_rate = np.zeros(n_bins)
+        peak_idx = n_bins // 3  # Different from preferred_distance test
+        firing_rate[peak_idx] = 25.0
+
+        result = EgocentricRateResult(
+            firing_rate=firing_rate,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        direction = result.preferred_direction()
+        # Direction is second component (index 1) of bin_centers
+        expected_direction = float(sample_ego_env.bin_centers[peak_idx, 1])
+        assert direction == expected_direction
+
+    def test_preferred_direction_0_means_ahead(
+        self,
+        sample_ego_env: Environment,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test convention: 0 radians means object is ahead of animal.
+
+        This verifies the egocentric coordinate convention documented in
+        CLAUDE.md and the module docstring.
+        """
+        from neurospatial.encoding.egocentric import EgocentricRateResult
+
+        # Find a bin with direction close to 0 (ahead)
+        bin_centers = sample_ego_env.bin_centers
+        # Find the bin closest to direction=0
+        directions = bin_centers[:, 1]
+        ahead_bin = np.argmin(np.abs(directions))
+
+        # Create firing rate peaked at the "ahead" bin
+        n_bins = sample_ego_env.n_bins
+        firing_rate = np.zeros(n_bins)
+        firing_rate[ahead_bin] = 30.0
+
+        result = EgocentricRateResult(
+            firing_rate=firing_rate,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        direction = result.preferred_direction()
+        # Should be close to 0 (ahead)
+        assert abs(direction) < np.pi / 6  # Within 30 degrees of ahead
+
+
+class TestEgocentricRateResultConvenienceMethodsWithNaN:
+    """Test convenience methods handle NaN values correctly."""
+
+    def test_preferred_distance_with_some_nan(
+        self,
+        sample_ego_env: Environment,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test preferred_distance() works with NaN values in firing rate."""
+        from neurospatial.encoding.egocentric import EgocentricRateResult
+
+        n_bins = sample_ego_env.n_bins
+        firing_rate = np.full(n_bins, np.nan)
+        firing_rate[10] = 15.0  # One valid value
+
+        result = EgocentricRateResult(
+            firing_rate=firing_rate,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        dist = result.preferred_distance()
+        # Should return distance of the only non-NaN bin
+        expected_dist = float(sample_ego_env.bin_centers[10, 0])
+        assert dist == expected_dist
+
+    def test_preferred_direction_with_some_nan(
+        self,
+        sample_ego_env: Environment,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test preferred_direction() works with NaN values in firing rate."""
+        from neurospatial.encoding.egocentric import EgocentricRateResult
+
+        n_bins = sample_ego_env.n_bins
+        firing_rate = np.full(n_bins, np.nan)
+        firing_rate[15] = 20.0  # One valid value
+
+        result = EgocentricRateResult(
+            firing_rate=firing_rate,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        direction = result.preferred_direction()
+        # Should return direction of the only non-NaN bin
+        expected_direction = float(sample_ego_env.bin_centers[15, 1])
+        assert direction == expected_direction

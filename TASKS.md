@@ -306,10 +306,10 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Define `EgocentricRatesResult` dataclass (frozen=True)
   - [x] Note: Uses `ego_env` (polar Environment), not spatial Environment
 
-- [ ] **5.2** Implement `EgocentricRateResult` convenience methods
-  - [ ] Implement `plot(ax, **kwargs)` → delegates to `ego_env.plot_field()`
-  - [ ] Implement `preferred_distance()` → distance component of peak bin
-  - [ ] Implement `preferred_direction()` → direction component of peak bin (0=ahead)
+- [x] **5.2** Implement `EgocentricRateResult` convenience methods
+  - [x] Implement `plot(ax, **kwargs)` → delegates to `ego_env.plot_field()`
+  - [x] Implement `preferred_distance()` → distance component of peak bin
+  - [x] Implement `preferred_direction()` → direction component of peak bin (0=ahead)
 
 - [ ] **5.3** Implement `EgocentricRateResult` classification
   - [ ] Implement `is_ovc(min_info)` → boolean based on egocentric spatial info

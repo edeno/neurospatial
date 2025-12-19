@@ -3,10 +3,41 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 5.1 - Create `encoding/egocentric.py` with result class definitions
-**Next Task**: Task 5.2 - Implement `EgocentricRateResult` convenience methods
+**Last Completed**: Task 5.2 - Implement `EgocentricRateResult` convenience methods
+**Next Task**: Task 5.3 - Implement `EgocentricRateResult` classification
 
 ## Session Notes
+
+### Task 5.2: Implement `EgocentricRateResult` convenience methods [COMPLETED]
+
+**Goal**: Add three convenience methods to `EgocentricRateResult`: plot, preferred_distance, and preferred_direction.
+
+**Implementation**:
+- Added three methods to `EgocentricRateResult` in `src/neurospatial/encoding/egocentric.py`:
+  - `plot(ax=None, **kwargs)`: Delegates to `ego_env.plot_field()` for visualization
+  - `preferred_distance()`: Returns distance component (index 0) of peak bin
+  - `preferred_direction()`: Returns direction component (index 1) of peak bin (0=ahead)
+- All methods use `_to_numpy()` helper for JAX compatibility
+- Added NumPy-style docstrings with coordinate convention documentation
+
+**TDD Process**:
+1. Wrote 13 new tests in `tests/encoding/test_encoding_egocentric.py`:
+   - 3 tests for `plot()` (returns axes, accepts ax, accepts kwargs)
+   - 4 tests for `preferred_distance()` (returns float, non-negative, within range, corresponds to peak)
+   - 4 tests for `preferred_direction()` (returns float, valid range, corresponds to peak, 0=ahead)
+   - 2 tests for NaN handling (some NaN values)
+2. Ran tests - all 13 failed (expected)
+3. Implemented the methods
+4. Ran tests - all 13 passed
+
+**Code Review**: APPROVED
+- Optional suggestion: Add all-NaN edge case handling (matches existing behavior in view.py single-neuron methods)
+- This is non-blocking and can be addressed in follow-up if desired
+
+**Test Results**: 44/44 tests pass (31 original + 13 new)
+**Quality checks**: All ruff and mypy checks pass
+
+---
 
 ### Task 5.1: Create `encoding/egocentric.py` with result class definitions [COMPLETED]
 

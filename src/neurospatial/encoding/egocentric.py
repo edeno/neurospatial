@@ -74,11 +74,16 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from numpy.typing import ArrayLike
+import numpy as np
+from numpy.typing import ArrayLike, NDArray
+
+from neurospatial.encoding._base import _to_numpy
 
 if TYPE_CHECKING:
+    from matplotlib.axes import Axes
+
     from neurospatial import Environment
 
 __all__ = [
@@ -183,6 +188,136 @@ class EgocentricRateResult:
     distance_range: tuple[float, float]
     n_distance_bins: int
     n_direction_bins: int
+
+    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
+        """Plot the egocentric rate map (firing rate by distance/direction).
+
+        Delegates to the egocentric environment's plot_field method for
+        consistent visualization across the codebase.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes, optional
+            Axes to plot on. If None, creates a new figure and axes.
+        **kwargs
+            Additional keyword arguments passed to ego_env.plot_field().
+            Common options include:
+            - cmap : str or Colormap, default="viridis"
+            - vmin, vmax : float, colorbar limits
+            - add_colorbar : bool, default=True
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+            The axes containing the plot.
+
+        Notes
+        -----
+        The egocentric rate map shows firing rate indexed by (distance,
+        direction) relative to the object. Distance is the first dimension,
+        direction is the second dimension.
+
+        Examples
+        --------
+        >>> result = EgocentricRateResult(...)
+        >>> ax = result.plot()
+        >>> plt.show()
+
+        >>> fig, ax = plt.subplots()
+        >>> result.plot(ax=ax, cmap="hot", vmax=20.0)
+
+        See Also
+        --------
+        preferred_distance : Get distance component of peak response
+        preferred_direction : Get direction component of peak response
+        """
+        return self.ego_env.plot_field(_to_numpy(self.firing_rate), ax=ax, **kwargs)
+
+    def preferred_distance(self) -> float:
+        """Distance to object at peak firing rate.
+
+        Returns the distance component (first dimension) of the egocentric
+        bin where the neuron shows maximum firing rate.
+
+        Returns
+        -------
+        float
+            Distance to object at peak firing rate, in the same units as
+            the environment (typically cm). Uses nanargmax to handle NaN
+            values in the firing rate map.
+
+        Notes
+        -----
+        For object-vector cells, this represents the preferred distance to
+        the object. A cell with preferred_distance=20 fires most when the
+        object is 20 cm away from the animal.
+
+        The distance is extracted from the egocentric environment's bin
+        centers. The first component (index 0) represents distance.
+
+        Examples
+        --------
+        >>> result = EgocentricRateResult(...)
+        >>> dist = result.preferred_distance()
+        >>> print(f"Preferred distance: {dist:.1f} cm")
+
+        See Also
+        --------
+        preferred_direction : Get direction component of peak response
+        plot : Visualize the egocentric rate map
+        """
+        firing_rate = _to_numpy(self.firing_rate)
+        peak_bin = np.nanargmax(firing_rate)
+        bin_centers: NDArray[np.float64] = self.ego_env.bin_centers
+        return float(bin_centers[peak_bin, 0])
+
+    def preferred_direction(self) -> float:
+        """Direction to object at peak firing rate.
+
+        Returns the direction component (second dimension) of the egocentric
+        bin where the neuron shows maximum firing rate. Direction is in
+        radians using the egocentric coordinate convention.
+
+        Returns
+        -------
+        float
+            Direction to object at peak firing rate, in radians.
+            - 0 = object is directly ahead of animal
+            - +π/2 = object is to the left
+            - -π/2 = object is to the right
+            - ±π = object is behind
+
+            Uses nanargmax to handle NaN values in the firing rate map.
+
+        Notes
+        -----
+        For object-vector cells, this represents the preferred direction to
+        the object relative to the animal's heading. A cell with
+        preferred_direction=π/2 fires most when the object is to the left.
+
+        The direction is extracted from the egocentric environment's bin
+        centers. The second component (index 1) represents direction.
+
+        **Coordinate convention**: This uses egocentric (animal-centered)
+        coordinates, NOT allocentric (world-centered) coordinates:
+        - Egocentric: 0 = ahead of animal, +π/2 = left
+        - Allocentric: 0 = East, +π/2 = North
+
+        Examples
+        --------
+        >>> result = EgocentricRateResult(...)
+        >>> direction = result.preferred_direction()
+        >>> print(f"Preferred direction: {np.degrees(direction):.1f}°")
+
+        See Also
+        --------
+        preferred_distance : Get distance component of peak response
+        plot : Visualize the egocentric rate map
+        """
+        firing_rate = _to_numpy(self.firing_rate)
+        peak_bin = np.nanargmax(firing_rate)
+        bin_centers: NDArray[np.float64] = self.ego_env.bin_centers
+        return float(bin_centers[peak_bin, 1])
 
 
 @dataclass(frozen=True)
