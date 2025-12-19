@@ -74,11 +74,16 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from numpy.typing import ArrayLike
+import numpy as np
+from numpy.typing import ArrayLike, NDArray
+
+from neurospatial.encoding._base import _to_numpy
 
 if TYPE_CHECKING:
+    from matplotlib.axes import Axes
+
     from neurospatial import Environment
 
 __all__ = [
@@ -195,6 +200,142 @@ class ViewRateResult:
     view_distance: float
     smoothing_method: str
     bandwidth: float
+
+    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
+        """Plot the view field (firing rate by viewed location).
+
+        Delegates to the environment's plot_field method for consistent
+        visualization across the codebase.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes, optional
+            Axes to plot on. If None, creates a new figure and axes.
+        **kwargs
+            Additional keyword arguments passed to env.plot_field().
+            Common options include:
+            - cmap : str or Colormap, default="viridis"
+            - vmin, vmax : float, colorbar limits
+            - add_colorbar : bool, default=True
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+            The axes containing the plot.
+
+        Notes
+        -----
+        The view field shows firing rate indexed by *viewed* location (where
+        the animal looked), not by animal position. This is the key difference
+        from place fields.
+
+        Examples
+        --------
+        >>> result = ViewRateResult(...)
+        >>> ax = result.plot()
+        >>> plt.show()
+
+        >>> fig, ax = plt.subplots()
+        >>> result.plot(ax=ax, cmap="hot", vmax=20.0)
+
+        See Also
+        --------
+        peak_view_location : Get location of peak view response
+        """
+        return self.env.plot_field(_to_numpy(self.firing_rate), ax=ax, **kwargs)
+
+    def peak_view_location(self) -> NDArray[np.float64]:
+        """Location of peak view response.
+
+        Returns the spatial coordinates where the neuron shows maximum firing
+        rate when the animal *views* that location.
+
+        Returns
+        -------
+        ndarray, shape (n_dims,)
+            Spatial coordinates of the bin with maximum firing rate.
+            Uses nanargmax to handle NaN values in the firing rate map.
+
+        Notes
+        -----
+        For spatial view cells, the peak view location represents where the
+        neuron fires most when the animal looks there, regardless of where
+        the animal is positioned.
+
+        Examples
+        --------
+        >>> result = ViewRateResult(...)
+        >>> peak = result.peak_view_location()
+        >>> print(f"Peak view response at ({peak[0]:.1f}, {peak[1]:.1f}) cm")
+
+        See Also
+        --------
+        view_spatial_information : Quantify spatial selectivity of view response
+        plot : Visualize the view field
+        """
+        firing_rate = _to_numpy(self.firing_rate)
+        peak_bin = np.nanargmax(firing_rate)
+        result: NDArray[np.float64] = self.env.bin_centers[peak_bin]
+        return result
+
+    def view_spatial_information(self) -> float:
+        """Skaggs spatial information based on view occupancy (bits per spike).
+
+        Quantifies how much information each spike conveys about the *viewed*
+        location (where the animal is looking), not the animal's position.
+        Higher values indicate more spatially selective view responses.
+
+        Returns
+        -------
+        float
+            Spatial information in bits/spike. Always non-negative.
+            Returns 0.0 for uniform firing.
+
+        Notes
+        -----
+        Uses the Skaggs et al. (1993) formula with **view occupancy**:
+
+        .. math::
+
+            I = \\sum_i p_i \\frac{r_i}{\\bar{r}} \\log_2 \\left( \\frac{r_i}{\\bar{r}} \\right)
+
+        where :math:`p_i` is the fraction of time spent *viewing* bin i
+        (not time spent *at* bin i).
+
+        **Key difference from spatial_information()**: This metric uses
+        ``view_occupancy`` (time viewing each location) rather than standard
+        ``occupancy`` (time at each location). For true spatial view cells,
+        this metric should be higher than standard spatial information.
+
+        **Interpretation**:
+
+        - Spatial view cells typically have 0.5-2 bits/spike
+        - Higher values indicate more spatially selective view responses
+        - Zero means uniform view-response (no spatial view selectivity)
+
+        References
+        ----------
+        .. [1] Skaggs, W. E., McNaughton, B. L., & Gothard, K. M. (1993).
+               An information-theoretic approach to deciphering the hippocampal code.
+        .. [2] Rolls, E. T., et al. (1997). Spatial view cells in the primate
+               hippocampus. European Journal of Neuroscience, 9(8), 1789-1794.
+
+        Examples
+        --------
+        >>> result = ViewRateResult(...)
+        >>> info = result.view_spatial_information()
+        >>> print(f"View spatial information: {info:.2f} bits/spike")
+
+        See Also
+        --------
+        peak_view_location : Get location of peak view response
+        neurospatial.encoding._metrics.spatial_information : Underlying computation
+        """
+        from neurospatial.encoding._metrics import spatial_information
+
+        return spatial_information(
+            _to_numpy(self.firing_rate), _to_numpy(self.view_occupancy)
+        )
 
 
 @dataclass(frozen=True)

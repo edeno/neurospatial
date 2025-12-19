@@ -551,3 +551,332 @@ class TestViewRatesResultEdgeCases:
 
         assert len(result) == 0
         assert list(result) == []
+
+
+# ==============================================================================
+# ViewRateResult Convenience Methods Tests - Task 4.2
+# ==============================================================================
+
+
+class TestViewRateResultPlot:
+    """Test ViewRateResult.plot() method."""
+
+    def test_plot_returns_axes(
+        self,
+        simple_env: Environment,
+        single_firing_rate: np.ndarray,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """plot() should return matplotlib Axes."""
+        from neurospatial.encoding.view import ViewRateResult
+
+        result = ViewRateResult(
+            firing_rate=single_firing_rate,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        import matplotlib
+
+        matplotlib.use("Agg")  # Non-interactive backend for testing
+        import matplotlib.pyplot as plt
+
+        ax = result.plot()
+        assert ax is not None
+        plt.close()
+
+    def test_plot_accepts_ax_argument(
+        self,
+        simple_env: Environment,
+        single_firing_rate: np.ndarray,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """plot() should accept existing axes."""
+        from neurospatial.encoding.view import ViewRateResult
+
+        result = ViewRateResult(
+            firing_rate=single_firing_rate,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        _fig, ax_in = plt.subplots()
+        ax_out = result.plot(ax=ax_in)
+        assert ax_out is ax_in
+        plt.close()
+
+    def test_plot_accepts_kwargs(
+        self,
+        simple_env: Environment,
+        single_firing_rate: np.ndarray,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """plot() should pass through kwargs to env.plot_field()."""
+        from neurospatial.encoding.view import ViewRateResult
+
+        result = ViewRateResult(
+            firing_rate=single_firing_rate,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        # Should not raise - kwargs are passed through
+        ax = result.plot(cmap="hot", vmax=25.0)
+        assert ax is not None
+        plt.close()
+
+
+class TestViewRateResultPeakViewLocation:
+    """Test ViewRateResult.peak_view_location() method."""
+
+    def test_peak_view_location_returns_ndarray(
+        self,
+        simple_env: Environment,
+        single_firing_rate: np.ndarray,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """peak_view_location() should return ndarray."""
+        from neurospatial.encoding.view import ViewRateResult
+
+        result = ViewRateResult(
+            firing_rate=single_firing_rate,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        peak = result.peak_view_location()
+        assert isinstance(peak, np.ndarray)
+
+    def test_peak_view_location_shape(
+        self,
+        simple_env: Environment,
+        single_firing_rate: np.ndarray,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """peak_view_location() should return (n_dims,) array."""
+        from neurospatial.encoding.view import ViewRateResult
+
+        result = ViewRateResult(
+            firing_rate=single_firing_rate,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        peak = result.peak_view_location()
+        # 2D environment should have 2 dimensions
+        assert peak.shape == (2,)
+
+    def test_peak_view_location_at_max_firing(
+        self,
+        simple_env: Environment,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """peak_view_location() should return location of maximum firing rate."""
+        from neurospatial.encoding.view import ViewRateResult
+
+        # Create firing rate with known peak at a specific bin
+        n_bins = simple_env.n_bins
+        firing_rate = np.zeros(n_bins, dtype=np.float64)
+        peak_bin = 5  # Known peak bin
+        firing_rate[peak_bin] = 100.0
+
+        result = ViewRateResult(
+            firing_rate=firing_rate,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        peak = result.peak_view_location()
+        expected = simple_env.bin_centers[peak_bin]
+        assert_array_equal(peak, expected)
+
+    def test_peak_view_location_handles_nan(
+        self,
+        simple_env: Environment,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """peak_view_location() should handle NaN values correctly."""
+        from neurospatial.encoding.view import ViewRateResult
+
+        n_bins = simple_env.n_bins
+        firing_rate = np.full(n_bins, np.nan, dtype=np.float64)
+        peak_bin = 3
+        firing_rate[peak_bin] = 50.0  # Only non-NaN value
+
+        result = ViewRateResult(
+            firing_rate=firing_rate,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        peak = result.peak_view_location()
+        expected = simple_env.bin_centers[peak_bin]
+        assert_array_equal(peak, expected)
+
+
+class TestViewRateResultViewSpatialInformation:
+    """Test ViewRateResult.view_spatial_information() method."""
+
+    def test_view_spatial_information_returns_float(
+        self,
+        simple_env: Environment,
+        single_firing_rate: np.ndarray,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """view_spatial_information() should return float."""
+        from neurospatial.encoding.view import ViewRateResult
+
+        result = ViewRateResult(
+            firing_rate=single_firing_rate,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        info = result.view_spatial_information()
+        assert isinstance(info, float)
+
+    def test_view_spatial_information_non_negative(
+        self,
+        simple_env: Environment,
+        single_firing_rate: np.ndarray,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """view_spatial_information() should be non-negative."""
+        from neurospatial.encoding.view import ViewRateResult
+
+        result = ViewRateResult(
+            firing_rate=single_firing_rate,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        info = result.view_spatial_information()
+        assert info >= 0.0
+
+    def test_view_spatial_information_uses_view_occupancy(
+        self,
+        simple_env: Environment,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """view_spatial_information() should use view_occupancy, not standard occupancy."""
+        from neurospatial.encoding.view import ViewRateResult
+
+        # Create a peaked firing rate
+        n_bins = simple_env.n_bins
+        firing_rate = np.zeros(n_bins, dtype=np.float64)
+        firing_rate[n_bins // 2] = 20.0
+
+        # Create non-uniform view occupancy that emphasizes the peak
+        view_occupancy = np.ones(n_bins, dtype=np.float64) * 0.1
+        view_occupancy[n_bins // 2] = 1.0  # More time viewing the peak
+
+        result = ViewRateResult(
+            firing_rate=firing_rate,
+            view_occupancy=view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        info = result.view_spatial_information()
+        # Should produce meaningful spatial information
+        assert info >= 0.0
+
+    def test_view_spatial_information_uniform_firing_is_zero(
+        self,
+        simple_env: Environment,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """view_spatial_information() should return 0 for uniform firing."""
+        from neurospatial.encoding.view import ViewRateResult
+
+        # Uniform firing rate across all bins
+        firing_rate = np.ones(simple_env.n_bins, dtype=np.float64) * 5.0
+
+        result = ViewRateResult(
+            firing_rate=firing_rate,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        info = result.view_spatial_information()
+        # Uniform firing should have zero spatial information
+        assert info == pytest.approx(0.0, abs=1e-10)
+
+    def test_view_spatial_information_peaked_is_positive(
+        self,
+        simple_env: Environment,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """view_spatial_information() should be positive for peaked firing."""
+        from neurospatial.encoding.view import ViewRateResult
+
+        # Peaked firing rate
+        n_bins = simple_env.n_bins
+        firing_rate = np.zeros(n_bins, dtype=np.float64)
+        firing_rate[n_bins // 2] = 50.0  # Strong peak
+
+        result = ViewRateResult(
+            firing_rate=firing_rate,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        info = result.view_spatial_information()
+        assert info > 0.0
