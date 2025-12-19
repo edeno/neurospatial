@@ -3,10 +3,66 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 2.10 - Write comprehensive tests for spatial encoding (Milestone 2 COMPLETE!)
-**Next Task**: Task 3.1 - Create `encoding/directional.py` with result class definitions
+**Last Completed**: Task 3.1 - Create `encoding/directional.py` with result class definitions
+**Next Task**: Task 3.2 - Implement `DirectionalRateResult` convenience methods
 
 ## Session Notes
+
+### Task 3.1: Create `encoding/directional.py` with Result Class Definitions [COMPLETED]
+
+**Goal**: Create the result class definitions for directional rate computation (head direction cells).
+
+**Approach**: TDD - wrote 23 tests first (`test_encoding_directional.py`), then implemented.
+
+**Result**:
+
+- Created `src/neurospatial/encoding/directional.py` with 2 dataclasses
+- Created `tests/encoding/test_encoding_directional.py` with 23 tests (all pass)
+- All mypy and ruff checks pass
+- Code review passed with APPROVE
+
+**Key Implementation Details**:
+
+- `DirectionalRateResult`: Single-neuron result (frozen dataclass)
+  - Fields: `firing_rate`, `occupancy`, `bin_centers`, `bin_size`, `smoothing_sigma`
+  - No Environment dependency (head direction is 1D circular, not spatial)
+  - `bin_centers` stores angular coordinates in radians [0, 2π)
+
+- `DirectionalRatesResult`: Batch result (frozen dataclass)
+  - Fields: `firing_rates` (plural), `occupancy`, `bin_centers`, `bin_size`, `smoothing_sigma`
+  - Implements `__len__`, `__getitem__`, `__iter__` for iteration
+  - `__getitem__(idx)` returns `DirectionalRateResult` for single neuron
+
+**Design differences from SpatialRateResult**:
+
+- No `env` field (replaced by `bin_centers`)
+- No `smoothing_method` field (replaced by `smoothing_sigma`)
+- `bin_size` in radians (angular resolution)
+- `smoothing_sigma` can be None (unsmoothed)
+
+**Test coverage (23 tests in 9 classes)**:
+
+- `TestDirectionalRateResultImport`: 2 tests (import from module and package)
+- `TestDirectionalRateResultCreation`: 3 tests (basic, with smoothing, frozen)
+- `TestDirectionalRateResultFields`: 4 tests (shapes, value ranges)
+- `TestDirectionalRatesResultImport`: 2 tests (import from module and package)
+- `TestDirectionalRatesResultCreation`: 2 tests (basic, frozen)
+- `TestDirectionalRatesResultFields`: 2 tests (shapes)
+- `TestDirectionalRatesResultIteration`: 6 tests (len, getitem, iter, metadata, order)
+- `TestDirectionalRatesResultEdgeCases`: 2 tests (single neuron, empty)
+
+**Exports added**:
+
+- `DirectionalRateResult` and `DirectionalRatesResult` exported from `encoding/__init__.py`
+
+**Code review feedback**: APPROVE - Ready to merge
+
+- All 23 tests pass
+- Zero mypy errors
+- Follows established patterns from spatial.py
+- Comprehensive documentation with NumPy-style docstrings
+
+---
 
 ### Task 2.10: Write Comprehensive Tests for Spatial Encoding [COMPLETED]
 

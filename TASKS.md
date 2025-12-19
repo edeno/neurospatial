@@ -53,6 +53,8 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
 
 **Success Criteria**: `_metrics.py` and `_smoothing.py` pass unit tests and can be imported by encoding modules.
 
+**Note**: `_metrics.py` and `_smoothing.py` are NumPy-only in this milestone. JAX implementations are deferred to Milestone 6. The `_get_array_module()` helper is defined in `_base.py` but backend dispatch in `_metrics.py` will be added when JAX support is implemented.
+
 ### Tasks
 
 - [x] **1.1** Create `encoding/_metrics.py` with shared metric implementations
@@ -165,10 +167,10 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
 
 ### Tasks
 
-- [ ] **3.1** Create `encoding/directional.py` with result class definitions
-  - [ ] Define `DirectionalRateResult` dataclass (frozen=True)
-  - [ ] Define `DirectionalRatesResult` dataclass (frozen=True)
-  - [ ] Note: No Environment dependency, only bin_centers
+- [x] **3.1** Create `encoding/directional.py` with result class definitions
+  - [x] Define `DirectionalRateResult` dataclass (frozen=True)
+  - [x] Define `DirectionalRatesResult` dataclass (frozen=True)
+  - [x] Note: No Environment dependency, only bin_centers
 
 - [ ] **3.2** Implement `DirectionalRateResult` convenience methods
   - [ ] Implement `plot(ax, polar, **kwargs)` → polar or Cartesian tuning curve
