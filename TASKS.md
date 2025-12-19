@@ -321,10 +321,10 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Implement `preferred_directions()` → returns `(n_neurons,)`
   - [x] Implement `detect_ovcs(min_info)` → returns `(n_neurons,)` bool
 
-- [ ] **5.5** Implement `EgocentricRatesResult.to_dataframe()`
-  - [ ] Include neuron_id, preferred_distance, preferred_direction columns
-  - [ ] Include preferred_direction_deg, peak_rate columns
-  - [ ] Include is_ovc column
+- [x] **5.5** Implement `EgocentricRatesResult.to_dataframe()`
+  - [x] Include neuron_id, preferred_distance, preferred_direction columns
+  - [x] Include preferred_direction_deg, peak_rate columns
+  - [x] Include is_ovc column
 
 - [ ] **5.6** Implement binning layer for egocentric encoding
   - [ ] Create helper to compute egocentric occupancy

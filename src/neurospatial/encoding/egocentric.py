@@ -72,7 +72,7 @@ neurospatial.ops.egocentric : Egocentric coordinate transforms
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -82,6 +82,7 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial.encoding._base import _to_numpy
 
 if TYPE_CHECKING:
+    import pandas as pd
     from matplotlib.axes import Axes
 
     from neurospatial import Environment
@@ -835,3 +836,103 @@ class EgocentricRatesResult:
         firing_rates = _to_numpy(self.firing_rates)
         result: NDArray[np.float64] = np.nanmax(firing_rates, axis=1)
         return result
+
+    def to_dataframe(
+        self,
+        neuron_ids: Sequence[str | int] | None = None,
+    ) -> pd.DataFrame:
+        """Export metrics to DataFrame for exploratory analysis.
+
+        Computes all egocentric metrics and exports them to a pandas DataFrame
+        for easy filtering, sorting, and analysis.
+
+        Parameters
+        ----------
+        neuron_ids : sequence of str or int, optional
+            Identifiers for each neuron. If None, uses integer indices
+            (0, 1, 2, ..., n_neurons-1).
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with columns:
+
+            - neuron_id: identifier for each neuron
+            - preferred_distance: preferred distance to object (cm)
+            - preferred_direction: preferred direction to object (radians, 0=ahead)
+            - preferred_direction_deg: preferred direction (degrees)
+            - peak_rate: maximum firing rate (Hz)
+            - is_ovc: whether classified as OVC (using default threshold)
+
+        Raises
+        ------
+        ValueError
+            If neuron_ids has a different length than the number of neurons.
+
+        Notes
+        -----
+        This method computes all metrics at once, which may be slow for
+        large populations. For selective metric computation, use the
+        individual methods (``preferred_distances()``, ``detect_ovcs()``, etc.).
+
+        **Common pandas workflows**:
+
+        - Filter: ``df[df["is_ovc"] == True]``
+        - Sort: ``df.sort_values("preferred_distance")``
+        - Top-N: ``df.nlargest(10, "peak_rate")``
+
+        Examples
+        --------
+        >>> result = EgocentricRatesResult(...)
+        >>> df = result.to_dataframe()
+        >>> print(df.head())
+           neuron_id  preferred_distance  preferred_direction  ...
+
+        >>> # Filter for OVCs only
+        >>> ovcs = df[df["is_ovc"]]
+        >>> print(f"Found {len(ovcs)} OVCs")
+
+        >>> # Sort by preferred distance
+        >>> sorted_df = df.sort_values("preferred_distance")
+
+        >>> # Custom neuron identifiers
+        >>> df = result.to_dataframe(neuron_ids=["unit_0", "unit_1", "unit_2"])
+
+        See Also
+        --------
+        detect_ovcs : OVC classification
+        preferred_distances : Batch preferred distance computation
+        preferred_directions : Batch preferred direction computation
+        """
+        import pandas as pd
+
+        n_neurons = len(self)
+
+        # Validate and convert neuron_ids
+        if neuron_ids is None:
+            neuron_ids_list: list[str | int] = list(range(n_neurons))
+        else:
+            neuron_ids_list = list(neuron_ids)
+            if len(neuron_ids_list) != n_neurons:
+                raise ValueError(
+                    f"neuron_ids has {len(neuron_ids_list)} elements but "
+                    f"result contains {n_neurons} neurons"
+                )
+
+        # Compute all metrics
+        pref_dists = self.preferred_distances()
+        pref_dirs = self.preferred_directions()
+        peak_rates = self.peak_firing_rates()
+        is_ovc = self.detect_ovcs()
+
+        # Build DataFrame
+        data: dict[str, Any] = {
+            "neuron_id": neuron_ids_list,
+            "preferred_distance": pref_dists,
+            "preferred_direction": pref_dirs,
+            "preferred_direction_deg": np.degrees(pref_dirs),
+            "peak_rate": peak_rates,
+            "is_ovc": is_ovc,
+        }
+
+        return pd.DataFrame(data)

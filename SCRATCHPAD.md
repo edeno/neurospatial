@@ -3,10 +3,46 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 5.4 - Implement `EgocentricRatesResult` batch methods
-**Next Task**: Task 5.5 - Implement `EgocentricRatesResult.to_dataframe()`
+**Last Completed**: Task 5.5 - Implement `EgocentricRatesResult.to_dataframe()`
+**Next Task**: Task 5.6 - Implement binning layer for egocentric encoding
 
 ## Session Notes
+
+### Task 5.5: Implement `EgocentricRatesResult.to_dataframe()` [COMPLETED]
+
+**Goal**: Add `to_dataframe()` method to `EgocentricRatesResult` for exporting metrics to pandas DataFrame.
+
+**Implementation**:
+- Added `to_dataframe()` method to `EgocentricRatesResult` in `src/neurospatial/encoding/egocentric.py` (lines 840-938)
+- Added required imports: `Sequence` from collections.abc, `pd` for TYPE_CHECKING
+- DataFrame columns: neuron_id, preferred_distance, preferred_direction, preferred_direction_deg, peak_rate, is_ovc
+- Follows exactly the pattern from `ViewRatesResult.to_dataframe()` and `DirectionalRatesResult.to_dataframe()`
+- Validates neuron_ids length matches number of neurons
+- Handles empty results (0 neurons) gracefully
+- Comprehensive NumPy-style docstring with Parameters, Returns, Raises, Notes, Examples, See Also sections
+
+**TDD Process**:
+1. Wrote 18 new tests in `tests/encoding/test_encoding_egocentric.py`:
+   - 2 tests for basic functionality (returns DataFrame, correct row count)
+   - 6 tests for column existence (neuron_id, preferred_distance, preferred_direction, preferred_direction_deg, peak_rate, is_ovc)
+   - 3 tests for neuron ID handling (default indices, custom IDs, length mismatch error)
+   - 5 tests for correctness validation (each column matches batch method output)
+   - 2 tests for edge cases (empty result, single neuron)
+2. Ran tests - all 18 failed (expected)
+3. Implemented the method
+4. Ran tests - all 18 passed
+
+**Code Review**: APPROVED
+- Perfect consistency with existing to_dataframe() implementations
+- Comprehensive documentation quality
+- Robust error handling
+- Type-safe implementation
+- No critical or quality issues
+
+**Test Results**: 97/97 tests pass (79 original + 18 new)
+**Quality checks**: All ruff and mypy checks pass
+
+---
 
 ### Task 5.4: Implement `EgocentricRatesResult` batch methods [COMPLETED]
 
