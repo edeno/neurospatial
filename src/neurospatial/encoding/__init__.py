@@ -27,6 +27,7 @@ from neurospatial.encoding.border import (
 from neurospatial.encoding.directional import (
     DirectionalRateResult,
     DirectionalRatesResult,
+    compute_directional_rate,
 )
 
 # Grid cell analysis
@@ -124,6 +125,7 @@ __all__ = [  # noqa: RUF022 - organized by category
     # Directional rate (head direction cells) - new API
     "DirectionalRateResult",
     "DirectionalRatesResult",
+    "compute_directional_rate",
     # Phase precession analysis
     "PhasePrecessionResult",
     "has_phase_precession",

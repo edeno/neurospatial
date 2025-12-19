@@ -207,11 +207,11 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Handle circular binning (0 to 2π)
   - [x] Support `angle_unit` parameter for input conversion
 
-- [ ] **3.8** Implement `compute_directional_rate()` function
-  - [ ] Accept single spike_times array
-  - [ ] Support `angle_unit` parameter ("rad" or "deg")
-  - [ ] Optional Gaussian smoothing via `smoothing_sigma`
-  - [ ] Return `DirectionalRateResult`
+- [x] **3.8** Implement `compute_directional_rate()` function
+  - [x] Accept single spike_times array
+  - [x] Support `angle_unit` parameter ("rad" or "deg")
+  - [x] Optional Gaussian smoothing via `smoothing_sigma`
+  - [x] Return `DirectionalRateResult`
 
 - [ ] **3.9** Implement `compute_directional_rates()` function
   - [ ] Accept list of spike_times arrays

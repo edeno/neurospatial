@@ -2930,3 +2930,477 @@ class TestDirectionalRatesResultToDataframe:
 
         df = result.to_dataframe()
         assert len(df) == 1
+
+
+# ==============================================================================
+# compute_directional_rate() Tests - Task 3.8
+# ==============================================================================
+
+
+class TestComputeDirectionalRateImport:
+    """Test that compute_directional_rate can be imported."""
+
+    def test_import_from_directional(self) -> None:
+        """compute_directional_rate can be imported from encoding.directional."""
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        assert compute_directional_rate is not None
+
+    def test_import_from_encoding(self) -> None:
+        """compute_directional_rate can be imported from encoding package."""
+        from neurospatial.encoding import compute_directional_rate
+
+        assert compute_directional_rate is not None
+
+
+class TestComputeDirectionalRateBasic:
+    """Test basic compute_directional_rate functionality."""
+
+    def test_returns_directional_rate_result(self) -> None:
+        """compute_directional_rate returns DirectionalRateResult."""
+        from neurospatial.encoding.directional import (
+            DirectionalRateResult,
+            compute_directional_rate,
+        )
+
+        # Create trajectory with varying head directions
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+
+        # Create spike times
+        spike_times = np.array([1.0, 2.5, 4.0, 7.5])
+
+        result = compute_directional_rate(spike_times, times, headings)
+        assert isinstance(result, DirectionalRateResult)
+
+    def test_firing_rate_shape(self) -> None:
+        """compute_directional_rate produces firing_rate with correct shape."""
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = np.array([1.0, 2.5, 4.0, 7.5])
+
+        result = compute_directional_rate(spike_times, times, headings)
+
+        # Default bin_size is π/30 = 60 bins
+        n_bins = 60
+        assert np.asarray(result.firing_rate).shape == (n_bins,)
+
+    def test_occupancy_shape(self) -> None:
+        """compute_directional_rate produces occupancy with correct shape."""
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = np.array([1.0, 2.5, 4.0, 7.5])
+
+        result = compute_directional_rate(spike_times, times, headings)
+
+        n_bins = 60
+        assert np.asarray(result.occupancy).shape == (n_bins,)
+
+    def test_bin_centers_shape(self) -> None:
+        """compute_directional_rate produces bin_centers with correct shape."""
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = np.array([1.0, 2.5, 4.0, 7.5])
+
+        result = compute_directional_rate(spike_times, times, headings)
+
+        n_bins = 60
+        assert np.asarray(result.bin_centers).shape == (n_bins,)
+
+    def test_bin_centers_in_radians(self) -> None:
+        """compute_directional_rate produces bin_centers in radians [0, 2π)."""
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = np.array([1.0, 2.5, 4.0, 7.5])
+
+        result = compute_directional_rate(spike_times, times, headings)
+
+        centers = np.asarray(result.bin_centers)
+        assert np.all(centers >= 0)
+        assert np.all(centers < 2 * np.pi)
+
+    def test_metadata_defaults(self) -> None:
+        """compute_directional_rate stores correct default metadata."""
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = np.array([1.0, 2.5, 4.0, 7.5])
+
+        result = compute_directional_rate(spike_times, times, headings)
+
+        assert result.bin_size == np.pi / 30
+        assert result.smoothing_sigma is None
+
+    def test_firing_rate_non_negative(self) -> None:
+        """compute_directional_rate produces non-negative firing rates."""
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = np.array([1.0, 2.5, 4.0, 7.5])
+
+        result = compute_directional_rate(spike_times, times, headings)
+
+        rates = np.asarray(result.firing_rate)
+        # Allow NaN for unvisited bins, but finite values should be non-negative
+        assert np.all(rates[~np.isnan(rates)] >= 0)
+
+
+class TestComputeDirectionalRateBinSize:
+    """Test compute_directional_rate bin_size parameter."""
+
+    def test_custom_bin_size_radians(self) -> None:
+        """compute_directional_rate respects bin_size parameter in radians."""
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = np.array([1.0, 2.5, 4.0, 7.5])
+
+        # Use 15 degree bins = π/12 radians
+        bin_size = np.pi / 12  # 24 bins
+        result = compute_directional_rate(
+            spike_times, times, headings, bin_size=bin_size
+        )
+
+        assert result.bin_size == bin_size
+        # 2π / (π/12) = 24 bins
+        assert np.asarray(result.firing_rate).shape == (24,)
+
+    def test_custom_bin_size_degrees(self) -> None:
+        """compute_directional_rate respects bin_size parameter in degrees."""
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 360, 100)
+        spike_times = np.array([1.0, 2.5, 4.0, 7.5])
+
+        # Use 15 degree bins
+        bin_size = 15.0  # 24 bins
+        result = compute_directional_rate(
+            spike_times, times, headings, bin_size=bin_size, angle_unit="deg"
+        )
+
+        # bin_size is stored in radians internally
+        np.testing.assert_allclose(result.bin_size, np.radians(bin_size))
+        # 360 / 15 = 24 bins
+        assert np.asarray(result.firing_rate).shape == (24,)
+
+
+class TestComputeDirectionalRateAngleUnit:
+    """Test compute_directional_rate angle_unit parameter."""
+
+    def test_angle_unit_rad_default(self) -> None:
+        """compute_directional_rate uses radians by default."""
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)  # Radians
+        spike_times = np.array([1.0, 2.5, 4.0, 7.5])
+
+        result = compute_directional_rate(spike_times, times, headings)
+
+        # Should work without errors
+        assert result is not None
+        assert np.asarray(result.firing_rate).shape[0] > 0
+
+    def test_angle_unit_deg(self) -> None:
+        """compute_directional_rate handles degrees correctly."""
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 360, 100)  # Degrees
+        spike_times = np.array([1.0, 2.5, 4.0, 7.5])
+
+        result = compute_directional_rate(
+            spike_times, times, headings, bin_size=6.0, angle_unit="deg"
+        )
+
+        # Should produce 60 bins (360 / 6)
+        assert np.asarray(result.firing_rate).shape == (60,)
+        # bin_size stored in radians
+        np.testing.assert_allclose(result.bin_size, np.radians(6.0))
+
+    def test_angle_unit_rad_and_deg_equivalent(self) -> None:
+        """compute_directional_rate produces equivalent results for rad and deg."""
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings_rad = np.random.uniform(0, 2 * np.pi, 100)
+        headings_deg = np.degrees(headings_rad)
+        spike_times = np.array([1.0, 2.5, 4.0, 7.5])
+
+        result_rad = compute_directional_rate(
+            spike_times, times, headings_rad, bin_size=np.pi / 30, angle_unit="rad"
+        )
+
+        result_deg = compute_directional_rate(
+            spike_times, times, headings_deg, bin_size=6.0, angle_unit="deg"
+        )
+
+        # Firing rates should be equivalent
+        np.testing.assert_allclose(
+            result_rad.firing_rate, result_deg.firing_rate, rtol=1e-10
+        )
+
+
+class TestComputeDirectionalRateSmoothing:
+    """Test compute_directional_rate smoothing_sigma parameter."""
+
+    def test_smoothing_sigma_none_default(self) -> None:
+        """compute_directional_rate returns None smoothing_sigma by default."""
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = np.array([1.0, 2.5, 4.0, 7.5])
+
+        result = compute_directional_rate(spike_times, times, headings)
+        assert result.smoothing_sigma is None
+
+    def test_smoothing_sigma_stored(self) -> None:
+        """compute_directional_rate stores smoothing_sigma in result."""
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = np.array([1.0, 2.5, 4.0, 7.5])
+
+        smoothing_sigma = np.pi / 6  # 30 degrees
+        result = compute_directional_rate(
+            spike_times, times, headings, smoothing_sigma=smoothing_sigma
+        )
+        assert result.smoothing_sigma == smoothing_sigma
+
+    def test_smoothing_produces_smoother_curve(self) -> None:
+        """compute_directional_rate with smoothing produces smoother curves."""
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = np.array([1.0, 2.5, 4.0, 7.5])
+
+        result_raw = compute_directional_rate(spike_times, times, headings)
+        result_smooth = compute_directional_rate(
+            spike_times, times, headings, smoothing_sigma=np.pi / 6
+        )
+
+        rates_raw = np.asarray(result_raw.firing_rate)
+        rates_smooth = np.asarray(result_smooth.firing_rate)
+
+        # Replace NaN with 0 for variance calculation
+        rates_raw_filled = np.nan_to_num(rates_raw, nan=0.0)
+        rates_smooth_filled = np.nan_to_num(rates_smooth, nan=0.0)
+
+        # Smoothed curve should have lower bin-to-bin variance
+        var_raw = np.var(np.diff(rates_raw_filled))
+        var_smooth = np.var(np.diff(rates_smooth_filled))
+
+        # Smoothed curve has smaller local variance (more gradual changes)
+        assert var_smooth <= var_raw
+
+    def test_smoothing_sigma_degrees(self) -> None:
+        """compute_directional_rate smoothing_sigma with angle_unit=deg."""
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 360, 100)
+        spike_times = np.array([1.0, 2.5, 4.0, 7.5])
+
+        # 30 degree smoothing
+        result = compute_directional_rate(
+            spike_times,
+            times,
+            headings,
+            bin_size=6.0,
+            smoothing_sigma=30.0,
+            angle_unit="deg",
+        )
+
+        # smoothing_sigma is stored in radians
+        np.testing.assert_allclose(result.smoothing_sigma, np.radians(30.0))
+
+
+class TestComputeDirectionalRateEdgeCases:
+    """Test edge cases for compute_directional_rate."""
+
+    def test_empty_spike_train(self) -> None:
+        """compute_directional_rate handles empty spike train."""
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = np.array([])  # Empty
+
+        result = compute_directional_rate(spike_times, times, headings)
+
+        # Should return result with zero firing rates (or NaN)
+        rates = np.asarray(result.firing_rate)
+        assert np.all(rates[~np.isnan(rates)] == 0)
+
+    def test_single_spike(self) -> None:
+        """compute_directional_rate handles single spike."""
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = np.array([5.0])  # Single spike
+
+        result = compute_directional_rate(spike_times, times, headings)
+
+        # Should return valid result
+        rates = np.asarray(result.firing_rate)
+        # At least one bin should have non-zero rate
+        assert np.sum(rates[~np.isnan(rates)] > 0) >= 1
+
+    def test_spikes_outside_time_range_excluded(self) -> None:
+        """compute_directional_rate excludes spikes outside time range."""
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        np.random.seed(42)
+        times = np.linspace(1, 9, 100)  # Time range: 1 to 9
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        # Spikes at 0.5 and 9.5 are outside time range
+        spike_times = np.array([0.5, 2.0, 5.0, 9.5])
+
+        result = compute_directional_rate(spike_times, times, headings)
+
+        # Should have valid result (only 2 spikes counted: 2.0 and 5.0)
+        rates = np.asarray(result.firing_rate)
+        # Total spike count should be approximately 2 (not 4)
+        total_rate = np.nansum(rates * result.occupancy)
+        # Total spikes = integral of rate * occupancy
+        # With only 2 spikes included, the integral should be roughly 2
+        assert 1 <= total_rate <= 3  # Allow some tolerance
+
+    def test_all_same_heading(self) -> None:
+        """compute_directional_rate handles constant head direction."""
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        times = np.linspace(0, 10, 100)
+        headings = np.ones(100) * np.pi  # All at 180 degrees
+        spike_times = np.array([1.0, 2.5, 4.0, 7.5])
+
+        result = compute_directional_rate(spike_times, times, headings)
+
+        # All occupancy should be in one bin
+        occ = np.asarray(result.occupancy)
+        assert np.sum(occ > 0) == 1
+
+
+class TestComputeDirectionalRateResultMethods:
+    """Test that result from compute_directional_rate has working methods."""
+
+    def test_preferred_direction_method(self) -> None:
+        """Result has working preferred_direction method."""
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        np.random.seed(42)
+        # Use dense trajectory that covers all directions uniformly
+        times = np.linspace(0, 60, 3600)  # 60 seconds at 60 Hz
+        headings = np.linspace(0, 2 * np.pi, 3600) % (2 * np.pi)
+        # Create spikes correlated with heading near π/2
+        spike_mask = np.abs(headings - np.pi / 2) < 0.5
+        spike_times = times[spike_mask]
+
+        result = compute_directional_rate(spike_times, times, headings)
+
+        pref_dir = result.preferred_direction()
+        assert isinstance(pref_dir, float)
+        # Should be near π/2
+        assert np.abs(pref_dir - np.pi / 2) < 1.0  # Within ~57 degrees
+
+    def test_mean_vector_length_method(self) -> None:
+        """Result has working mean_vector_length method."""
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        np.random.seed(42)
+        # Use dense trajectory that covers all directions
+        times = np.linspace(0, 60, 3600)  # 60 seconds at 60 Hz
+        headings = np.linspace(0, 2 * np.pi, 3600) % (2 * np.pi)
+        # Spikes at regular intervals
+        spike_times = np.array([1.0, 2.5, 4.0, 7.5, 15.0, 30.0, 45.0])
+
+        result = compute_directional_rate(spike_times, times, headings)
+
+        mvl = result.mean_vector_length()
+        assert isinstance(mvl, float)
+        assert 0 <= mvl <= 1
+
+    def test_is_hd_cell_method(self) -> None:
+        """Result has working is_hd_cell method."""
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        np.random.seed(42)
+        # Use dense trajectory that covers all directions
+        times = np.linspace(0, 60, 3600)  # 60 seconds at 60 Hz
+        headings = np.linspace(0, 2 * np.pi, 3600) % (2 * np.pi)
+        spike_times = np.array([1.0, 2.5, 4.0, 7.5, 15.0, 30.0])
+
+        result = compute_directional_rate(spike_times, times, headings)
+
+        is_hd = result.is_hd_cell()
+        assert isinstance(is_hd, bool)
+
+    def test_plot_method(self) -> None:
+        """Result has working plot method."""
+        pytest.importorskip("matplotlib")
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        np.random.seed(42)
+        # Use dense trajectory that covers all directions
+        times = np.linspace(0, 60, 3600)  # 60 seconds at 60 Hz
+        headings = np.linspace(0, 2 * np.pi, 3600) % (2 * np.pi)
+        spike_times = np.array([1.0, 2.5, 4.0, 7.5, 15.0, 30.0])
+
+        result = compute_directional_rate(spike_times, times, headings)
+
+        ax = result.plot()
+        assert ax is not None
+
+
+class TestComputeDirectionalRateInputValidation:
+    """Test input validation for compute_directional_rate."""
+
+    def test_invalid_angle_unit(self) -> None:
+        """compute_directional_rate raises ValueError for invalid angle_unit."""
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = np.array([1.0, 2.5, 4.0])
+
+        with pytest.raises(ValueError, match="angle_unit"):
+            compute_directional_rate(
+                spike_times,
+                times,
+                headings,
+                angle_unit="invalid",  # type: ignore[arg-type]
+            )

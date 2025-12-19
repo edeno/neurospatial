@@ -50,7 +50,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -63,6 +63,7 @@ if TYPE_CHECKING:
 __all__ = [
     "DirectionalRateResult",
     "DirectionalRatesResult",
+    "compute_directional_rate",
 ]
 
 
@@ -1280,3 +1281,166 @@ class DirectionalRatesResult:
         }
 
         return pd.DataFrame(data)
+
+
+def compute_directional_rate(
+    spike_times: NDArray[np.float64],
+    times: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    bin_size: float = np.pi / 30,
+    *,
+    smoothing_sigma: float | None = None,
+    angle_unit: Literal["rad", "deg"] = "rad",
+) -> DirectionalRateResult:
+    """Compute directional firing rate for one neuron.
+
+    Computes a directional tuning curve from spike times and head direction
+    data. The result is a DirectionalRateResult object containing the firing
+    rate map, occupancy, and metadata.
+
+    Parameters
+    ----------
+    spike_times : ndarray, shape (n_spikes,)
+        Times of spike events in seconds. Can be empty.
+    times : ndarray, shape (n_samples,)
+        Timestamps of head direction samples in seconds.
+    headings : ndarray, shape (n_samples,)
+        Head direction at each time point. Units determined by ``angle_unit``.
+    bin_size : float, default=π/30 (6 degrees)
+        Width of angular bins. Units match ``angle_unit``.
+        Default produces 60 bins (6° resolution).
+    smoothing_sigma : float or None, default=None
+        Gaussian smoothing bandwidth for the tuning curve. Units match
+        ``angle_unit``. If None, no smoothing is applied.
+    angle_unit : {'rad', 'deg'}, default='rad'
+        Unit of ``headings``, ``bin_size``, and ``smoothing_sigma``.
+
+        - 'rad': angles in radians
+        - 'deg': angles in degrees
+
+    Returns
+    -------
+    DirectionalRateResult
+        Result object containing:
+
+        - ``firing_rate``: Firing rate by direction in Hz, shape (n_bins,)
+        - ``occupancy``: Time at each direction in seconds, shape (n_bins,)
+        - ``bin_centers``: Angular bin centers in radians, shape (n_bins,)
+        - ``bin_size``: Bin width in radians
+        - ``smoothing_sigma``: Smoothing bandwidth in radians (or None)
+
+    Raises
+    ------
+    ValueError
+        If angle_unit is not 'rad' or 'deg'.
+
+    See Also
+    --------
+    compute_directional_rates : Batch version for multiple neurons
+    DirectionalRateResult : Result class with convenience methods
+
+    Notes
+    -----
+    The function uses the binning layer (``_directional_binning.py``) to convert
+    spike times to spike counts and compute occupancy, then optionally applies
+    Gaussian smoothing.
+
+    **Algorithm**:
+
+    1. Bin spike train into angular bins based on head direction at spike time
+    2. Compute occupancy (time spent at each direction)
+    3. Compute raw firing rate (spike counts / occupancy)
+    4. Apply Gaussian smoothing if ``smoothing_sigma`` is provided
+
+    **Smoothing**: Uses circular Gaussian smoothing to handle the wrap-around
+    at 0/2π. The smoothing is applied to both spike counts and occupancy
+    separately (not to the ratio) to preserve proper rate estimation.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.encoding.directional import compute_directional_rate
+
+    >>> # Create trajectory and spike times
+    >>> times = np.linspace(0, 60, 1800)  # 60 seconds at 30 Hz
+    >>> headings = np.random.uniform(0, 2 * np.pi, 1800)
+    >>> spike_times = np.random.uniform(0, 60, 100)  # 100 spikes
+
+    >>> # Compute directional rate (radians)
+    >>> result = compute_directional_rate(spike_times, times, headings)
+    >>> result.preferred_direction()  # doctest: +SKIP
+    1.57...
+
+    >>> # With smoothing
+    >>> result = compute_directional_rate(
+    ...     spike_times, times, headings, smoothing_sigma=np.pi / 6
+    ... )
+
+    >>> # Using degrees
+    >>> headings_deg = np.degrees(headings)
+    >>> result = compute_directional_rate(
+    ...     spike_times, times, headings_deg, bin_size=6.0, angle_unit="deg"
+    ... )
+    """
+    from neurospatial.encoding._directional_binning import (
+        bin_directional_spike_train,
+        compute_directional_occupancy,
+    )
+
+    # Validate angle_unit
+    if angle_unit not in ("rad", "deg"):
+        raise ValueError(f"angle_unit must be 'rad' or 'deg', got '{angle_unit}'")
+
+    # Convert inputs to arrays
+    spike_times = np.asarray(spike_times, dtype=np.float64).ravel()
+    times = np.asarray(times, dtype=np.float64).ravel()
+    headings = np.asarray(headings, dtype=np.float64).ravel()
+
+    # Compute occupancy and bin centers
+    occupancy, bin_centers = compute_directional_occupancy(
+        times, headings, bin_size, angle_unit=angle_unit
+    )
+
+    # Bin spike train
+    spike_counts = bin_directional_spike_train(
+        spike_times, times, headings, bin_size, angle_unit=angle_unit
+    )
+
+    # Convert bin_size and smoothing_sigma to radians for storage
+    if angle_unit == "deg":
+        bin_size_rad = np.radians(bin_size)
+        smoothing_sigma_rad = np.radians(smoothing_sigma) if smoothing_sigma else None
+    else:
+        bin_size_rad = bin_size
+        smoothing_sigma_rad = smoothing_sigma
+
+    # Apply smoothing if requested
+    if smoothing_sigma is not None:
+        from scipy.ndimage import gaussian_filter1d
+
+        # Convert smoothing_sigma to number of bins
+        sigma_bins = smoothing_sigma_rad / bin_size_rad
+
+        # Apply circular Gaussian smoothing
+        # Use mode='wrap' for circular boundary conditions
+        spike_counts_smooth = gaussian_filter1d(
+            spike_counts, sigma=sigma_bins, mode="wrap"
+        )
+        occupancy_smooth = gaussian_filter1d(occupancy, sigma=sigma_bins, mode="wrap")
+    else:
+        spike_counts_smooth = spike_counts
+        occupancy_smooth = occupancy
+
+    # Compute firing rate (handle division by zero)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        firing_rate = spike_counts_smooth / occupancy_smooth
+        # Set unvisited bins to NaN
+        firing_rate[occupancy_smooth == 0] = np.nan
+
+    return DirectionalRateResult(
+        firing_rate=firing_rate,
+        occupancy=occupancy,
+        bin_centers=bin_centers,
+        bin_size=bin_size_rad,
+        smoothing_sigma=smoothing_sigma_rad,
+    )

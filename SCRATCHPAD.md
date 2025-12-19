@@ -3,10 +3,48 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 3.7 - Implement binning layer for directional encoding
-**Next Task**: Task 3.8 - Implement `compute_directional_rate()` function
+**Last Completed**: Task 3.8 - Implement `compute_directional_rate()` function
+**Next Task**: Task 3.9 - Implement `compute_directional_rates()` function
 
 ## Session Notes
+
+### Task 3.8: Implement `compute_directional_rate()` function [COMPLETED]
+
+**Goal**: Create the single-neuron directional rate computation function.
+
+**Approach**: TDD - wrote 27 tests first, then implemented.
+
+**Result**:
+
+- Added `compute_directional_rate()` to `src/neurospatial/encoding/directional.py`
+- Added 27 tests to `tests/encoding/test_encoding_directional.py` (all 145 tests pass)
+- All mypy and ruff checks pass
+- Code review passed with APPROVE
+
+**Key Implementation Details**:
+
+- `compute_directional_rate(spike_times, times, headings, bin_size, smoothing_sigma, angle_unit)`:
+  - Uses binning layer to compute spike counts and occupancy
+  - Optionally applies circular Gaussian smoothing via `scipy.ndimage.gaussian_filter1d` with `mode='wrap'`
+  - Smoothing is applied to spike counts and occupancy **separately** before division (scientifically correct)
+  - Returns `DirectionalRateResult` with firing_rate, occupancy, bin_centers, bin_size, smoothing_sigma
+  - All angular values stored in radians internally (even when input is degrees)
+
+**Test Coverage**:
+
+- Basic functionality (return type, shapes, metadata)
+- Parameter variations (bin_size, angle_unit, smoothing_sigma)
+- Edge cases (empty spikes, single spike, spikes outside time range, constant heading)
+- Result methods (preferred_direction, mean_vector_length, is_hd_cell, plot)
+- Input validation (invalid angle_unit)
+
+**Design Pattern**: Follows `compute_spatial_rate()` pattern closely:
+
+- Similar docstring structure
+- Similar smoothing approach
+- Returns immutable frozen dataclass
+
+---
 
 ### Task 3.7: Implement Binning Layer for Directional Encoding [COMPLETED]
 
