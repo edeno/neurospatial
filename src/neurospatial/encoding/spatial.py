@@ -48,14 +48,16 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from neurospatial.encoding._base import SpatialResultMixin
+from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 
 if TYPE_CHECKING:
+    from matplotlib.axes import Axes
+
     from neurospatial import Environment
 
 __all__ = [
@@ -158,6 +160,142 @@ class SpatialRateResult(SpatialResultMixin):
     env: Environment
     smoothing_method: str
     bandwidth: float
+
+    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
+        """Plot the spatial rate map.
+
+        Delegates to the environment's plot_field method for consistent
+        visualization across the codebase.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes, optional
+            Axes to plot on. If None, creates a new figure and axes.
+        **kwargs
+            Additional keyword arguments passed to env.plot_field().
+            Common options include:
+            - cmap : str or Colormap, default="viridis"
+            - vmin, vmax : float, colorbar limits
+            - add_colorbar : bool, default=True
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+            The axes containing the plot.
+
+        Examples
+        --------
+        >>> result = SpatialRateResult(...)
+        >>> ax = result.plot()
+        >>> plt.show()
+
+        >>> fig, ax = plt.subplots()
+        >>> result.plot(ax=ax, cmap="hot", vmax=20.0)
+        """
+        return self.env.plot_field(_to_numpy(self.firing_rate), ax=ax, **kwargs)
+
+    def peak_location(self) -> NDArray[np.float64]:
+        """Coordinates of peak firing rate.
+
+        Convenience alias for `peak_locations()` for single-neuron results.
+
+        Returns
+        -------
+        ndarray, shape (n_dims,)
+            Spatial coordinates of the bin with maximum firing rate.
+
+        See Also
+        --------
+        peak_locations : Inherited method that handles both single and batch
+        peak_firing_rates : Get the maximum firing rate value
+
+        Examples
+        --------
+        >>> result = SpatialRateResult(...)
+        >>> peak = result.peak_location()
+        >>> print(f"Peak at ({peak[0]:.1f}, {peak[1]:.1f}) cm")
+        """
+        return self.peak_locations()
+
+    def spatial_information(self) -> float:
+        """Skaggs spatial information (bits per spike).
+
+        Quantifies how much information each spike conveys about the
+        animal's spatial location. Higher values indicate more spatially
+        selective firing.
+
+        Returns
+        -------
+        float
+            Spatial information in bits/spike. Always non-negative.
+            Returns 0.0 for uniform firing.
+
+        Notes
+        -----
+        Uses the Skaggs et al. (1993) formula:
+
+        .. math::
+
+            I = \\sum_i p_i \\frac{r_i}{\\bar{r}} \\log_2 \\left( \\frac{r_i}{\\bar{r}} \\right)
+
+        **Interpretation**:
+
+        - Place cells typically have 1-3 bits/spike
+        - Higher values indicate more spatially selective firing
+        - Zero means uniform firing (no spatial selectivity)
+
+        References
+        ----------
+        .. [1] Skaggs, W. E., McNaughton, B. L., & Gothard, K. M. (1993).
+               An information-theoretic approach to deciphering the hippocampal code.
+
+        Examples
+        --------
+        >>> result = SpatialRateResult(...)
+        >>> info = result.spatial_information()
+        >>> print(f"Spatial information: {info:.2f} bits/spike")
+        """
+        from neurospatial.encoding._metrics import spatial_information
+
+        return spatial_information(
+            _to_numpy(self.firing_rate), _to_numpy(self.occupancy)
+        )
+
+    def sparsity(self) -> float:
+        """Sparsity of spatial firing.
+
+        Measures what fraction of the environment elicits significant
+        firing. Lower values indicate sparser, more selective place fields.
+
+        Returns
+        -------
+        float
+            Sparsity value in range [0, 1].
+            - Low (0.1-0.3): Sparse, selective place field
+            - High (~1.0): Uniform firing throughout environment
+
+        Notes
+        -----
+        Uses the Skaggs et al. (1996) formula:
+
+        .. math::
+
+            S = \\frac{\\left( \\sum_i p_i r_i \\right)^2}{\\sum_i p_i r_i^2}
+
+        References
+        ----------
+        .. [1] Skaggs, W. E., McNaughton, B. L., et al. (1996). Theta phase
+               precession in hippocampal neuronal populations.
+
+        Examples
+        --------
+        >>> result = SpatialRateResult(...)
+        >>> spars = result.sparsity()
+        >>> print(f"Sparsity: {spars:.2f}")
+        """
+        from neurospatial.encoding._metrics import sparsity
+
+        return sparsity(_to_numpy(self.firing_rate), _to_numpy(self.occupancy))
 
 
 @dataclass(frozen=True)

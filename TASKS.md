@@ -96,11 +96,11 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Define `SpatialRatesResult` dataclass (frozen=True)
   - [x] Inherit from `SpatialResultMixin` for shared methods
 
-- [ ] **2.2** Implement `SpatialRateResult` convenience methods
-  - [ ] Implement `plot(ax, **kwargs)` → delegates to `env.plot_field()`
-  - [ ] Implement `peak_location()` alias → calls `peak_locations()` from mixin
-  - [ ] Implement `spatial_information()` → delegates to `_metrics.py`
-  - [ ] Implement `sparsity()` → delegates to `_metrics.py`
+- [x] **2.2** Implement `SpatialRateResult` convenience methods
+  - [x] Implement `plot(ax, **kwargs)` → delegates to `env.plot_field()`
+  - [x] Implement `peak_location()` alias → calls `peak_locations()` from mixin
+  - [x] Implement `spatial_information()` → delegates to `_metrics.py`
+  - [x] Implement `sparsity()` → delegates to `_metrics.py`
 
 - [ ] **2.3** Implement `SpatialRateResult` cell type metrics
   - [ ] Implement `grid_score()` → delegates to `grid.py`

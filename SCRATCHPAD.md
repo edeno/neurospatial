@@ -3,10 +3,60 @@
 ## Current Status
 
 **Date**: 2025-12-18
-**Last Completed**: Task 2.1 - Create `encoding/spatial.py` with result class definitions
-**Next Task**: Task 2.2 - Implement `SpatialRateResult` convenience methods
+**Last Completed**: Task 2.2 - Implement `SpatialRateResult` convenience methods
+**Next Task**: Task 2.3 - Implement `SpatialRateResult` cell type metrics
 
 ## Session Notes
+
+### Task 2.2: `SpatialRateResult` Convenience Methods [COMPLETED]
+
+**Goal**: Implement convenience methods for the SpatialRateResult class.
+
+**Approach**: TDD - wrote 17 tests first, then implemented.
+
+**Result**:
+
+- Added 4 convenience methods to `SpatialRateResult` in `src/neurospatial/encoding/spatial.py`
+- Added 17 new tests in `tests/encoding/test_encoding_spatial.py` (total now 47, all pass)
+- All mypy and ruff checks pass
+- Code review passed with APPROVE
+
+**Key Implementation Details**:
+
+- `plot(ax, **kwargs)`: Delegates to `env.plot_field()` for visualization
+  - Accepts optional `ax` argument
+  - Passes through all kwargs
+  - Uses `_to_numpy()` for JAX compatibility
+
+- `peak_location()`: Alias for `peak_locations()` from mixin
+  - Returns `(n_dims,)` coordinates
+  - Convenience method for single-neuron results
+
+- `spatial_information()`: Skaggs spatial information (bits/spike)
+  - Delegates to `_metrics.spatial_information()`
+  - Returns float, always non-negative
+  - Uniform firing returns 0.0
+
+- `sparsity()`: Skaggs sparsity measure
+  - Delegates to `_metrics.sparsity()`
+  - Returns float in range [0, 1]
+  - Uniform firing returns 1.0, selective firing < 0.1
+
+**Documentation**:
+
+- All methods have complete NumPy-style docstrings
+- Include formulas in Notes section
+- Include Skaggs et al. references
+- Include interpretation guidelines
+
+**Code review feedback**: APPROVE with no issues. Implementation follows all project patterns:
+
+- Proper delegation to existing utilities
+- `_to_numpy()` for host-only operations
+- TYPE_CHECKING guard for matplotlib Axes import
+- Method-level imports to avoid circular dependencies
+
+---
 
 ### Task 2.1: `encoding/spatial.py` - Result Class Definitions [COMPLETED]
 

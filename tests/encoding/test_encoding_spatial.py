@@ -613,3 +613,373 @@ class TestSpatialModuleExports:
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         assert SpatialRatesResult is not None
+
+
+# ==============================================================================
+# Test SpatialRateResult convenience methods (Task 2.2)
+# ==============================================================================
+
+
+class TestSpatialRateResultPlot:
+    """Tests for SpatialRateResult.plot() method."""
+
+    def test_has_plot_method(
+        self,
+        simple_env: Environment,
+        firing_rate_single: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """SpatialRateResult should have a plot() method."""
+        from neurospatial.encoding.spatial import SpatialRateResult
+
+        result = SpatialRateResult(
+            firing_rate=firing_rate_single,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        assert hasattr(result, "plot")
+        assert callable(result.plot)
+
+    def test_plot_returns_axes(
+        self,
+        simple_env: Environment,
+        firing_rate_single: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """plot() should return matplotlib Axes."""
+        import matplotlib
+
+        matplotlib.use("Agg")  # Use non-interactive backend for testing
+        import matplotlib.pyplot as plt
+
+        from neurospatial.encoding.spatial import SpatialRateResult
+
+        result = SpatialRateResult(
+            firing_rate=firing_rate_single,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        ax = result.plot()
+        assert ax is not None
+        plt.close("all")
+
+    def test_plot_accepts_ax_argument(
+        self,
+        simple_env: Environment,
+        firing_rate_single: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """plot() should accept an optional ax argument."""
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        from neurospatial.encoding.spatial import SpatialRateResult
+
+        result = SpatialRateResult(
+            firing_rate=firing_rate_single,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        _fig, ax = plt.subplots()
+        returned_ax = result.plot(ax=ax)
+        # Should use the provided axes
+        assert returned_ax is ax or returned_ax is not None
+        plt.close("all")
+
+
+class TestSpatialRateResultPeakLocation:
+    """Tests for SpatialRateResult.peak_location() alias method."""
+
+    def test_has_peak_location_method(
+        self,
+        simple_env: Environment,
+        firing_rate_single: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """SpatialRateResult should have a peak_location() method."""
+        from neurospatial.encoding.spatial import SpatialRateResult
+
+        result = SpatialRateResult(
+            firing_rate=firing_rate_single,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        assert hasattr(result, "peak_location")
+        assert callable(result.peak_location)
+
+    def test_peak_location_returns_same_as_peak_locations(
+        self,
+        simple_env: Environment,
+        firing_rate_single: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """peak_location() should return the same result as peak_locations()."""
+        from neurospatial.encoding.spatial import SpatialRateResult
+
+        result = SpatialRateResult(
+            firing_rate=firing_rate_single,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        peak_location = result.peak_location()
+        peak_locations = result.peak_locations()
+        np.testing.assert_array_equal(peak_location, peak_locations)
+
+    def test_peak_location_returns_correct_shape(
+        self,
+        simple_env: Environment,
+        firing_rate_single: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """peak_location() should return (n_dims,) for single neuron."""
+        from neurospatial.encoding.spatial import SpatialRateResult
+
+        result = SpatialRateResult(
+            firing_rate=firing_rate_single,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        peak = result.peak_location()
+        assert isinstance(peak, np.ndarray)
+        assert peak.shape == (simple_env.n_dims,)
+
+
+class TestSpatialRateResultSpatialInformation:
+    """Tests for SpatialRateResult.spatial_information() method."""
+
+    def test_has_spatial_information_method(
+        self,
+        simple_env: Environment,
+        firing_rate_single: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """SpatialRateResult should have a spatial_information() method."""
+        from neurospatial.encoding.spatial import SpatialRateResult
+
+        result = SpatialRateResult(
+            firing_rate=firing_rate_single,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        assert hasattr(result, "spatial_information")
+        assert callable(result.spatial_information)
+
+    def test_spatial_information_returns_float(
+        self,
+        simple_env: Environment,
+        firing_rate_single: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """spatial_information() should return a float."""
+        from neurospatial.encoding.spatial import SpatialRateResult
+
+        result = SpatialRateResult(
+            firing_rate=firing_rate_single,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        info = result.spatial_information()
+        assert isinstance(info, float)
+
+    def test_spatial_information_delegates_to_metrics(
+        self, simple_env: Environment, occupancy: NDArray[np.float64]
+    ) -> None:
+        """spatial_information() should match _metrics.spatial_information()."""
+        from neurospatial.encoding._metrics import spatial_information as si_func
+        from neurospatial.encoding.spatial import SpatialRateResult
+
+        # Create a specific firing pattern
+        n_bins = simple_env.n_bins
+        firing_rate = np.zeros(n_bins, dtype=np.float64)
+        firing_rate[n_bins // 2] = 30.0  # Single peak
+
+        result = SpatialRateResult(
+            firing_rate=firing_rate,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        # Compare with direct call to _metrics
+        expected = si_func(firing_rate, occupancy)
+        assert result.spatial_information() == pytest.approx(expected)
+
+    def test_spatial_information_nonnegative(
+        self,
+        simple_env: Environment,
+        firing_rate_single: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """spatial_information() should always be non-negative."""
+        from neurospatial.encoding.spatial import SpatialRateResult
+
+        result = SpatialRateResult(
+            firing_rate=firing_rate_single,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        info = result.spatial_information()
+        assert info >= 0.0
+
+    def test_spatial_information_uniform_firing_is_zero(
+        self, simple_env: Environment
+    ) -> None:
+        """Uniform firing should have ~zero spatial information."""
+        from neurospatial.encoding.spatial import SpatialRateResult
+
+        n_bins = simple_env.n_bins
+        firing_rate = np.ones(n_bins, dtype=np.float64) * 5.0  # Uniform
+        occupancy = np.ones(n_bins, dtype=np.float64)
+
+        result = SpatialRateResult(
+            firing_rate=firing_rate,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        info = result.spatial_information()
+        assert info == pytest.approx(0.0, abs=1e-6)
+
+
+class TestSpatialRateResultSparsity:
+    """Tests for SpatialRateResult.sparsity() method."""
+
+    def test_has_sparsity_method(
+        self,
+        simple_env: Environment,
+        firing_rate_single: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """SpatialRateResult should have a sparsity() method."""
+        from neurospatial.encoding.spatial import SpatialRateResult
+
+        result = SpatialRateResult(
+            firing_rate=firing_rate_single,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        assert hasattr(result, "sparsity")
+        assert callable(result.sparsity)
+
+    def test_sparsity_returns_float(
+        self,
+        simple_env: Environment,
+        firing_rate_single: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """sparsity() should return a float."""
+        from neurospatial.encoding.spatial import SpatialRateResult
+
+        result = SpatialRateResult(
+            firing_rate=firing_rate_single,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        spars = result.sparsity()
+        assert isinstance(spars, float)
+
+    def test_sparsity_delegates_to_metrics(
+        self, simple_env: Environment, occupancy: NDArray[np.float64]
+    ) -> None:
+        """sparsity() should match _metrics.sparsity()."""
+        from neurospatial.encoding._metrics import sparsity as sparsity_func
+        from neurospatial.encoding.spatial import SpatialRateResult
+
+        # Create a specific firing pattern
+        n_bins = simple_env.n_bins
+        firing_rate = np.zeros(n_bins, dtype=np.float64)
+        firing_rate[n_bins // 2] = 30.0  # Single peak
+
+        result = SpatialRateResult(
+            firing_rate=firing_rate,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        # Compare with direct call to _metrics
+        expected = sparsity_func(firing_rate, occupancy)
+        assert result.sparsity() == pytest.approx(expected)
+
+    def test_sparsity_in_valid_range(
+        self,
+        simple_env: Environment,
+        firing_rate_single: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """sparsity() should be in range [0, 1]."""
+        from neurospatial.encoding.spatial import SpatialRateResult
+
+        result = SpatialRateResult(
+            firing_rate=firing_rate_single,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        spars = result.sparsity()
+        assert 0.0 <= spars <= 1.0
+
+    def test_sparsity_uniform_firing_is_one(self, simple_env: Environment) -> None:
+        """Uniform firing should have sparsity close to 1."""
+        from neurospatial.encoding.spatial import SpatialRateResult
+
+        n_bins = simple_env.n_bins
+        firing_rate = np.ones(n_bins, dtype=np.float64) * 5.0  # Uniform
+        occupancy = np.ones(n_bins, dtype=np.float64)
+
+        result = SpatialRateResult(
+            firing_rate=firing_rate,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        spars = result.sparsity()
+        assert spars == pytest.approx(1.0, abs=1e-6)
+
+    def test_sparsity_selective_firing_is_low(self, simple_env: Environment) -> None:
+        """Selective firing (single bin) should have low sparsity."""
+        from neurospatial.encoding.spatial import SpatialRateResult
+
+        n_bins = simple_env.n_bins
+        firing_rate = np.zeros(n_bins, dtype=np.float64)
+        firing_rate[n_bins // 2] = 30.0  # Only fires in one bin
+        occupancy = np.ones(n_bins, dtype=np.float64)
+
+        result = SpatialRateResult(
+            firing_rate=firing_rate,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        spars = result.sparsity()
+        # Should be 1/n_bins for single-bin firing with uniform occupancy
+        expected = 1.0 / n_bins
+        assert spars == pytest.approx(expected, rel=1e-6)
