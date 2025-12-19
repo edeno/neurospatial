@@ -72,7 +72,7 @@ neurospatial.ops.visibility : Visibility and gaze computation
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -82,6 +82,7 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial.encoding._base import _to_numpy
 
 if TYPE_CHECKING:
+    import pandas as pd
     from matplotlib.axes import Axes
 
     from neurospatial import Environment
@@ -750,6 +751,102 @@ class ViewRatesResult:
         """
         info = self.view_spatial_information()
         return info > min_info
+
+    def to_dataframe(
+        self,
+        neuron_ids: Sequence[str | int] | None = None,
+    ) -> pd.DataFrame:
+        """Export metrics to DataFrame for exploratory analysis.
+
+        Computes all view field metrics and exports them to a pandas DataFrame
+        for easy filtering, sorting, and analysis.
+
+        Parameters
+        ----------
+        neuron_ids : sequence of str or int, optional
+            Identifiers for each neuron. If None, uses integer indices
+            (0, 1, 2, ..., n_neurons-1).
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with columns:
+
+            - neuron_id: identifier for each neuron
+            - peak_view_x: x-coordinate of peak view location
+            - peak_view_y: y-coordinate of peak view location
+            - peak_rate: maximum firing rate (Hz)
+            - view_spatial_info: view spatial information (bits/spike)
+            - is_view_cell: whether classified as view cell (using default threshold)
+
+        Raises
+        ------
+        ValueError
+            If neuron_ids has a different length than the number of neurons.
+
+        Notes
+        -----
+        This method computes all metrics at once, which may be slow for
+        large populations. For selective metric computation, use the
+        individual methods (``view_spatial_information()``, ``detect_view_cells()``, etc.).
+
+        **Common pandas workflows**:
+
+        - Filter: ``df[df["is_view_cell"] == True]``
+        - Sort: ``df.sort_values("view_spatial_info", ascending=False)``
+        - Top-N: ``df.nlargest(10, "peak_rate")``
+
+        Examples
+        --------
+        >>> result = ViewRatesResult(...)
+        >>> df = result.to_dataframe()
+        >>> print(df.head())
+
+        >>> # With custom neuron IDs
+        >>> df = result.to_dataframe(neuron_ids=["unit_1", "unit_2", ...])
+
+        >>> # Filter to view cells only
+        >>> view_cells_df = df[df["is_view_cell"]]
+
+        See Also
+        --------
+        peak_view_locations : Get peak view locations for all neurons
+        view_spatial_information : Get spatial information for all neurons
+        detect_view_cells : Classify neurons as view cells
+        """
+        import pandas as pd
+
+        n_neurons = len(self)
+
+        # Validate and convert neuron_ids
+        if neuron_ids is None:
+            neuron_ids_list: list[str | int] = list(range(n_neurons))
+        else:
+            neuron_ids_list = list(neuron_ids)
+            if len(neuron_ids_list) != n_neurons:
+                raise ValueError(
+                    f"neuron_ids has {len(neuron_ids_list)} elements but "
+                    f"result contains {n_neurons} neurons"
+                )
+
+        # Compute all metrics
+        peak_locs = self.peak_view_locations()
+        firing_rates = _to_numpy(self.firing_rates)
+        peak_rates = np.nanmax(firing_rates, axis=1) if n_neurons > 0 else np.array([])
+        view_info = self.view_spatial_information()
+        is_view_cell = self.detect_view_cells()
+
+        # Build DataFrame
+        data: dict[str, Any] = {
+            "neuron_id": neuron_ids_list,
+            "peak_view_x": peak_locs[:, 0],
+            "peak_view_y": peak_locs[:, 1],
+            "peak_rate": peak_rates,
+            "view_spatial_info": view_info,
+            "is_view_cell": is_view_cell,
+        }
+
+        return pd.DataFrame(data)
 
 
 # =============================================================================

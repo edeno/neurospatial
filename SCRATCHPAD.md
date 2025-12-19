@@ -3,10 +3,62 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 4.4 - Implement `ViewRatesResult` batch methods
-**Next Task**: Task 4.5 - Implement `ViewRatesResult.to_dataframe()`
+**Last Completed**: Task 4.5 - Implement `ViewRatesResult.to_dataframe()`
+**Next Task**: Task 4.6 - Implement binning layer for view encoding
 
 ## Session Notes
+
+### Task 4.5: Implement `ViewRatesResult.to_dataframe()` [COMPLETED]
+
+**Goal**: Add `to_dataframe()` method to `ViewRatesResult` for exporting metrics to pandas DataFrame.
+
+**Approach**: TDD - wrote 18 tests first, then implemented.
+
+**Result**:
+
+- Added 1 method to `ViewRatesResult` in `src/neurospatial/encoding/view.py`
+- Added 18 new tests in `tests/encoding/test_encoding_view.py` (total now 77, all pass)
+- All mypy and ruff checks pass
+- Code review passed with APPROVE
+
+**Key Implementation Details**:
+
+- `to_dataframe(neuron_ids=None)`: Export view cell metrics to DataFrame
+  - Returns pandas DataFrame with columns:
+    - `neuron_id`: User-provided or auto-generated integer indices
+    - `peak_view_x`: X-coordinate of peak view location
+    - `peak_view_y`: Y-coordinate of peak view location
+    - `peak_rate`: Maximum firing rate (Hz)
+    - `view_spatial_info`: View spatial information (bits/spike)
+    - `is_view_cell`: Classification based on default threshold (0.5 bits/spike)
+  - Validates `neuron_ids` length matches number of neurons
+  - Handles empty results (0 neurons) gracefully
+  - Follows pattern from `DirectionalRatesResult.to_dataframe()` and `SpatialRatesResult.to_dataframe()`
+
+**Code review recommendations addressed**:
+
+1. Used consistent error message format matching other `to_dataframe()` implementations
+2. Added explicit type annotation `neuron_ids_list: list[str | int]` for clarity
+3. Added explicit type annotation `data: dict[str, Any]` for the data dictionary
+4. Simplified empty array handling (removed redundant conditionals for `peak_view_x/y`)
+
+**Test coverage (18 tests in 1 class)**:
+
+- Column existence tests (6): neuron_id, peak_view_x, peak_view_y, peak_rate, view_spatial_info, is_view_cell
+- Correctness validation (5): peak_view_x, peak_view_y, peak_rate, view_spatial_info, is_view_cell match batch methods
+- Neuron ID handling (3): default indices, custom IDs, length mismatch error
+- Edge cases (2): empty result (0 neurons), single neuron
+- Basic functionality (2): returns DataFrame, correct row count
+
+**Documentation**:
+
+- Complete NumPy-style docstring with Parameters, Returns, Raises, Notes, Examples, See Also sections
+- Common pandas workflows documented (filter, sort, top-N)
+- Cross-references to related batch methods
+
+**Milestone 4 Progress**: Tasks 4.1-4.5 complete, 4 tasks remaining (4.6-4.9).
+
+---
 
 ### Task 4.4: Implement `ViewRatesResult` Batch Methods [COMPLETED]
 

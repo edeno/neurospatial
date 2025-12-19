@@ -1572,3 +1572,444 @@ class TestViewRatesResultDetectViewCells:
         classification = result.detect_view_cells()
         # Uniform firing has zero info, should all be False
         assert not np.any(classification)
+
+
+# ==============================================================================
+# ViewRatesResult.to_dataframe() Tests - Task 4.5
+# ==============================================================================
+
+
+class TestViewRatesResultToDataframe:
+    """Test ViewRatesResult.to_dataframe() method."""
+
+    def test_to_dataframe_returns_dataframe(
+        self,
+        simple_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """to_dataframe() should return a pandas DataFrame."""
+        from neurospatial.encoding.view import ViewRatesResult
+
+        result = ViewRatesResult(
+            firing_rates=batch_firing_rates,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        import pandas as pd
+
+        df = result.to_dataframe()
+        assert isinstance(df, pd.DataFrame)
+
+    def test_to_dataframe_row_count(
+        self,
+        simple_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_view_occupancy: np.ndarray,
+        n_neurons: int,
+    ) -> None:
+        """to_dataframe() should have one row per neuron."""
+        from neurospatial.encoding.view import ViewRatesResult
+
+        result = ViewRatesResult(
+            firing_rates=batch_firing_rates,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        df = result.to_dataframe()
+        assert len(df) == n_neurons
+
+    def test_to_dataframe_has_neuron_id_column(
+        self,
+        simple_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """to_dataframe() should have neuron_id column."""
+        from neurospatial.encoding.view import ViewRatesResult
+
+        result = ViewRatesResult(
+            firing_rates=batch_firing_rates,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        df = result.to_dataframe()
+        assert "neuron_id" in df.columns
+
+    def test_to_dataframe_has_peak_view_x_column(
+        self,
+        simple_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """to_dataframe() should have peak_view_x column."""
+        from neurospatial.encoding.view import ViewRatesResult
+
+        result = ViewRatesResult(
+            firing_rates=batch_firing_rates,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        df = result.to_dataframe()
+        assert "peak_view_x" in df.columns
+
+    def test_to_dataframe_has_peak_view_y_column(
+        self,
+        simple_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """to_dataframe() should have peak_view_y column."""
+        from neurospatial.encoding.view import ViewRatesResult
+
+        result = ViewRatesResult(
+            firing_rates=batch_firing_rates,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        df = result.to_dataframe()
+        assert "peak_view_y" in df.columns
+
+    def test_to_dataframe_has_peak_rate_column(
+        self,
+        simple_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """to_dataframe() should have peak_rate column."""
+        from neurospatial.encoding.view import ViewRatesResult
+
+        result = ViewRatesResult(
+            firing_rates=batch_firing_rates,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        df = result.to_dataframe()
+        assert "peak_rate" in df.columns
+
+    def test_to_dataframe_has_view_spatial_info_column(
+        self,
+        simple_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """to_dataframe() should have view_spatial_info column."""
+        from neurospatial.encoding.view import ViewRatesResult
+
+        result = ViewRatesResult(
+            firing_rates=batch_firing_rates,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        df = result.to_dataframe()
+        assert "view_spatial_info" in df.columns
+
+    def test_to_dataframe_has_is_view_cell_column(
+        self,
+        simple_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """to_dataframe() should have is_view_cell column."""
+        from neurospatial.encoding.view import ViewRatesResult
+
+        result = ViewRatesResult(
+            firing_rates=batch_firing_rates,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        df = result.to_dataframe()
+        assert "is_view_cell" in df.columns
+
+    def test_to_dataframe_default_neuron_ids(
+        self,
+        simple_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_view_occupancy: np.ndarray,
+        n_neurons: int,
+    ) -> None:
+        """to_dataframe() should use integer indices by default for neuron_id."""
+        from neurospatial.encoding.view import ViewRatesResult
+
+        result = ViewRatesResult(
+            firing_rates=batch_firing_rates,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        df = result.to_dataframe()
+        expected_ids = list(range(n_neurons))
+        assert list(df["neuron_id"]) == expected_ids
+
+    def test_to_dataframe_custom_neuron_ids(
+        self,
+        simple_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_view_occupancy: np.ndarray,
+        n_neurons: int,
+    ) -> None:
+        """to_dataframe() should accept custom neuron_ids."""
+        from neurospatial.encoding.view import ViewRatesResult
+
+        result = ViewRatesResult(
+            firing_rates=batch_firing_rates,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        custom_ids = [f"unit_{i}" for i in range(n_neurons)]
+        df = result.to_dataframe(neuron_ids=custom_ids)
+        assert list(df["neuron_id"]) == custom_ids
+
+    def test_to_dataframe_neuron_ids_length_mismatch(
+        self,
+        simple_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """to_dataframe() should raise ValueError for wrong neuron_ids length."""
+        from neurospatial.encoding.view import ViewRatesResult
+
+        result = ViewRatesResult(
+            firing_rates=batch_firing_rates,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        # Wrong number of ids
+        with pytest.raises(ValueError):
+            result.to_dataframe(neuron_ids=["a", "b"])  # Only 2, but 5 neurons
+
+    def test_to_dataframe_peak_view_x_matches_batch_method(
+        self,
+        simple_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_view_occupancy: np.ndarray,
+        n_neurons: int,
+    ) -> None:
+        """to_dataframe() peak_view_x should match peak_view_locations()[:, 0]."""
+        from neurospatial.encoding.view import ViewRatesResult
+
+        result = ViewRatesResult(
+            firing_rates=batch_firing_rates,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        df = result.to_dataframe()
+        expected = result.peak_view_locations()[:, 0]
+        np.testing.assert_array_almost_equal(df["peak_view_x"].values, expected)
+
+    def test_to_dataframe_peak_view_y_matches_batch_method(
+        self,
+        simple_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_view_occupancy: np.ndarray,
+        n_neurons: int,
+    ) -> None:
+        """to_dataframe() peak_view_y should match peak_view_locations()[:, 1]."""
+        from neurospatial.encoding.view import ViewRatesResult
+
+        result = ViewRatesResult(
+            firing_rates=batch_firing_rates,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        df = result.to_dataframe()
+        expected = result.peak_view_locations()[:, 1]
+        np.testing.assert_array_almost_equal(df["peak_view_y"].values, expected)
+
+    def test_to_dataframe_peak_rate_matches_batch_method(
+        self,
+        simple_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """to_dataframe() peak_rate should match np.nanmax(firing_rates, axis=1)."""
+        from neurospatial.encoding.view import ViewRatesResult
+
+        result = ViewRatesResult(
+            firing_rates=batch_firing_rates,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        df = result.to_dataframe()
+        expected = np.nanmax(batch_firing_rates, axis=1)
+        np.testing.assert_array_almost_equal(df["peak_rate"].values, expected)
+
+    def test_to_dataframe_view_spatial_info_matches_batch_method(
+        self,
+        simple_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """to_dataframe() view_spatial_info should match view_spatial_information()."""
+        from neurospatial.encoding.view import ViewRatesResult
+
+        result = ViewRatesResult(
+            firing_rates=batch_firing_rates,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        df = result.to_dataframe()
+        expected = result.view_spatial_information()
+        np.testing.assert_array_almost_equal(df["view_spatial_info"].values, expected)
+
+    def test_to_dataframe_is_view_cell_matches_batch_method(
+        self,
+        simple_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """to_dataframe() is_view_cell should match detect_view_cells()."""
+        from neurospatial.encoding.view import ViewRatesResult
+
+        result = ViewRatesResult(
+            firing_rates=batch_firing_rates,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        df = result.to_dataframe()
+        expected = result.detect_view_cells()
+        np.testing.assert_array_equal(df["is_view_cell"].values, expected)
+
+    def test_to_dataframe_empty_result(
+        self,
+        simple_env: Environment,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """to_dataframe() should handle empty result (zero neurons)."""
+        import pandas as pd
+
+        from neurospatial.encoding.view import ViewRatesResult
+
+        empty_rates = np.zeros((0, simple_env.n_bins), dtype=np.float64)
+
+        result = ViewRatesResult(
+            firing_rates=empty_rates,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        df = result.to_dataframe()
+        assert isinstance(df, pd.DataFrame)
+        assert len(df) == 0
+        # Should still have all columns
+        expected_columns = {
+            "neuron_id",
+            "peak_view_x",
+            "peak_view_y",
+            "peak_rate",
+            "view_spatial_info",
+            "is_view_cell",
+        }
+        assert expected_columns.issubset(set(df.columns))
+
+    def test_to_dataframe_single_neuron(
+        self,
+        simple_env: Environment,
+        single_firing_rate: np.ndarray,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """to_dataframe() should work with a single neuron."""
+        import pandas as pd
+
+        from neurospatial.encoding.view import ViewRatesResult
+
+        # Reshape single neuron to batch format
+        batch_rates = single_firing_rate.reshape(1, -1)
+
+        result = ViewRatesResult(
+            firing_rates=batch_rates,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        df = result.to_dataframe()
+        assert isinstance(df, pd.DataFrame)
+        assert len(df) == 1
+        assert df["neuron_id"].iloc[0] == 0

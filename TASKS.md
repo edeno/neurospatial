@@ -258,10 +258,10 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Implement `view_spatial_information()` → returns `(n_neurons,)`
   - [x] Implement `detect_view_cells(min_info)` → returns `(n_neurons,)` bool
 
-- [ ] **4.5** Implement `ViewRatesResult.to_dataframe()`
-  - [ ] Include neuron_id, peak_view_x, peak_view_y columns
-  - [ ] Include peak_rate, view_spatial_info columns
-  - [ ] Include is_view_cell column
+- [x] **4.5** Implement `ViewRatesResult.to_dataframe()`
+  - [x] Include neuron_id, peak_view_x, peak_view_y columns
+  - [x] Include peak_rate, view_spatial_info columns
+  - [x] Include is_view_cell column
 
 - [ ] **4.6** Implement binning layer for view encoding
   - [ ] Create helper to compute view occupancy (time viewing each spatial bin)
