@@ -349,13 +349,13 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Add `n_jobs` parameter for parallelization
   - [x] Return `EgocentricRatesResult`
 
-- [ ] **5.9** Write comprehensive tests for egocentric encoding
-  - [ ] Test single neuron computation
-  - [ ] Test batch computation
-  - [ ] Test all result class methods
-  - [ ] Test euclidean vs geodesic distance
-  - [ ] Test error when geodesic requested without env
-  - [ ] Test `to_dataframe()` output format
+- [x] **5.9** Write comprehensive tests for egocentric encoding
+  - [x] Test single neuron computation
+  - [x] Test batch computation
+  - [x] Test all result class methods
+  - [x] Test euclidean vs geodesic distance
+  - [x] Test error when geodesic requested without env
+  - [x] Test `to_dataframe()` output format
 
 ---
 
