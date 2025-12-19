@@ -3,10 +3,70 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 5.7 - Implement `compute_egocentric_rate()` function
-**Next Task**: Task 5.8 - Implement `compute_egocentric_rates()` function
+**Last Completed**: Task 5.8 - Implement `compute_egocentric_rates()` function
+**Next Task**: Task 5.9 - Write comprehensive tests for egocentric encoding
 
 ## Session Notes
+
+### Task 5.8: Implement `compute_egocentric_rates()` function [COMPLETED]
+
+**Goal**: Implement the batch version of egocentric rate computation for processing multiple neurons efficiently.
+
+**Implementation**:
+- Added `compute_egocentric_rates()` function to `src/neurospatial/encoding/egocentric.py` (lines 1185-1471)
+- Function signature follows canonical argument order (spike_times, times, positions, headings, object_positions)
+- Keyword-only parameters: env, distance_range, n_distance_bins, n_direction_bins, distance_metric, smoothing_method, bandwidth, min_occupancy, n_jobs
+- Supports all spike time formats via `normalize_spike_times()`:
+  - List/tuple of 1D arrays (canonical)
+  - 2D array with NaN padding
+  - Single 1D array (wrapped in list)
+- Delegates to:
+  - `_egocentric_binning.bin_egocentric_spike_trains()` for batch spike counting with shared occupancy
+  - `_smoothing.smooth_rate_maps_batch()` for batch smoothing
+- Returns `EgocentricRatesResult` with iteration support
+
+**Key Design Decisions**:
+- Follows `compute_view_rates()` pattern exactly for consistency
+- Precomputes egocentric coordinates and occupancy once (shared across all neurons)
+- Uses `n_jobs` parameter for joblib parallelization of spike binning
+- Handles edge case of zero neurons gracefully (still computes occupancy)
+- Comprehensive input validation (distance_metric, env requirement, array lengths)
+
+**Files Modified**:
+- `src/neurospatial/encoding/egocentric.py`: Added compute_egocentric_rates function, updated __all__
+- `src/neurospatial/encoding/__init__.py`: Added compute_egocentric_rates to exports and __all__
+
+**Files Created**:
+- `tests/encoding/test_compute_egocentric_rates.py` (40 tests)
+
+**TDD Process**:
+1. Wrote 40 tests covering:
+   - Import tests (from egocentric module, encoding package, in __all__)
+   - Return type tests (correct type, shapes for firing_rates/occupancy/ego_env)
+   - Spike time format tests (list of arrays, 2D NaN-padded, single 1D array)
+   - Parameter storage tests (distance_range, n_distance_bins, n_direction_bins)
+   - Parameter handling tests (distance_metric, smoothing_method, n_jobs)
+   - Iteration tests (len, getitem, iteration)
+   - Edge cases (empty list, single neuron, empty spike trains)
+   - Input validation tests (invalid distance_metric, geodesic without env, mismatched lengths)
+   - Consistency tests (single neuron matches compute_egocentric_rate, multiple neurons consistent)
+   - Signature tests (argument order, keyword-only parameters)
+   - Correctness tests (non-negative rates, non-negative occupancy, total occupancy approximates duration)
+   - Result method integration tests (plot, preferred_distances, preferred_directions, detect_ovcs, to_dataframe)
+2. Ran tests - all 40 failed (expected - function didn't exist)
+3. Implemented the function
+4. Ran tests - all 40 passed
+
+**Code Review**: APPROVED (no critical issues)
+- Excellent consistency with existing batch patterns
+- Comprehensive documentation quality
+- Complete type annotations (mypy passes)
+- Clean code structure with proper delegation
+
+**Test Results**: 40/40 tests pass
+**Quality checks**: All ruff and mypy checks pass
+
+---
 
 ### Task 5.7: Implement `compute_egocentric_rate()` function [COMPLETED]
 

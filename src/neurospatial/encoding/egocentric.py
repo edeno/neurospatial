@@ -16,8 +16,8 @@ EgocentricRateResult
 EgocentricRatesResult
     Multi-neuron egocentric rate maps with batch methods and iteration
 
-Compute Functions (to be implemented in Tasks 5.7-5.8)
-------------------------------------------------------
+Compute Functions
+-----------------
 compute_egocentric_rate
     Compute egocentric firing rate for one neuron
 compute_egocentric_rates
@@ -91,6 +91,7 @@ __all__ = [
     "EgocentricRateResult",
     "EgocentricRatesResult",
     "compute_egocentric_rate",
+    "compute_egocentric_rates",
 ]
 
 
@@ -1173,6 +1174,297 @@ def compute_egocentric_rate(
     # Return result
     return EgocentricRateResult(
         firing_rate=firing_rate,
+        occupancy=occupancy,
+        ego_env=ego_env,
+        distance_range=distance_range,
+        n_distance_bins=n_distance_bins,
+        n_direction_bins=n_direction_bins,
+    )
+
+
+def compute_egocentric_rates(
+    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    object_positions: NDArray[np.float64],
+    *,
+    env: Environment | None = None,
+    distance_range: tuple[float, float] = (0.0, 50.0),
+    n_distance_bins: int = 10,
+    n_direction_bins: int = 12,
+    distance_metric: Literal["euclidean", "geodesic"] = "euclidean",
+    smoothing_method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
+    bandwidth: float = 5.0,
+    min_occupancy: float = 0.0,
+    n_jobs: int = 1,
+) -> EgocentricRatesResult:
+    """Compute egocentric firing rates for multiple neurons.
+
+    This is the batch version of ``compute_egocentric_rate()`` that efficiently
+    processes multiple neurons with shared trajectory data. It precomputes
+    shared quantities (egocentric coordinates, occupancy) once and optionally
+    parallelizes spike counting with joblib.
+
+    Parameters
+    ----------
+    spike_times : sequence of arrays or 2D array
+        Spike times for each neuron. Accepted formats:
+
+        - List/tuple of 1D arrays: ``[spikes_0, spikes_1, ...]`` (canonical)
+        - 2D array with NaN padding: shape ``(n_neurons, max_spikes)``
+        - 1D array (single neuron): wrapped in list automatically
+
+        All formats are normalized via ``normalize_spike_times()``.
+    times : ndarray, shape (n_samples,)
+        Timestamps of trajectory samples in seconds.
+    positions : ndarray, shape (n_samples, 2)
+        Animal position coordinates at each time sample.
+    headings : ndarray, shape (n_samples,)
+        Head direction at each time sample (radians, 0=East allocentric).
+    object_positions : ndarray, shape (n_objects, 2)
+        Object positions in allocentric coordinates. The firing rate is
+        computed relative to the *nearest* object at each timepoint.
+    env : Environment, optional
+        Required when ``distance_metric="geodesic"``. The allocentric
+        environment used to compute geodesic distances around obstacles.
+    distance_range : tuple of float, default=(0.0, 50.0)
+        (min_distance, max_distance) for egocentric binning. Distances outside
+        this range are not included in the rate map.
+    n_distance_bins : int, default=10
+        Number of distance bins in the egocentric polar grid.
+    n_direction_bins : int, default=12
+        Number of direction bins in the egocentric polar grid. Covers the
+        full circle (-pi to pi).
+    distance_metric : {"euclidean", "geodesic"}, default="euclidean"
+        Distance metric for computing distance to objects:
+
+        - **euclidean**: Straight-line distance.
+        - **geodesic**: Path distance respecting environment boundaries.
+          Requires ``env`` parameter.
+
+    smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
+        Smoothing method to use:
+
+        - **binned** (default): Raw rate computation without smoothing.
+          Appropriate for egocentric polar grids where boundary-aware
+          smoothing may not apply.
+        - **diffusion_kde**: Graph-based boundary-aware KDE.
+        - **gaussian_kde**: Standard Euclidean KDE.
+
+    bandwidth : float, default=5.0
+        Smoothing bandwidth for gaussian_kde and diffusion_kde methods.
+    min_occupancy : float, default=0.0
+        Minimum occupancy (seconds) for a bin to be included. Bins with
+        occupancy below this threshold are set to NaN.
+    n_jobs : int, default=1
+        Number of parallel jobs for spike counting. Use -1 for all CPUs.
+        1 means sequential processing (no parallelization overhead).
+
+    Returns
+    -------
+    EgocentricRatesResult
+        Result object containing:
+
+        - ``firing_rates``: Firing rate maps, shape ``(n_neurons, n_bins)``
+        - ``occupancy``: Time in each egocentric bin in seconds, shape ``(n_bins,)``
+        - ``ego_env``: The egocentric polar environment
+        - ``distance_range``: Distance range used
+        - ``n_distance_bins``: Number of distance bins
+        - ``n_direction_bins``: Number of direction bins
+
+        The result supports iteration: ``for single in result: ...``
+        and indexing: ``single = result[0]``.
+
+    Raises
+    ------
+    ValueError
+        If ``distance_metric="geodesic"`` but ``env`` is None.
+        If ``distance_metric`` is not one of the valid options.
+        If inputs have mismatched lengths.
+
+    See Also
+    --------
+    compute_egocentric_rate : Single-neuron version
+    EgocentricRatesResult : Result class with batch methods
+    compute_spatial_rates : Standard spatial rates (by animal position)
+
+    Notes
+    -----
+    **Efficiency advantages over calling ``compute_egocentric_rate()`` in a loop**:
+
+    1. Egocentric coordinates (distance, bearing to nearest object) are
+       computed once and shared across all neurons
+    2. Occupancy is computed once and shared
+    3. Diffusion kernel (for ``diffusion_kde`` method) is computed once
+    4. Spike binning can be parallelized with joblib
+
+    **When to use batch vs single**:
+
+    - **Batch** (this function): Processing 3+ neurons, or any case where
+      efficiency matters. The overhead of precomputing shared quantities
+      is amortized over multiple neurons.
+    - **Single** (``compute_egocentric_rate``): Processing 1-2 neurons, or when
+      you need fine-grained control over individual neurons.
+
+    **Coordinate convention**: Direction uses egocentric (animal-centered)
+    coordinates where 0=ahead, +pi/2=left, -pi/2=right.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.encoding.egocentric import compute_egocentric_rates
+
+    >>> # Create trajectory and objects
+    >>> rng = np.random.default_rng(42)
+    >>> times = np.linspace(0, 100, 1000)
+    >>> positions = rng.uniform(10, 90, (1000, 2))
+    >>> headings = rng.uniform(-np.pi, np.pi, 1000)
+    >>> object_positions = np.array([[50.0, 50.0], [25.0, 75.0]])
+
+    >>> # Spike times for 3 neurons
+    >>> spike_times = [
+    ...     np.sort(rng.uniform(0, 100, 100)),  # Neuron 0
+    ...     np.sort(rng.uniform(0, 100, 150)),  # Neuron 1
+    ...     np.sort(rng.uniform(0, 100, 50)),  # Neuron 2
+    ... ]
+
+    >>> # Compute egocentric rates for all neurons
+    >>> result = compute_egocentric_rates(
+    ...     spike_times,
+    ...     times,
+    ...     positions,
+    ...     headings,
+    ...     object_positions,
+    ...     n_jobs=2,  # Parallel spike binning
+    ... )
+
+    >>> # Access results
+    >>> print(f"Number of neurons: {len(result)}")
+    >>> print(f"Firing rates shape: {result.firing_rates.shape}")
+
+    >>> # Iterate over neurons
+    >>> for i, single in enumerate(result):
+    ...     pref_dist = single.preferred_distance()
+    ...     pref_dir = single.preferred_direction()
+    ...     print(f"Neuron {i}: {pref_dist:.1f} cm at {np.degrees(pref_dir):.0f} deg")
+
+    >>> # Get metrics for all neurons
+    >>> df = result.to_dataframe()
+    >>> print(df)
+
+    >>> # Use 2D array with NaN padding
+    >>> spike_times_2d = np.array(
+    ...     [
+    ...         [0.1, 0.5, 1.0, np.nan],
+    ...         [0.2, 0.3, 0.8, 1.2],
+    ...     ]
+    ... )
+    >>> result2 = compute_egocentric_rates(
+    ...     spike_times_2d, times, positions, headings, object_positions
+    ... )
+
+    References
+    ----------
+    .. [1] Hoydal, O. A., et al. (2019). Object-vector coding in the medial
+           entorhinal cortex. Nature, 568(7752), 400-404.
+    """
+    from neurospatial.encoding._egocentric_binning import bin_egocentric_spike_trains
+    from neurospatial.encoding._smoothing import smooth_rate_maps_batch
+    from neurospatial.encoding._spikes import normalize_spike_times
+
+    # Validate distance_metric
+    valid_metrics = {"euclidean", "geodesic"}
+    if distance_metric not in valid_metrics:
+        raise ValueError(
+            f"Invalid distance_metric: '{distance_metric}'. "
+            f"Must be one of {sorted(valid_metrics)}"
+        )
+
+    # Validate env requirement for geodesic
+    if distance_metric == "geodesic" and env is None:
+        raise ValueError(
+            "distance_metric='geodesic' requires env parameter.\n"
+            "Pass the allocentric environment to compute geodesic distances."
+        )
+
+    # Normalize spike times to canonical list-of-arrays format
+    spike_times_list = normalize_spike_times(spike_times)
+    n_neurons = len(spike_times_list)
+
+    # Convert inputs to arrays
+    times = np.asarray(times, dtype=np.float64).ravel()
+    positions = np.asarray(positions, dtype=np.float64)
+    headings = np.asarray(headings, dtype=np.float64).ravel()
+    object_positions = np.asarray(object_positions, dtype=np.float64)
+
+    # Validate input array lengths
+    n_samples = len(times)
+    if len(positions) != n_samples:
+        raise ValueError(
+            f"times length ({n_samples}) must match positions length ({len(positions)})"
+        )
+    if len(headings) != n_samples:
+        raise ValueError(
+            f"times length ({n_samples}) must match headings length ({len(headings)})"
+        )
+
+    # Handle edge case: no neurons
+    if n_neurons == 0:
+        # Still need to compute occupancy for consistency
+        from neurospatial.encoding._egocentric_binning import (
+            compute_egocentric_occupancy,
+        )
+
+        occupancy, ego_env = compute_egocentric_occupancy(
+            times,
+            positions,
+            headings,
+            object_positions,
+            distance_range=distance_range,
+            n_distance_bins=n_distance_bins,
+            n_direction_bins=n_direction_bins,
+            distance_metric=distance_metric,
+            env=env,
+        )
+        return EgocentricRatesResult(
+            firing_rates=np.empty((0, ego_env.n_bins), dtype=np.float64),
+            occupancy=occupancy,
+            ego_env=ego_env,
+            distance_range=distance_range,
+            n_distance_bins=n_distance_bins,
+            n_direction_bins=n_direction_bins,
+        )
+
+    # Bin spike trains by egocentric coordinates and compute occupancy
+    # bin_egocentric_spike_trains returns (spike_counts, occupancy, ego_env)
+    spike_counts, occupancy, ego_env = bin_egocentric_spike_trains(
+        spike_times_list,
+        times,
+        positions,
+        headings,
+        object_positions,
+        distance_range=distance_range,
+        n_distance_bins=n_distance_bins,
+        n_direction_bins=n_direction_bins,
+        distance_metric=distance_metric,
+        env=env,
+        n_jobs=n_jobs,
+    )
+
+    # Apply batch smoothing to compute firing rates
+    firing_rates = smooth_rate_maps_batch(
+        ego_env,
+        spike_counts,
+        occupancy,
+        method=smoothing_method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+    )
+
+    # Return result
+    return EgocentricRatesResult(
+        firing_rates=firing_rates,
         occupancy=occupancy,
         ego_env=ego_env,
         distance_range=distance_range,

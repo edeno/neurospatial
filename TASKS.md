@@ -342,12 +342,12 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Apply smoothing via `_smoothing.py`
   - [x] Return `EgocentricRateResult`
 
-- [ ] **5.8** Implement `compute_egocentric_rates()` function
-  - [ ] Accept list of spike_times arrays
-  - [ ] Normalize input via `normalize_spike_times()`
-  - [ ] Precompute shared quantities (egocentric occupancy, polar bins)
-  - [ ] Add `n_jobs` parameter for parallelization
-  - [ ] Return `EgocentricRatesResult`
+- [x] **5.8** Implement `compute_egocentric_rates()` function
+  - [x] Accept list of spike_times arrays
+  - [x] Normalize input via `normalize_spike_times()`
+  - [x] Precompute shared quantities (egocentric occupancy, polar bins)
+  - [x] Add `n_jobs` parameter for parallelization
+  - [x] Return `EgocentricRatesResult`
 
 - [ ] **5.9** Write comprehensive tests for egocentric encoding
   - [ ] Test single neuron computation
