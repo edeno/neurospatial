@@ -106,6 +106,14 @@ from neurospatial.encoding.population import (
     population_vector_correlation,
 )
 
+# Spatial rate (place/grid/border cells) - new API
+from neurospatial.encoding.spatial import (
+    SpatialRateResult,
+    SpatialRatesResult,
+    compute_spatial_rate,
+    compute_spatial_rates,
+)
+
 # Spatial view cell analysis
 from neurospatial.encoding.spatial_view import (
     FieldOfView,
@@ -119,6 +127,14 @@ from neurospatial.encoding.spatial_view import (
     visibility_occupancy,
 )
 
+# View rate (spatial view cells) - new API
+from neurospatial.encoding.view import (
+    ViewRateResult,
+    ViewRatesResult,
+    compute_view_rate,
+    compute_view_rates,
+)
+
 __all__ = [  # noqa: RUF022 - organized by category
     # Border/boundary cell analysis
     "border_score",
@@ -128,6 +144,16 @@ __all__ = [  # noqa: RUF022 - organized by category
     "DirectionalRatesResult",
     "compute_directional_rate",
     "compute_directional_rates",
+    # Spatial rate (place/grid/border cells) - new API
+    "SpatialRateResult",
+    "SpatialRatesResult",
+    "compute_spatial_rate",
+    "compute_spatial_rates",
+    # View rate (spatial view cells) - new API
+    "ViewRateResult",
+    "ViewRatesResult",
+    "compute_view_rate",
+    "compute_view_rates",
     # Phase precession analysis
     "PhasePrecessionResult",
     "has_phase_precession",

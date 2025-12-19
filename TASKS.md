@@ -239,9 +239,9 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
 
 ### Tasks
 
-- [ ] **4.1** Create `encoding/view.py` with result class definitions
-  - [ ] Define `ViewRateResult` dataclass (frozen=True)
-  - [ ] Define `ViewRatesResult` dataclass (frozen=True)
+- [x] **4.1** Create `encoding/view.py` with result class definitions
+  - [x] Define `ViewRateResult` dataclass (frozen=True)
+  - [x] Define `ViewRatesResult` dataclass (frozen=True)
 
 - [ ] **4.2** Implement `ViewRateResult` convenience methods
   - [ ] Implement `plot(ax, **kwargs)` → delegates to `env.plot_field()`

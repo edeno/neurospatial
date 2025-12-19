@@ -3,10 +3,69 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 3.11 - Write comprehensive tests for directional encoding
-**Next Task**: Task 4.1 - Create `encoding/view.py` with result class definitions
+**Last Completed**: Task 4.1 - Create `encoding/view.py` with result class definitions
+**Next Task**: Task 4.2 - Implement `ViewRateResult` convenience methods
 
 ## Session Notes
+
+### Task 4.1: Create `encoding/view.py` with Result Class Definitions [COMPLETED]
+
+**Goal**: Create the result class definitions for view rate computation (spatial view cells).
+
+**Approach**: TDD - wrote 22 tests first (`test_encoding_view.py`), then implemented.
+
+**Result**:
+
+- Created `src/neurospatial/encoding/view.py` with 2 dataclasses
+- Created `tests/encoding/test_encoding_view.py` with 22 tests (all pass)
+- All mypy and ruff checks pass
+- Code review passed with APPROVE
+
+**Key Implementation Details**:
+
+- `ViewRateResult`: Single-neuron result (frozen dataclass)
+  - Fields: `firing_rate`, `view_occupancy`, `env`, `gaze_model`, `view_distance`, `smoothing_method`, `bandwidth`
+  - Uses `view_occupancy` instead of `occupancy` (time *viewing* each bin, not time *at* each bin)
+  - No Environment mixin inheritance (different semantics from spatial results)
+
+- `ViewRatesResult`: Batch result (frozen dataclass)
+  - Fields: `firing_rates` (plural), `view_occupancy`, `env`, `gaze_model`, `view_distance`, `smoothing_method`, `bandwidth`
+  - Implements `__len__`, `__getitem__`, `__iter__` for iteration
+  - `__getitem__(idx)` returns `ViewRateResult` for single neuron
+
+**Design differences from SpatialRateResult**:
+
+- Uses `view_occupancy` instead of `occupancy` (semantic difference)
+- No `SpatialResultMixin` inheritance (will add `peak_view_location()` in Task 4.2)
+- Additional fields: `gaze_model`, `view_distance`
+
+**Test coverage (22 tests in 9 classes)**:
+
+- `TestViewRateResultImport`: 2 tests (import from module and package)
+- `TestViewRateResultCreation`: 2 tests (basic, frozen)
+- `TestViewRateResultFields`: 3 tests (shapes, required fields)
+- `TestViewRatesResultImport`: 2 tests (import from module and package)
+- `TestViewRatesResultCreation`: 2 tests (basic, frozen)
+- `TestViewRatesResultFields`: 3 tests (shapes, required fields)
+- `TestViewRatesResultIteration`: 6 tests (len, getitem, iter, metadata, order)
+- `TestViewRatesResultEdgeCases`: 2 tests (single neuron, empty)
+
+**Exports added**:
+
+- `ViewRateResult` and `ViewRatesResult` exported from `encoding/__init__.py`
+- Also added missing `SpatialRateResult` and `SpatialRatesResult` exports
+
+**Code review feedback**:
+
+- Reviewer suggested adding `SpatialResultMixin` inheritance
+- Decided NOT to add it because:
+  - View results use `view_occupancy` semantics (different from `occupancy`)
+  - Will add `peak_view_location()` method (not `peak_location()`) in Task 4.2
+  - Naming convention intentionally different to distinguish view vs position
+
+**Milestone 4 Progress**: Task 4.1 complete, 8 tasks remaining (4.2-4.9).
+
+---
 
 ### Task 3.11: Write Comprehensive Tests for Directional Encoding [COMPLETED]
 
