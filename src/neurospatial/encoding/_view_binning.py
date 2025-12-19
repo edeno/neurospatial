@@ -148,10 +148,22 @@ def compute_view_occupancy(
         )
 
     # Validate minimum samples
-    if n_samples < 3:
+    if n_samples < 2:
         raise ValueError(
-            f"At least 3 samples required for view occupancy computation, got {n_samples}"
+            f"At least 2 samples required for view occupancy computation, got {n_samples}"
         )
+
+    # Validate times are monotonically non-decreasing
+    if n_samples > 1:
+        time_diffs = np.diff(times)
+        if np.any(time_diffs < 0):
+            decreasing_indices = np.where(time_diffs < 0)[0]
+            raise ValueError(
+                "times must be monotonically non-decreasing (sorted). "
+                f"Found {len(decreasing_indices)} decreasing interval(s) at "
+                f"indices: {decreasing_indices.tolist()[:5]}"
+                + (" ..." if len(decreasing_indices) > 5 else "")
+            )
 
     # Validate gaze_model
     valid_gaze_models = {"fixed_distance", "ray_cast", "boundary"}
@@ -170,8 +182,9 @@ def compute_view_occupancy(
                 f"times length ({n_samples})"
             )
 
-    # Compute time step
-    dt = np.median(np.diff(times))
+    # Compute per-sample time deltas (n-1 intervals for n samples)
+    # Each interval[i] represents the time from sample[i] to sample[i+1]
+    dt = np.diff(times)
 
     # Compute viewed locations for all timepoints
     viewed_locations = compute_viewed_location(
@@ -196,9 +209,20 @@ def compute_view_occupancy(
         valid_view_mask = view_bins >= 0
 
     # Compute view occupancy (time spent viewing each bin)
+    # We have n_samples positions and n_samples-1 intervals.
+    # Each interval[i] is assigned to the bin at position[i] (start of interval).
+    # This matches Environment.occupancy() behavior (time_allocation='start').
     view_occupancy = np.zeros(env.n_bins, dtype=np.float64)
-    valid_indices = view_bins[valid_view_mask]
-    np.add.at(view_occupancy, valid_indices, dt)
+
+    # Only consider positions that start valid intervals (all except last)
+    # interval_bins[i] is the bin viewed during interval[i]
+    interval_bins = view_bins[:-1]  # Exclude last position (no following interval)
+    valid_interval_mask = interval_bins >= 0
+
+    # Accumulate time per bin
+    valid_bins = interval_bins[valid_interval_mask]
+    valid_dt = dt[valid_interval_mask]
+    np.add.at(view_occupancy, valid_bins, valid_dt)
 
     return view_occupancy
 

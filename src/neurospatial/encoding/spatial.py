@@ -1518,19 +1518,21 @@ def compute_spatial_rates(
     spike_times_list = normalize_spike_times(spike_times)
     n_neurons = len(spike_times_list)
 
+    # Convert inputs to arrays
+    times = np.asarray(times, dtype=np.float64)
+    positions = np.asarray(positions, dtype=np.float64)
+
     # Handle edge case: no neurons
+    # Still compute occupancy from trajectory (occupancy is independent of neural data)
     if n_neurons == 0:
+        occupancy = env.occupancy(times, positions)  # type: ignore[misc]
         return SpatialRatesResult(
             firing_rates=np.empty((0, env.n_bins), dtype=np.float64),
-            occupancy=np.zeros(env.n_bins, dtype=np.float64),
+            occupancy=occupancy,
             env=env,
             smoothing_method=smoothing_method,
             bandwidth=bandwidth,
         )
-
-    # Convert inputs to arrays
-    times = np.asarray(times, dtype=np.float64)
-    positions = np.asarray(positions, dtype=np.float64)
 
     # Bin spike trains and compute occupancy
     # bin_spike_trains returns (spike_counts, occupancy)

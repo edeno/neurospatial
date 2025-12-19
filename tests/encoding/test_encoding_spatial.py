@@ -4387,6 +4387,39 @@ class TestComputeSpatialRatesEdgeCases:
         assert len(result) == 0
         assert result.firing_rates.shape == (0, trajectory_env.n_bins)
 
+    def test_empty_neurons_list_has_valid_occupancy(
+        self,
+        trajectory_env: Environment,
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """Empty neuron list should still have valid occupancy from trajectory.
+
+        Bug: Previously returned zero occupancy, which is incorrect.
+        Occupancy reflects animal position regardless of neural activity.
+        """
+        from neurospatial.encoding.spatial import compute_spatial_rates
+
+        result = compute_spatial_rates(
+            trajectory_env,
+            [],  # Empty list of neurons
+            trajectory_times,
+            trajectory_positions,
+        )
+
+        # Occupancy should still be computed from trajectory
+        total_duration = trajectory_times[-1] - trajectory_times[0]
+        total_occupancy = np.sum(result.occupancy)
+
+        # Should have meaningful occupancy (not all zeros)
+        assert total_occupancy > 0, (
+            "Empty neuron list should still compute occupancy from trajectory"
+        )
+        # Total should be close to recording duration
+        assert total_occupancy >= total_duration * 0.8, (
+            f"Expected occupancy ~{total_duration:.1f}s, got {total_occupancy:.1f}s"
+        )
+
 
 class TestComputeSpatialRatesResultMethods:
     """Tests that result from compute_spatial_rates has expected batch methods."""

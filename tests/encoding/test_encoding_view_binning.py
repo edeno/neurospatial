@@ -931,39 +931,73 @@ class TestViewBinningInputValidation:
         self,
         simple_env: Environment,
     ) -> None:
-        """Should raise error with fewer than 3 samples."""
+        """Should raise error with fewer than 2 samples."""
         from neurospatial.encoding._view_binning import compute_view_occupancy
 
-        times = np.array([0.0, 1.0])  # Only 2 samples
-        positions = np.array([[50, 50], [51, 50]])
-        headings = np.array([0.0, 0.0])
+        times = np.array([0.0])  # Only 1 sample - need at least 2
+        positions = np.array([[50, 50]])
+        headings = np.array([0.0])
 
-        with pytest.raises(ValueError, match=r"3|samples"):
+        with pytest.raises(ValueError, match=r"2|samples"):
             compute_view_occupancy(simple_env, times, positions, headings)
 
 
 # ==============================================================================
-# Test consistency with existing spatial_view.py implementation
+# Test comparison with legacy spatial_view.py implementation
 # ==============================================================================
 
 
-class TestConsistencyWithSpatialView:
-    """Tests to verify consistency with existing compute_spatial_view_field."""
+class TestComparisonWithLegacySpatialView:
+    """Tests comparing new binning layer with legacy compute_spatial_view_field.
 
-    def test_view_occupancy_matches_spatial_view_implementation(
+    Note: The legacy implementation has a bug (uses median(dt) instead of per-sample
+    deltas). The new implementation is CORRECT and may differ from legacy.
+    """
+
+    def test_view_occupancy_total_is_correct(
         self,
         simple_env: Environment,
         trajectory_data: dict,
     ) -> None:
-        """View occupancy from binning layer should match spatial_view.py approach.
+        """New implementation should have correct total occupancy.
 
-        This tests that the new binning layer produces the same view_occupancy
-        as the existing implementation in compute_spatial_view_field.
+        Total view occupancy should equal sum of actual time intervals
+        (times[-1] - times[0]) minus any intervals with invalid views.
+        """
+        from neurospatial.encoding._view_binning import compute_view_occupancy
+
+        view_occ_new = compute_view_occupancy(
+            simple_env,
+            trajectory_data["times"],
+            trajectory_data["positions"],
+            trajectory_data["headings"],
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+        )
+
+        # Total should equal sum of time intervals
+        total_duration = trajectory_data["times"][-1] - trajectory_data["times"][0]
+        total_occupancy = np.sum(view_occ_new)
+
+        # Allow some difference due to invalid views (outside environment)
+        # but should be very close for trajectories staying in center
+        assert total_occupancy <= total_duration * 1.01
+        assert total_occupancy >= total_duration * 0.9  # Most views should be valid
+
+    def test_view_occupancy_bins_are_similar_to_legacy(
+        self,
+        simple_env: Environment,
+        trajectory_data: dict,
+    ) -> None:
+        """New and legacy implementations should have similar bin distributions.
+
+        While total occupancy may differ (due to bug fix), the relative distribution
+        across bins should be similar since both use the same gaze model and
+        viewed location computation.
         """
         from neurospatial.encoding._view_binning import compute_view_occupancy
         from neurospatial.encoding.spatial_view import compute_spatial_view_field
 
-        # Use fixed_distance gaze model with specific parameters
         view_distance = 10.0
         gaze_model = "fixed_distance"
 
@@ -977,8 +1011,7 @@ class TestConsistencyWithSpatialView:
             view_distance=view_distance,
         )
 
-        # Get view occupancy from existing implementation
-        # We need some spikes to run compute_spatial_view_field
+        # Get view occupancy from legacy implementation
         spikes = np.array([0.5, 1.5, 2.5, 3.5])
         result = compute_spatial_view_field(
             simple_env,
@@ -988,12 +1021,157 @@ class TestConsistencyWithSpatialView:
             trajectory_data["headings"],
             gaze_model=gaze_model,
             view_distance=view_distance,
-            smoothing_method="binned",  # No smoothing to compare raw occupancy
+            smoothing_method="binned",
             min_occupancy_seconds=0.0,
         )
-        view_occ_existing = result.view_occupancy
+        view_occ_legacy = result.view_occupancy
 
-        # Should match exactly
-        np.testing.assert_array_almost_equal(
-            view_occ_new, view_occ_existing, decimal=10
+        # Normalize to compare distributions
+        new_norm = view_occ_new / (np.sum(view_occ_new) + 1e-10)
+        legacy_norm = view_occ_legacy / (np.sum(view_occ_legacy) + 1e-10)
+
+        # Distributions should be similar (correlation > 0.95)
+        # Both use the same gaze model, just different time integration
+        correlation = np.corrcoef(new_norm.flatten(), legacy_norm.flatten())[0, 1]
+        assert correlation > 0.95, f"Distributions too different: r={correlation:.3f}"
+
+
+# ==============================================================================
+# Tests for bugfixes from code review (2025-12-19)
+# ==============================================================================
+
+
+class TestViewOccupancyNonUniformSampling:
+    """Tests for correct handling of non-uniform time sampling.
+
+    Bug: view_occupancy used median(dt) constant instead of per-sample deltas.
+    This inflates occupancy when sampling is non-uniform.
+    """
+
+    def test_nonuniform_times_uses_actual_deltas(
+        self,
+        simple_env: Environment,
+    ) -> None:
+        """View occupancy should use actual time deltas, not median.
+
+        With non-uniform sampling, using median(dt) instead of actual dt
+        gives incorrect total occupancy.
+        """
+        from neurospatial.encoding._view_binning import compute_view_occupancy
+
+        # Create non-uniform time samples: first half at 10Hz, second half at 100Hz
+        times_slow = np.linspace(0, 5, 51)  # 50 intervals of 0.1s
+        times_fast = np.linspace(5.01, 10, 500)  # 499 intervals of ~0.01s
+        times = np.concatenate([times_slow, times_fast])
+
+        n_samples = len(times)
+        positions = np.tile([50, 50], (n_samples, 1))  # Stationary
+        headings = np.zeros(n_samples)  # Looking east
+
+        view_occupancy = compute_view_occupancy(
+            simple_env,
+            times,
+            positions,
+            headings,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
         )
+
+        # Expected total: sum of all actual time deltas
+        # = (5-0) + (10-5.01) = 5 + 4.99 = ~9.99 seconds
+        total_duration = times[-1] - times[0]  # ~10s
+        total_occupancy = np.sum(view_occupancy)
+
+        # With correct implementation, total should equal sum of deltas
+        # (which equals times[-1] - times[0] minus any invalid frames)
+        # Allow 1% tolerance for floating point
+        assert abs(total_occupancy - total_duration) < total_duration * 0.01, (
+            f"Expected occupancy ~{total_duration:.3f}s, got {total_occupancy:.3f}s. "
+            "This may indicate using median(dt) instead of actual deltas."
+        )
+
+    def test_last_frame_not_counted(
+        self,
+        simple_env: Environment,
+    ) -> None:
+        """The last frame should not contribute to occupancy.
+
+        Occupancy uses (n-1) intervals from n samples. The last sample
+        has no following interval to contribute.
+        """
+        from neurospatial.encoding._view_binning import compute_view_occupancy
+
+        times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])  # 5 samples, 4 intervals
+        positions = np.tile([50, 50], (5, 1))
+        headings = np.zeros(5)
+
+        view_occupancy = compute_view_occupancy(
+            simple_env,
+            times,
+            positions,
+            headings,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+        )
+
+        # With 4 intervals of 1s each, total should be 4s (not 5s)
+        total_occupancy = np.sum(view_occupancy)
+        assert abs(total_occupancy - 4.0) < 0.01, (
+            f"Expected 4.0s (4 intervals), got {total_occupancy:.3f}s. "
+            "Last frame may be incorrectly contributing to occupancy."
+        )
+
+
+class TestTimesValidation:
+    """Tests for input validation of times array."""
+
+    def test_unsorted_times_raises_error(
+        self,
+        simple_env: Environment,
+    ) -> None:
+        """Unsorted times should raise ValueError.
+
+        searchsorted assumes sorted input. Unsorted times will silently
+        produce incorrect results without validation.
+        """
+        from neurospatial.encoding._view_binning import compute_view_occupancy
+
+        times = np.array([0.0, 2.0, 1.0, 3.0])  # Not sorted
+        positions = np.tile([50, 50], (4, 1))
+        headings = np.zeros(4)
+
+        with pytest.raises(ValueError, match=r"monotonic|sorted|increasing"):
+            compute_view_occupancy(
+                simple_env,
+                times,
+                positions,
+                headings,
+            )
+
+    def test_duplicate_times_allowed(
+        self,
+        simple_env: Environment,
+    ) -> None:
+        """Duplicate times (monotonically non-decreasing) should be allowed.
+
+        Times like [0, 1, 1, 2] are valid (non-decreasing but not strictly
+        increasing). The duplicate contributes 0 seconds.
+        """
+        from neurospatial.encoding._view_binning import compute_view_occupancy
+
+        times = np.array([0.0, 1.0, 1.0, 2.0])  # Duplicate at t=1
+        positions = np.tile([50, 50], (4, 1))
+        headings = np.zeros(4)
+
+        view_occupancy = compute_view_occupancy(
+            simple_env,
+            times,
+            positions,
+            headings,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+        )
+
+        # 3 intervals: 1s, 0s, 1s = 2s total
+        total_occupancy = np.sum(view_occupancy)
+        assert abs(total_occupancy - 2.0) < 0.01

@@ -3,10 +3,45 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 4.9 - Write comprehensive tests for view encoding
+**Last Completed**: Bugfixes from code review (view_occupancy, spatial_rates occupancy)
 **Next Task**: Task 5.1 - Create `encoding/egocentric.py` with result class definitions
 
 ## Session Notes
+
+### Bugfixes from Code Review (2025-12-19) [COMPLETED]
+
+**Context**: Code review identified several issues in the encoding module implementation.
+
+**Fixes Applied**:
+
+1. **HIGH: view_occupancy used constant dt instead of per-sample deltas**
+   - **Bug**: `compute_view_occupancy()` used `dt = np.median(np.diff(times))` which gives incorrect results for non-uniform sampling
+   - **Fix**: Changed to `dt = np.diff(times)` and properly accumulate per-interval time
+   - **Also fixed**: Last frame was incorrectly contributing to occupancy (n samples should give n-1 intervals)
+   - **Files**: `src/neurospatial/encoding/_view_binning.py`
+   - **Tests**: Added 4 new tests in `TestViewOccupancyNonUniformSampling` and `TestTimesValidation`
+
+2. **LOW: No time monotonicity validation in binning functions**
+   - **Bug**: `compute_view_occupancy()` uses `searchsorted` which assumes sorted input; unsorted times silently mis-bin
+   - **Fix**: Added validation that times are monotonically non-decreasing
+   - **Files**: `src/neurospatial/encoding/_view_binning.py`
+   - **Tests**: Added `test_unsorted_times_raises_error` and `test_duplicate_times_allowed`
+
+3. **MEDIUM: compute_spatial_rates returns zero occupancy for empty neurons**
+   - **Bug**: When `spike_times=[]`, occupancy was returned as all zeros instead of actual trajectory occupancy
+   - **Fix**: Compute occupancy from trajectory even when no neurons provided
+   - **Files**: `src/neurospatial/encoding/spatial.py`
+   - **Tests**: Added `test_empty_neurons_list_has_valid_occupancy`
+
+**Deferred Issues** (lower priority, can be addressed later):
+
+- **MEDIUM**: View binning recomputes viewed locations redundantly (optimization)
+- **MEDIUM**: `ViewRatesResult.to_dataframe()` assumes 2D environment (1D handling)
+- **MEDIUM**: Backend docs vs implementation mismatch (doc sync task)
+
+**All tests pass**: 46 view binning tests, 135 view encoding tests, 201 spatial encoding tests
+
+---
 
 ### Task 4.9: Write Comprehensive Tests for View Encoding [COMPLETED]
 
