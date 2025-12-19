@@ -3,10 +3,43 @@
 ## Current Status
 
 **Date**: 2025-12-18
-**Last Completed**: Task 0.3 - Create `encoding/_backend.py` with backend selection
-**Next Task**: Task 0.4 - Create `encoding/_core_numpy.py` with stubs
+**Last Completed**: Task 0.4 - Create `encoding/_core_numpy.py` with stubs
+**Next Task**: Task 0.5 - Create `encoding/_core_jax.py` with stubs
 
 ## Session Notes
+
+### Task 0.4: `encoding/_core_numpy.py` [COMPLETED]
+
+**Goal**: Create NumPy core array operations stubs for rate computation and smoothing.
+
+**Approach**: TDD - wrote tests first (`test_encoding_core_numpy.py`), then implemented.
+
+**Result**:
+
+- Created `src/neurospatial/encoding/_core_numpy.py` with 4 stub functions
+- Created `tests/encoding/test_encoding_core_numpy.py` with 22 tests (all pass)
+- All mypy and ruff checks pass
+- Code review passed with APPROVE
+
+**Key Implementation Details**:
+
+- `compute_firing_rate_single(spike_counts, occupancy)`: Single neuron rate computation
+- `compute_firing_rates_batch(spike_counts, occupancy)`: Batch rate computation for (n_neurons, n_bins)
+- `smooth_rate_map_single(firing_rate, adjacency, bandwidth, method)`: Single neuron smoothing
+- `smooth_rate_maps_batch(firing_rates, adjacency, bandwidth, method)`: Batch smoothing
+
+**Stub behavior**:
+
+All functions raise `NotImplementedError` with helpful messages explaining this is Phase 0 of the refactor. Actual implementations will be added in Phase 1 (Milestone 1).
+
+**Function signatures established**:
+
+- Single neuron arrays: `(n_bins,)`
+- Batch arrays: `(n_neurons, n_bins)` for firing data, `(n_bins,)` for shared occupancy
+- Smoothing methods: `Literal["diffusion_kde", "gaussian_kde", "binned"]`
+- Default bandwidth: 5.0, default min_occupancy: 0.0
+
+---
 
 ### Task 0.3: `encoding/_backend.py` [COMPLETED]
 

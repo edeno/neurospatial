@@ -35,9 +35,9 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Define `"auto"` behavior: use JAX if available, NumPy otherwise
   - [x] Force NumPy silently on Windows when `"auto"`
 
-- [ ] **0.4** Create `encoding/_core_numpy.py` with stubs
-  - [ ] Define function signatures for core array operations
-  - [ ] Add placeholder implementations that raise NotImplementedError
+- [x] **0.4** Create `encoding/_core_numpy.py` with stubs
+  - [x] Define function signatures for core array operations
+  - [x] Add placeholder implementations that raise NotImplementedError
 
 - [ ] **0.5** Create `encoding/_core_jax.py` with stubs
   - [ ] Define function signatures matching `_core_numpy.py`
