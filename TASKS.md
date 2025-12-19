@@ -119,11 +119,11 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Implement `border_scores(threshold, distance_metric)` → delegates to `batch_border_scores()`
   - [x] Implement `classify(min_spatial_info, min_grid_score, min_border_score)` → returns `(n_neurons,)` string labels
 
-- [ ] **2.6** Implement `SpatialRatesResult.to_dataframe()`
-  - [ ] Include neuron_id, peak_x, peak_y, peak_rate columns
-  - [ ] Include spatial_info, sparsity columns
-  - [ ] Include grid_score, border_score columns
-  - [ ] Optionally include cell_type classification
+- [x] **2.6** Implement `SpatialRatesResult.to_dataframe()`
+  - [x] Include neuron_id, peak_x, peak_y, peak_rate columns
+  - [x] Include spatial_info, sparsity columns
+  - [x] Include grid_score, border_score columns
+  - [x] Optionally include cell_type classification
 
 - [ ] **2.7** Implement binning layer for spatial encoding
   - [ ] Create helper to convert (env, spike_times, times, positions) → (spike_counts, occupancy)

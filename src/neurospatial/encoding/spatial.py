@@ -46,7 +46,7 @@ Examples
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -56,6 +56,7 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 
 if TYPE_CHECKING:
+    import pandas as pd
     from matplotlib.axes import Axes
 
     from neurospatial import Environment
@@ -1054,3 +1055,105 @@ class SpatialRatesResult(SpatialResultMixin):
                 labels[i] = "unclassified"
 
         return labels
+
+    def to_dataframe(
+        self,
+        neuron_ids: Sequence[str] | None = None,
+        include_classification: bool = True,
+    ) -> pd.DataFrame:
+        """Export metrics to DataFrame for exploratory analysis.
+
+        Computes all spatial metrics and exports them to a pandas DataFrame
+        for easy filtering, sorting, and analysis. This is a host-only method;
+        all metrics are computed as NumPy arrays (not JAX).
+
+        Parameters
+        ----------
+        neuron_ids : sequence of str, optional
+            Identifiers for each neuron. If None, uses integer indices
+            (0, 1, 2, ..., n_neurons-1).
+        include_classification : bool, default True
+            Whether to include the cell_type column with classification
+            labels from ``classify()``.
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with columns:
+
+            - neuron_id: identifier for each neuron
+            - peak_x: x-coordinate of peak firing location
+            - peak_y: y-coordinate of peak firing location (NaN for 1D)
+            - peak_rate: maximum firing rate (Hz)
+            - spatial_info: spatial information (bits/spike)
+            - sparsity: sparsity measure (0-1)
+            - grid_score: grid score (hexagonal periodicity)
+            - border_score: border score (boundary proximity tuning)
+            - cell_type: classification label (if include_classification=True)
+
+        Notes
+        -----
+        This method computes all metrics at once, which may be slow for
+        large populations. For selective metric computation, use the
+        individual methods (``spatial_information()``, ``grid_scores()``, etc.).
+
+        **Common pandas workflows**:
+
+        - Filter: ``df[df["cell_type"] == "place"]``
+        - Sort: ``df.sort_values("spatial_info", ascending=False)``
+        - Top-N: ``df.nlargest(10, "peak_rate")``
+
+        Examples
+        --------
+        >>> result = SpatialRatesResult(...)
+        >>> df = result.to_dataframe()
+        >>> print(df.head())
+           neuron_id  peak_x  peak_y  peak_rate  spatial_info  ...
+
+        >>> # Filter for place cells
+        >>> place_cells = df[df["cell_type"] == "place"]
+        >>> print(f"Found {len(place_cells)} place cells")
+
+        >>> # Sort by spatial information
+        >>> top_cells = df.sort_values("spatial_info", ascending=False).head(10)
+
+        >>> # Custom neuron identifiers
+        >>> df = result.to_dataframe(neuron_ids=["unit_0", "unit_1", "unit_2"])
+
+        See Also
+        --------
+        classify : Cell type classification
+        spatial_information : Batch spatial information computation
+        grid_scores : Batch grid score computation
+        border_scores : Batch border score computation
+        """
+        import pandas as pd
+
+        n_neurons = len(self)
+
+        # Use integer indices if no neuron_ids provided
+        if neuron_ids is None:
+            neuron_ids_list: list[str | int] = list(range(n_neurons))
+        else:
+            neuron_ids_list = list(neuron_ids)
+
+        # Compute peak locations
+        peaks = self.peak_locations()
+        n_dims = peaks.shape[1] if peaks.ndim > 1 else 1
+
+        # Build data dictionary
+        data: dict[str, Any] = {
+            "neuron_id": neuron_ids_list,
+            "peak_x": peaks[:, 0],
+            "peak_y": peaks[:, 1] if n_dims > 1 else np.full(n_neurons, np.nan),
+            "peak_rate": self.peak_firing_rates(),
+            "spatial_info": self.spatial_information(),
+            "sparsity": self.sparsity(),
+            "grid_score": self.grid_scores(),
+            "border_score": self.border_scores(),
+        }
+
+        if include_classification:
+            data["cell_type"] = self.classify()
+
+        return pd.DataFrame(data)

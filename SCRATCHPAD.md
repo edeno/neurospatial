@@ -3,10 +3,62 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 2.5 - Implement `SpatialRatesResult` batch metrics
-**Next Task**: Task 2.6 - Create integration test demonstrating full workflow
+**Last Completed**: Task 2.6 - Implement `SpatialRatesResult.to_dataframe()`
+**Next Task**: Task 2.7 - Implement binning layer for spatial encoding
 
 ## Session Notes
+
+### Task 2.6: `SpatialRatesResult.to_dataframe()` [COMPLETED]
+
+**Goal**: Implement the `to_dataframe()` method for exporting metrics to pandas DataFrame.
+
+**Approach**: TDD - wrote 24 tests first, then implemented.
+
+**Result**:
+
+- Added `to_dataframe()` method to `SpatialRatesResult` in `src/neurospatial/encoding/spatial.py`
+- Added 24 new tests in `tests/encoding/test_encoding_spatial.py` (total now 133, all pass)
+- All mypy and ruff checks pass
+- Code review passed with APPROVE
+
+**Key Implementation Details**:
+
+- `to_dataframe(neuron_ids, include_classification)`: Export to pandas DataFrame
+  - Parameters:
+    - `neuron_ids`: Optional custom identifiers (default: integer indices)
+    - `include_classification`: Whether to include cell_type column (default: True)
+  - Returns DataFrame with columns:
+    - neuron_id, peak_x, peak_y, peak_rate
+    - spatial_info, sparsity
+    - grid_score, border_score
+    - cell_type (optional)
+
+- Delegates to existing batch methods:
+  - `peak_locations()` for peak_x, peak_y
+  - `peak_firing_rates()` for peak_rate
+  - `spatial_information()` for spatial_info
+  - `sparsity()` for sparsity
+  - `grid_scores()` for grid_score
+  - `border_scores()` for border_score
+  - `classify()` for cell_type
+
+- Handles 1D environments by setting peak_y to NaN
+
+**Documentation**:
+
+- Complete NumPy-style docstring
+- Includes common pandas workflows (filter, sort, top-N)
+- Includes practical examples
+- Cross-references to related methods
+
+**Code review feedback**: APPROVE - Ready to merge
+
+- No critical issues identified
+- Minor documentation clarity improvement applied
+- All 24 tests pass
+- Proper delegation pattern followed
+
+---
 
 ### Task 2.5: `SpatialRatesResult` Batch Metrics [COMPLETED]
 
