@@ -844,3 +844,213 @@ class SpatialRatesResult(SpatialResultMixin):
         from neurospatial.encoding._metrics import batch_sparsity
 
         return batch_sparsity(_to_numpy(self.firing_rates), _to_numpy(self.occupancy))
+
+    def grid_scores(self) -> NDArray[np.float64]:
+        """Grid scores (hexagonal periodicity) for all neurons.
+
+        Quantifies the hexagonal periodicity of each neuron's firing rate map,
+        which is characteristic of grid cells. Higher values indicate stronger
+        hexagonal grid patterns.
+
+        Returns
+        -------
+        ndarray, shape (n_neurons,)
+            Grid scores in range [-2, 2] for each neuron.
+            - score > 0.4: Strong hexagonal grid (typical threshold)
+            - score ≈ 0: No hexagonal structure
+            - score < 0: Anti-hexagonal structure (rare)
+            Returns NaN for neurons where grid score cannot be computed.
+
+        Notes
+        -----
+        For each neuron, computes the spatial autocorrelation and extracts
+        the grid score based on rotational symmetry.
+
+        Uses the Sargolini et al. (2006) algorithm:
+
+        1. Compute 2D spatial autocorrelation via FFT
+        2. Rotate by 30°, 60°, 90°, 120°, 150°
+        3. Grid score = min(r60, r120) - max(r30, r90, r150)
+
+        Delegates to ``neurospatial.encoding._metrics.batch_grid_scores()``.
+
+        References
+        ----------
+        .. [1] Sargolini, F., Fyhn, M., et al. (2006). Conjunctive
+               representation of position, direction, and velocity in
+               entorhinal cortex. Science, 312(5774), 758-762.
+
+        See Also
+        --------
+        SpatialRateResult.grid_score : Single-neuron grid score
+        SpatialRateResult.grid_properties : Full grid cell metrics
+
+        Examples
+        --------
+        >>> result = SpatialRatesResult(...)
+        >>> scores = result.grid_scores()
+        >>> print(f"Mean grid score: {np.nanmean(scores):.3f}")
+        >>> n_grid_cells = np.sum(scores > 0.4)
+        """
+        from neurospatial.encoding._metrics import batch_grid_scores
+
+        return batch_grid_scores(self.env, _to_numpy(self.firing_rates))
+
+    def border_scores(
+        self,
+        threshold: float = 0.3,
+        min_area: float = 0.0,
+        distance_metric: Literal["geodesic", "euclidean"] = "geodesic",
+    ) -> NDArray[np.float64]:
+        """Border scores (boundary proximity tuning) for all neurons.
+
+        Quantifies how much each neuron's firing field is aligned with
+        environmental boundaries (walls). Higher values indicate stronger
+        border cell properties.
+
+        Parameters
+        ----------
+        threshold : float, default 0.3
+            Fraction of peak firing rate used to segment the field.
+            Bins with firing rate >= threshold * peak are included in field.
+        min_area : float, default 0.0
+            Minimum field area in physical units (e.g., cm²). Fields smaller
+            than this return NaN. Default 0.0 (no filtering).
+        distance_metric : {'geodesic', 'euclidean'}, default 'geodesic'
+            Distance metric for computing distance from field to boundaries.
+            - 'geodesic': Graph shortest path distance (respects obstacles)
+            - 'euclidean': Straight-line distance in physical space
+
+        Returns
+        -------
+        ndarray, shape (n_neurons,)
+            Border scores in range [-1, 1] for each neuron.
+            - +1: Perfect border cell (field on boundary)
+            - 0: No boundary preference
+            - -1: Anti-border (field in center)
+            Returns NaN for neurons where border score cannot be computed.
+
+        Notes
+        -----
+        Uses the Solstad et al. (2008) algorithm for each neuron.
+
+        Delegates to ``neurospatial.encoding._metrics.batch_border_scores()``.
+
+        References
+        ----------
+        .. [1] Solstad, T., Boccara, C. N., et al. (2008). Representation of
+               geometric borders in the entorhinal cortex. Science, 322(5909),
+               1865-1868.
+
+        See Also
+        --------
+        SpatialRateResult.border_score : Single-neuron border score
+
+        Examples
+        --------
+        >>> result = SpatialRatesResult(...)
+        >>> scores = result.border_scores()
+        >>> print(f"Mean border score: {np.nanmean(scores):.3f}")
+        >>> n_border_cells = np.sum(scores > 0.5)
+        """
+        from neurospatial.encoding._metrics import batch_border_scores
+
+        return batch_border_scores(
+            self.env,
+            _to_numpy(self.firing_rates),
+            threshold=threshold,
+            min_area=min_area,
+            distance_metric=distance_metric,
+        )
+
+    def classify(
+        self,
+        min_spatial_info: float = 0.5,
+        min_grid_score: float = 0.4,
+        min_border_score: float = 0.5,
+    ) -> NDArray[np.str_]:
+        """Classify neurons into spatial cell types.
+
+        Applies threshold-based classification to label neurons as place cells,
+        grid cells, border cells, or unclassified based on their spatial
+        information, grid score, and border score.
+
+        Parameters
+        ----------
+        min_spatial_info : float, default 0.5
+            Minimum spatial information (bits/spike) to be classified as a
+            spatially tuned cell. Neurons below this are labeled "unclassified".
+        min_grid_score : float, default 0.4
+            Minimum grid score to be classified as a grid cell. Standard
+            threshold from Sargolini et al. (2006).
+        min_border_score : float, default 0.5
+            Minimum border score to be classified as a border cell. Standard
+            threshold from Solstad et al. (2008).
+
+        Returns
+        -------
+        ndarray, shape (n_neurons,)
+            String labels for each neuron. One of:
+            - "grid": Grid cell (high grid score, passes spatial info threshold)
+            - "border": Border cell (high border score, passes spatial info threshold)
+            - "place": Place cell (high spatial info, not grid or border)
+            - "unclassified": Does not meet criteria for any spatial cell type
+
+        Notes
+        -----
+        **Classification priority** (higher takes precedence):
+
+        1. **Grid cell**: grid_score >= min_grid_score
+        2. **Border cell**: border_score >= min_border_score
+        3. **Place cell**: spatial_info >= min_spatial_info (and not grid/border)
+        4. **Unclassified**: Does not meet any criteria
+
+        **Typical thresholds** (from literature):
+
+        - Spatial information: 0.5-1.0 bits/spike (varies by study)
+        - Grid score: 0.4-0.5 (Sargolini et al., 2006)
+        - Border score: 0.5-0.6 (Solstad et al., 2008)
+
+        References
+        ----------
+        .. [1] Sargolini, F., et al. (2006). Science, 312(5774), 758-762.
+        .. [2] Solstad, T., et al. (2008). Science, 322(5909), 1865-1868.
+        .. [3] Skaggs, W. E., et al. (1993). NIPS, 5, 1030-1037.
+
+        See Also
+        --------
+        spatial_information : Compute spatial information
+        grid_scores : Compute grid scores
+        border_scores : Compute border scores
+
+        Examples
+        --------
+        >>> result = SpatialRatesResult(...)
+        >>> labels = result.classify()
+        >>> print(f"Grid cells: {np.sum(labels == 'grid')}")
+        >>> print(f"Border cells: {np.sum(labels == 'border')}")
+        >>> print(f"Place cells: {np.sum(labels == 'place')}")
+        >>> print(f"Unclassified: {np.sum(labels == 'unclassified')}")
+        """
+        n_neurons = len(self)
+        labels = np.empty(n_neurons, dtype="<U14")  # Max length: "unclassified"
+
+        # Compute all metrics
+        spatial_info = self.spatial_information()
+        grid_scores = self.grid_scores()
+        border_scores = self.border_scores()
+
+        # Apply classification with priority: grid > border > place > unclassified
+        for i in range(n_neurons):
+            if not np.isnan(grid_scores[i]) and grid_scores[i] >= min_grid_score:
+                labels[i] = "grid"
+            elif (
+                not np.isnan(border_scores[i]) and border_scores[i] >= min_border_score
+            ):
+                labels[i] = "border"
+            elif spatial_info[i] >= min_spatial_info:
+                labels[i] = "place"
+            else:
+                labels[i] = "unclassified"
+
+        return labels

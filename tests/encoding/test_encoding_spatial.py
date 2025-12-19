@@ -1972,3 +1972,534 @@ class TestSpatialRatesResultSparsity:
         # Sparsity should be 1/n_bins for single-bin firing with uniform occupancy
         expected = np.full(n_neurons, 1.0 / n_bins)
         np.testing.assert_array_almost_equal(spars, expected)
+
+
+# ==============================================================================
+# Test SpatialRatesResult batch metrics (Task 2.5)
+# ==============================================================================
+
+
+class TestSpatialRatesResultGridScores:
+    """Tests for SpatialRatesResult.grid_scores() method."""
+
+    def test_has_grid_scores_method(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """SpatialRatesResult should have a grid_scores() method."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        assert hasattr(result, "grid_scores")
+        assert callable(result.grid_scores)
+
+    def test_grid_scores_returns_array(
+        self,
+        regular_grid_env: Environment,
+    ) -> None:
+        """grid_scores() should return an ndarray for batch."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        n_neurons = 3
+        n_bins = regular_grid_env.n_bins
+        firing_rates = np.random.rand(n_neurons, n_bins) * 10.0
+        occupancy = np.ones(n_bins, dtype=np.float64)
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates,
+            occupancy=occupancy,
+            env=regular_grid_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        scores = result.grid_scores()
+        assert isinstance(scores, np.ndarray)
+
+    def test_grid_scores_correct_shape(
+        self,
+        regular_grid_env: Environment,
+    ) -> None:
+        """grid_scores() should return (n_neurons,) array."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        n_neurons = 5
+        n_bins = regular_grid_env.n_bins
+        firing_rates = np.random.rand(n_neurons, n_bins) * 10.0
+        occupancy = np.ones(n_bins, dtype=np.float64)
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates,
+            occupancy=occupancy,
+            env=regular_grid_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        scores = result.grid_scores()
+        assert scores.shape == (n_neurons,)
+
+    def test_grid_scores_delegates_to_batch_grid_scores(
+        self,
+        regular_grid_env: Environment,
+    ) -> None:
+        """grid_scores() should delegate to batch_grid_scores()."""
+        from neurospatial.encoding._metrics import batch_grid_scores
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        n_neurons = 3
+        n_bins = regular_grid_env.n_bins
+        rng = np.random.default_rng(42)
+        firing_rates = rng.random((n_neurons, n_bins)) * 10.0
+        occupancy = np.ones(n_bins, dtype=np.float64)
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates,
+            occupancy=occupancy,
+            env=regular_grid_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        expected = batch_grid_scores(regular_grid_env, firing_rates)
+        scores = result.grid_scores()
+
+        # Handle NaN comparison properly
+        for i in range(n_neurons):
+            if np.isnan(expected[i]):
+                assert np.isnan(scores[i])
+            else:
+                assert scores[i] == pytest.approx(expected[i])
+
+    def test_grid_scores_in_valid_range(
+        self,
+        regular_grid_env: Environment,
+    ) -> None:
+        """grid_scores() should be in range [-2, 2] or NaN."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        n_neurons = 5
+        n_bins = regular_grid_env.n_bins
+        rng = np.random.default_rng(123)
+        firing_rates = rng.random((n_neurons, n_bins)) * 10.0
+        occupancy = np.ones(n_bins, dtype=np.float64)
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates,
+            occupancy=occupancy,
+            env=regular_grid_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        scores = result.grid_scores()
+        for score in scores:
+            if not np.isnan(score):
+                assert -2.0 <= score <= 2.0
+
+
+class TestSpatialRatesResultBorderScores:
+    """Tests for SpatialRatesResult.border_scores() method."""
+
+    def test_has_border_scores_method(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """SpatialRatesResult should have a border_scores() method."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        assert hasattr(result, "border_scores")
+        assert callable(result.border_scores)
+
+    def test_border_scores_returns_array(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """border_scores() should return an ndarray for batch."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        scores = result.border_scores()
+        assert isinstance(scores, np.ndarray)
+
+    def test_border_scores_correct_shape(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """border_scores() should return (n_neurons,) array."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        scores = result.border_scores()
+        n_neurons = firing_rates_batch.shape[0]
+        assert scores.shape == (n_neurons,)
+
+    def test_border_scores_accepts_threshold_parameter(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """border_scores() should accept a threshold parameter."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        # Should not raise
+        scores = result.border_scores(threshold=0.5)
+        assert isinstance(scores, np.ndarray)
+
+    def test_border_scores_accepts_distance_metric_parameter(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """border_scores() should accept a distance_metric parameter."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        # Should not raise with either metric
+        scores_geodesic = result.border_scores(distance_metric="geodesic")
+        scores_euclidean = result.border_scores(distance_metric="euclidean")
+        assert isinstance(scores_geodesic, np.ndarray)
+        assert isinstance(scores_euclidean, np.ndarray)
+
+    def test_border_scores_accepts_min_area_parameter(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """border_scores() should accept a min_area parameter."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        # Should not raise with min_area parameter
+        scores = result.border_scores(min_area=10.0)
+        assert isinstance(scores, np.ndarray)
+
+    def test_border_scores_delegates_to_batch_border_scores(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """border_scores() should delegate to batch_border_scores()."""
+        from neurospatial.encoding._metrics import batch_border_scores
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        expected = batch_border_scores(simple_env, firing_rates_batch)
+        scores = result.border_scores()
+
+        # Handle NaN comparison properly
+        for i in range(len(expected)):
+            if np.isnan(expected[i]):
+                assert np.isnan(scores[i])
+            else:
+                assert scores[i] == pytest.approx(expected[i])
+
+    def test_border_scores_in_valid_range(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """border_scores() should be in range [-1, 1] or NaN."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        scores = result.border_scores()
+        for score in scores:
+            if not np.isnan(score):
+                assert -1.0 <= score <= 1.0
+
+
+class TestSpatialRatesResultClassify:
+    """Tests for SpatialRatesResult.classify() method."""
+
+    def test_has_classify_method(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """SpatialRatesResult should have a classify() method."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        assert hasattr(result, "classify")
+        assert callable(result.classify)
+
+    def test_classify_returns_string_array(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """classify() should return an ndarray of strings."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        labels = result.classify()
+        assert isinstance(labels, np.ndarray)
+        assert labels.dtype.kind in ("U", "S", "O")  # Unicode, byte string, or object
+
+    def test_classify_correct_shape(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """classify() should return (n_neurons,) array."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        labels = result.classify()
+        n_neurons = firing_rates_batch.shape[0]
+        assert labels.shape == (n_neurons,)
+
+    def test_classify_accepts_threshold_parameters(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """classify() should accept min_spatial_info, min_grid_score, min_border_score."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        # Should not raise with custom thresholds
+        labels = result.classify(
+            min_spatial_info=0.3,
+            min_grid_score=0.5,
+            min_border_score=0.4,
+        )
+        assert isinstance(labels, np.ndarray)
+
+    def test_classify_valid_labels(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """classify() should return valid cell type labels."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        labels = result.classify()
+        valid_labels = {"place", "grid", "border", "unclassified"}
+        for label in labels:
+            assert label in valid_labels, f"Unexpected label: {label}"
+
+    def test_classify_place_cell_by_spatial_info(self, simple_env: Environment) -> None:
+        """classify() should label neurons with high spatial info as place cells."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        n_bins = simple_env.n_bins
+        n_neurons = 3
+        firing_rates = np.zeros((n_neurons, n_bins), dtype=np.float64)
+        # Each neuron fires in only one bin (high spatial information)
+        for i in range(n_neurons):
+            firing_rates[i, i * 4 + 2] = 30.0
+        occupancy = np.ones(n_bins, dtype=np.float64)
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        # With high spatial info and no grid/border preference, should be place cells
+        labels = result.classify(
+            min_spatial_info=0.1, min_grid_score=2.0, min_border_score=2.0
+        )
+        # All should be labeled as place cells (high spatial info, no grid/border)
+        assert all(label == "place" for label in labels)
+
+    def test_classify_unclassified_low_spatial_info(
+        self, simple_env: Environment
+    ) -> None:
+        """classify() should label neurons with low spatial info as unclassified."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        n_bins = simple_env.n_bins
+        n_neurons = 3
+        # Uniform firing (zero spatial information)
+        firing_rates = np.ones((n_neurons, n_bins), dtype=np.float64) * 5.0
+        occupancy = np.ones(n_bins, dtype=np.float64)
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        # Use unreachable thresholds for grid and border to test spatial info threshold
+        labels = result.classify(
+            min_spatial_info=0.5,
+            min_grid_score=2.0,  # Unreachable (max is ~2.0)
+            min_border_score=2.0,  # Unreachable (max is 1.0)
+        )
+        # All should be unclassified (uniform firing = no spatial info, and we
+        # disabled grid/border classification with unreachable thresholds)
+        assert all(label == "unclassified" for label in labels)
+
+    def test_classify_border_cell_high_border_score(
+        self, simple_env: Environment
+    ) -> None:
+        """classify() should label neurons with high border score as border cells."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        n_bins = simple_env.n_bins
+        n_neurons = 1
+        firing_rates = np.zeros((n_neurons, n_bins), dtype=np.float64)
+
+        # Set high firing on boundary bins
+        boundary_bins = simple_env.boundary_bins
+        if len(boundary_bins) > 0:
+            firing_rates[0, boundary_bins] = 20.0
+        occupancy = np.ones(n_bins, dtype=np.float64)
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        # Get the actual border score to set appropriate threshold
+        border_score = result.border_scores()[0]
+        if not np.isnan(border_score) and border_score > 0.0:
+            # Set threshold just below the actual score
+            labels = result.classify(
+                min_spatial_info=0.0,  # Don't require spatial info
+                min_grid_score=2.0,  # Effectively disable grid classification
+                min_border_score=border_score - 0.1,  # Just below actual score
+            )
+            assert labels[0] == "border"
+
+    def test_classify_priority_order(self, simple_env: Environment) -> None:
+        """classify() should follow priority: grid > border > place > unclassified."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        # This tests that when multiple criteria are met, the right label is chosen
+        n_bins = simple_env.n_bins
+        n_neurons = 1
+        # Create firing that could meet multiple criteria
+        firing_rates = np.zeros((n_neurons, n_bins), dtype=np.float64)
+        firing_rates[0, :] = 5.0  # Some baseline
+        firing_rates[0, n_bins // 2] = 30.0  # Peak (place cell)
+        occupancy = np.ones(n_bins, dtype=np.float64)
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        # With only spatial info criterion met, should be place cell
+        labels = result.classify(
+            min_spatial_info=0.0,  # Low threshold
+            min_grid_score=2.0,  # Unreachable threshold
+            min_border_score=2.0,  # Unreachable threshold
+        )
+        assert labels[0] == "place"

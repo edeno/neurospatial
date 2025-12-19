@@ -114,10 +114,10 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Implement `spatial_information()` → returns `(n_neurons,)`
   - [x] Implement `sparsity()` → returns `(n_neurons,)`
 
-- [ ] **2.5** Implement `SpatialRatesResult` batch metrics
-  - [ ] Implement `grid_scores()` → delegates to `batch_grid_scores()`
-  - [ ] Implement `border_scores(threshold, distance_metric)` → delegates to `batch_border_scores()`
-  - [ ] Implement `classify(min_spatial_info, min_grid_score, min_border_score)` → returns `(n_neurons,)` string labels
+- [x] **2.5** Implement `SpatialRatesResult` batch metrics
+  - [x] Implement `grid_scores()` → delegates to `batch_grid_scores()`
+  - [x] Implement `border_scores(threshold, distance_metric)` → delegates to `batch_border_scores()`
+  - [x] Implement `classify(min_spatial_info, min_grid_score, min_border_score)` → returns `(n_neurons,)` string labels
 
 - [ ] **2.6** Implement `SpatialRatesResult.to_dataframe()`
   - [ ] Include neuron_id, peak_x, peak_y, peak_rate columns

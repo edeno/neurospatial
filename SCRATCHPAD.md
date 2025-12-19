@@ -3,10 +3,63 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 2.4 - Implement `SpatialRatesResult` batch methods
-**Next Task**: Task 2.5 - Implement `SpatialRatesResult` batch metrics
+**Last Completed**: Task 2.5 - Implement `SpatialRatesResult` batch metrics
+**Next Task**: Task 2.6 - Create integration test demonstrating full workflow
 
 ## Session Notes
+
+### Task 2.5: `SpatialRatesResult` Batch Metrics [COMPLETED]
+
+**Goal**: Implement batch metrics methods for the SpatialRatesResult class.
+
+**Approach**: TDD - wrote 22 tests first, then implemented.
+
+**Result**:
+
+- Added 3 batch metrics methods to `SpatialRatesResult` in `src/neurospatial/encoding/spatial.py`
+- Added 22 new tests in `tests/encoding/test_encoding_spatial.py` (total now 109, all pass)
+- All mypy and ruff checks pass
+- Code review passed with APPROVE
+
+**Key Implementation Details**:
+
+- `grid_scores()`: Batch grid score computation → returns `(n_neurons,)` array
+  - Delegates to `batch_grid_scores()` from `_metrics.py`
+  - Returns values in range [-2, 2] or NaN
+  - NaN returned when grid score cannot be computed (non-2D, constant firing)
+
+- `border_scores(threshold, min_area, distance_metric)`: Batch border score → returns `(n_neurons,)` array
+  - Delegates to `batch_border_scores()` from `_metrics.py`
+  - Returns values in range [-1, 1] or NaN
+  - Accepts same parameters as single-neuron `border_score()` (threshold, min_area, distance_metric)
+
+- `classify(min_spatial_info, min_grid_score, min_border_score)`: Cell type classification → returns `(n_neurons,)` string array
+  - Computes all three metrics internally (spatial_info, grid_scores, border_scores)
+  - Returns labels: "grid", "border", "place", or "unclassified"
+  - Classification priority: grid > border > place > unclassified
+  - Default thresholds from literature: spatial_info=0.5, grid_score=0.4, border_score=0.5
+
+**Documentation**:
+
+- All methods have complete NumPy-style docstrings
+- Include algorithm descriptions (Sargolini et al. 2006, Solstad et al. 2008, Skaggs et al. 1993)
+- Include interpretation guidelines and threshold recommendations
+- Include See Also cross-references
+
+**Code review feedback**: APPROVE - Ready to merge
+
+- Excellent adherence to project patterns
+- Complete and accurate NumPy-style documentation
+- Comprehensive test coverage (22 tests including min_area parameter test)
+- Proper delegation to existing utilities
+
+**Test notes**:
+
+- Added test for `min_area` parameter per code review feedback
+- Fixed `test_classify_unclassified_low_spatial_info` to use unreachable thresholds for grid/border
+  (uniform firing has high border score, so need to disable border classification to test spatial info threshold)
+
+---
 
 ### Task 2.4: `SpatialRatesResult` Batch Methods [COMPLETED]
 
