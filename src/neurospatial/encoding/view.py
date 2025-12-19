@@ -74,7 +74,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -850,21 +850,226 @@ class ViewRatesResult:
 
 
 # =============================================================================
-# Compute Functions (stubs for Tasks 4.7-4.8)
+# Compute Functions
 # =============================================================================
 
 
-def compute_view_rate() -> ViewRateResult:
+def compute_view_rate(
+    env: Environment,
+    spike_times: NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    *,
+    gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
+    view_distance: float = 10.0,
+    smoothing_method: Literal[
+        "diffusion_kde", "gaussian_kde", "binned"
+    ] = "diffusion_kde",
+    bandwidth: float = 5.0,
+    min_occupancy: float = 0.0,
+) -> ViewRateResult:
     """Compute view field for one neuron.
 
-    To be implemented in Task 4.7.
+    This function computes a smoothed firing rate map indexed by *viewed*
+    location (where the animal was looking), not the animal's position.
+    This is the key metric for identifying spatial view cells.
+
+    Parameters
+    ----------
+    env : Environment
+        The spatial environment defining the bin structure. Must be fitted
+        (e.g., created via ``Environment.from_samples()``).
+    spike_times : ndarray, shape (n_spikes,)
+        Times of spike events in seconds. Can be empty.
+    times : ndarray, shape (n_samples,)
+        Timestamps of trajectory samples in seconds.
+    positions : ndarray, shape (n_samples, 2)
+        Position coordinates at each time sample.
+    headings : ndarray, shape (n_samples,)
+        Head direction at each time sample (radians, 0=East).
+    gaze_model : {"fixed_distance", "ray_cast", "boundary"}, default="fixed_distance"
+        Method for computing viewed location:
+
+        - **fixed_distance**: Point at fixed distance in gaze direction.
+          Fast and simple, good default for most analyses.
+        - **ray_cast**: Intersection with environment boundary. More
+          realistic for environments with walls.
+        - **boundary**: Nearest boundary point in gaze direction.
+
+    view_distance : float, default=10.0
+        Distance for fixed_distance gaze model (environment units).
+        Ignored for ray_cast and boundary models.
+    smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
+        Smoothing method to use:
+
+        - **diffusion_kde** (recommended): Graph-based boundary-aware KDE.
+          Respects environment boundaries (walls, obstacles).
+        - **gaussian_kde**: Standard Euclidean KDE. Ignores boundaries.
+        - **binned**: Legacy method. Computes raw rate first, then smooths.
+
+    bandwidth : float, default=5.0
+        Smoothing bandwidth in the same units as bin_size. Larger values
+        produce more smoothing.
+    min_occupancy : float, default=0.0
+        Minimum view occupancy (seconds) for a bin to be included. Bins with
+        view occupancy below this threshold are set to NaN.
+
+    Returns
+    -------
+    ViewRateResult
+        Result object containing:
+
+        - ``firing_rate``: Firing rate by viewed location in Hz, shape (n_bins,)
+        - ``view_occupancy``: Time viewing each bin in seconds, shape (n_bins,)
+        - ``env``: The environment used
+        - ``gaze_model``: Gaze model used
+        - ``view_distance``: View distance parameter
+        - ``smoothing_method``: Method used for smoothing
+        - ``bandwidth``: Bandwidth used for smoothing
 
     Raises
     ------
-    NotImplementedError
-        This function is not yet implemented.
+    ValueError
+        If gaze_model is not one of the valid options.
+        If inputs have mismatched lengths.
+
+    See Also
+    --------
+    compute_view_rates : Batch version for multiple neurons
+    ViewRateResult : Result class with convenience methods
+    compute_spatial_rate : Standard spatial rate (by animal position)
+
+    Notes
+    -----
+    The function uses the view binning layer (``_view_binning.py``) to convert
+    spike times to spike counts based on *viewed* location, then the smoothing
+    layer (``_smoothing.py``) to compute the smoothed firing rate.
+
+    **Algorithm**:
+
+    1. Compute viewed locations from positions and headings using gaze model
+    2. Bin spikes by viewed location (not animal position)
+    3. Compute view occupancy (time spent viewing each bin)
+    4. Apply smoothing (method-dependent, see ``_smoothing.py``)
+
+    **Place cells vs spatial view cells**: For place cells, the view field
+    and place field are correlated (viewing location correlates with position).
+    For true spatial view cells, the view field shows stronger spatial
+    selectivity than the place field.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding.view import compute_view_rate
+
+    >>> # Create environment from positions
+    >>> positions = np.random.rand(1000, 2) * 100
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
+
+    >>> # Create trajectory with positions and headings
+    >>> times = np.linspace(0, 10, 1000)
+    >>> positions = np.random.rand(1000, 2) * 100
+    >>> headings = np.random.uniform(0, 2 * np.pi, 1000)
+    >>> spike_times = np.array([1.0, 2.5, 4.0, 7.5, 8.2])
+
+    >>> # Compute view rate
+    >>> result = compute_view_rate(
+    ...     env,
+    ...     spike_times,
+    ...     times,
+    ...     positions,
+    ...     headings,
+    ...     gaze_model="fixed_distance",
+    ...     view_distance=10.0,
+    ... )
+
+    >>> # Access results
+    >>> peak = result.peak_view_location()
+    >>> info = result.view_spatial_information()
+    >>> is_view_cell = result.is_view_cell()
+
+    >>> # Plot the view field
+    >>> ax = result.plot()
+
+    References
+    ----------
+    .. [1] Rolls, E. T., et al. (1997). Spatial view cells in the primate
+           hippocampus. European Journal of Neuroscience, 9(8), 1789-1794.
     """
-    raise NotImplementedError("compute_view_rate will be implemented in Task 4.7")
+    from neurospatial.encoding._smoothing import smooth_rate_map
+    from neurospatial.encoding._view_binning import (
+        bin_view_spike_train,
+        compute_view_occupancy,
+    )
+
+    # Validate gaze_model
+    valid_gaze_models = {"fixed_distance", "ray_cast", "boundary"}
+    if gaze_model not in valid_gaze_models:
+        raise ValueError(
+            f"Invalid gaze_model: '{gaze_model}'. "
+            f"Must be one of {sorted(valid_gaze_models)}"
+        )
+
+    # Convert inputs to arrays
+    spike_times = np.asarray(spike_times, dtype=np.float64)
+    times = np.asarray(times, dtype=np.float64)
+    positions = np.asarray(positions, dtype=np.float64)
+    headings = np.asarray(headings, dtype=np.float64)
+
+    # Validate input array lengths
+    n_samples = len(times)
+    if len(positions) != n_samples:
+        raise ValueError(
+            f"times length ({n_samples}) must match positions length ({len(positions)})"
+        )
+    if len(headings) != n_samples:
+        raise ValueError(
+            f"times length ({n_samples}) must match headings length ({len(headings)})"
+        )
+
+    # Bin spike train by viewed location
+    spike_counts = bin_view_spike_train(
+        env,
+        spike_times,
+        times,
+        positions,
+        headings,
+        gaze_model=gaze_model,
+        view_distance=view_distance,
+    )
+
+    # Compute view occupancy
+    view_occupancy = compute_view_occupancy(
+        env,
+        times,
+        positions,
+        headings,
+        gaze_model=gaze_model,
+        view_distance=view_distance,
+    )
+
+    # Apply smoothing to compute firing rate
+    firing_rate = smooth_rate_map(
+        env,
+        spike_counts,
+        view_occupancy,
+        method=smoothing_method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+    )
+
+    # Return result
+    return ViewRateResult(
+        firing_rate=firing_rate,
+        view_occupancy=view_occupancy,
+        env=env,
+        gaze_model=gaze_model,
+        view_distance=view_distance,
+        smoothing_method=smoothing_method,
+        bandwidth=bandwidth,
+    )
 
 
 def compute_view_rates() -> ViewRatesResult:

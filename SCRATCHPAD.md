@@ -3,10 +3,90 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 4.6 - Implement binning layer for view encoding
-**Next Task**: Task 4.7 - Implement `compute_view_rate()` function
+**Last Completed**: Task 4.7 - Implement `compute_view_rate()` function
+**Next Task**: Task 4.8 - Implement `compute_view_rates()` function
 
 ## Session Notes
+
+### Task 4.7: Implement `compute_view_rate()` function [COMPLETED]
+
+**Goal**: Create the single-neuron view rate computation function that computes spatial view fields from spike trains and trajectory data.
+
+**Approach**: TDD - wrote 34 tests first, then implemented.
+
+**Result**:
+
+- Added `compute_view_rate()` to `src/neurospatial/encoding/view.py`
+- Created `tests/encoding/test_compute_view_rate.py` with 34 tests (all pass)
+- All mypy and ruff checks pass
+- Code review passed with APPROVE
+
+**Key Implementation Details**:
+
+- `compute_view_rate(env, spike_times, times, positions, headings, *, gaze_model, view_distance, smoothing_method, bandwidth, min_occupancy)`:
+  - Parameters follow canonical argument order from CLAUDE.md (headings required for egocentric)
+  - Uses view binning layer (`_view_binning.py`) to bin spikes by *viewed* location
+  - Uses smoothing layer (`_smoothing.py`) to compute smoothed firing rate
+  - Returns `ViewRateResult` with all required fields
+  - Validates gaze_model parameter (fixed_distance, ray_cast, boundary)
+  - Validates input array lengths (times, positions, headings must match)
+
+**Signature**:
+
+```python
+def compute_view_rate(
+    env: Environment,
+    spike_times: NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    *,
+    gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
+    view_distance: float = 10.0,
+    smoothing_method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
+    bandwidth: float = 5.0,
+    min_occupancy: float = 0.0,
+) -> ViewRateResult:
+```
+
+**Test coverage (34 tests in 11 classes)**:
+
+- `TestComputeViewRateImport`: 2 tests (import from module and package)
+- `TestComputeViewRateReturnsResult`: 4 tests (return type, shapes, env)
+- `TestComputeViewRateGazeModel`: 4 tests (valid models, default, invalid raises)
+- `TestComputeViewRateViewDistance`: 2 tests (storage, default)
+- `TestComputeViewRateSmoothing`: 5 tests (methods, default, bandwidth storage)
+- `TestComputeViewRateEmptySpikes`: 2 tests (zero rate, positive occupancy)
+- `TestComputeViewRateCorrectness`: 3 tests (non-negative rate, non-negative occupancy, view vs spatial occupancy)
+- `TestComputeViewRateResultMethods`: 4 tests (plot, peak_view_location, view_spatial_information, is_view_cell)
+- `TestComputeViewRateMinOccupancy`: 2 tests (threshold masking, default)
+- `TestComputeViewRateInputValidation`: 2 tests (mismatched times/positions, mismatched times/headings)
+- `TestComputeViewRateSignature`: 2 tests (canonical argument order, keyword-only params)
+
+**Key difference from `compute_spatial_rate()`**:
+
+- Requires `headings` parameter for gaze computation
+- Uses view binning (where animal looked) instead of spatial binning (where animal was)
+- Uses `view_occupancy` instead of `occupancy`
+- Additional parameters: `gaze_model`, `view_distance`
+
+**Code review feedback addressed**:
+
+1. Added input length validation for better error messages
+2. Fixed docstring example to use `positions` instead of `trajectory` for consistency with CLAUDE.md
+
+**Documentation**:
+
+- Complete NumPy-style docstring with:
+  - Extended description explaining view fields vs place fields
+  - Full parameter documentation with gaze model explanations
+  - Notes section on algorithm and place vs view cell differences
+  - Working examples
+  - Scientific references (Rolls et al., 1997)
+
+**Milestone 4 Progress**: Tasks 4.1-4.7 complete, 2 tasks remaining (4.8-4.9).
+
+---
 
 ### Task 4.6: Implement Binning Layer for View Encoding [COMPLETED]
 

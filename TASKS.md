@@ -268,12 +268,12 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Support gaze models: "fixed_distance", "ray_cast", "boundary"
   - [x] Convert (spike_times, times, positions, headings, gaze_model) → (spike_counts, view_occupancy)
 
-- [ ] **4.7** Implement `compute_view_rate()` function
-  - [ ] Accept single spike_times array
-  - [ ] Support `gaze_model` parameter
-  - [ ] Support `view_distance` parameter
-  - [ ] Apply smoothing via `_smoothing.py`
-  - [ ] Return `ViewRateResult`
+- [x] **4.7** Implement `compute_view_rate()` function
+  - [x] Accept single spike_times array
+  - [x] Support `gaze_model` parameter
+  - [x] Support `view_distance` parameter
+  - [x] Apply smoothing via `_smoothing.py`
+  - [x] Return `ViewRateResult`
 
 - [ ] **4.8** Implement `compute_view_rates()` function
   - [ ] Accept list of spike_times arrays
