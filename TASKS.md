@@ -62,12 +62,12 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Implement `batch_sparsity(firing_rates, occupancy)` for population
   - [x] Add unit tests
 
-- [ ] **1.2** Create `encoding/_smoothing.py` with shared smoothing code
-  - [ ] Extract common smoothing logic from existing `place.py`
-  - [ ] Implement `diffusion_kde` smoothing
-  - [ ] Implement `gaussian_kde` smoothing
-  - [ ] Implement `binned` (no smoothing) mode
-  - [ ] Add unit tests
+- [x] **1.2** Create `encoding/_smoothing.py` with shared smoothing code
+  - [x] Extract common smoothing logic from existing `place.py`
+  - [x] Implement `diffusion_kde` smoothing
+  - [x] Implement `gaussian_kde` smoothing
+  - [x] Implement `binned` (no smoothing) mode
+  - [x] Add unit tests
 
 - [ ] **1.3** Implement batch grid score computation in `_metrics.py`
   - [ ] Implement `batch_grid_scores(env, firing_rates)` → `(n_neurons,)`

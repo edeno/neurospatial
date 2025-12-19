@@ -3,10 +3,72 @@
 ## Current Status
 
 **Date**: 2025-12-18
-**Last Completed**: Task 1.1 - Create `encoding/_metrics.py` with shared metric implementations
-**Next Task**: Task 1.2 - Create `encoding/_smoothing.py` with shared smoothing code
+**Last Completed**: Task 1.2 - Create `encoding/_smoothing.py` with shared smoothing code
+**Next Task**: Task 1.3 - Implement batch grid score computation in `_metrics.py`
 
 ## Session Notes
+
+### Task 1.2: `encoding/_smoothing.py` [COMPLETED]
+
+**Goal**: Create shared smoothing implementations for rate map computation with three methods.
+
+**Approach**: TDD - wrote tests first (`test_encoding_smoothing.py`), then implemented.
+
+**Result**:
+
+- Created `src/neurospatial/encoding/_smoothing.py` with 2 public functions + 4 private helpers
+- Created `tests/encoding/test_encoding_smoothing.py` with 34 tests (all pass)
+- All mypy and ruff checks pass
+- Code review passed after fixing type annotation issues
+
+**Key Implementation Details**:
+
+- `smooth_rate_map(env, spike_counts, occupancy, method, bandwidth, ...)`: Single neuron smoothing
+- `smooth_rate_maps_batch(env, spike_counts, occupancy, ...)`: Batch version for populations
+
+**Three smoothing methods**:
+
+1. **diffusion_kde** (recommended): Graph-based boundary-aware KDE
+   - Respects environment boundaries via graph connectivity
+   - Order: smooth counts → smooth occupancy → normalize
+   - Uses `env.compute_kernel(bandwidth, mode="density")`
+
+2. **gaussian_kde**: Standard Euclidean KDE
+   - Ignores boundaries (mass can bleed through walls)
+   - Uses pairwise Gaussian weights between bin centers
+   - Order: smooth counts → smooth occupancy → normalize
+
+3. **binned** (legacy): Bin-then-smooth order
+   - Order: normalize → smooth result
+   - Can introduce discretization artifacts
+   - Uses `env.smooth()` for diffusion smoothing of rate map
+
+**Parameters**:
+
+- `bandwidth`: Smoothing bandwidth (same units as bin_size)
+- `min_occupancy`: Threshold for masking low-occupancy bins
+- `kernel`: Optional precomputed kernel for efficiency
+
+**Edge case handling**:
+
+- Zero occupancy bins: Produce NaN in rate map
+- Zero spike counts: Return zero rate (not NaN)
+- Invalid method: Raises `ValueError`
+- Negative bandwidth: Raises `ValueError`
+- Shape mismatches: Raises `ValueError`
+
+**Type annotation fix**:
+
+Used `cast("EnvironmentProtocol", env)` pattern for method calls to satisfy mypy,
+following the same pattern used in `place.py`, `border.py`, and other encoding modules.
+
+**Code review feedback addressed**:
+
+- Fixed 4 mypy errors by using `cast("EnvironmentProtocol", env)` for method calls
+- Documented min_occupancy behavior (uses raw occupancy for threshold, not smoothed)
+- Kept bandwidth validation method-specific (binned allows 0, KDE methods require > 0)
+
+---
 
 ### Task 1.1: `encoding/_metrics.py` [COMPLETED]
 
