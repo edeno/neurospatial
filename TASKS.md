@@ -282,12 +282,12 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Add `n_jobs` parameter for parallelization
   - [x] Return `ViewRatesResult`
 
-- [ ] **4.9** Write comprehensive tests for view encoding
-  - [ ] Test single neuron computation
-  - [ ] Test batch computation
-  - [ ] Test all result class methods
-  - [ ] Test different gaze models
-  - [ ] Test `to_dataframe()` output format
+- [x] **4.9** Write comprehensive tests for view encoding
+  - [x] Test single neuron computation
+  - [x] Test batch computation
+  - [x] Test all result class methods
+  - [x] Test different gaze models
+  - [x] Test `to_dataframe()` output format
 
 ---
 
