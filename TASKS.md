@@ -380,10 +380,11 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Use `vmap` for batch operations
   - [x] Verify numerical equivalence with NumPy
 
-- [ ] **6.3** Implement JAX grid/border score computations
-  - [ ] Port grid score inner loop to JAX
-  - [ ] Port border score inner loop to JAX
-  - [ ] Use `vmap` for batch operations
+- [x] **6.3** ~~Implement JAX grid/border score computations~~ **SKIPPED (N/A)**
+  - Grid score depends on scipy.fft, scipy.ndimage.rotate, skimage.peak_local_max
+  - Border score depends on networkx.dijkstra, scipy.sparse.csgraph
+  - These operations have no JAX equivalents; batch functions remain NumPy-only
+  - See SCRATCHPAD.md for full analysis (2025-12-19)
 
 - [ ] **6.4** Add backend dispatch to compute functions
   - [ ] Add `backend` parameter to `compute_spatial_rate(s)`

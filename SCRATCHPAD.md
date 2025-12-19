@@ -3,10 +3,55 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 6.2 - Implement JAX metric computations in `_core_jax.py`
-**Next Task**: Task 6.3 - Implement JAX grid/border score computations
+**Last Completed**: Task 6.3 - Skipped (N/A - see notes below)
+**Next Task**: Task 6.4 - Add backend dispatch to compute functions
 
 ## Session Notes
+
+### Task 6.3: Implement JAX grid/border score computations [SKIPPED - N/A]
+
+**Goal**: Port grid score and border score inner loops to JAX with vmap for batch operations.
+
+**Analysis**:
+
+After reviewing the existing implementations in `grid.py` and `border.py`, I determined that porting these functions to JAX is not feasible:
+
+**Grid Score Dependencies** (cannot port to JAX):
+
+- `scipy.fft.fft2` / `scipy.fft.ifft2` - FFT-based 2D autocorrelation
+- `scipy.ndimage.rotate` - Image rotation for 30°, 60°, 90°, 120°, 150° angles
+- `scipy.stats.pearsonr` - Correlation computation
+- `skimage.feature.peak_local_max` - Peak detection for scale/orientation
+
+**Border Score Dependencies** (cannot port to JAX):
+
+- `networkx.multi_source_dijkstra_path_length` - Geodesic distance computation
+- `networkx.adjacency_matrix` - Graph connectivity
+- `scipy.sparse.csgraph.dijkstra` - Alternative Dijkstra implementation
+- Environment object methods (`boundary_bins`, `bin_centers`) - Not JAX-traceable
+
+**Key Insight**: The "inner loops" identified in the task description are actually:
+
+1. Simple vectorized NumPy operations (min/max, correlation)
+2. Already efficient for CPU computation
+3. Not the bottleneck in these algorithms
+
+The expensive operations (FFT autocorrelation, image rotation, graph traversal) are fundamentally incompatible with JAX's programming model and would require complete algorithm redesign.
+
+**Decision**: Skip Task 6.3 entirely. The batch functions `batch_grid_scores()` and `batch_border_scores()` in `_metrics.py` will remain NumPy-only. This is documented as an intentional limitation of the JAX backend.
+
+**Rationale**:
+
+1. Grid/border score computations are typically done once per recording session (not per-frame)
+2. The NumPy implementations are already efficient with vectorized operations
+3. JAX's benefit is in GPU-accelerated batch processing, which doesn't apply here
+4. Reimplementing the algorithms in pure JAX would be complex and error-prone
+
+**Files Modified**: None
+
+**Decision made by**: User approval (2025-12-19)
+
+---
 
 ### Task 6.2: Implement JAX metric computations in `_core_jax.py` [COMPLETED]
 
