@@ -16,12 +16,12 @@ ViewRateResult
 ViewRatesResult
     Multi-neuron view fields with batch methods and iteration
 
-Compute Functions (to be implemented in Tasks 4.7-4.8)
-------------------------------------------------------
+Compute Functions
+-----------------
 compute_view_rate
     Compute view field for one neuron
 compute_view_rates
-    Compute view fields for multiple neurons
+    Compute view fields for multiple neurons (batch)
 
 Key Difference: Place Cells vs Spatial View Cells
 --------------------------------------------------
@@ -836,11 +836,17 @@ class ViewRatesResult:
         view_info = self.view_spatial_information()
         is_view_cell = self.detect_view_cells()
 
+        # Determine dimensionality for peak location columns
+        # View encoding is typically 2D, but handle 1D for robustness
+        n_dims = peak_locs.shape[1] if peak_locs.ndim > 1 else 1
+
         # Build DataFrame
         data: dict[str, Any] = {
             "neuron_id": neuron_ids_list,
             "peak_view_x": peak_locs[:, 0],
-            "peak_view_y": peak_locs[:, 1],
+            "peak_view_y": peak_locs[:, 1]
+            if n_dims > 1
+            else np.full(n_neurons, np.nan),
             "peak_rate": peak_rates,
             "view_spatial_info": view_info,
             "is_view_cell": is_view_cell,

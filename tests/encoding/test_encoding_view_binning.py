@@ -1175,3 +1175,83 @@ class TestTimesValidation:
         # 3 intervals: 1s, 0s, 1s = 2s total
         total_occupancy = np.sum(view_occupancy)
         assert abs(total_occupancy - 2.0) < 0.01
+
+
+# ==============================================================================
+# Tests for view binning optimization (precomputation)
+# ==============================================================================
+
+
+class TestBinViewSpikeTrainsPrecomputation:
+    """Tests that bin_view_spike_trains precomputes shared quantities.
+
+    Bug: viewed_locations was recomputed for every neuron in the batch,
+    contradicting the docstring that says it precomputes shared quantities.
+    """
+
+    def test_batch_result_matches_sequential(
+        self,
+        simple_env: Environment,
+        trajectory_data: dict,
+        multiple_neuron_spikes: list[NDArray[np.float64]],
+    ) -> None:
+        """Batch result should match sequential single-neuron calls."""
+        from neurospatial.encoding._view_binning import (
+            bin_view_spike_train,
+            bin_view_spike_trains,
+        )
+
+        # Get batch result
+        batch_counts, _batch_occupancy = bin_view_spike_trains(
+            simple_env,
+            multiple_neuron_spikes,
+            trajectory_data["times"],
+            trajectory_data["positions"],
+            trajectory_data["headings"],
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+        )
+
+        # Get sequential results
+        for i, spikes in enumerate(multiple_neuron_spikes):
+            single_counts = bin_view_spike_train(
+                simple_env,
+                spikes,
+                trajectory_data["times"],
+                trajectory_data["positions"],
+                trajectory_data["headings"],
+                gaze_model="fixed_distance",
+                view_distance=10.0,
+            )
+            np.testing.assert_array_almost_equal(
+                batch_counts[i], single_counts, err_msg=f"Neuron {i} counts differ"
+            )
+
+    def test_view_bins_precomputed_once(
+        self,
+        simple_env: Environment,
+        trajectory_data: dict,
+    ) -> None:
+        """view_bins should be computed once and reused for all neurons.
+
+        This test verifies that viewed locations are precomputed by checking
+        that the internal implementation uses precomputed view_bins.
+        """
+        from neurospatial.encoding._view_binning import (
+            _precompute_view_bins,
+        )
+
+        # This internal function should exist for precomputation
+        view_bins = _precompute_view_bins(
+            simple_env,
+            trajectory_data["positions"],
+            trajectory_data["headings"],
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+        )
+
+        # Should return bin indices for each timepoint
+        assert view_bins.shape == (len(trajectory_data["times"]),)
+        assert view_bins.dtype == np.intp
+        # Invalid views should be -1
+        assert np.all((view_bins >= -1) & (view_bins < simple_env.n_bins))

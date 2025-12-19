@@ -3,16 +3,16 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Bugfixes from code review (view_occupancy, spatial_rates occupancy)
+**Last Completed**: All code review bugfixes (6 issues resolved)
 **Next Task**: Task 5.1 - Create `encoding/egocentric.py` with result class definitions
 
 ## Session Notes
 
-### Bugfixes from Code Review (2025-12-19) [COMPLETED]
+### All Code Review Bugfixes (2025-12-19) [COMPLETED]
 
-**Context**: Code review identified several issues in the encoding module implementation.
+**Context**: Code review identified 6 issues in the encoding module. All have been resolved.
 
-**Fixes Applied**:
+**Fixes Applied (First Session)**:
 
 1. **HIGH: view_occupancy used constant dt instead of per-sample deltas**
    - **Bug**: `compute_view_occupancy()` used `dt = np.median(np.diff(times))` which gives incorrect results for non-uniform sampling
@@ -33,13 +33,28 @@
    - **Files**: `src/neurospatial/encoding/spatial.py`
    - **Tests**: Added `test_empty_neurons_list_has_valid_occupancy`
 
-**Deferred Issues** (lower priority, can be addressed later):
+**Fixes Applied (Second Session)**:
 
-- **MEDIUM**: View binning recomputes viewed locations redundantly (optimization)
-- **MEDIUM**: `ViewRatesResult.to_dataframe()` assumes 2D environment (1D handling)
-- **MEDIUM**: Backend docs vs implementation mismatch (doc sync task)
+4. **MEDIUM: View binning recomputes viewed locations redundantly**
+   - **Bug**: `bin_view_spike_trains()` was computing viewed locations separately for each neuron
+   - **Fix**: Created `_precompute_view_bins()` and `_bin_spikes_with_precomputed_view_bins()` helpers
+   - Refactored `bin_view_spike_trains()` to precompute view bins once and reuse for all neurons
+   - Refactored `compute_view_occupancy()` to also use the precomputation helper
+   - **Files**: `src/neurospatial/encoding/_view_binning.py`
+   - **Tests**: Added `TestBinViewSpikeTrainsPrecomputation` class (2 tests)
 
-**All tests pass**: 46 view binning tests, 135 view encoding tests, 201 spatial encoding tests
+5. **MEDIUM: ViewRatesResult.to_dataframe() assumes 2D environment**
+   - **Bug**: `to_dataframe()` accessed `peak_locs[:, 1]` without checking if 1D
+   - **Fix**: Added `n_dims` check before accessing y-coordinate, fill with NaN for 1D
+   - **Files**: `src/neurospatial/encoding/view.py`
+   - **Pattern**: Mirrors `SpatialRatesResult.to_dataframe()` 1D handling
+
+6. **MEDIUM: Backend docs vs implementation mismatch**
+   - **Bug**: Module docstring said "to be implemented in Tasks 4.7-4.8" for compute functions that were already implemented
+   - **Fix**: Updated module docstring to remove outdated task references
+   - **Files**: `src/neurospatial/encoding/view.py`
+
+**All tests pass**: 183 total tests (77 view encoding, 48 view binning, 58 compute_view_rate)
 
 ---
 

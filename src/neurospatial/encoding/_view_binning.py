@@ -44,6 +44,127 @@ __all__ = [
 ]
 
 
+def _precompute_view_bins(
+    env: Environment,
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    *,
+    gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
+    view_distance: float = 10.0,
+    gaze_offsets: NDArray[np.float64] | None = None,
+) -> NDArray[np.intp]:
+    """Precompute view bin indices for all trajectory samples.
+
+    This internal helper computes viewed locations and maps them to bins
+    once, so they can be reused for multiple neurons in batch processing.
+
+    Parameters
+    ----------
+    env : Environment
+        The spatial environment defining bin structure.
+    positions : ndarray, shape (n_samples, 2)
+        Position coordinates at each time sample.
+    headings : ndarray, shape (n_samples,)
+        Head direction at each time sample (radians, 0=East).
+    gaze_model : {"fixed_distance", "ray_cast", "boundary"}, default="fixed_distance"
+        Method for computing viewed location.
+    view_distance : float, default=10.0
+        Distance for fixed_distance gaze model (environment units).
+    gaze_offsets : ndarray, shape (n_samples,), optional
+        Offset from heading to gaze direction.
+
+    Returns
+    -------
+    view_bins : ndarray, shape (n_samples,), dtype=intp
+        Bin index for each sample. -1 indicates invalid view (outside env).
+    """
+    n_samples = len(positions)
+
+    # Compute viewed locations for all timepoints
+    viewed_locations = compute_viewed_location(
+        positions,
+        headings,
+        method=gaze_model,
+        view_distance=view_distance,
+        gaze_offsets=gaze_offsets,
+        env=env if gaze_model in ("ray_cast", "boundary") else None,
+    )
+
+    # Identify valid viewed locations (finite and inside environment)
+    valid_view_mask = np.all(np.isfinite(viewed_locations), axis=1)
+
+    # Map viewed locations to bins
+    view_bins = np.full(n_samples, -1, dtype=np.intp)
+    if np.any(valid_view_mask):
+        valid_viewed = viewed_locations[valid_view_mask]
+        valid_bins = env.bin_at(valid_viewed)
+        view_bins[valid_view_mask] = valid_bins
+        # Bins outside environment return -1 from bin_at, which is what we want
+
+    return view_bins
+
+
+def _bin_spikes_with_precomputed_view_bins(
+    spike_times: NDArray[np.float64],
+    times: NDArray[np.float64],
+    view_bins: NDArray[np.intp],
+    n_bins: int,
+) -> NDArray[np.float64]:
+    """Bin a single spike train using precomputed view bins.
+
+    Internal helper for efficient batch processing.
+
+    Parameters
+    ----------
+    spike_times : ndarray, shape (n_spikes,)
+        Times of spike events in seconds.
+    times : ndarray, shape (n_samples,)
+        Timestamps of trajectory samples in seconds.
+    view_bins : ndarray, shape (n_samples,), dtype=intp
+        Precomputed view bin indices (-1 for invalid views).
+    n_bins : int
+        Number of bins in the environment.
+
+    Returns
+    -------
+    spike_counts : ndarray, shape (n_bins,)
+        Number of spikes in each spatial bin based on viewed location.
+    """
+    n_samples = len(times)
+    spike_counts = np.zeros(n_bins, dtype=np.float64)
+
+    # Handle empty spike train
+    if len(spike_times) == 0:
+        return spike_counts
+
+    # Filter spikes to valid time range
+    t_min, t_max = times[0], times[-1]
+    valid_time_mask = (spike_times >= t_min) & (spike_times <= t_max)
+    spike_times_valid = spike_times[valid_time_mask]
+
+    if len(spike_times_valid) == 0:
+        return spike_counts
+
+    # Find nearest behavioral frame for each spike
+    spike_frame_idx = np.searchsorted(times, spike_times_valid, side="right") - 1
+    spike_frame_idx = np.clip(spike_frame_idx, 0, n_samples - 1)
+
+    # Get viewed bin at each spike time
+    spike_view_bins = view_bins[spike_frame_idx]
+
+    # Only count spikes where view was valid (inside environment)
+    valid_spike_views = spike_view_bins >= 0
+    valid_spike_view_bins = spike_view_bins[valid_spike_views]
+
+    if len(valid_spike_view_bins) == 0:
+        return spike_counts
+
+    # Count spikes per viewed bin
+    np.add.at(spike_counts, valid_spike_view_bins, 1.0)
+
+    return spike_counts
+
+
 def compute_view_occupancy(
     env: Environment,
     times: NDArray[np.float64],
@@ -186,27 +307,15 @@ def compute_view_occupancy(
     # Each interval[i] represents the time from sample[i] to sample[i+1]
     dt = np.diff(times)
 
-    # Compute viewed locations for all timepoints
-    viewed_locations = compute_viewed_location(
+    # Precompute view bins for all timepoints
+    view_bins = _precompute_view_bins(
+        env,
         positions,
         headings,
-        method=gaze_model,
+        gaze_model=gaze_model,
         view_distance=view_distance,
         gaze_offsets=gaze_offsets,
-        env=env if gaze_model in ("ray_cast", "boundary") else None,
     )
-
-    # Identify valid viewed locations (finite and inside environment)
-    valid_view_mask = np.all(np.isfinite(viewed_locations), axis=1)
-
-    # Map viewed locations to bins
-    view_bins = np.full(n_samples, -1, dtype=np.intp)
-    if np.any(valid_view_mask):
-        valid_viewed = viewed_locations[valid_view_mask]
-        valid_bins = env.bin_at(valid_viewed)
-        view_bins[valid_view_mask] = valid_bins
-        # Update valid mask to only include views inside environment
-        valid_view_mask = view_bins >= 0
 
     # Compute view occupancy (time spent viewing each bin)
     # We have n_samples positions and n_samples-1 intervals.
@@ -468,10 +577,10 @@ def bin_view_spike_trains(
     positions = np.asarray(positions, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
 
-    # Compute view occupancy once (shared across all neurons)
-    view_occupancy = compute_view_occupancy(
+    # Precompute view bins ONCE (shared across all neurons)
+    # This is the expensive computation - computed once instead of per-neuron
+    view_bins = _precompute_view_bins(
         env,
-        times,
         positions,
         headings,
         gaze_model=gaze_model,
@@ -479,35 +588,31 @@ def bin_view_spike_trains(
         gaze_offsets=gaze_offsets,
     )
 
-    # Process neurons
+    # Compute view occupancy from precomputed bins
+    dt = np.diff(times)
+    view_occupancy = np.zeros(env.n_bins, dtype=np.float64)
+    interval_bins = view_bins[:-1]  # Exclude last position (no following interval)
+    valid_interval_mask = interval_bins >= 0
+    valid_bins = interval_bins[valid_interval_mask]
+    valid_dt = dt[valid_interval_mask]
+    np.add.at(view_occupancy, valid_bins, valid_dt)
+
+    # Process neurons using precomputed view_bins
+    n_bins = env.n_bins
     if n_jobs == 1:
         # Sequential processing
-        spike_counts = np.zeros((n_neurons, env.n_bins), dtype=np.float64)
+        spike_counts = np.zeros((n_neurons, n_bins), dtype=np.float64)
         for i, spikes in enumerate(spike_times_list):
-            spike_counts[i] = bin_view_spike_train(
-                env,
-                spikes,
-                times,
-                positions,
-                headings,
-                gaze_model=gaze_model,
-                view_distance=view_distance,
-                gaze_offsets=gaze_offsets,
+            spike_counts[i] = _bin_spikes_with_precomputed_view_bins(
+                spikes, times, view_bins, n_bins
             )
     else:
         # Parallel processing with joblib
         from joblib import Parallel, delayed
 
         def _process_neuron(spikes: NDArray[np.float64]) -> NDArray[np.float64]:
-            return bin_view_spike_train(
-                env,
-                spikes,
-                times,
-                positions,
-                headings,
-                gaze_model=gaze_model,
-                view_distance=view_distance,
-                gaze_offsets=gaze_offsets,
+            return _bin_spikes_with_precomputed_view_bins(
+                spikes, times, view_bins, n_bins
             )
 
         results = Parallel(n_jobs=n_jobs)(
