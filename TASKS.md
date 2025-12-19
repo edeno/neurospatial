@@ -301,10 +301,10 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
 
 ### Tasks
 
-- [ ] **5.1** Create `encoding/egocentric.py` with result class definitions
-  - [ ] Define `EgocentricRateResult` dataclass (frozen=True)
-  - [ ] Define `EgocentricRatesResult` dataclass (frozen=True)
-  - [ ] Note: Uses `ego_env` (polar Environment), not spatial Environment
+- [x] **5.1** Create `encoding/egocentric.py` with result class definitions
+  - [x] Define `EgocentricRateResult` dataclass (frozen=True)
+  - [x] Define `EgocentricRatesResult` dataclass (frozen=True)
+  - [x] Note: Uses `ego_env` (polar Environment), not spatial Environment
 
 - [ ] **5.2** Implement `EgocentricRateResult` convenience methods
   - [ ] Implement `plot(ax, **kwargs)` → delegates to `ego_env.plot_field()`

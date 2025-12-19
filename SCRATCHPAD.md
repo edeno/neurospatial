@@ -3,10 +3,42 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: All code review bugfixes (6 issues resolved)
-**Next Task**: Task 5.1 - Create `encoding/egocentric.py` with result class definitions
+**Last Completed**: Task 5.1 - Create `encoding/egocentric.py` with result class definitions
+**Next Task**: Task 5.2 - Implement `EgocentricRateResult` convenience methods
 
 ## Session Notes
+
+### Task 5.1: Create `encoding/egocentric.py` with result class definitions [COMPLETED]
+
+**Goal**: Define the result dataclasses for egocentric (object vector) cell encoding.
+
+**Implementation**:
+- Created `src/neurospatial/encoding/egocentric.py` with:
+  - `EgocentricRateResult` dataclass (frozen=True) with fields:
+    - `firing_rate`: ArrayLike (n_bins,)
+    - `occupancy`: ArrayLike (n_bins,)
+    - `ego_env`: Environment (egocentric polar environment)
+    - `distance_range`: tuple[float, float]
+    - `n_distance_bins`: int
+    - `n_direction_bins`: int
+  - `EgocentricRatesResult` dataclass (frozen=True) with:
+    - Same fields but `firing_rates` shape (n_neurons, n_bins)
+    - `__len__`, `__getitem__`, `__iter__` methods for iteration
+- Updated `src/neurospatial/encoding/__init__.py` to export the new classes
+- Created comprehensive test suite: `tests/encoding/test_encoding_egocentric.py` (31 tests)
+
+**TDD Process**:
+1. Wrote 31 tests covering imports, definitions, creation, and iteration
+2. Ran tests - all 31 failed (expected)
+3. Implemented the dataclasses
+4. Ran tests - all 31 passed
+
+**Code Review**: APPROVED with no critical or quality issues
+
+**Test Results**: 31/31 tests pass
+
+---
+
 
 ### All Code Review Bugfixes (2025-12-19) [COMPLETED]
 
