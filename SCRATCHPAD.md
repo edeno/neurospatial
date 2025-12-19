@@ -3,10 +3,73 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 3.8 - Implement `compute_directional_rate()` function
-**Next Task**: Task 3.9 - Implement `compute_directional_rates()` function
+**Last Completed**: Task 3.9 - Implement `compute_directional_rates()` function
+**Next Task**: Task 3.10 - Write comprehensive tests for directional encoding
 
 ## Session Notes
+
+### Task 3.9: Implement `compute_directional_rates()` function [COMPLETED]
+
+**Goal**: Create the batch directional rate computation function for multiple neurons.
+
+**Approach**: TDD - wrote 36 tests first, then implemented.
+
+**Result**:
+
+- Added `compute_directional_rates()` to `src/neurospatial/encoding/directional.py`
+- Added 36 tests to `tests/encoding/test_encoding_directional.py` (all 181 tests pass)
+- All mypy and ruff checks pass
+- Code review passed after addressing type annotation issues
+
+**Key Implementation Details**:
+
+- `compute_directional_rates(spike_times, times, headings, bin_size, smoothing_sigma, angle_unit, n_jobs)`:
+  - Accepts multiple input formats: list of arrays, tuple, 2D array with NaN padding, single 1D array
+  - Normalizes input via `normalize_spike_times()` from `_spikes.py`
+  - Precomputes shared quantities (occupancy, bin_centers) once
+  - Uses nested `_process_neuron()` helper for per-neuron processing
+  - Supports parallelization via joblib `n_jobs` parameter
+  - Returns `DirectionalRatesResult` with all required fields
+
+**Efficiency advantages over calling `compute_directional_rate()` in a loop**:
+
+1. Occupancy is computed once and shared across all neurons
+2. Bin centers are computed once
+3. Spike binning can be parallelized with joblib
+
+**Test Coverage (36 tests in 13 classes)**:
+
+- `TestComputeDirectionalRatesImport`: 2 tests (import from module and package)
+- `TestComputeDirectionalRatesBasic`: 7 tests (return type, shapes, metadata)
+- `TestComputeDirectionalRatesInputFormats`: 4 tests (list, tuple, 2D array, 1D array)
+- `TestComputeDirectionalRatesNJobs`: 3 tests (parallelization and consistency)
+- `TestComputeDirectionalRatesAngleUnit`: 3 tests (rad, deg, equivalence)
+- `TestComputeDirectionalRatesSmoothing`: 2 tests (storage, smoother curves)
+- `TestComputeDirectionalRatesConsistency`: 2 tests (**CRITICAL** - batch matches single-neuron, shared occupancy)
+- `TestComputeDirectionalRatesEdgeCases`: 4 tests (empty spikes, single neuron, empty list)
+- `TestComputeDirectionalRatesResultMethods`: 4 tests (preferred_directions, mean_vector_lengths, detect_hd_cells, to_dataframe)
+- `TestComputeDirectionalRatesInputValidation`: 1 test (invalid angle_unit)
+
+**Consistency verification**:
+
+- `test_batch_matches_single_neuron_results()` proves batch produces identical results to processing each neuron individually with `compute_directional_rate()` using `decimal=10`
+
+**Code Review Feedback Addressed**:
+
+1. Fixed type annotation for `firing_rate` variable in `_process_neuron()` helper
+2. Added explicit type annotations for `spike_counts_smooth`, `occupancy_smooth`
+3. Added explicit type annotation for `spike_times_list` after normalization
+4. Changed condition to use `smoothing_sigma_rad` consistently instead of `smoothing_sigma`
+
+**Documentation**:
+
+- Complete NumPy-style docstring with:
+  - Extended description explaining efficiency advantages
+  - Full parameter documentation
+  - Notes section on when to use batch vs single
+  - Working examples with iteration and parallelization
+
+---
 
 ### Task 3.8: Implement `compute_directional_rate()` function [COMPLETED]
 

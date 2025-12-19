@@ -64,6 +64,7 @@ __all__ = [
     "DirectionalRateResult",
     "DirectionalRatesResult",
     "compute_directional_rate",
+    "compute_directional_rates",
 ]
 
 
@@ -1439,6 +1440,212 @@ def compute_directional_rate(
 
     return DirectionalRateResult(
         firing_rate=firing_rate,
+        occupancy=occupancy,
+        bin_centers=bin_centers,
+        bin_size=bin_size_rad,
+        smoothing_sigma=smoothing_sigma_rad,
+    )
+
+
+def compute_directional_rates(
+    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    times: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    bin_size: float = np.pi / 30,
+    *,
+    smoothing_sigma: float | None = None,
+    angle_unit: Literal["rad", "deg"] = "rad",
+    n_jobs: int = 1,
+) -> DirectionalRatesResult:
+    """Compute directional firing rates for multiple neurons.
+
+    This is the batch version of ``compute_directional_rate()`` that efficiently
+    processes multiple neurons with shared trajectory data. It precomputes
+    shared quantities (occupancy, bin centers) once and optionally parallelizes
+    spike counting with joblib.
+
+    Parameters
+    ----------
+    spike_times : sequence of arrays or 2D array
+        Spike times for each neuron. Accepted formats:
+
+        - List/tuple of 1D arrays: ``[spikes_0, spikes_1, ...]`` (canonical)
+        - 2D array with NaN padding: shape ``(n_neurons, max_spikes)``
+        - 1D array (single neuron): wrapped in list automatically
+
+        All formats are normalized via ``normalize_spike_times()``.
+    times : ndarray, shape (n_samples,)
+        Timestamps of head direction samples in seconds.
+    headings : ndarray, shape (n_samples,)
+        Head direction at each time point. Units determined by ``angle_unit``.
+    bin_size : float, default=π/30 (6 degrees)
+        Width of angular bins. Units match ``angle_unit``.
+        Default produces 60 bins (6° resolution).
+    smoothing_sigma : float or None, default=None
+        Gaussian smoothing bandwidth for the tuning curves. Units match
+        ``angle_unit``. If None, no smoothing is applied.
+    angle_unit : {'rad', 'deg'}, default='rad'
+        Unit of ``headings``, ``bin_size``, and ``smoothing_sigma``.
+
+        - 'rad': angles in radians
+        - 'deg': angles in degrees
+
+    n_jobs : int, default=1
+        Number of parallel jobs for spike binning. Use -1 for all CPUs.
+        1 means sequential processing (no parallelization overhead).
+
+    Returns
+    -------
+    DirectionalRatesResult
+        Result object containing:
+
+        - ``firing_rates``: Firing rate maps, shape ``(n_neurons, n_bins)``
+        - ``occupancy``: Time in each bin in seconds, shape ``(n_bins,)``
+        - ``bin_centers``: Angular bin centers in radians, shape ``(n_bins,)``
+        - ``bin_size``: Bin width in radians
+        - ``smoothing_sigma``: Smoothing bandwidth in radians (or None)
+
+        The result supports iteration: ``for single in result: ...``
+        and indexing: ``single = result[0]``.
+
+    See Also
+    --------
+    compute_directional_rate : Single-neuron version
+    DirectionalRatesResult : Result class with batch methods
+
+    Notes
+    -----
+    **Efficiency advantages over calling ``compute_directional_rate()`` in a loop**:
+
+    1. Occupancy is computed once and shared across all neurons
+    2. Bin centers are computed once
+    3. Spike binning can be parallelized with joblib
+
+    **When to use batch vs single**:
+
+    - **Batch** (this function): Processing 3+ neurons, or any case where
+      shared computation matters
+    - **Single**: One neuron, or when you need individual control per neuron
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.encoding.directional import compute_directional_rates
+
+    >>> # Create trajectory and spike times
+    >>> times = np.linspace(0, 60, 1800)  # 60 seconds at 30 Hz
+    >>> headings = np.random.uniform(0, 2 * np.pi, 1800)
+    >>> spike_times = [
+    ...     np.random.uniform(0, 60, 100),  # Neuron 0
+    ...     np.random.uniform(0, 60, 150),  # Neuron 1
+    ...     np.random.uniform(0, 60, 80),  # Neuron 2
+    ... ]
+
+    >>> # Compute batch
+    >>> result = compute_directional_rates(spike_times, times, headings)
+    >>> result.firing_rates.shape  # doctest: +SKIP
+    (3, 60)
+
+    >>> # With parallelization
+    >>> result = compute_directional_rates(spike_times, times, headings, n_jobs=-1)
+
+    >>> # Using degrees
+    >>> headings_deg = np.random.uniform(0, 360, 1800)
+    >>> result = compute_directional_rates(
+    ...     spike_times, times, headings_deg, bin_size=6.0, angle_unit="deg"
+    ... )
+    """
+    from neurospatial.encoding._directional_binning import (
+        bin_directional_spike_train,
+        compute_directional_occupancy,
+    )
+    from neurospatial.encoding._spikes import normalize_spike_times
+
+    # Validate angle_unit
+    if angle_unit not in ("rad", "deg"):
+        raise ValueError(f"angle_unit must be 'rad' or 'deg', got '{angle_unit}'")
+
+    # Normalize spike times to canonical format
+    spike_times_list: list[NDArray[np.float64]] = normalize_spike_times(spike_times)
+    n_neurons = len(spike_times_list)
+
+    # Convert inputs to arrays
+    times = np.asarray(times, dtype=np.float64).ravel()
+    headings = np.asarray(headings, dtype=np.float64).ravel()
+
+    # Precompute shared quantities: occupancy and bin centers
+    occupancy, bin_centers = compute_directional_occupancy(
+        times, headings, bin_size, angle_unit=angle_unit
+    )
+    n_bins = len(bin_centers)
+
+    # Convert bin_size and smoothing_sigma to radians for storage
+    if angle_unit == "deg":
+        bin_size_rad = np.radians(bin_size)
+        smoothing_sigma_rad = np.radians(smoothing_sigma) if smoothing_sigma else None
+    else:
+        bin_size_rad = bin_size
+        smoothing_sigma_rad = smoothing_sigma
+
+    # Handle empty neuron list
+    if n_neurons == 0:
+        empty_rates = np.empty((0, n_bins), dtype=np.float64)
+        return DirectionalRatesResult(
+            firing_rates=empty_rates,
+            occupancy=occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size_rad,
+            smoothing_sigma=smoothing_sigma_rad,
+        )
+
+    # Helper function to process a single neuron's spike train
+    def _process_neuron(neuron_spikes: NDArray[np.float64]) -> NDArray[np.float64]:
+        """Bin spike train and compute firing rate for one neuron."""
+        spike_counts = bin_directional_spike_train(
+            neuron_spikes, times, headings, bin_size, angle_unit=angle_unit
+        )
+
+        # Apply smoothing if requested
+        if smoothing_sigma_rad is not None:
+            from scipy.ndimage import gaussian_filter1d
+
+            sigma_bins = smoothing_sigma_rad / bin_size_rad
+            spike_counts_smooth: NDArray[np.float64] = gaussian_filter1d(
+                spike_counts, sigma=sigma_bins, mode="wrap"
+            )
+            occupancy_smooth: NDArray[np.float64] = gaussian_filter1d(
+                occupancy, sigma=sigma_bins, mode="wrap"
+            )
+        else:
+            spike_counts_smooth = spike_counts
+            occupancy_smooth = occupancy
+
+        # Compute firing rate (handle division by zero)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            firing_rate: NDArray[np.float64] = spike_counts_smooth / occupancy_smooth
+            # Set unvisited bins to NaN
+            firing_rate[occupancy_smooth == 0] = np.nan
+
+        return firing_rate
+
+    # Process neurons (sequential or parallel)
+    if n_jobs == 1 or n_neurons <= 1:
+        # Sequential processing
+        firing_rates = np.array(
+            [_process_neuron(spikes) for spikes in spike_times_list],
+            dtype=np.float64,
+        )
+    else:
+        # Parallel processing with joblib
+        from joblib import Parallel, delayed
+
+        firing_rates_list = Parallel(n_jobs=n_jobs)(
+            delayed(_process_neuron)(spikes) for spikes in spike_times_list
+        )
+        firing_rates = np.array(firing_rates_list, dtype=np.float64)
+
+    return DirectionalRatesResult(
+        firing_rates=firing_rates,
         occupancy=occupancy,
         bin_centers=bin_centers,
         bin_size=bin_size_rad,

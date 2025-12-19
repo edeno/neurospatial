@@ -213,12 +213,12 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Optional Gaussian smoothing via `smoothing_sigma`
   - [x] Return `DirectionalRateResult`
 
-- [ ] **3.9** Implement `compute_directional_rates()` function
-  - [ ] Accept list of spike_times arrays
-  - [ ] Normalize input via `normalize_spike_times()`
-  - [ ] Precompute shared quantities (occupancy, heading bins)
-  - [ ] Add `n_jobs` parameter for parallelization
-  - [ ] Return `DirectionalRatesResult`
+- [x] **3.9** Implement `compute_directional_rates()` function
+  - [x] Accept list of spike_times arrays
+  - [x] Normalize input via `normalize_spike_times()`
+  - [x] Precompute shared quantities (occupancy, heading bins)
+  - [x] Add `n_jobs` parameter for parallelization
+  - [x] Return `DirectionalRatesResult`
 
 - [ ] **3.11** Write comprehensive tests for directional encoding
   - [ ] Test single neuron computation

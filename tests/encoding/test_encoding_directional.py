@@ -3404,3 +3404,593 @@ class TestComputeDirectionalRateInputValidation:
                 headings,
                 angle_unit="invalid",  # type: ignore[arg-type]
             )
+
+
+# ==============================================================================
+# compute_directional_rates() Tests - Task 3.9
+# ==============================================================================
+
+
+class TestComputeDirectionalRatesImport:
+    """Test that compute_directional_rates can be imported."""
+
+    def test_import_from_directional(self) -> None:
+        """compute_directional_rates can be imported from encoding.directional."""
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        assert compute_directional_rates is not None
+
+    def test_import_from_encoding(self) -> None:
+        """compute_directional_rates can be imported from encoding package."""
+        from neurospatial.encoding import compute_directional_rates
+
+        assert compute_directional_rates is not None
+
+
+class TestComputeDirectionalRatesBasic:
+    """Test basic compute_directional_rates functionality."""
+
+    def test_returns_directional_rates_result(self) -> None:
+        """compute_directional_rates returns DirectionalRatesResult."""
+        from neurospatial.encoding.directional import (
+            DirectionalRatesResult,
+            compute_directional_rates,
+        )
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+
+        # Create spike times for 3 neurons
+        spike_times = [
+            np.array([1.0, 2.5, 4.0]),
+            np.array([0.5, 3.0, 5.5, 8.0]),
+            np.array([2.0, 6.0]),
+        ]
+
+        result = compute_directional_rates(spike_times, times, headings)
+        assert isinstance(result, DirectionalRatesResult)
+
+    def test_firing_rates_shape(self) -> None:
+        """compute_directional_rates produces firing_rates with correct shape."""
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = [
+            np.array([1.0, 2.5, 4.0]),
+            np.array([0.5, 3.0, 5.5, 8.0]),
+            np.array([2.0, 6.0]),
+        ]
+
+        result = compute_directional_rates(spike_times, times, headings)
+
+        # Default bin_size is π/30 = 60 bins
+        n_bins = 60
+        n_neurons = 3
+        rates = np.asarray(result.firing_rates)
+        assert rates.shape == (n_neurons, n_bins)
+
+    def test_occupancy_shape(self) -> None:
+        """compute_directional_rates produces occupancy with correct shape (shared)."""
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = [
+            np.array([1.0, 2.5, 4.0]),
+            np.array([0.5, 3.0, 5.5, 8.0]),
+            np.array([2.0, 6.0]),
+        ]
+
+        result = compute_directional_rates(spike_times, times, headings)
+
+        n_bins = 60
+        occ = np.asarray(result.occupancy)
+        assert occ.shape == (n_bins,)
+
+    def test_bin_centers_shape(self) -> None:
+        """compute_directional_rates produces bin_centers with correct shape."""
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = [
+            np.array([1.0, 2.5, 4.0]),
+            np.array([0.5, 3.0, 5.5, 8.0]),
+        ]
+
+        result = compute_directional_rates(spike_times, times, headings)
+
+        n_bins = 60
+        centers = np.asarray(result.bin_centers)
+        assert centers.shape == (n_bins,)
+
+    def test_bin_size_stored_in_radians(self) -> None:
+        """compute_directional_rates stores bin_size in radians."""
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = [np.array([1.0, 2.5])]
+
+        result = compute_directional_rates(spike_times, times, headings)
+
+        # Default bin_size is π/30
+        np.testing.assert_allclose(result.bin_size, np.pi / 30)
+
+    def test_smoothing_sigma_none_default(self) -> None:
+        """compute_directional_rates returns None smoothing_sigma by default."""
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = [np.array([1.0, 2.5])]
+
+        result = compute_directional_rates(spike_times, times, headings)
+        assert result.smoothing_sigma is None
+
+    def test_len_returns_n_neurons(self) -> None:
+        """len() of result returns number of neurons."""
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = [
+            np.array([1.0, 2.5]),
+            np.array([0.5, 3.0]),
+            np.array([2.0]),
+            np.array([4.0, 7.0]),
+        ]
+
+        result = compute_directional_rates(spike_times, times, headings)
+        assert len(result) == 4
+
+
+class TestComputeDirectionalRatesInputFormats:
+    """Test compute_directional_rates accepts various input formats."""
+
+    def test_list_of_arrays(self) -> None:
+        """compute_directional_rates accepts list of arrays."""
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = [
+            np.array([1.0, 2.5]),
+            np.array([0.5, 3.0, 5.5]),
+        ]
+
+        result = compute_directional_rates(spike_times, times, headings)
+        assert len(result) == 2
+
+    def test_tuple_of_arrays(self) -> None:
+        """compute_directional_rates accepts tuple of arrays."""
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = (
+            np.array([1.0, 2.5]),
+            np.array([0.5, 3.0, 5.5]),
+        )
+
+        result = compute_directional_rates(spike_times, times, headings)
+        assert len(result) == 2
+
+    def test_2d_array_with_nan_padding(self) -> None:
+        """compute_directional_rates accepts 2D array with NaN padding."""
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+
+        # 2D array with NaN padding
+        spike_times = np.array(
+            [
+                [1.0, 2.5, 4.0, np.nan],
+                [0.5, 3.0, np.nan, np.nan],
+                [2.0, 6.0, 8.0, 9.0],
+            ]
+        )
+
+        result = compute_directional_rates(spike_times, times, headings)
+        assert len(result) == 3
+
+    def test_1d_array_single_neuron(self) -> None:
+        """compute_directional_rates accepts 1D array (single neuron)."""
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+
+        # Single neuron as 1D array
+        spike_times = np.array([1.0, 2.5, 4.0, 7.5])
+
+        result = compute_directional_rates(spike_times, times, headings)
+        assert len(result) == 1
+
+
+class TestComputeDirectionalRatesNJobs:
+    """Test compute_directional_rates n_jobs parameter."""
+
+    def test_n_jobs_default_one(self) -> None:
+        """compute_directional_rates defaults to n_jobs=1."""
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = [np.array([1.0, 2.5]), np.array([0.5, 3.0])]
+
+        # Should work without passing n_jobs
+        result = compute_directional_rates(spike_times, times, headings)
+        assert result is not None
+
+    def test_n_jobs_parallel(self) -> None:
+        """compute_directional_rates works with n_jobs > 1."""
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = [
+            np.array([1.0, 2.5]),
+            np.array([0.5, 3.0]),
+            np.array([2.0, 6.0]),
+            np.array([4.0, 8.0]),
+        ]
+
+        result = compute_directional_rates(spike_times, times, headings, n_jobs=2)
+        assert len(result) == 4
+
+    def test_n_jobs_consistency(self) -> None:
+        """compute_directional_rates produces same results with different n_jobs."""
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = [
+            np.array([1.0, 2.5]),
+            np.array([0.5, 3.0]),
+            np.array([2.0, 6.0]),
+        ]
+
+        result_seq = compute_directional_rates(spike_times, times, headings, n_jobs=1)
+        result_par = compute_directional_rates(spike_times, times, headings, n_jobs=2)
+
+        np.testing.assert_array_almost_equal(
+            np.asarray(result_seq.firing_rates),
+            np.asarray(result_par.firing_rates),
+        )
+
+
+class TestComputeDirectionalRatesAngleUnit:
+    """Test compute_directional_rates angle_unit parameter."""
+
+    def test_angle_unit_rad_default(self) -> None:
+        """compute_directional_rates uses radians by default."""
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)  # Radians
+        spike_times = [np.array([1.0, 2.5, 4.0])]
+
+        result = compute_directional_rates(spike_times, times, headings)
+        assert result is not None
+        assert np.asarray(result.firing_rates).shape[1] > 0
+
+    def test_angle_unit_deg(self) -> None:
+        """compute_directional_rates handles degrees correctly."""
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 360, 100)  # Degrees
+        spike_times = [np.array([1.0, 2.5, 4.0])]
+
+        result = compute_directional_rates(
+            spike_times, times, headings, bin_size=6.0, angle_unit="deg"
+        )
+
+        # Should produce 60 bins (360 / 6)
+        assert np.asarray(result.firing_rates).shape == (1, 60)
+        # bin_size stored in radians
+        np.testing.assert_allclose(result.bin_size, np.radians(6.0))
+
+    def test_angle_unit_rad_and_deg_equivalent(self) -> None:
+        """compute_directional_rates produces equivalent results for rad and deg."""
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings_rad = np.random.uniform(0, 2 * np.pi, 100)
+        headings_deg = np.degrees(headings_rad)
+        spike_times = [np.array([1.0, 2.5, 4.0])]
+
+        result_rad = compute_directional_rates(
+            spike_times, times, headings_rad, bin_size=np.pi / 30, angle_unit="rad"
+        )
+
+        result_deg = compute_directional_rates(
+            spike_times, times, headings_deg, bin_size=6.0, angle_unit="deg"
+        )
+
+        np.testing.assert_array_almost_equal(
+            np.asarray(result_rad.firing_rates),
+            np.asarray(result_deg.firing_rates),
+        )
+
+
+class TestComputeDirectionalRatesSmoothing:
+    """Test compute_directional_rates smoothing_sigma parameter."""
+
+    def test_smoothing_sigma_stored(self) -> None:
+        """compute_directional_rates stores smoothing_sigma in result."""
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = [np.array([1.0, 2.5, 4.0])]
+
+        smoothing_sigma = np.pi / 6  # 30 degrees
+        result = compute_directional_rates(
+            spike_times, times, headings, smoothing_sigma=smoothing_sigma
+        )
+        assert result.smoothing_sigma == smoothing_sigma
+
+    def test_smoothing_produces_smoother_curves(self) -> None:
+        """compute_directional_rates with smoothing produces smoother curves."""
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = [np.array([1.0, 2.5, 4.0, 7.5])]
+
+        result_raw = compute_directional_rates(spike_times, times, headings)
+        result_smooth = compute_directional_rates(
+            spike_times, times, headings, smoothing_sigma=np.pi / 6
+        )
+
+        rates_raw = np.asarray(result_raw.firing_rates[0])
+        rates_smooth = np.asarray(result_smooth.firing_rates[0])
+
+        # Replace NaN with 0 for variance calculation
+        rates_raw_filled = np.nan_to_num(rates_raw, nan=0.0)
+        rates_smooth_filled = np.nan_to_num(rates_smooth, nan=0.0)
+
+        # Smoothed should have lower variance
+        assert np.var(rates_smooth_filled) < np.var(rates_raw_filled)
+
+
+class TestComputeDirectionalRatesConsistency:
+    """Test consistency between batch and single-neuron computation."""
+
+    def test_batch_matches_single_neuron_results(self) -> None:
+        """compute_directional_rates matches single-neuron compute_directional_rate."""
+        from neurospatial.encoding.directional import (
+            compute_directional_rate,
+            compute_directional_rates,
+        )
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = [
+            np.array([1.0, 2.5, 4.0]),
+            np.array([0.5, 3.0, 5.5, 8.0]),
+            np.array([2.0, 6.0]),
+        ]
+
+        # Compute batch
+        batch_result = compute_directional_rates(spike_times, times, headings)
+
+        # Compute single-neuron for each
+        for i, spikes in enumerate(spike_times):
+            single_result = compute_directional_rate(spikes, times, headings)
+
+            np.testing.assert_array_almost_equal(
+                np.asarray(batch_result[i].firing_rate),
+                np.asarray(single_result.firing_rate),
+                decimal=10,
+            )
+
+    def test_batch_shares_occupancy(self) -> None:
+        """compute_directional_rates shares occupancy across neurons."""
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = [
+            np.array([1.0, 2.5, 4.0]),
+            np.array([0.5, 3.0, 5.5, 8.0]),
+        ]
+
+        result = compute_directional_rates(spike_times, times, headings)
+
+        # Occupancy should be identical for all neurons
+        occ_0 = np.asarray(result[0].occupancy)
+        occ_1 = np.asarray(result[1].occupancy)
+        np.testing.assert_array_equal(occ_0, occ_1)
+
+
+class TestComputeDirectionalRatesEdgeCases:
+    """Test edge cases for compute_directional_rates."""
+
+    def test_empty_spike_train(self) -> None:
+        """compute_directional_rates handles neurons with empty spike trains."""
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = [
+            np.array([1.0, 2.5, 4.0]),
+            np.array([]),  # Empty
+            np.array([2.0, 6.0]),
+        ]
+
+        result = compute_directional_rates(spike_times, times, headings)
+        assert len(result) == 3
+
+        # Neuron with empty spikes should have zero (or NaN) firing rates
+        rates_empty = np.asarray(result[1].firing_rate)
+        assert np.all(rates_empty[~np.isnan(rates_empty)] == 0)
+
+    def test_single_neuron(self) -> None:
+        """compute_directional_rates works with single neuron."""
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = [np.array([1.0, 2.5, 4.0])]
+
+        result = compute_directional_rates(spike_times, times, headings)
+        assert len(result) == 1
+
+    def test_empty_list(self) -> None:
+        """compute_directional_rates handles empty list (0 neurons)."""
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times: list[np.ndarray] = []
+
+        result = compute_directional_rates(spike_times, times, headings)
+        assert len(result) == 0
+
+    def test_all_empty_spike_trains(self) -> None:
+        """compute_directional_rates handles all neurons having empty spikes."""
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        np.random.seed(42)
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = [np.array([]), np.array([]), np.array([])]
+
+        result = compute_directional_rates(spike_times, times, headings)
+        assert len(result) == 3
+
+
+class TestComputeDirectionalRatesResultMethods:
+    """Test that result from compute_directional_rates has working methods."""
+
+    def test_preferred_directions_method(self) -> None:
+        """Result has working preferred_directions method."""
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        np.random.seed(42)
+        times = np.linspace(0, 60, 3600)  # 60 seconds at 60 Hz
+        headings = np.linspace(0, 2 * np.pi, 3600) % (2 * np.pi)
+
+        # Create spikes for neurons with different preferred directions
+        spike_times = []
+        for pref_dir in [0, np.pi / 2, np.pi]:
+            mask = np.abs(headings - pref_dir) < 0.5
+            spike_times.append(times[mask])
+
+        result = compute_directional_rates(spike_times, times, headings)
+        pref_dirs = result.preferred_directions()
+
+        assert isinstance(pref_dirs, np.ndarray)
+        assert pref_dirs.shape == (3,)
+
+    def test_mean_vector_lengths_method(self) -> None:
+        """Result has working mean_vector_lengths method."""
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        np.random.seed(42)
+        times = np.linspace(0, 60, 3600)
+        headings = np.linspace(0, 2 * np.pi, 3600) % (2 * np.pi)
+        spike_times = [
+            np.array([1.0, 2.5, 4.0]),
+            np.array([0.5, 3.0, 5.5]),
+        ]
+
+        result = compute_directional_rates(spike_times, times, headings)
+        mvls = result.mean_vector_lengths()
+
+        assert isinstance(mvls, np.ndarray)
+        assert mvls.shape == (2,)
+        assert np.all((mvls >= 0) & (mvls <= 1))
+
+    def test_detect_hd_cells_method(self) -> None:
+        """Result has working detect_hd_cells method."""
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        np.random.seed(42)
+        times = np.linspace(0, 60, 3600)
+        headings = np.linspace(0, 2 * np.pi, 3600) % (2 * np.pi)
+        spike_times = [
+            np.array([1.0, 2.5, 4.0]),
+            np.array([0.5, 3.0, 5.5]),
+        ]
+
+        result = compute_directional_rates(spike_times, times, headings)
+        is_hd = result.detect_hd_cells()
+
+        assert isinstance(is_hd, np.ndarray)
+        assert is_hd.dtype == np.bool_
+        assert is_hd.shape == (2,)
+
+    def test_to_dataframe_method(self) -> None:
+        """Result has working to_dataframe method."""
+        pytest.importorskip("pandas")
+        import pandas as pd
+
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        np.random.seed(42)
+        times = np.linspace(0, 60, 3600)
+        headings = np.linspace(0, 2 * np.pi, 3600) % (2 * np.pi)
+        spike_times = [
+            np.array([1.0, 2.5, 4.0]),
+            np.array([0.5, 3.0, 5.5]),
+        ]
+
+        result = compute_directional_rates(spike_times, times, headings)
+        df = result.to_dataframe()
+
+        assert isinstance(df, pd.DataFrame)
+        assert len(df) == 2
+        assert "neuron_id" in df.columns
+        assert "preferred_direction" in df.columns
+        assert "mean_vector_length" in df.columns
+        assert "is_hd_cell" in df.columns
+
+
+class TestComputeDirectionalRatesInputValidation:
+    """Test input validation for compute_directional_rates."""
+
+    def test_invalid_angle_unit(self) -> None:
+        """compute_directional_rates raises ValueError for invalid angle_unit."""
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        times = np.linspace(0, 10, 100)
+        headings = np.random.uniform(0, 2 * np.pi, 100)
+        spike_times = [np.array([1.0, 2.5, 4.0])]
+
+        with pytest.raises(ValueError, match="angle_unit"):
+            compute_directional_rates(
+                spike_times,
+                times,
+                headings,
+                angle_unit="invalid",  # type: ignore[arg-type]
+            )
