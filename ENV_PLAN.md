@@ -64,7 +64,7 @@ src/neurospatial/ops/
 
 | Target File | Functions to Add | Source |
 |-------------|------------------|--------|
-| `ops/graph.py` | `shortest_path`, `reachable_from`, `connected_components`, `graph_rings` | `environment/queries.py` |
+| `ops/graph.py` | `shortest_path`, `reachable_from`, `connected_components`, `graph_rings`, `boundary_bins`, `bin_attributes`, `edge_attributes` | `environment/queries.py`, `environment/metrics.py` |
 | `ops/distance.py` | `distance_to_region` | `environment/queries.py` |
 | `ops/smoothing.py` | `smooth_field` (wrapper for apply_kernel) | `environment/fields.py` |
 | `ops/transforms.py` | `subset_environment`, `rebin_environment` | `environment/transforms.py` |
@@ -120,11 +120,11 @@ def compute_kernel(env: Environment, bandwidth: float) -> NDArray:
 ```python
 @dataclass(frozen=True)
 class Environment:
-    # Use object.__setattr__ to set on frozen dataclass during __post_init__
-    _kernel_cache: dict = field(default_factory=dict, repr=False, compare=False)
+    # Mutable fields on frozen dataclass: use init=False and set in __post_init__
+    _kernel_cache: dict = field(init=False, repr=False, compare=False)
 
     def __post_init__(self):
-        # Frozen dataclass workaround for mutable default
+        # Frozen dataclass requires object.__setattr__ to set mutable fields
         object.__setattr__(self, '_kernel_cache', {})
 ```
 
@@ -176,13 +176,18 @@ class Environment:
     """
     # === Core State ===
     layout: LayoutEngine
-    regions: Regions = field(default_factory=Regions)  # Mutable container
+    regions: Regions = field(default_factory=Regions)  # Mutable container (interior mutability)
     name: str = ""
     units: str | None = None
     frame: str | None = None
 
     # === Internal (not user-facing) ===
-    _kernel_cache: dict = field(default_factory=dict, repr=False, compare=False)
+    # Mutable fields on frozen dataclass: use init=False and set in __post_init__
+    _kernel_cache: dict = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self):
+        # Frozen dataclass requires object.__setattr__ to set mutable fields
+        object.__setattr__(self, '_kernel_cache', {})
 
     # === Facade Factories (dispatch to neurospatial.factories) ===
     @classmethod
@@ -214,6 +219,8 @@ class Environment:
     @property
     def bin_centers(self) -> np.ndarray: ...
     @property
+    def bin_sizes(self) -> np.ndarray: ...  # Size of each bin
+    @property
     def n_bins(self) -> int: ...
     @property
     def n_dims(self) -> int: ...
@@ -225,16 +232,19 @@ class Environment:
     def layout_type(self) -> str: ...
     @property
     def layout_parameters(self) -> dict: ...
+    @property
+    def linearization_properties(self) -> dict: ...  # 1D only
 
     # === Fundamental Verbs (delegated to layout) ===
     def bin_at(self, point) -> int: ...
+    def bin_center_of(self, idx) -> np.ndarray: ...  # Get center coordinates of bin
     def contains(self, point) -> bool: ...
     def neighbors(self, idx) -> list[int]: ...
     def to_linear(self, point) -> float: ...      # 1D only
     def linear_to_nd(self, x) -> np.ndarray: ...  # 1D only
 ```
 
-**Total: ~25 public methods/properties** (down from ~70)
+**Total: ~27 public methods/properties** (down from ~70)
 
 ---
 
@@ -304,21 +314,31 @@ class Environment:
 | Current Method | Status | Rationale |
 |----------------|--------|-----------|
 | `env.bin_at(...)` | **KEEP** | Core geometry query |
+| `env.bin_center_of(...)` | **KEEP** | Core geometry query |
 | `env.contains(...)` | **KEEP** | Core geometry query |
 | `env.neighbors(...)` | **KEEP** | Core geometry query |
-| `env.bin_center_of(...)` | **KEEP** | Core geometry query |
+
+### Properties (→ KEEP on Environment)
+
+| Current Property | Status | Rationale |
+|------------------|--------|-----------|
 | `env.bin_sizes` | **KEEP** | Core geometry property |
+| `env.linearization_properties` | **KEEP** | 1D-specific, tied to layout |
 
-### Metrics (→ `ops/metrics.py` NEW or KEEP as properties)
+### 1D Methods (→ KEEP on Environment)
 
-| Current Method | New Location | Import Path |
+| Current Method | Status | Rationale |
+|----------------|--------|-----------|
+| `env.to_linear(...)` | **KEEP** | Core 1D geometry |
+| `env.linear_to_nd(...)` | **KEEP** | Core 1D geometry |
+
+### Graph Topology (→ `ops/graph.py` - EXTEND)
+
+| Current Method | New Function | Import Path |
 |----------------|--------------|-------------|
 | `env.boundary_bins` | `compute_boundary_bins(env)` | `from neurospatial.ops import compute_boundary_bins` |
 | `env.bin_attributes` | `compute_bin_attributes(env)` | `from neurospatial.ops import compute_bin_attributes` |
 | `env.edge_attributes` | `compute_edge_attributes(env)` | `from neurospatial.ops import compute_edge_attributes` |
-| `env.linearization_properties` | **KEEP** as property | 1D-specific, tied to layout |
-| `env.to_linear(...)` | **KEEP** | Core 1D geometry |
-| `env.linear_to_nd(...)` | **KEEP** | Core 1D geometry |
 
 ### Regions (→ `regions/` - ADD functions)
 
@@ -425,9 +445,9 @@ def clear_kernel_cache(env: Environment) -> None: ...
 def clear_all_caches(env: Environment) -> None: ...
 ```
 
-### Step 6: Create ops/metrics.py (NEW)
+### Step 6: Extend ops/graph.py with topology queries
 
-Move from `environment/metrics.py`:
+Add graph topology functions from `environment/metrics.py`:
 
 ```python
 def compute_boundary_bins(env) -> NDArray: ...
@@ -560,7 +580,7 @@ After each step:
 
 Final verification:
 
-- [ ] Environment class has ~25 public methods/properties
+- [ ] Environment class has ~27 public methods/properties
 - [ ] All moved functions are importable from new locations
 - [ ] Domain re-exports work (`from neurospatial.encoding import smooth_field`)
 - [ ] Factory methods work (`Environment.from_samples(...)`)
@@ -617,7 +637,7 @@ def __post_init__(self):
 
 ## Success Criteria
 
-1. **Environment is a dataclass**: `@dataclass(frozen=True)` with ~25 methods
+1. **Environment is a dataclass**: `@dataclass(frozen=True)` with ~27 methods/properties
 2. **No mixins**: All mixin files deleted (queries.py, fields.py, trajectory.py, etc.)
 3. **Functional API**: All operations are `function(env, ...)` not `env.method(...)`
 4. **Tests pass**: Full test suite green

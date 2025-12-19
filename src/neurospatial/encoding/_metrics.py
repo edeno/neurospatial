@@ -23,10 +23,16 @@ References
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 from numpy.typing import NDArray
 
+if TYPE_CHECKING:
+    from neurospatial import Environment
+
 __all__ = [
+    "batch_grid_scores",
     "batch_sparsity",
     "batch_spatial_information",
     "sparsity",
@@ -421,3 +427,129 @@ def batch_sparsity(
     )
 
     return result
+
+
+def batch_grid_scores(
+    env: Environment,
+    firing_rates: NDArray[np.float64],
+    *,
+    inner_radius_fraction: float = 0.2,
+    outer_radius_fraction: float = 0.5,
+) -> NDArray[np.float64]:
+    """Compute grid scores for multiple neurons.
+
+    Computes grid score (hexagonal periodicity) for each neuron's firing
+    rate map. Grid score quantifies how well the firing pattern exhibits
+    the characteristic 6-fold rotational symmetry of grid cells.
+
+    Parameters
+    ----------
+    env : Environment
+        Spatial environment containing bin centers and connectivity.
+        Must be a regular 2D grid for FFT-based autocorrelation.
+    firing_rates : ndarray, shape (n_neurons, n_bins)
+        Firing rate maps for each neuron in Hz.
+    inner_radius_fraction : float, default=0.2
+        Inner radius of annular region as fraction of autocorrelogram semi-axis.
+        See :func:`~neurospatial.encoding.grid.grid_score` for details.
+    outer_radius_fraction : float, default=0.5
+        Outer radius of annular region as fraction of autocorrelogram semi-axis.
+        See :func:`~neurospatial.encoding.grid.grid_score` for details.
+
+    Returns
+    -------
+    ndarray, shape (n_neurons,)
+        Grid scores in range [-2, 2] for each neuron. Returns NaN for neurons
+        where grid score cannot be computed (constant firing, invalid autocorrelation,
+        or non-regular grid environment).
+
+    Raises
+    ------
+    ValueError
+        If firing_rates is not 2D.
+        If firing_rates.shape[1] != env.n_bins.
+
+    Notes
+    -----
+    For each neuron, this function:
+
+    1. Computes spatial autocorrelation using :func:`spatial_autocorrelation`
+    2. Computes grid score using :func:`grid_score`
+
+    **Interpretation**:
+
+    - **score > 0.4**: Strong hexagonal grid (typical threshold for grid cells)
+    - **score ≈ 0**: No hexagonal structure (place cells, non-spatial cells)
+    - **score < 0**: Anti-hexagonal structure (rare)
+
+    **Environment requirements**:
+
+    Grid score computation requires a regular 2D grid environment for FFT-based
+    autocorrelation. For irregular environments, the function returns NaN.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding._metrics import batch_grid_scores
+
+    >>> # Create environment
+    >>> x = np.linspace(-50, 50, 51)
+    >>> xx, yy = np.meshgrid(x, x)
+    >>> positions = np.column_stack([xx.ravel(), yy.ravel()])
+    >>> env = Environment.from_samples(positions, bin_size=2.0)
+
+    >>> # Random firing patterns (5 neurons)
+    >>> rng = np.random.default_rng(42)
+    >>> firing_rates = rng.random((5, env.n_bins)) * 10
+    >>> scores = batch_grid_scores(env, firing_rates)
+    >>> scores.shape
+    (5,)
+
+    See Also
+    --------
+    neurospatial.encoding.grid.grid_score : Single autocorrelogram grid score
+    neurospatial.encoding.grid.spatial_autocorrelation : Compute autocorrelation
+    """
+    from neurospatial.encoding.grid import grid_score, spatial_autocorrelation
+
+    firing_rates = np.asarray(firing_rates)
+
+    # Validate shapes
+    if firing_rates.ndim != 2:
+        raise ValueError(
+            f"firing_rates must be 2D (n_neurons, n_bins), got shape {firing_rates.shape}"
+        )
+
+    if firing_rates.shape[1] != env.n_bins:
+        raise ValueError(
+            f"firing_rates has {firing_rates.shape[1]} bins but "
+            f"env has {env.n_bins} bins"
+        )
+
+    n_neurons = firing_rates.shape[0]
+    scores = np.empty(n_neurons, dtype=np.float64)
+
+    for i in range(n_neurons):
+        firing_rate = firing_rates[i]
+
+        try:
+            # Compute spatial autocorrelation (FFT method for regular 2D grids)
+            autocorr = spatial_autocorrelation(env, firing_rate, method="auto")
+
+            # spatial_autocorrelation returns 2D array for FFT, tuple for graph
+            if isinstance(autocorr, tuple):
+                # Graph-based method not compatible with grid_score
+                scores[i] = np.nan
+            else:
+                # Compute grid score from 2D autocorrelation
+                scores[i] = grid_score(
+                    autocorr,
+                    inner_radius_fraction=inner_radius_fraction,
+                    outer_radius_fraction=outer_radius_fraction,
+                )
+        except (ValueError, RuntimeError):
+            # Handle errors gracefully (e.g., constant firing, all NaN)
+            scores[i] = np.nan
+
+    return scores

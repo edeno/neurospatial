@@ -20,6 +20,8 @@ from neurospatial.encoding._metrics import (
     spatial_information,
 )
 
+# batch_grid_scores import is done locally in tests to allow TDD (tests first)
+
 # =============================================================================
 # Test Fixtures
 # =============================================================================
@@ -509,3 +511,244 @@ class TestBackwardsCompatibility:
         legacy_spars = legacy_sparsity(firing_rate, occupancy)
 
         assert_allclose(new_spars, legacy_spars, rtol=1e-10)
+
+
+# =============================================================================
+# Test batch_grid_scores (population)
+# =============================================================================
+
+
+def _create_hexagonal_autocorr(size: int = 100, radius: float = 20.0) -> np.ndarray:
+    """Create synthetic hexagonal autocorrelogram for testing.
+
+    Parameters
+    ----------
+    size : int
+        Size of the autocorrelogram (size x size).
+    radius : float
+        Radius to place the 6 surrounding peaks.
+
+    Returns
+    -------
+    autocorr : ndarray
+        Normalized autocorrelogram with hexagonal pattern.
+    """
+    autocorr = np.zeros((size, size))
+    center = size // 2
+
+    # Coordinate grids
+    y_grid, x_grid = np.ogrid[:size, :size]
+
+    # Central peak
+    dist_from_center = np.sqrt((y_grid - center) ** 2 + (x_grid - center) ** 2)
+    autocorr = np.exp(-(dist_from_center**2) / (2 * 5**2))
+
+    # Add 6 peaks at 60 degrees intervals (hexagonal pattern)
+    for angle_deg in [0, 60, 120, 180, 240, 300]:
+        angle_rad = np.radians(angle_deg)
+        peak_y = center + int(radius * np.sin(angle_rad))
+        peak_x = center + int(radius * np.cos(angle_rad))
+        peak_dist = np.sqrt((y_grid - peak_y) ** 2 + (x_grid - peak_x) ** 2)
+        autocorr += 0.8 * np.exp(-(peak_dist**2) / (2 * 5**2))
+
+    return autocorr / autocorr.max()
+
+
+class TestBatchGridScores:
+    """Tests for batch_grid_scores() function."""
+
+    @pytest.fixture
+    def env_2d_grid(self):
+        """Create a regular 2D grid environment for testing.
+
+        Returns
+        -------
+        env : Environment
+            Regular 2D grid environment suitable for FFT-based autocorrelation.
+        """
+        from neurospatial import Environment
+
+        # Create regular 2D grid
+        x = np.linspace(-50, 50, 51)
+        xx, yy = np.meshgrid(x, x)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
+        env = Environment.from_samples(positions, bin_size=2.0)
+        return env
+
+    @pytest.fixture
+    def batch_firing_rates_for_grid(self, env_2d_grid):
+        """Create batch of firing rates for grid score testing.
+
+        Returns
+        -------
+        firing_rates : ndarray
+            Shape (n_neurons, n_bins) with different patterns.
+        env : Environment
+            The environment used to create the firing rates.
+        """
+        env = env_2d_grid
+        n_neurons = 3
+        n_bins = env.n_bins
+        rng = np.random.default_rng(42)
+
+        firing_rates = np.zeros((n_neurons, n_bins))
+
+        # Neuron 0: random noise (low grid score expected)
+        firing_rates[0] = rng.random(n_bins) * 5.0
+
+        # Neuron 1: single place field (low grid score expected)
+        bin_centers = env.bin_centers
+        center = np.mean(bin_centers, axis=0)
+        distances = np.sqrt(np.sum((bin_centers - center) ** 2, axis=1))
+        firing_rates[1] = 10.0 * np.exp(-(distances**2) / (2 * 10**2))
+
+        # Neuron 2: another random pattern
+        firing_rates[2] = rng.random(n_bins) * 3.0
+
+        return firing_rates, env
+
+    def test_batch_grid_scores_returns_correct_shape(self, batch_firing_rates_for_grid):
+        """batch_grid_scores should return (n_neurons,) array."""
+        from neurospatial.encoding._metrics import batch_grid_scores
+
+        firing_rates, env = batch_firing_rates_for_grid
+        scores = batch_grid_scores(env, firing_rates)
+
+        assert scores.shape == (3,)
+
+    def test_batch_grid_scores_returns_float64(self, batch_firing_rates_for_grid):
+        """batch_grid_scores should return float64 array."""
+        from neurospatial.encoding._metrics import batch_grid_scores
+
+        firing_rates, env = batch_firing_rates_for_grid
+        scores = batch_grid_scores(env, firing_rates)
+
+        assert scores.dtype == np.float64
+
+    def test_batch_grid_scores_range(self, batch_firing_rates_for_grid):
+        """Grid scores should be in valid range [-2, 2] or NaN."""
+        from neurospatial.encoding._metrics import batch_grid_scores
+
+        firing_rates, env = batch_firing_rates_for_grid
+        scores = batch_grid_scores(env, firing_rates)
+
+        # Scores should be in range [-2, 2] or NaN
+        valid_scores = scores[~np.isnan(scores)]
+        assert np.all(valid_scores >= -2.0)
+        assert np.all(valid_scores <= 2.0)
+
+    def test_batch_grid_scores_single_neuron(self, env_2d_grid):
+        """Should work with (1, n_bins) input."""
+        from neurospatial.encoding._metrics import batch_grid_scores
+
+        env = env_2d_grid
+        rng = np.random.default_rng(42)
+        firing_rates = rng.random((1, env.n_bins)) * 5.0
+
+        scores = batch_grid_scores(env, firing_rates)
+
+        assert scores.shape == (1,)
+
+    def test_batch_grid_scores_matches_single_grid_score(self, env_2d_grid):
+        """Batch computation should match single-neuron grid_score computation."""
+        from neurospatial.encoding._metrics import batch_grid_scores
+        from neurospatial.encoding.grid import grid_score, spatial_autocorrelation
+
+        env = env_2d_grid
+        rng = np.random.default_rng(42)
+        firing_rates = rng.random((2, env.n_bins)) * 5.0
+
+        # Batch computation
+        batch_scores = batch_grid_scores(env, firing_rates)
+
+        # Single neuron computation for comparison
+        single_scores = []
+        for i in range(firing_rates.shape[0]):
+            autocorr = spatial_autocorrelation(env, firing_rates[i], method="fft")
+            score = grid_score(autocorr)
+            single_scores.append(score)
+
+        single_scores = np.array(single_scores)
+        assert_allclose(batch_scores, single_scores, rtol=1e-10)
+
+    def test_batch_grid_scores_wrong_shape_raises(self, env_2d_grid):
+        """Should raise ValueError for wrong firing_rates shape."""
+        from neurospatial.encoding._metrics import batch_grid_scores
+
+        env = env_2d_grid
+
+        # 1D array should raise
+        firing_rate_1d = np.random.rand(env.n_bins)
+        with pytest.raises(ValueError, match="firing_rates must be 2D"):
+            batch_grid_scores(env, firing_rate_1d)
+
+        # Wrong n_bins should raise
+        firing_rates_wrong = np.random.rand(3, env.n_bins + 10)
+        with pytest.raises(ValueError, match="bins"):
+            batch_grid_scores(env, firing_rates_wrong)
+
+    def test_batch_grid_scores_handles_nan(self, env_2d_grid):
+        """Should handle NaN values in firing rates."""
+        from neurospatial.encoding._metrics import batch_grid_scores
+
+        env = env_2d_grid
+        rng = np.random.default_rng(42)
+        firing_rates = rng.random((2, env.n_bins)) * 5.0
+
+        # Add some NaN values
+        firing_rates[0, 10:15] = np.nan
+
+        # Should not raise (NaN handling may result in NaN output)
+        scores = batch_grid_scores(env, firing_rates)
+
+        assert scores.shape == (2,)
+        # Note: score may or may not be NaN depending on implementation
+
+    def test_batch_grid_scores_with_constant_firing(self, env_2d_grid):
+        """Constant firing rate should return NaN (zero variance)."""
+        from neurospatial.encoding._metrics import batch_grid_scores
+
+        env = env_2d_grid
+        firing_rates = np.ones((2, env.n_bins)) * 5.0  # Constant
+
+        scores = batch_grid_scores(env, firing_rates)
+
+        assert scores.shape == (2,)
+        # Constant firing → zero variance → NaN expected
+        assert np.all(np.isnan(scores))
+
+
+class TestBatchGridScoresNonRegularGrid:
+    """Tests for batch_grid_scores with non-regular grid environments."""
+
+    @pytest.fixture
+    def env_sparse_grid(self):
+        """Create a sparse (non-regular) environment for testing.
+
+        Returns
+        -------
+        env : Environment
+            Environment with sparse coverage.
+        """
+        from neurospatial import Environment
+
+        # Create sparse positions (not a regular grid)
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(-50, 50, size=(500, 2))
+        env = Environment.from_samples(positions, bin_size=5.0)
+        return env
+
+    def test_batch_grid_scores_sparse_env_returns_nan(self, env_sparse_grid):
+        """For sparse environments where FFT doesn't work, should handle gracefully."""
+        from neurospatial.encoding._metrics import batch_grid_scores
+
+        env = env_sparse_grid
+        rng = np.random.default_rng(42)
+        firing_rates = rng.random((2, env.n_bins)) * 5.0
+
+        # Should not raise - may return NaN for non-FFT-compatible envs
+        scores = batch_grid_scores(env, firing_rates)
+
+        assert scores.shape == (2,)
+        # Sparse environments may not be compatible with FFT-based grid score
+        # Implementation may return NaN or use graph-based method

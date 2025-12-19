@@ -3,10 +3,52 @@
 ## Current Status
 
 **Date**: 2025-12-18
-**Last Completed**: Task 1.2 - Create `encoding/_smoothing.py` with shared smoothing code
-**Next Task**: Task 1.3 - Implement batch grid score computation in `_metrics.py`
+**Last Completed**: Task 1.3 - Implement batch grid score computation in `_metrics.py`
+**Next Task**: Task 1.4 - Implement batch border score computation in `_metrics.py`
 
 ## Session Notes
+
+### Task 1.3: `encoding/_metrics.py` - batch_grid_scores [COMPLETED]
+
+**Goal**: Add `batch_grid_scores()` function to compute grid scores for multiple neurons.
+
+**Approach**: TDD - wrote tests first (`test_encoding_metrics.py`), then implemented.
+
+**Result**:
+
+- Added `batch_grid_scores(env, firing_rates)` to `src/neurospatial/encoding/_metrics.py`
+- Added 9 new tests in `tests/encoding/test_encoding_metrics.py` (all pass, total now 47)
+- All mypy and ruff checks pass
+- Code review passed with APPROVE
+
+**Key Implementation Details**:
+
+- `batch_grid_scores(env, firing_rates, ...)`: Batch grid score computation for populations
+- Delegates to `grid.spatial_autocorrelation()` and `grid.grid_score()` for each neuron
+- Returns `(n_neurons,)` array of grid scores in range [-2, 2] or NaN
+
+**Parameters**:
+
+- `env`: Environment (must be regular 2D grid for FFT-based autocorrelation)
+- `firing_rates`: Shape `(n_neurons, n_bins)`
+- `inner_radius_fraction`: Default 0.2 (passed to grid_score)
+- `outer_radius_fraction`: Default 0.5 (passed to grid_score)
+
+**Edge case handling**:
+
+- Constant firing rate: Returns NaN (zero variance)
+- NaN values in firing rate: Handled gracefully
+- Graph-based method (non-FFT): Returns NaN (grid_score requires 2D autocorrelogram)
+- Wrong input shape: Raises ValueError
+- Computation errors: Caught and returns NaN for that neuron
+
+**Code review notes**:
+
+- Follows same pattern as `batch_spatial_information()` and `batch_sparsity()`
+- Graceful error handling prevents batch failure from single problematic neuron
+- Complete NumPy docstring with interpretation guidelines
+
+---
 
 ### Task 1.2: `encoding/_smoothing.py` [COMPLETED]
 
