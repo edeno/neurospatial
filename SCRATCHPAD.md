@@ -3,10 +3,80 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 3.5 - Implement `DirectionalRatesResult` batch methods
-**Next Task**: Task 3.6 - Implement `DirectionalRatesResult.to_dataframe()`
+**Last Completed**: Task 3.6 - Implement `DirectionalRatesResult.to_dataframe()`
+**Next Task**: Task 3.7 - Implement binning layer for directional encoding
 
 ## Session Notes
+
+### Task 3.6: Implement `DirectionalRatesResult.to_dataframe()` [COMPLETED]
+
+**Goal**: Add `to_dataframe()` method to export directional metrics to pandas DataFrame.
+
+**Approach**: TDD - wrote 22 tests first, then implemented.
+
+**Result**:
+
+- Added `to_dataframe()` method to `DirectionalRatesResult` in `src/neurospatial/encoding/directional.py`
+- Added 22 new tests in `tests/encoding/test_encoding_directional.py` (total now 118, all pass)
+- All mypy and ruff checks pass
+- Code review passed with APPROVE
+
+**Key Implementation Details**:
+
+- `to_dataframe(neuron_ids)`: Export to pandas DataFrame
+  - Parameters:
+    - `neuron_ids`: Optional custom identifiers (default: integer indices)
+  - Returns DataFrame with columns:
+    - neuron_id: identifier for each neuron
+    - preferred_direction: preferred direction in radians [-π, π]
+    - preferred_direction_deg: preferred direction in degrees [-180, 180]
+    - mean_vector_length: mean vector length [0, 1]
+    - tuning_width: tuning width (HWHM) in radians (0, π]
+    - tuning_width_deg: tuning width (HWHM) in degrees (0, 180]
+    - peak_rate: maximum firing rate (Hz)
+    - is_hd_cell: whether classified as HD cell (using default thresholds)
+
+- Delegates to existing batch methods:
+  - `preferred_directions()` for preferred_direction
+  - `mean_vector_lengths()` for mean_vector_length
+  - `tuning_widths()` for tuning_width
+  - `peak_firing_rates()` for peak_rate
+  - `detect_hd_cells()` for is_hd_cell
+  - `np.degrees()` for degree conversions
+
+**Test coverage (22 tests in 1 class)**:
+
+- `TestDirectionalRatesResultToDataframe`: 22 tests
+  - Returns DataFrame type
+  - Correct row count
+  - All column presence tests (8 columns)
+  - Default integer neuron IDs
+  - Custom neuron IDs
+  - Length mismatch validation
+  - Metric accuracy (matches batch methods)
+  - Degree conversions correct
+  - Empty result edge case
+  - Single neuron edge case
+
+**Documentation**:
+
+- Complete NumPy-style docstring
+- Includes common pandas workflows (filter, sort, top-N)
+- Includes practical examples
+- Cross-references to related methods
+
+**Code review feedback**: APPROVE - Ready to merge
+
+- Perfect alignment with reference pattern (`SpatialRatesResult.to_dataframe()`)
+- Complete type safety with `Sequence[str | int]` type annotation
+- Comprehensive test coverage (22 tests)
+- Proper pandas import pattern (inside function)
+
+**Type annotation fix**:
+
+Changed `list[str | int]` to `Sequence[str | int]` per code review suggestion for consistency with `SpatialRatesResult.to_dataframe()`.
+
+---
 
 ### Task 3.5: Implement `DirectionalRatesResult` Batch Methods [COMPLETED]
 

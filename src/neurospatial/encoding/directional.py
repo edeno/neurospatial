@@ -48,7 +48,7 @@ neurospatial.stats.circular : Circular statistics utilities
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -56,6 +56,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 if TYPE_CHECKING:
+    import pandas as pd
     from matplotlib.axes import Axes
     from matplotlib.projections.polar import PolarAxes
 
@@ -1174,3 +1175,108 @@ class DirectionalRatesResult:
             is_hd[i] = self[i].is_hd_cell(min_mvl=min_mvl, alpha=alpha)
 
         return is_hd
+
+    def to_dataframe(
+        self,
+        neuron_ids: Sequence[str | int] | None = None,
+    ) -> pd.DataFrame:
+        """Export metrics to DataFrame for exploratory analysis.
+
+        Computes all directional metrics and exports them to a pandas DataFrame
+        for easy filtering, sorting, and analysis.
+
+        Parameters
+        ----------
+        neuron_ids : sequence of str or int, optional
+            Identifiers for each neuron. If None, uses integer indices
+            (0, 1, 2, ..., n_neurons-1).
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with columns:
+
+            - neuron_id: identifier for each neuron
+            - preferred_direction: preferred direction in radians [-π, π]
+            - preferred_direction_deg: preferred direction in degrees [-180, 180]
+            - mean_vector_length: mean vector length [0, 1]
+            - tuning_width: tuning width (HWHM) in radians (0, π]
+            - tuning_width_deg: tuning width (HWHM) in degrees (0, 180]
+            - peak_rate: maximum firing rate (Hz)
+            - is_hd_cell: whether classified as HD cell (using default thresholds)
+
+        Raises
+        ------
+        ValueError
+            If neuron_ids has a different length than the number of neurons.
+
+        Notes
+        -----
+        This method computes all metrics at once, which may be slow for
+        large populations. For selective metric computation, use the
+        individual methods (``preferred_directions()``, ``mean_vector_lengths()``, etc.).
+
+        **Common pandas workflows**:
+
+        - Filter: ``df[df["is_hd_cell"] == True]``
+        - Sort: ``df.sort_values("mean_vector_length", ascending=False)``
+        - Top-N: ``df.nlargest(10, "peak_rate")``
+
+        Examples
+        --------
+        >>> result = DirectionalRatesResult(...)
+        >>> df = result.to_dataframe()
+        >>> print(df.head())
+           neuron_id  preferred_direction  preferred_direction_deg  ...
+
+        >>> # Filter for HD cells
+        >>> hd_cells = df[df["is_hd_cell"]]
+        >>> print(f"Found {len(hd_cells)} HD cells")
+
+        >>> # Sort by mean vector length
+        >>> top_cells = df.sort_values("mean_vector_length", ascending=False).head(10)
+
+        >>> # Custom neuron identifiers
+        >>> df = result.to_dataframe(neuron_ids=["unit_0", "unit_1", "unit_2"])
+
+        See Also
+        --------
+        detect_hd_cells : HD cell classification
+        preferred_directions : Batch preferred direction computation
+        mean_vector_lengths : Batch mean vector length computation
+        """
+        import pandas as pd
+
+        n_neurons = len(self)
+
+        # Use integer indices if no neuron_ids provided
+        if neuron_ids is None:
+            neuron_ids_list: list[str | int] = list(range(n_neurons))
+        else:
+            neuron_ids_list = list(neuron_ids)
+            if len(neuron_ids_list) != n_neurons:
+                raise ValueError(
+                    f"neuron_ids has {len(neuron_ids_list)} elements but "
+                    f"result contains {n_neurons} neurons"
+                )
+
+        # Compute all metrics
+        pref_dirs = self.preferred_directions()
+        mvls = self.mean_vector_lengths()
+        widths = self.tuning_widths()
+        peaks = self.peak_firing_rates()
+        is_hd = self.detect_hd_cells()
+
+        # Build data dictionary
+        data: dict[str, Any] = {
+            "neuron_id": neuron_ids_list,
+            "preferred_direction": pref_dirs,
+            "preferred_direction_deg": np.degrees(pref_dirs),
+            "mean_vector_length": mvls,
+            "tuning_width": widths,
+            "tuning_width_deg": np.degrees(widths),
+            "peak_rate": peaks,
+            "is_hd_cell": is_hd,
+        }
+
+        return pd.DataFrame(data)

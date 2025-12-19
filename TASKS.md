@@ -197,10 +197,10 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Implement `detect_hd_cells(min_mvl, alpha)` → returns `(n_neurons,)` bool
   - [x] Implement `peak_firing_rates()` → returns `(n_neurons,)`
 
-- [ ] **3.6** Implement `DirectionalRatesResult.to_dataframe()`
-  - [ ] Include neuron_id, preferred_direction, preferred_direction_deg columns
-  - [ ] Include mean_vector_length, tuning_width, tuning_width_deg columns
-  - [ ] Include peak_rate, is_hd_cell columns
+- [x] **3.6** Implement `DirectionalRatesResult.to_dataframe()`
+  - [x] Include neuron_id, preferred_direction, preferred_direction_deg columns
+  - [x] Include mean_vector_length, tuning_width, tuning_width_deg columns
+  - [x] Include peak_rate, is_hd_cell columns
 
 - [ ] **3.7** Implement binning layer for directional encoding
   - [ ] Create helper to convert (spike_times, times, headings, bin_size) → (spike_counts, occupancy)
