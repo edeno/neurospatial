@@ -3,10 +3,65 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 5.5 - Implement `EgocentricRatesResult.to_dataframe()`
-**Next Task**: Task 5.6 - Implement binning layer for egocentric encoding
+**Last Completed**: Task 5.6 - Implement binning layer for egocentric encoding
+**Next Task**: Task 5.7 - Implement `compute_egocentric_rate()` function
 
 ## Session Notes
+
+### Task 5.6: Implement binning layer for egocentric encoding [COMPLETED]
+
+**Goal**: Create the binning layer for egocentric (object-vector) encoding that converts spike trains and trajectory data into spike counts and occupancy in egocentric polar coordinates.
+
+**Implementation**:
+- Created `src/neurospatial/encoding/_egocentric_binning.py` with three main functions:
+  - `compute_egocentric_occupancy(times, positions, headings, object_positions, ...)`: Computes time spent at each distance/direction bin relative to nearest object
+  - `bin_egocentric_spike_train(spike_times, times, positions, headings, object_positions, ...)`: Bins single neuron by egocentric coordinates
+  - `bin_egocentric_spike_trains(spike_times, times, positions, headings, object_positions, ...)`: Batch version with joblib parallelization
+
+**Key Design Decisions**:
+- Returns `ego_env` (egocentric polar Environment) along with occupancy/spike counts for consistency with other encoding modules
+- Uses `_compute_egocentric_coords()` helper that:
+  - Computes distance and bearing to ALL objects at each timepoint
+  - Finds NEAREST object at each timepoint
+  - Supports both "euclidean" and "geodesic" distance metrics
+- Uses `_coords_to_flat_bin_idx()` helper for converting (distance, bearing) to flat bin indices
+- Precomputes egocentric coordinates once for batch processing (shared across all neurons)
+- Follows patterns from `_view_binning.py` and `_directional_binning.py` exactly
+
+**Files Created**:
+- `src/neurospatial/encoding/_egocentric_binning.py` (820 lines)
+- `tests/encoding/test_encoding_egocentric_binning.py` (618 lines, 41 tests)
+
+**TDD Process**:
+1. Wrote 41 tests covering:
+   - Import tests
+   - Basic functionality (returns correct types/shapes)
+   - Occupancy computation (total approximates duration, non-negative, correct dtype)
+   - Spike binning (non-negative counts, total <= input spikes)
+   - Distance metric handling (euclidean default, geodesic requires env)
+   - Input validation (mismatched lengths, insufficient samples, unsorted times)
+   - Coordinate correctness (bearing 0 ahead, pi/2 left, -pi/2 right)
+   - Nearest object selection
+   - Batch consistency with single neuron results
+   - n_jobs parallelization
+   - 2D NaN-padded array input format
+2. Ran tests - all 41 failed (expected)
+3. Implemented the module
+4. Ran tests - all 41 passed
+
+**Code Review**: APPROVED (9.7/10)
+- Perfect consistency with existing patterns (_view_binning.py, _directional_binning.py)
+- Excellent documentation (comprehensive NumPy-style docstrings)
+- Complete type annotations
+- Robust edge case handling
+- Minor improvements made:
+  - Replaced assert with explicit ValueError for type narrowing
+  - Added clarifying comment for NaN handling in geodesic distance
+
+**Test Results**: 41/41 tests pass
+**Quality checks**: All ruff and mypy checks pass
+
+---
 
 ### Task 5.5: Implement `EgocentricRatesResult.to_dataframe()` [COMPLETED]
 

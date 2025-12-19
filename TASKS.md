@@ -326,12 +326,12 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Include preferred_direction_deg, peak_rate columns
   - [x] Include is_ovc column
 
-- [ ] **5.6** Implement binning layer for egocentric encoding
-  - [ ] Create helper to compute egocentric occupancy
-  - [ ] Compute egocentric bearing and distance for all position-object pairs
-  - [ ] Convert to polar bin indices
-  - [ ] Support `distance_metric` parameter ("euclidean" or "geodesic")
-  - [ ] When "geodesic", require `env` parameter
+- [x] **5.6** Implement binning layer for egocentric encoding
+  - [x] Create helper to compute egocentric occupancy
+  - [x] Compute egocentric bearing and distance for all position-object pairs
+  - [x] Convert to polar bin indices
+  - [x] Support `distance_metric` parameter ("euclidean" or "geodesic")
+  - [x] When "geodesic", require `env` parameter
 
 - [ ] **5.7** Implement `compute_egocentric_rate()` function
   - [ ] Accept single spike_times array
