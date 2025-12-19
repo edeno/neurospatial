@@ -3,10 +3,79 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 4.5 - Implement `ViewRatesResult.to_dataframe()`
-**Next Task**: Task 4.6 - Implement binning layer for view encoding
+**Last Completed**: Task 4.6 - Implement binning layer for view encoding
+**Next Task**: Task 4.7 - Implement `compute_view_rate()` function
 
 ## Session Notes
+
+### Task 4.6: Implement Binning Layer for View Encoding [COMPLETED]
+
+**Goal**: Create binning layer that computes view occupancy (time viewing each spatial bin) and bins spikes by viewed location.
+
+**Approach**: TDD - wrote 41 tests first, then implemented.
+
+**Result**:
+
+- Created `src/neurospatial/encoding/_view_binning.py` with 3 functions
+- Created `tests/encoding/test_encoding_view_binning.py` with 41 tests (all pass)
+- All mypy and ruff checks pass
+- Code review passed with APPROVE
+
+**Key Implementation Details**:
+
+- `compute_view_occupancy(env, times, positions, headings, gaze_model, view_distance)`: Compute view occupancy
+  - Returns `(n_bins,)` float64 array of time spent *viewing* each bin
+  - Delegates to `compute_viewed_location()` from `ops/visibility.py` for gaze computation
+  - Accumulates time per viewed bin using `np.add.at()`
+  - Views outside environment don't contribute to occupancy
+
+- `bin_view_spike_train(env, spike_times, times, positions, headings, gaze_model, view_distance)`: Single neuron
+  - Returns `(n_bins,)` float64 array of spike counts by viewed location
+  - Uses nearest-neighbor lookup (`np.searchsorted`) for spike→frame mapping
+  - Does NOT use interpolation for gaze direction (scientifically correct)
+  - Empty spike trains return zeros
+
+- `bin_view_spike_trains(env, spike_times, times, positions, headings, gaze_model, view_distance, n_jobs)`: Batch
+  - Returns tuple: `(spike_counts, view_occupancy)` where:
+    - spike_counts: `(n_neurons, n_bins)` float64
+    - view_occupancy: `(n_bins,)` float64 (shared across neurons)
+  - Precomputes view_occupancy once (shared across all neurons)
+  - Supports joblib parallelization via `n_jobs` parameter
+  - Normalizes input via `normalize_spike_times()` for flexible formats
+
+**Gaze models supported**:
+
+- `"fixed_distance"` (default): Point at fixed distance in gaze direction
+- `"ray_cast"`: Intersection with environment boundary
+- `"boundary"`: Nearest boundary point in gaze direction
+
+**Test coverage (41 tests in 9 classes)**:
+
+- `TestComputeViewOccupancy`: 6 tests (basic functionality, shape, non-negative, duration, differs from position)
+- `TestComputeViewOccupancyGazeModels`: 6 tests (all gaze models, view_distance, different results)
+- `TestBinViewSpikeTrain`: 7 tests (basic, shape, non-negative, count, empty, outside range)
+- `TestBinViewSpikeTrainGazeModels`: 3 tests (all gaze models)
+- `TestBinViewSpikeTrains`: 10 tests (tuple return, shapes, dtypes, empty neuron, consistency, n_jobs, normalization)
+- `TestViewBinningEdgeCases`: 3 tests (constant heading, view outside env, all spikes same location)
+- `TestViewBinningInputValidation`: 4 tests (mismatched lengths, invalid gaze_model, insufficient samples)
+- `TestConsistencyWithSpatialView`: 1 critical test (view occupancy matches existing `compute_spatial_view_field`)
+
+**Consistency verification**:
+
+- `test_view_occupancy_matches_spatial_view_implementation()` proves new binning layer produces identical view_occupancy to existing implementation in `spatial_view.py` using `np.testing.assert_array_almost_equal`, decimal=10
+
+**Code review feedback**: APPROVE - Production-ready code
+
+- Scientifically correct (nearest-neighbor lookup, not interpolation)
+- Well-documented (NumPy-style docstrings throughout)
+- Thoroughly tested (41 tests including critical consistency test)
+- Consistent with existing patterns (`_binning.py`, `_directional_binning.py`)
+- Type-safe (mypy passes)
+- Performant (batch optimization with shared view_occupancy)
+
+**Milestone 4 Progress**: Tasks 4.1-4.6 complete, 3 tasks remaining (4.7-4.9).
+
+---
 
 ### Task 4.5: Implement `ViewRatesResult.to_dataframe()` [COMPLETED]
 

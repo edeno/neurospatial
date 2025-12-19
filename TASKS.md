@@ -263,10 +263,10 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Include peak_rate, view_spatial_info columns
   - [x] Include is_view_cell column
 
-- [ ] **4.6** Implement binning layer for view encoding
-  - [ ] Create helper to compute view occupancy (time viewing each spatial bin)
-  - [ ] Support gaze models: "fixed_distance", "ray_cast", "boundary"
-  - [ ] Convert (spike_times, times, positions, headings, gaze_model) → (spike_counts, view_occupancy)
+- [x] **4.6** Implement binning layer for view encoding
+  - [x] Create helper to compute view occupancy (time viewing each spatial bin)
+  - [x] Support gaze models: "fixed_distance", "ray_cast", "boundary"
+  - [x] Convert (spike_times, times, positions, headings, gaze_model) → (spike_counts, view_occupancy)
 
 - [ ] **4.7** Implement `compute_view_rate()` function
   - [ ] Accept single spike_times array
