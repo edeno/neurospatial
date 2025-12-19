@@ -35,6 +35,7 @@ from neurospatial.encoding.directional import (
 from neurospatial.encoding.egocentric import (
     EgocentricRateResult,
     EgocentricRatesResult,
+    compute_egocentric_rate,
 )
 
 # Grid cell analysis
@@ -153,6 +154,7 @@ __all__ = [  # noqa: RUF022 - organized by category
     # Egocentric rate (object vector cells) - new API
     "EgocentricRateResult",
     "EgocentricRatesResult",
+    "compute_egocentric_rate",
     # Spatial rate (place/grid/border cells) - new API
     "SpatialRateResult",
     "SpatialRatesResult",

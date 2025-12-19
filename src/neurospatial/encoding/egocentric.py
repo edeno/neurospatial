@@ -74,7 +74,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -90,6 +90,7 @@ if TYPE_CHECKING:
 __all__ = [
     "EgocentricRateResult",
     "EgocentricRatesResult",
+    "compute_egocentric_rate",
 ]
 
 
@@ -936,3 +937,245 @@ class EgocentricRatesResult:
         }
 
         return pd.DataFrame(data)
+
+
+def compute_egocentric_rate(
+    spike_times: NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    object_positions: NDArray[np.float64],
+    *,
+    env: Environment | None = None,
+    distance_range: tuple[float, float] = (0.0, 50.0),
+    n_distance_bins: int = 10,
+    n_direction_bins: int = 12,
+    distance_metric: Literal["euclidean", "geodesic"] = "euclidean",
+    smoothing_method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
+    bandwidth: float = 5.0,
+    min_occupancy: float = 0.0,
+) -> EgocentricRateResult:
+    """Compute egocentric firing rate for one neuron.
+
+    This function computes a smoothed firing rate map in egocentric polar
+    coordinates (distance and direction to nearest object). This is the key
+    metric for identifying object-vector cells (OVCs).
+
+    Parameters
+    ----------
+    spike_times : ndarray, shape (n_spikes,)
+        Times of spike events in seconds. Can be empty.
+    times : ndarray, shape (n_samples,)
+        Timestamps of trajectory samples in seconds.
+    positions : ndarray, shape (n_samples, 2)
+        Animal position coordinates at each time sample.
+    headings : ndarray, shape (n_samples,)
+        Head direction at each time sample (radians, 0=East allocentric).
+    object_positions : ndarray, shape (n_objects, 2)
+        Object positions in allocentric coordinates. The firing rate is
+        computed relative to the *nearest* object at each timepoint.
+    env : Environment, optional
+        Required when ``distance_metric="geodesic"``. The allocentric
+        environment used to compute geodesic distances around obstacles.
+    distance_range : tuple of float, default=(0.0, 50.0)
+        (min_distance, max_distance) for egocentric binning. Distances outside
+        this range are not included in the rate map.
+    n_distance_bins : int, default=10
+        Number of distance bins in the egocentric polar grid.
+    n_direction_bins : int, default=12
+        Number of direction bins in the egocentric polar grid. Covers the
+        full circle (-π to π).
+    distance_metric : {"euclidean", "geodesic"}, default="euclidean"
+        Distance metric for computing distance to objects:
+
+        - **euclidean**: Straight-line distance.
+        - **geodesic**: Path distance respecting environment boundaries.
+          Requires ``env`` parameter.
+
+    smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
+        Smoothing method to use:
+
+        - **binned** (default): Raw rate computation without smoothing.
+          Appropriate for egocentric polar grids where boundary-aware
+          smoothing may not apply.
+        - **diffusion_kde**: Graph-based boundary-aware KDE.
+        - **gaussian_kde**: Standard Euclidean KDE.
+
+    bandwidth : float, default=5.0
+        Smoothing bandwidth for gaussian_kde and diffusion_kde methods.
+    min_occupancy : float, default=0.0
+        Minimum occupancy (seconds) for a bin to be included. Bins with
+        occupancy below this threshold are set to NaN.
+
+    Returns
+    -------
+    EgocentricRateResult
+        Result object containing:
+
+        - ``firing_rate``: Firing rate by egocentric coordinates in Hz,
+          shape (n_bins,)
+        - ``occupancy``: Time in each egocentric bin in seconds,
+          shape (n_bins,)
+        - ``ego_env``: The egocentric polar environment
+        - ``distance_range``: Distance range used
+        - ``n_distance_bins``: Number of distance bins
+        - ``n_direction_bins``: Number of direction bins
+
+    Raises
+    ------
+    ValueError
+        If ``distance_metric="geodesic"`` but ``env`` is None.
+        If ``distance_metric`` is not one of the valid options.
+        If inputs have mismatched lengths.
+
+    See Also
+    --------
+    compute_egocentric_rates : Batch version for multiple neurons
+    EgocentricRateResult : Result class with convenience methods
+    compute_spatial_rate : Standard spatial rate (by animal position)
+
+    Notes
+    -----
+    The function uses the egocentric binning layer (``_egocentric_binning.py``)
+    to convert spike times to spike counts based on distance and direction to
+    the nearest object, then the smoothing layer (``_smoothing.py``) to compute
+    the smoothed firing rate.
+
+    **Algorithm**:
+
+    1. Compute egocentric coordinates (distance, bearing) to nearest object
+       at each behavioral frame
+    2. Bin spikes by egocentric coordinates at spike time
+    3. Compute egocentric occupancy (time spent at each distance/direction)
+    4. Apply smoothing (method-dependent, see ``_smoothing.py``)
+
+    **Coordinate convention**: Direction uses egocentric (animal-centered)
+    coordinates where 0=ahead, +π/2=left, -π/2=right.
+
+    **Place cells vs object-vector cells**: For place cells, firing is
+    determined by allocentric position. For OVCs, firing is determined by
+    egocentric relationship to objects. Computing place field using
+    ``compute_spatial_rate`` and OVC field using this function, then comparing
+    spatial information, can help distinguish cell types.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.encoding.egocentric import compute_egocentric_rate
+
+    >>> # Create trajectory and objects
+    >>> rng = np.random.default_rng(42)
+    >>> times = np.linspace(0, 100, 1000)
+    >>> positions = rng.uniform(10, 90, (1000, 2))
+    >>> headings = rng.uniform(-np.pi, np.pi, 1000)
+    >>> object_positions = np.array([[50.0, 50.0], [25.0, 75.0]])
+    >>> spike_times = np.sort(rng.uniform(0, 100, 100))
+
+    >>> # Compute egocentric rate
+    >>> result = compute_egocentric_rate(
+    ...     spike_times,
+    ...     times,
+    ...     positions,
+    ...     headings,
+    ...     object_positions,
+    ... )
+
+    >>> # Access results
+    >>> pref_dist = result.preferred_distance()
+    >>> pref_dir = result.preferred_direction()
+    >>> info = result.egocentric_spatial_information()
+    >>> is_ovc = result.is_ovc()
+
+    >>> # Plot the egocentric rate map
+    >>> ax = result.plot()
+
+    References
+    ----------
+    .. [1] Hoydal, O. A., et al. (2019). Object-vector coding in the medial
+           entorhinal cortex. Nature, 568(7752), 400-404.
+    """
+    from neurospatial.encoding._egocentric_binning import (
+        bin_egocentric_spike_train,
+        compute_egocentric_occupancy,
+    )
+    from neurospatial.encoding._smoothing import smooth_rate_map
+
+    # Validate distance_metric
+    valid_metrics = {"euclidean", "geodesic"}
+    if distance_metric not in valid_metrics:
+        raise ValueError(
+            f"Invalid distance_metric: '{distance_metric}'. "
+            f"Must be one of {sorted(valid_metrics)}"
+        )
+
+    # Validate env requirement for geodesic
+    if distance_metric == "geodesic" and env is None:
+        raise ValueError(
+            "distance_metric='geodesic' requires env parameter.\n"
+            "Pass the allocentric environment to compute geodesic distances."
+        )
+
+    # Convert inputs to arrays
+    spike_times = np.asarray(spike_times, dtype=np.float64).ravel()
+    times = np.asarray(times, dtype=np.float64).ravel()
+    positions = np.asarray(positions, dtype=np.float64)
+    headings = np.asarray(headings, dtype=np.float64).ravel()
+    object_positions = np.asarray(object_positions, dtype=np.float64)
+
+    # Validate input array lengths
+    n_samples = len(times)
+    if len(positions) != n_samples:
+        raise ValueError(
+            f"times length ({n_samples}) must match positions length ({len(positions)})"
+        )
+    if len(headings) != n_samples:
+        raise ValueError(
+            f"times length ({n_samples}) must match headings length ({len(headings)})"
+        )
+
+    # Bin spike train by egocentric coordinates
+    spike_counts, ego_env = bin_egocentric_spike_train(
+        spike_times,
+        times,
+        positions,
+        headings,
+        object_positions,
+        distance_range=distance_range,
+        n_distance_bins=n_distance_bins,
+        n_direction_bins=n_direction_bins,
+        distance_metric=distance_metric,
+        env=env,
+    )
+
+    # Compute egocentric occupancy
+    occupancy, _ = compute_egocentric_occupancy(
+        times,
+        positions,
+        headings,
+        object_positions,
+        distance_range=distance_range,
+        n_distance_bins=n_distance_bins,
+        n_direction_bins=n_direction_bins,
+        distance_metric=distance_metric,
+        env=env,
+    )
+
+    # Apply smoothing to compute firing rate
+    firing_rate = smooth_rate_map(
+        ego_env,
+        spike_counts,
+        occupancy,
+        method=smoothing_method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+    )
+
+    # Return result
+    return EgocentricRateResult(
+        firing_rate=firing_rate,
+        occupancy=occupancy,
+        ego_env=ego_env,
+        distance_range=distance_range,
+        n_distance_bins=n_distance_bins,
+        n_direction_bins=n_direction_bins,
+    )

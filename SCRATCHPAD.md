@@ -3,10 +3,66 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 5.6 - Implement binning layer for egocentric encoding
-**Next Task**: Task 5.7 - Implement `compute_egocentric_rate()` function
+**Last Completed**: Task 5.7 - Implement `compute_egocentric_rate()` function
+**Next Task**: Task 5.8 - Implement `compute_egocentric_rates()` function
 
 ## Session Notes
+
+### Task 5.7: Implement `compute_egocentric_rate()` function [COMPLETED]
+
+**Goal**: Implement the main compute function for egocentric (object-vector) rate maps.
+
+**Implementation**:
+- Added `compute_egocentric_rate()` function to `src/neurospatial/encoding/egocentric.py` (lines 942-1181)
+- Function signature follows canonical argument order (spike_times, times, positions, headings, object_positions)
+- Optional parameters (keyword-only): env, distance_range, n_distance_bins, n_direction_bins, distance_metric, smoothing_method, bandwidth, min_occupancy
+- Delegates to:
+  - `_egocentric_binning.bin_egocentric_spike_train()` for spike counts
+  - `_egocentric_binning.compute_egocentric_occupancy()` for occupancy
+  - `_smoothing.smooth_rate_map()` for smoothing
+- Returns `EgocentricRateResult` with all required fields
+
+**Key Design Decisions**:
+- `env` is optional (keyword-only) - required only for geodesic distance metric
+- Default `smoothing_method="binned"` (not diffusion_kde) as boundary-aware smoothing may not apply to egocentric polar grids
+- Default `distance_range=(0.0, 50.0)`, `n_distance_bins=10`, `n_direction_bins=12`
+- Input validation for array lengths and distance_metric values
+- Comprehensive NumPy docstring with examples and scientific references
+
+**Files Modified**:
+- `src/neurospatial/encoding/egocentric.py`: Added compute_egocentric_rate function, updated __all__
+- `src/neurospatial/encoding/__init__.py`: Added compute_egocentric_rate to exports
+
+**Files Created**:
+- `tests/encoding/test_compute_egocentric_rate.py` (900 lines, 40 tests)
+
+**TDD Process**:
+1. Wrote 40 tests covering:
+   - Import tests (from egocentric module and encoding package)
+   - Return type tests (correct type, shapes for firing_rate/occupancy/ego_env)
+   - Distance range and bin count parameter tests
+   - Distance metric parameter tests (euclidean default, geodesic requires env)
+   - Smoothing parameter tests (all three methods, bandwidth)
+   - Empty spike train behavior
+   - Correctness tests (non-negative rates, total occupancy approximates duration)
+   - Result methods integration tests (plot, preferred_distance, preferred_direction, etc.)
+   - min_occupancy threshold tests
+   - Input validation tests (mismatched lengths)
+   - Signature tests (argument order, keyword-only parameters)
+2. Ran tests - all 40 failed (expected - function didn't exist)
+3. Implemented the function
+4. Ran tests - all 40 passed
+
+**Code Review**: APPROVED
+- Excellent quality, matches patterns from compute_view_rate()
+- Complete type annotations (mypy passes)
+- Outstanding NumPy docstring
+- Clean code structure with proper delegation
+
+**Test Results**: 40/40 tests pass
+**Quality checks**: All ruff and mypy checks pass
+
+---
 
 ### Task 5.6: Implement binning layer for egocentric encoding [COMPLETED]
 

@@ -333,14 +333,14 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Support `distance_metric` parameter ("euclidean" or "geodesic")
   - [x] When "geodesic", require `env` parameter
 
-- [ ] **5.7** Implement `compute_egocentric_rate()` function
-  - [ ] Accept single spike_times array
-  - [ ] Accept `object_positions` array
-  - [ ] Support `distance_range` and bin count parameters
-  - [ ] Support `distance_metric` parameter
-  - [ ] Optional `env` parameter (required for geodesic)
-  - [ ] Apply smoothing via `_smoothing.py`
-  - [ ] Return `EgocentricRateResult`
+- [x] **5.7** Implement `compute_egocentric_rate()` function
+  - [x] Accept single spike_times array
+  - [x] Accept `object_positions` array
+  - [x] Support `distance_range` and bin count parameters
+  - [x] Support `distance_metric` parameter
+  - [x] Optional `env` parameter (required for geodesic)
+  - [x] Apply smoothing via `_smoothing.py`
+  - [x] Return `EgocentricRateResult`
 
 - [ ] **5.8** Implement `compute_egocentric_rates()` function
   - [ ] Accept list of spike_times arrays
