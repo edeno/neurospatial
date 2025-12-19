@@ -311,8 +311,8 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Implement `preferred_distance()` → distance component of peak bin
   - [x] Implement `preferred_direction()` → direction component of peak bin (0=ahead)
 
-- [ ] **5.3** Implement `EgocentricRateResult` classification
-  - [ ] Implement `is_ovc(min_info)` → boolean based on egocentric spatial info
+- [x] **5.3** Implement `EgocentricRateResult` classification
+  - [x] Implement `is_ovc(min_info)` → boolean based on egocentric spatial info
 
 - [ ] **5.4** Implement `EgocentricRatesResult` batch methods
   - [ ] Implement `__len__`, `__getitem__`, `__iter__` for iteration

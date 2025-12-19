@@ -319,6 +319,133 @@ class EgocentricRateResult:
         bin_centers: NDArray[np.float64] = self.ego_env.bin_centers
         return float(bin_centers[peak_bin, 1])
 
+    def egocentric_spatial_information(self) -> float:
+        """Compute egocentric spatial information (bits per spike).
+
+        Egocentric spatial information quantifies how much information each
+        spike conveys about the animal's egocentric position relative to an
+        object. This uses the Skaggs spatial information formula with the
+        egocentric occupancy.
+
+        Returns
+        -------
+        float
+            Egocentric spatial information in bits per spike. Returns 0.0
+            for uniform firing (no spatial selectivity).
+
+        Notes
+        -----
+        **Formula (Skaggs et al. 1993)**:
+
+        .. math::
+
+            I = \\sum_i p_i \\frac{r_i}{\\bar{r}} \\log_2 \\left( \\frac{r_i}{\\bar{r}} \\right)
+
+        where :math:`p_i` is occupancy probability in egocentric bin :math:`i`,
+        :math:`r_i` is firing rate in that bin, and :math:`\\bar{r}` is mean
+        firing rate.
+
+        **Interpretation**:
+
+        - Object-vector cells typically have 0.5-2.0+ bits/spike
+        - Higher values indicate more selective tuning to distance/direction
+        - Zero means uniform firing (no egocentric selectivity)
+
+        This metric uses the egocentric occupancy (time spent at each
+        distance/direction combination), which differs from standard spatial
+        information that uses allocentric position occupancy.
+
+        Examples
+        --------
+        >>> result = EgocentricRateResult(...)
+        >>> info = result.egocentric_spatial_information()
+        >>> print(f"Egocentric spatial info: {info:.2f} bits/spike")
+
+        See Also
+        --------
+        is_ovc : Classify as object-vector cell based on this metric
+        """
+        from neurospatial.encoding._metrics import spatial_information
+
+        firing_rate = _to_numpy(self.firing_rate)
+        occupancy = _to_numpy(self.occupancy)
+        return spatial_information(firing_rate, occupancy)
+
+    def is_ovc(self, min_info: float = 0.3) -> bool:
+        """Classify as object-vector cell based on egocentric spatial information.
+
+        A neuron is classified as an object-vector cell (OVC) if its egocentric
+        spatial information exceeds the minimum threshold. OVCs fire when the
+        animal is at a specific distance and direction from an object.
+
+        Parameters
+        ----------
+        min_info : float, default=0.3
+            Minimum egocentric spatial information threshold in bits/spike.
+
+            **How was 0.3 chosen?**
+
+            This threshold is based on values reported in rodent entorhinal
+            cortex studies (Hoydal et al., 2019). The lower threshold compared
+            to spatial view cells (0.5) reflects that:
+
+            - Egocentric polar coordinates have sparser sampling
+            - Object-vector fields can be broader than place fields
+            - The information calculation is sensitive to bin count
+
+            Empirically:
+
+            - Strong OVCs: 0.5-1.5+ bits/spike
+            - Moderate OVCs: 0.3-0.5 bits/spike
+            - Weak/non-OVCs: < 0.3 bits/spike
+
+            **When to adjust:**
+
+            - Different brain regions: May need 0.2-0.5
+            - Different bin counts: Fewer bins → higher info, adjust accordingly
+            - Noisy recordings: Consider 0.2 (more permissive)
+            - Publication quality: Use 0.5 or higher (more conservative)
+
+        Returns
+        -------
+        bool
+            True if egocentric_spatial_information() > min_info, False otherwise.
+
+        Notes
+        -----
+        **Object-vector vs place cells**: Both may show high spatial
+        information, but OVCs have higher *egocentric* spatial information
+        (using egocentric occupancy relative to objects) than *allocentric*
+        spatial information (using standard position occupancy).
+
+        For more rigorous classification, consider also using:
+
+        - Stability across sessions
+        - Multiple objects (OVCs should generalize)
+        - Shuffling controls
+
+        References
+        ----------
+        .. [1] Hoydal, O. A., et al. (2019). Object-vector coding in the medial
+               entorhinal cortex. Nature, 568(7752), 400-404.
+        .. [2] Deshmukh, S. S., & Knierim, J. J. (2011). Representation of
+               non-spatial and spatial information in the lateral entorhinal
+               cortex. Frontiers in Behavioral Neuroscience, 5, 69.
+
+        Examples
+        --------
+        >>> result = EgocentricRateResult(...)
+        >>> if result.is_ovc():
+        ...     print("This is an object-vector cell!")
+        >>> if result.is_ovc(min_info=0.5):
+        ...     print("This is a strong object-vector cell!")
+
+        See Also
+        --------
+        egocentric_spatial_information : Compute the metric used for classification
+        """
+        return self.egocentric_spatial_information() > min_info
+
 
 @dataclass(frozen=True)
 class EgocentricRatesResult:

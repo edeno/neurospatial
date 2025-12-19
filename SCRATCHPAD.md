@@ -3,10 +3,45 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 5.2 - Implement `EgocentricRateResult` convenience methods
-**Next Task**: Task 5.3 - Implement `EgocentricRateResult` classification
+**Last Completed**: Task 5.3 - Implement `EgocentricRateResult` classification
+**Next Task**: Task 5.4 - Implement `EgocentricRatesResult` batch methods
 
 ## Session Notes
+
+### Task 5.3: Implement `EgocentricRateResult` classification [COMPLETED]
+
+**Goal**: Add classification method (`is_ovc()`) to `EgocentricRateResult` for determining if a neuron is an object-vector cell.
+
+**Implementation**:
+- Added two methods to `EgocentricRateResult` in `src/neurospatial/encoding/egocentric.py`:
+  - `egocentric_spatial_information()`: Computes spatial information using egocentric occupancy
+    - Delegates to `spatial_information()` from `_metrics.py`
+    - Uses `_to_numpy()` for JAX compatibility
+    - Returns bits/spike (0 for uniform firing)
+  - `is_ovc(min_info=0.3)`: Classifies neuron as OVC based on egocentric spatial information threshold
+    - Default threshold 0.3 (lower than view cells at 0.5 due to sparser egocentric sampling)
+    - Returns `True` if `egocentric_spatial_information() > min_info`
+- Both methods follow the pattern from `ViewRateResult.is_view_cell()` for consistency
+- Added comprehensive NumPy-style docstrings with scientific references (Hoydal et al., 2019)
+
+**TDD Process**:
+1. Wrote 11 new tests in `tests/encoding/test_encoding_egocentric.py`:
+   - 6 tests for `is_ovc()` (returns bool, accepts min_info, default threshold, true for high info, false for uniform, respects threshold)
+   - 5 tests for `egocentric_spatial_information()` (returns float, non-negative, zero for uniform, high for selective, uses occupancy)
+2. Ran tests - all 11 failed (expected)
+3. Implemented the methods
+4. Ran tests - all 11 passed
+
+**Code Review**: APPROVED
+- No critical issues
+- One low-priority suggestion: Minor docstring clarification (non-blocking)
+- Perfect consistency with ViewRateResult pattern
+- Outstanding documentation quality noted
+
+**Test Results**: 55/55 tests pass (44 original + 11 new)
+**Quality checks**: All ruff and mypy checks pass
+
+---
 
 ### Task 5.2: Implement `EgocentricRateResult` convenience methods [COMPLETED]
 

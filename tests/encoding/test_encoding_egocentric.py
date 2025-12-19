@@ -1021,3 +1021,313 @@ class TestEgocentricRateResultConvenienceMethodsWithNaN:
         # Should return direction of the only non-NaN bin
         expected_direction = float(sample_ego_env.bin_centers[15, 1])
         assert direction == expected_direction
+
+
+# =============================================================================
+# EgocentricRateResult Classification Tests (Task 5.3)
+# =============================================================================
+
+
+class TestEgocentricRateResultIsOVC:
+    """Test is_ovc() method of EgocentricRateResult."""
+
+    def test_is_ovc_returns_bool(
+        self,
+        sample_ego_env: Environment,
+        single_neuron_firing_rate: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that is_ovc() returns a bool."""
+        from neurospatial.encoding.egocentric import EgocentricRateResult
+
+        result = EgocentricRateResult(
+            firing_rate=single_neuron_firing_rate,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        is_ovc = result.is_ovc()
+        assert isinstance(is_ovc, bool)
+
+    def test_is_ovc_accepts_min_info_parameter(
+        self,
+        sample_ego_env: Environment,
+        single_neuron_firing_rate: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that is_ovc() accepts min_info parameter."""
+        from neurospatial.encoding.egocentric import EgocentricRateResult
+
+        result = EgocentricRateResult(
+            firing_rate=single_neuron_firing_rate,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        # Should not raise - accepts min_info parameter
+        _ = result.is_ovc(min_info=0.3)
+        _ = result.is_ovc(min_info=0.7)
+
+    def test_is_ovc_default_threshold_is_0_3(
+        self,
+        sample_ego_env: Environment,
+        single_neuron_firing_rate: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that is_ovc() has default min_info=0.3.
+
+        This lower threshold (compared to view cells at 0.5) reflects that
+        egocentric fields can be sparser and the information calculation
+        is affected by the polar coordinate binning.
+        """
+        from neurospatial.encoding.egocentric import EgocentricRateResult
+
+        result = EgocentricRateResult(
+            firing_rate=single_neuron_firing_rate,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        # Should return the same as explicitly passing 0.3
+        default_result = result.is_ovc()
+        explicit_result = result.is_ovc(min_info=0.3)
+        assert default_result == explicit_result
+
+    def test_is_ovc_true_for_high_info(
+        self,
+        sample_ego_env: Environment,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that is_ovc() returns True for high spatial information.
+
+        A highly selective neuron (fires only in one bin) should have
+        high egocentric spatial information and be classified as OVC.
+        """
+        from neurospatial.encoding.egocentric import EgocentricRateResult
+
+        # Create a highly selective firing rate (fires only in one bin)
+        n_bins = sample_ego_env.n_bins
+        firing_rate = np.zeros(n_bins)
+        firing_rate[n_bins // 2] = 30.0  # Single peak
+
+        result = EgocentricRateResult(
+            firing_rate=firing_rate,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        # Should be classified as OVC (high spatial info)
+        assert result.is_ovc(min_info=0.3) is True
+
+    def test_is_ovc_false_for_uniform_firing(
+        self,
+        sample_ego_env: Environment,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that is_ovc() returns False for uniform firing.
+
+        A neuron with uniform firing rate has zero spatial information
+        and should not be classified as OVC.
+        """
+        from neurospatial.encoding.egocentric import EgocentricRateResult
+
+        # Create uniform firing rate (no spatial selectivity)
+        n_bins = sample_ego_env.n_bins
+        firing_rate = np.ones(n_bins) * 5.0
+
+        result = EgocentricRateResult(
+            firing_rate=firing_rate,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        # Should NOT be classified as OVC (zero spatial info)
+        assert result.is_ovc(min_info=0.3) is False
+
+    def test_is_ovc_respects_threshold(
+        self,
+        sample_ego_env: Environment,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that is_ovc() classification depends on threshold.
+
+        A neuron should be classified differently depending on
+        the min_info threshold used.
+        """
+        from neurospatial.encoding.egocentric import EgocentricRateResult
+
+        # Create moderately selective firing (some spatial info)
+        n_bins = sample_ego_env.n_bins
+        firing_rate = np.random.rand(n_bins) * 5.0
+        # Add a mild peak
+        firing_rate[n_bins // 2] = 15.0
+
+        result = EgocentricRateResult(
+            firing_rate=firing_rate,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        # Compute actual info to set appropriate thresholds
+        info = result.egocentric_spatial_information()
+
+        # Should be True for lower threshold
+        assert result.is_ovc(min_info=info - 0.1) is True
+        # Should be False for higher threshold
+        assert result.is_ovc(min_info=info + 0.1) is False
+
+
+class TestEgocentricRateResultEgocentricSpatialInformation:
+    """Test egocentric_spatial_information() method of EgocentricRateResult.
+
+    This method computes spatial information using egocentric occupancy.
+    """
+
+    def test_egocentric_spatial_information_returns_float(
+        self,
+        sample_ego_env: Environment,
+        single_neuron_firing_rate: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that egocentric_spatial_information() returns a float."""
+        from neurospatial.encoding.egocentric import EgocentricRateResult
+
+        result = EgocentricRateResult(
+            firing_rate=single_neuron_firing_rate,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        info = result.egocentric_spatial_information()
+        assert isinstance(info, float)
+
+    def test_egocentric_spatial_information_is_nonnegative(
+        self,
+        sample_ego_env: Environment,
+        single_neuron_firing_rate: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that egocentric_spatial_information() returns non-negative value."""
+        from neurospatial.encoding.egocentric import EgocentricRateResult
+
+        result = EgocentricRateResult(
+            firing_rate=single_neuron_firing_rate,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        info = result.egocentric_spatial_information()
+        assert info >= 0.0
+
+    def test_egocentric_spatial_information_zero_for_uniform(
+        self,
+        sample_ego_env: Environment,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that uniform firing gives zero spatial information."""
+        from neurospatial.encoding.egocentric import EgocentricRateResult
+
+        # Create uniform firing rate
+        n_bins = sample_ego_env.n_bins
+        firing_rate = np.ones(n_bins) * 5.0
+
+        result = EgocentricRateResult(
+            firing_rate=firing_rate,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        info = result.egocentric_spatial_information()
+        assert abs(info) < 1e-6  # Should be approximately zero
+
+    def test_egocentric_spatial_information_high_for_selective(
+        self,
+        sample_ego_env: Environment,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that selective firing gives high spatial information."""
+        from neurospatial.encoding.egocentric import EgocentricRateResult
+
+        # Create selective firing (single bin active)
+        n_bins = sample_ego_env.n_bins
+        firing_rate = np.zeros(n_bins)
+        firing_rate[n_bins // 2] = 30.0
+
+        result = EgocentricRateResult(
+            firing_rate=firing_rate,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        info = result.egocentric_spatial_information()
+        # Highly selective firing should have high info
+        assert info > 1.0  # bits/spike
+
+    def test_egocentric_spatial_information_uses_occupancy(
+        self,
+        sample_ego_env: Environment,
+    ) -> None:
+        """Test that egocentric_spatial_information uses occupancy field."""
+        from neurospatial.encoding.egocentric import EgocentricRateResult
+
+        n_bins = sample_ego_env.n_bins
+        firing_rate = np.zeros(n_bins)
+        firing_rate[n_bins // 2] = 30.0
+
+        # Non-uniform occupancy
+        occupancy1 = np.ones(n_bins)
+        occupancy2 = np.ones(n_bins)
+        occupancy2[n_bins // 2] = 10.0  # More time at peak
+
+        result1 = EgocentricRateResult(
+            firing_rate=firing_rate,
+            occupancy=occupancy1,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        result2 = EgocentricRateResult(
+            firing_rate=firing_rate,
+            occupancy=occupancy2,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        # Different occupancy should give different information
+        info1 = result1.egocentric_spatial_information()
+        info2 = result2.egocentric_spatial_information()
+        assert info1 != info2
