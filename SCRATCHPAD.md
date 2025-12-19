@@ -3,10 +3,64 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 5.9 - Write comprehensive tests for egocentric encoding
-**Next Task**: Task 5.10 - Update existing functions to use shared binning
+**Last Completed**: Task 6.1 - Implement JAX smoothing operations in `_core_jax.py`
+**Next Task**: Task 6.2 - Implement JAX metric computations in `_core_jax.py`
 
 ## Session Notes
+
+### Task 6.1: Implement JAX smoothing operations in `_core_jax.py` [COMPLETED]
+
+**Goal**: Implement JAX versions of core array operations for encoding computations, enabling GPU acceleration for batch neural encoding.
+
+**Implementation**:
+
+- Added JAX as optional dependency to `pyproject.toml` (jax>=0.4.30, jaxlib>=0.4.30)
+- Implemented four functions in `src/neurospatial/encoding/_core_jax.py`:
+  - `compute_firing_rate_single()`: Convert spike counts and occupancy to firing rate
+  - `compute_firing_rates_batch()`: Batch version for multiple neurons
+  - `smooth_rate_map_single()`: Apply kernel smoothing to firing rate map
+  - `smooth_rate_maps_batch()`: Batch version for multiple neurons
+- Also implemented the corresponding NumPy functions in `src/neurospatial/encoding/_core_numpy.py`
+
+**Key Design Decisions**:
+
+- JAX functions use `jnp.where()` for safe division (NaN handling)
+- Smoothing functions apply precomputed kernel via matrix multiplication (bandwidth not used dynamically)
+- All functions work with JAX arrays and are compatible with `jit`, `vmap`, and `grad`
+- Enable `jax_enable_x64` in tests for numerical equivalence with NumPy
+
+**Files Modified**:
+
+- `pyproject.toml`: Added JAX optional dependency and mypy overrides
+- `src/neurospatial/encoding/_core_numpy.py`: Implemented all 4 stub functions
+- `src/neurospatial/encoding/_core_jax.py`: Implemented all 4 stub functions
+
+**Files Created**:
+
+- `tests/encoding/test_core_jax.py` (41 tests)
+
+**TDD Process**:
+1. Wrote 41 tests covering:
+   - Import tests (all functions importable)
+   - Return type tests (JAX array outputs)
+   - Shape tests (output matches input)
+   - Correctness tests (rate = counts / occupancy)
+   - Zero/NaN occupancy handling
+   - min_occupancy threshold
+   - Kernel smoothing behavior
+   - Batch consistency with single calls
+   - Numerical equivalence with NumPy
+   - JAX-specific features (jit, vmap)
+   - Edge cases (all zeros, single bin, all NaN)
+2. Ran tests - all failed (expected - stubs raised NotImplementedError)
+3. Implemented NumPy functions first
+4. Implemented JAX functions
+5. Ran tests - all 41 passed
+
+**Test Results**: 41/41 tests pass
+**Quality checks**: All ruff and mypy checks pass
+
+---
 
 ### Task 5.9: Write comprehensive tests for egocentric encoding [COMPLETED]
 

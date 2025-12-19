@@ -89,14 +89,26 @@ def compute_firing_rate_single(
     >>> from neurospatial.encoding._core_numpy import compute_firing_rate_single
     >>> spike_counts = np.array([0, 5, 10, 5, 0], dtype=np.float64)
     >>> occupancy = np.array([1.0, 1.0, 2.0, 1.0, 0.0], dtype=np.float64)
-    >>> rate = compute_firing_rate_single(spike_counts, occupancy)  # doctest: +SKIP
-    >>> rate  # doctest: +SKIP
+    >>> rate = compute_firing_rate_single(spike_counts, occupancy)
+    >>> rate
     array([ 0.,  5.,  5.,  5., nan])
     """
-    raise NotImplementedError(
-        "compute_firing_rate_single is not yet implemented. "
-        "This is a stub for Phase 0 of the encoding refactor."
-    )
+    spike_counts = np.asarray(spike_counts, dtype=np.float64)
+    occupancy = np.asarray(occupancy, dtype=np.float64)
+
+    # Compute firing rate with safe division
+    with np.errstate(divide="ignore", invalid="ignore"):
+        firing_rate = np.where(
+            occupancy > 0,
+            spike_counts / occupancy,
+            np.nan,
+        )
+
+    # Apply min_occupancy threshold
+    if min_occupancy > 0:
+        firing_rate = np.where(occupancy >= min_occupancy, firing_rate, np.nan)
+
+    return firing_rate.astype(np.float64)
 
 
 def compute_firing_rates_batch(
@@ -144,14 +156,26 @@ def compute_firing_rates_batch(
     ...     dtype=np.float64,
     ... )
     >>> occupancy = np.array([1.0, 1.0, 2.0, 1.0, 0.0], dtype=np.float64)
-    >>> rates = compute_firing_rates_batch(spike_counts, occupancy)  # doctest: +SKIP
-    >>> rates.shape  # doctest: +SKIP
+    >>> rates = compute_firing_rates_batch(spike_counts, occupancy)
+    >>> rates.shape
     (2, 5)
     """
-    raise NotImplementedError(
-        "compute_firing_rates_batch is not yet implemented. "
-        "This is a stub for Phase 0 of the encoding refactor."
-    )
+    spike_counts = np.asarray(spike_counts, dtype=np.float64)
+    occupancy = np.asarray(occupancy, dtype=np.float64)
+
+    # Compute firing rate with safe division (broadcasting over neurons)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        firing_rates = np.where(
+            occupancy > 0,
+            spike_counts / occupancy,
+            np.nan,
+        )
+
+    # Apply min_occupancy threshold
+    if min_occupancy > 0:
+        firing_rates = np.where(occupancy >= min_occupancy, firing_rates, np.nan)
+
+    return firing_rates.astype(np.float64)
 
 
 def smooth_rate_map_single(
@@ -169,10 +193,12 @@ def smooth_rate_map_single(
         Unsmoothed firing rate map (Hz).
     adjacency : NDArray[np.float64], shape (n_bins, n_bins)
         Adjacency matrix encoding spatial connectivity between bins.
-        Used for graph-based smoothing methods.
+        Used for graph-based smoothing methods. For diffusion_kde and
+        gaussian_kde, this should be a row-normalized kernel/weight matrix.
     bandwidth : float, default=5.0
         Smoothing bandwidth in physical units (e.g., cm). The interpretation
-        depends on the smoothing method.
+        depends on the smoothing method. For "binned" method with bandwidth=0,
+        the input is returned unchanged.
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Smoothing method to apply:
 
@@ -180,7 +206,7 @@ def smooth_rate_map_single(
           estimation using heat diffusion on the connectivity graph.
         - ``"gaussian_kde"``: Standard Gaussian kernel smoothing, treating
           the rate map as a 2D image.
-        - ``"binned"``: No smoothing (returns input unchanged).
+        - ``"binned"``: Returns input unchanged (no smoothing applied).
 
     Returns
     -------
@@ -193,20 +219,34 @@ def smooth_rate_map_single(
     irregular boundaries or obstacles, as it respects the connectivity
     structure and avoids bleeding across barriers.
 
+    This function expects the adjacency/kernel matrix to already be computed.
+    For higher-level smoothing that computes kernels from Environment objects,
+    use :func:`neurospatial.encoding._smoothing.smooth_rate_map`.
+
     Examples
     --------
     >>> import numpy as np
     >>> from neurospatial.encoding._core_numpy import smooth_rate_map_single
     >>> firing_rate = np.array([0.0, 1.0, 5.0, 1.0, 0.0], dtype=np.float64)
-    >>> adjacency = np.eye(5, dtype=np.float64)  # Identity for simplicity
+    >>> adjacency = np.eye(5, dtype=np.float64)  # Identity - no smoothing
     >>> smoothed = smooth_rate_map_single(
-    ...     firing_rate, adjacency, bandwidth=2.0
-    ... )  # doctest: +SKIP
+    ...     firing_rate, adjacency, bandwidth=2.0, method="binned"
+    ... )
+    >>> smoothed
+    array([0., 1., 5., 1., 0.])
     """
-    raise NotImplementedError(
-        "smooth_rate_map_single is not yet implemented. "
-        "This is a stub for Phase 0 of the encoding refactor."
-    )
+    firing_rate = np.asarray(firing_rate, dtype=np.float64)
+    adjacency = np.asarray(adjacency, dtype=np.float64)
+
+    if method == "binned":
+        # No smoothing - return input unchanged
+        return firing_rate.astype(np.float64)
+
+    # For diffusion_kde and gaussian_kde, apply kernel smoothing
+    # The adjacency matrix is the smoothing kernel (row-normalized weights)
+    smoothed = adjacency @ firing_rate
+
+    return smoothed.astype(np.float64)
 
 
 def smooth_rate_maps_batch(
@@ -227,7 +267,8 @@ def smooth_rate_maps_batch(
         Unsmoothed firing rate maps for each neuron (Hz).
     adjacency : NDArray[np.float64], shape (n_bins, n_bins)
         Adjacency matrix encoding spatial connectivity between bins.
-        Shared across all neurons.
+        Shared across all neurons. For diffusion_kde and gaussian_kde,
+        this should be a row-normalized kernel/weight matrix.
     bandwidth : float, default=5.0
         Smoothing bandwidth in physical units (e.g., cm).
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
@@ -245,6 +286,8 @@ def smooth_rate_maps_batch(
     which is more efficient than calling :func:`smooth_rate_map_single`
     in a loop when the adjacency matrix and bandwidth are shared.
 
+    Uses BLAS Level 3 (GEMM) for efficient batch matrix multiplication.
+
     Examples
     --------
     >>> import numpy as np
@@ -258,12 +301,21 @@ def smooth_rate_maps_batch(
     ... )
     >>> adjacency = np.eye(5, dtype=np.float64)
     >>> smoothed = smooth_rate_maps_batch(
-    ...     firing_rates, adjacency, bandwidth=2.0
-    ... )  # doctest: +SKIP
-    >>> smoothed.shape  # doctest: +SKIP
+    ...     firing_rates, adjacency, bandwidth=2.0, method="binned"
+    ... )
+    >>> smoothed.shape
     (2, 5)
     """
-    raise NotImplementedError(
-        "smooth_rate_maps_batch is not yet implemented. "
-        "This is a stub for Phase 0 of the encoding refactor."
-    )
+    firing_rates = np.asarray(firing_rates, dtype=np.float64)
+    adjacency = np.asarray(adjacency, dtype=np.float64)
+
+    if method == "binned":
+        # No smoothing - return input unchanged
+        return firing_rates.astype(np.float64)
+
+    # For diffusion_kde and gaussian_kde, apply kernel smoothing
+    # Batch matrix multiplication: (n_neurons, n_bins) @ (n_bins, n_bins).T
+    # Result: (n_neurons, n_bins)
+    smoothed: NDArray[np.float64] = (adjacency @ firing_rates.T).T
+
+    return smoothed.astype(np.float64)

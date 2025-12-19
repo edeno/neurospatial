@@ -107,6 +107,12 @@ nwb = [
     "ndx-pose>=0.2.0",           # Pose estimation data
     "ndx-events>=0.4.0",         # Event/trial data
 ]
+# JAX acceleration (optional, Linux/macOS only)
+# Provides GPU acceleration for batch neural encoding computations
+jax = [
+    "jax>=0.4.30", # JAX core
+    "jaxlib>=0.4.30", # JAX library (CPU)
+]
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -337,6 +343,11 @@ module = [
     "ndx_pose.*",
     "ndx_events",
     "ndx_events.*",
+    # JAX (optional dependencies)
+    "jax",
+    "jax.*",
+    "jaxlib",
+    "jaxlib.*",
 ]
 ignore_missing_imports = true
 

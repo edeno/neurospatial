@@ -369,10 +369,10 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
 
 ### Tasks
 
-- [ ] **6.1** Implement JAX smoothing operations in `_core_jax.py`
-  - [ ] Port `diffusion_kde` smoothing to JAX
-  - [ ] Port `gaussian_kde` smoothing to JAX
-  - [ ] Verify numerical equivalence with NumPy
+- [x] **6.1** Implement JAX smoothing operations in `_core_jax.py`
+  - [x] Port `diffusion_kde` smoothing to JAX
+  - [x] Port `gaussian_kde` smoothing to JAX
+  - [x] Verify numerical equivalence with NumPy
 
 - [ ] **6.2** Implement JAX metric computations in `_core_jax.py`
   - [ ] Port `spatial_information` to JAX
