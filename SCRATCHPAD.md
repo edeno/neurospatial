@@ -3,10 +3,35 @@
 ## Current Status
 
 **Date**: 2025-12-18
-**Last Completed**: Task 0.1 - Create `encoding/_base.py` with shared protocols and helpers
-**Next Task**: Task 0.2 - Create `encoding/_spikes.py` with spike format normalization
+**Last Completed**: Task 0.2 - Create `encoding/_spikes.py` with spike format normalization
+**Next Task**: Task 0.3 - Create `encoding/_backend.py` with backend selection
 
 ## Session Notes
+
+### Task 0.2: `encoding/_spikes.py` [COMPLETED]
+
+**Goal**: Create spike format normalization helper that converts various input formats to the canonical list-of-arrays format.
+
+**Approach**: TDD - wrote tests first (`test_encoding_spikes.py`), then implemented.
+
+**Result**:
+- Created `src/neurospatial/encoding/_spikes.py` with `normalize_spike_times()` function
+- Created `tests/encoding/test_encoding_spikes.py` with 27 tests (all pass)
+- All mypy and ruff checks pass
+- Code review passed with APPROVE
+
+**Key Implementation Details**:
+- Function accepts 1D array (single neuron), 2D array (NaN-padded), or list/tuple of 1D arrays
+- Uses `isinstance(spike_times, (list, tuple))` instead of `isinstance(spike_times, Sequence)` to avoid mypy unreachable code warning
+- Proper error handling for ragged object arrays, 3D arrays, and non-1D elements in lists
+- All output arrays are converted to `float64` dtype
+
+**Input formats handled**:
+1. 1D array (single neuron) → wrapped in list
+2. 2D array (n_neurons, max_spikes) with NaN padding → split, NaNs removed
+3. list/tuple of 1D arrays (canonical) → each element converted to float64 array
+
+---
 
 ### Task 0.1: `encoding/_base.py` [COMPLETED]
 

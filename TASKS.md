@@ -21,13 +21,13 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Define `HasEnvironment` protocol
   - [x] Implement `SpatialResultMixin` with `peak_locations()` and `peak_firing_rates()`
 
-- [ ] **0.2** Create `encoding/_spikes.py` with spike format normalization
-  - [ ] Implement `normalize_spike_times()` function
-  - [ ] Handle 1D array (single neuron) input
-  - [ ] Handle 2D array (n_neurons, max_spikes) with NaN padding
-  - [ ] Handle list/tuple of 1D arrays (canonical format)
-  - [ ] Reject ragged object arrays with clear error message
-  - [ ] Add unit tests for all input formats
+- [x] **0.2** Create `encoding/_spikes.py` with spike format normalization
+  - [x] Implement `normalize_spike_times()` function
+  - [x] Handle 1D array (single neuron) input
+  - [x] Handle 2D array (n_neurons, max_spikes) with NaN padding
+  - [x] Handle list/tuple of 1D arrays (canonical format)
+  - [x] Reject ragged object arrays with clear error message
+  - [x] Add unit tests for all input formats
 
 - [ ] **0.3** Create `encoding/_backend.py` with backend selection
   - [ ] Implement `get_backend(name: str)` function
