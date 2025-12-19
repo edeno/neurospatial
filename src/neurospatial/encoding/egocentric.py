@@ -604,3 +604,234 @@ class EgocentricRatesResult:
         """
         for i in range(len(self)):
             yield self[i]
+
+    def plot(self, idx: int, ax: Axes | None = None, **kwargs: Any) -> Axes:
+        """Plot the egocentric rate map for a specific neuron.
+
+        Delegates to the egocentric environment's plot_field method for
+        consistent visualization across the codebase.
+
+        Parameters
+        ----------
+        idx : int
+            Index of the neuron to plot (0-indexed).
+        ax : matplotlib.axes.Axes, optional
+            Axes to plot on. If None, creates a new figure and axes.
+        **kwargs
+            Additional keyword arguments passed to ego_env.plot_field().
+            Common options include:
+            - cmap : str or Colormap, default="viridis"
+            - vmin, vmax : float, colorbar limits
+            - add_colorbar : bool, default=True
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+            The axes containing the plot.
+
+        Notes
+        -----
+        The egocentric rate map shows firing rate indexed by (distance,
+        direction) relative to the object. Distance is the first dimension,
+        direction is the second dimension.
+
+        Examples
+        --------
+        >>> # Plot the first neuron's egocentric rate map
+        >>> ax = result.plot(idx=0)
+        >>> plt.show()
+
+        >>> # Plot neuron 3 with custom colormap
+        >>> fig, ax = plt.subplots()
+        >>> result.plot(idx=3, ax=ax, cmap="hot", vmax=20.0)
+
+        See Also
+        --------
+        preferred_distances : Get distance preferences for all neurons
+        EgocentricRateResult.plot : Plot for single-neuron result
+        """
+        return self.ego_env.plot_field(
+            _to_numpy(self.firing_rates[idx]),  # type: ignore[index]
+            ax=ax,
+            **kwargs,
+        )
+
+    def preferred_distances(self) -> NDArray[np.float64]:
+        """Preferred distances to object for all neurons.
+
+        Returns the distance component (first dimension) of the egocentric
+        bin where each neuron shows maximum firing rate.
+
+        Returns
+        -------
+        ndarray, shape (n_neurons,)
+            Distance to object at peak firing rate for each neuron, in the
+            same units as the environment (typically cm).
+
+        Notes
+        -----
+        For object-vector cells, this represents the preferred distance to
+        the object. A cell with preferred_distance=20 fires most when the
+        object is 20 cm away from the animal.
+
+        Examples
+        --------
+        >>> distances = result.preferred_distances()
+        >>> print(f"Neuron 0 prefers distance: {distances[0]:.1f} cm")
+        >>> print(f"Mean preferred distance: {distances.mean():.1f} cm")
+
+        See Also
+        --------
+        EgocentricRateResult.preferred_distance : Single-neuron version
+        preferred_directions : Get direction preferences for all neurons
+        """
+        firing_rates = _to_numpy(self.firing_rates)
+        n_neurons = firing_rates.shape[0]
+        bin_centers: NDArray[np.float64] = self.ego_env.bin_centers
+
+        distances = np.empty(n_neurons, dtype=np.float64)
+        for i in range(n_neurons):
+            peak_idx = int(np.nanargmax(firing_rates[i]))
+            distances[i] = bin_centers[peak_idx, 0]
+        return distances
+
+    def preferred_directions(self) -> NDArray[np.float64]:
+        """Preferred directions to object for all neurons.
+
+        Returns the direction component (second dimension) of the egocentric
+        bin where each neuron shows maximum firing rate. Direction is in
+        radians using the egocentric coordinate convention.
+
+        Returns
+        -------
+        ndarray, shape (n_neurons,)
+            Direction to object at peak firing rate for each neuron, in radians.
+            - 0 = object is directly ahead of animal
+            - +π/2 = object is to the left
+            - -π/2 = object is to the right
+            - ±π = object is behind
+
+        Notes
+        -----
+        For object-vector cells, this represents the preferred direction to
+        the object relative to the animal's heading.
+
+        **Coordinate convention**: This uses egocentric (animal-centered)
+        coordinates, NOT allocentric (world-centered) coordinates.
+
+        Examples
+        --------
+        >>> directions = result.preferred_directions()
+        >>> print(f"Neuron 0 prefers direction: {np.degrees(directions[0]):.1f}°")
+
+        See Also
+        --------
+        EgocentricRateResult.preferred_direction : Single-neuron version
+        preferred_distances : Get distance preferences for all neurons
+        """
+        firing_rates = _to_numpy(self.firing_rates)
+        n_neurons = firing_rates.shape[0]
+        bin_centers: NDArray[np.float64] = self.ego_env.bin_centers
+
+        directions = np.empty(n_neurons, dtype=np.float64)
+        for i in range(n_neurons):
+            peak_idx = int(np.nanargmax(firing_rates[i]))
+            directions[i] = bin_centers[peak_idx, 1]
+        return directions
+
+    def egocentric_spatial_information(self) -> NDArray[np.float64]:
+        """Egocentric spatial information for all neurons (bits per spike).
+
+        Quantifies how much information each spike conveys about the animal's
+        egocentric position relative to an object for each neuron.
+
+        Returns
+        -------
+        ndarray, shape (n_neurons,)
+            Egocentric spatial information in bits/spike for each neuron.
+            Always non-negative. Returns 0.0 for uniform firing.
+
+        Notes
+        -----
+        Uses the Skaggs et al. (1993) formula with **egocentric occupancy**.
+        This is computed by delegating to the batch spatial information
+        function in ``_metrics.py``.
+
+        Examples
+        --------
+        >>> info = result.egocentric_spatial_information()
+        >>> print(f"Neuron with highest info: {np.argmax(info)}")
+
+        See Also
+        --------
+        EgocentricRateResult.egocentric_spatial_information : Single-neuron version
+        detect_ovcs : Classify neurons based on this metric
+        """
+        from neurospatial.encoding._metrics import batch_spatial_information
+
+        return batch_spatial_information(
+            _to_numpy(self.firing_rates), _to_numpy(self.occupancy)
+        )
+
+    def detect_ovcs(self, min_info: float = 0.3) -> NDArray[np.bool_]:
+        """Classify neurons as object-vector cells.
+
+        A neuron is classified as an object-vector cell (OVC) if its egocentric
+        spatial information exceeds the minimum threshold.
+
+        Parameters
+        ----------
+        min_info : float, default=0.3
+            Minimum egocentric spatial information threshold in bits/spike.
+            See EgocentricRateResult.is_ovc() for threshold rationale.
+
+        Returns
+        -------
+        ndarray, shape (n_neurons,)
+            Boolean array where True indicates the neuron is classified
+            as an object-vector cell.
+
+        Notes
+        -----
+        Uses vectorized computation of egocentric_spatial_information() for
+        efficiency with large populations.
+
+        Examples
+        --------
+        >>> is_ovc = result.detect_ovcs()
+        >>> print(f"Found {is_ovc.sum()} OVCs")
+
+        >>> # Use stricter threshold
+        >>> is_ovc = result.detect_ovcs(min_info=0.5)
+
+        See Also
+        --------
+        EgocentricRateResult.is_ovc : Single-neuron classification
+        egocentric_spatial_information : The metric used for classification
+        """
+        info = self.egocentric_spatial_information()
+        return info > min_info
+
+    def peak_firing_rates(self) -> NDArray[np.float64]:
+        """Peak firing rates for all neurons.
+
+        Returns the maximum firing rate for each neuron.
+
+        Returns
+        -------
+        ndarray, shape (n_neurons,)
+            Maximum firing rate in Hz for each neuron.
+
+        Examples
+        --------
+        >>> peak_rates = result.peak_firing_rates()
+        >>> print(f"Highest peak rate: {peak_rates.max():.1f} Hz")
+
+        See Also
+        --------
+        preferred_distances : Get distance preferences for all neurons
+        preferred_directions : Get direction preferences for all neurons
+        """
+        firing_rates = _to_numpy(self.firing_rates)
+        result: NDArray[np.float64] = np.nanmax(firing_rates, axis=1)
+        return result

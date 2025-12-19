@@ -1331,3 +1331,557 @@ class TestEgocentricRateResultEgocentricSpatialInformation:
         info1 = result1.egocentric_spatial_information()
         info2 = result2.egocentric_spatial_information()
         assert info1 != info2
+
+
+# =============================================================================
+# EgocentricRatesResult Batch Methods Tests (Task 5.4)
+# =============================================================================
+
+
+class TestEgocentricRatesResultPlot:
+    """Test plot() method of EgocentricRatesResult."""
+
+    def test_plot_returns_axes(
+        self,
+        sample_ego_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that plot() returns a matplotlib Axes object."""
+        from matplotlib.axes import Axes
+
+        from neurospatial.encoding.egocentric import EgocentricRatesResult
+
+        result = EgocentricRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        ax = result.plot(idx=0)
+        assert isinstance(ax, Axes)
+
+    def test_plot_requires_idx(
+        self,
+        sample_ego_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that plot() requires idx parameter."""
+        from neurospatial.encoding.egocentric import EgocentricRatesResult
+
+        result = EgocentricRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        # Should raise TypeError without idx
+        with pytest.raises(TypeError):
+            result.plot()  # type: ignore[call-arg]
+
+    def test_plot_accepts_ax_parameter(
+        self,
+        sample_ego_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that plot() accepts an ax parameter."""
+        import matplotlib.pyplot as plt
+
+        from neurospatial.encoding.egocentric import EgocentricRatesResult
+
+        result = EgocentricRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        fig, ax = plt.subplots()
+        returned_ax = result.plot(idx=1, ax=ax)
+        assert returned_ax is ax
+        plt.close(fig)
+
+    def test_plot_accepts_kwargs(
+        self,
+        sample_ego_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that plot() accepts keyword arguments."""
+        from neurospatial.encoding.egocentric import EgocentricRatesResult
+
+        result = EgocentricRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        # Should not raise - kwargs are passed through
+        ax = result.plot(idx=2, cmap="hot", vmax=30.0)
+        assert ax is not None
+
+
+class TestEgocentricRatesResultPreferredDistances:
+    """Test preferred_distances() method of EgocentricRatesResult."""
+
+    def test_preferred_distances_returns_array(
+        self,
+        sample_ego_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that preferred_distances() returns an ndarray."""
+        from neurospatial.encoding.egocentric import EgocentricRatesResult
+
+        result = EgocentricRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        distances = result.preferred_distances()
+        assert isinstance(distances, np.ndarray)
+
+    def test_preferred_distances_shape(
+        self,
+        sample_ego_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that preferred_distances() has correct shape (n_neurons,)."""
+        from neurospatial.encoding.egocentric import EgocentricRatesResult
+
+        result = EgocentricRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        distances = result.preferred_distances()
+        assert distances.shape == (5,)  # 5 neurons in batch_firing_rates
+
+    def test_preferred_distances_all_nonnegative(
+        self,
+        sample_ego_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that preferred_distances() values are non-negative."""
+        from neurospatial.encoding.egocentric import EgocentricRatesResult
+
+        result = EgocentricRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        distances = result.preferred_distances()
+        assert np.all(distances >= 0.0)
+
+    def test_preferred_distances_matches_single_neuron(
+        self,
+        sample_ego_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that preferred_distances() matches single-neuron method."""
+        from neurospatial.encoding.egocentric import EgocentricRatesResult
+
+        result = EgocentricRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        batch_distances = result.preferred_distances()
+        for i, single in enumerate(result):
+            np.testing.assert_almost_equal(
+                batch_distances[i], single.preferred_distance()
+            )
+
+
+class TestEgocentricRatesResultPreferredDirections:
+    """Test preferred_directions() method of EgocentricRatesResult."""
+
+    def test_preferred_directions_returns_array(
+        self,
+        sample_ego_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that preferred_directions() returns an ndarray."""
+        from neurospatial.encoding.egocentric import EgocentricRatesResult
+
+        result = EgocentricRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        directions = result.preferred_directions()
+        assert isinstance(directions, np.ndarray)
+
+    def test_preferred_directions_shape(
+        self,
+        sample_ego_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that preferred_directions() has correct shape (n_neurons,)."""
+        from neurospatial.encoding.egocentric import EgocentricRatesResult
+
+        result = EgocentricRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        directions = result.preferred_directions()
+        assert directions.shape == (5,)  # 5 neurons in batch_firing_rates
+
+    def test_preferred_directions_matches_single_neuron(
+        self,
+        sample_ego_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that preferred_directions() matches single-neuron method."""
+        from neurospatial.encoding.egocentric import EgocentricRatesResult
+
+        result = EgocentricRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        batch_directions = result.preferred_directions()
+        for i, single in enumerate(result):
+            np.testing.assert_almost_equal(
+                batch_directions[i], single.preferred_direction()
+            )
+
+
+class TestEgocentricRatesResultDetectOVCs:
+    """Test detect_ovcs() method of EgocentricRatesResult."""
+
+    def test_detect_ovcs_returns_array(
+        self,
+        sample_ego_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that detect_ovcs() returns an ndarray."""
+        from neurospatial.encoding.egocentric import EgocentricRatesResult
+
+        result = EgocentricRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        is_ovc = result.detect_ovcs()
+        assert isinstance(is_ovc, np.ndarray)
+
+    def test_detect_ovcs_shape(
+        self,
+        sample_ego_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that detect_ovcs() has correct shape (n_neurons,)."""
+        from neurospatial.encoding.egocentric import EgocentricRatesResult
+
+        result = EgocentricRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        is_ovc = result.detect_ovcs()
+        assert is_ovc.shape == (5,)  # 5 neurons in batch_firing_rates
+
+    def test_detect_ovcs_returns_bool(
+        self,
+        sample_ego_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that detect_ovcs() returns boolean dtype."""
+        from neurospatial.encoding.egocentric import EgocentricRatesResult
+
+        result = EgocentricRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        is_ovc = result.detect_ovcs()
+        assert is_ovc.dtype == np.bool_
+
+    def test_detect_ovcs_accepts_min_info(
+        self,
+        sample_ego_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that detect_ovcs() accepts min_info parameter."""
+        from neurospatial.encoding.egocentric import EgocentricRatesResult
+
+        result = EgocentricRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        # Should not raise
+        _ = result.detect_ovcs(min_info=0.3)
+        _ = result.detect_ovcs(min_info=0.5)
+
+    def test_detect_ovcs_default_threshold_is_0_3(
+        self,
+        sample_ego_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that detect_ovcs() has default min_info=0.3."""
+        from neurospatial.encoding.egocentric import EgocentricRatesResult
+
+        result = EgocentricRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        default_result = result.detect_ovcs()
+        explicit_result = result.detect_ovcs(min_info=0.3)
+        np.testing.assert_array_equal(default_result, explicit_result)
+
+    def test_detect_ovcs_matches_single_neuron(
+        self,
+        sample_ego_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that detect_ovcs() matches single-neuron is_ovc() method."""
+        from neurospatial.encoding.egocentric import EgocentricRatesResult
+
+        result = EgocentricRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        batch_is_ovc = result.detect_ovcs()
+        for i, single in enumerate(result):
+            assert batch_is_ovc[i] == single.is_ovc()
+
+
+class TestEgocentricRatesResultEgocentricSpatialInformation:
+    """Test egocentric_spatial_information() method of EgocentricRatesResult."""
+
+    def test_egocentric_spatial_information_returns_array(
+        self,
+        sample_ego_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that egocentric_spatial_information() returns an ndarray."""
+        from neurospatial.encoding.egocentric import EgocentricRatesResult
+
+        result = EgocentricRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        info = result.egocentric_spatial_information()
+        assert isinstance(info, np.ndarray)
+
+    def test_egocentric_spatial_information_shape(
+        self,
+        sample_ego_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that egocentric_spatial_information() has correct shape."""
+        from neurospatial.encoding.egocentric import EgocentricRatesResult
+
+        result = EgocentricRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        info = result.egocentric_spatial_information()
+        assert info.shape == (5,)  # 5 neurons in batch_firing_rates
+
+    def test_egocentric_spatial_information_all_nonnegative(
+        self,
+        sample_ego_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that egocentric_spatial_information() values are non-negative."""
+        from neurospatial.encoding.egocentric import EgocentricRatesResult
+
+        result = EgocentricRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        info = result.egocentric_spatial_information()
+        assert np.all(info >= 0.0)
+
+    def test_egocentric_spatial_information_matches_single_neuron(
+        self,
+        sample_ego_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that egocentric_spatial_information() matches single-neuron method."""
+        from neurospatial.encoding.egocentric import EgocentricRatesResult
+
+        result = EgocentricRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        batch_info = result.egocentric_spatial_information()
+        for i, single in enumerate(result):
+            np.testing.assert_almost_equal(
+                batch_info[i], single.egocentric_spatial_information()
+            )
+
+
+class TestEgocentricRatesResultPeakFiringRates:
+    """Test peak_firing_rates() method of EgocentricRatesResult."""
+
+    def test_peak_firing_rates_returns_array(
+        self,
+        sample_ego_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that peak_firing_rates() returns an ndarray."""
+        from neurospatial.encoding.egocentric import EgocentricRatesResult
+
+        result = EgocentricRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        peak_rates = result.peak_firing_rates()
+        assert isinstance(peak_rates, np.ndarray)
+
+    def test_peak_firing_rates_shape(
+        self,
+        sample_ego_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that peak_firing_rates() has correct shape (n_neurons,)."""
+        from neurospatial.encoding.egocentric import EgocentricRatesResult
+
+        result = EgocentricRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        peak_rates = result.peak_firing_rates()
+        assert peak_rates.shape == (5,)  # 5 neurons in batch_firing_rates
+
+    def test_peak_firing_rates_correct_values(
+        self,
+        sample_ego_env: Environment,
+        batch_firing_rates: np.ndarray,
+        single_neuron_occupancy: np.ndarray,
+    ) -> None:
+        """Test that peak_firing_rates() returns max of each neuron's rates."""
+        from neurospatial.encoding.egocentric import EgocentricRatesResult
+
+        result = EgocentricRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_neuron_occupancy,
+            ego_env=sample_ego_env,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        peak_rates = result.peak_firing_rates()
+        expected = np.nanmax(batch_firing_rates, axis=1)
+        np.testing.assert_array_almost_equal(peak_rates, expected)

@@ -3,10 +3,49 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 5.3 - Implement `EgocentricRateResult` classification
-**Next Task**: Task 5.4 - Implement `EgocentricRatesResult` batch methods
+**Last Completed**: Task 5.4 - Implement `EgocentricRatesResult` batch methods
+**Next Task**: Task 5.5 - Implement `EgocentricRatesResult.to_dataframe()`
 
 ## Session Notes
+
+### Task 5.4: Implement `EgocentricRatesResult` batch methods [COMPLETED]
+
+**Goal**: Add batch methods to `EgocentricRatesResult` for processing multiple neurons efficiently.
+
+**Implementation**:
+- Added six methods to `EgocentricRatesResult` in `src/neurospatial/encoding/egocentric.py`:
+  - `plot(idx, ax, **kwargs)`: Plot a specific neuron's egocentric rate map (lines 608-657)
+  - `preferred_distances()`: Returns (n_neurons,) array of preferred distances (lines 659-696)
+  - `preferred_directions()`: Returns (n_neurons,) array of preferred directions (lines 698-740)
+  - `egocentric_spatial_information()`: Returns (n_neurons,) array of spatial info (lines 742-774)
+  - `detect_ovcs(min_info=0.3)`: Returns (n_neurons,) boolean array for OVC classification (lines 776-813)
+  - `peak_firing_rates()`: Returns (n_neurons,) array of peak firing rates (lines 815-837)
+- All methods follow `ViewRatesResult` pattern exactly for consistency
+- Uses `batch_spatial_information()` from `_metrics.py` for efficient vectorized computation
+- Added comprehensive NumPy-style docstrings with examples and cross-references
+
+**TDD Process**:
+1. Wrote 24 new tests in `tests/encoding/test_encoding_egocentric.py`:
+   - 4 tests for `plot()` (returns axes, requires idx, accepts ax/kwargs)
+   - 4 tests for `preferred_distances()` (shape, type, non-negative, consistency with single-neuron)
+   - 3 tests for `preferred_directions()` (shape, type, consistency with single-neuron)
+   - 6 tests for `detect_ovcs()` (shape, dtype, min_info param, default threshold, consistency)
+   - 4 tests for `egocentric_spatial_information()` (shape, type, non-negative, consistency)
+   - 3 tests for `peak_firing_rates()` (shape, type, correct values)
+2. Ran tests - all 24 failed (expected)
+3. Implemented the methods
+4. Ran tests - all 24 passed
+
+**Code Review**: APPROVED
+- Perfect consistency with ViewRatesResult pattern
+- Excellent documentation quality
+- One suggestion: `to_dataframe()` method could be added in Task 5.5 (non-blocking)
+- Minor performance optimization suggestion for vectorizing loops (very low priority)
+
+**Test Results**: 79/79 tests pass (55 original + 24 new)
+**Quality checks**: All ruff and mypy checks pass
+
+---
 
 ### Task 5.3: Implement `EgocentricRateResult` classification [COMPLETED]
 

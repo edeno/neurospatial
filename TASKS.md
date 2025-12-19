@@ -314,12 +314,12 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
 - [x] **5.3** Implement `EgocentricRateResult` classification
   - [x] Implement `is_ovc(min_info)` → boolean based on egocentric spatial info
 
-- [ ] **5.4** Implement `EgocentricRatesResult` batch methods
-  - [ ] Implement `__len__`, `__getitem__`, `__iter__` for iteration
-  - [ ] Implement `plot(idx, ax, **kwargs)`
-  - [ ] Implement `preferred_distances()` → returns `(n_neurons,)`
-  - [ ] Implement `preferred_directions()` → returns `(n_neurons,)`
-  - [ ] Implement `detect_ovcs(min_info)` → returns `(n_neurons,)` bool
+- [x] **5.4** Implement `EgocentricRatesResult` batch methods
+  - [x] Implement `__len__`, `__getitem__`, `__iter__` for iteration
+  - [x] Implement `plot(idx, ax, **kwargs)`
+  - [x] Implement `preferred_distances()` → returns `(n_neurons,)`
+  - [x] Implement `preferred_directions()` → returns `(n_neurons,)`
+  - [x] Implement `detect_ovcs(min_info)` → returns `(n_neurons,)` bool
 
 - [ ] **5.5** Implement `EgocentricRatesResult.to_dataframe()`
   - [ ] Include neuron_id, preferred_distance, preferred_direction columns
