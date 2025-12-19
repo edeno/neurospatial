@@ -1228,14 +1228,9 @@ def compute_spatial_rate(
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included. Bins with
         occupancy below this threshold are set to NaN.
-    backend : {"numpy", "jax", "auto"}, default="numpy"
+    backend : {"numpy"}, default="numpy"
         Computation backend. Currently only "numpy" is implemented.
-
-        - **numpy**: Works everywhere, including Windows.
-        - **jax**: Requires JAX installation (Linux/macOS only). Not yet
-          implemented; raises NotImplementedError.
-        - **auto**: Uses JAX if available, falls back to NumPy silently
-          on Windows or if JAX not installed.
+        Reserved for future JAX/GPU support.
 
     Returns
     -------
@@ -1399,8 +1394,9 @@ def compute_spatial_rates(
     n_jobs : int, default=1
         Number of parallel jobs for spike counting. Use -1 for all CPUs.
         1 means sequential processing (no parallelization overhead).
-    backend : {"numpy", "jax", "auto"}, default="numpy"
+    backend : {"numpy"}, default="numpy"
         Computation backend. Currently only "numpy" is implemented.
+        Reserved for future JAX/GPU support.
 
     Returns
     -------

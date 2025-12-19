@@ -44,6 +44,42 @@ __all__ = [
 ]
 
 
+def _validate_times(times: NDArray[np.float64], context: str = "view binning") -> None:
+    """Validate times array for view binning operations.
+
+    Checks that times are:
+    1. At least 2 samples (needed for dt computation)
+    2. Monotonically non-decreasing (needed for searchsorted)
+
+    Parameters
+    ----------
+    times : ndarray
+        Timestamps to validate.
+    context : str
+        Description of the calling function for error messages.
+
+    Raises
+    ------
+    ValueError
+        If times has fewer than 2 samples.
+        If times are not monotonically non-decreasing.
+    """
+    n_samples = len(times)
+
+    if n_samples < 2:
+        raise ValueError(f"At least 2 samples required for {context}, got {n_samples}")
+
+    time_diffs = np.diff(times)
+    if np.any(time_diffs < 0):
+        decreasing_indices = np.where(time_diffs < 0)[0]
+        raise ValueError(
+            "times must be monotonically non-decreasing (sorted). "
+            f"Found {len(decreasing_indices)} decreasing interval(s) at "
+            f"indices: {decreasing_indices.tolist()[:5]}"
+            + (" ..." if len(decreasing_indices) > 5 else "")
+        )
+
+
 def _precompute_view_bins(
     env: Environment,
     positions: NDArray[np.float64],
@@ -214,7 +250,8 @@ def compute_view_occupancy(
     ValueError
         If input arrays have mismatched lengths.
         If gaze_model is invalid.
-        If fewer than 3 samples provided.
+        If fewer than 2 samples provided.
+        If times are not monotonically non-decreasing.
 
     Notes
     -----
@@ -268,23 +305,8 @@ def compute_view_occupancy(
             f"times length ({n_samples}) must match headings length ({len(headings)})"
         )
 
-    # Validate minimum samples
-    if n_samples < 2:
-        raise ValueError(
-            f"At least 2 samples required for view occupancy computation, got {n_samples}"
-        )
-
-    # Validate times are monotonically non-decreasing
-    if n_samples > 1:
-        time_diffs = np.diff(times)
-        if np.any(time_diffs < 0):
-            decreasing_indices = np.where(time_diffs < 0)[0]
-            raise ValueError(
-                "times must be monotonically non-decreasing (sorted). "
-                f"Found {len(decreasing_indices)} decreasing interval(s) at "
-                f"indices: {decreasing_indices.tolist()[:5]}"
-                + (" ..." if len(decreasing_indices) > 5 else "")
-            )
+    # Validate times (minimum samples and monotonicity)
+    _validate_times(times, context="view occupancy computation")
 
     # Validate gaze_model
     valid_gaze_models = {"fixed_distance", "ray_cast", "boundary"}
@@ -527,6 +549,12 @@ def bin_view_spike_trains(
     view_occupancy : ndarray, shape (n_bins,)
         Time in seconds spent viewing each spatial bin (shared across neurons).
 
+    Raises
+    ------
+    ValueError
+        If fewer than 2 trajectory samples provided.
+        If times are not monotonically non-decreasing.
+
     Examples
     --------
     >>> import numpy as np
@@ -576,6 +604,9 @@ def bin_view_spike_trains(
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
+
+    # Validate times (minimum samples and monotonicity)
+    _validate_times(times, context="spike binning")
 
     # Precompute view bins ONCE (shared across all neurons)
     # This is the expensive computation - computed once instead of per-neuron
