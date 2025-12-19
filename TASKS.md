@@ -102,11 +102,11 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Implement `spatial_information()` → delegates to `_metrics.py`
   - [x] Implement `sparsity()` → delegates to `_metrics.py`
 
-- [ ] **2.3** Implement `SpatialRateResult` cell type metrics
-  - [ ] Implement `grid_score()` → delegates to `grid.py`
-  - [ ] Implement `grid_properties()` → delegates to `grid.py`
-  - [ ] Implement `border_score(threshold, distance_metric)` → delegates to `border.py`
-  - [ ] Implement `region_coverage(threshold, regions)` → delegates to `border.py`
+- [x] **2.3** Implement `SpatialRateResult` cell type metrics
+  - [x] Implement `grid_score()` → delegates to `grid.py`
+  - [x] Implement `grid_properties()` → delegates to `grid.py`
+  - [x] Implement `border_score(threshold, min_area, distance_metric)` → delegates to `border.py`
+  - [x] Implement `region_coverage(threshold, regions)` → delegates to `border.py`
 
 - [ ] **2.4** Implement `SpatialRatesResult` batch methods
   - [x] Implement `__len__`, `__getitem__`, `__iter__` for iteration

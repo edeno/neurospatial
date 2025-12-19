@@ -48,7 +48,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -59,6 +59,8 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
     from neurospatial import Environment
+    from neurospatial.encoding.grid import GridProperties
+    from neurospatial.environment._protocols import EnvironmentProtocol
 
 __all__ = [
     "SpatialRateResult",
@@ -296,6 +298,267 @@ class SpatialRateResult(SpatialResultMixin):
         from neurospatial.encoding._metrics import sparsity
 
         return sparsity(_to_numpy(self.firing_rate), _to_numpy(self.occupancy))
+
+    def grid_score(self) -> float:
+        """Grid score (hexagonal periodicity).
+
+        Quantifies the hexagonal periodicity of the firing rate map, which
+        is characteristic of grid cells. Higher values indicate stronger
+        hexagonal grid patterns.
+
+        Returns
+        -------
+        float
+            Grid score in range [-2, 2].
+            - score > 0.4: Strong hexagonal grid (typical threshold)
+            - score ≈ 0: No hexagonal structure
+            - score < 0: Anti-hexagonal structure (rare)
+            Returns NaN if grid score cannot be computed (e.g., non-2D grid).
+
+        Notes
+        -----
+        Computes the spatial autocorrelation of the firing rate map and
+        extracts the grid score based on rotational symmetry.
+
+        Uses the Sargolini et al. (2006) algorithm:
+
+        1. Compute 2D spatial autocorrelation via FFT
+        2. Rotate by 30°, 60°, 90°, 120°, 150°
+        3. Grid score = min(r60, r120) - max(r30, r90, r150)
+
+        This method delegates to ``neurospatial.encoding.grid.grid_score()``.
+
+        References
+        ----------
+        .. [1] Sargolini, F., Fyhn, M., et al. (2006). Conjunctive
+               representation of position, direction, and velocity in
+               entorhinal cortex. Science, 312(5774), 758-762.
+
+        See Also
+        --------
+        grid_properties : Full grid cell metrics (score, scale, orientation)
+
+        Examples
+        --------
+        >>> result = SpatialRateResult(...)
+        >>> score = result.grid_score()
+        >>> print(f"Grid score: {score:.3f}")
+        """
+        from neurospatial.encoding.grid import grid_score as gs_func
+        from neurospatial.encoding.grid import spatial_autocorrelation
+
+        firing_rate = _to_numpy(self.firing_rate)
+        autocorr = spatial_autocorrelation(self.env, firing_rate, method="fft")
+        # FFT method always returns 2D array, not tuple
+        if isinstance(autocorr, tuple):
+            raise RuntimeError("FFT autocorrelation should return array, not tuple")
+        return gs_func(autocorr)
+
+    def grid_properties(self) -> GridProperties:
+        """Full grid cell metrics (score, scale, orientation).
+
+        Returns a comprehensive set of grid cell metrics computed from the
+        spatial autocorrelation of the firing rate map.
+
+        Returns
+        -------
+        GridProperties
+            Dataclass containing:
+
+            - score : float
+                Grid score in range [-2, 2]
+            - scale : float
+                Grid spacing in physical units (same as bin_size)
+            - orientation : float
+                Grid orientation in degrees [0, 60)
+            - orientation_std : float
+                Standard deviation of orientation estimates
+            - peak_coords : NDArray
+                Detected peak coordinates (n_peaks, 2)
+            - n_peaks : int
+                Number of peaks detected
+
+        Notes
+        -----
+        This method is more efficient than calling ``grid_score()`` separately
+        when you need multiple grid metrics, as it performs peak detection
+        only once.
+
+        Delegates to ``neurospatial.encoding.grid.grid_properties()``.
+
+        References
+        ----------
+        .. [1] Sargolini, F., Fyhn, M., et al. (2006). Conjunctive
+               representation of position, direction, and velocity in
+               entorhinal cortex. Science, 312(5774), 758-762.
+        .. [2] Hafting, T., Fyhn, M., et al. (2005). Microstructure of a
+               spatial map in the entorhinal cortex. Nature, 436(7052), 801-806.
+
+        See Also
+        --------
+        grid_score : Just the grid score
+        neurospatial.encoding.grid.GridProperties : Return type details
+
+        Examples
+        --------
+        >>> result = SpatialRateResult(...)
+        >>> props = result.grid_properties()
+        >>> print(f"Score: {props.score:.2f}")
+        >>> print(f"Scale: {props.scale:.1f} cm")
+        >>> print(f"Orientation: {props.orientation:.1f}°")
+        """
+        from neurospatial.encoding.grid import grid_properties as gp_func
+        from neurospatial.encoding.grid import spatial_autocorrelation
+
+        firing_rate = _to_numpy(self.firing_rate)
+        autocorr = spatial_autocorrelation(self.env, firing_rate, method="fft")
+        # FFT method always returns 2D array, not tuple
+        if isinstance(autocorr, tuple):
+            raise RuntimeError("FFT autocorrelation should return array, not tuple")
+        # Use minimum bin size for grid properties (typically same for isotropic grids)
+        bin_size = float(np.min(self.env.bin_sizes))
+        return gp_func(autocorr, bin_size=bin_size)
+
+    def border_score(
+        self,
+        threshold: float = 0.3,
+        min_area: float = 0.0,
+        distance_metric: Literal["geodesic", "euclidean"] = "geodesic",
+    ) -> float:
+        """Border score (boundary proximity tuning).
+
+        Quantifies how much the cell's firing field is aligned with
+        environmental boundaries (walls). Higher values indicate stronger
+        border cell properties.
+
+        Parameters
+        ----------
+        threshold : float, default 0.3
+            Fraction of peak firing rate used to segment the field.
+            Bins with firing rate >= threshold * peak are included in field.
+        min_area : float, default 0.0
+            Minimum field area in physical units (e.g., cm²). Fields smaller
+            than this return NaN. Default 0.0 (no filtering). For rat
+            hippocampal data, Solstad et al. (2008) used 200 cm².
+        distance_metric : {'geodesic', 'euclidean'}, default 'geodesic'
+            Distance metric for computing distance from field to boundaries.
+            - 'geodesic': Graph shortest path distance (respects obstacles)
+            - 'euclidean': Straight-line distance in physical space
+
+        Returns
+        -------
+        float
+            Border score in range [-1, 1].
+            - +1: Perfect border cell (field on boundary)
+            - 0: No boundary preference
+            - -1: Anti-border (field in center)
+            Returns NaN if border score cannot be computed.
+
+        Notes
+        -----
+        Uses the Solstad et al. (2008) algorithm:
+
+        1. Segment field at threshold * peak
+        2. Compute boundary coverage (fraction of boundary in field)
+        3. Compute normalized distance from field to boundary
+        4. Border score = (coverage - distance) / (coverage + distance)
+
+        Delegates to ``neurospatial.encoding.border.border_score()``.
+
+        References
+        ----------
+        .. [1] Solstad, T., Boccara, C. N., et al. (2008). Representation of
+               geometric borders in the entorhinal cortex. Science, 322(5909),
+               1865-1868.
+
+        See Also
+        --------
+        region_coverage : Coverage of specific spatial regions
+
+        Examples
+        --------
+        >>> result = SpatialRateResult(...)
+        >>> score = result.border_score()
+        >>> print(f"Border score: {score:.3f}")
+        """
+        from neurospatial.encoding.border import border_score as bs_func
+
+        firing_rate = _to_numpy(self.firing_rate)
+        # Cast to EnvironmentProtocol for type checker (Environment implements it)
+        env = cast("EnvironmentProtocol", self.env)
+        return bs_func(
+            env,
+            firing_rate,
+            threshold=threshold,
+            min_area=min_area,
+            distance_metric=distance_metric,
+        )
+
+    def region_coverage(
+        self,
+        threshold: float = 0.3,
+        regions: list[str] | None = None,
+    ) -> dict[str, float]:
+        """Coverage of each spatial region by the firing field.
+
+        Computes what fraction of each region's bins are covered by the
+        firing field (bins where firing_rate >= threshold * peak).
+
+        Parameters
+        ----------
+        threshold : float, default 0.3
+            Fraction of peak firing rate used to define the field.
+            Bins with firing rate >= threshold * peak are included.
+        regions : list of str, optional
+            Region names to analyze. If None, analyzes all regions
+            defined in env.regions.
+
+        Returns
+        -------
+        dict[str, float]
+            Mapping from region name to coverage fraction [0, 1].
+            Coverage = (region bins in field) / (total region bins).
+
+        Notes
+        -----
+        This method is useful for:
+
+        - **Border cell analysis**: Determine which wall a border cell prefers
+        - **Task-relevant regions**: Check if fields overlap with reward zones
+        - **Multi-zone analysis**: Quantify field distribution across zones
+
+        Delegates to ``neurospatial.encoding.border.compute_region_coverage()``.
+
+        See Also
+        --------
+        border_score : Overall border preference score
+        neurospatial.encoding.border.compute_region_coverage : Direct call
+
+        Examples
+        --------
+        >>> result = SpatialRateResult(...)
+        >>> coverage = result.region_coverage()
+        >>> for region, cov in sorted(coverage.items()):
+        ...     print(f"{region}: {cov:.1%}")
+        """
+        from neurospatial.encoding.border import compute_region_coverage
+
+        firing_rate = _to_numpy(self.firing_rate)
+
+        # Threshold field at fraction of peak
+        peak_rate = np.nanmax(firing_rate)
+        if peak_rate == 0 or np.isnan(peak_rate):
+            # No firing, return zero coverage for all regions
+            if regions is None:
+                regions = list(self.env.regions.keys())
+            return dict.fromkeys(regions, 0.0)
+
+        field_mask = firing_rate >= threshold * peak_rate
+        field_bins = np.where(field_mask)[0]
+
+        # Cast to EnvironmentProtocol for type checker (Environment implements it)
+        env = cast("EnvironmentProtocol", self.env)
+        return compute_region_coverage(field_bins, env, regions=regions)
 
 
 @dataclass(frozen=True)

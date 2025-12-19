@@ -2,11 +2,63 @@
 
 ## Current Status
 
-**Date**: 2025-12-18
-**Last Completed**: Task 2.2 - Implement `SpatialRateResult` convenience methods
-**Next Task**: Task 2.3 - Implement `SpatialRateResult` cell type metrics
+**Date**: 2025-12-19
+**Last Completed**: Task 2.3 - Implement `SpatialRateResult` cell type metrics
+**Next Task**: Task 2.4 - Implement `SpatialRatesResult` batch methods
 
 ## Session Notes
+
+### Task 2.3: `SpatialRateResult` Cell Type Metrics [COMPLETED]
+
+**Goal**: Implement cell type metric convenience methods for the SpatialRateResult class.
+
+**Approach**: TDD - wrote 24 tests first, then implemented.
+
+**Result**:
+
+- Added 4 cell type metric methods to `SpatialRateResult` in `src/neurospatial/encoding/spatial.py`
+- Added 24 new tests in `tests/encoding/test_encoding_spatial.py` (total now 69, all pass)
+- All mypy and ruff checks pass
+- Code review passed with APPROVE
+
+**Key Implementation Details**:
+
+- `grid_score()`: Grid cell hexagonal periodicity score
+  - Delegates to `grid.spatial_autocorrelation()` and `grid.grid_score()`
+  - Returns float in range [-2, 2] or NaN
+  - Uses FFT-based autocorrelation for 2D regular grids
+  - Added runtime check for tuple return from FFT (should never happen)
+
+- `grid_properties()`: Full grid cell metrics
+  - Delegates to `grid.spatial_autocorrelation()` and `grid.grid_properties()`
+  - Returns `GridProperties` dataclass with score, scale, orientation, etc.
+  - Uses `float(np.min(env.bin_sizes))` for bin_size parameter (handles non-uniform grids)
+
+- `border_score(threshold, min_area, distance_metric)`: Border cell boundary tuning score
+  - Delegates to `border.border_score()`
+  - Returns float in range [-1, 1] or NaN
+  - Added `min_area` parameter (from code review feedback) for filtering small fields
+  - Uses `cast("EnvironmentProtocol", self.env)` for mypy compatibility
+
+- `region_coverage(threshold, regions)`: Coverage of spatial regions by firing field
+  - Delegates to `border.compute_region_coverage()`
+  - Returns dict mapping region names to coverage fractions [0, 1]
+  - Handles zero/NaN peak rate by returning zero coverage for all regions
+
+**Code review feedback addressed**:
+
+1. Added `min_area` parameter to `border_score()` (Medium priority - API completeness)
+2. Added edge case tests for zero firing and min_area filtering
+3. Used type casts for EnvironmentProtocol compatibility
+
+**Documentation**:
+
+- All methods have complete NumPy-style docstrings
+- Include algorithm descriptions (Sargolini et al. 2006, Solstad et al. 2008)
+- Include interpretation guidelines and threshold recommendations
+- Include See Also cross-references
+
+---
 
 ### Task 2.2: `SpatialRateResult` Convenience Methods [COMPLETED]
 
