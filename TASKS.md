@@ -39,9 +39,9 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Define function signatures for core array operations
   - [x] Add placeholder implementations that raise NotImplementedError
 
-- [ ] **0.5** Create `encoding/_core_jax.py` with stubs
-  - [ ] Define function signatures matching `_core_numpy.py`
-  - [ ] Add placeholder implementations (to be filled in Phase 6)
+- [x] **0.5** Create `encoding/_core_jax.py` with stubs
+  - [x] Define function signatures matching `_core_numpy.py`
+  - [x] Add placeholder implementations (to be filled in Phase 6)
 
 ---
 

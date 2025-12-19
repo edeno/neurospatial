@@ -3,10 +3,48 @@
 ## Current Status
 
 **Date**: 2025-12-18
-**Last Completed**: Task 0.4 - Create `encoding/_core_numpy.py` with stubs
-**Next Task**: Task 0.5 - Create `encoding/_core_jax.py` with stubs
+**Last Completed**: Task 0.5 - Create `encoding/_core_jax.py` with stubs
+**Next Task**: Task 1.1 - Create `encoding/_metrics.py` with shared metric implementations
 
 ## Session Notes
+
+### Task 0.5: `encoding/_core_jax.py` [COMPLETED]
+
+**Goal**: Create JAX core array operations stubs matching `_core_numpy.py` interface.
+
+**Approach**: TDD - wrote tests first (`test_encoding_core_jax.py`), then implemented.
+
+**Result**:
+
+- Created `src/neurospatial/encoding/_core_jax.py` with 4 stub functions
+- Created `tests/encoding/test_encoding_core_jax.py` with 23 tests (all skip when JAX unavailable)
+- All mypy and ruff checks pass
+- Code review passed with APPROVE
+
+**Key Implementation Details**:
+
+- `compute_firing_rate_single(spike_counts, occupancy)`: Single neuron rate computation (JAX)
+- `compute_firing_rates_batch(spike_counts, occupancy)`: Batch rate computation (JAX)
+- `smooth_rate_map_single(firing_rate, adjacency, bandwidth, method)`: Single neuron smoothing (JAX)
+- `smooth_rate_maps_batch(firing_rates, adjacency, bandwidth, method)`: Batch smoothing (JAX)
+
+**Stub behavior**:
+
+All functions raise `NotImplementedError` with messages indicating this is Phase 0, and JAX implementations will be added in Phase 6.
+
+**Type annotations**:
+
+- Uses `TYPE_CHECKING` guard to import `jax.Array` only during static type checking
+- Module can be imported without JAX installed
+- Tests are skipped when JAX is not available via `pytestmark = pytest.mark.skipif`
+
+**Interface consistency**:
+
+- All function signatures match `_core_numpy.py` exactly
+- Same parameter names, types, and defaults
+- Same docstring structure with JAX-specific notes added
+
+---
 
 ### Task 0.4: `encoding/_core_numpy.py` [COMPLETED]
 
