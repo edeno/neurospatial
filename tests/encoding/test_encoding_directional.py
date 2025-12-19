@@ -4296,3 +4296,122 @@ class TestDirectionalRateResultMatchesHeadDirectionMetrics:
 
         # Should indicate it's NOT an HD cell
         assert "Not classified as HD cell" in interp
+
+
+class TestDirectionalRateResultNaNHandling:
+    """Test that DirectionalRateResult handles NaN values gracefully.
+
+    When bins have zero occupancy, firing_rate contains NaN for those bins.
+    The circular statistics methods should handle this gracefully by masking
+    NaN values before computation.
+    """
+
+    def test_preferred_direction_with_nans(self) -> None:
+        """preferred_direction handles NaN values in firing_rate."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        n_bins = 60
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        # Create tuning curve with some NaN values (unvisited bins)
+        firing_rate = 10.0 * np.exp(5.0 * (np.cos(bin_centers - np.pi / 2) - 1))
+        firing_rate[::5] = np.nan  # Set every 5th bin to NaN
+
+        result = DirectionalRateResult(
+            firing_rate=firing_rate,
+            occupancy=np.ones(n_bins) * 0.5,
+            bin_centers=bin_centers,
+            bin_size=np.pi / 30,
+            smoothing_sigma=None,
+        )
+        pref_dir = result.preferred_direction()
+
+        # Should still compute a valid preferred direction
+        assert not np.isnan(pref_dir)
+        # Should be close to π/2 (90 degrees)
+        assert np.abs(pref_dir - np.pi / 2) < 0.2
+
+    def test_mean_vector_length_with_nans(self) -> None:
+        """mean_vector_length handles NaN values in firing_rate."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        n_bins = 60
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        firing_rate = 10.0 * np.exp(5.0 * (np.cos(bin_centers - np.pi / 2) - 1))
+        firing_rate[::5] = np.nan  # Set every 5th bin to NaN
+
+        result = DirectionalRateResult(
+            firing_rate=firing_rate,
+            occupancy=np.ones(n_bins) * 0.5,
+            bin_centers=bin_centers,
+            bin_size=np.pi / 30,
+            smoothing_sigma=None,
+        )
+        mvl = result.mean_vector_length()
+
+        # Should still compute a valid MVL
+        assert not np.isnan(mvl)
+        assert 0 <= mvl <= 1
+
+    def test_rayleigh_pvalue_with_nans(self) -> None:
+        """rayleigh_pvalue handles NaN values in firing_rate."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        n_bins = 60
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        firing_rate = 10.0 * np.exp(5.0 * (np.cos(bin_centers - np.pi / 2) - 1))
+        firing_rate[::5] = np.nan  # Set every 5th bin to NaN
+
+        result = DirectionalRateResult(
+            firing_rate=firing_rate,
+            occupancy=np.ones(n_bins) * 0.5,
+            bin_centers=bin_centers,
+            bin_size=np.pi / 30,
+            smoothing_sigma=None,
+        )
+        pval = result.rayleigh_pvalue()
+
+        # Should still compute a valid p-value
+        assert not np.isnan(pval)
+        assert 0 <= pval <= 1
+
+    def test_is_hd_cell_with_nans(self) -> None:
+        """is_hd_cell handles NaN values in firing_rate."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        n_bins = 60
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        firing_rate = 10.0 * np.exp(5.0 * (np.cos(bin_centers - np.pi / 2) - 1))
+        firing_rate[::5] = np.nan  # Set every 5th bin to NaN
+
+        result = DirectionalRateResult(
+            firing_rate=firing_rate,
+            occupancy=np.ones(n_bins) * 0.5,
+            bin_centers=bin_centers,
+            bin_size=np.pi / 30,
+            smoothing_sigma=None,
+        )
+        is_hd = result.is_hd_cell()
+
+        # Should return a boolean (not error or NaN comparison issue)
+        assert isinstance(is_hd, bool)
+
+    def test_all_nans_returns_nan(self) -> None:
+        """Metrics return NaN when all firing_rate values are NaN."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        n_bins = 60
+        bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        firing_rate = np.full(n_bins, np.nan)
+
+        result = DirectionalRateResult(
+            firing_rate=firing_rate,
+            occupancy=np.zeros(n_bins),  # All unvisited
+            bin_centers=bin_centers,
+            bin_size=np.pi / 30,
+            smoothing_sigma=None,
+        )
+
+        # All metrics should return NaN
+        assert np.isnan(result.preferred_direction())
+        assert np.isnan(result.mean_vector_length())
+        assert np.isnan(result.rayleigh_pvalue())

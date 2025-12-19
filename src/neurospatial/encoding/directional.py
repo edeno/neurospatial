@@ -290,7 +290,12 @@ class DirectionalRateResult:
         rates = np.asarray(self.firing_rate, dtype=np.float64)
         centers = np.asarray(self.bin_centers, dtype=np.float64)
 
-        return circular_mean(centers, weights=rates)
+        # Mask out NaN values (from unvisited bins) before computing circular mean
+        valid_mask = ~np.isnan(rates)
+        if not np.any(valid_mask):
+            return float(np.nan)
+
+        return circular_mean(centers[valid_mask], weights=rates[valid_mask])
 
     def preferred_direction_deg(self) -> float:
         """Compute the preferred direction in degrees.
@@ -424,7 +429,12 @@ class DirectionalRateResult:
         rates = np.asarray(self.firing_rate, dtype=np.float64)
         centers = np.asarray(self.bin_centers, dtype=np.float64)
 
-        return mean_resultant_length(centers, weights=rates)
+        # Mask out NaN values (from unvisited bins) before computing MVL
+        valid_mask = ~np.isnan(rates)
+        if not np.any(valid_mask):
+            return float(np.nan)
+
+        return mean_resultant_length(centers[valid_mask], weights=rates[valid_mask])
 
     def tuning_width(self) -> float:
         """Compute the tuning width (half-width at half-maximum) in radians.
@@ -632,8 +642,13 @@ class DirectionalRateResult:
         rates = np.asarray(self.firing_rate, dtype=np.float64)
         centers = np.asarray(self.bin_centers, dtype=np.float64)
 
+        # Mask out NaN values (from unvisited bins) before Rayleigh test
+        valid_mask = ~np.isnan(rates)
+        if not np.any(valid_mask):
+            return float(np.nan)
+
         # The rayleigh_test uses the bin centers as angles and firing rates as weights
-        _, pval = rayleigh_test(centers, weights=rates)
+        _, pval = rayleigh_test(centers[valid_mask], weights=rates[valid_mask])
 
         return pval
 
@@ -1407,20 +1422,24 @@ def compute_directional_rate(
         spike_times, times, headings, bin_size, angle_unit=angle_unit
     )
 
-    # Convert bin_size and smoothing_sigma to radians for storage
+    # Compute actual bin_size from bin_centers (handles non-divisible bin_size)
+    # The binning layer rounds n_bins = int(round(2π / bin_size)), so the actual
+    # bin spacing may differ from the requested bin_size
+    n_bins = len(bin_centers)
+    actual_bin_size_rad = 2 * np.pi / n_bins
+
+    # Convert smoothing_sigma to radians for storage
     if angle_unit == "deg":
-        bin_size_rad = np.radians(bin_size)
         smoothing_sigma_rad = np.radians(smoothing_sigma) if smoothing_sigma else None
     else:
-        bin_size_rad = bin_size
         smoothing_sigma_rad = smoothing_sigma
 
     # Apply smoothing if requested
-    if smoothing_sigma is not None:
+    if smoothing_sigma_rad is not None:
         from scipy.ndimage import gaussian_filter1d
 
         # Convert smoothing_sigma to number of bins
-        sigma_bins = smoothing_sigma_rad / bin_size_rad
+        sigma_bins = smoothing_sigma_rad / actual_bin_size_rad
 
         # Apply circular Gaussian smoothing
         # Use mode='wrap' for circular boundary conditions
@@ -1442,7 +1461,7 @@ def compute_directional_rate(
         firing_rate=firing_rate,
         occupancy=occupancy,
         bin_centers=bin_centers,
-        bin_size=bin_size_rad,
+        bin_size=actual_bin_size_rad,
         smoothing_sigma=smoothing_sigma_rad,
     )
 
@@ -1579,13 +1598,27 @@ def compute_directional_rates(
     )
     n_bins = len(bin_centers)
 
-    # Convert bin_size and smoothing_sigma to radians for storage
+    # Compute actual bin_size from bin_centers (handles non-divisible bin_size)
+    # The binning layer rounds n_bins = int(round(2π / bin_size)), so the actual
+    # bin spacing may differ from the requested bin_size
+    actual_bin_size_rad = 2 * np.pi / n_bins
+
+    # Convert smoothing_sigma to radians for storage
     if angle_unit == "deg":
-        bin_size_rad = np.radians(bin_size)
         smoothing_sigma_rad = np.radians(smoothing_sigma) if smoothing_sigma else None
     else:
-        bin_size_rad = bin_size
         smoothing_sigma_rad = smoothing_sigma
+
+    # Precompute smoothed occupancy once (instead of per-neuron)
+    if smoothing_sigma_rad is not None:
+        from scipy.ndimage import gaussian_filter1d
+
+        sigma_bins = smoothing_sigma_rad / actual_bin_size_rad
+        occupancy_smooth: NDArray[np.float64] = gaussian_filter1d(
+            occupancy, sigma=sigma_bins, mode="wrap"
+        )
+    else:
+        occupancy_smooth = occupancy
 
     # Handle empty neuron list
     if n_neurons == 0:
@@ -1594,7 +1627,7 @@ def compute_directional_rates(
             firing_rates=empty_rates,
             occupancy=occupancy,
             bin_centers=bin_centers,
-            bin_size=bin_size_rad,
+            bin_size=actual_bin_size_rad,
             smoothing_sigma=smoothing_sigma_rad,
         )
 
@@ -1609,16 +1642,11 @@ def compute_directional_rates(
         if smoothing_sigma_rad is not None:
             from scipy.ndimage import gaussian_filter1d
 
-            sigma_bins = smoothing_sigma_rad / bin_size_rad
             spike_counts_smooth: NDArray[np.float64] = gaussian_filter1d(
                 spike_counts, sigma=sigma_bins, mode="wrap"
             )
-            occupancy_smooth: NDArray[np.float64] = gaussian_filter1d(
-                occupancy, sigma=sigma_bins, mode="wrap"
-            )
         else:
             spike_counts_smooth = spike_counts
-            occupancy_smooth = occupancy
 
         # Compute firing rate (handle division by zero)
         with np.errstate(divide="ignore", invalid="ignore"):
@@ -1648,6 +1676,6 @@ def compute_directional_rates(
         firing_rates=firing_rates,
         occupancy=occupancy,
         bin_centers=bin_centers,
-        bin_size=bin_size_rad,
+        bin_size=actual_bin_size_rad,
         smoothing_sigma=smoothing_sigma_rad,
     )

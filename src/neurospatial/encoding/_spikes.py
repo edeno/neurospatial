@@ -7,6 +7,7 @@ The main function is `normalize_spike_times()`, which accepts:
 
 - 1D array (single neuron) → wrapped in list
 - 2D array (n_neurons, max_spikes) with NaN padding → split, NaNs removed
+- list/tuple of scalars (single neuron) → converted to 1D array, wrapped in list
 - list/tuple of 1D arrays (canonical format) → each element converted to array
 
 This normalization happens at the entry point of encoding functions, ensuring
@@ -37,6 +38,8 @@ def normalize_spike_times(
         - 1D array (single neuron) → wrapped in list
         - 2D array (n_neurons, max_spikes) → split along axis 0, NaN padding
           removed from each row
+        - List/tuple of scalars (single neuron) → converted to 1D array,
+          wrapped in list (e.g., ``[0.1, 0.5, 1.2]``)
         - List/tuple of 1D arrays (canonical format) → each element converted
           to float64 array
 
@@ -59,6 +62,15 @@ def normalize_spike_times(
     >>> import numpy as np
     >>> from neurospatial.encoding._spikes import normalize_spike_times
     >>> spikes = np.array([0.1, 0.5, 1.2])
+    >>> normalized = normalize_spike_times(spikes)
+    >>> len(normalized)
+    1
+    >>> normalized[0]
+    array([0.1, 0.5, 1.2])
+
+    Single neuron (list of scalars - common user input):
+
+    >>> spikes = [0.1, 0.5, 1.2]  # Plain list of floats
     >>> normalized = normalize_spike_times(spikes)
     >>> len(normalized)
     1
@@ -93,7 +105,19 @@ def normalize_spike_times(
         if len(spike_times) == 0:
             return []
 
-        # Convert each element to 1D float64 array
+        # Check if this is a list of scalars (single neuron's spike times)
+        # This is a common user input pattern: [0.1, 0.5, 1.0]
+        first_elem = spike_times[0]
+        if isinstance(first_elem, (int, float, np.floating, np.integer)):
+            # Treat as single neuron: convert entire list to 1D array
+            arr = np.asarray(spike_times, dtype=np.float64)
+            if arr.ndim != 1:
+                raise ValueError(
+                    f"Expected 1D array from list of scalars, got shape {arr.shape}"
+                )
+            return [arr]
+
+        # Convert each element to 1D float64 array (list of arrays pattern)
         result: list[NDArray[np.float64]] = []
         for i, row in enumerate(spike_times):
             arr = np.asarray(row, dtype=np.float64)

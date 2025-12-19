@@ -396,6 +396,64 @@ class TestNormalizeSpikeTimesEdgeCases:
 # ==============================================================================
 
 
+class TestNormalizeSpikeTimesListOfScalars:
+    """Tests for list of scalars input (single neuron).
+
+    This is a common user input pattern: [0.1, 0.5, 1.0] representing
+    spike times for a single neuron.
+    """
+
+    def test_list_of_floats_returns_single_neuron(self) -> None:
+        """List of floats should be treated as single neuron."""
+        from neurospatial.encoding._spikes import normalize_spike_times
+
+        result = normalize_spike_times([0.1, 0.5, 1.0])
+        assert len(result) == 1
+        np.testing.assert_array_equal(result[0], [0.1, 0.5, 1.0])
+
+    def test_list_of_ints_returns_single_neuron(self) -> None:
+        """List of ints should be treated as single neuron, converted to float64."""
+        from neurospatial.encoding._spikes import normalize_spike_times
+
+        result = normalize_spike_times([1, 2, 3])
+        assert len(result) == 1
+        assert result[0].dtype == np.float64
+        np.testing.assert_array_equal(result[0], [1.0, 2.0, 3.0])
+
+    def test_tuple_of_floats_returns_single_neuron(self) -> None:
+        """Tuple of floats should be treated as single neuron."""
+        from neurospatial.encoding._spikes import normalize_spike_times
+
+        result = normalize_spike_times((0.1, 0.5, 1.0))
+        assert len(result) == 1
+        np.testing.assert_array_equal(result[0], [0.1, 0.5, 1.0])
+
+    def test_single_float_in_list_returns_single_neuron(self) -> None:
+        """List with single float should return one neuron with one spike."""
+        from neurospatial.encoding._spikes import normalize_spike_times
+
+        result = normalize_spike_times([0.5])
+        assert len(result) == 1
+        np.testing.assert_array_equal(result[0], [0.5])
+
+    def test_list_of_numpy_scalars_returns_single_neuron(self) -> None:
+        """List of numpy scalar types should be treated as single neuron."""
+        from neurospatial.encoding._spikes import normalize_spike_times
+
+        result = normalize_spike_times([np.float64(0.1), np.float64(0.5)])
+        assert len(result) == 1
+        np.testing.assert_array_equal(result[0], [0.1, 0.5])
+
+    def test_list_of_numpy_ints_returns_single_neuron(self) -> None:
+        """List of numpy integer types should be treated as single neuron."""
+        from neurospatial.encoding._spikes import normalize_spike_times
+
+        result = normalize_spike_times([np.int64(1), np.int64(2), np.int64(3)])
+        assert len(result) == 1
+        assert result[0].dtype == np.float64
+        np.testing.assert_array_equal(result[0], [1.0, 2.0, 3.0])
+
+
 class TestSpikesImports:
     """Test that expected items are importable from _spikes module."""
 

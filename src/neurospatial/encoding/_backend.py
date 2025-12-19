@@ -141,7 +141,7 @@ def get_backend(name: BackendType) -> Any:
             platform_note = (
                 " JAX is not supported on Windows."
                 if sys.platform == "win32"
-                else " JAX is not installed. Install with: pip install jax jaxlib"
+                else " JAX is not installed. Install with: uv add jax jaxlib"
             )
             raise ImportError(
                 f"JAX backend requested but JAX is not available.{platform_note}"
@@ -204,7 +204,7 @@ def get_backend_name(name: BackendType) -> Literal["numpy", "jax"]:
             platform_note = (
                 " JAX is not supported on Windows."
                 if sys.platform == "win32"
-                else " JAX is not installed. Install with: pip install jax jaxlib"
+                else " JAX is not installed. Install with: uv add jax jaxlib"
             )
             raise ImportError(
                 f"JAX backend requested but JAX is not available.{platform_note}"
