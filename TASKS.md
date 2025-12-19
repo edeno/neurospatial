@@ -188,13 +188,14 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Implement `is_hd_cell(min_mvl, alpha)` → boolean based on MVL and p-value
   - [x] Implement `interpretation(min_mvl)` → human-readable string
 
-- [ ] **3.5** Implement `DirectionalRatesResult` batch methods
-  - [ ] Implement `__len__`, `__getitem__`, `__iter__` for iteration
-  - [ ] Implement `plot(idx, ax, polar, **kwargs)`
-  - [ ] Implement `preferred_directions()` → returns `(n_neurons,)`
-  - [ ] Implement `mean_vector_lengths()` → returns `(n_neurons,)`
-  - [ ] Implement `tuning_widths()` → returns `(n_neurons,)`
-  - [ ] Implement `detect_hd_cells(min_mvl, alpha)` → returns `(n_neurons,)` bool
+- [x] **3.5** Implement `DirectionalRatesResult` batch methods
+  - [x] Implement `__len__`, `__getitem__`, `__iter__` for iteration
+  - [x] Implement `plot(idx, ax, polar, **kwargs)`
+  - [x] Implement `preferred_directions()` → returns `(n_neurons,)`
+  - [x] Implement `mean_vector_lengths()` → returns `(n_neurons,)`
+  - [x] Implement `tuning_widths()` → returns `(n_neurons,)`
+  - [x] Implement `detect_hd_cells(min_mvl, alpha)` → returns `(n_neurons,)` bool
+  - [x] Implement `peak_firing_rates()` → returns `(n_neurons,)`
 
 - [ ] **3.6** Implement `DirectionalRatesResult.to_dataframe()`
   - [ ] Include neuron_id, preferred_direction, preferred_direction_deg columns

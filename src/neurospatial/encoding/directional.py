@@ -964,3 +964,213 @@ class DirectionalRatesResult:
         """
         for i in range(len(self)):
             yield self[i]
+
+    def plot(
+        self,
+        idx: int,
+        ax: Axes | PolarAxes | None = None,
+        polar: bool = True,
+        **kwargs: Any,
+    ) -> Axes | PolarAxes:
+        """Plot the directional tuning curve for a specific neuron.
+
+        Creates a visualization of the firing rate as a function of direction
+        for the specified neuron. By default, creates a polar plot.
+
+        Parameters
+        ----------
+        idx : int
+            Index of the neuron to plot (0-indexed).
+        ax : matplotlib.axes.Axes or matplotlib.projections.polar.PolarAxes, optional
+            Axes to plot on. If None, creates a new figure with appropriate
+            projection (polar or Cartesian based on the ``polar`` parameter).
+        polar : bool, default=True
+            If True, create a polar plot (circular representation).
+            If False, create a Cartesian plot (angle on x-axis, rate on y-axis).
+        **kwargs : dict
+            Additional keyword arguments passed to matplotlib's plot function.
+
+        Returns
+        -------
+        matplotlib.axes.Axes or matplotlib.projections.polar.PolarAxes
+            The axes object containing the plot.
+
+        Examples
+        --------
+        >>> ax = result.plot(0)  # Plot first neuron  # doctest: +SKIP
+        >>> ax = result.plot(0, polar=False, color="red")  # doctest: +SKIP
+
+        See Also
+        --------
+        DirectionalRateResult.plot : Plot method for single neuron
+        """
+        return self[idx].plot(ax=ax, polar=polar, **kwargs)
+
+    def preferred_directions(self) -> NDArray[np.float64]:
+        """Compute preferred directions for all neurons.
+
+        The preferred direction is the circular mean of the bin centers
+        weighted by the firing rate.
+
+        Returns
+        -------
+        numpy.ndarray
+            Array of shape (n_neurons,) with preferred directions in radians,
+            range [-π, π].
+
+        Examples
+        --------
+        >>> pref_dirs = result.preferred_directions()
+        >>> pref_dirs.shape
+        (n_neurons,)
+
+        See Also
+        --------
+        DirectionalRateResult.preferred_direction : Single-neuron method
+        """
+        from neurospatial.stats.circular import circular_mean
+
+        rates: NDArray[np.float64] = np.asarray(self.firing_rates, dtype=np.float64)
+        centers: NDArray[np.float64] = np.asarray(self.bin_centers, dtype=np.float64)
+
+        n_neurons = len(self)
+        pref_dirs = np.empty(n_neurons, dtype=np.float64)
+
+        for i in range(n_neurons):
+            pref_dirs[i] = circular_mean(centers, weights=rates[i])
+
+        return pref_dirs
+
+    def mean_vector_lengths(self) -> NDArray[np.float64]:
+        """Compute mean vector lengths for all neurons.
+
+        The mean vector length quantifies the concentration of directional
+        tuning. It ranges from 0 (uniform firing) to 1 (all firing at one
+        direction).
+
+        Returns
+        -------
+        numpy.ndarray
+            Array of shape (n_neurons,) with mean vector lengths in [0, 1].
+            Higher values indicate sharper tuning.
+
+        Examples
+        --------
+        >>> mvls = result.mean_vector_lengths()
+        >>> mvls.shape
+        (n_neurons,)
+
+        See Also
+        --------
+        DirectionalRateResult.mean_vector_length : Single-neuron method
+        """
+        from neurospatial.stats.circular import mean_resultant_length
+
+        rates: NDArray[np.float64] = np.asarray(self.firing_rates, dtype=np.float64)
+        centers: NDArray[np.float64] = np.asarray(self.bin_centers, dtype=np.float64)
+
+        n_neurons = len(self)
+        mvls = np.empty(n_neurons, dtype=np.float64)
+
+        for i in range(n_neurons):
+            mvls[i] = mean_resultant_length(centers, weights=rates[i])
+
+        return mvls
+
+    def tuning_widths(self) -> NDArray[np.float64]:
+        """Compute tuning widths (HWHM) for all neurons.
+
+        The tuning width is the angular distance from the peak at which the
+        firing rate drops to half of its maximum value.
+
+        Returns
+        -------
+        numpy.ndarray
+            Array of shape (n_neurons,) with tuning widths in radians,
+            range (0, π]. Contains NaN for neurons with flat tuning curves.
+
+        Examples
+        --------
+        >>> widths = result.tuning_widths()
+        >>> widths.shape
+        (n_neurons,)
+
+        See Also
+        --------
+        DirectionalRateResult.tuning_width : Single-neuron method
+        """
+        n_neurons = len(self)
+        widths = np.empty(n_neurons, dtype=np.float64)
+
+        for i in range(n_neurons):
+            widths[i] = self[i].tuning_width()
+
+        return widths
+
+    def peak_firing_rates(self) -> NDArray[np.float64]:
+        """Get peak firing rates for all neurons.
+
+        Returns the maximum firing rate across all directional bins for each
+        neuron. NaN values are ignored.
+
+        Returns
+        -------
+        numpy.ndarray
+            Array of shape (n_neurons,) with peak firing rates in Hz.
+
+        Examples
+        --------
+        >>> peaks = result.peak_firing_rates()
+        >>> peaks.shape
+        (n_neurons,)
+
+        See Also
+        --------
+        DirectionalRateResult.peak_firing_rate : Single-neuron method
+        """
+        rates: NDArray[np.float64] = np.asarray(self.firing_rates, dtype=np.float64)
+        result: NDArray[np.float64] = np.nanmax(rates, axis=1)
+        return result
+
+    def detect_hd_cells(
+        self, min_mvl: float = 0.4, alpha: float = 0.05
+    ) -> NDArray[np.bool_]:
+        """Classify neurons as head direction cells.
+
+        A neuron is classified as a head direction (HD) cell if it meets
+        both criteria (Taube et al., 1990):
+
+        1. Mean vector length (MVL) > min_mvl (default 0.4)
+        2. Rayleigh test p-value < alpha (default 0.05)
+
+        Parameters
+        ----------
+        min_mvl : float, default=0.4
+            Minimum mean vector length threshold.
+        alpha : float, default=0.05
+            Significance level for Rayleigh test.
+
+        Returns
+        -------
+        numpy.ndarray
+            Boolean array of shape (n_neurons,). True indicates the neuron
+            is classified as an HD cell.
+
+        Examples
+        --------
+        >>> is_hd = result.detect_hd_cells()
+        >>> is_hd.shape
+        (n_neurons,)
+        >>> n_hd_cells = np.sum(is_hd)
+
+        See Also
+        --------
+        DirectionalRateResult.is_hd_cell : Single-neuron method
+        """
+        n_neurons = len(self)
+        is_hd = np.empty(n_neurons, dtype=np.bool_)
+
+        for i in range(n_neurons):
+            is_hd[i] = self[i].is_hd_cell(min_mvl=min_mvl, alpha=alpha)
+
+        return is_hd

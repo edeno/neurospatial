@@ -3,10 +3,78 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 3.4 - Implement `DirectionalRateResult` classification
-**Next Task**: Task 3.5 - Implement `DirectionalRatesResult` batch methods
+**Last Completed**: Task 3.5 - Implement `DirectionalRatesResult` batch methods
+**Next Task**: Task 3.6 - Implement `DirectionalRatesResult.to_dataframe()`
 
 ## Session Notes
+
+### Task 3.5: Implement `DirectionalRatesResult` Batch Methods [COMPLETED]
+
+**Goal**: Add batch methods to `DirectionalRatesResult` for efficient population analysis.
+
+**Approach**: TDD - wrote 28 tests first, then implemented.
+
+**Result**:
+
+- Added 6 batch methods to `DirectionalRatesResult` in `src/neurospatial/encoding/directional.py`
+- Added 28 new tests in `tests/encoding/test_encoding_directional.py` (total now 96, all pass)
+- All mypy and ruff checks pass
+- Code review passed with APPROVE
+
+**Key Implementation Details**:
+
+- `plot(idx, ax, polar, **kwargs)`: Plot a specific neuron's tuning curve
+  - Requires `idx` parameter (0-indexed)
+  - Delegates to `self[idx].plot()` for the actual plot
+  - Accepts `ax`, `polar`, and kwargs passed through
+
+- `preferred_directions()`: Preferred directions for all neurons
+  - Returns `(n_neurons,)` array in radians [-π, π]
+  - Delegates to `circular_mean()` from `neurospatial.stats.circular`
+  - Uses explicit loop (vectorization possible in future)
+
+- `mean_vector_lengths()`: Mean vector lengths for all neurons
+  - Returns `(n_neurons,)` array in [0, 1]
+  - Delegates to `mean_resultant_length()` from `neurospatial.stats.circular`
+  - Uses explicit loop (vectorization possible in future)
+
+- `tuning_widths()`: Tuning widths (HWHM) for all neurons
+  - Returns `(n_neurons,)` array in radians (0, π], or NaN
+  - Delegates to `self[i].tuning_width()` for each neuron
+
+- `peak_firing_rates()`: Peak firing rates for all neurons
+  - Returns `(n_neurons,)` array in Hz
+  - Uses vectorized `np.nanmax(rates, axis=1)` for efficiency
+
+- `detect_hd_cells(min_mvl, alpha)`: HD cell classification for all neurons
+  - Returns `(n_neurons,)` boolean array
+  - Parameters: min_mvl (default 0.4), alpha (default 0.05)
+  - Delegates to `self[i].is_hd_cell()` for each neuron
+
+**Test coverage (28 tests in 6 classes)**:
+
+- `TestDirectionalRatesResultPlot`: 6 tests (returns axes, requires idx, polar default, cartesian, existing axes, kwargs)
+- `TestDirectionalRatesResultPreferredDirections`: 4 tests (returns array, shape, matches single, valid range)
+- `TestDirectionalRatesResultMeanVectorLengths`: 4 tests (returns array, shape, matches single, valid range)
+- `TestDirectionalRatesResultTuningWidths`: 4 tests (returns array, shape, matches single, valid range)
+- `TestDirectionalRatesResultDetectHdCells`: 6 tests (returns array, shape, matches single, respects min_mvl, respects alpha, default thresholds)
+- `TestDirectionalRatesResultPeakFiringRates`: 4 tests (returns array, shape, matches single, non-negative)
+
+**Documentation**:
+
+- Complete NumPy-style docstrings for all methods
+- Examples showing typical usage
+- See Also cross-references to single-neuron methods
+
+**Code review feedback**: APPROVE - Ready to merge
+
+- Excellent code quality with consistent implementation pattern
+- Complete type annotations (mypy passes)
+- Comprehensive test coverage (28 tests)
+- One smart vectorization (`peak_firing_rates`)
+- Performance optimization opportunity noted for future: 4 methods use loops instead of vectorized operations
+
+---
 
 ### Task 3.4: Implement `DirectionalRateResult` Classification [COMPLETED]
 

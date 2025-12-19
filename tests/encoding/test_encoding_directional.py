@@ -1746,3 +1746,670 @@ class TestDirectionalRateResultInterpretation:
 
         # Should mention the threshold somewhere
         assert str(custom_threshold) in interp or "0.5" in interp
+
+
+# ==============================================================================
+# DirectionalRatesResult Batch Methods Tests - Task 3.5
+# ==============================================================================
+
+
+class TestDirectionalRatesResultPlot:
+    """Test DirectionalRatesResult.plot() method."""
+
+    def test_plot_returns_axes(
+        self,
+        batch_firing_rates: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """plot(idx) returns matplotlib Axes object."""
+        pytest.importorskip("matplotlib")
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        result = DirectionalRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        ax = result.plot(0)
+        assert ax is not None
+        assert hasattr(ax, "plot")
+
+    def test_plot_requires_idx(
+        self,
+        batch_firing_rates: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """plot() requires idx parameter."""
+        pytest.importorskip("matplotlib")
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        result = DirectionalRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        # Should raise TypeError if idx not provided
+        with pytest.raises(TypeError):
+            result.plot()  # type: ignore[call-arg]
+
+    def test_plot_polar_default(
+        self,
+        batch_firing_rates: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """plot(idx) creates polar plot by default."""
+        pytest.importorskip("matplotlib")
+        from matplotlib.projections.polar import PolarAxes
+
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        result = DirectionalRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        ax = result.plot(0, polar=True)
+        assert isinstance(ax, PolarAxes)
+
+    def test_plot_cartesian(
+        self,
+        batch_firing_rates: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """plot(idx, polar=False) creates Cartesian plot."""
+        pytest.importorskip("matplotlib")
+        from matplotlib.projections.polar import PolarAxes
+
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        result = DirectionalRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        ax = result.plot(0, polar=False)
+        assert not isinstance(ax, PolarAxes)
+
+    def test_plot_with_ax(
+        self,
+        batch_firing_rates: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """plot(idx) accepts existing axes."""
+        plt = pytest.importorskip("matplotlib.pyplot")
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        result = DirectionalRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        _, ax_provided = plt.subplots(subplot_kw={"projection": "polar"})
+        ax_returned = result.plot(0, ax=ax_provided)
+        assert ax_returned is ax_provided
+
+    def test_plot_with_kwargs(
+        self,
+        batch_firing_rates: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """plot(idx) passes through kwargs."""
+        pytest.importorskip("matplotlib")
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        result = DirectionalRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        # Should not raise an error with valid kwargs
+        ax = result.plot(0, color="red", linewidth=2)
+        assert ax is not None
+
+
+class TestDirectionalRatesResultPreferredDirections:
+    """Test DirectionalRatesResult.preferred_directions() method."""
+
+    def test_preferred_directions_returns_array(
+        self,
+        batch_firing_rates: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """preferred_directions() returns numpy array."""
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        result = DirectionalRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        pref_dirs = result.preferred_directions()
+        assert isinstance(pref_dirs, np.ndarray)
+
+    def test_preferred_directions_shape(
+        self,
+        batch_firing_rates: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+        n_neurons: int,
+    ) -> None:
+        """preferred_directions() returns (n_neurons,) array."""
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        result = DirectionalRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        pref_dirs = result.preferred_directions()
+        assert pref_dirs.shape == (n_neurons,)
+
+    def test_preferred_directions_matches_single(
+        self,
+        batch_firing_rates: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """preferred_directions() matches iteration over single results."""
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        result = DirectionalRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        pref_dirs = result.preferred_directions()
+
+        for i, single in enumerate(result):
+            np.testing.assert_allclose(pref_dirs[i], single.preferred_direction())
+
+    def test_preferred_directions_in_valid_range(
+        self,
+        batch_firing_rates: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """preferred_directions() values are in [-π, π]."""
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        result = DirectionalRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        pref_dirs = result.preferred_directions()
+        assert np.all(pref_dirs >= -np.pi)
+        assert np.all(pref_dirs <= np.pi)
+
+
+class TestDirectionalRatesResultMeanVectorLengths:
+    """Test DirectionalRatesResult.mean_vector_lengths() method."""
+
+    def test_mean_vector_lengths_returns_array(
+        self,
+        batch_firing_rates: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """mean_vector_lengths() returns numpy array."""
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        result = DirectionalRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        mvls = result.mean_vector_lengths()
+        assert isinstance(mvls, np.ndarray)
+
+    def test_mean_vector_lengths_shape(
+        self,
+        batch_firing_rates: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+        n_neurons: int,
+    ) -> None:
+        """mean_vector_lengths() returns (n_neurons,) array."""
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        result = DirectionalRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        mvls = result.mean_vector_lengths()
+        assert mvls.shape == (n_neurons,)
+
+    def test_mean_vector_lengths_matches_single(
+        self,
+        batch_firing_rates: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """mean_vector_lengths() matches iteration over single results."""
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        result = DirectionalRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        mvls = result.mean_vector_lengths()
+
+        for i, single in enumerate(result):
+            np.testing.assert_allclose(mvls[i], single.mean_vector_length())
+
+    def test_mean_vector_lengths_in_valid_range(
+        self,
+        batch_firing_rates: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """mean_vector_lengths() values are in [0, 1]."""
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        result = DirectionalRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        mvls = result.mean_vector_lengths()
+        assert np.all(mvls >= 0)
+        assert np.all(mvls <= 1)
+
+
+class TestDirectionalRatesResultTuningWidths:
+    """Test DirectionalRatesResult.tuning_widths() method."""
+
+    def test_tuning_widths_returns_array(
+        self,
+        batch_firing_rates: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """tuning_widths() returns numpy array."""
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        result = DirectionalRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        widths = result.tuning_widths()
+        assert isinstance(widths, np.ndarray)
+
+    def test_tuning_widths_shape(
+        self,
+        batch_firing_rates: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+        n_neurons: int,
+    ) -> None:
+        """tuning_widths() returns (n_neurons,) array."""
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        result = DirectionalRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        widths = result.tuning_widths()
+        assert widths.shape == (n_neurons,)
+
+    def test_tuning_widths_matches_single(
+        self,
+        batch_firing_rates: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """tuning_widths() matches iteration over single results."""
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        result = DirectionalRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        widths = result.tuning_widths()
+
+        for i, single in enumerate(result):
+            np.testing.assert_allclose(widths[i], single.tuning_width())
+
+    def test_tuning_widths_in_valid_range(
+        self,
+        batch_firing_rates: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """tuning_widths() values are in (0, π] or NaN."""
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        result = DirectionalRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        widths = result.tuning_widths()
+        # Filter out NaN values for range check
+        valid_widths = widths[~np.isnan(widths)]
+        if len(valid_widths) > 0:
+            assert np.all(valid_widths > 0)
+            assert np.all(valid_widths <= np.pi)
+
+
+class TestDirectionalRatesResultDetectHdCells:
+    """Test DirectionalRatesResult.detect_hd_cells() method."""
+
+    def test_detect_hd_cells_returns_array(
+        self,
+        batch_firing_rates: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """detect_hd_cells() returns numpy array."""
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        result = DirectionalRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        is_hd = result.detect_hd_cells()
+        assert isinstance(is_hd, np.ndarray)
+
+    def test_detect_hd_cells_shape(
+        self,
+        batch_firing_rates: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+        n_neurons: int,
+    ) -> None:
+        """detect_hd_cells() returns (n_neurons,) bool array."""
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        result = DirectionalRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        is_hd = result.detect_hd_cells()
+        assert is_hd.shape == (n_neurons,)
+        assert is_hd.dtype == np.bool_
+
+    def test_detect_hd_cells_matches_single(
+        self,
+        batch_firing_rates: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """detect_hd_cells() matches iteration over single results."""
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        result = DirectionalRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        is_hd = result.detect_hd_cells()
+
+        for i, single in enumerate(result):
+            assert is_hd[i] == single.is_hd_cell()
+
+    def test_detect_hd_cells_respects_min_mvl(
+        self,
+        batch_firing_rates: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """detect_hd_cells() respects min_mvl parameter."""
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        result = DirectionalRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        # Very permissive threshold
+        is_hd_permissive = result.detect_hd_cells(min_mvl=0.0)
+
+        # Very strict threshold
+        is_hd_strict = result.detect_hd_cells(min_mvl=0.99)
+
+        # Strict should have fewer or equal HD cells
+        assert np.sum(is_hd_strict) <= np.sum(is_hd_permissive)
+
+    def test_detect_hd_cells_respects_alpha(
+        self,
+        batch_firing_rates: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """detect_hd_cells() respects alpha parameter."""
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        result = DirectionalRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        # Very permissive alpha
+        is_hd_permissive = result.detect_hd_cells(alpha=1.0)
+
+        # Very strict alpha
+        is_hd_strict = result.detect_hd_cells(alpha=1e-10)
+
+        # Strict should have fewer or equal HD cells
+        assert np.sum(is_hd_strict) <= np.sum(is_hd_permissive)
+
+    def test_detect_hd_cells_default_thresholds(
+        self,
+        batch_firing_rates: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """detect_hd_cells() uses default thresholds of min_mvl=0.4, alpha=0.05."""
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        result = DirectionalRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        is_hd_default = result.detect_hd_cells()
+        is_hd_explicit = result.detect_hd_cells(min_mvl=0.4, alpha=0.05)
+
+        np.testing.assert_array_equal(is_hd_default, is_hd_explicit)
+
+
+class TestDirectionalRatesResultPeakFiringRates:
+    """Test DirectionalRatesResult.peak_firing_rates() method."""
+
+    def test_peak_firing_rates_returns_array(
+        self,
+        batch_firing_rates: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """peak_firing_rates() returns numpy array."""
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        result = DirectionalRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        peaks = result.peak_firing_rates()
+        assert isinstance(peaks, np.ndarray)
+
+    def test_peak_firing_rates_shape(
+        self,
+        batch_firing_rates: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+        n_neurons: int,
+    ) -> None:
+        """peak_firing_rates() returns (n_neurons,) array."""
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        result = DirectionalRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        peaks = result.peak_firing_rates()
+        assert peaks.shape == (n_neurons,)
+
+    def test_peak_firing_rates_matches_single(
+        self,
+        batch_firing_rates: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """peak_firing_rates() matches iteration over single results."""
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        result = DirectionalRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        peaks = result.peak_firing_rates()
+
+        for i, single in enumerate(result):
+            np.testing.assert_allclose(peaks[i], single.peak_firing_rate())
+
+    def test_peak_firing_rates_nonnegative(
+        self,
+        batch_firing_rates: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """peak_firing_rates() values are non-negative."""
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        result = DirectionalRatesResult(
+            firing_rates=batch_firing_rates,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        peaks = result.peak_firing_rates()
+        assert np.all(peaks >= 0)
