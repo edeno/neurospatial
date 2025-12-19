@@ -91,10 +91,10 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
 
 ### Tasks
 
-- [ ] **2.1** Create `encoding/spatial.py` with result class definitions
-  - [ ] Define `SpatialRateResult` dataclass (frozen=True)
-  - [ ] Define `SpatialRatesResult` dataclass (frozen=True)
-  - [ ] Inherit from `SpatialResultMixin` for shared methods
+- [x] **2.1** Create `encoding/spatial.py` with result class definitions
+  - [x] Define `SpatialRateResult` dataclass (frozen=True)
+  - [x] Define `SpatialRatesResult` dataclass (frozen=True)
+  - [x] Inherit from `SpatialResultMixin` for shared methods
 
 - [ ] **2.2** Implement `SpatialRateResult` convenience methods
   - [ ] Implement `plot(ax, **kwargs)` → delegates to `env.plot_field()`
@@ -109,7 +109,7 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [ ] Implement `region_coverage(threshold, regions)` → delegates to `border.py`
 
 - [ ] **2.4** Implement `SpatialRatesResult` batch methods
-  - [ ] Implement `__len__`, `__getitem__`, `__iter__` for iteration
+  - [x] Implement `__len__`, `__getitem__`, `__iter__` for iteration
   - [ ] Implement `plot(idx, ax, **kwargs)`
   - [ ] Implement `spatial_information()` → returns `(n_neurons,)`
   - [ ] Implement `sparsity()` → returns `(n_neurons,)`

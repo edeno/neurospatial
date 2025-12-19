@@ -3,10 +3,45 @@
 ## Current Status
 
 **Date**: 2025-12-18
-**Last Completed**: Task 1.4 - Implement batch border score computation in `_metrics.py`
-**Next Task**: Task 2.1 - Create `encoding/spatial.py` with result class definitions
+**Last Completed**: Task 2.1 - Create `encoding/spatial.py` with result class definitions
+**Next Task**: Task 2.2 - Implement `SpatialRateResult` convenience methods
 
 ## Session Notes
+
+### Task 2.1: `encoding/spatial.py` - Result Class Definitions [COMPLETED]
+
+**Goal**: Create spatial.py with SpatialRateResult and SpatialRatesResult dataclasses.
+
+**Approach**: TDD - wrote 30 tests first (`test_encoding_spatial.py`), then implemented.
+
+**Result**:
+
+- Created `src/neurospatial/encoding/spatial.py` with 2 dataclasses
+- Created `tests/encoding/test_encoding_spatial.py` with 30 tests (all pass)
+- All mypy and ruff checks pass
+- Code review passed with APPROVE
+
+**Key Implementation Details**:
+
+- `SpatialRateResult`: Single-neuron result (frozen dataclass)
+  - Fields: `firing_rate`, `occupancy`, `env`, `smoothing_method`, `bandwidth`
+  - Inherits from `SpatialResultMixin` for `peak_locations()`, `peak_firing_rates()`
+
+- `SpatialRatesResult`: Batch result (frozen dataclass)
+  - Fields: `firing_rates` (plural), `occupancy`, `env`, `smoothing_method`, `bandwidth`
+  - Inherits from `SpatialResultMixin`
+  - Implements `__len__`, `__getitem__`, `__iter__` for iteration
+  - `__getitem__(idx)` returns `SpatialRateResult` for single neuron
+
+**Iteration interface**:
+
+- `len(result)`: Returns number of neurons
+- `result[i]`: Returns `SpatialRateResult` for neuron i
+- `for r in result`: Iterates over single-neuron results
+
+**Code review feedback**: APPROVE with no critical issues. Suggestions for future enhancements (TypeVar for JAX support, custom __repr__) are low priority.
+
+---
 
 ### Task 1.4: `encoding/_metrics.py` - batch_border_scores [COMPLETED]
 
