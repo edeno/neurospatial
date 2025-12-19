@@ -3,10 +3,80 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 3.3 - Implement `DirectionalRateResult` tuning metrics
-**Next Task**: Task 3.4 - Implement `DirectionalRateResult` classification
+**Last Completed**: Task 3.4 - Implement `DirectionalRateResult` classification
+**Next Task**: Task 3.5 - Implement `DirectionalRatesResult` batch methods
 
 ## Session Notes
+
+### Task 3.4: Implement `DirectionalRateResult` Classification [COMPLETED]
+
+**Goal**: Add classification methods to `DirectionalRateResult` for determining if a neuron is a head direction cell and providing human-readable interpretation.
+
+**Approach**: TDD - wrote 13 tests first, then implemented.
+
+**Result**:
+
+- Added 2 classification methods to `DirectionalRateResult` in `src/neurospatial/encoding/directional.py`
+- Added 13 new tests in `tests/encoding/test_encoding_directional.py` (total now 68, all pass)
+- All mypy and ruff checks pass
+- Code review passed with APPROVE
+
+**Key Implementation Details**:
+
+- `is_hd_cell(min_mvl=0.4, alpha=0.05)`: Boolean classification
+  - Returns True if MVL > min_mvl AND rayleigh_pvalue < alpha
+  - Default thresholds from Taube et al. (1990)
+  - Both criteria must be met (AND logic)
+  - Reuses existing `mean_vector_length()` and `rayleigh_pvalue()` methods
+
+- `interpretation(min_mvl=0.4)`: Human-readable string
+  - For HD cells: Shows header, preferred direction, MVL (with threshold), peak rate, tuning width, Rayleigh p-value
+  - For non-HD cells: Explains which criteria failed with educational guidance
+  - Includes threshold selection rationale from Taube et al. (1990)
+  - Format matches existing `HeadDirectionMetrics.interpretation()` in `head_direction.py`
+
+**Test coverage (13 tests in 2 classes)**:
+
+- `TestDirectionalRateResultIsHdCell`: 7 tests
+  - Returns bool
+  - True for sharply tuned neurons
+  - False for uniform firing
+  - Respects min_mvl parameter
+  - Respects alpha parameter
+  - Default thresholds (0.4, 0.05)
+  - Requires both criteria
+
+- `TestDirectionalRateResultInterpretation`: 6 tests
+  - Returns string
+  - HD cell format (header, metrics)
+  - Non-HD cell format (explains why)
+  - Explains low MVL
+  - Respects min_mvl parameter
+  - Includes threshold value
+
+**Documentation**:
+
+- Complete NumPy-style docstrings with:
+  - Parameter descriptions with threshold rationale
+  - "How was 0.4 chosen?" section with Taube et al. (1990) reference
+  - "When to adjust" guidance for different brain regions/species
+  - Examples with expected output
+  - See Also cross-references
+
+**API Consistency**:
+
+- Method signatures match existing `HeadDirectionMetrics` API
+- Output format identical to `HeadDirectionMetrics.interpretation()`
+- Same educational messaging about threshold selection
+
+**Code review feedback**: APPROVE - No critical issues
+
+- Perfect API consistency with legacy HeadDirectionMetrics
+- Outstanding documentation with biological context
+- Robust implementation with proper boolean logic
+- Comprehensive test coverage
+
+---
 
 ### Task 3.3: Implement `DirectionalRateResult` Tuning Metrics [COMPLETED]
 

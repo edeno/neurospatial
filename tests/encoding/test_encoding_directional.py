@@ -1383,3 +1383,366 @@ class TestDirectionalRateResultRayleighPvalue:
         pval = result.rayleigh_pvalue()
         # Uniform firing should have high p-value (non-significant)
         assert pval > 0.5
+
+
+# ==============================================================================
+# DirectionalRateResult Classification Methods Tests - Task 3.4
+# ==============================================================================
+
+
+class TestDirectionalRateResultIsHdCell:
+    """Test DirectionalRateResult.is_hd_cell() method."""
+
+    def test_is_hd_cell_returns_bool(
+        self,
+        single_firing_rate: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """is_hd_cell() returns a boolean."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        result = DirectionalRateResult(
+            firing_rate=single_firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        is_hd = result.is_hd_cell()
+        assert isinstance(is_hd, bool)
+
+    def test_is_hd_cell_true_for_sharply_tuned(
+        self,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """is_hd_cell() returns True for sharply tuned neurons."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        # Very sharply tuned neuron (kappa=5)
+        preferred_dir = np.pi / 2
+        firing_rate = 10.0 * np.exp(5.0 * (np.cos(bin_centers - preferred_dir) - 1))
+
+        result = DirectionalRateResult(
+            firing_rate=firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        # Should be classified as HD cell (high MVL, low p-value)
+        assert result.is_hd_cell() is True
+
+    def test_is_hd_cell_false_for_uniform(
+        self,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+        n_bins: int,
+    ) -> None:
+        """is_hd_cell() returns False for uniform firing."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        # Uniform firing rate
+        firing_rate = np.ones(n_bins) * 5.0
+
+        result = DirectionalRateResult(
+            firing_rate=firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        # Should NOT be classified as HD cell
+        assert result.is_hd_cell() is False
+
+    def test_is_hd_cell_uses_min_mvl_threshold(
+        self,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """is_hd_cell() respects min_mvl parameter."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        # Moderately tuned neuron (kappa=2 gives MVL around 0.3-0.4)
+        preferred_dir = np.pi / 2
+        firing_rate = 10.0 * np.exp(2.0 * (np.cos(bin_centers - preferred_dir) - 1))
+
+        result = DirectionalRateResult(
+            firing_rate=firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        mvl = result.mean_vector_length()
+
+        # With high threshold (above MVL), should be False
+        assert result.is_hd_cell(min_mvl=mvl + 0.1) is False
+
+        # With low threshold (below MVL), should be True
+        assert result.is_hd_cell(min_mvl=mvl - 0.1) is True
+
+    def test_is_hd_cell_uses_alpha_threshold(
+        self,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """is_hd_cell() respects alpha parameter."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        # Sharply tuned neuron
+        preferred_dir = np.pi / 2
+        firing_rate = 10.0 * np.exp(5.0 * (np.cos(bin_centers - preferred_dir) - 1))
+
+        result = DirectionalRateResult(
+            firing_rate=firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        pval = result.rayleigh_pvalue()
+
+        # With very strict alpha (below p-value), should be False
+        # Note: sharply tuned will have very low p-value, so use even lower alpha
+        assert result.is_hd_cell(alpha=pval / 10) is False
+
+        # With permissive alpha (above p-value), should be True
+        assert result.is_hd_cell(alpha=0.1) is True
+
+    def test_is_hd_cell_default_thresholds(
+        self,
+        single_firing_rate: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """is_hd_cell() uses default thresholds of min_mvl=0.4, alpha=0.05."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        result = DirectionalRateResult(
+            firing_rate=single_firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        # Calling with no arguments should use defaults
+        is_hd_default = result.is_hd_cell()
+        is_hd_explicit = result.is_hd_cell(min_mvl=0.4, alpha=0.05)
+        assert is_hd_default == is_hd_explicit
+
+    def test_is_hd_cell_requires_both_criteria(
+        self,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """is_hd_cell() requires BOTH MVL > threshold AND p-value < alpha."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        # Create tuned neuron
+        preferred_dir = np.pi / 2
+        firing_rate = 10.0 * np.exp(5.0 * (np.cos(bin_centers - preferred_dir) - 1))
+
+        result = DirectionalRateResult(
+            firing_rate=firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        mvl = result.mean_vector_length()
+        pval = result.rayleigh_pvalue()
+
+        # Set thresholds so only MVL criterion is met
+        # (high alpha threshold that is below the p-value)
+        if pval > 0:
+            assert result.is_hd_cell(min_mvl=mvl - 0.1, alpha=pval / 10) is False
+
+        # Set thresholds so only p-value criterion is met
+        # (high MVL threshold that is above the actual MVL)
+        assert result.is_hd_cell(min_mvl=mvl + 0.1, alpha=0.1) is False
+
+
+class TestDirectionalRateResultInterpretation:
+    """Test DirectionalRateResult.interpretation() method."""
+
+    def test_interpretation_returns_string(
+        self,
+        single_firing_rate: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """interpretation() returns a string."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        result = DirectionalRateResult(
+            firing_rate=single_firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        interp = result.interpretation()
+        assert isinstance(interp, str)
+
+    def test_interpretation_hd_cell_format(
+        self,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """interpretation() for HD cell includes key metrics."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        # Very sharply tuned neuron
+        preferred_dir = np.pi / 2
+        firing_rate = 10.0 * np.exp(5.0 * (np.cos(bin_centers - preferred_dir) - 1))
+
+        result = DirectionalRateResult(
+            firing_rate=firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        interp = result.interpretation()
+
+        # Should indicate it's an HD cell
+        assert "HEAD DIRECTION CELL" in interp
+
+        # Should include preferred direction
+        assert "Preferred direction" in interp
+
+        # Should include MVL
+        assert "Mean vector length" in interp or "MVL" in interp
+
+        # Should include peak firing rate
+        assert "Peak" in interp or "peak" in interp or "firing" in interp.lower()
+
+    def test_interpretation_non_hd_cell_format(
+        self,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+        n_bins: int,
+    ) -> None:
+        """interpretation() for non-HD cell explains why."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        # Uniform firing rate
+        firing_rate = np.ones(n_bins) * 5.0
+
+        result = DirectionalRateResult(
+            firing_rate=firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        interp = result.interpretation()
+
+        # Should NOT say it's an HD cell
+        assert "*** HEAD DIRECTION CELL ***" not in interp
+
+        # Should indicate it's not an HD cell
+        assert "Not classified as HD cell" in interp or "not" in interp.lower()
+
+    def test_interpretation_explains_low_mvl(
+        self,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+        n_bins: int,
+    ) -> None:
+        """interpretation() explains when MVL is too low."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        # Uniform firing rate (low MVL)
+        firing_rate = np.ones(n_bins) * 5.0
+
+        result = DirectionalRateResult(
+            firing_rate=firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        interp = result.interpretation()
+
+        # Should mention MVL being too low
+        assert "vector length" in interp.lower() or "mvl" in interp.lower()
+
+    def test_interpretation_uses_min_mvl_threshold(
+        self,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """interpretation() respects min_mvl parameter."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        # Moderately tuned neuron
+        preferred_dir = np.pi / 2
+        firing_rate = 10.0 * np.exp(2.5 * (np.cos(bin_centers - preferred_dir) - 1))
+
+        result = DirectionalRateResult(
+            firing_rate=firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        mvl = result.mean_vector_length()
+
+        # With low threshold, should be HD cell
+        interp_low = result.interpretation(min_mvl=mvl - 0.1)
+        assert "HEAD DIRECTION CELL" in interp_low
+
+        # With high threshold, should NOT be HD cell
+        interp_high = result.interpretation(min_mvl=mvl + 0.1)
+        assert "HEAD DIRECTION CELL" not in interp_high
+
+    def test_interpretation_includes_threshold_value(
+        self,
+        single_firing_rate: np.ndarray,
+        single_occupancy: np.ndarray,
+        bin_centers: np.ndarray,
+        bin_size: float,
+    ) -> None:
+        """interpretation() includes the threshold value used."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        result = DirectionalRateResult(
+            firing_rate=single_firing_rate,
+            occupancy=single_occupancy,
+            bin_centers=bin_centers,
+            bin_size=bin_size,
+            smoothing_sigma=None,
+        )
+
+        custom_threshold = 0.5
+        interp = result.interpretation(min_mvl=custom_threshold)
+
+        # Should mention the threshold somewhere
+        assert str(custom_threshold) in interp or "0.5" in interp

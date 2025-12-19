@@ -634,6 +634,178 @@ class DirectionalRateResult:
 
         return pval
 
+    def is_hd_cell(self, min_mvl: float = 0.4, alpha: float = 0.05) -> bool:
+        """Classify as head direction cell.
+
+        A neuron is classified as a head direction (HD) cell if it meets
+        both of the following criteria (Taube et al., 1990):
+
+        1. Mean vector length (MVL) > min_mvl (default 0.4)
+        2. Rayleigh test p-value < alpha (default 0.05)
+
+        Parameters
+        ----------
+        min_mvl : float, default=0.4
+            Minimum mean vector length threshold.
+
+            **How was 0.4 chosen?**
+
+            This threshold comes from Taube et al. (1990) analyzing
+            postsubicular HD cells in rats. Empirically:
+
+            - Classic HD cells: 0.5-0.8
+            - Borderline HD cells: 0.3-0.5
+            - Non-HD cells: 0.1-0.3
+
+            **When to adjust:**
+
+            - Other brain regions: May need 0.3-0.5
+            - Different species: Validate threshold first
+            - Noisy recordings: Consider 0.3 (more permissive)
+            - Publication quality: Use 0.5 (more conservative)
+
+        alpha : float, default=0.05
+            Significance level for Rayleigh test. A neuron must have a
+            p-value below this threshold to be classified as an HD cell.
+
+        Returns
+        -------
+        bool
+            True if the neuron passes both HD cell criteria.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.encoding.directional import DirectionalRateResult
+        >>> n_bins = 60
+        >>> bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        >>> # Sharply tuned neuron
+        >>> firing_rate = 10.0 * np.exp(5.0 * (np.cos(bin_centers - np.pi / 2) - 1))
+        >>> result = DirectionalRateResult(
+        ...     firing_rate=firing_rate,
+        ...     occupancy=np.ones(n_bins) * 0.5,
+        ...     bin_centers=bin_centers,
+        ...     bin_size=np.pi / 30,
+        ...     smoothing_sigma=None,
+        ... )
+        >>> result.is_hd_cell()  # Sharply tuned neuron should be classified as HD cell
+        True
+
+        See Also
+        --------
+        mean_vector_length : Tuning strength measure
+        rayleigh_pvalue : Statistical test for non-uniformity
+        interpretation : Human-readable summary of classification
+
+        References
+        ----------
+        Taube, J.S., Muller, R.U., & Ranck, J.B. (1990). Head-direction cells
+            recorded from the postsubiculum in freely moving rats. I.
+            Description and quantitative analysis. J Neurosci, 10(2), 420-435.
+        """
+        return self.mean_vector_length() > min_mvl and self.rayleigh_pvalue() < alpha
+
+    def interpretation(self, min_mvl: float = 0.4) -> str:
+        """Human-readable interpretation of head direction metrics.
+
+        Provides a comprehensive summary of the neuron's directional tuning
+        properties and classification status. For neurons classified as HD
+        cells, includes preferred direction, tuning strength, and peak rate.
+        For non-HD cells, explains which criteria were not met.
+
+        Parameters
+        ----------
+        min_mvl : float, default=0.4
+            Minimum mean vector length threshold for HD cell classification.
+            Same parameter as in :meth:`is_hd_cell`.
+
+        Returns
+        -------
+        str
+            Multi-line string containing:
+
+            **For HD cells:**
+            - Header indicating HD cell classification
+            - Preferred direction (degrees)
+            - Mean vector length (with threshold)
+            - Peak firing rate (Hz)
+            - Tuning width (degrees)
+            - Rayleigh test p-value
+
+            **For non-HD cells:**
+            - Header indicating non-HD cell
+            - Explanation of which criteria failed
+            - Guidance on threshold selection
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.encoding.directional import DirectionalRateResult
+        >>> n_bins = 60
+        >>> bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        >>> # Sharply tuned neuron
+        >>> firing_rate = 10.0 * np.exp(5.0 * (np.cos(bin_centers - np.pi / 2) - 1))
+        >>> result = DirectionalRateResult(
+        ...     firing_rate=firing_rate,
+        ...     occupancy=np.ones(n_bins) * 0.5,
+        ...     bin_centers=bin_centers,
+        ...     bin_size=np.pi / 30,
+        ...     smoothing_sigma=None,
+        ... )
+        >>> print(result.interpretation())  # doctest: +SKIP
+        *** HEAD DIRECTION CELL ***
+        Preferred direction: 90.0 deg
+        Mean vector length: 0.xxx (threshold = 0.4)
+        Peak firing rate: 10.0 Hz
+        Tuning width (HWHM): xx.x deg
+        Rayleigh test: p = 0.xxxx
+
+        See Also
+        --------
+        is_hd_cell : Boolean classification method
+        mean_vector_length : Tuning strength
+        rayleigh_pvalue : Statistical significance
+        """
+        lines = []
+        alpha = 0.05  # Fixed significance level for Rayleigh test
+
+        mvl = self.mean_vector_length()
+        pval = self.rayleigh_pvalue()
+        is_hd = self.is_hd_cell(min_mvl=min_mvl, alpha=alpha)
+
+        if is_hd:
+            lines.append("*** HEAD DIRECTION CELL ***")
+            lines.append(
+                f"Preferred direction: {self.preferred_direction_deg():.1f} deg"
+            )
+            lines.append(f"Mean vector length: {mvl:.3f} (threshold = {min_mvl})")
+            lines.append(f"Peak firing rate: {self.peak_firing_rate():.1f} Hz")
+            lines.append(f"Tuning width (HWHM): {self.tuning_width_deg():.1f} deg")
+            lines.append(f"Rayleigh test: p = {pval:.4f}")
+        else:
+            lines.append("Not classified as HD cell")
+            if mvl < min_mvl:
+                lines.append(f"  - Mean vector length too low: {mvl:.3f} < {min_mvl}")
+                lines.append(
+                    f"    How was {min_mvl} chosen? Default 0.4 is from "
+                    "Taube et al. (1990) analyzing"
+                )
+                lines.append("    postsubicular HD cells in rats. Empirically:")
+                lines.append("      Classic HD cells: 0.5-0.8")
+                lines.append("      Borderline HD cells: 0.3-0.5")
+                lines.append("      Non-HD cells: 0.1-0.3")
+                lines.append("    When to adjust:")
+                lines.append("      - Other brain regions: May need 0.3-0.5")
+                lines.append("      - Different species: Validate threshold first")
+                lines.append("      - Noisy recordings: Consider 0.3 (more permissive)")
+                lines.append("      - Publication quality: Use 0.5 (more conservative)")
+            if pval >= alpha:
+                lines.append(
+                    f"  - Rayleigh test not significant: p = {pval:.3f} >= {alpha}"
+                )
+
+        return "\n".join(lines)
+
 
 @dataclass(frozen=True)
 class DirectionalRatesResult:

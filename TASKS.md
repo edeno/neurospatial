@@ -184,9 +184,9 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Implement `tuning_width_deg()` → converts to degrees
   - [x] Implement `rayleigh_pvalue()` → Rayleigh test via `stats.circular`
 
-- [ ] **3.4** Implement `DirectionalRateResult` classification
-  - [ ] Implement `is_hd_cell(min_mvl, alpha)` → boolean based on MVL and p-value
-  - [ ] Implement `interpretation(min_mvl)` → human-readable string
+- [x] **3.4** Implement `DirectionalRateResult` classification
+  - [x] Implement `is_hd_cell(min_mvl, alpha)` → boolean based on MVL and p-value
+  - [x] Implement `interpretation(min_mvl)` → human-readable string
 
 - [ ] **3.5** Implement `DirectionalRatesResult` batch methods
   - [ ] Implement `__len__`, `__getitem__`, `__iter__` for iteration
