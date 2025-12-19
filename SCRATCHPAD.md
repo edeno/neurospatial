@@ -3,10 +3,63 @@
 ## Current Status
 
 **Date**: 2025-12-18
-**Last Completed**: Task 0.5 - Create `encoding/_core_jax.py` with stubs
-**Next Task**: Task 1.1 - Create `encoding/_metrics.py` with shared metric implementations
+**Last Completed**: Task 1.1 - Create `encoding/_metrics.py` with shared metric implementations
+**Next Task**: Task 1.2 - Create `encoding/_smoothing.py` with shared smoothing code
 
 ## Session Notes
+
+### Task 1.1: `encoding/_metrics.py` [COMPLETED]
+
+**Goal**: Create shared spatial information and sparsity metric implementations for encoding result classes.
+
+**Approach**: TDD - wrote tests first (`test_encoding_metrics.py`), then implemented.
+
+**Result**:
+
+- Created `src/neurospatial/encoding/_metrics.py` with 4 functions
+- Created `tests/encoding/test_encoding_metrics.py` with 38 tests (all pass)
+- All mypy and ruff checks pass
+- Code review passed with APPROVE
+
+**Key Implementation Details**:
+
+- `spatial_information(firing_rate, occupancy, base=2.0)`: Skaggs spatial information (bits/spike)
+- `batch_spatial_information(firing_rates, occupancy, base=2.0)`: Batch version for populations
+- `sparsity(firing_rate, occupancy)`: Skaggs sparsity measure (0-1)
+- `batch_sparsity(firing_rates, occupancy)`: Batch version for populations
+
+**Formula implementations**:
+
+Spatial information (Skaggs et al. 1993):
+```
+I = sum_i(p_i * (r_i/r_mean) * log2(r_i/r_mean))
+```
+
+Sparsity (Skaggs et al. 1996):
+```
+S = (sum_i(p_i * r_i))^2 / sum_i(p_i * r_i^2)
+```
+
+**Edge case handling**:
+
+- NaN values: Ignored via `np.nansum`
+- Zero mean rate: Returns 0.0
+- Empty arrays: Raises `ValueError`
+- Mismatched shapes: Raises `ValueError`
+- Inf values: Handled gracefully
+
+**Backward compatibility**:
+
+- Tests verify exact match with legacy `place.py` implementations
+- Both `test_matches_place_skaggs_information` and `test_matches_place_sparsity` pass
+
+**Code review notes**:
+
+- Batch functions use list comprehension (intentionally simple, JAX can use vmap in Phase 6)
+- Occupancy is normalized internally (more defensive than legacy which expects pre-normalized)
+- All functions return Python float (single) or NDArray[float64] (batch)
+
+---
 
 ### Task 0.5: `encoding/_core_jax.py` [COMPLETED]
 

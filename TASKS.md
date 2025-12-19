@@ -55,12 +55,12 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
 
 ### Tasks
 
-- [ ] **1.1** Create `encoding/_metrics.py` with shared metric implementations
-  - [ ] Implement `spatial_information(firing_rate, occupancy)` for single neuron
-  - [ ] Implement `batch_spatial_information(firing_rates, occupancy)` for population
-  - [ ] Implement `sparsity(firing_rate, occupancy)` for single neuron
-  - [ ] Implement `batch_sparsity(firing_rates, occupancy)` for population
-  - [ ] Add unit tests
+- [x] **1.1** Create `encoding/_metrics.py` with shared metric implementations
+  - [x] Implement `spatial_information(firing_rate, occupancy)` for single neuron
+  - [x] Implement `batch_spatial_information(firing_rates, occupancy)` for population
+  - [x] Implement `sparsity(firing_rate, occupancy)` for single neuron
+  - [x] Implement `batch_sparsity(firing_rates, occupancy)` for population
+  - [x] Add unit tests
 
 - [ ] **1.2** Create `encoding/_smoothing.py` with shared smoothing code
   - [ ] Extract common smoothing logic from existing `place.py`
