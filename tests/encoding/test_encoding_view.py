@@ -880,3 +880,172 @@ class TestViewRateResultViewSpatialInformation:
 
         info = result.view_spatial_information()
         assert info > 0.0
+
+
+# ==============================================================================
+# ViewRateResult Classification Tests - Task 4.3
+# ==============================================================================
+
+
+class TestViewRateResultIsViewCell:
+    """Test ViewRateResult.is_view_cell() method."""
+
+    def test_is_view_cell_returns_bool(
+        self,
+        simple_env: Environment,
+        single_firing_rate: np.ndarray,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """is_view_cell() should return a boolean."""
+        from neurospatial.encoding.view import ViewRateResult
+
+        result = ViewRateResult(
+            firing_rate=single_firing_rate,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        classification = result.is_view_cell()
+        assert isinstance(classification, bool)
+
+    def test_is_view_cell_true_for_high_info(
+        self,
+        simple_env: Environment,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """is_view_cell() should return True for neurons with high view spatial info."""
+        from neurospatial.encoding.view import ViewRateResult
+
+        # Create a sharply peaked firing rate (high spatial info)
+        n_bins = simple_env.n_bins
+        firing_rate = np.zeros(n_bins, dtype=np.float64)
+        firing_rate[n_bins // 2] = 50.0  # Strong peak
+
+        result = ViewRateResult(
+            firing_rate=firing_rate,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        # With a sharp peak, spatial info should be high
+        # Use a low threshold to ensure this passes
+        assert result.is_view_cell(min_info=0.1) is True
+
+    def test_is_view_cell_false_for_uniform_firing(
+        self,
+        simple_env: Environment,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """is_view_cell() should return False for uniform firing (zero info)."""
+        from neurospatial.encoding.view import ViewRateResult
+
+        # Uniform firing rate
+        firing_rate = np.ones(simple_env.n_bins, dtype=np.float64) * 5.0
+
+        result = ViewRateResult(
+            firing_rate=firing_rate,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        # Uniform firing has zero spatial information, should be False
+        assert result.is_view_cell(min_info=0.1) is False
+
+    def test_is_view_cell_respects_min_info_parameter(
+        self,
+        simple_env: Environment,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """is_view_cell() should respect the min_info threshold parameter."""
+        from neurospatial.encoding.view import ViewRateResult
+
+        # Create moderately peaked firing rate
+        n_bins = simple_env.n_bins
+        firing_rate = np.ones(n_bins, dtype=np.float64) * 2.0
+        firing_rate[n_bins // 2] = 10.0  # Moderate peak
+
+        result = ViewRateResult(
+            firing_rate=firing_rate,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        info = result.view_spatial_information()
+
+        # With very low threshold, should be True
+        assert result.is_view_cell(min_info=0.0) is True
+
+        # With threshold higher than actual info, should be False
+        assert result.is_view_cell(min_info=info + 10.0) is False
+
+    def test_is_view_cell_default_threshold(
+        self,
+        simple_env: Environment,
+        single_view_occupancy: np.ndarray,
+    ) -> None:
+        """is_view_cell() should use default min_info=0.5."""
+        from neurospatial.encoding.view import ViewRateResult
+
+        # Uniform firing with zero info
+        firing_rate = np.ones(simple_env.n_bins, dtype=np.float64) * 5.0
+
+        result = ViewRateResult(
+            firing_rate=firing_rate,
+            view_occupancy=single_view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        # With default threshold (0.5), uniform firing should be False
+        assert result.is_view_cell() is False
+
+    def test_is_view_cell_uses_view_spatial_information(
+        self,
+        simple_env: Environment,
+    ) -> None:
+        """is_view_cell() should use view_spatial_information() for classification."""
+        from neurospatial.encoding.view import ViewRateResult
+
+        # Create peaked firing rate with custom view occupancy
+        n_bins = simple_env.n_bins
+        firing_rate = np.zeros(n_bins, dtype=np.float64)
+        firing_rate[n_bins // 2] = 30.0
+
+        # Custom view occupancy that emphasizes the peak
+        view_occupancy = np.ones(n_bins, dtype=np.float64)
+
+        result = ViewRateResult(
+            firing_rate=firing_rate,
+            view_occupancy=view_occupancy,
+            env=simple_env,
+            gaze_model="fixed_distance",
+            view_distance=10.0,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        # Get actual info value
+        info = result.view_spatial_information()
+
+        # Classification should be consistent with the threshold
+        assert result.is_view_cell(min_info=info - 0.01) is True
+        assert result.is_view_cell(min_info=info + 0.01) is False

@@ -337,6 +337,76 @@ class ViewRateResult:
             _to_numpy(self.firing_rate), _to_numpy(self.view_occupancy)
         )
 
+    def is_view_cell(self, min_info: float = 0.5) -> bool:
+        """Classify as spatial view cell based on view spatial information.
+
+        A neuron is classified as a spatial view cell if its view spatial
+        information exceeds the minimum threshold. Spatial view cells fire
+        when the animal *looks at* a specific location, regardless of where
+        the animal is positioned.
+
+        Parameters
+        ----------
+        min_info : float, default=0.5
+            Minimum view spatial information threshold in bits/spike.
+
+            **How was 0.5 chosen?**
+
+            This threshold is based on typical values reported in primate
+            hippocampus studies (Rolls et al., 1997; Georges-François et al.,
+            1999). Empirically:
+
+            - Strong view cells: 1.0-2.0+ bits/spike
+            - Moderate view cells: 0.5-1.0 bits/spike
+            - Weak/non-view cells: < 0.5 bits/spike
+
+            **When to adjust:**
+
+            - Different brain regions: May need 0.3-0.7
+            - Different species: Validate threshold first
+            - Noisy recordings: Consider 0.3 (more permissive)
+            - Publication quality: Use 0.7 or higher (more conservative)
+
+        Returns
+        -------
+        bool
+            True if view_spatial_information() > min_info, False otherwise.
+
+        Notes
+        -----
+        Unlike head direction cells which use both mean vector length and
+        Rayleigh test, view cell classification is typically based solely
+        on spatial information because view fields don't have the circular
+        structure of directional tuning.
+
+        **Place cells vs spatial view cells**: Both may show high spatial
+        information, but spatial view cells have higher *view* spatial
+        information (using view occupancy) than *position* spatial information
+        (using standard occupancy).
+
+        References
+        ----------
+        .. [1] Rolls, E. T., et al. (1997). Spatial view cells in the primate
+               hippocampus. European Journal of Neuroscience, 9(8), 1789-1794.
+        .. [2] Georges-François, P., Rolls, E. T., & Robertson, R. G. (1999).
+               Spatial view cells in the primate hippocampus: allocentric view
+               not head direction or eye position or place.
+
+        Examples
+        --------
+        >>> result = ViewRateResult(...)
+        >>> if result.is_view_cell():
+        ...     print("This is a spatial view cell!")
+        >>> if result.is_view_cell(min_info=0.3):
+        ...     print("This cell passes a more permissive threshold")
+
+        See Also
+        --------
+        view_spatial_information : Compute the spatial information metric
+        peak_view_location : Get location of peak view response
+        """
+        return self.view_spatial_information() > min_info
+
 
 @dataclass(frozen=True)
 class ViewRatesResult:
