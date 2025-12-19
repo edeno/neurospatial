@@ -137,14 +137,14 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Return `SpatialRateResult`
   - [x] Add `backend` parameter (default "numpy")
 
-- [ ] **2.9** Implement `compute_spatial_rates()` function
-  - [ ] Accept list of spike_times arrays
-  - [ ] Normalize input via `normalize_spike_times()`
-  - [ ] Precompute shared quantities (occupancy, position bins)
-  - [ ] Apply smoothing via `_smoothing.py`
-  - [ ] Return `SpatialRatesResult`
-  - [ ] Add `n_jobs` parameter for parallelization
-  - [ ] Add `backend` parameter (default "numpy")
+- [x] **2.9** Implement `compute_spatial_rates()` function
+  - [x] Accept list of spike_times arrays
+  - [x] Normalize input via `normalize_spike_times()`
+  - [x] Precompute shared quantities (occupancy, position bins)
+  - [x] Apply smoothing via `_smoothing.py`
+  - [x] Return `SpatialRatesResult`
+  - [x] Add `n_jobs` parameter for parallelization
+  - [x] Add `backend` parameter (default "numpy")
 
 - [ ] **2.10** Write comprehensive tests for spatial encoding
   - [ ] Test single neuron computation

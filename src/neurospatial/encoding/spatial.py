@@ -67,6 +67,7 @@ __all__ = [
     "SpatialRateResult",
     "SpatialRatesResult",
     "compute_spatial_rate",
+    "compute_spatial_rates",
 ]
 
 
@@ -1330,6 +1331,216 @@ def compute_spatial_rate(
     # Return result
     return SpatialRateResult(
         firing_rate=firing_rate,
+        occupancy=occupancy,
+        env=env,
+        smoothing_method=smoothing_method,
+        bandwidth=bandwidth,
+    )
+
+
+def compute_spatial_rates(
+    env: Environment,
+    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    smoothing_method: Literal[
+        "diffusion_kde", "gaussian_kde", "binned"
+    ] = "diffusion_kde",
+    bandwidth: float = 5.0,
+    min_occupancy: float = 0.0,
+    n_jobs: int = 1,
+    backend: Literal["numpy", "jax", "auto"] = "numpy",
+) -> SpatialRatesResult:
+    """Compute spatial firing rate maps for multiple neurons.
+
+    This is the batch version of ``compute_spatial_rate()`` that efficiently
+    processes multiple neurons with shared trajectory data. It precomputes
+    shared quantities (occupancy, position bins, diffusion kernel) once and
+    optionally parallelizes spike counting with joblib.
+
+    Parameters
+    ----------
+    env : Environment
+        The spatial environment defining the bin structure. Must be fitted
+        (e.g., created via ``Environment.from_samples()``).
+    spike_times : sequence of arrays or 2D array
+        Spike times for each neuron. Accepted formats:
+
+        - List/tuple of 1D arrays: ``[spikes_0, spikes_1, ...]`` (canonical)
+        - 2D array with NaN padding: shape ``(n_neurons, max_spikes)``
+        - 1D array (single neuron): wrapped in list automatically
+
+        All formats are normalized via ``normalize_spike_times()``.
+    times : ndarray, shape (n_samples,)
+        Timestamps of trajectory samples in seconds.
+    positions : ndarray, shape (n_samples, n_dims)
+        Position coordinates at each time sample.
+    smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
+        Smoothing method to use. See ``compute_spatial_rate()`` for details.
+    bandwidth : float, default=5.0
+        Smoothing bandwidth in the same units as bin_size.
+    min_occupancy : float, default=0.0
+        Minimum occupancy (seconds) for a bin to be included.
+    n_jobs : int, default=1
+        Number of parallel jobs for spike counting. Use -1 for all CPUs.
+        1 means sequential processing (no parallelization overhead).
+    backend : {"numpy", "jax", "auto"}, default="numpy"
+        Computation backend. Currently only "numpy" is implemented.
+
+    Returns
+    -------
+    SpatialRatesResult
+        Result object containing:
+
+        - ``firing_rates``: Firing rate maps, shape ``(n_neurons, n_bins)``
+        - ``occupancy``: Time in each bin in seconds, shape ``(n_bins,)``
+        - ``env``: The environment used
+        - ``smoothing_method``: Method used for smoothing
+        - ``bandwidth``: Bandwidth used for smoothing
+
+        The result supports iteration: ``for single in result: ...``
+        and indexing: ``single = result[0]``.
+
+    See Also
+    --------
+    compute_spatial_rate : Single-neuron version
+    SpatialRatesResult : Result class with batch methods
+
+    Notes
+    -----
+    **Efficiency advantages over calling ``compute_spatial_rate()`` in a loop**:
+
+    1. Occupancy is computed once and shared across all neurons
+    2. Diffusion kernel (for ``diffusion_kde`` method) is computed once
+    3. Position-to-bin mapping is done once
+    4. Spike binning can be parallelized with joblib
+
+    **When to use batch vs single**:
+
+    - **Batch** (this function): Processing 3+ neurons, or any case where
+      efficiency matters. The overhead of precomputing shared quantities
+      is amortized over multiple neurons.
+    - **Single** (``compute_spatial_rate``): Processing 1-2 neurons, or when
+      you need fine-grained control over individual neurons.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding.spatial import compute_spatial_rates
+
+    >>> # Create environment from positions
+    >>> positions = np.random.rand(1000, 2) * 100
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
+
+    >>> # Create trajectory
+    >>> times = np.linspace(0, 10, 1000)
+    >>> trajectory = np.random.rand(1000, 2) * 100
+
+    >>> # Spike times for 3 neurons
+    >>> spike_times = [
+    ...     np.array([1.0, 2.5, 4.0]),  # Neuron 0
+    ...     np.array([0.5, 1.5, 2.5, 3.5]),  # Neuron 1
+    ...     np.array([5.0, 8.0]),  # Neuron 2
+    ... ]
+
+    >>> # Compute spatial rates for all neurons
+    >>> result = compute_spatial_rates(
+    ...     env,
+    ...     spike_times,
+    ...     times,
+    ...     trajectory,
+    ...     smoothing_method="diffusion_kde",
+    ...     bandwidth=10.0,
+    ...     n_jobs=2,  # Parallel spike binning
+    ... )
+
+    >>> # Access results
+    >>> print(f"Number of neurons: {len(result)}")
+    >>> print(f"Firing rates shape: {result.firing_rates.shape}")
+    >>> print(f"Peak rates: {result.peak_firing_rates()}")
+
+    >>> # Iterate over neurons
+    >>> for i, single in enumerate(result):
+    ...     print(f"Neuron {i}: peak = {single.peak_firing_rates():.2f} Hz")
+
+    >>> # Get metrics for all neurons
+    >>> df = result.to_dataframe()
+    >>> print(df)
+
+    >>> # Use 2D array with NaN padding
+    >>> spike_times_2d = np.array(
+    ...     [
+    ...         [0.1, 0.5, 1.0, np.nan],
+    ...         [0.2, 0.3, 0.8, 1.2],
+    ...     ]
+    ... )
+    >>> result2 = compute_spatial_rates(env, spike_times_2d, times, trajectory)
+    """
+    from neurospatial.encoding._binning import bin_spike_trains
+    from neurospatial.encoding._smoothing import smooth_rate_maps_batch
+    from neurospatial.encoding._spikes import normalize_spike_times
+
+    # Validate backend
+    # For now, only numpy is implemented; jax and auto fall back to numpy
+    if backend == "jax":
+        # Check if JAX is available
+        from neurospatial.encoding._backend import is_jax_available
+
+        if not is_jax_available():
+            raise ImportError(
+                "JAX backend requested but JAX is not available. "
+                "Install JAX or use backend='numpy'."
+            )
+        # JAX implementation not yet available
+        raise NotImplementedError(
+            "JAX backend for compute_spatial_rates is not yet implemented. "
+            "Use backend='numpy' for now."
+        )
+    # For 'auto' and 'numpy', use numpy implementation
+
+    # Normalize spike times to canonical list-of-arrays format
+    spike_times_list = normalize_spike_times(spike_times)
+    n_neurons = len(spike_times_list)
+
+    # Handle edge case: no neurons
+    if n_neurons == 0:
+        return SpatialRatesResult(
+            firing_rates=np.empty((0, env.n_bins), dtype=np.float64),
+            occupancy=np.zeros(env.n_bins, dtype=np.float64),
+            env=env,
+            smoothing_method=smoothing_method,
+            bandwidth=bandwidth,
+        )
+
+    # Convert inputs to arrays
+    times = np.asarray(times, dtype=np.float64)
+    positions = np.asarray(positions, dtype=np.float64)
+
+    # Bin spike trains and compute occupancy
+    # bin_spike_trains returns (spike_counts, occupancy)
+    spike_counts, occupancy = bin_spike_trains(
+        env,
+        spike_times_list,
+        times,
+        positions,
+        n_jobs=n_jobs,
+    )
+
+    # Apply batch smoothing to compute firing rates
+    firing_rates = smooth_rate_maps_batch(
+        env,
+        spike_counts,
+        occupancy,
+        method=smoothing_method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+    )
+
+    # Return result
+    return SpatialRatesResult(
+        firing_rates=firing_rates,
         occupancy=occupancy,
         env=env,
         smoothing_method=smoothing_method,

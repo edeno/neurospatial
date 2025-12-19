@@ -3,10 +3,91 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 2.8 - Implement `compute_spatial_rate()` function
-**Next Task**: Task 2.9 - Implement `compute_spatial_rates()` function
+**Last Completed**: Task 2.9 - Implement `compute_spatial_rates()` function
+**Next Task**: Task 2.10 - Write comprehensive tests for spatial encoding
 
 ## Session Notes
+
+### Task 2.9: Implement `compute_spatial_rates()` Function [COMPLETED]
+
+**Goal**: Implement the batch spatial rate computation function for multiple neurons.
+
+**Approach**: TDD - wrote 44 tests first, then implemented.
+
+**Result**:
+
+- Added `compute_spatial_rates()` function to `src/neurospatial/encoding/spatial.py`
+- Added 44 tests to `tests/encoding/test_encoding_spatial.py` (total now 203+, all pass)
+- All mypy and ruff checks pass
+- Code review passed with APPROVE
+
+**Key Implementation Details**:
+
+- `compute_spatial_rates(env, spike_times, times, positions, *, smoothing_method, bandwidth, min_occupancy, n_jobs, backend)`:
+  - Parameters follow canonical argument order from CLAUDE.md
+  - Accepts multiple input formats: list of arrays, tuple, 2D array with NaN padding, single 1D array
+  - Normalizes input via `normalize_spike_times()`
+  - Uses `bin_spike_trains()` for efficient batch binning with parallelization
+  - Uses `smooth_rate_maps_batch()` for batch smoothing
+  - Returns `SpatialRatesResult` with all required fields
+
+**Signature**:
+
+```python
+def compute_spatial_rates(
+    env: Environment,
+    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    smoothing_method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
+    bandwidth: float = 5.0,
+    min_occupancy: float = 0.0,
+    n_jobs: int = 1,
+    backend: Literal["numpy", "jax", "auto"] = "numpy",
+) -> SpatialRatesResult:
+```
+
+**Efficiency advantages over calling `compute_spatial_rate()` in a loop**:
+
+1. Occupancy computed once and shared across all neurons
+2. Diffusion kernel computed once (in `smooth_rate_maps_batch()`)
+3. Position-to-bin mapping done once (in `bin_spike_trains()`)
+4. Spike binning parallelizable with joblib (`n_jobs` parameter)
+
+**Test coverage (44 tests in 11 classes)**:
+
+- `TestComputeSpatialRatesFunction`: 13 tests (basic functionality, shapes, metadata, defaults)
+- `TestComputeSpatialRatesInputFormats`: 4 tests (list, tuple, 2D array, 1D array)
+- `TestComputeSpatialRatesNJobs`: 3 tests (parallelization parameter and consistency)
+- `TestComputeSpatialRatesSmoothingMethods`: 3 tests (diffusion_kde, gaussian_kde, binned)
+- `TestComputeSpatialRatesMinOccupancy`: 2 tests (parameter and masking)
+- `TestComputeSpatialRatesBackendParameter`: 3 tests (numpy, auto)
+- `TestComputeSpatialRatesConsistency`: 2 tests (**CRITICAL** - batch matches single-neuron)
+- `TestComputeSpatialRatesEdgeCases`: 4 tests (empty spikes, single neuron, empty list)
+- `TestComputeSpatialRatesResultMethods`: 10 tests (all batch methods)
+
+**Consistency verification**:
+
+- `test_batch_matches_single_neuron_results()` proves batch produces identical results to processing each neuron individually with `compute_spatial_rate()` using `rtol=1e-10`
+
+**Documentation**:
+
+- Complete NumPy-style docstring with:
+  - Extended description explaining efficiency advantages
+  - Full parameter documentation
+  - Notes section on when to use batch vs single
+  - Working examples with iteration and DataFrame export
+
+**Code review feedback**: APPROVE - Ready to merge
+
+- All 44 tests pass
+- Zero mypy errors
+- Clean separation of concerns
+- Comprehensive documentation
+- Follows all project patterns from CLAUDE.md
+
+---
 
 ### Task 2.8: Implement `compute_spatial_rate()` Function [COMPLETED]
 
