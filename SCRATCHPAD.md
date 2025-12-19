@@ -3,10 +3,77 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 4.7 - Implement `compute_view_rate()` function
-**Next Task**: Task 4.8 - Implement `compute_view_rates()` function
+**Last Completed**: Task 4.8 - Implement `compute_view_rates()` function
+**Next Task**: Task 4.9 - Write comprehensive tests for view encoding
 
 ## Session Notes
+
+### Task 4.8: Implement `compute_view_rates()` function [COMPLETED]
+
+**Goal**: Create the batch version of view rate computation that efficiently processes multiple neurons with shared trajectory data.
+
+**Approach**: TDD - wrote 24 tests first, then implemented.
+
+**Result**:
+
+- Added `compute_view_rates()` to `src/neurospatial/encoding/view.py`
+- Added 24 tests to `tests/encoding/test_compute_view_rate.py` (total now 58 tests, all pass)
+- All mypy and ruff checks pass
+- Code review passed with APPROVE
+
+**Key Implementation Details**:
+
+- `compute_view_rates(env, spike_times, times, positions, headings, *, gaze_model, view_distance, smoothing_method, bandwidth, min_occupancy, n_jobs)`:
+  - Parameters follow canonical argument order from CLAUDE.md
+  - Uses `normalize_spike_times()` to accept list of arrays, 2D NaN-padded array, or single 1D array
+  - Uses `bin_view_spike_trains()` for efficient batch binning (precomputes view occupancy once)
+  - Uses `smooth_rate_maps_batch()` for efficient batch smoothing (precomputes diffusion kernel once)
+  - Returns `ViewRatesResult` with iteration support
+  - Validates gaze_model parameter
+  - Validates input array lengths
+  - Handles zero-neuron edge case gracefully
+
+**Signature**:
+
+```python
+def compute_view_rates(
+    env: Environment,
+    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    *,
+    gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
+    view_distance: float = 10.0,
+    smoothing_method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
+    bandwidth: float = 5.0,
+    min_occupancy: float = 0.0,
+    n_jobs: int = 1,
+) -> ViewRatesResult:
+```
+
+**Test coverage (24 new tests in 10 classes)**:
+
+- `TestComputeViewRatesImport`: 2 tests (import from module, in __all__)
+- `TestComputeViewRatesReturnsResult`: 3 tests (return type, firing_rates shape, view_occupancy shape)
+- `TestComputeViewRatesSpikeTimeFormats`: 2 tests (list of arrays, 2D NaN-padded)
+- `TestComputeViewRatesParameters`: 5 tests (gaze_model, view_distance, smoothing_method, bandwidth, n_jobs)
+- `TestComputeViewRatesNeuronIteration`: 3 tests (len, getitem, iteration)
+- `TestComputeViewRatesEdgeCases`: 3 tests (empty list, single neuron, neuron with no spikes)
+- `TestComputeViewRatesInputValidation`: 3 tests (invalid gaze_model, mismatched times/positions, mismatched times/headings)
+- `TestComputeViewRatesConsistencyWithSingle`: 1 test (single neuron matches compute_view_rate)
+- `TestComputeViewRatesSignature`: 2 tests (canonical argument order, keyword-only params)
+
+**Efficiency advantages over calling `compute_view_rate()` in a loop**:
+
+1. View occupancy computed once and shared across all neurons
+2. Diffusion kernel computed once for batch smoothing
+3. Viewed-bin mapping done once
+4. Spike binning can be parallelized with joblib (n_jobs parameter)
+
+**Milestone 4 Progress**: Tasks 4.1-4.8 complete, 1 task remaining (4.9).
+
+---
 
 ### Task 4.7: Implement `compute_view_rate()` function [COMPLETED]
 

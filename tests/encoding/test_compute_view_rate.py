@@ -770,3 +770,536 @@ class TestComputeViewRateSignature:
                 assert params[param_name].kind == inspect.Parameter.KEYWORD_ONLY, (
                     f"{param_name} should be keyword-only"
                 )
+
+
+# =============================================================================
+# Tests for compute_view_rates() (batch version)
+# =============================================================================
+
+
+class TestComputeViewRatesImport:
+    """Test that compute_view_rates can be imported correctly."""
+
+    def test_import_from_view_module(self) -> None:
+        """compute_view_rates should be importable from view module."""
+        from neurospatial.encoding.view import compute_view_rates
+
+        assert compute_view_rates is not None
+
+    def test_in_module_all(self) -> None:
+        """compute_view_rates should be in __all__ list."""
+        from neurospatial.encoding import view
+
+        assert "compute_view_rates" in view.__all__
+
+
+class TestComputeViewRatesReturnsResult:
+    """Test that compute_view_rates returns ViewRatesResult."""
+
+    def test_returns_view_rates_result(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """compute_view_rates should return ViewRatesResult."""
+        from neurospatial.encoding.view import ViewRatesResult, compute_view_rates
+
+        times, positions, headings = trajectory_data
+        spike_times_list = [
+            np.array([1.0, 2.5, 4.0]),
+            np.array([0.5, 1.5, 2.5]),
+        ]
+
+        result = compute_view_rates(
+            simple_env, spike_times_list, times, positions, headings
+        )
+
+        assert isinstance(result, ViewRatesResult)
+
+    def test_result_has_correct_firing_rates_shape(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """firing_rates should have shape (n_neurons, n_bins)."""
+        from neurospatial.encoding.view import compute_view_rates
+
+        times, positions, headings = trajectory_data
+        spike_times_list = [
+            np.array([1.0, 2.5]),
+            np.array([0.5, 1.5]),
+            np.array([5.0]),
+        ]
+
+        result = compute_view_rates(
+            simple_env, spike_times_list, times, positions, headings
+        )
+
+        assert result.firing_rates.shape == (3, simple_env.n_bins)
+
+    def test_result_has_correct_view_occupancy_shape(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """view_occupancy should have shape (n_bins,) - shared across neurons."""
+        from neurospatial.encoding.view import compute_view_rates
+
+        times, positions, headings = trajectory_data
+        spike_times_list = [
+            np.array([1.0, 2.5]),
+            np.array([0.5, 1.5]),
+        ]
+
+        result = compute_view_rates(
+            simple_env, spike_times_list, times, positions, headings
+        )
+
+        assert result.view_occupancy.shape == (simple_env.n_bins,)
+
+
+class TestComputeViewRatesSpikeTimeFormats:
+    """Test that compute_view_rates accepts different spike time formats."""
+
+    def test_list_of_arrays(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """Should accept list of 1D arrays (canonical format)."""
+        from neurospatial.encoding.view import compute_view_rates
+
+        times, positions, headings = trajectory_data
+        spike_times_list = [
+            np.array([1.0, 2.5, 4.0]),
+            np.array([0.5]),
+        ]
+
+        result = compute_view_rates(
+            simple_env, spike_times_list, times, positions, headings
+        )
+
+        assert len(result) == 2
+
+    def test_2d_array_with_nan_padding(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """Should accept 2D array with NaN padding."""
+        from neurospatial.encoding.view import compute_view_rates
+
+        times, positions, headings = trajectory_data
+        spike_times_2d = np.array(
+            [
+                [1.0, 2.5, np.nan],
+                [0.5, 1.5, 3.5],
+            ]
+        )
+
+        result = compute_view_rates(
+            simple_env, spike_times_2d, times, positions, headings
+        )
+
+        assert len(result) == 2
+
+
+class TestComputeViewRatesParameters:
+    """Test compute_view_rates parameter handling."""
+
+    def test_gaze_model_parameter(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """gaze_model parameter should be passed to underlying functions."""
+        from neurospatial.encoding.view import compute_view_rates
+
+        times, positions, headings = trajectory_data
+        spike_times_list = [np.array([1.0, 2.5])]
+
+        result = compute_view_rates(
+            simple_env,
+            spike_times_list,
+            times,
+            positions,
+            headings,
+            gaze_model="ray_cast",
+        )
+
+        assert result.gaze_model == "ray_cast"
+
+    def test_view_distance_parameter(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """view_distance parameter should be stored in result."""
+        from neurospatial.encoding.view import compute_view_rates
+
+        times, positions, headings = trajectory_data
+        spike_times_list = [np.array([1.0, 2.5])]
+
+        result = compute_view_rates(
+            simple_env,
+            spike_times_list,
+            times,
+            positions,
+            headings,
+            view_distance=20.0,
+        )
+
+        assert result.view_distance == 20.0
+
+    def test_smoothing_method_parameter(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """smoothing_method parameter should be stored in result."""
+        from neurospatial.encoding.view import compute_view_rates
+
+        times, positions, headings = trajectory_data
+        spike_times_list = [np.array([1.0, 2.5])]
+
+        result = compute_view_rates(
+            simple_env,
+            spike_times_list,
+            times,
+            positions,
+            headings,
+            smoothing_method="gaussian_kde",
+        )
+
+        assert result.smoothing_method == "gaussian_kde"
+
+    def test_bandwidth_parameter(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """bandwidth parameter should be stored in result."""
+        from neurospatial.encoding.view import compute_view_rates
+
+        times, positions, headings = trajectory_data
+        spike_times_list = [np.array([1.0, 2.5])]
+
+        result = compute_view_rates(
+            simple_env,
+            spike_times_list,
+            times,
+            positions,
+            headings,
+            bandwidth=10.0,
+        )
+
+        assert result.bandwidth == 10.0
+
+    def test_n_jobs_parameter(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """n_jobs parameter should work without error."""
+        from neurospatial.encoding.view import compute_view_rates
+
+        times, positions, headings = trajectory_data
+        spike_times_list = [
+            np.array([1.0, 2.5]),
+            np.array([0.5, 1.5]),
+            np.array([5.0]),
+        ]
+
+        # Test with n_jobs=2
+        result = compute_view_rates(
+            simple_env,
+            spike_times_list,
+            times,
+            positions,
+            headings,
+            n_jobs=2,
+        )
+
+        assert len(result) == 3
+
+
+class TestComputeViewRatesNeuronIteration:
+    """Test that ViewRatesResult supports iteration over neurons."""
+
+    def test_len(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """len() should return number of neurons."""
+        from neurospatial.encoding.view import compute_view_rates
+
+        times, positions, headings = trajectory_data
+        spike_times_list = [
+            np.array([1.0, 2.5]),
+            np.array([0.5, 1.5]),
+            np.array([5.0]),
+        ]
+
+        result = compute_view_rates(
+            simple_env, spike_times_list, times, positions, headings
+        )
+
+        assert len(result) == 3
+
+    def test_getitem(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """result[i] should return ViewRateResult for neuron i."""
+        from neurospatial.encoding.view import ViewRateResult, compute_view_rates
+
+        times, positions, headings = trajectory_data
+        spike_times_list = [
+            np.array([1.0, 2.5]),
+            np.array([0.5, 1.5]),
+        ]
+
+        result = compute_view_rates(
+            simple_env, spike_times_list, times, positions, headings
+        )
+
+        single = result[0]
+        assert isinstance(single, ViewRateResult)
+        assert single.firing_rate.shape == (simple_env.n_bins,)
+
+    def test_iteration(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """Iteration should yield ViewRateResult for each neuron."""
+        from neurospatial.encoding.view import ViewRateResult, compute_view_rates
+
+        times, positions, headings = trajectory_data
+        spike_times_list = [
+            np.array([1.0, 2.5]),
+            np.array([0.5, 1.5]),
+        ]
+
+        result = compute_view_rates(
+            simple_env, spike_times_list, times, positions, headings
+        )
+
+        count = 0
+        for single in result:
+            assert isinstance(single, ViewRateResult)
+            count += 1
+
+        assert count == 2
+
+
+class TestComputeViewRatesEdgeCases:
+    """Test edge cases for compute_view_rates."""
+
+    def test_empty_spike_times_list(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """Empty list should return result with zero neurons."""
+        from neurospatial.encoding.view import compute_view_rates
+
+        times, positions, headings = trajectory_data
+        spike_times_list: list[np.ndarray] = []
+
+        result = compute_view_rates(
+            simple_env, spike_times_list, times, positions, headings
+        )
+
+        assert len(result) == 0
+        assert result.firing_rates.shape == (0, simple_env.n_bins)
+
+    def test_single_neuron(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """Single neuron should work correctly."""
+        from neurospatial.encoding.view import compute_view_rates
+
+        times, positions, headings = trajectory_data
+        spike_times_list = [np.array([1.0, 2.5, 4.0])]
+
+        result = compute_view_rates(
+            simple_env, spike_times_list, times, positions, headings
+        )
+
+        assert len(result) == 1
+        assert result.firing_rates.shape == (1, simple_env.n_bins)
+
+    def test_neuron_with_no_spikes(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """Neuron with empty spike train should produce zeros."""
+        from neurospatial.encoding.view import compute_view_rates
+
+        times, positions, headings = trajectory_data
+        spike_times_list = [
+            np.array([1.0, 2.5]),
+            np.array([]),  # No spikes
+        ]
+
+        result = compute_view_rates(
+            simple_env, spike_times_list, times, positions, headings
+        )
+
+        # Second neuron should have all zeros
+        assert np.all(result.firing_rates[1] == 0)
+
+
+class TestComputeViewRatesInputValidation:
+    """Test input validation for compute_view_rates."""
+
+    def test_invalid_gaze_model_raises(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """Invalid gaze_model should raise ValueError."""
+        from neurospatial.encoding.view import compute_view_rates
+
+        times, positions, headings = trajectory_data
+        spike_times_list = [np.array([1.0, 2.5])]
+
+        with pytest.raises(ValueError, match=r"Invalid gaze_model"):
+            compute_view_rates(
+                simple_env,
+                spike_times_list,
+                times,
+                positions,
+                headings,
+                gaze_model="invalid_model",  # type: ignore[arg-type]
+            )
+
+    def test_mismatched_times_positions_raises(
+        self,
+        simple_env: Environment,
+    ) -> None:
+        """Mismatched times and positions should raise ValueError."""
+        from neurospatial.encoding.view import compute_view_rates
+
+        times = np.linspace(0, 10, 1000)
+        positions = np.random.rand(500, 2) * 100  # Wrong length
+        headings = np.random.uniform(0, 2 * np.pi, 1000)
+        spike_times_list = [np.array([1.0, 2.5])]
+
+        with pytest.raises(ValueError, match=r"times length.*positions length"):
+            compute_view_rates(
+                simple_env,
+                spike_times_list,
+                times,
+                positions,
+                headings,
+            )
+
+    def test_mismatched_times_headings_raises(
+        self,
+        simple_env: Environment,
+    ) -> None:
+        """Mismatched times and headings should raise ValueError."""
+        from neurospatial.encoding.view import compute_view_rates
+
+        times = np.linspace(0, 10, 1000)
+        positions = np.random.rand(1000, 2) * 100
+        headings = np.random.uniform(0, 2 * np.pi, 500)  # Wrong length
+        spike_times_list = [np.array([1.0, 2.5])]
+
+        with pytest.raises(ValueError, match=r"times length.*headings length"):
+            compute_view_rates(
+                simple_env,
+                spike_times_list,
+                times,
+                positions,
+                headings,
+            )
+
+
+class TestComputeViewRatesConsistencyWithSingle:
+    """Test that compute_view_rates is consistent with compute_view_rate."""
+
+    def test_single_neuron_matches(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+        spike_times: np.ndarray,
+    ) -> None:
+        """Single neuron result should match compute_view_rate."""
+        from neurospatial.encoding.view import compute_view_rate, compute_view_rates
+
+        times, positions, headings = trajectory_data
+
+        # Compute with single function
+        single_result = compute_view_rate(
+            simple_env, spike_times, times, positions, headings
+        )
+
+        # Compute with batch function
+        batch_result = compute_view_rates(
+            simple_env, [spike_times], times, positions, headings
+        )
+
+        # Should match
+        np.testing.assert_array_almost_equal(
+            batch_result.firing_rates[0], single_result.firing_rate
+        )
+        np.testing.assert_array_almost_equal(
+            batch_result.view_occupancy, single_result.view_occupancy
+        )
+
+
+class TestComputeViewRatesSignature:
+    """Test function signature follows conventions."""
+
+    def test_canonical_argument_order(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """Arguments should follow canonical order: env, spike_times, times, positions, headings."""
+        from neurospatial.encoding.view import compute_view_rates
+
+        times, positions, headings = trajectory_data
+        spike_times_list = [np.array([1.0, 2.5])]
+
+        # Positional arguments should work in this order
+        result = compute_view_rates(
+            simple_env,
+            spike_times_list,
+            times,
+            positions,
+            headings,
+        )
+        assert result is not None
+
+    def test_keyword_only_parameters(self) -> None:
+        """gaze_model, view_distance, etc. should be keyword-only."""
+        import inspect
+
+        from neurospatial.encoding.view import compute_view_rates
+
+        sig = inspect.signature(compute_view_rates)
+        params = sig.parameters
+
+        # These should be keyword-only (after the *)
+        keyword_only_params = {
+            "gaze_model",
+            "view_distance",
+            "smoothing_method",
+            "bandwidth",
+            "min_occupancy",
+            "n_jobs",
+        }
+        for param_name in keyword_only_params:
+            if param_name in params:
+                assert params[param_name].kind == inspect.Parameter.KEYWORD_ONLY, (
+                    f"{param_name} should be keyword-only"
+                )

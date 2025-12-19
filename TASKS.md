@@ -275,12 +275,12 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Apply smoothing via `_smoothing.py`
   - [x] Return `ViewRateResult`
 
-- [ ] **4.8** Implement `compute_view_rates()` function
-  - [ ] Accept list of spike_times arrays
-  - [ ] Normalize input via `normalize_spike_times()`
-  - [ ] Precompute shared quantities (view_occupancy, viewed_bins)
-  - [ ] Add `n_jobs` parameter for parallelization
-  - [ ] Return `ViewRatesResult`
+- [x] **4.8** Implement `compute_view_rates()` function
+  - [x] Accept list of spike_times arrays
+  - [x] Normalize input via `normalize_spike_times()`
+  - [x] Precompute shared quantities (view_occupancy, viewed_bins)
+  - [x] Add `n_jobs` parameter for parallelization
+  - [x] Return `ViewRatesResult`
 
 - [ ] **4.9** Write comprehensive tests for view encoding
   - [ ] Test single neuron computation
