@@ -3,10 +3,48 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 3.9 - Implement `compute_directional_rates()` function
-**Next Task**: Task 3.10 - Write comprehensive tests for directional encoding
+**Last Completed**: Task 3.11 - Write comprehensive tests for directional encoding
+**Next Task**: Task 4.1 - Create `encoding/view.py` with result class definitions
 
 ## Session Notes
+
+### Task 3.11: Write Comprehensive Tests for Directional Encoding [COMPLETED]
+
+**Goal**: Verify comprehensive test coverage for all directional encoding functionality, including metric equivalence with legacy `HeadDirectionMetrics`.
+
+**Approach**: TDD - verified existing coverage, added 10 new tests for metric comparison.
+
+**Result**:
+
+- Added `TestDirectionalRateResultMatchesHeadDirectionMetrics` class with 10 tests
+- Total test count: 187 tests in `tests/encoding/test_encoding_directional.py` (all pass)
+- All ruff checks pass
+- No new mypy errors introduced (pre-existing errors in other tests)
+
+**Key Implementation Details**:
+
+- **No deprecated shim needed**: User confirmed backwards compatibility not required
+- All single neuron computation tests: Already covered from TDD in Tasks 3.1-3.4
+- All batch computation tests: Already covered from TDD in Tasks 3.5-3.9
+- All result class method tests: Already covered
+- `angle_unit` conversion tests: Already covered
+
+**New Test Coverage (10 tests)**:
+
+- `test_preferred_direction_matches`: Verifies new API matches legacy
+- `test_mean_vector_length_matches`: Verifies MVL matches exactly (rtol=1e-10)
+- `test_peak_firing_rate_matches`: Verifies peak rate matches exactly
+- `test_rayleigh_pvalue_matches`: Verifies p-value matches exactly
+- `test_is_hd_cell_matches`: Verifies HD classification matches for sharply tuned
+- `test_is_hd_cell_matches_uniform`: Verifies HD classification matches for non-HD
+- `test_tuning_width_same_order_of_magnitude`: Verifies tuning width within 50%
+- `test_preferred_direction_deg_matches`: Verifies degree conversion matches
+- `test_interpretation_contains_key_info_for_hd_cell`: Verifies output format
+- `test_interpretation_contains_key_info_for_non_hd_cell`: Verifies output format
+
+**Milestone 3 Status**: COMPLETE! All 11 tasks finished (3.1-3.9, 3.11).
+
+---
 
 ### Task 3.9: Implement `compute_directional_rates()` function [COMPLETED]
 

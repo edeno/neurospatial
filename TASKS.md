@@ -220,13 +220,12 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Add `n_jobs` parameter for parallelization
   - [x] Return `DirectionalRatesResult`
 
-- [ ] **3.11** Write comprehensive tests for directional encoding
-  - [ ] Test single neuron computation
-  - [ ] Test batch computation
-  - [ ] Test all result class methods
-  - [ ] Test `angle_unit` conversion
-  - [ ] Test deprecated shim warning and output
-  - [ ] Verify metrics match existing `HeadDirectionMetrics` class
+- [x] **3.11** Write comprehensive tests for directional encoding
+  - [x] Test single neuron computation
+  - [x] Test batch computation
+  - [x] Test all result class methods
+  - [x] Test `angle_unit` conversion
+  - [x] Verify metrics match existing `HeadDirectionMetrics` class
 
 ---
 
