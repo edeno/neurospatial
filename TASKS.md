@@ -131,11 +131,11 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Occupancy shape: `(n_bins,)`
   - [x] Parallelize over neurons with joblib
 
-- [ ] **2.8** Implement `compute_spatial_rate()` function
-  - [ ] Accept single spike_times array
-  - [ ] Apply smoothing via `_smoothing.py`
-  - [ ] Return `SpatialRateResult`
-  - [ ] Add `backend` parameter (default "numpy")
+- [x] **2.8** Implement `compute_spatial_rate()` function
+  - [x] Accept single spike_times array
+  - [x] Apply smoothing via `_smoothing.py`
+  - [x] Return `SpatialRateResult`
+  - [x] Add `backend` parameter (default "numpy")
 
 - [ ] **2.9** Implement `compute_spatial_rates()` function
   - [ ] Accept list of spike_times arrays

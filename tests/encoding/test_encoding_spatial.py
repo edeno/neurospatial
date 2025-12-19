@@ -3003,3 +3003,625 @@ class TestSpatialRatesResultToDataframe:
         df = result.to_dataframe()
         assert len(df) == 1
         assert df["neuron_id"].iloc[0] == 0
+
+
+# ==============================================================================
+# Test compute_spatial_rate() function (Task 2.8)
+# ==============================================================================
+
+
+@pytest.fixture
+def trajectory_env() -> Environment:
+    """Create an environment from a realistic trajectory."""
+    # Generate a random walk trajectory
+    np.random.seed(42)
+    n_samples = 1000
+    dt = 0.01  # 10 ms sampling interval
+    velocity = 10.0  # cm/s
+
+    # Random walk
+    angles = np.cumsum(np.random.randn(n_samples) * 0.1)
+    dx = velocity * dt * np.cos(angles)
+    dy = velocity * dt * np.sin(angles)
+    x = 50 + np.cumsum(dx)
+    y = 50 + np.cumsum(dy)
+
+    # Clip to arena bounds
+    x = np.clip(x, 0, 100)
+    y = np.clip(y, 0, 100)
+
+    positions = np.column_stack([x, y])
+    return Environment.from_samples(positions, bin_size=5.0)
+
+
+@pytest.fixture
+def trajectory_times() -> NDArray[np.float64]:
+    """Create timestamps for the trajectory."""
+    n_samples = 1000
+    dt = 0.01
+    return np.arange(n_samples) * dt
+
+
+@pytest.fixture
+def trajectory_positions(trajectory_env: Environment) -> NDArray[np.float64]:
+    """Create positions matching the trajectory environment."""
+    np.random.seed(42)
+    n_samples = 1000
+    dt = 0.01
+    velocity = 10.0
+
+    angles = np.cumsum(np.random.randn(n_samples) * 0.1)
+    dx = velocity * dt * np.cos(angles)
+    dy = velocity * dt * np.sin(angles)
+    x = 50 + np.cumsum(dx)
+    y = 50 + np.cumsum(dy)
+
+    x = np.clip(x, 0, 100)
+    y = np.clip(y, 0, 100)
+
+    return np.column_stack([x, y])
+
+
+@pytest.fixture
+def place_cell_spikes(
+    trajectory_times: NDArray[np.float64],
+    trajectory_positions: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Create spike times for a place cell with a field at (60, 60)."""
+    np.random.seed(123)
+    field_center = np.array([60.0, 60.0])
+    field_radius = 15.0
+    max_rate = 20.0  # Hz
+
+    # Compute distance from field center at each time
+    distances = np.linalg.norm(trajectory_positions - field_center, axis=1)
+
+    # Firing rate is Gaussian centered on field
+    firing_rates = max_rate * np.exp(-0.5 * (distances / field_radius) ** 2)
+
+    # Generate spikes using Poisson process
+    dt = trajectory_times[1] - trajectory_times[0]
+    spike_probs = firing_rates * dt
+    spikes_mask = np.random.random(len(trajectory_times)) < spike_probs
+    spike_times = trajectory_times[spikes_mask]
+
+    return spike_times
+
+
+class TestComputeSpatialRateFunction:
+    """Tests for compute_spatial_rate() function (Task 2.8)."""
+
+    def test_function_is_importable(self) -> None:
+        """compute_spatial_rate should be importable from encoding.spatial."""
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        assert compute_spatial_rate is not None
+
+    def test_function_is_callable(self) -> None:
+        """compute_spatial_rate should be callable."""
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        assert callable(compute_spatial_rate)
+
+    def test_returns_spatial_rate_result(
+        self,
+        trajectory_env: Environment,
+        place_cell_spikes: NDArray[np.float64],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """compute_spatial_rate should return a SpatialRateResult."""
+        from neurospatial.encoding.spatial import (
+            SpatialRateResult,
+            compute_spatial_rate,
+        )
+
+        result = compute_spatial_rate(
+            trajectory_env,
+            place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+        )
+        assert isinstance(result, SpatialRateResult)
+
+    def test_result_has_correct_firing_rate_shape(
+        self,
+        trajectory_env: Environment,
+        place_cell_spikes: NDArray[np.float64],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """Result firing_rate should have shape (n_bins,)."""
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        result = compute_spatial_rate(
+            trajectory_env,
+            place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+        )
+        assert result.firing_rate.shape == (trajectory_env.n_bins,)
+
+    def test_result_has_correct_occupancy_shape(
+        self,
+        trajectory_env: Environment,
+        place_cell_spikes: NDArray[np.float64],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """Result occupancy should have shape (n_bins,)."""
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        result = compute_spatial_rate(
+            trajectory_env,
+            place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+        )
+        assert result.occupancy.shape == (trajectory_env.n_bins,)
+
+    def test_result_stores_environment(
+        self,
+        trajectory_env: Environment,
+        place_cell_spikes: NDArray[np.float64],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """Result should store the environment."""
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        result = compute_spatial_rate(
+            trajectory_env,
+            place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+        )
+        assert result.env is trajectory_env
+
+    def test_result_stores_smoothing_method(
+        self,
+        trajectory_env: Environment,
+        place_cell_spikes: NDArray[np.float64],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """Result should store the smoothing method used."""
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        result = compute_spatial_rate(
+            trajectory_env,
+            place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+            smoothing_method="gaussian_kde",
+        )
+        assert result.smoothing_method == "gaussian_kde"
+
+    def test_result_stores_bandwidth(
+        self,
+        trajectory_env: Environment,
+        place_cell_spikes: NDArray[np.float64],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """Result should store the bandwidth used."""
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        result = compute_spatial_rate(
+            trajectory_env,
+            place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+            bandwidth=10.0,
+        )
+        assert result.bandwidth == 10.0
+
+    def test_default_smoothing_method(
+        self,
+        trajectory_env: Environment,
+        place_cell_spikes: NDArray[np.float64],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """Default smoothing method should be 'diffusion_kde'."""
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        result = compute_spatial_rate(
+            trajectory_env,
+            place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+        )
+        assert result.smoothing_method == "diffusion_kde"
+
+    def test_default_bandwidth(
+        self,
+        trajectory_env: Environment,
+        place_cell_spikes: NDArray[np.float64],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """Default bandwidth should be 5.0."""
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        result = compute_spatial_rate(
+            trajectory_env,
+            place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+        )
+        assert result.bandwidth == 5.0
+
+    def test_firing_rates_are_non_negative(
+        self,
+        trajectory_env: Environment,
+        place_cell_spikes: NDArray[np.float64],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """Firing rates should be non-negative (or NaN)."""
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        result = compute_spatial_rate(
+            trajectory_env,
+            place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+        )
+        # Check non-NaN values are >= 0
+        valid_rates = result.firing_rate[~np.isnan(result.firing_rate)]
+        assert np.all(valid_rates >= 0)
+
+    def test_occupancy_is_non_negative(
+        self,
+        trajectory_env: Environment,
+        place_cell_spikes: NDArray[np.float64],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """Occupancy should be non-negative."""
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        result = compute_spatial_rate(
+            trajectory_env,
+            place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+        )
+        assert np.all(result.occupancy >= 0)
+
+    def test_empty_spike_train_produces_zero_rates(
+        self,
+        trajectory_env: Environment,
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """Empty spike train should produce zero (or NaN) firing rates."""
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        empty_spikes = np.array([], dtype=np.float64)
+        result = compute_spatial_rate(
+            trajectory_env,
+            empty_spikes,
+            trajectory_times,
+            trajectory_positions,
+        )
+        # Non-NaN values should be 0
+        valid_rates = result.firing_rate[~np.isnan(result.firing_rate)]
+        assert np.all(valid_rates == 0)
+
+    def test_single_spike_produces_localized_rate(
+        self,
+        trajectory_env: Environment,
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """Single spike should produce localized firing rate."""
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        # Single spike at t=0.5s
+        single_spike = np.array([0.5])
+        result = compute_spatial_rate(
+            trajectory_env,
+            single_spike,
+            trajectory_times,
+            trajectory_positions,
+        )
+        # At least one bin should have non-zero firing rate
+        valid_rates = result.firing_rate[~np.isnan(result.firing_rate)]
+        assert np.any(valid_rates > 0)
+
+
+class TestComputeSpatialRateSmoothingMethods:
+    """Tests for compute_spatial_rate smoothing method options."""
+
+    def test_diffusion_kde_method(
+        self,
+        trajectory_env: Environment,
+        place_cell_spikes: NDArray[np.float64],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """diffusion_kde smoothing method should work."""
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        result = compute_spatial_rate(
+            trajectory_env,
+            place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+            smoothing_method="diffusion_kde",
+        )
+        assert result.smoothing_method == "diffusion_kde"
+        assert result.firing_rate.shape == (trajectory_env.n_bins,)
+
+    def test_gaussian_kde_method(
+        self,
+        trajectory_env: Environment,
+        place_cell_spikes: NDArray[np.float64],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """gaussian_kde smoothing method should work."""
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        result = compute_spatial_rate(
+            trajectory_env,
+            place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+            smoothing_method="gaussian_kde",
+        )
+        assert result.smoothing_method == "gaussian_kde"
+        assert result.firing_rate.shape == (trajectory_env.n_bins,)
+
+    def test_binned_method(
+        self,
+        trajectory_env: Environment,
+        place_cell_spikes: NDArray[np.float64],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """binned smoothing method should work."""
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        result = compute_spatial_rate(
+            trajectory_env,
+            place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+            smoothing_method="binned",
+        )
+        assert result.smoothing_method == "binned"
+        assert result.firing_rate.shape == (trajectory_env.n_bins,)
+
+    def test_different_methods_produce_different_results(
+        self,
+        trajectory_env: Environment,
+        place_cell_spikes: NDArray[np.float64],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """Different smoothing methods should produce different results."""
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        result_diffusion = compute_spatial_rate(
+            trajectory_env,
+            place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+            smoothing_method="diffusion_kde",
+        )
+        result_gaussian = compute_spatial_rate(
+            trajectory_env,
+            place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+            smoothing_method="gaussian_kde",
+        )
+
+        # Results should be different (though the peak location should be similar)
+        # Use np.nanmax to handle NaN values
+        assert not np.allclose(
+            np.nan_to_num(result_diffusion.firing_rate, nan=0),
+            np.nan_to_num(result_gaussian.firing_rate, nan=0),
+        )
+
+
+class TestComputeSpatialRateMinOccupancy:
+    """Tests for compute_spatial_rate min_occupancy parameter."""
+
+    def test_min_occupancy_parameter_exists(
+        self,
+        trajectory_env: Environment,
+        place_cell_spikes: NDArray[np.float64],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """min_occupancy parameter should be accepted."""
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        # Should not raise
+        result = compute_spatial_rate(
+            trajectory_env,
+            place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+            min_occupancy=0.1,
+        )
+        assert result is not None
+
+    def test_min_occupancy_masks_low_occupancy_bins(
+        self,
+        trajectory_env: Environment,
+        place_cell_spikes: NDArray[np.float64],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """Bins with occupancy below min_occupancy should be NaN."""
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        # Use a high min_occupancy threshold
+        result = compute_spatial_rate(
+            trajectory_env,
+            place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+            min_occupancy=1.0,  # 1 second minimum
+        )
+
+        # Bins with low occupancy should be NaN
+        low_occ_mask = result.occupancy < 1.0
+        if np.any(low_occ_mask):
+            assert np.all(np.isnan(result.firing_rate[low_occ_mask]))
+
+
+class TestComputeSpatialRateBackendParameter:
+    """Tests for compute_spatial_rate backend parameter."""
+
+    def test_backend_parameter_exists(
+        self,
+        trajectory_env: Environment,
+        place_cell_spikes: NDArray[np.float64],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """backend parameter should be accepted."""
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        # Should not raise
+        result = compute_spatial_rate(
+            trajectory_env,
+            place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+            backend="numpy",
+        )
+        assert result is not None
+
+    def test_default_backend_is_numpy(
+        self,
+        trajectory_env: Environment,
+        place_cell_spikes: NDArray[np.float64],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """Default backend should be 'numpy'."""
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        # Function should work without specifying backend
+        result = compute_spatial_rate(
+            trajectory_env,
+            place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+        )
+        # Result should be a numpy array
+        assert isinstance(np.asarray(result.firing_rate), np.ndarray)
+
+    def test_auto_backend_works(
+        self,
+        trajectory_env: Environment,
+        place_cell_spikes: NDArray[np.float64],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """backend='auto' should work (use numpy if jax unavailable)."""
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        result = compute_spatial_rate(
+            trajectory_env,
+            place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+            backend="auto",
+        )
+        assert result is not None
+
+
+class TestComputeSpatialRateResultMethods:
+    """Tests that result from compute_spatial_rate has all expected methods."""
+
+    def test_result_has_plot_method(
+        self,
+        trajectory_env: Environment,
+        place_cell_spikes: NDArray[np.float64],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """Result should have plot() method."""
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        result = compute_spatial_rate(
+            trajectory_env,
+            place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+        )
+        assert hasattr(result, "plot")
+        assert callable(result.plot)
+
+    def test_result_has_peak_location_method(
+        self,
+        trajectory_env: Environment,
+        place_cell_spikes: NDArray[np.float64],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """Result should have peak_location() method."""
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        result = compute_spatial_rate(
+            trajectory_env,
+            place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+        )
+        assert hasattr(result, "peak_location")
+        peak = result.peak_location()
+        assert peak.shape == (2,)  # 2D environment
+
+    def test_result_has_spatial_information_method(
+        self,
+        trajectory_env: Environment,
+        place_cell_spikes: NDArray[np.float64],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """Result should have spatial_information() method."""
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        result = compute_spatial_rate(
+            trajectory_env,
+            place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+        )
+        assert hasattr(result, "spatial_information")
+        info = result.spatial_information()
+        assert isinstance(info, float)
+        assert info >= 0
+
+    def test_result_peak_location_near_expected(
+        self,
+        trajectory_env: Environment,
+        place_cell_spikes: NDArray[np.float64],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """Peak location should be near the place field center."""
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        result = compute_spatial_rate(
+            trajectory_env,
+            place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+        )
+        peak = result.peak_location()
+        # Place field was centered at (60, 60) in the fixture
+        expected_center = np.array([60.0, 60.0])
+        # Peak should be within reasonable distance (depends on sampling)
+        distance = np.linalg.norm(peak - expected_center)
+        # Allow 30 cm tolerance due to random trajectory sampling and discrete binning
+        assert distance < 30.0, f"Peak at {peak}, expected near {expected_center}"

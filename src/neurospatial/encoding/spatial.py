@@ -66,6 +66,7 @@ if TYPE_CHECKING:
 __all__ = [
     "SpatialRateResult",
     "SpatialRatesResult",
+    "compute_spatial_rate",
 ]
 
 
@@ -1157,3 +1158,180 @@ class SpatialRatesResult(SpatialResultMixin):
             data["cell_type"] = self.classify()
 
         return pd.DataFrame(data)
+
+
+# ==============================================================================
+# Compute Functions
+# ==============================================================================
+
+
+def compute_spatial_rate(
+    env: Environment,
+    spike_times: NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    smoothing_method: Literal[
+        "diffusion_kde", "gaussian_kde", "binned"
+    ] = "diffusion_kde",
+    bandwidth: float = 5.0,
+    min_occupancy: float = 0.0,
+    backend: Literal["numpy", "jax", "auto"] = "numpy",
+) -> SpatialRateResult:
+    """Compute spatial firing rate map for one neuron.
+
+    This function computes a smoothed firing rate map from spike times
+    and trajectory data. The result is a SpatialRateResult object containing
+    the firing rate map, occupancy, and metadata.
+
+    Parameters
+    ----------
+    env : Environment
+        The spatial environment defining the bin structure. Must be fitted
+        (e.g., created via ``Environment.from_samples()``).
+    spike_times : ndarray, shape (n_spikes,)
+        Times of spike events in seconds. Can be empty.
+    times : ndarray, shape (n_samples,)
+        Timestamps of trajectory samples in seconds.
+    positions : ndarray, shape (n_samples, n_dims)
+        Position coordinates at each time sample.
+    smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
+        Smoothing method to use:
+
+        - **diffusion_kde** (recommended): Graph-based boundary-aware KDE.
+          Respects environment boundaries (walls, obstacles). Uses diffusion
+          kernel computed from environment graph.
+        - **gaussian_kde**: Standard Euclidean KDE. Uses Gaussian kernel based
+          on Euclidean distance between bin centers. Ignores boundaries (mass
+          can "bleed through" walls).
+        - **binned**: Legacy method. Computes raw rate first, then smooths.
+          Can introduce discretization artifacts.
+
+    bandwidth : float, default=5.0
+        Smoothing bandwidth in the same units as bin_size. Larger values
+        produce more smoothing.
+    min_occupancy : float, default=0.0
+        Minimum occupancy (seconds) for a bin to be included. Bins with
+        occupancy below this threshold are set to NaN.
+    backend : {"numpy", "jax", "auto"}, default="numpy"
+        Computation backend. Currently only "numpy" is implemented.
+
+        - **numpy**: Works everywhere, including Windows.
+        - **jax**: Requires JAX installation (Linux/macOS only). Not yet
+          implemented; raises NotImplementedError.
+        - **auto**: Uses JAX if available, falls back to NumPy silently
+          on Windows or if JAX not installed.
+
+    Returns
+    -------
+    SpatialRateResult
+        Result object containing:
+
+        - ``firing_rate``: Firing rate map in Hz, shape (n_bins,)
+        - ``occupancy``: Time in each bin in seconds, shape (n_bins,)
+        - ``env``: The environment used
+        - ``smoothing_method``: Method used for smoothing
+        - ``bandwidth``: Bandwidth used for smoothing
+
+    See Also
+    --------
+    compute_spatial_rates : Batch version for multiple neurons
+    SpatialRateResult : Result class with convenience methods
+
+    Notes
+    -----
+    The function uses the binning layer (``_binning.py``) to convert spike
+    times to spike counts, then the smoothing layer (``_smoothing.py``) to
+    compute the smoothed firing rate.
+
+    **Algorithm**:
+
+    1. Map trajectory positions to spatial bins
+    2. Interpolate spike positions from trajectory using spike times
+    3. Count spikes in each spatial bin
+    4. Compute occupancy (time spent in each bin)
+    5. Apply smoothing (method-dependent, see ``_smoothing.py``)
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding.spatial import compute_spatial_rate
+
+    >>> # Create environment from positions
+    >>> positions = np.random.rand(1000, 2) * 100
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
+
+    >>> # Create trajectory and spike times
+    >>> times = np.linspace(0, 10, 1000)
+    >>> trajectory = np.random.rand(1000, 2) * 100
+    >>> spike_times = np.array([1.0, 2.5, 4.0, 7.5, 8.2])
+
+    >>> # Compute spatial rate
+    >>> result = compute_spatial_rate(
+    ...     env,
+    ...     spike_times,
+    ...     times,
+    ...     trajectory,
+    ...     smoothing_method="diffusion_kde",
+    ...     bandwidth=10.0,
+    ... )
+
+    >>> # Access results
+    >>> print(f"Peak rate: {result.peak_firing_rates():.2f} Hz")
+    >>> print(f"Peak location: {result.peak_location()}")
+    >>> print(f"Spatial information: {result.spatial_information():.2f} bits/spike")
+
+    >>> # Plot the rate map
+    >>> ax = result.plot()
+    """
+    from neurospatial.encoding._binning import bin_spike_train, compute_occupancy
+    from neurospatial.encoding._smoothing import smooth_rate_map
+
+    # Validate backend
+    # For now, only numpy is implemented; jax and auto fall back to numpy
+    if backend == "jax":
+        # Check if JAX is available
+        from neurospatial.encoding._backend import is_jax_available
+
+        if not is_jax_available():
+            raise ImportError(
+                "JAX backend requested but JAX is not available. "
+                "Install JAX or use backend='numpy'."
+            )
+        # JAX implementation not yet available
+        raise NotImplementedError(
+            "JAX backend for compute_spatial_rate is not yet implemented. "
+            "Use backend='numpy' for now."
+        )
+    # For 'auto' and 'numpy', use numpy implementation
+
+    # Convert inputs to arrays
+    spike_times = np.asarray(spike_times, dtype=np.float64)
+    times = np.asarray(times, dtype=np.float64)
+    positions = np.asarray(positions, dtype=np.float64)
+
+    # Bin spike train into spatial bins
+    spike_counts = bin_spike_train(env, spike_times, times, positions)
+
+    # Compute occupancy
+    occupancy = compute_occupancy(env, times, positions)
+
+    # Apply smoothing to compute firing rate
+    firing_rate = smooth_rate_map(
+        env,
+        spike_counts,
+        occupancy,
+        method=smoothing_method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+    )
+
+    # Return result
+    return SpatialRateResult(
+        firing_rate=firing_rate,
+        occupancy=occupancy,
+        env=env,
+        smoothing_method=smoothing_method,
+        bandwidth=bandwidth,
+    )

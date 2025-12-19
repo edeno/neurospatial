@@ -3,10 +3,79 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 2.7 - Implement binning layer for spatial encoding
-**Next Task**: Task 2.8 - Implement `compute_spatial_rate()` function
+**Last Completed**: Task 2.8 - Implement `compute_spatial_rate()` function
+**Next Task**: Task 2.9 - Implement `compute_spatial_rates()` function
 
 ## Session Notes
+
+### Task 2.8: Implement `compute_spatial_rate()` Function [COMPLETED]
+
+**Goal**: Implement the single-neuron spatial rate computation function.
+
+**Approach**: TDD - wrote 27 tests first, then implemented.
+
+**Result**:
+
+- Added `compute_spatial_rate()` function to `src/neurospatial/encoding/spatial.py`
+- Added 27 tests to `tests/encoding/test_encoding_spatial.py` (total now 160, all pass)
+- All mypy and ruff checks pass
+- Code review passed with APPROVE
+
+**Key Implementation Details**:
+
+- `compute_spatial_rate(env, spike_times, times, positions, *, smoothing_method, bandwidth, min_occupancy, backend)`:
+  - Parameters follow canonical argument order from CLAUDE.md
+  - Uses binning layer (`_binning.py`) to convert spikes to counts and compute occupancy
+  - Uses smoothing layer (`_smoothing.py`) to compute smoothed firing rate
+  - Returns `SpatialRateResult` with all required fields
+
+**Signature**:
+
+```python
+def compute_spatial_rate(
+    env: Environment,
+    spike_times: NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    smoothing_method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
+    bandwidth: float = 5.0,
+    min_occupancy: float = 0.0,
+    backend: Literal["numpy", "jax", "auto"] = "numpy",
+) -> SpatialRateResult:
+```
+
+**Backend handling**:
+
+- `"numpy"`: Default, works everywhere
+- `"jax"`: Raises `NotImplementedError` (not yet implemented)
+- `"auto"`: Falls back to NumPy (JAX not yet implemented)
+
+**Test coverage**:
+
+- Core functionality: 14 tests (importability, return type, shapes, metadata, defaults, edge cases)
+- Smoothing methods: 4 tests (diffusion_kde, gaussian_kde, binned, different results)
+- Parameters: 6 tests (min_occupancy, backend options)
+- Result methods: 4 tests (plot, peak_location, spatial_information, peak near expected)
+
+**Documentation**:
+
+- Complete NumPy-style docstring with:
+  - One-line summary and extended description
+  - Full parameter documentation with types and constraints
+  - Returns section with structure details
+  - See Also cross-references
+  - Notes section explaining algorithm
+  - Working examples
+
+**Code review feedback**: APPROVE - Ready to merge
+
+- All 27 tests pass
+- Zero mypy errors
+- Clean separation of concerns (binning → smoothing → result)
+- Comprehensive documentation
+
+---
 
 ### Task 2.7: Binning Layer for Spatial Encoding [COMPLETED]
 
