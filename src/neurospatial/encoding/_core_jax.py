@@ -50,6 +50,10 @@ __all__ = [
     "compute_firing_rates_batch",
     "smooth_rate_map_single",
     "smooth_rate_maps_batch",
+    "sparsity_batch",
+    "sparsity_single",
+    "spatial_information_batch",
+    "spatial_information_single",
 ]
 
 
@@ -334,3 +338,293 @@ def smooth_rate_maps_batch(
     smoothed = (adjacency @ firing_rates.T).T
 
     return smoothed
+
+
+def spatial_information_single(
+    firing_rate: Array,
+    occupancy: Array,
+    *,
+    base: float = 2.0,
+) -> Array:
+    """Compute Skaggs spatial information (bits per spike) for single neuron.
+
+    Spatial information quantifies how much information each spike conveys
+    about the animal's spatial location. This is a fundamental metric for
+    classifying place cells and other spatially-tuned neurons.
+
+    Parameters
+    ----------
+    firing_rate : jax.Array, shape (n_bins,)
+        Firing rate map in Hz. Can contain NaN values which are ignored.
+    occupancy : jax.Array, shape (n_bins,)
+        Time spent in each bin (seconds or any time unit). Will be normalized
+        to probability internally. Can contain NaN values which are ignored.
+    base : float, default=2.0
+        Logarithm base. Use 2.0 for bits (standard), e for nats.
+
+    Returns
+    -------
+    jax.Array (scalar)
+        Spatial information in bits per spike (if base=2.0).
+        Returns 0.0 if mean rate is zero or undefined.
+
+    Notes
+    -----
+    **Formula (Skaggs et al. 1993)**:
+
+    .. math::
+
+        I = \\sum_i p_i \\frac{r_i}{\\bar{r}} \\log \\left( \\frac{r_i}{\\bar{r}} \\right)
+
+    where :math:`p_i` is occupancy probability, :math:`r_i` is firing rate
+    in bin :math:`i`, and :math:`\\bar{r}` is mean firing rate.
+
+    This function is designed to be compatible with JAX transformations
+    like ``jit`` and ``vmap`` for GPU acceleration.
+
+    Examples
+    --------
+    >>> import jax.numpy as jnp
+    >>> from neurospatial.encoding._core_jax import spatial_information_single
+    >>> firing_rate = jnp.ones(100) * 3.0  # Uniform
+    >>> occupancy = jnp.ones(100)
+    >>> info = spatial_information_single(firing_rate, occupancy)  # doctest: +SKIP
+    >>> float(info) < 1e-6  # ~0 for uniform  # doctest: +SKIP
+    True
+    """
+    firing_rate = jnp.asarray(firing_rate)
+    occupancy = jnp.asarray(occupancy)
+
+    # Replace NaN with 0 for computation (will be masked out by occupancy anyway)
+    firing_rate_clean = jnp.nan_to_num(firing_rate, nan=0.0)
+    occupancy_clean = jnp.nan_to_num(occupancy, nan=0.0)
+
+    # Normalize occupancy to probability
+    occ_sum = jnp.sum(occupancy_clean)
+    # Handle zero total occupancy
+    occupancy_prob = jnp.where(
+        occ_sum > 0,
+        occupancy_clean / occ_sum,
+        jnp.zeros_like(occupancy_clean),
+    )
+
+    # Mean firing rate (weighted by occupancy)
+    mean_rate = jnp.sum(occupancy_prob * firing_rate_clean)
+
+    # For valid bins: positive occupancy and positive finite firing rate
+    # We need valid_mask for computing information only in valid bins
+    valid_mask = (occupancy_prob > 0) & (firing_rate_clean > 0)
+
+    # Compute ratio = r_i / mean_rate where valid
+    # Use where to avoid division by zero
+    ratio = jnp.where(
+        (mean_rate > 0) & valid_mask,
+        firing_rate_clean / mean_rate,
+        1.0,  # Use 1.0 to give log(1) = 0 for invalid bins
+    )
+
+    # Compute p * ratio * log(ratio) for each bin
+    # log(ratio) where ratio = 1 gives 0, so invalid bins contribute nothing
+    log_ratio = jnp.log(ratio) / jnp.log(base)
+    contribution = jnp.where(
+        valid_mask & (mean_rate > 0),
+        occupancy_prob * ratio * log_ratio,
+        0.0,
+    )
+
+    information = jnp.sum(contribution)
+
+    # Clamp to non-negative (floating point errors can produce tiny negatives)
+    information = jnp.maximum(information, 0.0)
+
+    # Return 0 if mean_rate is 0 or occupancy sum is 0
+    return jnp.where((mean_rate > 0) & (occ_sum > 0), information, 0.0)
+
+
+def spatial_information_batch(
+    firing_rates: Array,
+    occupancy: Array,
+    *,
+    base: float = 2.0,
+) -> Array:
+    """Compute Skaggs spatial information for multiple neurons.
+
+    Vectorized version of :func:`spatial_information_single` for efficient
+    population analysis using JAX's ``vmap``.
+
+    Parameters
+    ----------
+    firing_rates : jax.Array, shape (n_neurons, n_bins)
+        Firing rate maps for each neuron in Hz.
+    occupancy : jax.Array, shape (n_bins,)
+        Shared occupancy for all neurons (time spent in each bin).
+    base : float, default=2.0
+        Logarithm base. Use 2.0 for bits (standard), e for nats.
+
+    Returns
+    -------
+    jax.Array, shape (n_neurons,)
+        Spatial information in bits per spike for each neuron.
+
+    Notes
+    -----
+    This function uses ``vmap`` to vectorize :func:`spatial_information_single`
+    over the first axis (neurons) for efficient batch computation.
+
+    Examples
+    --------
+    >>> import jax.numpy as jnp
+    >>> from neurospatial.encoding._core_jax import spatial_information_batch
+    >>> firing_rates = jnp.ones((5, 100)) * 5.0  # 5 neurons, uniform
+    >>> occupancy = jnp.ones(100)
+    >>> info = spatial_information_batch(firing_rates, occupancy)  # doctest: +SKIP
+    >>> info.shape  # doctest: +SKIP
+    (5,)
+    """
+    import jax
+
+    firing_rates = jnp.asarray(firing_rates)
+    occupancy = jnp.asarray(occupancy)
+
+    # Handle empty batch
+    if firing_rates.shape[0] == 0:
+        return jnp.array([], dtype=firing_rates.dtype)
+
+    # vmap over first axis of firing_rates
+    vmapped_fn = jax.vmap(
+        lambda rate: spatial_information_single(rate, occupancy, base=base)
+    )
+    return vmapped_fn(firing_rates)
+
+
+def sparsity_single(
+    firing_rate: Array,
+    occupancy: Array,
+) -> Array:
+    """Compute sparsity of spatial firing for single neuron.
+
+    Sparsity measures what fraction of the environment elicits significant
+    firing. Lower values indicate sparser, more selective place fields.
+
+    Parameters
+    ----------
+    firing_rate : jax.Array, shape (n_bins,)
+        Firing rate map in Hz. Can contain NaN values which are ignored.
+    occupancy : jax.Array, shape (n_bins,)
+        Time spent in each bin (seconds or any time unit). Will be normalized
+        to probability internally. Can contain NaN values which are ignored.
+
+    Returns
+    -------
+    jax.Array (scalar)
+        Sparsity value in range [0, 1]. Lower values indicate sparser firing.
+        Returns 0.0 if denominator is zero or undefined.
+
+    Notes
+    -----
+    **Formula (Skaggs et al. 1996)**:
+
+    .. math::
+
+        S = \\frac{\\left( \\sum_i p_i r_i \\right)^2}{\\sum_i p_i r_i^2}
+
+    where :math:`p_i` is occupancy probability and :math:`r_i` is firing rate.
+
+    **Interpretation**:
+
+    - Range: [0, 1]
+    - Low sparsity (0.1-0.3): Sparse, selective place field
+    - High sparsity (~1.0): Uniform firing throughout environment
+    - Typical place cells: 0.1-0.3
+
+    This function is designed to be compatible with JAX transformations
+    like ``jit`` and ``vmap`` for GPU acceleration.
+
+    Examples
+    --------
+    >>> import jax.numpy as jnp
+    >>> from neurospatial.encoding._core_jax import sparsity_single
+    >>> firing_rate = jnp.ones(100) * 5.0  # Uniform
+    >>> occupancy = jnp.ones(100)
+    >>> spars = sparsity_single(firing_rate, occupancy)  # doctest: +SKIP
+    >>> float(spars) > 0.99  # Close to 1 for uniform  # doctest: +SKIP
+    True
+    """
+    firing_rate = jnp.asarray(firing_rate)
+    occupancy = jnp.asarray(occupancy)
+
+    # Replace NaN with 0 for computation
+    firing_rate_clean = jnp.nan_to_num(firing_rate, nan=0.0)
+    occupancy_clean = jnp.nan_to_num(occupancy, nan=0.0)
+
+    # Normalize occupancy to probability
+    occ_sum = jnp.sum(occupancy_clean)
+    occupancy_prob = jnp.where(
+        occ_sum > 0,
+        occupancy_clean / occ_sum,
+        jnp.zeros_like(occupancy_clean),
+    )
+
+    # Compute sparsity
+    numerator = jnp.sum(occupancy_prob * firing_rate_clean) ** 2
+    denominator = jnp.sum(occupancy_prob * firing_rate_clean**2)
+
+    # Safe division
+    sparsity_value = jnp.where(
+        denominator > 0,
+        numerator / denominator,
+        0.0,
+    )
+
+    # Clamp to [0, 1] to handle floating point precision issues
+    return jnp.clip(sparsity_value, 0.0, 1.0)
+
+
+def sparsity_batch(
+    firing_rates: Array,
+    occupancy: Array,
+) -> Array:
+    """Compute sparsity for multiple neurons.
+
+    Vectorized version of :func:`sparsity_single` for efficient population
+    analysis using JAX's ``vmap``.
+
+    Parameters
+    ----------
+    firing_rates : jax.Array, shape (n_neurons, n_bins)
+        Firing rate maps for each neuron in Hz.
+    occupancy : jax.Array, shape (n_bins,)
+        Shared occupancy for all neurons (time spent in each bin).
+
+    Returns
+    -------
+    jax.Array, shape (n_neurons,)
+        Sparsity values in range [0, 1] for each neuron.
+
+    Notes
+    -----
+    This function uses ``vmap`` to vectorize :func:`sparsity_single` over
+    the first axis (neurons) for efficient batch computation.
+
+    Examples
+    --------
+    >>> import jax.numpy as jnp
+    >>> from neurospatial.encoding._core_jax import sparsity_batch
+    >>> firing_rates = jnp.ones((5, 100)) * 5.0  # 5 neurons, uniform
+    >>> occupancy = jnp.ones(100)
+    >>> spars = sparsity_batch(firing_rates, occupancy)  # doctest: +SKIP
+    >>> spars.shape  # doctest: +SKIP
+    (5,)
+    """
+    import jax
+
+    firing_rates = jnp.asarray(firing_rates)
+    occupancy = jnp.asarray(occupancy)
+
+    # Handle empty batch
+    if firing_rates.shape[0] == 0:
+        return jnp.array([], dtype=firing_rates.dtype)
+
+    # vmap over first axis of firing_rates
+    vmapped_fn = jax.vmap(lambda rate: sparsity_single(rate, occupancy))
+    return vmapped_fn(firing_rates)

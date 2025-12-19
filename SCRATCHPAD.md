@@ -3,10 +3,71 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 6.1 - Implement JAX smoothing operations in `_core_jax.py`
-**Next Task**: Task 6.2 - Implement JAX metric computations in `_core_jax.py`
+**Last Completed**: Task 6.2 - Implement JAX metric computations in `_core_jax.py`
+**Next Task**: Task 6.3 - Implement JAX grid/border score computations
 
 ## Session Notes
+
+### Task 6.2: Implement JAX metric computations in `_core_jax.py` [COMPLETED]
+
+**Goal**: Implement JAX versions of spatial_information and sparsity metrics with vmap for batch operations.
+
+**Implementation**:
+
+- Added four functions to `src/neurospatial/encoding/_core_jax.py`:
+  - `spatial_information_single()`: Compute Skaggs spatial information (bits/spike) for single neuron
+  - `spatial_information_batch()`: Batch version using `jax.vmap` for multiple neurons
+  - `sparsity_single()`: Compute sparsity measure (0-1) for single neuron
+  - `sparsity_batch()`: Batch version using `jax.vmap` for multiple neurons
+
+**Key Design Decisions**:
+
+- JAX functions use `jnp.nan_to_num()` to handle NaN inputs gracefully
+- Use `jnp.where()` for safe division and conditional computation
+- Batch functions use `jax.vmap` to vectorize over neurons efficiently
+- All functions compatible with `jit`, `vmap`, and `grad` transformations
+- Handle edge cases: zero firing rate, zero occupancy, single bin, empty batch
+
+**Algorithm Details**:
+
+Spatial Information (Skaggs et al. 1993):
+```
+I = Σᵢ pᵢ × (rᵢ/r̄) × log₂(rᵢ/r̄)
+```
+where pᵢ is occupancy probability, rᵢ is firing rate, r̄ is mean rate.
+
+Sparsity (Skaggs et al. 1996):
+```
+S = (Σᵢ pᵢ × rᵢ)² / (Σᵢ pᵢ × rᵢ²)
+```
+
+**Files Modified**:
+
+- `src/neurospatial/encoding/_core_jax.py`: Added 4 new functions, updated __all__
+
+**Files Created**:
+
+- `tests/encoding/test_core_jax_metrics.py` (49 tests)
+
+**TDD Process**:
+1. Wrote 49 tests covering:
+   - Import tests (all functions importable)
+   - Return type tests (JAX array outputs)
+   - Correctness tests (uniform → 0 info, selective → high info)
+   - Edge case handling (zero occupancy, NaN, single bin)
+   - NumPy equivalence tests
+   - JAX-specific features (jit, vmap)
+   - Consistency tests (batch matches single)
+2. Ran tests - all failed (expected - stubs raised NotImplementedError)
+3. Implemented all 4 functions
+4. Ran tests - 48 passed, 1 failed (floating point tolerance near zero)
+5. Fixed test with appropriate atol for near-zero comparisons
+6. All 49 tests pass
+
+**Test Results**: 49/49 tests pass
+**Quality checks**: All ruff and mypy checks pass
+
+---
 
 ### Task 6.1: Implement JAX smoothing operations in `_core_jax.py` [COMPLETED]
 

@@ -374,11 +374,11 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Port `gaussian_kde` smoothing to JAX
   - [x] Verify numerical equivalence with NumPy
 
-- [ ] **6.2** Implement JAX metric computations in `_core_jax.py`
-  - [ ] Port `spatial_information` to JAX
-  - [ ] Port `sparsity` to JAX
-  - [ ] Use `vmap` for batch operations
-  - [ ] Verify numerical equivalence with NumPy
+- [x] **6.2** Implement JAX metric computations in `_core_jax.py`
+  - [x] Port `spatial_information` to JAX
+  - [x] Port `sparsity` to JAX
+  - [x] Use `vmap` for batch operations
+  - [x] Verify numerical equivalence with NumPy
 
 - [ ] **6.3** Implement JAX grid/border score computations
   - [ ] Port grid score inner loop to JAX
