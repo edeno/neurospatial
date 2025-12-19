@@ -146,12 +146,12 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Add `n_jobs` parameter for parallelization
   - [x] Add `backend` parameter (default "numpy")
 
-- [ ] **2.10** Write comprehensive tests for spatial encoding
-  - [ ] Test single neuron computation
-  - [ ] Test batch computation
-  - [ ] Test all result class methods
-  - [ ] Test edge cases (empty spike trains, single spike, etc.)
-  - [ ] Test `to_dataframe()` output format
+- [x] **2.10** Write comprehensive tests for spatial encoding
+  - [x] Test single neuron computation
+  - [x] Test batch computation
+  - [x] Test all result class methods
+  - [x] Test edge cases (empty spike trains, single spike, etc.)
+  - [x] Test `to_dataframe()` output format
 
 ---
 
