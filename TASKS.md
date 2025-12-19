@@ -251,12 +251,12 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
 - [x] **4.3** Implement `ViewRateResult` classification
   - [x] Implement `is_view_cell(min_info)` → boolean based on view spatial info
 
-- [ ] **4.4** Implement `ViewRatesResult` batch methods
-  - [ ] Implement `__len__`, `__getitem__`, `__iter__` for iteration
-  - [ ] Implement `plot(idx, ax, **kwargs)`
-  - [ ] Implement `peak_view_locations()` → returns `(n_neurons, n_dims)`
-  - [ ] Implement `view_spatial_information()` → returns `(n_neurons,)`
-  - [ ] Implement `detect_view_cells(min_info)` → returns `(n_neurons,)` bool
+- [x] **4.4** Implement `ViewRatesResult` batch methods
+  - [x] Implement `__len__`, `__getitem__`, `__iter__` for iteration
+  - [x] Implement `plot(idx, ax, **kwargs)`
+  - [x] Implement `peak_view_locations()` → returns `(n_neurons, n_dims)`
+  - [x] Implement `view_spatial_information()` → returns `(n_neurons,)`
+  - [x] Implement `detect_view_cells(min_info)` → returns `(n_neurons,)` bool
 
 - [ ] **4.5** Implement `ViewRatesResult.to_dataframe()`
   - [ ] Include neuron_id, peak_view_x, peak_view_y columns

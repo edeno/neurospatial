@@ -3,10 +3,68 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 4.3 - Implement `ViewRateResult` classification
-**Next Task**: Task 4.4 - Implement `ViewRatesResult` batch methods
+**Last Completed**: Task 4.4 - Implement `ViewRatesResult` batch methods
+**Next Task**: Task 4.5 - Implement `ViewRatesResult.to_dataframe()`
 
 ## Session Notes
+
+### Task 4.4: Implement `ViewRatesResult` Batch Methods [COMPLETED]
+
+**Goal**: Add batch methods to `ViewRatesResult` for efficient population analysis of spatial view cells.
+
+**Approach**: TDD - wrote 19 tests first, then implemented.
+
+**Result**:
+
+- Added 4 batch methods to `ViewRatesResult` in `src/neurospatial/encoding/view.py`
+- Added 19 new tests in `tests/encoding/test_encoding_view.py` (total now 59, all pass)
+- All mypy and ruff checks pass
+- Code review passed after addressing recommendations
+
+**Key Implementation Details**:
+
+- `plot(idx, ax, **kwargs)`: Plot a specific neuron's view field
+  - Requires `idx` parameter (0-indexed)
+  - Delegates to `env.plot_field()` with the neuron's firing rate
+  - Accepts `ax` and kwargs passed through
+
+- `peak_view_locations()`: Peak view locations for all neurons
+  - Returns `(n_neurons, n_dims)` array of coordinates
+  - Uses `np.nanargmax()` to handle NaN values
+  - Returns NaN coordinates for neurons with all-NaN firing rates (edge case)
+
+- `view_spatial_information()`: View spatial information for all neurons
+  - Returns `(n_neurons,)` array in bits/spike
+  - Delegates to `batch_spatial_information()` from `_metrics.py`
+  - Uses `view_occupancy` (not standard occupancy)
+
+- `detect_view_cells(min_info=0.5)`: Classify neurons as spatial view cells
+  - Returns `(n_neurons,)` boolean array
+  - Uses vectorized comparison: `info > min_info`
+  - Default threshold 0.5 bits/spike from Rolls et al. (1997)
+
+**Code review recommendations addressed**:
+
+1. Added NaN validation to `peak_view_locations()` - returns NaN coordinates for all-NaN neurons
+2. Vectorized `detect_view_cells()` for performance with large populations
+
+**Test coverage (19 tests in 5 classes)**:
+
+- `TestViewRatesResultPlot`: 4 tests (returns axes, requires idx, accepts ax, accepts kwargs)
+- `TestViewRatesResultPeakViewLocations`: 5 tests (returns ndarray, shape, matches single, handles NaN, all-NaN edge case)
+- `TestViewRatesResultViewSpatialInformation`: 5 tests (returns ndarray, shape, matches single, non-negative, uniform=0)
+- `TestViewRatesResultDetectViewCells`: 5 tests (returns ndarray, shape, matches single, respects min_info, default threshold)
+
+**Documentation**:
+
+- Complete NumPy-style docstrings for all 4 methods
+- Examples showing typical usage
+- See Also cross-references to single-neuron methods
+- Notes sections explaining view occupancy semantics
+
+**Milestone 4 Progress**: Tasks 4.1-4.4 complete, 5 tasks remaining (4.5-4.9).
+
+---
 
 ### Task 4.3: Implement `ViewRateResult` Classification [COMPLETED]
 

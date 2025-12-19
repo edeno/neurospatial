@@ -572,6 +572,185 @@ class ViewRatesResult:
         for i in range(len(self)):
             yield self[i]
 
+    def plot(self, idx: int, ax: Axes | None = None, **kwargs: Any) -> Axes:
+        """Plot the view field for a specific neuron.
+
+        Delegates to the environment's plot_field method for consistent
+        visualization across the codebase.
+
+        Parameters
+        ----------
+        idx : int
+            Index of the neuron to plot (0-indexed).
+        ax : matplotlib.axes.Axes, optional
+            Axes to plot on. If None, creates a new figure and axes.
+        **kwargs
+            Additional keyword arguments passed to env.plot_field().
+            Common options include:
+            - cmap : str or Colormap, default="viridis"
+            - vmin, vmax : float, colorbar limits
+            - add_colorbar : bool, default=True
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+            The axes containing the plot.
+
+        Notes
+        -----
+        The view field shows firing rate indexed by *viewed* location (where
+        the animal looked), not by animal position. This is the key difference
+        from place fields.
+
+        Examples
+        --------
+        >>> # Plot the first neuron's view field
+        >>> ax = result.plot(idx=0)
+        >>> plt.show()
+
+        >>> # Plot neuron 5 with custom colormap
+        >>> fig, ax = plt.subplots()
+        >>> result.plot(idx=5, ax=ax, cmap="hot", vmax=20.0)
+
+        See Also
+        --------
+        peak_view_locations : Get locations of peak view responses
+        ViewRateResult.plot : Plot for single-neuron result
+        """
+        return self.env.plot_field(
+            _to_numpy(self.firing_rates[idx]),  # type: ignore[index]
+            ax=ax,
+            **kwargs,
+        )
+
+    def peak_view_locations(self) -> NDArray[np.float64]:
+        """Locations of peak view responses for all neurons.
+
+        Returns the spatial coordinates where each neuron shows maximum
+        firing rate when the animal *views* that location.
+
+        Returns
+        -------
+        ndarray, shape (n_neurons, n_dims)
+            Spatial coordinates of the bins with maximum firing rate for
+            each neuron. Uses nanargmax to handle NaN values. Returns NaN
+            coordinates for neurons with all-NaN firing rates.
+
+        Notes
+        -----
+        For spatial view cells, peak view locations represent where each
+        neuron fires most when the animal looks there, regardless of where
+        the animal is positioned.
+
+        If all firing rates for a neuron are NaN, the peak location will
+        be NaN coordinates.
+
+        Examples
+        --------
+        >>> peaks = result.peak_view_locations()
+        >>> print(f"Neuron 0 peak at ({peaks[0, 0]:.1f}, {peaks[0, 1]:.1f}) cm")
+
+        See Also
+        --------
+        ViewRateResult.peak_view_location : Single-neuron version
+        view_spatial_information : Quantify spatial selectivity
+        """
+        firing_rates = _to_numpy(self.firing_rates)
+        n_neurons = firing_rates.shape[0]
+        n_dims = self.env.bin_centers.shape[1]
+
+        peak_locs = np.empty((n_neurons, n_dims), dtype=np.float64)
+        for i in range(n_neurons):
+            valid_mask = ~np.isnan(firing_rates[i])
+            if not np.any(valid_mask):
+                # All NaN - return NaN coordinates
+                peak_locs[i] = np.nan
+            else:
+                peak_idx = int(np.nanargmax(firing_rates[i]))
+                peak_locs[i] = self.env.bin_centers[peak_idx]
+        return peak_locs
+
+    def view_spatial_information(self) -> NDArray[np.float64]:
+        """View spatial information for all neurons (bits per spike).
+
+        Quantifies how much information each spike conveys about the *viewed*
+        location for each neuron.
+
+        Returns
+        -------
+        ndarray, shape (n_neurons,)
+            Spatial information in bits/spike for each neuron.
+            Always non-negative. Returns 0.0 for uniform firing.
+
+        Notes
+        -----
+        Uses the Skaggs et al. (1993) formula with **view occupancy**:
+
+        .. math::
+
+            I = \\sum_i p_i \\frac{r_i}{\\bar{r}} \\log_2 \\left( \\frac{r_i}{\\bar{r}} \\right)
+
+        where :math:`p_i` is the fraction of time spent *viewing* bin i.
+
+        This is computed by delegating to the batch spatial information
+        function in ``_metrics.py``.
+
+        Examples
+        --------
+        >>> info = result.view_spatial_information()
+        >>> print(f"Neuron with highest info: {np.argmax(info)}")
+        >>> print(f"Info values: {info[:5]}")
+
+        See Also
+        --------
+        ViewRateResult.view_spatial_information : Single-neuron version
+        detect_view_cells : Classify as view cells based on this metric
+        """
+        from neurospatial.encoding._metrics import batch_spatial_information
+
+        return batch_spatial_information(
+            _to_numpy(self.firing_rates), _to_numpy(self.view_occupancy)
+        )
+
+    def detect_view_cells(self, min_info: float = 0.5) -> NDArray[np.bool_]:
+        """Classify neurons as spatial view cells.
+
+        A neuron is classified as a spatial view cell if its view spatial
+        information exceeds the minimum threshold.
+
+        Parameters
+        ----------
+        min_info : float, default=0.5
+            Minimum view spatial information threshold in bits/spike.
+            See ViewRateResult.is_view_cell() for threshold rationale.
+
+        Returns
+        -------
+        ndarray, shape (n_neurons,)
+            Boolean array where True indicates the neuron is classified
+            as a spatial view cell.
+
+        Notes
+        -----
+        Uses vectorized computation of view_spatial_information() for
+        efficiency with large populations.
+
+        Examples
+        --------
+        >>> is_view_cell = result.detect_view_cells()
+        >>> print(f"Found {is_view_cell.sum()} view cells")
+
+        >>> # Use stricter threshold
+        >>> is_view_cell = result.detect_view_cells(min_info=1.0)
+
+        See Also
+        --------
+        ViewRateResult.is_view_cell : Single-neuron classification
+        view_spatial_information : The metric used for classification
+        """
+        info = self.view_spatial_information()
+        return info > min_info
+
 
 # =============================================================================
 # Compute Functions (stubs for Tasks 4.7-4.8)
