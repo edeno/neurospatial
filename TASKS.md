@@ -125,11 +125,11 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Include grid_score, border_score columns
   - [x] Optionally include cell_type classification
 
-- [ ] **2.7** Implement binning layer for spatial encoding
-  - [ ] Create helper to convert (env, spike_times, times, positions) → (spike_counts, occupancy)
-  - [ ] Spike counts shape: `(n_neurons, n_bins)`
-  - [ ] Occupancy shape: `(n_bins,)`
-  - [ ] Parallelize over neurons with joblib
+- [x] **2.7** Implement binning layer for spatial encoding
+  - [x] Create helper to convert (env, spike_times, times, positions) → (spike_counts, occupancy)
+  - [x] Spike counts shape: `(n_neurons, n_bins)`
+  - [x] Occupancy shape: `(n_bins,)`
+  - [x] Parallelize over neurons with joblib
 
 - [ ] **2.8** Implement `compute_spatial_rate()` function
   - [ ] Accept single spike_times array

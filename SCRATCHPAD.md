@@ -3,10 +3,66 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 2.6 - Implement `SpatialRatesResult.to_dataframe()`
-**Next Task**: Task 2.7 - Implement binning layer for spatial encoding
+**Last Completed**: Task 2.7 - Implement binning layer for spatial encoding
+**Next Task**: Task 2.8 - Implement `compute_spatial_rate()` function
 
 ## Session Notes
+
+### Task 2.7: Binning Layer for Spatial Encoding [COMPLETED]
+
+**Goal**: Create helper functions to convert (env, spike_times, times, positions) → (spike_counts, occupancy) for spatial encoding.
+
+**Approach**: TDD - wrote 27 tests first, then implemented.
+
+**Result**:
+
+- Created `src/neurospatial/encoding/_binning.py` with 3 functions
+- Created `tests/encoding/test_encoding_binning.py` with 27 tests (all pass)
+- All mypy and ruff checks pass
+- Code review passed with REQUEST_CHANGES, then APPROVE after fixes
+
+**Key Implementation Details**:
+
+- `bin_spike_train(env, spike_times, times, positions)`: Single neuron spike binning
+  - Interpolates spike positions from trajectory using linear interpolation
+  - Returns `(n_bins,)` float64 array of spike counts
+  - Handles empty spike trains, spikes outside time range, and invalid bins
+
+- `compute_occupancy(env, times, positions)`: Compute time spent in each bin
+  - Delegates to `Environment.occupancy()` for robust computation
+  - Returns `(n_bins,)` float64 array of occupancy in seconds
+  - Validates input shapes and dimensions
+
+- `bin_spike_trains(env, spike_times, times, positions, n_jobs=1)`: Batch version
+  - Normalizes spike times via `normalize_spike_times()` for flexible input formats
+  - Returns tuple: `(spike_counts, occupancy)`
+    - spike_counts: `(n_neurons, n_bins)` float64
+    - occupancy: `(n_bins,)` float64 (shared across neurons)
+  - Supports parallelization via joblib `n_jobs` parameter
+
+**Code review feedback addressed**:
+
+1. Removed unused `position_bins` parameter from `bin_spike_train()`
+   - Spike positions are interpolated, so precomputed trajectory bins are not useful
+2. Removed unused `position_bins` parameter from `compute_occupancy()`
+   - `Environment.occupancy()` doesn't accept this parameter
+3. Fixed docstring examples to use dynamic shape assertions instead of hardcoded values
+4. Added input validation for times/positions length mismatch in `bin_spike_train()`
+
+**Documentation**:
+
+- Complete NumPy-style docstrings with parameter descriptions
+- Module docstring explains output shapes and layer purpose
+- Examples show typical usage patterns
+
+**Separation of concerns**:
+
+The binning layer is intentionally separated from smoothing to allow:
+- Reusing occupancy across multiple neurons (computed once per batch)
+- Future JAX implementations with different parallelization strategies
+- Clear API boundary between discrete binning and continuous smoothing
+
+---
 
 ### Task 2.6: `SpatialRatesResult.to_dataframe()` [COMPLETED]
 
