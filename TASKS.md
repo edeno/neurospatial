@@ -243,10 +243,10 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Define `ViewRateResult` dataclass (frozen=True)
   - [x] Define `ViewRatesResult` dataclass (frozen=True)
 
-- [ ] **4.2** Implement `ViewRateResult` convenience methods
-  - [ ] Implement `plot(ax, **kwargs)` → delegates to `env.plot_field()`
-  - [ ] Implement `peak_view_location()` → location of peak view response
-  - [ ] Implement `view_spatial_information()` → spatial info based on view occupancy
+- [x] **4.2** Implement `ViewRateResult` convenience methods
+  - [x] Implement `plot(ax, **kwargs)` → delegates to `env.plot_field()`
+  - [x] Implement `peak_view_location()` → location of peak view response
+  - [x] Implement `view_spatial_information()` → spatial info based on view occupancy
 
 - [ ] **4.3** Implement `ViewRateResult` classification
   - [ ] Implement `is_view_cell(min_info)` → boolean based on view spatial info

@@ -3,10 +3,60 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 4.1 - Create `encoding/view.py` with result class definitions
-**Next Task**: Task 4.2 - Implement `ViewRateResult` convenience methods
+**Last Completed**: Task 4.2 - Implement `ViewRateResult` convenience methods
+**Next Task**: Task 4.3 - Implement `ViewRateResult` classification
 
 ## Session Notes
+
+### Task 4.2: Implement `ViewRateResult` Convenience Methods [COMPLETED]
+
+**Goal**: Add convenience methods to `ViewRateResult` for plotting and basic metrics.
+
+**Approach**: TDD - wrote 12 tests first, then implemented.
+
+**Result**:
+
+- Added 3 convenience methods to `ViewRateResult` in `src/neurospatial/encoding/view.py`
+- Added 12 new tests in `tests/encoding/test_encoding_view.py` (total now 34, all pass)
+- All mypy and ruff checks pass
+- Code review passed after fixing type annotation issue
+
+**Key Implementation Details**:
+
+- `plot(ax, **kwargs)`: Visualize view field
+  - Delegates to `env.plot_field()` for consistent visualization
+  - Uses `_to_numpy()` for JAX compatibility
+  - Accepts optional `ax` argument and passes through kwargs
+
+- `peak_view_location()`: Location of peak view response
+  - Returns `(n_dims,)` coordinates of bin with maximum firing rate
+  - Uses `np.nanargmax()` to handle NaN values
+  - Explicitly typed result for mypy compatibility
+
+- `view_spatial_information()`: Skaggs spatial info based on view occupancy
+  - Delegates to `spatial_information()` from `_metrics.py`
+  - Uses `view_occupancy` instead of standard `occupancy` (key difference for view cells)
+  - Returns float, always non-negative
+
+**Design differences from SpatialRateResult**:
+
+- Method names include "view" prefix (e.g., `peak_view_location` vs `peak_location`)
+- `view_spatial_information()` uses `view_occupancy` (time *viewing* each bin) instead of `occupancy` (time *at* each bin)
+- No `SpatialResultMixin` inheritance (view cells have different semantics)
+
+**Test coverage (12 tests in 3 classes)**:
+
+- `TestViewRateResultPlot`: 3 tests (returns axes, accepts ax, passes kwargs)
+- `TestViewRateResultPeakViewLocation`: 4 tests (returns ndarray, shape, correctness, NaN handling)
+- `TestViewRateResultViewSpatialInformation`: 5 tests (returns float, non-negative, uses view_occupancy, uniform=0, peaked>0)
+
+**Code review feedback addressed**:
+
+1. Fixed type annotation in `peak_view_location()` - added explicit `result: NDArray[np.float64]` annotation for mypy
+
+**Milestone 4 Progress**: Tasks 4.1-4.2 complete, 7 tasks remaining (4.3-4.9).
+
+---
 
 ### Task 4.1: Create `encoding/view.py` with Result Class Definitions [COMPLETED]
 
