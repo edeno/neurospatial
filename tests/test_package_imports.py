@@ -470,13 +470,14 @@ class TestPLANMDExampleUsage:
 
     def test_plan_md_neural_encoding_pattern(self):
         """Test the neural encoding import pattern from PLAN.md."""
-        from neurospatial.encoding import grid, head_direction, place
+        from neurospatial.encoding import grid, head_direction, place, spatial
 
         assert hasattr(place, "compute_place_field")
         assert hasattr(place, "skaggs_information")
-        assert hasattr(place, "detect_place_fields")
+        # detect_place_fields moved to spatial module
+        assert hasattr(spatial, "detect_place_fields")
         assert hasattr(grid, "grid_score")
-        assert hasattr(head_direction, "head_direction_tuning_curve")
+        assert hasattr(head_direction, "compute_head_direction_tuning_curve")
 
     def test_plan_md_neural_decoding_pattern(self):
         """Test the neural decoding import pattern from PLAN.md."""

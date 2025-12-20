@@ -30,12 +30,9 @@ from hypothesis.extra import numpy as hnp
 from numpy.typing import NDArray
 
 from neurospatial import Environment
-from neurospatial.encoding.place import (
-    rate_map_coherence,
-    selectivity,
-    skaggs_information,
-    sparsity,
-)
+from neurospatial.encoding._field_metrics import rate_map_coherence
+from neurospatial.encoding._metrics import selectivity, sparsity
+from neurospatial.encoding._metrics import spatial_information as skaggs_information
 from neurospatial.ops import normalize_field
 from neurospatial.ops.alignment import get_2d_rotation_matrix
 from neurospatial.ops.transforms import AffineND, from_rotation_matrix

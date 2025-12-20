@@ -23,12 +23,10 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.encoding.place import (
-    compute_place_field,
-    detect_place_fields,
-    skaggs_information,
-    sparsity,
-)
+from neurospatial.encoding._metrics import sparsity
+from neurospatial.encoding._metrics import spatial_information as skaggs_information
+from neurospatial.encoding.place import compute_place_field
+from neurospatial.encoding.spatial import detect_place_fields
 from neurospatial.ops.binning import map_points_to_bins
 from neurospatial.ops.distance import pairwise_distances
 from neurospatial.ops.smoothing import compute_diffusion_kernels
