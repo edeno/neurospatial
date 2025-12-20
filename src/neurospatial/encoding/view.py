@@ -874,6 +874,7 @@ def compute_view_rate(
     ] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
+    backend: Literal["numpy", "jax", "auto"] = "numpy",
 ) -> ViewRateResult:
     """Compute view field for one neuron.
 
@@ -920,6 +921,12 @@ def compute_view_rate(
     min_occupancy : float, default=0.0
         Minimum view occupancy (seconds) for a bin to be included. Bins with
         view occupancy below this threshold are set to NaN.
+    backend : {'numpy', 'jax', 'auto'}, default='numpy'
+        Computation backend.
+
+        - 'numpy': Use NumPy (always available)
+        - 'jax': Use JAX (not yet implemented, raises NotImplementedError)
+        - 'auto': Use JAX if available, otherwise NumPy
 
     Returns
     -------
@@ -1004,11 +1011,33 @@ def compute_view_rate(
     .. [1] Rolls, E. T., et al. (1997). Spatial view cells in the primate
            hippocampus. European Journal of Neuroscience, 9(8), 1789-1794.
     """
+    from neurospatial.encoding._backend import SUPPORTED_BACKENDS, is_jax_available
     from neurospatial.encoding._smoothing import smooth_rate_map
     from neurospatial.encoding._view_binning import (
         bin_view_spike_train,
         compute_view_occupancy,
     )
+
+    # Validate backend
+    if backend not in SUPPORTED_BACKENDS:
+        raise ValueError(
+            f"Unknown backend: {backend!r}. "
+            f"Supported backends are: {', '.join(repr(b) for b in SUPPORTED_BACKENDS)}"
+        )
+
+    # For now, only numpy is implemented; jax raises NotImplementedError
+    if backend == "jax":
+        if not is_jax_available():
+            raise ImportError(
+                "JAX backend requested but JAX is not available. "
+                "Install JAX or use backend='numpy'."
+            )
+        # JAX implementation not yet available
+        raise NotImplementedError(
+            "JAX backend for compute_view_rate is not yet implemented. "
+            "Use backend='numpy' for now."
+        )
+    # For 'auto' and 'numpy', use numpy implementation
 
     # Validate gaze_model
     valid_gaze_models = {"fixed_distance", "ray_cast", "boundary"}
@@ -1036,6 +1065,11 @@ def compute_view_rate(
         )
 
     # Bin spike train by viewed location
+    # TODO(perf): For expensive gaze models (ray_cast), view coordinates are
+    # computed twice (once for spike binning, once for occupancy). Consider
+    # precomputing view coordinates and passing them to both functions.
+    # For now, use compute_view_rates() for batch processing which already
+    # precomputes shared quantities.
     spike_counts = bin_view_spike_train(
         env,
         spike_times,
@@ -1093,6 +1127,7 @@ def compute_view_rates(
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
     n_jobs: int = 1,
+    backend: Literal["numpy", "jax", "auto"] = "numpy",
 ) -> ViewRatesResult:
     """Compute view fields for multiple neurons.
 
@@ -1141,6 +1176,12 @@ def compute_view_rates(
     n_jobs : int, default=1
         Number of parallel jobs for spike counting. Use -1 for all CPUs.
         1 means sequential processing (no parallelization overhead).
+    backend : {'numpy', 'jax', 'auto'}, default='numpy'
+        Computation backend.
+
+        - 'numpy': Use NumPy (always available)
+        - 'jax': Use JAX (not yet implemented, raises NotImplementedError)
+        - 'auto': Use JAX if available, otherwise NumPy
 
     Returns
     -------
@@ -1248,9 +1289,31 @@ def compute_view_rates(
     .. [1] Rolls, E. T., et al. (1997). Spatial view cells in the primate
            hippocampus. European Journal of Neuroscience, 9(8), 1789-1794.
     """
+    from neurospatial.encoding._backend import SUPPORTED_BACKENDS, is_jax_available
     from neurospatial.encoding._smoothing import smooth_rate_maps_batch
     from neurospatial.encoding._spikes import normalize_spike_times
     from neurospatial.encoding._view_binning import bin_view_spike_trains
+
+    # Validate backend
+    if backend not in SUPPORTED_BACKENDS:
+        raise ValueError(
+            f"Unknown backend: {backend!r}. "
+            f"Supported backends are: {', '.join(repr(b) for b in SUPPORTED_BACKENDS)}"
+        )
+
+    # For now, only numpy is implemented; jax raises NotImplementedError
+    if backend == "jax":
+        if not is_jax_available():
+            raise ImportError(
+                "JAX backend requested but JAX is not available. "
+                "Install JAX or use backend='numpy'."
+            )
+        # JAX implementation not yet available
+        raise NotImplementedError(
+            "JAX backend for compute_view_rates is not yet implemented. "
+            "Use backend='numpy' for now."
+        )
+    # For 'auto' and 'numpy', use numpy implementation
 
     # Validate gaze_model
     valid_gaze_models = {"fixed_distance", "ray_cast", "boundary"}

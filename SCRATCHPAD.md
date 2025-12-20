@@ -3,8 +3,8 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 6.3 - Skipped (N/A - see notes below)
-**Next Task**: Task 6.4 - Add backend dispatch to compute functions
+**Last Completed**: Task 6.4 - Add backend dispatch to compute functions
+**Next Task**: Task 6.5 - Update result class methods for backend awareness
 
 ## Session Notes
 
@@ -50,6 +50,42 @@ The expensive operations (FFT autocorrelation, image rotation, graph traversal) 
 **Files Modified**: None
 
 **Decision made by**: User approval (2025-12-19)
+
+---
+
+### Task 6.4: Add backend dispatch to compute functions [COMPLETED]
+
+**Goal**: Add `backend` parameter to all compute functions for API consistency.
+
+**Implementation**:
+
+Added `backend` parameter (default="numpy") to:
+
+- `compute_directional_rate()` and `compute_directional_rates()` in `directional.py`
+- `compute_view_rate()` and `compute_view_rates()` in `view.py`
+- `compute_egocentric_rate()` and `compute_egocentric_rates()` in `egocentric.py`
+
+Note: `compute_spatial_rate(s)` already had the backend parameter.
+
+Each function:
+
+1. Validates backend is in `SUPPORTED_BACKENDS` (numpy, jax, auto)
+2. Raises `NotImplementedError` for `backend="jax"` (JAX implementation not yet available)
+3. Uses NumPy for `backend="auto"` (fallback until JAX implementations exist)
+
+**Tests Created**: `tests/encoding/test_backend_dispatch.py` with 26 tests covering:
+
+- All compute functions accept `backend="numpy"`
+- All compute functions accept `backend="auto"`
+- All compute functions reject invalid backend
+- Consistency tests verifying all functions have `backend` parameter with `"numpy"` default
+
+**Files Modified**:
+
+- `src/neurospatial/encoding/directional.py`
+- `src/neurospatial/encoding/view.py`
+- `src/neurospatial/encoding/egocentric.py`
+- `tests/encoding/test_backend_dispatch.py` (new)
 
 ---
 

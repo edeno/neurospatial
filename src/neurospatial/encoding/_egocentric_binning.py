@@ -61,7 +61,101 @@ __all__ = [
     "bin_egocentric_spike_train",
     "bin_egocentric_spike_trains",
     "compute_egocentric_occupancy",
+    "normalize_object_positions",
 ]
+
+
+def normalize_object_positions(
+    object_positions: NDArray[np.float64] | Sequence[float],
+) -> NDArray[np.float64]:
+    """Normalize object positions to canonical (n_objects, 2) format.
+
+    Converts common input formats to a consistent 2D array representation
+    for egocentric encoding functions.
+
+    Parameters
+    ----------
+    object_positions : array-like
+        Object positions in one of these formats:
+
+        - 1D array of length 2 (single object) → reshaped to (1, 2)
+        - 2D array of shape (n_objects, 2) (canonical format) → returned as-is
+        - List/tuple of length 2 (single object, e.g., ``[x, y]``) → converted
+          to (1, 2) array
+
+    Returns
+    -------
+    ndarray, shape (n_objects, 2)
+        Object positions as 2D float64 array. Always at least shape (1, 2).
+
+    Raises
+    ------
+    ValueError
+        If input has unexpected shape or dimensions.
+
+    Examples
+    --------
+    Single object (common user input):
+
+    >>> import numpy as np
+    >>> from neurospatial.encoding._egocentric_binning import normalize_object_positions
+    >>> obj = [50.0, 50.0]  # Plain list
+    >>> normalized = normalize_object_positions(obj)
+    >>> normalized.shape
+    (1, 2)
+    >>> normalized
+    array([[50., 50.]])
+
+    Single object as 1D array:
+
+    >>> obj = np.array([50.0, 50.0])
+    >>> normalize_object_positions(obj).shape
+    (1, 2)
+
+    Multiple objects (already canonical):
+
+    >>> objs = np.array([[50.0, 50.0], [25.0, 75.0]])
+    >>> normalize_object_positions(objs).shape
+    (2, 2)
+
+    Notes
+    -----
+    This normalization happens at the entry point of egocentric encoding
+    functions, ensuring consistent internal handling regardless of how the
+    user provides object data. Single-object inputs like ``[x, y]`` are a
+    common pattern in neuroscience experiments with a single landmark.
+    """
+    arr = np.asarray(object_positions, dtype=np.float64)
+
+    # 1D array of length 2: single object [x, y]
+    if arr.ndim == 1:
+        if len(arr) != 2:
+            raise ValueError(
+                f"1D object_positions must have length 2 (single object [x, y]), "
+                f"got length {len(arr)}.\n"
+                f"For multiple objects, pass a 2D array with shape (n_objects, 2)."
+            )
+        return arr.reshape(1, 2)
+
+    # 2D array: validate shape
+    if arr.ndim == 2:
+        if arr.shape[1] != 2:
+            raise ValueError(
+                f"object_positions must have shape (n_objects, 2), "
+                f"got shape {arr.shape}.\n"
+                f"Each row should be [x, y] coordinates."
+            )
+        if arr.shape[0] == 0:
+            raise ValueError(
+                "object_positions cannot be empty. "
+                "Provide at least one object position."
+            )
+        return arr
+
+    raise ValueError(
+        f"object_positions must be 1D (single object) or 2D (multiple objects), "
+        f"got {arr.ndim}D array with shape {arr.shape}."
+    )
 
 
 def _validate_times(

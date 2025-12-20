@@ -386,8 +386,8 @@ def batch_sparsity(
     This function computes sparsity independently for each neuron.
     The occupancy is shared across all neurons (same behavioral sampling).
 
-    This is a backend-aware function: if `firing_rates` is a JAX array,
-    the computation will use JAX operations and return a JAX array.
+    Currently uses NumPy internally. JAX backend support will be added in
+    Milestone 6. All inputs are converted to NumPy arrays.
 
     Examples
     --------

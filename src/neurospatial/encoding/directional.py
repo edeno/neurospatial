@@ -1307,6 +1307,7 @@ def compute_directional_rate(
     *,
     smoothing_sigma: float | None = None,
     angle_unit: Literal["rad", "deg"] = "rad",
+    backend: Literal["numpy", "jax", "auto"] = "numpy",
 ) -> DirectionalRateResult:
     """Compute directional firing rate for one neuron.
 
@@ -1333,6 +1334,13 @@ def compute_directional_rate(
 
         - 'rad': angles in radians
         - 'deg': angles in degrees
+
+    backend : {'numpy', 'jax', 'auto'}, default='numpy'
+        Computation backend.
+
+        - 'numpy': Use NumPy (always available)
+        - 'jax': Use JAX (not yet implemented, raises NotImplementedError)
+        - 'auto': Use JAX if available, otherwise NumPy
 
     Returns
     -------
@@ -1398,10 +1406,32 @@ def compute_directional_rate(
     ...     spike_times, times, headings_deg, bin_size=6.0, angle_unit="deg"
     ... )
     """
+    from neurospatial.encoding._backend import SUPPORTED_BACKENDS, is_jax_available
     from neurospatial.encoding._directional_binning import (
         bin_directional_spike_train,
         compute_directional_occupancy,
     )
+
+    # Validate backend
+    if backend not in SUPPORTED_BACKENDS:
+        raise ValueError(
+            f"Unknown backend: {backend!r}. "
+            f"Supported backends are: {', '.join(repr(b) for b in SUPPORTED_BACKENDS)}"
+        )
+
+    # For now, only numpy is implemented; jax raises NotImplementedError
+    if backend == "jax":
+        if not is_jax_available():
+            raise ImportError(
+                "JAX backend requested but JAX is not available. "
+                "Install JAX or use backend='numpy'."
+            )
+        # JAX implementation not yet available
+        raise NotImplementedError(
+            "JAX backend for compute_directional_rate is not yet implemented. "
+            "Use backend='numpy' for now."
+        )
+    # For 'auto' and 'numpy', use numpy implementation
 
     # Validate angle_unit
     if angle_unit not in ("rad", "deg"):
@@ -1475,6 +1505,7 @@ def compute_directional_rates(
     smoothing_sigma: float | None = None,
     angle_unit: Literal["rad", "deg"] = "rad",
     n_jobs: int = 1,
+    backend: Literal["numpy", "jax", "auto"] = "numpy",
 ) -> DirectionalRatesResult:
     """Compute directional firing rates for multiple neurons.
 
@@ -1512,6 +1543,12 @@ def compute_directional_rates(
     n_jobs : int, default=1
         Number of parallel jobs for spike binning. Use -1 for all CPUs.
         1 means sequential processing (no parallelization overhead).
+    backend : {'numpy', 'jax', 'auto'}, default='numpy'
+        Computation backend.
+
+        - 'numpy': Use NumPy (always available)
+        - 'jax': Use JAX (not yet implemented, raises NotImplementedError)
+        - 'auto': Use JAX if available, otherwise NumPy
 
     Returns
     -------
@@ -1574,11 +1611,33 @@ def compute_directional_rates(
     ...     spike_times, times, headings_deg, bin_size=6.0, angle_unit="deg"
     ... )
     """
+    from neurospatial.encoding._backend import SUPPORTED_BACKENDS, is_jax_available
     from neurospatial.encoding._directional_binning import (
         bin_directional_spike_train,
         compute_directional_occupancy,
     )
     from neurospatial.encoding._spikes import normalize_spike_times
+
+    # Validate backend
+    if backend not in SUPPORTED_BACKENDS:
+        raise ValueError(
+            f"Unknown backend: {backend!r}. "
+            f"Supported backends are: {', '.join(repr(b) for b in SUPPORTED_BACKENDS)}"
+        )
+
+    # For now, only numpy is implemented; jax raises NotImplementedError
+    if backend == "jax":
+        if not is_jax_available():
+            raise ImportError(
+                "JAX backend requested but JAX is not available. "
+                "Install JAX or use backend='numpy'."
+            )
+        # JAX implementation not yet available
+        raise NotImplementedError(
+            "JAX backend for compute_directional_rates is not yet implemented. "
+            "Use backend='numpy' for now."
+        )
+    # For 'auto' and 'numpy', use numpy implementation
 
     # Validate angle_unit
     if angle_unit not in ("rad", "deg"):

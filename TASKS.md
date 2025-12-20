@@ -386,12 +386,12 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - These operations have no JAX equivalents; batch functions remain NumPy-only
   - See SCRATCHPAD.md for full analysis (2025-12-19)
 
-- [ ] **6.4** Add backend dispatch to compute functions
-  - [ ] Add `backend` parameter to `compute_spatial_rate(s)`
-  - [ ] Add `backend` parameter to `compute_directional_rate(s)`
-  - [ ] Add `backend` parameter to `compute_view_rate(s)`
-  - [ ] Add `backend` parameter to `compute_egocentric_rate(s)`
-  - [ ] Route through `_backend.py` selection logic
+- [x] **6.4** Add backend dispatch to compute functions
+  - [x] Add `backend` parameter to `compute_spatial_rate(s)` (already had it)
+  - [x] Add `backend` parameter to `compute_directional_rate(s)`
+  - [x] Add `backend` parameter to `compute_view_rate(s)`
+  - [x] Add `backend` parameter to `compute_egocentric_rate(s)`
+  - [x] Route through `_backend.py` selection logic
 
 - [ ] **6.5** Update result class methods for backend awareness
   - [ ] Ensure `_to_numpy()` handles JAX arrays correctly

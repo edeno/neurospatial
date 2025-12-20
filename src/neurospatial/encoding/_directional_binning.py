@@ -144,6 +144,13 @@ def compute_directional_occupancy(
             f"Fix: Remove duplicate timestamps or check for timestamp errors."
         )
 
+    # Validate bin_size
+    if bin_size <= 0:
+        raise ValueError(
+            f"bin_size must be positive, got {bin_size}.\n"
+            f"Fix: Use a positive bin size (e.g., np.pi/30 radians or 6 degrees)."
+        )
+
     # Convert to radians if needed
     if angle_unit == "deg":
         headings_rad = np.radians(headings)
@@ -152,8 +159,14 @@ def compute_directional_occupancy(
         headings_rad = headings
         bin_size_rad = bin_size
 
-    # Compute bin edges and centers
+    # Validate bin_size produces valid number of bins
     n_bins = int(np.round(2 * np.pi / bin_size_rad))
+    if n_bins < 1:
+        raise ValueError(
+            f"bin_size is too large: {bin_size} ({angle_unit}). "
+            f"Results in {n_bins} bins (need at least 1).\n"
+            f"Fix: Use a smaller bin_size (max ~2π radians or 360 degrees)."
+        )
     bin_edges = np.linspace(0, 2 * np.pi, n_bins + 1)
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
 
@@ -248,6 +261,13 @@ def bin_directional_spike_train(
     if angle_unit not in ("rad", "deg"):
         raise ValueError(f"angle_unit must be 'rad' or 'deg', got '{angle_unit}'")
 
+    # Validate bin_size
+    if bin_size <= 0:
+        raise ValueError(
+            f"bin_size must be positive, got {bin_size}.\n"
+            f"Fix: Use a positive bin size (e.g., np.pi/30 radians or 6 degrees)."
+        )
+
     spike_times = np.asarray(spike_times, dtype=np.float64).ravel()
     times = np.asarray(times, dtype=np.float64).ravel()
     headings = np.asarray(headings, dtype=np.float64).ravel()
@@ -260,8 +280,15 @@ def bin_directional_spike_train(
         headings_rad = headings
         bin_size_rad = bin_size
 
-    # Compute number of bins
+    # Validate bin_size produces valid number of bins
     n_bins = int(np.round(2 * np.pi / bin_size_rad))
+    if n_bins < 1:
+        raise ValueError(
+            f"bin_size is too large: {bin_size} ({angle_unit}). "
+            f"Results in {n_bins} bins (need at least 1).\n"
+            f"Fix: Use a smaller bin_size (max ~2π radians or 360 degrees)."
+        )
+
     bin_edges = np.linspace(0, 2 * np.pi, n_bins + 1)
 
     # Initialize spike counts
