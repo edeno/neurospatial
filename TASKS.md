@@ -458,11 +458,6 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [ ] Run `uv run mypy src/neurospatial/encoding/` for type checking
   - [ ] Run `uv run ruff check . && uv run ruff format .` for linting
 
-- [ ] **7.7** Create migration guide
-  - [ ] Document old function → new function mapping
-  - [ ] Document result class field name changes (`.field` → `.firing_rate`)
-  - [ ] Provide code snippets for common migrations
-
 ---
 
 ## Task Tracking Legend

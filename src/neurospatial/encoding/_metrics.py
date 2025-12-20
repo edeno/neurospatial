@@ -49,7 +49,11 @@ __all__ = [
     "batch_grid_scores",
     "batch_sparsity",
     "batch_spatial_information",
+    "information_per_second",
+    "mutual_information",
+    "selectivity",
     "sparsity",
+    "spatial_coverage_single_cell",
     "spatial_information",
 ]
 
@@ -731,3 +735,372 @@ def batch_border_scores(
             scores[i] = np.nan
 
     return scores
+
+
+def selectivity(
+    firing_rate: ArrayLike,
+    occupancy: ArrayLike,
+) -> float:
+    """Compute spatial selectivity (peak rate / mean rate).
+
+    Selectivity measures how spatially selective a cell's firing is. Higher
+    values indicate the cell fires strongly in a small region and weakly
+    elsewhere. A value of 1.0 indicates uniform firing throughout the
+    environment.
+
+    Parameters
+    ----------
+    firing_rate : ArrayLike, shape (n_bins,)
+        Firing rate map (Hz or spikes/second).
+    occupancy : ArrayLike, shape (n_bins,)
+        Occupancy probability (normalized to sum to 1).
+
+    Returns
+    -------
+    float
+        Selectivity value, always >= 1.0. Returns NaN if:
+        - Mean rate is zero (division by zero)
+        - All firing rates are NaN
+        Returns infinity if peak rate is positive but mean rate is zero.
+
+    Notes
+    -----
+    **Formula**:
+
+    .. math::
+
+        S = \\frac{r_{\\text{peak}}}{\\bar{r}}
+
+    where :math:`r_{\\text{peak}}` is the maximum firing rate and
+    :math:`\\bar{r}` is the occupancy-weighted mean firing rate.
+
+    **Interpretation**:
+
+    - **Selectivity = 1.0**: Uniform firing (peak equals mean)
+    - **Selectivity = 2-5**: Moderately selective place field
+    - **Selectivity > 10**: Highly selective place field (fires in small region)
+
+    **NaN handling**: NaN values in firing_rate are excluded from peak and mean
+    calculations. Occupancy is renormalized to valid bins.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.encoding._metrics import selectivity
+
+    >>> # Uniform firing -> selectivity = 1.0
+    >>> firing_rate = np.ones(100) * 5.0
+    >>> occupancy = np.ones(100) / 100
+    >>> select = selectivity(firing_rate, occupancy)
+    >>> abs(select - 1.0) < 1e-6
+    True
+
+    See Also
+    --------
+    spatial_information : Spatial information (bits/spike)
+    sparsity : Spatial sparsity
+
+    References
+    ----------
+    .. [1] opexebo package (Moser Lab):
+           https://github.com/kavli-ntnu/opexebo
+    """
+    firing_rate = np.asarray(firing_rate)
+    occupancy = np.asarray(occupancy)
+
+    # Handle NaN values
+    valid_mask = np.isfinite(firing_rate) & np.isfinite(occupancy)
+
+    if not np.any(valid_mask):
+        # All NaN
+        return np.nan
+
+    # Get valid values
+    firing_rate_valid = firing_rate[valid_mask]
+    occupancy_valid = occupancy[valid_mask]
+
+    # Normalize occupancy to probability
+    occupancy_prob = occupancy_valid / np.sum(occupancy_valid)
+
+    # Peak firing rate
+    peak_rate = np.max(firing_rate_valid)
+
+    # Mean firing rate (occupancy-weighted)
+    mean_rate = np.sum(occupancy_prob * firing_rate_valid)
+
+    # Compute selectivity
+    if mean_rate == 0:
+        # Division by zero
+        if peak_rate > 0:
+            return np.inf
+        else:
+            return np.nan
+
+    selectivity_value = peak_rate / mean_rate
+
+    return float(selectivity_value)
+
+
+def information_per_second(
+    firing_rate: ArrayLike,
+    occupancy: ArrayLike,
+    *,
+    base: float = 2.0,
+) -> float:
+    """Compute spatial information in bits per second.
+
+    This metric combines spatial information content (bits/spike) with the
+    cell's firing rate to give information transmission rate. It measures
+    how many bits of spatial information the cell conveys per second.
+
+    Parameters
+    ----------
+    firing_rate : ArrayLike, shape (n_bins,)
+        Firing rate map (Hz or spikes/second).
+    occupancy : ArrayLike, shape (n_bins,)
+        Occupancy probability (normalized to sum to 1).
+    base : float, default=2.0
+        Logarithm base for information calculation. Use 2.0 for bits,
+        np.e for nats.
+
+    Returns
+    -------
+    float
+        Information rate in bits/second (or nats/second if base=e).
+        Returns NaN if firing rate or occupancy are all NaN.
+
+    Notes
+    -----
+    **Formula**:
+
+    .. math::
+
+        I_{\\text{rate}} = I_{\\text{content}} \\times \\bar{r}
+
+    where :math:`I_{\\text{content}}` is the Skaggs spatial information
+    (bits/spike) and :math:`\\bar{r}` is the mean firing rate (spikes/second).
+
+    **Interpretation**:
+
+    - Combines "how much info per spike" with "how many spikes per second"
+    - A cell can have high bits/spike but low bits/second if it fires rarely
+    - Conversely, a cell with low selectivity but high rate can have high bits/second
+
+    **Use case**: This metric favors cells that both fire frequently AND are
+    spatially selective, making it useful for identifying the most informative
+    place cells for population decoding.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.encoding._metrics import information_per_second
+
+    >>> # Highly selective but rare firing
+    >>> firing_rate = np.zeros(100)
+    >>> firing_rate[50] = 10.0  # 10 Hz in one bin, 0.1 Hz mean
+    >>> occupancy = np.ones(100) / 100
+    >>> info_rate = information_per_second(firing_rate, occupancy)
+    >>> info_rate > 0
+    True
+
+    See Also
+    --------
+    spatial_information : Spatial information (bits/spike)
+    mutual_information : Mutual information between position and firing
+
+    References
+    ----------
+    .. [1] Markus et al. (1994). Interactions between location and task affect
+           the spatial and directional firing of hippocampal neurons. J Neurosci 14(11).
+    """
+    # Compute Skaggs information (bits/spike)
+    info_content = spatial_information(firing_rate, occupancy, base=base)
+
+    firing_rate = np.asarray(firing_rate)
+    occupancy = np.asarray(occupancy)
+
+    # Handle NaN values for mean rate calculation
+    valid_mask = np.isfinite(firing_rate) & np.isfinite(occupancy)
+
+    if not np.any(valid_mask):
+        return np.nan
+
+    firing_rate_valid = firing_rate[valid_mask]
+    occupancy_valid = occupancy[valid_mask]
+
+    # Normalize occupancy
+    occupancy_prob = occupancy_valid / np.sum(occupancy_valid)
+
+    # Mean firing rate (occupancy-weighted)
+    mean_rate = np.sum(occupancy_prob * firing_rate_valid)
+
+    # Information rate = bits/spike x spikes/second = bits/second
+    info_rate = info_content * mean_rate
+
+    return float(info_rate)
+
+
+def mutual_information(
+    firing_rate: ArrayLike,
+    occupancy: ArrayLike,
+    *,
+    base: float = 2.0,
+) -> float:
+    """Compute mutual information between position and firing rate.
+
+    Mutual information quantifies how much knowing the animal's position
+    reduces uncertainty about the neuron's firing rate. This is a fundamental
+    information-theoretic measure of spatial coding.
+
+    Parameters
+    ----------
+    firing_rate : ArrayLike, shape (n_bins,)
+        Firing rate map (Hz or spikes/second).
+    occupancy : ArrayLike, shape (n_bins,)
+        Occupancy probability (normalized to sum to 1).
+    base : float, default=2.0
+        Logarithm base for information calculation. Use 2.0 for bits,
+        np.e for nats.
+
+    Returns
+    -------
+    float
+        Mutual information in bits (or nats if base=e). Returns NaN if
+        firing rate or occupancy are all NaN or if mean rate is zero.
+
+    Notes
+    -----
+    **Relationship to other metrics**:
+
+    - ``mutual_information`` = ``spatial_information`` x ``mean_rate``
+    - ``mutual_information`` = ``information_per_second``
+    - MI is symmetric: MI(position; firing) = MI(firing; position)
+
+    **Interpretation**:
+
+    - **MI = 0**: Position and firing are independent (no place field)
+    - **MI > 0**: Position provides information about firing
+    - Higher MI indicates stronger spatial coding
+
+    **Difference from Skaggs information**: Skaggs info is bits per spike,
+    MI is total bits. A cell with high Skaggs but low firing rate will have
+    lower MI than a moderately selective cell that fires frequently.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.encoding._metrics import mutual_information
+
+    >>> # Strong place field
+    >>> firing_rate = np.ones(100) * 0.5
+    >>> firing_rate[40:50] = 10.0
+    >>> occupancy = np.ones(100) / 100
+    >>> mi = mutual_information(firing_rate, occupancy)
+    >>> mi > 0
+    True
+
+    See Also
+    --------
+    spatial_information : Spatial information (bits/spike)
+    information_per_second : Information rate (equivalent to MI)
+    sparsity : Sparsity measure
+
+    References
+    ----------
+    .. [1] Skaggs et al. (1993). An information-theoretic approach to deciphering
+           the hippocampal code. NIPS.
+    """
+    # MI is mathematically equivalent to information_per_second
+    return information_per_second(firing_rate, occupancy, base=base)
+
+
+def spatial_coverage_single_cell(
+    firing_rate: ArrayLike,
+    *,
+    threshold: float = 0.1,
+) -> float:
+    """Compute fraction of environment where cell fires above threshold.
+
+    This metric quantifies how much of the spatial environment a single cell
+    covers with its firing. Lower values indicate more spatially selective
+    place fields.
+
+    Parameters
+    ----------
+    firing_rate : ArrayLike, shape (n_bins,)
+        Firing rate map (Hz or spikes/second).
+    threshold : float, default=0.1
+        Minimum firing rate (Hz) to consider a bin as "covered".
+        Standard values: 0.1 Hz (minimal activity) or 1.0 Hz (clear activity).
+
+    Returns
+    -------
+    float
+        Fraction of bins with firing rate > threshold, in range [0, 1].
+        Returns NaN if all firing rates are NaN.
+
+    Notes
+    -----
+    **Formula**:
+
+    .. math::
+
+        C = \\frac{\\sum_i \\mathbb{1}[r_i > \\theta]}{N}
+
+    where :math:`r_i` is firing rate in bin :math:`i`, :math:`\\theta` is
+    the threshold, and :math:`N` is the total number of bins.
+
+    **Interpretation**:
+
+    - **Coverage = 0.0**: Cell fires nowhere (no place field)
+    - **Coverage = 0.1**: Cell fires in 10% of environment (highly selective)
+    - **Coverage = 0.5**: Cell fires in half the environment (broad field)
+    - **Coverage = 1.0**: Cell fires everywhere (no spatial selectivity)
+
+    **Relationship to other metrics**:
+
+    - Inverse of selectivity: high coverage -> low selectivity
+    - Complementary to sparsity: both measure spatial specificity
+
+    **NaN handling**: NaN values in firing_rate are treated as bins with
+    zero firing (below threshold).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.encoding._metrics import spatial_coverage_single_cell
+
+    >>> # Highly selective cell (fires in 10% of bins)
+    >>> firing_rate = np.zeros(100)
+    >>> firing_rate[40:50] = 5.0
+    >>> coverage = spatial_coverage_single_cell(firing_rate, threshold=0.1)
+    >>> abs(coverage - 0.10) < 1e-6
+    True
+
+    See Also
+    --------
+    sparsity : Sparsity measure (inverse of coverage)
+    selectivity : Peak / mean rate ratio
+
+    References
+    ----------
+    .. [1] Muller et al. (1987). The effects of changes in the environment on
+           the spatial firing of hippocampal complex-spike cells. J Neurosci 7(7).
+    """
+    firing_rate = np.asarray(firing_rate)
+
+    # Handle NaN values (treat as below threshold)
+    valid_mask = np.isfinite(firing_rate)
+
+    if not np.any(valid_mask):
+        return np.nan
+
+    # Count bins above threshold
+    n_above = np.sum(firing_rate[valid_mask] > threshold)
+
+    # Total number of bins (including NaN bins as zeros)
+    n_total = len(firing_rate)
+
+    coverage = n_above / n_total
+
+    return float(coverage)

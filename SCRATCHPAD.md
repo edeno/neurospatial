@@ -2,9 +2,95 @@
 
 ## Current Status
 
-**Date**: 2025-12-19
-**Last Completed**: Task 6.7 - Add performance benchmarks
-**Next Task**: Task 7.1 - Update `encoding/__init__.py` exports
+**Date**: 2025-12-20
+**Last Completed**: Task 7.1 - Update encoding/__init__.py exports
+**Next Task**: Task 7.2 - Full migration of old encoding modules
+
+## Milestone 7: Cleanup and Documentation - Migration Plan
+
+### Overview
+
+User requested **full migration** of utilities from old files to new locations, then removal of old files (no deprecation period).
+
+### Files to Remove
+
+1. `encoding/place.py` → merged into `spatial.py` and `_field_metrics.py`
+2. `encoding/head_direction.py` → merged into `directional.py`
+3. `encoding/spatial_view.py` → merged into `view.py`
+4. `encoding/object_vector.py` → merged into `egocentric.py`
+
+### Files to Keep
+
+- `encoding/border.py` - standalone border score utilities
+- `encoding/grid.py` - standalone grid score utilities
+- `encoding/population.py` - population-level analysis
+- `encoding/phase_precession.py` - theta phase precession
+
+### Migration Details
+
+#### From place.py:
+
+| Function | Destination | Notes |
+|----------|-------------|-------|
+| `compute_place_field` | Remove | Replaced by `compute_spatial_rate` |
+| `DirectionalPlaceFields` | `spatial.py` | Dataclass for directional fields |
+| `compute_directional_place_fields` | `spatial.py` | Computes direction-conditioned fields |
+| `detect_place_fields` | `spatial.py` | Field detection with helpers |
+| `skaggs_information` | Re-export from `_metrics.py` | Already exists as `spatial_information` |
+| `sparsity` | Re-export from `_metrics.py` | Already exists |
+| `field_size` | `_field_metrics.py` | Field geometry metric |
+| `rate_map_centroid` | `_field_metrics.py` | Field geometry metric |
+| `field_shape_metrics` | `_field_metrics.py` | Field geometry metric |
+| `field_stability` | `_field_metrics.py` | Field comparison metric |
+| `field_shift_distance` | `_field_metrics.py` | Field comparison metric |
+| `compute_field_emd` | `_field_metrics.py` | Field comparison metric |
+| `in_out_field_ratio` | `_field_metrics.py` | Field comparison metric |
+| `rate_map_coherence` | `_field_metrics.py` | Field comparison metric |
+| `information_per_second` | `_metrics.py` | Information metric |
+| `mutual_information` | `_metrics.py` | Information metric |
+| `selectivity` | `_metrics.py` | Selectivity metric |
+| `spatial_coverage_single_cell` | `_metrics.py` | Coverage metric |
+
+#### From head_direction.py:
+
+| Function | Destination | Notes |
+|----------|-------------|-------|
+| `compute_head_direction_tuning_curve` | Remove | Replaced by `compute_directional_rate` |
+| `HeadDirectionMetrics` | Remove | Replaced by `DirectionalRateResult` methods |
+| `head_direction_metrics` | Remove | Use `DirectionalRateResult` instead |
+| `is_head_direction_cell` | `directional.py` | Keep for convenience |
+| `plot_head_direction_tuning` | `directional.py` | Keep for convenience |
+| `circular_mean` | Re-export from `stats.circular` | Already exists |
+| `mean_resultant_length` | Re-export from `stats.circular` | Already exists |
+| `rayleigh_test` | Re-export from `stats.circular` | Already exists |
+
+#### From spatial_view.py:
+
+| Function | Destination | Notes |
+|----------|-------------|-------|
+| `compute_spatial_view_field` | Remove | Replaced by `compute_view_rate` |
+| `SpatialViewFieldResult` | Remove | Replaced by `ViewRateResult` |
+| `SpatialViewMetrics` | Remove | Replaced by `ViewRateResult` methods |
+| `spatial_view_cell_metrics` | Remove | Use `ViewRateResult` instead |
+| `is_spatial_view_cell` | `view.py` | Keep for convenience |
+| `compute_viewed_location` | `view.py` | Core gaze computation |
+| `compute_viewshed` | `view.py` | Core visibility computation |
+| `visibility_occupancy` | `view.py` | Core occupancy computation |
+| `FieldOfView` | `view.py` | Dataclass |
+
+#### From object_vector.py:
+
+| Function | Destination | Notes |
+|----------|-------------|-------|
+| `compute_object_vector_field` | Remove | Replaced by `compute_egocentric_rate` |
+| `ObjectVectorFieldResult` | Remove | Replaced by `EgocentricRateResult` |
+| `ObjectVectorMetrics` | Remove | Replaced by `EgocentricRateResult` methods |
+| `compute_object_vector_tuning` | `egocentric.py` | Keep for tuning analysis |
+| `object_vector_score` | `egocentric.py` | Keep for OVC metric |
+| `is_object_vector_cell` | `egocentric.py` | Keep for convenience |
+| `plot_object_vector_tuning` | `egocentric.py` | Keep for visualization |
+
+---
 
 ## Session Notes
 
