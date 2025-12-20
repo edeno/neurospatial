@@ -17,8 +17,6 @@ Design requirements (from PLAN.md):
 
 from __future__ import annotations
 
-import pytest
-
 # ==============================================================================
 # Test module imports
 # ==============================================================================
@@ -66,24 +64,12 @@ class TestCoreNumpyImports:
 
 
 # ==============================================================================
-# Test compute_firing_rate_single stub
+# Test compute_firing_rate_single
 # ==============================================================================
 
 
-class TestComputeFiringRateSingleStub:
-    """Tests for compute_firing_rate_single stub function."""
-
-    def test_raises_not_implemented_error(self) -> None:
-        """compute_firing_rate_single should raise NotImplementedError (stub)."""
-        import numpy as np
-
-        from neurospatial.encoding._core_numpy import compute_firing_rate_single
-
-        spike_counts = np.array([0, 1, 2, 0, 1], dtype=np.float64)
-        occupancy = np.array([1.0, 1.0, 1.0, 1.0, 1.0], dtype=np.float64)
-
-        with pytest.raises(NotImplementedError, match="not yet implemented"):
-            compute_firing_rate_single(spike_counts, occupancy)
+class TestComputeFiringRateSingle:
+    """Tests for compute_firing_rate_single function."""
 
     def test_function_has_docstring(self) -> None:
         """compute_firing_rate_single should have a docstring."""
@@ -94,25 +80,12 @@ class TestComputeFiringRateSingleStub:
 
 
 # ==============================================================================
-# Test compute_firing_rates_batch stub
+# Test compute_firing_rates_batch
 # ==============================================================================
 
 
-class TestComputeFiringRatesBatchStub:
-    """Tests for compute_firing_rates_batch stub function."""
-
-    def test_raises_not_implemented_error(self) -> None:
-        """compute_firing_rates_batch should raise NotImplementedError (stub)."""
-        import numpy as np
-
-        from neurospatial.encoding._core_numpy import compute_firing_rates_batch
-
-        # Shape: (n_neurons, n_bins)
-        spike_counts = np.array([[0, 1, 2, 0, 1], [1, 0, 1, 2, 0]], dtype=np.float64)
-        occupancy = np.array([1.0, 1.0, 1.0, 1.0, 1.0], dtype=np.float64)
-
-        with pytest.raises(NotImplementedError, match="not yet implemented"):
-            compute_firing_rates_batch(spike_counts, occupancy)
+class TestComputeFiringRatesBatch:
+    """Tests for compute_firing_rates_batch function."""
 
     def test_function_has_docstring(self) -> None:
         """compute_firing_rates_batch should have a docstring."""
@@ -123,30 +96,12 @@ class TestComputeFiringRatesBatchStub:
 
 
 # ==============================================================================
-# Test smooth_rate_map_single stub
+# Test smooth_rate_map_single
 # ==============================================================================
 
 
-class TestSmoothRateMapSingleStub:
-    """Tests for smooth_rate_map_single stub function."""
-
-    def test_raises_not_implemented_error(self) -> None:
-        """smooth_rate_map_single should raise NotImplementedError (stub)."""
-        import numpy as np
-
-        from neurospatial.encoding._core_numpy import smooth_rate_map_single
-
-        firing_rate = np.array([0.0, 1.0, 2.0, 1.0, 0.0], dtype=np.float64)
-        # Mock adjacency matrix (sparse)
-        adjacency = np.eye(5, dtype=np.float64)
-
-        with pytest.raises(NotImplementedError, match="not yet implemented"):
-            smooth_rate_map_single(
-                firing_rate,
-                adjacency,
-                bandwidth=5.0,
-                method="diffusion_kde",
-            )
+class TestSmoothRateMapSingle:
+    """Tests for smooth_rate_map_single function."""
 
     def test_function_has_docstring(self) -> None:
         """smooth_rate_map_single should have a docstring."""
@@ -157,34 +112,12 @@ class TestSmoothRateMapSingleStub:
 
 
 # ==============================================================================
-# Test smooth_rate_maps_batch stub
+# Test smooth_rate_maps_batch
 # ==============================================================================
 
 
-class TestSmoothRateMapsBatchStub:
-    """Tests for smooth_rate_maps_batch stub function."""
-
-    def test_raises_not_implemented_error(self) -> None:
-        """smooth_rate_maps_batch should raise NotImplementedError (stub)."""
-        import numpy as np
-
-        from neurospatial.encoding._core_numpy import smooth_rate_maps_batch
-
-        # Shape: (n_neurons, n_bins)
-        firing_rates = np.array(
-            [[0.0, 1.0, 2.0, 1.0, 0.0], [1.0, 2.0, 1.0, 0.0, 0.0]],
-            dtype=np.float64,
-        )
-        # Mock adjacency matrix (sparse)
-        adjacency = np.eye(5, dtype=np.float64)
-
-        with pytest.raises(NotImplementedError, match="not yet implemented"):
-            smooth_rate_maps_batch(
-                firing_rates,
-                adjacency,
-                bandwidth=5.0,
-                method="diffusion_kde",
-            )
+class TestSmoothRateMapsBatch:
+    """Tests for smooth_rate_maps_batch function."""
 
     def test_function_has_docstring(self) -> None:
         """smooth_rate_maps_batch should have a docstring."""

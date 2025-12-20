@@ -1102,7 +1102,11 @@ def compute_egocentric_rate(
     .. [1] Hoydal, O. A., et al. (2019). Object-vector coding in the medial
            entorhinal cortex. Nature, 568(7752), 400-404.
     """
-    from neurospatial.encoding._backend import SUPPORTED_BACKENDS, is_jax_available
+    from neurospatial.encoding._backend import (
+        SUPPORTED_BACKENDS,
+        get_backend_name,
+        is_jax_available,
+    )
     from neurospatial.encoding._egocentric_binning import (
         bin_egocentric_spike_train,
         compute_egocentric_occupancy,
@@ -1117,19 +1121,9 @@ def compute_egocentric_rate(
             f"Supported backends are: {', '.join(repr(b) for b in SUPPORTED_BACKENDS)}"
         )
 
-    # For now, only numpy is implemented; jax raises NotImplementedError
-    if backend == "jax":
-        if not is_jax_available():
-            raise ImportError(
-                "JAX backend requested but JAX is not available. "
-                "Install JAX or use backend='numpy'."
-            )
-        # JAX implementation not yet available
-        raise NotImplementedError(
-            "JAX backend for compute_egocentric_rate is not yet implemented. "
-            "Use backend='numpy' for now."
-        )
-    # For 'auto' and 'numpy', use numpy implementation
+    # Resolve backend (handles "auto" → "numpy" or "jax")
+    # This raises ImportError if backend="jax" and JAX is unavailable
+    resolved_backend = get_backend_name(backend)
 
     # Validate distance_metric
     valid_metrics = {"euclidean", "geodesic"}
@@ -1206,6 +1200,13 @@ def compute_egocentric_rate(
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
     )
+
+    # Convert to JAX arrays if JAX backend is selected
+    if resolved_backend == "jax" and is_jax_available():
+        import jax.numpy as jnp
+
+        firing_rate = jnp.asarray(firing_rate)  # type: ignore[assignment]
+        occupancy = jnp.asarray(occupancy)  # type: ignore[assignment]
 
     # Return result
     return EgocentricRateResult(
@@ -1412,7 +1413,11 @@ def compute_egocentric_rates(
     .. [1] Hoydal, O. A., et al. (2019). Object-vector coding in the medial
            entorhinal cortex. Nature, 568(7752), 400-404.
     """
-    from neurospatial.encoding._backend import SUPPORTED_BACKENDS, is_jax_available
+    from neurospatial.encoding._backend import (
+        SUPPORTED_BACKENDS,
+        get_backend_name,
+        is_jax_available,
+    )
     from neurospatial.encoding._egocentric_binning import (
         bin_egocentric_spike_trains,
         normalize_object_positions,
@@ -1427,19 +1432,9 @@ def compute_egocentric_rates(
             f"Supported backends are: {', '.join(repr(b) for b in SUPPORTED_BACKENDS)}"
         )
 
-    # For now, only numpy is implemented; jax raises NotImplementedError
-    if backend == "jax":
-        if not is_jax_available():
-            raise ImportError(
-                "JAX backend requested but JAX is not available. "
-                "Install JAX or use backend='numpy'."
-            )
-        # JAX implementation not yet available
-        raise NotImplementedError(
-            "JAX backend for compute_egocentric_rates is not yet implemented. "
-            "Use backend='numpy' for now."
-        )
-    # For 'auto' and 'numpy', use numpy implementation
+    # Resolve backend (handles "auto" → "numpy" or "jax")
+    # This raises ImportError if backend="jax" and JAX is unavailable
+    resolved_backend = get_backend_name(backend)
 
     # Validate distance_metric
     valid_metrics = {"euclidean", "geodesic"}
@@ -1496,8 +1491,14 @@ def compute_egocentric_rates(
             distance_metric=distance_metric,
             env=env,
         )
+        firing_rates_result: ArrayLike = np.empty((0, ego_env.n_bins), dtype=np.float64)
+        if resolved_backend == "jax" and is_jax_available():
+            import jax.numpy as jnp
+
+            firing_rates_result = jnp.asarray(firing_rates_result)
+            occupancy = jnp.asarray(occupancy)  # type: ignore[assignment]
         return EgocentricRatesResult(
-            firing_rates=np.empty((0, ego_env.n_bins), dtype=np.float64),
+            firing_rates=firing_rates_result,
             occupancy=occupancy,
             ego_env=ego_env,
             distance_range=distance_range,
@@ -1530,6 +1531,13 @@ def compute_egocentric_rates(
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
     )
+
+    # Convert to JAX arrays if JAX backend is selected
+    if resolved_backend == "jax" and is_jax_available():
+        import jax.numpy as jnp
+
+        firing_rates = jnp.asarray(firing_rates)  # type: ignore[assignment]
+        occupancy = jnp.asarray(occupancy)  # type: ignore[assignment]
 
     # Return result
     return EgocentricRatesResult(

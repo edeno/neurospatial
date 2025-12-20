@@ -1295,7 +1295,11 @@ def compute_spatial_rate(
     >>> # Plot the rate map
     >>> ax = result.plot()
     """
-    from neurospatial.encoding._backend import SUPPORTED_BACKENDS, is_jax_available
+    from neurospatial.encoding._backend import (
+        SUPPORTED_BACKENDS,
+        get_backend_name,
+        is_jax_available,
+    )
     from neurospatial.encoding._binning import bin_spike_train, compute_occupancy
     from neurospatial.encoding._smoothing import smooth_rate_map
 
@@ -1306,32 +1310,23 @@ def compute_spatial_rate(
             f"Supported backends are: {', '.join(repr(b) for b in SUPPORTED_BACKENDS)}"
         )
 
-    # For now, only numpy is implemented; jax raises NotImplementedError
-    if backend == "jax":
-        if not is_jax_available():
-            raise ImportError(
-                "JAX backend requested but JAX is not available. "
-                "Install JAX or use backend='numpy'."
-            )
-        # JAX implementation not yet available
-        raise NotImplementedError(
-            "JAX backend for compute_spatial_rate is not yet implemented. "
-            "Use backend='numpy' for now."
-        )
-    # For 'auto' and 'numpy', use numpy implementation
+    # Resolve backend (handles "auto" → "numpy" or "jax")
+    # This raises ImportError if backend="jax" and JAX is unavailable
+    resolved_backend = get_backend_name(backend)
 
     # Convert inputs to arrays
     spike_times = np.asarray(spike_times, dtype=np.float64)
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
 
-    # Bin spike train into spatial bins
+    # Bin spike train into spatial bins (always NumPy - CPU/joblib)
     spike_counts = bin_spike_train(env, spike_times, times, positions)
 
-    # Compute occupancy
+    # Compute occupancy (always NumPy)
     occupancy = compute_occupancy(env, times, positions)
 
-    # Apply smoothing to compute firing rate
+    # Apply smoothing to compute firing rate (NumPy for now)
+    # The smoothing uses environment-specific kernels that are NumPy-based
     firing_rate = smooth_rate_map(
         env,
         spike_counts,
@@ -1340,6 +1335,13 @@ def compute_spatial_rate(
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
     )
+
+    # Convert to JAX arrays if JAX backend is selected
+    if resolved_backend == "jax" and is_jax_available():
+        import jax.numpy as jnp
+
+        firing_rate = jnp.asarray(firing_rate)  # type: ignore[assignment]
+        occupancy = jnp.asarray(occupancy)  # type: ignore[assignment]
 
     # Return result
     return SpatialRateResult(
@@ -1492,7 +1494,11 @@ def compute_spatial_rates(
     ... )
     >>> result2 = compute_spatial_rates(env, spike_times_2d, times, trajectory)
     """
-    from neurospatial.encoding._backend import SUPPORTED_BACKENDS, is_jax_available
+    from neurospatial.encoding._backend import (
+        SUPPORTED_BACKENDS,
+        get_backend_name,
+        is_jax_available,
+    )
     from neurospatial.encoding._binning import bin_spike_trains
     from neurospatial.encoding._smoothing import smooth_rate_maps_batch
     from neurospatial.encoding._spikes import normalize_spike_times
@@ -1504,19 +1510,9 @@ def compute_spatial_rates(
             f"Supported backends are: {', '.join(repr(b) for b in SUPPORTED_BACKENDS)}"
         )
 
-    # For now, only numpy is implemented; jax raises NotImplementedError
-    if backend == "jax":
-        if not is_jax_available():
-            raise ImportError(
-                "JAX backend requested but JAX is not available. "
-                "Install JAX or use backend='numpy'."
-            )
-        # JAX implementation not yet available
-        raise NotImplementedError(
-            "JAX backend for compute_spatial_rates is not yet implemented. "
-            "Use backend='numpy' for now."
-        )
-    # For 'auto' and 'numpy', use numpy implementation
+    # Resolve backend (handles "auto" → "numpy" or "jax")
+    # This raises ImportError if backend="jax" and JAX is unavailable
+    resolved_backend = get_backend_name(backend)
 
     # Normalize spike times to canonical list-of-arrays format
     spike_times_list = normalize_spike_times(spike_times)
@@ -1533,15 +1529,24 @@ def compute_spatial_rates(
 
         # Use compute_occupancy which handles 1D position reshaping
         occupancy = compute_occupancy(env, times, positions)
+
+        # Convert to JAX if needed
+        firing_rates_result: ArrayLike = np.empty((0, env.n_bins), dtype=np.float64)
+        if resolved_backend == "jax" and is_jax_available():
+            import jax.numpy as jnp
+
+            firing_rates_result = jnp.asarray(firing_rates_result)
+            occupancy = jnp.asarray(occupancy)  # type: ignore[assignment]
+
         return SpatialRatesResult(
-            firing_rates=np.empty((0, env.n_bins), dtype=np.float64),
+            firing_rates=firing_rates_result,
             occupancy=occupancy,
             env=env,
             smoothing_method=smoothing_method,
             bandwidth=bandwidth,
         )
 
-    # Bin spike trains and compute occupancy
+    # Bin spike trains and compute occupancy (always NumPy - CPU/joblib)
     # bin_spike_trains returns (spike_counts, occupancy)
     spike_counts, occupancy = bin_spike_trains(
         env,
@@ -1551,7 +1556,8 @@ def compute_spatial_rates(
         n_jobs=n_jobs,
     )
 
-    # Apply batch smoothing to compute firing rates
+    # Apply batch smoothing to compute firing rates (NumPy for now)
+    # The smoothing uses environment-specific kernels that are NumPy-based
     firing_rates = smooth_rate_maps_batch(
         env,
         spike_counts,
@@ -1560,6 +1566,13 @@ def compute_spatial_rates(
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
     )
+
+    # Convert to JAX arrays if JAX backend is selected
+    if resolved_backend == "jax" and is_jax_available():
+        import jax.numpy as jnp
+
+        firing_rates = jnp.asarray(firing_rates)  # type: ignore[assignment]
+        occupancy = jnp.asarray(occupancy)  # type: ignore[assignment]
 
     # Return result
     return SpatialRatesResult(

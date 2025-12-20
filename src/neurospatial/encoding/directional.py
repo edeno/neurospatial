@@ -1406,7 +1406,11 @@ def compute_directional_rate(
     ...     spike_times, times, headings_deg, bin_size=6.0, angle_unit="deg"
     ... )
     """
-    from neurospatial.encoding._backend import SUPPORTED_BACKENDS, is_jax_available
+    from neurospatial.encoding._backend import (
+        SUPPORTED_BACKENDS,
+        get_backend_name,
+        is_jax_available,
+    )
     from neurospatial.encoding._directional_binning import (
         bin_directional_spike_train,
         compute_directional_occupancy,
@@ -1419,19 +1423,9 @@ def compute_directional_rate(
             f"Supported backends are: {', '.join(repr(b) for b in SUPPORTED_BACKENDS)}"
         )
 
-    # For now, only numpy is implemented; jax raises NotImplementedError
-    if backend == "jax":
-        if not is_jax_available():
-            raise ImportError(
-                "JAX backend requested but JAX is not available. "
-                "Install JAX or use backend='numpy'."
-            )
-        # JAX implementation not yet available
-        raise NotImplementedError(
-            "JAX backend for compute_directional_rate is not yet implemented. "
-            "Use backend='numpy' for now."
-        )
-    # For 'auto' and 'numpy', use numpy implementation
+    # Resolve backend (handles "auto" → "numpy" or "jax")
+    # This raises ImportError if backend="jax" and JAX is unavailable
+    resolved_backend = get_backend_name(backend)
 
     # Validate angle_unit
     if angle_unit not in ("rad", "deg"):
@@ -1486,6 +1480,14 @@ def compute_directional_rate(
         firing_rate = spike_counts_smooth / occupancy_smooth
         # Set unvisited bins to NaN
         firing_rate[occupancy_smooth == 0] = np.nan
+
+    # Convert to JAX arrays if JAX backend is selected
+    if resolved_backend == "jax" and is_jax_available():
+        import jax.numpy as jnp
+
+        firing_rate = jnp.asarray(firing_rate)
+        occupancy = jnp.asarray(occupancy)  # type: ignore[assignment]
+        bin_centers = jnp.asarray(bin_centers)  # type: ignore[assignment]
 
     return DirectionalRateResult(
         firing_rate=firing_rate,
@@ -1611,7 +1613,11 @@ def compute_directional_rates(
     ...     spike_times, times, headings_deg, bin_size=6.0, angle_unit="deg"
     ... )
     """
-    from neurospatial.encoding._backend import SUPPORTED_BACKENDS, is_jax_available
+    from neurospatial.encoding._backend import (
+        SUPPORTED_BACKENDS,
+        get_backend_name,
+        is_jax_available,
+    )
     from neurospatial.encoding._directional_binning import (
         bin_directional_spike_train,
         compute_directional_occupancy,
@@ -1625,19 +1631,9 @@ def compute_directional_rates(
             f"Supported backends are: {', '.join(repr(b) for b in SUPPORTED_BACKENDS)}"
         )
 
-    # For now, only numpy is implemented; jax raises NotImplementedError
-    if backend == "jax":
-        if not is_jax_available():
-            raise ImportError(
-                "JAX backend requested but JAX is not available. "
-                "Install JAX or use backend='numpy'."
-            )
-        # JAX implementation not yet available
-        raise NotImplementedError(
-            "JAX backend for compute_directional_rates is not yet implemented. "
-            "Use backend='numpy' for now."
-        )
-    # For 'auto' and 'numpy', use numpy implementation
+    # Resolve backend (handles "auto" → "numpy" or "jax")
+    # This raises ImportError if backend="jax" and JAX is unavailable
+    resolved_backend = get_backend_name(backend)
 
     # Validate angle_unit
     if angle_unit not in ("rad", "deg"):
@@ -1681,7 +1677,13 @@ def compute_directional_rates(
 
     # Handle empty neuron list
     if n_neurons == 0:
-        empty_rates = np.empty((0, n_bins), dtype=np.float64)
+        empty_rates: ArrayLike = np.empty((0, n_bins), dtype=np.float64)
+        if resolved_backend == "jax" and is_jax_available():
+            import jax.numpy as jnp
+
+            empty_rates = jnp.asarray(empty_rates)
+            occupancy = jnp.asarray(occupancy)  # type: ignore[assignment]
+            bin_centers = jnp.asarray(bin_centers)  # type: ignore[assignment]
         return DirectionalRatesResult(
             firing_rates=empty_rates,
             occupancy=occupancy,
@@ -1730,6 +1732,14 @@ def compute_directional_rates(
             delayed(_process_neuron)(spikes) for spikes in spike_times_list
         )
         firing_rates = np.array(firing_rates_list, dtype=np.float64)
+
+    # Convert to JAX arrays if JAX backend is selected
+    if resolved_backend == "jax" and is_jax_available():
+        import jax.numpy as jnp
+
+        firing_rates = jnp.asarray(firing_rates)  # type: ignore[assignment]
+        occupancy = jnp.asarray(occupancy)  # type: ignore[assignment]
+        bin_centers = jnp.asarray(bin_centers)  # type: ignore[assignment]
 
     return DirectionalRatesResult(
         firing_rates=firing_rates,
