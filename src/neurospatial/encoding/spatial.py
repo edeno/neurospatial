@@ -1295,15 +1295,19 @@ def compute_spatial_rate(
     >>> # Plot the rate map
     >>> ax = result.plot()
     """
+    from neurospatial.encoding._backend import SUPPORTED_BACKENDS, is_jax_available
     from neurospatial.encoding._binning import bin_spike_train, compute_occupancy
     from neurospatial.encoding._smoothing import smooth_rate_map
 
     # Validate backend
-    # For now, only numpy is implemented; jax and auto fall back to numpy
-    if backend == "jax":
-        # Check if JAX is available
-        from neurospatial.encoding._backend import is_jax_available
+    if backend not in SUPPORTED_BACKENDS:
+        raise ValueError(
+            f"Unknown backend: {backend!r}. "
+            f"Supported backends are: {', '.join(repr(b) for b in SUPPORTED_BACKENDS)}"
+        )
 
+    # For now, only numpy is implemented; jax raises NotImplementedError
+    if backend == "jax":
         if not is_jax_available():
             raise ImportError(
                 "JAX backend requested but JAX is not available. "
@@ -1488,16 +1492,20 @@ def compute_spatial_rates(
     ... )
     >>> result2 = compute_spatial_rates(env, spike_times_2d, times, trajectory)
     """
+    from neurospatial.encoding._backend import SUPPORTED_BACKENDS, is_jax_available
     from neurospatial.encoding._binning import bin_spike_trains
     from neurospatial.encoding._smoothing import smooth_rate_maps_batch
     from neurospatial.encoding._spikes import normalize_spike_times
 
     # Validate backend
-    # For now, only numpy is implemented; jax and auto fall back to numpy
-    if backend == "jax":
-        # Check if JAX is available
-        from neurospatial.encoding._backend import is_jax_available
+    if backend not in SUPPORTED_BACKENDS:
+        raise ValueError(
+            f"Unknown backend: {backend!r}. "
+            f"Supported backends are: {', '.join(repr(b) for b in SUPPORTED_BACKENDS)}"
+        )
 
+    # For now, only numpy is implemented; jax raises NotImplementedError
+    if backend == "jax":
         if not is_jax_available():
             raise ImportError(
                 "JAX backend requested but JAX is not available. "
@@ -1521,7 +1529,10 @@ def compute_spatial_rates(
     # Handle edge case: no neurons
     # Still compute occupancy from trajectory (occupancy is independent of neural data)
     if n_neurons == 0:
-        occupancy = env.occupancy(times, positions)  # type: ignore[misc]
+        from neurospatial.encoding._binning import compute_occupancy
+
+        # Use compute_occupancy which handles 1D position reshaping
+        occupancy = compute_occupancy(env, times, positions)
         return SpatialRatesResult(
             firing_rates=np.empty((0, env.n_bins), dtype=np.float64),
             occupancy=occupancy,
