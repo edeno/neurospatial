@@ -18,6 +18,24 @@ population : Population-level metrics
 """
 
 # Border/boundary cell analysis
+# Field metrics (from _field_metrics and _metrics modules)
+from neurospatial.encoding._field_metrics import (
+    compute_field_emd,
+    field_shape_metrics,
+    field_shift_distance,
+    field_size,
+    field_stability,
+    in_out_field_ratio,
+    rate_map_centroid,
+    rate_map_coherence,
+)
+from neurospatial.encoding._metrics import (
+    information_per_second,
+    mutual_information,
+    selectivity,
+    sparsity,
+    spatial_coverage_single_cell,
+)
 from neurospatial.encoding.border import (
     border_score,
     compute_region_coverage,
@@ -27,16 +45,25 @@ from neurospatial.encoding.border import (
 from neurospatial.encoding.directional import (
     DirectionalRateResult,
     DirectionalRatesResult,
+    circular_mean,
     compute_directional_rate,
     compute_directional_rates,
+    is_head_direction_cell,
+    mean_resultant_length,
+    plot_head_direction_tuning,
+    rayleigh_test,
 )
 
 # Egocentric rate (object vector cells) - new API
 from neurospatial.encoding.egocentric import (
     EgocentricRateResult,
     EgocentricRatesResult,
+    compute_egocentric_bearing,
     compute_egocentric_rate,
     compute_egocentric_rates,
+    is_object_vector_cell,
+    object_vector_score,
+    plot_object_vector_tuning,
 )
 
 # Grid cell analysis
@@ -50,27 +77,19 @@ from neurospatial.encoding.grid import (
     spatial_autocorrelation,
 )
 
-# Head direction cell analysis
+# Head direction cell analysis (legacy - prefer directional module)
 from neurospatial.encoding.head_direction import (
     HeadDirectionMetrics,
-    circular_mean,
     compute_head_direction_tuning_curve,
     head_direction_metrics,
-    is_head_direction_cell,
-    mean_resultant_length,
-    plot_head_direction_tuning,
-    rayleigh_test,
 )
 
-# Object-vector cell analysis
+# Object-vector cell analysis (legacy - prefer egocentric module)
 from neurospatial.encoding.object_vector import (
     ObjectVectorFieldResult,
     ObjectVectorMetrics,
     compute_object_vector_field,
     compute_object_vector_tuning,
-    is_object_vector_cell,
-    object_vector_score,
-    plot_object_vector_tuning,
 )
 
 # Phase precession analysis
@@ -81,26 +100,10 @@ from neurospatial.encoding.phase_precession import (
     plot_phase_precession,
 )
 
-# Place cell analysis
+# Place cell analysis (legacy - prefer spatial module)
 from neurospatial.encoding.place import (
-    DirectionalPlaceFields,
-    compute_directional_place_fields,
-    compute_field_emd,
     compute_place_field,
-    detect_place_fields,
-    field_shape_metrics,
-    field_shift_distance,
-    field_size,
-    field_stability,
-    in_out_field_ratio,
-    information_per_second,
-    mutual_information,
-    rate_map_centroid,
-    rate_map_coherence,
-    selectivity,
     skaggs_information,
-    sparsity,
-    spatial_coverage_single_cell,
 )
 
 # Population-level metrics
@@ -116,31 +119,34 @@ from neurospatial.encoding.population import (
 
 # Spatial rate (place/grid/border cells) - new API
 from neurospatial.encoding.spatial import (
+    DirectionalPlaceFields,
     SpatialRateResult,
     SpatialRatesResult,
+    compute_directional_place_fields,
     compute_spatial_rate,
     compute_spatial_rates,
+    detect_place_fields,
 )
 
-# Spatial view cell analysis
+# Spatial view cell analysis (legacy - prefer view module)
 from neurospatial.encoding.spatial_view import (
-    FieldOfView,
     SpatialViewFieldResult,
     SpatialViewMetrics,
     compute_spatial_view_field,
-    compute_viewed_location,
-    compute_viewshed,
-    is_spatial_view_cell,
     spatial_view_cell_metrics,
-    visibility_occupancy,
 )
 
 # View rate (spatial view cells) - new API
 from neurospatial.encoding.view import (
+    FieldOfView,
     ViewRateResult,
     ViewRatesResult,
     compute_view_rate,
     compute_view_rates,
+    compute_viewed_location,
+    compute_viewshed,
+    is_spatial_view_cell,
+    visibility_occupancy,
 )
 
 __all__ = [  # noqa: RUF022 - organized by category
@@ -155,6 +161,7 @@ __all__ = [  # noqa: RUF022 - organized by category
     # Egocentric rate (object vector cells) - new API
     "EgocentricRateResult",
     "EgocentricRatesResult",
+    "compute_egocentric_bearing",
     "compute_egocentric_rate",
     "compute_egocentric_rates",
     # Spatial rate (place/grid/border cells) - new API
