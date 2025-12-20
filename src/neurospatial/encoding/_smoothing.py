@@ -16,6 +16,16 @@ The key difference between methods is the order of operations:
 - diffusion_kde/gaussian_kde: Smooth counts → Smooth occupancy → Normalize
 - binned: Normalize → Smooth result
 
+**Backend Support**:
+
+The smoothing functions support both NumPy and JAX backends via the ``backend``
+parameter. When ``backend="jax"``, the core rate computation (spike_counts /
+occupancy) is performed using JAX array operations from ``_core_jax.py``.
+
+Note that the diffusion kernel computation uses Environment methods which are
+NumPy-based, so the kernel is computed on CPU and then transferred to JAX.
+The rate computation itself uses JAX operations.
+
 **Performance Warning**:
 
 ``gaussian_kde`` computes a full pairwise distance matrix between all bins,
@@ -38,10 +48,10 @@ References
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -62,7 +72,8 @@ def smooth_rate_map(
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
     kernel: NDArray[np.float64] | None = None,
-) -> NDArray[np.float64]:
+    backend: Literal["numpy", "jax"] = "numpy",
+) -> ArrayLike:
     """Compute smoothed firing rate map from spike counts and occupancy.
 
     This function applies smoothing to spike counts and occupancy to compute
@@ -101,12 +112,17 @@ def smooth_rate_map(
         Precomputed diffusion kernel for efficiency when processing multiple
         neurons. Only used with method="diffusion_kde". If None, the kernel
         is computed from the environment.
+    backend : {"numpy", "jax"}, default="numpy"
+        Computation backend. When "jax", uses JAX array operations for the
+        core rate computation (smoothing/division). The kernel computation
+        from the Environment is always NumPy-based.
 
     Returns
     -------
-    ndarray, shape (n_bins,)
+    ArrayLike, shape (n_bins,)
         Smoothed firing rate in Hz (spikes/second). Bins with zero or
-        low occupancy are NaN.
+        low occupancy are NaN. Returns ndarray for numpy backend, jax.Array
+        for jax backend.
 
     Raises
     ------
@@ -136,6 +152,12 @@ def smooth_rate_map(
     ``diffusion_kde`` (default). ``gaussian_kde`` recomputes a dense
     n_bins × n_bins weight matrix for each neuron, which is slow for large
     environments or large populations.
+
+    **Backend behavior**: When ``backend="jax"``, the kernel smoothing and
+    rate computation use JAX operations. The kernel itself is computed from
+    the Environment using NumPy and converted to JAX. This enables GPU
+    acceleration for the matrix operations and compatibility with JAX
+    transformations like ``jit`` and ``grad``.
 
     **Algorithm Details**:
 
@@ -178,7 +200,13 @@ def smooth_rate_map(
     # Input validation
     _validate_smoothing_inputs(env, spike_counts, occupancy, method, bandwidth)
 
-    # Dispatch to appropriate method
+    # Dispatch to JAX or NumPy implementation
+    if backend == "jax":
+        return _smooth_rate_map_jax(  # type: ignore[no-any-return]
+            env, spike_counts, occupancy, method, bandwidth, min_occupancy, kernel
+        )
+
+    # Dispatch to appropriate NumPy method
     match method:
         case "diffusion_kde":
             return _diffusion_kde(
@@ -202,7 +230,8 @@ def smooth_rate_maps_batch(
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
     kernel: NDArray[np.float64] | None = None,
-) -> NDArray[np.float64]:
+    backend: Literal["numpy", "jax"] = "numpy",
+) -> ArrayLike:
     """Compute smoothed firing rate maps for multiple neurons.
 
     Batch version of smooth_rate_map that efficiently processes multiple
@@ -224,11 +253,16 @@ def smooth_rate_maps_batch(
         Minimum occupancy threshold.
     kernel : ndarray, shape (n_bins, n_bins), optional
         Precomputed diffusion kernel.
+    backend : {"numpy", "jax"}, default="numpy"
+        Computation backend. When "jax", uses JAX array operations for the
+        core rate computation (smoothing/division). See smooth_rate_map for
+        details on backend behavior.
 
     Returns
     -------
-    ndarray, shape (n_neurons, n_bins)
-        Smoothed firing rates in Hz for each neuron.
+    ArrayLike, shape (n_neurons, n_bins)
+        Smoothed firing rates in Hz for each neuron. Returns ndarray for
+        numpy backend, jax.Array for jax backend.
 
     Raises
     ------
@@ -258,7 +292,13 @@ def smooth_rate_maps_batch(
             f"env has {env.n_bins} bins (n_bins mismatch)"
         )
 
-    # Dispatch to vectorized implementations
+    # Dispatch to JAX or NumPy implementation
+    if backend == "jax":
+        return _smooth_rate_maps_batch_jax(  # type: ignore[no-any-return]
+            env, spike_counts, occupancy, method, bandwidth, min_occupancy, kernel
+        )
+
+    # Dispatch to NumPy vectorized implementations
     if method == "diffusion_kde":
         if kernel is None:
             kernel = cast("EnvironmentProtocol", env).compute_kernel(
@@ -597,3 +637,215 @@ def _binned_batch(
             )
 
     return result.astype(np.float64)
+
+
+# =============================================================================
+# JAX Implementation Functions
+# =============================================================================
+
+
+def _smooth_rate_map_jax(
+    env: Environment,
+    spike_counts: NDArray[np.float64],
+    occupancy: NDArray[np.float64],
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"],
+    bandwidth: float,
+    min_occupancy: float,
+    kernel: NDArray[np.float64] | None,
+) -> Any:
+    """JAX implementation of smooth_rate_map.
+
+    Uses JAX array operations for the core computation while keeping
+    kernel computation on NumPy (from Environment).
+    """
+    import jax.numpy as jnp
+
+    from neurospatial.encoding._core_jax import compute_firing_rate_single
+
+    # Convert inputs to JAX with explicit float64
+    spike_counts_j = jnp.asarray(spike_counts, dtype=jnp.float64)
+    occupancy_j = jnp.asarray(occupancy, dtype=jnp.float64)
+
+    if method == "binned":
+        # Binned: compute rate first, then smooth
+        # Rate computation uses JAX
+        firing_rate = compute_firing_rate_single(
+            spike_counts_j, occupancy_j, min_occupancy=min_occupancy
+        )
+
+        if bandwidth <= 0:
+            return firing_rate
+
+        # Smoothing still uses NumPy (Environment.smooth)
+        # Convert back to NumPy for smoothing, then back to JAX
+        firing_rate_np = np.asarray(firing_rate)
+        nan_mask = np.isnan(firing_rate_np)
+
+        if np.all(nan_mask):
+            return firing_rate  # All NaN, return as-is
+
+        rate_filled = firing_rate_np.copy()
+        rate_filled[nan_mask] = 0.0
+        weights = np.ones_like(firing_rate_np)
+        weights[nan_mask] = 0.0
+
+        env_protocol = cast("EnvironmentProtocol", env)
+        rate_smoothed = env_protocol.smooth(rate_filled, bandwidth=bandwidth)
+        weights_smoothed = env_protocol.smooth(weights, bandwidth=bandwidth)
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            result_np = np.where(
+                weights_smoothed > 0,
+                rate_smoothed / weights_smoothed,
+                np.nan,
+            )
+        return jnp.asarray(result_np, dtype=jnp.float64)
+
+    # For diffusion_kde and gaussian_kde: smooth then normalize
+    # Get kernel (computed by Environment, so NumPy)
+    if method == "diffusion_kde":
+        if kernel is None:
+            kernel = cast("EnvironmentProtocol", env).compute_kernel(
+                bandwidth, mode="density", cache=True
+            )
+        kernel_j = jnp.asarray(kernel, dtype=jnp.float64)
+
+        # JAX matrix operations for smoothing
+        spike_density = kernel_j @ spike_counts_j
+        occupancy_density = kernel_j @ occupancy_j
+
+    else:  # gaussian_kde
+        # Compute Gaussian weights using JAX
+        bin_centers = env.bin_centers
+        bin_centers_j = jnp.asarray(bin_centers, dtype=jnp.float64)
+        two_sigma_sq = 2.0 * bandwidth**2
+
+        # Pairwise squared distances
+        bin_sq_norm = jnp.sum(bin_centers_j**2, axis=1, keepdims=True)
+        dist_sq = bin_sq_norm + bin_sq_norm.T - 2 * (bin_centers_j @ bin_centers_j.T)
+        dist_sq = jnp.maximum(dist_sq, 0)
+
+        kernel_j = jnp.exp(-dist_sq / two_sigma_sq)
+        spike_density = kernel_j @ spike_counts_j
+        occupancy_density = kernel_j @ occupancy_j
+
+    # Compute firing rate using JAX
+    firing_rate = jnp.where(
+        occupancy_density > 0,
+        spike_density / occupancy_density,
+        jnp.nan,
+    )
+
+    # Apply min_occupancy threshold
+    if min_occupancy > 0:
+        firing_rate = jnp.where(occupancy_j >= min_occupancy, firing_rate, jnp.nan)
+
+    return firing_rate
+
+
+def _smooth_rate_maps_batch_jax(
+    env: Environment,
+    spike_counts: NDArray[np.float64],
+    occupancy: NDArray[np.float64],
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"],
+    bandwidth: float,
+    min_occupancy: float,
+    kernel: NDArray[np.float64] | None,
+) -> Any:
+    """JAX implementation of smooth_rate_maps_batch.
+
+    Uses JAX array operations for the core computation while keeping
+    kernel computation on NumPy (from Environment).
+    """
+    import jax.numpy as jnp
+
+    from neurospatial.encoding._core_jax import compute_firing_rates_batch
+
+    # Convert inputs to JAX with explicit float64
+    spike_counts_j = jnp.asarray(spike_counts, dtype=jnp.float64)
+    occupancy_j = jnp.asarray(occupancy, dtype=jnp.float64)
+
+    if method == "binned":
+        # Binned: compute rate first, then smooth
+        # Rate computation uses JAX
+        firing_rates = compute_firing_rates_batch(
+            spike_counts_j, occupancy_j, min_occupancy=min_occupancy
+        )
+
+        if bandwidth <= 0:
+            return firing_rates
+
+        # Smoothing uses NumPy (Environment.smooth) - per-neuron loop
+        # This is the legacy method and not optimized for JAX
+        firing_rates_np = np.asarray(firing_rates)
+        n_neurons = firing_rates_np.shape[0]
+        result = np.empty_like(firing_rates_np, dtype=np.float64)
+        env_protocol = cast("EnvironmentProtocol", env)
+
+        for i in range(n_neurons):
+            raw_rate = firing_rates_np[i]
+            nan_mask = np.isnan(raw_rate)
+
+            if np.all(nan_mask):
+                result[i] = raw_rate
+                continue
+
+            rate_filled = raw_rate.copy()
+            rate_filled[nan_mask] = 0.0
+            weights = np.ones_like(raw_rate)
+            weights[nan_mask] = 0.0
+
+            rate_smoothed = env_protocol.smooth(rate_filled, bandwidth=bandwidth)
+            weights_smoothed = env_protocol.smooth(weights, bandwidth=bandwidth)
+
+            with np.errstate(divide="ignore", invalid="ignore"):
+                result[i] = np.where(
+                    weights_smoothed > 0,
+                    rate_smoothed / weights_smoothed,
+                    np.nan,
+                )
+
+        return jnp.asarray(result, dtype=jnp.float64)
+
+    # For diffusion_kde and gaussian_kde: smooth then normalize
+    # Get kernel (computed by Environment, so NumPy)
+    if method == "diffusion_kde":
+        if kernel is None:
+            kernel = cast("EnvironmentProtocol", env).compute_kernel(
+                bandwidth, mode="density", cache=True
+            )
+        kernel_j = jnp.asarray(kernel, dtype=jnp.float64)
+
+        # JAX matrix operations for batch smoothing
+        # (kernel @ spike_counts.T).T = spike_counts @ kernel.T
+        spike_density = (kernel_j @ spike_counts_j.T).T
+        occupancy_density = kernel_j @ occupancy_j
+
+    else:  # gaussian_kde
+        # Compute Gaussian weights using JAX
+        bin_centers = env.bin_centers
+        bin_centers_j = jnp.asarray(bin_centers, dtype=jnp.float64)
+        two_sigma_sq = 2.0 * bandwidth**2
+
+        # Pairwise squared distances
+        bin_sq_norm = jnp.sum(bin_centers_j**2, axis=1, keepdims=True)
+        dist_sq = bin_sq_norm + bin_sq_norm.T - 2 * (bin_centers_j @ bin_centers_j.T)
+        dist_sq = jnp.maximum(dist_sq, 0)
+
+        kernel_j = jnp.exp(-dist_sq / two_sigma_sq)
+        # spike_counts @ weights.T for batch
+        spike_density = spike_counts_j @ kernel_j.T
+        occupancy_density = kernel_j @ occupancy_j
+
+    # Compute firing rates using JAX (broadcasting over neurons)
+    firing_rates = jnp.where(
+        occupancy_density > 0,
+        spike_density / occupancy_density,
+        jnp.nan,
+    )
+
+    # Apply min_occupancy threshold
+    if min_occupancy > 0:
+        firing_rates = jnp.where(occupancy_j >= min_occupancy, firing_rates, jnp.nan)
+
+    return firing_rates

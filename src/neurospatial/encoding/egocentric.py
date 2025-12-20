@@ -1205,8 +1205,8 @@ def compute_egocentric_rate(
     if resolved_backend == "jax" and is_jax_available():
         import jax.numpy as jnp
 
-        firing_rate = jnp.asarray(firing_rate)  # type: ignore[assignment]
-        occupancy = jnp.asarray(occupancy)  # type: ignore[assignment]
+        firing_rate = jnp.asarray(firing_rate, dtype=jnp.float64)
+        occupancy = jnp.asarray(occupancy, dtype=jnp.float64)  # type: ignore[assignment]
 
     # Return result
     return EgocentricRateResult(
@@ -1496,7 +1496,7 @@ def compute_egocentric_rates(
             import jax.numpy as jnp
 
             firing_rates_result = jnp.asarray(firing_rates_result)
-            occupancy = jnp.asarray(occupancy)  # type: ignore[assignment]
+            occupancy = jnp.asarray(occupancy, dtype=jnp.float64)  # type: ignore[assignment]
         return EgocentricRatesResult(
             firing_rates=firing_rates_result,
             occupancy=occupancy,
@@ -1536,8 +1536,8 @@ def compute_egocentric_rates(
     if resolved_backend == "jax" and is_jax_available():
         import jax.numpy as jnp
 
-        firing_rates = jnp.asarray(firing_rates)  # type: ignore[assignment]
-        occupancy = jnp.asarray(occupancy)  # type: ignore[assignment]
+        firing_rates = jnp.asarray(firing_rates, dtype=jnp.float64)
+        occupancy = jnp.asarray(occupancy, dtype=jnp.float64)  # type: ignore[assignment]
 
     # Return result
     return EgocentricRatesResult(

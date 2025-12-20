@@ -3,10 +3,71 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 6.6 - Write JAX-specific tests (with JAX dispatch fix)
+**Last Completed**: Task 6.6 Follow-up #2 - Wire up real JAX compute path
 **Next Task**: Task 6.7 - Add performance benchmarks
 
 ## Session Notes
+
+### Task 6.6 Follow-up #2: Wire up real JAX compute path [COMPLETED]
+
+**Goal**: Make `backend="jax"` use actual JAX operations for smoothing/rate computation,
+not just convert outputs to JAX arrays.
+
+**Issue Found** (via second code review):
+
+The previous fix only converted outputs to JAX arrays at the end. The core math
+(smoothing, rate computation) was still NumPy/SciPy. This meant:
+
+1. No GPU acceleration
+2. No JAX tracing compatibility (can't use with `jit`, `grad`, `vmap`)
+3. `_core_jax.py` functions were still orphaned
+
+**Implementation**:
+
+Added backend-aware smoothing in `_smoothing.py`:
+
+1. `smooth_rate_map(..., backend="jax")` now:
+   - Converts inputs to JAX arrays with explicit `dtype=jnp.float64`
+   - For diffusion_kde/gaussian_kde: Uses JAX for kernel smoothing (`kernel_j @ spike_counts_j`)
+   - For binned: Uses `_core_jax.compute_firing_rate_single()` for rate computation
+   - Returns JAX arrays directly
+
+2. `smooth_rate_maps_batch(..., backend="jax")` similarly uses JAX operations
+
+3. `compute_spatial_rate(s)` passes `backend=resolved_backend` to smoothing functions
+
+**JAX Operations Used**:
+
+```python
+# In _smooth_rate_map_jax:
+kernel_j = jnp.asarray(kernel, dtype=jnp.float64)  # NumPy kernel → JAX
+spike_density = kernel_j @ spike_counts_j  # JAX matrix multiply
+occupancy_density = kernel_j @ occupancy_j  # JAX matrix multiply
+firing_rate = jnp.where(occupancy_density > 0, spike_density / occupancy_density, jnp.nan)
+```
+
+**Note on dtype**: JAX defaults to float32 unless `jax_enable_x64` is set. The code
+requests float64 but JAX will downcast to float32 with a warning if x64 is disabled.
+With `JAX_ENABLE_X64=1`, results match NumPy to machine precision (5e-15).
+
+**Files Modified**:
+
+- `src/neurospatial/encoding/_smoothing.py`: Added `backend` parameter and JAX implementations
+- `src/neurospatial/encoding/spatial.py`: Pass backend to smoothing functions
+
+**Verification**:
+
+- All 34 backend/JAX tests pass
+- JAX arrays are returned from compute functions
+- With `JAX_ENABLE_X64=1`, results match NumPy to ~5e-15
+
+**Remaining Work**:
+
+- Metrics (`_metrics.py`) are still NumPy-only
+- Other compute functions (directional, view, egocentric) need similar updates
+- Docstrings need updating to reflect actual JAX behavior
+
+---
 
 ### Task 6.6 Follow-up: Wire up JAX backend dispatch [COMPLETED]
 
@@ -25,6 +86,7 @@ The compute functions (`compute_spatial_rate`, etc.) were raising `NotImplemente
 **Design Decision**: Core math only (not binning)
 
 Following the PLAN.md two-layer architecture:
+
 - **Binning layer**: Always NumPy (CPU/joblib for parallelization)
 - **Core rate/metrics layer**: Converts to JAX arrays at the end when JAX backend selected
 
@@ -35,6 +97,7 @@ downstream JAX computations.
 **Implementation**:
 
 Modified all compute functions to:
+
 1. Use `get_backend_name(backend)` to resolve "auto" to actual backend
 2. Keep binning on NumPy (CPU/joblib) - this is intentional per PLAN.md
 3. Convert results to JAX arrays at the end if JAX backend selected

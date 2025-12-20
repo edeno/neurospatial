@@ -1098,8 +1098,8 @@ def compute_view_rate(
     if resolved_backend == "jax" and is_jax_available():
         import jax.numpy as jnp
 
-        firing_rate = jnp.asarray(firing_rate)  # type: ignore[assignment]
-        view_occupancy = jnp.asarray(view_occupancy)  # type: ignore[assignment]
+        firing_rate = jnp.asarray(firing_rate, dtype=jnp.float64)
+        view_occupancy = jnp.asarray(view_occupancy, dtype=jnp.float64)  # type: ignore[assignment]
 
     # Return result
     return ViewRateResult(
@@ -1356,7 +1356,7 @@ def compute_view_rates(
             import jax.numpy as jnp
 
             firing_rates_result = jnp.asarray(firing_rates_result)
-            view_occupancy = jnp.asarray(view_occupancy)  # type: ignore[assignment]
+            view_occupancy = jnp.asarray(view_occupancy, dtype=jnp.float64)  # type: ignore[assignment]
         return ViewRatesResult(
             firing_rates=firing_rates_result,
             view_occupancy=view_occupancy,
@@ -1394,8 +1394,8 @@ def compute_view_rates(
     if resolved_backend == "jax" and is_jax_available():
         import jax.numpy as jnp
 
-        firing_rates = jnp.asarray(firing_rates)  # type: ignore[assignment]
-        view_occupancy = jnp.asarray(view_occupancy)  # type: ignore[assignment]
+        firing_rates = jnp.asarray(firing_rates, dtype=jnp.float64)
+        view_occupancy = jnp.asarray(view_occupancy, dtype=jnp.float64)  # type: ignore[assignment]
 
     # Return result
     return ViewRatesResult(

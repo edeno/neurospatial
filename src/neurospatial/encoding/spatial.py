@@ -1325,8 +1325,8 @@ def compute_spatial_rate(
     # Compute occupancy (always NumPy)
     occupancy = compute_occupancy(env, times, positions)
 
-    # Apply smoothing to compute firing rate (NumPy for now)
-    # The smoothing uses environment-specific kernels that are NumPy-based
+    # Apply smoothing to compute firing rate
+    # When backend="jax", uses JAX for the core rate computation
     firing_rate = smooth_rate_map(
         env,
         spike_counts,
@@ -1334,14 +1334,15 @@ def compute_spatial_rate(
         method=smoothing_method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
+        backend=resolved_backend,
     )
 
-    # Convert to JAX arrays if JAX backend is selected
+    # Convert occupancy to JAX if JAX backend is selected
+    # (firing_rate is already JAX from smooth_rate_map)
     if resolved_backend == "jax" and is_jax_available():
         import jax.numpy as jnp
 
-        firing_rate = jnp.asarray(firing_rate)  # type: ignore[assignment]
-        occupancy = jnp.asarray(occupancy)  # type: ignore[assignment]
+        occupancy = jnp.asarray(occupancy, dtype=jnp.float64)  # type: ignore[assignment]
 
     # Return result
     return SpatialRateResult(
@@ -1535,8 +1536,8 @@ def compute_spatial_rates(
         if resolved_backend == "jax" and is_jax_available():
             import jax.numpy as jnp
 
-            firing_rates_result = jnp.asarray(firing_rates_result)
-            occupancy = jnp.asarray(occupancy)  # type: ignore[assignment]
+            firing_rates_result = jnp.asarray(firing_rates_result, dtype=jnp.float64)
+            occupancy = jnp.asarray(occupancy, dtype=jnp.float64)  # type: ignore[assignment]
 
         return SpatialRatesResult(
             firing_rates=firing_rates_result,
@@ -1556,8 +1557,8 @@ def compute_spatial_rates(
         n_jobs=n_jobs,
     )
 
-    # Apply batch smoothing to compute firing rates (NumPy for now)
-    # The smoothing uses environment-specific kernels that are NumPy-based
+    # Apply batch smoothing to compute firing rates
+    # When backend="jax", uses JAX for the core rate computation
     firing_rates = smooth_rate_maps_batch(
         env,
         spike_counts,
@@ -1565,14 +1566,15 @@ def compute_spatial_rates(
         method=smoothing_method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
+        backend=resolved_backend,
     )
 
-    # Convert to JAX arrays if JAX backend is selected
+    # Convert occupancy to JAX if JAX backend is selected
+    # (firing_rates is already JAX from smooth_rate_maps_batch)
     if resolved_backend == "jax" and is_jax_available():
         import jax.numpy as jnp
 
-        firing_rates = jnp.asarray(firing_rates)  # type: ignore[assignment]
-        occupancy = jnp.asarray(occupancy)  # type: ignore[assignment]
+        occupancy = jnp.asarray(occupancy, dtype=jnp.float64)  # type: ignore[assignment]
 
     # Return result
     return SpatialRatesResult(
