@@ -3,10 +3,51 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 6.5 - Update result class methods for backend awareness
-**Next Task**: Task 6.6 - Write JAX-specific tests
+**Last Completed**: Task 6.6 - Write JAX-specific tests
+**Next Task**: Task 6.7 - Add performance benchmarks
 
 ## Session Notes
+
+### Task 6.6: Write JAX-specific tests [COMPLETED]
+
+**Goal**: Verify JAX backend behavior through comprehensive tests.
+
+**Analysis**:
+
+Upon review, the tests required for Task 6.6 were already implemented across multiple test files:
+
+1. **JAX backend produces same results as NumPy**:
+   - `test_core_jax_metrics.py::TestNumpyEquivalence` (4 tests)
+   - `test_jax_backend_awareness.py::TestNumpyJaxConsistency` (2 tests)
+
+2. **`"auto"` behavior with JAX installed**:
+   - `test_encoding_backend.py::TestGetBackend::test_auto_backend_returns_numpy_or_jax`
+   - All `test_accepts_auto_backend` tests in `test_backend_dispatch.py`
+
+3. **`"auto"` behavior on Windows (forces NumPy)**:
+   - `test_encoding_backend.py::TestGetBackend::test_auto_backend_returns_numpy_on_windows`
+   - `test_encoding_backend.py::TestIsJaxAvailable::test_returns_false_on_windows`
+
+4. **`"jax"` raises clear error when unavailable**:
+   - `test_encoding_backend.py::TestGetBackend::test_jax_backend_raises_when_unavailable`
+
+**Test Coverage Summary**:
+
+- `test_encoding_backend.py`: 24 tests for backend infrastructure
+- `test_backend_dispatch.py`: 26 tests for compute function backend parameter
+- `test_jax_backend_awareness.py`: 23 tests for result classes with JAX arrays
+- `test_core_jax_metrics.py`: 49 tests for JAX metric implementations
+
+**Total**: 122 tests pass, 1 skipped (JAX unavailable path)
+
+**Note**: The compute functions (`compute_spatial_rate`, etc.) with `backend="jax"`
+raise `NotImplementedError` because the full JAX pipeline is not yet implemented.
+This is intentional - Task 6.1 only implemented the core smoothing operations in
+`_core_jax.py`, not the full compute pipeline.
+
+**Files Reviewed**: No new files created; existing tests verified as comprehensive.
+
+---
 
 ### Task 6.5: Update result class methods for backend awareness [COMPLETED]
 

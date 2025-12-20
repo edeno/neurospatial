@@ -398,11 +398,11 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Ensure `_get_array_module()` detects JAX arrays
   - [x] Test plotting methods with JAX arrays
 
-- [ ] **6.6** Write JAX-specific tests
-  - [ ] Test JAX backend produces same results as NumPy
-  - [ ] Test `"auto"` behavior with JAX installed
-  - [ ] Test `"auto"` behavior on Windows (forces NumPy)
-  - [ ] Test `"jax"` raises clear error when JAX unavailable
+- [x] **6.6** Write JAX-specific tests
+  - [x] Test JAX backend produces same results as NumPy
+  - [x] Test `"auto"` behavior with JAX installed
+  - [x] Test `"auto"` behavior on Windows (forces NumPy)
+  - [x] Test `"jax"` raises clear error when JAX unavailable
 
 - [ ] **6.7** Add performance benchmarks
   - [ ] Create benchmark script comparing NumPy vs JAX
