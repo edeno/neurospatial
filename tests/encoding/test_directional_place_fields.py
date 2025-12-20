@@ -7,11 +7,11 @@ import pytest
 from numpy.testing import assert_array_almost_equal, assert_array_equal
 
 from neurospatial import Environment
-from neurospatial.encoding.place import (
+from neurospatial.encoding.place import compute_place_field
+from neurospatial.encoding.spatial import (
     DirectionalPlaceFields,
     _subset_spikes_by_time_mask,
     compute_directional_place_fields,
-    compute_place_field,
 )
 
 

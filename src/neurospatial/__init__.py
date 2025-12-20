@@ -30,7 +30,8 @@ encoding : Neural encoding analysis
     cells, spatial view cells, phase precession, and population metrics.
 
     >>> from neurospatial.encoding import place, grid, head_direction
-    >>> from neurospatial.encoding.place import compute_place_field, detect_place_fields
+    >>> from neurospatial.encoding.place import compute_place_field
+    >>> from neurospatial.encoding.spatial import detect_place_fields
 
 decoding : Neural decoding
     Bayesian position decoding, trajectory detection, cell assemblies.

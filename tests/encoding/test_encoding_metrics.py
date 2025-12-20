@@ -501,16 +501,8 @@ class TestBackwardsCompatibility:
 
         assert_allclose(new_info, legacy_info, rtol=1e-10)
 
-    def test_matches_place_sparsity(self, place_cell_like):
-        """Should match neurospatial.encoding.place.sparsity."""
-        from neurospatial.encoding.place import sparsity as legacy_sparsity
-
-        firing_rate, occupancy = place_cell_like
-
-        new_spars = sparsity(firing_rate, occupancy)
-        legacy_spars = legacy_sparsity(firing_rate, occupancy)
-
-        assert_allclose(new_spars, legacy_spars, rtol=1e-10)
+    # Note: test_matches_place_sparsity removed - sparsity is no longer in place.py
+    # after the encoding module reorganization. sparsity is now only in _metrics.py.
 
 
 # =============================================================================

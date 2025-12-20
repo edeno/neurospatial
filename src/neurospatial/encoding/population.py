@@ -21,7 +21,7 @@ import numpy as np
 from matplotlib.colors import ListedColormap
 from numpy.typing import NDArray
 
-from neurospatial.encoding.place import detect_place_fields
+from neurospatial.encoding.spatial import detect_place_fields
 from neurospatial.environment import Environment
 
 

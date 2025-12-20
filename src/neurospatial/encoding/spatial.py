@@ -1884,18 +1884,21 @@ def compute_directional_place_fields(
         )
         positions_sub = positions[mask]
 
-        # Compute spatial rate for this direction
-        result = compute_spatial_rate(
+        # Compute place field for this direction using legacy function
+        # for backward compatibility with existing analysis pipelines
+        from neurospatial.encoding.place import compute_place_field
+
+        field = compute_place_field(
             env,
             spike_times_sub,
             times_sub,
             positions_sub,
             smoothing_method=smoothing_method,
             bandwidth=bandwidth,
-            min_occupancy=min_occupancy_seconds,
+            min_occupancy_seconds=min_occupancy_seconds,
         )
 
-        fields_dict[label] = np.asarray(result.firing_rate)
+        fields_dict[label] = field
 
     return DirectionalPlaceFields(fields=fields_dict, labels=tuple(unique_labels))
 

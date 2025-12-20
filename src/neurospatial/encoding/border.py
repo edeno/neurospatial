@@ -212,7 +212,7 @@ def border_score(
         return np.nan
 
     # Check field area (sum of bin areas)
-    from neurospatial.encoding.place import field_size
+    from neurospatial.encoding._field_metrics import field_size
 
     area = field_size(field_bins, env)
     if area < min_area:

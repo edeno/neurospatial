@@ -94,11 +94,11 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy import stats
 
-from neurospatial.encoding.place import (
-    rate_map_coherence,
-    skaggs_information,
+from neurospatial.encoding._field_metrics import rate_map_coherence
+from neurospatial.encoding._metrics import (
     sparsity,
 )
+from neurospatial.encoding._metrics import spatial_information as skaggs_information
 from neurospatial.ops.visibility import (
     FieldOfView,
     compute_viewed_location,
