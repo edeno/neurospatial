@@ -425,15 +425,15 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Export all new functions and result classes
   - [x] Define `__all__` list
 
-- [~] **7.2** Migrate and remove old files (no deprecation period)
+- [x] **7.2** Migrate and remove old files (no deprecation period)
   - [x] Create `_field_metrics.py` with field geometry and comparison utilities
   - [x] Add additional metrics to `_metrics.py` (selectivity, info_per_second, etc.)
-  - [ ] Move `detect_place_fields` and `DirectionalPlaceFields` to `spatial.py`
-  - [ ] Move head_direction.py utilities to `directional.py`
-  - [ ] Move spatial_view.py utilities to `view.py`
-  - [ ] Move object_vector.py utilities to `egocentric.py`
-  - [ ] Update `__init__.py` exports from new locations
-  - [ ] Update all imports in tests and examples
+  - [x] Move `detect_place_fields` and `DirectionalPlaceFields` to `spatial.py`
+  - [x] Move head_direction.py utilities to `directional.py`
+  - [x] Move spatial_view.py utilities to `view.py`
+  - [x] Move object_vector.py utilities to `egocentric.py`
+  - [x] Update `__init__.py` exports from new locations
+  - [x] Update all imports in tests and examples
   - [ ] Remove old files: `place.py`, `head_direction.py`, `spatial_view.py`, `object_vector.py`
   - [ ] Note: Keep `border.py`, `grid.py`, `population.py`, `phase_precession.py`
 
