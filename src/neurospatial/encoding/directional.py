@@ -50,7 +50,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -60,11 +60,28 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
     from matplotlib.projections.polar import PolarAxes
 
+# Re-export circular statistics for convenience in HD workflow
+from neurospatial.stats.circular import (
+    circular_mean,
+    mean_resultant_length,
+    rayleigh_test,
+)
+
+# ruff: noqa: RUF022 - intentionally grouped by category
 __all__ = [
+    # Result classes
     "DirectionalRateResult",
     "DirectionalRatesResult",
+    # Compute functions
     "compute_directional_rate",
     "compute_directional_rates",
+    # Convenience functions
+    "is_head_direction_cell",
+    "plot_head_direction_tuning",
+    # Circular statistics (re-exported from stats.circular)
+    "circular_mean",
+    "mean_resultant_length",
+    "rayleigh_test",
 ]
 
 
@@ -1748,3 +1765,240 @@ def compute_directional_rates(
         bin_size=actual_bin_size_rad,
         smoothing_sigma=smoothing_sigma_rad,
     )
+
+
+# ==============================================================================
+# Convenience Functions
+# ==============================================================================
+
+
+def is_head_direction_cell(
+    spike_times: NDArray[np.float64],
+    times: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    *,
+    bin_size: float = np.pi / 30,
+    smoothing_sigma: float | None = None,
+    angle_unit: Literal["rad", "deg"] = "rad",
+    min_mvl: float = 0.4,
+    alpha: float = 0.05,
+) -> bool:
+    """Quick check: Is this a head direction cell?
+
+    Convenience function for fast screening of neurons. Computes directional
+    tuning and checks if the neuron meets HD cell criteria.
+
+    For detailed metrics, use ``compute_directional_rate()`` and inspect
+    the result's methods (``is_hd_cell()``, ``mean_vector_length()``, etc.).
+
+    Parameters
+    ----------
+    spike_times : ndarray of shape (n_spikes,)
+        Times of spikes (same time units as times).
+    times : ndarray of shape (n_frames,)
+        Timestamps corresponding to each head direction sample.
+    headings : ndarray of shape (n_frames,)
+        Head direction at each time point.
+    bin_size : float, default=π/30 (6 degrees)
+        Width of angular bins. Units match ``angle_unit``.
+    smoothing_sigma : float or None, default=None
+        Gaussian smoothing bandwidth. Units match ``angle_unit``.
+    angle_unit : {'rad', 'deg'}, default='rad'
+        Unit of headings and bin_size.
+    min_mvl : float, default=0.4
+        Minimum mean vector length threshold.
+    alpha : float, default=0.05
+        Significance level for Rayleigh test.
+
+    Returns
+    -------
+    bool
+        True if neuron passes HD cell criteria.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.encoding.directional import is_head_direction_cell
+    >>> # Screen many neurons
+    >>> times = np.linspace(0, 60, 1800)
+    >>> headings = np.random.uniform(0, 2 * np.pi, 1800)
+    >>> spike_times = np.random.uniform(0, 60, 100)
+    >>> result = is_head_direction_cell(spike_times, times, headings)
+    >>> type(result)
+    <class 'bool'>
+
+    See Also
+    --------
+    compute_directional_rate : Full directional rate computation
+    DirectionalRateResult.is_hd_cell : HD cell classification on result object
+    """
+    try:
+        result = compute_directional_rate(
+            spike_times,
+            times,
+            headings,
+            bin_size=bin_size,
+            smoothing_sigma=smoothing_sigma,
+            angle_unit=angle_unit,
+        )
+        return result.is_hd_cell(min_mvl=min_mvl, alpha=alpha)
+    except (ValueError, RuntimeError):
+        return False
+
+
+def plot_head_direction_tuning(
+    result: DirectionalRateResult,
+    ax: Axes | PolarAxes | None = None,
+    *,
+    polar: bool = True,
+    show_preferred_direction: bool = True,
+    show_metrics: bool = True,
+    color: str = "C0",
+    fill_alpha: float = 0.3,
+    **kwargs: Any,
+) -> Axes | PolarAxes:
+    """Plot head direction tuning curve with metrics overlay.
+
+    Creates standard head direction tuning visualization with optional polar
+    or linear projection. Polar plots show 0° at the top (North) with
+    clockwise direction following neuroscience convention.
+
+    Parameters
+    ----------
+    result : DirectionalRateResult
+        Result from ``compute_directional_rate()``.
+    ax : matplotlib.axes.Axes, optional
+        Axes to plot on. If None, creates new figure with appropriate projection.
+    polar : bool, default=True
+        If True, create a polar plot (circular representation).
+        If False, create a Cartesian plot (angle on x-axis, rate on y-axis).
+    show_preferred_direction : bool, default=True
+        If True, mark the preferred direction with a radial line.
+    show_metrics : bool, default=True
+        If True, show metrics text box with preferred direction, MVL, and peak rate.
+    color : str, default='C0'
+        Color for tuning curve line and fill.
+    fill_alpha : float, default=0.3
+        Alpha (transparency) for filled area under curve.
+    **kwargs : dict
+        Additional keyword arguments passed to matplotlib's plot function.
+
+    Returns
+    -------
+    matplotlib.axes.Axes or matplotlib.projections.polar.PolarAxes
+        The axes object with the plot.
+
+    Notes
+    -----
+    **Polar plot conventions**:
+
+    - 0° at top (North): Uses ``theta_zero_location='N'``
+    - Clockwise direction: Uses ``theta_direction=-1``
+    - Curve is closed (first point appended at end)
+
+    These conventions match standard neuroscience visualization where
+    0° = facing forward/north, 90° = facing right/east.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.encoding.directional import (
+    ...     compute_directional_rate,
+    ...     plot_head_direction_tuning,
+    ... )
+    >>> times = np.linspace(0, 60, 1800)
+    >>> headings = np.random.uniform(0, 2 * np.pi, 1800)
+    >>> spike_times = np.random.uniform(0, 60, 100)
+    >>> result = compute_directional_rate(spike_times, times, headings)
+    >>> ax = plot_head_direction_tuning(result)  # doctest: +SKIP
+
+    See Also
+    --------
+    DirectionalRateResult.plot : Basic plotting method on result object
+    """
+    import matplotlib.pyplot as plt
+
+    # Convert to numpy for plotting
+    rates = np.asarray(result.firing_rate, dtype=np.float64)
+    centers = np.asarray(result.bin_centers, dtype=np.float64)
+
+    # Close the curve by appending first point to end
+    rates_closed = np.concatenate([rates, [rates[0]]])
+    centers_closed = np.concatenate([centers, [centers[0] + 2 * np.pi]])
+
+    if ax is None:
+        if polar:
+            _, ax = plt.subplots(subplot_kw={"projection": "polar"})
+        else:
+            _, ax = plt.subplots()
+
+    if polar:
+        polar_ax = cast("PolarAxes", ax)
+
+        # Configure polar plot: 0° at top (North), clockwise direction
+        polar_ax.set_theta_zero_location("N")
+        polar_ax.set_theta_direction(-1)
+
+        # Plot tuning curve
+        polar_ax.plot(centers_closed, rates_closed, color=color, linewidth=2, **kwargs)
+
+        # Fill under curve
+        polar_ax.fill(centers_closed, rates_closed, color=color, alpha=fill_alpha)
+
+        # Set angle labels in degrees
+        polar_ax.set_thetagrids(
+            [0, 45, 90, 135, 180, 225, 270, 315],
+            ["0°", "45°", "90°", "135°", "180°", "225°", "270°", "315°"],
+        )
+
+        # Mark preferred direction
+        if show_preferred_direction:
+            pfd = result.preferred_direction()
+            peak_rate = result.peak_firing_rate()
+            polar_ax.plot(
+                [pfd, pfd],
+                [0, peak_rate],
+                color="red",
+                linewidth=2,
+                linestyle="--",
+                zorder=3,
+            )
+
+    else:
+        # Linear projection
+        x_closed = np.degrees(centers_closed)
+        x_closed[-1] = 360.0  # Ensure last point is at 360
+        ax.set_xlabel("Head Direction (deg)")
+        ax.set_xlim(0, 360)
+
+        # Plot tuning curve
+        ax.plot(x_closed, rates_closed, color=color, linewidth=2, **kwargs)
+
+        # Fill under curve
+        ax.fill(x_closed, rates_closed, color=color, alpha=fill_alpha)
+
+        ax.set_ylabel("Firing Rate (Hz)")
+
+        # Mark preferred direction
+        if show_preferred_direction:
+            pfd_deg = result.preferred_direction_deg()
+            ax.axvline(pfd_deg, color="red", linewidth=2, linestyle="--", zorder=3)
+
+    # Show metrics text box if requested
+    if show_metrics:
+        metrics_text = (
+            f"PFD: {result.preferred_direction_deg():.1f}°\n"
+            f"MVL: {result.mean_vector_length():.3f}\n"
+            f"Peak: {result.peak_firing_rate():.1f} Hz"
+        )
+        ax.text(
+            0.02,
+            0.98,
+            metrics_text,
+            transform=ax.transAxes,
+            fontsize=9,
+            verticalalignment="top",
+            bbox={"boxstyle": "round", "facecolor": "wheat", "alpha": 0.8},
+        )
+
+    return ax
