@@ -159,6 +159,12 @@ def smooth_rate_map(
     acceleration for the matrix operations and compatibility with JAX
     transformations like ``jit`` and ``grad``.
 
+    **JAX backend limitation with binned method**: When using ``backend="jax"``
+    with ``smoothing_method="binned"``, the smoothing step requires a round-trip
+    to NumPy (Environment.smooth uses NumPy). This may be slower than pure NumPy
+    for this method. For optimal JAX performance, use ``diffusion_kde`` or
+    ``gaussian_kde`` which keep the rate computation entirely in JAX.
+
     **Algorithm Details**:
 
     For diffusion_kde and gaussian_kde (correct KDE order):

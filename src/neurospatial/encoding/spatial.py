@@ -1228,9 +1228,16 @@ def compute_spatial_rate(
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included. Bins with
         occupancy below this threshold are set to NaN.
-    backend : {"numpy"}, default="numpy"
-        Computation backend. Currently only "numpy" is implemented.
-        Reserved for future JAX/GPU support.
+    backend : {"numpy", "jax", "auto"}, default="numpy"
+        Computation backend for rate map smoothing:
+
+        - ``"numpy"``: Use NumPy for all computations. Works everywhere.
+        - ``"jax"``: Use JAX for rate computation. Requires JAX installation.
+          Enables GPU acceleration and JAX transformations (jit, grad).
+        - ``"auto"``: Use JAX if available, otherwise NumPy.
+
+        Note: Binning operations (spike counting, occupancy) always use NumPy.
+        Only the smoothing/rate computation uses the selected backend.
 
     Returns
     -------
@@ -1401,9 +1408,16 @@ def compute_spatial_rates(
     n_jobs : int, default=1
         Number of parallel jobs for spike counting. Use -1 for all CPUs.
         1 means sequential processing (no parallelization overhead).
-    backend : {"numpy"}, default="numpy"
-        Computation backend. Currently only "numpy" is implemented.
-        Reserved for future JAX/GPU support.
+    backend : {"numpy", "jax", "auto"}, default="numpy"
+        Computation backend for rate map smoothing:
+
+        - ``"numpy"``: Use NumPy for all computations. Works everywhere.
+        - ``"jax"``: Use JAX for rate computation. Requires JAX installation.
+          Enables GPU acceleration and JAX transformations (jit, grad).
+        - ``"auto"``: Use JAX if available, otherwise NumPy.
+
+        Note: Binning operations (spike counting, occupancy) always use NumPy.
+        Only the smoothing/rate computation uses the selected backend.
 
     Returns
     -------
