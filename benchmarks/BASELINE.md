@@ -202,18 +202,16 @@ This section records baseline performance metrics for the encoding module backen
 
 Fastest mode - raw binned spike counts divided by occupancy.
 
-| n_neurons | Backend | Time (ms) | ms/neuron | Speedup |
-|-----------|---------|-----------|-----------|---------|
-| 10        | numpy   | 4.6       | 0.46      | 1.00x   |
-| 10        | jax     | 3.8       | 0.38      | 1.23x   |
-| 100       | numpy   | 13.2      | 0.13      | 1.00x   |
-| 100       | jax     | 13.6      | 0.14      | 0.97x   |
-| 1000      | numpy   | 112.5     | 0.11      | 1.00x   |
-| 1000      | jax     | 115.7     | 0.12      | 0.97x   |
+| n_neurons | Backend | Time (ms) | ms/neuron |
+|-----------|---------|-----------|-----------|
+| 10        | numpy   | 4.6       | 0.46      |
+| 100       | numpy   | 13.2      | 0.13      |
+| 1000      | numpy   | 112.5     | 0.11      |
 
 **Key Observations:**
-- For binned (no smoothing), NumPy and JAX have similar performance
-- Overhead of JAX array conversion negates any benefits for simple operations
+
+- Binned smoothing always uses NumPy (JAX is skipped)
+- Simple element-wise division (`spike_counts / occupancy`) has no matrix ops to accelerate
 - Time scales linearly with population size (~0.11-0.13 ms/neuron)
 
 ---
@@ -233,10 +231,34 @@ for publication-quality rate maps.
 | 1000      | jax     | 92.0      | 0.09      | **1.62x** |
 
 **Key Observations:**
+
 - JAX shows meaningful speedup for large populations (1.62x at 1000 neurons)
 - Speedup comes from accelerated matrix operations in the smoothing kernel
 - For small populations (<100), JAX overhead negates benefits
 - Diffusion KDE is slightly faster than binned per-neuron due to kernel reuse
+
+---
+
+### Gaussian KDE Smoothing
+
+Euclidean distance-based KDE smoothing. Ignores graph connectivity (mass can
+"bleed through" walls). Useful for simple environments without barriers.
+
+| n_neurons | Backend | Time (ms) | ms/neuron | Speedup |
+|-----------|---------|-----------|-----------|---------|
+| 10        | numpy   | 3.3       | 0.33      | 1.00x   |
+| 10        | jax     | 3.8       | 0.38      | 0.86x   |
+| 100       | numpy   | 12.5      | 0.13      | 1.00x   |
+| 100       | jax     | 12.2      | 0.12      | 1.03x   |
+| 1000      | numpy   | 150.2     | 0.15      | 1.00x   |
+| 1000      | jax     | 94.3      | 0.09      | **1.59x** |
+
+**Key Observations:**
+
+- Similar speedup profile to diffusion_kde (both use matrix operations)
+- JAX provides ~1.6x speedup for large populations (1000+ neurons)
+- Break-even point is around 100 neurons
+- Gaussian weights kernel computed in JAX (unlike diffusion which uses precomputed kernel)
 
 ---
 
@@ -249,9 +271,12 @@ for publication-quality rate maps.
 | Downstream JAX pipeline | Use JAX to avoid array copies |
 | Windows | Use NumPy (JAX not supported) |
 | Simple exploration | Use NumPy for simplicity |
+| Binned smoothing (no smoothing) | Always uses NumPy (JAX skipped) |
 
 **Note:** The binning layer always runs on NumPy (CPU). JAX acceleration
-applies only to the smoothing/rate computation step.
+applies only to the smoothing/rate computation step for `diffusion_kde` and
+`gaussian_kde` methods. The `binned` method always uses NumPy since it's
+just element-wise division with no matrix operations to accelerate.
 
 ---
 

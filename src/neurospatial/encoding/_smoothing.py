@@ -207,7 +207,9 @@ def smooth_rate_map(
     _validate_smoothing_inputs(env, spike_counts, occupancy, method, bandwidth)
 
     # Dispatch to JAX or NumPy implementation
-    if backend == "jax":
+    # Note: For "binned" method, JAX adds overhead without benefit since it's
+    # just element-wise division. Always use NumPy for binned.
+    if backend == "jax" and method != "binned":
         return _smooth_rate_map_jax(  # type: ignore[no-any-return]
             env, spike_counts, occupancy, method, bandwidth, min_occupancy, kernel
         )
@@ -299,7 +301,9 @@ def smooth_rate_maps_batch(
         )
 
     # Dispatch to JAX or NumPy implementation
-    if backend == "jax":
+    # Note: For "binned" method, JAX adds overhead without benefit since it's
+    # just element-wise division. Always use NumPy for binned.
+    if backend == "jax" and method != "binned":
         return _smooth_rate_maps_batch_jax(  # type: ignore[no-any-return]
             env, spike_counts, occupancy, method, bandwidth, min_occupancy, kernel
         )
