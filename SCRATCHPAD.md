@@ -3,10 +3,63 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 6.6 Follow-up #2 - Wire up real JAX compute path
-**Next Task**: Task 6.7 - Add performance benchmarks
+**Last Completed**: Task 6.7 - Add performance benchmarks
+**Next Task**: Task 7.1 - Update `encoding/__init__.py` exports
 
 ## Session Notes
+
+### Task 6.7: Add performance benchmarks [COMPLETED]
+
+**Goal**: Create a benchmark script comparing NumPy vs JAX backends for spatial rate computation.
+
+**Implementation**:
+
+Created `benchmarks/bench_encoding_backends.py` with:
+1. `EncodingBenchmarkResult` dataclass for storing results
+2. `create_benchmark_data()` for generating test data with configurable population sizes
+3. `run_single_benchmark()` for running individual benchmarks with warmup
+4. `run_encoding_benchmark()` for full benchmark suite
+5. `results_to_dataframe()` and `print_summary_table()` for output formatting
+6. Command-line interface with options for population sizes, iterations, smoothing method, etc.
+
+**Key Design Decisions**:
+- Warmup iterations excluded from timing (critical for JAX JIT compilation)
+- Triple garbage collection before timing for clean baselines
+- Multiple iterations averaged (default n=3) for statistical validity
+- Speedup calculated relative to NumPy baseline
+- Supports both "binned" and "diffusion_kde" smoothing methods
+
+**Performance Results**:
+
+| Smoothing | n_neurons | NumPy (ms) | JAX (ms) | Speedup |
+|-----------|-----------|------------|----------|---------|
+| binned    | 10        | 4.6        | 3.8      | 1.23x   |
+| binned    | 100       | 13.2       | 13.6     | 0.97x   |
+| binned    | 1000      | 112.5      | 115.7    | 0.97x   |
+| diffusion | 10        | 3.1        | 3.6      | 0.86x   |
+| diffusion | 100       | 12.9       | 12.0     | 1.08x   |
+| diffusion | 1000      | 149.3      | 92.0     | **1.62x** |
+
+**Key Findings**:
+- JAX shows meaningful speedup for large populations (1.62x at 1000 neurons with diffusion_kde)
+- Speedup comes from accelerated matrix operations in the smoothing kernel
+- For small populations (<100), JAX overhead negates benefits
+- Binning layer always runs on NumPy; JAX only accelerates smoothing step
+
+**Files Created**:
+- `benchmarks/bench_encoding_backends.py`: Main benchmark script
+- `tests/benchmarks/test_encoding_backends.py`: Tests for benchmark components
+- `benchmarks/BASELINE.md`: Updated with encoding backend performance results
+
+**TDD Process**:
+1. Created test file first with expected structure
+2. Ran tests to verify failure (red)
+3. Implemented benchmark script
+4. Ran tests to verify success (green)
+5. Applied code review, addressed feedback
+6. Added JAX x64 fixture to tests
+
+---
 
 ### Task 6.6 Follow-up #2: Wire up real JAX compute path [COMPLETED]
 

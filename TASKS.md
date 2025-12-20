@@ -404,10 +404,10 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Test `"auto"` behavior on Windows (forces NumPy)
   - [x] Test `"jax"` raises clear error when JAX unavailable
 
-- [ ] **6.7** Add performance benchmarks
-  - [ ] Create benchmark script comparing NumPy vs JAX
-  - [ ] Test with varying population sizes (10, 100, 1000 neurons)
-  - [ ] Document performance characteristics
+- [x] **6.7** Add performance benchmarks
+  - [x] Create benchmark script comparing NumPy vs JAX
+  - [x] Test with varying population sizes (10, 100, 1000 neurons)
+  - [x] Document performance characteristics
 
 ---
 
@@ -423,7 +423,6 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
 
 - [ ] **7.1** Update `encoding/__init__.py` exports
   - [ ] Export all new functions and result classes
-  - [ ] Export deprecated shims with deprecation marker
   - [ ] Define `__all__` list
 
 - [ ] **7.2** Remove old files (after deprecation period)
