@@ -46,7 +46,8 @@ Examples
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections import deque
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -63,11 +64,19 @@ if TYPE_CHECKING:
     from neurospatial.encoding.grid import GridProperties
     from neurospatial.environment._protocols import EnvironmentProtocol
 
+# ruff: noqa: RUF022 - intentionally grouped by category
 __all__ = [
+    # Result classes
     "SpatialRateResult",
     "SpatialRatesResult",
+    # Compute functions
     "compute_spatial_rate",
     "compute_spatial_rates",
+    # Directional place fields
+    "DirectionalPlaceFields",
+    "compute_directional_place_fields",
+    # Field detection
+    "detect_place_fields",
 ]
 
 
@@ -1598,3 +1607,729 @@ def compute_spatial_rates(
         smoothing_method=smoothing_method,
         bandwidth=bandwidth,
     )
+
+
+# ==============================================================================
+# Directional Place Fields
+# ==============================================================================
+
+
+@dataclass(frozen=True)
+class DirectionalPlaceFields:
+    """Container for direction-conditioned place field results.
+
+    Stores firing rate maps computed separately for different movement
+    directions or trial types. This enables analysis of directional
+    tuning in place cells.
+
+    Attributes
+    ----------
+    fields : Mapping[str, NDArray[np.float64]]
+        Dictionary mapping direction labels (e.g., "A→B", "forward") to
+        firing rate arrays. Each array has shape (n_bins,) matching the
+        environment's bin structure.
+    labels : tuple[str, ...]
+        Tuple of direction labels in iteration order. Preserves the order
+        in which directions were processed, enabling reproducible iteration.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> fields = {
+    ...     "home→goal": np.array([1.0, 2.0, 3.0]),
+    ...     "goal→home": np.array([3.0, 2.0, 1.0]),
+    ... }
+    >>> result = DirectionalPlaceFields(
+    ...     fields=fields,
+    ...     labels=("home→goal", "goal→home"),
+    ... )
+    >>> result.fields["home→goal"]
+    array([1., 2., 3.])
+    >>> result.labels
+    ('home→goal', 'goal→home')
+
+    See Also
+    --------
+    compute_directional_place_fields : Compute directional place fields from spike data.
+    """
+
+    fields: Mapping[str, NDArray[np.float64]]
+    labels: tuple[str, ...]
+
+
+def _subset_spikes_by_time_mask(
+    times: NDArray[np.float64],
+    spike_times: NDArray[np.float64],
+    mask: NDArray[np.bool_],
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Subset spike times by a boolean mask over trajectory times.
+
+    Extracts spikes that fall within the time ranges defined by contiguous
+    True segments in the mask. Uses binary search (searchsorted) for
+    efficient O(log n) spike slicing per segment.
+
+    Parameters
+    ----------
+    times : NDArray[np.float64], shape (n_timepoints,)
+        Timestamps of trajectory samples (seconds). Must be sorted.
+    spike_times : NDArray[np.float64], shape (n_spikes,)
+        Timestamps of spike occurrences (seconds). Must be sorted.
+    mask : NDArray[np.bool_], shape (n_timepoints,)
+        Boolean mask indicating which timepoints to include.
+        Contiguous True segments define time ranges for spike inclusion.
+
+    Returns
+    -------
+    times_sub : NDArray[np.float64]
+        Subset of times where mask is True. Same as ``times[mask]``.
+    spike_times_sub : NDArray[np.float64]
+        Spikes that fall within the time ranges of contiguous True segments.
+        Boundaries are inclusive: spikes at segment start/end are included.
+
+    Notes
+    -----
+    For each contiguous segment of True values in mask:
+    - ``t_start = times[segment_first_index]``
+    - ``t_end = times[segment_last_index]``
+    - Spikes in ``[t_start, t_end]`` (inclusive) are selected
+
+    This function is designed for conditioning place field analysis on
+    subsets of the trajectory (e.g., by movement direction, trial type).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+    >>> spike_times = np.array([0.5, 1.5, 2.5, 3.5])
+    >>> mask = np.array([False, True, True, False, False])
+    >>> times_sub, spikes_sub = _subset_spikes_by_time_mask(times, spike_times, mask)
+    >>> times_sub
+    array([1., 2.])
+    >>> spikes_sub
+    array([1.5])
+    """
+    # Fast path: empty mask
+    if not np.any(mask):
+        return np.array([], dtype=np.float64), np.array([], dtype=np.float64)
+
+    # Get indices where mask is True
+    true_indices = np.where(mask)[0]
+
+    # Find contiguous segments by looking for gaps > 1
+    # diff > 1 indicates a break in contiguity
+    if len(true_indices) == 0:
+        return np.array([], dtype=np.float64), np.array([], dtype=np.float64)
+
+    # Find segment boundaries: where consecutive indices are not adjacent
+    breaks = np.where(np.diff(true_indices) > 1)[0] + 1
+    segment_starts = np.concatenate([[0], breaks])
+    segment_ends = np.concatenate([breaks, [len(true_indices)]])
+
+    # Fast path: empty spike train
+    if len(spike_times) == 0:
+        return times[mask], np.array([], dtype=np.float64)
+
+    # Collect spikes from each segment
+    spike_slices = []
+
+    for seg_start_idx, seg_end_idx in zip(segment_starts, segment_ends, strict=True):
+        # Get the actual time indices for this segment
+        first_time_idx = true_indices[seg_start_idx]
+        last_time_idx = true_indices[seg_end_idx - 1]
+
+        # Get time boundaries
+        t_start = times[first_time_idx]
+        t_end = times[last_time_idx]
+
+        # Use searchsorted for O(log n) spike slicing
+        # side="left" for t_start: include spikes at exactly t_start
+        # side="right" for t_end: include spikes at exactly t_end
+        spike_start = np.searchsorted(spike_times, t_start, side="left")
+        spike_end = np.searchsorted(spike_times, t_end, side="right")
+
+        if spike_start < spike_end:
+            spike_slices.append(spike_times[spike_start:spike_end])
+
+    # Concatenate all spike slices
+    if spike_slices:
+        spike_times_sub = np.concatenate(spike_slices)
+    else:
+        spike_times_sub = np.array([], dtype=np.float64)
+
+    return times[mask], spike_times_sub
+
+
+def compute_directional_place_fields(
+    env: Environment,
+    spike_times: NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    direction_labels: NDArray[np.object_],
+    *,
+    smoothing_method: Literal[
+        "diffusion_kde", "gaussian_kde", "binned"
+    ] = "diffusion_kde",
+    bandwidth: float = 5.0,
+    min_occupancy_seconds: float = 0.0,
+) -> DirectionalPlaceFields:
+    """Compute place fields conditioned on movement direction or trial type.
+
+    Separates trajectory data by direction labels and computes independent
+    place fields for each direction. This enables analysis of directional
+    tuning in place cells, where firing rates differ based on which way
+    the animal is moving through a location.
+
+    Parameters
+    ----------
+    env : Environment
+        Spatial environment defining the discretization.
+    spike_times : NDArray[np.float64], shape (n_spikes,)
+        Timestamps of spike occurrences (seconds).
+    times : NDArray[np.float64], shape (n_timepoints,)
+        Timestamps of trajectory samples (seconds). Must be sorted.
+    positions : NDArray[np.float64], shape (n_timepoints, n_dims) or (n_timepoints,)
+        Position trajectory. For 1D, can be shape (n_timepoints,) or (n_timepoints, 1).
+    direction_labels : NDArray[object], shape (n_timepoints,)
+        Direction label for each timepoint. Each label is a hashable string
+        (e.g., "A→B", "forward", "CW"). The special label "other" is excluded
+        from results, allowing unlabeled periods to be ignored.
+    smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
+        Estimation method passed to ``compute_place_field``. See that function
+        for detailed descriptions of each method.
+    bandwidth : float, default=5.0
+        Smoothing bandwidth in environment units (e.g., cm).
+    min_occupancy_seconds : float, default=0.0
+        Minimum occupancy threshold (only used with method="binned").
+
+    Returns
+    -------
+    DirectionalPlaceFields
+        Container with:
+        - ``fields``: Mapping from direction label to firing rate array (n_bins,)
+        - ``labels``: Tuple of direction labels in iteration order
+
+    Raises
+    ------
+    ValueError
+        If ``direction_labels`` length doesn't match ``times`` length.
+    ValueError
+        If ``bandwidth`` is not positive (passed through to ``compute_place_field``).
+
+    See Also
+    --------
+    compute_spatial_rate : Compute single (non-directional) spatial rate.
+
+    Notes
+    -----
+    The "other" label is reserved for timepoints that should be excluded from
+    analysis (e.g., inter-trial intervals, stationary periods). Any timepoints
+    with label "other" are ignored when computing fields.
+
+    For each unique non-"other" label, this function:
+    1. Creates a boolean mask for timepoints with that label
+    2. Extracts the trajectory and spikes within those masked periods
+    3. Calls ``compute_spatial_rate`` on the subset
+    4. Stores the resulting field in the output mapping
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding.spatial import compute_directional_place_fields
+    >>>
+    >>> # Create environment and trajectory
+    >>> positions = np.random.uniform(0, 100, (1000, 2))
+    >>> times = np.linspace(0, 100, 1000)
+    >>> env = Environment.from_samples(positions, bin_size=10.0)
+    >>>
+    >>> # Create directional labels (first half forward, second half backward)
+    >>> labels = np.array(["forward"] * 500 + ["backward"] * 500, dtype=object)
+    >>> spike_times = np.random.uniform(0, 100, 50)
+    >>>
+    >>> # Compute directional place fields
+    >>> result = compute_directional_place_fields(
+    ...     env, spike_times, times, positions, labels, bandwidth=10.0
+    ... )
+    >>> "forward" in result.fields
+    True
+    >>> "backward" in result.fields
+    True
+    """
+    # Validate direction_labels length matches times
+    if len(direction_labels) != len(times):
+        raise ValueError(
+            f"direction_labels must have same length as times, "
+            f"got {len(direction_labels)} and {len(times)}"
+        )
+
+    # Convert labels to array
+    labels_arr = np.asarray(direction_labels, dtype=object)
+
+    # Get unique labels, excluding "other"
+    unique_labels = [label for label in np.unique(labels_arr) if label != "other"]
+
+    # Sort labels for reproducibility
+    unique_labels = sorted(unique_labels, key=str)
+
+    # Compute place field for each direction
+    fields_dict: dict[str, NDArray[np.float64]] = {}
+
+    for label in unique_labels:
+        # Build mask for this direction
+        mask = labels_arr == label
+
+        # Get subsets using our helper
+        times_sub, spike_times_sub = _subset_spikes_by_time_mask(
+            times, spike_times, mask
+        )
+        positions_sub = positions[mask]
+
+        # Compute spatial rate for this direction
+        result = compute_spatial_rate(
+            env,
+            spike_times_sub,
+            times_sub,
+            positions_sub,
+            smoothing_method=smoothing_method,
+            bandwidth=bandwidth,
+            min_occupancy=min_occupancy_seconds,
+        )
+
+        fields_dict[label] = np.asarray(result.firing_rate)
+
+    return DirectionalPlaceFields(fields=fields_dict, labels=tuple(unique_labels))
+
+
+# ==============================================================================
+# Place Field Detection
+# ==============================================================================
+
+
+def detect_place_fields(
+    firing_rate: NDArray[np.float64],
+    env: Environment,
+    *,
+    threshold: float = 0.2,
+    min_size: int | None = None,
+    max_mean_rate: float = 10.0,
+    detect_subfields: bool = True,
+) -> list[NDArray[np.int64]]:
+    """Detect place fields using iterative peak-based approach (neurocode method).
+
+    This implements the field-standard algorithm used by neurocode (AyA Lab)
+    with support for subfield discrimination and interneuron exclusion.
+
+    Parameters
+    ----------
+    firing_rate : array, shape (n_bins,)
+        Firing rate map (Hz) from neuron.
+    env : Environment
+        Spatial environment for binning.
+    threshold : float, default=0.2
+        Fraction of peak rate for field boundary detection (0-1).
+        Standard value is 0.2 (20% of peak).
+    min_size : int, optional
+        Minimum number of bins for a valid field. If None, defaults to 9 bins.
+    max_mean_rate : float, default=10.0
+        Maximum mean firing rate (Hz). Neurons exceeding this are excluded
+        as putative interneurons (vandermeerlab convention).
+    detect_subfields : bool, default=True
+        If True, recursively detect subfields within large fields using
+        higher thresholds. This discriminates coalescent place fields.
+
+    Returns
+    -------
+    fields : list of arrays
+        List of place fields, where each field is a 1D array of bin indices
+        (integers) belonging to that field. Empty list if no fields detected.
+
+    Notes
+    -----
+    **Algorithm (neurocode approach)**:
+
+    1. **Interneuron exclusion**: If mean rate > max_mean_rate, return no fields
+    2. **Peak detection**: Find global maximum in firing rate map
+    3. **Field segmentation**: Threshold at fraction of peak to define boundary
+    4. **Connected component**: Extract bins above threshold connected to peak
+    5. **Size filtering**: Discard fields smaller than min_size
+    6. **Subfield recursion**: If detect_subfields=True, recursively apply
+       higher thresholds (0.5, 0.7) to discriminate coalescent fields
+    7. **Iteration**: Remove detected field bins and repeat until no peaks remain
+
+    **Interneuron exclusion**: Following vandermeerlab convention, neurons with
+    mean firing rate > 10 Hz are excluded as putative interneurons. Pyramidal
+    cells (place cells) typically fire at 0.5-5 Hz.
+
+    **Subfield detection**: When two place fields are close together, they may
+    appear as a single broad field at low thresholds. Recursive thresholding
+    at 0.5× and 0.7× peak discriminates true subfields.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding.spatial import detect_place_fields
+    >>> # Create synthetic place cell
+    >>> positions = np.random.randn(5000, 2) * 20
+    >>> env = Environment.from_samples(positions, bin_size=2.0)
+    >>> firing_rate = np.zeros(env.n_bins)
+    >>> # Add Gaussian place field at center
+    >>> for i in range(env.n_bins):
+    ...     dist = np.linalg.norm(env.bin_centers[i])
+    ...     firing_rate[i] = 8.0 * np.exp(-(dist**2) / (2 * 3.0**2))
+    >>> fields = detect_place_fields(firing_rate, env)
+    >>> len(fields)  # doctest: +SKIP
+    1
+
+    See Also
+    --------
+    SpatialRateResult : Result class with rate map and metrics
+
+    References
+    ----------
+    .. [1] neurocode repository (AyA Lab, Cornell): FindPlaceFields.m
+    .. [2] Wilson & McNaughton (1993). Dynamics of hippocampal ensemble code
+           for space. Science 261(5124).
+    """
+    # Validate inputs
+    if firing_rate.shape[0] != env.n_bins:
+        raise ValueError(
+            f"firing_rate shape {firing_rate.shape} does not match "
+            f"env.n_bins ({env.n_bins})"
+        )
+
+    if not 0 < threshold < 1:
+        raise ValueError(f"threshold must be in (0, 1), got {threshold}")
+
+    # Set default min_size
+    if min_size is None:
+        min_size = 9  # Standard minimum (3×3 bins for 2D)
+
+    # Interneuron exclusion
+    mean_rate = np.nanmean(firing_rate)
+    if mean_rate > max_mean_rate:
+        return []  # Putative interneuron
+
+    # Make a copy to modify during iteration
+    rate_map = firing_rate.copy()
+    fields = []
+
+    # Iteratively find fields
+    while True:
+        # Handle all-NaN case
+        if not np.any(np.isfinite(rate_map)):
+            break  # No valid values remaining
+
+        # Find peak
+        peak_idx = int(np.nanargmax(rate_map))
+        peak_rate = rate_map[peak_idx]
+
+        # Check if peak is meaningful
+        if peak_rate <= 0 or not np.isfinite(peak_rate):
+            break
+
+        # Threshold at fraction of peak
+        threshold_rate = peak_rate * threshold
+
+        # Find bins above threshold
+        above_threshold = rate_map >= threshold_rate
+
+        # Extract connected component containing peak
+        field_bins = _extract_connected_component(peak_idx, above_threshold, env)
+
+        # Check minimum size
+        if len(field_bins) < min_size:
+            # Remove this small field and continue
+            rate_map[field_bins] = 0
+            continue
+
+        # Check for subfields (recursive thresholding)
+        if detect_subfields and len(field_bins) > min_size * 2:
+            # Try higher thresholds to discriminate subfields
+            subfields = _detect_subfields(
+                firing_rate[field_bins], field_bins, peak_rate, env, min_size
+            )
+            if len(subfields) > 1:
+                # Found subfields - add them separately
+                fields.extend(subfields)
+            else:
+                # No subfields - add as single field
+                fields.append(field_bins)
+        else:
+            # Add field
+            fields.append(field_bins)
+
+        # Remove field bins from rate map
+        rate_map[field_bins] = 0
+
+        # Check if any meaningful peaks remain
+        if np.nanmax(rate_map) < threshold_rate:
+            break
+
+    return fields
+
+
+def _extract_connected_component_scipy(
+    seed_idx: int,
+    mask: NDArray[np.bool_],
+    env: Environment,
+) -> NDArray[np.int64]:
+    """Extract connected component using scipy.ndimage.label (fast path for grids).
+
+    This is the optimized path for grid-based environments, providing ~6× speedup
+    over graph-based flood-fill by leveraging scipy's optimized N-D labeling.
+
+    Parameters
+    ----------
+    seed_idx : int
+        Starting bin index in active bin indexing.
+    mask : array, shape (n_bins,)
+        Boolean mask of candidate bins (active bin indexing).
+    env : Environment
+        Spatial environment (must be grid-based with grid_shape and active_mask).
+
+    Returns
+    -------
+    component : array
+        Bin indices in connected component (active bin indexing, sorted).
+
+    Raises
+    ------
+    ValueError
+        If environment does not have grid_shape or active_mask attributes.
+
+    Notes
+    -----
+    This function only works for grid-based environments (RegularGridLayout,
+    MaskedGridLayout, etc.). For non-grid environments (1D tracks, irregular
+    graphs), use _extract_connected_component_graph() instead.
+
+    The algorithm:
+    1. Reshape flat mask to N-D grid using grid_shape
+    2. Apply scipy.ndimage.label to find connected components
+    3. Identify which component contains the seed
+    4. Convert back to flat active bin indices
+    """
+    from scipy import ndimage
+
+    # Validate environment has required attributes
+    if env.grid_shape is None or env.active_mask is None:
+        raise ValueError("scipy path requires grid_shape and active_mask")
+
+    # Reshape flat mask (active bin indexing) to N-D grid (original grid indexing)
+    grid_mask = np.zeros(env.grid_shape, dtype=bool)
+    grid_mask[env.active_mask] = mask
+
+    # Determine connectivity structure to match graph connectivity
+    # Check if environment uses diagonal neighbors
+    n_dims = len(env.grid_shape)
+    if hasattr(env.layout, "_build_params_used"):
+        params = env.layout._build_params_used
+        connect_diagonal = params.get("connect_diagonal_neighbors", False)
+    else:
+        # Default: no diagonal connections (4-connected in 2D, 6-connected in 3D)
+        connect_diagonal = False
+
+    # Create connectivity structure for scipy
+    if connect_diagonal:
+        # Full connectivity (includes diagonals): connectivity = n_dims
+        structure = ndimage.generate_binary_structure(n_dims, n_dims)
+    else:
+        # Axial connectivity only (no diagonals): connectivity = 1
+        structure = ndimage.generate_binary_structure(n_dims, 1)
+
+    # Label connected components in N-D grid
+    labeled, _n_components = ndimage.label(grid_mask, structure=structure)
+
+    # Convert seed from active bin index to grid coordinates
+    # active_mask.ravel() gives flat indices of active bins in original grid
+    active_flat_indices = np.where(env.active_mask.ravel())[0]
+    seed_grid_flat_idx = active_flat_indices[seed_idx]
+    seed_grid_coords = np.unravel_index(seed_grid_flat_idx, env.grid_shape)
+
+    # Get label of component containing seed
+    seed_label = labeled[seed_grid_coords]
+
+    if seed_label == 0:
+        # Seed not in any component (shouldn't happen if mask[seed_idx] is True)
+        return np.array([seed_idx], dtype=np.int64)
+
+    # Extract all grid positions in this component
+    component_grid_mask = labeled == seed_label
+
+    # Convert back to flat active bin indices
+    # Find which active bins correspond to this component
+    component_in_active_bins = component_grid_mask.ravel() & env.active_mask.ravel()
+    component_grid_flat_indices = np.where(component_in_active_bins)[0]
+
+    # Map from original grid flat indices to active bin indices
+    component_bins = np.searchsorted(active_flat_indices, component_grid_flat_indices)
+
+    return np.array(sorted(component_bins), dtype=np.int64)
+
+
+def _extract_connected_component_graph(
+    seed_idx: int,
+    mask: NDArray[np.bool_],
+    env: Environment,
+) -> NDArray[np.int64]:
+    """Extract connected component using graph-based flood-fill (fallback path).
+
+    This is the fallback path for non-grid environments (1D tracks, irregular
+    graphs) and works for any graph structure. It uses breadth-first search
+    with direct graph.neighbors() queries.
+
+    Parameters
+    ----------
+    seed_idx : int
+        Starting bin index.
+    mask : array, shape (n_bins,)
+        Boolean mask of candidate bins.
+    env : Environment
+        Spatial environment for connectivity.
+
+    Returns
+    -------
+    component : array
+        Bin indices in connected component (sorted).
+
+    Notes
+    -----
+    This is the original implementation, proven to be already optimal for
+    sparse connected components on arbitrary graphs. Benchmarking showed
+    this is faster than NetworkX's connected_components() due to avoiding
+    subgraph creation overhead.
+    """
+    # Flood fill using graph connectivity (BFS)
+    component_set = {seed_idx}
+    frontier = deque([seed_idx])
+
+    while frontier:
+        current = frontier.popleft()
+        # Get neighbors from graph
+        neighbors = list(env.connectivity.neighbors(current))
+        for neighbor in neighbors:
+            if mask[neighbor] and neighbor not in component_set:
+                component_set.add(neighbor)
+                frontier.append(neighbor)
+
+    return np.array(sorted(component_set), dtype=np.int64)
+
+
+def _extract_connected_component(
+    seed_idx: int,
+    mask: NDArray[np.bool_],
+    env: Environment,
+) -> NDArray[np.int64]:
+    """Extract connected component of bins from seed (routes to optimal method).
+
+    Automatically selects the optimal algorithm based on environment type:
+    - Grid environments (2D/3D): Uses scipy.ndimage.label (~6× faster)
+    - Non-grid environments: Uses graph-based flood-fill
+
+    Parameters
+    ----------
+    seed_idx : int
+        Starting bin index.
+    mask : array, shape (n_bins,)
+        Boolean mask of candidate bins.
+    env : Environment
+        Spatial environment for connectivity.
+
+    Returns
+    -------
+    component : array
+        Bin indices in connected component (sorted).
+
+    Notes
+    -----
+    The routing logic checks for grid-based environments using:
+    - env.grid_shape is not None
+    - len(env.grid_shape) >= 2 (2D or 3D grids)
+    - env.active_mask is not None
+
+    For grid environments, uses scipy.ndimage.label for ~6× speedup.
+    For non-grid environments, uses graph-based flood-fill (already optimal).
+    """
+    # Check if scipy fast path is applicable
+    if (
+        env.grid_shape is not None
+        and len(env.grid_shape) >= 2
+        and env.active_mask is not None
+    ):
+        # Fast path: scipy.ndimage.label for grid environments
+        return _extract_connected_component_scipy(seed_idx, mask, env)
+    else:
+        # Fallback path: graph-based flood-fill for non-grid environments
+        return _extract_connected_component_graph(seed_idx, mask, env)
+
+
+def _detect_subfields(
+    field_rates: NDArray[np.float64],
+    field_bins: NDArray[np.int64],
+    peak_rate: float,
+    env: Environment,
+    min_size: int,
+) -> list[NDArray[np.int64]]:
+    """Recursively detect subfields using higher thresholds.
+
+    Parameters
+    ----------
+    field_rates : array
+        Firing rates within field bins.
+    field_bins : array
+        Bin indices of field.
+    peak_rate : float
+        Peak firing rate in field.
+    env : Environment
+        Spatial environment.
+    min_size : int
+        Minimum field size.
+
+    Returns
+    -------
+    subfields : list of arrays
+        List of subfield bin indices. If only one subfield found,
+        returns list with original field.
+    """
+    # Try thresholds: 0.5 and 0.7 of peak
+    subfield_thresholds = [0.5, 0.7]
+
+    for thresh in subfield_thresholds:
+        threshold_rate = peak_rate * thresh
+        above_threshold = field_rates >= threshold_rate
+
+        # Find connected components
+        subfields = []
+        remaining_mask = above_threshold.copy()
+
+        while remaining_mask.any():
+            # Find a seed
+            seed_local_idx = np.where(remaining_mask)[0][0]
+            seed_global_idx = field_bins[seed_local_idx]
+
+            # Build mask in global coordinates
+            global_mask = np.zeros(env.n_bins, dtype=bool)
+            global_mask[field_bins[above_threshold]] = True
+
+            # Extract component
+            component_global = _extract_connected_component(
+                seed_global_idx, global_mask, env
+            )
+
+            if len(component_global) >= min_size:
+                subfields.append(component_global)
+
+            # Remove from remaining mask
+            for bin_idx in component_global:
+                # Find local index
+                local_indices = np.where(field_bins == bin_idx)[0]
+                if len(local_indices) > 0:
+                    remaining_mask[local_indices[0]] = False
+
+        # If found multiple subfields, return them
+        if len(subfields) > 1:
+            return subfields
+
+    # No subfields found
+    return [field_bins]

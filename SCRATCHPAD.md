@@ -94,6 +94,33 @@ User requested **full migration** of utilities from old files to new locations, 
 
 ## Session Notes
 
+### Task 7.2: Full Migration - In Progress (2025-12-20)
+
+**Completed**:
+
+1. **Created `_field_metrics.py`** with field geometry and comparison utilities:
+   - `field_size`, `rate_map_centroid`, `field_shape_metrics`
+   - `field_stability`, `field_shift_distance`, `compute_field_emd`
+   - `in_out_field_ratio`, `rate_map_coherence`
+
+2. **Extended `_metrics.py`** with additional metrics:
+   - `selectivity` (peak/mean ratio)
+   - `information_per_second` (bits/second)
+   - `mutual_information` (= information_per_second)
+   - `spatial_coverage_single_cell` (fraction with firing)
+
+**Remaining**:
+
+- Move `detect_place_fields` and `DirectionalPlaceFields` to `spatial.py`
+- Move `is_head_direction_cell`, `plot_head_direction_tuning` to `directional.py`
+- Move `is_spatial_view_cell`, gaze utilities to `view.py`
+- Move OVC utilities to `egocentric.py`
+- Update `__init__.py` exports
+- Update all external imports (tests, examples, docs)
+- Remove old files
+
+---
+
 ### Task 6.7: Add performance benchmarks [COMPLETED]
 
 **Goal**: Create a benchmark script comparing NumPy vs JAX backends for spatial rate computation.

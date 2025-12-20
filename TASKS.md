@@ -421,15 +421,20 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
 
 ### Tasks
 
-- [ ] **7.1** Update `encoding/__init__.py` exports
-  - [ ] Export all new functions and result classes
-  - [ ] Define `__all__` list
+- [x] **7.1** Update `encoding/__init__.py` exports
+  - [x] Export all new functions and result classes
+  - [x] Define `__all__` list
 
-- [ ] **7.2** Remove old files (after deprecation period)
-  - [ ] Remove `encoding/place.py` (merged into `spatial.py`)
-  - [ ] Remove `encoding/head_direction.py` (replaced by `directional.py`)
-  - [ ] Remove `encoding/spatial_view.py` (replaced by `view.py`)
-  - [ ] Remove `encoding/object_vector.py` (replaced by `egocentric.py`)
+- [~] **7.2** Migrate and remove old files (no deprecation period)
+  - [x] Create `_field_metrics.py` with field geometry and comparison utilities
+  - [x] Add additional metrics to `_metrics.py` (selectivity, info_per_second, etc.)
+  - [ ] Move `detect_place_fields` and `DirectionalPlaceFields` to `spatial.py`
+  - [ ] Move head_direction.py utilities to `directional.py`
+  - [ ] Move spatial_view.py utilities to `view.py`
+  - [ ] Move object_vector.py utilities to `egocentric.py`
+  - [ ] Update `__init__.py` exports from new locations
+  - [ ] Update all imports in tests and examples
+  - [ ] Remove old files: `place.py`, `head_direction.py`, `spatial_view.py`, `object_vector.py`
   - [ ] Note: Keep `border.py`, `grid.py`, `population.py`, `phase_precession.py`
 
 - [ ] **7.3** Update example notebooks using old encoding API
