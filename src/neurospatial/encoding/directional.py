@@ -1339,7 +1339,7 @@ def compute_directional_rate(
         Computation backend.
 
         - 'numpy': Use NumPy (always available)
-        - 'jax': Use JAX (not yet implemented, raises NotImplementedError)
+        - 'jax': Use JAX for output arrays (smoothing uses NumPy/SciPy)
         - 'auto': Use JAX if available, otherwise NumPy
 
     Returns
@@ -1549,7 +1549,7 @@ def compute_directional_rates(
         Computation backend.
 
         - 'numpy': Use NumPy (always available)
-        - 'jax': Use JAX (not yet implemented, raises NotImplementedError)
+        - 'jax': Use JAX for output arrays (smoothing uses NumPy/SciPy)
         - 'auto': Use JAX if available, otherwise NumPy
 
     Returns

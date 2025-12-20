@@ -7,10 +7,12 @@ The functions in this module operate on dense arrays:
 - Single neuron: firing_rate (n_bins,), occupancy (n_bins,)
 - Batch: firing_rates (n_neurons, n_bins), occupancy (n_bins,)
 
-**Current status**: NumPy-only. JAX backend support will be added in Milestone 6.
-When JAX support is implemented, these functions will become backend-aware
-(NumPy in → NumPy out, JAX in → JAX out). For now, all inputs are coerced to
-NumPy via ``np.asarray()``.
+**Backend-aware**: These functions detect the input array type and dispatch
+to the appropriate backend (NumPy or JAX). JAX arrays are routed to the
+JAX implementations in ``_core_jax.py``, preserving JAX-traced compute graphs.
+
+- NumPy in → NumPy out
+- JAX in → JAX out
 
 For host-only operations, use ``_to_numpy()`` from ``_base.py`` first.
 
@@ -27,14 +29,25 @@ References
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
 if TYPE_CHECKING:
     from neurospatial import Environment
     from neurospatial.environment._protocols import EnvironmentProtocol
+
+
+def _is_jax_array(arr: ArrayLike) -> bool:
+    """Check if array is a JAX array."""
+    try:
+        import jax
+
+        return isinstance(arr, jax.Array)
+    except ImportError:
+        return False
+
 
 __all__ = [
     "batch_border_scores",
@@ -47,11 +60,11 @@ __all__ = [
 
 
 def spatial_information(
-    firing_rate: NDArray[np.float64],
-    occupancy: NDArray[np.float64],
+    firing_rate: ArrayLike,
+    occupancy: ArrayLike,
     *,
     base: float = 2.0,
-) -> float:
+) -> float | Any:
     """Compute Skaggs spatial information (bits per spike) for single neuron.
 
     Spatial information quantifies how much information each spike conveys
@@ -60,9 +73,10 @@ def spatial_information(
 
     Parameters
     ----------
-    firing_rate : ndarray, shape (n_bins,)
+    firing_rate : ArrayLike, shape (n_bins,)
         Firing rate map in Hz. Can contain NaN values which are ignored.
-    occupancy : ndarray, shape (n_bins,)
+        Accepts NumPy arrays or JAX arrays.
+    occupancy : ArrayLike, shape (n_bins,)
         Time spent in each bin (seconds or any time unit). Will be normalized
         to probability internally. Can contain NaN values which are ignored.
     base : float, default=2.0
@@ -70,9 +84,10 @@ def spatial_information(
 
     Returns
     -------
-    float
+    float | jax.Array
         Spatial information in bits per spike (if base=2.0).
         Returns 0.0 if mean rate is zero or undefined.
+        Returns float for NumPy input, JAX scalar for JAX input.
 
     Raises
     ------
@@ -95,6 +110,9 @@ def spatial_information(
     - Place cells typically have 1-3 bits/spike
     - Higher values indicate more spatially selective firing
     - Zero information means uniform firing (no spatial selectivity)
+
+    **Backend-aware**: Detects input array type and dispatches to NumPy or
+    JAX implementation. JAX arrays preserve JAX-traced compute graphs.
 
     Examples
     --------
@@ -121,7 +139,13 @@ def spatial_information(
     batch_spatial_information : Vectorized version for populations
     sparsity : Complementary measure of spatial selectivity
     """
-    # Input validation
+    # Check if JAX array and dispatch to JAX implementation
+    if _is_jax_array(firing_rate) or _is_jax_array(occupancy):
+        from neurospatial.encoding._core_jax import spatial_information_single
+
+        return spatial_information_single(firing_rate, occupancy, base=base)  # type: ignore[arg-type]
+
+    # NumPy implementation
     firing_rate = np.asarray(firing_rate)
     occupancy = np.asarray(occupancy)
 
@@ -166,11 +190,11 @@ def spatial_information(
 
 
 def batch_spatial_information(
-    firing_rates: NDArray[np.float64],
-    occupancy: NDArray[np.float64],
+    firing_rates: ArrayLike,
+    occupancy: ArrayLike,
     *,
     base: float = 2.0,
-) -> NDArray[np.float64]:
+) -> NDArray[np.float64] | Any:
     """Compute Skaggs spatial information for multiple neurons.
 
     Vectorized version of `spatial_information()` for efficient population
@@ -178,17 +202,19 @@ def batch_spatial_information(
 
     Parameters
     ----------
-    firing_rates : ndarray, shape (n_neurons, n_bins)
+    firing_rates : ArrayLike, shape (n_neurons, n_bins)
         Firing rate maps for each neuron in Hz.
-    occupancy : ndarray, shape (n_bins,)
+        Accepts NumPy arrays or JAX arrays.
+    occupancy : ArrayLike, shape (n_bins,)
         Shared occupancy for all neurons (time spent in each bin).
     base : float, default=2.0
         Logarithm base. Use 2.0 for bits (standard), np.e for nats.
 
     Returns
     -------
-    ndarray, shape (n_neurons,)
+    ndarray | jax.Array, shape (n_neurons,)
         Spatial information in bits per spike for each neuron.
+        Returns NumPy array for NumPy input, JAX array for JAX input.
 
     Raises
     ------
@@ -200,7 +226,8 @@ def batch_spatial_information(
     This function computes spatial information independently for each neuron.
     The occupancy is shared across all neurons (same behavioral sampling).
 
-    All inputs are converted to NumPy arrays for computation.
+    **Backend-aware**: Detects input array type and dispatches to NumPy or
+    JAX implementation. JAX uses ``vmap`` for efficient vectorization.
 
     Examples
     --------
@@ -218,6 +245,13 @@ def batch_spatial_information(
     --------
     spatial_information : Single-neuron version
     """
+    # Check if JAX array and dispatch to JAX implementation
+    if _is_jax_array(firing_rates) or _is_jax_array(occupancy):
+        from neurospatial.encoding._core_jax import spatial_information_batch
+
+        return spatial_information_batch(firing_rates, occupancy, base=base)  # type: ignore[arg-type]
+
+    # NumPy implementation
     firing_rates = np.asarray(firing_rates)
     occupancy = np.asarray(occupancy)
 
@@ -253,9 +287,9 @@ def batch_spatial_information(
 
 
 def sparsity(
-    firing_rate: NDArray[np.float64],
-    occupancy: NDArray[np.float64],
-) -> float:
+    firing_rate: ArrayLike,
+    occupancy: ArrayLike,
+) -> float | Any:
     """Compute sparsity of spatial firing for single neuron.
 
     Sparsity measures what fraction of the environment elicits significant
@@ -263,17 +297,19 @@ def sparsity(
 
     Parameters
     ----------
-    firing_rate : ndarray, shape (n_bins,)
+    firing_rate : ArrayLike, shape (n_bins,)
         Firing rate map in Hz. Can contain NaN values which are ignored.
-    occupancy : ndarray, shape (n_bins,)
+        Accepts NumPy arrays or JAX arrays.
+    occupancy : ArrayLike, shape (n_bins,)
         Time spent in each bin (seconds or any time unit). Will be normalized
         to probability internally. Can contain NaN values which are ignored.
 
     Returns
     -------
-    float
+    float | jax.Array
         Sparsity value in range [0, 1]. Lower values indicate sparser firing.
         Returns 0.0 if denominator is zero or undefined.
+        Returns float for NumPy input, JAX scalar for JAX input.
 
     Raises
     ------
@@ -296,6 +332,9 @@ def sparsity(
     - Low sparsity (0.1-0.3): Sparse, selective place field
     - High sparsity (~1.0): Uniform firing throughout environment
     - Typical place cells: 0.1-0.3
+
+    **Backend-aware**: Detects input array type and dispatches to NumPy or
+    JAX implementation. JAX arrays preserve JAX-traced compute graphs.
 
     Examples
     --------
@@ -322,7 +361,13 @@ def sparsity(
     batch_sparsity : Vectorized version for populations
     spatial_information : Complementary measure of spatial selectivity
     """
-    # Input validation
+    # Check if JAX array and dispatch to JAX implementation
+    if _is_jax_array(firing_rate) or _is_jax_array(occupancy):
+        from neurospatial.encoding._core_jax import sparsity_single
+
+        return sparsity_single(firing_rate, occupancy)  # type: ignore[arg-type]
+
+    # NumPy implementation
     firing_rate = np.asarray(firing_rate)
     occupancy = np.asarray(occupancy)
 
@@ -356,9 +401,9 @@ def sparsity(
 
 
 def batch_sparsity(
-    firing_rates: NDArray[np.float64],
-    occupancy: NDArray[np.float64],
-) -> NDArray[np.float64]:
+    firing_rates: ArrayLike,
+    occupancy: ArrayLike,
+) -> NDArray[np.float64] | Any:
     """Compute sparsity for multiple neurons.
 
     Vectorized version of `sparsity()` for efficient population analysis.
@@ -366,15 +411,17 @@ def batch_sparsity(
 
     Parameters
     ----------
-    firing_rates : ndarray, shape (n_neurons, n_bins)
+    firing_rates : ArrayLike, shape (n_neurons, n_bins)
         Firing rate maps for each neuron in Hz.
-    occupancy : ndarray, shape (n_bins,)
+        Accepts NumPy arrays or JAX arrays.
+    occupancy : ArrayLike, shape (n_bins,)
         Shared occupancy for all neurons (time spent in each bin).
 
     Returns
     -------
-    ndarray, shape (n_neurons,)
+    ndarray | jax.Array, shape (n_neurons,)
         Sparsity values in range [0, 1] for each neuron.
+        Returns NumPy array for NumPy input, JAX array for JAX input.
 
     Raises
     ------
@@ -386,8 +433,8 @@ def batch_sparsity(
     This function computes sparsity independently for each neuron.
     The occupancy is shared across all neurons (same behavioral sampling).
 
-    Currently uses NumPy internally. JAX backend support will be added in
-    Milestone 6. All inputs are converted to NumPy arrays.
+    **Backend-aware**: Detects input array type and dispatches to NumPy or
+    JAX implementation. JAX uses ``vmap`` for efficient vectorization.
 
     Examples
     --------
@@ -405,6 +452,13 @@ def batch_sparsity(
     --------
     sparsity : Single-neuron version
     """
+    # Check if JAX array and dispatch to JAX implementation
+    if _is_jax_array(firing_rates) or _is_jax_array(occupancy):
+        from neurospatial.encoding._core_jax import sparsity_batch
+
+        return sparsity_batch(firing_rates, occupancy)  # type: ignore[arg-type]
+
+    # NumPy implementation
     firing_rates = np.asarray(firing_rates)
     occupancy = np.asarray(occupancy)
 

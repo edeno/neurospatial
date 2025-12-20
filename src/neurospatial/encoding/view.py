@@ -925,7 +925,7 @@ def compute_view_rate(
         Computation backend.
 
         - 'numpy': Use NumPy (always available)
-        - 'jax': Use JAX (not yet implemented, raises NotImplementedError)
+        - 'jax': Use JAX for rate computation (requires JAX installation)
         - 'auto': Use JAX if available, otherwise NumPy
 
     Returns
@@ -1085,6 +1085,7 @@ def compute_view_rate(
     )
 
     # Apply smoothing to compute firing rate
+    # smooth_rate_map dispatches to JAX or NumPy based on backend
     firing_rate = smooth_rate_map(
         env,
         spike_counts,
@@ -1092,13 +1093,14 @@ def compute_view_rate(
         method=smoothing_method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
+        backend=resolved_backend,
     )
 
-    # Convert to JAX arrays if JAX backend is selected
+    # Convert occupancy to JAX if JAX backend is selected
+    # (firing_rate is already JAX from smooth_rate_map)
     if resolved_backend == "jax" and is_jax_available():
         import jax.numpy as jnp
 
-        firing_rate = jnp.asarray(firing_rate, dtype=jnp.float64)
         view_occupancy = jnp.asarray(view_occupancy, dtype=jnp.float64)  # type: ignore[assignment]
 
     # Return result
@@ -1181,7 +1183,7 @@ def compute_view_rates(
         Computation backend.
 
         - 'numpy': Use NumPy (always available)
-        - 'jax': Use JAX (not yet implemented, raises NotImplementedError)
+        - 'jax': Use JAX for rate computation (requires JAX installation)
         - 'auto': Use JAX if available, otherwise NumPy
 
     Returns
@@ -1381,6 +1383,7 @@ def compute_view_rates(
     )
 
     # Apply batch smoothing to compute firing rates
+    # smooth_rate_maps_batch dispatches to JAX or NumPy based on backend
     firing_rates = smooth_rate_maps_batch(
         env,
         spike_counts,
@@ -1388,13 +1391,14 @@ def compute_view_rates(
         method=smoothing_method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
+        backend=resolved_backend,
     )
 
-    # Convert to JAX arrays if JAX backend is selected
+    # Convert occupancy to JAX if JAX backend is selected
+    # (firing_rates is already JAX from smooth_rate_maps_batch)
     if resolved_backend == "jax" and is_jax_available():
         import jax.numpy as jnp
 
-        firing_rates = jnp.asarray(firing_rates, dtype=jnp.float64)
         view_occupancy = jnp.asarray(view_occupancy, dtype=jnp.float64)  # type: ignore[assignment]
 
     # Return result
