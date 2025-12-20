@@ -87,11 +87,29 @@ if TYPE_CHECKING:
 
     from neurospatial import Environment
 
+# Re-export visibility functions for convenience in view cell workflow
+from neurospatial.ops.visibility import (
+    FieldOfView,
+    compute_viewed_location,
+    compute_viewshed,
+    visibility_occupancy,
+)
+
+# ruff: noqa: RUF022 - intentionally grouped by category
 __all__ = [
+    # Result classes
     "ViewRateResult",
     "ViewRatesResult",
+    # Compute functions
     "compute_view_rate",
     "compute_view_rates",
+    # Convenience functions
+    "is_spatial_view_cell",
+    # Re-exports from ops.visibility
+    "FieldOfView",
+    "compute_viewed_location",
+    "compute_viewshed",
+    "visibility_occupancy",
 ]
 
 
@@ -1411,3 +1429,96 @@ def compute_view_rates(
         smoothing_method=smoothing_method,
         bandwidth=bandwidth,
     )
+
+
+# ==============================================================================
+# Convenience Functions
+# ==============================================================================
+
+
+def is_spatial_view_cell(
+    env: Environment,
+    spike_times: NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    *,
+    view_distance: float = 10.0,
+    gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
+    smoothing_method: Literal[
+        "diffusion_kde", "gaussian_kde", "binned"
+    ] = "diffusion_kde",
+    bandwidth: float = 5.0,
+    min_info: float = 0.5,
+) -> bool:
+    """Quick check: Is this a spatial view cell?
+
+    Convenience function for fast screening of neurons. Computes view field
+    and checks if the neuron meets spatial view cell criteria based on
+    view spatial information.
+
+    For detailed metrics, use ``compute_view_rate()`` and inspect the result's
+    methods (``is_view_cell()``, ``view_spatial_information()``, etc.).
+
+    Parameters
+    ----------
+    env : Environment
+        Spatial environment defining the discretization.
+    spike_times : NDArray[np.float64], shape (n_spikes,)
+        Times of spikes.
+    times : NDArray[np.float64], shape (n_time,)
+        Timestamps for each behavioral sample.
+    positions : NDArray[np.float64], shape (n_time, 2)
+        Animal positions in allocentric coordinates.
+    headings : NDArray[np.float64], shape (n_time,)
+        Animal heading at each time (radians).
+    view_distance : float, default=10.0
+        Distance for fixed_distance gaze model.
+    gaze_model : {"fixed_distance", "ray_cast", "boundary"}, default="fixed_distance"
+        Method for computing viewed location.
+    smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
+        Rate map smoothing method.
+    bandwidth : float, default=5.0
+        Smoothing bandwidth in environment units.
+    min_info : float, default=0.5
+        Minimum view spatial information threshold in bits/spike.
+
+    Returns
+    -------
+    bool
+        True if neuron passes spatial view cell criteria.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding.view import is_spatial_view_cell
+    >>> positions = np.random.rand(1000, 2) * 100
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
+    >>> times = np.linspace(0, 100, 1000)
+    >>> headings = np.random.uniform(0, 2 * np.pi, 1000)
+    >>> spike_times = np.random.uniform(0, 100, 50)
+    >>> result = is_spatial_view_cell(env, spike_times, times, positions, headings)
+    >>> type(result)
+    <class 'bool'>
+
+    See Also
+    --------
+    compute_view_rate : Full view rate computation
+    ViewRateResult.is_view_cell : View cell classification on result object
+    """
+    try:
+        result = compute_view_rate(
+            env,
+            spike_times,
+            times,
+            positions,
+            headings,
+            view_distance=view_distance,
+            gaze_model=gaze_model,
+            smoothing_method=smoothing_method,
+            bandwidth=bandwidth,
+        )
+        return result.is_view_cell(min_info=min_info)
+    except (ValueError, RuntimeError):
+        return False
