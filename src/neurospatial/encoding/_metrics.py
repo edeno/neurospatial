@@ -14,6 +14,10 @@ JAX implementations in ``_core_jax.py``, preserving JAX-traced compute graphs.
 - NumPy in → NumPy out
 - JAX in → JAX out
 
+**Automatic detection**: Users don't need to specify a ``backend`` parameter.
+The functions automatically detect whether inputs are NumPy or JAX arrays
+and dispatch accordingly.
+
 For host-only operations, use ``_to_numpy()`` from ``_base.py`` first.
 
 References
@@ -34,20 +38,11 @@ from typing import TYPE_CHECKING, Any, cast
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial.encoding._base import _is_jax_array
+
 if TYPE_CHECKING:
     from neurospatial import Environment
     from neurospatial.environment._protocols import EnvironmentProtocol
-
-
-def _is_jax_array(arr: ArrayLike) -> bool:
-    """Check if array is a JAX array."""
-    try:
-        import jax
-
-        return isinstance(arr, jax.Array)
-    except ImportError:
-        return False
-
 
 __all__ = [
     "batch_border_scores",

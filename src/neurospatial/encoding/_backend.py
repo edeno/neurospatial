@@ -39,6 +39,7 @@ __all__ = [
     "get_backend",
     "get_backend_name",
     "is_jax_available",
+    "validate_and_resolve_backend",
 ]
 
 # Valid backend names
@@ -215,3 +216,51 @@ def get_backend_name(name: BackendType) -> Literal["numpy", "jax"]:
     if is_jax_available():
         return "jax"
     return "numpy"
+
+
+def validate_and_resolve_backend(backend: str) -> Literal["numpy", "jax"]:
+    """Validate backend parameter and resolve 'auto' to actual backend.
+
+    Convenience function that combines backend validation with resolution.
+    Use this at the start of compute functions to validate user input and
+    get the resolved backend name.
+
+    Parameters
+    ----------
+    backend : str
+        Backend name. Must be one of ``"numpy"``, ``"jax"``, or ``"auto"``.
+
+    Returns
+    -------
+    {"numpy", "jax"}
+        The resolved backend name. For ``"auto"``, returns the backend that
+        would be selected based on availability.
+
+    Raises
+    ------
+    ValueError
+        If ``backend`` is not one of the supported backends.
+    ImportError
+        If ``backend="jax"`` but JAX is not available.
+
+    Examples
+    --------
+    >>> from neurospatial.encoding._backend import validate_and_resolve_backend
+    >>> validate_and_resolve_backend("numpy")
+    'numpy'
+
+    >>> validate_and_resolve_backend("auto")  # Resolves to actual backend
+    'numpy'
+
+    >>> validate_and_resolve_backend("invalid")  # doctest: +IGNORE_EXCEPTION_DETAIL
+    Traceback (most recent call last):
+        ...
+    ValueError: Unknown backend: 'invalid'. ...
+    """
+    if backend not in SUPPORTED_BACKENDS:
+        raise ValueError(
+            f"Unknown backend: {backend!r}. "
+            f"Supported backends are: {', '.join(repr(b) for b in SUPPORTED_BACKENDS)}"
+        )
+
+    return get_backend_name(backend)  # type: ignore[arg-type]

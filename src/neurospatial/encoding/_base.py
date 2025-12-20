@@ -2,6 +2,7 @@
 
 This module provides shared infrastructure for encoding result classes:
 
+- `_is_jax_array`: Check if an array is a JAX array
 - `_to_numpy`: Convert arrays (NumPy or JAX) to NumPy for host-only operations
 - `_get_array_module`: Detect array backend (numpy or jax.numpy) for backend-aware ops
 - `HasOccupancy`: Protocol for result classes with occupancy data
@@ -21,6 +22,39 @@ from numpy.typing import ArrayLike, NDArray
 
 if TYPE_CHECKING:
     from neurospatial import Environment
+
+
+def _is_jax_array(arr: ArrayLike) -> bool:
+    """Check if an array is a JAX array.
+
+    Use this to detect JAX arrays for backend-aware dispatch. Returns False
+    if JAX is not installed.
+
+    Parameters
+    ----------
+    arr : ArrayLike
+        Input array to check.
+
+    Returns
+    -------
+    bool
+        True if arr is a JAX array, False otherwise (including if JAX is
+        not installed).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.encoding._base import _is_jax_array
+    >>> arr = np.array([1.0, 2.0, 3.0])
+    >>> _is_jax_array(arr)
+    False
+    """
+    try:
+        import jax
+
+        return isinstance(arr, jax.Array)
+    except ImportError:
+        return False
 
 
 def _to_numpy(arr: ArrayLike) -> NDArray:
@@ -82,15 +116,10 @@ def _get_array_module(arr: ArrayLike) -> Any:
     >>> xp is np
     True
     """
-    # Check if JAX is available and if arr is a JAX array
-    try:
-        import jax
+    if _is_jax_array(arr):
         import jax.numpy as jnp
 
-        if isinstance(arr, jax.Array):
-            return jnp
-    except ImportError:
-        pass
+        return jnp
     return np
 
 
