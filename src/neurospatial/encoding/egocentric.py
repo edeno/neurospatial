@@ -84,14 +84,27 @@ from neurospatial.encoding._base import _to_numpy
 if TYPE_CHECKING:
     import pandas as pd
     from matplotlib.axes import Axes
+    from matplotlib.projections.polar import PolarAxes
 
     from neurospatial import Environment
 
+# Re-export egocentric ops for convenience in OVC workflow
+from neurospatial.ops.egocentric import compute_egocentric_bearing
+
+# ruff: noqa: RUF022 - intentionally grouped by category
 __all__ = [
+    # Result classes
     "EgocentricRateResult",
     "EgocentricRatesResult",
+    # Compute functions
     "compute_egocentric_rate",
     "compute_egocentric_rates",
+    # Convenience functions
+    "is_object_vector_cell",
+    "object_vector_score",
+    "plot_object_vector_tuning",
+    # Re-exports from ops.egocentric
+    "compute_egocentric_bearing",
 ]
 
 
@@ -1552,3 +1565,300 @@ def compute_egocentric_rates(
         n_distance_bins=n_distance_bins,
         n_direction_bins=n_direction_bins,
     )
+
+
+# ==============================================================================
+# Convenience Functions for Object-Vector Cell Analysis
+# ==============================================================================
+
+
+def _mean_resultant_length(
+    angles: NDArray[np.float64],
+    weights: NDArray[np.float64] | None = None,
+) -> float:
+    """Compute mean resultant length of circular data.
+
+    Parameters
+    ----------
+    angles : array of float
+        Angles in radians.
+    weights : array of float, optional
+        Weights for each angle. If None, uniform weights.
+
+    Returns
+    -------
+    float
+        Mean resultant length in [0, 1].
+    """
+    if weights is None:
+        weights = np.ones_like(angles)
+
+    weights = weights / np.sum(weights)
+    x = np.sum(weights * np.cos(angles))
+    y = np.sum(weights * np.sin(angles))
+
+    return float(np.sqrt(x**2 + y**2))
+
+
+def object_vector_score(
+    tuning_curve: NDArray[np.float64],
+    *,
+    max_distance_selectivity: float = 10.0,
+) -> float:
+    """Compute combined object-vector selectivity score.
+
+    The score combines distance selectivity and direction selectivity
+    following the formula:
+
+        s_OV = ((s_d - 1) / (s_d* - 1)) * s_theta
+
+    where:
+    - s_d = peak / mean (distance selectivity)
+    - s_d* = max_distance_selectivity (normalization constant)
+    - s_theta = mean resultant length (direction selectivity)
+
+    Parameters
+    ----------
+    tuning_curve : NDArray[np.float64], shape (n_dist, n_dir)
+        2D firing rate tuning curve in egocentric polar coordinates.
+    max_distance_selectivity : float, default=10.0
+        Maximum expected distance selectivity for normalization.
+        Must be > 1.
+
+    Returns
+    -------
+    float
+        Object-vector score in [0, 1]. Higher scores indicate sharper
+        tuning to a specific distance and direction.
+
+    Raises
+    ------
+    ValueError
+        If max_distance_selectivity <= 1.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.encoding.egocentric import object_vector_score
+    >>> # Sharp tuning at one location
+    >>> tc = np.zeros((10, 12)) + 0.1
+    >>> tc[5, 6] = 20.0
+    >>> score = object_vector_score(tc)
+    >>> score > 0.5
+    True
+
+    See Also
+    --------
+    is_object_vector_cell : Classify neuron as OVC
+    EgocentricRateResult.object_vector_score : Score method on result object
+    """
+    if max_distance_selectivity <= 1.0:
+        raise ValueError(
+            f"max_distance_selectivity must be > 1, got {max_distance_selectivity}"
+        )
+
+    tuning_curve = np.asarray(tuning_curve, dtype=np.float64)
+
+    # Handle NaN values
+    valid_mask = np.isfinite(tuning_curve)
+    if not np.any(valid_mask):
+        return float(np.nan)
+
+    valid_rates = tuning_curve[valid_mask]
+
+    # Compute distance selectivity
+    peak_rate = float(np.max(valid_rates))
+    mean_rate = float(np.mean(valid_rates))
+
+    if mean_rate == 0:
+        return 0.0
+
+    distance_selectivity = peak_rate / mean_rate
+
+    # Normalize distance selectivity to [0, 1]
+    normalized_dist_sel = (distance_selectivity - 1.0) / (
+        max_distance_selectivity - 1.0
+    )
+    normalized_dist_sel = float(np.clip(normalized_dist_sel, 0.0, 1.0))
+
+    # Compute direction selectivity (mean resultant length)
+    n_dir = tuning_curve.shape[1]
+    direction_bins = np.linspace(-np.pi, np.pi, n_dir + 1)
+    dir_bin_centers = (direction_bins[:-1] + direction_bins[1:]) / 2
+
+    # Marginalize over distance
+    direction_tuning = np.nansum(tuning_curve, axis=0)
+    total = np.sum(direction_tuning)
+
+    if total == 0:
+        direction_selectivity = 0.0
+    else:
+        direction_selectivity = _mean_resultant_length(
+            dir_bin_centers, weights=direction_tuning
+        )
+
+    # Combined score
+    score = normalized_dist_sel * direction_selectivity
+
+    return float(np.clip(score, 0.0, 1.0))
+
+
+def is_object_vector_cell(
+    tuning_curve: NDArray[np.float64],
+    peak_rate: float,
+    *,
+    score_threshold: float = 0.3,
+    min_peak_rate: float = 5.0,
+) -> bool:
+    """Classify neuron as object-vector cell.
+
+    A neuron is classified as an OVC if it has:
+    1. Object-vector score above threshold
+    2. Peak firing rate above minimum
+
+    Parameters
+    ----------
+    tuning_curve : NDArray[np.float64], shape (n_dist, n_dir)
+        2D firing rate tuning curve in egocentric polar coordinates.
+    peak_rate : float
+        Peak firing rate in Hz.
+    score_threshold : float, default=0.3
+        Minimum object-vector score to classify as OVC.
+    min_peak_rate : float, default=5.0
+        Minimum peak firing rate in Hz.
+
+    Returns
+    -------
+    bool
+        True if classified as object-vector cell.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.encoding.egocentric import is_object_vector_cell
+    >>> # Sharp tuning with high rate
+    >>> tc = np.zeros((10, 12)) + 0.1
+    >>> tc[5, 6] = 25.0
+    >>> is_object_vector_cell(tc, peak_rate=25.0, score_threshold=0.3)
+    True
+
+    See Also
+    --------
+    object_vector_score : Compute OVC score
+    EgocentricRateResult.is_ovc : OVC classification on result object
+    """
+    if peak_rate < min_peak_rate:
+        return False
+
+    score = object_vector_score(tuning_curve)
+
+    if np.isnan(score):
+        return False
+
+    return bool(score >= score_threshold)
+
+
+def plot_object_vector_tuning(
+    result: EgocentricRateResult,
+    ax: Axes | PolarAxes | None = None,
+    *,
+    show_peak: bool = True,
+    add_colorbar: bool = False,
+    cmap: str = "viridis",
+    **kwargs: Any,
+) -> Axes | PolarAxes:
+    """Plot object-vector tuning curve as polar heatmap.
+
+    Creates a polar plot where:
+    - Radial axis = distance from object
+    - Angular axis = egocentric direction to object
+
+    Parameters
+    ----------
+    result : EgocentricRateResult
+        Result from ``compute_egocentric_rate()``.
+    ax : matplotlib.axes.Axes, optional
+        Axes to plot on. If None, creates new figure with polar projection.
+    show_peak : bool, default=True
+        If True, mark the peak location with a marker.
+    add_colorbar : bool, default=False
+        If True, add a colorbar.
+    cmap : str, default='viridis'
+        Colormap name.
+    **kwargs : dict
+        Additional keyword arguments passed to pcolormesh.
+
+    Returns
+    -------
+    matplotlib.axes.Axes or matplotlib.projections.polar.PolarAxes
+        The axes object with the plot.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.encoding.egocentric import (
+    ...     compute_egocentric_rate,
+    ...     plot_object_vector_tuning,
+    ... )
+    >>> # Compute egocentric rate field
+    >>> result = compute_egocentric_rate(...)  # doctest: +SKIP
+    >>> ax = plot_object_vector_tuning(result)  # doctest: +SKIP
+
+    See Also
+    --------
+    EgocentricRateResult.plot : Basic plotting on result object
+    """
+    import matplotlib.pyplot as plt
+    from matplotlib.projections.polar import PolarAxes as MPLPolarAxes
+
+    # Reshape firing rate to 2D grid (distance x direction)
+    firing_rate = np.asarray(result.firing_rate, dtype=np.float64)
+    tuning_curve = firing_rate.reshape(result.n_distance_bins, result.n_direction_bins)
+
+    # Create bin edges
+    dist_min, dist_max = result.distance_range
+    distance_bins = np.linspace(dist_min, dist_max, result.n_distance_bins + 1)
+    direction_bins = np.linspace(-np.pi, np.pi, result.n_direction_bins + 1)
+
+    # Create figure if needed
+    if ax is None:
+        _, ax = plt.subplots(subplot_kw={"projection": "polar"})
+
+    # Create mesh grid for polar plot
+    theta, r = np.meshgrid(direction_bins, distance_bins)
+
+    # Plot heatmap
+    mesh = ax.pcolormesh(theta, r, tuning_curve, cmap=cmap, shading="flat", **kwargs)
+
+    # Configure polar plot
+    if isinstance(ax, MPLPolarAxes):
+        ax.set_theta_zero_location("N")  # 0 degrees at top (ahead)
+        ax.set_theta_direction(-1)  # Clockwise
+
+    # Mark peak if requested
+    if show_peak:
+        valid_mask = np.isfinite(tuning_curve)
+        if np.any(valid_mask):
+            # Find peak
+            peak_idx = np.unravel_index(np.nanargmax(tuning_curve), tuning_curve.shape)
+            dist_centers = (distance_bins[:-1] + distance_bins[1:]) / 2
+            dir_centers = (direction_bins[:-1] + direction_bins[1:]) / 2
+
+            peak_r = dist_centers[peak_idx[0]]
+            peak_theta = dir_centers[peak_idx[1]]
+
+            ax.scatter(
+                [peak_theta],
+                [peak_r],
+                color="red",
+                s=100,
+                marker="*",
+                zorder=5,
+                label="Peak",
+            )
+
+    # Add colorbar if requested
+    if add_colorbar:
+        plt.colorbar(mesh, ax=ax, label="Firing rate (Hz)")
+
+    return ax
