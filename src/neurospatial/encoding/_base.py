@@ -64,8 +64,8 @@ def _get_array_module(arr: ArrayLike) -> Any:
     Parameters
     ----------
     arr : ArrayLike
-        Input array. If it has a `__jax_array__` method, it's detected as
-        a JAX array.
+        Input array. JAX arrays are detected via isinstance check with
+        jax.Array.
 
     Returns
     -------
@@ -82,11 +82,15 @@ def _get_array_module(arr: ArrayLike) -> Any:
     >>> xp is np
     True
     """
-    # JAX arrays have a __jax_array__ method
-    if hasattr(arr, "__jax_array__"):
+    # Check if JAX is available and if arr is a JAX array
+    try:
+        import jax
         import jax.numpy as jnp
 
-        return jnp
+        if isinstance(arr, jax.Array):
+            return jnp
+    except ImportError:
+        pass
     return np
 
 

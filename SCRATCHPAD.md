@@ -3,10 +3,78 @@
 ## Current Status
 
 **Date**: 2025-12-19
-**Last Completed**: Task 6.4 - Add backend dispatch to compute functions
-**Next Task**: Task 6.5 - Update result class methods for backend awareness
+**Last Completed**: Task 6.5 - Update result class methods for backend awareness
+**Next Task**: Task 6.6 - Write JAX-specific tests
 
 ## Session Notes
+
+### Task 6.5: Update result class methods for backend awareness [COMPLETED]
+
+**Goal**: Ensure result class methods correctly handle JAX arrays.
+
+**Issue Found**:
+
+The existing `_get_array_module()` function used `hasattr(arr, "__jax_array__")` to detect JAX arrays. However, modern JAX arrays (`jaxlib._jax.ArrayImpl`) no longer have this attribute. The test `test_jax_array_returns_jax_numpy` was failing.
+
+**Root Cause**:
+
+- JAX changed their array implementation; `__jax_array__` no longer exists on JAX arrays
+- The correct way to detect JAX arrays is via `isinstance(arr, jax.Array)`
+
+**Fix Applied** (`_base.py`):
+
+```python
+def _get_array_module(arr: ArrayLike) -> Any:
+    # Check if JAX is available and if arr is a JAX array
+    try:
+        import jax
+        import jax.numpy as jnp
+
+        if isinstance(arr, jax.Array):
+            return jnp
+    except ImportError:
+        pass
+    return np
+```
+
+**Tests Created**:
+
+- `tests/encoding/test_jax_backend_awareness.py` (23 tests)
+  - `TestToNumpyWithJax`: 3 tests for JAX → NumPy conversion
+  - `TestGetArrayModuleWithJax`: 2 tests for JAX array detection
+  - `TestSpatialResultMixinWithJax`: 4 tests for mixin methods with JAX
+  - `TestSpatialRateResultWithJax`: 3 tests for single result with JAX
+  - `TestSpatialRatesResultWithJax`: 3 tests for batch result with JAX
+  - `TestDirectionalRateResultWithJax`: 3 tests for directional with JAX
+  - `TestViewRateResultWithJax`: 1 test for view with JAX
+  - `TestEgocentricRateResultWithJax`: 2 tests for egocentric with JAX
+  - `TestNumpyJaxConsistency`: 2 tests verifying NumPy/JAX produce same results
+
+**Files Modified**:
+
+- `src/neurospatial/encoding/_base.py`: Fixed `_get_array_module()` to use `isinstance(arr, jax.Array)`
+
+**Files Created**:
+
+- `tests/encoding/test_jax_backend_awareness.py` (23 tests)
+
+**Verification**:
+
+All plot methods already correctly use `_to_numpy()` or `np.asarray()` which handle JAX arrays transparently:
+
+- `SpatialRateResult.plot()` - uses `_to_numpy()`
+- `SpatialRatesResult.plot()` - uses `np.asarray()` + `_to_numpy()`
+- `EgocentricRateResult.plot()` - uses `_to_numpy()`
+- `EgocentricRatesResult.plot()` - uses `_to_numpy()`
+- `DirectionalRateResult.plot()` - uses `np.asarray()`
+- `DirectionalRatesResult.plot()` - delegates via `self[idx].plot()`
+- `ViewRateResult.plot()` - uses `_to_numpy()`
+- `ViewRatesResult.plot()` - uses `_to_numpy()`
+
+**Test Results**: 47/47 tests pass (24 base tests + 23 JAX tests)
+**Quality checks**: All ruff and mypy checks pass
+
+---
 
 ### Task 6.3: Implement JAX grid/border score computations [SKIPPED - N/A]
 

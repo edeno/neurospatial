@@ -393,10 +393,10 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Add `backend` parameter to `compute_egocentric_rate(s)`
   - [x] Route through `_backend.py` selection logic
 
-- [ ] **6.5** Update result class methods for backend awareness
-  - [ ] Ensure `_to_numpy()` handles JAX arrays correctly
-  - [ ] Ensure `_get_array_module()` detects JAX arrays
-  - [ ] Test plotting methods with JAX arrays
+- [x] **6.5** Update result class methods for backend awareness
+  - [x] Ensure `_to_numpy()` handles JAX arrays correctly
+  - [x] Ensure `_get_array_module()` detects JAX arrays
+  - [x] Test plotting methods with JAX arrays
 
 - [ ] **6.6** Write JAX-specific tests
   - [ ] Test JAX backend produces same results as NumPy
