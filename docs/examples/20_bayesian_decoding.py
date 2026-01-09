@@ -52,7 +52,7 @@ from neurospatial.decoding import (
     median_decoding_error,
     shuffle_time_bins,
 )
-from neurospatial.encoding.place import compute_place_field
+from neurospatial.encoding import compute_spatial_rate
 from neurospatial.simulation import (
     PlaceCellModel,
     generate_poisson_spikes,
@@ -174,7 +174,7 @@ fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 
 for idx, ax in enumerate(axes):
     cell_idx = idx * (n_neurons // 3)
-    field = compute_place_field(
+    result_cell = compute_spatial_rate(
         env,
         spike_times_list[cell_idx],
         times,
@@ -182,6 +182,7 @@ for idx, ax in enumerate(axes):
         smoothing_method="diffusion_kde",
         bandwidth=5.0,
     )
+    field = result_cell.firing_rate
 
     # Plot field
     x_positions = env.bin_centers[:, 0]
@@ -213,14 +214,14 @@ plt.show()
 # Compute place fields for all neurons (encoding models)
 encoding_models = np.array(
     [
-        compute_place_field(
+        compute_spatial_rate(
             env,
             spike_times_list[i],
             times,
             positions,
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
-        )
+        ).firing_rate
         for i in range(n_neurons)
     ]
 )
@@ -694,7 +695,7 @@ df.head()
 # In this notebook, you learned:
 #
 # ### Building Encoding Models
-# - Compute place fields for each neuron using `compute_place_field()`
+# - Compute place fields for each neuron using `compute_spatial_rate()` (access `.firing_rate`)
 # - Stack into encoding models array: shape `(n_neurons, n_bins)`
 #
 # ### Bayesian Decoding

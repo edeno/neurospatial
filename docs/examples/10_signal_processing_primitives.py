@@ -45,7 +45,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from neurospatial import Environment
-from neurospatial.encoding.place import compute_place_field
+from neurospatial.encoding import compute_spatial_rate
 from neurospatial.ops.graph import graph_convolve, neighbor_reduce
 
 # Random seed for reproducibility
@@ -135,9 +135,10 @@ print(f"Generated {len(spike_times)} spikes")
 
 # %%
 # Compute firing rate field with diffusion KDE (recommended for visualization)
-firing_rate = compute_place_field(
-    env, spike_times, times, positions, bandwidth=5.0, min_occupancy_seconds=0.5
+result = compute_spatial_rate(
+    env, spike_times, times, positions, bandwidth=5.0, min_occupancy=0.5
 )
+firing_rate = result.firing_rate
 
 # Compute neighbor average (for coherence)
 neighbor_avg = neighbor_reduce(env, firing_rate, op="mean", include_self=False)
@@ -341,14 +342,15 @@ plt.show()
 
 # %%
 # Smooth firing rate for cleaner edge detection
-firing_rate_smooth = compute_place_field(
+result_smooth = compute_spatial_rate(
     env,
     spike_times,
     times,
     positions,
-    min_occupancy_seconds=0.5,
+    min_occupancy=0.5,
     bandwidth=5.0,
 )
+firing_rate_smooth = result_smooth.firing_rate
 
 
 # Define Mexican hat kernel (difference of Gaussians)

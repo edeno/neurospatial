@@ -437,15 +437,15 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - Note: Old files kept for backward compatibility (403 test imports still use old locations)
   - Note: Keep `border.py`, `grid.py`, `population.py`, `phase_precession.py`
 
-- [ ] **7.3** Update example notebooks using old encoding API
-  - [ ] Update `08_spike_field_basics.ipynb` to use new API
-  - [ ] Update `10_signal_processing_primitives.ipynb` to use new API
-  - [ ] Update `11_place_field_analysis.ipynb` to use `compute_spatial_rate(s)`
-  - [ ] Update `19_real_data_bandit_task.ipynb` to use new API
-  - [ ] Update `20_bayesian_decoding.ipynb` to use `compute_spatial_rate(s)`
-  - [ ] Update `21_directional_place_fields.ipynb` to use `compute_directional_rate(s)`
-  - [ ] Update `22_spatial_view_cells.ipynb` to use `compute_view_rate(s)`
-  - [ ] Sync `examples/` and `docs/examples/` directories after updates
+- [x] **7.3** Update example notebooks using old encoding API
+  - [x] Update `08_spike_field_basics.ipynb` to use new API
+  - [x] Update `10_signal_processing_primitives.ipynb` to use new API
+  - [x] Update `11_place_field_analysis.ipynb` to use `compute_spatial_rate(s)`
+  - [x] Update `19_real_data_bandit_task.ipynb` to use new API
+  - [x] Update `20_bayesian_decoding.ipynb` to use `compute_spatial_rate(s)`
+  - [x] `21_directional_place_fields.ipynb` - DOES NOT EXIST
+  - [x] Update `22_spatial_view_cells.ipynb` to use `compute_view_rate(s)`
+  - [x] Sync `examples/` and `docs/examples/` directories after updates
 
 - [ ] **7.4** Update CLAUDE.md documentation
   - [ ] Update "Most Common Patterns" section with new API
@@ -462,6 +462,56 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [ ] Run `uv run pytest` to verify all tests pass
   - [ ] Run `uv run mypy src/neurospatial/encoding/` for type checking
   - [ ] Run `uv run ruff check . && uv run ruff format .` for linting
+
+---
+
+## Milestone 8: Bug Fixes and Robustness
+
+**Goal**: Address critical bugs and robustness issues identified during code review.
+
+**Dependencies**: Milestones 2-5 complete (core functionality working)
+
+**Success Criteria**: All identified bugs fixed, edge cases handled gracefully, API consistent across single/batch functions.
+
+### Tasks
+
+- [ ] **8.1** Fix NaN handling in egocentric nearest-object selection
+  - [ ] Replace `np.argmin` with `np.nanargmin` in `_egocentric_binning.py:283`
+  - [ ] Add guard for all-NaN case (when all objects are outside env with geodesic metric)
+  - [ ] Mask NaN distances to `np.inf` before selection, or skip invalid timepoints
+  - [ ] Add tests for out-of-env objects with geodesic distance
+  - [ ] Add tests for mixed NaN/finite distance cases
+
+- [ ] **8.2** Enforce monotonic time validation in single-neuron binning helpers
+  - [ ] Add monotonic time check to `bin_view_spike_train()` in `_view_binning.py:361`
+  - [ ] Add monotonic time check to `bin_egocentric_spike_train()` in `_egocentric_binning.py:548`
+  - [ ] Match validation behavior in batch versions
+  - [ ] Document time ordering requirement in docstrings
+  - [ ] Add tests for unsorted times raising ValueError
+
+- [ ] **8.3** Decide and codify JAX metric behavior
+  - [ ] Decide: backend-aware metrics vs host-only (NumPy) metrics
+  - [ ] Current issue: `_to_numpy()` forces NumPy in result methods, so JAX paths in `_metrics.py` never execute
+  - [ ] If backend-aware: update result methods to preserve JAX arrays through metric calls
+  - [ ] If host-only: document this behavior and remove unused JAX paths from `_metrics.py`
+  - [ ] Update `spatial.py:234` and `spatial.py:789` accordingly
+  - [ ] Add tests verifying chosen behavior
+
+- [ ] **8.4** Expose `gaze_offsets` in compute_view_rate(s) API
+  - [ ] Add `gaze_offsets` parameter to `compute_view_rate()` in `view.py:881`
+  - [ ] Add `gaze_offsets` parameter to `compute_view_rates()`
+  - [ ] Propagate through to `_view_binning` layer
+  - [ ] Document use case: eye-tracking data in primate spatial view cell studies
+  - [ ] Add tests for gaze_offsets parameter
+
+- [ ] **8.5** Optimize single-neuron compute paths to avoid redundant computation
+  - [ ] Issue: `compute_view_rate()` computes view coordinates twice (binning + occupancy)
+  - [ ] Issue: `compute_egocentric_rate()` has same redundancy
+  - [ ] For expensive gaze models (ray_cast, geodesic), this is significant overhead
+  - [ ] Option A: Accept precomputed bins as optional parameter
+  - [ ] Option B: Refactor to compute view/ego coordinates once and reuse
+  - [ ] Add performance test to verify improvement
+  - [ ] Affected files: `view.py:1079`, `egocentric.py:1175`
 
 ---
 

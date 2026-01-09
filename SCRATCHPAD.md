@@ -2,9 +2,24 @@
 
 ## Current Status
 
-**Date**: 2025-12-20
-**Last Completed**: Task 7.1 - Update encoding/__init__.py exports
-**Next Task**: Task 7.2 - Full migration of old encoding modules
+**Date**: 2026-01-08
+**Last Completed**: Task 7.3 - Update example notebooks using new encoding API
+**Next Task**: Task 7.4 - Update CLAUDE.md documentation
+
+### Task 7.3 Completion Notes
+
+Updated the following notebooks to use new encoding API:
+
+- `08_spike_field_basics.ipynb`: `compute_place_field` → `compute_spatial_rate`
+- `10_signal_processing_primitives.ipynb`: `compute_place_field` → `compute_spatial_rate`
+- `11_place_field_analysis.ipynb`: `compute_place_field` → `compute_spatial_rate`
+- `19_real_data_bandit_task.ipynb`: `compute_place_field` → `compute_spatial_rate`
+- `20_bayesian_decoding.ipynb`: `compute_place_field` → `compute_spatial_rate`
+- `22_spatial_view_cells.ipynb`: `compute_spatial_view_field` → `compute_view_rate`, `compute_place_field` → `compute_spatial_rate`
+
+Note: `21_directional_place_fields.ipynb` does not exist in the repository.
+
+All notebooks synced to `docs/examples/` directory.
 
 ## Milestone 7: Cleanup and Documentation - Migration Plan
 

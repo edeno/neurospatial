@@ -43,8 +43,8 @@ from shapely.ops import unary_union
 
 # Neurospatial imports
 from neurospatial import Environment
-from neurospatial.encoding.place import (
-    compute_place_field,
+from neurospatial.encoding import (
+    compute_spatial_rate,
     detect_place_fields,
     field_shift_distance,
     field_size,
@@ -171,7 +171,7 @@ print(f"Ground truth: {place_cell.ground_truth}")
 # Using diffusion KDE method (default) with 5 cm bandwidth
 # This method spreads spike and occupancy mass BEFORE normalization
 # and respects environment boundaries via graph connectivity
-firing_rate = compute_place_field(
+result = compute_spatial_rate(
     env,
     spike_times,
     times,
@@ -179,6 +179,7 @@ firing_rate = compute_place_field(
     smoothing_method="diffusion_kde",  # Default: boundary-aware graph-based KDE
     bandwidth=5.0,  # Spatial smoothing bandwidth (cm)
 )
+firing_rate = result.firing_rate
 
 print(
     f"Firing rate range: [{np.nanmin(firing_rate):.2f}, {np.nanmax(firing_rate):.2f}] Hz"
@@ -368,21 +369,23 @@ first_half_mask = times < mid_time
 second_half_mask = times >= mid_time
 
 # Compute firing rates for each half
-firing_rate_half1 = compute_place_field(
+result_half1 = compute_spatial_rate(
     env,
     spike_times[spike_times < mid_time],
     times[first_half_mask],
     positions[first_half_mask],
     bandwidth=5.0,
 )
+firing_rate_half1 = result_half1.firing_rate
 
-firing_rate_half2 = compute_place_field(
+result_half2 = compute_spatial_rate(
     env,
     spike_times[spike_times >= mid_time],
     times[second_half_mask],
     positions[second_half_mask],
     bandwidth=5.0,
 )
+firing_rate_half2 = result_half2.firing_rate
 
 # Compute stability (correlation between halves)
 stability_pearson = field_stability(
@@ -454,13 +457,14 @@ def analyze_place_cell(env, spike_times, times, positions):
         Dictionary containing all metrics and detected fields
     """
     # Step 1: Compute firing rate map
-    firing_rate = compute_place_field(
+    result = compute_spatial_rate(
         env,
         spike_times,
         times,
         positions,
         bandwidth=5.0,
     )
+    firing_rate = result.firing_rate
 
     # Step 2: Detect place fields
     place_fields = detect_place_fields(
@@ -493,21 +497,23 @@ def analyze_place_cell(env, spike_times, times, positions):
     first_half = times < mid_time
     second_half = times >= mid_time
 
-    rate_half1 = compute_place_field(
+    result_h1 = compute_spatial_rate(
         env,
         spike_times[spike_times < mid_time],
         times[first_half],
         positions[first_half],
         bandwidth=5.0,
     )
+    rate_half1 = result_h1.firing_rate
 
-    rate_half2 = compute_place_field(
+    result_h2 = compute_spatial_rate(
         env,
         spike_times[spike_times >= mid_time],
         times[second_half],
         positions[second_half],
         bandwidth=5.0,
     )
+    rate_half2 = result_h2.firing_rate
 
     stability = field_stability(rate_half1, rate_half2, method="pearson")
 
@@ -704,13 +710,14 @@ plt.show()
 
 # %%
 # Compute firing rate map for T-maze
-tmaze_firing_rate = compute_place_field(
+tmaze_result = compute_spatial_rate(
     tmaze_env,
     tmaze_spike_times,
     tmaze_times,
     tmaze_positions,
     bandwidth=8.0,  # Consistent smoothing
 )
+tmaze_firing_rate = tmaze_result.firing_rate
 
 print("\nComputed T-maze firing rate map:")
 print(f"  Peak rate: {tmaze_firing_rate.max():.2f} Hz")
@@ -936,13 +943,14 @@ spikes_session1 = generate_poisson_spikes(
     seed=100,
 )
 
-rate_session1 = compute_place_field(
+result_s1 = compute_spatial_rate(
     track_env,
     spikes_session1,
     track_times,
     track_positions,
     bandwidth=8.0,  # Match 08_spike_field_basics.py for consistent smoothing
 )
+rate_session1 = result_s1.firing_rate
 
 # Session 2: Same cell, but field shifted 20 cm to the right (x=50 cm)
 field_center_session2 = np.array([50.0, 50.0])  # 20 cm shift
@@ -963,13 +971,14 @@ spikes_session2 = generate_poisson_spikes(
     seed=101,
 )
 
-rate_session2 = compute_place_field(
+result_s2 = compute_spatial_rate(
     track_env,
     spikes_session2,
     track_times,
     track_positions,
     bandwidth=8.0,  # Match 08_spike_field_basics.py for consistent smoothing
 )
+rate_session2 = result_s2.firing_rate
 
 print(f"\nSession 1: {len(spikes_session1)} spikes, field at {field_center_session1}")
 print(f"Session 2: {len(spikes_session2)} spikes, field at {field_center_session2}")
@@ -1155,13 +1164,14 @@ spikes_stem = generate_poisson_spikes(
     seed=200,
 )
 
-rate_stem = compute_place_field(
+result_stem = compute_spatial_rate(
     tmaze_env,
     spikes_stem,
     maze_times,
     maze_positions,
     bandwidth=8.0,  # Match 08_spike_field_basics.py for consistent smoothing
 )
+rate_stem = result_stem.firing_rate
 
 # Session B: Place field at left arm end (far from stem start)
 # Left arm center: midpoint along the left arm
@@ -1185,13 +1195,14 @@ spikes_arm = generate_poisson_spikes(
     seed=201,
 )
 
-rate_arm = compute_place_field(
+result_arm = compute_spatial_rate(
     tmaze_env,
     spikes_arm,
     maze_times,
     maze_positions,
     bandwidth=8.0,  # Match 08_spike_field_basics.py for consistent smoothing
 )
+rate_arm = result_arm.firing_rate
 
 print(f"\nSession A (stem start): {len(spikes_stem)} spikes")
 print(f"Session B (arm end): {len(spikes_arm)} spikes")
@@ -1378,7 +1389,7 @@ print("\nAlways use geodesic distance for complex environments!")
 #
 # ### Key Functions Used
 #
-# - `compute_place_field()` - Spike train → firing rate map
+# - `compute_spatial_rate()` - Spike train → firing rate map (returns `SpatialRateResult`)
 # - `detect_place_fields()` - Automatic field detection
 # - `field_size()` - Field area in physical units
 # - `rate_map_centroid()` - Center of mass

@@ -48,11 +48,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from neurospatial import Environment
-from neurospatial.encoding.place import compute_place_field
+from neurospatial.encoding import (
+    compute_spatial_rate,
+    compute_view_rate,
+    compute_viewed_location,
+)
 from neurospatial.encoding.spatial_view import (
     FieldOfView,
-    compute_spatial_view_field,
-    compute_viewed_location,
     spatial_view_cell_metrics,
 )
 from neurospatial.ops.egocentric import heading_from_velocity
@@ -220,7 +222,7 @@ print(f"Mean firing rate: {len(pc_spikes) / times[-1]:.2f} Hz")
 # Compute view fields and place fields
 
 # View field: binned by VIEWED location
-svc_view_result = compute_spatial_view_field(
+svc_view_result = compute_view_rate(
     env,
     svc_spikes,
     times,
@@ -230,12 +232,13 @@ svc_view_result = compute_spatial_view_field(
     smoothing_method="diffusion_kde",
     bandwidth=8.0,
 )
-svc_view_field = svc_view_result.field
+svc_view_field = svc_view_result.firing_rate
 
 # Place field: binned by POSITION
-svc_place_field = compute_place_field(
+svc_place_result = compute_spatial_rate(
     env, svc_spikes, times, positions, smoothing_method="diffusion_kde", bandwidth=8.0
 )
+svc_place_field = svc_place_result.firing_rate
 
 print("Spatial view cell fields computed")
 print(f"  View field peak: {np.nanmax(svc_view_field):.2f} Hz")
@@ -243,7 +246,7 @@ print(f"  Place field peak: {np.nanmax(svc_place_field):.2f} Hz")
 
 # %%
 # Same for place cell
-pc_view_result = compute_spatial_view_field(
+pc_view_result = compute_view_rate(
     env,
     pc_spikes,
     times,
@@ -253,11 +256,12 @@ pc_view_result = compute_spatial_view_field(
     smoothing_method="diffusion_kde",
     bandwidth=8.0,
 )
-pc_view_field = pc_view_result.field
+pc_view_field = pc_view_result.firing_rate
 
-pc_place_field = compute_place_field(
+pc_place_result = compute_spatial_rate(
     env, pc_spikes, times, positions, smoothing_method="diffusion_kde", bandwidth=8.0
 )
+pc_place_field = pc_place_result.firing_rate
 
 print("Place cell fields computed")
 print(f"  View field peak: {np.nanmax(pc_view_field):.2f} Hz")
@@ -449,8 +453,8 @@ for bearing, label in zip(test_bearings, labels, strict=True):
 # ### Key Concepts
 # - **Spatial view cells** fire based on *where the animal is looking*, not where it is
 # - **Place cells** fire based on *where the animal is located*
-# - **View fields** are indexed by viewed location (use `compute_spatial_view_field`)
-# - **Place fields** are indexed by animal position (use `compute_place_field`)
+# - **View fields** are indexed by viewed location (use `compute_view_rate`, access `.firing_rate`)
+# - **Place fields** are indexed by animal position (use `compute_spatial_rate`, access `.firing_rate`)
 #
 # ### Classification
 # - Spatial view cells have higher view field information than place field information

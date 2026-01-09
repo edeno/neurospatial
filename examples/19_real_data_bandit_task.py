@@ -48,8 +48,8 @@ import numpy as np
 
 from neurospatial import Environment
 from neurospatial.animation import HeadDirectionOverlay, PositionOverlay
-from neurospatial.encoding.place import (
-    compute_place_field,
+from neurospatial.encoding import (
+    compute_spatial_rate,
     detect_place_fields,
     field_size,
     rate_map_centroid,
@@ -345,15 +345,16 @@ for unit_idx in example_units:
     spikes = spike_times_all[unit_idx]
 
     # Compute place field using diffusion KDE (boundary-aware)
-    firing_rate = compute_place_field(
+    result = compute_spatial_rate(
         env_2d,
         spikes,
         times_array,
         positions_array,
         smoothing_method="diffusion_kde",
         bandwidth=8.0,  # 8 cm smoothing
-        min_occupancy_seconds=0.5,
+        min_occupancy=0.5,
     )
+    firing_rate = result.firing_rate
 
     place_fields[unit_idx] = firing_rate
 
@@ -738,15 +739,16 @@ for unit_idx in active_units:
     spikes = spike_times_all[unit_idx]
 
     # Compute place field
-    firing_rate = compute_place_field(
+    result = compute_spatial_rate(
         env_2d,
         spikes,
         times_array,
         positions_array,
         smoothing_method="diffusion_kde",
         bandwidth=8.0,
-        min_occupancy_seconds=0.5,
+        min_occupancy=0.5,
     )
+    firing_rate = result.firing_rate
 
     # Compute metrics
     occupancy = env_2d.occupancy(times_array, positions_array, return_seconds=True)
@@ -885,7 +887,7 @@ print(f"  Median: {np.median(sparsity_all):.3f}")
 # 2. **Environment Creation**: Built both 2D and 1D linearized representations
 #    of the maze from a track graph
 #
-# 3. **Place Field Computation**: Used `compute_place_field()` with diffusion KDE
+# 3. **Place Field Computation**: Used `compute_spatial_rate()` with diffusion KDE
 #    for boundary-aware smoothing
 #
 # 4. **Interactive Visualization**: Used napari to animate position overlays on
@@ -901,7 +903,7 @@ print(f"  Median: {np.median(sparsity_all):.3f}")
 #
 # - `Environment.from_graph()` - Create 1D linearized environment
 # - `Environment.from_samples()` - Create 2D spatial environment
-# - `compute_place_field()` - Convert spikes to firing rate maps
+# - `compute_spatial_rate()` - Convert spikes to firing rate maps (returns `SpatialRateResult`)
 # - `env.animate_fields()` - Interactive napari visualization
 # - `PositionOverlay` - Animate animal position with trail
 # - `skaggs_information()` - Measure spatial information (bits/spike)
