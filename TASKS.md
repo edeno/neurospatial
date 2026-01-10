@@ -458,10 +458,10 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Add batch processing examples
   - [x] Add `to_dataframe()` usage examples
 
-- [ ] **7.6** Run full test suite and fix regressions
-  - [ ] Run `uv run pytest` to verify all tests pass
-  - [ ] Run `uv run mypy src/neurospatial/encoding/` for type checking
-  - [ ] Run `uv run ruff check . && uv run ruff format .` for linting
+- [x] **7.6** Run full test suite and fix regressions
+  - [x] Run `uv run pytest` to verify all tests pass (9052 passed, 19 skipped)
+  - [x] Run `uv run mypy src/neurospatial/encoding/` for type checking (25 files, no issues)
+  - [x] Run `uv run ruff check . && uv run ruff format .` for linting (580 files formatted)
 
 ---
 
