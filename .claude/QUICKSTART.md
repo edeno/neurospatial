@@ -98,30 +98,69 @@ nd_pos = env.linear_to_nd(linear_pos)
 
 ### Neural Analysis
 
-**Place fields:**
+**Place fields (single neuron):**
 
 ```python
-from neurospatial.encoding.place import compute_place_field
+from neurospatial.encoding import compute_spatial_rate
 
-# Compute place field for one neuron
-firing_rate = compute_place_field(
+# Compute place field for one neuron (returns SpatialRateResult)
+result = compute_spatial_rate(
     env, spike_times, times, positions,
     smoothing_method="diffusion_kde",  # Default: graph-based boundary-aware KDE
-    bandwidth=5.0  # Smoothing bandwidth (cm)
+    bandwidth=5.0,  # Smoothing bandwidth (cm)
+    min_occupancy=0.5,  # Minimum seconds in bin (default: 0.0)
 )
-# Methods: "diffusion_kde" (default), "gaussian_kde", "binned" (legacy)
+# Access the firing rate
+firing_rate = result.firing_rate  # Shape: (n_bins,)
+
+# Convenience methods on result object
+peak_coords = result.peak_locations()      # (n_dims,) coordinates of peak
+peak_rate = result.peak_firing_rates()     # Scalar max firing rate
+info = result.spatial_information()        # Skaggs info (bits/spike)
+```
+
+**Place fields (population):**
+
+```python
+from neurospatial.encoding import compute_spatial_rates
+
+# Compute place fields for multiple neurons
+spike_times_list = [neuron1_spikes, neuron2_spikes, neuron3_spikes]
+result = compute_spatial_rates(
+    env, spike_times_list, times, positions,
+    smoothing_method="diffusion_kde",
+    bandwidth=5.0,
+    n_jobs=4,  # Parallelize over neurons
+)
+
+# Access results
+firing_rates = result.firing_rates  # Shape: (n_neurons, n_bins)
+
+# Batch metrics
+info = result.spatial_information()  # (n_neurons,)
+sparsity = result.sparsity()         # (n_neurons,)
+peaks = result.peak_locations()      # (n_neurons, n_dims)
+
+# Export to DataFrame
+df = result.to_dataframe()
+print(df.columns)  # ['neuron_id', 'peak_x', 'peak_y', 'peak_rate', 'spatial_info', ...]
+
+# Iterate over neurons
+for i, single_result in enumerate(result):
+    single_result.plot()  # Plot individual place field
 ```
 
 **Bayesian decoding:**
 
 ```python
+from neurospatial.encoding import compute_spatial_rates
 from neurospatial.decoding import decode_position, decoding_error
 
-# Build encoding models (one per neuron)
-encoding_models = np.array([
-    compute_place_field(env, spike_times_list[i], times, positions, bandwidth=8.0)
-    for i in range(n_neurons)
-])  # Shape: (n_neurons, n_bins)
+# Build encoding models (one per neuron) using batch API
+result = compute_spatial_rates(
+    env, spike_times_list, times, positions, bandwidth=8.0
+)
+encoding_models = result.firing_rates  # Shape: (n_neurons, n_bins)
 
 # Bin spikes for decoding
 dt = 0.025  # 25 ms time bins
@@ -346,40 +385,62 @@ ego_env = Environment.from_polar_egocentric(
 
 Analyze cells that encode distance and direction to objects in egocentric coordinates:
 
-**Compute object-vector field:**
+**Compute egocentric rate field (single neuron):**
 
 ```python
-from neurospatial.encoding.object_vector import compute_object_vector_field
+from neurospatial.encoding import compute_egocentric_rate
 
 # Define object positions in allocentric (world) coordinates
 object_positions = np.array([[50.0, 30.0], [80.0, 60.0]])  # 2 objects
 
-# Compute object-vector field (egocentric polar representation)
-result = compute_object_vector_field(
+# Compute egocentric polar field (returns EgocentricRateResult)
+result = compute_egocentric_rate(
     spike_times=spike_times,          # Spike times for one neuron
     times=times,                       # Trajectory timestamps
     positions=positions,               # Animal positions (n_time, 2)
     headings=headings,                 # Animal heading angles (radians)
     object_positions=object_positions,
-    max_distance=50.0,                 # Max distance to consider (cm)
+    distance_range=(0.0, 50.0),        # Distance range (cm)
     n_distance_bins=10,                # Number of radial bins
     n_direction_bins=12,               # Number of angular bins
-    smoothing_method="diffusion_kde",            # or "binned"
 )
 
 # Access results
-field = result.field           # Firing rate in egocentric polar space
-ego_env = result.ego_env       # Egocentric polar environment
-occupancy = result.occupancy   # Time spent in each bin
+firing_rate = result.firing_rate  # Firing rate in egocentric polar space
+ego_env = result.ego_env          # Egocentric polar environment
+occupancy = result.occupancy      # Time spent in each bin
 
-# Find preferred distance and direction
-peak_idx = np.nanargmax(field)
-preferred_distance = ego_env.bin_centers[peak_idx, 0]
-preferred_direction = ego_env.bin_centers[peak_idx, 1]
-print(f"Preferred: {preferred_distance:.1f} cm at {np.degrees(preferred_direction):.0f}°")
+# Convenience methods
+pref_dist = result.preferred_distance()    # Distance component of peak
+pref_dir = result.preferred_direction()    # Direction component (0=ahead)
+print(f"Preferred: {pref_dist:.1f} cm at {np.degrees(pref_dir):.0f}°")
 ```
 
-**Classify object-vector cells:**
+**Compute egocentric rate fields (population):**
+
+```python
+from neurospatial.encoding import compute_egocentric_rates
+
+# Compute fields for multiple neurons
+spike_times_list = [neuron1_spikes, neuron2_spikes, neuron3_spikes]
+result = compute_egocentric_rates(
+    spike_times_list, times, positions, headings, object_positions,
+    distance_range=(0.0, 50.0),
+    n_distance_bins=10,
+    n_direction_bins=12,
+    n_jobs=4,  # Parallelize
+)
+
+# Batch metrics
+pref_dists = result.preferred_distances()  # (n_neurons,)
+pref_dirs = result.preferred_directions()  # (n_neurons,)
+ovcs = result.detect_ovcs(min_info=0.5)    # (n_neurons,) bool
+
+# Export to DataFrame
+df = result.to_dataframe()
+```
+
+**Classify object-vector cells (legacy API):**
 
 ```python
 from neurospatial.encoding.object_vector import (
@@ -401,13 +462,6 @@ metrics = compute_object_vector_tuning(
 print(metrics.interpretation())  # Human-readable summary
 print(f"OVC score: {metrics.object_vector_score:.3f}")
 print(f"Peak rate: {metrics.peak_rate:.1f} Hz")
-
-# Classify
-if is_object_vector_cell(
-    metrics.tuning_curve, metrics.peak_rate,
-    score_threshold=0.3, min_peak_rate=5.0
-):
-    print("This is an object-vector cell!")
 
 # Plot polar tuning curve
 fig, ax = plot_object_vector_tuning(metrics, mark_peak=True, colorbar=True)
@@ -462,13 +516,13 @@ env.animate_fields(fields, frame_times=frame_times, overlays=[overlay])
 
 Analyze cells that fire when the animal is *looking at* a specific location (not *at* that location):
 
-**Compute spatial view field:**
+**Compute view field (single neuron):**
 
 ```python
-from neurospatial.encoding.spatial_view import compute_spatial_view_field
+from neurospatial.encoding import compute_view_rate
 
 # Compute view field (binned by *viewed location*, not position)
-result = compute_spatial_view_field(
+result = compute_view_rate(
     env=env,
     spike_times=spike_times,
     times=times,
@@ -480,17 +534,41 @@ result = compute_spatial_view_field(
 )
 
 # Access results
-view_field = result.field          # Firing rate by viewed location
+view_field = result.firing_rate       # Firing rate by viewed location
 view_occupancy = result.view_occupancy  # Time viewing each bin
 
 # Compare to place field (binned by position)
-from neurospatial.encoding.place import compute_place_field
-place_field = compute_place_field(env, spike_times, times, positions)
+from neurospatial.encoding import compute_spatial_rate
+place_result = compute_spatial_rate(env, spike_times, times, positions)
+place_field = place_result.firing_rate
 
 # For spatial view cells: view_field differs from place_field
 ```
 
-**Classify spatial view cells:**
+**Compute view fields (population):**
+
+```python
+from neurospatial.encoding import compute_view_rates
+
+# Compute view fields for multiple neurons
+spike_times_list = [neuron1_spikes, neuron2_spikes, neuron3_spikes]
+result = compute_view_rates(
+    env, spike_times_list, times, positions, headings,
+    view_distance=15.0,
+    gaze_model="fixed_distance",
+    n_jobs=4,  # Parallelize
+)
+
+# Batch metrics
+peaks = result.peak_view_locations()       # (n_neurons, n_dims)
+info = result.view_spatial_information()   # (n_neurons,)
+view_cells = result.detect_view_cells(min_info=0.5)  # (n_neurons,) bool
+
+# Export to DataFrame
+df = result.to_dataframe()
+```
+
+**Classify spatial view cells (legacy API):**
 
 ```python
 from neurospatial.encoding.spatial_view import (

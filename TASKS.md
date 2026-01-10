@@ -453,10 +453,10 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Add backend parameter documentation
   - [x] Document result class methods
 
-- [ ] **7.5** Update QUICKSTART.md documentation
-  - [ ] Update neural encoding section
-  - [ ] Add batch processing examples
-  - [ ] Add `to_dataframe()` usage examples
+- [x] **7.5** Update QUICKSTART.md documentation
+  - [x] Update neural encoding section
+  - [x] Add batch processing examples
+  - [x] Add `to_dataframe()` usage examples
 
 - [ ] **7.6** Run full test suite and fix regressions
   - [ ] Run `uv run pytest` to verify all tests pass
