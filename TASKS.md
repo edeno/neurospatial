@@ -483,12 +483,12 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Add tests for out-of-env objects with geodesic distance
   - [x] Add tests for mixed NaN/finite distance cases
 
-- [ ] **8.2** Enforce monotonic time validation in single-neuron binning helpers
-  - [ ] Add monotonic time check to `bin_view_spike_train()` in `_view_binning.py:361`
-  - [ ] Add monotonic time check to `bin_egocentric_spike_train()` in `_egocentric_binning.py:548`
-  - [ ] Match validation behavior in batch versions
-  - [ ] Document time ordering requirement in docstrings
-  - [ ] Add tests for unsorted times raising ValueError
+- [x] **8.2** Enforce monotonic time validation in single-neuron binning helpers
+  - [x] Add monotonic time check to `bin_view_spike_train()` in `_view_binning.py:361`
+  - [x] Add monotonic time check to `bin_egocentric_spike_train()` in `_egocentric_binning.py:548`
+  - [x] Match validation behavior in batch versions
+  - [x] Document time ordering requirement in docstrings
+  - [x] Add tests for unsorted times raising ValueError
 
 - [ ] **8.3** Decide and codify JAX metric behavior
   - [ ] Decide: backend-aware metrics vs host-only (NumPy) metrics

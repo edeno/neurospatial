@@ -546,6 +546,58 @@ class TestBinViewSpikeTrainGazeModels:
         assert spike_counts.shape == (simple_env.n_bins,)
 
 
+class TestBinViewSpikeTrainValidation:
+    """Tests for input validation in bin_view_spike_train (single neuron)."""
+
+    def test_unsorted_times_raises_error(
+        self,
+        simple_env: Environment,
+    ) -> None:
+        """bin_view_spike_train should reject unsorted times.
+
+        This matches the validation behavior of bin_view_spike_trains (batch version).
+        """
+        from neurospatial.encoding._view_binning import bin_view_spike_train
+
+        times = np.array([0.0, 2.0, 1.0, 3.0])  # Not monotonic
+        positions = np.tile([50, 50], (4, 1))
+        headings = np.zeros(4)
+        spike_times = np.array([0.5, 1.5])
+
+        with pytest.raises(ValueError, match="monotonically non-decreasing"):
+            bin_view_spike_train(
+                simple_env,
+                spike_times,
+                times,
+                positions,
+                headings,
+            )
+
+    def test_insufficient_samples_raises_error(
+        self,
+        simple_env: Environment,
+    ) -> None:
+        """bin_view_spike_train should reject fewer than 2 samples.
+
+        This matches the validation behavior of bin_view_spike_trains (batch version).
+        """
+        from neurospatial.encoding._view_binning import bin_view_spike_train
+
+        times = np.array([0.0])  # Only 1 sample
+        positions = np.array([[50, 50]])
+        headings = np.array([0.0])
+        spike_times = np.array([0.5])
+
+        with pytest.raises(ValueError, match="At least 2 samples"):
+            bin_view_spike_train(
+                simple_env,
+                spike_times,
+                times,
+                positions,
+                headings,
+            )
+
+
 # ==============================================================================
 # Test bin_view_spike_trains (batch)
 # ==============================================================================

@@ -615,6 +615,8 @@ def bin_egocentric_spike_train(
     ------
     ValueError
         If distance_metric="geodesic" but env is None.
+        If fewer than 2 trajectory samples provided.
+        If times are not monotonically non-decreasing.
 
     Notes
     -----
@@ -649,6 +651,9 @@ def bin_egocentric_spike_train(
     positions = np.asarray(positions, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64).ravel()
     object_positions = np.asarray(object_positions, dtype=np.float64)
+
+    # Validate times (minimum samples and monotonicity)
+    _validate_times(times, context="egocentric spike binning")
 
     n_samples = len(times)
 

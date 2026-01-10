@@ -400,6 +400,12 @@ def bin_view_spike_train(
         Number of spikes in each spatial bin based on viewed location
         (float64 for compatibility with smoothing operations).
 
+    Raises
+    ------
+    ValueError
+        If fewer than 2 trajectory samples provided.
+        If times are not monotonically non-decreasing.
+
     Notes
     -----
     Spikes are assigned to bins based on the viewed location at the nearest
@@ -443,6 +449,9 @@ def bin_view_spike_train(
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
+
+    # Validate times (minimum samples and monotonicity)
+    _validate_times(times, context="view spike binning")
 
     n_samples = len(times)
     n_bins = env.n_bins

@@ -3,8 +3,39 @@
 ## Current Status
 
 **Date**: 2026-01-10
-**Last Completed**: Task 8.1 (NaN handling in egocentric nearest-object selection)
-**Next Task**: Task 8.2 (Enforce monotonic time validation in single-neuron binning helpers)
+**Last Completed**: Task 8.2 (Enforce monotonic time validation in single-neuron binning helpers)
+**Next Task**: Task 8.3 (Decide and codify JAX metric behavior)
+
+### Task 8.2 Completion Notes (2026-01-10)
+
+**Problem**: The single-neuron binning functions `bin_view_spike_train()` and
+`bin_egocentric_spike_train()` did not validate that times were monotonically
+increasing, while their batch counterparts (`bin_view_spike_trains()` and
+`bin_egocentric_spike_trains()`) did. This inconsistency could lead to silent
+incorrect results when unsorted times were passed to single-neuron functions.
+
+**Solution**: Added `_validate_times()` calls to both single-neuron functions,
+matching the behavior of their batch counterparts.
+
+**Files Modified**:
+
+- `src/neurospatial/encoding/_view_binning.py` (line 448: added validation call, lines 403-406: added Raises section to docstring)
+- `src/neurospatial/encoding/_egocentric_binning.py` (line 653: added validation call, lines 617-619: added to Raises section)
+- `tests/encoding/test_encoding_view_binning.py` (added `TestBinViewSpikeTrainValidation` class with 2 tests)
+- `tests/encoding/test_encoding_egocentric_binning.py` (added `TestBinEgocentricSpikeTrainValidation` class with 2 tests)
+
+**Tests Added**:
+
+- `TestBinViewSpikeTrainValidation.test_unsorted_times_raises_error` - Unsorted times raise ValueError
+- `TestBinViewSpikeTrainValidation.test_insufficient_samples_raises_error` - <2 samples raise ValueError
+- `TestBinEgocentricSpikeTrainValidation.test_unsorted_times_raises_error` - Unsorted times raise ValueError
+- `TestBinEgocentricSpikeTrainValidation.test_insufficient_samples_raises_error` - <2 samples raise ValueError
+
+**Validation**:
+
+- All 102 tests in view/egocentric binning test files pass
+- mypy: no issues in 2 source files
+- ruff: all checks passed, files already formatted
 
 ### Task 8.1 Completion Notes (2026-01-10)
 
