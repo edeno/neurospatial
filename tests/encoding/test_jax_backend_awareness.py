@@ -308,7 +308,8 @@ class TestSpatialRateResultWithJax:
         plt.close("all")
 
     def test_spatial_information_with_jax(self, simple_env: Environment) -> None:
-        """spatial_information() should work with JAX arrays."""
+        """spatial_information() should work with JAX arrays and return JAX scalar."""
+        import jax
         import jax.numpy as jnp
 
         from neurospatial.encoding.spatial import SpatialRateResult
@@ -327,8 +328,9 @@ class TestSpatialRateResultWithJax:
         )
 
         info = result.spatial_information()
-        assert isinstance(info, float)
-        assert info >= 0.0
+        # Backend-aware: JAX input -> JAX output
+        assert isinstance(info, jax.Array)
+        assert float(info) >= 0.0
 
     def test_peak_location_with_jax(self, simple_env: Environment) -> None:
         """peak_location() should work with JAX arrays."""
@@ -390,7 +392,8 @@ class TestSpatialRatesResultWithJax:
         plt.close("all")
 
     def test_spatial_information_with_jax(self, simple_env: Environment) -> None:
-        """spatial_information() should work with JAX arrays."""
+        """spatial_information() should work with JAX arrays and return JAX array."""
+        import jax
         import jax.numpy as jnp
 
         from neurospatial.encoding.spatial import SpatialRatesResult
@@ -409,7 +412,8 @@ class TestSpatialRatesResultWithJax:
         )
 
         info = result.spatial_information()
-        assert isinstance(info, np.ndarray)
+        # Backend-aware: JAX input -> JAX output
+        assert isinstance(info, jax.Array)
         assert info.shape == (n_neurons,)
 
     def test_getitem_with_jax(self, simple_env: Environment) -> None:
@@ -725,3 +729,188 @@ class TestNumpyJaxConsistency:
 
         # Should be the same
         np.testing.assert_array_equal(peak_np, peak_jax)
+
+
+# ==============================================================================
+# Test JAX array preservation through metric calls (Task 8.3)
+# ==============================================================================
+
+
+@skip_without_jax
+class TestJaxArrayPreservation:
+    """Verify that JAX arrays are preserved through backend-aware metric calls.
+
+    These tests verify the backend-aware behavior: when JAX arrays are passed
+    to metric functions via result class methods, the output should also be
+    JAX arrays (not converted to NumPy).
+
+    This is critical for JAX-traced compute graphs and GPU workflows.
+    """
+
+    def test_spatial_information_preserves_jax_single(
+        self, simple_env: Environment
+    ) -> None:
+        """spatial_information() on SpatialRateResult should return JAX scalar."""
+        import jax
+        import jax.numpy as jnp
+
+        jax.config.update("jax_enable_x64", True)
+
+        from neurospatial.encoding.spatial import SpatialRateResult
+
+        n_bins = simple_env.n_bins
+        firing_rate_jax = jnp.zeros(n_bins).at[n_bins // 2].set(10.0)
+        occupancy_jax = jnp.ones(n_bins)
+
+        result = SpatialRateResult(
+            firing_rate=firing_rate_jax,  # type: ignore[arg-type]
+            occupancy=occupancy_jax,  # type: ignore[arg-type]
+            env=simple_env,
+            smoothing_method="binned",
+            bandwidth=5.0,
+        )
+
+        info = result.spatial_information()
+        # Should be a JAX array (scalar), not a Python float
+        assert isinstance(info, jax.Array), (
+            f"Expected jax.Array, got {type(info)}. "
+            "JAX arrays should be preserved through metric calls."
+        )
+
+    def test_sparsity_preserves_jax_single(self, simple_env: Environment) -> None:
+        """sparsity() on SpatialRateResult should return JAX scalar."""
+        import jax
+        import jax.numpy as jnp
+
+        jax.config.update("jax_enable_x64", True)
+
+        from neurospatial.encoding.spatial import SpatialRateResult
+
+        n_bins = simple_env.n_bins
+        firing_rate_jax = jnp.zeros(n_bins).at[n_bins // 2].set(10.0)
+        occupancy_jax = jnp.ones(n_bins)
+
+        result = SpatialRateResult(
+            firing_rate=firing_rate_jax,  # type: ignore[arg-type]
+            occupancy=occupancy_jax,  # type: ignore[arg-type]
+            env=simple_env,
+            smoothing_method="binned",
+            bandwidth=5.0,
+        )
+
+        spars = result.sparsity()
+        # Should be a JAX array (scalar), not a Python float
+        assert isinstance(spars, jax.Array), (
+            f"Expected jax.Array, got {type(spars)}. "
+            "JAX arrays should be preserved through metric calls."
+        )
+
+    def test_spatial_information_preserves_jax_batch(
+        self, simple_env: Environment
+    ) -> None:
+        """spatial_information() on SpatialRatesResult should return JAX array."""
+        import jax
+        import jax.numpy as jnp
+
+        jax.config.update("jax_enable_x64", True)
+
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        n_bins = simple_env.n_bins
+        n_neurons = 3
+        firing_rates_np = np.zeros((n_neurons, n_bins))
+        for i in range(n_neurons):
+            firing_rates_np[i, i + 1] = 10.0
+        firing_rates_jax = jnp.array(firing_rates_np)
+        occupancy_jax = jnp.ones(n_bins)
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_jax,  # type: ignore[arg-type]
+            occupancy=occupancy_jax,  # type: ignore[arg-type]
+            env=simple_env,
+            smoothing_method="binned",
+            bandwidth=5.0,
+        )
+
+        info = result.spatial_information()
+        # Should be a JAX array, not NumPy
+        assert isinstance(info, jax.Array), (
+            f"Expected jax.Array, got {type(info)}. "
+            "JAX arrays should be preserved through metric calls."
+        )
+        assert info.shape == (n_neurons,)
+
+    def test_sparsity_preserves_jax_batch(self, simple_env: Environment) -> None:
+        """sparsity() on SpatialRatesResult should return JAX array."""
+        import jax
+        import jax.numpy as jnp
+
+        jax.config.update("jax_enable_x64", True)
+
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        n_bins = simple_env.n_bins
+        n_neurons = 3
+        firing_rates_np = np.zeros((n_neurons, n_bins))
+        for i in range(n_neurons):
+            firing_rates_np[i, i + 1] = 10.0
+        firing_rates_jax = jnp.array(firing_rates_np)
+        occupancy_jax = jnp.ones(n_bins)
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_jax,  # type: ignore[arg-type]
+            occupancy=occupancy_jax,  # type: ignore[arg-type]
+            env=simple_env,
+            smoothing_method="binned",
+            bandwidth=5.0,
+        )
+
+        spars = result.sparsity()
+        # Should be a JAX array, not NumPy
+        assert isinstance(spars, jax.Array), (
+            f"Expected jax.Array, got {type(spars)}. "
+            "JAX arrays should be preserved through metric calls."
+        )
+        assert spars.shape == (n_neurons,)
+
+    def test_metrics_module_preserves_jax_direct(self) -> None:
+        """_metrics module should preserve JAX arrays when called directly."""
+        import jax
+        import jax.numpy as jnp
+
+        jax.config.update("jax_enable_x64", True)
+
+        from neurospatial.encoding._metrics import (
+            batch_sparsity,
+            batch_spatial_information,
+            sparsity,
+            spatial_information,
+        )
+
+        n_bins = 10
+        n_neurons = 3
+
+        # Single neuron test
+        firing_rate_jax = jnp.zeros(n_bins).at[5].set(10.0)
+        occupancy_jax = jnp.ones(n_bins)
+
+        info = spatial_information(firing_rate_jax, occupancy_jax)
+        spars = sparsity(firing_rate_jax, occupancy_jax)
+
+        assert isinstance(info, jax.Array), f"Expected jax.Array, got {type(info)}"
+        assert isinstance(spars, jax.Array), f"Expected jax.Array, got {type(spars)}"
+
+        # Batch test
+        firing_rates_jax = jnp.zeros((n_neurons, n_bins))
+        for i in range(n_neurons):
+            firing_rates_jax = firing_rates_jax.at[i, i + 1].set(10.0)
+
+        info_batch = batch_spatial_information(firing_rates_jax, occupancy_jax)
+        spars_batch = batch_sparsity(firing_rates_jax, occupancy_jax)
+
+        assert isinstance(info_batch, jax.Array), (
+            f"Expected jax.Array, got {type(info_batch)}"
+        )
+        assert isinstance(spars_batch, jax.Array), (
+            f"Expected jax.Array, got {type(spars_batch)}"
+        )

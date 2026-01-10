@@ -231,7 +231,7 @@ class SpatialRateResult(SpatialResultMixin):
         """
         return self.peak_locations()
 
-    def spatial_information(self) -> float:
+    def spatial_information(self) -> float | Any:
         """Skaggs spatial information (bits per spike).
 
         Quantifies how much information each spike conveys about the
@@ -240,9 +240,12 @@ class SpatialRateResult(SpatialResultMixin):
 
         Returns
         -------
-        float
+        float | jax.Array
             Spatial information in bits/spike. Always non-negative.
             Returns 0.0 for uniform firing.
+
+            **Backend-aware**: Returns float for NumPy input,
+            JAX scalar for JAX input.
 
         Notes
         -----
@@ -268,14 +271,17 @@ class SpatialRateResult(SpatialResultMixin):
         >>> result = SpatialRateResult(...)
         >>> info = result.spatial_information()
         >>> print(f"Spatial information: {info:.2f} bits/spike")
+
+        See Also
+        --------
+        neurospatial.encoding._metrics.spatial_information : Underlying computation
         """
         from neurospatial.encoding._metrics import spatial_information
 
-        return spatial_information(
-            _to_numpy(self.firing_rate), _to_numpy(self.occupancy)
-        )
+        # Pass arrays directly - _metrics.py handles JAX dispatch
+        return spatial_information(self.firing_rate, self.occupancy)
 
-    def sparsity(self) -> float:
+    def sparsity(self) -> float | Any:
         """Sparsity of spatial firing.
 
         Measures what fraction of the environment elicits significant
@@ -283,10 +289,13 @@ class SpatialRateResult(SpatialResultMixin):
 
         Returns
         -------
-        float
+        float | jax.Array
             Sparsity value in range [0, 1].
             - Low (0.1-0.3): Sparse, selective place field
             - High (~1.0): Uniform firing throughout environment
+
+            **Backend-aware**: Returns float for NumPy input,
+            JAX scalar for JAX input.
 
         Notes
         -----
@@ -306,10 +315,15 @@ class SpatialRateResult(SpatialResultMixin):
         >>> result = SpatialRateResult(...)
         >>> spars = result.sparsity()
         >>> print(f"Sparsity: {spars:.2f}")
+
+        See Also
+        --------
+        neurospatial.encoding._metrics.sparsity : Underlying computation
         """
         from neurospatial.encoding._metrics import sparsity
 
-        return sparsity(_to_numpy(self.firing_rate), _to_numpy(self.occupancy))
+        # Pass arrays directly - _metrics.py handles JAX dispatch
+        return sparsity(self.firing_rate, self.occupancy)
 
     def grid_score(self) -> float:
         """Grid score (hexagonal periodicity).
@@ -786,7 +800,7 @@ class SpatialRatesResult(SpatialResultMixin):
         rates: NDArray[np.float64] = np.asarray(self.firing_rates)
         return self.env.plot_field(_to_numpy(rates[idx]), ax=ax, **kwargs)
 
-    def spatial_information(self) -> NDArray[np.float64]:
+    def spatial_information(self) -> NDArray[np.float64] | Any:
         """Skaggs spatial information (bits per spike) for all neurons.
 
         Quantifies how much information each spike conveys about the
@@ -795,9 +809,12 @@ class SpatialRatesResult(SpatialResultMixin):
 
         Returns
         -------
-        ndarray, shape (n_neurons,)
+        ndarray | jax.Array, shape (n_neurons,)
             Spatial information in bits/spike for each neuron.
             Always non-negative. Returns 0.0 for uniform firing.
+
+            **Backend-aware**: Returns NumPy array for NumPy input,
+            JAX array for JAX input.
 
         Notes
         -----
@@ -823,14 +840,17 @@ class SpatialRatesResult(SpatialResultMixin):
         >>> result = SpatialRatesResult(...)
         >>> info = result.spatial_information()
         >>> print(f"Mean spatial information: {info.mean():.2f} bits/spike")
+
+        See Also
+        --------
+        neurospatial.encoding._metrics.batch_spatial_information : Underlying computation
         """
         from neurospatial.encoding._metrics import batch_spatial_information
 
-        return batch_spatial_information(
-            _to_numpy(self.firing_rates), _to_numpy(self.occupancy)
-        )
+        # Pass arrays directly - _metrics.py handles JAX dispatch
+        return batch_spatial_information(self.firing_rates, self.occupancy)
 
-    def sparsity(self) -> NDArray[np.float64]:
+    def sparsity(self) -> NDArray[np.float64] | Any:
         """Sparsity of spatial firing for all neurons.
 
         Measures what fraction of the environment elicits significant
@@ -838,10 +858,13 @@ class SpatialRatesResult(SpatialResultMixin):
 
         Returns
         -------
-        ndarray, shape (n_neurons,)
+        ndarray | jax.Array, shape (n_neurons,)
             Sparsity values in range [0, 1] for each neuron.
             - Low (0.1-0.3): Sparse, selective place field
             - High (~1.0): Uniform firing throughout environment
+
+            **Backend-aware**: Returns NumPy array for NumPy input,
+            JAX array for JAX input.
 
         Notes
         -----
@@ -861,10 +884,15 @@ class SpatialRatesResult(SpatialResultMixin):
         >>> result = SpatialRatesResult(...)
         >>> spars = result.sparsity()
         >>> print(f"Mean sparsity: {spars.mean():.2f}")
+
+        See Also
+        --------
+        neurospatial.encoding._metrics.batch_sparsity : Underlying computation
         """
         from neurospatial.encoding._metrics import batch_sparsity
 
-        return batch_sparsity(_to_numpy(self.firing_rates), _to_numpy(self.occupancy))
+        # Pass arrays directly - _metrics.py handles JAX dispatch
+        return batch_sparsity(self.firing_rates, self.occupancy)
 
     def grid_scores(self) -> NDArray[np.float64]:
         """Grid scores (hexagonal periodicity) for all neurons.

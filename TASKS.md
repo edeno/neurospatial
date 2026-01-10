@@ -490,13 +490,19 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Document time ordering requirement in docstrings
   - [x] Add tests for unsorted times raising ValueError
 
-- [ ] **8.3** Decide and codify JAX metric behavior
-  - [ ] Decide: backend-aware metrics vs host-only (NumPy) metrics
-  - [ ] Current issue: `_to_numpy()` forces NumPy in result methods, so JAX paths in `_metrics.py` never execute
-  - [ ] If backend-aware: update result methods to preserve JAX arrays through metric calls
-  - [ ] If host-only: document this behavior and remove unused JAX paths from `_metrics.py`
-  - [ ] Update `spatial.py:234` and `spatial.py:789` accordingly
-  - [ ] Add tests verifying chosen behavior
+- [x] **8.3** Decide and codify JAX metric behavior
+  - [x] Decide: backend-aware metrics vs host-only (NumPy) metrics
+    - Decision: **Backend-aware** (user confirmed 2026-01-10)
+  - [x] Current issue: `_to_numpy()` forces NumPy in result methods, so JAX paths in `_metrics.py` never execute
+  - [x] If backend-aware: update result methods to preserve JAX arrays through metric calls
+    - Removed `_to_numpy()` calls from `spatial_information()` and `sparsity()` in result classes
+    - Updated `SpatialRateResult` and `SpatialRatesResult` in `spatial.py`
+  - [x] Update `spatial.py:234` and `spatial.py:789` accordingly
+    - Methods now pass arrays directly to `_metrics.py` which handles JAX dispatch
+  - [x] Add tests verifying chosen behavior
+    - Added `TestJaxArrayPreservation` class with 5 tests in `test_jax_backend_awareness.py`
+    - Updated existing tests to verify JAX output types
+  - [x] Update docstrings with backend-aware return types
 
 - [ ] **8.4** Expose `gaze_offsets` in compute_view_rate(s) API
   - [ ] Add `gaze_offsets` parameter to `compute_view_rate()` in `view.py:881`

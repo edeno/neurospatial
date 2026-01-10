@@ -3,8 +3,57 @@
 ## Current Status
 
 **Date**: 2026-01-10
-**Last Completed**: Task 8.2 (Enforce monotonic time validation in single-neuron binning helpers)
-**Next Task**: Task 8.3 (Decide and codify JAX metric behavior)
+**Last Completed**: Task 8.3 (Decide and codify JAX metric behavior)
+**Next Task**: Task 8.4 (Expose `gaze_offsets` in compute_view_rate(s) API)
+
+### Task 8.3 Completion Notes (2026-01-10)
+
+**Problem**: Result class metric methods (`spatial_information()`, `sparsity()`) were
+calling `_to_numpy()` before passing arrays to `_metrics.py`, which meant the JAX
+implementations in `_core_jax.py` were never executed even when JAX arrays were used.
+
+**Design Decision**: User chose **backend-aware** metrics over host-only:
+
+- JAX input → JAX output (scalar or array)
+- NumPy input → NumPy output (float or ndarray)
+
+This enables JAX-traced compute graphs for advanced workflows (autodiff, GPU).
+
+**Solution**: Removed `_to_numpy()` calls from metric methods in result classes.
+The `_metrics.py` module already handles JAX dispatch correctly.
+
+**Files Modified**:
+
+- `src/neurospatial/encoding/spatial.py`
+  - `SpatialRateResult.spatial_information()`: removed `_to_numpy()` wrappers
+  - `SpatialRateResult.sparsity()`: removed `_to_numpy()` wrappers
+  - `SpatialRatesResult.spatial_information()`: removed `_to_numpy()` wrappers
+  - `SpatialRatesResult.sparsity()`: removed `_to_numpy()` wrappers
+  - Updated return type annotations: `float | Any`, `NDArray | Any`
+  - Updated docstrings with "Backend-aware" notes
+
+- `tests/encoding/test_jax_backend_awareness.py`
+  - Added `TestJaxArrayPreservation` class with 5 tests for JAX preservation
+  - Updated `TestSpatialRateResultWithJax.test_spatial_information_with_jax`
+  - Updated `TestSpatialRatesResultWithJax.test_spatial_information_with_jax`
+
+**Tests Added**:
+
+- `test_spatial_information_preserves_jax_single` - JAX scalar output
+- `test_sparsity_preserves_jax_single` - JAX scalar output
+- `test_spatial_information_preserves_jax_batch` - JAX array output
+- `test_sparsity_preserves_jax_batch` - JAX array output
+- `test_metrics_module_preserves_jax_direct` - Direct `_metrics.py` calls
+
+**Validation**:
+
+- All 28 JAX backend awareness tests pass
+- All 1995 encoding tests pass
+- All 4908 tests in test suite pass
+- mypy: no issues in source files
+- ruff: all checks passed
+
+---
 
 ### Task 8.2 Completion Notes (2026-01-10)
 
