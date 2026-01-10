@@ -3190,6 +3190,34 @@ All functions raise `NotImplementedError` with helpful messages explaining this 
 
 ---
 
+## Session 2026-01-10: Task 8.4 - Expose gaze_offsets in compute_view_rate(s) API
+
+**Completed**: Task 8.4
+
+**Summary**:
+Exposed the `gaze_offsets` parameter in the public `compute_view_rate()` and `compute_view_rates()` API. This parameter was already supported in the underlying `_view_binning.py` layer but not exposed at the top-level API.
+
+**Changes Made**:
+1. Added `gaze_offsets: NDArray[np.float64] | None = None` parameter to both functions
+2. Added validation to ensure `gaze_offsets` length matches `times` length
+3. Propagated `gaze_offsets` to `bin_view_spike_train()`, `bin_view_spike_trains()`, and `compute_view_occupancy()`
+4. Added comprehensive docstring documentation explaining the use case (eye-tracking in primate studies)
+5. Added 13 new tests in `test_compute_view_rate.py`:
+   - `TestComputeViewRateGazeOffsets` (6 tests)
+   - `TestComputeViewRatesGazeOffsets` (7 tests)
+
+**Test Results**:
+- All 71 tests in `test_compute_view_rate.py` pass
+- All 129 tests in related view encoding tests pass
+- ruff and mypy checks pass
+
+**Files Modified**:
+- `src/neurospatial/encoding/view.py` (added parameter, validation, docs)
+- `tests/encoding/test_compute_view_rate.py` (added 13 new tests)
+- `TASKS.md` (marked 8.4 complete)
+
+---
+
 ## Blockers
 
 (None currently)

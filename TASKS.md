@@ -504,12 +504,12 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
     - Updated existing tests to verify JAX output types
   - [x] Update docstrings with backend-aware return types
 
-- [ ] **8.4** Expose `gaze_offsets` in compute_view_rate(s) API
-  - [ ] Add `gaze_offsets` parameter to `compute_view_rate()` in `view.py:881`
-  - [ ] Add `gaze_offsets` parameter to `compute_view_rates()`
-  - [ ] Propagate through to `_view_binning` layer
-  - [ ] Document use case: eye-tracking data in primate spatial view cell studies
-  - [ ] Add tests for gaze_offsets parameter
+- [x] **8.4** Expose `gaze_offsets` in compute_view_rate(s) API
+  - [x] Add `gaze_offsets` parameter to `compute_view_rate()` in `view.py:881`
+  - [x] Add `gaze_offsets` parameter to `compute_view_rates()`
+  - [x] Propagate through to `_view_binning` layer
+  - [x] Document use case: eye-tracking data in primate spatial view cell studies
+  - [x] Add tests for gaze_offsets parameter
 
 - [ ] **8.5** Optimize single-neuron compute paths to avoid redundant computation
   - [ ] Issue: `compute_view_rate()` computes view coordinates twice (binning + occupancy)

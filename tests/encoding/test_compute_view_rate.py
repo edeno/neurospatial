@@ -1297,9 +1297,367 @@ class TestComputeViewRatesSignature:
             "bandwidth",
             "min_occupancy",
             "n_jobs",
+            "gaze_offsets",
         }
         for param_name in keyword_only_params:
             if param_name in params:
                 assert params[param_name].kind == inspect.Parameter.KEYWORD_ONLY, (
                     f"{param_name} should be keyword-only"
                 )
+
+
+# =============================================================================
+# Tests for gaze_offsets parameter (Task 8.4)
+# =============================================================================
+
+
+class TestComputeViewRateGazeOffsets:
+    """Test gaze_offsets parameter for compute_view_rate."""
+
+    def test_accepts_gaze_offsets_parameter(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+        spike_times: np.ndarray,
+    ) -> None:
+        """compute_view_rate should accept gaze_offsets parameter."""
+        from neurospatial.encoding.view import compute_view_rate
+
+        times, positions, headings = trajectory_data
+        # Create gaze offsets - e.g., simulate looking 30 degrees to the left
+        gaze_offsets = np.full_like(headings, np.pi / 6)
+
+        result = compute_view_rate(
+            simple_env,
+            spike_times,
+            times,
+            positions,
+            headings,
+            gaze_offsets=gaze_offsets,
+        )
+
+        assert result is not None
+        assert result.firing_rate.shape == (simple_env.n_bins,)
+
+    def test_gaze_offsets_default_is_none(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+        spike_times: np.ndarray,
+    ) -> None:
+        """Default gaze_offsets should be None (gaze aligned with heading)."""
+        import inspect
+
+        from neurospatial.encoding.view import compute_view_rate
+
+        sig = inspect.signature(compute_view_rate)
+        params = sig.parameters
+
+        assert "gaze_offsets" in params
+        assert params["gaze_offsets"].default is None
+
+    def test_gaze_offsets_changes_view_field(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+        spike_times: np.ndarray,
+    ) -> None:
+        """Non-zero gaze offsets should produce different view field than zero offsets."""
+        from neurospatial.encoding.view import compute_view_rate
+
+        times, positions, headings = trajectory_data
+
+        # No gaze offset (aligned with heading)
+        result_no_offset = compute_view_rate(
+            simple_env,
+            spike_times,
+            times,
+            positions,
+            headings,
+            gaze_offsets=None,
+        )
+
+        # 90-degree gaze offset (looking left)
+        gaze_offsets = np.full_like(headings, np.pi / 2)
+        result_with_offset = compute_view_rate(
+            simple_env,
+            spike_times,
+            times,
+            positions,
+            headings,
+            gaze_offsets=gaze_offsets,
+        )
+
+        # View occupancy should be different (looking in different directions)
+        assert not np.allclose(
+            result_no_offset.view_occupancy, result_with_offset.view_occupancy
+        )
+
+    def test_gaze_offsets_mismatched_length_raises(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+        spike_times: np.ndarray,
+    ) -> None:
+        """Mismatched gaze_offsets length should raise ValueError."""
+        from neurospatial.encoding.view import compute_view_rate
+
+        times, positions, headings = trajectory_data
+        # Wrong length gaze_offsets
+        gaze_offsets = np.zeros(len(times) // 2)
+
+        with pytest.raises(ValueError, match=r"gaze_offsets.*length"):
+            compute_view_rate(
+                simple_env,
+                spike_times,
+                times,
+                positions,
+                headings,
+                gaze_offsets=gaze_offsets,
+            )
+
+    def test_gaze_offsets_with_different_gaze_models(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+        spike_times: np.ndarray,
+    ) -> None:
+        """gaze_offsets should work with all gaze models."""
+        from neurospatial.encoding.view import compute_view_rate
+
+        times, positions, headings = trajectory_data
+        gaze_offsets = np.full_like(headings, np.pi / 6)
+
+        for gaze_model in ["fixed_distance", "ray_cast", "boundary"]:
+            result = compute_view_rate(
+                simple_env,
+                spike_times,
+                times,
+                positions,
+                headings,
+                gaze_model=gaze_model,  # type: ignore[arg-type]
+                gaze_offsets=gaze_offsets,
+            )
+            assert result is not None
+
+    def test_zero_gaze_offsets_equals_no_offsets(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+        spike_times: np.ndarray,
+    ) -> None:
+        """Zero gaze offsets should produce same result as None."""
+        from neurospatial.encoding.view import compute_view_rate
+
+        times, positions, headings = trajectory_data
+
+        # No offset (None)
+        result_none = compute_view_rate(
+            simple_env,
+            spike_times,
+            times,
+            positions,
+            headings,
+            gaze_offsets=None,
+        )
+
+        # Explicit zero offsets
+        gaze_offsets = np.zeros_like(headings)
+        result_zero = compute_view_rate(
+            simple_env,
+            spike_times,
+            times,
+            positions,
+            headings,
+            gaze_offsets=gaze_offsets,
+        )
+
+        # Should be identical
+        np.testing.assert_array_almost_equal(
+            result_none.firing_rate, result_zero.firing_rate
+        )
+        np.testing.assert_array_almost_equal(
+            result_none.view_occupancy, result_zero.view_occupancy
+        )
+
+
+class TestComputeViewRatesGazeOffsets:
+    """Test gaze_offsets parameter for compute_view_rates (batch version)."""
+
+    def test_accepts_gaze_offsets_parameter(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """compute_view_rates should accept gaze_offsets parameter."""
+        from neurospatial.encoding.view import compute_view_rates
+
+        times, positions, headings = trajectory_data
+        spike_times_list = [
+            np.array([1.0, 2.5, 4.0]),
+            np.array([0.5, 1.5, 2.5]),
+        ]
+        gaze_offsets = np.full_like(headings, np.pi / 6)
+
+        result = compute_view_rates(
+            simple_env,
+            spike_times_list,
+            times,
+            positions,
+            headings,
+            gaze_offsets=gaze_offsets,
+        )
+
+        assert result is not None
+        assert result.firing_rates.shape == (2, simple_env.n_bins)
+
+    def test_gaze_offsets_default_is_none(self) -> None:
+        """Default gaze_offsets should be None."""
+        import inspect
+
+        from neurospatial.encoding.view import compute_view_rates
+
+        sig = inspect.signature(compute_view_rates)
+        params = sig.parameters
+
+        assert "gaze_offsets" in params
+        assert params["gaze_offsets"].default is None
+
+    def test_gaze_offsets_changes_view_fields(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """Non-zero gaze offsets should produce different view fields."""
+        from neurospatial.encoding.view import compute_view_rates
+
+        times, positions, headings = trajectory_data
+        spike_times_list = [np.array([1.0, 2.5, 4.0])]
+
+        # No gaze offset
+        result_no_offset = compute_view_rates(
+            simple_env,
+            spike_times_list,
+            times,
+            positions,
+            headings,
+            gaze_offsets=None,
+        )
+
+        # 90-degree gaze offset
+        gaze_offsets = np.full_like(headings, np.pi / 2)
+        result_with_offset = compute_view_rates(
+            simple_env,
+            spike_times_list,
+            times,
+            positions,
+            headings,
+            gaze_offsets=gaze_offsets,
+        )
+
+        # View occupancy should differ
+        assert not np.allclose(
+            result_no_offset.view_occupancy, result_with_offset.view_occupancy
+        )
+
+    def test_gaze_offsets_mismatched_length_raises(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """Mismatched gaze_offsets length should raise ValueError."""
+        from neurospatial.encoding.view import compute_view_rates
+
+        times, positions, headings = trajectory_data
+        spike_times_list = [np.array([1.0, 2.5])]
+        gaze_offsets = np.zeros(len(times) // 2)
+
+        with pytest.raises(ValueError, match=r"gaze_offsets.*length"):
+            compute_view_rates(
+                simple_env,
+                spike_times_list,
+                times,
+                positions,
+                headings,
+                gaze_offsets=gaze_offsets,
+            )
+
+    def test_gaze_offsets_consistency_with_single(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+        spike_times: np.ndarray,
+    ) -> None:
+        """Batch with gaze_offsets should match single neuron version."""
+        from neurospatial.encoding.view import compute_view_rate, compute_view_rates
+
+        times, positions, headings = trajectory_data
+        gaze_offsets = np.full_like(headings, np.pi / 4)
+
+        # Single neuron
+        single_result = compute_view_rate(
+            simple_env,
+            spike_times,
+            times,
+            positions,
+            headings,
+            gaze_offsets=gaze_offsets,
+        )
+
+        # Batch with one neuron
+        batch_result = compute_view_rates(
+            simple_env,
+            [spike_times],
+            times,
+            positions,
+            headings,
+            gaze_offsets=gaze_offsets,
+        )
+
+        # Should match
+        np.testing.assert_array_almost_equal(
+            batch_result.firing_rates[0], single_result.firing_rate
+        )
+        np.testing.assert_array_almost_equal(
+            batch_result.view_occupancy, single_result.view_occupancy
+        )
+
+    def test_gaze_offsets_keyword_only(self) -> None:
+        """gaze_offsets should be keyword-only parameter."""
+        import inspect
+
+        from neurospatial.encoding.view import compute_view_rates
+
+        sig = inspect.signature(compute_view_rates)
+        params = sig.parameters
+
+        assert "gaze_offsets" in params
+        assert params["gaze_offsets"].kind == inspect.Parameter.KEYWORD_ONLY
+
+    def test_gaze_offsets_with_n_jobs(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """gaze_offsets should work with parallel processing."""
+        from neurospatial.encoding.view import compute_view_rates
+
+        times, positions, headings = trajectory_data
+        spike_times_list = [
+            np.array([1.0, 2.5]),
+            np.array([0.5, 1.5]),
+            np.array([3.0, 4.5]),
+        ]
+        gaze_offsets = np.full_like(headings, np.pi / 3)
+
+        result = compute_view_rates(
+            simple_env,
+            spike_times_list,
+            times,
+            positions,
+            headings,
+            gaze_offsets=gaze_offsets,
+            n_jobs=2,
+        )
+
+        assert len(result) == 3

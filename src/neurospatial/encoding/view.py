@@ -887,6 +887,7 @@ def compute_view_rate(
     *,
     gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
     view_distance: float = 10.0,
+    gaze_offsets: NDArray[np.float64] | None = None,
     smoothing_method: Literal[
         "diffusion_kde", "gaussian_kde", "binned"
     ] = "diffusion_kde",
@@ -925,6 +926,12 @@ def compute_view_rate(
     view_distance : float, default=10.0
         Distance for fixed_distance gaze model (environment units).
         Ignored for ray_cast and boundary models.
+    gaze_offsets : ndarray, shape (n_samples,), optional
+        Offset from head direction to actual gaze direction (radians).
+        Positive values indicate gaze to the left of heading.
+        If None (default), gaze is aligned with head direction.
+        Use this for eye-tracking data in primate spatial view cell studies
+        where gaze direction differs from head direction.
     smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Smoothing method to use:
 
@@ -1076,6 +1083,15 @@ def compute_view_rate(
             f"times length ({n_samples}) must match headings length ({len(headings)})"
         )
 
+    # Validate gaze_offsets if provided
+    if gaze_offsets is not None:
+        gaze_offsets = np.asarray(gaze_offsets, dtype=np.float64)
+        if len(gaze_offsets) != n_samples:
+            raise ValueError(
+                f"gaze_offsets length ({len(gaze_offsets)}) must match "
+                f"times length ({n_samples})"
+            )
+
     # Bin spike train by viewed location
     # TODO(perf): For expensive gaze models (ray_cast), view coordinates are
     # computed twice (once for spike binning, once for occupancy). Consider
@@ -1090,6 +1106,7 @@ def compute_view_rate(
         headings,
         gaze_model=gaze_model,
         view_distance=view_distance,
+        gaze_offsets=gaze_offsets,
     )
 
     # Compute view occupancy
@@ -1100,6 +1117,7 @@ def compute_view_rate(
         headings,
         gaze_model=gaze_model,
         view_distance=view_distance,
+        gaze_offsets=gaze_offsets,
     )
 
     # Apply smoothing to compute firing rate
@@ -1142,6 +1160,7 @@ def compute_view_rates(
     *,
     gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
     view_distance: float = 10.0,
+    gaze_offsets: NDArray[np.float64] | None = None,
     smoothing_method: Literal[
         "diffusion_kde", "gaussian_kde", "binned"
     ] = "diffusion_kde",
@@ -1188,6 +1207,12 @@ def compute_view_rates(
     view_distance : float, default=10.0
         Distance for fixed_distance gaze model (environment units).
         Ignored for ray_cast and boundary models.
+    gaze_offsets : ndarray, shape (n_samples,), optional
+        Offset from head direction to actual gaze direction (radians).
+        Positive values indicate gaze to the left of heading.
+        If None (default), gaze is aligned with head direction.
+        Use this for eye-tracking data in primate spatial view cell studies
+        where gaze direction differs from head direction.
     smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Smoothing method to use. See ``compute_view_rate()`` for details.
     bandwidth : float, default=5.0
@@ -1358,6 +1383,15 @@ def compute_view_rates(
             f"times length ({n_samples}) must match headings length ({len(headings)})"
         )
 
+    # Validate gaze_offsets if provided
+    if gaze_offsets is not None:
+        gaze_offsets = np.asarray(gaze_offsets, dtype=np.float64)
+        if len(gaze_offsets) != n_samples:
+            raise ValueError(
+                f"gaze_offsets length ({len(gaze_offsets)}) must match "
+                f"times length ({n_samples})"
+            )
+
     # Handle edge case: no neurons
     if n_neurons == 0:
         # Still need to compute view_occupancy for consistency
@@ -1370,6 +1404,7 @@ def compute_view_rates(
             headings,
             gaze_model=gaze_model,
             view_distance=view_distance,
+            gaze_offsets=gaze_offsets,
         )
         firing_rates_result: ArrayLike = np.empty((0, env.n_bins), dtype=np.float64)
         if resolved_backend == "jax" and is_jax_available():
@@ -1397,6 +1432,7 @@ def compute_view_rates(
         headings,
         gaze_model=gaze_model,
         view_distance=view_distance,
+        gaze_offsets=gaze_offsets,
         n_jobs=n_jobs,
     )
 
