@@ -2,9 +2,39 @@
 
 ## Current Status
 
-**Date**: 2026-01-08
-**Last Completed**: Milestone 7 complete (Tasks 7.4, 7.5, 7.6)
-**Next Task**: Milestone 8 - Bug Fixes and Robustness (Task 8.1)
+**Date**: 2026-01-10
+**Last Completed**: Task 8.1 (NaN handling in egocentric nearest-object selection)
+**Next Task**: Task 8.2 (Enforce monotonic time validation in single-neuron binning helpers)
+
+### Task 8.1 Completion Notes (2026-01-10)
+
+**Problem**: When using geodesic distance metric with objects outside the environment,
+`np.argmin` doesn't handle NaN values properly, returning arbitrary indices.
+
+**Solution**: Replace `np.argmin` with NaN-aware approach:
+1. Identify rows where all distances are NaN (no reachable objects)
+2. Replace NaN with infinity so argmin prefers finite distances
+3. Use regular argmin on the masked array
+4. Restore NaN for all-NaN rows (both distance and bearing)
+
+**Files Modified**:
+- `src/neurospatial/encoding/_egocentric_binning.py` (lines 282-306)
+- `tests/encoding/test_encoding_egocentric_binning.py` (added `TestEgocentricNaNHandling` class with 7 tests)
+
+**Tests Added**:
+- `test_object_outside_env_geodesic` - Object outside environment returns NaN
+- `test_mixed_nan_finite_distances` - Mixed NaN/finite selects nearest valid
+- `test_all_objects_outside_env_geodesic` - All objects outside returns NaN
+- `test_position_outside_env_geodesic` - Position outside env returns NaN
+- `test_mixed_valid_invalid_positions_geodesic` - Mixed positions handled correctly
+- `test_occupancy_with_nan_distances` - Occupancy handles NaN gracefully
+- `test_spike_binning_with_nan_distances` - Spike binning handles NaN gracefully
+
+**Validation**:
+- All 48 tests in `test_encoding_egocentric_binning.py` pass
+- All 1986 encoding tests pass
+- mypy: no issues
+- ruff: all checks passed
 
 ### Milestone 7 Completion Notes (2026-01-08)
 

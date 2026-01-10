@@ -1071,3 +1071,278 @@ class TestConsistencyWithObjectVector:
         # different internal occupancy computation. Instead verify shape.
         assert occupancy_new.shape == (n_distance * n_direction,)
         assert np.sum(occupancy_new) > 0  # Has some occupancy
+
+
+# =============================================================================
+# Test NaN handling in egocentric coordinate computation
+# =============================================================================
+
+
+class TestEgocentricNaNHandling:
+    """Tests for NaN handling in egocentric nearest-object selection.
+
+    Bug: When using geodesic distance, objects outside the environment have NaN
+    distances. np.argmin doesn't handle NaN properly, returning arbitrary indices.
+
+    This test class covers:
+    - Objects outside environment with geodesic distance
+    - Mixed NaN/finite distance cases (some objects inside, some outside)
+    - All-NaN case (all objects outside environment)
+    """
+
+    @pytest.fixture
+    def env_with_hole(self) -> Environment:
+        """Create environment with a hole where objects can be placed outside.
+
+        Creates an L-shaped environment using a regular grid that excludes
+        the upper-right quadrant (60-100, 60-100). This ensures predictable
+        bin coverage for testing.
+        """
+        # Create a dense grid covering the L-shaped area
+        # Lower-left quadrant (0-60, 0-60) - fully covered
+        # Lower-right strip (60-100, 0-60) - covered
+        # Upper-left strip (0-60, 60-100) - covered
+        # Upper-right quadrant (60-100, 60-100) - HOLE (not covered)
+        x_lower = np.linspace(2.5, 57.5, 12)  # Centers for 0-60
+        y_lower = np.linspace(2.5, 57.5, 12)
+        x_upper = np.linspace(2.5, 57.5, 12)  # x for upper-left strip
+        y_upper = np.linspace(62.5, 97.5, 8)
+        x_right = np.linspace(62.5, 97.5, 8)  # x for lower-right strip
+        y_right = np.linspace(2.5, 57.5, 12)
+
+        # Create grid positions
+        positions = []
+        # Lower-left quadrant
+        for x in x_lower:
+            for y in y_lower:
+                positions.append([x, y])
+        # Upper-left strip
+        for x in x_upper:
+            for y in y_upper:
+                positions.append([x, y])
+        # Lower-right strip
+        for x in x_right:
+            for y in y_right:
+                positions.append([x, y])
+
+        positions = np.array(positions)
+        return Environment.from_samples(positions, bin_size=5.0)
+
+    def test_object_outside_env_geodesic(self, env_with_hole: Environment):
+        """Object outside environment should produce NaN distance with geodesic."""
+        from neurospatial.encoding._egocentric_binning import (
+            _compute_egocentric_coords,
+        )
+
+        # Animal at origin (inside env), object in upper-right quadrant (outside)
+        positions = np.array([[25.0, 25.0]])
+        headings = np.array([0.0])
+        # Object outside the L-shaped environment (in the hole)
+        object_positions = np.array([[75.0, 75.0]])
+
+        distances, bearings = _compute_egocentric_coords(
+            positions,
+            headings,
+            object_positions,
+            distance_metric="geodesic",
+            env=env_with_hole,
+        )
+
+        # Distance should be NaN (object outside env)
+        assert np.isnan(distances[0, 0])
+        # Bearing should also be NaN (no reachable object to compute bearing to)
+        assert np.isnan(bearings[0, 0])
+
+    def test_mixed_nan_finite_distances(self, env_with_hole: Environment):
+        """With mixed NaN/finite distances, should select nearest valid object."""
+        from neurospatial.encoding._egocentric_binning import (
+            _compute_egocentric_coords,
+        )
+
+        # Animal at origin (inside env)
+        positions = np.array([[25.0, 25.0]])
+        headings = np.array([0.0])
+        # Object 1: outside env (NaN distance)
+        # Object 2: inside env (finite distance)
+        object_positions = np.array(
+            [
+                [75.0, 75.0],  # Outside (in hole)
+                [30.0, 25.0],  # Inside (5 units away)
+            ]
+        )
+
+        distances, bearings = _compute_egocentric_coords(
+            positions,
+            headings,
+            object_positions,
+            distance_metric="geodesic",
+            env=env_with_hole,
+        )
+
+        # Should select object 2 (inside env, finite distance ~5)
+        # NOT object 1 (outside env, NaN distance)
+        assert not np.isnan(distances[0, 0]), "Should return finite distance, not NaN"
+        # Distance should be approximately 5 (euclidean, but geodesic might differ slightly)
+        assert distances[0, 0] < 20, f"Expected ~5, got {distances[0, 0]}"
+        # Bearing should be ~0 (object 2 is directly ahead)
+        assert abs(bearings[0, 0]) < 0.5, f"Expected ~0, got {bearings[0, 0]}"
+
+    def test_all_objects_outside_env_geodesic(self, env_with_hole: Environment):
+        """When all objects are outside env, should return NaN distance."""
+        from neurospatial.encoding._egocentric_binning import (
+            _compute_egocentric_coords,
+        )
+
+        # Animal at origin (inside env)
+        positions = np.array([[25.0, 25.0]])
+        headings = np.array([0.0])
+        # Both objects outside env (in the hole)
+        object_positions = np.array(
+            [
+                [75.0, 75.0],
+                [80.0, 80.0],
+            ]
+        )
+
+        distances, bearings = _compute_egocentric_coords(
+            positions,
+            headings,
+            object_positions,
+            distance_metric="geodesic",
+            env=env_with_hole,
+        )
+
+        # Distance should be NaN (all objects outside)
+        assert np.isnan(distances[0, 0]), "All objects outside: should return NaN"
+        # Bearing should also be NaN (no valid nearest object)
+        assert np.isnan(bearings[0, 0]), "All objects outside: bearing should be NaN"
+
+    def test_position_outside_env_geodesic(self, env_with_hole: Environment):
+        """When animal position is outside env, should return NaN distance."""
+        from neurospatial.encoding._egocentric_binning import (
+            _compute_egocentric_coords,
+        )
+
+        # Animal in the hole (outside env)
+        positions = np.array([[75.0, 75.0]])
+        headings = np.array([0.0])
+        # Object inside env
+        object_positions = np.array([[25.0, 25.0]])
+
+        distances, _bearings = _compute_egocentric_coords(
+            positions,
+            headings,
+            object_positions,
+            distance_metric="geodesic",
+            env=env_with_hole,
+        )
+
+        # Distance should be NaN (animal position outside env)
+        assert np.isnan(distances[0, 0]), "Position outside env: should return NaN"
+
+    def test_mixed_valid_invalid_positions_geodesic(self, env_with_hole: Environment):
+        """With some positions outside env, should handle NaN distances correctly."""
+        from neurospatial.encoding._egocentric_binning import (
+            _compute_egocentric_coords,
+        )
+
+        # Time 0: inside env, Time 1: outside env
+        positions = np.array(
+            [
+                [25.0, 25.0],  # Inside
+                [75.0, 75.0],  # Outside (in hole)
+            ]
+        )
+        headings = np.array([0.0, 0.0])
+        # Object inside env
+        object_positions = np.array([[30.0, 25.0]])
+
+        distances, _bearings = _compute_egocentric_coords(
+            positions,
+            headings,
+            object_positions,
+            distance_metric="geodesic",
+            env=env_with_hole,
+        )
+
+        # Time 0: should have finite distance
+        assert not np.isnan(distances[0, 0]), (
+            "Position inside: should have finite distance"
+        )
+        # Time 1: should have NaN distance
+        assert np.isnan(distances[1, 0]), "Position outside: should have NaN distance"
+
+    def test_occupancy_with_nan_distances(self, env_with_hole: Environment):
+        """Occupancy computation should handle NaN distances gracefully."""
+        from neurospatial.encoding._egocentric_binning import (
+            compute_egocentric_occupancy,
+        )
+
+        n_time = 100
+        rng = np.random.default_rng(42)
+        # Some positions inside, some outside
+        positions = np.zeros((n_time, 2))
+        positions[:50] = rng.uniform(10, 40, (50, 2))  # Inside
+        positions[50:] = rng.uniform(60, 90, (50, 2))  # In hole (outside)
+        times = np.linspace(0, 10, n_time)
+        headings = np.zeros(n_time)
+
+        # Object in the hole (outside env)
+        object_positions = np.array([[75.0, 75.0]])
+
+        # Should not raise an error
+        occupancy, _ego_env = compute_egocentric_occupancy(
+            times,
+            positions,
+            headings,
+            object_positions,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+            distance_metric="geodesic",
+            env=env_with_hole,
+        )
+
+        # Occupancy should be all zeros or NaN (object outside env)
+        # because we can never compute a valid distance to the object
+        assert occupancy.shape == (10 * 12,)
+
+    def test_spike_binning_with_nan_distances(self, env_with_hole: Environment):
+        """Spike binning should handle NaN distances gracefully."""
+        from neurospatial.encoding._egocentric_binning import (
+            bin_egocentric_spike_train,
+        )
+
+        n_time = 100
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(10, 40, (n_time, 2))  # All inside env
+        times = np.linspace(0, 10, n_time)
+        headings = np.zeros(n_time)
+        spike_times = np.array([1.0, 3.0, 5.0])
+
+        # Mix of inside/outside objects
+        object_positions = np.array(
+            [
+                [75.0, 75.0],  # Outside (in hole)
+                [30.0, 25.0],  # Inside
+            ]
+        )
+
+        # Should not raise an error
+        spike_counts, _ego_env = bin_egocentric_spike_train(
+            spike_times,
+            times,
+            positions,
+            headings,
+            object_positions,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+            distance_metric="geodesic",
+            env=env_with_hole,
+        )
+
+        # Should have binned some spikes
+        assert spike_counts.shape == (10 * 12,)
+        # Some spikes should be binned (those at valid positions near valid object)
+        assert np.sum(spike_counts) > 0

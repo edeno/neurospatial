@@ -475,12 +475,13 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
 
 ### Tasks
 
-- [ ] **8.1** Fix NaN handling in egocentric nearest-object selection
-  - [ ] Replace `np.argmin` with `np.nanargmin` in `_egocentric_binning.py:283`
-  - [ ] Add guard for all-NaN case (when all objects are outside env with geodesic metric)
-  - [ ] Mask NaN distances to `np.inf` before selection, or skip invalid timepoints
-  - [ ] Add tests for out-of-env objects with geodesic distance
-  - [ ] Add tests for mixed NaN/finite distance cases
+- [x] **8.1** Fix NaN handling in egocentric nearest-object selection
+  - [x] Replace `np.argmin` with NaN-aware approach in `_egocentric_binning.py:283`
+  - [x] Add guard for all-NaN case (when all objects are outside env with geodesic metric)
+  - [x] Mask NaN distances to `np.inf` before selection, restore NaN for all-NaN rows
+  - [x] Set bearing to NaN when all distances are NaN (no valid nearest object)
+  - [x] Add tests for out-of-env objects with geodesic distance
+  - [x] Add tests for mixed NaN/finite distance cases
 
 - [ ] **8.2** Enforce monotonic time validation in single-neuron binning helpers
   - [ ] Add monotonic time check to `bin_view_spike_train()` in `_view_binning.py:361`

@@ -280,9 +280,27 @@ def _compute_egocentric_coords(
     bearings_all = compute_egocentric_bearing(positions, headings, object_positions)
 
     # Find nearest object at each timepoint
-    nearest_obj_idx = np.argmin(distances_all, axis=1)
+    # Handle NaN distances (objects/positions outside environment with geodesic metric):
+    # 1. Identify rows where all distances are NaN (no reachable objects)
+    # 2. Replace NaN with inf for argmin (so finite distances are preferred)
+    # 3. Use regular argmin on the masked array
+    # 4. Restore NaN for all-NaN rows
+
+    all_nan_mask = np.all(np.isnan(distances_all), axis=1)
+
+    # Replace NaN with inf so argmin prefers finite values
+    # np.nanargmin raises ValueError on all-NaN slices, so we use this approach
+    distances_for_argmin = np.where(np.isnan(distances_all), np.inf, distances_all)
+    nearest_obj_idx = np.argmin(distances_for_argmin, axis=1)
+
     nearest_distances = distances_all[np.arange(n_time), nearest_obj_idx]
     nearest_bearings = bearings_all[np.arange(n_time), nearest_obj_idx]
+
+    # For timepoints where all objects had NaN distances, ensure both distance
+    # and bearing are NaN. (argmin on all-inf row returns 0, which may have been
+    # NaN in original). Bearing is also NaN because there's no valid nearest object.
+    nearest_distances[all_nan_mask] = np.nan
+    nearest_bearings[all_nan_mask] = np.nan
 
     # Return as (n_time, 1) for consistency
     return nearest_distances.reshape(-1, 1), nearest_bearings.reshape(-1, 1)
