@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Last Updated**: 2025-12-06 (Package reorganization with domain-centric structure)
+**Last Updated**: 2026-01-08 (Encoding API updated to use result classes)
 
 ---
 
@@ -143,15 +143,19 @@ neighbors = env.neighbors(bin_idx)
 ### 2. Compute Place Fields
 
 ```python
-from neurospatial.encoding.place import compute_place_field
+from neurospatial.encoding import compute_spatial_rate
 
-# Compute place field for one neuron
-firing_rate = compute_place_field(
+# Compute place field for one neuron (returns SpatialRateResult)
+result = compute_spatial_rate(
     env, spike_times, times, positions,
     smoothing_method="diffusion_kde",  # Default: graph-based boundary-aware KDE
-    bandwidth=5.0  # Smoothing bandwidth (cm)
+    bandwidth=5.0,  # Smoothing bandwidth (cm)
+    min_occupancy=0.5,  # Exclude bins with <0.5s occupancy
 )
+firing_rate = result.firing_rate  # Access firing rate from result object
+
 # Methods: "diffusion_kde" (default), "gaussian_kde", "binned" (legacy)
+# Result also has: result.occupancy, result.env, result.skaggs_information(), etc.
 ```
 
 **Need decoding?** See [QUICKSTART.md - Bayesian Decoding](.claude/QUICKSTART.md#neural-analysis)
@@ -252,19 +256,20 @@ distances = compute_egocentric_distance(
 ### 8. Compute Object-Vector Field
 
 ```python
-from neurospatial.encoding.object_vector import compute_object_vector_field
+from neurospatial.encoding import compute_egocentric_rate
 
-# Compute firing field in egocentric polar coordinates
-result = compute_object_vector_field(
+# Compute firing field in egocentric polar coordinates (returns EgocentricRateResult)
+result = compute_egocentric_rate(
     env, spike_times, times, positions, headings, object_positions,
     distance_range=(0, 50),  # cm from object
     angle_range=(-np.pi, np.pi),  # full circle
     distance_bin_size=5.0,  # 5 cm bins
     angle_bin_size=np.pi/12,  # 15° bins
 )
-# result.field: firing rate in egocentric polar bins
+# result.firing_rate: firing rate in egocentric polar bins
 # result.ego_env: the egocentric polar environment
 # result.occupancy: time spent in each bin
+# result.preferred_distance(), result.preferred_angle(): peak location
 ```
 
 **Need metrics?** See [QUICKSTART.md - Object-Vector Cells](.claude/QUICKSTART.md#object-vector-cells)
@@ -272,16 +277,20 @@ result = compute_object_vector_field(
 ### 9. Compute Spatial View Field
 
 ```python
-from neurospatial.encoding.spatial_view import compute_spatial_view_field
+from neurospatial.encoding import compute_view_rate
 
-# Compute firing field indexed by VIEWED location (not animal position)
-result = compute_spatial_view_field(
+# Compute firing field indexed by VIEWED location (returns ViewRateResult)
+result = compute_view_rate(
     env, spike_times, times, positions, headings,
     view_distance=20.0,  # cm ahead
     gaze_model="fixed_distance",  # or "ray_cast", "boundary"
+    smoothing_method="diffusion_kde",
+    bandwidth=5.0,
 )
-# result.field: firing rate at each spatial bin (indexed by where animal looked)
+# result.firing_rate: firing rate at each spatial bin (indexed by where animal looked)
 # result.view_occupancy: time spent viewing each bin
+# result.is_view_cell(): classification method
+# result.view_spatial_information(): spatial information metric
 ```
 
 **Need classification?** See [QUICKSTART.md - Spatial View Cells](.claude/QUICKSTART.md#spatial-view-cells)

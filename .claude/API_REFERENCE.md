@@ -46,9 +46,10 @@ func(
 
 **Examples:**
 
-- `compute_place_field(env, spike_times, times, positions, *, smoothing_method=...)`
-- `compute_object_vector_tuning(env, spike_times, times, positions, headings, object_positions, *, ...)`
-- `compute_spatial_view_field(env, spike_times, times, positions, headings, *, ...)`
+- `compute_spatial_rate(env, spike_times, times, positions, *, smoothing_method=...)`
+- `compute_egocentric_rate(env, spike_times, times, positions, headings, object_positions, *, ...)`
+- `compute_view_rate(env, spike_times, times, positions, headings, *, ...)`
+- `compute_directional_rate(spike_times, times, headings, *, ...)`
 
 #### Egocentric Operations (bearing, distance to targets)
 
@@ -257,31 +258,121 @@ from neurospatial.ops import (
 
 ## Neural Encoding (encoding/)
 
-### Place Cells
+### New API (Recommended)
+
+The new encoding API uses consistent naming (`compute_*_rate`) and returns rich result objects:
+
+```python
+from neurospatial.encoding import (
+    # Spatial Rate (Place/Grid/Border Cells)
+    compute_spatial_rate,                   # Single-neuron spatial rate map
+    compute_spatial_rates,                  # Population spatial rate maps
+    SpatialRateResult,                      # Result with firing_rate, occupancy, metrics
+    SpatialRatesResult,                     # Population result
+
+    # Directional Rate (Head Direction Cells)
+    compute_directional_rate,               # Single-neuron HD tuning
+    compute_directional_rates,              # Population HD tuning
+    DirectionalRateResult,                  # Result with preferred_direction, MRL, etc.
+    DirectionalRatesResult,                 # Population result
+
+    # View Rate (Spatial View Cells)
+    compute_view_rate,                      # Single-neuron view field
+    compute_view_rates,                     # Population view fields
+    ViewRateResult,                         # Result with view_occupancy, is_view_cell()
+    ViewRatesResult,                        # Population result
+
+    # Egocentric Rate (Object-Vector Cells)
+    compute_egocentric_rate,                # Single-neuron egocentric polar field
+    compute_egocentric_rates,               # Population egocentric fields
+    EgocentricRateResult,                   # Result with preferred_distance(), preferred_angle()
+    EgocentricRatesResult,                  # Population result
+
+    # Metrics (available on result objects or standalone)
+    skaggs_information,                     # Spatial info (bits/spike)
+    sparsity,                               # Spatial sparsity
+    detect_place_fields,                    # Detect fields from rate map
+    field_size,                             # Field size
+    rate_map_centroid,                      # Field centroid
+    field_stability,                        # Temporal stability
+    field_shift_distance,                   # Shift between sessions
+
+    # Helper functions
+    compute_viewed_location,                # Compute viewed location from gaze
+    compute_viewshed,                       # Compute visible bins
+)
+```
+
+### Backend Parameter
+
+All new encoding functions accept a `backend` parameter for computation:
+
+```python
+# Backend options (for compute_*_rate functions)
+backend="numpy"   # Default: Works everywhere, including Windows
+backend="jax"     # Requires JAX (Linux/macOS); raises ImportError if unavailable
+backend="auto"    # Uses JAX if available, falls back to NumPy silently
+
+# Example usage
+result = compute_spatial_rate(
+    env, spike_times, times, positions,
+    backend="numpy",  # or "jax" or "auto"
+)
+```
+
+**When to use each backend:**
+- `"numpy"`: Default choice, works everywhere
+- `"jax"`: For GPU acceleration or JAX-based pipelines (Linux/macOS only)
+- `"auto"`: For portable code that uses JAX when available
+
+### Result Class Methods
+
+Result objects from the new API provide convenient methods:
+
+**SpatialRateResult** (from `compute_spatial_rate`):
+- `.firing_rate` - Firing rate map (n_bins,) in Hz
+- `.occupancy` - Time in each bin (n_bins,) in seconds
+- `.env` - Environment used for computation
+- `.peak_locations()` - Coordinates of peak firing (n_dims,)
+- `.peak_firing_rates()` - Maximum firing rate (scalar)
+
+**DirectionalRateResult** (from `compute_directional_rate`):
+- `.firing_rate` - Tuning curve (n_bins,) in Hz
+- `.occupancy` - Time at each direction (n_bins,) in seconds
+- `.bin_centers` - Angular bin centers (n_bins,) in radians
+- `.preferred_direction()` - Circular mean weighted by rate (radians)
+- `.preferred_direction_deg()` - Same in degrees
+- `.peak_firing_rate()` - Maximum firing rate
+- `.mrl()` - Mean resultant length (tuning strength)
+- `.tuning_width()` - Half-width at half-maximum (radians)
+- `.plot(ax=None, polar=True)` - Plot tuning curve
+
+**ViewRateResult** (from `compute_view_rate`):
+- `.firing_rate` - View field (n_bins,) in Hz
+- `.view_occupancy` - Time *viewing* each bin (n_bins,) in seconds
+- `.env` - Environment used for computation
+- `.gaze_model` - Gaze model used ("fixed_distance", "ray_cast", "boundary")
+- `.view_distance` - Distance parameter for gaze model
+
+**EgocentricRateResult** (from `compute_egocentric_rate`):
+- `.firing_rate` - Egocentric polar field (n_bins,) in Hz
+- `.occupancy` - Time in each egocentric bin (n_bins,) in seconds
+- `.ego_env` - Egocentric polar environment
+- `.distance_range` - Distance range (min, max)
+- `.n_distance_bins` - Number of distance bins
+- `.n_direction_bins` - Number of direction bins
+
+### Legacy API (Still Available)
+
+The legacy API is still available for backward compatibility:
 
 ```python
 from neurospatial.encoding.place import (
-    # Field computation
-    compute_place_field,                    # Place field estimation
-    compute_directional_place_fields,       # Directional tuning
-    DirectionalPlaceFields,                 # Container for directional fields
-
-    # Place field metrics
-    detect_place_fields,                    # Detect fields from rate map
-    skaggs_information,                     # Spatial info (bits/spike)
-    sparsity,                               # Spatial sparsity
-    selectivity,                            # Place field selectivity
-    rate_map_centroid,                      # Field centroid
-    field_size,                             # Field size
-    field_stability,                        # Temporal stability
-    field_shape_metrics,                    # Shape metrics
-    field_shift_distance,                   # Shift between sessions
-    in_out_field_ratio,                     # In/out firing ratio
-    information_per_second,                 # Bits/second
-    mutual_information,                     # MI between fields
-    rate_map_coherence,                     # Spatial coherence
-    spatial_coverage_single_cell,           # Coverage fraction
-    compute_field_emd,                      # Earth mover distance
+    compute_place_field,                    # Use compute_spatial_rate instead
+    detect_place_fields,
+    skaggs_information,
+    sparsity,
+    # ... other metrics
 )
 ```
 
@@ -301,9 +392,22 @@ from neurospatial.encoding.grid import (
 
 ### Head Direction Cells
 
+**New API (Recommended):**
+
+```python
+from neurospatial.encoding import (
+    compute_directional_rate,               # HD tuning curve (returns DirectionalRateResult)
+    compute_directional_rates,              # Population HD tuning
+    DirectionalRateResult,                  # Result with preferred_direction(), mrl(), etc.
+    DirectionalRatesResult,                 # Population result
+)
+```
+
+**Legacy API (Still Available):**
+
 ```python
 from neurospatial.encoding.head_direction import (
-    compute_head_direction_tuning_curve,    # HD tuning curve (renamed from head_direction_tuning_curve)
+    compute_head_direction_tuning_curve,    # Use compute_directional_rate instead
     head_direction_metrics,                 # Comprehensive HD metrics
     is_head_direction_cell,                 # HD cell classification
     plot_head_direction_tuning,             # Polar plot
@@ -314,7 +418,6 @@ from neurospatial.encoding.head_direction import (
     mean_resultant_length,
     circular_mean,
 )
-# Note: parameter 'head_directions' renamed to 'headings' for consistency
 ```
 
 ### Border/Boundary Cells
@@ -329,11 +432,24 @@ from neurospatial.encoding.border import (
 
 ### Object-Vector Cells
 
+**New API (Recommended):**
+
+```python
+from neurospatial.encoding import (
+    compute_egocentric_rate,                # Egocentric polar field (returns EgocentricRateResult)
+    compute_egocentric_rates,               # Population egocentric fields
+    EgocentricRateResult,                   # Result with preferred_distance(), preferred_angle(), etc.
+    EgocentricRatesResult,                  # Population result
+)
+```
+
+**Legacy API (Still Available):**
+
 ```python
 from neurospatial.encoding.object_vector import (
     # Field computation
     ObjectVectorFieldResult,                # Result container
-    compute_object_vector_field,            # Compute egocentric polar field
+    compute_object_vector_field,            # Use compute_egocentric_rate instead
 
     # Metrics and classification
     ObjectVectorMetrics,                    # Frozen dataclass with tuning metrics
@@ -346,11 +462,26 @@ from neurospatial.encoding.object_vector import (
 
 ### Spatial View Cells
 
+**New API (Recommended):**
+
+```python
+from neurospatial.encoding import (
+    compute_view_rate,                      # View field (returns ViewRateResult)
+    compute_view_rates,                     # Population view fields
+    ViewRateResult,                         # Result with view_occupancy, is_view_cell(), etc.
+    ViewRatesResult,                        # Population result
+    compute_viewed_location,                # Compute viewed location from gaze
+    compute_viewshed,                       # Compute visible bins
+)
+```
+
+**Legacy API (Still Available):**
+
 ```python
 from neurospatial.encoding.spatial_view import (
     # Field computation
     SpatialViewFieldResult,                 # Result container
-    compute_spatial_view_field,             # Compute view field
+    compute_spatial_view_field,             # Use compute_view_rate instead
 
     # Metrics and classification
     SpatialViewMetrics,                     # Frozen dataclass with metrics

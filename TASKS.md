@@ -447,11 +447,11 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Update `22_spatial_view_cells.ipynb` to use `compute_view_rate(s)`
   - [x] Sync `examples/` and `docs/examples/` directories after updates
 
-- [ ] **7.4** Update CLAUDE.md documentation
-  - [ ] Update "Most Common Patterns" section with new API
-  - [ ] Update API reference for encoding module
-  - [ ] Add backend parameter documentation
-  - [ ] Document result class methods
+- [x] **7.4** Update CLAUDE.md documentation
+  - [x] Update "Most Common Patterns" section with new API
+  - [x] Update API reference for encoding module
+  - [x] Add backend parameter documentation
+  - [x] Document result class methods
 
 - [ ] **7.5** Update QUICKSTART.md documentation
   - [ ] Update neural encoding section
