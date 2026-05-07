@@ -79,7 +79,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from neurospatial.encoding._base import _to_numpy
+from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -109,7 +109,7 @@ __all__ = [
 
 
 @dataclass(frozen=True)
-class EgocentricRateResult:
+class EgocentricRateResult(SpatialResultMixin):
     """Result of egocentric rate computation for a single neuron.
 
     This class wraps an egocentric firing rate map (firing rate by distance
@@ -201,6 +201,13 @@ class EgocentricRateResult:
     distance_range: tuple[float, float]
     n_distance_bins: int
     n_direction_bins: int
+
+    @property
+    def _bin_centers(self) -> NDArray[np.float64]:
+        # Override SpatialResultMixin: egocentric results index polar bins
+        # via ego_env, not a world-coordinate Environment.
+        bin_centers: NDArray[np.float64] = self.ego_env.bin_centers
+        return bin_centers
 
     def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the egocentric rate map (firing rate by distance/direction).
@@ -461,7 +468,7 @@ class EgocentricRateResult:
 
 
 @dataclass(frozen=True)
-class EgocentricRatesResult:
+class EgocentricRatesResult(SpatialResultMixin):
     """Result of egocentric rate computation for multiple neurons.
 
     This class wraps egocentric firing rate maps for a population of neurons
@@ -555,6 +562,13 @@ class EgocentricRatesResult:
     distance_range: tuple[float, float]
     n_distance_bins: int
     n_direction_bins: int
+
+    @property
+    def _bin_centers(self) -> NDArray[np.float64]:
+        # Override SpatialResultMixin: egocentric results index polar bins
+        # via ego_env, not a world-coordinate Environment.
+        bin_centers: NDArray[np.float64] = self.ego_env.bin_centers
+        return bin_centers
 
     def __len__(self) -> int:
         """Return the number of neurons.
@@ -821,30 +835,6 @@ class EgocentricRatesResult:
         """
         info = self.egocentric_spatial_information()
         return info > min_info
-
-    def peak_firing_rates(self) -> NDArray[np.float64]:
-        """Peak firing rates for all neurons.
-
-        Returns the maximum firing rate for each neuron.
-
-        Returns
-        -------
-        ndarray, shape (n_neurons,)
-            Maximum firing rate in Hz for each neuron.
-
-        Examples
-        --------
-        >>> peak_rates = result.peak_firing_rates()
-        >>> print(f"Highest peak rate: {peak_rates.max():.1f} Hz")
-
-        See Also
-        --------
-        preferred_distances : Get distance preferences for all neurons
-        preferred_directions : Get direction preferences for all neurons
-        """
-        firing_rates = _to_numpy(self.firing_rates)
-        result: NDArray[np.float64] = np.nanmax(firing_rates, axis=1)
-        return result
 
     def to_dataframe(
         self,

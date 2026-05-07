@@ -161,7 +161,8 @@ class SpatialResultMixin:
     Requires subclass to have:
     - `self.firing_rate` (1D array) OR `self.firing_rates` (2D array)
     - `self.occupancy` (1D array)
-    - `self.env` (Environment instance)
+    - `self._bin_centers` returning the bin-centers array (default reads
+      ``self.env.bin_centers``; subclasses may override).
 
     Result classes should inherit this mixin to get consistent implementations
     of `peak_locations()` and `peak_firing_rates()`. Do NOT reimplement these
@@ -172,7 +173,26 @@ class SpatialResultMixin:
     All mixin methods are host-only: they use `_to_numpy()` internally and
     always return NumPy arrays. This is intentional as these methods are
     for convenience/visualization, not part of JAX-traced compute graphs.
+
+    The mixin works for any result class whose bin centers are available
+    via a single attribute access. The default reads ``self.env.bin_centers``,
+    suitable for spatial / view results. Result classes that index a different
+    coordinate space (egocentric polar, directional angular) should override
+    ``_bin_centers`` to return the appropriate centers array.
     """
+
+    @property
+    def _bin_centers(self) -> NDArray[np.float64]:
+        """Bin centers in the relevant coordinate space.
+
+        Default implementation reads ``self.env.bin_centers``. Subclasses
+        may override to read from a different attribute (e.g. ``ego_env``
+        for egocentric polar results, or a directly stored ``bin_centers``
+        for directional results).
+        """
+        env: Any = self.env  # type: ignore[attr-defined]
+        bin_centers: NDArray[np.float64] = env.bin_centers
+        return bin_centers
 
     def _get_rates(self) -> Any:
         """Get firing rate(s), handling both single and batch results.
@@ -187,9 +207,9 @@ class SpatialResultMixin:
         return self.firing_rate  # type: ignore[attr-defined]
 
     def peak_locations(self) -> NDArray[np.float64]:
-        """Peak firing locations in physical coordinates.
+        """Peak firing locations in the result's coordinate space.
 
-        Returns the environment coordinates of the bin with maximum firing rate.
+        Returns the bin-center coordinates of the maximum firing rate.
 
         For single-neuron results, returns shape (n_dims,).
         For batch results, returns shape (n_neurons, n_dims).
@@ -204,19 +224,15 @@ class SpatialResultMixin:
             Shape is (n_dims,) for single neuron, (n_neurons, n_dims) for batch.
         """
         rates = _to_numpy(self._get_rates())
-        env: Any = self.env  # type: ignore[attr-defined]
-        bin_centers: NDArray[np.float64] = env.bin_centers
+        bin_centers = self._bin_centers
 
         if rates.ndim == 1:
-            # Single neuron: return (n_dims,)
             peak_idx = int(np.nanargmax(rates))
             result: NDArray[np.float64] = bin_centers[peak_idx]
             return result
-        else:
-            # Batch: return (n_neurons, n_dims)
-            peak_indices = np.nanargmax(rates, axis=1)
-            result = bin_centers[peak_indices]
-            return result
+        peak_indices = np.nanargmax(rates, axis=1)
+        result = bin_centers[peak_indices]
+        return result
 
     def peak_firing_rates(self) -> NDArray[np.float64] | float:
         """Peak firing rate values.
@@ -238,9 +254,6 @@ class SpatialResultMixin:
         rates = _to_numpy(self._get_rates())
 
         if rates.ndim == 1:
-            # Single neuron: return scalar
             return float(np.nanmax(rates))
-        else:
-            # Batch: return (n_neurons,)
-            result: NDArray[np.float64] = np.nanmax(rates, axis=1)
-            return result
+        result: NDArray[np.float64] = np.nanmax(rates, axis=1)
+        return result

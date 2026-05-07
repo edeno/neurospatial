@@ -61,6 +61,7 @@ if TYPE_CHECKING:
     from matplotlib.projections.polar import PolarAxes
 
 # Re-export circular statistics for convenience in HD workflow
+from neurospatial.encoding._base import SpatialResultMixin
 from neurospatial.stats.circular import (
     circular_mean,
     mean_resultant_length,
@@ -86,7 +87,7 @@ __all__ = [
 
 
 @dataclass(frozen=True)
-class DirectionalRateResult:
+class DirectionalRateResult(SpatialResultMixin):
     """Result of directional rate computation for a single neuron.
 
     This class wraps a directional tuning curve with its associated metadata
@@ -168,6 +169,12 @@ class DirectionalRateResult:
     bin_centers: ArrayLike
     bin_size: float
     smoothing_sigma: float | None
+
+    @property
+    def _bin_centers(self) -> NDArray[np.float64]:
+        # Override SpatialResultMixin: directional results store bin centers
+        # directly on the dataclass (no Environment).
+        return np.asarray(self.bin_centers, dtype=np.float64)
 
     def plot(
         self,
@@ -840,7 +847,7 @@ class DirectionalRateResult:
 
 
 @dataclass(frozen=True)
-class DirectionalRatesResult:
+class DirectionalRatesResult(SpatialResultMixin):
     """Result of directional rate computation for multiple neurons.
 
     This class wraps directional tuning curves for a population of neurons
@@ -936,6 +943,12 @@ class DirectionalRatesResult:
     bin_centers: ArrayLike
     bin_size: float
     smoothing_sigma: float | None
+
+    @property
+    def _bin_centers(self) -> NDArray[np.float64]:
+        # Override SpatialResultMixin: directional results store bin centers
+        # directly on the dataclass (no Environment).
+        return np.asarray(self.bin_centers, dtype=np.float64)
 
     def __len__(self) -> int:
         """Return number of neurons.
@@ -1057,17 +1070,20 @@ class DirectionalRatesResult:
         --------
         DirectionalRateResult.preferred_direction : Single-neuron method
         """
-        from neurospatial.stats.circular import circular_mean
-
         rates: NDArray[np.float64] = np.asarray(self.firing_rates, dtype=np.float64)
         centers: NDArray[np.float64] = np.asarray(self.bin_centers, dtype=np.float64)
 
-        n_neurons = len(self)
-        pref_dirs = np.empty(n_neurons, dtype=np.float64)
+        weight_sums = rates.sum(axis=1)
+        # Avoid divide-by-zero; mark invalid (zero/all-NaN) neurons as NaN.
+        valid = weight_sums > 0
+        safe_sums = np.where(valid, weight_sums, 1.0)
+        weights_norm = rates / safe_sums[:, np.newaxis]
 
-        for i in range(n_neurons):
-            pref_dirs[i] = circular_mean(centers, weights=rates[i])
+        mean_cos = weights_norm @ np.cos(centers)
+        mean_sin = weights_norm @ np.sin(centers)
 
+        pref_dirs: NDArray[np.float64] = np.arctan2(mean_sin, mean_cos)
+        pref_dirs[~valid] = np.nan
         return pref_dirs
 
     def mean_vector_lengths(self) -> NDArray[np.float64]:
@@ -1093,17 +1109,19 @@ class DirectionalRatesResult:
         --------
         DirectionalRateResult.mean_vector_length : Single-neuron method
         """
-        from neurospatial.stats.circular import mean_resultant_length
-
         rates: NDArray[np.float64] = np.asarray(self.firing_rates, dtype=np.float64)
         centers: NDArray[np.float64] = np.asarray(self.bin_centers, dtype=np.float64)
 
-        n_neurons = len(self)
-        mvls = np.empty(n_neurons, dtype=np.float64)
+        weight_sums = rates.sum(axis=1)
+        valid = weight_sums > 0
+        safe_sums = np.where(valid, weight_sums, 1.0)
+        weights_norm = rates / safe_sums[:, np.newaxis]
 
-        for i in range(n_neurons):
-            mvls[i] = mean_resultant_length(centers, weights=rates[i])
+        mean_cos = weights_norm @ np.cos(centers)
+        mean_sin = weights_norm @ np.sin(centers)
 
+        mvls: NDArray[np.float64] = np.sqrt(mean_cos**2 + mean_sin**2)
+        mvls[~valid] = np.nan
         return mvls
 
     def tuning_widths(self) -> NDArray[np.float64]:
@@ -1135,31 +1153,6 @@ class DirectionalRatesResult:
             widths[i] = self[i].tuning_width()
 
         return widths
-
-    def peak_firing_rates(self) -> NDArray[np.float64]:
-        """Get peak firing rates for all neurons.
-
-        Returns the maximum firing rate across all directional bins for each
-        neuron. NaN values are ignored.
-
-        Returns
-        -------
-        numpy.ndarray
-            Array of shape (n_neurons,) with peak firing rates in Hz.
-
-        Examples
-        --------
-        >>> peaks = result.peak_firing_rates()
-        >>> peaks.shape
-        (n_neurons,)
-
-        See Also
-        --------
-        DirectionalRateResult.peak_firing_rate : Single-neuron method
-        """
-        rates: NDArray[np.float64] = np.asarray(self.firing_rates, dtype=np.float64)
-        result: NDArray[np.float64] = np.nanmax(rates, axis=1)
-        return result
 
     def detect_hd_cells(
         self, min_mvl: float = 0.4, alpha: float = 0.05

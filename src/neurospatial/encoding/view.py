@@ -79,7 +79,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from neurospatial.encoding._base import _to_numpy
+from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -114,7 +114,7 @@ __all__ = [
 
 
 @dataclass(frozen=True)
-class ViewRateResult:
+class ViewRateResult(SpatialResultMixin):
     """Result of view rate computation for a single neuron.
 
     This class wraps a view field (firing rate by viewed location) with its
@@ -425,7 +425,7 @@ class ViewRateResult:
 
 
 @dataclass(frozen=True)
-class ViewRatesResult:
+class ViewRatesResult(SpatialResultMixin):
     """Result of view rate computation for multiple neurons.
 
     This class wraps view fields for a population of neurons with shared
