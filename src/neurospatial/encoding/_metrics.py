@@ -144,48 +144,21 @@ def spatial_information(
 
         return spatial_information_single(firing_rate, occupancy, base=base)  # type: ignore[arg-type]
 
-    # NumPy implementation
-    firing_rate = np.asarray(firing_rate)
-    occupancy = np.asarray(occupancy)
+    # NumPy implementation — input validation here (boundary), kernel in _core_numpy.
+    firing_rate_arr = np.asarray(firing_rate)
+    occupancy_arr = np.asarray(occupancy)
 
-    if firing_rate.shape != occupancy.shape:
+    if firing_rate_arr.shape != occupancy_arr.shape:
         raise ValueError(
-            f"firing_rate shape {firing_rate.shape} does not match "
-            f"occupancy shape {occupancy.shape}"
+            f"firing_rate shape {firing_rate_arr.shape} does not match "
+            f"occupancy shape {occupancy_arr.shape}"
         )
-
-    # Handle empty arrays
-    if firing_rate.size == 0:
+    if firing_rate_arr.size == 0:
         raise ValueError("firing_rate and occupancy cannot be empty arrays")
 
-    # Normalize occupancy to probability
-    occ_sum = np.nansum(occupancy)
-    if occ_sum == 0 or np.isnan(occ_sum):
-        return 0.0
-    occupancy_prob = occupancy / occ_sum
+    from neurospatial.encoding._core_numpy import spatial_information_single as _np_si
 
-    # Mean firing rate (weighted by occupancy)
-    mean_rate = np.nansum(occupancy_prob * firing_rate)
-
-    if mean_rate == 0 or np.isnan(mean_rate):
-        return 0.0
-
-    # Compute information using vectorized operations
-    # Mask for valid bins: positive occupancy, positive finite firing rate
-    with np.errstate(divide="ignore", invalid="ignore"):
-        valid_mask = (occupancy_prob > 0) & (firing_rate > 0) & np.isfinite(firing_rate)
-
-        if not np.any(valid_mask):
-            return 0.0
-
-        # Extract valid values and compute
-        occ_valid = occupancy_prob[valid_mask]
-        rate_valid = firing_rate[valid_mask]
-        ratio = rate_valid / mean_rate
-        information = np.sum(occ_valid * ratio * np.log(ratio)) / np.log(base)
-
-    # Ensure non-negative result (floating point errors can produce tiny negatives)
-    return float(max(0.0, information))
+    return float(_np_si(firing_rate_arr, occupancy_arr, base=base))
 
 
 def batch_spatial_information(
@@ -378,37 +351,21 @@ def sparsity(
 
         return sparsity_single(firing_rate, occupancy)  # type: ignore[arg-type]
 
-    # NumPy implementation
-    firing_rate = np.asarray(firing_rate)
-    occupancy = np.asarray(occupancy)
+    # NumPy implementation — input validation here, kernel in _core_numpy.
+    firing_rate_arr = np.asarray(firing_rate)
+    occupancy_arr = np.asarray(occupancy)
 
-    if firing_rate.shape != occupancy.shape:
+    if firing_rate_arr.shape != occupancy_arr.shape:
         raise ValueError(
-            f"firing_rate shape {firing_rate.shape} does not match "
-            f"occupancy shape {occupancy.shape}"
+            f"firing_rate shape {firing_rate_arr.shape} does not match "
+            f"occupancy shape {occupancy_arr.shape}"
         )
-
-    # Handle empty arrays
-    if firing_rate.size == 0:
+    if firing_rate_arr.size == 0:
         raise ValueError("firing_rate and occupancy cannot be empty arrays")
 
-    # Normalize occupancy to probability
-    occ_sum = np.nansum(occupancy)
-    if occ_sum == 0 or np.isnan(occ_sum):
-        return 0.0
-    occupancy_prob = occupancy / occ_sum
+    from neurospatial.encoding._core_numpy import sparsity_single as _np_sp
 
-    # Compute sparsity (use nansum to ignore NaN bins)
-    numerator = np.nansum(occupancy_prob * firing_rate) ** 2
-    denominator = np.nansum(occupancy_prob * firing_rate**2)
-
-    if denominator == 0 or np.isnan(denominator):
-        return 0.0
-
-    sparsity_value = numerator / denominator
-
-    # Clamp to [0, 1] to handle floating point precision issues
-    return float(np.clip(sparsity_value, 0.0, 1.0))
+    return float(_np_sp(firing_rate_arr, occupancy_arr))
 
 
 def batch_sparsity(
@@ -488,24 +445,9 @@ def batch_sparsity(
             f"occupancy has {occupancy.shape[0]} bins"
         )
 
-    n_neurons = firing_rates.shape[0]
+    from neurospatial.encoding._core_numpy import sparsity_batch as _np_sp
 
-    # Vectorized one-pass implementation matching singular sparsity():
-    #   S_i = (sum_j p_j r_ij)^2 / sum_j p_j r_ij^2,
-    #   clamped to [0, 1]; degenerate denominators → 0.
-    occ_sum = np.nansum(occupancy)
-    if occ_sum == 0 or np.isnan(occ_sum):
-        return np.zeros(n_neurons, dtype=np.float64)
-    occ_prob = occupancy / occ_sum
-    occ_prob_row = occ_prob[np.newaxis, :]
-
-    numerator = np.nansum(occ_prob_row * firing_rates, axis=1) ** 2
-    denominator = np.nansum(occ_prob_row * firing_rates**2, axis=1)
-    valid_denom = (denominator > 0) & np.isfinite(denominator)
-
-    safe_denom = np.where(valid_denom, denominator, 1.0)
-    sparsity_values = np.where(valid_denom, numerator / safe_denom, 0.0)
-    return np.clip(sparsity_values, 0.0, 1.0).astype(np.float64, copy=False)
+    return _np_sp(firing_rates, occupancy)
 
 
 def batch_grid_scores(
