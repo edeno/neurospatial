@@ -48,26 +48,37 @@ fails at the boundary on stringly-typed-kwarg typos.
       [`_egocentric_binning.py:161`](../../../src/neurospatial/encoding/_egocentric_binning.py#L161)
       here and update both call sites.
 
-- [ ] **1.2** Wire shared validators into every public `compute_*` entry:
-      - [`compute_spatial_rate(s)`](../../../src/neurospatial/encoding/spatial.py#L1342)
-        currently does no length validation — silent wrong answers if
+- [ ] **1.2** Wire shared validators into every public `compute_*` entry
+      (line numbers verified 2026-05-07; re-grep `^def compute_` if drifted):
+      - [`compute_spatial_rate`](../../../src/neurospatial/encoding/spatial.py#L1210)
+        / [`compute_spatial_rates`](../../../src/neurospatial/encoding/spatial.py#L1391)
+        currently do no length validation — silent wrong answers if
         `len(times) != len(positions)`. Add `_validate_trajectory` and
         `_validate_smoothing_method`.
-      - [`compute_directional_rate(s)`](../../../src/neurospatial/encoding/directional.py#L1426)
+      - [`compute_directional_rate`](../../../src/neurospatial/encoding/directional.py#L1313)
+        / [`compute_directional_rates`](../../../src/neurospatial/encoding/directional.py#L1512)
         — drop the inconsistent `.ravel()` call; require 1D inputs
         explicitly.
-      - [`compute_view_rate(s)`](../../../src/neurospatial/encoding/view.py#L1039)
-        — replace its inline length check with `_validate_trajectory`.
-      - [`compute_egocentric_rate(s)`](../../../src/neurospatial/encoding/egocentric.py#L1118)
+      - [`compute_view_rate`](../../../src/neurospatial/encoding/view.py#L875)
+        / [`compute_view_rates`](../../../src/neurospatial/encoding/view.py#L1132)
+        — replace inline length checks with `_validate_trajectory`.
+      - [`compute_egocentric_rate`](../../../src/neurospatial/encoding/egocentric.py#L950)
+        / [`compute_egocentric_rates`](../../../src/neurospatial/encoding/egocentric.py#L1215)
         — add `_validate_trajectory` and `_validate_smoothing_method`.
 
-- [ ] **1.3** Fix [`compute_egocentric_rate(s)`](../../../src/neurospatial/encoding/egocentric.py#L956)
-      argument order. CLAUDE.md prescribes
+- [ ] **1.3** **API change** — fix `compute_egocentric_rate(s)` argument
+      order. CLAUDE.md prescribes
       `(env, spike_times, times, positions, headings, object_positions, ...)`.
-      Currently `env` is an optional kwarg-only at the end. Make `env` the
-      first positional arg (allow `None` only when the geodesic distance
-      metric is not requested; assert at call boundary). Update tests and
-      examples in `docs/examples/`.
+      Currently `env` is an optional kwarg-only at the end of
+      [`compute_egocentric_rate`](../../../src/neurospatial/encoding/egocentric.py#L950)
+      and
+      [`compute_egocentric_rates`](../../../src/neurospatial/encoding/egocentric.py#L1215).
+      Make `env` the first positional arg (allow `None` only when
+      `distance_metric != "geodesic"`; raise at the boundary if `None` is
+      passed with `geodesic`). Update tests in
+      `tests/encoding/test_compute_egocentric_rate*.py` and call sites in
+      `docs/examples/` in the same PR. **Note**: this is the only task in
+      M1 that is not behavior-preserving — see PLAN.md §M1.
 
 **Verification**: `uv run pytest tests/encoding/ -q`. New error paths must
 have at least one regression test each.
@@ -89,17 +100,18 @@ encoding domains.
 
 - [ ] **2.2** Migrate `DirectionalRateResult` / `DirectionalRatesResult`
       to inherit `SpatialResultMixin`. Remove inline `peak_*` reimplementations
-      at
-      [`directional.py:352-386`](../../../src/neurospatial/encoding/directional.py#L352)
+      starting at
+      [`directional.py:349 (peak_firing_rate, single)`](../../../src/neurospatial/encoding/directional.py#L349)
       and
-      [`directional.py:1145-1167`](../../../src/neurospatial/encoding/directional.py#L1145).
+      [`directional.py:1139 (peak_firing_rates, batch)`](../../../src/neurospatial/encoding/directional.py#L1139).
 
 - [ ] **2.3** Migrate `EgocentricRateResult(s)` and `ViewRateResult(s)` to
-      inherit `SpatialResultMixin`. Remove inline `peak_*` blocks in
-      [`egocentric.py:285-289`](../../../src/neurospatial/encoding/egocentric.py#L285),
-      [`egocentric.py:831-853`](../../../src/neurospatial/encoding/egocentric.py#L831),
-      [`view.py:266-298`](../../../src/neurospatial/encoding/view.py#L266),
-      [`view.py:645-690`](../../../src/neurospatial/encoding/view.py#L645).
+      inherit `SpatialResultMixin`. Remove inline `peak_firing_rates` block
+      in
+      [`egocentric.py:825`](../../../src/neurospatial/encoding/egocentric.py#L825)
+      and the equivalent inline blocks in `view.py` (grep
+      `def peak_firing_rate` to locate; line numbers verified at write time
+      may have shifted).
 
 - [ ] **2.4** Remove redundant fields `distance_range`, `n_distance_bins`,
       `n_direction_bins` from
@@ -111,11 +123,12 @@ encoding domains.
       as attributes — `@property` keeps them working without construction
       changes.
 
-- [ ] **2.5** Vectorize remaining per-neuron Python loops in batch result
-      classes:
-      - [`DirectionalRatesResult.detect_hd_cells`](../../../src/neurospatial/encoding/directional.py#L1208)
-      - [`DirectionalRatesResult.mean_vector_lengths`](../../../src/neurospatial/encoding/directional.py#L1110)
-      - [`DirectionalRatesResult.tuning_widths`](../../../src/neurospatial/encoding/directional.py#L1140)
+- [ ] **2.5** Vectorize remaining per-neuron Python loops in
+      `DirectionalRatesResult` (current line numbers from `grep "for i in
+      range(n_neurons)"` on `directional.py`):
+      - [`mean_vector_lengths`, loop at line 1068](../../../src/neurospatial/encoding/directional.py#L1068)
+      - [`tuning_widths`, loop at line 1104](../../../src/neurospatial/encoding/directional.py#L1104)
+      - [`detect_hd_cells`, loop at line 1202](../../../src/neurospatial/encoding/directional.py#L1202)
       All should follow the M0.3 pattern (compute arrays, mask, assign).
 
 **Verification**: full encoding test suite. Check that the
@@ -132,107 +145,118 @@ For each task, record before/after on
 `uv run python benchmarks/bench_encoding_backends.py` (population path).
 
 - [ ] **3.1** Hoist trajectory binning in
-      [`bin_spike_trains`](../../../src/neurospatial/encoding/_binning.py#L329).
-      Currently each `bin_spike_train` call runs `np.interp` per dim and
+      [`bin_spike_trains`](../../../src/neurospatial/encoding/_binning.py#L238).
+      Currently each
+      [`bin_spike_train`](../../../src/neurospatial/encoding/_binning.py#L41)
+      call runs `np.interp` per dim and
       `env.bin_at(spike_positions)`. Precompute
       `trajectory_bins = env.bin_at(positions)` once outside the loop;
       per neuron, do `np.searchsorted(times, spike_times) - 1` and look up.
       Mirror the existing pattern in
       [`_view_binning._precompute_view_bins`](../../../src/neurospatial/encoding/_view_binning.py#L83).
-      Baseline: ___ ms. After: ___ ms.
+      Baseline: TBD ms. After: TBD ms.
 
 - [ ] **3.2** Hoist per-neuron work in
-      [`bin_directional_spike_trains`](../../../src/neurospatial/encoding/_directional_binning.py#L403).
-      `angle_unit` validation, `bin_size` validation, `headings_rad = np.radians(headings)`,
-      `headings_wrapped = headings_rad % (2*pi)`, `bin_edges = np.linspace(...)`
-      are all population-level. Compute once before the per-neuron loop.
-      Same pattern repeats in
-      [`compute_directional_rates`](../../../src/neurospatial/encoding/directional.py#L1715)
+      [`bin_directional_spike_trains`](../../../src/neurospatial/encoding/_directional_binning.py#L328).
+      `angle_unit` validation, `bin_size` validation,
+      `headings_rad = np.radians(headings)`,
+      `headings_wrapped = headings_rad % (2*pi)`, and
+      `bin_edges = np.linspace(...)` are all population-level. Compute once
+      before the per-neuron loop. Same pattern repeats in
+      [`compute_directional_rates`](../../../src/neurospatial/encoding/directional.py#L1512)
       — wire it through.
-      Baseline: ___ ms. After: ___ ms.
+      Baseline: TBD ms. After: TBD ms.
 
 - [ ] **3.3** Vectorize NumPy `batch_spatial_information` and
       `batch_sparsity` in
-      [`_metrics.py:277`](../../../src/neurospatial/encoding/_metrics.py#L277)
+      [`_metrics.py batch_spatial_information line 191`](../../../src/neurospatial/encoding/_metrics.py#L191)
       and
-      [`_metrics.py:402`](../../../src/neurospatial/encoding/_metrics.py#L402).
-      Replace
-      ```python
-      np.array([spatial_information(rates[i], occ, base=base) for i in range(n)])
-      ```
-      with one-pass: normalize `occ`, compute `mean = rates @ occ_prob`,
-      `ratio = rates / mean[:, None]`, masked sum. The JAX path already
-      `vmap`s — keep behavior parity.
-      Baseline: ___ ms. After: ___ ms.
+      [`_metrics.py batch_sparsity line 402`](../../../src/neurospatial/encoding/_metrics.py#L402).
+      Replace the per-neuron list-comp with one-pass: normalize `occupancy`,
+      compute `mean = rates @ occ_prob`, `ratio = rates / mean[:, None]`,
+      masked sum. The JAX path already `vmap`s — keep behavior parity.
+      Baseline: TBD ms. After: TBD ms.
 
 **Verification**: equality check (within `1e-10`) between batched output
 and looped output on a fixed seed. Add as parametrized regression test.
 
 ---
 
-## M4 — JAX compilation and kernel caching
+## M4 — Backend symmetry
 
-**Goal**: the JAX backend actually runs compiled.
+**Goal**: `_core_numpy.py` and `_core_jax.py` are byte-twin modules.
+Prerequisite for M5 — see PLAN.md §M4.
 
-- [ ] **4.1** Add `@jax.jit` (or `@functools.partial(jit, static_argnames=...)`)
+- [ ] **4.1** Add `spatial_information_single`, `spatial_information_batch`,
+      `sparsity_single`, `sparsity_batch` to
+      [`_core_numpy.py`](../../../src/neurospatial/encoding/_core_numpy.py)
+      mirroring the JAX versions at
+      [`_core_jax.py:343 (spatial_information_single)`](../../../src/neurospatial/encoding/_core_jax.py#L343),
+      [`_core_jax.py:444 (spatial_information_batch)`](../../../src/neurospatial/encoding/_core_jax.py#L444),
+      [`_core_jax.py:500 (sparsity_single)`](../../../src/neurospatial/encoding/_core_jax.py#L500),
+      [`_core_jax.py:583 (sparsity_batch)`](../../../src/neurospatial/encoding/_core_jax.py#L583).
+      Use NumPy semantics (`np.maximum`, `np.where`) but match the JAX
+      output bit-for-bit on float64.
+
+- [ ] **4.2** Update
+      [`_metrics.py spatial_information line 61`](../../../src/neurospatial/encoding/_metrics.py#L61),
+      [`_metrics.py batch_spatial_information line 191`](../../../src/neurospatial/encoding/_metrics.py#L191),
+      [`_metrics.py sparsity line 288`](../../../src/neurospatial/encoding/_metrics.py#L288),
+      and
+      [`_metrics.py batch_sparsity line 402`](../../../src/neurospatial/encoding/_metrics.py#L402)
+      to dispatch to the correct backend kernel rather than running their
+      own inline NumPy versions. After this, `_metrics.py` is a thin
+      dispatch layer; the kernels live in `_core_*`.
+
+**Verification**: parametrize existing metric tests across
+`["numpy", "jax"]` and assert equality within 1e-10. Currently
+`_metrics.py` has inline NumPy paths that have already drifted from
+`_core_jax.py` in NaN clamping; regression tests must lock in the
+post-merge behavior.
+
+---
+
+## M5 — JAX compilation and kernel caching
+
+**Goal**: the JAX backend actually runs compiled. Gated on M4.
+
+- [ ] **5.1** Add `@jax.jit` (or `@functools.partial(jit, static_argnames=...)`)
       to pure functions in
       [`_core_jax.py`](../../../src/neurospatial/encoding/_core_jax.py):
-      - `compute_firing_rate_single`, `compute_firing_rates_batch`
-      - `smooth_rate_map_single`, `smooth_rate_maps_batch`
-      - `spatial_information_single`, `sparsity_single`
+      - [`smooth_rate_map_single` line 196](../../../src/neurospatial/encoding/_core_jax.py#L196)
+      - [`smooth_rate_maps_batch` line 270](../../../src/neurospatial/encoding/_core_jax.py#L270)
+      - [`spatial_information_single` line 343](../../../src/neurospatial/encoding/_core_jax.py#L343)
+      - [`sparsity_single` line 500](../../../src/neurospatial/encoding/_core_jax.py#L500)
       Static args: `base` (int), `min_occupancy` (float), shape-determining
       ints. Verify with a `jax.make_jaxpr` smoke test that no recompile
       happens on second call with same shapes.
-      Baseline: ___ ms. After: ___ ms.
+      Baseline: TBD ms. After: TBD ms.
 
-- [ ] **4.2** Cache the vmapped versions of `spatial_information_batch`
-      and `sparsity_batch` at module scope. Currently
-      [`_core_jax.py:484-497`](../../../src/neurospatial/encoding/_core_jax.py#L484)
+- [ ] **5.2** Cache the vmapped versions at module scope. Currently
+      [`spatial_information_batch (jax.vmap rebuilt at line 494)`](../../../src/neurospatial/encoding/_core_jax.py#L494)
       and
-      [`_core_jax.py:619-630`](../../../src/neurospatial/encoding/_core_jax.py#L619)
+      [`sparsity_batch (jax.vmap rebuilt at line 629)`](../../../src/neurospatial/encoding/_core_jax.py#L629)
       construct a fresh `jax.vmap(lambda ...)` on every call (re-traces).
       Pull the lambda out as a module-level `_jit`ed function and `vmap`
       it once.
 
-- [ ] **4.3** Add a `(bandwidth, env_id, n_bins)`-keyed cache for the
-      gaussian-KDE kernel in
-      [`_smoothing.py:727`](../../../src/neurospatial/encoding/_smoothing.py#L727)
-      (JAX) and
-      [`_smoothing.py:446-451, 580-584`](../../../src/neurospatial/encoding/_smoothing.py#L446)
-      (NumPy). Mirror `env.compute_kernel(..., cache=True)` for the
-      diffusion path. For `n_bins ≈ 1000+` this is a dense (n_bins, n_bins)
-      materialization plus exp per call; one-time cost on cache hit.
-      Baseline: ___ ms. After: ___ ms.
+- [ ] **5.3** Add a `(bandwidth, env_id, n_bins)`-keyed cache for the
+      gaussian-KDE kernel materialization. The dense `(n_bins, n_bins)`
+      kernel is rebuilt at every call site:
+      - [`_smoothing.py _gaussian_kde line 420`](../../../src/neurospatial/encoding/_smoothing.py#L420)
+        (NumPy single, kernel built at line 447)
+      - [`_smoothing.py _gaussian_kde_batch line 566`](../../../src/neurospatial/encoding/_smoothing.py#L566)
+        (NumPy batch, kernel built at line 581)
+      - [JAX gaussian KDE single (kernel built at line 738)](../../../src/neurospatial/encoding/_smoothing.py#L738)
+      - [JAX gaussian KDE batch (kernel built at line 845)](../../../src/neurospatial/encoding/_smoothing.py#L845)
+      Mirror `env.compute_kernel(..., cache=True)` for the diffusion path.
+      For `n_bins ≈ 1000+` this is a dense (n_bins, n_bins) materialization
+      plus exp per call; one-time cost on cache hit.
+      Baseline: TBD ms. After: TBD ms.
 
 **Verification**: `tests/benchmarks/test_encoding_backends.py` shows no
 regression at population sizes 10, 100, 1000. JAX path numerics within
-1e-6 of NumPy path on a fixed seed.
-
----
-
-## M5 — Backend symmetry
-
-**Goal**: `_core_numpy.py` and `_core_jax.py` are byte-twin modules.
-
-- [ ] **5.1** Add `spatial_information_single`, `spatial_information_batch`,
-      `sparsity_single`, `sparsity_batch` to
-      [`_core_numpy.py`](../../../src/neurospatial/encoding/_core_numpy.py)
-      mirroring the JAX versions (signatures, NaN handling, clamping).
-      Use NumPy semantics (`np.maximum`, `np.where`) but match the JAX
-      output bit-for-bit on float64.
-
-- [ ] **5.2** Update
-      [`_metrics.py:140-189, 277-285`](../../../src/neurospatial/encoding/_metrics.py#L140)
-      and
-      [`_metrics.py:402-450`](../../../src/neurospatial/encoding/_metrics.py#L402)
-      to dispatch to the correct backend kernel rather than running its
-      own inline NumPy version. After this, `_metrics.py` is a thin
-      dispatch layer; the kernels live in `_core_*`.
-
-**Verification**: parametrize existing metric tests across `["numpy", "jax"]`
-and assert equality within 1e-10. Currently `_metrics.py` has separate
-codepaths that have already drifted (different NaN clamping); regression
-tests must lock in the post-merge behavior.
+1e-6 of NumPy path on a fixed seed (M4 must already pass).
 
 ---
 
@@ -271,13 +295,16 @@ tests must lock in the post-merge behavior.
       with a delegator to `compute_view_rate`. Adapt the legacy
       `*FieldResult` / `*Metrics` constructors to wrap the new result.
 
-- [ ] **6.5** Final pass: also dedupe `_compute_egocentric_coords` in
-      [`_egocentric_binning.py:199-306`](../../../src/neurospatial/encoding/_egocentric_binning.py#L199)
+- [ ] **6.5** Final pass: also dedupe
+      [`_egocentric_binning._compute_egocentric_coords` line 199](../../../src/neurospatial/encoding/_egocentric_binning.py#L199)
       against
-      [`ops/egocentric.py:454-582`](../../../src/neurospatial/ops/egocentric.py#L454)
-      (`compute_egocentric_distance` + `compute_egocentric_bearing`).
-      The private helper hand-rolls Euclidean + a geodesic branch that
-      duplicates the ops layer. Keep only the "select nearest object" step.
+      [`ops/egocentric.compute_egocentric_distance` line 454](../../../src/neurospatial/ops/egocentric.py#L454)
+      and
+      [`ops/egocentric.compute_egocentric_bearing` line 380](../../../src/neurospatial/ops/egocentric.py#L380).
+      The private helper hand-rolls Euclidean (line 242) + a geodesic branch
+      via [`compute_distance_field`](../../../src/neurospatial/encoding/_egocentric_binning.py#L247)
+      that duplicates the ops layer. Keep only the "select nearest object"
+      step.
 
 **Verification**: full test suite, including legacy module tests, passes
 unchanged. Notebook smoke tests in `examples/11_place_field_analysis.ipynb`
@@ -293,13 +320,13 @@ or split per task if reviewer bandwidth is limited:
 
 | Milestone | Tasks | Est. PR size | Risk |
 | --- | --- | --- | --- |
-| M1 | 3 | ~300 LOC net | Low |
+| M1 | 3 | ~300 LOC net | Low–medium (1.3 is API change) |
 | M2 | 5 | ~400 LOC net | Medium |
 | M3 | 3 | ~250 LOC net | Medium (perf) |
-| M4 | 3 | ~150 LOC net | Medium-high (compile semantics) |
-| M5 | 2 | ~400 LOC net | Medium (numerics) |
+| M4 | 2 | ~400 LOC net | Medium (numerics) |
+| M5 | 3 | ~150 LOC net | Medium-high (compile semantics) |
 | M6 | 5 | ~−1500 LOC net | Highest (largest behavioral surface) |
 
 Total: ~−1500 LOC, ~6 PRs. M1+M2 can run in parallel; M3+M4+M5 should
-serialize because they touch overlapping perf-sensitive code; M6 must
-follow M2 and M5.
+serialize because they touch overlapping perf-sensitive code (and M5
+depends on M4 for backend numerical parity); M6 must follow M2 and M4.

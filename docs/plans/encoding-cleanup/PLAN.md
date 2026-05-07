@@ -52,14 +52,18 @@ This is follow-on cleanup to a `-wip` refactor that has not yet merged.
 Order milestones to land safest first so each milestone is independently
 mergeable:
 
-```
-M1  consistency           (3 tasks, low risk)        — pure validators
-M2  result-class reuse    (4 tasks, medium risk)     — touches public dataclasses
+```text
+M1  consistency           (3 tasks, low–medium risk) — validators + 1 API fix
+M2  result-class reuse    (5 tasks, medium risk)     — touches public dataclasses
 M3  binning hoisting      (3 tasks, medium risk)     — perf, behavior-preserving
-M4  jax compilation       (3 tasks, medium-high)     — perf, validates with bench
-M5  backend symmetry      (2 tasks, medium risk)     — restores numpy/jax parity
-M6  legacy delegation     (4 tasks, highest risk)    — largest LOC reduction
+M4  backend symmetry      (2 tasks, medium risk)     — restores numpy/jax parity
+M5  jax compilation       (3 tasks, medium-high)     — perf, validates with bench
+M6  legacy delegation     (5 tasks, highest risk)    — largest LOC reduction
 ```
+
+M4 (symmetry) precedes M5 (compilation) because backend twins must be
+numerically equivalent before optimizing one of them — see Milestone M4
+notes below.
 
 Each milestone gates on:
 
@@ -79,9 +83,17 @@ length-checks `positions`/`headings`, only `compute_directional_rate` calls
 `.ravel()` on inputs, and `smoothing_method` is validated at runtime in some
 paths but not others. Centralize the validators and call them from each entry.
 
-This is a behavior-preserving change (validators that already existed in some
-paths get applied to all paths; new errors surfaced at the boundary should
-be on inputs that would have failed deeper anyway).
+Tasks 1.1 and 1.2 are behavior-preserving (validators that already existed in
+some paths get applied to all paths; any new errors surface at the boundary
+on inputs that would have failed deeper anyway).
+
+Task 1.3 is **not** a validator change — it is a deliberate API fix.
+`compute_egocentric_rate(s)` currently has `spike_times` first and `env` as
+an optional kwarg-only at the end (see [egocentric.py line 950](../../../src/neurospatial/encoding/egocentric.py#L950)),
+which contradicts the canonical argument order documented in
+[CLAUDE.md line 262](../../../CLAUDE.md#L262). Bundling it into M1 keeps all
+"compute_* entry-point cleanup" together; treat it as the breaking change in
+the milestone and update callers (tests + examples) in the same PR.
 
 ### M2 — Result-class reuse
 
@@ -115,7 +127,21 @@ Three concrete wins, each replacing per-neuron work with shared work:
 The view and egocentric binning paths already have correct `_precompute_*`
 helpers — use them as the template.
 
-### M4 — JAX compilation and kernel caching
+### M4 — Backend symmetry
+
+`_core_jax.py` defines `spatial_information_single/_batch` and
+`sparsity_single/_batch`. `_core_numpy.py` does not — the equivalents live
+in `_metrics.py` with subtly different NaN/clamping behavior. Move the
+NumPy implementations into `_core_numpy.py` mirroring the JAX module, and
+have `_metrics.py` dispatch to whichever backend is active.
+
+This is the structural prerequisite for M5: backend twins must be byte-for-
+byte equivalent (within float tolerance) before optimizing one of them. If
+the NumPy and JAX paths produce different numbers today, then M5's `@jit`
+parity tests cannot tell whether a regression came from compilation or from
+a pre-existing drift.
+
+### M5 — JAX compilation and kernel caching
 
 The JAX backend currently runs eager (zero `@jit` decorations) and rebuilds
 hot intermediates on every call. Three changes:
@@ -132,18 +158,6 @@ hot intermediates on every call. Three changes:
 
 Each change has a measurable effect on the benchmark suite — record before/
 after numbers in TASKS.md.
-
-### M5 — Backend symmetry
-
-`_core_jax.py` defines `spatial_information_single/_batch` and
-`sparsity_single/_batch`. `_core_numpy.py` does not — the equivalents live
-in `_metrics.py` with subtly different NaN/clamping behavior. Move the
-NumPy implementations into `_core_numpy.py` mirroring the JAX module, and
-have `_metrics.py` dispatch to whichever backend is active.
-
-This is the structural prerequisite for confidence in M4: backend twins
-must be byte-for-byte equivalent (within float tolerance) before
-optimizing one of them.
 
 ### M6 — Legacy module delegation
 
@@ -167,8 +181,8 @@ work order is:
 4. Run the full test suite; any regression points to a missing detail in
    the new pipeline that must be added before continuing.
 
-This milestone is gated on M2 + M5 because the shims need stable result
-classes and consistent backend numerics.
+This milestone is gated on M2 + M4 because the shims need stable result
+classes (M2) and consistent backend numerics (M4).
 
 ## Verification
 
