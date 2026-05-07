@@ -431,13 +431,15 @@ def test_core_jax_import_enables_x64() -> None:
     dtype=jnp.float64)` silently truncated to float32. The encoding
     pipeline computes everything in float64 and is precision-sensitive
     around `min_occupancy` comparisons; we enable x64 at the JAX-backend
-    module's import time so the production path (compute_*_rate with
-    `backend="jax"`) always runs at float64.
+    module's import time so the production path (`compute_*_rate(
+    backend="jax")`) always runs at float64.
 
-    The conftest fixture also forces x64 on for all tests in this
-    package, so this test verifies the production-side effect by
-    re-checking the flag after a fresh import of `_core_jax` without
-    relying on the fixture.
+    The conftest fixture forces x64 on for all encoding tests, so a
+    naive ``reload + assert True`` here would pass even if the
+    import-time toggle in `_core_jax.py` were deleted. Defeat the
+    fixture by setting the flag to False *inside* the test, then
+    reload `_core_jax`, and assert the import flipped it back on.
+    The conftest's teardown still restores the user's original setting.
     """
     import importlib
 
@@ -445,5 +447,11 @@ def test_core_jax_import_enables_x64() -> None:
 
     import neurospatial.encoding._core_jax as core_jax_module
 
+    # Defeat the conftest fixture: simulate a production process whose JAX
+    # default (x64=False) is in effect at the moment _core_jax is imported.
+    jax.config.update("jax_enable_x64", False)
+    assert jax.config.read("jax_enable_x64") is False
+
     importlib.reload(core_jax_module)
+
     assert jax.config.read("jax_enable_x64") is True
