@@ -7,11 +7,15 @@ Visualize animal behavior alongside spatial field dynamics using flexible overla
 ```python
 from neurospatial import Environment
 from neurospatial.animation import PositionOverlay, BodypartOverlay, HeadDirectionOverlay
+from neurospatial.encoding import compute_spatial_rate
 import numpy as np
 
 # Create environment and fields
 env = Environment.from_samples(positions, bin_size=2.5)
-fields = [compute_place_field(env, spikes[i], times, positions) for i in range(100)]
+fields = [
+    compute_spatial_rate(env, spikes[i], times, positions).firing_rate
+    for i in range(100)
+]
 
 # Position overlay with trail
 position_overlay = PositionOverlay(
@@ -515,6 +519,7 @@ from neurospatial.animation import (
     BodypartOverlay,
     HeadDirectionOverlay,
 )
+from neurospatial.encoding import compute_spatial_rate
 import numpy as np
 
 # Load data
@@ -529,7 +534,7 @@ env.regions.add("goal", point=np.array([80.0, 80.0]))
 
 # Compute fields (e.g., place fields over trials)
 fields = [
-    compute_place_field(env, spike_times[i], timestamps, positions)
+    compute_spatial_rate(env, spike_times[i], timestamps, positions).firing_rate
     for i in range(50)
 ]
 

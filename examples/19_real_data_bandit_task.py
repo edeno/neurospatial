@@ -52,8 +52,8 @@ from neurospatial.encoding import (
     detect_place_fields,
     field_size,
     rate_map_centroid,
-    skaggs_information,
     sparsity,
+    spatial_information,
 )
 
 
@@ -375,7 +375,7 @@ for unit_idx in example_units:
     occupancy = env_2d.occupancy(times_array, positions_array, return_seconds=True)
 
     # Skaggs spatial information (bits/spike)
-    info = skaggs_information(firing_rate, occupancy, base=2.0)
+    info = spatial_information(firing_rate, occupancy, base=2.0)
 
     # Sparsity
     sparse = sparsity(firing_rate, occupancy)
@@ -765,7 +765,7 @@ for unit_idx in active_units:
 
     # Compute metrics
     occupancy = env_2d.occupancy(times_array, positions_array, return_seconds=True)
-    info = skaggs_information(firing_rate, occupancy, base=2.0)
+    info = spatial_information(firing_rate, occupancy, base=2.0)
     sparse = sparsity(firing_rate, occupancy)
     mean_rate = len(spikes) / duration
     peak_rate = np.nanmax(firing_rate)
@@ -919,7 +919,7 @@ print(f"  Median: {np.median(sparsity_all):.3f}")
 # - `compute_spatial_rate()` - Convert spikes to firing rate maps (returns `SpatialRateResult`)
 # - `env.animate_fields()` - Interactive napari visualization
 # - `PositionOverlay` - Animate animal position with trail
-# - `skaggs_information()` - Measure spatial information (bits/spike)
+# - `spatial_information()` - Measure spatial information (bits/spike)
 # - `sparsity()` - Measure firing field compactness
 # - `detect_place_fields()` - Automatic place field detection
 # - `field_size()`, `rate_map_centroid()` - Place field properties

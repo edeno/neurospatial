@@ -289,7 +289,7 @@ from neurospatial.encoding import (
     EgocentricRatesResult,                  # Population result
 
     # Metrics (available on result objects or standalone)
-    skaggs_information,                     # Spatial info (bits/spike)
+    spatial_information,                    # Spatial info (bits/spike)
     sparsity,                               # Spatial sparsity
     detect_place_fields,                    # Detect fields from rate map
     field_size,                             # Field size
@@ -370,7 +370,7 @@ below when you already have a firing-rate map and need standalone analysis:
 ```python
 from neurospatial.encoding import (
     detect_place_fields,
-    skaggs_information,
+    spatial_information,
     sparsity,
     rate_map_centroid,
     field_size,

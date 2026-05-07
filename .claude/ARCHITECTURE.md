@@ -247,7 +247,7 @@ Read out from population activity:
 
 **Free functions** - Cross-environment operations, neural/behavioral analysis:
 
-- Examples: `distance_field()`, `map_points_to_bins()`, `compute_place_field()`
+- Examples: `distance_field()`, `map_points_to_bins()`, `compute_spatial_rate()`
 - Use when: Neural analysis, batch processing, multi-environment operations
 
 **Principle:** Separation keeps `Environment` focused on spatial structure while providing specialized domain functions.

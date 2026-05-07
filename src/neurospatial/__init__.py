@@ -98,7 +98,7 @@ Core classes only at top level::
 Explicit submodule imports for all else (recommended)::
 
     # Neural encoding
-    from neurospatial.encoding import compute_spatial_rate, skaggs_information
+    from neurospatial.encoding import compute_spatial_rate, spatial_information
     from neurospatial.encoding.grid import grid_score
 
     # Neural decoding

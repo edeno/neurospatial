@@ -61,7 +61,7 @@ fields = detect_place_fields(
 Compute the physical area of a place field:
 
 ```python
-from neurospatial.metrics import field_size
+from neurospatial.encoding import field_size
 
 # Get size of first detected field
 area = field_size(fields[0], env)
@@ -75,10 +75,10 @@ Field size is computed as the sum of individual bin areas. For regular grids, ea
 Compute the firing-rate-weighted center of mass of a place field:
 
 ```python
-from neurospatial.metrics import field_centroid
+from neurospatial.encoding import rate_map_centroid
 
 # Compute centroid of first field
-center = field_centroid(firing_rate, fields[0], env)
+center = rate_map_centroid(firing_rate, fields[0], env)
 # Returns: array of shape (n_dims,) with N-D coordinates
 ```
 
@@ -93,13 +93,13 @@ $$
 Skaggs spatial information quantifies how much information (in bits) a cell's firing conveys about the animal's spatial location (Skaggs et al., 1996):
 
 ```python
-from neurospatial.metrics import skaggs_information
+from neurospatial.encoding import spatial_information
 
 # Compute occupancy
 occupancy = env.occupancy(times, positions, return_seconds=True)
 
 # Compute spatial information
-info = skaggs_information(firing_rate, occupancy, base=2.0)
+info = spatial_information(firing_rate, occupancy, base=2.0)
 # Returns: bits per spike
 ```
 
@@ -124,7 +124,7 @@ where:
 Sparsity measures how selectively a cell fires across space (Skaggs et al., 1996):
 
 ```python
-from neurospatial.metrics import sparsity
+from neurospatial.encoding import sparsity
 
 sparseness = sparsity(firing_rate, occupancy)
 # Returns: value in [0, 1]
@@ -146,7 +146,7 @@ $$
 Measure the stability of place fields across recording sessions:
 
 ```python
-from neurospatial.metrics import field_stability
+from neurospatial.encoding import field_stability
 from neurospatial.encoding import compute_spatial_rate
 
 # Compute firing rate maps from two sessions
@@ -178,7 +178,7 @@ stability = field_stability(
 Compute spatial coverage of a place cell population with comprehensive statistics:
 
 ```python
-from neurospatial.metrics import population_coverage, plot_population_coverage
+from neurospatial.encoding import population_coverage, plot_population_coverage
 import numpy as np
 
 # Stack firing rate maps from all neurons: shape (n_neurons, n_bins)
@@ -226,7 +226,7 @@ Coverage is the fraction of bins contained in at least one place field. High cov
 Count how many place fields overlap at each location:
 
 ```python
-from neurospatial.metrics import field_density_map
+from neurospatial.encoding import field_density_map
 
 density = field_density_map(all_place_fields, env.n_bins)
 # Returns: array of shape (n_bins,) with overlap counts
@@ -239,7 +239,7 @@ Useful for identifying "hotspots" where many cells have overlapping fields, whic
 Measure the spatial overlap between two fields using the Jaccard index:
 
 ```python
-from neurospatial.metrics import field_overlap
+from neurospatial.encoding import field_overlap
 
 # Compare fields from two cells
 overlap = field_overlap(field_bins_cell1, field_bins_cell2)
@@ -262,13 +262,13 @@ $$
 Count cells exceeding a spatial information threshold:
 
 ```python
-from neurospatial.metrics import count_place_cells
+from neurospatial.encoding import count_place_cells
 
 # Compute spatial information for all cells
 spatial_info = [
-    skaggs_information(rate_map1, occupancy),
-    skaggs_information(rate_map2, occupancy),
-    skaggs_information(rate_map3, occupancy),
+    spatial_information(rate_map1, occupancy),
+    spatial_information(rate_map2, occupancy),
+    spatial_information(rate_map3, occupancy),
 ]
 
 # Count place cells
@@ -286,7 +286,7 @@ Standard threshold: **0.5 bits/spike** (Skaggs et al., 1996; Thompson & Best, 19
 Compute pairwise correlations between firing rate maps:
 
 ```python
-from neurospatial.metrics import population_vector_correlation
+from neurospatial.encoding import population_vector_correlation
 
 # Stack rate maps into matrix (n_cells × n_bins)
 population_matrix = np.array([
@@ -309,7 +309,7 @@ Useful for identifying cell assemblies and functional clustering in spatial repr
 The border score quantifies how strongly a cell's firing field is aligned with environmental boundaries (walls). Implements the algorithm from Solstad et al. (2008), adapted for arbitrary graph-based environments:
 
 ```python
-from neurospatial.metrics import border_score
+from neurospatial.encoding import border_score
 from neurospatial.encoding import compute_spatial_rate
 
 # Compute firing rate map
@@ -430,11 +430,11 @@ The neurospatial metrics have been **validated** to match reference implementati
 ```python
 import numpy as np
 from neurospatial import Environment
-from neurospatial.metrics import (
+from neurospatial.encoding import (
     detect_place_fields,
     field_size,
-    field_centroid,
-    skaggs_information,
+    rate_map_centroid,
+    spatial_information,
     sparsity,
 )
 from neurospatial.encoding import compute_spatial_rate
@@ -452,12 +452,12 @@ print(f"Detected {len(fields)} place fields")
 # 3. Compute field properties
 for i, field in enumerate(fields):
     area = field_size(field, env)
-    center = field_centroid(firing_rate, field, env)
+    center = rate_map_centroid(firing_rate, field, env)
     print(f"Field {i+1}: area={area:.1f} cm², center={center}")
 
 # 4. Compute single-cell metrics
 occupancy = env.occupancy(times, positions, return_seconds=True)
-info = skaggs_information(firing_rate, occupancy)
+info = spatial_information(firing_rate, occupancy)
 sparse = sparsity(firing_rate, occupancy)
 print(f"Spatial information: {info:.3f} bits/spike")
 print(f"Sparsity: {sparse:.3f}")
@@ -470,10 +470,10 @@ print(f"Place cell: {is_place_cell}")
 ### Population-Level Analysis
 
 ```python
-from neurospatial.metrics import (
+from neurospatial.encoding import (
     population_coverage,
     plot_population_coverage,
-    skaggs_information,
+    spatial_information,
 )
 import numpy as np
 
@@ -512,7 +512,7 @@ for i, neuron_fields in enumerate(result.place_fields):
 ### Border Cell Detection
 
 ```python
-from neurospatial.metrics import border_score
+from neurospatial.encoding import border_score
 from neurospatial.encoding import compute_spatial_rate
 
 # Compute firing rate

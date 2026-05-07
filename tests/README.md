@@ -154,10 +154,10 @@ def test_place_field_pipeline(medium_2d_env):
     spike_times = generate_spike_times(positions, peak_location)
 
     # Compute place field
-    firing_rate = compute_place_field(
+    firing_rate = compute_spatial_rate(
         medium_2d_env, spike_times, times, positions,
         smoothing_method="diffusion_kde", bandwidth=5.0
-    )
+    ).firing_rate
 
     # Detect place fields
     fields = detect_place_fields(firing_rate, medium_2d_env)
@@ -227,7 +227,7 @@ large_2d_env         # ~2500 bins, 5000 samples, for stress tests
 small_1d_env         # ~5 bins, 1D linear track
 medium_2d_env_with_diagonal  # ~625 bins, diagonal connectivity
 
-# Legacy fixtures (for compatibility)
+# Small reusable fixtures
 simple_env           # Small 2D environment
 simple_3d_env        # Small 3D environment with diagonal connectivity
 ```
@@ -340,7 +340,7 @@ Every test should have a docstring explaining:
 - Any special conditions (if marked slow, integration, etc.)
 
 ```python
-def test_skaggs_information_uniform_firing():
+def test_spatial_information_uniform_firing():
     """Test that uniform firing produces zero spatial information.
 
     Uniform firing means each spike conveys no information about location,

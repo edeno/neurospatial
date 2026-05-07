@@ -354,7 +354,7 @@ print(
 #
 # The sections below show the **low-level details** of how place fields are computed. Most users can skip this - `compute_spatial_rate()` handles spike binning, occupancy normalization, and smoothing.
 #
-# ### Binned Approach (Legacy Method)
+# ### Binned Approach (Bin-Then-Smooth)
 #
 # For understanding raw binning behavior, use `smoothing_method="binned"`:
 

@@ -35,13 +35,14 @@ from neurospatial.encoding._metrics import (
     selectivity,
     sparsity,
     spatial_coverage_single_cell,
+    spatial_information,
 )
 from neurospatial.encoding.border import (
     border_score,
     compute_region_coverage,
 )
 
-# Directional rate (head direction cells) - new API
+# Directional rate (head direction cells)
 from neurospatial.encoding.directional import (
     DirectionalRateResult,
     DirectionalRatesResult,
@@ -54,7 +55,7 @@ from neurospatial.encoding.directional import (
     rayleigh_test,
 )
 
-# Egocentric rate (object vector cells) - new API
+# Egocentric rate (object vector cells)
 from neurospatial.encoding.egocentric import (
     EgocentricRateResult,
     EgocentricRatesResult,
@@ -77,14 +78,14 @@ from neurospatial.encoding.grid import (
     spatial_autocorrelation,
 )
 
-# Head direction cell analysis (legacy - prefer directional module)
+# Head direction cell analysis
 from neurospatial.encoding.head_direction import (
     HeadDirectionMetrics,
     compute_head_direction_tuning_curve,
     head_direction_metrics,
 )
 
-# Object-vector cell analysis (legacy - prefer egocentric module)
+# Object-vector field analysis
 from neurospatial.encoding.object_vector import (
     ObjectVectorFieldResult,
     ObjectVectorMetrics,
@@ -100,12 +101,6 @@ from neurospatial.encoding.phase_precession import (
     plot_phase_precession,
 )
 
-# Place cell analysis (legacy - prefer spatial module)
-from neurospatial.encoding.place import (
-    compute_place_field,
-    skaggs_information,
-)
-
 # Population-level metrics
 from neurospatial.encoding.population import (
     PopulationCoverageResult,
@@ -117,7 +112,7 @@ from neurospatial.encoding.population import (
     population_vector_correlation,
 )
 
-# Spatial rate (place/grid/border cells) - new API
+# Spatial rate (place/grid/border cells)
 from neurospatial.encoding.spatial import (
     DirectionalPlaceFields,
     SpatialRateResult,
@@ -128,7 +123,7 @@ from neurospatial.encoding.spatial import (
     detect_place_fields,
 )
 
-# Spatial view cell analysis (legacy - prefer view module)
+# Spatial view field analysis
 from neurospatial.encoding.spatial_view import (
     SpatialViewFieldResult,
     SpatialViewMetrics,
@@ -136,7 +131,7 @@ from neurospatial.encoding.spatial_view import (
     spatial_view_cell_metrics,
 )
 
-# View rate (spatial view cells) - new API
+# View rate (spatial view cells)
 from neurospatial.encoding.view import (
     FieldOfView,
     ViewRateResult,
@@ -153,23 +148,23 @@ __all__ = [  # noqa: RUF022 - organized by category
     # Border/boundary cell analysis
     "border_score",
     "compute_region_coverage",
-    # Directional rate (head direction cells) - new API
+    # Directional rate (head direction cells)
     "DirectionalRateResult",
     "DirectionalRatesResult",
     "compute_directional_rate",
     "compute_directional_rates",
-    # Egocentric rate (object vector cells) - new API
+    # Egocentric rate (object vector cells)
     "EgocentricRateResult",
     "EgocentricRatesResult",
     "compute_egocentric_bearing",
     "compute_egocentric_rate",
     "compute_egocentric_rates",
-    # Spatial rate (place/grid/border cells) - new API
+    # Spatial rate (place/grid/border cells)
     "SpatialRateResult",
     "SpatialRatesResult",
     "compute_spatial_rate",
     "compute_spatial_rates",
-    # View rate (spatial view cells) - new API
+    # View rate (spatial view cells)
     "ViewRateResult",
     "ViewRatesResult",
     "compute_view_rate",
@@ -218,7 +213,6 @@ __all__ = [  # noqa: RUF022 - organized by category
     "DirectionalPlaceFields",
     "compute_directional_place_fields",
     "compute_field_emd",
-    "compute_place_field",
     "detect_place_fields",
     "rate_map_centroid",
     "field_shape_metrics",
@@ -230,8 +224,8 @@ __all__ = [  # noqa: RUF022 - organized by category
     "mutual_information",
     "rate_map_coherence",
     "selectivity",
-    "skaggs_information",
     "sparsity",
+    "spatial_information",
     "spatial_coverage_single_cell",
     # Population-level metrics
     "PopulationCoverageResult",

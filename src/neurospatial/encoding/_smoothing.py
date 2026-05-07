@@ -10,7 +10,7 @@ The functions in this module operate on dense arrays:
 Three smoothing methods are supported:
 - **diffusion_kde**: Graph-based boundary-aware KDE (recommended)
 - **gaussian_kde**: Standard Euclidean KDE (ignores boundaries)
-- **binned**: Legacy method with bin-then-smooth order
+- **binned**: Bin-then-smooth order
 
 The key difference between methods is the order of operations:
 - diffusion_kde/gaussian_kde: Smooth counts → Smooth occupancy → Normalize
@@ -137,7 +137,7 @@ def smooth_rate_map(
         - **gaussian_kde**: Standard Euclidean KDE. Uses Gaussian kernel based
           on Euclidean distance between bin centers. Ignores boundaries (mass
           can "bleed through" walls). Order: smooth → normalize.
-        - **binned**: Legacy method. Computes raw rate first, then smooths.
+        - **binned**: Bin-then-smooth method. Computes raw rate first, then smooths.
           Order: normalize → smooth. Can introduce discretization artifacts.
 
     bandwidth : float, default=5.0
@@ -212,7 +212,7 @@ def smooth_rate_map(
     2. Smooth occupancy using kernel
     3. Compute rate: smoothed_spikes / smoothed_occupancy
 
-    For binned (legacy order):
+    For binned (bin-then-smooth order):
     1. Compute raw rate: spike_counts / occupancy
     2. Smooth the rate map
 
@@ -503,13 +503,13 @@ def _binned(
     bandwidth: float,
     min_occupancy: float,
 ) -> NDArray[np.float64]:
-    """Apply binned smoothing (legacy method).
+    """Apply binned smoothing.
 
-    Algorithm (legacy order):
+    Algorithm (bin-then-smooth order):
     1. Compute raw rate: spike_counts / occupancy
     2. Apply diffusion smoothing to the rate
 
-    This is the legacy order that can introduce discretization artifacts.
+    This order can introduce discretization artifacts.
     """
     spike_counts = np.asarray(spike_counts, dtype=np.float64)
     occupancy = np.asarray(occupancy, dtype=np.float64)
@@ -794,7 +794,7 @@ def _smooth_rate_maps_batch_jax(
             return firing_rates
 
         # Smoothing uses NumPy (Environment.smooth) - per-neuron loop
-        # This is the legacy method and not optimized for JAX
+        # This method is not optimized for JAX
         firing_rates_np = np.asarray(firing_rates)
         n_neurons = firing_rates_np.shape[0]
         result = np.empty_like(firing_rates_np, dtype=np.float64)

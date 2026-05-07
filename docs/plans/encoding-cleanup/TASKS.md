@@ -258,13 +258,15 @@ regression at population sizes 10, 100, 1000. JAX path numerics within
 
 ---
 
-## M6 — Legacy module delegation
+## M6 — Legacy surface removal or delegation
 
-**Status: blocked on numerical divergence between legacy and new
-pipelines. M6.1 added the parity tests as xfail; M6.2–M6.5 are not
-implemented.** See PLAN.md §M6 for the gap analysis.
+**Status: revised. Backwards compatibility is not required before release.
+M6.1 added parity tests as xfail; remaining M6 work should remove stale
+public surfaces or route runtime/docs through canonical result APIs.** See
+PLAN.md §M6 for the gap analysis.
 
-**Goal**: ~2000 line reduction; legacy public surface kept.
+**Goal**: coherent user-facing encoding interfaces and ~2000 line reduction
+where old implementations can be removed safely.
 
 - [x] **6.1** Add parity test
       [`tests/encoding/test_legacy_delegation_parity.py`](../../../tests/encoding/test_legacy_delegation_parity.py).
@@ -272,6 +274,11 @@ implemented.** See PLAN.md §M6 for the gap analysis.
       of 50%+ — see PLAN.md §M6 for the per-pair gap. Tests are marked
       `xfail` so they document the gap and will flip to passing if the
       legacy/new pipelines are aligned later.
+
+- [x] **6.2a** Route directional place fields through
+      `compute_spatial_rate`, rename its occupancy threshold to
+      `min_occupancy`, and update parity tests to compare against the
+      canonical result API.
 
 - [ ] **6.2** ~~Replace
       [`place.py compute_place_field`](../../../src/neurospatial/encoding/place.py)

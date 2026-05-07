@@ -81,7 +81,7 @@ Georges-François, P., Rolls, E. T., & Robertson, R. G. (1999). Spatial view
 
 See Also
 --------
-neurospatial.encoding.place : Place cell analysis
+    neurospatial.encoding.spatial : Spatial rate analysis
 neurospatial.ops.visibility : Visibility and gaze computation
 """
 
@@ -97,8 +97,8 @@ from scipy import stats
 from neurospatial.encoding._field_metrics import rate_map_coherence
 from neurospatial.encoding._metrics import (
     sparsity,
+    spatial_information,
 )
-from neurospatial.encoding._metrics import spatial_information as skaggs_information
 from neurospatial.ops.visibility import (
     FieldOfView,
     compute_viewed_location,
@@ -222,7 +222,7 @@ def compute_spatial_view_field(
 
     See Also
     --------
-    neurospatial.encoding.place.compute_place_field : Standard place field computation.
+    neurospatial.encoding.spatial.compute_spatial_rate : Spatial rate computation.
     neurospatial.ops.visibility.compute_viewed_location : Gaze computation.
 
     Examples
@@ -645,7 +645,7 @@ def spatial_view_cell_metrics(
     --------
     is_spatial_view_cell : Quick boolean classifier.
     compute_spatial_view_field : View field computation.
-    neurospatial.encoding.place.compute_place_field : Place field computation.
+    neurospatial.encoding.spatial.compute_spatial_rate : Place field computation.
 
     Examples
     --------
@@ -692,16 +692,19 @@ def spatial_view_cell_metrics(
         )
 
     # Compute place field (binned by animal position)
-    from neurospatial.encoding.place import compute_place_field
+    from neurospatial.encoding.spatial import compute_spatial_rate
 
-    place_field = compute_place_field(
-        env,
-        spike_times,
-        times,
-        positions,
-        smoothing_method=smoothing_method,
-        bandwidth=bandwidth,
-        min_occupancy_seconds=min_occupancy_seconds,
+    place_field = np.asarray(
+        compute_spatial_rate(
+            env,
+            spike_times,
+            times,
+            positions,
+            smoothing_method=smoothing_method,
+            bandwidth=bandwidth,
+            min_occupancy=min_occupancy_seconds,
+        ).firing_rate,
+        dtype=np.float64,
     )
 
     # Compute view field (binned by viewed location)
@@ -735,9 +738,9 @@ def spatial_view_cell_metrics(
         else np.ones(env.n_bins) / env.n_bins
     )
 
-    # Compute Skaggs information for both fields
-    view_field_skaggs_info = skaggs_information(view_field, view_occupancy_prob)
-    place_field_skaggs_info = skaggs_information(place_field, position_occupancy_prob)
+    # Compute spatial information for both fields
+    view_field_skaggs_info = spatial_information(view_field, view_occupancy_prob)
+    place_field_skaggs_info = spatial_information(place_field, position_occupancy_prob)
 
     # Compute sparsity for view field
     view_field_sparsity = sparsity(view_field, view_occupancy_prob)

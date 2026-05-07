@@ -1246,8 +1246,8 @@ def compute_spatial_rate(
         - **gaussian_kde**: Standard Euclidean KDE. Uses Gaussian kernel based
           on Euclidean distance between bin centers. Ignores boundaries (mass
           can "bleed through" walls).
-        - **binned**: Legacy method. Computes raw rate first, then smooths.
-          Can introduce discretization artifacts.
+        - **binned**: Bin-then-smooth method. Computes raw rate first, then
+          smooths. Can introduce discretization artifacts.
 
     bandwidth : float, default=5.0
         Smoothing bandwidth in the same units as bin_size. Larger values
@@ -1804,7 +1804,7 @@ def compute_directional_place_fields(
         "diffusion_kde", "gaussian_kde", "binned"
     ] = "diffusion_kde",
     bandwidth: float = 5.0,
-    min_occupancy_seconds: float = 0.0,
+    min_occupancy: float = 0.0,
 ) -> DirectionalPlaceFields:
     """Compute place fields conditioned on movement direction or trial type.
 
@@ -1831,8 +1831,9 @@ def compute_directional_place_fields(
         Estimation method passed through to the place-field helper.
     bandwidth : float, default=5.0
         Smoothing bandwidth in environment units (e.g., cm).
-    min_occupancy_seconds : float, default=0.0
-        Minimum occupancy threshold (only used with method="binned").
+    min_occupancy : float, default=0.0
+        Minimum occupancy threshold in seconds. Bins below this threshold are
+        set to NaN.
 
     Returns
     -------
@@ -1917,18 +1918,17 @@ def compute_directional_place_fields(
         )
         positions_sub = positions[mask]
 
-        # Reuse the existing place-field helper so directional place fields
-        # preserve the same numerical scaling as the standalone place-field path.
-        from neurospatial.encoding.place import compute_place_field
-
-        field = compute_place_field(
-            env,
-            spike_times_sub,
-            times_sub,
-            positions_sub,
-            smoothing_method=smoothing_method,
-            bandwidth=bandwidth,
-            min_occupancy_seconds=min_occupancy_seconds,
+        field = np.asarray(
+            compute_spatial_rate(
+                env,
+                spike_times_sub,
+                times_sub,
+                positions_sub,
+                smoothing_method=smoothing_method,
+                bandwidth=bandwidth,
+                min_occupancy=min_occupancy,
+            ).firing_rate,
+            dtype=np.float64,
         )
 
         fields_dict[label] = field

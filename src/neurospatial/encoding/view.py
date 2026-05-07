@@ -66,7 +66,7 @@ Georges-François, P., Rolls, E. T., & Robertson, R. G. (1999). Spatial view
 See Also
 --------
 neurospatial.encoding.spatial : Spatial rate computation for place cells
-neurospatial.encoding.spatial_view : Legacy spatial view module
+neurospatial.encoding.spatial_view : Field-level spatial view utilities
 neurospatial.ops.visibility : Visibility and gaze computation
 """
 
@@ -932,7 +932,7 @@ def compute_view_rate(
         - **diffusion_kde** (recommended): Graph-based boundary-aware KDE.
           Respects environment boundaries (walls, obstacles).
         - **gaussian_kde**: Standard Euclidean KDE. Ignores boundaries.
-        - **binned**: Legacy method. Computes raw rate first, then smooths.
+        - **binned**: Bin-then-smooth method. Computes raw rate first, then smooths.
 
     bandwidth : float, default=5.0
         Smoothing bandwidth in the same units as bin_size. Larger values

@@ -31,15 +31,11 @@ This plan tracks the remaining findings, ordered by risk × value.
 4. **Restore `_core_numpy.py` ↔ `_core_jax.py` symmetry** so the backend
    twins do not silently drift in numerics.
 
-Out of scope for this plan: feature additions, API breaking changes,
-deprecation of legacy public surface (legacy modules are kept as thin
-delegators, not removed).
+Out of scope for this plan: feature additions outside encoding cleanup.
+API breaks are allowed when they make the pre-user public surface coherent.
 
 ## Non-goals
 
-- No removal of any legacy public function. `compute_place_field`,
-  `compute_head_direction_tuning_curve`, `compute_object_vector_tuning`,
-  `compute_spatial_view_field` and their result classes stay importable.
 - No change to the public signatures of `compute_spatial_rate`,
   `compute_directional_rate`, `compute_egocentric_rate`, `compute_view_rate`
   or their plural variants — except where they are inconsistent with each
@@ -159,13 +155,16 @@ hot intermediates on every call. Three changes:
 Each change has a measurable effect on the benchmark suite — record before/
 after numbers in TASKS.md.
 
-### M6 — Legacy module delegation
+### M6 — Legacy surface removal or delegation
 
-**Status: on hold as of 2026-05-07.**
+**Status: revised as of 2026-05-07.**
 
-The plan was to rewrite the public functions in `place.py`,
-`head_direction.py`, `object_vector.py`, and `spatial_view.py` as thin
-shims over the new pipeline, eliminating ~2000 lines of duplicated logic.
+The original plan preserved backwards compatibility by rewriting the public
+functions in `place.py`, `head_direction.py`, `object_vector.py`, and
+`spatial_view.py` as thin shims over the new pipeline. Backwards
+compatibility is no longer required before the first user-facing release, so
+M6 should prefer removing or hiding stale public surfaces over preserving
+numerically divergent behavior.
 
 M6.1 (parity tests) was completed and is checked in at
 [`tests/encoding/test_legacy_delegation_parity.py`](../../../tests/encoding/test_legacy_delegation_parity.py)
@@ -184,15 +183,11 @@ as `xfail`. Every pair fails with relative differences of 50%+:
 - `compute_spatial_view_field` returns a `SpatialViewFieldResult` with
   no `firing_rate` attribute.
 
-These are not floating-point drift; they are different algorithms. M6.2
-through M6.5 are therefore blocked. Replacing the legacy bodies with
-shims would silently change the numbers users get from the legacy API.
-
-Rolling M6 forward in the future requires a separate alignment pass:
-either update the legacy functions to use the new pipeline's
-normalization (a behavioral change to the legacy API), or update the
-new pipeline to match the legacy convention (a behavioral change to the
-new API). Either choice needs explicit user-facing review.
+These are not floating-point drift; they are different algorithms. Because
+there are no users yet, the preferred resolution is to update runtime call
+sites and examples to the canonical result APIs, then either remove stale
+exports or keep old modules only as internal/reference implementations with
+tests that do not advertise them as supported.
 
 The xfail tests stay in place so that any future alignment pass
 automatically lights up — they will flip to passing the moment the gap

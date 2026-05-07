@@ -50,8 +50,8 @@ from neurospatial.encoding import (
     field_size,
     field_stability,
     rate_map_centroid,
-    skaggs_information,
     sparsity,
+    spatial_information,
 )
 
 # Simulation subpackage imports
@@ -338,7 +338,7 @@ for i, field_bins in enumerate(place_fields):
 occupancy = env.occupancy(times, positions, return_seconds=True)
 
 # Skaggs spatial information (bits/spike)
-spatial_info = skaggs_information(firing_rate, occupancy, base=2.0)
+spatial_info = spatial_information(firing_rate, occupancy, base=2.0)
 
 # Sparsity
 sparsity_score = sparsity(firing_rate, occupancy)
@@ -489,7 +489,7 @@ def analyze_place_cell(env, spike_times, times, positions):
 
     # Step 4: Compute spatial metrics
     occupancy = env.occupancy(times, positions, return_seconds=True)
-    spatial_info = skaggs_information(firing_rate, occupancy, base=2.0)
+    spatial_info = spatial_information(firing_rate, occupancy, base=2.0)
     sparsity_score = sparsity(firing_rate, occupancy)
 
     # Step 5: Assess stability (split-half)
@@ -1393,7 +1393,7 @@ print("\nAlways use geodesic distance for complex environments!")
 # - `detect_place_fields()` - Automatic field detection
 # - `field_size()` - Field area in physical units
 # - `rate_map_centroid()` - Center of mass
-# - `skaggs_information()` - Spatial information (bits/spike)
+# - `spatial_information()` - Spatial information (bits/spike)
 # - `sparsity()` - Firing sparsity [0, 1]
 # - `field_stability()` - Temporal stability (correlation)
 # - `field_shift_distance()` - Measure distance between field centroids (Euclidean or geodesic)
