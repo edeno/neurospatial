@@ -134,7 +134,7 @@ def test_environment_bin_at_maps_points_correctly():
 uv run pytest
 
 # Napari GUI tests (requires napari/Qt display support)
-uv run pytest -m "napari and not slow"
+uv run pytest -n 0 -m "napari and not slow"
 
 # Specific test file
 uv run pytest tests/test_environment.py

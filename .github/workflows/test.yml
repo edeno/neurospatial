@@ -111,6 +111,6 @@ jobs:
 
       - name: Run napari tests
         run: |
-          xvfb-run -a uv run pytest -m "napari and not slow"
+          xvfb-run -a uv run pytest -n 0 -m "napari and not slow"
         env:
           MPLBACKEND: Agg
