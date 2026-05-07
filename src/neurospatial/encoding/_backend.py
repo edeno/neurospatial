@@ -22,8 +22,11 @@ Examples
 >>> xp.array([1, 2, 3])
 array([1, 2, 3])
 
->>> get_backend_name("auto")  # Returns "numpy" or "jax" depending on availability
+>>> get_backend_name("numpy")
 'numpy'
+
+The result of ``get_backend_name("auto")`` depends on whether JAX is
+installed and supported on the current platform — see ``is_jax_available``.
 """
 
 from __future__ import annotations
@@ -72,8 +75,8 @@ def is_jax_available() -> bool:
     Examples
     --------
     >>> from neurospatial.encoding._backend import is_jax_available
-    >>> is_jax_available()  # Returns True on Linux/macOS with JAX installed
-    False
+    >>> isinstance(is_jax_available(), bool)
+    True
     """
     if sys.platform == "win32":
         return False
@@ -121,12 +124,12 @@ def get_backend(name: BackendType) -> Any:
     >>> from neurospatial.encoding._backend import get_backend
     >>> xp = get_backend("numpy")
     >>> arr = xp.array([1.0, 2.0, 3.0])
-    >>> arr.sum()
+    >>> float(arr.sum())
     6.0
 
-    >>> xp = get_backend("auto")  # Uses JAX if available, else NumPy
-    >>> xp.zeros(3)
-    array([0., 0., 0.])
+    The ``"auto"`` backend resolves to JAX when available (Linux/macOS with
+    JAX installed) and to NumPy otherwise, so its return value depends on
+    the runtime environment.
     """
     if name not in SUPPORTED_BACKENDS:
         raise ValueError(
@@ -188,8 +191,8 @@ def get_backend_name(name: BackendType) -> Literal["numpy", "jax"]:
     >>> get_backend_name("numpy")
     'numpy'
 
-    >>> get_backend_name("auto")  # Resolves to actual backend
-    'numpy'
+    >>> get_backend_name("auto") in {"numpy", "jax"}
+    True
     """
     if name not in SUPPORTED_BACKENDS:
         raise ValueError(
@@ -249,8 +252,8 @@ def validate_and_resolve_backend(backend: str) -> Literal["numpy", "jax"]:
     >>> validate_and_resolve_backend("numpy")
     'numpy'
 
-    >>> validate_and_resolve_backend("auto")  # Resolves to actual backend
-    'numpy'
+    >>> validate_and_resolve_backend("auto") in {"numpy", "jax"}
+    True
 
     >>> validate_and_resolve_backend("invalid")  # doctest: +IGNORE_EXCEPTION_DETAIL
     Traceback (most recent call last):
