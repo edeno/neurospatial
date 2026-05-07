@@ -579,7 +579,7 @@ if check_ffmpeg_available():
         backend="video",
         save_path=output_dir / "17_all_overlays.mp4",
         fps=10,
-        n_workers=4,
+        n_workers=1,
     )
     print(f"✓ Video: Saved to {output_path}")
 else:

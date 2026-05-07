@@ -1383,15 +1383,18 @@ def parallel_render_frames(
             }
         )
 
-    # Render in parallel
-    with ProcessPoolExecutor(max_workers=n_workers) as executor:
-        list(
-            tqdm(
-                executor.map(_render_worker_frames, worker_tasks),
-                total=n_workers,
-                desc="Workers",
+    if n_workers == 1:
+        _render_worker_frames(worker_tasks[0])
+    else:
+        # Render in parallel
+        with ProcessPoolExecutor(max_workers=n_workers) as executor:
+            list(
+                tqdm(
+                    executor.map(_render_worker_frames, worker_tasks),
+                    total=n_workers,
+                    desc="Workers",
+                )
             )
-        )
 
     # Return ffmpeg pattern (0-indexed for compatibility)
     # ffmpeg expects: frame_00000.png, frame_00001.png, etc.

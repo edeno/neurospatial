@@ -534,6 +534,40 @@ class TestParallelRendering:
             assert all("fields" in task for task in tasks)
             assert all("start_frame_idx" in task for task in tasks)
 
+    def test_serial_render_frames_does_not_spawn_process_pool(self, tmp_path):
+        """n_workers=1 should render in-process without ProcessPoolExecutor."""
+        from neurospatial.animation._parallel import parallel_render_frames
+
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+        fields = [rng.random(env.n_bins) for _ in range(3)]
+
+        with (
+            patch("neurospatial.animation._parallel.ProcessPoolExecutor") as mock_pool,
+            patch(
+                "neurospatial.animation._parallel._render_worker_frames"
+            ) as mock_worker,
+        ):
+            pattern = parallel_render_frames(
+                env=env,
+                fields=fields,
+                output_dir=str(tmp_path),
+                cmap="viridis",
+                vmin=0.0,
+                vmax=1.0,
+                frame_labels=None,
+                dpi=100,
+                n_workers=1,
+            )
+
+        assert "frame_" in pattern
+        mock_pool.assert_not_called()
+        mock_worker.assert_called_once()
+        task = mock_worker.call_args.args[0]
+        assert len(task["fields"]) == len(fields)
+        assert task["start_frame_idx"] == 0
+
     def test_parallel_render_frames_unpicklable_env(self, tmp_path):
         """Test error when environment cannot be pickled."""
         from neurospatial.animation._parallel import parallel_render_frames

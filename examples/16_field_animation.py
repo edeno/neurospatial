@@ -371,7 +371,7 @@ if check_ffmpeg_available():
         speed=5.0,  # 5x real-time
         cmap="hot",
         frame_labels=[f"Trial {i + 1}" for i in range(n_trials)],
-        n_workers=4,  # Parallel rendering
+        n_workers=1,  # Script-safe serial rendering
         dpi=100,
     )
     print(f"✓ Video saved to {output_path}")
@@ -624,7 +624,7 @@ if check_ffmpeg_available():
         save_path=output_dir / "16_large_session_summary.mp4",
         frame_times=subsampled_frame_times,
         speed=1.0,  # Real-time playback
-        n_workers=8,
+        n_workers=1,
         dry_run=True,  # Estimate first
     )
     print("\n  To render, run with dry_run=False")
