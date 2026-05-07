@@ -195,13 +195,13 @@ class TestInfoContentCompleteness:
         """info() should handle many regions gracefully."""
         from shapely.geometry import Point
 
+        env = grid_env_from_samples.copy()
+
         # Add 10 regions
         for i in range(10):
-            grid_env_from_samples.regions.add(
-                f"Region{i}", polygon=Point(0, 0).buffer(0.5 + i * 0.1)
-            )
+            env.regions.add(f"Region{i}", polygon=Point(0, 0).buffer(0.5 + i * 0.1))
 
-        result = grid_env_from_samples.info()
+        result = env.info()
         assert isinstance(result, str)
         # Should show count
         assert "10" in result

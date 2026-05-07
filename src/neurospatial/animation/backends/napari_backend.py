@@ -126,6 +126,9 @@ _TRANSFORM_WARNED_KEY: str = "_transform_fallback_warned"
 _PLAYBACK_CONTROLLER_KEY: str = "playback_controller"
 """Metadata key for storing PlaybackController in viewer."""
 
+_WINDOWED_MANAGER_CLEANUP_PATCHED_KEY: str = "_windowed_manager_cleanup_patched"
+"""Attribute key for tracking whether viewer.close disconnects windowed managers."""
+
 # Progressive loading constants
 WINDOWED_OVERLAY_THRESHOLD: int = 50_000
 """Frame count threshold above which windowed overlay loading is used.
@@ -402,6 +405,30 @@ class WindowedTracksManager:
                 self.layer.features = {"color": np.zeros(0)}
 
         self.window_center = center_frame
+
+
+def _disconnect_windowed_managers(viewer: napari.Viewer) -> None:
+    """Disconnect all windowed overlay managers registered on viewer layers."""
+    for layer in list(viewer.layers):
+        metadata = getattr(layer, "metadata", {})
+        manager = metadata.get("windowed_manager")
+        if manager is not None and hasattr(manager, "disconnect"):
+            manager.disconnect()
+
+
+def _register_windowed_manager_cleanup(viewer: napari.Viewer) -> None:
+    """Ensure viewer.close disconnects windowed overlay managers."""
+    if getattr(viewer, _WINDOWED_MANAGER_CLEANUP_PATCHED_KEY, False) is True:
+        return
+
+    original_close = viewer.close
+
+    def close_with_windowed_cleanup(*args: Any, **kwargs: Any) -> Any:
+        _disconnect_windowed_managers(viewer)
+        return original_close(*args, **kwargs)
+
+    object.__setattr__(viewer, "close", close_with_windowed_cleanup)
+    object.__setattr__(viewer, _WINDOWED_MANAGER_CLEANUP_PATCHED_KEY, True)
 
 
 # =============================================================================
@@ -3112,6 +3139,7 @@ def render_napari(
 
     # Create napari viewer
     viewer = napari.Viewer(title=title)
+    _register_windowed_manager_cleanup(viewer)
 
     # Compute scale for napari (converts pixels to environment units)
     # This enables the scale bar to show correct physical units (e.g., "10 cm")
@@ -3441,6 +3469,7 @@ def _render_multi_field_napari(
 
     # Create napari viewer
     viewer = napari.Viewer(title=title)
+    _register_windowed_manager_cleanup(viewer)
 
     # Compute scale for napari (converts pixels to environment units)
     # This enables the scale bar to show correct physical units (e.g., "10 cm")

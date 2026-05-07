@@ -82,3 +82,35 @@ jobs:
           fail_ci_if_error: false
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  napari:
+    name: Napari tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg xvfb libegl1 libopengl0
+
+      - name: Install dependencies
+        run: |
+          uv sync --extra dev --extra animation
+
+      - name: Run napari tests
+        run: |
+          xvfb-run -a uv run pytest -m "napari and not slow"
+        env:
+          MPLBACKEND: Agg

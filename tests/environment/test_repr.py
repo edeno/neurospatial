@@ -170,8 +170,9 @@ class TestEnvironmentReprHtml:
         # Add a region
         from shapely.geometry import Point
 
-        grid_env_from_samples.regions.add("TestRegion", polygon=Point(0, 0).buffer(2))
-        result = grid_env_from_samples._repr_html_()
+        env = grid_env_from_samples.copy()
+        env.regions.add("TestRegion", polygon=Point(0, 0).buffer(2))
+        result = env._repr_html_()
         # Should show region count
         assert "1" in result  # 1 region
         assert "region" in result.lower()
@@ -288,16 +289,13 @@ class TestReprEdgeCases:
         """_repr_html_() should handle many regions without becoming unwieldy."""
         from shapely.geometry import Point
 
-        # Clear any existing regions first (fixture may be shared)
-        grid_env_from_samples.regions.clear()
+        env = grid_env_from_samples.copy()
 
         # Add 20 regions
         for i in range(20):
-            grid_env_from_samples.regions.add(
-                f"Region{i}", polygon=Point(0, 0).buffer(0.5 + i * 0.1)
-            )
+            env.regions.add(f"Region{i}", polygon=Point(0, 0).buffer(0.5 + i * 0.1))
 
-        result = grid_env_from_samples._repr_html_()
+        result = env._repr_html_()
         assert isinstance(result, str)
         assert "20" in result  # Should show count
         # Should be reasonable length (not list all regions)

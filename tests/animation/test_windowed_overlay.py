@@ -7,13 +7,19 @@ napari's O(n) performance issues with large Points/Tracks layers.
 
 from __future__ import annotations
 
+import importlib.util
 from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
 
-# Skip all tests if napari not available
-pytest.importorskip("napari")
+HAS_NAPARI = importlib.util.find_spec("napari") is not None
+
+pytestmark = [
+    pytest.mark.napari,
+    pytest.mark.xdist_group(name="napari_gui"),
+    pytest.mark.skipif(not HAS_NAPARI, reason="napari not installed"),
+]
 
 
 class TestWindowedOverlayConstants:
@@ -165,6 +171,33 @@ class TestWindowedOverlayManager:
         manager.disconnect()  # Should not raise
         # disconnect should only be called once
         assert mock_viewer.dims.events.current_step.disconnect.call_count == 1
+
+    def test_viewer_close_disconnects_registered_managers(
+        self, mock_viewer, mock_layer, sample_points_data
+    ):
+        """Test viewer.close disconnects windowed managers stored on layers."""
+        from neurospatial.animation.backends.napari_backend import (
+            WindowedOverlayManager,
+            _register_windowed_manager_cleanup,
+        )
+
+        manager = WindowedOverlayManager(
+            viewer=mock_viewer,
+            layer=mock_layer,
+            full_data=sample_points_data,
+            window_radius=100,
+            update_threshold=25,
+        )
+        mock_layer.metadata["windowed_manager"] = manager
+        mock_viewer.layers = [mock_layer]
+        original_close = MagicMock()
+        mock_viewer.close = original_close
+
+        _register_windowed_manager_cleanup(mock_viewer)
+        mock_viewer.close()
+
+        assert manager._connected is False
+        original_close.assert_called_once()
 
     def test_update_window_filters_data_correctly(self, mock_viewer, mock_layer):
         """Test _update_window correctly filters data to window."""

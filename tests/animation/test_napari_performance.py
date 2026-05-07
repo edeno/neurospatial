@@ -10,6 +10,7 @@ Performance targets:
 
 from __future__ import annotations
 
+import importlib.util
 import time
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
@@ -21,8 +22,13 @@ from numpy.typing import NDArray
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
 
-# Skip all tests if napari not available
-pytest.importorskip("napari")
+HAS_NAPARI = importlib.util.find_spec("napari") is not None
+
+pytestmark = [
+    pytest.mark.napari,
+    pytest.mark.xdist_group(name="napari_gui"),
+    pytest.mark.skipif(not HAS_NAPARI, reason="napari not installed"),
+]
 
 
 # =============================================================================

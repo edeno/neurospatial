@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import importlib.util
+
 import numpy as np
 import pytest
 from numpy.typing import NDArray
+
+HAS_NAPARI = importlib.util.find_spec("napari") is not None
 
 # Mark all tests as napari tests (skip in CI without display)
 # Also mark for serial execution to prevent Qt/napari crashes in parallel
@@ -39,6 +43,17 @@ def multi_field_sequences(simple_env) -> list[list[NDArray[np.float64]]]:
             sequence.append(field)
         sequences.append(sequence)
     return sequences
+
+
+@pytest.fixture
+def close_viewer(request):
+    """Close real napari viewers created by a test."""
+
+    def register(viewer):
+        request.addfinalizer(viewer.close)
+        return viewer
+
+    return register
 
 
 class TestMultiFieldDetection:
@@ -119,10 +134,10 @@ class TestHorizontalLayout:
     """Test horizontal layout (side-by-side)."""
 
     @pytest.mark.skipif(
-        not pytest.importorskip("napari", reason="napari not installed"),
+        not HAS_NAPARI,
         reason="Requires napari",
     )
-    def test_horizontal_two_sequences(self, simple_env):
+    def test_horizontal_two_sequences(self, simple_env, close_viewer):
         """Horizontal layout with 2 sequences."""
         from neurospatial.animation.backends.napari_backend import render_napari
 
@@ -132,7 +147,7 @@ class TestHorizontalLayout:
         seq2 = [rng.random(simple_env.n_bins) for _ in range(5)]
         fields = [seq1, seq2]
 
-        viewer = render_napari(simple_env, fields, layout="horizontal")
+        viewer = close_viewer(render_napari(simple_env, fields, layout="horizontal"))
 
         # Should have 2 image layers
         image_layers = [
@@ -145,19 +160,23 @@ class TestHorizontalLayout:
         assert any("Field 2" in layer.name for layer in image_layers)
 
     @pytest.mark.skipif(
-        not pytest.importorskip("napari", reason="napari not installed"),
+        not HAS_NAPARI,
         reason="Requires napari",
     )
-    def test_horizontal_custom_layer_names(self, simple_env, multi_field_sequences):
+    def test_horizontal_custom_layer_names(
+        self, simple_env, multi_field_sequences, close_viewer
+    ):
         """Horizontal layout with custom layer names."""
         from neurospatial.animation.backends.napari_backend import render_napari
 
         layer_names = ["Neuron A", "Neuron B", "Neuron C"]
-        viewer = render_napari(
-            simple_env,
-            multi_field_sequences,
-            layout="horizontal",
-            layer_names=layer_names,
+        viewer = close_viewer(
+            render_napari(
+                simple_env,
+                multi_field_sequences,
+                layout="horizontal",
+                layer_names=layer_names,
+            )
         )
 
         # Verify custom names
@@ -173,14 +192,18 @@ class TestVerticalLayout:
     """Test vertical layout (stacked)."""
 
     @pytest.mark.skipif(
-        not pytest.importorskip("napari", reason="napari not installed"),
+        not HAS_NAPARI,
         reason="Requires napari",
     )
-    def test_vertical_three_sequences(self, simple_env, multi_field_sequences):
+    def test_vertical_three_sequences(
+        self, simple_env, multi_field_sequences, close_viewer
+    ):
         """Vertical layout with 3 sequences."""
         from neurospatial.animation.backends.napari_backend import render_napari
 
-        viewer = render_napari(simple_env, multi_field_sequences, layout="vertical")
+        viewer = close_viewer(
+            render_napari(simple_env, multi_field_sequences, layout="vertical")
+        )
 
         # Should have 3 image layers
         image_layers = [
@@ -193,10 +216,10 @@ class TestGridLayout:
     """Test grid layout (NxM arrangement)."""
 
     @pytest.mark.skipif(
-        not pytest.importorskip("napari", reason="napari not installed"),
+        not HAS_NAPARI,
         reason="Requires napari",
     )
-    def test_grid_four_sequences(self, simple_env):
+    def test_grid_four_sequences(self, simple_env, close_viewer):
         """Grid layout with 4 sequences (2x2)."""
         from neurospatial.animation.backends.napari_backend import render_napari
 
@@ -207,7 +230,7 @@ class TestGridLayout:
             seq = [rng.random(simple_env.n_bins) for _ in range(5)]
             sequences.append(seq)
 
-        viewer = render_napari(simple_env, sequences, layout="grid")
+        viewer = close_viewer(render_napari(simple_env, sequences, layout="grid"))
 
         # Should have 4 image layers
         image_layers = [
@@ -216,10 +239,10 @@ class TestGridLayout:
         assert len(image_layers) == 4
 
     @pytest.mark.skipif(
-        not pytest.importorskip("napari", reason="napari not installed"),
+        not HAS_NAPARI,
         reason="Requires napari",
     )
-    def test_grid_six_sequences(self, simple_env):
+    def test_grid_six_sequences(self, simple_env, close_viewer):
         """Grid layout with 6 sequences (2x3 or 3x2)."""
         from neurospatial.animation.backends.napari_backend import render_napari
 
@@ -230,7 +253,7 @@ class TestGridLayout:
             seq = [rng.random(simple_env.n_bins) for _ in range(5)]
             sequences.append(seq)
 
-        viewer = render_napari(simple_env, sequences, layout="grid")
+        viewer = close_viewer(render_napari(simple_env, sequences, layout="grid"))
 
         # Should have 6 image layers
         image_layers = [
@@ -243,14 +266,18 @@ class TestPlaybackSynchronization:
     """Test that playback is synchronized across all layers."""
 
     @pytest.mark.skipif(
-        not pytest.importorskip("napari", reason="napari not installed"),
+        not HAS_NAPARI,
         reason="Requires napari",
     )
-    def test_all_layers_share_time_dimension(self, simple_env, multi_field_sequences):
+    def test_all_layers_share_time_dimension(
+        self, simple_env, multi_field_sequences, close_viewer
+    ):
         """All layers should share the same time dimension."""
         from neurospatial.animation.backends.napari_backend import render_napari
 
-        viewer = render_napari(simple_env, multi_field_sequences, layout="horizontal")
+        viewer = close_viewer(
+            render_napari(simple_env, multi_field_sequences, layout="horizontal")
+        )
 
         # All image layers should have same number of frames
         image_layers = [
@@ -263,14 +290,18 @@ class TestPlaybackSynchronization:
         assert n_frames_list[0] == 10  # 10 frames per sequence
 
     @pytest.mark.skipif(
-        not pytest.importorskip("napari", reason="napari not installed"),
+        not HAS_NAPARI,
         reason="Requires napari",
     )
-    def test_frame_counter_shows_total_frames(self, simple_env, multi_field_sequences):
+    def test_frame_counter_shows_total_frames(
+        self, simple_env, multi_field_sequences, close_viewer
+    ):
         """Frame counter should show total frames (same for all sequences)."""
         from neurospatial.animation.backends.napari_backend import render_napari
 
-        viewer = render_napari(simple_env, multi_field_sequences, layout="horizontal")
+        viewer = close_viewer(
+            render_napari(simple_env, multi_field_sequences, layout="horizontal")
+        )
 
         # Check that all layers have correct number of frames via data shape
         image_layers = [
@@ -284,10 +315,10 @@ class TestBackwardsCompatibility:
     """Test that single-field input still works (backwards compatibility)."""
 
     @pytest.mark.skipif(
-        not pytest.importorskip("napari", reason="napari not installed"),
+        not HAS_NAPARI,
         reason="Requires napari",
     )
-    def test_single_field_still_works(self, simple_env):
+    def test_single_field_still_works(self, simple_env, close_viewer):
         """Single field sequence should work without layout parameter."""
         from neurospatial.animation.backends.napari_backend import render_napari
 
@@ -295,7 +326,7 @@ class TestBackwardsCompatibility:
         # Single sequence (current behavior)
         fields = [rng.random(simple_env.n_bins) for _ in range(10)]
 
-        viewer = render_napari(simple_env, fields)  # No layout parameter
+        viewer = close_viewer(render_napari(simple_env, fields))  # No layout parameter
 
         # Should have 1 image layer
         image_layers = [
@@ -304,10 +335,10 @@ class TestBackwardsCompatibility:
         assert len(image_layers) == 1
 
     @pytest.mark.skipif(
-        not pytest.importorskip("napari", reason="napari not installed"),
+        not HAS_NAPARI,
         reason="Requires napari",
     )
-    def test_single_field_with_frame_labels(self, simple_env):
+    def test_single_field_with_frame_labels(self, simple_env, close_viewer):
         """Single field with frame labels should still work."""
         from neurospatial.animation.backends.napari_backend import render_napari
 
@@ -315,7 +346,9 @@ class TestBackwardsCompatibility:
         fields = [rng.random(simple_env.n_bins) for _ in range(5)]
         frame_labels = [f"Trial {i + 1}" for i in range(5)]
 
-        viewer = render_napari(simple_env, fields, frame_labels=frame_labels)
+        viewer = close_viewer(
+            render_napari(simple_env, fields, frame_labels=frame_labels)
+        )
 
         # Should work without error
         assert len(viewer.layers) >= 1
@@ -325,10 +358,10 @@ class TestColorScaleSharing:
     """Test that all fields share the same color scale."""
 
     @pytest.mark.skipif(
-        not pytest.importorskip("napari", reason="napari not installed"),
+        not HAS_NAPARI,
         reason="Requires napari",
     )
-    def test_shared_vmin_vmax_across_sequences(self, simple_env):
+    def test_shared_vmin_vmax_across_sequences(self, simple_env, close_viewer):
         """All sequences should use the same vmin/vmax for comparison."""
         from neurospatial.animation.backends.napari_backend import render_napari
 
@@ -338,8 +371,8 @@ class TestColorScaleSharing:
         fields = [seq1, seq2]
 
         # Render with explicit vmin/vmax
-        viewer = render_napari(
-            simple_env, fields, layout="horizontal", vmin=0.0, vmax=2.0
+        viewer = close_viewer(
+            render_napari(simple_env, fields, layout="horizontal", vmin=0.0, vmax=2.0)
         )
 
         # Both sequences should use same color scale
@@ -351,10 +384,10 @@ class TestColorScaleSharing:
         assert len(image_layers) == 2
 
     @pytest.mark.skipif(
-        not pytest.importorskip("napari", reason="napari not installed"),
+        not HAS_NAPARI,
         reason="Requires napari",
     )
-    def test_auto_vmin_vmax_computed_globally(self, simple_env):
+    def test_auto_vmin_vmax_computed_globally(self, simple_env, close_viewer):
         """Auto vmin/vmax should be computed across all sequences."""
         from neurospatial.animation.backends.napari_backend import render_napari
 
@@ -364,7 +397,7 @@ class TestColorScaleSharing:
         fields = [seq1, seq2]
 
         # Render without explicit vmin/vmax (should compute globally)
-        viewer = render_napari(simple_env, fields, layout="horizontal")
+        viewer = close_viewer(render_napari(simple_env, fields, layout="horizontal"))
 
         # Should succeed without error
         image_layers = [
@@ -381,19 +414,23 @@ class TestDispatcherMultiFieldIntegration:
     """
 
     @pytest.mark.skipif(
-        not pytest.importorskip("napari", reason="napari not installed"),
+        not HAS_NAPARI,
         reason="Requires napari",
     )
-    def test_multi_field_via_dispatcher(self, simple_env, multi_field_sequences):
+    def test_multi_field_via_dispatcher(
+        self, simple_env, multi_field_sequences, close_viewer
+    ):
         """Multi-field should work through Environment.animate_fields()."""
         # Call via dispatcher (not render_napari directly)
         n_frames = 10  # Same as multi_field_sequences
         frame_times = np.linspace(0, 1.0, n_frames)
-        viewer = simple_env.animate_fields(
-            multi_field_sequences,
-            backend="napari",
-            layout="horizontal",
-            frame_times=frame_times,
+        viewer = close_viewer(
+            simple_env.animate_fields(
+                multi_field_sequences,
+                backend="napari",
+                layout="horizontal",
+                frame_times=frame_times,
+            )
         )
 
         # Should create 3 image layers (one per sequence)
@@ -407,10 +444,12 @@ class TestDispatcherMultiFieldIntegration:
             assert layer.data.shape[0] == 10
 
     @pytest.mark.skipif(
-        not pytest.importorskip("napari", reason="napari not installed"),
+        not HAS_NAPARI,
         reason="Requires napari",
     )
-    def test_multi_field_with_overlays(self, simple_env, multi_field_sequences):
+    def test_multi_field_with_overlays(
+        self, simple_env, multi_field_sequences, close_viewer
+    ):
         """Multi-field with overlays should work through dispatcher."""
         from neurospatial.animation.overlays import PositionOverlay
 
@@ -425,12 +464,14 @@ class TestDispatcherMultiFieldIntegration:
         frame_times = np.linspace(0, 1.0, n_frames)
 
         # Call via dispatcher with overlay
-        viewer = simple_env.animate_fields(
-            multi_field_sequences,
-            backend="napari",
-            layout="horizontal",
-            overlays=[overlay],
-            frame_times=frame_times,
+        viewer = close_viewer(
+            simple_env.animate_fields(
+                multi_field_sequences,
+                backend="napari",
+                layout="horizontal",
+                overlays=[overlay],
+                frame_times=frame_times,
+            )
         )
 
         # Should create 3 image layers + overlay layers
@@ -446,10 +487,12 @@ class TestDispatcherMultiFieldIntegration:
         assert len(points_layers) >= 1
 
     @pytest.mark.skipif(
-        not pytest.importorskip("napari", reason="napari not installed"),
+        not HAS_NAPARI,
         reason="Requires napari",
     )
-    def test_multi_field_with_frame_times(self, simple_env, multi_field_sequences):
+    def test_multi_field_with_frame_times(
+        self, simple_env, multi_field_sequences, close_viewer
+    ):
         """Multi-field with frame_times should align overlays correctly."""
         from neurospatial.animation.overlays import PositionOverlay
 
@@ -467,12 +510,14 @@ class TestDispatcherMultiFieldIntegration:
         )
 
         # Call via dispatcher with frame_times for alignment
-        viewer = simple_env.animate_fields(
-            multi_field_sequences,
-            backend="napari",
-            layout="horizontal",
-            overlays=[overlay],
-            frame_times=frame_times,
+        viewer = close_viewer(
+            simple_env.animate_fields(
+                multi_field_sequences,
+                backend="napari",
+                layout="horizontal",
+                overlays=[overlay],
+                frame_times=frame_times,
+            )
         )
 
         # Should work without error
@@ -486,10 +531,10 @@ class TestDispatcherMultiFieldIntegration:
             assert layer.data.shape[0] == n_frames
 
     @pytest.mark.skipif(
-        not pytest.importorskip("napari", reason="napari not installed"),
+        not HAS_NAPARI,
         reason="Requires napari",
     )
-    def test_multi_field_n_frames_detection(self, simple_env):
+    def test_multi_field_n_frames_detection(self, simple_env, close_viewer):
         """Dispatcher should correctly detect n_frames from multi-field input."""
         rng = np.random.default_rng(42)
 
@@ -502,11 +547,13 @@ class TestDispatcherMultiFieldIntegration:
         # Create frame_times for fields
         frame_times = np.linspace(0, 1.5, n_frames)
 
-        viewer = simple_env.animate_fields(
-            fields,
-            backend="napari",
-            layout="horizontal",
-            frame_times=frame_times,
+        viewer = close_viewer(
+            simple_env.animate_fields(
+                fields,
+                backend="napari",
+                layout="horizontal",
+                frame_times=frame_times,
+            )
         )
 
         # Verify correct n_frames detected (should be 15, not 2)

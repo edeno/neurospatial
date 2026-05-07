@@ -6,26 +6,56 @@ These tests verify that benchmark dataset generators produce:
 - Valid overlay data for animation backends
 """
 
+import importlib.util
 import sys
 from pathlib import Path
+from types import ModuleType
 
 import numpy as np
 
-# Add scripts directory to path for benchmark imports
 SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
+BENCHMARK_DATASETS_DIR = SCRIPTS_DIR / "benchmark_datasets"
+BENCHMARK_DATASETS_INIT_PATH = BENCHMARK_DATASETS_DIR / "__init__.py"
 
-# Import benchmark utilities from scripts/benchmark_datasets
-from benchmark_datasets import (  # noqa: E402
-    LARGE_CONFIG,
-    MEDIUM_CONFIG,
-    SMALL_CONFIG,
-    BenchmarkConfig,
-    create_benchmark_env,
-    create_benchmark_fields,
-    create_benchmark_overlays,
-)
+
+def _load_benchmark_datasets() -> ModuleType:
+    """Load scripts/benchmark_datasets without mutating sys.path globally."""
+    module_name = "_neurospatial_test_benchmark_datasets"
+    module_names = (module_name, f"{module_name}.datasets")
+    previous_modules = {
+        name: sys.modules[name] for name in module_names if name in sys.modules
+    }
+    spec = importlib.util.spec_from_file_location(
+        module_name,
+        BENCHMARK_DATASETS_INIT_PATH,
+        submodule_search_locations=[str(BENCHMARK_DATASETS_DIR)],
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError(
+            f"Could not load benchmark dataset package from {BENCHMARK_DATASETS_DIR}"
+        )
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        for name in module_names:
+            if name in previous_modules:
+                sys.modules[name] = previous_modules[name]
+            else:
+                sys.modules.pop(name, None)
+    return module
+
+
+benchmark_datasets = _load_benchmark_datasets()
+LARGE_CONFIG = benchmark_datasets.LARGE_CONFIG
+MEDIUM_CONFIG = benchmark_datasets.MEDIUM_CONFIG
+SMALL_CONFIG = benchmark_datasets.SMALL_CONFIG
+BenchmarkConfig = benchmark_datasets.BenchmarkConfig
+create_benchmark_env = benchmark_datasets.create_benchmark_env
+create_benchmark_fields = benchmark_datasets.create_benchmark_fields
+create_benchmark_overlays = benchmark_datasets.create_benchmark_overlays
 
 
 class TestBenchmarkConfig:

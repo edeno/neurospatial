@@ -24,6 +24,23 @@ MAX_PLAYBACK_FPS: int = 60  # Display refresh rate limit
 MIN_PLAYBACK_FPS: int = 1  # Minimum usable playback
 DEFAULT_SPEED: float = 1.0  # Real-time by default
 
+_NON_NAPARI_BACKEND_KWARGS = frozenset(
+    {
+        "bitrate",
+        "codec",
+        "colorbar_label",
+        "contrast_limits",
+        "dpi",
+        "dry_run",
+        "image_format",
+        "max_html_frames",
+        "n_workers",
+        "overlay_trajectory",
+        "show",
+        "show_colorbar",
+    }
+)
+
 
 def _compute_playback_fps(
     frame_times: NDArray[np.float64],
@@ -433,6 +450,12 @@ def animate_fields(
     if backend == "napari":
         from neurospatial.animation.backends.napari_backend import render_napari
 
+        napari_kwargs = {
+            key: value
+            for key, value in kwargs.items()
+            if key not in _NON_NAPARI_BACKEND_KWARGS
+        }
+
         return render_napari(
             env,  # type: ignore[arg-type]  # Backend signatures updated in future milestone
             fields,  # Now accepts arrays after Task 2.1
@@ -440,7 +463,7 @@ def animate_fields(
             show_regions=show_regions,
             region_alpha=region_alpha,
             scale_bar=scale_bar,
-            **kwargs,
+            **napari_kwargs,
         )
 
     elif backend == "video":

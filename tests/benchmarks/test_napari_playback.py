@@ -24,26 +24,35 @@ Generate histogram:
 
 Notes
 -----
-All tests are marked with @pytest.mark.slow and @pytest.mark.xdist_group(name="napari_gui")
-to prevent parallel execution (napari requires single Qt event loop) and to exclude
-from default test runs.
+All tests are marked with @pytest.mark.napari, @pytest.mark.slow, and
+@pytest.mark.xdist_group(name="napari_gui") to prevent parallel execution
+(napari requires a single Qt event loop) and to exclude them from default
+test runs.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import sys
 from pathlib import Path
+from types import ModuleType
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import pytest
 from numpy.typing import NDArray
 
-# Add scripts directory to path for benchmark_datasets import
+pytestmark = pytest.mark.napari
+
 SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
+BENCHMARK_DATASETS_DIR = SCRIPTS_DIR / "benchmark_datasets"
+BENCHMARK_DATASETS_INIT_PATH = BENCHMARK_DATASETS_DIR / "__init__.py"
 if not SCRIPTS_DIR.exists():
     raise RuntimeError(f"Scripts directory not found: {SCRIPTS_DIR}")
-sys.path.insert(0, str(SCRIPTS_DIR))
+if not BENCHMARK_DATASETS_INIT_PATH.exists():
+    raise RuntimeError(
+        f"Benchmark dataset package not found: {BENCHMARK_DATASETS_INIT_PATH}"
+    )
 
 if TYPE_CHECKING:
     import napari
@@ -74,7 +83,38 @@ DEFAULT_SEED = 42
 
 
 @pytest.fixture(scope="module")
-def benchmark_env() -> Environment:
+def benchmark_datasets_module() -> ModuleType:
+    """Load benchmark dataset helpers without mutating sys.path globally."""
+    module_name = "_neurospatial_test_benchmark_datasets"
+    module_names = (module_name, f"{module_name}.datasets")
+    previous_modules = {
+        name: sys.modules[name] for name in module_names if name in sys.modules
+    }
+    spec = importlib.util.spec_from_file_location(
+        module_name,
+        BENCHMARK_DATASETS_INIT_PATH,
+        submodule_search_locations=[str(BENCHMARK_DATASETS_DIR)],
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError(
+            f"Could not load benchmark dataset package from {BENCHMARK_DATASETS_DIR}"
+        )
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        for name in module_names:
+            if name in previous_modules:
+                sys.modules[name] = previous_modules[name]
+            else:
+                sys.modules.pop(name, None)
+    return module
+
+
+@pytest.fixture(scope="module")
+def benchmark_env(benchmark_datasets_module: ModuleType) -> Environment:
     """Create benchmark environment (50x50 grid, ~845 bins).
 
     This fixture is shared across all module tests (module-scoped).
@@ -86,7 +126,8 @@ def benchmark_env() -> Environment:
     Environment
         A fitted 2D environment with approximately 845 active bins.
     """
-    from benchmark_datasets import BenchmarkConfig, create_benchmark_env
+    BenchmarkConfig = benchmark_datasets_module.BenchmarkConfig
+    create_benchmark_env = benchmark_datasets_module.create_benchmark_env
 
     config = BenchmarkConfig(
         name="napari_benchmark",
@@ -97,9 +138,12 @@ def benchmark_env() -> Environment:
 
 
 @pytest.fixture(scope="module")
-def benchmark_fields(benchmark_env: Environment) -> NDArray[np.float32]:
+def benchmark_fields(
+    benchmark_datasets_module: ModuleType, benchmark_env: Environment
+) -> NDArray[np.float32]:
     """Create benchmark fields (DEFAULT_FRAMES frames)."""
-    from benchmark_datasets import BenchmarkConfig, create_benchmark_fields
+    BenchmarkConfig = benchmark_datasets_module.BenchmarkConfig
+    create_benchmark_fields = benchmark_datasets_module.create_benchmark_fields
 
     config = BenchmarkConfig(
         name="napari_benchmark",
@@ -857,6 +901,7 @@ class TestNapariPlaybackFrameCounts:
     def test_frame_count_1000(
         self,
         benchmark,
+        benchmark_datasets_module: ModuleType,
         benchmark_env: Environment,
     ) -> None:
         """Benchmark playback with 1000 frames.
@@ -867,7 +912,8 @@ class TestNapariPlaybackFrameCounts:
         Target: <33.3ms (30 fps)
         """
         pytest.importorskip("napari")
-        from benchmark_datasets import BenchmarkConfig, create_benchmark_fields
+        BenchmarkConfig = benchmark_datasets_module.BenchmarkConfig
+        create_benchmark_fields = benchmark_datasets_module.create_benchmark_fields
 
         n_frames = 1000
         playback_frames = 100  # Still only step through 100 for timing

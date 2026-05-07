@@ -174,8 +174,20 @@ def test_1d_graph_layout_with_html_backend(tmp_path):
 # ============================================================================
 
 
+@pytest.fixture
+def close_viewer(request):
+    """Close real napari viewers created by a test."""
+
+    def register(viewer):
+        request.addfinalizer(viewer.close)
+        return viewer
+
+    return register
+
+
+@pytest.mark.napari
 @pytest.mark.xdist_group(name="napari_gui")
-def test_triangular_mesh_layout_with_napari_backend(tmp_path):
+def test_triangular_mesh_layout_with_napari_backend(tmp_path, close_viewer):
     """Test full rendering pipeline with triangular mesh layout."""
     pytest.importorskip("napari")
 
@@ -200,7 +212,7 @@ def test_triangular_mesh_layout_with_napari_backend(tmp_path):
     fields = [rng.random(env.n_bins) for _ in range(n_frames)]
 
     # Render with napari backend (render_napari doesn't take frame_times)
-    viewer = render_napari(env, fields, vmin=0, vmax=1, fps=10)
+    viewer = close_viewer(render_napari(env, fields, vmin=0, vmax=1, fps=10))
 
     # Verify viewer created
     assert viewer is not None
@@ -216,8 +228,9 @@ def test_triangular_mesh_layout_with_napari_backend(tmp_path):
 # ============================================================================
 
 
+@pytest.mark.napari
 @pytest.mark.xdist_group(name="napari_gui")
-def test_masked_grid_layout_with_napari_backend():
+def test_masked_grid_layout_with_napari_backend(close_viewer):
     """Test full rendering pipeline with masked grid (boundary handling)."""
     pytest.importorskip("napari")
 
@@ -253,7 +266,7 @@ def test_masked_grid_layout_with_napari_backend():
     fields = [rng.random(env.n_bins) for _ in range(n_frames)]
 
     # Render with napari backend (GPU acceleration, render_napari doesn't take frame_times)
-    viewer = render_napari(env, fields, vmin=0, vmax=1, fps=10)
+    viewer = close_viewer(render_napari(env, fields, vmin=0, vmax=1, fps=10))
 
     # Verify viewer created
     assert viewer is not None
