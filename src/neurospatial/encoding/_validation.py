@@ -33,7 +33,7 @@ __all__ = [
 
 
 def validate_times(times: NDArray[np.float64], context: str = "encoding") -> None:
-    """Check that ``times`` has at least 2 samples and is monotonic.
+    """Check that ``times`` has at least 2 samples, is finite, and monotonic.
 
     Parameters
     ----------
@@ -45,13 +45,21 @@ def validate_times(times: NDArray[np.float64], context: str = "encoding") -> Non
     Raises
     ------
     ValueError
-        If ``times`` has fewer than 2 samples, or if any pair of adjacent
-        samples is decreasing (``times`` must be sorted; equal-valued
-        adjacent samples are allowed).
+        If ``times`` has fewer than 2 samples, contains NaN or +/-inf, or
+        if any pair of adjacent samples is decreasing (``times`` must be
+        sorted; equal-valued adjacent samples are allowed).
     """
     n_samples = len(times)
     if n_samples < 2:
         raise ValueError(f"At least 2 samples required for {context}, got {n_samples}")
+
+    if not np.all(np.isfinite(times)):
+        # NaN comparisons are False, so the monotonic check below would
+        # silently accept NaN-laced timestamps. Reject explicitly here.
+        n_bad = int(np.sum(~np.isfinite(times)))
+        raise ValueError(
+            f"times must be finite for {context}; got {n_bad} NaN/inf entries"
+        )
 
     time_diffs = np.diff(times)
     if np.any(time_diffs < 0):
@@ -68,28 +76,39 @@ def validate_trajectory(
     times: NDArray[np.float64],
     positions: NDArray[np.float64] | None = None,
     headings: NDArray[np.float64] | None = None,
+    *,
+    context: str = "encoding",
 ) -> None:
-    """Check that trajectory arrays have matching lengths and expected ndim.
+    """Check that trajectory arrays are 1D-aligned and ``times`` is sane.
+
+    Combines the ndim/length cross-check on ``(times, positions?, headings?)``
+    with the timestamp-shape check from :func:`validate_times` (min length 2,
+    finite, monotonically non-decreasing). Public ``compute_*`` entry points
+    should call this once on their trajectory inputs.
 
     Parameters
     ----------
     times : ndarray, shape (n_samples,)
-        Timestamps. Must be 1D.
+        Timestamps. Must be 1D and pass :func:`validate_times`.
     positions : ndarray, shape (n_samples,) or (n_samples, n_dims), optional
         Position coordinates. Must be 1D (linearized) or 2D with first
         axis matching ``times``.
     headings : ndarray, shape (n_samples,), optional
         Head direction values. Must be 1D with length matching ``times``.
+    context : str, default "encoding"
+        Description of the calling function for error messages.
 
     Raises
     ------
     ValueError
-        If ``times`` is not 1D, if ``headings`` is not 1D, if
-        ``positions`` is not 1D or 2D, or if any provided array's first
-        axis disagrees with ``len(times)``.
+        If ``times`` is not 1D, fails :func:`validate_times`, if
+        ``headings`` is not 1D, if ``positions`` is not 1D or 2D, or if
+        any provided array's first axis disagrees with ``len(times)``.
     """
     if times.ndim != 1:
         raise ValueError(f"times must be 1D, got shape {times.shape}")
+
+    validate_times(times, context=context)
 
     n_samples = len(times)
 

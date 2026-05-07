@@ -474,3 +474,49 @@ class TestBaseImports:
         from neurospatial.encoding._base import SpatialResultMixin
 
         assert SpatialResultMixin is not None
+
+
+class TestValidateTrajectoryRejectsBadTimes:
+    """Regression: validate_trajectory must reject empty / decreasing / NaN times.
+
+    A previous version only checked ndim and length cross-alignment, so
+    public ``compute_*`` entry points silently accepted degenerate inputs.
+    """
+
+    def test_empty_times_rejected(self) -> None:
+        from neurospatial.encoding._validation import validate_trajectory
+
+        empty = np.empty(0, dtype=np.float64)
+        with pytest.raises(ValueError, match=r"At least 2 samples"):
+            validate_trajectory(empty)
+
+    def test_single_sample_rejected(self) -> None:
+        from neurospatial.encoding._validation import validate_trajectory
+
+        with pytest.raises(ValueError, match=r"At least 2 samples"):
+            validate_trajectory(np.array([0.0]))
+
+    def test_decreasing_times_rejected(self) -> None:
+        from neurospatial.encoding._validation import validate_trajectory
+
+        decreasing = np.array([0.0, 1.0, 0.5, 2.0])
+        with pytest.raises(ValueError, match=r"monotonically non-decreasing"):
+            validate_trajectory(decreasing)
+
+    def test_nan_times_rejected(self) -> None:
+        from neurospatial.encoding._validation import validate_trajectory
+
+        with_nan = np.array([0.0, 0.5, np.nan, 1.0])
+        with pytest.raises(ValueError, match=r"finite"):
+            validate_trajectory(with_nan)
+
+    def test_compute_spatial_rate_rejects_decreasing_times(self) -> None:
+        """End-to-end: the public entry point inherits the time validation."""
+        from neurospatial import Environment
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        positions = np.linspace(0.0, 100.0, 10).reshape(-1, 1)
+        env = Environment.from_samples(positions, bin_size=10.0)
+        decreasing = np.array([0.0, 1.0, 0.5, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5])
+        with pytest.raises(ValueError, match=r"monotonically non-decreasing"):
+            compute_spatial_rate(env, np.array([0.5]), decreasing, positions)

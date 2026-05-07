@@ -112,8 +112,14 @@ def compute_firing_rate_single(
     """
     spike_counts = jnp.asarray(spike_counts)
     occupancy = jnp.asarray(occupancy)
+    # Pass min_occupancy at the same dtype as occupancy. Casting to float32
+    # would round the threshold and let JAX keep bins NumPy would mask
+    # (e.g. occupancy=0.100000001 vs min_occupancy=0.100000005 collapse to
+    # equal under float32).
     out: Array = _firing_rate_kernel(
-        spike_counts, occupancy, jnp.float32(min_occupancy)
+        spike_counts,
+        occupancy,
+        jnp.asarray(min_occupancy, dtype=occupancy.dtype),
     )
     return out
 
@@ -182,7 +188,9 @@ def compute_firing_rates_batch(
     spike_counts = jnp.asarray(spike_counts)
     occupancy = jnp.asarray(occupancy)
     out: Array = _firing_rates_batch_kernel(
-        spike_counts, occupancy, jnp.float32(min_occupancy)
+        spike_counts,
+        occupancy,
+        jnp.asarray(min_occupancy, dtype=occupancy.dtype),
     )
     return out
 

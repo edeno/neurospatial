@@ -122,8 +122,10 @@ def test_place_field_parity(
 
 
 @pytest.mark.xfail(
-    reason="Legacy head_direction tuning curve returns bin-center array first "
-    "and uses different bin centers than directional.compute_directional_rate."
+    reason="Legacy compute_head_direction_tuning_curve uses a different "
+    "occupancy normalization / bin-edge convention than "
+    "directional.compute_directional_rate; firing-rate values differ "
+    "even at corresponding bin centers."
 )
 def test_head_direction_parity(trajectory: dict[str, np.ndarray]) -> None:
     """Legacy compute_head_direction_tuning_curve matches the new directional API."""
@@ -131,7 +133,10 @@ def test_head_direction_parity(trajectory: dict[str, np.ndarray]) -> None:
     from neurospatial.encoding.head_direction import compute_head_direction_tuning_curve
 
     bin_size = np.pi / 30
-    legacy_rate, _legacy_bin_centers = compute_head_direction_tuning_curve(
+    # Legacy returns (bin_centers, firing_rates); preserve order on the LHS
+    # or the parity check compares centers against rates and the xfail no
+    # longer documents the real gap.
+    _legacy_bin_centers, legacy_rate = compute_head_direction_tuning_curve(
         trajectory["spike_times"],
         trajectory["times"],
         trajectory["headings"],

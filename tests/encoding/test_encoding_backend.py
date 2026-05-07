@@ -19,6 +19,7 @@ from __future__ import annotations
 import sys
 from unittest.mock import patch
 
+import numpy as np
 import pytest
 
 # ==============================================================================
@@ -345,3 +346,73 @@ class TestBackendEdgeCases:
         backend1 = get_backend("jax")
         backend2 = get_backend("jax")
         assert backend1 is backend2
+
+
+class TestMinOccupancyPrecisionAcrossBackends:
+    """Regression: JAX firing-rate kernels must compare min_occupancy at
+    occupancy's dtype.
+
+    A previous refactor passed `jnp.float32(min_occupancy)` to the jit-compiled
+    kernel, which truncated the threshold and let JAX keep bins that the NumPy
+    kernel masked.
+    """
+
+    def test_jax_matches_numpy_at_subfloat32_threshold_singular(self) -> None:
+        import jax.numpy as jnp
+
+        from neurospatial.encoding._core_jax import (
+            compute_firing_rate_single as jax_single,
+        )
+        from neurospatial.encoding._core_numpy import (
+            compute_firing_rate_single as np_single,
+        )
+
+        # Threshold and occupancy differ only in the last few float64 bits;
+        # under float32 they collapse to equal and the strict ">=" passes.
+        threshold = 0.100000005
+        occupancy = np.array([0.100000001, 1.0, 1.0, 1.0, 1.0], dtype=np.float64)
+        spike_counts = np.ones(5, dtype=np.float64)
+
+        np_rate = np.asarray(
+            np_single(spike_counts, occupancy, min_occupancy=threshold)
+        )
+        jax_rate = np.asarray(
+            jax_single(
+                jnp.asarray(spike_counts),
+                jnp.asarray(occupancy),
+                min_occupancy=threshold,
+            )
+        )
+
+        # NumPy must mask bin 0 (occupancy below threshold).
+        assert np.isnan(np_rate[0]), "test setup not exercising the bug"
+        # JAX must agree.
+        np.testing.assert_array_equal(np.isnan(np_rate), np.isnan(jax_rate))
+
+    def test_jax_matches_numpy_at_subfloat32_threshold_batch(self) -> None:
+        import jax.numpy as jnp
+
+        from neurospatial.encoding._core_jax import (
+            compute_firing_rates_batch as jax_batch,
+        )
+        from neurospatial.encoding._core_numpy import (
+            compute_firing_rates_batch as np_batch,
+        )
+
+        threshold = 0.100000005
+        occupancy = np.array([0.100000001, 1.0, 1.0, 1.0, 1.0], dtype=np.float64)
+        spike_counts = np.ones((3, 5), dtype=np.float64)
+
+        np_rates = np.asarray(
+            np_batch(spike_counts, occupancy, min_occupancy=threshold)
+        )
+        jax_rates = np.asarray(
+            jax_batch(
+                jnp.asarray(spike_counts),
+                jnp.asarray(occupancy),
+                min_occupancy=threshold,
+            )
+        )
+
+        assert np.all(np.isnan(np_rates[:, 0])), "test setup not exercising the bug"
+        np.testing.assert_array_equal(np.isnan(np_rates), np.isnan(jax_rates))
