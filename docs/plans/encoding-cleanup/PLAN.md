@@ -161,28 +161,42 @@ after numbers in TASKS.md.
 
 ### M6 — Legacy module delegation
 
-The largest mechanical change. `place.py`, `head_direction.py`,
-`object_vector.py`, and `spatial_view.py` collectively re-implement
-~2000 lines of logic that now lives in the new private pipeline. Rewrite
-each public function in those files as a thin shim that calls the
-corresponding `compute_*_rate(s)` and adapts the return type to the
-legacy result class.
+**Status: on hold as of 2026-05-07.**
 
-Risk: legacy public functions have legacy public signatures and legacy
-result-class fields. The shim must produce byte-equivalent outputs
-(values within float tolerance) on existing tests. For each module, the
-work order is:
+The plan was to rewrite the public functions in `place.py`,
+`head_direction.py`, `object_vector.py`, and `spatial_view.py` as thin
+shims over the new pipeline, eliminating ~2000 lines of duplicated logic.
 
-1. Identify all callers of the legacy function (in tests, docs/examples,
-   notebooks).
-2. Add a "delegation parity" test that runs the legacy function and the
-   new function on the same inputs and asserts equivalence.
-3. Replace the legacy implementation with the shim.
-4. Run the full test suite; any regression points to a missing detail in
-   the new pipeline that must be added before continuing.
+M6.1 (parity tests) was completed and is checked in at
+[`tests/encoding/test_legacy_delegation_parity.py`](../../../tests/encoding/test_legacy_delegation_parity.py)
+as `xfail`. Every pair fails with relative differences of 50%+:
 
-This milestone is gated on M2 + M4 because the shims need stable result
-classes (M2) and consistent backend numerics (M4).
+- `compute_place_field` ("binned" / "gaussian_kde" / "diffusion_kde") --
+  scale mismatch with `compute_spatial_rate`; values differ by an order
+  of magnitude. Different occupancy normalization or smoothing-order
+  convention.
+- `compute_head_direction_tuning_curve` returns
+  `(firing_rate, bin_centers)` rather than the new `Result` shape, and
+  the bin-center convention may differ.
+- `compute_object_vector_tuning` has a different signature (no `env`
+  arg) and returns an `ObjectVectorMetrics` whose attribute layout does
+  not include `firing_rate`.
+- `compute_spatial_view_field` returns a `SpatialViewFieldResult` with
+  no `firing_rate` attribute.
+
+These are not floating-point drift; they are different algorithms. M6.2
+through M6.5 are therefore blocked. Replacing the legacy bodies with
+shims would silently change the numbers users get from the legacy API.
+
+Rolling M6 forward in the future requires a separate alignment pass:
+either update the legacy functions to use the new pipeline's
+normalization (a behavioral change to the legacy API), or update the
+new pipeline to match the legacy convention (a behavioral change to the
+new API). Either choice needs explicit user-facing review.
+
+The xfail tests stay in place so that any future alignment pass
+automatically lights up — they will flip to passing the moment the gap
+closes.
 
 ## Verification
 

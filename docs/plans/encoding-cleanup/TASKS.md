@@ -262,40 +262,42 @@ regression at population sizes 10, 100, 1000. JAX path numerics within
 
 ## M6 — Legacy module delegation
 
+**Status: blocked on numerical divergence between legacy and new
+pipelines. M6.1 added the parity tests as xfail; M6.2–M6.5 are not
+implemented.** See PLAN.md §M6 for the gap analysis.
+
 **Goal**: ~2000 line reduction; legacy public surface kept.
 
-- [ ] **6.1** Add parity test
-      `tests/encoding/test_legacy_delegation_parity.py` that runs each
-      legacy function and its new counterpart on a shared synthetic
-      dataset and asserts firing-rate equivalence within 1e-8. Cover:
-      - `compute_place_field` ↔ `compute_spatial_rate(...).firing_rate`
-      - `compute_head_direction_tuning_curve` ↔ `compute_directional_rate(...).firing_rate`
-      - `compute_object_vector_tuning` ↔ `compute_egocentric_rate(...)`
-      - `compute_spatial_view_field` ↔ `compute_view_rate(...)`
-      Run these tests before any shim work; failures here mean the new
-      pipeline is missing a feature, not that the legacy code is wrong.
+- [x] **6.1** Add parity test
+      [`tests/encoding/test_legacy_delegation_parity.py`](../../../tests/encoding/test_legacy_delegation_parity.py).
+      All four pairs mismatched at `rtol=1e-6` with relative differences
+      of 50%+ — see PLAN.md §M6 for the per-pair gap. Tests are marked
+      `xfail` so they document the gap and will flip to passing if the
+      legacy/new pipelines are aligned later.
 
-- [ ] **6.2** Replace
+- [ ] **6.2** ~~Replace
       [`place.py compute_place_field`](../../../src/neurospatial/encoding/place.py)
       and its private helpers (`_interpolate_spike_positions`,
       `_binned_rate_map`, `_diffusion_kde`, `_gaussian_kde`, `_binned`)
       with a thin shim that calls `compute_spatial_rate` and adapts
-      the return. Delete the helpers (~480 lines).
+      the return. Delete the helpers (~480 lines).~~ **Blocked by M6.1.**
 
-- [ ] **6.3** Replace
+- [ ] **6.3** ~~Replace
       [`head_direction.py compute_head_direction_tuning_curve`](../../../src/neurospatial/encoding/head_direction.py)
       with a delegator to `compute_directional_rate`. Keep the
       `HeadDirectionMetrics` dataclass and `head_direction_metrics`
-      function as-is (they read from the rate map; no duplication).
+      function as-is (they read from the rate map; no duplication).~~
+      **Blocked by M6.1.**
 
-- [ ] **6.4** Replace
+- [ ] **6.4** ~~Replace
       [`object_vector.py compute_object_vector_tuning`](../../../src/neurospatial/encoding/object_vector.py)
       with a delegator to `compute_egocentric_rate`, and
       [`spatial_view.py compute_spatial_view_field`](../../../src/neurospatial/encoding/spatial_view.py)
       with a delegator to `compute_view_rate`. Adapt the legacy
-      `*FieldResult` / `*Metrics` constructors to wrap the new result.
+      `*FieldResult` / `*Metrics` constructors to wrap the new result.~~
+      **Blocked by M6.1.**
 
-- [ ] **6.5** Final pass: also dedupe
+- [ ] **6.5** ~~Final pass: also dedupe
       [`_egocentric_binning._compute_egocentric_coords` line 199](../../../src/neurospatial/encoding/_egocentric_binning.py#L199)
       against
       [`ops/egocentric.compute_egocentric_distance` line 454](../../../src/neurospatial/ops/egocentric.py#L454)
@@ -304,7 +306,8 @@ regression at population sizes 10, 100, 1000. JAX path numerics within
       The private helper hand-rolls Euclidean (line 242) + a geodesic branch
       via [`compute_distance_field`](../../../src/neurospatial/encoding/_egocentric_binning.py#L247)
       that duplicates the ops layer. Keep only the "select nearest object"
-      step.
+      step.~~ **Independent of M6.1's parity gap; could be done later as a
+      standalone refactor inside `_egocentric_binning.py`.**
 
 **Verification**: full test suite, including legacy module tests, passes
 unchanged. Notebook smoke tests in `examples/11_place_field_analysis.ipynb`
