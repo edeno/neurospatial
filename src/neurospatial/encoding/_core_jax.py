@@ -38,8 +38,10 @@ neurospatial.encoding._smoothing : Detailed smoothing implementations.
 
 from __future__ import annotations
 
+from functools import partial
 from typing import TYPE_CHECKING, Literal
 
+import jax
 import jax.numpy as jnp
 
 if TYPE_CHECKING:
@@ -110,20 +112,21 @@ def compute_firing_rate_single(
     """
     spike_counts = jnp.asarray(spike_counts)
     occupancy = jnp.asarray(occupancy)
-
-    # Compute firing rate with safe division using jnp.where
-    # JAX's division handles inf/nan differently, so we use where explicitly
-    firing_rate = jnp.where(
-        occupancy > 0,
-        spike_counts / occupancy,
-        jnp.nan,
+    out: Array = _firing_rate_kernel(
+        spike_counts, occupancy, jnp.float32(min_occupancy)
     )
+    return out
 
-    # Apply min_occupancy threshold
-    if min_occupancy > 0:
-        firing_rate = jnp.where(occupancy >= min_occupancy, firing_rate, jnp.nan)
 
-    return firing_rate
+@jax.jit
+def _firing_rate_kernel(
+    spike_counts: Array, occupancy: Array, min_occupancy: Array
+) -> Array:
+    # Single mask covers both safe-divide (occupancy > 0) and the
+    # user threshold (occupancy >= min_occupancy). When min_occupancy == 0
+    # this collapses to the original "occupancy > 0" semantics.
+    valid = (occupancy > 0) & (occupancy >= min_occupancy)
+    return jnp.where(valid, spike_counts / occupancy, jnp.nan)
 
 
 def compute_firing_rates_batch(
@@ -178,19 +181,18 @@ def compute_firing_rates_batch(
     """
     spike_counts = jnp.asarray(spike_counts)
     occupancy = jnp.asarray(occupancy)
-
-    # Compute firing rate with safe division (broadcasting over neurons)
-    firing_rates = jnp.where(
-        occupancy > 0,
-        spike_counts / occupancy,
-        jnp.nan,
+    out: Array = _firing_rates_batch_kernel(
+        spike_counts, occupancy, jnp.float32(min_occupancy)
     )
+    return out
 
-    # Apply min_occupancy threshold
-    if min_occupancy > 0:
-        firing_rates = jnp.where(occupancy >= min_occupancy, firing_rates, jnp.nan)
 
-    return firing_rates
+@jax.jit
+def _firing_rates_batch_kernel(
+    spike_counts: Array, occupancy: Array, min_occupancy: Array
+) -> Array:
+    valid = (occupancy > 0) & (occupancy >= min_occupancy)
+    return jnp.where(valid, spike_counts / occupancy, jnp.nan)
 
 
 def smooth_rate_map_single(
@@ -255,16 +257,15 @@ def smooth_rate_map_single(
     """
     firing_rate = jnp.asarray(firing_rate)
     adjacency = jnp.asarray(adjacency)
-
     if method == "binned":
-        # No smoothing - return input unchanged
         return firing_rate
+    out: Array = _smooth_rate_map_single_kernel(firing_rate, adjacency)
+    return out
 
-    # For diffusion_kde and gaussian_kde, apply kernel smoothing
-    # The adjacency matrix is the smoothing kernel (row-normalized weights)
-    smoothed = adjacency @ firing_rate
 
-    return smoothed
+@jax.jit
+def _smooth_rate_map_single_kernel(firing_rate: Array, adjacency: Array) -> Array:
+    return adjacency @ firing_rate
 
 
 def smooth_rate_maps_batch(
@@ -327,17 +328,15 @@ def smooth_rate_maps_batch(
     """
     firing_rates = jnp.asarray(firing_rates)
     adjacency = jnp.asarray(adjacency)
-
     if method == "binned":
-        # No smoothing - return input unchanged
         return firing_rates
+    out: Array = _smooth_rate_maps_batch_kernel(firing_rates, adjacency)
+    return out
 
-    # For diffusion_kde and gaussian_kde, apply kernel smoothing
-    # Batch matrix multiplication: (n_bins, n_bins) @ (n_bins, n_neurons).T
-    # Result: (n_neurons, n_bins)
-    smoothed = (adjacency @ firing_rates.T).T
 
-    return smoothed
+@jax.jit
+def _smooth_rate_maps_batch_kernel(firing_rates: Array, adjacency: Array) -> Array:
+    return (adjacency @ firing_rates.T).T
 
 
 def spatial_information_single(
@@ -394,51 +393,47 @@ def spatial_information_single(
     """
     firing_rate = jnp.asarray(firing_rate)
     occupancy = jnp.asarray(occupancy)
+    out: Array = _spatial_information_kernel(firing_rate, occupancy, base)
+    return out
 
-    # Replace NaN with 0 for computation (will be masked out by occupancy anyway)
+
+@partial(jax.jit, static_argnames=("base",))
+def _spatial_information_kernel(
+    firing_rate: Array, occupancy: Array, base: float
+) -> Array:
     firing_rate_clean = jnp.nan_to_num(firing_rate, nan=0.0)
     occupancy_clean = jnp.nan_to_num(occupancy, nan=0.0)
 
-    # Normalize occupancy to probability
     occ_sum = jnp.sum(occupancy_clean)
-    # Handle zero total occupancy
     occupancy_prob = jnp.where(
         occ_sum > 0,
         occupancy_clean / occ_sum,
         jnp.zeros_like(occupancy_clean),
     )
 
-    # Mean firing rate (weighted by occupancy)
     mean_rate = jnp.sum(occupancy_prob * firing_rate_clean)
-
-    # For valid bins: positive occupancy and positive finite firing rate
-    # We need valid_mask for computing information only in valid bins
     valid_mask = (occupancy_prob > 0) & (firing_rate_clean > 0)
 
-    # Compute ratio = r_i / mean_rate where valid
-    # Use where to avoid division by zero
     ratio = jnp.where(
         (mean_rate > 0) & valid_mask,
         firing_rate_clean / mean_rate,
-        1.0,  # Use 1.0 to give log(1) = 0 for invalid bins
+        1.0,
     )
-
-    # Compute p * ratio * log(ratio) for each bin
-    # log(ratio) where ratio = 1 gives 0, so invalid bins contribute nothing
     log_ratio = jnp.log(ratio) / jnp.log(base)
     contribution = jnp.where(
         valid_mask & (mean_rate > 0),
         occupancy_prob * ratio * log_ratio,
         0.0,
     )
-
-    information = jnp.sum(contribution)
-
-    # Clamp to non-negative (floating point errors can produce tiny negatives)
-    information = jnp.maximum(information, 0.0)
-
-    # Return 0 if mean_rate is 0 or occupancy sum is 0
+    information = jnp.maximum(jnp.sum(contribution), 0.0)
     return jnp.where((mean_rate > 0) & (occ_sum > 0), information, 0.0)
+
+
+# Cached vmap of the per-neuron information kernel. Building vmap once at
+# module scope (rather than fresh in each batch call) prevents re-tracing.
+_spatial_information_vmapped = jax.vmap(
+    _spatial_information_kernel, in_axes=(0, None, None)
+)
 
 
 def spatial_information_batch(
@@ -481,20 +476,15 @@ def spatial_information_batch(
     >>> info.shape  # doctest: +SKIP
     (5,)
     """
-    import jax
-
     firing_rates = jnp.asarray(firing_rates)
     occupancy = jnp.asarray(occupancy)
 
-    # Handle empty batch
     if firing_rates.shape[0] == 0:
         return jnp.array([], dtype=firing_rates.dtype)
 
-    # vmap over first axis of firing_rates
-    vmapped_fn = jax.vmap(
-        lambda rate: spatial_information_single(rate, occupancy, base=base)
-    )
-    return vmapped_fn(firing_rates)
+    # Reuse the module-level vmap rather than rebuilding it per call.
+    out: Array = _spatial_information_vmapped(firing_rates, occupancy, base)
+    return out
 
 
 def sparsity_single(
@@ -552,12 +542,15 @@ def sparsity_single(
     """
     firing_rate = jnp.asarray(firing_rate)
     occupancy = jnp.asarray(occupancy)
+    out: Array = _sparsity_kernel(firing_rate, occupancy)
+    return out
 
-    # Replace NaN with 0 for computation
+
+@jax.jit
+def _sparsity_kernel(firing_rate: Array, occupancy: Array) -> Array:
     firing_rate_clean = jnp.nan_to_num(firing_rate, nan=0.0)
     occupancy_clean = jnp.nan_to_num(occupancy, nan=0.0)
 
-    # Normalize occupancy to probability
     occ_sum = jnp.sum(occupancy_clean)
     occupancy_prob = jnp.where(
         occ_sum > 0,
@@ -565,19 +558,18 @@ def sparsity_single(
         jnp.zeros_like(occupancy_clean),
     )
 
-    # Compute sparsity
     numerator = jnp.sum(occupancy_prob * firing_rate_clean) ** 2
     denominator = jnp.sum(occupancy_prob * firing_rate_clean**2)
-
-    # Safe division
     sparsity_value = jnp.where(
         denominator > 0,
         numerator / denominator,
         0.0,
     )
-
-    # Clamp to [0, 1] to handle floating point precision issues
     return jnp.clip(sparsity_value, 0.0, 1.0)
+
+
+# Cached vmap of the per-neuron sparsity kernel.
+_sparsity_vmapped = jax.vmap(_sparsity_kernel, in_axes=(0, None))
 
 
 def sparsity_batch(
@@ -616,15 +608,12 @@ def sparsity_batch(
     >>> spars.shape  # doctest: +SKIP
     (5,)
     """
-    import jax
-
     firing_rates = jnp.asarray(firing_rates)
     occupancy = jnp.asarray(occupancy)
 
-    # Handle empty batch
     if firing_rates.shape[0] == 0:
         return jnp.array([], dtype=firing_rates.dtype)
 
-    # vmap over first axis of firing_rates
-    vmapped_fn = jax.vmap(lambda rate: sparsity_single(rate, occupancy))
-    return vmapped_fn(firing_rates)
+    # Reuse the module-level vmap rather than rebuilding it per call.
+    out: Array = _sparsity_vmapped(firing_rates, occupancy)
+    return out

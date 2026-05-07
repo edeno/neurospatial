@@ -63,6 +63,46 @@ __all__ = [
 ]
 
 
+# Cache for the dense Gaussian-KDE kernel. Keyed by (id(env), bandwidth);
+# value is the (n_bins, n_bins) weight matrix and its bin-count for a
+# stale-entry sanity check (in case an Environment gets GC'd and another
+# reuses the same id before this dict is purged).
+_GAUSSIAN_KERNEL_CACHE: dict[tuple[int, float], tuple[NDArray[np.float64], int]] = {}
+_GAUSSIAN_KERNEL_CACHE_MAX = 32
+
+
+def _get_gaussian_kernel(env: Environment, bandwidth: float) -> NDArray[np.float64]:
+    """Return the dense Gaussian-KDE weight matrix for ``env`` at ``bandwidth``.
+
+    The matrix is ``(n_bins, n_bins)`` and was previously rebuilt at every
+    call site via ``np.exp(-pairwise_dist_sq / (2*sigma^2))``. For
+    ``n_bins`` of a few thousand that materialization plus exp is
+    measurable; cache the result keyed on ``(id(env), bandwidth)`` and
+    verify ``n_bins`` to defend against id reuse after GC.
+    """
+    key = (id(env), float(bandwidth))
+    cached = _GAUSSIAN_KERNEL_CACHE.get(key)
+    bin_centers = env.bin_centers
+    n_bins = bin_centers.shape[0]
+    if cached is not None and cached[1] == n_bins:
+        return cached[0]
+
+    two_sigma_sq = 2.0 * bandwidth**2
+    bin_sq_norm = np.sum(bin_centers**2, axis=1, keepdims=True)
+    dist_sq = bin_sq_norm + bin_sq_norm.T - 2 * (bin_centers @ bin_centers.T)
+    dist_sq = np.maximum(dist_sq, 0)
+    kernel: NDArray[np.float64] = np.exp(-dist_sq / two_sigma_sq).astype(
+        np.float64, copy=False
+    )
+
+    if len(_GAUSSIAN_KERNEL_CACHE) >= _GAUSSIAN_KERNEL_CACHE_MAX:
+        # Evict an arbitrary oldest-ish entry. dict insertion order makes
+        # iter(...) return the oldest key first.
+        _GAUSSIAN_KERNEL_CACHE.pop(next(iter(_GAUSSIAN_KERNEL_CACHE)))
+    _GAUSSIAN_KERNEL_CACHE[key] = (kernel, n_bins)
+    return kernel
+
+
 def smooth_rate_map(
     env: Environment,
     spike_counts: NDArray[np.float64],
@@ -437,24 +477,9 @@ def _gaussian_kde(
     spike_counts = np.asarray(spike_counts, dtype=np.float64)
     occupancy = np.asarray(occupancy, dtype=np.float64)
 
-    bin_centers = env.bin_centers  # (n_bins, n_dims)
-    two_sigma_sq = 2.0 * bandwidth**2
-
-    # Compute pairwise squared distances
-    # dist_sq[i, j] = ||bin_i - bin_j||^2
-    # Using efficient broadcasting: ||a-b||^2 = ||a||^2 + ||b||^2 - 2*a.b
-    bin_sq_norm = np.sum(bin_centers**2, axis=1, keepdims=True)  # (n_bins, 1)
-    dist_sq = bin_sq_norm + bin_sq_norm.T - 2 * (bin_centers @ bin_centers.T)
-    dist_sq = np.maximum(dist_sq, 0)  # Numerical stability
-
-    # Gaussian weights: exp(-dist^2 / (2*sigma^2))
-    weights = np.exp(-dist_sq / two_sigma_sq)  # (n_bins, n_bins)
-
-    # Compute spike density: sum of Gaussian-weighted spikes
-    spike_density = weights @ spike_counts  # (n_bins,)
-
-    # Compute occupancy density: sum of Gaussian-weighted occupancy
-    occupancy_density = weights @ occupancy  # (n_bins,)
+    weights = _get_gaussian_kernel(env, bandwidth)
+    spike_density = weights @ spike_counts
+    occupancy_density = weights @ occupancy
 
     # Normalize
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -574,14 +599,7 @@ def _gaussian_kde_batch(
     spike_counts = np.asarray(spike_counts, dtype=np.float64)
     occupancy = np.asarray(occupancy, dtype=np.float64)
 
-    bin_centers = env.bin_centers
-    two_sigma_sq = 2.0 * bandwidth**2
-
-    bin_sq_norm = np.sum(bin_centers**2, axis=1, keepdims=True)
-    dist_sq = bin_sq_norm + bin_sq_norm.T - 2 * (bin_centers @ bin_centers.T)
-    dist_sq = np.maximum(dist_sq, 0)
-
-    weights = np.exp(-dist_sq / two_sigma_sq)
+    weights = _get_gaussian_kernel(env, bandwidth)
     spike_density = spike_counts @ weights.T
     occupancy_density = weights @ occupancy
 
@@ -725,17 +743,7 @@ def _smooth_rate_map_jax(
         occupancy_density = kernel_j @ occupancy_j
 
     else:  # gaussian_kde
-        # Compute Gaussian weights using JAX
-        bin_centers = env.bin_centers
-        bin_centers_j = jnp.asarray(bin_centers, dtype=jnp.float64)
-        two_sigma_sq = 2.0 * bandwidth**2
-
-        # Pairwise squared distances
-        bin_sq_norm = jnp.sum(bin_centers_j**2, axis=1, keepdims=True)
-        dist_sq = bin_sq_norm + bin_sq_norm.T - 2 * (bin_centers_j @ bin_centers_j.T)
-        dist_sq = jnp.maximum(dist_sq, 0)
-
-        kernel_j = jnp.exp(-dist_sq / two_sigma_sq)
+        kernel_j = jnp.asarray(_get_gaussian_kernel(env, bandwidth), dtype=jnp.float64)
         spike_density = kernel_j @ spike_counts_j
         occupancy_density = kernel_j @ occupancy_j
 
@@ -832,18 +840,7 @@ def _smooth_rate_maps_batch_jax(
         occupancy_density = kernel_j @ occupancy_j
 
     else:  # gaussian_kde
-        # Compute Gaussian weights using JAX
-        bin_centers = env.bin_centers
-        bin_centers_j = jnp.asarray(bin_centers, dtype=jnp.float64)
-        two_sigma_sq = 2.0 * bandwidth**2
-
-        # Pairwise squared distances
-        bin_sq_norm = jnp.sum(bin_centers_j**2, axis=1, keepdims=True)
-        dist_sq = bin_sq_norm + bin_sq_norm.T - 2 * (bin_centers_j @ bin_centers_j.T)
-        dist_sq = jnp.maximum(dist_sq, 0)
-
-        kernel_j = jnp.exp(-dist_sq / two_sigma_sq)
-        # spike_counts @ weights.T for batch
+        kernel_j = jnp.asarray(_get_gaussian_kernel(env, bandwidth), dtype=jnp.float64)
         spike_density = spike_counts_j @ kernel_j.T
         occupancy_density = kernel_j @ occupancy_j
 
