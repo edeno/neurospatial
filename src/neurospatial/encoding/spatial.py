@@ -1552,7 +1552,10 @@ def compute_spatial_rates(
         is_jax_available,
     )
     from neurospatial.encoding._binning import bin_spike_trains
-    from neurospatial.encoding._smoothing import smooth_rate_maps_batch
+    from neurospatial.encoding._smoothing import (
+        _validate_smoothing_parameters,
+        smooth_rate_maps_batch,
+    )
     from neurospatial.encoding._spikes import normalize_spike_times
 
     # Validate backend
@@ -1565,6 +1568,8 @@ def compute_spatial_rates(
     # Resolve backend (handles "auto" → "numpy" or "jax")
     # This raises ImportError if backend="jax" and JAX is unavailable
     resolved_backend = get_backend_name(backend)
+
+    _validate_smoothing_parameters(smoothing_method, bandwidth)
 
     # Normalize spike times to canonical list-of-arrays format
     spike_times_list = normalize_spike_times(spike_times)

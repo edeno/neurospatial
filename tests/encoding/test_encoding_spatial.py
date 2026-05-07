@@ -4387,6 +4387,24 @@ class TestComputeSpatialRatesEdgeCases:
         assert len(result) == 0
         assert result.firing_rates.shape == (0, trajectory_env.n_bins)
 
+    def test_empty_neurons_list_validates_smoothing_method(
+        self,
+        trajectory_env: Environment,
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """Empty neuron list should still reject invalid smoothing methods."""
+        from neurospatial.encoding.spatial import compute_spatial_rates
+
+        with pytest.raises(ValueError, match="method must be one of"):
+            compute_spatial_rates(
+                trajectory_env,
+                [],
+                trajectory_times,
+                trajectory_positions,
+                smoothing_method="invalid",  # type: ignore[arg-type]
+            )
+
     def test_empty_neurons_list_has_valid_occupancy(
         self,
         trajectory_env: Environment,

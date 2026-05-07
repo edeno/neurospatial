@@ -1421,7 +1421,10 @@ def compute_egocentric_rates(
         bin_egocentric_spike_trains,
         normalize_object_positions,
     )
-    from neurospatial.encoding._smoothing import smooth_rate_maps_batch
+    from neurospatial.encoding._smoothing import (
+        _validate_smoothing_parameters,
+        smooth_rate_maps_batch,
+    )
     from neurospatial.encoding._spikes import normalize_spike_times
 
     # Validate backend
@@ -1434,6 +1437,8 @@ def compute_egocentric_rates(
     # Resolve backend (handles "auto" → "numpy" or "jax")
     # This raises ImportError if backend="jax" and JAX is unavailable
     resolved_backend = get_backend_name(backend)
+
+    _validate_smoothing_parameters(smoothing_method, bandwidth)
 
     # Validate distance_metric
     valid_metrics = {"euclidean", "geodesic"}

@@ -116,8 +116,8 @@ class LinearFitResult:
     slope_std : float | None
         Standard deviation of slope estimates from Monte Carlo sampling.
         Measures the spread of sampled slopes across different draws from
-        the posterior. Only available when method="sample".
-        None when method="map" (deterministic fit).
+        the posterior. Only available when fitting_method="sample".
+        None when fitting_method="map" (deterministic fit).
 
     See Also
     --------
@@ -127,7 +127,7 @@ class LinearFitResult:
     Examples
     --------
     >>> result = fit_linear_trajectory(
-    ...     env, posterior, times, method="sample", rng=42
+    ...     env, posterior, times, fitting_method="sample", rng=42
     ... )  # doctest: +SKIP
     >>> print(
     ...     f"slope = {result.slope:.2f} ± {result.slope_std:.2f} bins/s"

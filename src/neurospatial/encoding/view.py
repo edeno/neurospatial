@@ -1324,7 +1324,10 @@ def compute_view_rates(
         get_backend_name,
         is_jax_available,
     )
-    from neurospatial.encoding._smoothing import smooth_rate_maps_batch
+    from neurospatial.encoding._smoothing import (
+        _validate_smoothing_parameters,
+        smooth_rate_maps_batch,
+    )
     from neurospatial.encoding._spikes import normalize_spike_times
     from neurospatial.encoding._view_binning import bin_view_spike_trains
 
@@ -1338,6 +1341,8 @@ def compute_view_rates(
     # Resolve backend (handles "auto" → "numpy" or "jax")
     # This raises ImportError if backend="jax" and JAX is unavailable
     resolved_backend = get_backend_name(backend)
+
+    _validate_smoothing_parameters(smoothing_method, bandwidth)
 
     # Validate gaze_model
     valid_gaze_models = {"fixed_distance", "ray_cast", "boundary"}

@@ -487,6 +487,20 @@ class TestComputeEgocentricRatesEdgeCases:
 class TestComputeEgocentricRatesInputValidation:
     """Tests for input validation."""
 
+    def test_empty_spike_times_list_validates_smoothing_method(self, trajectory_data):
+        """Empty list should still reject invalid smoothing methods."""
+        from neurospatial.encoding.egocentric import compute_egocentric_rates
+
+        with pytest.raises(ValueError, match="method must be one of"):
+            compute_egocentric_rates(
+                [],
+                trajectory_data["times"],
+                trajectory_data["positions"],
+                trajectory_data["headings"],
+                trajectory_data["object_positions"],
+                smoothing_method="invalid",  # type: ignore[arg-type]
+            )
+
     def test_invalid_distance_metric_raises(self, trajectory_data, spike_times_list):
         """Test that invalid distance_metric raises ValueError."""
         from neurospatial.encoding.egocentric import compute_egocentric_rates

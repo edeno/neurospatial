@@ -336,18 +336,7 @@ def _validate_smoothing_inputs(
     bandwidth: float,
 ) -> None:
     """Validate inputs for smoothing functions."""
-    # Validate method
-    valid_methods = {"diffusion_kde", "gaussian_kde", "binned"}
-    if method not in valid_methods:
-        raise ValueError(f"method must be one of {valid_methods}, got '{method}'")
-
-    # Validate bandwidth (binned allows 0)
-    if method == "binned":
-        if bandwidth < 0:
-            raise ValueError(f"bandwidth must be non-negative, got {bandwidth}")
-    else:
-        if bandwidth <= 0:
-            raise ValueError(f"bandwidth must be positive, got {bandwidth}")
+    _validate_smoothing_parameters(method, bandwidth)
 
     # Convert to arrays
     spike_counts = np.asarray(spike_counts)
@@ -366,6 +355,21 @@ def _validate_smoothing_inputs(
             f"spike_counts has {spike_counts.shape[0]} elements but "
             f"env has {env.n_bins} bins (n_bins mismatch)"
         )
+
+
+def _validate_smoothing_parameters(method: str, bandwidth: float) -> None:
+    """Validate smoothing method and bandwidth without requiring count arrays."""
+    valid_methods = {"diffusion_kde", "gaussian_kde", "binned"}
+    if method not in valid_methods:
+        raise ValueError(f"method must be one of {valid_methods}, got '{method}'")
+
+    # Validate bandwidth (binned allows 0)
+    if method == "binned":
+        if bandwidth < 0:
+            raise ValueError(f"bandwidth must be non-negative, got {bandwidth}")
+    else:
+        if bandwidth <= 0:
+            raise ValueError(f"bandwidth must be positive, got {bandwidth}")
 
 
 def _diffusion_kde(

@@ -519,7 +519,7 @@ print(f"Number of time bins: {len(segment_times)}")
 iso_result = fit_isotonic_trajectory(
     segment_posterior,
     segment_times,
-    method="expected",  # Use posterior mean
+    estimate_method="expected",  # Use posterior mean
     increasing=None,  # Auto-detect direction
 )
 
@@ -579,7 +579,7 @@ lin_result = fit_linear_trajectory(
     env,
     segment_posterior,
     segment_times,
-    method="sample",  # Monte Carlo sampling
+    fitting_method="sample",  # Monte Carlo sampling
     n_samples=1000,
     rng=42,
 )
@@ -618,7 +618,7 @@ for shuffled_spikes in shuffle_time_bins(segment_spikes, n_shuffles=n_shuffles, 
     shuffled_result = decode_position(env, shuffled_spikes, encoding_models, dt)
     # Fit isotonic trajectory
     shuffled_fit = fit_isotonic_trajectory(
-        shuffled_result.posterior, segment_times, method="expected"
+        shuffled_result.posterior, segment_times, estimate_method="expected"
     )
     null_scores.append(shuffled_fit.r_squared)
 

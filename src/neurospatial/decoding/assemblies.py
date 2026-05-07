@@ -38,7 +38,7 @@ Typical Workflows
 
 2. Detect assemblies:
 
-   >>> result = detect_assemblies(spike_counts, method="ica")  # doctest: +SKIP
+   >>> result = detect_assemblies(spike_counts, algorithm="ica")  # doctest: +SKIP
    >>> print(f"Found {result.n_significant} significant assemblies")  # doctest: +SKIP
 
 3. Analyze assembly patterns:

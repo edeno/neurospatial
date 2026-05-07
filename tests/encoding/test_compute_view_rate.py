@@ -1116,6 +1116,26 @@ class TestComputeViewRatesEdgeCases:
         assert len(result) == 0
         assert result.firing_rates.shape == (0, simple_env.n_bins)
 
+    def test_empty_spike_times_list_validates_smoothing_method(
+        self,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """Empty list should still reject invalid smoothing methods."""
+        from neurospatial.encoding.view import compute_view_rates
+
+        times, positions, headings = trajectory_data
+
+        with pytest.raises(ValueError, match="method must be one of"):
+            compute_view_rates(
+                simple_env,
+                [],
+                times,
+                positions,
+                headings,
+                smoothing_method="invalid",  # type: ignore[arg-type]
+            )
+
     def test_single_neuron(
         self,
         simple_env: Environment,
