@@ -29,9 +29,8 @@ encoding : Neural encoding analysis
     Place cells, grid cells, head direction cells, border cells, object-vector
     cells, spatial view cells, phase precession, and population metrics.
 
-    >>> from neurospatial.encoding import place, grid, head_direction
-    >>> from neurospatial.encoding.place import compute_place_field
-    >>> from neurospatial.encoding.spatial import detect_place_fields
+    >>> from neurospatial.encoding import compute_spatial_rate, detect_place_fields
+    >>> from neurospatial.encoding import compute_directional_rate, compute_view_rate
 
 decoding : Neural decoding
     Bayesian position decoding, trajectory detection, cell assemblies.
@@ -99,7 +98,7 @@ Core classes only at top level::
 Explicit submodule imports for all else (recommended)::
 
     # Neural encoding
-    from neurospatial.encoding.place import compute_place_field, skaggs_information
+    from neurospatial.encoding import compute_spatial_rate, skaggs_information
     from neurospatial.encoding.grid import grid_score
 
     # Neural decoding
@@ -141,14 +140,15 @@ Map trajectory to bins::
     >>> bin_sequence = env.bin_sequence(trajectory)  # doctest: +SKIP
     >>> occupancy = env.occupancy(times, trajectory)  # doctest: +SKIP
 
-Compute place field from spikes::
+Compute a spatial firing-rate map from spikes::
 
-    >>> from neurospatial.encoding.place import compute_place_field  # doctest: +SKIP
+    >>> from neurospatial.encoding import compute_spatial_rate  # doctest: +SKIP
     >>> spike_times = np.array([1.2, 2.5, 3.7, 5.1])  # doctest: +SKIP
-    >>> firing_rate = compute_place_field(  # doctest: +SKIP
+    >>> result = compute_spatial_rate(  # doctest: +SKIP
     ...     env, spike_times, times, trajectory,
     ...     smoothing_method='diffusion_kde', bandwidth=5.0
     ... )
+    >>> firing_rate = result.firing_rate  # doctest: +SKIP
 
 Add and query regions::
 

@@ -247,10 +247,10 @@ def generate_population_spikes(
     Use with place field detection to validate simulation:
 
     >>> # Example: Validate place field recovery (actual values vary by trajectory)
-    >>> from neurospatial import compute_place_field  # doctest: +SKIP
-    >>> rate_map = compute_place_field(
+    >>> from neurospatial.encoding import compute_spatial_rate  # doctest: +SKIP
+    >>> rate_map = compute_spatial_rate(
     ...     env, spike_trains[0], times, positions
-    ... )  # doctest: +SKIP
+    ... ).firing_rate  # doctest: +SKIP
     >>> true_center = place_cells[0].ground_truth["center"]  # doctest: +SKIP
     >>> detected_center = env.bin_centers[np.argmax(rate_map)]  # doctest: +SKIP
 

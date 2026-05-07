@@ -352,11 +352,11 @@ print(
 #
 # ## Part 2: Understanding the Components (Advanced)
 #
-# The sections below show the **low-level details** of how place fields are computed. Most users can skip this - `compute_place_field()` handles everything automatically.
+# The sections below show the **low-level details** of how place fields are computed. Most users can skip this - `compute_spatial_rate()` handles spike binning, occupancy normalization, and smoothing.
 #
 # ### Binned Approach (Legacy Method)
 #
-# For understanding or backwards compatibility, use `smoothing_method="binned"`:
+# For understanding raw binning behavior, use `smoothing_method="binned"`:
 
 # %%
 # Binned approach: compute firing rate field with minimal smoothing

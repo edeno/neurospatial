@@ -1828,8 +1828,7 @@ def compute_directional_place_fields(
         (e.g., "A→B", "forward", "CW"). The special label "other" is excluded
         from results, allowing unlabeled periods to be ignored.
     smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
-        Estimation method passed to ``compute_place_field``. See that function
-        for detailed descriptions of each method.
+        Estimation method passed through to the place-field helper.
     bandwidth : float, default=5.0
         Smoothing bandwidth in environment units (e.g., cm).
     min_occupancy_seconds : float, default=0.0
@@ -1847,7 +1846,7 @@ def compute_directional_place_fields(
     ValueError
         If ``direction_labels`` length doesn't match ``times`` length.
     ValueError
-        If ``bandwidth`` is not positive (passed through to ``compute_place_field``).
+        If ``bandwidth`` is not positive.
 
     See Also
     --------
@@ -1918,8 +1917,8 @@ def compute_directional_place_fields(
         )
         positions_sub = positions[mask]
 
-        # Compute place field for this direction using legacy function
-        # for backward compatibility with existing analysis pipelines
+        # Reuse the existing place-field helper so directional place fields
+        # preserve the same numerical scaling as the standalone place-field path.
         from neurospatial.encoding.place import compute_place_field
 
         field = compute_place_field(

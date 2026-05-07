@@ -194,7 +194,7 @@ def population_coverage(
     --------
     >>> import numpy as np  # doctest: +SKIP
     >>> from neurospatial import Environment  # doctest: +SKIP
-    >>> from neurospatial.encoding.place import compute_place_field  # doctest: +SKIP
+    >>> from neurospatial.encoding import compute_spatial_rate  # doctest: +SKIP
     >>> from neurospatial.encoding.population import (
     ...     population_coverage,
     ...     plot_population_coverage,
@@ -211,7 +211,7 @@ def population_coverage(
     ... ]  # List of spike time arrays, one per neuron  # doctest: +SKIP
     >>> firing_rates = np.array(  # doctest: +SKIP
     ...     [
-    ...         compute_place_field(env, spikes, times, positions)
+    ...         compute_spatial_rate(env, spikes, times, positions).firing_rate
     ...         for spikes in spike_times
     ...     ]
     ... )  # Shape: (n_neurons, n_bins)
@@ -256,8 +256,8 @@ def population_coverage(
             f"  - Firing rates were computed for a different environment\n"
             f"  - The environment was modified after computing firing rates\n\n"
             f"To fix: Recompute firing rates for each neuron:\n"
-            f"  from neurospatial import compute_place_field\n"
-            f"  firing_rate = compute_place_field(env, spike_times, times, positions)\n"
+            f"  from neurospatial.encoding import compute_spatial_rate\n"
+            f"  firing_rate = compute_spatial_rate(env, spike_times, times, positions).firing_rate\n"
             f"  firing_rates = np.stack([rate1, rate2, ...])"
         )
 

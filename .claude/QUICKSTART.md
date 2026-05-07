@@ -440,31 +440,16 @@ ovcs = result.detect_ovcs(min_info=0.5)    # (n_neurons,) bool
 df = result.to_dataframe()
 ```
 
-**Classify object-vector cells (legacy API):**
+**Classify object-vector cells from result metrics:**
 
 ```python
-from neurospatial.encoding.object_vector import (
-    compute_object_vector_tuning,
-    is_object_vector_cell,
-    plot_object_vector_tuning,
-)
+# Check classification on the canonical result object
+print(result.is_ovc(min_info=0.5))
+print(f"Preferred distance: {result.preferred_distance():.1f} cm")
+print(f"Preferred direction: {result.preferred_direction():.2f} rad")
 
-# Compute tuning metrics
-metrics = compute_object_vector_tuning(
-    spike_times=spike_times,
-    times=times,
-    positions=positions,
-    headings=headings,
-    object_positions=object_positions,
-)
-
-# Check classification
-print(metrics.interpretation())  # Human-readable summary
-print(f"OVC score: {metrics.object_vector_score:.3f}")
-print(f"Peak rate: {metrics.peak_rate:.1f} Hz")
-
-# Plot polar tuning curve
-fig, ax = plot_object_vector_tuning(metrics, mark_peak=True, colorbar=True)
+# Plot egocentric polar tuning
+fig, ax = result.plot()
 ```
 
 **Simulate object-vector cells:**
@@ -568,37 +553,13 @@ view_cells = result.detect_view_cells(min_info=0.5)  # (n_neurons,) bool
 df = result.to_dataframe()
 ```
 
-**Classify spatial view cells (legacy API):**
+**Classify spatial view cells from result metrics:**
 
 ```python
-from neurospatial.encoding.spatial_view import (
-    spatial_view_cell_metrics,
-    is_spatial_view_cell,
-    SpatialViewMetrics,
-)
-
-# Compute metrics comparing view field vs place field
-metrics = spatial_view_cell_metrics(
-    env=env,
-    spike_times=spike_times,
-    times=times,
-    positions=positions,
-    headings=headings,
-    view_distance=15.0,
-)
-
-# Human-readable interpretation
-print(metrics.interpretation())
-# Shows: view info, place info, correlation, classification reasoning
-
-# Access individual metrics
-print(f"View field info: {metrics.view_field_skaggs_info:.3f} bits/spike")
-print(f"Place field info: {metrics.place_field_skaggs_info:.3f} bits/spike")
-print(f"View-place correlation: {metrics.view_place_correlation:.3f}")
-
-# Quick classification
-if is_spatial_view_cell(env, spike_times, times, positions, headings):
-    print("Spatial view cell detected!")
+# Check classification on the canonical result object
+print(result.is_view_cell(min_info=0.5))
+print(f"View information: {result.view_spatial_information():.3f} bits/spike")
+print(f"Peak viewed location: {result.peak_view_location()}")
 ```
 
 **Simulate spatial view cells:**

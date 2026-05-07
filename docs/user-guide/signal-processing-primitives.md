@@ -112,9 +112,10 @@ Compute spatial coherence, a measure of how well firing rate predicts neighbor f
 import numpy as np
 from neurospatial import Environment
 from neurospatial.primitives import neighbor_reduce
+from neurospatial.encoding import compute_spatial_rate
 
 # Create firing rate field
-firing_rate = spikes_to_field(env, spike_times, times, positions)
+firing_rate = compute_spatial_rate(env, spike_times, times, positions).firing_rate
 
 # Compute neighbor average
 neighbor_avg = neighbor_reduce(firing_rate, env, op='mean', include_self=False)
@@ -335,14 +336,16 @@ Use Mexican hat filter to detect place field boundaries:
 ```python
 from neurospatial import Environment
 from neurospatial.primitives import convolve
+from neurospatial.encoding import compute_spatial_rate
 import numpy as np
 import matplotlib.pyplot as plt
 
 # Compute smoothed firing rate
-firing_rate = compute_place_field(
+firing_rate = compute_spatial_rate(
     env, spike_times, times, positions,
-    smoothing_bandwidth=5.0
-)
+    smoothing_method="gaussian_kde",
+    bandwidth=5.0,
+).firing_rate
 
 # Mexican hat for edge detection
 def mexican_hat(distances):
@@ -382,10 +385,11 @@ Compute spatial coherence as a measure of place field quality:
 ```python
 from neurospatial import Environment
 from neurospatial.primitives import neighbor_reduce
+from neurospatial.encoding import compute_spatial_rate
 import numpy as np
 
 # Compute firing rate
-firing_rate = spikes_to_field(env, spike_times, times, positions)
+firing_rate = compute_spatial_rate(env, spike_times, times, positions).firing_rate
 
 # Compute neighbor average (exclude self)
 neighbor_avg = neighbor_reduce(firing_rate, env, op='mean', include_self=False)
@@ -408,9 +412,10 @@ Measure local consistency of firing rates:
 
 ```python
 from neurospatial.primitives import neighbor_reduce
+from neurospatial.encoding import compute_spatial_rate
 
 # Compute firing rate
-firing_rate = spikes_to_field(env, spike_times, times, positions)
+firing_rate = compute_spatial_rate(env, spike_times, times, positions).firing_rate
 
 # Local variability (standard deviation of neighbors)
 local_std = neighbor_reduce(firing_rate, env, op='std', include_self=False)

@@ -217,10 +217,10 @@ def write_place_field(
     Examples
     --------
     >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
-    >>> from neurospatial import compute_place_field  # doctest: +SKIP
-    >>> place_field = compute_place_field(
+    >>> from neurospatial.encoding import compute_spatial_rate  # doctest: +SKIP
+    >>> place_field = compute_spatial_rate(
     ...     env, spike_times, timestamps, positions
-    ... )  # doctest: +SKIP
+    ... ).firing_rate  # doctest: +SKIP
     >>> with NWBHDF5IO("session.nwb", "r+") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
     ...     write_place_field(nwbfile, env, place_field, name="cell_001")

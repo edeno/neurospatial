@@ -6,10 +6,14 @@ Animate spatial fields over time using four different backends optimized for dif
 
 ```python
 from neurospatial import Environment
+from neurospatial.encoding import compute_spatial_rate
 
 # Create environment and compute fields over time
 env = Environment.from_samples(positions, bin_size=2.5)
-fields = [compute_place_field(env, spikes[i], times, positions) for i in range(30)]
+fields = [
+    compute_spatial_rate(env, spikes[i], times, positions).firing_rate
+    for i in range(30)
+]
 
 # Interactive viewer (best for exploration)
 env.animate_fields(fields, backend="napari")
@@ -338,7 +342,7 @@ fields = np.memmap(
 
 # Compute fields (writes directly to disk)
 for i, frame in enumerate(frames):
-    fields[i] = compute_place_field(env, spikes, times, positions[i])
+    fields[i] = compute_spatial_rate(env, spikes, times, positions[i]).firing_rate
 
 # Option 1: Interactive exploration (Napari lazy loads from disk)
 env.animate_fields(fields, backend="napari")

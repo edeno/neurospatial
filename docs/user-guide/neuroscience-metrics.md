@@ -21,11 +21,11 @@ Place fields are localized regions of elevated firing rate that characterize spa
 ```python
 import numpy as np
 from neurospatial import Environment
-from neurospatial.metrics import detect_place_fields
+from neurospatial.encoding import compute_spatial_rate, detect_place_fields
 
 # Create environment and compute firing rate map
 env = Environment.from_samples(positions, bin_size=2.5)
-firing_rate = spikes_to_field(env, spike_times, times, positions)
+firing_rate = compute_spatial_rate(env, spike_times, times, positions).firing_rate
 
 # Detect place fields
 fields = detect_place_fields(
@@ -147,10 +147,11 @@ Measure the stability of place fields across recording sessions:
 
 ```python
 from neurospatial.metrics import field_stability
+from neurospatial.encoding import compute_spatial_rate
 
 # Compute firing rate maps from two sessions
-rate_map_session1 = spikes_to_field(env, spikes1, times1, positions1)
-rate_map_session2 = spikes_to_field(env, spikes2, times2, positions2)
+rate_map_session1 = compute_spatial_rate(env, spikes1, times1, positions1).firing_rate
+rate_map_session2 = compute_spatial_rate(env, spikes2, times2, positions2).firing_rate
 
 # Compute stability
 stability = field_stability(
@@ -309,9 +310,10 @@ The border score quantifies how strongly a cell's firing field is aligned with e
 
 ```python
 from neurospatial.metrics import border_score
+from neurospatial.encoding import compute_spatial_rate
 
 # Compute firing rate map
-firing_rate = spikes_to_field(env, spike_times, times, positions)
+firing_rate = compute_spatial_rate(env, spike_times, times, positions).firing_rate
 
 # Compute border score
 score = border_score(
@@ -428,7 +430,6 @@ The neurospatial metrics have been **validated** to match reference implementati
 ```python
 import numpy as np
 from neurospatial import Environment
-from neurospatial import spikes_to_field
 from neurospatial.metrics import (
     detect_place_fields,
     field_size,
@@ -436,10 +437,13 @@ from neurospatial.metrics import (
     skaggs_information,
     sparsity,
 )
+from neurospatial.encoding import compute_spatial_rate
 
 # 1. Create environment and compute firing rate
 env = Environment.from_samples(positions, bin_size=2.5)
-firing_rate = spikes_to_field(env, spike_times, times, positions, min_occupancy_seconds=0.5)
+firing_rate = compute_spatial_rate(
+    env, spike_times, times, positions, min_occupancy=0.5
+).firing_rate
 
 # 2. Detect place fields
 fields = detect_place_fields(firing_rate, env, detect_subfields=True)
@@ -476,7 +480,7 @@ import numpy as np
 # Compute firing rate maps for all cells
 firing_rates = []
 for cell_spikes in all_spike_trains:
-    rate_map = spikes_to_field(env, cell_spikes, times, positions)
+    rate_map = compute_spatial_rate(env, cell_spikes, times, positions).firing_rate
     firing_rates.append(rate_map)
 
 # Stack into array: shape (n_neurons, n_bins)
@@ -509,9 +513,10 @@ for i, neuron_fields in enumerate(result.place_fields):
 
 ```python
 from neurospatial.metrics import border_score
+from neurospatial.encoding import compute_spatial_rate
 
 # Compute firing rate
-firing_rate = spikes_to_field(env, spike_times, times, positions)
+firing_rate = compute_spatial_rate(env, spike_times, times, positions).firing_rate
 
 # Compute border score
 score = border_score(firing_rate, env, threshold=0.3, min_area=200.0)
