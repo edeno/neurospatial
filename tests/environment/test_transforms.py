@@ -1012,7 +1012,7 @@ class TestApplyTransform:
 
         # Create a fitted environment and then mark it as unfitted
         # (simulates an environment that hasn't been properly initialized)
-        env = small_2d_env
+        env = small_2d_env.copy()
         env._is_fitted = False
 
         transform = translate(5, 5)

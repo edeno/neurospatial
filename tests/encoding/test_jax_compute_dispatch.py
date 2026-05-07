@@ -23,6 +23,7 @@ from numpy.testing import assert_allclose
 
 from neurospatial import Environment
 from neurospatial.encoding._backend import is_jax_available
+from neurospatial.encoding._base import _is_jax_array
 
 # Skip all tests if JAX is not available
 pytestmark = pytest.mark.skipif(
@@ -103,6 +104,8 @@ class TestComputeSpatialRateJaxBackend:
         # Basic sanity checks
         assert result is not None
         assert result.firing_rate.shape == (simple_env.n_bins,)
+        assert _is_jax_array(result.firing_rate)
+        assert _is_jax_array(result.occupancy)
 
     def test_jax_backend_matches_numpy(
         self,
@@ -228,6 +231,8 @@ class TestComputeSpatialRatesJaxBackend:
         # Basic sanity checks
         assert result is not None
         assert result.firing_rates.shape == (len(spike_times_batch), simple_env.n_bins)
+        assert _is_jax_array(result.firing_rates)
+        assert _is_jax_array(result.occupancy)
 
     def test_jax_backend_matches_numpy(
         self,
@@ -453,6 +458,8 @@ class TestComputeViewRateJaxBackend:
         # Basic sanity checks
         assert result is not None
         assert result.firing_rate.shape == (simple_env.n_bins,)
+        assert _is_jax_array(result.firing_rate)
+        assert _is_jax_array(result.view_occupancy)
 
     def test_jax_backend_matches_numpy(
         self,
@@ -596,6 +603,8 @@ class TestComputeViewRatesJaxBackend:
         # Basic sanity checks
         assert result is not None
         assert result.firing_rates.shape == (len(spike_times_batch), simple_env.n_bins)
+        assert _is_jax_array(result.firing_rates)
+        assert _is_jax_array(result.view_occupancy)
 
     def test_jax_backend_matches_numpy(
         self,
@@ -689,6 +698,8 @@ class TestComputeEgocentricRateJaxBackend:
         # Basic sanity checks
         assert result is not None
         assert result.firing_rate.shape == (result.ego_env.n_bins,)
+        assert _is_jax_array(result.firing_rate)
+        assert _is_jax_array(result.occupancy)
 
     def test_jax_backend_matches_numpy(
         self,
@@ -787,6 +798,8 @@ class TestComputeEgocentricRatesJaxBackend:
             len(spike_times_batch),
             result.ego_env.n_bins,
         )
+        assert _is_jax_array(result.firing_rates)
+        assert _is_jax_array(result.occupancy)
 
     def test_jax_backend_matches_numpy(
         self,
