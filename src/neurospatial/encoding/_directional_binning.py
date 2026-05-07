@@ -192,6 +192,87 @@ def compute_directional_occupancy(
     return occupancy, bin_centers
 
 
+def _precompute_directional_bins(
+    headings: NDArray[np.float64],
+    bin_size: float,
+    *,
+    angle_unit: Literal["rad", "deg"] = "rad",
+) -> tuple[NDArray[np.float64], NDArray[np.float64], int]:
+    """Validate angle parameters and precompute per-frame headings + bin edges.
+
+    Internal helper that hoists population-level work out of the per-neuron
+    binning loop. Used by both ``bin_directional_spike_train`` (singular) and
+    ``bin_directional_spike_trains`` (batch).
+
+    Returns
+    -------
+    headings_wrapped : ndarray, shape (n_samples,)
+        Per-frame head direction in radians, wrapped to ``[0, 2π)``.
+    bin_edges : ndarray, shape (n_bins + 1,)
+        Angular bin edges in radians, spanning ``[0, 2π]``.
+    n_bins : int
+        Number of angular bins.
+    """
+    if angle_unit not in ("rad", "deg"):
+        raise ValueError(f"angle_unit must be 'rad' or 'deg', got '{angle_unit}'")
+
+    if bin_size <= 0:
+        raise ValueError(
+            f"bin_size must be positive, got {bin_size}.\n"
+            f"Fix: Use a positive bin size (e.g., np.pi/30 radians or 6 degrees)."
+        )
+
+    headings_rad = np.radians(headings) if angle_unit == "deg" else headings
+    bin_size_rad = np.radians(bin_size) if angle_unit == "deg" else bin_size
+
+    n_bins = int(np.round(2 * np.pi / bin_size_rad))
+    if n_bins < 1:
+        raise ValueError(
+            f"bin_size is too large: {bin_size} ({angle_unit}). "
+            f"Results in {n_bins} bins (need at least 1).\n"
+            f"Fix: Use a smaller bin_size (max ~2π radians or 360 degrees)."
+        )
+
+    headings_wrapped = headings_rad % (2 * np.pi)
+    bin_edges = np.linspace(0, 2 * np.pi, n_bins + 1)
+    return headings_wrapped, bin_edges, n_bins
+
+
+def _bin_spikes_with_precomputed_directional_bins(
+    spike_times: NDArray[np.float64],
+    times: NDArray[np.float64],
+    headings_wrapped: NDArray[np.float64],
+    bin_edges: NDArray[np.float64],
+    n_bins: int,
+) -> NDArray[np.float64]:
+    """Bin a single spike train using precomputed directional bins.
+
+    Internal helper. ``headings_wrapped`` and ``bin_edges`` are produced once
+    by ``_precompute_directional_bins`` and reused across neurons.
+    """
+    spike_counts = np.zeros(n_bins, dtype=np.float64)
+
+    if len(spike_times) == 0:
+        return spike_counts
+
+    valid_mask = (spike_times >= times[0]) & (spike_times <= times[-1])
+    valid_spike_times = spike_times[valid_mask]
+    if len(valid_spike_times) == 0:
+        return spike_counts
+
+    spike_indices = np.searchsorted(times, valid_spike_times, side="right") - 1
+    spike_indices = np.clip(spike_indices, 0, len(headings_wrapped) - 1)
+    spike_hd = headings_wrapped[spike_indices]
+
+    # Nearest-neighbor (digitize) bin assignment — chosen over interpolation
+    # because head direction crosses 0/2π discontinuities, which would alias
+    # to the antipode under linear interp.
+    spike_bins = np.digitize(spike_hd, bin_edges) - 1
+    spike_bins[spike_bins >= n_bins] = 0
+
+    return np.bincount(spike_bins, minlength=n_bins).astype(np.float64)
+
+
 def bin_directional_spike_train(
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
@@ -257,72 +338,17 @@ def bin_directional_spike_train(
     compute_directional_occupancy : Compute occupancy
     bin_directional_spike_trains : Batch version for multiple neurons
     """
-    # Validate angle_unit
-    if angle_unit not in ("rad", "deg"):
-        raise ValueError(f"angle_unit must be 'rad' or 'deg', got '{angle_unit}'")
-
-    # Validate bin_size
-    if bin_size <= 0:
-        raise ValueError(
-            f"bin_size must be positive, got {bin_size}.\n"
-            f"Fix: Use a positive bin size (e.g., np.pi/30 radians or 6 degrees)."
-        )
-
     spike_times = np.asarray(spike_times, dtype=np.float64).ravel()
     times = np.asarray(times, dtype=np.float64).ravel()
     headings = np.asarray(headings, dtype=np.float64).ravel()
 
-    # Convert to radians if needed
-    if angle_unit == "deg":
-        headings_rad = np.radians(headings)
-        bin_size_rad = np.radians(bin_size)
-    else:
-        headings_rad = headings
-        bin_size_rad = bin_size
+    headings_wrapped, bin_edges, n_bins = _precompute_directional_bins(
+        headings, bin_size, angle_unit=angle_unit
+    )
 
-    # Validate bin_size produces valid number of bins
-    n_bins = int(np.round(2 * np.pi / bin_size_rad))
-    if n_bins < 1:
-        raise ValueError(
-            f"bin_size is too large: {bin_size} ({angle_unit}). "
-            f"Results in {n_bins} bins (need at least 1).\n"
-            f"Fix: Use a smaller bin_size (max ~2π radians or 360 degrees)."
-        )
-
-    bin_edges = np.linspace(0, 2 * np.pi, n_bins + 1)
-
-    # Initialize spike counts
-    spike_counts = np.zeros(n_bins, dtype=np.float64)
-
-    # Handle empty spike train
-    if len(spike_times) == 0:
-        return spike_counts
-
-    # Filter spikes to valid time range
-    valid_mask = (spike_times >= times[0]) & (spike_times <= times[-1])
-    valid_spike_times = spike_times[valid_mask]
-
-    if len(valid_spike_times) == 0:
-        return spike_counts
-
-    # Wrap headings to [0, 2*pi)
-    headings_wrapped = headings_rad % (2 * np.pi)
-
-    # Use nearest-neighbor assignment to avoid circular interpolation issues
-    # np.interp would give wrong results when head direction crosses 0/2pi
-    # (e.g., 350° to 10° would interpolate to 180° instead of ~0°)
-    spike_indices = np.searchsorted(times, valid_spike_times, side="right") - 1
-    spike_indices = np.clip(spike_indices, 0, len(headings_wrapped) - 1)
-    spike_hd = headings_wrapped[spike_indices]
-
-    # Assign spikes to bins
-    spike_bins = np.digitize(spike_hd, bin_edges) - 1
-    spike_bins[spike_bins >= n_bins] = 0
-
-    # Count spikes per bin using vectorized bincount
-    spike_counts = np.bincount(spike_bins, minlength=n_bins).astype(np.float64)
-
-    return spike_counts
+    return _bin_spikes_with_precomputed_directional_bins(
+        spike_times, times, headings_wrapped, bin_edges, n_bins
+    )
 
 
 def bin_directional_spike_trains(
@@ -414,27 +440,33 @@ def bin_directional_spike_trains(
     occupancy, bin_centers = compute_directional_occupancy(
         times, headings, bin_size, angle_unit=angle_unit
     )
-    n_bins = len(occupancy)
+    # Hoist per-neuron validation and angle wrapping out of the loop.
+    headings_wrapped, bin_edges, n_bins = _precompute_directional_bins(
+        headings, bin_size, angle_unit=angle_unit
+    )
 
-    # Process neurons
     if n_jobs == 1:
-        # Sequential processing
         spike_counts = np.zeros((n_neurons, n_bins), dtype=np.float64)
         for i, spikes in enumerate(spike_times_list):
-            spike_counts[i] = bin_directional_spike_train(
-                spikes, times, headings, bin_size, angle_unit=angle_unit
+            spike_counts[i] = _bin_spikes_with_precomputed_directional_bins(
+                np.asarray(spikes, dtype=np.float64).ravel(),
+                times,
+                headings_wrapped,
+                bin_edges,
+                n_bins,
             )
     else:
-        # Parallel processing with joblib
         from joblib import Parallel, delayed
 
-        def _process_neuron(spikes: NDArray[np.float64]) -> NDArray[np.float64]:
-            return bin_directional_spike_train(
-                spikes, times, headings, bin_size, angle_unit=angle_unit
-            )
-
         results = Parallel(n_jobs=n_jobs)(
-            delayed(_process_neuron)(spikes) for spikes in spike_times_list
+            delayed(_bin_spikes_with_precomputed_directional_bins)(
+                np.asarray(spikes, dtype=np.float64).ravel(),
+                times,
+                headings_wrapped,
+                bin_edges,
+                n_bins,
+            )
+            for spikes in spike_times_list
         )
         spike_counts = np.array(results, dtype=np.float64)
 

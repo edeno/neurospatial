@@ -271,18 +271,30 @@ def batch_spatial_information(
 
     n_neurons = firing_rates.shape[0]
 
-    # Compute for each neuron
-    # Note: Could be optimized with vectorized operations, but this is clearer
-    # and matches single-neuron behavior exactly. JAX backend can use vmap.
-    result = np.array(
-        [
-            spatial_information(firing_rates[i], occupancy, base=base)
-            for i in range(n_neurons)
-        ],
-        dtype=np.float64,
-    )
+    # Vectorized one-pass implementation. Match the singular spatial_information
+    # exactly for each neuron:
+    #   - Degenerate occupancy (all-NaN or zero) → all neurons return 0.
+    #   - mean_rate <= 0 or NaN for a neuron → that neuron returns 0.
+    #   - Bins are valid only when occupancy > 0, rate > 0, and rate finite.
+    occ_sum = np.nansum(occupancy)
+    if occ_sum == 0 or np.isnan(occ_sum):
+        return np.zeros(n_neurons, dtype=np.float64)
+    occ_prob = occupancy / occ_sum
+    occ_prob_row = occ_prob[np.newaxis, :]  # (1, n_bins)
 
-    return result
+    finite_rates = np.where(np.isfinite(firing_rates), firing_rates, 0.0)
+    mean_rates = np.nansum(occ_prob_row * finite_rates, axis=1)
+    valid_neuron = (mean_rates > 0) & np.isfinite(mean_rates)
+
+    safe_mean = np.where(valid_neuron, mean_rates, 1.0)[:, np.newaxis]
+    valid_bin = (occ_prob_row > 0) & (firing_rates > 0) & np.isfinite(firing_rates)
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ratio = firing_rates / safe_mean
+        contributions = np.where(valid_bin, occ_prob_row * ratio * np.log(ratio), 0.0)
+    info = contributions.sum(axis=1) / np.log(base)
+    info = np.where(valid_neuron, np.maximum(info, 0.0), 0.0)
+    return info.astype(np.float64, copy=False)
 
 
 def sparsity(
@@ -478,13 +490,22 @@ def batch_sparsity(
 
     n_neurons = firing_rates.shape[0]
 
-    # Compute for each neuron
-    result = np.array(
-        [sparsity(firing_rates[i], occupancy) for i in range(n_neurons)],
-        dtype=np.float64,
-    )
+    # Vectorized one-pass implementation matching singular sparsity():
+    #   S_i = (sum_j p_j r_ij)^2 / sum_j p_j r_ij^2,
+    #   clamped to [0, 1]; degenerate denominators → 0.
+    occ_sum = np.nansum(occupancy)
+    if occ_sum == 0 or np.isnan(occ_sum):
+        return np.zeros(n_neurons, dtype=np.float64)
+    occ_prob = occupancy / occ_sum
+    occ_prob_row = occ_prob[np.newaxis, :]
 
-    return result
+    numerator = np.nansum(occ_prob_row * firing_rates, axis=1) ** 2
+    denominator = np.nansum(occ_prob_row * firing_rates**2, axis=1)
+    valid_denom = (denominator > 0) & np.isfinite(denominator)
+
+    safe_denom = np.where(valid_denom, denominator, 1.0)
+    sparsity_values = np.where(valid_denom, numerator / safe_denom, 0.0)
+    return np.clip(sparsity_values, 0.0, 1.0).astype(np.float64, copy=False)
 
 
 def batch_grid_scores(
