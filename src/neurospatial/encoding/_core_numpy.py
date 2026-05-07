@@ -375,6 +375,10 @@ def spatial_information_single(
             firing_rate_clean / np.where(mean_rate > 0, mean_rate, 1.0),
             1.0,
         )
+        # If the divide underflowed to zero (subnormal firing_rate / mean_rate),
+        # log(ratio) = -inf and ratio*log(ratio) = 0*-inf = NaN. Clamp to 1
+        # for those bins so they contribute 0 (limit r*log(r) as r->0+ is 0).
+        ratio = np.where(ratio > 0, ratio, 1.0)
         log_ratio = np.log(ratio) / np.log(base)
         contribution = np.where(
             valid_mask & (mean_rate > 0),
@@ -423,6 +427,9 @@ def spatial_information_batch(
             firing_rates_clean / safe_mean,
             1.0,
         )
+        # Subnormal firing_rate / mean_rate can underflow to 0; log(0) = -inf
+        # and 0 * -inf = NaN. Clamp to 1 (log=0) for those bins.
+        ratio = np.where(ratio > 0, ratio, 1.0)
         log_ratio = np.log(ratio) / np.log(base)
         contributions = np.where(
             valid_bin & valid_neuron[:, np.newaxis],

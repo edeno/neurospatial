@@ -634,3 +634,62 @@ class TestBinningInputValidation:
 
         with pytest.raises(ValueError, match=r"dimension|shape"):
             compute_occupancy(simple_env, trajectory_data["times"], positions_3d)
+
+
+class TestSpikeInterpolationRegression:
+    """Regression tests guarding against snapshot-instead-of-interpolated binning.
+
+    A previous refactor mapped each spike to the bin of its most recent
+    trajectory frame instead of its interpolated position. With sparse
+    sampling or fast movement this shifts spikes to the previous bin —
+    a silent rate-map error.
+    """
+
+    def test_spike_between_samples_uses_interpolated_position(self) -> None:
+        """A spike at t=0.75 with samples at 0/10/20 maps to the 7.5 bin, not 0."""
+        from neurospatial import Environment
+        from neurospatial.encoding._binning import bin_spike_train
+
+        # 1D environment with bins of width 5 spanning [0, 20].
+        sample_positions = np.linspace(0.0, 20.0, 100).reshape(-1, 1)
+        env = Environment.from_samples(sample_positions, bin_size=5.0)
+
+        # Sparse trajectory: three samples at t=0, 1, 2 with positions 0, 10, 20.
+        times = np.array([0.0, 1.0, 2.0])
+        positions = np.array([[0.0], [10.0], [20.0]])
+
+        # Single spike at t=0.75; linear interpolation gives position 7.5
+        # which falls in the same bin as 7.5 (a different bin from position 0).
+        spike_times = np.array([0.75])
+
+        counts = bin_spike_train(env, spike_times, times, positions)
+
+        # Identify the bin that interpolated position 7.5 lives in, vs the
+        # bin that the snapshot position 0.0 lives in. The two must differ
+        # for this regression test to be meaningful, and the spike count
+        # must land in the interpolated bin.
+        interp_bin = env.bin_at(np.array([[7.5]]))[0]
+        snapshot_bin = env.bin_at(np.array([[0.0]]))[0]
+        assert interp_bin != snapshot_bin, "test setup not exercising the bug"
+        assert counts[interp_bin] == 1.0
+        assert counts[snapshot_bin] == 0.0
+
+    def test_batch_matches_single_under_interpolation(self) -> None:
+        """bin_spike_trains must match bin_spike_train per neuron exactly."""
+        from neurospatial import Environment
+        from neurospatial.encoding._binning import bin_spike_train, bin_spike_trains
+
+        sample_positions = np.linspace(0.0, 20.0, 100).reshape(-1, 1)
+        env = Environment.from_samples(sample_positions, bin_size=5.0)
+        times = np.array([0.0, 1.0, 2.0])
+        positions = np.array([[0.0], [10.0], [20.0]])
+        spike_lists = [
+            np.array([0.75]),
+            np.array([0.25, 1.5]),
+            np.array([]),
+        ]
+
+        batch_counts, _ = bin_spike_trains(env, spike_lists, times, positions)
+        for i, spikes in enumerate(spike_lists):
+            single = bin_spike_train(env, spikes, times, positions)
+            np.testing.assert_array_equal(batch_counts[i], single)

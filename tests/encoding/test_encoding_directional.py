@@ -4415,3 +4415,61 @@ class TestDirectionalRateResultNaNHandling:
         assert np.isnan(result.preferred_direction())
         assert np.isnan(result.mean_vector_length())
         assert np.isnan(result.rayleigh_pvalue())
+
+
+class TestDirectionalBatchNaNHandling:
+    """Regression: NaN bins must be dropped (not propagated) by the batched
+    circular-stats reductions.
+
+    A previous refactor used `rates.sum(axis=1)` and a plain matmul, which
+    propagates NaN to every neuron with even one NaN bin. The single-neuron
+    path masks NaNs first; the two paths must agree.
+    """
+
+    def test_preferred_directions_match_singletons_with_nan_bins(self) -> None:
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        n_bins = 4
+        bin_centers = np.linspace(0.0, 2 * np.pi, n_bins, endpoint=False)
+        firing_rates = np.array(
+            [
+                [1.0, np.nan, 0.0, 0.0],
+                [0.0, 2.0, np.nan, 0.0],
+            ]
+        )
+        result = DirectionalRatesResult(
+            firing_rates=firing_rates,
+            occupancy=np.ones(n_bins) * 0.5,
+            bin_centers=bin_centers,
+            bin_size=2 * np.pi / n_bins,
+            smoothing_sigma=None,
+        )
+
+        batch = result.preferred_directions()
+        singles = np.array([result[i].preferred_direction() for i in range(2)])
+        np.testing.assert_allclose(batch, singles)
+        assert np.all(np.isfinite(batch))
+
+    def test_mean_vector_lengths_match_singletons_with_nan_bins(self) -> None:
+        from neurospatial.encoding.directional import DirectionalRatesResult
+
+        n_bins = 4
+        bin_centers = np.linspace(0.0, 2 * np.pi, n_bins, endpoint=False)
+        firing_rates = np.array(
+            [
+                [1.0, np.nan, 0.0, 0.0],
+                [0.0, 2.0, np.nan, 0.0],
+            ]
+        )
+        result = DirectionalRatesResult(
+            firing_rates=firing_rates,
+            occupancy=np.ones(n_bins) * 0.5,
+            bin_centers=bin_centers,
+            bin_size=2 * np.pi / n_bins,
+            smoothing_sigma=None,
+        )
+
+        batch = result.mean_vector_lengths()
+        singles = np.array([result[i].mean_vector_length() for i in range(2)])
+        np.testing.assert_allclose(batch, singles)
+        assert np.all(np.isfinite(batch))

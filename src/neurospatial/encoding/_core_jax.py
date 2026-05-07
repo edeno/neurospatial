@@ -419,6 +419,9 @@ def _spatial_information_kernel(
         firing_rate_clean / mean_rate,
         1.0,
     )
+    # Subnormal firing_rate / mean_rate can underflow to 0; clamp so the
+    # subsequent log doesn't produce -inf and trigger 0*-inf = NaN.
+    ratio = jnp.where(ratio > 0, ratio, 1.0)
     log_ratio = jnp.log(ratio) / jnp.log(base)
     contribution = jnp.where(
         valid_mask & (mean_rate > 0),

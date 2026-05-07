@@ -1073,11 +1073,17 @@ class DirectionalRatesResult(SpatialResultMixin):
         rates: NDArray[np.float64] = np.asarray(self.firing_rates, dtype=np.float64)
         centers: NDArray[np.float64] = np.asarray(self.bin_centers, dtype=np.float64)
 
-        weight_sums = rates.sum(axis=1)
-        # Avoid divide-by-zero; mark invalid (zero/all-NaN) neurons as NaN.
+        # Match the single-neuron path: NaN bins are dropped before the
+        # circular-mean reduction, not propagated through. Without this
+        # mask any NaN bin makes the whole row's direction NaN, which
+        # disagrees with iterating singles.
+        finite = np.isfinite(rates)
+        finite_rates = np.where(finite, rates, 0.0)
+
+        weight_sums = finite_rates.sum(axis=1)
         valid = weight_sums > 0
         safe_sums = np.where(valid, weight_sums, 1.0)
-        weights_norm = rates / safe_sums[:, np.newaxis]
+        weights_norm = finite_rates / safe_sums[:, np.newaxis]
 
         mean_cos = weights_norm @ np.cos(centers)
         mean_sin = weights_norm @ np.sin(centers)
@@ -1112,10 +1118,14 @@ class DirectionalRatesResult(SpatialResultMixin):
         rates: NDArray[np.float64] = np.asarray(self.firing_rates, dtype=np.float64)
         centers: NDArray[np.float64] = np.asarray(self.bin_centers, dtype=np.float64)
 
-        weight_sums = rates.sum(axis=1)
+        # NaN bins are dropped before the reduction (see preferred_directions).
+        finite = np.isfinite(rates)
+        finite_rates = np.where(finite, rates, 0.0)
+
+        weight_sums = finite_rates.sum(axis=1)
         valid = weight_sums > 0
         safe_sums = np.where(valid, weight_sums, 1.0)
-        weights_norm = rates / safe_sums[:, np.newaxis]
+        weights_norm = finite_rates / safe_sums[:, np.newaxis]
 
         mean_cos = weights_norm @ np.cos(centers)
         mean_sin = weights_norm @ np.sin(centers)

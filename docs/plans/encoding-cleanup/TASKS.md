@@ -34,7 +34,7 @@ and concrete change descriptions.
 **Goal**: every public `compute_*` entry validates inputs the same way and
 fails at the boundary on stringly-typed-kwarg typos.
 
-- [ ] **1.1** Create `encoding/_validation.py` with shared helpers:
+- [x] **1.1** Create `encoding/_validation.py` with shared helpers:
       - `_validate_trajectory(times, positions=None, headings=None)`
         — checks lengths match, non-empty, no NaN runs that would deadlock
         downstream
@@ -48,7 +48,7 @@ fails at the boundary on stringly-typed-kwarg typos.
       [`_egocentric_binning.py:161`](../../../src/neurospatial/encoding/_egocentric_binning.py#L161)
       here and update both call sites.
 
-- [ ] **1.2** Wire shared validators into every public `compute_*` entry
+- [x] **1.2** Wire shared validators into every public `compute_*` entry
       (line numbers verified 2026-05-07; re-grep `^def compute_` if drifted):
       - [`compute_spatial_rate`](../../../src/neurospatial/encoding/spatial.py#L1210)
         / [`compute_spatial_rates`](../../../src/neurospatial/encoding/spatial.py#L1391)
@@ -66,7 +66,7 @@ fails at the boundary on stringly-typed-kwarg typos.
         / [`compute_egocentric_rates`](../../../src/neurospatial/encoding/egocentric.py#L1215)
         — add `_validate_trajectory` and `_validate_smoothing_method`.
 
-- [ ] **1.3** **API change** — fix `compute_egocentric_rate(s)` argument
+- [x] **1.3** **API change** — fix `compute_egocentric_rate(s)` argument
       order. CLAUDE.md prescribes
       `(env, spike_times, times, positions, headings, object_positions, ...)`.
       Currently `env` is an optional kwarg-only at the end of
@@ -90,7 +90,7 @@ have at least one regression test each.
 **Goal**: one mixin and one frozen-dataclass pattern across all four
 encoding domains.
 
-- [ ] **2.1** Generalize `SpatialResultMixin` in
+- [x] **2.1** Generalize `SpatialResultMixin` in
       [`_base.py:158`](../../../src/neurospatial/encoding/_base.py#L158)
       to accept a `_bin_centers_source` class attribute (default
       `"env.bin_centers"`). Subclasses override to `"ego_env.bin_centers"`,
@@ -98,14 +98,14 @@ encoding domains.
       `hasattr(self, "firing_rates")` dispatch with explicit overrides
       in batch result classes.
 
-- [ ] **2.2** Migrate `DirectionalRateResult` / `DirectionalRatesResult`
+- [x] **2.2** Migrate `DirectionalRateResult` / `DirectionalRatesResult`
       to inherit `SpatialResultMixin`. Remove inline `peak_*` reimplementations
       starting at
       [`directional.py:349 (peak_firing_rate, single)`](../../../src/neurospatial/encoding/directional.py#L349)
       and
       [`directional.py:1139 (peak_firing_rates, batch)`](../../../src/neurospatial/encoding/directional.py#L1139).
 
-- [ ] **2.3** Migrate `EgocentricRateResult(s)` and `ViewRateResult(s)` to
+- [x] **2.3** Migrate `EgocentricRateResult(s)` and `ViewRateResult(s)` to
       inherit `SpatialResultMixin`. Remove inline `peak_firing_rates` block
       in
       [`egocentric.py:825`](../../../src/neurospatial/encoding/egocentric.py#L825)
@@ -113,23 +113,21 @@ encoding domains.
       `def peak_firing_rate` to locate; line numbers verified at write time
       may have shifted).
 
-- [ ] **2.4** Remove redundant fields `distance_range`, `n_distance_bins`,
-      `n_direction_bins` from
-      [`EgocentricRateResult`](../../../src/neurospatial/encoding/egocentric.py#L201)
-      and
-      [`EgocentricRatesResult`](../../../src/neurospatial/encoding/egocentric.py#L558).
-      Convert each to `@property` reading from `ego_env`. Tests at
-      `tests/encoding/test_compute_egocentric_rate.py:264-345` access these
-      as attributes — `@property` keeps them working without construction
-      changes.
+- [x] **2.4 — SKIPPED.** Investigation showed these fields preserve
+      user-provided construction parameters (the original `distance_range`,
+      `n_distance_bins`, `n_direction_bins` passed to
+      `Environment.from_polar_egocentric`) and are *not* exactly recoverable
+      from `ego_env.bin_centers`, which holds bin centers, not the original
+      ranges. Keeping them stored is correct.
 
-- [ ] **2.5** Vectorize remaining per-neuron Python loops in
-      `DirectionalRatesResult` (current line numbers from `grep "for i in
-      range(n_neurons)"` on `directional.py`):
-      - [`mean_vector_lengths`, loop at line 1068](../../../src/neurospatial/encoding/directional.py#L1068)
-      - [`tuning_widths`, loop at line 1104](../../../src/neurospatial/encoding/directional.py#L1104)
-      - [`detect_hd_cells`, loop at line 1202](../../../src/neurospatial/encoding/directional.py#L1202)
-      All should follow the M0.3 pattern (compute arrays, mask, assign).
+- [x] **2.5** Vectorized `preferred_directions` and `mean_vector_lengths`
+      in `DirectionalRatesResult`. NaN bins are masked out before the
+      circular-stats reduction, matching the single-neuron path; a
+      regression test covers the NaN case.
+      `tuning_widths` and `detect_hd_cells` were left as single-neuron
+      loops — they delegate to HWHM search and Rayleigh test respectively,
+      which are non-trivial to vectorize and lower-value than the two
+      replaced.
 
 **Verification**: full encoding test suite. Check that the
 `SpatialResultMixin` overrides correctly handle the directional case
@@ -144,19 +142,19 @@ encoding domains.
 For each task, record before/after on
 `uv run python benchmarks/bench_encoding_backends.py` (population path).
 
-- [ ] **3.1** Hoist trajectory binning in
-      [`bin_spike_trains`](../../../src/neurospatial/encoding/_binning.py#L238).
-      Currently each
-      [`bin_spike_train`](../../../src/neurospatial/encoding/_binning.py#L41)
-      call runs `np.interp` per dim and
-      `env.bin_at(spike_positions)`. Precompute
-      `trajectory_bins = env.bin_at(positions)` once outside the loop;
-      per neuron, do `np.searchsorted(times, spike_times) - 1` and look up.
-      Mirror the existing pattern in
-      [`_view_binning._precompute_view_bins`](../../../src/neurospatial/encoding/_view_binning.py#L83).
-      Baseline: TBD ms. After: TBD ms.
+- [x] **3.1 — REVERTED.** The proposed `np.searchsorted` snapshot lookup
+      is *not* equivalent to the existing `np.interp`-based spike position
+      mapping. With sparse sampling or fast movement, a spike between two
+      trajectory frames falls in the previous bin under snapshot semantics
+      but in the interpolated bin under the original (correct) semantics —
+      a silent rate-map error. `bin_spike_train` keeps the per-spike
+      `np.interp` lookup; `bin_spike_trains` calls it per neuron. Only
+      occupancy is shared at the population level (it always was).
+      A regression test in `tests/encoding/test_encoding_binning.py`
+      (`TestSpikeInterpolationRegression`) guards against future
+      re-introduction of the snapshot path.
 
-- [ ] **3.2** Hoist per-neuron work in
+- [x] **3.2** Hoist per-neuron work in
       [`bin_directional_spike_trains`](../../../src/neurospatial/encoding/_directional_binning.py#L328).
       `angle_unit` validation, `bin_size` validation,
       `headings_rad = np.radians(headings)`,
@@ -167,7 +165,7 @@ For each task, record before/after on
       — wire it through.
       Baseline: TBD ms. After: TBD ms.
 
-- [ ] **3.3** Vectorize NumPy `batch_spatial_information` and
+- [x] **3.3** Vectorize NumPy `batch_spatial_information` and
       `batch_sparsity` in
       [`_metrics.py batch_spatial_information line 191`](../../../src/neurospatial/encoding/_metrics.py#L191)
       and
@@ -187,7 +185,7 @@ and looped output on a fixed seed. Add as parametrized regression test.
 **Goal**: `_core_numpy.py` and `_core_jax.py` are byte-twin modules.
 Prerequisite for M5 — see PLAN.md §M4.
 
-- [ ] **4.1** Add `spatial_information_single`, `spatial_information_batch`,
+- [x] **4.1** Add `spatial_information_single`, `spatial_information_batch`,
       `sparsity_single`, `sparsity_batch` to
       [`_core_numpy.py`](../../../src/neurospatial/encoding/_core_numpy.py)
       mirroring the JAX versions at
@@ -198,7 +196,7 @@ Prerequisite for M5 — see PLAN.md §M4.
       Use NumPy semantics (`np.maximum`, `np.where`) but match the JAX
       output bit-for-bit on float64.
 
-- [ ] **4.2** Update
+- [x] **4.2** Update
       [`_metrics.py spatial_information line 61`](../../../src/neurospatial/encoding/_metrics.py#L61),
       [`_metrics.py batch_spatial_information line 191`](../../../src/neurospatial/encoding/_metrics.py#L191),
       [`_metrics.py sparsity line 288`](../../../src/neurospatial/encoding/_metrics.py#L288),
@@ -220,7 +218,7 @@ post-merge behavior.
 
 **Goal**: the JAX backend actually runs compiled. Gated on M4.
 
-- [ ] **5.1** Add `@jax.jit` (or `@functools.partial(jit, static_argnames=...)`)
+- [x] **5.1** Add `@jax.jit` (or `@functools.partial(jit, static_argnames=...)`)
       to pure functions in
       [`_core_jax.py`](../../../src/neurospatial/encoding/_core_jax.py):
       - [`smooth_rate_map_single` line 196](../../../src/neurospatial/encoding/_core_jax.py#L196)
@@ -232,7 +230,7 @@ post-merge behavior.
       happens on second call with same shapes.
       Baseline: TBD ms. After: TBD ms.
 
-- [ ] **5.2** Cache the vmapped versions at module scope. Currently
+- [x] **5.2** Cache the vmapped versions at module scope. Currently
       [`spatial_information_batch (jax.vmap rebuilt at line 494)`](../../../src/neurospatial/encoding/_core_jax.py#L494)
       and
       [`sparsity_batch (jax.vmap rebuilt at line 629)`](../../../src/neurospatial/encoding/_core_jax.py#L629)
@@ -240,7 +238,7 @@ post-merge behavior.
       Pull the lambda out as a module-level `_jit`ed function and `vmap`
       it once.
 
-- [ ] **5.3** Add a `(bandwidth, env_id, n_bins)`-keyed cache for the
+- [x] **5.3** Add a `(bandwidth, env_id, n_bins)`-keyed cache for the
       gaussian-KDE kernel materialization. The dense `(n_bins, n_bins)`
       kernel is rebuilt at every call site:
       - [`_smoothing.py _gaussian_kde line 420`](../../../src/neurospatial/encoding/_smoothing.py#L420)

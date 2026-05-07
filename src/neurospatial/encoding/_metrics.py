@@ -223,51 +223,27 @@ def batch_spatial_information(
 
         return spatial_information_batch(firing_rates, occupancy, base=base)  # type: ignore[arg-type]
 
-    # NumPy implementation
-    firing_rates = np.asarray(firing_rates)
-    occupancy = np.asarray(occupancy)
+    # NumPy implementation — input validation here, kernel in _core_numpy.
+    firing_rates_arr = np.asarray(firing_rates)
+    occupancy_arr = np.asarray(occupancy)
 
-    # Validate shapes
-    if firing_rates.ndim != 2:
+    if firing_rates_arr.ndim != 2:
         raise ValueError(
-            f"firing_rates must be 2D (n_neurons, n_bins), got shape {firing_rates.shape}"
+            f"firing_rates must be 2D (n_neurons, n_bins), got shape {firing_rates_arr.shape}"
+        )
+    if occupancy_arr.ndim != 1:
+        raise ValueError(
+            f"occupancy must be 1D (n_bins,), got shape {occupancy_arr.shape}"
+        )
+    if firing_rates_arr.shape[1] != occupancy_arr.shape[0]:
+        raise ValueError(
+            f"firing_rates has {firing_rates_arr.shape[1]} bins but "
+            f"occupancy has {occupancy_arr.shape[0]} bins"
         )
 
-    if occupancy.ndim != 1:
-        raise ValueError(f"occupancy must be 1D (n_bins,), got shape {occupancy.shape}")
+    from neurospatial.encoding._core_numpy import spatial_information_batch as _np_si
 
-    if firing_rates.shape[1] != occupancy.shape[0]:
-        raise ValueError(
-            f"firing_rates has {firing_rates.shape[1]} bins but "
-            f"occupancy has {occupancy.shape[0]} bins"
-        )
-
-    n_neurons = firing_rates.shape[0]
-
-    # Vectorized one-pass implementation. Match the singular spatial_information
-    # exactly for each neuron:
-    #   - Degenerate occupancy (all-NaN or zero) → all neurons return 0.
-    #   - mean_rate <= 0 or NaN for a neuron → that neuron returns 0.
-    #   - Bins are valid only when occupancy > 0, rate > 0, and rate finite.
-    occ_sum = np.nansum(occupancy)
-    if occ_sum == 0 or np.isnan(occ_sum):
-        return np.zeros(n_neurons, dtype=np.float64)
-    occ_prob = occupancy / occ_sum
-    occ_prob_row = occ_prob[np.newaxis, :]  # (1, n_bins)
-
-    finite_rates = np.where(np.isfinite(firing_rates), firing_rates, 0.0)
-    mean_rates = np.nansum(occ_prob_row * finite_rates, axis=1)
-    valid_neuron = (mean_rates > 0) & np.isfinite(mean_rates)
-
-    safe_mean = np.where(valid_neuron, mean_rates, 1.0)[:, np.newaxis]
-    valid_bin = (occ_prob_row > 0) & (firing_rates > 0) & np.isfinite(firing_rates)
-
-    with np.errstate(divide="ignore", invalid="ignore"):
-        ratio = firing_rates / safe_mean
-        contributions = np.where(valid_bin, occ_prob_row * ratio * np.log(ratio), 0.0)
-    info = contributions.sum(axis=1) / np.log(base)
-    info = np.where(valid_neuron, np.maximum(info, 0.0), 0.0)
-    return info.astype(np.float64, copy=False)
+    return _np_si(firing_rates_arr, occupancy_arr, base=base)
 
 
 def sparsity(
