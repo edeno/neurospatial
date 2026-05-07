@@ -9,6 +9,7 @@ edit_uri: edit/main/docs/
 not_in_nav: ignore
 exclude_docs: |
   research/
+  plans/
 
 theme:
   name: material

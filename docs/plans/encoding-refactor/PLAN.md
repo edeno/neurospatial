@@ -1,5 +1,7 @@
 # Encoding Module Refactor Plan
 
+**Committed**: 2025-12-05
+
 ## Overview
 
 Refactor the `neurospatial.encoding` module to provide a consistent, user-friendly API optimized for batch processing of neural populations.

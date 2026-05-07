@@ -1,5 +1,7 @@
 # TASKS.md - Napari Playback Interface Enhancement
 
+**Committed**: 2025-11-03
+
 **Goal**: Replace FPS slider with speed dropdown and add keyboard shortcuts for neural data exploration.
 
 **Branch**: `feat/napari-speed-dropdown`

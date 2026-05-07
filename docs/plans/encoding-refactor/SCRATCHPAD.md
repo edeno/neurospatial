@@ -1,10 +1,21 @@
 # Encoding Module Refactor - Scratchpad
 
+**Committed**: 2025-10-31
+
 ## Current Status
 
-**Date**: 2026-01-10
-**Last Completed**: Task 8.3 (Decide and codify JAX metric behavior)
-**Next Task**: Task 8.4 (Expose `gaze_offsets` in compute_view_rate(s) API)
+**Date**: 2026-05-07
+**Associated Plan**: [PLAN.md](PLAN.md)
+**Task Tracker**: [TASKS.md](TASKS.md)
+**Last Completed**: Task 8.5 (Optimize single-neuron compute paths to avoid redundant computation)
+**Next Task**: Review branch against `main`
+
+**Current Evidence**:
+
+- `compute_view_rate()` now routes through `bin_view_spike_trains(..., n_jobs=1)` with a one-neuron batch, so viewed coordinates are shared by spike counts and occupancy.
+- `compute_egocentric_rate()` now routes through `bin_egocentric_spike_trains(..., n_jobs=1)` with a one-neuron batch, so egocentric coordinates are shared by spike counts and occupancy.
+- Regression tests verify the expensive coordinate helpers are called once by the single-neuron public APIs.
+- Planning artifacts now live under `docs/plans/encoding-refactor/` instead of the repository root.
 
 ### Task 8.3 Completion Notes (2026-01-10)
 
@@ -124,11 +135,13 @@ matching the behavior of their batch counterparts.
 - Added "Backend Parameter" section documenting numpy/jax/auto options
 - Added "Result Class Methods" section documenting all result class APIs
 
-**Task 7.5**: Updated QUICKSTART.md documentation
+**Task 7.5**: Updated `.claude/QUICKSTART.md` documentation
 - Updated Neural Analysis section with new API patterns
 - Added batch processing examples (compute_spatial_rates, n_jobs, to_dataframe)
 - Updated Object-Vector Cells section with compute_egocentric_rate(s)
 - Updated Spatial View Cells section with compute_view_rate(s)
+
+Note: `docs/getting-started/quickstart.md` is a separate public quickstart. Its older manual spatial firing-rate example was replaced with the public encoding API pattern on 2026-05-07.
 
 **Task 7.6**: Validation complete
 - pytest: 9052 passed, 19 skipped
@@ -3214,7 +3227,45 @@ Exposed the `gaze_offsets` parameter in the public `compute_view_rate()` and `co
 **Files Modified**:
 - `src/neurospatial/encoding/view.py` (added parameter, validation, docs)
 - `tests/encoding/test_compute_view_rate.py` (added 13 new tests)
-- `TASKS.md` (marked 8.4 complete)
+- `docs/plans/encoding-refactor/TASKS.md` (marked 8.4 complete)
+
+---
+
+## Session 2026-05-07: Plan Document Organization and Status Refresh
+
+**Completed**: Planning artifact reorganization and status refresh.
+
+**Summary**:
+Moved root-level working plans into `docs/plans/` and updated the encoding refactor tracker to identify its associated plan explicitly.
+
+**Changes Made**:
+1. Moved encoding refactor artifacts to `docs/plans/encoding-refactor/`.
+2. Moved other root-level plans into topic directories under `docs/plans/`.
+3. Added `docs/plans/README.md` as an index of planning documents.
+4. Updated this scratchpad's current status to point at Task 8.5 before the final cleanup pass.
+5. Updated `TASKS.md` to clarify the remaining encoding refactor tracker work before Tasks 7.7 and 8.5 were completed.
+
+**Open Follow-ups**:
+- Review branch against `main` for merge risks.
+
+---
+
+## Session 2026-05-07: Tasks 7.7 and 8.5 Completion
+
+**Completed**: Task 7.7 and Task 8.5.
+
+**Summary**:
+Updated the public quickstart's spatial firing-rate pattern to use the new encoding API, and optimized single-neuron view/egocentric compute paths by reusing the existing one-neuron batch binning path.
+
+**Changes Made**:
+1. Replaced manual histogram firing-rate code in `docs/getting-started/quickstart.md` with `compute_spatial_rate()` and `compute_spatial_rates()` examples, including `to_dataframe()`.
+2. Updated `compute_view_rate()` to call `bin_view_spike_trains()` with `[spike_times]` and `n_jobs=1`, reusing precomputed view bins for spike counts and occupancy.
+3. Updated `compute_egocentric_rate()` to call `bin_egocentric_spike_trains()` with `[spike_times]` and `n_jobs=1`, reusing precomputed egocentric coordinates for spike counts and occupancy.
+4. Added regression tests proving the expensive viewed-location and egocentric-coordinate helpers are called once on the single-neuron public paths.
+
+**Validation**:
+- `uv run pytest tests/encoding/test_compute_view_rate.py::TestComputeViewRatePrecomputation tests/encoding/test_compute_egocentric_rate.py::TestComputeEgocentricRatePrecomputation`: 2 passed, 4 warnings.
+- `uv run pytest tests/encoding/test_compute_view_rate.py tests/encoding/test_compute_egocentric_rate.py`: 113 passed, 164 warnings.
 
 ---
 

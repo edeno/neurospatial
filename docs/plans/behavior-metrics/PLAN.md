@@ -1,5 +1,6 @@
 # Implementation Plan: Advanced Behavioral Analysis Metrics
 
+**Committed**: 2025-12-05
 **Created**: 2025-12-05
 **Revised**: 2025-12-05 (post code-review and UX-review)
 **Status**: Ready for implementation
@@ -18,7 +19,7 @@ This plan implements **four advanced behavioral analysis directions** that lever
 
 This plan **extends** the behavioral trajectory metrics from BEHAV_PLAN.md:
 
-| BEHAV_PLAN.md | BEHAV_PLAN2.md (this plan) |
+| BEHAV_PLAN.md | This plan |
 |---------------|----------------------------|
 | Path efficiency (traveled vs shortest) | Deviation-from-diffusion (planned vs random) |
 | Goal-directed metrics (goal bias) | Information-theoretic reachability |

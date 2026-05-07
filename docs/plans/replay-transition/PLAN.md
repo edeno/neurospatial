@@ -1,5 +1,6 @@
 # Transition Matrix Construction for Replay Analysis
 
+**Committed**: 2025-11-04
 **Version**: 0.3.0
 **Status**: Planning
 **Target**: Hippocampal replay and theta sequence analysis

@@ -1481,6 +1481,48 @@ class TestComputeViewRateGazeOffsets:
         )
 
 
+class TestComputeViewRatePrecomputation:
+    """Regression tests for single-neuron precomputation efficiency."""
+
+    def test_view_coordinates_computed_once(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+        spike_times: np.ndarray,
+    ) -> None:
+        """compute_view_rate should reuse viewed locations for counts and occupancy."""
+        from neurospatial.encoding import _view_binning
+        from neurospatial.encoding.view import compute_view_rate
+
+        times, positions, headings = trajectory_data
+        call_count = 0
+        original = _view_binning.compute_viewed_location
+
+        def counting_compute_viewed_location(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(
+            _view_binning,
+            "compute_viewed_location",
+            counting_compute_viewed_location,
+        )
+
+        compute_view_rate(
+            simple_env,
+            spike_times,
+            times,
+            positions,
+            headings,
+            gaze_model="ray_cast",
+            smoothing_method="binned",
+        )
+
+        assert call_count == 1
+
+
 class TestComputeViewRatesGazeOffsets:
     """Test gaze_offsets parameter for compute_view_rates (batch version)."""
 

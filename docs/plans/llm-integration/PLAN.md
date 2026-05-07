@@ -1,5 +1,7 @@
 # LLM Integration Implementation Plan
 
+**Committed**: 2025-11-23
+
 **Goal:** Make `neurospatial` directly usable by LLM agents (including via MCP), with a small, robust tool surface, good schemas, and “skills”/playbooks that describe higher‑level workflows.
 
 ---

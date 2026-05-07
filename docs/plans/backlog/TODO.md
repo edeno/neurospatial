@@ -1,5 +1,7 @@
 # **1. Core Computation Engine**
 
+**Committed**: 2025-11-19
+
 ### **1.1 Population-level computation**
 
 * [ ] **Shared occupancy & binning:**

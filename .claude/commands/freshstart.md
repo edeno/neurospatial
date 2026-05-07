@@ -4,12 +4,12 @@ Start now by reading the files and telling me which task you'll work on first.
 
 Your workflow MUST be:
 
-    First, read these files IN ORDER:
-        SCRATCHPAD.md (notes and current status)
-        PLAN.md (overall plan)
-        TASKS.md (current tasks)
+    First, choose the relevant topic under docs/plans/, then read these files IN ORDER:
+        docs/plans/<topic>/SCRATCHPAD.md (notes and current status, if present)
+        docs/plans/<topic>/PLAN.md (overall plan)
+        docs/plans/<topic>/TASKS.md (current tasks, if present)
 
-    Find the FIRST unchecked [ ] task in TASKS.md
+    Find the FIRST unchecked [ ] task in the relevant TASKS.md
 
     For EVERY feature, follow TDD:
       a. Create the TEST file first  (or identify/modify existing tests)
@@ -21,9 +21,9 @@ Your workflow MUST be:
       g. Add/Update docstrings and types.
       h. Run ruff and mypy and fix any issues
 
-    Update TASKS.md checkboxes as you complete items.
+    Update the relevant TASKS.md checkboxes as you complete items.
 
-    Update SCRATCHPAD.md with notes
+    Update the relevant SCRATCHPAD.md with notes when one exists.
 
     Commit frequently with messages like "feat(F24): implement error handling"
 
@@ -32,14 +32,14 @@ Your workflow MUST be:
 - **Read before you code** - Use Read tool to understand context (funcion signatures, existing tests, etc)
 - **Test before you implement** - TDD is mandatory
 - **Ask when uncertain** - Better to ask than assume
-- **Document as you go** - Update SCRATCHPAD.md with decisions/blockers
+- **Document as you go** - Update the relevant SCRATCHPAD.md with decisions/blockers when one exists
 - **Test thoroughly** - Ensure all tests pass before marking tasks complete. There are no exceptions (no flaky tests or pre-existing failures). You MUST use systematic-debugging skill for failures.
 
 ---
 
 ## When Blocked
 
-If you encounter any of these, STOP and document in SCRATCHPAD.md:
+If you encounter any of these, STOP and document in the relevant SCRATCHPAD.md when one exists:
 
 1. **Unclear requirements** - Ask for clarification
 2. **Unexpected test failures** - Use systematic-debugging skill

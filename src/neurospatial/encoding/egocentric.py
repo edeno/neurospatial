@@ -1121,8 +1121,7 @@ def compute_egocentric_rate(
         is_jax_available,
     )
     from neurospatial.encoding._egocentric_binning import (
-        bin_egocentric_spike_train,
-        compute_egocentric_occupancy,
+        bin_egocentric_spike_trains,
         normalize_object_positions,
     )
     from neurospatial.encoding._smoothing import smooth_rate_map
@@ -1172,14 +1171,10 @@ def compute_egocentric_rate(
             f"times length ({n_samples}) must match headings length ({len(headings)})"
         )
 
-    # Bin spike train by egocentric coordinates
-    # TODO(perf): For geodesic distance, egocentric coordinates are computed
-    # twice (once for spike binning, once for occupancy). Consider precomputing
-    # egocentric coordinates and passing them to both functions. For now, use
-    # compute_egocentric_rates() for batch processing which precomputes shared
-    # quantities.
-    spike_counts, ego_env = bin_egocentric_spike_train(
-        spike_times,
+    # Reuse the batch binning path for the single-neuron API so egocentric
+    # coordinates are computed once and shared by spike counts and occupancy.
+    spike_counts_batch, occupancy, ego_env = bin_egocentric_spike_trains(
+        [spike_times],
         times,
         positions,
         headings,
@@ -1189,20 +1184,9 @@ def compute_egocentric_rate(
         n_direction_bins=n_direction_bins,
         distance_metric=distance_metric,
         env=env,
+        n_jobs=1,
     )
-
-    # Compute egocentric occupancy
-    occupancy, _ = compute_egocentric_occupancy(
-        times,
-        positions,
-        headings,
-        object_positions,
-        distance_range=distance_range,
-        n_distance_bins=n_distance_bins,
-        n_direction_bins=n_direction_bins,
-        distance_metric=distance_metric,
-        env=env,
-    )
+    spike_counts = spike_counts_batch[0]
 
     # Apply smoothing to compute firing rate
     # smooth_rate_map dispatches to JAX or NumPy based on backend

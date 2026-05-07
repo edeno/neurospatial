@@ -586,6 +586,49 @@ class TestComputeEgocentricRateEmptySpikes:
         assert np.sum(occupancy) > 0
 
 
+class TestComputeEgocentricRatePrecomputation:
+    """Regression tests for single-neuron precomputation efficiency."""
+
+    def test_egocentric_coordinates_computed_once(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        simple_env: Environment,
+        trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+        object_positions: np.ndarray,
+        spike_times: np.ndarray,
+    ) -> None:
+        """compute_egocentric_rate should reuse coordinates for counts and occupancy."""
+        from neurospatial.encoding import _egocentric_binning
+        from neurospatial.encoding.egocentric import compute_egocentric_rate
+
+        times, positions, headings = trajectory_data
+        call_count = 0
+        original = _egocentric_binning._compute_egocentric_coords
+
+        def counting_compute_egocentric_coords(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(
+            _egocentric_binning,
+            "_compute_egocentric_coords",
+            counting_compute_egocentric_coords,
+        )
+
+        compute_egocentric_rate(
+            spike_times,
+            times,
+            positions,
+            headings,
+            object_positions,
+            env=simple_env,
+            distance_metric="geodesic",
+        )
+
+        assert call_count == 1
+
+
 # ==============================================================================
 # Correctness Tests
 # ==============================================================================

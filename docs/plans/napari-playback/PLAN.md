@@ -1,5 +1,7 @@
 # PLAN3: Napari Playback Interface Enhancement
 
+**Committed**: 2025-11-22
+
 **Goal**: Replace the FPS slider with an intuitive speed dropdown and add keyboard shortcuts for efficient neural data exploration, particularly for millisecond-scale replay analysis.
 
 **Branch**: `feat/napari-speed-dropdown`

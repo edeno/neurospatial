@@ -1,8 +1,26 @@
 # Encoding Module Refactor - Task Breakdown
 
+**Committed**: 2025-12-05
+
 This document breaks down the encoding module refactor into actionable tasks. Each task is designed to be completable in a focused work session.
 
 **Reference**: See [PLAN.md](PLAN.md) for full design specifications.
+**Scratchpad**: See [SCRATCHPAD.md](SCRATCHPAD.md) for implementation notes and review history.
+
+## Current Status
+
+**Updated**: 2026-05-07
+
+**Associated plan**: [PLAN.md](PLAN.md), the encoding module refactor plan.
+
+**Status summary**:
+
+- Milestones 0-8 are complete.
+- Milestone 8 tasks 8.1-8.5 are complete.
+- Task 7.7 is complete.
+- Planning artifacts were moved from the repository root to `docs/plans/encoding-refactor/`.
+
+**Next step**: Review this branch against `main` for merge risks.
 
 ---
 
@@ -453,7 +471,7 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Add backend parameter documentation
   - [x] Document result class methods
 
-- [x] **7.5** Update QUICKSTART.md documentation
+- [x] **7.5** Update `.claude/QUICKSTART.md` documentation
   - [x] Update neural encoding section
   - [x] Add batch processing examples
   - [x] Add `to_dataframe()` usage examples
@@ -462,6 +480,11 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Run `uv run pytest` to verify all tests pass (9052 passed, 19 skipped)
   - [x] Run `uv run mypy src/neurospatial/encoding/` for type checking (25 files, no issues)
   - [x] Run `uv run ruff check . && uv run ruff format .` for linting (580 files formatted)
+
+- [x] **7.7** Audit public docs quickstart for new encoding API parity
+  - [x] `docs/getting-started/quickstart.md` still contained a manual spatial firing-rate histogram pattern
+  - [x] Add or link examples for `compute_spatial_rate(s)`, batch processing, and `to_dataframe()`
+  - [x] Keep public docs environment-focused, with a concise new encoding API pattern
 
 ---
 
@@ -511,14 +534,14 @@ This document breaks down the encoding module refactor into actionable tasks. Ea
   - [x] Document use case: eye-tracking data in primate spatial view cell studies
   - [x] Add tests for gaze_offsets parameter
 
-- [ ] **8.5** Optimize single-neuron compute paths to avoid redundant computation
-  - [ ] Issue: `compute_view_rate()` computes view coordinates twice (binning + occupancy)
-  - [ ] Issue: `compute_egocentric_rate()` has same redundancy
-  - [ ] For expensive gaze models (ray_cast, geodesic), this is significant overhead
-  - [ ] Option A: Accept precomputed bins as optional parameter
-  - [ ] Option B: Refactor to compute view/ego coordinates once and reuse
-  - [ ] Add performance test to verify improvement
-  - [ ] Affected files: `view.py:1079`, `egocentric.py:1175`
+- [x] **8.5** Optimize single-neuron compute paths to avoid redundant computation
+  - [x] Issue: `compute_view_rate()` computed view coordinates twice (binning + occupancy)
+  - [x] Issue: `compute_egocentric_rate()` had same redundancy
+  - [x] For expensive gaze models (ray_cast, geodesic), this was significant overhead
+  - [x] Confirmed still open on 2026-05-07; batch paths already precomputed shared quantities
+  - [x] Option B: Refactor to compute view/ego coordinates once and reuse
+  - [x] Add regression tests verifying expensive coordinate helpers are called once
+  - [x] Affected files: `src/neurospatial/encoding/view.py`, `src/neurospatial/encoding/egocentric.py`
 
 ---
 

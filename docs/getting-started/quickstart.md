@@ -218,28 +218,32 @@ Now that you understand the basics, explore:
 ### Pattern 1: Spatial Firing Rate Map
 
 ```python
-# Compute spike counts per bin
-spike_bin_indices = env.bin_at(spike_positions)
-spike_counts, _ = np.histogram(
-    spike_bin_indices,
-    bins=np.arange(env.n_bins + 1)
+from neurospatial.encoding import compute_spatial_rate, compute_spatial_rates
+
+# Single neuron
+result = compute_spatial_rate(
+    env,
+    spike_times,
+    times,
+    position_data,
+    smoothing_method="diffusion_kde",
+    bandwidth=5.0,
 )
 
-# Compute occupancy
-position_bin_indices = env.bin_at(position_data)
-occupancy, _ = np.histogram(
-    position_bin_indices,
-    bins=np.arange(env.n_bins + 1)
+firing_rate = result.firing_rate
+peak_location = result.peak_location()
+spatial_info = result.spatial_information()
+
+# Population batch. Reuses occupancy and binning across neurons.
+population = compute_spatial_rates(
+    env,
+    [spike_times_cell0, spike_times_cell1, spike_times_cell2],
+    times,
+    position_data,
+    n_jobs=2,
 )
 
-# Calculate firing rate (spikes/sec, assuming 30 Hz sampling)
-sampling_rate = 30.0  # Hz
-time_per_bin = occupancy / sampling_rate
-firing_rate = np.divide(
-    spike_counts,
-    time_per_bin,
-    where=time_per_bin > 0
-)
+summary = population.to_dataframe()
 ```
 
 ### Pattern 2: Distance to Target

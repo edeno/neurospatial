@@ -1,6 +1,7 @@
 # Advanced Behavioral Metrics: Implementation Tasks
 
-**Source**: [BEHAV_PLAN2.md](BEHAV_PLAN2.md)
+**Committed**: 2025-12-05
+**Source**: [PLAN.md](PLAN.md)
 **Created**: 2025-12-05
 **Revised**: 2025-12-05 (post code-review and UX-review)
 **Status**: Ready for implementation (after BEHAV_PLAN.md)
@@ -98,7 +99,7 @@ reachability.py (no internal dependencies)
 
 - [ ] Implement `reachable_set(env, position_bin, radius) -> NDArray[np.int_]`
   - [ ] Use `distance_field()` from distance module + threshold
-  - [ ] **NOTE**: `neighbors_within()` does NOT exist - see BEHAV_PLAN2.md for correct implementation
+  - [ ] **NOTE**: `neighbors_within()` does NOT exist - see [PLAN.md](PLAN.md) for correct implementation
   - [ ] Return bin indices within geodesic radius
 - [ ] Implement `future_distribution(env, position_bin, tau) -> NDArray[np.float64]`
   - [ ] Convert tau to bandwidth_sigma: `sqrt(2 * tau)`
@@ -141,7 +142,7 @@ reachability.py (no internal dependencies)
 - [ ] Test `future_entropy()` with delta distribution (should be 0)
 - [ ] Test `count_geodesic_options()` at corridor (should be 1-2)
 - [ ] Test `count_geodesic_options()` at T-junction (should be 3)
-- [ ] Test `count_geodesic_options()` differs from graph degree (see BEHAV_PLAN2.md)
+- [ ] Test `count_geodesic_options()` differs from graph degree (see [PLAN.md](PLAN.md))
 - [ ] Test `is_decision_point()` threshold logic
 - [ ] Test `is_constrained()` threshold logic
 - [ ] Test error messages are helpful
@@ -489,7 +490,7 @@ reachability.py (no internal dependencies)
    import networkx as nx
    L = nx.laplacian_matrix(env.connectivity).astype(np.float64)
    eigenvalues, eigenvectors = eigsh(L, k=n_components, which='SM')
-   # Sort and fix sign convention - see BEHAV_PLAN2.md
+   # Sort and fix sign convention - see PLAN.md
    ```
 
 4. **Reachable set computation**: Use `distance_field()` + threshold
@@ -569,7 +570,7 @@ raise ValueError(
 
 ## References
 
-- **BEHAV_PLAN2.md**: Full implementation details, dataclass definitions, function signatures
+- **PLAN.md**: Full implementation details, dataclass definitions, function signatures
 - **BEHAV_PLAN.md**: Basic behavioral metrics (prerequisite for M4)
 - **Mathematical framework**: Coifman & Lafon (2006), Stachenfeld et al. (2017), Redish (2016)
 - **Existing code**: `neurospatial.kernels`, `neurospatial.distance`, `neurospatial.visibility`

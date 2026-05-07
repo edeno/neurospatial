@@ -1042,10 +1042,7 @@ def compute_view_rate(
         is_jax_available,
     )
     from neurospatial.encoding._smoothing import smooth_rate_map
-    from neurospatial.encoding._view_binning import (
-        bin_view_spike_train,
-        compute_view_occupancy,
-    )
+    from neurospatial.encoding._view_binning import bin_view_spike_trains
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -1092,33 +1089,20 @@ def compute_view_rate(
                 f"times length ({n_samples})"
             )
 
-    # Bin spike train by viewed location
-    # TODO(perf): For expensive gaze models (ray_cast), view coordinates are
-    # computed twice (once for spike binning, once for occupancy). Consider
-    # precomputing view coordinates and passing them to both functions.
-    # For now, use compute_view_rates() for batch processing which already
-    # precomputes shared quantities.
-    spike_counts = bin_view_spike_train(
+    # Reuse the batch binning path for the single-neuron API so viewed
+    # coordinates are computed once and shared by spike counts and occupancy.
+    spike_counts_batch, view_occupancy = bin_view_spike_trains(
         env,
-        spike_times,
+        [spike_times],
         times,
         positions,
         headings,
         gaze_model=gaze_model,
         view_distance=view_distance,
         gaze_offsets=gaze_offsets,
+        n_jobs=1,
     )
-
-    # Compute view occupancy
-    view_occupancy = compute_view_occupancy(
-        env,
-        times,
-        positions,
-        headings,
-        gaze_model=gaze_model,
-        view_distance=view_distance,
-        gaze_offsets=gaze_offsets,
-    )
+    spike_counts = spike_counts_batch[0]
 
     # Apply smoothing to compute firing rate
     # smooth_rate_map dispatches to JAX or NumPy based on backend
