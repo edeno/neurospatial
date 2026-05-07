@@ -1106,7 +1106,7 @@ class TestPlaceFieldDetectionProperties:
     )  # Use profile's max_examples, extend deadline for detection
     def test_detected_fields_have_valid_indices(self, n_positions: int, seed: int):
         """Property: Detected field bin indices are valid."""
-        from neurospatial.encoding.place import detect_place_fields
+        from neurospatial.encoding.spatial import detect_place_fields
 
         rng = np.random.default_rng(seed)
 
@@ -1152,7 +1152,7 @@ class TestPlaceFieldDetectionProperties:
     )  # Use profile's max_examples, extend deadline for detection
     def test_uniform_rate_produces_no_fields(self, n_positions: int, seed: int):
         """Property: Uniform firing rate should produce no detected fields."""
-        from neurospatial.encoding.place import detect_place_fields
+        from neurospatial.encoding.spatial import detect_place_fields
 
         rng = np.random.default_rng(seed)
 

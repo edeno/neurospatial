@@ -1,5 +1,7 @@
 """Spike generation functions for converting firing rates to spike trains."""
 
+from typing import Any
+
 import numpy as np
 from numpy.typing import NDArray
 from tqdm.auto import tqdm
@@ -162,6 +164,8 @@ def generate_population_spikes(
     refractory_period: float = 0.002,
     seed: int | None = None,
     show_progress: bool = True,
+    *,
+    headings: NDArray[np.float64] | None = None,
 ) -> list[NDArray[np.float64]]:
     """Generate spike trains for population of neurons.
 
@@ -185,6 +189,10 @@ def generate_population_spikes(
     show_progress : bool, optional
         Show progress bar during spike generation (default: True).
         Set to False for quiet operation in scripts or tests.
+    headings : NDArray[np.float64], shape (n_time,), optional
+        Head direction in radians. Required for spatial-view models and
+        directional object-vector models. For head-direction models, headings
+        are used when provided; otherwise they are derived from position velocity.
 
     Returns
     -------
@@ -293,7 +301,7 @@ def generate_population_spikes(
     # Generate spikes for each model
     for i, model in iterator:
         # Compute firing rates for this model
-        rates = model.firing_rate(positions, times)
+        rates = _compute_model_firing_rate(model, positions, times, headings)
 
         # Generate spikes with derived seed for reproducibility
         model_seed = None if base_seed is None else base_seed + i
@@ -323,6 +331,46 @@ def generate_population_spikes(
         )
 
     return spike_trains
+
+
+def _compute_model_firing_rate(
+    model: NeuralModel,
+    positions: NDArray[np.float64],
+    times: NDArray[np.float64],
+    headings: NDArray[np.float64] | None,
+) -> NDArray[np.float64]:
+    """Compute firing rates for models with different input conventions."""
+    from neurospatial.simulation.models.head_direction_cells import (
+        HeadDirectionCellModel,
+    )
+    from neurospatial.simulation.models.object_vector_cells import (
+        ObjectVectorCellModel,
+    )
+    from neurospatial.simulation.models.spatial_view_cells import SpatialViewCellModel
+
+    model_any: Any = model
+
+    if isinstance(model_any, HeadDirectionCellModel):
+        if headings is None:
+            if len(times) < 2:
+                return np.zeros(len(times), dtype=np.float64)
+            from neurospatial.ops.egocentric import heading_from_velocity
+
+            dt = float(np.median(np.diff(times)))
+            headings = heading_from_velocity(positions, dt, min_speed=0.0)
+        rates = model_any.firing_rate(headings, positions=positions, times=times)
+    elif isinstance(model_any, SpatialViewCellModel | ObjectVectorCellModel):
+        rates = model_any.firing_rate(positions, times, headings=headings)
+    else:
+        rates = model_any.firing_rate(positions, times)
+
+    rates = np.asarray(rates, dtype=np.float64)
+    if len(rates) != len(times):
+        raise ValueError(
+            f"Model {type(model).__name__}.firing_rate returned {len(rates)} rates "
+            f"for {len(times)} time points."
+        )
+    return rates
 
 
 def add_modulation(

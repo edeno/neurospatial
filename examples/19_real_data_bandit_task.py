@@ -40,7 +40,6 @@
 # %%
 # Import the data loading function
 import importlib.util
-import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -57,17 +56,31 @@ from neurospatial.encoding import (
     sparsity,
 )
 
+
+def _find_project_root(start: Path) -> Path:
+    """Find the project root containing the real-data helper."""
+    for path in (start, *start.parents):
+        if (path / "data" / "load_bandit_data.py").exists():
+            return path
+    raise FileNotFoundError(f"Could not find data/load_bandit_data.py from {start}")
+
+
 # Determine base path (works in both scripts and notebooks)
 try:
     # When running as a script
-    _base_path = Path(__file__).parent.parent
+    _start_path = Path(__file__).resolve().parent
 except NameError:
     # When running in Jupyter notebook
-    _base_path = Path.cwd().parent if Path.cwd().name == "examples" else Path.cwd()
+    _start_path = Path.cwd().resolve()
+_base_path = _find_project_root(_start_path)
 
-# Add data directory to path for imports
-sys.path.insert(0, str(_base_path / "data"))
-from load_bandit_data import load_neural_recording_from_files
+_loader_path = _base_path / "data" / "load_bandit_data.py"
+_loader_spec = importlib.util.spec_from_file_location("load_bandit_data", _loader_path)
+if _loader_spec is None or _loader_spec.loader is None:
+    raise ImportError(f"Could not load bandit data helper from {_loader_path}")
+_loader_module = importlib.util.module_from_spec(_loader_spec)
+_loader_spec.loader.exec_module(_loader_module)
+load_neural_recording_from_files = _loader_module.load_neural_recording_from_files
 
 # Configure matplotlib
 plt.rcParams["figure.figsize"] = (14, 10)

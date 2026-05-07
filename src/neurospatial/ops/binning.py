@@ -249,7 +249,6 @@ def map_points_to_bins(
 
     elif tie_break == TieBreakStrategy.LOWEST_INDEX:
         # Deterministic path: find all ties and pick lowest index
-        # Single query with k neighbors to handle all tie scenarios at once
         max_neighbors = min(10, len(env.bin_centers))
         distances_kn, indices_kn = kdtree.query(points, k=max_neighbors, workers=-1)
 
@@ -268,6 +267,19 @@ def map_points_to_bins(
             # Set non-tied indices to large value so they're ignored in min
             tied_indices = np.where(is_tied, indices_kn, np.iinfo(np.intp).max)
             bin_indices = np.min(tied_indices, axis=1).astype(np.int64)
+
+            # cKDTree only returns max_neighbors candidates above. For exact ties
+            # involving more candidates, compute all-center distances only for
+            # rows where a tie was detected.
+            tied_rows = np.count_nonzero(is_tied, axis=1) > 1
+            if np.any(tied_rows):
+                all_distances = np.linalg.norm(
+                    env.bin_centers[None, :, :] - points[tied_rows, None, :],
+                    axis=2,
+                )
+                min_distances = np.min(all_distances, axis=1, keepdims=True)
+                all_tied = np.abs(all_distances - min_distances) < 1e-10
+                bin_indices[tied_rows] = np.argmax(all_tied, axis=1).astype(np.int64)
 
     else:
         raise ValueError(
