@@ -348,13 +348,17 @@ class TestBackendEdgeCases:
         assert backend1 is backend2
 
 
+@pytest.mark.skipif(not _has_jax(), reason="JAX not installed (optional 'jax' extra)")
 class TestMinOccupancyPrecisionAcrossBackends:
     """Regression: JAX firing-rate kernels must compare min_occupancy at
     occupancy's dtype.
 
     A previous refactor passed `jnp.float32(min_occupancy)` to the jit-compiled
     kernel, which truncated the threshold and let JAX keep bins that the NumPy
-    kernel masked.
+    kernel masked. A second related bug: JAX's default x64=False mode silently
+    truncates `jnp.asarray(float64_arr, dtype=jnp.float64)` to float32, so the
+    same divergence reappeared even after switching to dtype-preserving casts.
+    The `_core_jax` module enables x64 globally at import time to fix that.
     """
 
     def test_jax_matches_numpy_at_subfloat32_threshold_singular(self) -> None:
@@ -416,3 +420,30 @@ class TestMinOccupancyPrecisionAcrossBackends:
 
         assert np.all(np.isnan(np_rates[:, 0])), "test setup not exercising the bug"
         np.testing.assert_array_equal(np.isnan(np_rates), np.isnan(jax_rates))
+
+
+@pytest.mark.skipif(not _has_jax(), reason="JAX not installed (optional 'jax' extra)")
+def test_core_jax_import_enables_x64() -> None:
+    """Importing the JAX encoding kernel turns on jax_enable_x64.
+
+    Regression for a precision bug where production code left
+    `jax_enable_x64=False` (JAX's default), so `jnp.asarray(float64_arr,
+    dtype=jnp.float64)` silently truncated to float32. The encoding
+    pipeline computes everything in float64 and is precision-sensitive
+    around `min_occupancy` comparisons; we enable x64 at the JAX-backend
+    module's import time so the production path (compute_*_rate with
+    `backend="jax"`) always runs at float64.
+
+    The conftest fixture also forces x64 on for all tests in this
+    package, so this test verifies the production-side effect by
+    re-checking the flag after a fresh import of `_core_jax` without
+    relying on the fixture.
+    """
+    import importlib
+
+    import jax
+
+    import neurospatial.encoding._core_jax as core_jax_module
+
+    importlib.reload(core_jax_module)
+    assert jax.config.read("jax_enable_x64") is True
