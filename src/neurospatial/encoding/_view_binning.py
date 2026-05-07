@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.encoding._validation import validate_times as _validate_times
 from neurospatial.ops.visibility import compute_viewed_location
 
 if TYPE_CHECKING:
@@ -42,42 +43,6 @@ __all__ = [
     "bin_view_spike_trains",
     "compute_view_occupancy",
 ]
-
-
-def _validate_times(times: NDArray[np.float64], context: str = "view binning") -> None:
-    """Validate times array for view binning operations.
-
-    Checks that times are:
-    1. At least 2 samples (needed for dt computation)
-    2. Monotonically non-decreasing (needed for searchsorted)
-
-    Parameters
-    ----------
-    times : ndarray
-        Timestamps to validate.
-    context : str
-        Description of the calling function for error messages.
-
-    Raises
-    ------
-    ValueError
-        If times has fewer than 2 samples.
-        If times are not monotonically non-decreasing.
-    """
-    n_samples = len(times)
-
-    if n_samples < 2:
-        raise ValueError(f"At least 2 samples required for {context}, got {n_samples}")
-
-    time_diffs = np.diff(times)
-    if np.any(time_diffs < 0):
-        decreasing_indices = np.where(time_diffs < 0)[0]
-        raise ValueError(
-            "times must be monotonically non-decreasing (sorted). "
-            f"Found {len(decreasing_indices)} decreasing interval(s) at "
-            f"indices: {decreasing_indices.tolist()[:5]}"
-            + (" ..." if len(decreasing_indices) > 5 else "")
-        )
 
 
 def _precompute_view_bins(

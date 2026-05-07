@@ -1335,7 +1335,11 @@ def compute_spatial_rate(
         is_jax_available,
     )
     from neurospatial.encoding._binning import bin_spike_train, compute_occupancy
-    from neurospatial.encoding._smoothing import smooth_rate_map
+    from neurospatial.encoding._smoothing import (
+        _validate_smoothing_parameters,
+        smooth_rate_map,
+    )
+    from neurospatial.encoding._validation import validate_trajectory
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -1348,10 +1352,14 @@ def compute_spatial_rate(
     # This raises ImportError if backend="jax" and JAX is unavailable
     resolved_backend = get_backend_name(backend)
 
+    _validate_smoothing_parameters(smoothing_method, bandwidth)
+
     # Convert inputs to arrays
     spike_times = np.asarray(spike_times, dtype=np.float64)
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
+
+    validate_trajectory(times, positions=positions)
 
     # Bin spike train into spatial bins (always NumPy - CPU/joblib)
     spike_counts = bin_spike_train(env, spike_times, times, positions)
@@ -1547,6 +1555,7 @@ def compute_spatial_rates(
         smooth_rate_maps_batch,
     )
     from neurospatial.encoding._spikes import normalize_spike_times
+    from neurospatial.encoding._validation import validate_trajectory
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -1568,6 +1577,8 @@ def compute_spatial_rates(
     # Convert inputs to arrays
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
+
+    validate_trajectory(times, positions=positions)
 
     # Handle edge case: no neurons
     # Still compute occupancy from trajectory (occupancy is independent of neural data)

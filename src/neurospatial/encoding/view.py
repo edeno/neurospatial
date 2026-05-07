@@ -1035,7 +1035,11 @@ def compute_view_rate(
         get_backend_name,
         is_jax_available,
     )
-    from neurospatial.encoding._smoothing import smooth_rate_map
+    from neurospatial.encoding._smoothing import (
+        _validate_smoothing_parameters,
+        smooth_rate_map,
+    )
+    from neurospatial.encoding._validation import validate_trajectory
     from neurospatial.encoding._view_binning import bin_view_spike_trains
 
     # Validate backend
@@ -1057,22 +1061,16 @@ def compute_view_rate(
             f"Must be one of {sorted(valid_gaze_models)}"
         )
 
+    _validate_smoothing_parameters(smoothing_method, bandwidth)
+
     # Convert inputs to arrays
     spike_times = np.asarray(spike_times, dtype=np.float64)
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
 
-    # Validate input array lengths
+    validate_trajectory(times, positions=positions, headings=headings)
     n_samples = len(times)
-    if len(positions) != n_samples:
-        raise ValueError(
-            f"times length ({n_samples}) must match positions length ({len(positions)})"
-        )
-    if len(headings) != n_samples:
-        raise ValueError(
-            f"times length ({n_samples}) must match headings length ({len(headings)})"
-        )
 
     # Validate gaze_offsets if provided
     if gaze_offsets is not None:
@@ -1323,6 +1321,7 @@ def compute_view_rates(
         smooth_rate_maps_batch,
     )
     from neurospatial.encoding._spikes import normalize_spike_times
+    from neurospatial.encoding._validation import validate_trajectory
     from neurospatial.encoding._view_binning import bin_view_spike_trains
 
     # Validate backend
@@ -1355,16 +1354,8 @@ def compute_view_rates(
     positions = np.asarray(positions, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
 
-    # Validate input array lengths
+    validate_trajectory(times, positions=positions, headings=headings)
     n_samples = len(times)
-    if len(positions) != n_samples:
-        raise ValueError(
-            f"times length ({n_samples}) must match positions length ({len(positions)})"
-        )
-    if len(headings) != n_samples:
-        raise ValueError(
-            f"times length ({n_samples}) must match headings length ({len(headings)})"
-        )
 
     # Validate gaze_offsets if provided
     if gaze_offsets is not None:

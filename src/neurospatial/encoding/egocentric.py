@@ -948,13 +948,13 @@ class EgocentricRatesResult:
 
 
 def compute_egocentric_rate(
+    env: Environment | None,
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     object_positions: NDArray[np.float64],
     *,
-    env: Environment | None = None,
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
@@ -1088,6 +1088,7 @@ def compute_egocentric_rate(
 
     >>> # Compute egocentric rate
     >>> result = compute_egocentric_rate(
+    ...     None,
     ...     spike_times,
     ...     times,
     ...     positions,
@@ -1118,7 +1119,11 @@ def compute_egocentric_rate(
         bin_egocentric_spike_trains,
         normalize_object_positions,
     )
-    from neurospatial.encoding._smoothing import smooth_rate_map
+    from neurospatial.encoding._smoothing import (
+        _validate_smoothing_parameters,
+        smooth_rate_map,
+    )
+    from neurospatial.encoding._validation import validate_trajectory
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -1146,24 +1151,19 @@ def compute_egocentric_rate(
             "Pass the allocentric environment to compute geodesic distances."
         )
 
-    # Convert inputs to arrays
-    spike_times = np.asarray(spike_times, dtype=np.float64).ravel()
-    times = np.asarray(times, dtype=np.float64).ravel()
+    _validate_smoothing_parameters(smoothing_method, bandwidth)
+
+    # Convert inputs to arrays (1D required for spike_times/times/headings)
+    spike_times = np.asarray(spike_times, dtype=np.float64)
+    times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
-    headings = np.asarray(headings, dtype=np.float64).ravel()
+    headings = np.asarray(headings, dtype=np.float64)
     # Normalize object_positions: [x, y] -> [[x, y]] for single object
     object_positions = normalize_object_positions(object_positions)
 
-    # Validate input array lengths
-    n_samples = len(times)
-    if len(positions) != n_samples:
-        raise ValueError(
-            f"times length ({n_samples}) must match positions length ({len(positions)})"
-        )
-    if len(headings) != n_samples:
-        raise ValueError(
-            f"times length ({n_samples}) must match headings length ({len(headings)})"
-        )
+    validate_trajectory(times, positions=positions, headings=headings)
+    if spike_times.ndim != 1:
+        raise ValueError(f"spike_times must be 1D, got shape {spike_times.shape}")
 
     # Reuse the batch binning path for the single-neuron API so egocentric
     # coordinates are computed once and shared by spike counts and occupancy.
@@ -1213,13 +1213,13 @@ def compute_egocentric_rate(
 
 
 def compute_egocentric_rates(
+    env: Environment | None,
     spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     object_positions: NDArray[np.float64],
     *,
-    env: Environment | None = None,
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
@@ -1232,7 +1232,7 @@ def compute_egocentric_rates(
 ) -> EgocentricRatesResult:
     """Compute egocentric firing rates for multiple neurons.
 
-    This is the batch version of ``compute_egocentric_rate()`` that efficiently
+    This is the batch version of ``compute_egocentric_rate(None)`` that efficiently
     processes multiple neurons with shared trajectory data. It precomputes
     shared quantities (egocentric coordinates, occupancy) once and optionally
     parallelizes spike counting with joblib.
@@ -1328,7 +1328,7 @@ def compute_egocentric_rates(
 
     Notes
     -----
-    **Efficiency advantages over calling ``compute_egocentric_rate()`` in a loop**:
+    **Efficiency advantages over calling ``compute_egocentric_rate(None)`` in a loop**:
 
     1. Egocentric coordinates (distance, bearing to nearest object) are
        computed once and shared across all neurons
@@ -1368,6 +1368,7 @@ def compute_egocentric_rates(
 
     >>> # Compute egocentric rates for all neurons
     >>> result = compute_egocentric_rates(
+    ...     None,
     ...     spike_times,
     ...     times,
     ...     positions,
@@ -1398,7 +1399,7 @@ def compute_egocentric_rates(
     ...     ]
     ... )
     >>> result2 = compute_egocentric_rates(
-    ...     spike_times_2d, times, positions, headings, object_positions
+    ...     None, spike_times_2d, times, positions, headings, object_positions
     ... )
 
     References
@@ -1420,6 +1421,7 @@ def compute_egocentric_rates(
         smooth_rate_maps_batch,
     )
     from neurospatial.encoding._spikes import normalize_spike_times
+    from neurospatial.encoding._validation import validate_trajectory
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -1453,23 +1455,14 @@ def compute_egocentric_rates(
     spike_times_list = normalize_spike_times(spike_times)
     n_neurons = len(spike_times_list)
 
-    # Convert inputs to arrays
-    times = np.asarray(times, dtype=np.float64).ravel()
+    # Convert inputs to arrays (1D required for times/headings)
+    times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
-    headings = np.asarray(headings, dtype=np.float64).ravel()
+    headings = np.asarray(headings, dtype=np.float64)
     # Normalize object_positions: [x, y] -> [[x, y]] for single object
     object_positions = normalize_object_positions(object_positions)
 
-    # Validate input array lengths
-    n_samples = len(times)
-    if len(positions) != n_samples:
-        raise ValueError(
-            f"times length ({n_samples}) must match positions length ({len(positions)})"
-        )
-    if len(headings) != n_samples:
-        raise ValueError(
-            f"times length ({n_samples}) must match headings length ({len(headings)})"
-        )
+    validate_trajectory(times, positions=positions, headings=headings)
 
     # Handle edge case: no neurons
     if n_neurons == 0:
@@ -1759,7 +1752,7 @@ def plot_object_vector_tuning(
     Parameters
     ----------
     result : EgocentricRateResult
-        Result from ``compute_egocentric_rate()``.
+        Result from ``compute_egocentric_rate(None)``.
     ax : matplotlib.axes.Axes, optional
         Axes to plot on. If None, creates new figure with polar projection.
     show_peak : bool, default=True
@@ -1784,7 +1777,7 @@ def plot_object_vector_tuning(
     ...     plot_object_vector_tuning,
     ... )
     >>> # Compute egocentric rate field
-    >>> result = compute_egocentric_rate(...)  # doctest: +SKIP
+    >>> result = compute_egocentric_rate(None, ...)  # doctest: +SKIP
     >>> ax = plot_object_vector_tuning(result)  # doctest: +SKIP
 
     See Also

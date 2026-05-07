@@ -1,9 +1,9 @@
-"""Tests for compute_egocentric_rate() function.
+"""Tests for compute_egocentric_rate(None) function.
 
-This module tests the compute_egocentric_rate() function for computing egocentric
+This module tests the compute_egocentric_rate(None) function for computing egocentric
 firing rate maps for object-vector cells.
 
-Task 5.7: Implement compute_egocentric_rate() function
+Task 5.7: Implement compute_egocentric_rate(None) function
 - Accept single spike_times array
 - Accept object_positions array
 - Support distance_range and bin count parameters
@@ -126,6 +126,7 @@ class TestComputeEgocentricRateReturnsResult:
 
         times, positions, headings = trajectory_data
         result = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -145,6 +146,7 @@ class TestComputeEgocentricRateReturnsResult:
 
         times, positions, headings = trajectory_data
         result = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -165,6 +167,7 @@ class TestComputeEgocentricRateReturnsResult:
 
         times, positions, headings = trajectory_data
         result = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -184,6 +187,7 @@ class TestComputeEgocentricRateReturnsResult:
 
         times, positions, headings = trajectory_data
         result = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -212,6 +216,7 @@ class TestComputeEgocentricRateDistanceRange:
 
         times, positions, headings = trajectory_data
         result = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -231,6 +236,7 @@ class TestComputeEgocentricRateDistanceRange:
 
         times, positions, headings = trajectory_data
         result = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -255,6 +261,7 @@ class TestComputeEgocentricRateBinCounts:
 
         times, positions, headings = trajectory_data
         result = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -274,6 +281,7 @@ class TestComputeEgocentricRateBinCounts:
 
         times, positions, headings = trajectory_data
         result = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -293,6 +301,7 @@ class TestComputeEgocentricRateBinCounts:
 
         times, positions, headings = trajectory_data
         result = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -313,6 +322,7 @@ class TestComputeEgocentricRateBinCounts:
 
         times, positions, headings = trajectory_data
         result = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -335,6 +345,7 @@ class TestComputeEgocentricRateBinCounts:
         n_dist = 8
         n_dir = 16
         result = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -366,6 +377,7 @@ class TestComputeEgocentricRateDistanceMetric:
         times, positions, headings = trajectory_data
         # Should work without env parameter
         result = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -387,6 +399,7 @@ class TestComputeEgocentricRateDistanceMetric:
 
         times, positions, headings = trajectory_data
         result = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -408,6 +421,7 @@ class TestComputeEgocentricRateDistanceMetric:
         times, positions, headings = trajectory_data
         with pytest.raises(ValueError, match=r"geodesic.*requires.*env"):
             compute_egocentric_rate(
+                None,
                 spike_times,
                 times,
                 positions,
@@ -428,13 +442,13 @@ class TestComputeEgocentricRateDistanceMetric:
 
         times, positions, headings = trajectory_data
         result = compute_egocentric_rate(
+            simple_env,
             spike_times,
             times,
             positions,
             headings,
             object_positions,
             distance_metric="geodesic",
-            env=simple_env,
         )
         assert np.asarray(result.firing_rate).shape[0] > 0
 
@@ -450,6 +464,7 @@ class TestComputeEgocentricRateDistanceMetric:
         times, positions, headings = trajectory_data
         with pytest.raises(ValueError, match="Invalid distance_metric"):
             compute_egocentric_rate(
+                None,
                 spike_times,
                 times,
                 positions,
@@ -482,6 +497,7 @@ class TestComputeEgocentricRateSmoothing:
 
         times, positions, headings = trajectory_data
         result = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -502,6 +518,7 @@ class TestComputeEgocentricRateSmoothing:
 
         times, positions, headings = trajectory_data
         result = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -509,6 +526,7 @@ class TestComputeEgocentricRateSmoothing:
             object_positions,
         )
         explicit_result = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -546,6 +564,7 @@ class TestComputeEgocentricRateSmoothing:
 
         times, positions, headings = trajectory_data
         result = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -577,6 +596,7 @@ class TestComputeEgocentricRateEmptySpikes:
 
         times, positions, headings = trajectory_data
         result = compute_egocentric_rate(
+            None,
             empty_spike_times,
             times,
             positions,
@@ -598,6 +618,7 @@ class TestComputeEgocentricRateEmptySpikes:
 
         times, positions, headings = trajectory_data
         result = compute_egocentric_rate(
+            None,
             empty_spike_times,
             times,
             positions,
@@ -639,12 +660,12 @@ class TestComputeEgocentricRatePrecomputation:
         )
 
         compute_egocentric_rate(
+            simple_env,
             spike_times,
             times,
             positions,
             headings,
             object_positions,
-            env=simple_env,
             distance_metric="geodesic",
         )
 
@@ -670,6 +691,7 @@ class TestComputeEgocentricRateCorrectness:
 
         times, positions, headings = trajectory_data
         result = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -692,6 +714,7 @@ class TestComputeEgocentricRateCorrectness:
 
         times, positions, headings = trajectory_data
         result = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -713,6 +736,7 @@ class TestComputeEgocentricRateCorrectness:
         times, positions, headings = trajectory_data
         duration = times[-1] - times[0]
         result = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -745,6 +769,7 @@ class TestComputeEgocentricRateResultMethods:
 
         times, positions, headings = trajectory_data
         result = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -768,6 +793,7 @@ class TestComputeEgocentricRateResultMethods:
 
         times, positions, headings = trajectory_data
         result = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -788,6 +814,7 @@ class TestComputeEgocentricRateResultMethods:
 
         times, positions, headings = trajectory_data
         result = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -808,6 +835,7 @@ class TestComputeEgocentricRateResultMethods:
 
         times, positions, headings = trajectory_data
         result = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -828,6 +856,7 @@ class TestComputeEgocentricRateResultMethods:
 
         times, positions, headings = trajectory_data
         result = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -859,6 +888,7 @@ class TestComputeEgocentricRateMinOccupancy:
 
         # Compute with high min_occupancy threshold
         result_high = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -868,6 +898,7 @@ class TestComputeEgocentricRateMinOccupancy:
         )
         # Compute with no threshold
         result_low = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -893,6 +924,7 @@ class TestComputeEgocentricRateMinOccupancy:
         times, positions, headings = trajectory_data
         # Should work without specifying min_occupancy
         result = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -930,6 +962,7 @@ class TestComputeEgocentricRateInputValidation:
 
         with pytest.raises(ValueError, match=r"times.*positions"):
             compute_egocentric_rate(
+                None,
                 spike_times,
                 times,
                 positions,
@@ -952,6 +985,7 @@ class TestComputeEgocentricRateInputValidation:
 
         with pytest.raises(ValueError, match=r"times.*headings"):
             compute_egocentric_rate(
+                None,
                 spike_times,
                 times,
                 positions,
@@ -969,7 +1003,7 @@ class TestComputeEgocentricRateSignature:
     """Test function signature follows conventions."""
 
     def test_argument_order(self) -> None:
-        """Arguments should follow canonical order from PLAN.md."""
+        """Arguments should follow canonical order from CLAUDE.md (env first)."""
         import inspect
 
         from neurospatial.encoding.egocentric import compute_egocentric_rate
@@ -977,12 +1011,13 @@ class TestComputeEgocentricRateSignature:
         sig = inspect.signature(compute_egocentric_rate)
         params = list(sig.parameters.keys())
 
-        # First 5 positional args should be in this order
-        assert params[0] == "spike_times"
-        assert params[1] == "times"
-        assert params[2] == "positions"
-        assert params[3] == "headings"
-        assert params[4] == "object_positions"
+        # First 6 positional args should be in this order (env first per CLAUDE.md)
+        assert params[0] == "env"
+        assert params[1] == "spike_times"
+        assert params[2] == "times"
+        assert params[3] == "positions"
+        assert params[4] == "headings"
+        assert params[5] == "object_positions"
 
     def test_keyword_only_parameters(self) -> None:
         """Optional parameters should be keyword-only."""
@@ -992,9 +1027,9 @@ class TestComputeEgocentricRateSignature:
 
         sig = inspect.signature(compute_egocentric_rate)
 
-        # These should be keyword-only (after *)
+        # These should be keyword-only (after *).
+        # `env` is now first positional (canonical order); excluded here.
         keyword_only_params = [
-            "env",
             "distance_range",
             "n_distance_bins",
             "n_direction_bins",

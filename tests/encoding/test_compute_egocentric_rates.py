@@ -1,4 +1,4 @@
-"""Tests for compute_egocentric_rates() function.
+"""Tests for compute_egocentric_rates(None) function.
 
 This module tests the batch version of egocentric (object-vector) rate computation.
 Tests cover:
@@ -8,13 +8,13 @@ Tests cover:
 - Parameter handling (distance_range, n_bins, distance_metric, smoothing)
 - Edge cases (empty list, single neuron, empty spike trains)
 - Input validation
-- Consistency with single-neuron compute_egocentric_rate()
+- Consistency with single-neuron compute_egocentric_rate(None)
 - n_jobs parallelization
 - Signature (canonical argument order, keyword-only params)
 
 See Also
 --------
-test_compute_egocentric_rate.py : Tests for single-neuron compute_egocentric_rate()
+test_compute_egocentric_rate.py : Tests for single-neuron compute_egocentric_rate(None)
 test_encoding_egocentric.py : Tests for result classes
 test_encoding_egocentric_binning.py : Tests for binning layer
 """
@@ -118,6 +118,7 @@ class TestComputeEgocentricRatesReturnsResult:
         )
 
         result = compute_egocentric_rates(
+            None,
             spike_times_list,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -135,6 +136,7 @@ class TestComputeEgocentricRatesReturnsResult:
         n_direction_bins = 10
 
         result = compute_egocentric_rates(
+            None,
             spike_times_list,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -157,6 +159,7 @@ class TestComputeEgocentricRatesReturnsResult:
         n_direction_bins = 10
 
         result = compute_egocentric_rates(
+            None,
             spike_times_list,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -175,6 +178,7 @@ class TestComputeEgocentricRatesReturnsResult:
         from neurospatial.environment import Environment
 
         result = compute_egocentric_rates(
+            None,
             spike_times_list,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -189,6 +193,7 @@ class TestComputeEgocentricRatesReturnsResult:
         from neurospatial.encoding.egocentric import compute_egocentric_rates
 
         result = compute_egocentric_rates(
+            None,
             spike_times_list,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -212,6 +217,7 @@ class TestComputeEgocentricRatesSpikeTimeFormats:
         from neurospatial.encoding.egocentric import compute_egocentric_rates
 
         result = compute_egocentric_rates(
+            None,
             spike_times_list,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -226,6 +232,7 @@ class TestComputeEgocentricRatesSpikeTimeFormats:
         from neurospatial.encoding.egocentric import compute_egocentric_rates
 
         result = compute_egocentric_rates(
+            None,
             spike_times_2d,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -244,6 +251,7 @@ class TestComputeEgocentricRatesSpikeTimeFormats:
         spike_times_1d = np.sort(rng.uniform(0, trajectory_data["duration"], 50))
 
         result = compute_egocentric_rates(
+            None,
             spike_times_1d,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -270,6 +278,7 @@ class TestComputeEgocentricRatesParameters:
         distance_range = (5.0, 40.0)
 
         result = compute_egocentric_rates(
+            None,
             spike_times_list,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -287,6 +296,7 @@ class TestComputeEgocentricRatesParameters:
         n_distance_bins = 15
 
         result = compute_egocentric_rates(
+            None,
             spike_times_list,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -304,6 +314,7 @@ class TestComputeEgocentricRatesParameters:
         n_direction_bins = 24
 
         result = compute_egocentric_rates(
+            None,
             spike_times_list,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -320,6 +331,7 @@ class TestComputeEgocentricRatesParameters:
 
         # Should work without env parameter
         result = compute_egocentric_rates(
+            None,
             spike_times_list,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -335,6 +347,7 @@ class TestComputeEgocentricRatesParameters:
 
         for method in ["binned", "gaussian_kde", "diffusion_kde"]:
             result = compute_egocentric_rates(
+                None,
                 spike_times_list,
                 trajectory_data["times"],
                 trajectory_data["positions"],
@@ -351,6 +364,7 @@ class TestComputeEgocentricRatesParameters:
         # Test with different n_jobs values
         for n_jobs in [1, 2, -1]:
             result = compute_egocentric_rates(
+                None,
                 spike_times_list,
                 trajectory_data["times"],
                 trajectory_data["positions"],
@@ -374,6 +388,7 @@ class TestComputeEgocentricRatesNeuronIteration:
         from neurospatial.encoding.egocentric import compute_egocentric_rates
 
         result = compute_egocentric_rates(
+            None,
             spike_times_list,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -391,6 +406,7 @@ class TestComputeEgocentricRatesNeuronIteration:
         )
 
         result = compute_egocentric_rates(
+            None,
             spike_times_list,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -406,6 +422,7 @@ class TestComputeEgocentricRatesNeuronIteration:
         from neurospatial.encoding.egocentric import compute_egocentric_rates
 
         result = compute_egocentric_rates(
+            None,
             spike_times_list,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -430,6 +447,7 @@ class TestComputeEgocentricRatesEdgeCases:
         from neurospatial.encoding.egocentric import compute_egocentric_rates
 
         result = compute_egocentric_rates(
+            None,
             [],  # Empty list
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -450,6 +468,7 @@ class TestComputeEgocentricRatesEdgeCases:
         spike_times = [np.sort(rng.uniform(0, trajectory_data["duration"], 50))]
 
         result = compute_egocentric_rates(
+            None,
             spike_times,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -467,6 +486,7 @@ class TestComputeEgocentricRatesEdgeCases:
         spike_times_with_empty = [*spike_times_list, np.array([])]
 
         result = compute_egocentric_rates(
+            None,
             spike_times_with_empty,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -493,6 +513,7 @@ class TestComputeEgocentricRatesInputValidation:
 
         with pytest.raises(ValueError, match="method must be one of"):
             compute_egocentric_rates(
+                None,
                 [],
                 trajectory_data["times"],
                 trajectory_data["positions"],
@@ -507,6 +528,7 @@ class TestComputeEgocentricRatesInputValidation:
 
         with pytest.raises(ValueError, match="Invalid distance_metric"):
             compute_egocentric_rates(
+                None,
                 spike_times_list,
                 trajectory_data["times"],
                 trajectory_data["positions"],
@@ -521,6 +543,7 @@ class TestComputeEgocentricRatesInputValidation:
 
         with pytest.raises(ValueError, match="requires env parameter"):
             compute_egocentric_rates(
+                None,
                 spike_times_list,
                 trajectory_data["times"],
                 trajectory_data["positions"],
@@ -538,6 +561,7 @@ class TestComputeEgocentricRatesInputValidation:
 
         with pytest.raises(ValueError, match=r"times length.*positions length"):
             compute_egocentric_rates(
+                None,
                 spike_times_list,
                 trajectory_data["times"],
                 wrong_positions,
@@ -554,6 +578,7 @@ class TestComputeEgocentricRatesInputValidation:
 
         with pytest.raises(ValueError, match=r"times length.*headings length"):
             compute_egocentric_rates(
+                None,
                 spike_times_list,
                 trajectory_data["times"],
                 trajectory_data["positions"],
@@ -582,6 +607,7 @@ class TestComputeEgocentricRatesConsistencyWithSingle:
 
         # Compute with single function
         single_result = compute_egocentric_rate(
+            None,
             spike_times,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -595,6 +621,7 @@ class TestComputeEgocentricRatesConsistencyWithSingle:
 
         # Compute with batch function
         batch_result = compute_egocentric_rates(
+            None,
             [spike_times],
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -627,6 +654,7 @@ class TestComputeEgocentricRatesConsistencyWithSingle:
 
         # Compute batch
         batch_result = compute_egocentric_rates(
+            None,
             spike_times_list,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -641,6 +669,7 @@ class TestComputeEgocentricRatesConsistencyWithSingle:
         # Compute each neuron individually
         for i, spike_times in enumerate(spike_times_list):
             single_result = compute_egocentric_rate(
+                None,
                 spike_times,
                 trajectory_data["times"],
                 trajectory_data["positions"],
@@ -669,11 +698,12 @@ class TestComputeEgocentricRatesSignature:
     """Tests for function signature."""
 
     def test_canonical_argument_order(self, trajectory_data, spike_times_list):
-        """Test canonical argument order (no env first - it's optional)."""
+        """Test canonical argument order (env first per CLAUDE.md)."""
         from neurospatial.encoding.egocentric import compute_egocentric_rates
 
-        # Arguments should be: spike_times, times, positions, headings, object_positions
+        # env, spike_times, times, positions, headings, object_positions
         result = compute_egocentric_rates(
+            None,
             spike_times_list,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -691,9 +721,8 @@ class TestComputeEgocentricRatesSignature:
 
         sig = inspect.signature(compute_egocentric_rates)
 
-        # These should be keyword-only
+        # `env` is first positional (canonical order); excluded here.
         keyword_only_params = [
-            "env",
             "distance_range",
             "n_distance_bins",
             "n_direction_bins",
@@ -729,13 +758,13 @@ class TestComputeEgocentricRatesGeodesic:
         env = Environment.from_samples(trajectory_data["positions"], bin_size=5.0)
 
         result = compute_egocentric_rates(
+            env,
             spike_times_list,
             trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
             trajectory_data["object_positions"],
             distance_metric="geodesic",
-            env=env,
         )
 
         assert result is not None
@@ -754,6 +783,7 @@ class TestComputeEgocentricRatesCorrectness:
         from neurospatial.encoding.egocentric import compute_egocentric_rates
 
         result = compute_egocentric_rates(
+            None,
             spike_times_list,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -770,6 +800,7 @@ class TestComputeEgocentricRatesCorrectness:
         from neurospatial.encoding.egocentric import compute_egocentric_rates
 
         result = compute_egocentric_rates(
+            None,
             spike_times_list,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -786,6 +817,7 @@ class TestComputeEgocentricRatesCorrectness:
         from neurospatial.encoding.egocentric import compute_egocentric_rates
 
         result = compute_egocentric_rates(
+            None,
             spike_times_list,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -820,6 +852,7 @@ class TestComputeEgocentricRatesResultMethods:
         matplotlib.use("Agg")
 
         result = compute_egocentric_rates(
+            None,
             spike_times_list,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -835,6 +868,7 @@ class TestComputeEgocentricRatesResultMethods:
         from neurospatial.encoding.egocentric import compute_egocentric_rates
 
         result = compute_egocentric_rates(
+            None,
             spike_times_list,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -850,6 +884,7 @@ class TestComputeEgocentricRatesResultMethods:
         from neurospatial.encoding.egocentric import compute_egocentric_rates
 
         result = compute_egocentric_rates(
+            None,
             spike_times_list,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -865,6 +900,7 @@ class TestComputeEgocentricRatesResultMethods:
         from neurospatial.encoding.egocentric import compute_egocentric_rates
 
         result = compute_egocentric_rates(
+            None,
             spike_times_list,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -883,6 +919,7 @@ class TestComputeEgocentricRatesResultMethods:
         from neurospatial.encoding.egocentric import compute_egocentric_rates
 
         result = compute_egocentric_rates(
+            None,
             spike_times_list,
             trajectory_data["times"],
             trajectory_data["positions"],

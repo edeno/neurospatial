@@ -1426,6 +1426,7 @@ def compute_directional_rate(
         bin_directional_spike_train,
         compute_directional_occupancy,
     )
+    from neurospatial.encoding._validation import validate_trajectory
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -1442,10 +1443,14 @@ def compute_directional_rate(
     if angle_unit not in ("rad", "deg"):
         raise ValueError(f"angle_unit must be 'rad' or 'deg', got '{angle_unit}'")
 
-    # Convert inputs to arrays
-    spike_times = np.asarray(spike_times, dtype=np.float64).ravel()
-    times = np.asarray(times, dtype=np.float64).ravel()
-    headings = np.asarray(headings, dtype=np.float64).ravel()
+    # Convert inputs to arrays (1D required; validated below)
+    spike_times = np.asarray(spike_times, dtype=np.float64)
+    times = np.asarray(times, dtype=np.float64)
+    headings = np.asarray(headings, dtype=np.float64)
+
+    validate_trajectory(times, headings=headings)
+    if spike_times.ndim != 1:
+        raise ValueError(f"spike_times must be 1D, got shape {spike_times.shape}")
 
     # Compute occupancy and bin centers
     occupancy, bin_centers = compute_directional_occupancy(
@@ -1634,6 +1639,7 @@ def compute_directional_rates(
         compute_directional_occupancy,
     )
     from neurospatial.encoding._spikes import normalize_spike_times
+    from neurospatial.encoding._validation import validate_trajectory
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -1654,9 +1660,11 @@ def compute_directional_rates(
     spike_times_list: list[NDArray[np.float64]] = normalize_spike_times(spike_times)
     n_neurons = len(spike_times_list)
 
-    # Convert inputs to arrays
-    times = np.asarray(times, dtype=np.float64).ravel()
-    headings = np.asarray(headings, dtype=np.float64).ravel()
+    # Convert inputs to arrays (1D required; validated below)
+    times = np.asarray(times, dtype=np.float64)
+    headings = np.asarray(headings, dtype=np.float64)
+
+    validate_trajectory(times, headings=headings)
 
     # Precompute shared quantities: occupancy and bin centers
     occupancy, bin_centers = compute_directional_occupancy(

@@ -4,7 +4,7 @@ This module tests that all compute functions properly support the backend parame
 - compute_spatial_rate(s)
 - compute_directional_rate(s)
 - compute_view_rate(s)
-- compute_egocentric_rate(s)
+- compute_egocentric_rate(None, s)
 
 TDD approach: Tests written first, implementation follows.
 
@@ -482,6 +482,7 @@ class TestComputeEgocentricRateBackend:
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
         result = compute_egocentric_rate(
+            None,
             spike_times,
             trajectory_times,
             trajectory_positions,
@@ -503,6 +504,7 @@ class TestComputeEgocentricRateBackend:
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
         result = compute_egocentric_rate(
+            None,
             spike_times,
             trajectory_times,
             trajectory_positions,
@@ -525,6 +527,7 @@ class TestComputeEgocentricRateBackend:
 
         with pytest.raises(ValueError, match="Unknown backend"):
             compute_egocentric_rate(
+                None,
                 spike_times,
                 trajectory_times,
                 trajectory_positions,
@@ -549,6 +552,7 @@ class TestComputeEgocentricRatesBackend:
         from neurospatial.encoding.egocentric import compute_egocentric_rates
 
         result = compute_egocentric_rates(
+            None,
             multi_spike_times,
             trajectory_times,
             trajectory_positions,
@@ -571,6 +575,7 @@ class TestComputeEgocentricRatesBackend:
         from neurospatial.encoding.egocentric import compute_egocentric_rates
 
         result = compute_egocentric_rates(
+            None,
             multi_spike_times,
             trajectory_times,
             trajectory_positions,
@@ -593,6 +598,7 @@ class TestComputeEgocentricRatesBackend:
 
         with pytest.raises(ValueError, match="Unknown backend"):
             compute_egocentric_rates(
+                None,
                 multi_spike_times,
                 trajectory_times,
                 trajectory_positions,

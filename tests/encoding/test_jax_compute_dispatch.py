@@ -655,6 +655,7 @@ class TestComputeEgocentricRateJaxBackend:
 
         # This should NOT raise NotImplementedError
         result = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -687,6 +688,7 @@ class TestComputeEgocentricRateJaxBackend:
 
         # Compute with NumPy backend
         result_numpy = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -701,6 +703,7 @@ class TestComputeEgocentricRateJaxBackend:
 
         # Compute with JAX backend
         result_jax = compute_egocentric_rate(
+            None,
             spike_times,
             times,
             positions,
@@ -749,6 +752,7 @@ class TestComputeEgocentricRatesJaxBackend:
 
         # This should NOT raise NotImplementedError
         result = compute_egocentric_rates(
+            None,
             spike_times_batch,
             times,
             positions,
@@ -784,6 +788,7 @@ class TestComputeEgocentricRatesJaxBackend:
 
         # Compute with NumPy backend
         result_numpy = compute_egocentric_rates(
+            None,
             spike_times_batch,
             times,
             positions,
@@ -798,6 +803,7 @@ class TestComputeEgocentricRatesJaxBackend:
 
         # Compute with JAX backend
         result_jax = compute_egocentric_rates(
+            None,
             spike_times_batch,
             times,
             positions,
