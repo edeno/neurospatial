@@ -161,9 +161,6 @@ class EgocentricRateResult:
     coordinate system centered on the animal. Each bin corresponds to a
     (distance, direction) combination relative to the animal's heading.
 
-    Convenience methods (plot, preferred_distance, preferred_direction, etc.)
-    are implemented in Tasks 5.2-5.3.
-
     Examples
     --------
     >>> import numpy as np
@@ -513,9 +510,6 @@ class EgocentricRatesResult:
     **Iteration interface**: Supports ``len()``, indexing with ``[]``, and
     iteration with ``for``. Each element is an ``EgocentricRateResult`` for
     one neuron.
-
-    Batch methods (preferred_distances, preferred_directions, detect_ovcs,
-    to_dataframe) are implemented in Tasks 5.4-5.5.
 
     Examples
     --------

@@ -8,6 +8,7 @@ Date labels are the first Git commit date for the original artifact, based on `g
 
 | Plan committed | Area | Plan | Tasks | Notes |
 | --- | --- | --- | --- | --- |
+| 2026-05-07 | Encoding cleanup | [encoding-cleanup/PLAN.md](encoding-cleanup/PLAN.md) | [encoding-cleanup/TASKS.md](encoding-cleanup/TASKS.md) | Post-review cleanup of the encoding refactor. Six milestones (M1 consistency → M6 legacy delegation), targeting ~−1500 LOC net. M0 wins already applied on `encoding-refactor-wip`. |
 | 2025-12-05 | Encoding refactor | [encoding-refactor/PLAN.md](encoding-refactor/PLAN.md) | [encoding-refactor/TASKS.md](encoding-refactor/TASKS.md) | Tasks committed 2025-12-05; scratchpad committed 2025-10-31. Milestones 0-8 are complete. |
 | 2025-11-22 | Napari playback | [napari-playback/PLAN.md](napari-playback/PLAN.md) | [napari-playback/TASKS.md](napari-playback/TASKS.md) | Tasks committed 2025-11-03. Playback interface enhancement plan and task breakdown. |
 | 2025-12-05 | Behavior metrics | [behavior-metrics/PLAN.md](behavior-metrics/PLAN.md) | [behavior-metrics/TASKS.md](behavior-metrics/TASKS.md) | Tasks committed 2025-12-05. Advanced behavioral metrics plan. It references an earlier `BEHAV_PLAN.md` prerequisite that is not present in this checkout. |

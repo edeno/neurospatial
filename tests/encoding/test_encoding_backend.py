@@ -33,6 +33,16 @@ def _has_jax() -> bool:
     return importlib.util.find_spec("jax") is not None
 
 
+@pytest.fixture(autouse=True)
+def _clear_backend_availability_cache():
+    """Keep platform-mocking tests from leaking cached JAX availability."""
+    yield
+
+    import neurospatial.encoding._backend as backend_module
+
+    backend_module.is_jax_available.cache_clear()
+
+
 # ==============================================================================
 # Test SUPPORTED_BACKENDS constant
 # ==============================================================================

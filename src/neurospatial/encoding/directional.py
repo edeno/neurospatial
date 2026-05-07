@@ -15,8 +15,8 @@ DirectionalRateResult
 DirectionalRatesResult
     Multi-neuron directional tuning curves with batch methods and iteration
 
-Compute Functions (to be implemented in Tasks 3.8-3.9)
-------------------------------------------------------
+Compute Functions
+-----------------
 compute_directional_rate
     Compute directional firing rate for one neuron
 compute_directional_rates
@@ -130,9 +130,6 @@ class DirectionalRateResult:
     do not store an Environment. Head direction is a 1D circular variable that
     does not depend on spatial position. The bin_centers field provides the
     angular coordinates needed for analysis and plotting.
-
-    Convenience methods (plot, preferred_direction, mean_vector_length, etc.)
-    are implemented in Tasks 3.2-3.4.
 
     Examples
     --------
@@ -891,9 +888,6 @@ class DirectionalRatesResult:
     - `len(result)`: Number of neurons
     - `result[i]`: Returns `DirectionalRateResult` for neuron i
     - `for r in result`: Iterates over single-neuron results
-
-    Batch methods (preferred_directions, mean_vector_lengths, etc.) are
-    implemented in Tasks 3.5-3.6.
 
     Examples
     --------

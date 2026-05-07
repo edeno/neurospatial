@@ -22,14 +22,25 @@ class TestNoCircularImports:
     def test_import_neurospatial_fresh(self):
         """Test that neurospatial can be imported without circular import errors."""
         # Clear cached imports for a fresh test
+        cached_modules = {
+            name: module
+            for name, module in sys.modules.items()
+            if name.startswith("neurospatial")
+        }
         modules_to_clear = [k for k in sys.modules if k.startswith("neurospatial")]
         for mod in modules_to_clear:
             sys.modules.pop(mod, None)
 
-        # Import fresh
-        ns = importlib.import_module("neurospatial")
-        assert ns is not None
-        assert hasattr(ns, "Environment")
+        try:
+            # Import fresh
+            ns = importlib.import_module("neurospatial")
+            assert ns is not None
+            assert hasattr(ns, "Environment")
+        finally:
+            for mod in list(sys.modules):
+                if mod.startswith("neurospatial"):
+                    sys.modules.pop(mod, None)
+            sys.modules.update(cached_modules)
 
     def test_import_all_submodules_without_errors(self):
         """Test that all submodules can be imported without circular import errors."""

@@ -114,7 +114,7 @@ if nan_count > 0:
 ```
 
 **See Also:**
-- [Environment.from_samples() documentation](../api/environment/#neurospatial.environment.Environment.from_samples)
+- [Environment.from_samples() documentation](api/neurospatial/environment/factories.md#neurospatial.environment.factories.EnvironmentFactories.from_samples)
 - [Quickstart Guide](getting-started/quickstart.md)
 
 ---
@@ -182,8 +182,8 @@ env = Environment.from_samples(
 - Mixing up bin_size with number of bins: bin_size is spatial extent, not count
 
 **See Also:**
-- [Environment.from_samples() documentation](../api/environment/#neurospatial.environment.Environment.from_samples)
-- [Layout validation module](../api/layout/#neurospatial.layout.validation)
+- [Environment.from_samples() documentation](api/neurospatial/environment/factories.md#neurospatial.environment.factories.EnvironmentFactories.from_samples)
+- [Layout validation module](api/neurospatial/layout/validation.md#neurospatial.layout.validation)
 
 ---
 
@@ -259,7 +259,7 @@ composite_3d = CompositeEnvironment.from_environments(envs_3d)
 ```
 
 **See Also:**
-- [CompositeEnvironment documentation](../api/composite/#neurospatial.composite.CompositeEnvironment)
+- [CompositeEnvironment documentation](api/neurospatial/composite.md#neurospatial.composite.CompositeEnvironment)
 - [3D Environment Support](dimensionality_support.md)
 
 ---
@@ -342,7 +342,7 @@ env.bin_at([10.0, 20.0])  # Works!
 - `Environment.from_file()` - Load from saved file
 
 **See Also:**
-- [Environment Factory Methods](../api/environment/#factory-methods)
+- [Environment factory methods](api/neurospatial/environment/factories.md)
 - [Quickstart Guide](getting-started/quickstart.md)
 
 ---
@@ -419,8 +419,8 @@ env.to_file(safe_path)
 This restriction is intentional and cannot be disabled. If you have a legitimate use case requiring parent directory access, use absolute paths instead.
 
 **See Also:**
-- [I/O Module Documentation](../api/io/#neurospatial.io)
-- [Environment Serialization Guide](user-guide/workflows.md#saving-and-loading)
+- [I/O Module Documentation](api/neurospatial/io/index.md#neurospatial.io)
+- [Environment serialization API](api/neurospatial/environment/serialization.md#neurospatial.environment.serialization.EnvironmentSerialization)
 
 ---
 

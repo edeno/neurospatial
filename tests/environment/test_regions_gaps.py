@@ -23,6 +23,8 @@ code paths, particularly the region_membership() method and complex
 polygon geometries.
 """
 
+import copy
+
 import numpy as np
 import pytest
 from shapely.geometry import Polygon, box
@@ -274,7 +276,8 @@ class TestRegionMembership:
         -----
         Tests that polygon regions in 3D environments raise NotImplementedError.
         """
-        env = simple_3d_env
+        env = copy.copy(simple_3d_env)
+        env.regions = Regions()
 
         # Add polygon region (only valid in 2D)
         # Note: This will succeed in adding, but fail when querying

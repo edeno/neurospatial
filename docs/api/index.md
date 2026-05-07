@@ -48,7 +48,7 @@ Layout engines for discretizing continuous space.
 - `layout.engines.*`: Concrete layout implementations
 - `layout.factories`: Factory functions for creating layouts
 
-### [neurospatial.alignment](neurospatial/alignment.md)
+### [neurospatial.ops.alignment](neurospatial/ops/alignment.md)
 
 Transform and align spatial representations.
 
@@ -57,7 +57,7 @@ Transform and align spatial representations.
 - `map_probabilities()`: Align probability distributions between environments
 - `get_2d_rotation_matrix()`: Create 2D rotation matrices
 
-### [neurospatial.transforms](neurospatial/transforms.md)
+### [neurospatial.ops.transforms](neurospatial/ops/transforms.md)
 
 2D affine transformations.
 

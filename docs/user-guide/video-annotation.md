@@ -272,33 +272,10 @@ def process_annotation(role: Role) -> None:
 
 ## API Reference
 
-### annotate_video
-
-::: neurospatial.annotation.annotate_video
-    options:
-      show_root_heading: false
-      heading_level: 4
-
-### AnnotationResult
-
-::: neurospatial.annotation.AnnotationResult
-    options:
-      show_root_heading: false
-      heading_level: 4
-
-### regions_from_labelme
-
-::: neurospatial.annotation.regions_from_labelme
-    options:
-      show_root_heading: false
-      heading_level: 4
-
-### regions_from_cvat
-
-::: neurospatial.annotation.regions_from_cvat
-    options:
-      show_root_heading: false
-      heading_level: 4
+- [`annotate_video()`](../api/neurospatial/annotation/index.md#neurospatial.annotation.annotate_video)
+- [`AnnotationResult`](../api/neurospatial/annotation/index.md#neurospatial.annotation.AnnotationResult)
+- [`regions_from_labelme()`](../api/neurospatial/annotation/index.md#neurospatial.annotation.regions_from_labelme)
+- [`regions_from_cvat()`](../api/neurospatial/annotation/index.md#neurospatial.annotation.regions_from_cvat)
 
 ## Common Issues
 

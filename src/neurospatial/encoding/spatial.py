@@ -11,7 +11,7 @@ SpatialRateResult
 SpatialRatesResult
     Multi-neuron spatial rate maps with batch methods and iteration
 
-Compute Functions (to be implemented in Task 2.8-2.9)
+Compute Functions
 -----------------
 compute_spatial_rate
     Compute spatial firing rate for one neuron
@@ -127,9 +127,6 @@ class SpatialRateResult(SpatialResultMixin):
 
     - `peak_locations()`: Returns (n_dims,) coordinates of peak firing
     - `peak_firing_rates()`: Returns scalar max firing rate
-
-    Additional convenience methods (plot, metrics) are implemented in
-    Tasks 2.2-2.3.
 
     Examples
     --------
@@ -651,9 +648,6 @@ class SpatialRatesResult(SpatialResultMixin):
     - `peak_locations()`: Returns (n_neurons, n_dims) coordinates of peaks
     - `peak_firing_rates()`: Returns (n_neurons,) max firing rates
 
-    Additional batch methods (grid_scores, border_scores, classify, etc.)
-    are implemented in Tasks 2.4-2.6.
-
     Examples
     --------
     >>> import numpy as np
@@ -1082,25 +1076,21 @@ class SpatialRatesResult(SpatialResultMixin):
         >>> print(f"Unclassified: {np.sum(labels == 'unclassified')}")
         """
         n_neurons = len(self)
-        labels = np.empty(n_neurons, dtype="<U14")  # Max length: "unclassified"
 
-        # Compute all metrics
         spatial_info = self.spatial_information()
         grid_scores = self.grid_scores()
         border_scores = self.border_scores()
 
-        # Apply classification with priority: grid > border > place > unclassified
-        for i in range(n_neurons):
-            if not np.isnan(grid_scores[i]) and grid_scores[i] >= min_grid_score:
-                labels[i] = "grid"
-            elif (
-                not np.isnan(border_scores[i]) and border_scores[i] >= min_border_score
-            ):
-                labels[i] = "border"
-            elif spatial_info[i] >= min_spatial_info:
-                labels[i] = "place"
-            else:
-                labels[i] = "unclassified"
+        labels = np.full(n_neurons, "unclassified", dtype="<U14")
+        is_place = spatial_info >= min_spatial_info
+        is_border = (~np.isnan(border_scores)) & (border_scores >= min_border_score)
+        is_grid = (~np.isnan(grid_scores)) & (grid_scores >= min_grid_score)
+
+        # Priority: grid > border > place > unclassified (assign in reverse so
+        # higher-priority labels overwrite lower ones).
+        labels[is_place] = "place"
+        labels[is_border] = "border"
+        labels[is_grid] = "grid"
 
         return labels
 

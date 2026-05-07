@@ -28,6 +28,7 @@ array([1, 2, 3])
 
 from __future__ import annotations
 
+import functools
 import importlib.util
 import sys
 from typing import Any, Literal
@@ -49,6 +50,7 @@ SUPPORTED_BACKENDS: tuple[str, ...] = ("numpy", "jax", "auto")
 BackendType = Literal["numpy", "jax", "auto"]
 
 
+@functools.lru_cache(maxsize=1)
 def is_jax_available() -> bool:
     """Check if JAX is available on the current platform.
 
@@ -63,8 +65,9 @@ def is_jax_available() -> bool:
 
     Notes
     -----
-    This function performs the actual import check each time it's called.
-    JAX import can be slow on first call due to initialization.
+    The result is cached after the first call so subsequent backend
+    resolutions in hot paths (every ``compute_*_rate(s)`` call) avoid
+    repeated package-metadata lookups and import attempts.
 
     Examples
     --------
@@ -72,15 +75,12 @@ def is_jax_available() -> bool:
     >>> is_jax_available()  # Returns True on Linux/macOS with JAX installed
     False
     """
-    # JAX does not officially support Windows
     if sys.platform == "win32":
         return False
 
-    # Check if JAX is installed
     if importlib.util.find_spec("jax") is None:
         return False
 
-    # Try to actually import JAX to verify it works
     try:
         import jax  # noqa: F401
 

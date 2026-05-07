@@ -174,9 +174,6 @@ class ViewRateResult:
     cells, firing rate should be computed using view occupancy, not standard
     occupancy.
 
-    Convenience methods (plot, metrics, classification) are implemented in
-    Tasks 4.2-4.3.
-
     Examples
     --------
     >>> import numpy as np
@@ -480,9 +477,6 @@ class ViewRatesResult:
 
     **Iteration interface**: Supports `len()`, indexing with `[]`, and
     iteration with `for`. Each element is a `ViewRateResult` for one neuron.
-
-    Batch methods (plot, metrics, classification) are implemented in
-    Tasks 4.4-4.5.
 
     Examples
     --------
