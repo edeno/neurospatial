@@ -500,9 +500,7 @@ class TestComputeEgocentricRateSmoothing:
         """Default smoothing_method should be 'binned'."""
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
-        # Note: PLAN.md specifies 'binned' as default for egocentric
         times, positions, headings = trajectory_data
-        # Just verify it works with default (we'll check the docstring matches)
         result = compute_egocentric_rate(
             spike_times,
             times,
@@ -510,18 +508,41 @@ class TestComputeEgocentricRateSmoothing:
             headings,
             object_positions,
         )
-        assert isinstance(result.firing_rate, np.ndarray) or hasattr(
-            result.firing_rate, "__array__"
+        explicit_result = compute_egocentric_rate(
+            spike_times,
+            times,
+            positions,
+            headings,
+            object_positions,
+            smoothing_method="binned",
+        )
+
+        np.testing.assert_allclose(
+            np.asarray(result.firing_rate),
+            np.asarray(explicit_result.firing_rate),
+            equal_nan=True,
         )
 
     def test_bandwidth_parameter(
         self,
+        monkeypatch: pytest.MonkeyPatch,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
         object_positions: np.ndarray,
         spike_times: np.ndarray,
     ) -> None:
         """bandwidth parameter should be accepted."""
+        from neurospatial.encoding import _smoothing
         from neurospatial.encoding.egocentric import compute_egocentric_rate
+
+        captured: dict[str, object] = {}
+        original_smooth_rate_map = _smoothing.smooth_rate_map
+
+        def capture_smooth_rate_map(*args, **kwargs):
+            captured["method"] = kwargs["method"]
+            captured["bandwidth"] = kwargs["bandwidth"]
+            return original_smooth_rate_map(*args, **kwargs)
+
+        monkeypatch.setattr(_smoothing, "smooth_rate_map", capture_smooth_rate_map)
 
         times, positions, headings = trajectory_data
         result = compute_egocentric_rate(
@@ -534,6 +555,7 @@ class TestComputeEgocentricRateSmoothing:
             bandwidth=10.0,
         )
         assert np.asarray(result.firing_rate).shape[0] > 0
+        assert captured == {"method": "gaussian_kde", "bandwidth": 10.0}
 
 
 # ==============================================================================
@@ -902,8 +924,9 @@ class TestComputeEgocentricRateInputValidation:
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
         times = np.linspace(0, 100, 1000)
-        positions = np.random.rand(500, 2) * 100  # Wrong length
-        headings = np.random.uniform(-np.pi, np.pi, 1000)
+        rng = np.random.default_rng(42)
+        positions = rng.random((500, 2)) * 100  # Wrong length
+        headings = rng.uniform(-np.pi, np.pi, 1000)
 
         with pytest.raises(ValueError, match=r"times.*positions"):
             compute_egocentric_rate(
@@ -923,8 +946,9 @@ class TestComputeEgocentricRateInputValidation:
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
         times = np.linspace(0, 100, 1000)
-        positions = np.random.rand(1000, 2) * 100
-        headings = np.random.uniform(-np.pi, np.pi, 500)  # Wrong length
+        rng = np.random.default_rng(42)
+        positions = rng.random((1000, 2)) * 100
+        headings = rng.uniform(-np.pi, np.pi, 500)  # Wrong length
 
         with pytest.raises(ValueError, match=r"times.*headings"):
             compute_egocentric_rate(

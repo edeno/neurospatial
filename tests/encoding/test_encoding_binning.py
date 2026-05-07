@@ -44,7 +44,7 @@ def trajectory_data(simple_env: Environment) -> dict:
         - times: array of timestamps (1 second total, 100 samples at 100 Hz)
         - positions: array of positions (random walk within environment)
     """
-    np.random.seed(42)
+    rng = np.random.default_rng(42)
     n_samples = 100
     times = np.linspace(0, 1.0, n_samples)  # 1 second, 100 samples
 
@@ -52,7 +52,7 @@ def trajectory_data(simple_env: Environment) -> dict:
     positions = np.zeros((n_samples, 2))
     positions[0] = [50, 50]  # Start in center
     for i in range(1, n_samples):
-        step = np.random.randn(2) * 5  # Random step
+        step = rng.normal(size=2) * 5  # Random step
         positions[i] = positions[i - 1] + step
         # Clip to environment bounds
         positions[i] = np.clip(positions[i], 0, 100)
@@ -613,7 +613,8 @@ class TestBinningInputValidation:
         from neurospatial.encoding._binning import compute_occupancy
 
         times = np.linspace(0, 1, 100)
-        positions = np.random.rand(50, 2) * 100  # Different length
+        rng = np.random.default_rng(42)
+        positions = rng.random((50, 2)) * 100  # Different length
 
         with pytest.raises(ValueError, match=r"length|shape|mismatch"):
             compute_occupancy(simple_env, times, positions)

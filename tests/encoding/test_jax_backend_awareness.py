@@ -94,12 +94,9 @@ class TestToNumpyWithJax:
 
     def test_jax_preserves_values(self) -> None:
         """JAX to NumPy conversion should preserve values exactly."""
-        import jax
         import jax.numpy as jnp
 
         # Enable 64-bit precision for exact comparison
-        jax.config.update("jax_enable_x64", True)
-
         from neurospatial.encoding._base import _to_numpy
 
         values = np.array([1.5, 2.7, 3.14159, -0.5, 0.0])
@@ -658,10 +655,7 @@ class TestNumpyJaxConsistency:
 
     def test_spatial_information_consistency(self, simple_env: Environment) -> None:
         """spatial_information() should give same result for NumPy and JAX."""
-        import jax
         import jax.numpy as jnp
-
-        jax.config.update("jax_enable_x64", True)
 
         from neurospatial.encoding.spatial import SpatialRateResult
 
@@ -754,8 +748,6 @@ class TestJaxArrayPreservation:
         import jax
         import jax.numpy as jnp
 
-        jax.config.update("jax_enable_x64", True)
-
         from neurospatial.encoding.spatial import SpatialRateResult
 
         n_bins = simple_env.n_bins
@@ -781,8 +773,6 @@ class TestJaxArrayPreservation:
         """sparsity() on SpatialRateResult should return JAX scalar."""
         import jax
         import jax.numpy as jnp
-
-        jax.config.update("jax_enable_x64", True)
 
         from neurospatial.encoding.spatial import SpatialRateResult
 
@@ -811,8 +801,6 @@ class TestJaxArrayPreservation:
         """spatial_information() on SpatialRatesResult should return JAX array."""
         import jax
         import jax.numpy as jnp
-
-        jax.config.update("jax_enable_x64", True)
 
         from neurospatial.encoding.spatial import SpatialRatesResult
 
@@ -845,8 +833,6 @@ class TestJaxArrayPreservation:
         import jax
         import jax.numpy as jnp
 
-        jax.config.update("jax_enable_x64", True)
-
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         n_bins = simple_env.n_bins
@@ -877,8 +863,6 @@ class TestJaxArrayPreservation:
         """_metrics module should preserve JAX arrays when called directly."""
         import jax
         import jax.numpy as jnp
-
-        jax.config.update("jax_enable_x64", True)
 
         from neurospatial.encoding._metrics import (
             batch_sparsity,

@@ -115,9 +115,6 @@ class TestComputeSpatialRateJaxBackend:
         positions: np.ndarray,
     ) -> None:
         """JAX backend should produce numerically equivalent results to NumPy."""
-        import jax
-
-        jax.config.update("jax_enable_x64", True)
 
         from neurospatial.encoding.spatial import compute_spatial_rate
 
@@ -163,9 +160,6 @@ class TestComputeSpatialRateJaxBackend:
         positions: np.ndarray,
     ) -> None:
         """JAX backend should work with diffusion_kde smoothing."""
-        import jax
-
-        jax.config.update("jax_enable_x64", True)
 
         from neurospatial.encoding.spatial import compute_spatial_rate
 
@@ -242,9 +236,6 @@ class TestComputeSpatialRatesJaxBackend:
         positions: np.ndarray,
     ) -> None:
         """JAX backend should produce numerically equivalent results to NumPy for batch."""
-        import jax
-
-        jax.config.update("jax_enable_x64", True)
 
         from neurospatial.encoding.spatial import compute_spatial_rates
 
@@ -295,10 +286,6 @@ class TestAutoBackendBehavior:
         """backend='auto' should use JAX when available (not on Windows)."""
         import sys
 
-        import jax
-
-        jax.config.update("jax_enable_x64", True)
-
         from neurospatial.encoding.spatial import compute_spatial_rate
 
         # Compute with auto backend
@@ -347,9 +334,6 @@ class TestMetricsWithJaxBackend:
         positions: np.ndarray,
     ) -> None:
         """spatial_information() should work and match NumPy for JAX backend results."""
-        import jax
-
-        jax.config.update("jax_enable_x64", True)
 
         from neurospatial.encoding.spatial import compute_spatial_rate
 
@@ -385,9 +369,6 @@ class TestMetricsWithJaxBackend:
         positions: np.ndarray,
     ) -> None:
         """sparsity() should work and match NumPy for JAX backend results."""
-        import jax
-
-        jax.config.update("jax_enable_x64", True)
 
         from neurospatial.encoding.spatial import compute_spatial_rate
 
@@ -470,9 +451,6 @@ class TestComputeViewRateJaxBackend:
         headings: np.ndarray,
     ) -> None:
         """JAX backend should produce numerically equivalent results to NumPy."""
-        import jax
-
-        jax.config.update("jax_enable_x64", True)
 
         from neurospatial.encoding.view import compute_view_rate
 
@@ -525,9 +503,6 @@ class TestComputeViewRateJaxBackend:
         headings: np.ndarray,
     ) -> None:
         """JAX backend should work with diffusion_kde smoothing."""
-        import jax
-
-        jax.config.update("jax_enable_x64", True)
 
         from neurospatial.encoding.view import compute_view_rate
 
@@ -615,9 +590,6 @@ class TestComputeViewRatesJaxBackend:
         headings: np.ndarray,
     ) -> None:
         """JAX backend should produce numerically equivalent results to NumPy for batch."""
-        import jax
-
-        jax.config.update("jax_enable_x64", True)
 
         from neurospatial.encoding.view import compute_view_rates
 
@@ -710,9 +682,6 @@ class TestComputeEgocentricRateJaxBackend:
         object_positions: np.ndarray,
     ) -> None:
         """JAX backend should produce numerically equivalent results to NumPy."""
-        import jax
-
-        jax.config.update("jax_enable_x64", True)
 
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
@@ -810,9 +779,6 @@ class TestComputeEgocentricRatesJaxBackend:
         object_positions: np.ndarray,
     ) -> None:
         """JAX backend should produce numerically equivalent results to NumPy for batch."""
-        import jax
-
-        jax.config.update("jax_enable_x64", True)
 
         from neurospatial.encoding.egocentric import compute_egocentric_rates
 

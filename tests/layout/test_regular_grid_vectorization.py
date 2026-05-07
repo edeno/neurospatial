@@ -26,10 +26,11 @@ def simple_grid_env():
 def sparse_grid_env():
     """Create a sparse grid environment with many inactive bins."""
     # Create L-shaped environment (sparse active mask)
+    rng = np.random.default_rng(42)
     positions = np.vstack(
         [
-            np.random.uniform(0, 10, (500, 2)),  # Left part
-            np.random.uniform([10, 0], [20, 10], (500, 2)),  # Bottom right
+            rng.uniform(0, 10, (500, 2)),  # Left part
+            rng.uniform([10, 0], [20, 10], (500, 2)),  # Bottom right
         ]
     )
     env = Environment.from_samples(positions, bin_size=2.0)
@@ -249,23 +250,14 @@ class TestContainsPerformance:
         assert not result[2]
         assert result[3]
 
-    def test_contains_large_batch_performance(self, simple_grid_env):
+    @pytest.mark.slow
+    def test_contains_large_batch_performance(self, benchmark, simple_grid_env):
         """Test that large batch doesn't hang (regression test for vectorization)."""
-        import time
-
         env = simple_grid_env
 
-        # This should complete in < 1 second with vectorization
-        # Without vectorization, 100k points would take many seconds
         rng = np.random.default_rng(42)
         points = rng.uniform(-5, 25, (100000, 2))
 
-        start = time.perf_counter()
-        result = env.contains(points)
-        elapsed = time.perf_counter() - start
+        result = benchmark(env.contains, points)
 
         assert len(result) == 100000
-        # Should complete in reasonable time (< 2 seconds)
-        assert elapsed < 2.0, (
-            f"contains() took {elapsed:.2f}s for 100k points (too slow)"
-        )

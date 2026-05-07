@@ -371,7 +371,8 @@ class TestNormalizeSpikeTimesEdgeCases:
         from neurospatial.encoding._spikes import normalize_spike_times
 
         n_neurons = 1000
-        spikes = [np.random.rand(np.random.randint(0, 100)) for _ in range(n_neurons)]
+        rng = np.random.default_rng(42)
+        spikes = [rng.random(rng.integers(0, 100)) for _ in range(n_neurons)]
         result = normalize_spike_times(spikes)
         assert len(result) == n_neurons
 

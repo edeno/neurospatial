@@ -21,9 +21,6 @@ jax = pytest.importorskip("jax", reason="JAX not installed")
 
 import jax.numpy as jnp  # noqa: E402
 
-# Enable 64-bit precision in JAX for numerical equivalence with NumPy
-jax.config.update("jax_enable_x64", True)
-
 from neurospatial.encoding._backend import is_jax_available  # noqa: E402
 
 # Skip all tests in this module if JAX is not available
