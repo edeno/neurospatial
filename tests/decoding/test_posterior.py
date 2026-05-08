@@ -491,18 +491,48 @@ class TestDecodePosition:
     # Validation tests
     # -------------------------------------------------------------------------
 
-    def test_validate_false_default(
+    def test_validate_default_is_true(
         self,
         simple_env: Environment,
-        simple_spike_counts: np.ndarray,
         simple_encoding_models: np.ndarray,
     ) -> None:
-        """validate=False should be default (no extra checks)."""
+        """validate=True should be the default, so a bad input raises by default.
+
+        Regression for M1 1.8: previously decode_position defaulted to
+        validate=False, so users got nonsense posteriors with no warning
+        when their inputs were corrupted. The new default invocation
+        runs _validate_inputs and surfaces the problem at the boundary.
+        """
         from neurospatial.decoding.posterior import decode_position
 
-        # Should complete without extra validation overhead
+        spike_counts_nan = np.array([[0, np.nan], [1, 0], [0, 1]])
+        with pytest.raises(ValueError, match=r"NaN|nan|Inf|inf"):
+            decode_position(
+                simple_env, spike_counts_nan, simple_encoding_models, dt=0.025
+            )
+
+    def test_validate_false_opt_out_skips_input_checks(
+        self,
+        simple_env: Environment,
+        simple_encoding_models: np.ndarray,
+    ) -> None:
+        """validate=False is still available as an explicit opt-out for hot loops.
+
+        Users running decode_position inside a tight loop and confident
+        their inputs are clean can skip the per-call validation overhead.
+        """
+        from neurospatial.decoding.posterior import decode_position
+
+        # NaN input that validate=True would reject; with validate=False
+        # the runner does not check and returns a result (which will
+        # contain NaNs, but that's the user's call).
+        spike_counts_nan = np.array([[0, np.nan], [1, 0], [0, 1]])
         result = decode_position(
-            simple_env, simple_spike_counts, simple_encoding_models, dt=0.025
+            simple_env,
+            spike_counts_nan,
+            simple_encoding_models,
+            dt=0.025,
+            validate=False,
         )
         assert result is not None
 
@@ -561,6 +591,56 @@ class TestDecodePosition:
                 encoding_inf,
                 dt=0.025,
                 validate=True,
+            )
+
+    def test_validate_catches_negative_spike_counts(
+        self,
+        simple_env: Environment,
+        simple_encoding_models: np.ndarray,
+    ) -> None:
+        """validate=True (the new default) rejects negative spike counts.
+
+        Regression for M1 1.8: a negative spike count is physically
+        impossible (a count is "how many spikes per time bin"), but
+        nothing was rejecting it before. log_poisson_likelihood would
+        produce nonsense (n * log(rate) - rate*dt with negative n flips
+        the sign of the log-likelihood term) and a "valid"-looking
+        posterior would be returned.
+        """
+        from neurospatial.decoding.posterior import decode_position
+
+        spike_counts_negative = np.array([[0, 1], [-1, 0], [0, 1]], dtype=np.int64)
+        with pytest.raises(ValueError, match=r"negative entr"):
+            decode_position(
+                simple_env,
+                spike_counts_negative,
+                simple_encoding_models,
+                dt=0.025,
+            )
+
+    def test_validate_catches_negative_encoding_rates(
+        self,
+        simple_env: Environment,
+        simple_spike_counts: np.ndarray,
+    ) -> None:
+        """validate=True (the new default) rejects negative firing rates.
+
+        Firing rates are non-negative by definition (they're rates of a
+        Poisson process). A negative rate is almost always a bug
+        upstream (e.g., subtracting a baseline that exceeded the
+        observed rate); rejecting at the decoder boundary surfaces it.
+        """
+        from neurospatial.decoding.posterior import decode_position
+
+        n_bins = simple_env.n_bins
+        encoding_negative = np.ones((2, n_bins))
+        encoding_negative[0, 0] = -0.5
+        with pytest.raises(ValueError, match=r"negative entr"):
+            decode_position(
+                simple_env,
+                simple_spike_counts,
+                encoding_negative,
+                dt=0.025,
             )
 
     # -------------------------------------------------------------------------

@@ -234,7 +234,7 @@ def decode_position(
     prior: NDArray[np.float64] | None = None,
     method: Literal["poisson"] = "poisson",
     times: NDArray[np.float64] | None = None,
-    validate: bool = False,
+    validate: bool = True,
 ) -> DecodingResult:
     """Decode position from population spike counts.
 
@@ -361,31 +361,57 @@ def _validate_inputs(
     encoding_models: NDArray[np.float64],
     prior: NDArray[np.float64] | None,
 ) -> None:
-    """Validate inputs for decode_position.
+    """Validate inputs for ``decode_position``.
 
     Raises
     ------
     ValueError
-        If inputs contain NaN or Inf values.
+        If inputs contain NaN or Inf values, if any spike count is
+        negative, or if any encoding-model rate is negative.
     """
-    # Check spike counts
+    # Check spike counts: finite first (NaN/Inf can't pass the < 0 check
+    # cleanly), then non-negative. The error message tells the user how
+    # many bad entries we saw and the worst value, since
+    # "spike_counts has a negative value" without a count or value is
+    # not actionable on a 100k-row array.
     if not np.isfinite(spike_counts).all():
+        n_bad = int(np.sum(~np.isfinite(spike_counts)))
         raise ValueError(
-            "spike_counts contains NaN or Inf values. "
+            f"spike_counts contains {n_bad} NaN or Inf entries. "
             "All spike counts must be finite non-negative integers."
         )
-
-    # Check encoding models
-    if not np.isfinite(encoding_models).all():
+    if (spike_counts < 0).any():
+        n_negative = int(np.sum(spike_counts < 0))
+        worst_count = int(spike_counts.min())
         raise ValueError(
-            "encoding_models contains NaN or Inf values. "
-            "All firing rates must be finite non-negative values."
+            f"spike_counts contains {n_negative} negative entr"
+            f"{'y' if n_negative == 1 else 'ies'} (min: {worst_count}). "
+            "Spike counts represent spike events per time bin and must "
+            "be non-negative integers."
+        )
+
+    # Check encoding models: finite then non-negative (firing rates can't
+    # physically be negative).
+    if not np.isfinite(encoding_models).all():
+        n_bad = int(np.sum(~np.isfinite(encoding_models)))
+        raise ValueError(
+            f"encoding_models contains {n_bad} NaN or Inf entries. "
+            "All firing rates must be finite non-negative values (Hz)."
+        )
+    if (encoding_models < 0).any():
+        n_negative = int(np.sum(encoding_models < 0))
+        worst_rate = float(encoding_models.min())
+        raise ValueError(
+            f"encoding_models contains {n_negative} negative entr"
+            f"{'y' if n_negative == 1 else 'ies'} (min: {worst_rate:.6g} Hz). "
+            "Firing rates must be non-negative."
         )
 
     # Check prior if provided
     if prior is not None and not np.isfinite(prior).all():
+        n_bad = int(np.sum(~np.isfinite(prior)))
         raise ValueError(
-            "prior contains NaN or Inf values. "
+            f"prior contains {n_bad} NaN or Inf entries. "
             "Prior must be finite non-negative values."
         )
 
