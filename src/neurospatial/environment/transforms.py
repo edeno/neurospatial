@@ -532,7 +532,70 @@ class EnvironmentTransforms:
                 f"No bins selected. Selection resulted in empty mask. (invert={invert})"
             )
 
-        # --- Extract Subgraph ---
+        # --- Grid-env fast path: build via Environment.from_mask ----------
+        #
+        # Pre-M1 the subset path produced an inline `SubsetLayout` whose
+        # _layout_type_tag was the unregistered string "subset", which
+        # broke `to_file` / `from_file` (silent persistence loss --
+        # users could subset(), save, restart, and lose the env).
+        #
+        # For grid envs (RegularGrid, MaskedGrid, ImageMask, Hexagonal,
+        # ShapelyPolygon), we have a `grid_shape` + `grid_edges` +
+        # `active_mask` triple that fully describes the spatial
+        # discretization. Filter the existing active mask down to the
+        # selected bins and rebuild via `from_mask` -- the resulting env
+        # uses the canonical "MaskedGrid" layout, round-trips through
+        # `to_file` / `from_file`, and shares the existing layout
+        # serializer.
+        #
+        # For graph envs (1-D linearized tracks) we don't have a
+        # grid_shape and fall back to the inline SubsetLayout path
+        # below; that path is still not serializable, but is preserved
+        # so existing graph-env subset call sites don't regress. The
+        # inline path will be removed once graph subset is itself
+        # backed by a registered layout type (out of M1 scope).
+        is_grid_env = (
+            self.active_mask is not None
+            and self.grid_shape is not None
+            and self.grid_edges is not None
+            and len(self.grid_edges) > 0
+        )
+        if is_grid_env:
+            # Round-trip safe path. self.active_mask is the original
+            # grid-shape boolean mask; its True positions in row-major
+            # order correspond 1:1 to active bin indices [0, n_bins).
+            assert self.active_mask is not None  # for type checker
+            assert self.grid_edges is not None
+            flat_active_indices = np.flatnonzero(self.active_mask.ravel())
+            selected_flat = flat_active_indices[mask]
+            new_mask_flat = np.zeros(self.active_mask.size, dtype=bool)
+            new_mask_flat[selected_flat] = True
+            new_active_mask = new_mask_flat.reshape(self.active_mask.shape)
+
+            # Preserve the parent's diagonal-neighbor setting if it had
+            # one; default to True (matches Environment.from_mask).
+            parent_params = self._layout_params_used or {}
+            connect_diagonal = bool(
+                parent_params.get("connect_diagonal_neighbors", True)
+            )
+
+            env_cls = cast("type[Environment]", self.__class__)
+            sub_env = env_cls.from_mask(
+                active_mask=new_active_mask,
+                grid_edges=self.grid_edges,
+                name="",
+                connect_diagonal_neighbors=connect_diagonal,
+            )
+            # Preserve metadata (regions are still dropped per the
+            # documented contract).
+            if self.units is not None:
+                sub_env.units = self.units
+            if self.frame is not None:
+                sub_env.frame = self.frame
+            sub_env.coordinate_kind = self.coordinate_kind
+            return sub_env
+
+        # --- Graph-env fallback: extract induced subgraph ---------------
 
         # Get selected node indices
         selected_nodes = np.where(mask)[0].tolist()

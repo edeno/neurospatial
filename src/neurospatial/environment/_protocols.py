@@ -49,6 +49,7 @@ class EnvironmentProtocol(Protocol):
         tuple[float, Literal["transition", "density"]], NDArray[np.float64]
     ]
     _layout_type_used: str | None
+    _layout_params_used: dict[str, Any]
     _is_1d_env: bool
     _kdtree_cache: Any  # scipy.spatial.cKDTree, but avoiding import
 
