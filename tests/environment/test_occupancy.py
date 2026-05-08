@@ -17,8 +17,11 @@ class TestOccupancyBasic:
 
     def test_occupancy_simple_stationary(self):
         """Test occupancy with stationary samples in single bin."""
-        # Create simple 2D grid environment
-        data = np.array([[0, 0], [10, 10]])
+        # Dense grid env so position (5, 5) lands in an active bin
+        # rather than being flagged out-of-mask by bin_at (M1 1.2).
+        x = np.linspace(0.0, 10.0, 11)
+        xx, yy = np.meshgrid(x, x)
+        data = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(data, bin_size=5.0)
 
         # Stationary at position [5, 5] for 10 seconds
@@ -262,9 +265,20 @@ class TestOccupancyOutsideBehavior:
         assert_allclose(occ.sum(), 0.0)
         assert np.all(occ == 0.0)
 
-    def test_occupancy_mixed_inside_outside(self, minimal_2d_grid_env):
-        """Test occupancy with mix of inside and outside samples."""
-        env = minimal_2d_grid_env
+    def test_occupancy_mixed_inside_outside(self):
+        """Test occupancy with mix of inside and outside samples.
+
+        Builds a local dense 10x10 grid env so the (5, 5) "inside"
+        samples actually land in an active bin. minimal_2d_grid_env
+        only has two active bins (its corners), which under the M1 1.2
+        ``bin_at`` semantics correctly flags (5, 5) as outside the
+        active mask.
+        """
+        x = np.linspace(0.0, 10.0, 11)
+        xx, yy = np.meshgrid(x, x)
+        env = Environment.from_samples(
+            np.column_stack([xx.ravel(), yy.ravel()]), bin_size=2.0
+        )
 
         times = np.array([0.0, 5.0, 10.0, 15.0])
         positions = np.array(
@@ -358,7 +372,13 @@ class TestOccupancyPerformance:
         Requires inline environment: 100x100 grid needed for performance testing
         (unique large environment size not available in fixtures).
         """
-        data = np.array([[0, 0], [100, 100]])
+        # Dense 21x21 sample grid so the active mask covers every bin in
+        # the (0..100, 0..100) region. The earlier two-corner construction
+        # left the interior outside the active mask and `bin_at` (M1 1.2)
+        # correctly excluded every random sample from occupancy.
+        x = np.linspace(0.0, 100.0, 21)
+        xx, yy = np.meshgrid(x, x)
+        data = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(data, bin_size=5.0)
 
         # 100k samples (not 1M to keep test fast, but validates scaling)
@@ -568,3 +588,85 @@ class TestOccupancyReturnSeconds:
 
         # Should have 1 interval counted
         assert_allclose(occ_counts.sum(), 1.0, rtol=1e-6)
+
+
+class TestOccupancyAgreesWithBinSequenceOnOutsideSamples:
+    """Regression for M1 1.2: trajectory functions must agree on out-of-env samples.
+
+    Previously ``Environment.occupancy`` used ``map_points_to_bins`` which
+    returns the nearest in-env bin index regardless of how far the input
+    point is. ``Environment.bin_sequence`` used ``bin_at`` which returns
+    -1 for points outside any active bin. The same trajectory passed
+    through both methods produced inconsistent bin assignments: a
+    tracking error at (1e6, 1e6) silently inflated occupancy at the
+    env's edge.
+
+    Both methods should now treat out-of-env samples the same way --
+    -1 in the bin-sequence return, and excluded from the occupancy
+    integral.
+    """
+
+    def _build_env(self):
+        """Small open-field 10x10 cm Cartesian env (every grid bin active)."""
+        from neurospatial import Environment
+
+        # Dense grid of sample points so every bin in the 5x5 active region
+        # carries at least one sample.
+        x = np.linspace(0.0, 10.0, 11)
+        xx, yy = np.meshgrid(x, x)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
+        return Environment.from_samples(positions, bin_size=2.0)
+
+    def test_outside_sample_is_excluded_from_occupancy(self):
+        """A sample just outside the active mask used to inflate edge occupancy.
+
+        A tracking error at (13, 5) -- inside the env's bounding box but
+        outside the 10x10 active mask -- was silently mapped by
+        ``map_points_to_bins`` to the nearest in-env edge bin
+        (the implicit "10x typical bin spacing" threshold doesn't catch
+        2 cm of overshoot on a 2 cm-bin env). ``bin_sequence`` already
+        used ``bin_at`` and correctly reported -1 for this sample.
+
+        Now ``occupancy`` agrees: the interval starting at the
+        out-of-env sample is dropped from the integral.
+        """
+        env = self._build_env()
+        # Three timestamps, three samples. The middle one is just
+        # outside the 10x10 active mask (overshoot at the right wall).
+        times = np.array([0.0, 1.0, 2.0])
+        positions = np.array(
+            [
+                [5.0, 5.0],  # inside
+                [13.0, 5.0],  # 3 cm outside the active mask
+                [5.0, 5.0],  # inside
+            ]
+        )
+        occ = env.occupancy(times, positions, max_gap=None)
+
+        # bin_sequence agrees: the middle sample is -1.
+        bin_seq = env.bin_sequence(times, positions, dedup=False, outside_value=-1)
+        assert bin_seq[1] == -1
+
+        # The interval (t=1 to t=2) starts at the out-of-env sample and
+        # is therefore dropped. Total occupancy counts only the first
+        # interval (t=0 to t=1, duration 1.0 s).
+        assert occ.sum() == pytest.approx(1.0, abs=1e-9)
+
+    def test_in_env_sample_consistent_between_occupancy_and_bin_sequence(self):
+        """Every in-env sample maps to the same bin index in both methods."""
+        env = self._build_env()
+        rng = np.random.default_rng(0)
+        times = np.linspace(0.0, 5.0, 50)
+        # Synthetic trajectory squarely inside the env.
+        positions = rng.uniform(2.0, 8.0, size=(50, 2))
+
+        bin_seq = env.bin_sequence(times, positions, dedup=False, outside_value=-1)
+        # Every assignment must be a valid in-env bin (never -1).
+        assert (bin_seq >= 0).all()
+
+        # Total occupancy time should equal sum of dt[:-1] for valid
+        # intervals. With no out-of-env samples and no max_gap filter,
+        # that's the full trajectory duration minus the last sample.
+        occ = env.occupancy(times, positions, max_gap=None)
+        expected_total = float(np.diff(times).sum())
+        assert occ.sum() == pytest.approx(expected_total, rel=1e-6)

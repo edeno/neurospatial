@@ -568,14 +568,24 @@ def minimal_2d_grid_env() -> Environment:
 
 @pytest.fixture(scope="session")
 def minimal_20x20_grid_env() -> Environment:
-    """Small 20x20 grid for trajectory tests.
+    """Small dense 20x20 grid (every bin active) for trajectory tests.
 
-    Slightly larger than minimal_2d_grid_env for tests needing
-    more spatial resolution.
+    Slightly larger than minimal_2d_grid_env for tests needing more
+    spatial resolution. Every bin in the active mask is covered by a
+    sample so occupancy tests can confidently assert "this position
+    lands in this bin" rather than relying on KDTree nearest-neighbor
+    smearing out-of-mask samples to the nearest in-env corner. (The
+    earlier fixture built the env from just the two sample points
+    [(0,0), (20,20)], so every intermediate coordinate fell outside the
+    active mask -- the M1 1.2 ``bin_at`` switch in
+    ``Environment.occupancy`` exposed this implicit dependency on the
+    silent-wrong behavior.)
 
     Use for: Trajectory occupancy tests, gap handling tests.
     """
-    data = np.array([[0, 0], [20, 20]], dtype=np.float64)
+    x = np.linspace(0.0, 20.0, 21)
+    xx, yy = np.meshgrid(x, x)
+    data = np.column_stack([xx.ravel(), yy.ravel()])
     return Environment.from_samples(data, bin_size=5.0)
 
 

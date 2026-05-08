@@ -36,8 +36,6 @@ from neurospatial.environment._protocols import SelfEnv
 if TYPE_CHECKING:
     import scipy.sparse
 
-    from neurospatial import Environment
-
 
 # Numerical stability constants
 # Epsilon threshold for detecting near-zero values in ray-grid intersection.
@@ -182,8 +180,6 @@ class EnvironmentTrajectory:
         ... )  # doctest: +SKIP
 
         """
-        from neurospatial.ops.binning import map_points_to_bins
-
         # Input validation
         times = np.asarray(times, dtype=np.float64)
         positions = np.asarray(positions, dtype=np.float64)
@@ -268,12 +264,18 @@ class EnvironmentTrajectory:
         if len(times) == 1:
             return np.zeros(self.n_bins, dtype=np.float64)
 
-        # Map positions to bin indices
+        # Map positions to bin indices using the layout's geometric
+        # containment, which matches Environment.bin_sequence and returns
+        # -1 for samples outside the active mask. The earlier path
+        # used map_points_to_bins (KDTree nearest-neighbor with a
+        # heuristic 10x-typical-spacing threshold). That heuristic let
+        # samples a few centimeters outside the active mask silently
+        # bind to the nearest edge bin, so a tracking-error overshoot
+        # inflated occupancy at the boundary while bin_sequence
+        # correctly flagged the same sample as -1. See M1 task 1.2.
         bin_indices = cast(
             "NDArray[np.int64]",
-            map_points_to_bins(
-                positions, cast("Environment", self), tie_break="lowest_index"
-            ),
+            self.bin_at(positions).astype(np.int64),
         )
 
         # Compute time intervals
@@ -291,7 +293,7 @@ class EnvironmentTrajectory:
             valid_mask &= speed[:-1] >= min_speed
 
         # Filter out intervals starting outside environment bounds
-        # (map_points_to_bins returns -1 for points that don't map to any bin)
+        # (bin_at returns -1 for points outside any active bin).
         valid_mask &= bin_indices[:-1] >= 0
 
         # Initialize occupancy array

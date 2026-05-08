@@ -595,26 +595,51 @@ class EnvironmentTransforms:
                 """Build the layout (no-op for subset layouts)."""
                 pass  # Already built
 
-            def point_to_bin_index(self, point: NDArray[np.float64]) -> int:
-                """
-                Find the nearest bin index for a given point.
+            def point_to_bin_index(
+                self, points: NDArray[np.float64]
+            ) -> NDArray[np.int_]:
+                """Find the nearest bin index for each query point.
 
-                Parameters
-                ----------
-                point : ndarray of shape (n_dims,)
-                    Spatial coordinate to query.
+                Matches the standard layout contract: accepts a batch of
+                points shaped ``(n_points, n_dims)`` (a single 1-D point
+                is also tolerated for backwards compatibility) and
+                returns an array of bin indices shaped ``(n_points,)``.
+                Points farther than ``2 * typical_bin_spacing`` from the
+                nearest bin center are returned as ``-1`` so trajectory
+                callers (``Environment.bin_at`` -> ``Environment.occupancy``,
+                ``Environment.bin_sequence``) consistently flag
+                out-of-env samples.
 
-                Returns
-                -------
-                int
-                    Index of the nearest bin.
+                M1 1.1 will replace SubsetLayout with MaskedGrid, which
+                has the correct geometric containment behavior built in;
+                this fix is a stopgap so the subset path and the M1 1.2
+                ``bin_at`` switch for ``occupancy`` agree in the
+                meantime.
                 """
-                # Use KDTree for nearest neighbor
                 from scipy.spatial import cKDTree
 
+                pts = np.atleast_2d(np.asarray(points, dtype=np.float64))
                 tree = cKDTree(self.bin_centers)
-                _, idx = tree.query(point)
-                return int(idx)
+                distances, indices = tree.query(pts, k=1, workers=-1)
+
+                # Apply the same "10x typical spacing" outside heuristic
+                # used by ops.binning.map_points_to_bins so subset envs
+                # behave like Cartesian envs do for clearly out-of-env
+                # samples. We deliberately keep the threshold loose
+                # (10x) here because SubsetLayout has no notion of an
+                # active mask -- only a graph -- and tightening would
+                # spuriously reject points near sparse regions.
+                if len(self.bin_centers) > 1:
+                    nearest_neighbor_dist = tree.query(
+                        self.bin_centers, k=2, workers=-1
+                    )[0][:, 1]
+                    typical_bin_spacing = float(np.median(nearest_neighbor_dist))
+                    threshold = 10.0 * typical_bin_spacing
+                    indices = indices.astype(np.int64)
+                    indices[distances > threshold] = -1
+                else:
+                    indices = indices.astype(np.int64)
+                return cast("NDArray[np.int_]", indices)
 
             def bin_sizes(self) -> NDArray[np.float64]:
                 """
