@@ -44,7 +44,7 @@ Provide JSON‑safe, high‑level agent functions that wrap existing APIs:
   - `load_environment_tool(path) -> {"env_id": str, "summary": {...}}` (wraps `from_file` / later `Environment.from_nwb`).
 - **Basic analysis**
   - `compute_occupancy_tool(env_id, times, positions, **options) -> {"field_id": str, "summary": {...}}`
-  - `compute_place_field_tool(env_id, spike_times, times, positions, smoothing_method="diffusion_kde", **options) -> {"field_id": str, "summary": {...}}`
+  - `compute_spatial_rate_tool(env_id, spike_times, times, positions, smoothing_method="diffusion_kde", **options) -> {"field_id": str, "summary": {...}}`
   - Inputs/outputs must be JSON‑safe: lists, dicts, floats, ints, bools.
 - **Geometry / regions**
   - `list_regions_tool(env_id) -> {"regions": [..., {"name": str, "type": "point|polygon", ...}]}`
@@ -103,7 +103,7 @@ Expose the Phase 1 agent API through a standard agent protocol (e.g., MCP).
   - Map to an MCP tool with JSON schema for inputs/outputs.
   - Keep schemas stable and minimal; reuse enums and small structs where possible.
 - Name tools and write descriptions at the workflow level:
-  - Examples: `create_environment_from_nwb`, `compute_place_field`, *not* low‑level `bin_at`.
+  - Examples: `create_environment_from_nwb`, `compute_spatial_rate`, *not* low‑level `bin_at`.
 
 ### P2.3 Resources and Resource Templates
 
@@ -124,7 +124,7 @@ Expose the Phase 1 agent API through a standard agent protocol (e.g., MCP).
   - Calls a minimal set of tools through an MCP client:
     - `create_environment_from_samples`
     - `compute_occupancy`
-    - `compute_place_field`
+    - `compute_spatial_rate`
   - Verifies responses and internal registry state.
 
 ---
@@ -160,7 +160,7 @@ Provide higher‑level “skills” that orchestrate multiple tools and link to 
   - Orchestrates:
     - `create_environment_from_nwb_tool`
     - `compute_occupancy_tool`
-    - `compute_place_field_tool` (looping over units)
+    - `compute_spatial_rate_tool` (looping over units)
     - `summarize_environment` / `summarize_field` / `summarize_field_text`
   - Inputs:
     - `nwb_path`

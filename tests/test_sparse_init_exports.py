@@ -115,7 +115,6 @@ class TestOldExportsNotAtTopLevel:
             "to_dict",
             "from_dict",
             # Encoding metrics - should use neurospatial.encoding
-            "compute_place_field",
             "detect_place_fields",
             "spatial_information",
             "sparsity",

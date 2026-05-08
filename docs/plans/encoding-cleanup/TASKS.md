@@ -268,8 +268,8 @@ PLAN.md §M6 for the gap analysis.
 **Goal**: coherent user-facing encoding interfaces and ~2000 line reduction
 where old implementations can be removed safely.
 
-- [x] **6.1** Add parity test
-      [`tests/encoding/test_legacy_delegation_parity.py`](../../../tests/encoding/test_legacy_delegation_parity.py).
+- [x] **6.1** Added `tests/encoding/test_legacy_delegation_parity.py`
+      (now deleted with the legacy modules — no surviving file to link to).
       All four pairs mismatched at `rtol=1e-6` with relative differences
       of 50%+ — see PLAN.md §M6 for the per-pair gap. The parity test was
       later deleted with the legacy modules because there is no supported
