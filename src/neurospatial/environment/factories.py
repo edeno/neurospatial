@@ -904,6 +904,12 @@ class EnvironmentFactories:
             connect_diagonal_neighbors=True,
         )
 
+        # Mark the env as polar so downstream callers can refuse to run
+        # Cartesian-only operations on bin_centers (which here hold
+        # (distance, angle) pairs, not (x, y)). See
+        # ``Environment._check_cartesian`` and ``Environment.is_polar``.
+        env.coordinate_kind = "polar"
+
         # If circular_angle is True, add edges between first and last angle bins
         if circular_angle and n_angle > 1:
             _add_circular_connectivity(env.connectivity, n_distance, n_angle)

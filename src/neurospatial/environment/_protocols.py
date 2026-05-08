@@ -39,6 +39,10 @@ class EnvironmentProtocol(Protocol):
     regions: Regions
     units: str | None
     frame: str | None
+    # "cartesian" for envs whose bin_centers hold (x, y[, z]); "polar"
+    # for envs from from_polar_egocentric where bin_centers[:, 0] is
+    # distance and bin_centers[:, 1] is angle in radians.
+    coordinate_kind: Literal["cartesian", "polar"]
 
     # Internal/cache attributes that mixins access
     _kernel_cache: dict[
@@ -82,6 +86,30 @@ class EnvironmentProtocol(Protocol):
         -------
         bool
             True if environment supports linearization methods.
+        """
+        ...
+
+    @property
+    def is_polar(self) -> bool:
+        """
+        Whether this environment lives in polar coordinates.
+
+        Returns
+        -------
+        bool
+            True iff ``coordinate_kind == "polar"`` (envs created by
+            ``Environment.from_polar_egocentric``).
+        """
+        ...
+
+    def _check_cartesian(self, method_name: str) -> None:
+        """Raise ``ValueError`` if this env is not Cartesian.
+
+        Mixin methods that interpret inputs as ``(x, y[, z])`` (e.g.
+        ``bin_at``, ``distance_between``, the Euclidean branch of
+        ``distance_to``) call this at the top to fail at the API
+        boundary on a polar env rather than silently treating
+        ``(distance, angle)`` pairs as Cartesian.
         """
         ...
 

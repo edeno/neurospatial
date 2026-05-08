@@ -229,6 +229,11 @@ def to_file(env: Environment, path: PathLike) -> None:
         metadata["units"] = env.units
     if hasattr(env, "frame") and env.frame is not None:
         metadata["frame"] = env.frame
+    # coordinate_kind defaults to "cartesian"; only persist non-default
+    # values so older v0.4 envs round-trip without surprise. Loaders
+    # treat a missing key as "cartesian".
+    if hasattr(env, "coordinate_kind") and env.coordinate_kind != "cartesian":
+        metadata["coordinate_kind"] = env.coordinate_kind
 
     # Serialize graph to node-link format
     graph_data = nx.node_link_data(env.connectivity, edges="links")
@@ -393,6 +398,11 @@ def from_file(path: PathLike) -> Environment:
         env.units = metadata["units"]
     if "frame" in metadata:
         env.frame = metadata["frame"]
+    # Restore coordinate_kind; older serialized envs (and Cartesian
+    # ones from v0.4) won't carry the key and fall back to the
+    # field default of "cartesian".
+    if "coordinate_kind" in metadata:
+        env.coordinate_kind = metadata["coordinate_kind"]
 
     return env
 
@@ -467,6 +477,11 @@ def to_dict(env: Environment) -> dict[str, Any]:
         metadata["units"] = env.units
     if hasattr(env, "frame") and env.frame is not None:
         metadata["frame"] = env.frame
+    # coordinate_kind defaults to "cartesian"; only persist non-default
+    # values so older v0.4 envs round-trip without surprise. Loaders
+    # treat a missing key as "cartesian".
+    if hasattr(env, "coordinate_kind") and env.coordinate_kind != "cartesian":
+        metadata["coordinate_kind"] = env.coordinate_kind
 
     # Serialize graph
     graph_data = nx.node_link_data(env.connectivity, edges="links")

@@ -241,6 +241,22 @@ class Environment(
     units: str | None = field(init=False, default=None)
     frame: str | None = field(init=False, default=None)
 
+    # Coordinate-system flag. Cartesian envs (``from_samples``,
+    # ``from_polygon``, ``from_mask``, ``from_image``, ``from_graph``,
+    # ``from_layout`` for any non-polar layout) hold (x, y[, z]) bin
+    # centers and tolerate Euclidean distance on those centers. The
+    # ``polar`` value comes from ``from_polar_egocentric`` and means
+    # ``bin_centers[:, 0]`` is *distance* and ``bin_centers[:, 1]`` is
+    # *angle in radians*. A handful of methods (``bin_at``,
+    # ``distance_between``, ``distance_to(metric="euclidean")``)
+    # silently treat (distance, angle) pairs as (x, y) and produce
+    # nonsense; those methods raise on a polar env via
+    # ``_check_cartesian``. Geodesic operations remain valid because
+    # they read only the connectivity graph.
+    coordinate_kind: Literal["cartesian", "polar"] = field(
+        init=False, default="cartesian"
+    )
+
     # Internal state
     _is_1d_env: bool = field(init=False)
     _is_fitted: bool = field(init=False, default=False)
@@ -846,6 +862,42 @@ class Environment(
         return self._is_1d_env
 
     @property
+    def is_polar(self) -> bool:
+        """True iff the environment lives in egocentric polar coordinates.
+
+        Convenience wrapper over ``coordinate_kind == "polar"``. A polar
+        env's ``bin_centers[:, 0]`` is distance and ``bin_centers[:, 1]``
+        is angle in radians, not (x, y); methods that compute Euclidean
+        operations on bin_centers (``bin_at``, ``distance_between``,
+        ``distance_to(metric="euclidean")``) raise rather than return
+        silently-wrong numbers.
+        """
+        return self.coordinate_kind == "polar"
+
+    def _check_cartesian(self, method_name: str) -> None:
+        """Raise if this env is polar and the calling method assumes Cartesian.
+
+        Centralises the "this method only makes sense on (x, y[, z])
+        bin centers" check so each guarded method has a one-line call
+        and a uniform error message. The error names the offending
+        method and points the user at the geodesic alternative when
+        one exists.
+        """
+        if self.coordinate_kind != "cartesian":
+            raise ValueError(
+                f"Environment.{method_name}() assumes Cartesian "
+                f"coordinates but this environment is "
+                f"coordinate_kind={self.coordinate_kind!r} "
+                "(bin_centers[:, 0]=distance, bin_centers[:, 1]=angle "
+                "for polar envs from from_polar_egocentric). For "
+                "polar envs, use connectivity-graph operations "
+                "(neighbors, path_between, reachable_from, or "
+                "distance_to(metric='geodesic')) instead, or build "
+                "an allocentric Cartesian env via from_samples / "
+                "from_polygon / from_mask."
+            )
+
+    @property
     @check_fitted
     def n_dims(self) -> int:
         """Return the number of spatial dimensions of the active bin centers.
@@ -1071,6 +1123,7 @@ class Environment(
             # Copy metadata
             env_copy.units = self.units
             env_copy.frame = self.frame
+            env_copy.coordinate_kind = self.coordinate_kind
         else:
             # Shallow copy: share references
             env_copy = Environment(
@@ -1084,6 +1137,7 @@ class Environment(
             # Copy metadata
             env_copy.units = self.units
             env_copy.frame = self.frame
+            env_copy.coordinate_kind = self.coordinate_kind
 
         # Always clear caches (regardless of deep/shallow)
         # This ensures caches are rebuilt for the new environment object

@@ -406,3 +406,124 @@ class TestDocstringNote:
         angles = env.bin_centers[:, 1]
         assert np.all(angles >= -np.pi)
         assert np.all(angles <= np.pi)
+
+
+class TestPolarCoordinateKindFlag:
+    """Regression for M1 1.3: polar envs are flagged distinct from Cartesian.
+
+    Without an explicit flag, downstream code that computes Euclidean
+    distance on `bin_centers` silently treats `(distance, angle)` pairs
+    as `(x, y)` and produces meaningless numbers. The new
+    `coordinate_kind` attribute and `is_polar` property make the
+    distinction visible to callers and let safety checks fire.
+    """
+
+    @pytest.fixture
+    def polar_env(self):
+        """A small polar env: 5 distance bins, 4 angle bins."""
+        return Environment.from_polar_egocentric(
+            distance_range=(0.0, 50.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=10.0,
+            angle_bin_size=np.pi / 2,
+        )
+
+    @pytest.fixture
+    def cartesian_env(self):
+        """A small Cartesian env for the negative-control side of every test."""
+        positions = np.column_stack([np.linspace(0, 30, 16), np.linspace(0, 30, 16)])
+        return Environment.from_samples(positions, bin_size=2.0)
+
+    def test_from_polar_egocentric_marks_env_polar(self, polar_env):
+        """from_polar_egocentric should set coordinate_kind='polar'."""
+        assert polar_env.coordinate_kind == "polar"
+        assert polar_env.is_polar is True
+
+    def test_cartesian_factories_default_to_cartesian(self, cartesian_env):
+        """from_samples / from_polygon / from_mask / etc. produce Cartesian envs."""
+        assert cartesian_env.coordinate_kind == "cartesian"
+        assert cartesian_env.is_polar is False
+
+
+class TestPolarRaisesOnCartesianAssumingMethods:
+    """Methods that interpret inputs as (x, y) must reject polar envs.
+
+    bin_at, distance_between, and distance_to(metric='euclidean') all
+    compute Euclidean operations on bin_centers; running them against a
+    polar env's (distance, angle) bin centers produces silently wrong
+    numbers. They should fail at the boundary instead.
+
+    Methods that operate purely on the connectivity graph (path_between,
+    reachable_from, neighbors, distance_to(metric='geodesic')) are safe
+    on polar envs and must keep working.
+    """
+
+    @pytest.fixture
+    def polar_env(self):
+        return Environment.from_polar_egocentric(
+            distance_range=(0.0, 50.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=10.0,
+            angle_bin_size=np.pi / 2,
+        )
+
+    def test_bin_at_raises_on_polar_env(self, polar_env):
+        from_xy = np.array([[5.0, 5.0]])
+        with pytest.raises(ValueError, match=r"polar.*bin_at|bin_at.*polar"):
+            polar_env.bin_at(from_xy)
+
+    def test_distance_between_raises_on_polar_env(self, polar_env):
+        with pytest.raises(
+            ValueError, match=r"polar.*distance_between|distance_between.*polar"
+        ):
+            polar_env.distance_between(np.array([0.0, 0.0]), np.array([10.0, 10.0]))
+
+    def test_distance_to_euclidean_raises_on_polar_env(self, polar_env):
+        with pytest.raises(
+            ValueError,
+            match=r"polar.*distance_to.*euclidean|distance_to.*euclidean.*polar",
+        ):
+            polar_env.distance_to([0], metric="euclidean")
+
+    def test_distance_to_geodesic_works_on_polar_env(self, polar_env):
+        """Geodesic distance respects connectivity, so it's well-defined on polar."""
+        distances = polar_env.distance_to([0], metric="geodesic")
+        assert distances.shape == (polar_env.n_bins,)
+        # Distance from a bin to itself is zero; everything else is positive.
+        assert distances[0] == 0.0
+        assert (distances[1:] >= 0).all()
+
+    def test_neighbors_works_on_polar_env(self, polar_env):
+        """neighbors only reads the connectivity graph; should not raise."""
+        nbrs = polar_env.neighbors(0)
+        assert isinstance(nbrs, list)
+
+
+class TestPolarSerializationRoundTrip:
+    """coordinate_kind must survive copy and to_file/from_file round-trips."""
+
+    def test_copy_preserves_coordinate_kind(self):
+        env = Environment.from_polar_egocentric(
+            distance_range=(0.0, 50.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=10.0,
+            angle_bin_size=np.pi / 2,
+        )
+        env_copy = env.copy()
+        assert env_copy.coordinate_kind == "polar"
+        assert env_copy.is_polar is True
+
+    def test_to_file_from_file_preserves_coordinate_kind(self, tmp_path):
+        from neurospatial.io.files import from_file, to_file
+
+        env = Environment.from_polar_egocentric(
+            distance_range=(0.0, 50.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=10.0,
+            angle_bin_size=np.pi / 2,
+        )
+        path = tmp_path / "polar_env"
+        to_file(env, path)
+        loaded = from_file(path)
+        assert loaded.coordinate_kind == "polar"
+        assert loaded.is_polar is True
