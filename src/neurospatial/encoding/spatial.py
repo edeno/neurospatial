@@ -46,6 +46,7 @@ Examples
 
 from __future__ import annotations
 
+import warnings
 from collections import deque
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
@@ -2056,10 +2057,25 @@ def detect_place_fields(
     if min_size is None:
         min_size = 9  # Standard minimum (3×3 bins for 2D)
 
-    # Interneuron exclusion
+    # Interneuron exclusion. Emit a UserWarning before returning an empty
+    # list so a caller running detect_place_fields over a population can
+    # tell the difference between "this neuron has no detectable place
+    # fields" (an empty list with no warning) and "this neuron was
+    # excluded as a putative interneuron" (an empty list plus a
+    # documented warning). M2 task 2.10 will fold this into a richer
+    # PlaceFieldsResult dataclass with an `excluded_reason` attribute;
+    # for M1 the warning is the minimum-viable visible signal.
     mean_rate = np.nanmean(firing_rate)
     if mean_rate > max_mean_rate:
-        return []  # Putative interneuron
+        warnings.warn(
+            f"detect_place_fields: neuron excluded as putative interneuron "
+            f"(mean rate {float(mean_rate):.2f} Hz > max_mean_rate "
+            f"{max_mean_rate} Hz). Returning empty field list. Pass a larger "
+            "max_mean_rate to include fast-firing cells.",
+            UserWarning,
+            stacklevel=2,
+        )
+        return []
 
     # Make a copy to modify during iteration
     rate_map = firing_rate.copy()

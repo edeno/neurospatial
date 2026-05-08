@@ -6,6 +6,8 @@ Following TDD: Tests written FIRST before implementation.
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
@@ -168,7 +170,14 @@ class TestDetectPlaceFields:
         assert len(fields_no_subfields) == 1
 
     def test_detect_place_fields_interneuron_exclusion(self):
-        """Test interneuron exclusion (high mean rate > 10 Hz)."""
+        """Test interneuron exclusion (high mean rate > 10 Hz).
+
+        The function emits a UserWarning before returning [], so a
+        caller running detect_place_fields over a population can tell
+        the difference between "no detectable fields" and "excluded as
+        putative interneuron". The empty-list return is preserved (M2
+        task 2.10 will fold this into a richer PlaceFieldsResult).
+        """
         rng = np.random.default_rng(42)
         positions = rng.standard_normal((5000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
@@ -178,10 +187,34 @@ class TestDetectPlaceFields:
 
         from neurospatial.encoding.spatial import detect_place_fields
 
-        # Should detect no fields (excluded as interneuron)
-        fields = detect_place_fields(firing_rate, env, max_mean_rate=10.0)
+        # Should detect no fields (excluded as interneuron) and warn.
+        with pytest.warns(UserWarning, match=r"putative interneuron.*15\.00 Hz"):
+            fields = detect_place_fields(firing_rate, env, max_mean_rate=10.0)
 
         assert len(fields) == 0
+
+    def test_detect_place_fields_no_warning_for_typical_pyramidal_cell(self):
+        """Pyramidal-rate cells should NOT emit the interneuron warning.
+
+        Regression for M1 1.4: the warning must fire ONLY when the
+        max_mean_rate threshold is crossed. Don't bother quiet
+        well-formed pyramidal cells with a noisy log.
+        """
+        rng = np.random.default_rng(0)
+        positions = rng.standard_normal((5000, 2)) * 10
+        env = Environment.from_samples(positions, bin_size=2.0)
+
+        firing_rate = np.zeros(env.n_bins)
+        # Gaussian field at the centre, peak ~8 Hz, mean well under 10.
+        for i in range(env.n_bins):
+            dist = float(np.linalg.norm(env.bin_centers[i]))
+            firing_rate[i] = 8.0 * np.exp(-(dist**2) / (2 * 3.0**2))
+
+        from neurospatial.encoding.spatial import detect_place_fields
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # turn any warning into a failure
+            detect_place_fields(firing_rate, env, max_mean_rate=10.0)
 
     def test_detect_place_fields_uniform_rate(self):
         """Test detection with uniform firing rate.
