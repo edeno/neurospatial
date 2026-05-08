@@ -263,15 +263,21 @@ def decode_position(
         Future: "gaussian", "clusterless".
     times : NDArray[np.float64] | None, default=None
         Time bin centers (seconds). If provided, stored in DecodingResult.
-    validate : bool, default=False
-        If True, run extra validation checks:
+    validate : bool, default=True
+        If True (the default), run extra validation checks before and
+        after the core computation:
 
-        - Verify posterior rows sum to 1.0 (within atol=1e-6)
-        - Check for NaN/Inf in inputs and outputs
-        - Warn if priors aren't properly normalized
-        - Check encoding_models for extreme values
+        - Reject NaN/Inf entries in spike_counts, encoding_models, prior.
+        - Reject negative spike_counts (must be non-negative integers).
+        - Reject fractional spike_counts when given a float dtype
+          (cast to integer first or fix the upstream binning bug).
+        - Reject negative encoding_models firing rates.
+        - Reject negative prior entries.
+        - Verify each posterior row sums to 1.0 within atol=1e-6.
 
-        This adds overhead but is useful for debugging.
+        Pass ``validate=False`` to opt out (e.g., inside a hot inner
+        loop where the inputs are guaranteed-clean and the per-call
+        overhead matters).
 
     Returns
     -------
@@ -382,13 +388,36 @@ def _validate_inputs(
         )
     if (spike_counts < 0).any():
         n_negative = int(np.sum(spike_counts < 0))
-        worst_count = int(spike_counts.min())
+        worst_count = float(spike_counts.min())
         raise ValueError(
             f"spike_counts contains {n_negative} negative entr"
-            f"{'y' if n_negative == 1 else 'ies'} (min: {worst_count}). "
+            f"{'y' if n_negative == 1 else 'ies'} (min: {worst_count:g}). "
             "Spike counts represent spike events per time bin and must "
             "be non-negative integers."
         )
+
+    # Spike counts must also be integer-valued. Allow integer dtypes
+    # outright and float dtypes whose values happen to be exact integers
+    # (a common shape after building counts via histogramming and storing
+    # them in a float64 column for ergonomic reasons). A fractional value
+    # like 0.5 is silently meaningless under the Poisson likelihood and
+    # would produce a "valid"-looking posterior; reject it at the boundary.
+    if not np.issubdtype(spike_counts.dtype, np.integer):
+        rounded = np.floor(spike_counts)
+        is_integer_valued = np.equal(spike_counts, rounded)
+        if not is_integer_valued.all():
+            n_fractional = int(np.sum(~is_integer_valued))
+            # Pick the entry with the largest fractional part so the user
+            # can grep for it in their input rather than guessing.
+            fractional_part = np.abs(spike_counts - rounded)
+            worst_value = float(spike_counts.flat[int(fractional_part.argmax())])
+            raise ValueError(
+                f"spike_counts contains {n_fractional} fractional entr"
+                f"{'y' if n_fractional == 1 else 'ies'} (e.g., {worst_value:g}). "
+                "Spike counts must be integer-valued. Cast with "
+                "`spike_counts.astype(np.int64)` after confirming the "
+                "non-integer values are not a binning bug upstream."
+            )
 
     # Check encoding models: finite then non-negative (firing rates can't
     # physically be negative).
@@ -407,13 +436,27 @@ def _validate_inputs(
             "Firing rates must be non-negative."
         )
 
-    # Check prior if provided
-    if prior is not None and not np.isfinite(prior).all():
-        n_bad = int(np.sum(~np.isfinite(prior)))
-        raise ValueError(
-            f"prior contains {n_bad} NaN or Inf entries. "
-            "Prior must be finite non-negative values."
-        )
+    # Check prior if provided: finite then non-negative. Internal
+    # normalization divides by the row sum, so a prior with negative
+    # entries that sum to a positive total still yields a "valid" posterior
+    # row but no longer represents a probability distribution -- reject
+    # at the boundary rather than silently propagating.
+    if prior is not None:
+        if not np.isfinite(prior).all():
+            n_bad = int(np.sum(~np.isfinite(prior)))
+            raise ValueError(
+                f"prior contains {n_bad} NaN or Inf entries. "
+                "Prior must be finite non-negative values."
+            )
+        if (prior < 0).any():
+            n_negative = int(np.sum(prior < 0))
+            worst_prior = float(prior.min())
+            raise ValueError(
+                f"prior contains {n_negative} negative entr"
+                f"{'y' if n_negative == 1 else 'ies'} (min: {worst_prior:.6g}). "
+                "A prior over positions is a probability mass and must "
+                "be non-negative."
+            )
 
 
 def _validate_output(posterior: NDArray[np.float64]) -> None:

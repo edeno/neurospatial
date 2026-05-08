@@ -643,6 +643,78 @@ class TestDecodePosition:
                 dt=0.025,
             )
 
+    def test_validate_catches_fractional_spike_counts(
+        self,
+        simple_env: Environment,
+    ) -> None:
+        """validate=True rejects fractional float-dtype spike counts.
+
+        Regression for review follow-up: the validator's error message
+        promised "non-negative integers" but the implementation only
+        checked finite + non-negative, so a float array like
+        [[0.5, 1.0]] passed and produced a "valid"-looking posterior
+        from a Poisson likelihood that is undefined at non-integer n.
+        """
+        from neurospatial.decoding.posterior import decode_position
+
+        n_bins = simple_env.n_bins
+        encoding_models = np.ones((2, n_bins))
+        spike_counts_fractional = np.array([[0.5, 1.0]])
+        with pytest.raises(ValueError, match=r"fractional entr"):
+            decode_position(
+                simple_env, spike_counts_fractional, encoding_models, dt=0.025
+            )
+
+    def test_validate_accepts_float_spike_counts_with_integer_values(
+        self,
+        simple_env: Environment,
+    ) -> None:
+        """Float arrays with integer-valued entries are still allowed.
+
+        Spike counts are sometimes carried in float64 columns for
+        ergonomic reasons (mixed dataframes, JAX backends). Validating
+        only the *value* (np.equal(x, floor(x))) -- not the dtype --
+        lets those legitimate cases through while still catching truly
+        fractional inputs.
+        """
+        from neurospatial.decoding.posterior import decode_position
+
+        n_bins = simple_env.n_bins
+        encoding_models = np.ones((2, n_bins))
+        spike_counts_float = np.array([[0.0, 1.0], [2.0, 0.0]], dtype=np.float64)
+        result = decode_position(
+            simple_env, spike_counts_float, encoding_models, dt=0.025
+        )
+        assert result is not None
+
+    def test_validate_catches_negative_prior(
+        self,
+        simple_env: Environment,
+        simple_spike_counts: np.ndarray,
+        simple_encoding_models: np.ndarray,
+    ) -> None:
+        """validate=True rejects priors with negative entries.
+
+        Regression for review follow-up: the prior was checked for
+        finite values but not for non-negativity, despite the error
+        message claiming "Prior must be finite non-negative values".
+        Internal normalization divides by the row sum, so a negative
+        entry could yield a finite-looking posterior that no longer
+        represents a probability distribution.
+        """
+        from neurospatial.decoding.posterior import decode_position
+
+        prior = np.full(simple_env.n_bins, 1.0)
+        prior[0] = -1.0
+        with pytest.raises(ValueError, match=r"negative entr"):
+            decode_position(
+                simple_env,
+                simple_spike_counts,
+                simple_encoding_models,
+                dt=0.025,
+                prior=prior,
+            )
+
     # -------------------------------------------------------------------------
     # Integration tests
     # -------------------------------------------------------------------------
