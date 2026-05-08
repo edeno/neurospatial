@@ -1,0 +1,38 @@
+name: Doc snippets
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test-doc-snippets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: latest
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Run curated doc-snippet smoke test
+        env:
+          MPLBACKEND: Agg
+        run: uv run python scripts/test_doc_snippets.py
+
+      - name: Self-test (helper regression)
+        env:
+          MPLBACKEND: Agg
+        run: uv run pytest tests/test_doc_snippets_helper.py -q

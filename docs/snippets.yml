@@ -1,0 +1,70 @@
+# Curated documentation-snippet manifest for scripts/test_doc_snippets.py.
+#
+# Each entry is one fenced ```python block (in a Markdown file) or one REPL
+# example group (in the top-level package docstring) that we want CI to
+# execute on every PR. The point of the manifest is to make snippet-test
+# coverage a deliberate, opt-in surface rather than a fragile auto-collect.
+#
+# Add new entries when introducing a new first-run snippet that a new user
+# would copy-paste. Skip entries that intrinsically require external assets
+# (FFmpeg, real video files, NWB files, large datasets) with a short reason;
+# such snippets belong in a notebook, not in CI smoke tests.
+
+snippets:
+  - id: readme_quickstart
+    source: README.md
+    kind: markdown
+    index: 0
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"
+
+  - id: readme_common_use_cases_position_analysis
+    source: README.md
+    kind: markdown
+    index: 1
+    skip: |
+      Uses placeholder loaders (load_timestamps, load_tracking_data,
+      load_speeds). Tracked in M6 backlog; will be replaced with a runnable
+      sample-data loader during the v0.4 example-coverage pass.
+
+  - id: readme_animation_napari_block
+    source: README.md
+    kind: markdown
+    index: 6
+    skip: |
+      Animation snippet requires napari + GPU/X11 + ffmpeg; not appropriate
+      for a CI smoke test. Animation behavior is exercised by notebooks
+      16-18 and the dedicated animation tests.
+
+  - id: readme_animation_large_dataset_block
+    source: README.md
+    kind: markdown
+    index: 7
+    skip: |
+      Same as readme_animation_napari_block: requires napari/ffmpeg.
+
+  - id: quickstart_first_environment
+    source: .claude/QUICKSTART.md
+    kind: markdown
+    index: 0
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"
+
+  - id: docs_quickstart_basic_creation
+    source: docs/getting-started/quickstart.md
+    kind: markdown
+    index: 0
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"
+
+  - id: package_docstring_common_usage
+    source: src/neurospatial/__init__.py
+    kind: package_docstring
+    index: 0
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"
+      import numpy as np
