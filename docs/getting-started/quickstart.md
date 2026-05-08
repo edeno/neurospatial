@@ -59,9 +59,11 @@ print(f"Point is inside environment: {is_inside}")
 neighbors = env.neighbors(bin_idx)
 print(f"Bin {bin_idx} has {len(neighbors)} neighbors: {neighbors}")
 
-# Calculate distance between bins
+# Calculate geodesic distance between bins
+# (path_between/distance_to operate on bin indices; distance_between expects
+# point coordinates and is the right call when you have raw (x, y) positions.)
 bin_a, bin_b = 0, 10
-distance = env.distance_between(bin_a, bin_b)
+distance = float(env.distance_to([bin_b])[bin_a])
 print(f"Distance between bins {bin_a} and {bin_b}: {distance:.2f}")
 
 # Find shortest path
@@ -184,25 +186,24 @@ print(f"Circular arena bins: {env_circle.n_bins}")
 
 ## Working with Different Layout Types
 
-neurospatial supports multiple layout engines:
+neurospatial supports multiple layout engines. `from_samples()` infers the
+active region from sample points and currently supports `RegularGrid` (the
+default) and `Hexagonal` layouts:
 
 ```python
 # Hexagonal layout (more uniform neighbor distances)
 env_hex = Environment.from_samples(
     positions=position_data,
     bin_size=2.0,
-    layout_type="hexagonal",
+    layout="hexagonal",
     name="HexEnvironment"
 )
-
-# Triangular mesh
-env_tri = Environment.from_samples(
-    positions=position_data,
-    bin_size=2.0,
-    layout_type="triangular",
-    name="TriEnvironment"
-)
 ```
+
+For other layouts (Triangular mesh, Shapely polygon, masked grid, etc.) use
+the matching factory or `Environment.from_layout(...)`. See the
+[layout engines guide](../user-guide/layout-engines.md) for the full list and
+required parameters.
 
 ## Next Steps
 
@@ -253,11 +254,8 @@ summary = population.to_dataframe()
 target = np.array([[20.0, 20.0]])
 target_bin = env.bin_at(target)[0]
 
-# Calculate distance from every bin to target
-distances = np.array([
-    env.distance_between(bin_idx, target_bin)
-    for bin_idx in range(env.n_bins)
-])
+# Distance from every bin to the target bin (geodesic by default)
+distances = env.distance_to([target_bin])
 
 print(f"Mean distance to target: {np.mean(distances):.2f} cm")
 ```
@@ -274,16 +272,12 @@ zones = {
 for name, polygon in zones.items():
     env.regions.add(name, polygon=polygon)
 
-# Compute time in each zone
-for name in zones.keys():
-    # Get bins in this region
-    region_bins = []
-    for bin_idx in range(env.n_bins):
-        bin_point = Point(env.bin_centers[bin_idx])
-        if env.regions[name].polygon.contains(bin_point):
-            region_bins.append(bin_idx)
+# Discretize the trajectory once (positions: (n_time, n_dims) of (x, y) coordinates)
+position_bin_indices = env.bin_sequence(times, position_data)
 
-    # Count samples
-    time_in_region = np.sum(np.isin(position_bin_indices, region_bins))
+# Compute time in each zone using the high-level region API
+for name in zones.keys():
+    region_bins = env.bins_in_region(name)
+    time_in_region = int(np.sum(np.isin(position_bin_indices, region_bins)))
     print(f"Time in {name}: {time_in_region} samples")
 ```

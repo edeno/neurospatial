@@ -63,7 +63,7 @@ env.to_file("my_environment")  # Creates .json + .npz files
 loaded_env = Environment.from_file("my_environment")
 
 # Validate
-from neurospatial import validate_environment
+from neurospatial.layout.validation import validate_environment
 validate_environment(env, strict=True)  # Warns if units/frame missing
 ```
 
@@ -88,7 +88,13 @@ G = nx.Graph()
 G.add_nodes_from([(0, {"pos": (0, 0)}), (1, {"pos": (50, 0)}), (2, {"pos": (100, 0)})])
 G.add_edges_from([(0, 1), (1, 2)])
 
-env = Environment.from_graph(G, bin_size=2.0)
+# from_graph requires edge_order (linearization order) and edge_spacing (gap between edges)
+env = Environment.from_graph(
+    G,
+    edge_order=[(0, 1), (1, 2)],
+    edge_spacing=0.0,  # no gap between segments
+    bin_size=2.0,
+)
 print(env.is_1d)  # True
 
 # Linearization methods available
@@ -186,9 +192,12 @@ result.plot(show_map=True, colorbar=True)
 ```python
 from neurospatial.behavior.segmentation import segment_trials
 
+# Discretize trajectory: positions (n_time, n_dims) -> bin indices (n_time,)
+position_bins = env.bin_sequence(times, positions)
+
 # Segment trials from trajectory
 trials = segment_trials(
-    trajectory_bins, times, env,
+    position_bins, times, env,
     start_region="home",
     end_regions=["reward_left", "reward_right"],
 )
@@ -735,8 +744,10 @@ basis = geodesic_rbf_basis(
     sigma=[5.0, 10.0],   # Bandwidths in cm (multi-scale)
 )  # Shape: (n_centers * n_sigmas, n_bins)
 
-# Create GLM design matrix from trajectory
-bin_indices = env.bin_sequence(trajectory, times)
+# Create GLM design matrix from trajectory.
+# bin_sequence takes (times, positions) — order matters; reversing it silently
+# misindexes the basis matrix.
+bin_indices = env.bin_sequence(times, positions)
 X_spatial = basis[:, bin_indices].T  # Shape: (n_times, n_basis)
 
 # Fit GLM (example with statsmodels)

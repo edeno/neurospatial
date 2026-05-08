@@ -146,7 +146,7 @@ position_data = np.array([
 
 # Create an environment with 2 cm bins
 env = Environment.from_samples(
-    data_samples=position_data,
+    positions=position_data,
     bin_size=2.0,  # 2 cm bins
     name="OpenField"
 )
@@ -222,7 +222,7 @@ speeds = load_speeds()  # Shape: (n_timepoints,)
 
 # Create environment with 5 cm bins, auto-detect active areas
 env = Environment.from_samples(
-    data_samples=position,
+    positions=position,
     bin_size=5.0,  # cm
     infer_active_bins=True,
     dilate=True,  # Expand active region
@@ -426,18 +426,24 @@ fields = [
     for i in range(30)
 ]
 
+# frame_times is required: one timestamp per field (seconds)
+frame_times = np.arange(len(fields)) / 30.0  # 30 Hz
+
 # Interactive Napari viewer (best for exploration)
-env.animate_fields(fields, backend="napari")
+env.animate_fields(fields, frame_times=frame_times, backend="napari")
 
 # Video export with parallel rendering (best for presentations)
 env.clear_cache()  # Required for parallel rendering
-env.animate_fields(fields, save_path="animation.mp4", fps=30, n_workers=4)
+env.animate_fields(
+    fields, frame_times=frame_times,
+    save_path="animation.mp4", n_workers=4,
+)
 
 # HTML standalone player (best for sharing)
-env.animate_fields(fields, save_path="animation.html")
+env.animate_fields(fields, frame_times=frame_times, save_path="animation.html")
 
 # Jupyter widget (best for notebooks)
-env.animate_fields(fields, backend="widget")
+env.animate_fields(fields, frame_times=frame_times, backend="widget")
 ```
 
 ### Backend Selection Guide
@@ -457,18 +463,24 @@ For sessions with 100K+ frames (e.g., 1-hour recording at 250 Hz):
 
 ```python
 import numpy as np
+from neurospatial.animation import subsample_frames
 
 # Use memory-mapped arrays (doesn't load into RAM)
 fields = np.memmap('fields.dat', dtype='float32', mode='w+',
                    shape=(900_000, env.n_bins))
 
-# Napari lazy-loads from disk (no data loading)
-env.animate_fields(fields, backend="napari")
+# Napari lazy-loads from disk (no data loading); frame_times is required
+frame_times = np.arange(len(fields)) / 250.0  # 250 Hz acquisition
+env.animate_fields(fields, frame_times=frame_times, backend="napari")
 
 # Or subsample for video export (250 Hz → 30 fps)
 subsampled = subsample_frames(fields, source_fps=250, target_fps=30)
+sub_times = np.arange(len(subsampled)) / 30.0
 env.clear_cache()
-env.animate_fields(subsampled, save_path="replay.mp4", n_workers=4)
+env.animate_fields(
+    subsampled, frame_times=sub_times,
+    save_path="replay.mp4", n_workers=4,
+)
 ```
 
 ### Learn More

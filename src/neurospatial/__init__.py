@@ -137,7 +137,9 @@ Map trajectory to bins::
 
     >>> times = np.linspace(0, 10, 100)  # doctest: +SKIP
     >>> trajectory = np.random.uniform(0, 100, (100, 2))  # doctest: +SKIP
-    >>> bin_sequence = env.bin_sequence(trajectory)  # doctest: +SKIP
+    >>> # bin_sequence and occupancy take (times, positions); reversing the
+    >>> # arguments silently produces wrong results.
+    >>> bin_sequence = env.bin_sequence(times, trajectory)  # doctest: +SKIP
     >>> occupancy = env.occupancy(times, trajectory)  # doctest: +SKIP
 
 Compute a spatial firing-rate map from spikes::
@@ -183,18 +185,22 @@ Examples
 Create 2D environment and compute shortest path::
 
     >>> env = Environment.from_samples(  # doctest: +SKIP
-    ...     positions, bin_size=5.0, units='cm',
-    ...     connect_diagonal_neighbors=True
+    ...     positions, bin_size=5.0,
+    ...     connect_diagonal_neighbors=True,
     ... )
+    >>> env.units = 'cm'  # doctest: +SKIP
     >>> path = env.path_between(start_bin=0, goal_bin=100)  # doctest: +SKIP
-    >>> distance = env.distance_between(0, 100)  # doctest: +SKIP
+    >>> # distance_between takes coordinates; for graph distance between bin
+    >>> # indices use distance_to([target_bin]) and index by the source bin.
+    >>> distance = float(env.distance_to([100])[0])  # doctest: +SKIP
 
 Create 3D environment::
 
     >>> positions_3d = np.random.uniform(0, 100, (1000, 3))  # doctest: +SKIP
     >>> env_3d = Environment.from_samples(  # doctest: +SKIP
-    ...     positions_3d, bin_size=5.0, units='cm'
+    ...     positions_3d, bin_size=5.0,
     ... )
+    >>> env_3d.units = 'cm'  # doctest: +SKIP
     >>> env_3d.n_dims  # doctest: +SKIP
     3
 
@@ -202,9 +208,8 @@ Create environment from polygon::
 
     >>> from shapely.geometry import box  # doctest: +SKIP
     >>> polygon = box(0, 0, 100, 100)  # doctest: +SKIP
-    >>> env = Environment.from_polygon(  # doctest: +SKIP
-    ...     polygon, bin_size=5.0, units='cm'
-    ... )
+    >>> env = Environment.from_polygon(polygon, bin_size=5.0)  # doctest: +SKIP
+    >>> env.units = 'cm'  # doctest: +SKIP
 """
 
 import logging
