@@ -155,7 +155,7 @@ result = compute_spatial_rate(
 firing_rate = result.firing_rate  # Access firing rate from result object
 
 # Methods: "diffusion_kde" (default), "gaussian_kde", "binned" (legacy)
-# Result also has: result.occupancy, result.env, result.skaggs_information(), etc.
+# Result also has: result.occupancy, result.env, result.spatial_information(), etc.
 ```
 
 **Need decoding?** See [QUICKSTART.md - Bayesian Decoding](.claude/QUICKSTART.md#neural-analysis)
@@ -261,15 +261,14 @@ from neurospatial.encoding import compute_egocentric_rate
 # Compute firing field in egocentric polar coordinates (returns EgocentricRateResult)
 result = compute_egocentric_rate(
     env, spike_times, times, positions, headings, object_positions,
-    distance_range=(0, 50),  # cm from object
-    angle_range=(-np.pi, np.pi),  # full circle
-    distance_bin_size=5.0,  # 5 cm bins
-    angle_bin_size=np.pi/12,  # 15° bins
+    distance_range=(0.0, 50.0),  # min/max distance to object (cm)
+    n_distance_bins=10,          # radial resolution
+    n_direction_bins=12,         # angular resolution (full circle)
 )
 # result.firing_rate: firing rate in egocentric polar bins
 # result.ego_env: the egocentric polar environment
 # result.occupancy: time spent in each bin
-# result.preferred_distance(), result.preferred_angle(): peak location
+# result.preferred_distance(), result.preferred_direction(): peak location
 ```
 
 **Need metrics?** See [QUICKSTART.md - Object-Vector Cells](.claude/QUICKSTART.md#object-vector-cells)

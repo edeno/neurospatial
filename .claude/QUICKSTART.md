@@ -394,12 +394,15 @@ from neurospatial.encoding import compute_egocentric_rate
 object_positions = np.array([[50.0, 30.0], [80.0, 60.0]])  # 2 objects
 
 # Compute egocentric polar field (returns EgocentricRateResult)
+# `env` is the first positional arg; pass None for euclidean distance,
+# or pass the allocentric Environment for distance_metric="geodesic".
 result = compute_egocentric_rate(
-    spike_times=spike_times,          # Spike times for one neuron
-    times=times,                       # Trajectory timestamps
-    positions=positions,               # Animal positions (n_time, 2)
-    headings=headings,                 # Animal heading angles (radians)
-    object_positions=object_positions,
+    None,                              # env (required for geodesic only)
+    spike_times,                       # Spike times for one neuron
+    times,                             # Trajectory timestamps
+    positions,                         # Animal positions (n_time, 2)
+    headings,                          # Animal heading angles (radians)
+    object_positions,
     distance_range=(0.0, 50.0),        # Distance range (cm)
     n_distance_bins=10,                # Number of radial bins
     n_direction_bins=12,               # Number of angular bins
@@ -424,6 +427,7 @@ from neurospatial.encoding import compute_egocentric_rates
 # Compute fields for multiple neurons
 spike_times_list = [neuron1_spikes, neuron2_spikes, neuron3_spikes]
 result = compute_egocentric_rates(
+    None,  # env (required only for distance_metric="geodesic")
     spike_times_list, times, positions, headings, object_positions,
     distance_range=(0.0, 50.0),
     n_distance_bins=10,
@@ -556,10 +560,15 @@ df = result.to_dataframe()
 **Classify spatial view cells from result metrics:**
 
 ```python
-# Check classification on the canonical result object
-print(result.is_view_cell(min_info=0.5))
-print(f"View information: {result.view_spatial_information():.3f} bits/spike")
-print(f"Peak viewed location: {result.peak_view_location()}")
+# Single-neuron result from compute_view_rate(...)
+print(single.is_view_cell(min_info=0.5))
+print(f"View information: {single.view_spatial_information():.3f} bits/spike")
+print(f"Peak viewed location: {single.peak_view_location()}")
+
+# Batch result from compute_view_rates(...)
+print(batch.detect_view_cells(min_info=0.5))           # (n_neurons,) bool
+print(batch.view_spatial_information())                # (n_neurons,)
+print(batch.peak_view_locations())                     # (n_neurons, n_dims)
 ```
 
 **Simulate spatial view cells:**
