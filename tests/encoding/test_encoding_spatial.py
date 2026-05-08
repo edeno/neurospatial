@@ -21,6 +21,7 @@ import pytest
 from numpy.typing import NDArray
 
 from neurospatial import Environment
+from neurospatial.encoding._metrics import BatchScoresResult
 
 # ==============================================================================
 # Test fixtures
@@ -2021,7 +2022,7 @@ class TestSpatialRatesResultGridScores:
             bandwidth=5.0,
         )
         scores = result.grid_scores()
-        assert isinstance(scores, np.ndarray)
+        assert isinstance(scores, BatchScoresResult)
 
     def test_grid_scores_correct_shape(
         self,
@@ -2142,7 +2143,7 @@ class TestSpatialRatesResultBorderScores:
             bandwidth=5.0,
         )
         scores = result.border_scores()
-        assert isinstance(scores, np.ndarray)
+        assert isinstance(scores, BatchScoresResult)
 
     def test_border_scores_correct_shape(
         self,
@@ -2182,7 +2183,7 @@ class TestSpatialRatesResultBorderScores:
         )
         # Should not raise
         scores = result.border_scores(threshold=0.5)
-        assert isinstance(scores, np.ndarray)
+        assert isinstance(scores, BatchScoresResult)
 
     def test_border_scores_accepts_distance_metric_parameter(
         self,
@@ -2203,8 +2204,8 @@ class TestSpatialRatesResultBorderScores:
         # Should not raise with either metric
         scores_geodesic = result.border_scores(distance_metric="geodesic")
         scores_euclidean = result.border_scores(distance_metric="euclidean")
-        assert isinstance(scores_geodesic, np.ndarray)
-        assert isinstance(scores_euclidean, np.ndarray)
+        assert isinstance(scores_geodesic, BatchScoresResult)
+        assert isinstance(scores_euclidean, BatchScoresResult)
 
     def test_border_scores_accepts_min_area_parameter(
         self,
@@ -2224,7 +2225,7 @@ class TestSpatialRatesResultBorderScores:
         )
         # Should not raise with min_area parameter
         scores = result.border_scores(min_area=10.0)
-        assert isinstance(scores, np.ndarray)
+        assert isinstance(scores, BatchScoresResult)
 
     def test_border_scores_delegates_to_batch_border_scores(
         self,

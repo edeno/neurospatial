@@ -8,6 +8,8 @@ Following TDD approach: tests written before implementation.
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
@@ -745,6 +747,109 @@ class TestBatchGridScoresNonRegularGrid:
         assert scores.shape == (2,)
         # Sparse environments may not be compatible with FFT-based grid score
         # Implementation may return NaN or use graph-based method
+
+
+class TestBatchScoresFailuresMask:
+    """Regressions for M1 1.5: batch metric failures must be visible.
+
+    Previously batch_grid_scores and batch_border_scores swallowed
+    (ValueError, RuntimeError) and substituted NaN per neuron with no
+    indication. A caller running "fraction of grid cells" on the
+    output silently treated failures as zeros and tests passed.
+    Now both batch functions:
+
+    1. Track per-neuron failures in a parallel boolean mask.
+    2. Emit a UserWarning summarizing the failure count.
+    3. Return a BatchScoresResult so the mask is reachable.
+    """
+
+    @pytest.fixture
+    def env_2d_grid(self):
+        """Small regular 2D grid suitable for batch scoring."""
+        from neurospatial import Environment
+
+        x = np.linspace(-20, 20, 21)
+        xx, yy = np.meshgrid(x, x)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
+        return Environment.from_samples(positions, bin_size=2.0)
+
+    def test_batch_grid_scores_returns_result_class(self, env_2d_grid):
+        """batch_grid_scores returns BatchScoresResult, not a bare ndarray."""
+        from neurospatial.encoding._metrics import (
+            BatchScoresResult,
+            batch_grid_scores,
+        )
+
+        env = env_2d_grid
+        rng = np.random.default_rng(0)
+        firing_rates = rng.random((3, env.n_bins)) * 5.0
+        result = batch_grid_scores(env, firing_rates)
+        assert isinstance(result, BatchScoresResult)
+        assert result.scores.shape == (3,)
+        assert result.failures.shape == (3,)
+        assert result.failures.dtype == np.bool_
+
+    def test_batch_grid_scores_no_failures_no_warning(self, env_2d_grid):
+        """When every neuron's score computes cleanly, no warning fires."""
+        from neurospatial.encoding._metrics import batch_grid_scores
+
+        env = env_2d_grid
+        rng = np.random.default_rng(0)
+        firing_rates = rng.random((3, env.n_bins)) * 5.0
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # any warning becomes a failure
+            result = batch_grid_scores(env, firing_rates)
+        assert result.n_failures == 0
+        assert not result.failures.any()
+
+    def test_batch_border_scores_warns_and_flags_failed_neurons(
+        self,
+        env_2d_grid,
+    ):
+        """A monkey-patched border_score that raises must populate failures.
+
+        Patches ``neurospatial.encoding.border.border_score`` so the
+        first neuron raises ValueError. The batch wrapper must:
+
+        1. Continue computing the remaining neurons.
+        2. Set failures[0]=True (and not flag the others).
+        3. Set scores[0]=NaN (and leave the others finite).
+        4. Emit a UserWarning that mentions the failure count.
+        """
+        from neurospatial.encoding import _metrics
+
+        env = env_2d_grid
+        rng = np.random.default_rng(0)
+        firing_rates = rng.random((3, env.n_bins)) * 5.0
+
+        call_count = {"n": 0}
+
+        def fake_border_score(*args, **kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                raise ValueError("intentional test failure on neuron 0")
+            return 0.5  # something finite for the other two
+
+        # batch_border_scores does `from neurospatial.encoding.border
+        # import border_score` inside the function body, so patching the
+        # source module is the right place for the test to intercept.
+        import neurospatial.encoding.border as border_mod
+
+        original = border_mod.border_score
+        try:
+            border_mod.border_score = fake_border_score
+            with pytest.warns(
+                UserWarning, match=r"raised an exception for 1 of 3 neurons"
+            ):
+                result = _metrics.batch_border_scores(env, firing_rates)
+        finally:
+            border_mod.border_score = original
+
+        assert result.n_failures == 1
+        assert result.failures[0] and not result.failures[1] and not result.failures[2]
+        assert np.isnan(result.scores[0])
+        assert result.scores[1] == pytest.approx(0.5)
+        assert result.scores[2] == pytest.approx(0.5)
 
 
 # =============================================================================

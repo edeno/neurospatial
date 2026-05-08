@@ -56,6 +56,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
+from neurospatial.encoding._metrics import BatchScoresResult
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -889,7 +890,7 @@ class SpatialRatesResult(SpatialResultMixin):
         # Pass arrays directly - _metrics.py handles JAX dispatch
         return batch_sparsity(self.firing_rates, self.occupancy)
 
-    def grid_scores(self) -> NDArray[np.float64]:
+    def grid_scores(self) -> BatchScoresResult:
         """Grid scores (hexagonal periodicity) for all neurons.
 
         Quantifies the hexagonal periodicity of each neuron's firing rate map,
@@ -898,12 +899,12 @@ class SpatialRatesResult(SpatialResultMixin):
 
         Returns
         -------
-        ndarray, shape (n_neurons,)
-            Grid scores in range [-2, 2] for each neuron.
-            - score > 0.4: Strong hexagonal grid (typical threshold)
-            - score ≈ 0: No hexagonal structure
-            - score < 0: Anti-hexagonal structure (rare)
-            Returns NaN for neurons where grid score cannot be computed.
+        BatchScoresResult
+            Container with ``scores`` (shape ``(n_neurons,)``, range [-2, 2])
+            and ``failures`` (boolean mask, ``True`` for neurons whose grid
+            score computation raised an exception that was caught and
+            converted to NaN). Use ``result.scores`` for the raw array if
+            your downstream code expects a plain ndarray.
 
         Notes
         -----
@@ -945,7 +946,7 @@ class SpatialRatesResult(SpatialResultMixin):
         threshold: float = 0.3,
         min_area: float = 0.0,
         distance_metric: Literal["geodesic", "euclidean"] = "geodesic",
-    ) -> NDArray[np.float64]:
+    ) -> BatchScoresResult:
         """Border scores (boundary proximity tuning) for all neurons.
 
         Quantifies how much each neuron's firing field is aligned with
@@ -1079,13 +1080,17 @@ class SpatialRatesResult(SpatialResultMixin):
         n_neurons = len(self)
 
         spatial_info = self.spatial_information()
-        grid_scores = self.grid_scores()
-        border_scores = self.border_scores()
+        # grid_scores() / border_scores() return BatchScoresResult; pull
+        # the float array out via .scores for the boolean masks below.
+        grid_scores_arr = self.grid_scores().scores
+        border_scores_arr = self.border_scores().scores
 
         labels = np.full(n_neurons, "unclassified", dtype="<U14")
         is_place = spatial_info >= min_spatial_info
-        is_border = (~np.isnan(border_scores)) & (border_scores >= min_border_score)
-        is_grid = (~np.isnan(grid_scores)) & (grid_scores >= min_grid_score)
+        is_border = (~np.isnan(border_scores_arr)) & (
+            border_scores_arr >= min_border_score
+        )
+        is_grid = (~np.isnan(grid_scores_arr)) & (grid_scores_arr >= min_grid_score)
 
         # Priority: grid > border > place > unclassified (assign in reverse so
         # higher-priority labels overwrite lower ones).
@@ -1193,8 +1198,8 @@ class SpatialRatesResult(SpatialResultMixin):
             "peak_rate": self.peak_firing_rates(),
             "spatial_info": self.spatial_information(),
             "sparsity": self.sparsity(),
-            "grid_score": self.grid_scores(),
-            "border_score": self.border_scores(),
+            "grid_score": self.grid_scores().scores,
+            "border_score": self.border_scores().scores,
         }
 
         if include_classification:

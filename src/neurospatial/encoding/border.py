@@ -12,6 +12,7 @@ Solstad, T., Boccara, C. N., Kropff, E., Moser, M. B., & Moser, E. I. (2008).
 
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING, Literal
 
 import networkx as nx
@@ -240,7 +241,22 @@ def border_score(
                 sources=boundary_bins.tolist(),
                 weight="distance",
             )
-        except Exception:
+        except Exception as exc:
+            # Multi-source Dijkstra is the only failure mode reachable
+            # here (NetworkXError on a graph with missing 'distance'
+            # weights, or similar). Surface the failure as a warning
+            # before returning NaN: silently substituting NaN was the
+            # silent-wrong-result path that batch_border_scores then
+            # propagated unchanged.
+            warnings.warn(
+                f"border_score: geodesic distance computation failed "
+                f"({type(exc).__name__}: {exc}). Returning NaN. Pass "
+                "`distance_metric='euclidean'` to use straight-line "
+                "distance instead, or check that the environment's "
+                "connectivity graph has finite 'distance' edge weights.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
             return np.nan
 
         # For each field bin, get distance to nearest boundary (vectorized lookup)

@@ -33,12 +33,90 @@ References
 
 from __future__ import annotations
 
+import warnings
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial.encoding._base import _is_jax_array
+
+
+@dataclass(frozen=True)
+class BatchScoresResult:
+    """Container for per-neuron batch metric scores plus a per-neuron failure mask.
+
+    Returned by :func:`batch_grid_scores` and :func:`batch_border_scores` so a
+    caller can distinguish "this neuron's score is genuinely NaN (e.g.,
+    constant firing)" from "this neuron's score computation raised an
+    exception that we caught". Without the mask, both look like NaN to the
+    downstream code, so a population-level statistic ("fraction of grid
+    cells") silently treats failures as zeros and tests pass.
+
+    Attributes
+    ----------
+    scores : NDArray[np.float64], shape (n_neurons,)
+        Score for each neuron. NaN where computation could not produce a
+        meaningful value (constant firing, all-NaN input, or a caught
+        exception). Use the ``failures`` mask to tell the latter apart.
+    failures : NDArray[np.bool_], shape (n_neurons,)
+        ``True`` for any neuron whose score computation raised an exception
+        that was caught and converted to NaN. ``False`` otherwise (including
+        for neurons whose score is NaN for legitimate reasons such as
+        constant firing).
+
+    Notes
+    -----
+    The result behaves like an NDArray for indexing and length: ``len(result)``
+    returns ``n_neurons``, ``result[i]`` returns the i-th score (a float).
+    Generic helpers expecting a 1-D float array can use ``result.scores``.
+    """
+
+    scores: NDArray[np.float64]
+    failures: NDArray[np.bool_]
+
+    def __len__(self) -> int:
+        return int(self.scores.shape[0])
+
+    def __getitem__(self, idx: Any) -> Any:
+        # Delegate to the ndarray's own __getitem__ so all forms of
+        # ndarray indexing work transparently: integer (-> scalar float),
+        # slice (-> 1-D ndarray), boolean mask (-> 1-D ndarray), array
+        # of indices (-> 1-D ndarray). The downstream code that used to
+        # write `scores[~np.isnan(scores)]` against a plain ndarray
+        # keeps working when `scores` is a BatchScoresResult.
+        return self.scores[idx]
+
+    def __array__(self, dtype: Any = None) -> NDArray[np.float64]:
+        # NumPy ufuncs (np.isnan, np.where, etc.) call __array__ when
+        # given a non-ndarray input. Returning the underlying scores
+        # array lets callers use BatchScoresResult anywhere they used
+        # to use a plain (n_neurons,) array of scores.
+        if dtype is None:
+            return self.scores
+        return self.scores.astype(dtype)
+
+    @property
+    def shape(self) -> tuple[int, ...]:
+        """Shape of the underlying scores array, ``(n_neurons,)``.
+
+        Pass-through to ``self.scores.shape`` so callers reading
+        ``result.shape`` can keep doing so when the function previously
+        returned a plain ndarray.
+        """
+        return self.scores.shape
+
+    @property
+    def dtype(self) -> np.dtype[np.float64]:
+        """dtype of the underlying scores array (always ``np.float64``)."""
+        return self.scores.dtype
+
+    @property
+    def n_failures(self) -> int:
+        """Total number of neurons whose computation raised an exception."""
+        return int(self.failures.sum())
+
 
 if TYPE_CHECKING:
     from neurospatial import Environment
@@ -432,7 +510,7 @@ def batch_grid_scores(
     *,
     inner_radius_fraction: float = 0.2,
     outer_radius_fraction: float = 0.5,
-) -> NDArray[np.float64]:
+) -> BatchScoresResult:
     """Compute grid scores for multiple neurons.
 
     Computes grid score (hexagonal periodicity) for each neuron's firing
@@ -455,10 +533,20 @@ def batch_grid_scores(
 
     Returns
     -------
-    ndarray, shape (n_neurons,)
-        Grid scores in range [-2, 2] for each neuron. Returns NaN for neurons
-        where grid score cannot be computed (constant firing, invalid autocorrelation,
-        or non-regular grid environment).
+    BatchScoresResult
+        Container with two parallel arrays of length ``n_neurons``:
+
+        - ``scores``: grid scores in range [-2, 2]. NaN where grid score
+          cannot be computed (constant firing, invalid autocorrelation,
+          non-regular grid environment, or a caught exception).
+        - ``failures``: boolean mask, ``True`` for neurons whose
+          computation raised an exception that was caught and converted
+          to NaN. Use this to distinguish "score is NaN for legitimate
+          reasons (e.g., constant firing → unitless autocorrelation)"
+          from "score is NaN because grid_score crashed". A
+          ``UserWarning`` is also emitted when at least one neuron
+          fails so the failure surfaces in logs even if the caller
+          ignores ``failures``.
 
     Raises
     ------
@@ -499,8 +587,10 @@ def batch_grid_scores(
     >>> # Random firing patterns (5 neurons)
     >>> rng = np.random.default_rng(42)
     >>> firing_rates = rng.random((5, env.n_bins)) * 10
-    >>> scores = batch_grid_scores(env, firing_rates)
-    >>> scores.shape
+    >>> result = batch_grid_scores(env, firing_rates)
+    >>> result.scores.shape
+    (5,)
+    >>> result.failures.shape
     (5,)
 
     See Also
@@ -526,6 +616,7 @@ def batch_grid_scores(
 
     n_neurons = firing_rates.shape[0]
     scores = np.empty(n_neurons, dtype=np.float64)
+    failures = np.zeros(n_neurons, dtype=np.bool_)
 
     for i in range(n_neurons):
         firing_rate = firing_rates[i]
@@ -546,10 +637,23 @@ def batch_grid_scores(
                     outer_radius_fraction=outer_radius_fraction,
                 )
         except (ValueError, RuntimeError):
-            # Handle errors gracefully (e.g., constant firing, all NaN)
+            # Caught exception: record both NaN and the failure flag so
+            # the caller can distinguish this from a legitimate-NaN.
             scores[i] = np.nan
+            failures[i] = True
 
-    return scores
+    n_failed = int(failures.sum())
+    if n_failed > 0:
+        warnings.warn(
+            f"batch_grid_scores: grid_score raised an exception for "
+            f"{n_failed} of {n_neurons} neuron"
+            f"{'' if n_neurons == 1 else 's'}; their scores were set to "
+            "NaN. Inspect the `failures` mask on the returned "
+            "BatchScoresResult to identify which neurons failed.",
+            UserWarning,
+            stacklevel=2,
+        )
+    return BatchScoresResult(scores=scores, failures=failures)
 
 
 def batch_border_scores(
@@ -559,7 +663,7 @@ def batch_border_scores(
     threshold: float = 0.3,
     min_area: float = 0.0,
     distance_metric: str = "geodesic",
-) -> NDArray[np.float64]:
+) -> BatchScoresResult:
     """Compute border scores for multiple neurons.
 
     Computes border score (boundary proximity tuning) for each neuron's firing
@@ -589,9 +693,16 @@ def batch_border_scores(
 
     Returns
     -------
-    ndarray, shape (n_neurons,)
-        Border scores in range [-1, 1] for each neuron. Returns NaN for neurons
-        where border score cannot be computed (zero firing, invalid field, etc.).
+    BatchScoresResult
+        Container with two parallel arrays of length ``n_neurons``:
+
+        - ``scores``: border scores in range [-1, 1]. NaN where border
+          score cannot be computed (zero firing, invalid field, no
+          field bins, or a caught exception).
+        - ``failures``: boolean mask, ``True`` for neurons whose
+          ``border_score`` call raised ``ValueError`` or
+          ``RuntimeError`` and was caught. A ``UserWarning`` is also
+          emitted when at least one neuron fails.
 
     Raises
     ------
@@ -657,6 +768,7 @@ def batch_border_scores(
 
     n_neurons = firing_rates.shape[0]
     scores = np.empty(n_neurons, dtype=np.float64)
+    failures = np.zeros(n_neurons, dtype=np.bool_)
 
     for i in range(n_neurons):
         firing_rate = firing_rates[i]
@@ -670,10 +782,23 @@ def batch_border_scores(
                 distance_metric=distance_metric,  # type: ignore[arg-type]
             )
         except (ValueError, RuntimeError):
-            # Handle errors gracefully (e.g., all NaN, no field bins)
+            # Caught exception: record both NaN and the failure flag so
+            # the caller can distinguish this from a legitimate-NaN.
             scores[i] = np.nan
+            failures[i] = True
 
-    return scores
+    n_failed = int(failures.sum())
+    if n_failed > 0:
+        warnings.warn(
+            f"batch_border_scores: border_score raised an exception for "
+            f"{n_failed} of {n_neurons} neuron"
+            f"{'' if n_neurons == 1 else 's'}; their scores were set to "
+            "NaN. Inspect the `failures` mask on the returned "
+            "BatchScoresResult to identify which neurons failed.",
+            UserWarning,
+            stacklevel=2,
+        )
+    return BatchScoresResult(scores=scores, failures=failures)
 
 
 def selectivity(
