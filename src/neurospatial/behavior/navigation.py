@@ -78,7 +78,7 @@ Complete analysis pipeline for a spatial navigation task::
 
     # 1. Segment trajectory into trials
     trials = segment_trials(
-        trajectory_bins,
+        position_bins,
         times,
         env,
         start_region="home",
@@ -87,7 +87,7 @@ Complete analysis pipeline for a spatial navigation task::
 
     # 2. Extract trial-based regressors
     start_bins, goal_bins = trials_to_region_arrays(trials, times, env)
-    progress = path_progress(env, trajectory_bins, start_bins, goal_bins)
+    progress = path_progress(env, position_bins, start_bins, goal_bins)
 
     # 3. Compute efficiency
     result = compute_path_efficiency(env, positions, times, goal)
@@ -400,14 +400,14 @@ def trials_to_region_arrays(
 
     Examples
     --------
-    >>> trials = segment_trials(trajectory_bins, times, env, ...)  # doctest: +SKIP
+    >>> trials = segment_trials(position_bins, times, env, ...)  # doctest: +SKIP
     >>> start_bins, goal_bins = trials_to_region_arrays(
     ...     trials, times, env
     ... )  # doctest: +SKIP
     >>> progress = path_progress(
-    ...     env, trajectory_bins, start_bins, goal_bins
+    ...     env, position_bins, start_bins, goal_bins
     ... )  # doctest: +SKIP
-    >>> dist = distance_to_region(env, trajectory_bins, goal_bins)  # doctest: +SKIP
+    >>> dist = distance_to_region(env, position_bins, goal_bins)  # doctest: +SKIP
 
     See Also
     --------
@@ -442,7 +442,7 @@ def trials_to_region_arrays(
 
 def path_progress(
     env: Environment,
-    trajectory_bins: NDArray[np.int_],
+    position_bins: NDArray[np.int_],
     start_bins: NDArray[np.int_],
     goal_bins: NDArray[np.int_],
     *,
@@ -451,14 +451,14 @@ def path_progress(
     """Compute normalized path progress from start to goal (0 -> 1).
 
     Fully vectorized computation over entire session. For each timepoint t:
-        progress[t] = distance(start_bins[t], trajectory_bins[t]) /
+        progress[t] = distance(start_bins[t], position_bins[t]) /
                       distance(start_bins[t], goal_bins[t])
 
     Parameters
     ----------
     env : Environment
         Spatial environment.
-    trajectory_bins : NDArray[np.int_], shape (n_samples,)
+    position_bins : NDArray[np.int_], shape (n_samples,)
         Current bin index at each timepoint.
     start_bins : NDArray[np.int_], shape (n_samples,)
         Start bin for each timepoint. Can be constant (single trial) or
@@ -499,18 +499,18 @@ def path_progress(
     >>> # Single trial - constant start/goal
     >>> progress = path_progress(  # doctest: +SKIP
     ...     env,
-    ...     trajectory_bins,
-    ...     start_bins=np.full(len(trajectory_bins), 10),
-    ...     goal_bins=np.full(len(trajectory_bins), 50),
+    ...     position_bins,
+    ...     start_bins=np.full(len(position_bins), 10),
+    ...     goal_bins=np.full(len(position_bins), 50),
     ... )
 
     >>> # Multiple trials - construct arrays once, compute once
-    >>> trials = segment_trials(trajectory_bins, times, env, ...)  # doctest: +SKIP
+    >>> trials = segment_trials(position_bins, times, env, ...)  # doctest: +SKIP
     >>> start_bins, goal_bins = trials_to_region_arrays(
     ...     trials, times, env
     ... )  # doctest: +SKIP
     >>> progress = path_progress(
-    ...     env, trajectory_bins, start_bins, goal_bins
+    ...     env, position_bins, start_bins, goal_bins
     ... )  # doctest: +SKIP
 
     See Also
@@ -525,10 +525,10 @@ def path_progress(
         raise EnvironmentNotFittedError("Environment", "path_progress")
 
     # Validate array lengths
-    n_samples = len(trajectory_bins)
+    n_samples = len(position_bins)
     if len(start_bins) != n_samples or len(goal_bins) != n_samples:
         raise ValueError(
-            f"Array length mismatch: trajectory_bins has {n_samples} samples, "
+            f"Array length mismatch: position_bins has {n_samples} samples, "
             f"but start_bins has {len(start_bins)} and goal_bins has {len(goal_bins)}. "
             f"All arrays must have the same length."
         )
@@ -550,7 +550,7 @@ def path_progress(
             dist_matrix = euclidean_distance_matrix(env.bin_centers)
 
         # Vectorized lookup: distance from start to current position
-        distances_from_start = dist_matrix[start_bins, trajectory_bins]
+        distances_from_start = dist_matrix[start_bins, position_bins]
 
         # Vectorized lookup: total distance from start to goal
         total_distances = dist_matrix[start_bins, goal_bins]
@@ -579,9 +579,7 @@ def path_progress(
                 bin_centers=env.bin_centers if metric == "euclidean" else None,
             )
 
-            distances_from_start[pair_mask] = start_dist_field[
-                trajectory_bins[pair_mask]
-            ]
+            distances_from_start[pair_mask] = start_dist_field[position_bins[pair_mask]]
             total_distances[pair_mask] = start_dist_field[goal_bin]
 
     # Compute progress
@@ -595,7 +593,7 @@ def path_progress(
     disconnected = np.isinf(total_distances)
     progress[disconnected] = np.nan
 
-    invalid_bins = (start_bins == -1) | (goal_bins == -1) | (trajectory_bins == -1)
+    invalid_bins = (start_bins == -1) | (goal_bins == -1) | (position_bins == -1)
     progress[invalid_bins] = np.nan
 
     progress = np.clip(progress, 0.0, 1.0)
@@ -605,7 +603,7 @@ def path_progress(
 
 def distance_to_region(
     env: Environment,
-    trajectory_bins: NDArray[np.int_],
+    position_bins: NDArray[np.int_],
     target_bins: NDArray[np.int_] | int,
     *,
     metric: Literal["geodesic", "euclidean"] = "geodesic",
@@ -620,7 +618,7 @@ def distance_to_region(
     ----------
     env : Environment
         Spatial environment.
-    trajectory_bins : NDArray[np.int_], shape (n_samples,)
+    position_bins : NDArray[np.int_], shape (n_samples,)
         Bin indices over time.
     target_bins : NDArray[np.int_] or int
         Target bin specification:
@@ -647,7 +645,7 @@ def distance_to_region(
     Examples
     --------
     >>> goal_bins = env.bins_in_region("reward_zone")  # doctest: +SKIP
-    >>> dist = distance_to_region(env, trajectory_bins, goal_bins[0])  # doctest: +SKIP
+    >>> dist = distance_to_region(env, position_bins, goal_bins[0])  # doctest: +SKIP
 
     See Also
     --------
@@ -663,21 +661,21 @@ def distance_to_region(
     is_scalar_target = np.isscalar(target_bins)
 
     if is_scalar_target:
-        n_samples = len(trajectory_bins)
+        n_samples = len(position_bins)
         target_int = int(target_bins)
 
         if target_int == -1:
             return np.full(n_samples, np.nan, dtype=np.float64)
 
         dist_field = env.distance_to([target_int], metric=metric)  # type: ignore[misc]
-        distances = dist_field[trajectory_bins].astype(np.float64)
+        distances = dist_field[position_bins].astype(np.float64)
 
-        invalid_mask = trajectory_bins == -1
+        invalid_mask = position_bins == -1
         distances[invalid_mask] = np.nan
         return distances
 
     else:
-        n_samples = len(trajectory_bins)
+        n_samples = len(position_bins)
 
         if env.n_bins < 5000:
             from neurospatial.ops.distance import (
@@ -692,7 +690,7 @@ def distance_to_region(
             else:
                 dist_matrix = euclidean_distance_matrix(env.bin_centers)
 
-            distances = dist_matrix[trajectory_bins, target_bins]
+            distances = dist_matrix[position_bins, target_bins]
         else:
             unique_targets = np.unique(target_bins)
             unique_targets = unique_targets[unique_targets != -1]
@@ -703,9 +701,9 @@ def distance_to_region(
                 mask = target_bins == target
                 if np.any(mask):
                     dist_field = env.distance_to([int(target)], metric=metric)  # type: ignore[misc]
-                    distances[mask] = dist_field[trajectory_bins[mask]]
+                    distances[mask] = dist_field[position_bins[mask]]
 
-        invalid_mask = (trajectory_bins == -1) | (target_bins == -1)
+        invalid_mask = (position_bins == -1) | (target_bins == -1)
         distances[invalid_mask] = np.nan
 
         return distances
@@ -713,7 +711,7 @@ def distance_to_region(
 
 def cost_to_goal(
     env: Environment,
-    trajectory_bins: NDArray[np.int_],
+    position_bins: NDArray[np.int_],
     goal_bins: NDArray[np.int_] | int,
     *,
     cost_map: NDArray[np.float64] | None = None,
@@ -731,7 +729,7 @@ def cost_to_goal(
     ----------
     env : Environment
         Spatial environment.
-    trajectory_bins : NDArray[np.int_], shape (n_samples,)
+    position_bins : NDArray[np.int_], shape (n_samples,)
         Bin indices over time.
     goal_bins : NDArray[np.int_] or int
         Target bin(s). Can be scalar (constant goal) or array (dynamic goal).
@@ -748,13 +746,13 @@ def cost_to_goal(
     Examples
     --------
     >>> # Simple: uniform cost (equivalent to geodesic distance)
-    >>> cost = cost_to_goal(env, trajectory_bins, goal_bin)  # doctest: +SKIP
+    >>> cost = cost_to_goal(env, position_bins, goal_bin)  # doctest: +SKIP
 
     >>> # Learned avoidance: avoid punishment zone
     >>> cost_map = np.ones(env.n_bins)  # doctest: +SKIP
     >>> cost_map[punishment_bins] = 10.0  # doctest: +SKIP
     >>> cost = cost_to_goal(
-    ...     env, trajectory_bins, goal_bin, cost_map=cost_map
+    ...     env, position_bins, goal_bin, cost_map=cost_map
     ... )  # doctest: +SKIP
 
     See Also
@@ -765,7 +763,7 @@ def cost_to_goal(
 
     # Case 1: No cost modifications
     if cost_map is None and terrain_difficulty is None:
-        return distance_to_region(env, trajectory_bins, goal_bins, metric="geodesic")
+        return distance_to_region(env, position_bins, goal_bins, metric="geodesic")
 
     # Case 2: Cost modifications - build weighted graph
     g_weighted = env.connectivity.copy()
@@ -785,9 +783,9 @@ def cost_to_goal(
 
     if isinstance(goal_bins, (int, np.integer)):
         dist_field = distance_field(g_weighted, [int(goal_bins)], weight="weight")
-        costs = dist_field[trajectory_bins]
+        costs = dist_field[position_bins]
 
-        invalid_mask = (trajectory_bins == -1) | (goal_bins == -1)
+        invalid_mask = (position_bins == -1) | (goal_bins == -1)
         costs[invalid_mask] = np.nan
 
         return costs
@@ -795,15 +793,15 @@ def cost_to_goal(
         unique_goals = np.unique(goal_bins)
         unique_goals = unique_goals[unique_goals != -1]
 
-        costs = np.full(len(trajectory_bins), np.nan, dtype=np.float64)
+        costs = np.full(len(position_bins), np.nan, dtype=np.float64)
 
         for goal in unique_goals:
             mask = goal_bins == goal
             if np.any(mask):
                 dist_field = distance_field(g_weighted, [int(goal)], weight="weight")
-                costs[mask] = dist_field[trajectory_bins[mask]]
+                costs[mask] = dist_field[position_bins[mask]]
 
-        invalid_mask = (trajectory_bins == -1) | (goal_bins == -1)
+        invalid_mask = (position_bins == -1) | (goal_bins == -1)
         costs[invalid_mask] = np.nan
 
         return costs
@@ -830,7 +828,7 @@ def time_to_goal(
 
     Examples
     --------
-    >>> trials = segment_trials(trajectory_bins, times, env, ...)  # doctest: +SKIP
+    >>> trials = segment_trials(position_bins, times, env, ...)  # doctest: +SKIP
     >>> ttg = time_to_goal(times, trials)  # doctest: +SKIP
     >>> approach_mask = (ttg > 0) & (ttg <= 2.0)  # Last 2 seconds  # doctest: +SKIP
 
@@ -856,7 +854,7 @@ def time_to_goal(
 
 def graph_turn_sequence(
     env: Environment,
-    trajectory_bins: NDArray[np.int_],
+    position_bins: NDArray[np.int_],
     start_bin: int,
     end_bin: int,
     *,
@@ -871,7 +869,7 @@ def graph_turn_sequence(
     ----------
     env : Environment
         Spatial environment (any layout type).
-    trajectory_bins : NDArray[np.int_], shape (n_samples,)
+    position_bins : NDArray[np.int_], shape (n_samples,)
         Bin indices along trajectory (single trial or segment).
     start_bin, end_bin : int
         Start and end bin indices to orient path direction.
@@ -888,9 +886,7 @@ def graph_turn_sequence(
     --------
     >>> for trial in trials:  # doctest: +SKIP
     ...     mask = (times >= trial.start_time) & (times <= trial.end_time)
-    ...     turn_seq = graph_turn_sequence(
-    ...         env, trajectory_bins[mask], start_bin, end_bin
-    ...     )
+    ...     turn_seq = graph_turn_sequence(env, position_bins[mask], start_bin, end_bin)
     ...     print(f"Trial: {turn_seq}")  # "left" or "right"
 
     See Also
@@ -902,7 +898,7 @@ def graph_turn_sequence(
 
         raise EnvironmentNotFittedError("Environment", "graph_turn_sequence")
 
-    consecutive_bins = np.column_stack([trajectory_bins[:-1], trajectory_bins[1:]])
+    consecutive_bins = np.column_stack([position_bins[:-1], position_bins[1:]])
     transition_counts = Counter(map(tuple, consecutive_bins))
 
     valid_transitions = [
@@ -915,8 +911,8 @@ def graph_turn_sequence(
         return ""
 
     # Get unique bins preserving order (first occurrence)
-    _, unique_indices = np.unique(trajectory_bins, return_index=True)
-    unique_bins_ordered = trajectory_bins[np.sort(unique_indices)]
+    _, unique_indices = np.unique(position_bins, return_index=True)
+    unique_bins_ordered = position_bins[np.sort(unique_indices)]
 
     # Build set of valid bins from transitions
     valid_bins = set()
@@ -1009,7 +1005,7 @@ def goal_pair_direction_labels(
 
     Examples
     --------
-    >>> trials = segment_trials(trajectory_bins, times, env, ...)  # doctest: +SKIP
+    >>> trials = segment_trials(position_bins, times, env, ...)  # doctest: +SKIP
     >>> labels = goal_pair_direction_labels(times, trials)  # doctest: +SKIP
     >>> result = compute_directional_place_fields(  # doctest: +SKIP
     ...     env, spike_times, times, positions, labels
@@ -1852,11 +1848,9 @@ def approach_rate(
         distances = np.linalg.norm(goal_vec, axis=1)
     else:
         assert env is not None
-        trajectory_bins = env.bin_at(positions)
+        position_bins = env.bin_at(positions)
         goal_bin = env.bin_at(goal)
-        distances = distance_to_region(
-            env, trajectory_bins, goal_bin, metric="geodesic"
-        )
+        distances = distance_to_region(env, position_bins, goal_bin, metric="geodesic")
 
     dt = np.diff(times)
     d_distance = np.diff(distances)

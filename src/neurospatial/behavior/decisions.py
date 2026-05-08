@@ -259,7 +259,7 @@ class DecisionAnalysisResult:
 
 
 def decision_region_entry_time(
-    trajectory_bins: NDArray[np.int64],
+    position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
     env: Environment,
     region: str,
@@ -268,10 +268,10 @@ def decision_region_entry_time(
 
     Parameters
     ----------
-    trajectory_bins : NDArray[np.int64], shape (n_samples,)
+    position_bins : NDArray[np.int64], shape (n_samples,)
         Sequence of bin indices representing the trajectory.
     times : NDArray[np.float64], shape (n_samples,)
-        Timestamps corresponding to trajectory bins (seconds).
+        Timestamps corresponding to position bins (seconds).
     env : Environment
         Environment with region definitions.
     region : str
@@ -292,7 +292,7 @@ def decision_region_entry_time(
     Examples
     --------
     >>> entry_time = decision_region_entry_time(
-    ...     trajectory_bins, times, env, "center"
+    ...     position_bins, times, env, "center"
     ... )  # doctest: +SKIP
     >>> print(f"Entered decision region at t={entry_time:.2f}s")  # doctest: +SKIP
     """
@@ -309,7 +309,7 @@ def decision_region_entry_time(
     region_bin_set = set(region_bins)
 
     # Find first entry
-    for i, bin_idx in enumerate(trajectory_bins):
+    for i, bin_idx in enumerate(position_bins):
         if bin_idx in region_bin_set:
             return float(times[i])
 
@@ -644,7 +644,7 @@ def geodesic_voronoi_labels(
 
 def distance_to_decision_boundary(
     env: Environment,
-    trajectory_bins: NDArray[np.int_],
+    position_bins: NDArray[np.int_],
     goal_bins: list[int] | NDArray[np.int_],
 ) -> NDArray[np.float64]:
     """Compute distance to nearest decision boundary for each trajectory point.
@@ -656,7 +656,7 @@ def distance_to_decision_boundary(
     ----------
     env : Environment
         Spatial environment.
-    trajectory_bins : NDArray[np.int_], shape (n_samples,)
+    position_bins : NDArray[np.int_], shape (n_samples,)
         Bin indices along the trajectory.
     goal_bins : list[int] or NDArray[np.int_]
         Bin indices of goal locations.
@@ -675,7 +675,7 @@ def distance_to_decision_boundary(
     Examples
     --------
     >>> distances = distance_to_decision_boundary(
-    ...     env, trajectory_bins, goal_bins
+    ...     env, position_bins, goal_bins
     ... )  # doctest: +SKIP
     >>> commitment_mask = distances > 20.0  # Committed to a goal  # doctest: +SKIP
     """
@@ -686,7 +686,7 @@ def distance_to_decision_boundary(
 
     if n_goals < 2:
         # With single goal, there's no boundary - return infinity
-        return np.full(len(trajectory_bins), np.inf)
+        return np.full(len(position_bins), np.inf)
 
     # Compute distance from each goal to all bins
     all_distances = np.zeros((n_goals, env.n_bins))
@@ -701,9 +701,9 @@ def distance_to_decision_boundary(
 
     # For each trajectory bin, compute distance to boundary
     # Boundary distance = |d1 - d2| where d1, d2 are distances to two nearest goals
-    boundary_distances = np.zeros(len(trajectory_bins))
+    boundary_distances = np.zeros(len(position_bins))
 
-    for i, bin_idx in enumerate(trajectory_bins):
+    for i, bin_idx in enumerate(position_bins):
         if bin_idx < 0 or bin_idx >= env.n_bins:
             boundary_distances[i] = np.nan
             continue
@@ -735,7 +735,7 @@ def distance_to_decision_boundary(
 
 
 def detect_boundary_crossings(
-    trajectory_bins: NDArray[np.int_],
+    position_bins: NDArray[np.int_],
     voronoi_labels: NDArray[np.int_],
     times: NDArray[np.float64],
 ) -> tuple[list[float], list[tuple[int, int]]]:
@@ -743,7 +743,7 @@ def detect_boundary_crossings(
 
     Parameters
     ----------
-    trajectory_bins : NDArray[np.int_], shape (n_samples,)
+    position_bins : NDArray[np.int_], shape (n_samples,)
         Bin indices along the trajectory.
     voronoi_labels : NDArray[np.int_], shape (n_bins,)
         Voronoi label for each bin (from geodesic_voronoi_labels).
@@ -760,15 +760,15 @@ def detect_boundary_crossings(
     Examples
     --------
     >>> crossing_times, directions = detect_boundary_crossings(
-    ...     trajectory_bins, voronoi_labels, times
+    ...     position_bins, voronoi_labels, times
     ... )  # doctest: +SKIP
     >>> print(f"Animal crossed boundary {len(crossing_times)} times")  # doctest: +SKIP
     """
-    trajectory_bins = np.asarray(trajectory_bins)
+    position_bins = np.asarray(position_bins)
     times = np.asarray(times)
 
     # Get label for each trajectory point
-    trajectory_labels = voronoi_labels[trajectory_bins]
+    trajectory_labels = voronoi_labels[position_bins]
 
     # Vectorized crossing detection
     # Find where labels change between consecutive frames
@@ -878,13 +878,11 @@ def compute_decision_analysis(
                 f"Available regions: {available}."
             )
 
-    # Get trajectory bins
-    trajectory_bins = env.bin_at(positions)
+    # Get position bins
+    position_bins = env.bin_at(positions)
 
     # Find entry time to decision region
-    entry_time = decision_region_entry_time(
-        trajectory_bins, times, env, decision_region
-    )
+    entry_time = decision_region_entry_time(position_bins, times, env, decision_region)
 
     # Compute pre-decision metrics
     pre_decision = compute_pre_decision_metrics(
@@ -905,10 +903,10 @@ def compute_decision_analysis(
             )
     voronoi_labels = geodesic_voronoi_labels(env, goal_bins)
 
-    trajectory_labels = voronoi_labels[trajectory_bins]
-    boundary_distances = distance_to_decision_boundary(env, trajectory_bins, goal_bins)
+    trajectory_labels = voronoi_labels[position_bins]
+    boundary_distances = distance_to_decision_boundary(env, position_bins, goal_bins)
     crossing_times, crossing_directions = detect_boundary_crossings(
-        trajectory_bins, voronoi_labels, times
+        position_bins, voronoi_labels, times
     )
 
     boundary = DecisionBoundaryMetrics(
@@ -923,7 +921,7 @@ def compute_decision_analysis(
     for i, goal_region in enumerate(goal_regions):
         goal_region_bins = set(env.bins_in_region(goal_region))
         # Check if trajectory ends in this goal region
-        for bin_idx in reversed(trajectory_bins):
+        for bin_idx in reversed(position_bins):
             if bin_idx in goal_region_bins:
                 chosen_goal = i
                 break

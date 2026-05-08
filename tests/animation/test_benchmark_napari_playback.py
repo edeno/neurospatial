@@ -9,9 +9,13 @@ This test module validates the benchmark script:
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+from types import ModuleType
 
 import numpy as np
 import pytest
@@ -19,6 +23,38 @@ import pytest
 # Path to the benchmark script
 SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
 BENCHMARK_SCRIPT = SCRIPTS_DIR / "benchmark_napari_playback.py"
+
+
+@contextmanager
+def _loaded_benchmark_module() -> Iterator[ModuleType]:
+    """Import benchmark script while restoring process-global state afterward."""
+    module_name = "benchmark_napari_playback"
+    imported_module_names = (
+        module_name,
+        "benchmark_datasets",
+        "benchmark_datasets.datasets",
+    )
+    previous_modules = {
+        name: sys.modules[name] for name in imported_module_names if name in sys.modules
+    }
+    original_sys_path = sys.path.copy()
+
+    spec = importlib.util.spec_from_file_location(module_name, BENCHMARK_SCRIPT)
+    if spec is None or spec.loader is None:
+        pytest.skip("Could not load benchmark script")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+        yield module
+    finally:
+        sys.path[:] = original_sys_path
+        for name in imported_module_names:
+            if name in previous_modules:
+                sys.modules[name] = previous_modules[name]
+            else:
+                sys.modules.pop(name, None)
 
 
 class TestBenchmarkScriptExists:
@@ -46,17 +82,8 @@ class TestBenchmarkArgumentParsing:
     @pytest.fixture
     def benchmark_module(self):
         """Import the benchmark module."""
-        import importlib.util
-
-        spec = importlib.util.spec_from_file_location(
-            "benchmark_napari_playback", BENCHMARK_SCRIPT
-        )
-        if spec is None or spec.loader is None:
-            pytest.skip("Could not load benchmark script")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules["benchmark_napari_playback"] = module
-        spec.loader.exec_module(module)
-        return module
+        with _loaded_benchmark_module() as module:
+            yield module
 
     def test_has_argument_parser(self, benchmark_module):
         """Module should have create_argument_parser or parse_args function."""
@@ -139,17 +166,8 @@ class TestBenchmarkDataGeneration:
     @pytest.fixture
     def benchmark_module(self):
         """Import the benchmark module."""
-        import importlib.util
-
-        spec = importlib.util.spec_from_file_location(
-            "benchmark_napari_playback", BENCHMARK_SCRIPT
-        )
-        if spec is None or spec.loader is None:
-            pytest.skip("Could not load benchmark script")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules["benchmark_napari_playback"] = module
-        spec.loader.exec_module(module)
-        return module
+        with _loaded_benchmark_module() as module:
+            yield module
 
     def test_generate_benchmark_data_function(self, benchmark_module):
         """Module should have generate_benchmark_data function."""
@@ -200,17 +218,8 @@ class TestOverlayCreation:
     @pytest.fixture
     def benchmark_module(self):
         """Import the benchmark module."""
-        import importlib.util
-
-        spec = importlib.util.spec_from_file_location(
-            "benchmark_napari_playback", BENCHMARK_SCRIPT
-        )
-        if spec is None or spec.loader is None:
-            pytest.skip("Could not load benchmark script")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules["benchmark_napari_playback"] = module
-        spec.loader.exec_module(module)
-        return module
+        with _loaded_benchmark_module() as module:
+            yield module
 
     def test_create_selected_overlays_function(self, benchmark_module):
         """Module should have create_selected_overlays function."""
@@ -330,17 +339,8 @@ class TestTimingMetricsOutput:
     @pytest.fixture
     def benchmark_module(self):
         """Import the benchmark module."""
-        import importlib.util
-
-        spec = importlib.util.spec_from_file_location(
-            "benchmark_napari_playback", BENCHMARK_SCRIPT
-        )
-        if spec is None or spec.loader is None:
-            pytest.skip("Could not load benchmark script")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules["benchmark_napari_playback"] = module
-        spec.loader.exec_module(module)
-        return module
+        with _loaded_benchmark_module() as module:
+            yield module
 
     def test_print_timing_metrics_function(self, benchmark_module):
         """Module should have print_timing_metrics function."""
@@ -411,17 +411,8 @@ class TestEdgeCases:
     @pytest.fixture
     def benchmark_module(self):
         """Import the benchmark module."""
-        import importlib.util
-
-        spec = importlib.util.spec_from_file_location(
-            "benchmark_napari_playback", BENCHMARK_SCRIPT
-        )
-        if spec is None or spec.loader is None:
-            pytest.skip("Could not load benchmark script")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules["benchmark_napari_playback"] = module
-        spec.loader.exec_module(module)
-        return module
+        with _loaded_benchmark_module() as module:
+            yield module
 
     def test_default_overlay_behavior(self, benchmark_module, rng):
         """When no overlays specified, should return empty list."""
@@ -508,17 +499,8 @@ class TestTimerContextManager:
     @pytest.fixture
     def benchmark_module(self):
         """Import the benchmark module."""
-        import importlib.util
-
-        spec = importlib.util.spec_from_file_location(
-            "benchmark_napari_playback", BENCHMARK_SCRIPT
-        )
-        if spec is None or spec.loader is None:
-            pytest.skip("Could not load benchmark script")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules["benchmark_napari_playback"] = module
-        spec.loader.exec_module(module)
-        return module
+        with _loaded_benchmark_module() as module:
+            yield module
 
     def test_timer_measures_elapsed_time(self, benchmark_module):
         """Timer should measure elapsed time correctly."""

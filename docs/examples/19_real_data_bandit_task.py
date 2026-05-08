@@ -40,7 +40,6 @@
 # %%
 # Import the data loading function
 import importlib.util
-import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -48,26 +47,40 @@ import numpy as np
 
 from neurospatial import Environment
 from neurospatial.animation import HeadDirectionOverlay, PositionOverlay
-from neurospatial.encoding.place import (
-    compute_place_field,
+from neurospatial.encoding import (
+    compute_spatial_rate,
     detect_place_fields,
     field_size,
     rate_map_centroid,
-    skaggs_information,
     sparsity,
+    spatial_information,
 )
+
+
+def _find_project_root(start: Path) -> Path:
+    """Find the project root containing the real-data helper."""
+    for path in (start, *start.parents):
+        if (path / "data" / "load_bandit_data.py").exists():
+            return path
+    raise FileNotFoundError(f"Could not find data/load_bandit_data.py from {start}")
+
 
 # Determine base path (works in both scripts and notebooks)
 try:
     # When running as a script
-    _base_path = Path(__file__).parent.parent
+    _start_path = Path(__file__).resolve().parent
 except NameError:
     # When running in Jupyter notebook
-    _base_path = Path.cwd().parent if Path.cwd().name == "examples" else Path.cwd()
+    _start_path = Path.cwd().resolve()
+_base_path = _find_project_root(_start_path)
 
-# Add data directory to path for imports
-sys.path.insert(0, str(_base_path / "data"))
-from load_bandit_data import load_neural_recording_from_files
+_loader_path = _base_path / "data" / "load_bandit_data.py"
+_loader_spec = importlib.util.spec_from_file_location("load_bandit_data", _loader_path)
+if _loader_spec is None or _loader_spec.loader is None:
+    raise ImportError(f"Could not load bandit data helper from {_loader_path}")
+_loader_module = importlib.util.module_from_spec(_loader_spec)
+_loader_spec.loader.exec_module(_loader_module)
+load_neural_recording_from_files = _loader_module.load_neural_recording_from_files
 
 # Configure matplotlib
 plt.rcParams["figure.figsize"] = (14, 10)
@@ -345,15 +358,16 @@ for unit_idx in example_units:
     spikes = spike_times_all[unit_idx]
 
     # Compute place field using diffusion KDE (boundary-aware)
-    firing_rate = compute_place_field(
+    result = compute_spatial_rate(
         env_2d,
         spikes,
         times_array,
         positions_array,
         smoothing_method="diffusion_kde",
         bandwidth=8.0,  # 8 cm smoothing
-        min_occupancy_seconds=0.5,
+        min_occupancy=0.5,
     )
+    firing_rate = result.firing_rate
 
     place_fields[unit_idx] = firing_rate
 
@@ -361,7 +375,7 @@ for unit_idx in example_units:
     occupancy = env_2d.occupancy(times_array, positions_array, return_seconds=True)
 
     # Skaggs spatial information (bits/spike)
-    info = skaggs_information(firing_rate, occupancy, base=2.0)
+    info = spatial_information(firing_rate, occupancy, base=2.0)
 
     # Sparsity
     sparse = sparsity(firing_rate, occupancy)
@@ -738,19 +752,20 @@ for unit_idx in active_units:
     spikes = spike_times_all[unit_idx]
 
     # Compute place field
-    firing_rate = compute_place_field(
+    result = compute_spatial_rate(
         env_2d,
         spikes,
         times_array,
         positions_array,
         smoothing_method="diffusion_kde",
         bandwidth=8.0,
-        min_occupancy_seconds=0.5,
+        min_occupancy=0.5,
     )
+    firing_rate = result.firing_rate
 
     # Compute metrics
     occupancy = env_2d.occupancy(times_array, positions_array, return_seconds=True)
-    info = skaggs_information(firing_rate, occupancy, base=2.0)
+    info = spatial_information(firing_rate, occupancy, base=2.0)
     sparse = sparsity(firing_rate, occupancy)
     mean_rate = len(spikes) / duration
     peak_rate = np.nanmax(firing_rate)
@@ -885,7 +900,7 @@ print(f"  Median: {np.median(sparsity_all):.3f}")
 # 2. **Environment Creation**: Built both 2D and 1D linearized representations
 #    of the maze from a track graph
 #
-# 3. **Place Field Computation**: Used `compute_place_field()` with diffusion KDE
+# 3. **Place Field Computation**: Used `compute_spatial_rate()` with diffusion KDE
 #    for boundary-aware smoothing
 #
 # 4. **Interactive Visualization**: Used napari to animate position overlays on
@@ -901,10 +916,10 @@ print(f"  Median: {np.median(sparsity_all):.3f}")
 #
 # - `Environment.from_graph()` - Create 1D linearized environment
 # - `Environment.from_samples()` - Create 2D spatial environment
-# - `compute_place_field()` - Convert spikes to firing rate maps
+# - `compute_spatial_rate()` - Convert spikes to firing rate maps (returns `SpatialRateResult`)
 # - `env.animate_fields()` - Interactive napari visualization
 # - `PositionOverlay` - Animate animal position with trail
-# - `skaggs_information()` - Measure spatial information (bits/spike)
+# - `spatial_information()` - Measure spatial information (bits/spike)
 # - `sparsity()` - Measure firing field compactness
 # - `detect_place_fields()` - Automatic place field detection
 # - `field_size()`, `rate_map_centroid()` - Place field properties

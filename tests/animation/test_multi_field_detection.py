@@ -6,19 +6,15 @@ in the animation pipeline.
 
 from __future__ import annotations
 
+import importlib.util
+
 import numpy as np
 import pytest
 
 # Import the detection function directly for unit testing
 from neurospatial.animation.backends.napari_backend import _is_multi_field_input
 
-# Check for optional dependencies
-try:
-    import napari  # noqa: F401
-
-    HAS_NAPARI = True
-except ImportError:
-    HAS_NAPARI = False
+HAS_NAPARI = importlib.util.find_spec("napari") is not None
 
 
 class TestMultiFieldDetectionEdgeCases:
@@ -55,6 +51,8 @@ class TestMultiFieldDetectionEdgeCases:
 
 
 @pytest.mark.skipif(not HAS_NAPARI, reason="napari not installed")
+@pytest.mark.napari
+@pytest.mark.xdist_group(name="napari_gui")
 class TestMultiFieldValidationRobustness:
     """Test validation catches invalid inputs."""
 
@@ -107,6 +105,9 @@ class TestMultiFieldValidationRobustness:
             render_napari(simple_env, fields)
 
 
+@pytest.mark.napari
+@pytest.mark.xdist_group(name="napari_gui")
+@pytest.mark.skipif(not HAS_NAPARI, reason="napari not installed")
 class TestMismatchedShapeErrors:
     """Test that mismatched shapes raise correct errors."""
 

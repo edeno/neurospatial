@@ -6,6 +6,168 @@ Import patterns organized by feature area.
 
 ---
 
+## Function Argument Conventions
+
+### Canonical Argument Names
+
+Use these standardized names consistently across all modules:
+
+| Concept | Canonical Name | NOT | Notes |
+|---------|----------------|-----|-------|
+| Continuous coordinates | `positions` | `trajectory`, `coords`, `xy` | Shape: (n_time, n_dims) |
+| Discretized bin indices | `position_bins` | `trajectory_bins`, `bins`, `bin_idx` | Shape: (n_time,), dtype=int64 |
+| Sample timestamps | `times` | `timestamps`, `t`, `time_array` | Shape: (n_time,), in seconds |
+| Spike event times | `spike_times` | `spikes`, `spike_train` | Shape: (n_spikes,), in seconds |
+| Animal heading | `headings` | `heading`, `head_direction`, `hd` | Shape: (n_time,), in radians |
+| Target locations | `targets` | `target_positions`, `objects` | For egocentric operations |
+| Object locations | `object_positions` | `objects`, `landmarks` | For encoding functions |
+| Smoothing kernel size | `bandwidth` | `sigma`, `smoothing` | In physical units (e.g., cm) |
+| Estimation algorithm | `smoothing_method` | `method`, `estimator` | For place field computation |
+| Distance algorithm | `distance_metric` | `metric`, `distance_type` | "euclidean" or "geodesic" |
+
+### Canonical Argument Order by Function Type
+
+#### Neural Encoding Functions (place fields, object-vector, spatial view)
+
+```python
+func(
+    env,                    # 1. Environment (spatial context)
+    spike_times,            # 2. Neural data (what fired)
+    times,                  # 3. Timestamps (when sampled)
+    positions,              # 4. Position coordinates (where animal was)
+    headings,               # 5. Head direction (which way facing) - if egocentric
+    object_positions,       # 6. External targets - if relevant
+    *,                      # 7. Keyword-only separator
+    smoothing_method=...,   # 8. Algorithm parameters
+    bandwidth=...,
+    min_occupancy=...,
+)
+```
+
+**Examples:**
+
+- `compute_spatial_rate(env, spike_times, times, positions, *, smoothing_method=...)`
+- `compute_egocentric_rate(env, spike_times, times, positions, headings, object_positions, *, ...)`
+- `compute_view_rate(env, spike_times, times, positions, headings, *, ...)`
+- `compute_directional_rate(spike_times, times, headings, *, ...)`
+
+#### Egocentric Operations (bearing, distance to targets)
+
+```python
+func(
+    positions,              # 1. Animal positions (where animal is)
+    headings,               # 2. Animal headings (which way facing)
+    targets,                # 3. Target locations (what animal relates to)
+)
+```
+
+**Examples:**
+
+- `compute_egocentric_bearing(positions, headings, targets)`
+- `allocentric_to_egocentric(points, positions, headings)`
+
+#### Behavioral Segmentation (laps, trials, crossings)
+
+```python
+func(
+    position_bins,          # 1. Discretized position indices
+    times,                  # 2. Timestamps
+    env,                    # 3. Environment (for graph/region lookups)
+    *,                      # 4. Keyword-only separator
+    region_params...,       # 5. Region specifications
+)
+```
+
+**Alternative for functions requiring continuous positions:**
+
+```python
+func(
+    positions,              # 1. Continuous position coordinates
+    times,                  # 2. Timestamps
+    env,                    # 3. Environment
+    *,                      # 4. Keyword-only separator
+    source=...,             # 5. Region parameters
+    target=...,
+)
+```
+
+**Examples:**
+
+- `segment_trials(position_bins, times, env, *, start_region=..., end_regions=...)`
+- `detect_laps(position_bins, times, env, *, method=..., min_overlap=...)`
+- `detect_runs_between_regions(positions, times, env, *, source=..., target=...)`
+
+#### Head Direction Functions
+
+Head direction functions are an exception - they don't require `env` because head direction is independent of spatial discretization:
+
+```python
+func(
+    spike_times,            # 1. Spike times
+    times,                  # 2. Sample timestamps
+    head_directions,        # 3. HD at each timepoint
+    *,                      # 4. Keyword-only separator
+    bin_size=...,           # 5. Angular bin size
+    angle_unit=...,
+)
+```
+
+**Examples:**
+
+- `compute_directional_rate(spike_times, times, headings, *, bin_size=...)`
+- `is_head_direction_cell(spike_times, times, headings, **kwargs)`
+
+#### Events/Peri-Event Functions
+
+Event functions analyze temporal alignment without spatial context:
+
+```python
+func(
+    spike_times,            # 1. Spike times
+    event_times,            # 2. Event timestamps
+    window,                 # 3. Time window around events
+    *,                      # 4. Keyword-only separator
+    bin_size=...,           # 5. Temporal bin size
+)
+```
+
+**Examples:**
+
+- `peri_event_histogram(spike_times, event_times, window, *, bin_size=...)`
+- `align_spikes_to_events(spike_times, event_times, window)`
+
+### Keyword-Only Separator (`*`) Guidelines
+
+Use `*` to force keyword-only arguments when:
+
+1. Function has more than 3-4 positional arguments
+2. Optional parameters follow required ones
+3. Parameters control algorithm behavior (smoothing_method, bandwidth)
+4. Parameters specify thresholds or ranges
+
+**Good:**
+
+```python
+def compute_spatial_rate(
+    env, spike_times, times, positions,
+    *,  # Force keyword-only after core data
+    smoothing_method="diffusion_kde",
+    bandwidth=5.0,
+): ...
+```
+
+**Avoid:**
+
+```python
+def compute_spatial_rate(
+    env, spike_times, times, positions,
+    smoothing_method="diffusion_kde",  # Can be passed positionally - error-prone
+    bandwidth=5.0,
+): ...
+```
+
+---
+
 ## Core Classes
 
 ```python
@@ -96,31 +258,122 @@ from neurospatial.ops import (
 
 ## Neural Encoding (encoding/)
 
-### Place Cells
+### Canonical Rate API
+
+Encoding uses consistent `compute_*_rate` names and returns rich result objects:
 
 ```python
-from neurospatial.encoding.place import (
-    # Field computation
-    compute_place_field,                    # Place field estimation
-    compute_directional_place_fields,       # Directional tuning
-    DirectionalPlaceFields,                 # Container for directional fields
+from neurospatial.encoding import (
+    # Spatial Rate (Place/Grid/Border Cells)
+    compute_spatial_rate,                   # Single-neuron spatial rate map
+    compute_spatial_rates,                  # Population spatial rate maps
+    SpatialRateResult,                      # Result with firing_rate, occupancy, metrics
+    SpatialRatesResult,                     # Population result
 
-    # Place field metrics
-    detect_place_fields,                    # Detect fields from rate map
-    skaggs_information,                     # Spatial info (bits/spike)
+    # Directional Rate (Head Direction Cells)
+    compute_directional_rate,               # Single-neuron HD tuning
+    compute_directional_rates,              # Population HD tuning
+    DirectionalRateResult,                  # Result with preferred_direction, MRL, etc.
+    DirectionalRatesResult,                 # Population result
+
+    # View Rate (Spatial View Cells)
+    compute_view_rate,                      # Single-neuron view field
+    compute_view_rates,                     # Population view fields
+    ViewRateResult,                         # Result with view_occupancy, is_view_cell()
+    ViewRatesResult,                        # Population result
+
+    # Egocentric Rate (Object-Vector Cells)
+    compute_egocentric_rate,                # Single-neuron egocentric polar field
+    compute_egocentric_rates,               # Population egocentric fields
+    EgocentricRateResult,                   # Result with preferred_distance(), preferred_direction()
+    EgocentricRatesResult,                  # Population result
+
+    # Metrics (available on result objects or standalone)
+    spatial_information,                    # Spatial info (bits/spike)
     sparsity,                               # Spatial sparsity
-    selectivity,                            # Place field selectivity
-    rate_map_centroid,                      # Field centroid
+    detect_place_fields,                    # Detect fields from rate map
     field_size,                             # Field size
+    rate_map_centroid,                      # Field centroid
     field_stability,                        # Temporal stability
-    field_shape_metrics,                    # Shape metrics
     field_shift_distance,                   # Shift between sessions
-    in_out_field_ratio,                     # In/out firing ratio
-    information_per_second,                 # Bits/second
-    mutual_information,                     # MI between fields
-    rate_map_coherence,                     # Spatial coherence
-    spatial_coverage_single_cell,           # Coverage fraction
-    compute_field_emd,                      # Earth mover distance
+
+    # Helper functions
+    compute_viewed_location,                # Compute viewed location from gaze
+    compute_viewshed,                       # Compute visible bins
+)
+```
+
+### Backend Parameter
+
+All canonical encoding functions accept a `backend` parameter for computation:
+
+```python
+# Backend options
+backend="numpy"   # Default: Works everywhere, including Windows
+backend="jax"     # Requires JAX (Linux/macOS); raises ImportError if unavailable
+backend="auto"    # Uses JAX if available, falls back to NumPy silently
+
+# Example usage
+result = compute_spatial_rate(
+    env, spike_times, times, positions,
+    backend="numpy",  # or "jax" or "auto"
+)
+```
+
+**When to use each backend:**
+- `"numpy"`: Default choice, works everywhere
+- `"jax"`: For GPU acceleration or JAX-based pipelines (Linux/macOS only)
+- `"auto"`: For portable code that uses JAX when available
+
+### Result Class Methods
+
+Result objects from the new API provide convenient methods:
+
+**SpatialRateResult** (from `compute_spatial_rate`):
+- `.firing_rate` - Firing rate map (n_bins,) in Hz
+- `.occupancy` - Time in each bin (n_bins,) in seconds
+- `.env` - Environment used for computation
+- `.peak_locations()` - Coordinates of peak firing (n_dims,)
+- `.peak_firing_rates()` - Maximum firing rate (scalar)
+
+**DirectionalRateResult** (from `compute_directional_rate`):
+- `.firing_rate` - Tuning curve (n_bins,) in Hz
+- `.occupancy` - Time at each direction (n_bins,) in seconds
+- `.bin_centers` - Angular bin centers (n_bins,) in radians
+- `.preferred_direction()` - Circular mean weighted by rate (radians)
+- `.preferred_direction_deg()` - Same in degrees
+- `.peak_firing_rate()` - Maximum firing rate
+- `.mrl()` - Mean resultant length (tuning strength)
+- `.tuning_width()` - Half-width at half-maximum (radians)
+- `.plot(ax=None, polar=True)` - Plot tuning curve
+
+**ViewRateResult** (from `compute_view_rate`):
+- `.firing_rate` - View field (n_bins,) in Hz
+- `.view_occupancy` - Time *viewing* each bin (n_bins,) in seconds
+- `.env` - Environment used for computation
+- `.gaze_model` - Gaze model used ("fixed_distance", "ray_cast", "boundary")
+- `.view_distance` - Distance parameter for gaze model
+
+**EgocentricRateResult** (from `compute_egocentric_rate`):
+- `.firing_rate` - Egocentric polar field (n_bins,) in Hz
+- `.occupancy` - Time in each egocentric bin (n_bins,) in seconds
+- `.ego_env` - Egocentric polar environment
+- `.distance_range` - Distance range (min, max)
+- `.n_distance_bins` - Number of distance bins
+- `.n_direction_bins` - Number of direction bins
+
+### Place Field Metrics
+
+Use `compute_spatial_rate()` for rate-map estimation. Use the metric helpers
+below when you already have a firing-rate map and need standalone analysis:
+
+```python
+from neurospatial.encoding import (
+    detect_place_fields,
+    spatial_information,
+    sparsity,
+    rate_map_centroid,
+    field_size,
 )
 ```
 
@@ -141,19 +394,15 @@ from neurospatial.encoding.grid import (
 ### Head Direction Cells
 
 ```python
-from neurospatial.encoding.head_direction import (
-    head_direction_tuning_curve,            # HD tuning curve
-    head_direction_metrics,                 # Comprehensive HD metrics
-    is_head_direction_cell,                 # HD cell classification
-    plot_head_direction_tuning,             # Polar plot
-    HeadDirectionMetrics,                   # Metrics dataclass
-
-    # Re-exported from stats.circular
-    rayleigh_test,
-    mean_resultant_length,
-    circular_mean,
+from neurospatial.encoding import (
+    compute_directional_rate,               # HD tuning curve (returns DirectionalRateResult)
+    compute_directional_rates,              # Population HD tuning
+    DirectionalRateResult,                  # Result with preferred_direction(), mrl(), etc.
+    DirectionalRatesResult,                 # Population result
 )
 ```
+
+For standalone circular statistics, import from `neurospatial.stats.circular`.
 
 ### Border/Boundary Cells
 
@@ -162,45 +411,38 @@ from neurospatial.encoding.border import (
     border_score,                           # Border score
     compute_region_coverage,                # Region coverage stats
 )
+# Note: border_score parameter order changed to (env, firing_rate, ...) for consistency
 ```
 
 ### Object-Vector Cells
 
 ```python
-from neurospatial.encoding.object_vector import (
-    # Field computation
-    ObjectVectorFieldResult,                # Result container
-    compute_object_vector_field,            # Compute egocentric polar field
-
-    # Metrics and classification
-    ObjectVectorMetrics,                    # Frozen dataclass with tuning metrics
-    compute_object_vector_tuning,           # Compute tuning from spikes
-    object_vector_score,                    # Distance × direction selectivity
-    is_object_vector_cell,                  # Classifier (score + peak rate)
-    plot_object_vector_tuning,              # Polar heatmap visualization
+from neurospatial.encoding import (
+    compute_egocentric_rate,                # Egocentric polar field (returns EgocentricRateResult)
+    compute_egocentric_rates,               # Population egocentric fields
+    EgocentricRateResult,                   # Result with preferred_distance(), preferred_direction(), etc.
+    EgocentricRatesResult,                  # Population result
 )
 ```
+
+Use result methods such as `preferred_distance()`, `preferred_direction()`, and
+`is_ovc()` for classification workflows.
 
 ### Spatial View Cells
 
 ```python
-from neurospatial.encoding.spatial_view import (
-    # Field computation
-    SpatialViewFieldResult,                 # Result container
-    compute_spatial_view_field,             # Compute view field
-
-    # Metrics and classification
-    SpatialViewMetrics,                     # Frozen dataclass with metrics
-    spatial_view_cell_metrics,              # Compute view vs place metrics
-    is_spatial_view_cell,                   # Quick classifier
-
-    # Re-exported from ops.visibility
-    compute_viewed_location,
-    compute_viewshed,
-    visibility_occupancy,
-    FieldOfView,
+from neurospatial.encoding import (
+    compute_view_rate,                      # View field (returns ViewRateResult)
+    compute_view_rates,                     # Population view fields
+    ViewRateResult,                         # Result with view_occupancy, is_view_cell(), etc.
+    ViewRatesResult,                        # Population result
+    compute_viewed_location,                # Compute viewed location from gaze
+    compute_viewshed,                       # Compute visible bins
 )
 ```
+
+Use `compute_view_rate()`/`compute_view_rates()` for view-field estimation and
+the returned result methods for classification and summaries.
 
 ### Phase Precession
 

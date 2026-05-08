@@ -135,7 +135,7 @@ class TestBorderFunctionality:
         firing_rate = np.zeros(env.n_bins)
         firing_rate[env.boundary_bins] = 5.0
 
-        score = border_score(firing_rate, env)
+        score = border_score(env, firing_rate)
 
         # Boundary field should have high score
         assert score > 0.5, f"Expected score > 0.5 for boundary field, got {score}"
@@ -160,7 +160,7 @@ class TestBorderFunctionality:
         firing_rate = np.zeros(env.n_bins)
         firing_rate[center_bin] = 5.0
 
-        score = border_score(firing_rate, env)
+        score = border_score(env, firing_rate)
 
         # Central field should have low/negative score
         assert score < 0.0, f"Expected score < 0 for central field, got {score}"
@@ -178,7 +178,7 @@ class TestBorderFunctionality:
         firing_rate = np.zeros(env.n_bins)
         firing_rate[env.boundary_bins] = 5.0
 
-        score = border_score(firing_rate, env)
+        score = border_score(env, firing_rate)
 
         assert isinstance(score, (float, np.floating))
 

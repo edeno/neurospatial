@@ -12,6 +12,7 @@ Tests overlay integration with napari backend, including:
 
 from __future__ import annotations
 
+import importlib.util
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
@@ -25,8 +26,13 @@ if TYPE_CHECKING:
     from neurospatial.animation.overlays import OverlayData
     from neurospatial.environment.core import Environment
 
-# Skip all tests if napari not available
-pytest.importorskip("napari")
+HAS_NAPARI = importlib.util.find_spec("napari") is not None
+
+pytestmark = [
+    pytest.mark.napari,
+    pytest.mark.xdist_group(name="napari_gui"),
+    pytest.mark.skipif(not HAS_NAPARI, reason="napari not installed"),
+]
 
 
 @pytest.fixture

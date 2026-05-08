@@ -216,9 +216,10 @@ class TestRebin:
     def test_rebin_updates_name(self, medium_2d_env: Environment) -> None:
         """Test that rebinned environment has updated name."""
         # Set original name
-        medium_2d_env.name = "OriginalEnv"
+        env = medium_2d_env.copy()
+        env.name = "OriginalEnv"
 
-        rebinned = medium_2d_env.rebin(factor=2)
+        rebinned = env.rebin(factor=2)
 
         assert "rebinned" in rebinned.name.lower()
         assert "OriginalEnv" in rebinned.name
@@ -886,10 +887,11 @@ class TestApplyTransform:
         from neurospatial.ops.transforms import translate
 
         # Set original name
-        medium_2d_env.name = "OriginalEnv"
+        env = medium_2d_env.copy()
+        env.name = "OriginalEnv"
 
         transform = translate(5, 5)
-        transformed = medium_2d_env.apply_transform(transform)
+        transformed = env.apply_transform(transform)
 
         assert "transformed" in transformed.name.lower()
 
@@ -1012,7 +1014,7 @@ class TestApplyTransform:
 
         # Create a fitted environment and then mark it as unfitted
         # (simulates an environment that hasn't been properly initialized)
-        env = small_2d_env
+        env = small_2d_env.copy()
         env._is_fitted = False
 
         transform = translate(5, 5)

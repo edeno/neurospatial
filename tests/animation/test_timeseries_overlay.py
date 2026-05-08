@@ -1088,6 +1088,8 @@ class TestTimeSeriesGroupConflictWarnings:
 @pytest.fixture
 def _napari_viewer():
     """Create a napari viewer for testing, skip if unavailable."""
+    import sys
+
     napari = pytest.importorskip("napari")
     try:
         from qtpy.QtWidgets import QApplication
@@ -1095,7 +1097,7 @@ def _napari_viewer():
         # Create application if needed
         app = QApplication.instance()
         if app is None:
-            pytest.skip("No Qt application available")
+            app = QApplication(sys.argv)
     except ImportError:
         pytest.skip("Qt not available")
 
@@ -1175,7 +1177,7 @@ class TestTimeSeriesNapariDockWidget:
         dock_widgets = viewer.window._dock_widgets
         assert len(dock_widgets) > 0
         # Check that Time Series widget exists
-        widget_names = [dw.title() for dw in dock_widgets.values()]
+        widget_names = [dw.windowTitle() for dw in dock_widgets.values()]
         assert "Time Series" in widget_names
 
     def test_timeseries_dock_updates_on_frame_change(
@@ -1218,12 +1220,14 @@ class TestTimeSeriesNapariDockWidget:
         self, simple_env, sample_fields, sample_timeseries_overlay
     ):
         """Test that render_napari correctly adds time series dock widget."""
+        import sys
+
         pytest.importorskip("napari")
         try:
             from qtpy.QtWidgets import QApplication
 
             if QApplication.instance() is None:
-                pytest.skip("No Qt application available")
+                QApplication(sys.argv)
         except ImportError:
             pytest.skip("Qt not available")
 
@@ -1248,7 +1252,7 @@ class TestTimeSeriesNapariDockWidget:
         try:
             # Check dock widget was added
             dock_widgets = viewer.window._dock_widgets
-            widget_names = [dw.title() for dw in dock_widgets.values()]
+            widget_names = [dw.windowTitle() for dw in dock_widgets.values()]
             assert "Time Series" in widget_names
 
         finally:
@@ -1256,12 +1260,14 @@ class TestTimeSeriesNapariDockWidget:
 
     def test_no_timeseries_dock_when_empty(self, simple_env, sample_fields):
         """Test that no dock widget is added when no time series overlays."""
+        import sys
+
         pytest.importorskip("napari")
         try:
             from qtpy.QtWidgets import QApplication
 
             if QApplication.instance() is None:
-                pytest.skip("No Qt application available")
+                QApplication(sys.argv)
         except ImportError:
             pytest.skip("Qt not available")
 
@@ -1281,7 +1287,7 @@ class TestTimeSeriesNapariDockWidget:
         try:
             # Check dock widgets - should not have Time Series
             dock_widgets = viewer.window._dock_widgets
-            widget_names = [dw.title() for dw in dock_widgets.values()]
+            widget_names = [dw.windowTitle() for dw in dock_widgets.values()]
             # Time Series should NOT be present
             assert "Time Series" not in widget_names
 

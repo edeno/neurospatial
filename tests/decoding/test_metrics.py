@@ -418,24 +418,7 @@ class TestConfusionMatrix:
         assert result.dtype == np.float64
 
     def test_confusion_matrix_map_method_sum_equals_n_time_bins(self, small_2d_env):
-        """For method='map', confusion matrix should sum to n_time_bins."""
-        from neurospatial.decoding.metrics import confusion_matrix
-
-        n_bins = small_2d_env.n_bins
-        n_time_bins = 100
-        rng = np.random.default_rng(42)
-
-        posterior = rng.random((n_time_bins, n_bins))
-        posterior /= posterior.sum(axis=1, keepdims=True)
-        actual_bins = rng.integers(0, n_bins, n_time_bins)
-
-        result = confusion_matrix(small_2d_env, posterior, actual_bins, method="map")
-
-        # For MAP method, total counts should equal n_time_bins
-        assert result.sum() == pytest.approx(n_time_bins)
-
-    def test_confusion_matrix_expected_method_row_sums(self, small_2d_env):
-        """For method='expected', each row should sum to count of actual bin occurrences."""
+        """For summary_method='map', confusion matrix should sum to n_time_bins."""
         from neurospatial.decoding.metrics import confusion_matrix
 
         n_bins = small_2d_env.n_bins
@@ -447,7 +430,26 @@ class TestConfusionMatrix:
         actual_bins = rng.integers(0, n_bins, n_time_bins)
 
         result = confusion_matrix(
-            small_2d_env, posterior, actual_bins, method="expected"
+            small_2d_env, posterior, actual_bins, summary_method="map"
+        )
+
+        # For MAP method, total counts should equal n_time_bins
+        assert result.sum() == pytest.approx(n_time_bins)
+
+    def test_confusion_matrix_expected_method_row_sums(self, small_2d_env):
+        """For summary_method='expected', each row should sum to count of actual bin occurrences."""
+        from neurospatial.decoding.metrics import confusion_matrix
+
+        n_bins = small_2d_env.n_bins
+        n_time_bins = 100
+        rng = np.random.default_rng(42)
+
+        posterior = rng.random((n_time_bins, n_bins))
+        posterior /= posterior.sum(axis=1, keepdims=True)
+        actual_bins = rng.integers(0, n_bins, n_time_bins)
+
+        result = confusion_matrix(
+            small_2d_env, posterior, actual_bins, summary_method="expected"
         )
 
         # Each row should sum to the count of times that bin occurred
@@ -471,7 +473,9 @@ class TestConfusionMatrix:
         posterior = np.zeros((n_time_bins, n_bins))
         posterior[np.arange(n_time_bins), actual_bins] = 1.0
 
-        result = confusion_matrix(small_2d_env, posterior, actual_bins, method="map")
+        result = confusion_matrix(
+            small_2d_env, posterior, actual_bins, summary_method="map"
+        )
 
         # Should be diagonal with 2 in each diagonal entry
         expected = np.diag(np.full(n_bins, 2.0))
@@ -492,7 +496,7 @@ class TestConfusionMatrix:
         posterior[np.arange(n_time_bins), actual_bins] = 1.0
 
         result = confusion_matrix(
-            small_2d_env, posterior, actual_bins, method="expected"
+            small_2d_env, posterior, actual_bins, summary_method="expected"
         )
 
         expected = np.diag(np.full(n_bins, 2.0))
@@ -510,7 +514,7 @@ class TestConfusionMatrix:
         actual_bins = np.arange(n_bins)  # Each bin occurs once
 
         result = confusion_matrix(
-            small_2d_env, posterior, actual_bins, method="expected"
+            small_2d_env, posterior, actual_bins, summary_method="expected"
         )
 
         # Each row should sum to 1 (one occurrence per actual bin)
@@ -540,7 +544,9 @@ class TestConfusionMatrix:
 
         actual_bins = np.array([0, 0, 1])
 
-        result = confusion_matrix(small_2d_env, posterior, actual_bins, method="map")
+        result = confusion_matrix(
+            small_2d_env, posterior, actual_bins, summary_method="map"
+        )
 
         # Row 0 (actual=0): decoded=0 once, decoded=1 once
         assert result[0, 0] == pytest.approx(1.0)
@@ -568,7 +574,7 @@ class TestConfusionMatrix:
         actual_bins = np.array([0, 0])
 
         result = confusion_matrix(
-            small_2d_env, posterior, actual_bins, method="expected"
+            small_2d_env, posterior, actual_bins, summary_method="expected"
         )
 
         # Row 0 (actual=0): accumulate posteriors for both time bins
@@ -593,9 +599,9 @@ class TestConfusionMatrix:
 
         for method in ["map", "expected"]:
             result = confusion_matrix(
-                small_2d_env, posterior, actual_bins, method=method
+                small_2d_env, posterior, actual_bins, summary_method=method
             )
-            assert np.all(result >= 0), f"Negative values for method={method}"
+            assert np.all(result >= 0), f"Negative values for summary_method={method}"
 
     def test_confusion_matrix_invalid_method_raises(self, small_2d_env):
         """Invalid method should raise ValueError."""
@@ -606,7 +612,9 @@ class TestConfusionMatrix:
         actual_bins = np.zeros(5, dtype=np.int64)
 
         with pytest.raises(ValueError, match=r"method.*map.*expected"):
-            confusion_matrix(small_2d_env, posterior, actual_bins, method="invalid")
+            confusion_matrix(
+                small_2d_env, posterior, actual_bins, summary_method="invalid"
+            )
 
     def test_confusion_matrix_out_of_range_bins_raises(self, small_2d_env):
         """Actual bins outside valid range should raise ValueError."""
@@ -667,7 +675,9 @@ class TestConfusionMatrix:
         posterior[:, 0] = 1.0  # Always decode to bin 0
         actual_bins = np.zeros(5, dtype=np.int64)  # Always at bin 0
 
-        result = confusion_matrix(small_2d_env, posterior, actual_bins, method="map")
+        result = confusion_matrix(
+            small_2d_env, posterior, actual_bins, summary_method="map"
+        )
 
         # Row 0 should have all mass, rows 1+ should be zero
         assert result[0, 0] == pytest.approx(5.0)
@@ -693,7 +703,7 @@ class TestConfusionMatrixSuccessCriteria:
         # Success criteria from TASKS.md
         cm = confusion_matrix(small_2d_env, posterior, actual_bins)
         assert cm.shape == (n_bins, n_bins)
-        assert cm.sum() == pytest.approx(n_time_bins)  # for method="map"
+        assert cm.sum() == pytest.approx(n_time_bins)  # for summary_method="map"
 
 
 class TestDecodingCorrelation:

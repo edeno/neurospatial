@@ -458,6 +458,11 @@ class TestAnnotateTrackGraphVideoPath:
             "neurospatial.animation._video_io.VideoReader", MockVideoReader
         )
 
+        # Mock napari so the test runs in CI environments without the
+        # optional `animation` extra installed; the IndexError we expect
+        # is raised before any real napari interaction would happen.
+        _setup_mocks(monkeypatch)
+
         from neurospatial.annotation.track_graph import annotate_track_graph
 
         with pytest.raises(IndexError, match="out of range"):

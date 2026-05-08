@@ -538,7 +538,7 @@ class TestHTMLBackendIntegration:
             assert save_path.exists()
 
             # Read and verify content contains position data
-            html_content = save_path.read_text()
+            html_content = save_path.read_text(encoding="utf-8")
             assert (
                 "position" in html_content.lower() or "overlay" in html_content.lower()
             )
@@ -567,7 +567,7 @@ class TestHTMLBackendIntegration:
             assert save_path.exists()
 
             # Read and verify content
-            html_content = save_path.read_text()
+            html_content = save_path.read_text(encoding="utf-8")
             assert len(html_content) > 0
 
     def test_html_supports_bodypart_overlays(

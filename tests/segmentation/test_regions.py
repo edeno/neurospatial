@@ -33,13 +33,13 @@ class TestDetectRegionCrossings:
             [50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0]
         )
         trajectory = np.column_stack([x_traj, y_traj])
-        trajectory_bins = env.bin_at(trajectory)
+        position_bins = env.bin_at(trajectory)
         times = np.arange(len(trajectory), dtype=float)
 
         from neurospatial.behavior.segmentation import detect_region_crossings
 
         crossings = detect_region_crossings(
-            trajectory_bins, times, "target", env, direction="both"
+            position_bins, times, "target", env, direction="both"
         )
 
         # Should detect entries and exits
@@ -62,13 +62,13 @@ class TestDetectRegionCrossings:
         x_traj = np.array([20.0, 40.0, 50.0, 55.0, 50.0, 40.0, 50.0])
         y_traj = np.array([50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0])
         trajectory = np.column_stack([x_traj, y_traj])
-        trajectory_bins = env.bin_at(trajectory)
+        position_bins = env.bin_at(trajectory)
         times = np.arange(len(trajectory), dtype=float)
 
         from neurospatial.behavior.segmentation import detect_region_crossings
 
         crossings = detect_region_crossings(
-            trajectory_bins, times, "target", env, direction="entry"
+            position_bins, times, "target", env, direction="entry"
         )
 
         # All crossings should be entries
@@ -87,13 +87,13 @@ class TestDetectRegionCrossings:
         x_traj = np.array([50.0, 55.0, 50.0, 40.0, 20.0, 50.0, 40.0])
         y_traj = np.array([50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0])
         trajectory = np.column_stack([x_traj, y_traj])
-        trajectory_bins = env.bin_at(trajectory)
+        position_bins = env.bin_at(trajectory)
         times = np.arange(len(trajectory), dtype=float)
 
         from neurospatial.behavior.segmentation import detect_region_crossings
 
         crossings = detect_region_crossings(
-            trajectory_bins, times, "target", env, direction="exit"
+            position_bins, times, "target", env, direction="exit"
         )
 
         # All crossings should be exits
@@ -112,20 +112,20 @@ class TestDetectRegionCrossings:
         x_traj = np.array([10.0, 15.0, 20.0, 15.0, 10.0])
         y_traj = np.array([10.0, 10.0, 10.0, 10.0, 10.0])
         trajectory = np.column_stack([x_traj, y_traj])
-        trajectory_bins = env.bin_at(trajectory)
+        position_bins = env.bin_at(trajectory)
         times = np.arange(len(trajectory), dtype=float)
 
         from neurospatial.behavior.segmentation import detect_region_crossings
 
         crossings = detect_region_crossings(
-            trajectory_bins, times, "target", env, direction="both"
+            position_bins, times, "target", env, direction="both"
         )
 
         # Should have no crossings
         assert len(crossings) == 0
 
     def test_parameter_order(self):
-        """Test parameter order is (trajectory_bins, times, region, env, direction)."""
+        """Test parameter order is (position_bins, times, region, env, direction)."""
         x = np.linspace(0, 100, 20)
         y = np.linspace(0, 100, 20)
         xx, yy = np.meshgrid(x, y)
@@ -133,14 +133,14 @@ class TestDetectRegionCrossings:
         env = Environment.from_samples(positions, bin_size=10.0)
         env.regions.add("target", polygon=Point(50.0, 50.0).buffer(10.0))
 
-        trajectory_bins = np.arange(10)
+        position_bins = np.arange(10)
         times = np.arange(10, dtype=float)
 
         from neurospatial.behavior.segmentation import detect_region_crossings
 
         # This should work without error
         crossings = detect_region_crossings(
-            trajectory_bins, times, "target", env, direction="both"
+            position_bins, times, "target", env, direction="both"
         )
         assert isinstance(crossings, list)
 
@@ -259,7 +259,7 @@ class TestDetectRunsBetweenRegions:
         assert len(runs) == 0
 
     def test_parameter_order(self):
-        """Test parameter order is (trajectory_positions, times, env, *, source, target, ...)."""
+        """Test parameter order is (positions, times, env, *, source, target, ...)."""
         x = np.linspace(0, 100, 20)
         y = np.linspace(0, 100, 20)
         xx, yy = np.meshgrid(x, y)
@@ -382,7 +382,7 @@ class TestSegmentByVelocity:
             assert start < end  # Start before end
 
     def test_parameter_order(self):
-        """Test parameter order is (trajectory_positions, times, threshold, *, ...)."""
+        """Test parameter order is (positions, times, threshold, *, ...)."""
         trajectory = np.linspace(0, 100, 50)[:, None]
         times = np.arange(50, dtype=float)
 
@@ -430,14 +430,14 @@ class TestRegionSegmentationIntegration:
         )
 
         # Map to bins
-        trajectory_bins = env.bin_at(trajectory)
+        position_bins = env.bin_at(trajectory)
 
         # 1. Detect region crossings
         source_crossings = detect_region_crossings(
-            trajectory_bins, times, "source", env, direction="both"
+            position_bins, times, "source", env, direction="both"
         )
         target_crossings = detect_region_crossings(
-            trajectory_bins, times, "target", env, direction="both"
+            position_bins, times, "target", env, direction="both"
         )
 
         # 2. Detect runs between regions

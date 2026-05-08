@@ -82,3 +82,45 @@ jobs:
           fail_ci_if_error: false
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  napari:
+    name: Napari tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          # Qt5 system deps: PyQt5 imports under napari, but Qt aborts under
+          # xvfb without the full set of XCB plugins. Mirrors napari's own
+          # headless-CI deps list.
+          sudo apt-get install -y \
+            ffmpeg xvfb \
+            libegl1 libopengl0 \
+            libxkbcommon-x11-0 libxkbcommon0 \
+            libdbus-1-3 libfontconfig1 libglib2.0-0 \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-shape0 \
+            libxcb-xinerama0 libxcb-xkb1
+
+      - name: Install dependencies
+        run: |
+          uv sync --extra dev --extra animation
+
+      - name: Run napari tests
+        run: |
+          xvfb-run -a uv run pytest -n 0 -m "napari and not slow"
+        env:
+          MPLBACKEND: Agg

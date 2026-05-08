@@ -122,7 +122,7 @@ class SpatialViewCellModel:
     max_rate : float, optional
         Peak firing rate in Hz (default: 20.0).
     baseline_rate : float, optional
-        Baseline firing rate when not viewing preferred location (default: 0.001 Hz).
+        Baseline firing rate when not viewing preferred location (default: 0.01 Hz).
     require_visibility : bool, optional
         If True, returns baseline rate when view is blocked (default: False).
     fov : FieldOfView | None, optional
@@ -213,7 +213,7 @@ class SpatialViewCellModel:
             "fixed_distance", "ray_cast", "boundary"
         ] = "fixed_distance",
         max_rate: float = 20.0,
-        baseline_rate: float = 0.001,
+        baseline_rate: float = 0.01,
         require_visibility: bool = False,
         fov: FieldOfView | None = None,
     ) -> None:
@@ -294,7 +294,8 @@ class SpatialViewCellModel:
         times : NDArray[np.float64], shape (n_time,), optional
             Time points in seconds (not used, for API compatibility).
         headings : NDArray[np.float64], shape (n_time,)
-            Animal heading in radians (0=East). Required.
+            Animal heading in radians (allocentric convention: 0=East).
+            **Required for all SpatialViewCellModel computations.**
 
         Returns
         -------
@@ -359,9 +360,9 @@ class SpatialViewCellModel:
                     from neurospatial.ops.egocentric import compute_egocentric_bearing
 
                     bearing = compute_egocentric_bearing(
-                        self.preferred_view_location[None, :],
                         positions[i : i + 1],
                         headings[i : i + 1],
+                        self.preferred_view_location[None, :],
                     )[0, 0]
 
                     if not self.fov.contains_angle(bearing):
@@ -385,9 +386,9 @@ class SpatialViewCellModel:
 
                 # Compute bearing to viewed location
                 bearing = compute_egocentric_bearing(
-                    viewed_locations[i : i + 1],
                     positions[i : i + 1],
                     headings[i : i + 1],
+                    viewed_locations[i : i + 1],
                 )[0, 0]
 
                 if not self.fov.contains_angle(bearing):

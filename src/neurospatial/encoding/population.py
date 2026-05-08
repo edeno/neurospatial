@@ -21,7 +21,7 @@ import numpy as np
 from matplotlib.colors import ListedColormap
 from numpy.typing import NDArray
 
-from neurospatial.encoding.place import detect_place_fields
+from neurospatial.encoding.spatial import detect_place_fields
 from neurospatial.environment import Environment
 
 
@@ -194,7 +194,7 @@ def population_coverage(
     --------
     >>> import numpy as np  # doctest: +SKIP
     >>> from neurospatial import Environment  # doctest: +SKIP
-    >>> from neurospatial.encoding.place import compute_place_field  # doctest: +SKIP
+    >>> from neurospatial.encoding import compute_spatial_rate  # doctest: +SKIP
     >>> from neurospatial.encoding.population import (
     ...     population_coverage,
     ...     plot_population_coverage,
@@ -211,7 +211,7 @@ def population_coverage(
     ... ]  # List of spike time arrays, one per neuron  # doctest: +SKIP
     >>> firing_rates = np.array(  # doctest: +SKIP
     ...     [
-    ...         compute_place_field(env, spikes, times, positions)
+    ...         compute_spatial_rate(env, spikes, times, positions).firing_rate
     ...         for spikes in spike_times
     ...     ]
     ... )  # Shape: (n_neurons, n_bins)
@@ -256,8 +256,8 @@ def population_coverage(
             f"  - Firing rates were computed for a different environment\n"
             f"  - The environment was modified after computing firing rates\n\n"
             f"To fix: Recompute firing rates for each neuron:\n"
-            f"  from neurospatial import compute_place_field\n"
-            f"  firing_rate = compute_place_field(env, spike_times, times, positions)\n"
+            f"  from neurospatial.encoding import compute_spatial_rate\n"
+            f"  firing_rate = compute_spatial_rate(env, spike_times, times, positions).firing_rate\n"
             f"  firing_rates = np.stack([rate1, rate2, ...])"
         )
 
@@ -535,7 +535,7 @@ def count_place_cells(
     ----------
     spatial_information : array, shape (n_cells,)
         Spatial information (bits/spike) for each cell.
-        Typically computed using `skaggs_information()`.
+        Typically computed using `spatial_information()`.
     threshold : float, default=0.5
         Minimum spatial information (bits/spike) to classify as place cell.
         Default of 0.5 bits/spike is standard in literature (Skaggs et al., 1996).
@@ -557,7 +557,7 @@ def count_place_cells(
 
     See Also
     --------
-    skaggs_information : Compute spatial information
+    spatial_information : Compute spatial information
 
     Notes
     -----
@@ -698,8 +698,8 @@ def population_vector_correlation(
     >>> import numpy as np
     >>> from neurospatial.encoding.population import population_vector_correlation
     >>> # Three cells with different firing patterns
-    >>> np.random.seed(42)
-    >>> population_matrix = np.random.rand(3, 50)
+    >>> rng = np.random.default_rng(42)
+    >>> population_matrix = rng.random((3, 50))
     >>> corr_matrix = population_vector_correlation(population_matrix)
     >>> print(corr_matrix.shape)
     (3, 3)

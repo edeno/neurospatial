@@ -86,9 +86,7 @@ class TestGeneratePoissonSurrogatesNew:
 
         n_surrogates = 10
         surrogates = list(
-            generate_poisson_surrogates(
-                spike_counts, dt, n_surrogates=n_surrogates, rng=42
-            )
+            generate_poisson_surrogates(spike_counts, n_surrogates=n_surrogates, rng=42)
         )
         assert len(surrogates) == n_surrogates
 
@@ -97,7 +95,7 @@ class TestGeneratePoissonSurrogatesNew:
         from neurospatial.stats.surrogates import generate_poisson_surrogates
 
         for surrogate in generate_poisson_surrogates(
-            spike_counts, dt, n_surrogates=5, rng=42
+            spike_counts, n_surrogates=5, rng=42
         ):
             assert surrogate.shape == spike_counts.shape
 
@@ -106,7 +104,7 @@ class TestGeneratePoissonSurrogatesNew:
         from neurospatial.stats.surrogates import generate_poisson_surrogates
 
         for surrogate in generate_poisson_surrogates(
-            spike_counts, dt, n_surrogates=5, rng=42
+            spike_counts, n_surrogates=5, rng=42
         ):
             assert surrogate.dtype == np.int64
 
@@ -117,7 +115,7 @@ class TestGeneratePoissonSurrogatesNew:
         from neurospatial.stats.surrogates import generate_poisson_surrogates
 
         for surrogate in generate_poisson_surrogates(
-            spike_counts, dt, n_surrogates=10, rng=42
+            spike_counts, n_surrogates=10, rng=42
         ):
             assert (surrogate >= 0).all()
 
@@ -128,10 +126,10 @@ class TestGeneratePoissonSurrogatesNew:
         from neurospatial.stats.surrogates import generate_poisson_surrogates
 
         surrogates1 = list(
-            generate_poisson_surrogates(spike_counts, dt, n_surrogates=5, rng=42)
+            generate_poisson_surrogates(spike_counts, n_surrogates=5, rng=42)
         )
         surrogates2 = list(
-            generate_poisson_surrogates(spike_counts, dt, n_surrogates=5, rng=42)
+            generate_poisson_surrogates(spike_counts, n_surrogates=5, rng=42)
         )
         for s1, s2 in zip(surrogates1, surrogates2, strict=True):
             assert_array_equal(s1, s2)
@@ -173,7 +171,7 @@ class TestGenerateInhomogeneousPoissonSurrogatesNew:
         n_surrogates = 10
         surrogates = list(
             generate_inhomogeneous_poisson_surrogates(
-                spike_counts, dt, n_surrogates=n_surrogates, rng=42
+                spike_counts, n_surrogates=n_surrogates, rng=42
             )
         )
         assert len(surrogates) == n_surrogates
@@ -185,7 +183,7 @@ class TestGenerateInhomogeneousPoissonSurrogatesNew:
         )
 
         for surrogate in generate_inhomogeneous_poisson_surrogates(
-            spike_counts, dt, n_surrogates=5, rng=42
+            spike_counts, n_surrogates=5, rng=42
         ):
             assert surrogate.shape == spike_counts.shape
 
@@ -196,7 +194,7 @@ class TestGenerateInhomogeneousPoissonSurrogatesNew:
         )
 
         for surrogate in generate_inhomogeneous_poisson_surrogates(
-            spike_counts, dt, n_surrogates=5, rng=42
+            spike_counts, n_surrogates=5, rng=42
         ):
             assert surrogate.dtype == np.int64
 
@@ -210,12 +208,12 @@ class TestGenerateInhomogeneousPoissonSurrogatesNew:
 
         surrogates1 = list(
             generate_inhomogeneous_poisson_surrogates(
-                spike_counts, dt, n_surrogates=5, rng=42
+                spike_counts, n_surrogates=5, rng=42
             )
         )
         surrogates2 = list(
             generate_inhomogeneous_poisson_surrogates(
-                spike_counts, dt, n_surrogates=5, rng=42
+                spike_counts, n_surrogates=5, rng=42
             )
         )
         for s1, s2 in zip(surrogates1, surrogates2, strict=True):

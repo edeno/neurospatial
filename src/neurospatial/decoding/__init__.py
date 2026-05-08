@@ -111,11 +111,12 @@ Examples
 --------
 Basic decoding workflow::
 
-    >>> from neurospatial import Environment, compute_place_field  # doctest: +SKIP
+    >>> from neurospatial import Environment  # doctest: +SKIP
+    >>> from neurospatial.encoding import compute_spatial_rate  # doctest: +SKIP
     >>> from neurospatial.decoding import decode_position  # doctest: +SKIP
     >>> env = Environment.from_samples(positions, bin_size=5.0)  # doctest: +SKIP
     >>> encoding_models = np.array([  # doctest: +SKIP
-    ...     compute_place_field(env, spikes, times, positions)
+    ...     compute_spatial_rate(env, spikes, times, positions).firing_rate
     ...     for spikes in spike_times_list
     ... ])
     >>> result = decode_position(env, spike_counts, encoding_models, dt=0.025)  # doctest: +SKIP
@@ -124,7 +125,7 @@ Basic decoding workflow::
 
 See Also
 --------
-neurospatial.compute_place_field : Compute encoding models (place fields)
+neurospatial.encoding.compute_spatial_rate : Compute encoding models (place fields)
 neurospatial.Environment : Spatial discretization
 
 Notes

@@ -193,6 +193,7 @@ def points_in_any_region(
     *,
     transform: SpatialTransform | None = None,
     point_tolerance: float = POINT_TOLERANCE,
+    include_boundary: bool = True,
 ) -> NDArray[np.bool_]:
     """Determine whether each point lies inside any of the provided Regions.
 
@@ -209,6 +210,9 @@ def points_in_any_region(
         the Regions' coordinate space.
     point_tolerance : float, default=POINT_TOLERANCE
         Tolerance for comparing query points to point Regions.
+    include_boundary : bool, default=True
+        If True, points on the boundary of polygon regions are considered inside.
+        If False, only points strictly inside polygons are considered inside.
 
     Returns
     -------
@@ -232,6 +236,7 @@ def points_in_any_region(
             transformed_pts,
             region,
             point_tolerance,
+            include_boundary=include_boundary,
         )
         overall_mask |= region_mask
         if overall_mask.all():  # Early exit if all points are already covered
@@ -247,6 +252,7 @@ def regions_containing_points(
     region_names: Sequence[str] | None = None,
     return_dataframe: bool = True,
     point_tolerance: float = POINT_TOLERANCE,
+    include_boundary: bool = True,
 ) -> list[list[str]] | pd.DataFrame:
     """For each point, identify all Regions that contain it.
 
@@ -271,6 +277,9 @@ def regions_containing_points(
         that contain the corresponding point.
     point_tolerance : float, default=POINT_TOLERANCE
         Tolerance for comparing query points to point Regions.
+    include_boundary : bool, default=True
+        If True, points on the boundary of polygon regions are considered inside.
+        If False, only points strictly inside polygons are considered inside.
 
     Returns
     -------
@@ -330,6 +339,7 @@ def regions_containing_points(
                 transformed_pts,
                 reg,
                 point_tolerance,
+                include_boundary=include_boundary,
             )
         return df
     # Build list of lists of region names
@@ -339,6 +349,7 @@ def regions_containing_points(
             transformed_pts,
             region,
             point_tolerance,
+            include_boundary=include_boundary,
         )
         # Iterate through points that are in the current region
         for i in np.flatnonzero(point_mask):

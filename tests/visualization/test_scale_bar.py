@@ -320,8 +320,9 @@ class TestPlotWithScaleBar:
 
     def test_plot_with_regions_and_scale_bar(self, small_2d_env):
         """Test scale bar works with regions displayed."""
-        small_2d_env.regions.add("center", point=(5.0, 5.0))
-        ax = small_2d_env.plot(scale_bar=True, show_regions=True)
+        env = small_2d_env.copy()
+        env.regions.add("center", point=(5.0, 5.0))
+        ax = env.plot(scale_bar=True, show_regions=True)
         assert len(ax.artists) > 0
         plt.close()
 
@@ -399,12 +400,12 @@ class TestAnimateFieldsWithScaleBar:
 
             assert Path(f.name).exists()
 
-    @pytest.mark.skipif(
-        not pytest.importorskip("napari", reason="napari not installed"),
-        reason="napari not installed",
-    )
+    @pytest.mark.napari
+    @pytest.mark.xdist_group(name="napari_gui")
     def test_napari_backend_with_scale_bar(self, small_2d_env, rng):
         """Test napari backend configures native scale bar."""
+        pytest.importorskip("napari")
+
         fields = [rng.random(small_2d_env.n_bins) for _ in range(3)]
         frame_times = np.linspace(0, 1.0, 3)  # 3 frames over 1 second
 

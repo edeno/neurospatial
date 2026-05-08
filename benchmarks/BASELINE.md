@@ -1,4 +1,4 @@
-# Animation Backend Baseline Metrics
+# Performance Baseline Metrics
 
 **Date:** 2025-11-21
 **Machine:** macOS (darwin)
@@ -182,4 +182,119 @@ uv run python benchmarks/bench_widget.py --config large
 uv run python benchmarks/bench_napari.py --all
 uv run python benchmarks/bench_video.py --all
 uv run python benchmarks/bench_widget.py --all
+```
+
+---
+
+## Encoding Backend Baseline Metrics
+
+**Date:** 2025-12-19
+**Machine:** macOS (darwin)
+**Python:** 3.13.5
+**JAX available:** Yes (x64 mode enabled)
+
+This section records baseline performance metrics for the encoding module backends
+(NumPy vs JAX) for spatial rate computation.
+
+---
+
+### Binned Smoothing (No smoothing)
+
+Fastest mode - raw binned spike counts divided by occupancy.
+
+| n_neurons | Backend | Time (ms) | ms/neuron |
+|-----------|---------|-----------|-----------|
+| 10        | numpy   | 4.6       | 0.46      |
+| 100       | numpy   | 13.2      | 0.13      |
+| 1000      | numpy   | 112.5     | 0.11      |
+
+**Key Observations:**
+
+- Binned smoothing always uses NumPy (JAX is skipped)
+- Simple element-wise division (`spike_counts / occupancy`) has no matrix ops to accelerate
+- Time scales linearly with population size (~0.11-0.13 ms/neuron)
+
+---
+
+### Diffusion KDE Smoothing
+
+Graph-based boundary-aware KDE smoothing. This is the recommended method
+for publication-quality rate maps.
+
+| n_neurons | Backend | Time (ms) | ms/neuron | Speedup |
+|-----------|---------|-----------|-----------|---------|
+| 10        | numpy   | 3.1       | 0.31      | 1.00x   |
+| 10        | jax     | 3.6       | 0.36      | 0.86x   |
+| 100       | numpy   | 12.9      | 0.13      | 1.00x   |
+| 100       | jax     | 12.0      | 0.12      | 1.08x   |
+| 1000      | numpy   | 149.3     | 0.15      | 1.00x   |
+| 1000      | jax     | 92.0      | 0.09      | **1.62x** |
+
+**Key Observations:**
+
+- JAX shows meaningful speedup for large populations (1.62x at 1000 neurons)
+- Speedup comes from accelerated matrix operations in the smoothing kernel
+- For small populations (<100), JAX overhead negates benefits
+- Diffusion KDE is slightly faster than binned per-neuron due to kernel reuse
+
+---
+
+### Gaussian KDE Smoothing
+
+Euclidean distance-based KDE smoothing. Ignores graph connectivity (mass can
+"bleed through" walls). Useful for simple environments without barriers.
+
+| n_neurons | Backend | Time (ms) | ms/neuron | Speedup |
+|-----------|---------|-----------|-----------|---------|
+| 10        | numpy   | 3.3       | 0.33      | 1.00x   |
+| 10        | jax     | 3.8       | 0.38      | 0.86x   |
+| 100       | numpy   | 12.5      | 0.13      | 1.00x   |
+| 100       | jax     | 12.2      | 0.12      | 1.03x   |
+| 1000      | numpy   | 150.2     | 0.15      | 1.00x   |
+| 1000      | jax     | 94.3      | 0.09      | **1.59x** |
+
+**Key Observations:**
+
+- Similar speedup profile to diffusion_kde (both use matrix operations)
+- JAX provides ~1.6x speedup for large populations (1000+ neurons)
+- Break-even point is around 100 neurons
+- Gaussian weights kernel computed in JAX (unlike diffusion which uses precomputed kernel)
+
+---
+
+### When to Use JAX Backend
+
+| Use Case | Recommendation |
+|----------|---------------|
+| Small population (<100 neurons) | Use NumPy (default) |
+| Large population (1000+ neurons) | Use JAX for 1.5-2x speedup |
+| Downstream JAX pipeline | Use JAX to avoid array copies |
+| Windows | Use NumPy (JAX not supported) |
+| Simple exploration | Use NumPy for simplicity |
+| Binned smoothing (no smoothing) | Always uses NumPy (JAX skipped) |
+
+**Note:** The binning layer always runs on NumPy (CPU). JAX acceleration
+applies only to the smoothing/rate computation step for `diffusion_kde` and
+`gaussian_kde` methods. The `binned` method always uses NumPy since it's
+just element-wise division with no matrix operations to accelerate.
+
+---
+
+### Running Encoding Benchmarks
+
+```bash
+# Default benchmark (10, 100, 1000 neurons, binned smoothing)
+uv run python benchmarks/bench_encoding_backends.py
+
+# Custom population sizes
+uv run python benchmarks/bench_encoding_backends.py --n-neurons 10 100 500 1000
+
+# With diffusion KDE smoothing
+uv run python benchmarks/bench_encoding_backends.py --smoothing diffusion_kde
+
+# NumPy only (skip JAX)
+uv run python benchmarks/bench_encoding_backends.py --no-jax
+
+# Save results to CSV
+uv run python benchmarks/bench_encoding_backends.py --csv results.csv
 ```

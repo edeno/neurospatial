@@ -900,7 +900,7 @@ def compute_viewshed(
         if n_cues > 0:
             # Compute bearings (already vectorized)
             bearings = compute_egocentric_bearing(
-                cue_positions, position.reshape(1, -1), np.array([heading])
+                position.reshape(1, -1), np.array([heading]), cue_positions
             )[0]
 
             # Compute distances (vectorized)
@@ -1066,7 +1066,7 @@ def visible_cues(
     # Compute distances and bearings (vectorized)
     distances = np.linalg.norm(cue_positions - position, axis=1)
     bearings = compute_egocentric_bearing(
-        cue_positions, position.reshape(1, -1), np.array([heading])
+        position.reshape(1, -1), np.array([heading]), cue_positions
     )[0]
 
     # Check FOV (vectorized) - FieldOfView.contains_angle handles arrays
@@ -1094,7 +1094,7 @@ def visible_cues(
 
 def compute_viewshed_trajectory(
     env: Environment,
-    trajectory: NDArray[np.float64],
+    positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
     fov: FieldOfView | float | None = None,
@@ -1107,7 +1107,7 @@ def compute_viewshed_trajectory(
     ----------
     env : Environment
         The environment.
-    trajectory : NDArray[np.float64], shape (n_time, 2)
+    positions : NDArray[np.float64], shape (n_time, 2)
         Positions along trajectory.
     headings : NDArray[np.float64], shape (n_time,)
         Headings at each position.
@@ -1123,14 +1123,14 @@ def compute_viewshed_trajectory(
     list of ViewshedResult
         Viewshed result at each trajectory point.
     """
-    trajectory = np.asarray(trajectory, dtype=np.float64)
+    positions = np.asarray(positions, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
 
     results = []
-    for i in range(len(trajectory)):
+    for i in range(len(positions)):
         result = compute_viewshed(
             env,
-            trajectory[i],
+            positions[i],
             headings[i],
             fov=fov,
             n_rays=n_rays,
@@ -1143,7 +1143,7 @@ def compute_viewshed_trajectory(
 
 def visibility_occupancy(
     env: Environment,
-    trajectory: NDArray[np.float64],
+    positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     times: NDArray[np.float64],
     *,
@@ -1156,7 +1156,7 @@ def visibility_occupancy(
     ----------
     env : Environment
         The environment.
-    trajectory : NDArray[np.float64], shape (n_time, 2)
+    positions : NDArray[np.float64], shape (n_time, 2)
         Positions along trajectory.
     headings : NDArray[np.float64], shape (n_time,)
         Headings at each position.
@@ -1172,7 +1172,7 @@ def visibility_occupancy(
     NDArray[np.float64], shape (n_bins,)
         Total time (seconds) each bin was visible.
     """
-    trajectory = np.asarray(trajectory, dtype=np.float64)
+    positions = np.asarray(positions, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
     times = np.asarray(times, dtype=np.float64)
 
@@ -1188,7 +1188,7 @@ def visibility_occupancy(
     for i in range(n_time):
         result = compute_viewshed(
             env,
-            trajectory[i],
+            positions[i],
             headings[i],
             fov=fov,
             n_rays=n_rays,

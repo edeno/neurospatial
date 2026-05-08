@@ -23,8 +23,26 @@ if TYPE_CHECKING:
 
     from neurospatial import Environment
 
+# =============================================================================
+# Constants for NWB spatial fields
+# =============================================================================
+
 # Name for the shared bin_centers dataset in analysis module
-BIN_CENTERS_NAME = "bin_centers"
+BIN_CENTERS_NAME: str = "bin_centers"
+
+# Default names for field containers
+DEFAULT_PLACE_FIELD_NAME: str = "place_field"
+DEFAULT_OCCUPANCY_NAME: str = "occupancy"
+
+# Default processing module for analysis results
+DEFAULT_ANALYSIS_MODULE: str = "analysis"
+
+# Default units for field values
+DEFAULT_FIELD_UNIT: str = "Hz"  # SI-compliant for firing rates
+DEFAULT_OCCUPANCY_UNIT: str = "seconds"
+
+# Default timestamp for static data
+DEFAULT_STATIC_TIMESTAMP: float = 0.0
 
 
 def _validate_field_shape(field: NDArray, n_bins: int) -> None:
@@ -109,7 +127,7 @@ def _ensure_bin_centers(nwbfile: NWBFile, env: Environment) -> None:
     from pynwb import TimeSeries
 
     analysis = _get_or_create_processing_module(
-        nwbfile, "analysis", "Analysis results including spatial fields"
+        nwbfile, DEFAULT_ANALYSIS_MODULE, "Analysis results including spatial fields"
     )
 
     # Only add bin_centers if not already present
@@ -122,7 +140,7 @@ def _ensure_bin_centers(nwbfile: NWBFile, env: Environment) -> None:
             description="Spatial bin center coordinates for place fields",
             data=bin_centers_data,
             unit=env.units if env.units else "unknown",
-            timestamps=[0.0],  # Single timepoint - static data
+            timestamps=[DEFAULT_STATIC_TIMESTAMP],  # Single timepoint - static data
             comments=f"n_dims={env.bin_centers.shape[1]}, n_bins={env.n_bins}",
         )
         analysis.add(bin_centers_ts)
@@ -133,10 +151,10 @@ def write_place_field(
     nwbfile: NWBFile,
     env: Environment,
     field: NDArray[np.float64],
-    name: str = "place_field",
+    name: str = DEFAULT_PLACE_FIELD_NAME,
     description: str = "",
     *,
-    unit: str = "Hz",
+    unit: str = DEFAULT_FIELD_UNIT,
     timestamps: NDArray[np.float64] | None = None,
     overwrite: bool = False,
 ) -> None:
@@ -199,10 +217,10 @@ def write_place_field(
     Examples
     --------
     >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
-    >>> from neurospatial import compute_place_field  # doctest: +SKIP
-    >>> place_field = compute_place_field(
+    >>> from neurospatial.encoding import compute_spatial_rate  # doctest: +SKIP
+    >>> place_field = compute_spatial_rate(
     ...     env, spike_times, timestamps, positions
-    ... )  # doctest: +SKIP
+    ... ).firing_rate  # doctest: +SKIP
     >>> with NWBHDF5IO("session.nwb", "r+") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
     ...     write_place_field(nwbfile, env, place_field, name="cell_001")
@@ -237,7 +255,7 @@ def write_place_field(
 
     # Get or create analysis processing module
     analysis = _get_or_create_processing_module(
-        nwbfile, "analysis", "Analysis results including spatial fields"
+        nwbfile, DEFAULT_ANALYSIS_MODULE, "Analysis results including spatial fields"
     )
 
     # Check for existing field with same name
@@ -259,7 +277,7 @@ def write_place_field(
     timestamps_for_ts: list[float] | NDArray[np.float64]
     if field.ndim == 1:
         # Static field - single timepoint
-        timestamps_for_ts = [0.0]
+        timestamps_for_ts = [DEFAULT_STATIC_TIMESTAMP]
         data = field.reshape(1, -1)  # Shape: (1, n_bins)
     else:
         # Time-varying field - use provided timestamps or sequential indices
@@ -286,10 +304,10 @@ def write_occupancy(
     nwbfile: NWBFile,
     env: Environment,
     occupancy: NDArray[np.float64],
-    name: str = "occupancy",
+    name: str = DEFAULT_OCCUPANCY_NAME,
     description: str = "",
     *,
-    unit: str = "seconds",
+    unit: str = DEFAULT_OCCUPANCY_UNIT,
     overwrite: bool = False,
 ) -> None:
     """
@@ -363,7 +381,7 @@ def write_occupancy(
 
     # Get or create analysis processing module
     analysis = _get_or_create_processing_module(
-        nwbfile, "analysis", "Analysis results including spatial fields"
+        nwbfile, DEFAULT_ANALYSIS_MODULE, "Analysis results including spatial fields"
     )
 
     # Check for existing occupancy with same name
@@ -388,7 +406,7 @@ def write_occupancy(
         description=description,
         data=data,
         unit=unit,
-        timestamps=[0.0],  # Single timepoint - static data
+        timestamps=[DEFAULT_STATIC_TIMESTAMP],  # Single timepoint - static data
         comments=f"Occupancy map with n_bins={env.n_bins}. See '{BIN_CENTERS_NAME}' for coordinates.",
     )
 

@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from neurospatial.simulation.models import PlaceCellModel
+from neurospatial.simulation.models import HeadDirectionCellModel, PlaceCellModel
 from neurospatial.simulation.spikes import (
     add_modulation,
     generate_poisson_spikes,
@@ -276,6 +276,50 @@ class TestGeneratePopulationSpikes:
             if len(spike_times) > 1:
                 isis = np.diff(spike_times)
                 assert np.all(isis >= refractory_period - 1e-10)
+
+    def test_head_direction_model_derives_headings(self):
+        """HeadDirectionCellModel should work without explicit headings."""
+        model = HeadDirectionCellModel(
+            preferred_direction=0.0,
+            max_rate=50.0,
+            baseline_rate=5.0,
+        )
+        times = np.linspace(0.0, 1.0, 101)
+        positions = np.column_stack([times, np.zeros_like(times)])
+
+        spike_trains = generate_population_spikes(
+            [model],
+            positions,
+            times,
+            seed=42,
+            show_progress=False,
+        )
+
+        assert len(spike_trains) == 1
+        assert isinstance(spike_trains[0], np.ndarray)
+
+    def test_head_direction_model_uses_explicit_headings(self):
+        """Explicit headings should be passed to HeadDirectionCellModel."""
+        model = HeadDirectionCellModel(
+            preferred_direction=np.pi / 2,
+            max_rate=50.0,
+            baseline_rate=5.0,
+        )
+        times = np.linspace(0.0, 1.0, 101)
+        positions = np.column_stack([times, np.zeros_like(times)])
+        headings = np.full(len(times), np.pi / 2)
+
+        spike_trains = generate_population_spikes(
+            [model],
+            positions,
+            times,
+            headings=headings,
+            seed=42,
+            show_progress=False,
+        )
+
+        assert len(spike_trains) == 1
+        assert isinstance(spike_trains[0], np.ndarray)
 
 
 class TestAddModulation:

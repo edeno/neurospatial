@@ -33,9 +33,7 @@ Examples
 
 >>> # Generate rate-matched surrogates
 >>> spike_counts = np.array([[0, 1], [2, 0], [1, 1]], dtype=np.int64)
->>> for surrogate in generate_poisson_surrogates(
-...     spike_counts, dt=0.025, n_surrogates=3, rng=42
-... ):
+>>> for surrogate in generate_poisson_surrogates(spike_counts, n_surrogates=3, rng=42):
 ...     pass  # Analyze surrogate
 
 See Also
@@ -51,32 +49,12 @@ from collections.abc import Generator
 import numpy as np
 from numpy.typing import NDArray
 
-
-def _ensure_rng(
-    rng: np.random.Generator | int | None,
-) -> np.random.Generator:
-    """Convert rng parameter to a Generator instance.
-
-    Parameters
-    ----------
-    rng : np.random.Generator | int | None
-        Random number generator, seed, or None.
-
-    Returns
-    -------
-    np.random.Generator
-        A random number generator instance.
-    """
-    if rng is None:
-        return np.random.default_rng()
-    if isinstance(rng, np.random.Generator):
-        return rng
-    return np.random.default_rng(rng)
+# Import internal utilities from canonical location
+from neurospatial.stats._utils import _ensure_rng
 
 
 def generate_poisson_surrogates(
     spike_counts: NDArray[np.int64],
-    dt: float,
     *,
     n_surrogates: int = 1000,
     rng: np.random.Generator | int | None = None,
@@ -95,11 +73,6 @@ def generate_poisson_surrogates(
     ----------
     spike_counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
         Original spike counts per neuron per time bin.
-    dt : float
-        Time bin width in seconds. **Note:** This parameter is accepted for
-        API consistency with other decoding functions but is NOT used in the
-        computation. Surrogates are generated using mean spike counts directly
-        as Poisson rate parameters.
     n_surrogates : int, default=1000
         Number of surrogate spike trains to generate.
     rng : np.random.Generator | int | None, default=None
@@ -131,7 +104,7 @@ def generate_poisson_surrogates(
     ...     [[0, 1], [2, 0], [1, 1]], dtype=np.int64
     ... )  # doctest: +SKIP
     >>> for i, surrogate in enumerate(  # doctest: +SKIP
-    ...     generate_poisson_surrogates(spike_counts, dt=0.025, n_surrogates=3, rng=42)
+    ...     generate_poisson_surrogates(spike_counts, n_surrogates=3, rng=42)
     ... ):
     ...     print(f"Surrogate {i}: shape={surrogate.shape}, total={surrogate.sum()}")
     Surrogate 0: shape=(3, 2), total=3
@@ -165,7 +138,6 @@ def generate_poisson_surrogates(
 
 def generate_inhomogeneous_poisson_surrogates(
     spike_counts: NDArray[np.int64],
-    dt: float,
     *,
     smoothing_window: int = 3,
     n_surrogates: int = 1000,
@@ -185,11 +157,6 @@ def generate_inhomogeneous_poisson_surrogates(
     ----------
     spike_counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
         Original spike counts per neuron per time bin.
-    dt : float
-        Time bin width in seconds. **Note:** This parameter is accepted for
-        API consistency with other decoding functions but is NOT used in the
-        computation. Surrogates are generated using smoothed spike counts
-        directly as time-varying Poisson rate parameters.
     smoothing_window : int, default=3
         Size of the uniform smoothing window (in time bins) applied to
         estimate time-varying rates. Larger values preserve less temporal
@@ -229,7 +196,7 @@ def generate_inhomogeneous_poisson_surrogates(
     ... )
     >>> for i, surrogate in enumerate(
     ...     generate_inhomogeneous_poisson_surrogates(
-    ...         spike_counts, dt=0.025, smoothing_window=3, n_surrogates=3, rng=42
+    ...         spike_counts, smoothing_window=3, n_surrogates=3, rng=42
     ...     )
     ... ):
     ...     print(f"Surrogate {i}: shape={surrogate.shape}")

@@ -19,6 +19,18 @@ from neurospatial import Environment
 pytestmark = pytest.mark.xdist_group(name="napari_gui")
 
 
+def _napari_installed() -> bool:
+    import importlib.util
+
+    return importlib.util.find_spec("napari") is not None
+
+
+_skip_without_napari = pytest.mark.skipif(
+    not _napari_installed(),
+    reason="napari not installed (lives in the optional 'animation' extra)",
+)
+
+
 # Helper function for creating properly configured mock viewers
 def _create_mock_viewer():
     """Create a properly configured mock napari viewer for testing."""
@@ -1196,6 +1208,7 @@ class TestRenderNapariArrayInput:
         del fields_mmap
 
 
+@_skip_without_napari
 class TestLargeDatasetColormapRange:
     """Test colormap range computation warning for very large datasets."""
 
@@ -1305,6 +1318,7 @@ class TestLargeDatasetColormapRange:
 # See benchmarks/bench_lazy_renderers.py for details.
 
 
+@_skip_without_napari
 class TestMultiscaleDisabled:
     """Test that multiscale=False is always set for add_image calls.
 

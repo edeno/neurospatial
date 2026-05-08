@@ -21,7 +21,7 @@
 # By the end of this notebook, you will be able to:
 #
 # - Convert spike trains to occupancy-normalized firing rate fields
-# - Use `compute_place_field()` with different smoothing methods
+# - Use `compute_spatial_rate()` with different smoothing methods
 # - Understand min occupancy thresholds and their impact
 # - Generate reward fields for reinforcement learning
 # - Compare different reward decay profiles
@@ -41,7 +41,7 @@ from shapely.geometry import Point
 
 from neurospatial import Environment
 from neurospatial.behavior.reward import goal_reward_field, region_reward_field
-from neurospatial.encoding.place import compute_place_field
+from neurospatial.encoding import compute_spatial_rate
 from neurospatial.simulation import (
     PlaceCellModel,
     generate_poisson_spikes,
@@ -77,7 +77,7 @@ WONG_COLORS = {
 #
 # ## Part 1: Place Field Analysis - Recommended Workflow
 #
-# This section demonstrates the **recommended approach** for computing place fields from spike data. We'll use `compute_place_field()`, which handles all the details automatically:
+# This section demonstrates the **recommended approach** for computing place fields from spike data. We'll use `compute_spatial_rate()`, which handles all the details automatically:
 #
 # - Spike-to-bin mapping
 # - Occupancy normalization (spike count / time in bin)
@@ -282,31 +282,33 @@ print(f"Bins with >0.5s: {np.sum(occupancy > 0.5)}/{env.n_bins}")
 # %% [markdown]
 # ### Compute Place Field (Recommended Approach)
 #
-# **Use `compute_place_field()` for most applications** - it handles spike conversion, occupancy normalization, and smoothing in one call:
+# **Use `compute_spatial_rate()` for most applications** - it handles spike conversion, occupancy normalization, and smoothing in one call:
 
 # %%
 # One-liner: compute smoothed place field using boundary-aware diffusion KDE
-place_field = compute_place_field(
+result = compute_spatial_rate(
     env,
     spike_times,
     times,
     positions,
     smoothing_method="diffusion_kde",  # Boundary-aware smoothing (recommended)
     bandwidth=8.0,  # Smoothing bandwidth in cm
-    min_occupancy_seconds=0.5,  # Exclude bins with <0.5s occupancy
+    min_occupancy=0.5,  # Exclude bins with <0.5s occupancy
 )
+place_field = result.firing_rate  # Access firing rate from result object
 
 print("Place field computed using diffusion KDE")
 print(f"Peak firing rate: {np.nanmax(place_field):.2f} Hz")
 print(f"Valid bins: {np.sum(~np.isnan(place_field))}/{env.n_bins}")
 
 # %% [markdown]
-# **Why `compute_place_field()` is recommended:**
+# **Why `compute_spatial_rate()` is recommended:**
 #
 # - **One function call** - handles all steps automatically
 # - **Occupancy normalization** - divides spike counts by time in each bin
 # - **Boundary-aware smoothing** - diffusion KDE respects environment boundaries
 # - **Standard in neuroscience** - implements best practices from the literature
+# - **Rich result object** - returns `SpatialRateResult` with firing rate, occupancy, and methods
 #
 # For most users, this is the **only function you need** for place field analysis.
 
@@ -350,33 +352,35 @@ print(
 #
 # ## Part 2: Understanding the Components (Advanced)
 #
-# The sections below show the **low-level details** of how place fields are computed. Most users can skip this - `compute_place_field()` handles everything automatically.
+# The sections below show the **low-level details** of how place fields are computed. Most users can skip this - `compute_spatial_rate()` handles spike binning, occupancy normalization, and smoothing.
 #
-# ### Binned Approach (Legacy Method)
+# ### Binned Approach (Bin-Then-Smooth)
 #
-# For understanding or backwards compatibility, use `smoothing_method="binned"`:
+# For understanding raw binning behavior, use `smoothing_method="binned"`:
 
 # %%
 # Binned approach: compute firing rate field with minimal smoothing
-firing_rate_raw = compute_place_field(
+result_raw = compute_spatial_rate(
     env,
     spike_times,
     times,
     positions,
     smoothing_method="binned",
     bandwidth=0.1,  # Minimal smoothing to see raw binned structure
-    min_occupancy_seconds=0.0,  # Include all bins
+    min_occupancy=0.0,  # Include all bins
 )
+firing_rate_raw = result_raw.firing_rate
 
-firing_rate_filtered = compute_place_field(
+result_filtered = compute_spatial_rate(
     env,
     spike_times,
     times,
     positions,
     smoothing_method="binned",
     bandwidth=0.1,
-    min_occupancy_seconds=0.5,  # Standard threshold
+    min_occupancy=0.5,  # Standard threshold
 )
+firing_rate_filtered = result_filtered.firing_rate
 
 # Compute occupancy for visualization
 occupancy = env.occupancy(times, positions, return_seconds=True)
@@ -460,7 +464,7 @@ plt.show()
 # - Debugging place field computation
 # - Research requiring non-standard processing
 #
-# **For most applications, use `compute_place_field()` instead** (shown in Part 1).
+# **For most applications, use `compute_spatial_rate()` instead** (shown in Part 1).
 
 # %% [markdown]
 # ---
@@ -827,9 +831,10 @@ plt.show()
 # In this notebook, you learned:
 #
 # ### Spike Field Conversion
-# - ✅ Convert spike trains to firing rate fields using `compute_place_field()`
-# - ✅ Apply occupancy thresholds (`min_occupancy_seconds=0.5` is standard)
-# - ✅ Use `compute_place_field()` for one-liner workflows with smoothing
+# - ✅ Convert spike trains to firing rate fields using `compute_spatial_rate()`
+# - ✅ Apply occupancy thresholds (`min_occupancy=0.5` is standard)
+# - ✅ Use `compute_spatial_rate()` for one-liner workflows with smoothing
+# - ✅ Access firing rate from result object: `result.firing_rate`
 # - ✅ Visualize occupancy, raw, and filtered firing rates
 #
 # ### Reward Field Generation

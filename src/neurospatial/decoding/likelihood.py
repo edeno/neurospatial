@@ -34,6 +34,7 @@ from typing import cast
 
 import numpy as np
 from numpy.typing import NDArray
+from scipy import sparse
 
 
 def log_poisson_likelihood(
@@ -142,7 +143,16 @@ def log_poisson_likelihood(
     # Spike count term: n_i * log(lambda_i * dt)
     # Matrix multiplication: (n_time_bins, n_neurons) @ (n_neurons, n_bins)
     # Result: (n_time_bins, n_bins)
-    spike_term = spike_counts @ log_expected
+    #
+    # Optimize for sparse spike counts (common in neural data: >80% zeros)
+    # Use scipy.sparse for significant speedup when sparsity > 80%
+    sparsity = 1.0 - np.count_nonzero(spike_counts) / spike_counts.size
+    if sparsity > 0.8 and spike_counts.size > 1000:
+        # Convert to sparse CSR format for efficient row-wise operations
+        spike_counts_sparse = sparse.csr_matrix(spike_counts.astype(np.float64))
+        spike_term = spike_counts_sparse @ log_expected
+    else:
+        spike_term = spike_counts @ log_expected
 
     # Rate penalty term: -sum_i lambda_i * dt
     # Sum over neurons for each bin, broadcast across time bins

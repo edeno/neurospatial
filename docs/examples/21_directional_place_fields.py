@@ -52,14 +52,13 @@ import numpy as np
 from shapely.geometry import Polygon
 
 # Neurospatial imports
-from neurospatial import (
-    Environment,
-    compute_directional_place_fields,
-    compute_place_field,
+from neurospatial import Environment
+from neurospatial.behavior import (
     goal_pair_direction_labels,
     heading_direction_labels,
     segment_trials,
 )
+from neurospatial.encoding import compute_directional_place_fields, compute_spatial_rate
 
 # Simulation imports
 from neurospatial.simulation import (
@@ -314,14 +313,14 @@ outbound_field = directional_fields.fields["home\u2192goal"]
 inbound_field = directional_fields.fields["goal\u2192home"]
 
 # Also compute overall (non-directional) place field for comparison
-overall_field = compute_place_field(
+overall_field = compute_spatial_rate(
     track_env,
     spike_times,
     times,
     positions,
     smoothing_method="diffusion_kde",
     bandwidth=8.0,
-)
+).firing_rate
 
 # Create visualization
 fig, axes = plt.subplots(1, 3, figsize=(18, 4), constrained_layout=True)
@@ -723,7 +722,7 @@ if east_label and west_label:
 #
 # 3. **Directional Place Fields** (`compute_directional_place_fields`):
 #    - Computes separate place field for each direction label
-#    - Reuses `compute_place_field` internally
+#    - Reuses `compute_spatial_rate` internally
 #    - Returns `DirectionalPlaceFields` dataclass with fields and labels
 #
 # 4. **Directional Index** (simple formula):

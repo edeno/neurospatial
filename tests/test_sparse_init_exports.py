@@ -115,9 +115,8 @@ class TestOldExportsNotAtTopLevel:
             "to_dict",
             "from_dict",
             # Encoding metrics - should use neurospatial.encoding
-            "compute_place_field",
             "detect_place_fields",
-            "skaggs_information",
+            "spatial_information",
             "sparsity",
             "selectivity",
             "border_score",
@@ -179,12 +178,12 @@ class TestSubmoduleImportsStillWork:
             detect_place_fields,
             grid_score,
             selectivity,
-            skaggs_information,
             sparsity,
+            spatial_information,
         )
 
         assert detect_place_fields is not None
-        assert skaggs_information is not None
+        assert spatial_information is not None
         assert sparsity is not None
         assert selectivity is not None
         assert border_score is not None

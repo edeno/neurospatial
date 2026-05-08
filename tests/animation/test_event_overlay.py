@@ -8,12 +8,15 @@ Tests are organized by milestone tasks from TASKS.md.
 
 from __future__ import annotations
 
+import importlib.util
 from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 from numpy.testing import assert_array_equal
+
+HAS_NAPARI = importlib.util.find_spec("napari") is not None
 
 # =============================================================================
 # Milestone 1: Core Data Structures Tests
@@ -1047,9 +1050,6 @@ class TestConvertOverlaysToDataWithEvents:
 # Milestone 2: Napari Backend Tests
 # =============================================================================
 
-# Skip napari tests if napari not available
-napari = pytest.importorskip("napari")
-
 
 @pytest.fixture
 def simple_env():
@@ -1191,6 +1191,9 @@ def _create_mock_viewer_with_metadata_support():
     return mock_viewer
 
 
+@pytest.mark.napari
+@pytest.mark.xdist_group(name="napari_gui")
+@pytest.mark.skipif(not HAS_NAPARI, reason="napari not installed")
 class TestNapariEventOverlayPointsAndCallback:
     """Test napari backend event rendering using Points layer with callback.
 
@@ -1407,6 +1410,9 @@ class TestNapariEventOverlayPointsAndCallback:
         # The key test is that we use 3D points, covered by test_instant_mode_uses_3d_coordinates
 
 
+@pytest.mark.napari
+@pytest.mark.xdist_group(name="napari_gui")
+@pytest.mark.skipif(not HAS_NAPARI, reason="napari not installed")
 class TestNapariEventOverlayDecayModes:
     """Test napari backend event rendering with different decay modes.
 
@@ -1468,6 +1474,9 @@ class TestNapariEventOverlayDecayModes:
         assert mock_viewer.add_points.called
 
 
+@pytest.mark.napari
+@pytest.mark.xdist_group(name="napari_gui")
+@pytest.mark.skipif(not HAS_NAPARI, reason="napari not installed")
 class TestNapariEventOverlayMultipleTypes:
     """Test napari backend event rendering with multiple event types.
 
@@ -1531,6 +1540,9 @@ class TestNapariEventOverlayMultipleTypes:
         assert len(face_color) == 5
 
 
+@pytest.mark.napari
+@pytest.mark.xdist_group(name="napari_gui")
+@pytest.mark.skipif(not HAS_NAPARI, reason="napari not installed")
 class TestNapariEventOverlayCoordinates:
     """Test napari backend event coordinate transformation."""
 
@@ -1578,6 +1590,9 @@ class TestNapariEventOverlayCoordinates:
         assert found_match, "Expected transformed coordinates in points layer"
 
 
+@pytest.mark.napari
+@pytest.mark.xdist_group(name="napari_gui")
+@pytest.mark.skipif(not HAS_NAPARI, reason="napari not installed")
 class TestNapariEventOverlayEdgeCases:
     """Test edge cases for napari event overlay rendering."""
 

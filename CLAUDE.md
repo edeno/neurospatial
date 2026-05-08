@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Last Updated**: 2025-12-06 (Package reorganization with domain-centric structure)
+**Last Updated**: 2026-01-08 (Encoding API updated to use result classes)
 
 ---
 
@@ -36,6 +36,48 @@ West----+----East                 Back----+----Ahead
 **Example:** Animal at (0,0) facing East (heading=0), object at (10, 10):
 - Allocentric bearing to object: π/4 (45° from East toward North)
 - Egocentric bearing to object: π/4 (45° left of ahead)
+
+### Canonical Argument Order
+
+All public functions follow a consistent argument order pattern:
+
+```python
+# Neural encoding functions (place fields, object-vector, spatial view, etc.)
+func(
+    env,                    # 1. Environment (spatial context)
+    spike_times,            # 2. Neural data (what fired)
+    times,                  # 3. Timestamps (when sampled)
+    positions,              # 4. Position coordinates (where animal was)
+    headings,               # 5. Head direction (which way facing) - if egocentric
+    object_positions,       # 6. External targets - if relevant
+    *,                      # 7. Keyword-only separator
+    method_params,          # 8. Algorithm parameters (bandwidth, smoothing_method, etc.)
+)
+
+# Egocentric operations (bearing, distance to targets)
+func(
+    positions,              # 1. Animal positions (where animal is)
+    headings,               # 2. Animal headings (which way facing)
+    targets,                # 3. Target locations (what animal is relating to)
+)
+
+# Behavioral segmentation (laps, trials, crossings)
+func(
+    position_bins,          # 1. Discretized position indices
+    times,                  # 2. Timestamps
+    env,                    # 3. Environment (for graph/region lookups)
+    *,                      # 4. Keyword-only separator
+    region_params,          # 5. Region specifications (start_region, end_regions, etc.)
+)
+```
+
+**Key principles:**
+
+- **Environment first** for encoding functions (establishes spatial context)
+- **Animal state before targets** for egocentric ops (positions, headings, then targets)
+- **Data before metadata** (spike_times before times, positions before headings)
+- **Use `positions`** not `trajectory` for coordinate arrays (consistency)
+- **Use `position_bins`** not `trajectory_bins` for discretized indices
 
 ---
 
@@ -101,15 +143,19 @@ neighbors = env.neighbors(bin_idx)
 ### 2. Compute Place Fields
 
 ```python
-from neurospatial.encoding.place import compute_place_field
+from neurospatial.encoding import compute_spatial_rate
 
-# Compute place field for one neuron
-firing_rate = compute_place_field(
+# Compute place field for one neuron (returns SpatialRateResult)
+result = compute_spatial_rate(
     env, spike_times, times, positions,
     smoothing_method="diffusion_kde",  # Default: graph-based boundary-aware KDE
-    bandwidth=5.0  # Smoothing bandwidth (cm)
+    bandwidth=5.0,  # Smoothing bandwidth (cm)
+    min_occupancy=0.5,  # Exclude bins with <0.5s occupancy
 )
+firing_rate = result.firing_rate  # Access firing rate from result object
+
 # Methods: "diffusion_kde" (default), "gaussian_kde", "binned" (legacy)
+# Result also has: result.occupancy, result.env, result.spatial_information(), etc.
 ```
 
 **Need decoding?** See [QUICKSTART.md - Bayesian Decoding](.claude/QUICKSTART.md#neural-analysis)
@@ -192,7 +238,8 @@ from neurospatial.ops.egocentric import (
 )
 
 # Compute heading from movement direction (min_speed in cm/s)
-headings = heading_from_velocity(positions, times, min_speed=5.0)  # cm/s
+dt = times[1] - times[0]  # time step in seconds
+headings = heading_from_velocity(positions, dt, min_speed=5.0)  # cm/s
 
 # Compute egocentric bearing to objects (0=ahead, π/2=left, -π/2=right)
 object_positions = np.array([[50, 50], [75, 25]])  # 2 objects, coordinates in cm
@@ -200,7 +247,7 @@ bearings = compute_egocentric_bearing(positions, headings, object_positions)
 
 # Compute egocentric distance (Euclidean or geodesic)
 distances = compute_egocentric_distance(
-    positions, object_positions, metric="euclidean"
+    positions, headings, object_positions, metric="euclidean"
 )
 ```
 
@@ -209,19 +256,19 @@ distances = compute_egocentric_distance(
 ### 8. Compute Object-Vector Field
 
 ```python
-from neurospatial.encoding.object_vector import compute_object_vector_field
+from neurospatial.encoding import compute_egocentric_rate
 
-# Compute firing field in egocentric polar coordinates
-result = compute_object_vector_field(
-    spike_times, times, positions, headings, object_positions,
-    distance_range=(0, 50),  # cm from object
-    angle_range=(-np.pi, np.pi),  # full circle
-    distance_bin_size=5.0,  # 5 cm bins
-    angle_bin_size=np.pi/12,  # 15° bins
+# Compute firing field in egocentric polar coordinates (returns EgocentricRateResult)
+result = compute_egocentric_rate(
+    env, spike_times, times, positions, headings, object_positions,
+    distance_range=(0.0, 50.0),  # min/max distance to object (cm)
+    n_distance_bins=10,          # radial resolution
+    n_direction_bins=12,         # angular resolution (full circle)
 )
-# result.field: firing rate in egocentric polar bins
+# result.firing_rate: firing rate in egocentric polar bins
 # result.ego_env: the egocentric polar environment
 # result.occupancy: time spent in each bin
+# result.preferred_distance(), result.preferred_direction(): peak location
 ```
 
 **Need metrics?** See [QUICKSTART.md - Object-Vector Cells](.claude/QUICKSTART.md#object-vector-cells)
@@ -229,16 +276,20 @@ result = compute_object_vector_field(
 ### 9. Compute Spatial View Field
 
 ```python
-from neurospatial.encoding.spatial_view import compute_spatial_view_field
+from neurospatial.encoding import compute_view_rate
 
-# Compute firing field indexed by VIEWED location (not animal position)
-result = compute_spatial_view_field(
+# Compute firing field indexed by VIEWED location (returns ViewRateResult)
+result = compute_view_rate(
     env, spike_times, times, positions, headings,
     view_distance=20.0,  # cm ahead
     gaze_model="fixed_distance",  # or "ray_cast", "boundary"
+    smoothing_method="diffusion_kde",
+    bandwidth=5.0,
 )
-# result.field: firing rate at each spatial bin (indexed by where animal looked)
+# result.firing_rate: firing rate at each spatial bin (indexed by where animal looked)
 # result.view_occupancy: time spent viewing each bin
+# result.is_view_cell(): classification method
+# result.view_spatial_information(): spatial information metric
 ```
 
 **Need classification?** See [QUICKSTART.md - Spatial View Cells](.claude/QUICKSTART.md#spatial-view-cells)

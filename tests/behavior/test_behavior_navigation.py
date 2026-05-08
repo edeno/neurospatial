@@ -485,17 +485,17 @@ class TestBehavioralFunctions:
 
         # Create trajectory bins
         n_samples = 10
-        trajectory_bins = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+        position_bins = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
         start_bins = np.full(n_samples, 0)
         goal_bins = np.full(n_samples, 9)
 
         # Limit to valid bin range
-        trajectory_bins = np.minimum(trajectory_bins, simple_env.n_bins - 1)
+        position_bins = np.minimum(position_bins, simple_env.n_bins - 1)
         start_bins = np.minimum(start_bins, simple_env.n_bins - 1)
         goal_bins = np.minimum(goal_bins, simple_env.n_bins - 1)
 
         progress = path_progress(
-            simple_env, trajectory_bins, start_bins, goal_bins, metric="euclidean"
+            simple_env, position_bins, start_bins, goal_bins, metric="euclidean"
         )
 
         assert len(progress) == n_samples
@@ -507,28 +507,28 @@ class TestBehavioralFunctions:
         from neurospatial.behavior.navigation import distance_to_region
 
         # Create trajectory
-        trajectory_bins = np.array([0, 1, 2, 3, 4])
-        trajectory_bins = np.minimum(trajectory_bins, simple_env.n_bins - 1)
+        position_bins = np.array([0, 1, 2, 3, 4])
+        position_bins = np.minimum(position_bins, simple_env.n_bins - 1)
         target_bin = min(10, simple_env.n_bins - 1)
 
         distances = distance_to_region(
-            simple_env, trajectory_bins, target_bin, metric="euclidean"
+            simple_env, position_bins, target_bin, metric="euclidean"
         )
 
-        assert len(distances) == len(trajectory_bins)
+        assert len(distances) == len(position_bins)
         assert all(d >= 0 or np.isnan(d) for d in distances)
 
     def test_distance_to_region_array(self, simple_env):
         """Test distance_to_region with array targets."""
         from neurospatial.behavior.navigation import distance_to_region
 
-        trajectory_bins = np.array([0, 1, 2, 3, 4])
-        trajectory_bins = np.minimum(trajectory_bins, simple_env.n_bins - 1)
+        position_bins = np.array([0, 1, 2, 3, 4])
+        position_bins = np.minimum(position_bins, simple_env.n_bins - 1)
         target_bins = np.array([10, 10, 10, 20, 20])
         target_bins = np.minimum(target_bins, simple_env.n_bins - 1)
 
         distances = distance_to_region(
-            simple_env, trajectory_bins, target_bins, metric="euclidean"
+            simple_env, position_bins, target_bins, metric="euclidean"
         )
 
-        assert len(distances) == len(trajectory_bins)
+        assert len(distances) == len(position_bins)

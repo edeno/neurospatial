@@ -38,7 +38,7 @@ Typical Workflows
 
 2. Detect assemblies:
 
-   >>> result = detect_assemblies(spike_counts, method="ica")  # doctest: +SKIP
+   >>> result = detect_assemblies(spike_counts, algorithm="ica")  # doctest: +SKIP
    >>> print(f"Found {result.n_significant} significant assemblies")  # doctest: +SKIP
 
 3. Analyze assembly patterns:
@@ -368,7 +368,7 @@ def marchenko_pastur_threshold(
 def detect_assemblies(
     spike_counts: NDArray[np.float64],
     *,
-    method: Literal["ica", "pca", "nmf"] = "ica",
+    algorithm: Literal["ica", "pca", "nmf"] = "ica",
     n_components: int | Literal["auto"] = "auto",
     z_threshold: float = 2.0,
     random_state: int | None = None,
@@ -384,8 +384,8 @@ def detect_assemblies(
     spike_counts : NDArray[np.float64], shape (n_neurons, n_time_bins)
         Binned spike counts for population. Will be z-scored internally.
         Typical bin size: 25-100ms for assembly detection.
-    method : {'ica', 'pca', 'nmf'}, default='ica'
-        Detection method:
+    algorithm : {'ica', 'pca', 'nmf'}, default='ica'
+        Detection algorithm:
 
         - 'ica': Independent Component Analysis (FastICA). Best for
           separating statistically independent assemblies. Default choice.
@@ -459,7 +459,7 @@ def detect_assemblies(
     >>> result = detect_assemblies(spike_counts, n_components=5)  # doctest: +SKIP
 
     >>> # Using PCA for faster computation
-    >>> result = detect_assemblies(spike_counts, method="pca")  # doctest: +SKIP
+    >>> result = detect_assemblies(spike_counts, algorithm="pca")  # doctest: +SKIP
 
     >>> # Access assembly patterns
     >>> for i, pattern in enumerate(result.patterns):  # doctest: +SKIP
@@ -541,20 +541,20 @@ def detect_assemblies(
             )
 
     # Perform dimensionality reduction
-    if method == "pca":
+    if algorithm == "pca":
         patterns, activations, explained_var = _detect_pca(spike_counts_z, n_comp)
-    elif method == "ica":
+    elif algorithm == "ica":
         patterns, activations, explained_var = _detect_ica(
             spike_counts_z, n_comp, random_state
         )
-    elif method == "nmf":
+    elif algorithm == "nmf":
         patterns, activations, explained_var = _detect_nmf(
             spike_counts,
             n_comp,
             random_state,  # NMF uses original counts
         )
     else:
-        raise ValueError(f"Unknown method: {method}. Use 'ica', 'pca', or 'nmf'.")
+        raise ValueError(f"Unknown algorithm: {algorithm}. Use 'ica', 'pca', or 'nmf'.")
 
     # Create AssemblyPattern objects - vectorized z-score computation
     # Compute z-scores for all patterns at once: shape (n_comp, n_neurons)
@@ -579,7 +579,7 @@ def detect_assemblies(
     return AssemblyDetectionResult(
         patterns=assembly_patterns,
         activations=activations,
-        method=method,
+        method=algorithm,
         n_significant=n_significant,
         eigenvalues=eigenvalues,
         threshold=mp_threshold,

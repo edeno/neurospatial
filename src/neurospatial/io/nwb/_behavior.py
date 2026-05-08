@@ -19,6 +19,13 @@ if TYPE_CHECKING:
     from pynwb import NWBFile
     from pynwb.behavior import CompassDirection, Position, SpatialSeries
 
+# =============================================================================
+# Constants for behavior data
+# =============================================================================
+
+# Fallback units for position data when not specified
+DEFAULT_POSITION_UNITS: str = "cm"
+
 
 def read_position(
     nwbfile: NWBFile,

@@ -494,7 +494,7 @@ def spike_field_env_100() -> Environment:
     Standard diagonal trajectory covering the environment.
     Creates ~100 active bins.
 
-    Use for: spike_to_field tests, compute_place_field tests.
+    Use for: spike_to_field tests, compute_spatial_rate tests.
     """
     positions = np.column_stack([np.linspace(0, 100, 1000), np.linspace(0, 100, 1000)])
     return Environment.from_samples(positions, bin_size=10.0)
@@ -516,12 +516,12 @@ def spike_field_trajectory() -> tuple[NDArray[np.float64], NDArray[np.float64]]:
 
 @pytest.fixture(scope="session")
 def spike_field_env_random() -> Environment:
-    """Random uniform 60x60 environment with bin_size=5 for compute_place_field tests.
+    """Random uniform 60x60 environment with bin_size=5 for compute_spatial_rate tests.
 
     Uses seeded RNG for reproducibility.
     Positions uniformly distributed in [20, 80] range.
 
-    Use for: compute_place_field tests with random coverage.
+    Use for: compute_spatial_rate tests with random coverage.
     """
     rng = np.random.default_rng(DEFAULT_SEED)
     positions = rng.uniform(20, 80, (500, 2))
@@ -530,7 +530,7 @@ def spike_field_env_random() -> Environment:
 
 @pytest.fixture(scope="session")
 def spike_field_random_trajectory() -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Random trajectory for compute_place_field tests (500 points, 50 seconds).
+    """Random trajectory for compute_spatial_rate tests (500 points, 50 seconds).
 
     Uses seeded RNG for reproducibility (DEFAULT_SEED=42).
     Positions uniformly distributed in [20, 80] range.

@@ -38,9 +38,9 @@ class TestOldFilesDeleted:
 
         The metrics package was a re-export layer that duplicated the API.
         Users should now import from canonical locations:
-        - neurospatial.encoding.place (place field metrics)
-        - neurospatial.encoding.head_direction (HD cell metrics)
-        - neurospatial.encoding.object_vector (OVC metrics)
+        - neurospatial.encoding.spatial (spatial rate metrics)
+        - neurospatial.encoding.directional (HD cell metrics)
+        - neurospatial.encoding.egocentric (OVC metrics)
         - neurospatial.behavior.navigation (navigation metrics)
         - neurospatial.behavior.vte (VTE metrics)
         """
@@ -51,6 +51,23 @@ class TestOldFilesDeleted:
 
         with pytest.raises(ModuleNotFoundError, match="metrics"):
             importlib.import_module("neurospatial.metrics")
+
+    @pytest.mark.parametrize(
+        "module_name",
+        [
+            "neurospatial.encoding.place",
+            "neurospatial.encoding.head_direction",
+            "neurospatial.encoding.object_vector",
+            "neurospatial.encoding.spatial_view",
+        ],
+    )
+    def test_old_encoding_modules_deleted(self, module_name: str) -> None:
+        """Verify old field-level encoding modules are deleted."""
+        if module_name in sys.modules:
+            del sys.modules[module_name]
+
+        with pytest.raises(ModuleNotFoundError):
+            importlib.import_module(module_name)
 
 
 class TestNewImportPathsWork:

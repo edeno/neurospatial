@@ -66,7 +66,7 @@ class TestHeadDirectionCellModel:
 
         # Test at preferred direction
         headings = np.array([preferred])
-        rates = hd.firing_rate(headings=headings)
+        rates = hd.firing_rate(headings)
         assert rates[0] == pytest.approx(40.0, abs=1e-6)
 
     def test_von_mises_tuning_curve(self):
@@ -85,7 +85,7 @@ class TestHeadDirectionCellModel:
 
         # Test at various angles
         headings = np.linspace(-np.pi, np.pi, 100)
-        rates = hd.firing_rate(headings=headings)
+        rates = hd.firing_rate(headings)
 
         # Peak should be at preferred direction (index ~50)
         peak_idx = np.argmax(rates)
@@ -113,7 +113,7 @@ class TestHeadDirectionCellModel:
             max_rate=40.0,
             baseline_rate=0.0,
         )
-        rates_broad = hd_broad.firing_rate(headings=headings)
+        rates_broad = hd_broad.firing_rate(headings)
 
         # High concentration (sharp)
         hd_sharp = HeadDirectionCellModel(
@@ -122,7 +122,7 @@ class TestHeadDirectionCellModel:
             max_rate=40.0,
             baseline_rate=0.0,
         )
-        rates_sharp = hd_sharp.firing_rate(headings=headings)
+        rates_sharp = hd_sharp.firing_rate(headings)
 
         # Sharp tuning should have fewer bins above half-max rate
         half_max = 20.0  # half of max_rate
@@ -200,33 +200,22 @@ class TestHeadDirectionCellModel:
         with pytest.raises(ValueError, match=r"baseline_rate.*cannot exceed max_rate"):
             HeadDirectionCellModel(max_rate=10.0, baseline_rate=20.0)
 
-    def test_firing_rate_with_positions_and_times(self, sample_positions, sample_times):
-        """Test computing headings from positions."""
+    def test_firing_rate_with_headings_array(self):
+        """Test firing rate with array of headings."""
         hd = HeadDirectionCellModel(preferred_direction=0.0)
 
-        # Should compute headings from velocity
-        rates = hd.firing_rate(positions=sample_positions, times=sample_times)
+        # Generate headings
+        headings = np.linspace(-np.pi, np.pi, 100)
+        rates = hd.firing_rate(headings)
 
-        assert len(rates) == len(sample_times)
+        assert len(rates) == len(headings)
         assert np.all(rates >= hd.baseline_rate)
         assert np.all(rates <= hd.max_rate)
 
-    def test_firing_rate_requires_headings_or_positions(self):
-        """Test that either headings or positions must be provided."""
-        hd = HeadDirectionCellModel()
-
-        with pytest.raises(ValueError, match="Either headings or positions"):
-            hd.firing_rate()
-
-    def test_firing_rate_requires_times_with_positions(self, sample_positions):
-        """Test that times must be provided when using positions."""
-        hd = HeadDirectionCellModel()
-
-        with pytest.raises(ValueError, match="times must be provided"):
-            hd.firing_rate(positions=sample_positions)
-
-    def test_headings_preferred_over_positions(self, sample_times):
-        """Test that explicit headings are used when provided."""
+    def test_firing_rate_with_optional_positions_times(
+        self, sample_positions, sample_times
+    ):
+        """Test that positions and times parameters are accepted but not used."""
         hd = HeadDirectionCellModel(
             preferred_direction=0.0,
             concentration=5.0,
@@ -236,13 +225,13 @@ class TestHeadDirectionCellModel:
 
         # All headings at preferred direction should give max rate
         headings = np.zeros(100)
-        positions = np.random.rand(100, 2) * 100  # Random positions
 
+        # Positions and times are optional and won't affect result
         rates = hd.firing_rate(
-            positions=positions, times=sample_times[:100], headings=headings
+            headings, positions=sample_positions[:100], times=sample_times[:100]
         )
 
-        # Should use headings, not compute from positions
+        # Should use headings only
         np.testing.assert_allclose(rates, 40.0, atol=1e-6)
 
     def test_population_of_hd_cells(self):
@@ -265,7 +254,7 @@ class TestHeadDirectionCellModel:
         # Population response
         headings = np.linspace(-np.pi, np.pi, 360)
         population_rates = np.column_stack(
-            [cell.firing_rate(headings=headings) for cell in hd_cells]
+            [cell.firing_rate(headings) for cell in hd_cells]
         )
 
         assert population_rates.shape == (360, n_cells)

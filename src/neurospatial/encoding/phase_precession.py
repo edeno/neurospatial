@@ -316,7 +316,9 @@ def phase_precession(
     offset = float(circmean(residuals, high=2 * np.pi, low=0))
 
     # Compute correlation using circular-linear correlation
-    correlation, pval = circular_linear_correlation(phases, positions)
+    correlation, pval = circular_linear_correlation(
+        angles=phases, linear_values=positions
+    )
 
     return PhasePrecessionResult(
         slope=float(optimal_slope),

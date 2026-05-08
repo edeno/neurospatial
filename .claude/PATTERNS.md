@@ -285,7 +285,7 @@ Answer questions about that environment or perform local transforms:
 
 Take environments/graphs/fields as input and perform higher-level analysis:
 
-- **Examples**: `distance_field()`, `map_points_to_bins()`, `estimate_transform()`, `compute_place_field()`
+- **Examples**: `distance_field()`, `map_points_to_bins()`, `estimate_transform()`, `compute_spatial_rate()`
 - **Use when**: Cross-environment operations, neural/behavioral analysis, or batch processing
 
 **If you're unsure:** Start from the object you have (Environment, field array, graph) and use autocomplete. If it's about cross-environment, neural, or behavioral analysis, look in the domain-specific submodules:

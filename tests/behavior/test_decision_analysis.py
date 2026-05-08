@@ -285,9 +285,9 @@ class TestDecisionRegionEntryTime:
                 np.linspace(0, 60, n_samples),  # y moves from 0 to 60
             ]
         )
-        trajectory_bins = env.bin_at(positions)
+        position_bins = env.bin_at(positions)
 
-        entry_time = decision_region_entry_time(trajectory_bins, times, env, "center")
+        entry_time = decision_region_entry_time(position_bins, times, env, "center")
 
         # Center region is at y=55, trajectory goes from y=0 to y=60 over 10s
         # Entry should be around t = 10 * (55/60) ≈ 9.2s (accounting for bin discretization)
@@ -308,10 +308,10 @@ class TestDecisionRegionEntryTime:
                 np.linspace(0, 30, n_samples),  # Only goes to y=30, not center
             ]
         )
-        trajectory_bins = env.bin_at(positions)
+        position_bins = env.bin_at(positions)
 
         with pytest.raises(ValueError, match="never enters"):
-            decision_region_entry_time(trajectory_bins, times, env, "center")
+            decision_region_entry_time(position_bins, times, env, "center")
 
 
 # =============================================================================
@@ -537,9 +537,9 @@ class TestDistanceToDecisionBoundary:
 
         # Trajectory at center (on boundary)
         center_bin = env.bin_at(np.array([50.0, 55.0]))
-        trajectory_bins = np.array([center_bin])
+        position_bins = np.array([center_bin])
 
-        distances = distance_to_decision_boundary(env, trajectory_bins, goal_bins)
+        distances = distance_to_decision_boundary(env, position_bins, goal_bins)
 
         # At center, distance to boundary should be small
         assert distances[0] < 10.0
@@ -558,9 +558,9 @@ class TestDistanceToDecisionBoundary:
         goal_bins = [left_bin, right_bin]
 
         # Trajectory at left goal (far from boundary)
-        trajectory_bins = np.array([left_bin])
+        position_bins = np.array([left_bin])
 
-        distances = distance_to_decision_boundary(env, trajectory_bins, goal_bins)
+        distances = distance_to_decision_boundary(env, position_bins, goal_bins)
 
         # At goal, distance to boundary should be larger
         assert distances[0] > 20.0
@@ -580,11 +580,11 @@ class TestDetectBoundaryCrossings:
 
         # Voronoi labels change at index 5
         voronoi_labels = np.array([0, 0, 0, 0, 0, 1, 1, 1, 1, 1])
-        trajectory_bins = np.arange(10)
+        position_bins = np.arange(10)
         times = np.linspace(0, 9, 10)
 
         crossing_times, crossing_directions = detect_boundary_crossings(
-            trajectory_bins, voronoi_labels, times
+            position_bins, voronoi_labels, times
         )
 
         assert len(crossing_times) == 1
@@ -597,11 +597,11 @@ class TestDetectBoundaryCrossings:
 
         # Labels oscillate: 0 -> 1 -> 0 -> 1
         voronoi_labels = np.array([0, 0, 1, 1, 0, 0, 1, 1])
-        trajectory_bins = np.arange(8)
+        position_bins = np.arange(8)
         times = np.linspace(0, 7, 8)
 
         crossing_times, crossing_directions = detect_boundary_crossings(
-            trajectory_bins, voronoi_labels, times
+            position_bins, voronoi_labels, times
         )
 
         assert len(crossing_times) == 3
@@ -613,11 +613,11 @@ class TestDetectBoundaryCrossings:
 
         # All same label
         voronoi_labels = np.array([0, 0, 0, 0, 0])
-        trajectory_bins = np.arange(5)
+        position_bins = np.arange(5)
         times = np.linspace(0, 4, 5)
 
         crossing_times, crossing_directions = detect_boundary_crossings(
-            trajectory_bins, voronoi_labels, times
+            position_bins, voronoi_labels, times
         )
 
         assert len(crossing_times) == 0
@@ -783,9 +783,9 @@ class TestDistanceToDecisionBoundaryEdgeCases:
 
         # Create trajectory with invalid bins
         valid_bin = int(env.bin_at(np.array([[50.0, 55.0]]))[0])
-        trajectory_bins = np.array([valid_bin, -1, env.n_bins + 100], dtype=np.int64)
+        position_bins = np.array([valid_bin, -1, env.n_bins + 100], dtype=np.int64)
 
-        distances = distance_to_decision_boundary(env, trajectory_bins, goal_bins)
+        distances = distance_to_decision_boundary(env, position_bins, goal_bins)
 
         assert not np.isnan(distances[0])  # valid bin
         assert np.isnan(distances[1])  # -1 index

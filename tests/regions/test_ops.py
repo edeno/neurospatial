@@ -281,6 +281,34 @@ class TestPointsInAnyRegion:
         # All points should be inside the large region
         assert np.all(mask)
 
+    def test_include_boundary_true(self):
+        """Test that boundary points are included when include_boundary=True."""
+        poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
+        regions = Regions([Region(name="box", data=poly, kind="polygon")])
+
+        # Points on boundary
+        pts = np.array([[0.0, 5.0], [5.0, 0.0], [10.0, 5.0]])
+
+        mask = points_in_any_region(pts, regions, include_boundary=True)
+
+        # All boundary points should be included
+        assert np.all(mask)
+
+    def test_include_boundary_false(self):
+        """Test that boundary points are excluded when include_boundary=False."""
+        poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
+        regions = Regions([Region(name="box", data=poly, kind="polygon")])
+
+        # Mix of interior, boundary, and exterior points
+        pts = np.array([[5.0, 5.0], [0.0, 5.0], [10.0, 5.0], [15.0, 15.0]])
+
+        mask = points_in_any_region(pts, regions, include_boundary=False)
+
+        assert mask[0]  # Interior point included
+        assert not mask[1]  # Boundary point excluded
+        assert not mask[2]  # Boundary point excluded
+        assert not mask[3]  # Exterior point excluded
+
 
 class TestRegionsContainingPoints:
     """Tests for regions_containing_points function."""
@@ -490,3 +518,48 @@ class TestRegionsContainingPoints:
         # Results are region names (strings), not Region objects
         assert isinstance(result[0][0], str)
         assert set(result[0]) == {"box1", "box2"}
+
+    def test_include_boundary_true_dataframe(self):
+        """Test that boundary points are included in DataFrame when include_boundary=True."""
+        poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
+        regions = Regions([Region(name="box", data=poly, kind="polygon")])
+
+        # Points on boundary
+        pts = np.array([[0.0, 5.0], [5.0, 0.0], [10.0, 5.0]])
+
+        df = regions_containing_points(pts, regions, include_boundary=True)
+
+        # All boundary points should be included
+        assert df["box"].all()
+
+    def test_include_boundary_false_dataframe(self):
+        """Test that boundary points are excluded in DataFrame when include_boundary=False."""
+        poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
+        regions = Regions([Region(name="box", data=poly, kind="polygon")])
+
+        # Mix of interior, boundary, and exterior points
+        pts = np.array([[5.0, 5.0], [0.0, 5.0], [10.0, 5.0], [15.0, 15.0]])
+
+        df = regions_containing_points(pts, regions, include_boundary=False)
+
+        assert df.loc[0, "box"]  # Interior point included
+        assert not df.loc[1, "box"]  # Boundary point excluded
+        assert not df.loc[2, "box"]  # Boundary point excluded
+        assert not df.loc[3, "box"]  # Exterior point excluded
+
+    def test_include_boundary_false_list(self):
+        """Test that boundary points are excluded in list format when include_boundary=False."""
+        poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
+        regions = Regions([Region(name="box", data=poly, kind="polygon")])
+
+        # Mix of interior, boundary, and exterior points
+        pts = np.array([[5.0, 5.0], [0.0, 5.0], [10.0, 5.0], [15.0, 15.0]])
+
+        result = regions_containing_points(
+            pts, regions, return_dataframe=False, include_boundary=False
+        )
+
+        assert result[0] == ["box"]  # Interior point included
+        assert result[1] == []  # Boundary point excluded
+        assert result[2] == []  # Boundary point excluded
+        assert result[3] == []  # Exterior point excluded

@@ -5,11 +5,36 @@ factory methods that use it, ensuring consistent API and preventing
 silent bugs from arbitrary defaults.
 """
 
+import inspect
+
 import numpy as np
 import pytest
 from shapely.geometry import Polygon
 
 from neurospatial import Environment
+
+
+def _bin_size_section(docstring: str) -> str:
+    """Extract the lower-cased text of the ``bin_size`` parameter section.
+
+    Uses dedented docstring text so the "next line not starting with a
+    space" parameter-boundary heuristic works on every Python version.
+    Python 3.13 auto-dedents `__doc__` (PEP 257), but 3.10-3.12 keep the
+    original source indentation; without dedenting, the heuristic never
+    fires and the parser slurps the next parameter into the bin_size
+    section.
+    """
+    lines = docstring.split("\n")
+    in_section = False
+    section: list[str] = []
+    for line in lines:
+        if "bin_size :" in line:
+            in_section = True
+        elif in_section:
+            if line.strip() and not line.startswith(" "):
+                break
+            section.append(line)
+    return " ".join(section).lower()
 
 
 class TestBinSizeRequired:
@@ -148,28 +173,11 @@ class TestDocstringConsistency:
 
     def test_from_samples_docstring_shows_required(self):
         """from_samples() docstring should not say 'optional' or show 'default'."""
-        docstring = Environment.from_samples.__doc__
+        docstring = inspect.getdoc(Environment.from_samples) or ""
 
-        # Check for bin_size parameter documentation
         assert "bin_size" in docstring
+        bin_size_text = _bin_size_section(docstring)
 
-        # Should not indicate it's optional or has a default
-        # (We check the parameter section specifically)
-        lines = docstring.split("\n")
-        in_bin_size_section = False
-        bin_size_section = []
-
-        for line in lines:
-            if "bin_size :" in line:
-                in_bin_size_section = True
-            elif in_bin_size_section:
-                if line.strip() and not line.startswith(" "):
-                    break  # End of bin_size section
-                bin_size_section.append(line)
-
-        bin_size_text = " ".join(bin_size_section).lower()
-
-        # Should not mention "optional", "default", "defaults to"
         assert "optional" not in bin_size_text, (
             "from_samples() docstring should not describe bin_size as optional"
         )
@@ -179,27 +187,11 @@ class TestDocstringConsistency:
 
     def test_from_polygon_docstring_shows_required(self):
         """from_polygon() docstring should not say 'optional' or show 'default'."""
-        docstring = Environment.from_polygon.__doc__
+        docstring = inspect.getdoc(Environment.from_polygon) or ""
 
-        # Check for bin_size parameter documentation
         assert "bin_size" in docstring
+        bin_size_text = _bin_size_section(docstring)
 
-        # Should not indicate it's optional
-        lines = docstring.split("\n")
-        in_bin_size_section = False
-        bin_size_section = []
-
-        for line in lines:
-            if "bin_size :" in line:
-                in_bin_size_section = True
-            elif in_bin_size_section:
-                if line.strip() and not line.startswith(" "):
-                    break
-                bin_size_section.append(line)
-
-        bin_size_text = " ".join(bin_size_section).lower()
-
-        # Should not mention "optional", "default", "defaults to"
         assert "optional" not in bin_size_text, (
             "from_polygon() docstring should not describe bin_size as optional"
         )
@@ -209,27 +201,11 @@ class TestDocstringConsistency:
 
     def test_from_image_docstring_shows_required(self):
         """from_image() docstring should not say 'optional' or show 'default'."""
-        docstring = Environment.from_image.__doc__
+        docstring = inspect.getdoc(Environment.from_image) or ""
 
-        # Check for bin_size parameter documentation
         assert "bin_size" in docstring
+        bin_size_text = _bin_size_section(docstring)
 
-        # Should not indicate it's optional
-        lines = docstring.split("\n")
-        in_bin_size_section = False
-        bin_size_section = []
-
-        for line in lines:
-            if "bin_size :" in line:
-                in_bin_size_section = True
-            elif in_bin_size_section:
-                if line.strip() and not line.startswith(" "):
-                    break
-                bin_size_section.append(line)
-
-        bin_size_text = " ".join(bin_size_section).lower()
-
-        # Should not mention "optional", "default", "defaults to"
         assert "optional" not in bin_size_text, (
             "from_image() docstring should not describe bin_size as optional"
         )

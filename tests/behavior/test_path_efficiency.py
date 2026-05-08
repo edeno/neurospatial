@@ -66,8 +66,8 @@ class TestTraveledPathLength:
         env = Environment.from_samples(sample_positions, bin_size=5.0)
 
         # Create trajectory on bin centers
-        trajectory_bins = np.arange(5)
-        positions = env.bin_centers[trajectory_bins]
+        position_bins = np.arange(5)
+        positions = env.bin_centers[position_bins]
 
         length = traveled_path_length(positions, metric="geodesic", env=env)
 

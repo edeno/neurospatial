@@ -15,6 +15,13 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
+# =============================================================================
+# Constants for NWB adapters
+# =============================================================================
+
+# Default starting time for time series when not specified
+DEFAULT_STARTING_TIME: float = 0.0
+
 
 def timestamps_from_series(series: Any) -> NDArray[np.float64]:
     """
@@ -55,7 +62,9 @@ def timestamps_from_series(series: Any) -> NDArray[np.float64]:
         )
 
     n_samples = len(series.data)
-    starting_time = float(getattr(series, "starting_time", 0.0) or 0.0)
+    starting_time = float(
+        getattr(series, "starting_time", DEFAULT_STARTING_TIME) or DEFAULT_STARTING_TIME
+    )
     rate = float(rate)
     timestamps = np.arange(n_samples, dtype=np.float64) / rate + starting_time
     return np.asarray(timestamps, dtype=np.float64)

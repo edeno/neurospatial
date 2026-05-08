@@ -153,8 +153,8 @@ class TestComputeStepLengths:
         env = Environment.from_samples(sample_positions, bin_size=5.0)
 
         # Create trajectory on bin centers (for geodesic distance to work)
-        trajectory_bins = np.arange(5)
-        positions = env.bin_centers[trajectory_bins]
+        position_bins = np.arange(5)
+        positions = env.bin_centers[position_bins]
 
         # Use geodesic distance
         step_lengths = compute_step_lengths(
@@ -165,8 +165,8 @@ class TestComputeStepLengths:
         import networkx as nx
 
         for i in range(len(step_lengths)):
-            bin_i = trajectory_bins[i]
-            bin_j = trajectory_bins[i + 1]
+            bin_i = position_bins[i]
+            bin_j = position_bins[i + 1]
             expected = float(
                 nx.shortest_path_length(
                     env.connectivity, source=bin_i, target=bin_j, weight="distance"
@@ -198,7 +198,7 @@ class TestComputeHomeRange:
         """Test 95% home range selection."""
         # Create trajectory with known occupancy distribution
         # Bin 0: 50 visits, Bin 1: 30 visits, Bin 2: 15 visits, Bin 3: 5 visits
-        trajectory_bins = np.concatenate(
+        position_bins = np.concatenate(
             [
                 np.repeat(0, 50),
                 np.repeat(1, 30),
@@ -207,7 +207,7 @@ class TestComputeHomeRange:
             ]
         )
 
-        home_range = compute_home_range(trajectory_bins, percentile=95.0)
+        home_range = compute_home_range(position_bins, percentile=95.0)
 
         # 95% of 100 visits = 95 visits
         # Bin 0 (50) + Bin 1 (30) + Bin 2 (15) = 95 visits = 95%
@@ -216,9 +216,9 @@ class TestComputeHomeRange:
 
     def test_home_range_100_percentile(self):
         """Test that 100% includes all visited bins."""
-        trajectory_bins = np.array([0, 1, 2, 3, 0, 1, 2, 0, 1, 0])
+        position_bins = np.array([0, 1, 2, 3, 0, 1, 2, 0, 1, 0])
 
-        home_range = compute_home_range(trajectory_bins, percentile=100.0)
+        home_range = compute_home_range(position_bins, percentile=100.0)
 
         # Should include all unique bins
         assert set(home_range) == {0, 1, 2, 3}
@@ -226,29 +226,29 @@ class TestComputeHomeRange:
     def test_home_range_50_percentile(self):
         """Test 50% home range (core area)."""
         # Uniform distribution: 10 visits per bin across 10 bins
-        trajectory_bins = np.repeat(np.arange(10), 10)
+        position_bins = np.repeat(np.arange(10), 10)
 
-        home_range = compute_home_range(trajectory_bins, percentile=50.0)
+        home_range = compute_home_range(position_bins, percentile=50.0)
 
         # 50% of visits = any 5 bins
         assert len(home_range) == 5
 
     def test_home_range_returns_indices(self):
         """Test that home_range returns bin indices (integers)."""
-        trajectory_bins = np.array([0, 1, 2, 1, 0, 1, 2])
+        position_bins = np.array([0, 1, 2, 1, 0, 1, 2])
 
-        home_range = compute_home_range(trajectory_bins, percentile=95.0)
+        home_range = compute_home_range(position_bins, percentile=95.0)
 
         # Should be numpy array of integers
         assert isinstance(home_range, np.ndarray)
         assert home_range.dtype in [np.int32, np.int64, np.intp]
 
     def test_parameter_order(self):
-        """Test that parameter order is (trajectory_bins, *, percentile)."""
-        trajectory_bins = np.array([0, 1, 2, 1, 0])
+        """Test that parameter order is (position_bins, *, percentile)."""
+        position_bins = np.array([0, 1, 2, 1, 0])
 
         # This should work without error
-        home_range = compute_home_range(trajectory_bins, percentile=95.0)
+        home_range = compute_home_range(position_bins, percentile=95.0)
         assert isinstance(home_range, np.ndarray)
 
 
@@ -366,8 +366,8 @@ class TestTrajectoryMetricsIntegration:
 
         # Home range still uses bins (makes sense for occupancy-based metrics)
         env = Environment.from_samples(positions, bin_size=5.0)
-        trajectory_bins = env.bin_at(positions)
-        home_range = compute_home_range(trajectory_bins, percentile=95.0)
+        position_bins = env.bin_at(positions)
+        home_range = compute_home_range(position_bins, percentile=95.0)
 
         # MSD uses continuous positions
         tau_values, msd_values = mean_square_displacement(
@@ -411,8 +411,8 @@ class TestGeodesicDistanceOptimization:
         env = Environment.from_samples(sample_positions, bin_size=5.0)
 
         # Create trajectory visiting multiple bins
-        trajectory_bins = np.array([0, 1, 2, 5, 10, 15, 10, 5, 2, 1, 0])
-        positions = env.bin_centers[trajectory_bins]
+        position_bins = np.array([0, 1, 2, 5, 10, 15, 10, 5, 2, 1, 0])
+        positions = env.bin_centers[position_bins]
 
         # Get step lengths using our optimized implementation
         step_lengths = compute_step_lengths(
@@ -421,8 +421,8 @@ class TestGeodesicDistanceOptimization:
 
         # Compare to NetworkX ground truth (per-step Dijkstra)
         for i in range(len(step_lengths)):
-            bin_i = trajectory_bins[i]
-            bin_j = trajectory_bins[i + 1]
+            bin_i = position_bins[i]
+            bin_j = position_bins[i + 1]
 
             if bin_i == bin_j:
                 expected = 0.0
@@ -464,8 +464,8 @@ class TestGeodesicDistanceOptimization:
         # If we have disconnected components, test the behavior
         # Note: This test may pass trivially if all bins connect
         # The key is that the code handles inf distances gracefully
-        trajectory_bins = env.bin_at(positions)
-        bin_positions = env.bin_centers[trajectory_bins]
+        position_bins = env.bin_at(positions)
+        bin_positions = env.bin_centers[position_bins]
 
         step_lengths = compute_step_lengths(
             bin_positions, distance_type="geodesic", env=env

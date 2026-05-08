@@ -139,16 +139,16 @@ from neurospatial import Environment
 
 # Create environment and map positions to bins
 env = Environment.from_samples(positions, bin_size=5.0)
-trajectory_bins = env.bin_at(positions)
+position_bins = env.bin_at(positions)
 
 # Compute core territory (95th percentile)
-home_range_bins = compute_home_range(trajectory_bins, percentile=95.0)
+home_range_bins = compute_home_range(position_bins, percentile=95.0)
 
 # Compute home range area
 home_range_area = len(home_range_bins) * env.bin_area
 
 print(f"Home range: {home_range_area:.1f} cm²")
-print(f"Core area (50%): {len(compute_home_range(trajectory_bins, percentile=50.0))}")
+print(f"Core area (50%): {len(compute_home_range(position_bins, percentile=50.0))}")
 ```
 
 **Key Points**:
@@ -235,15 +235,15 @@ from neurospatial.segmentation import detect_region_crossings
 
 # Detect all crossings (entries and exits)
 crossings = detect_region_crossings(
-    trajectory_bins, times, region_name="goal", env=env, direction="both"
+    position_bins, times, region_name="goal", env=env, direction="both"
 )
 
 # Filter by direction
 entries = detect_region_crossings(
-    trajectory_bins, times, "goal", env, direction="entry"
+    position_bins, times, "goal", env, direction="entry"
 )
 exits = detect_region_crossings(
-    trajectory_bins, times, "goal", env, direction="exit"
+    position_bins, times, "goal", env, direction="exit"
 )
 
 # Analyze crossing events
@@ -273,7 +273,7 @@ from neurospatial.segmentation import detect_runs_between_regions
 
 # Detect runs from start to goal
 runs = detect_runs_between_regions(
-    trajectory_positions,
+    positions,
     times,
     env,
     source="start",
@@ -314,7 +314,7 @@ from neurospatial.segmentation import segment_by_velocity
 
 # Segment into movement epochs
 movement_epochs = segment_by_velocity(
-    trajectory_positions,
+    positions,
     times,
     threshold=10.0,  # cm/s
     min_duration=0.5,  # seconds
@@ -359,7 +359,7 @@ from neurospatial.segmentation import detect_laps
 
 # Auto-detect laps using first 10% as template
 laps = detect_laps(
-    trajectory_bins,
+    position_bins,
     times,
     env,
     method="auto",
@@ -390,7 +390,7 @@ Use a user-provided reference lap as template.
 reference_lap = np.array([10, 15, 20, 25, 30, 35], dtype=np.int64)
 
 laps = detect_laps(
-    trajectory_bins,
+    position_bins,
     times,
     env,
     method="reference",
@@ -417,7 +417,7 @@ env.regions.add("start", polygon=Point(50, 50).buffer(5.0))
 
 # Detect laps as inter-crossing intervals
 laps = detect_laps(
-    trajectory_bins,
+    position_bins,
     times,
     env,
     method="region",
@@ -446,14 +446,14 @@ Automatically classifies laps as clockwise or counter-clockwise.
 ```python
 # Only counter-clockwise laps
 ccw_laps = detect_laps(
-    trajectory_bins, times, env,
+    position_bins, times, env,
     method="auto",
     direction="counter-clockwise"
 )
 
 # Only clockwise laps
 cw_laps = detect_laps(
-    trajectory_bins, times, env,
+    position_bins, times, env,
     method="auto",
     direction="clockwise"
 )
@@ -485,7 +485,7 @@ env.regions.add("right", polygon=Point(80, 90).buffer(8))
 
 # Segment into trials
 trials = segment_trials(
-    trajectory_bins,
+    position_bins,
     times,
     env,
     start_region="start",
@@ -524,7 +524,7 @@ env.regions.add("arm_c", polygon=Point(80, 30).buffer(8))
 
 # Segment into arm visits
 trials = segment_trials(
-    trajectory_bins,
+    position_bins,
     times,
     env,
     start_region="center",
@@ -560,7 +560,7 @@ for i in range(8):
 
 # Segment into arm choices
 trials = segment_trials(
-    trajectory_bins,
+    position_bins,
     times,
     env,
     start_region="center",
@@ -604,8 +604,8 @@ from neurospatial.segmentation import trajectory_similarity
 
 # Compare two trajectories
 similarity = trajectory_similarity(
-    trajectory1_bins,
-    trajectory2_bins,
+    position1_bins,
+    position2_bins,
     env,
     method="jaccard"
 )
@@ -634,8 +634,8 @@ Sequential correlation (order-sensitive).
 
 ```python
 similarity = trajectory_similarity(
-    trajectory1_bins,
-    trajectory2_bins,
+    position1_bins,
+    position2_bins,
     env,
     method="correlation"
 )
@@ -659,8 +659,8 @@ Maximum deviation between paths.
 
 ```python
 similarity = trajectory_similarity(
-    trajectory1_bins,
-    trajectory2_bins,
+    position1_bins,
+    position2_bins,
     env,
     method="hausdorff"
 )
@@ -687,8 +687,8 @@ Optimal alignment allowing temporal shifts.
 
 ```python
 similarity = trajectory_similarity(
-    trajectory1_bins,
-    trajectory2_bins,
+    position1_bins,
+    position2_bins,
     env,
     method="dtw"
 )
@@ -723,7 +723,7 @@ from neurospatial.segmentation import detect_goal_directed_runs
 
 # Detect efficient paths toward goal
 goal_runs = detect_goal_directed_runs(
-    trajectory_bins,
+    position_bins,
     times,
     env,
     goal_region="goal",
@@ -762,7 +762,7 @@ Detect hippocampal replay sequences that match awake trajectories.
 
 ```python
 # Awake exploration
-awake_trajectory = trajectory_bins[:1000]
+awake_trajectory = position_bins[:1000]
 
 # Sleep/rest epochs (detected separately)
 sleep_epochs = [(1000, 1200), (1500, 1800), (2000, 2300)]
@@ -770,7 +770,7 @@ sleep_epochs = [(1000, 1200), (1500, 1800), (2000, 2300)]
 # Detect replays matching awake trajectory
 replays = []
 for start, end in sleep_epochs:
-    sleep_segment = trajectory_bins[start:end]
+    sleep_segment = position_bins[start:end]
     similarity = trajectory_similarity(
         awake_trajectory,
         sleep_segment,
@@ -802,7 +802,7 @@ Analyze learning and performance across laps.
 ```python
 # Step 1: Detect laps
 laps = detect_laps(
-    trajectory_bins,
+    position_bins,
     times,
     env,
     method="auto",
@@ -841,8 +841,8 @@ for i in range(len(laps)-1):
     mask2 = (times >= laps[i+1].start_time) & (times <= laps[i+1].end_time)
 
     similarity = trajectory_similarity(
-        trajectory_bins[mask1],
-        trajectory_bins[mask2],
+        position_bins[mask1],
+        position_bins[mask2],
         env,
         method="jaccard"
     )
@@ -863,7 +863,7 @@ Analyze choice behavior and learning in T-maze.
 ```python
 # Step 1: Segment trials
 trials = segment_trials(
-    trajectory_bins,
+    position_bins,
     times,
     env,
     start_region="start",
@@ -883,8 +883,8 @@ for i in range(len(left_trials)-1):
     mask2 = (times >= left_trials[i+1].start_time) & (times <= left_trials[i+1].end_time)
 
     sim = trajectory_similarity(
-        trajectory_bins[mask1],
-        trajectory_bins[mask2],
+        position_bins[mask1],
+        position_bins[mask2],
         env,
         method="jaccard"
     )
@@ -896,7 +896,7 @@ print(f"Left choice stereotypy: {np.mean(left_similarities):.3f}")
 for trial in trials[:5]:  # First 5 trials
     if trial.end_region:
         mask = (times >= trial.start_time) & (times <= trial.end_time)
-        trial_bins = trajectory_bins[mask]
+        trial_bins = position_bins[mask]
         trial_times = times[mask]
 
         goal_runs = detect_goal_directed_runs(
@@ -955,10 +955,10 @@ if transition_idx:
 
     # Compare spatial coverage before/after (home range still uses bins)
     env = Environment.from_samples(positions, bin_size=5.0)
-    trajectory_bins = env.bin_at(positions)
+    position_bins = env.bin_at(positions)
 
-    explore_bins = trajectory_bins[:transition_idx * hop_size]
-    goal_bins = trajectory_bins[transition_idx * hop_size:]
+    explore_bins = position_bins[:transition_idx * hop_size]
+    goal_bins = position_bins[transition_idx * hop_size:]
 
     explore_home = compute_home_range(explore_bins, percentile=95)
     goal_home = compute_home_range(goal_bins, percentile=95)

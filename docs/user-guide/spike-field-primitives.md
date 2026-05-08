@@ -4,12 +4,12 @@ This guide covers the primitives for converting spike trains into occupancy-norm
 
 ## Overview
 
-The neurospatial library provides two functions for spike-to-field conversion:
+The neurospatial encoding API provides one canonical entry point for
+spike-to-field conversion:
 
-- **`spikes_to_field()`** - Core function for converting spike trains to firing rate fields
-- **`compute_place_field()`** - Convenience wrapper that combines spike conversion with optional smoothing
+- **`compute_spatial_rate()`** - Converts spike trains to occupancy-normalized spatial firing-rate maps and returns a `SpatialRateResult`
 
-Both functions follow the neurospatial API convention: **environment comes first** in the parameter order, matching the existing pattern used throughout the library.
+The function follows the neurospatial API convention: **environment comes first** in the parameter order.
 
 ## Why Occupancy Normalization Matters
 
@@ -35,15 +35,15 @@ By default, `env.occupancy()` returns occupancy in **seconds** (time-weighted). 
 
 ### Converting Spike Trains to Firing Rate Fields
 
-The `spikes_to_field()` function converts spike train data into spatial firing rate maps:
+The `compute_spatial_rate()` function converts spike train data into spatial firing rate maps:
 
 ```python
 import numpy as np
 from neurospatial import Environment
-from neurospatial import spikes_to_field
+from neurospatial.encoding import compute_spatial_rate
 
 # Create environment from trajectory data
-env = Environment.from_samples(trajectory_positions, bin_size=2.5)
+env = Environment.from_samples(positions, bin_size=2.5)
 
 # Spike times (seconds)
 spike_times = np.array([1.2, 3.5, 5.1, 7.8, ...])
@@ -53,13 +53,15 @@ times = np.array([0.0, 0.033, 0.067, ...])  # 30 Hz sampling
 positions = np.array([[x1, y1], [x2, y2], ...])  # Shape (n_timepoints, 2)
 
 # Compute firing rate field
-firing_rate = spikes_to_field(
+result = compute_spatial_rate(
     env,
     spike_times,
     times,
     positions,
-    min_occupancy_seconds=0.5  # Exclude bins with < 0.5 seconds occupancy
+    smoothing_method="binned",
+    min_occupancy=0.5,  # Exclude bins with < 0.5 seconds occupancy
 )
+firing_rate = result.firing_rate
 
 # Result: firing_rate.shape = (env.n_bins,)
 # Units: spikes/second
@@ -70,36 +72,30 @@ firing_rate = spikes_to_field(
 
 - Parameter order: **environment comes first**, followed by spike data and trajectory data
 - Returns firing rate in **spikes/second**
-- Bins with occupancy less than `min_occupancy_seconds` are set to `NaN`
-- Default `min_occupancy_seconds=0.0` includes all bins
+- Bins with occupancy less than `min_occupancy` are set to `NaN`
+- Default `min_occupancy=0.0` includes all bins
 
-### One-Liner with Smoothing: `compute_place_field()`
+### One-Liner with Smoothing: `compute_spatial_rate()`
 
-For typical place field analysis workflows, use the convenience function that combines spike conversion and smoothing:
+For typical place field analysis workflows, use `compute_spatial_rate()` with a smoothing method:
 
 ```python
-from neurospatial import compute_place_field
+from neurospatial.encoding import compute_spatial_rate
 
 # Compute place field with Gaussian smoothing
-place_field = compute_place_field(
+result = compute_spatial_rate(
     env,
     spike_times,
     times,
     positions,
-    min_occupancy_seconds=0.5,
-    smoothing_bandwidth=5.0  # Gaussian kernel bandwidth (cm)
+    min_occupancy=0.5,
+    smoothing_method="gaussian_kde",
+    bandwidth=5.0,  # Gaussian kernel bandwidth (cm)
 )
+place_field = result.firing_rate
 ```
 
-This is equivalent to:
-
-```python
-# Two-step workflow (manual)
-firing_rate = spikes_to_field(env, spike_times, times, positions, min_occupancy_seconds=0.5)
-place_field = env.smooth(firing_rate, bandwidth=5.0)
-```
-
-If `smoothing_bandwidth=None`, `compute_place_field()` behaves identically to `spikes_to_field()`.
+Use `smoothing_method="binned"` when you want the unsmoothed occupancy-normalized rate map.
 
 ## Parameter Order: Environment First
 
@@ -107,8 +103,7 @@ If `smoothing_bandwidth=None`, `compute_place_field()` behaves identically to `s
 
 ```python
 # Correct parameter order
-spikes_to_field(env, spike_times, times, positions, ...)
-compute_place_field(env, spike_times, times, positions, ...)
+compute_spatial_rate(env, spike_times, times, positions, ...)
 
 # This matches the existing neurospatial API:
 env.occupancy(times, positions)
@@ -125,17 +120,23 @@ This design decision ensures:
 
 ## Min Occupancy Threshold: Best Practices
 
-The `min_occupancy_seconds` parameter controls reliability filtering:
+The `min_occupancy` parameter controls reliability filtering:
 
 ```python
 # Include all bins (default)
-firing_rate = spikes_to_field(env, spike_times, times, positions, min_occupancy_seconds=0.0)
+firing_rate = compute_spatial_rate(
+    env, spike_times, times, positions, min_occupancy=0.0
+).firing_rate
 
 # Exclude bins with < 0.5 seconds occupancy (typical for place fields)
-firing_rate = spikes_to_field(env, spike_times, times, positions, min_occupancy_seconds=0.5)
+firing_rate = compute_spatial_rate(
+    env, spike_times, times, positions, min_occupancy=0.5
+).firing_rate
 
 # More conservative (1 second threshold)
-firing_rate = spikes_to_field(env, spike_times, times, positions, min_occupancy_seconds=1.0)
+firing_rate = compute_spatial_rate(
+    env, spike_times, times, positions, min_occupancy=1.0
+).firing_rate
 ```
 
 **Recommendations:**
@@ -152,13 +153,13 @@ Bins with occupancy below the threshold are set to **NaN** (not zero), which:
 
 ### Why Not Use Default Filtering?
 
-The default `min_occupancy_seconds=0.0` (no filtering) is intentional:
+The default `min_occupancy=0.0` (no filtering) is intentional:
 
 1. **Flexibility**: Users can inspect all bins and make informed filtering decisions
 2. **Transparency**: All data is preserved, no hidden thresholding
 3. **Composability**: You can apply custom filters after computing firing rates
 
-For typical place field analysis, **explicitly set `min_occupancy_seconds=0.5`** to match standard neuroscience practices.
+For typical place field analysis, **explicitly set `min_occupancy=0.5`** to match standard neuroscience practices.
 
 ## Edge Cases and Validation
 
@@ -169,8 +170,8 @@ Empty spike arrays (no spikes) produce fields of zeros:
 ```python
 spike_times = np.array([])  # No spikes
 
-firing_rate = spikes_to_field(env, spike_times, times, positions)
-# Result: all zeros (or NaN where occupancy < min_occupancy_seconds)
+firing_rate = compute_spatial_rate(env, spike_times, times, positions).firing_rate
+# Result: all zeros (or NaN where occupancy < min_occupancy)
 ```
 
 ### Out-of-Bounds Spikes
@@ -181,7 +182,7 @@ Spikes occurring outside the trajectory time range are filtered with a warning:
 spike_times = np.array([1.0, 100.0, 200.0])  # Some spikes beyond times.max()
 times = np.array([0.0, 0.033, ..., 50.0])  # Max time = 50.0
 
-firing_rate = spikes_to_field(env, spike_times, times, positions)
+firing_rate = compute_spatial_rate(env, spike_times, times, positions).firing_rate
 # UserWarning: "X spikes fall outside trajectory time range [0.0, 50.0] and were excluded"
 ```
 
@@ -195,7 +196,7 @@ The function handles 1D trajectories (linear tracks, circular tracks) correctly:
 # 1D positions - either shape (n_timepoints, 1) or (n_timepoints,)
 positions_1d = np.array([0.0, 2.5, 5.0, 7.5, ...])  # Shape (n_timepoints,)
 
-firing_rate = spikes_to_field(env, spike_times, times, positions_1d)
+firing_rate = compute_spatial_rate(env, spike_times, times, positions_1d).firing_rate
 # Automatically handles 1D interpolation
 ```
 
@@ -210,13 +211,13 @@ positions = np.array([[0, 0], [1, 1]])  # Different length!
 # Raises ValueError: "times and positions must have the same length"
 
 # Negative min_occupancy
-spikes_to_field(env, spike_times, times, positions, min_occupancy_seconds=-1.0)
-# Raises ValueError: "min_occupancy_seconds must be non-negative (got -1.0)"
+compute_spatial_rate(env, spike_times, times, positions, min_occupancy=-1.0)
+# Raises ValueError: "min_occupancy must be non-negative (got -1.0)"
 ```
 
 ## NaN Handling in Smoothing
 
-When using `compute_place_field()` with smoothing, NaN values (from low-occupancy bins) are handled automatically:
+When using `compute_spatial_rate()` with smoothing, NaN values from low-occupancy bins are handled by the smoothing implementation:
 
 1. NaN bins are temporarily filled with 0
 2. Gaussian smoothing is applied
@@ -226,7 +227,14 @@ When using `compute_place_field()` with smoothing, NaN values (from low-occupanc
 
 ```python
 # Manual workflow with custom NaN handling
-firing_rate = spikes_to_field(env, spike_times, times, positions, min_occupancy_seconds=0.5)
+firing_rate = compute_spatial_rate(
+    env,
+    spike_times,
+    times,
+    positions,
+    smoothing_method="binned",
+    min_occupancy=0.5,
+).firing_rate
 
 # Option 1: Smooth only valid bins (NaN stays NaN)
 smoothed = env.smooth(firing_rate, bandwidth=5.0)
@@ -236,7 +244,7 @@ from scipy.ndimage import distance_transform_edt
 # ... custom NaN handling ...
 ```
 
-For most use cases, the default NaN handling in `compute_place_field()` is appropriate and matches common neuroscience practice.
+For most use cases, the default NaN handling in `compute_spatial_rate()` is appropriate and matches common neuroscience practice.
 
 ## Visualizing Results
 
@@ -247,9 +255,23 @@ import matplotlib.pyplot as plt
 
 # Compute occupancy and firing rate
 occupancy = env.occupancy(times, positions, return_seconds=True)
-firing_rate = spikes_to_field(env, spike_times, times, positions, min_occupancy_seconds=0.5)
-place_field = compute_place_field(env, spike_times, times, positions,
-                                   min_occupancy_seconds=0.5, smoothing_bandwidth=5.0)
+firing_rate = compute_spatial_rate(
+    env,
+    spike_times,
+    times,
+    positions,
+    smoothing_method="binned",
+    min_occupancy=0.5,
+).firing_rate
+place_field = compute_spatial_rate(
+    env,
+    spike_times,
+    times,
+    positions,
+    min_occupancy=0.5,
+    smoothing_method="gaussian_kde",
+    bandwidth=5.0,
+).firing_rate
 
 # Visualize using environment plotting
 fig, axes = plt.subplots(1, 3, figsize=(15, 4))
@@ -279,7 +301,8 @@ Here's a complete workflow from trajectory data to smoothed place field:
 
 ```python
 import numpy as np
-from neurospatial import Environment, compute_place_field
+from neurospatial import Environment
+from neurospatial.encoding import compute_spatial_rate
 
 # 1. Load or generate trajectory data
 times = np.linspace(0, 60, 1800)  # 1 minute at 30 Hz
@@ -299,14 +322,16 @@ env = Environment.from_samples(positions, bin_size=2.5)
 env.units = "cm"
 
 # 4. Compute place field
-place_field = compute_place_field(
+result = compute_spatial_rate(
     env,
     spike_times,
     times,
     positions,
-    min_occupancy_seconds=0.5,
-    smoothing_bandwidth=5.0
+    min_occupancy=0.5,
+    smoothing_method="gaussian_kde",
+    bandwidth=5.0,
 )
+place_field = result.firing_rate
 
 # 5. Visualize
 import matplotlib.pyplot as plt
@@ -324,10 +349,10 @@ print(f"Spatial information: {np.sum(place_field > 0.5 * np.nanmax(place_field))
 
 For complete parameter descriptions and examples, see:
 
-- [`spikes_to_field()`](../api/neurospatial/spike_field.md#spikes_to_field) - Core spike conversion function
-- [`compute_place_field()`](../api/neurospatial/spike_field.md#compute_place_field) - Convenience function with smoothing
-- [`Environment.occupancy()`](../api/neurospatial/environment/index.md#occupancy) - Occupancy computation
-- [`Environment.smooth()`](../api/neurospatial/environment/index.md#smooth) - Spatial field smoothing
+- [`compute_spatial_rate()`](../api/neurospatial/encoding/spatial.md#neurospatial.encoding.spatial.compute_spatial_rate) - Place field computation
+- [`bin_spike_train()`](../api/neurospatial/encoding/_binning.md#neurospatial.encoding._binning.bin_spike_train) - Spike binning helper
+- [`Environment.occupancy()`](../api/neurospatial/environment/trajectory.md#neurospatial.environment.trajectory.EnvironmentTrajectory.occupancy) - Occupancy computation
+- [`Environment.smooth()`](../api/neurospatial/environment/fields.md#neurospatial.environment.fields.EnvironmentFields.smooth) - Spatial field smoothing
 
 ## Related Topics
 

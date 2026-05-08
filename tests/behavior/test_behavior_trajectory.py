@@ -128,7 +128,7 @@ class TestComputeHomeRangeBasic:
         """Test 95% home range selection."""
         from neurospatial.behavior.trajectory import compute_home_range
 
-        trajectory_bins = np.concatenate(
+        position_bins = np.concatenate(
             [
                 np.repeat(0, 50),
                 np.repeat(1, 30),
@@ -137,7 +137,7 @@ class TestComputeHomeRangeBasic:
             ]
         )
 
-        home_range = compute_home_range(trajectory_bins, percentile=95.0)
+        home_range = compute_home_range(position_bins, percentile=95.0)
 
         assert set(home_range) == {0, 1, 2}
 

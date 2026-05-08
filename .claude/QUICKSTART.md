@@ -98,30 +98,69 @@ nd_pos = env.linear_to_nd(linear_pos)
 
 ### Neural Analysis
 
-**Place fields:**
+**Place fields (single neuron):**
 
 ```python
-from neurospatial.encoding.place import compute_place_field
+from neurospatial.encoding import compute_spatial_rate
 
-# Compute place field for one neuron
-firing_rate = compute_place_field(
+# Compute place field for one neuron (returns SpatialRateResult)
+result = compute_spatial_rate(
     env, spike_times, times, positions,
     smoothing_method="diffusion_kde",  # Default: graph-based boundary-aware KDE
-    bandwidth=5.0  # Smoothing bandwidth (cm)
+    bandwidth=5.0,  # Smoothing bandwidth (cm)
+    min_occupancy=0.5,  # Minimum seconds in bin (default: 0.0)
 )
-# Methods: "diffusion_kde" (default), "gaussian_kde", "binned" (legacy)
+# Access the firing rate
+firing_rate = result.firing_rate  # Shape: (n_bins,)
+
+# Convenience methods on result object
+peak_coords = result.peak_locations()      # (n_dims,) coordinates of peak
+peak_rate = result.peak_firing_rates()     # Scalar max firing rate
+info = result.spatial_information()        # Skaggs info (bits/spike)
+```
+
+**Place fields (population):**
+
+```python
+from neurospatial.encoding import compute_spatial_rates
+
+# Compute place fields for multiple neurons
+spike_times_list = [neuron1_spikes, neuron2_spikes, neuron3_spikes]
+result = compute_spatial_rates(
+    env, spike_times_list, times, positions,
+    smoothing_method="diffusion_kde",
+    bandwidth=5.0,
+    n_jobs=4,  # Parallelize over neurons
+)
+
+# Access results
+firing_rates = result.firing_rates  # Shape: (n_neurons, n_bins)
+
+# Batch metrics
+info = result.spatial_information()  # (n_neurons,)
+sparsity = result.sparsity()         # (n_neurons,)
+peaks = result.peak_locations()      # (n_neurons, n_dims)
+
+# Export to DataFrame
+df = result.to_dataframe()
+print(df.columns)  # ['neuron_id', 'peak_x', 'peak_y', 'peak_rate', 'spatial_info', ...]
+
+# Iterate over neurons
+for i, single_result in enumerate(result):
+    single_result.plot()  # Plot individual place field
 ```
 
 **Bayesian decoding:**
 
 ```python
+from neurospatial.encoding import compute_spatial_rates
 from neurospatial.decoding import decode_position, decoding_error
 
-# Build encoding models (one per neuron)
-encoding_models = np.array([
-    compute_place_field(env, spike_times_list[i], times, positions, bandwidth=8.0)
-    for i in range(n_neurons)
-])  # Shape: (n_neurons, n_bins)
+# Build encoding models (one per neuron) using batch API
+result = compute_spatial_rates(
+    env, spike_times_list, times, positions, bandwidth=8.0
+)
+encoding_models = result.firing_rates  # Shape: (n_neurons, n_bins)
 
 # Bin spikes for decoding
 dt = 0.025  # 25 ms time bins
@@ -305,19 +344,19 @@ ego_landmarks = allocentric_to_egocentric(landmarks, positions, headings)
 # ego_landmarks[t, i, :] = landmark i in animal's reference frame at time t
 
 # Compute bearing (angle) to targets
-bearings = compute_egocentric_bearing(landmarks, positions, headings)
+bearings = compute_egocentric_bearing(positions, headings, landmarks)
 # bearings shape: (n_time, n_landmarks)
 # 0=ahead, pi/2=left, -pi/2=right, +/-pi=behind
 
 # Compute distances (Euclidean or geodesic)
 distances = compute_egocentric_distance(
-    landmarks, positions, headings,
+    positions, headings, landmarks,
     metric="euclidean"  # or "geodesic" with env parameter
 )
 
 # For geodesic distances (respects walls/obstacles)
 distances = compute_egocentric_distance(
-    landmarks, positions, headings,
+    positions, headings, landmarks,
     metric="geodesic", env=env
 )
 ```
@@ -346,68 +385,75 @@ ego_env = Environment.from_polar_egocentric(
 
 Analyze cells that encode distance and direction to objects in egocentric coordinates:
 
-**Compute object-vector field:**
+**Compute egocentric rate field (single neuron):**
 
 ```python
-from neurospatial.encoding.object_vector import compute_object_vector_field
+from neurospatial.encoding import compute_egocentric_rate
 
 # Define object positions in allocentric (world) coordinates
 object_positions = np.array([[50.0, 30.0], [80.0, 60.0]])  # 2 objects
 
-# Compute object-vector field (egocentric polar representation)
-result = compute_object_vector_field(
-    spike_times=spike_times,          # Spike times for one neuron
-    times=times,                       # Trajectory timestamps
-    positions=positions,               # Animal positions (n_time, 2)
-    headings=headings,                 # Animal heading angles (radians)
-    object_positions=object_positions,
-    max_distance=50.0,                 # Max distance to consider (cm)
+# Compute egocentric polar field (returns EgocentricRateResult)
+# `env` is the first positional arg; pass None for euclidean distance,
+# or pass the allocentric Environment for distance_metric="geodesic".
+result = compute_egocentric_rate(
+    None,                              # env (required for geodesic only)
+    spike_times,                       # Spike times for one neuron
+    times,                             # Trajectory timestamps
+    positions,                         # Animal positions (n_time, 2)
+    headings,                          # Animal heading angles (radians)
+    object_positions,
+    distance_range=(0.0, 50.0),        # Distance range (cm)
     n_distance_bins=10,                # Number of radial bins
     n_direction_bins=12,               # Number of angular bins
-    smoothing_method="diffusion_kde",            # or "binned"
 )
 
 # Access results
-field = result.field           # Firing rate in egocentric polar space
-ego_env = result.ego_env       # Egocentric polar environment
-occupancy = result.occupancy   # Time spent in each bin
+firing_rate = result.firing_rate  # Firing rate in egocentric polar space
+ego_env = result.ego_env          # Egocentric polar environment
+occupancy = result.occupancy      # Time spent in each bin
 
-# Find preferred distance and direction
-peak_idx = np.nanargmax(field)
-preferred_distance = ego_env.bin_centers[peak_idx, 0]
-preferred_direction = ego_env.bin_centers[peak_idx, 1]
-print(f"Preferred: {preferred_distance:.1f} cm at {np.degrees(preferred_direction):.0f}°")
+# Convenience methods
+pref_dist = result.preferred_distance()    # Distance component of peak
+pref_dir = result.preferred_direction()    # Direction component (0=ahead)
+print(f"Preferred: {pref_dist:.1f} cm at {np.degrees(pref_dir):.0f}°")
 ```
 
-**Classify object-vector cells:**
+**Compute egocentric rate fields (population):**
 
 ```python
-from neurospatial.encoding.object_vector import (
-    compute_object_vector_tuning,
-    is_object_vector_cell,
-    plot_object_vector_tuning,
+from neurospatial.encoding import compute_egocentric_rates
+
+# Compute fields for multiple neurons
+spike_times_list = [neuron1_spikes, neuron2_spikes, neuron3_spikes]
+result = compute_egocentric_rates(
+    None,  # env (required only for distance_metric="geodesic")
+    spike_times_list, times, positions, headings, object_positions,
+    distance_range=(0.0, 50.0),
+    n_distance_bins=10,
+    n_direction_bins=12,
+    n_jobs=4,  # Parallelize
 )
 
-# Compute tuning metrics
-metrics = compute_object_vector_tuning(
-    spike_times=spike_times,
-    times=times,
-    positions=positions,
-    headings=headings,
-    object_positions=object_positions,
-)
+# Batch metrics
+pref_dists = result.preferred_distances()  # (n_neurons,)
+pref_dirs = result.preferred_directions()  # (n_neurons,)
+ovcs = result.detect_ovcs(min_info=0.5)    # (n_neurons,) bool
 
-# Check classification
-print(metrics.interpretation())  # Human-readable summary
-print(f"OVC score: {metrics.object_vector_score:.3f}")
-print(f"Peak rate: {metrics.peak_rate:.1f} Hz")
+# Export to DataFrame
+df = result.to_dataframe()
+```
 
-# Classify
-if is_object_vector_cell(metrics, threshold=0.3, min_peak_rate=5.0):
-    print("This is an object-vector cell!")
+**Classify object-vector cells from result metrics:**
 
-# Plot polar tuning curve
-fig, ax = plot_object_vector_tuning(metrics, mark_peak=True, colorbar=True)
+```python
+# Check classification on the canonical result object
+print(result.is_ovc(min_info=0.5))
+print(f"Preferred distance: {result.preferred_distance():.1f} cm")
+print(f"Preferred direction: {result.preferred_direction():.2f} rad")
+
+# Plot egocentric polar tuning
+fig, ax = result.plot()
 ```
 
 **Simulate object-vector cells:**
@@ -459,13 +505,13 @@ env.animate_fields(fields, frame_times=frame_times, overlays=[overlay])
 
 Analyze cells that fire when the animal is *looking at* a specific location (not *at* that location):
 
-**Compute spatial view field:**
+**Compute view field (single neuron):**
 
 ```python
-from neurospatial.encoding.spatial_view import compute_spatial_view_field
+from neurospatial.encoding import compute_view_rate
 
 # Compute view field (binned by *viewed location*, not position)
-result = compute_spatial_view_field(
+result = compute_view_rate(
     env=env,
     spike_times=spike_times,
     times=times,
@@ -477,47 +523,52 @@ result = compute_spatial_view_field(
 )
 
 # Access results
-view_field = result.field          # Firing rate by viewed location
+view_field = result.firing_rate       # Firing rate by viewed location
 view_occupancy = result.view_occupancy  # Time viewing each bin
 
 # Compare to place field (binned by position)
-from neurospatial.encoding.place import compute_place_field
-place_field = compute_place_field(env, spike_times, times, positions)
+from neurospatial.encoding import compute_spatial_rate
+place_result = compute_spatial_rate(env, spike_times, times, positions)
+place_field = place_result.firing_rate
 
 # For spatial view cells: view_field differs from place_field
 ```
 
-**Classify spatial view cells:**
+**Compute view fields (population):**
 
 ```python
-from neurospatial.encoding.spatial_view import (
-    spatial_view_cell_metrics,
-    is_spatial_view_cell,
-    SpatialViewMetrics,
-)
+from neurospatial.encoding import compute_view_rates
 
-# Compute metrics comparing view field vs place field
-metrics = spatial_view_cell_metrics(
-    env=env,
-    spike_times=spike_times,
-    times=times,
-    positions=positions,
-    headings=headings,
+# Compute view fields for multiple neurons
+spike_times_list = [neuron1_spikes, neuron2_spikes, neuron3_spikes]
+result = compute_view_rates(
+    env, spike_times_list, times, positions, headings,
     view_distance=15.0,
+    gaze_model="fixed_distance",
+    n_jobs=4,  # Parallelize
 )
 
-# Human-readable interpretation
-print(metrics.interpretation())
-# Shows: view info, place info, correlation, classification reasoning
+# Batch metrics
+peaks = result.peak_view_locations()       # (n_neurons, n_dims)
+info = result.view_spatial_information()   # (n_neurons,)
+view_cells = result.detect_view_cells(min_info=0.5)  # (n_neurons,) bool
 
-# Access individual metrics
-print(f"View field info: {metrics.view_field_skaggs_info:.3f} bits/spike")
-print(f"Place field info: {metrics.place_field_skaggs_info:.3f} bits/spike")
-print(f"View-place correlation: {metrics.view_place_correlation:.3f}")
+# Export to DataFrame
+df = result.to_dataframe()
+```
 
-# Quick classification
-if is_spatial_view_cell(env, spike_times, times, positions, headings):
-    print("Spatial view cell detected!")
+**Classify spatial view cells from result metrics:**
+
+```python
+# Single-neuron result from compute_view_rate(...)
+print(single.is_view_cell(min_info=0.5))
+print(f"View information: {single.view_spatial_information():.3f} bits/spike")
+print(f"Peak viewed location: {single.peak_view_location()}")
+
+# Batch result from compute_view_rates(...)
+print(batch.detect_view_cells(min_info=0.5))           # (n_neurons,) bool
+print(batch.view_spatial_information())                # (n_neurons,)
+print(batch.peak_view_locations())                     # (n_neurons, n_dims)
 ```
 
 **Simulate spatial view cells:**
@@ -742,7 +793,7 @@ plot_circular_basis_tuning(beta_sin, beta_cos, projection="polar")
 
 **Related functions:** (from `neurospatial.encoding` and `neurospatial.stats.circular`)
 
-- `head_direction_metrics()`: Complete head direction cell analysis
+- `compute_directional_rate()`: Complete head direction cell analysis
 - `phase_precession()`: Detect theta phase precession
 - `rayleigh_test()`: Test for circular uniformity
 

@@ -45,7 +45,7 @@ class TestBorderScore:
         firing_rate = np.zeros(env.n_bins)
         firing_rate[env.boundary_bins] = 5.0
 
-        score = border_score(firing_rate, env)
+        score = border_score(env, firing_rate)
 
         # Boundary-only field should have score very close to 1.0
         assert score > 0.9, f"Expected score > 0.9 for boundary-only field, got {score}"
@@ -80,7 +80,7 @@ class TestBorderScore:
         firing_rate = np.zeros(env.n_bins)
         firing_rate[center_bin] = 5.0
 
-        score = border_score(firing_rate, env)
+        score = border_score(env, firing_rate)
 
         # Central-only field should have negative score (far from boundary)
         assert score < 0.0, f"Expected score < 0 for central-only field, got {score}"
@@ -102,7 +102,7 @@ class TestBorderScore:
 
         from neurospatial.encoding.border import border_score
 
-        score = border_score(firing_rate, env)
+        score = border_score(env, firing_rate)
 
         # Perfect border cell should have high positive score (close to 1)
         assert score > 0.5, f"Expected border score > 0.5 for border cell, got {score}"
@@ -123,7 +123,7 @@ class TestBorderScore:
 
         from neurospatial.encoding.border import border_score
 
-        score = border_score(firing_rate, env)
+        score = border_score(env, firing_rate)
 
         # Central field should have low or negative score
         assert score < 0.3, (
@@ -143,7 +143,7 @@ class TestBorderScore:
 
         from neurospatial.encoding.border import border_score
 
-        score = border_score(firing_rate, env)
+        score = border_score(env, firing_rate)
 
         # Corner field should have high score (touches boundaries)
         assert score > 0.4, f"Expected border score > 0.4 for corner field, got {score}"
@@ -159,7 +159,7 @@ class TestBorderScore:
 
         from neurospatial.encoding.border import border_score
 
-        score = border_score(firing_rate, env)
+        score = border_score(env, firing_rate)
 
         # Uniform firing covers all boundaries with perfect coverage (cM=1.0)
         # Mean distance to boundary is relatively low (many bins ARE boundaries)
@@ -183,10 +183,10 @@ class TestBorderScore:
         from neurospatial.encoding.border import border_score
 
         # Lower threshold includes more bins
-        score_low = border_score(firing_rate, env, threshold=0.1)
+        score_low = border_score(env, firing_rate, threshold=0.1)
 
         # Higher threshold includes fewer bins
-        score_high = border_score(firing_rate, env, threshold=0.5)
+        score_high = border_score(env, firing_rate, threshold=0.5)
 
         # Both should be valid scores
         assert -1.0 <= score_low <= 1.0
@@ -201,7 +201,7 @@ class TestBorderScore:
 
         from neurospatial.encoding.border import border_score
 
-        score = border_score(firing_rate, env)
+        score = border_score(env, firing_rate)
 
         # Should return NaN for all-NaN input
         assert np.isnan(score), f"Expected NaN for all-NaN input, got {score}"
@@ -215,7 +215,7 @@ class TestBorderScore:
 
         from neurospatial.encoding.border import border_score
 
-        score = border_score(firing_rate, env)
+        score = border_score(env, firing_rate)
 
         # Should return NaN (no field detected)
         assert np.isnan(score), f"Expected NaN for zero firing, got {score}"
@@ -230,7 +230,7 @@ class TestBorderScore:
         from neurospatial.encoding.border import border_score
 
         with pytest.raises(ValueError, match=r"firing_rate\.shape"):
-            border_score(firing_rate, env)
+            border_score(env, firing_rate)
 
     def test_border_score_threshold_validation(self, small_2d_env: Environment) -> None:
         """Test validation of threshold parameter."""
@@ -241,10 +241,10 @@ class TestBorderScore:
 
         # Threshold must be in (0, 1)
         with pytest.raises(ValueError, match="threshold must be in"):
-            border_score(firing_rate, env, threshold=0.0)
+            border_score(env, firing_rate, threshold=0.0)
 
         with pytest.raises(ValueError, match="threshold must be in"):
-            border_score(firing_rate, env, threshold=1.5)
+            border_score(env, firing_rate, threshold=1.5)
 
     def test_border_score_min_area_validation(self, small_2d_env: Environment) -> None:
         """Test validation of min_area parameter."""
@@ -255,7 +255,7 @@ class TestBorderScore:
 
         # min_area must be non-negative
         with pytest.raises(ValueError, match="min_area must be non-negative"):
-            border_score(firing_rate, env, min_area=-10.0)
+            border_score(env, firing_rate, min_area=-10.0)
 
     def test_border_score_parameter_order(self, small_2d_env: Environment) -> None:
         """Test that firing_rate comes before env (project convention)."""
@@ -265,7 +265,7 @@ class TestBorderScore:
         from neurospatial.encoding.border import border_score
 
         # This should work (firing_rate first)
-        score = border_score(firing_rate, env)
+        score = border_score(env, firing_rate)
         assert isinstance(score, (float, np.floating))
 
     def test_border_score_returns_float(self, small_2d_env: Environment) -> None:
@@ -279,7 +279,7 @@ class TestBorderScore:
 
         from neurospatial.encoding.border import border_score
 
-        score = border_score(firing_rate, env)
+        score = border_score(env, firing_rate)
 
         # Should return scalar
         assert np.ndim(score) == 0, "Border score should be scalar"
@@ -297,7 +297,7 @@ class TestBorderScore:
             # Random firing rate
             firing_rate = rng.random(env.n_bins) * 5.0
 
-            score = border_score(firing_rate, env)
+            score = border_score(env, firing_rate)
 
             # Score should be in valid range or NaN
             if not np.isnan(score):
@@ -319,10 +319,10 @@ class TestBorderScore:
         from neurospatial.encoding.border import border_score
 
         # Explicit geodesic
-        score_geodesic = border_score(firing_rate, env, distance_metric="geodesic")
+        score_geodesic = border_score(env, firing_rate, distance_metric="geodesic")
 
         # Default should match geodesic
-        score_default = border_score(firing_rate, env)
+        score_default = border_score(env, firing_rate)
 
         assert score_geodesic == score_default, (
             "Default distance metric should be geodesic"
@@ -342,7 +342,7 @@ class TestBorderScore:
 
         from neurospatial.encoding.border import border_score
 
-        score = border_score(firing_rate, env, distance_metric="euclidean")
+        score = border_score(env, firing_rate, distance_metric="euclidean")
 
         # Should return valid score
         assert -1.0 <= score <= 1.0, f"Expected score in [-1, 1], got {score}"
@@ -363,8 +363,8 @@ class TestBorderScore:
 
         from neurospatial.encoding.border import border_score
 
-        score_geodesic = border_score(firing_rate, env, distance_metric="geodesic")
-        score_euclidean = border_score(firing_rate, env, distance_metric="euclidean")
+        score_geodesic = border_score(env, firing_rate, distance_metric="geodesic")
+        score_euclidean = border_score(env, firing_rate, distance_metric="euclidean")
 
         # Both should be valid
         assert -1.0 <= score_geodesic <= 1.0
@@ -386,7 +386,7 @@ class TestBorderScore:
         with pytest.raises(
             ValueError, match=r"distance_metric must be 'geodesic' or 'euclidean'"
         ):
-            border_score(firing_rate, env, distance_metric="invalid")
+            border_score(env, firing_rate, distance_metric="invalid")
 
     def test_border_score_euclidean_central_field(
         self, dense_50x50_bin5_env: Environment
@@ -403,7 +403,7 @@ class TestBorderScore:
 
         from neurospatial.encoding.border import border_score
 
-        score = border_score(firing_rate, env, distance_metric="euclidean")
+        score = border_score(env, firing_rate, distance_metric="euclidean")
 
         # Central field should have low score with euclidean distance
         assert score < 0.3, (

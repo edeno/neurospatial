@@ -582,7 +582,7 @@ def rayleigh_test(
 
 def circular_linear_correlation(
     angles: NDArray[np.float64],
-    values: NDArray[np.float64],
+    linear_values: NDArray[np.float64],
     *,
     angle_unit: Literal["rad", "deg"] = "rad",
 ) -> tuple[float, float]:
@@ -596,8 +596,8 @@ def circular_linear_correlation(
     ----------
     angles : ndarray of shape (n_samples,)
         Circular variable (e.g., spike phases) in radians or degrees.
-    values : ndarray of shape (n_samples,)
-        Linear variable (e.g., positions).
+    linear_values : ndarray of shape (n_samples,)
+        Linear variable (e.g., positions, time).
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of input angles.
 
@@ -646,12 +646,12 @@ def circular_linear_correlation(
 
     # Convert to arrays and radians if needed
     angles = np.asarray(angles, dtype=np.float64)
-    values = np.asarray(values, dtype=np.float64)
+    linear_values = np.asarray(linear_values, dtype=np.float64)
     angles = _to_radians(angles, angle_unit)
 
     # Validate paired inputs (handles length mismatch, NaN removal)
-    angles, values = _validate_paired_input(
-        angles, values, "angles", "values", min_samples=3
+    angles, linear_values = _validate_paired_input(
+        angles, linear_values, "angles", "linear_values", min_samples=3
     )
 
     n = len(angles)
@@ -661,8 +661,8 @@ def circular_linear_correlation(
     cos_angles = np.cos(angles)
 
     # Check for degenerate case: no variation in linear variable
-    values_std = np.std(values)
-    if values_std < 1e-10:
+    linear_std = np.std(linear_values)
+    if linear_std < 1e-10:
         warnings.warn(
             "Linear variable has no variation (constant values). "
             "Circular-linear correlation is undefined. Returning r=0.",
@@ -674,8 +674,8 @@ def circular_linear_correlation(
     # r_xs: correlation between x (linear) and sin(angles)
     # r_xc: correlation between x (linear) and cos(angles)
     # r_cs: correlation between cos(angles) and sin(angles)
-    r_xs, _ = pearsonr(values, sin_angles)
-    r_xc, _ = pearsonr(values, cos_angles)
+    r_xs, _ = pearsonr(linear_values, sin_angles)
+    r_xc, _ = pearsonr(linear_values, cos_angles)
     r_cs, _ = pearsonr(cos_angles, sin_angles)
 
     # Handle degenerate case: r_cs near 1 (cos and sin perfectly correlated)
@@ -1380,6 +1380,19 @@ def is_modulated(
     min_magnitude : float, default=0.2
         Minimum modulation magnitude (amplitude) required.
         Amplitude = sqrt(beta_sin^2 + beta_cos^2).
+
+        **Default justification (0.2)**: This threshold provides a balance
+        between sensitivity and specificity for detecting biologically
+        meaningful circular modulation in neural data. Based on typical
+        GLM coefficient scales for head direction cells and phase precession:
+
+        - Weak modulation: 0.1-0.3 (may be noise)
+        - Moderate modulation: 0.3-0.6 (reliable signal)
+        - Strong modulation: >0.6 (clear tuning)
+
+        The 0.2 threshold filters out very weak effects while maintaining
+        sensitivity to moderate modulation. Adjust based on your data scale
+        and scientific question.
 
     Returns
     -------

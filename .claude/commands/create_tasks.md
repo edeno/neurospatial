@@ -1,4 +1,4 @@
-Based on PLAN.md and CLAUDE.md, make TASKS.md. This will:
+Based on a plan under docs/plans/<topic>/PLAN.md and CLAUDE.md, make docs/plans/<topic>/TASKS.md. This will:
 
 1. Breaks down high-level goals into manageable tasks (use checkboxes)
 2. Organizes work into clear milestones

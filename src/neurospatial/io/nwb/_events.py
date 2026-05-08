@@ -20,11 +20,28 @@ if TYPE_CHECKING:
     import ndx_events
     from pynwb import NWBFile
 
+# =============================================================================
+# Constants for NWB events
+# =============================================================================
+
+# Default processing module for behavioral data
+DEFAULT_PROCESSING_MODULE: str = "behavior"
+
+# Default names for event tables
+DEFAULT_LAPS_NAME: str = "laps"
+DEFAULT_REGION_CROSSINGS_NAME: str = "region_crossings"
+DEFAULT_TRIALS_NAME: str = "trials"
+
+# Predefined NWB interval table names
+PREDEFINED_TRIALS: str = "trials"
+PREDEFINED_EPOCHS: str = "epochs"
+PREDEFINED_INVALID_TIMES: str = "invalid_times"
+
 
 def read_events(
     nwbfile: NWBFile,
     table_name: str,
-    processing_module: str = "behavior",
+    processing_module: str = DEFAULT_PROCESSING_MODULE,
 ) -> pd.DataFrame:
     """
     Read events table from NWB file.
@@ -154,15 +171,15 @@ def read_intervals(
     _require_pynwb()
 
     # Check predefined interval tables first
-    if interval_name == "trials" and nwbfile.trials is not None:
+    if interval_name == PREDEFINED_TRIALS and nwbfile.trials is not None:
         logger.debug("Reading trials table from NWB file")
         return nwbfile.trials.to_dataframe()
 
-    if interval_name == "epochs" and nwbfile.epochs is not None:
+    if interval_name == PREDEFINED_EPOCHS and nwbfile.epochs is not None:
         logger.debug("Reading epochs table from NWB file")
         return nwbfile.epochs.to_dataframe()
 
-    if interval_name == "invalid_times" and nwbfile.invalid_times is not None:
+    if interval_name == PREDEFINED_INVALID_TIMES and nwbfile.invalid_times is not None:
         logger.debug("Reading invalid_times table from NWB file")
         return nwbfile.invalid_times.to_dataframe()
 
@@ -174,11 +191,11 @@ def read_intervals(
     # Not found - provide helpful error message
     available = []
     if nwbfile.trials is not None:
-        available.append("trials")
+        available.append(PREDEFINED_TRIALS)
     if nwbfile.epochs is not None:
-        available.append("epochs")
+        available.append(PREDEFINED_EPOCHS)
     if nwbfile.invalid_times is not None:
-        available.append("invalid_times")
+        available.append(PREDEFINED_INVALID_TIMES)
     available.extend(list(nwbfile.intervals.keys()))
 
     raise KeyError(
@@ -196,7 +213,7 @@ def write_laps(
     start_regions: Sequence[str] | None = None,
     end_regions: Sequence[str] | None = None,
     stop_times: NDArray[np.float64] | None = None,
-    name: str = "laps",
+    name: str = DEFAULT_LAPS_NAME,
     overwrite: bool = False,
 ) -> None:
     """
@@ -350,7 +367,7 @@ def write_laps(
 
     # Get or create behavior processing module
     behavior = _get_or_create_processing_module(
-        nwbfile, "behavior", "Behavioral data including laps and events"
+        nwbfile, DEFAULT_PROCESSING_MODULE, "Behavioral data including laps and events"
     )
 
     # Check for existing table with same name
@@ -401,7 +418,7 @@ def write_region_crossings(
     event_types: NDArray[np.str_],
     description: str = "Region crossing events",
     *,
-    name: str = "region_crossings",
+    name: str = DEFAULT_REGION_CROSSINGS_NAME,
     overwrite: bool = False,
 ) -> None:
     """
@@ -502,7 +519,9 @@ def write_region_crossings(
 
     # Get or create behavior processing module
     behavior = _get_or_create_processing_module(
-        nwbfile, "behavior", "Behavioral data including region crossings and events"
+        nwbfile,
+        DEFAULT_PROCESSING_MODULE,
+        "Behavioral data including region crossings and events",
     )
 
     # Check for existing table with same name
@@ -746,11 +765,11 @@ def write_trials(
         from pynwb.epoch import TimeIntervals
 
         new_trials = TimeIntervals(
-            name="trials",
+            name=DEFAULT_TRIALS_NAME,
             description=description,
         )
         # Replace the internal reference
-        nwbfile.fields["trials"] = new_trials
+        nwbfile.fields[DEFAULT_TRIALS_NAME] = new_trials
 
     # If no trials to add, skip table creation (NWB requires at least one trial)
     if n_trials == 0:
@@ -980,7 +999,7 @@ def write_events(
     name: str,
     *,
     description: str = "Event data",
-    processing_module: str = "behavior",
+    processing_module: str = DEFAULT_PROCESSING_MODULE,
     overwrite: bool = False,
 ) -> None:
     """

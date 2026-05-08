@@ -189,8 +189,10 @@ def simulate_session(
         **Boundary cell parameters** (cell_type='boundary' or 'mixed'):
 
         - distance : float - Preferred distance from boundary (maps to preferred_distance)
-        - width : float - Distance tolerance (maps to distance_tolerance, boundary cells only)
-        - boundary_width : float - Alias for width (unambiguous for mixed cell types)
+        - boundary_width : float - Distance tolerance (maps to distance_tolerance, recommended)
+        - width : float - Distance tolerance (maps to distance_tolerance, only for cell_type='boundary')
+          Note: 'width' is NOT remapped for mixed cell types to avoid conflicts with PlaceCellModel.
+          Use 'boundary_width' for unambiguous parameter passing in mixed mode.
         - max_rate : float - Peak firing rate in Hz (default: 15.0)
         - baseline_rate : float - Baseline firing rate in Hz (default: 0.001)
         - distance_metric : {'euclidean', 'geodesic'} - Distance computation method
@@ -330,14 +332,15 @@ def simulate_session(
     for param in ["max_rate", "baseline_rate", "distance_metric"]:
         if param in kwargs:
             boundary_cell_params[param] = kwargs.pop(param)
-    # Remapped parameters: distance -> preferred_distance, width -> distance_tolerance
-    # Note: only remap width for boundary cells (place cells use width differently)
+    # Remapped parameters: distance -> preferred_distance
     if "distance" in kwargs:
         boundary_cell_params["preferred_distance"] = kwargs.pop("distance")
+    # For distance_tolerance: prefer explicit "boundary_width", fallback to "width" only for pure boundary mode
+    # Note: "width" is used by PlaceCellModel, so only map to distance_tolerance for pure boundary cells
     if "boundary_width" in kwargs:
         boundary_cell_params["distance_tolerance"] = kwargs.pop("boundary_width")
     elif "width" in kwargs and cell_type == "boundary":
-        # Only remap 'width' to distance_tolerance for pure boundary cell mode
+        # Only remap 'width' to distance_tolerance for pure boundary cell mode to avoid conflicts with PlaceCellModel
         boundary_cell_params["distance_tolerance"] = kwargs.pop("width")
 
     # GridCellModel parameters - remap convenience names to actual parameter names
@@ -379,7 +382,8 @@ def simulate_session(
         raise ValueError(f"Unknown trajectory method: {trajectory_method}")
 
     # Initialize RNG for field center selection (use seed+1 to avoid collision with trajectory seed)
-    rng = np.random.default_rng(seed + 1 if seed is not None else None)
+    # Use modulo to prevent overflow for large seeds
+    rng = np.random.default_rng((seed + 1) % (2**32) if seed is not None else None)
 
     # Generate field centers based on coverage
     if coverage == "uniform":

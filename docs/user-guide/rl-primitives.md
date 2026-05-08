@@ -478,9 +478,9 @@ policy_shaped = train_agent(env, reward_shaped)
 
 For complete parameter descriptions and examples, see:
 
-- [`region_reward_field()`](../api/neurospatial/reward.md#region_reward_field) - Region-based rewards
-- [`goal_reward_field()`](../api/neurospatial/reward.md#goal_reward_field) - Distance-based rewards
-- [`distance_field()`](../api/neurospatial/distance.md#distance_field) - Underlying distance computation
+- [`region_reward_field()`](../api/neurospatial/behavior/reward.md#neurospatial.behavior.reward.region_reward_field) - Region-based rewards
+- [`goal_reward_field()`](../api/neurospatial/behavior/reward.md#neurospatial.behavior.reward.goal_reward_field) - Distance-based rewards
+- [`distance_field()`](../api/neurospatial/ops/distance.md#neurospatial.ops.distance.distance_field) - Underlying distance computation
 
 ## Related Topics
 

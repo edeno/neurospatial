@@ -7,20 +7,64 @@ object-vector cells, and spatial view cells.
 
 Submodules
 ----------
-place : Place cell analysis
+spatial : Spatial rate analysis
 grid : Grid cell analysis
-head_direction : Head direction cell analysis
+directional : Head direction and directional-rate analysis
 border : Border/boundary cell analysis
-object_vector : Object-vector cell analysis
-spatial_view : Spatial view cell analysis
+egocentric : Object-vector and egocentric-rate analysis
+view : Spatial view cell analysis
 phase_precession : Theta phase precession analysis
 population : Population-level metrics
 """
 
 # Border/boundary cell analysis
+# Field metrics (from _field_metrics and _metrics modules)
+from neurospatial.encoding._field_metrics import (
+    compute_field_emd,
+    field_shape_metrics,
+    field_shift_distance,
+    field_size,
+    field_stability,
+    in_out_field_ratio,
+    rate_map_centroid,
+    rate_map_coherence,
+)
+from neurospatial.encoding._metrics import (
+    information_per_second,
+    mutual_information,
+    selectivity,
+    sparsity,
+    spatial_coverage_single_cell,
+    spatial_information,
+)
 from neurospatial.encoding.border import (
     border_score,
     compute_region_coverage,
+)
+
+# Directional rate (head direction cells)
+from neurospatial.encoding.directional import (
+    DirectionalRateResult,
+    DirectionalRatesResult,
+    circular_mean,
+    compute_directional_rate,
+    compute_directional_rates,
+    is_head_direction_cell,
+    mean_resultant_length,
+    plot_head_direction_tuning,
+    rayleigh_test,
+)
+
+# Egocentric rate (object vector cells)
+from neurospatial.encoding.egocentric import (
+    EgocentricRateResult,
+    EgocentricRatesResult,
+    compute_egocentric_bearing,
+    compute_egocentric_rate,
+    compute_egocentric_rates,
+    is_object_vector_cell,
+    object_vector_score,
+    plot_object_vector_tuning,
 )
 
 # Grid cell analysis
@@ -34,57 +78,12 @@ from neurospatial.encoding.grid import (
     spatial_autocorrelation,
 )
 
-# Head direction cell analysis
-from neurospatial.encoding.head_direction import (
-    HeadDirectionMetrics,
-    circular_mean,
-    head_direction_metrics,
-    head_direction_tuning_curve,
-    is_head_direction_cell,
-    mean_resultant_length,
-    plot_head_direction_tuning,
-    rayleigh_test,
-)
-
-# Object-vector cell analysis
-from neurospatial.encoding.object_vector import (
-    ObjectVectorFieldResult,
-    ObjectVectorMetrics,
-    compute_object_vector_field,
-    compute_object_vector_tuning,
-    is_object_vector_cell,
-    object_vector_score,
-    plot_object_vector_tuning,
-)
-
 # Phase precession analysis
 from neurospatial.encoding.phase_precession import (
     PhasePrecessionResult,
     has_phase_precession,
     phase_precession,
     plot_phase_precession,
-)
-
-# Place cell analysis
-from neurospatial.encoding.place import (
-    DirectionalPlaceFields,
-    compute_directional_place_fields,
-    compute_field_emd,
-    compute_place_field,
-    detect_place_fields,
-    field_shape_metrics,
-    field_shift_distance,
-    field_size,
-    field_stability,
-    in_out_field_ratio,
-    information_per_second,
-    mutual_information,
-    rate_map_centroid,
-    rate_map_coherence,
-    selectivity,
-    skaggs_information,
-    sparsity,
-    spatial_coverage_single_cell,
 )
 
 # Population-level metrics
@@ -98,16 +97,27 @@ from neurospatial.encoding.population import (
     population_vector_correlation,
 )
 
-# Spatial view cell analysis
-from neurospatial.encoding.spatial_view import (
+# Spatial rate (place/grid/border cells)
+from neurospatial.encoding.spatial import (
+    DirectionalPlaceFields,
+    SpatialRateResult,
+    SpatialRatesResult,
+    compute_directional_place_fields,
+    compute_spatial_rate,
+    compute_spatial_rates,
+    detect_place_fields,
+)
+
+# View rate (spatial view cells)
+from neurospatial.encoding.view import (
     FieldOfView,
-    SpatialViewFieldResult,
-    SpatialViewMetrics,
-    compute_spatial_view_field,
+    ViewRateResult,
+    ViewRatesResult,
+    compute_view_rate,
+    compute_view_rates,
     compute_viewed_location,
     compute_viewshed,
     is_spatial_view_cell,
-    spatial_view_cell_metrics,
     visibility_occupancy,
 )
 
@@ -115,16 +125,33 @@ __all__ = [  # noqa: RUF022 - organized by category
     # Border/boundary cell analysis
     "border_score",
     "compute_region_coverage",
+    # Directional rate (head direction cells)
+    "DirectionalRateResult",
+    "DirectionalRatesResult",
+    "compute_directional_rate",
+    "compute_directional_rates",
+    # Egocentric rate (object vector cells)
+    "EgocentricRateResult",
+    "EgocentricRatesResult",
+    "compute_egocentric_bearing",
+    "compute_egocentric_rate",
+    "compute_egocentric_rates",
+    # Spatial rate (place/grid/border cells)
+    "SpatialRateResult",
+    "SpatialRatesResult",
+    "compute_spatial_rate",
+    "compute_spatial_rates",
+    # View rate (spatial view cells)
+    "ViewRateResult",
+    "ViewRatesResult",
+    "compute_view_rate",
+    "compute_view_rates",
     # Phase precession analysis
     "PhasePrecessionResult",
     "has_phase_precession",
     "phase_precession",
     "plot_phase_precession",
     # Object-vector cell analysis
-    "ObjectVectorFieldResult",
-    "ObjectVectorMetrics",
-    "compute_object_vector_field",
-    "compute_object_vector_tuning",
     "is_object_vector_cell",
     "object_vector_score",
     "plot_object_vector_tuning",
@@ -137,19 +164,12 @@ __all__ = [  # noqa: RUF022 - organized by category
     "periodicity_score",
     "spatial_autocorrelation",
     # Head direction cell analysis
-    "HeadDirectionMetrics",
     "circular_mean",
-    "head_direction_metrics",
-    "head_direction_tuning_curve",
     "is_head_direction_cell",
     "mean_resultant_length",
     "plot_head_direction_tuning",
     "rayleigh_test",
     # Spatial view cell analysis
-    "SpatialViewFieldResult",
-    "SpatialViewMetrics",
-    "compute_spatial_view_field",
-    "spatial_view_cell_metrics",
     "is_spatial_view_cell",
     "compute_viewed_location",
     "compute_viewshed",
@@ -159,7 +179,6 @@ __all__ = [  # noqa: RUF022 - organized by category
     "DirectionalPlaceFields",
     "compute_directional_place_fields",
     "compute_field_emd",
-    "compute_place_field",
     "detect_place_fields",
     "rate_map_centroid",
     "field_shape_metrics",
@@ -171,8 +190,8 @@ __all__ = [  # noqa: RUF022 - organized by category
     "mutual_information",
     "rate_map_coherence",
     "selectivity",
-    "skaggs_information",
     "sparsity",
+    "spatial_information",
     "spatial_coverage_single_cell",
     # Population-level metrics
     "PopulationCoverageResult",

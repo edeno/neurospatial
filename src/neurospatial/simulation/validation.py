@@ -65,7 +65,7 @@ def validate_simulation(
     show_plots : bool, optional
         If True, creates diagnostic plots (default: False).
     **kwargs
-        Additional parameters passed to compute_place_field().
+        Additional parameters passed to ``compute_spatial_rate()``.
 
     Returns
     -------
@@ -147,7 +147,7 @@ def validate_simulation(
     See Also
     --------
     simulate_session : Create complete simulation session
-    compute_place_field : Compute place field from spike data
+    compute_spatial_rate : Compute spatial firing rate from spike data
     plot_session_summary : Visualize complete session
 
     Notes
@@ -172,7 +172,7 @@ def validate_simulation(
     - 'binned': Simple binning without smoothing (noisy but unbiased)
     """
     # Import here to avoid circular dependency
-    from neurospatial.encoding.place import compute_place_field
+    from neurospatial.encoding import compute_spatial_rate
 
     # Parse input parameters
     if session is not None:
@@ -239,13 +239,16 @@ def validate_simulation(
             continue
 
         # Compute detected place field
-        detected_field = compute_place_field(
-            env,
-            spike_times,
-            times,
-            positions,
-            smoothing_method=smoothing_method,
-            **kwargs,
+        detected_field = np.asarray(
+            compute_spatial_rate(
+                env,
+                spike_times,
+                times,
+                positions,
+                smoothing_method=smoothing_method,
+                **kwargs,
+            ).firing_rate,
+            dtype=np.float64,
         )
 
         # Find detected center (peak of rate map)
@@ -285,7 +288,7 @@ def validate_simulation(
                 center=true_center,
                 width=gt["width"],
                 max_rate=gt["max_rate"],
-                baseline_rate=gt.get("baseline_rate", 0.001),
+                baseline_rate=gt.get("baseline_rate", 0.01),
             )
 
             # Compute true firing rate at bin centers
@@ -529,7 +532,7 @@ def plot_session_summary(
     from matplotlib.gridspec import GridSpec
 
     # Import here to avoid circular dependency
-    from neurospatial.encoding.place import compute_place_field
+    from neurospatial.encoding import compute_spatial_rate
     from neurospatial.simulation.session import SimulationSession
 
     # Validate session type
@@ -647,8 +650,15 @@ Traj: {metadata.get("trajectory_method", "ou")}
             ax.axis("off")
         else:
             # Compute rate map
-            rate_map = compute_place_field(
-                env, spike_times, times, positions, smoothing_method="diffusion_kde"
+            rate_map = np.asarray(
+                compute_spatial_rate(
+                    env,
+                    spike_times,
+                    times,
+                    positions,
+                    smoothing_method="diffusion_kde",
+                ).firing_rate,
+                dtype=np.float64,
             )
 
             # Plot as 2D heatmap if possible

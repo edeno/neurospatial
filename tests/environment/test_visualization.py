@@ -319,9 +319,9 @@ class TestPlotField:
 
         plt.close(fig)
 
-    def test_integration_with_compute_place_field(self):
-        """Integration test: visualize computed place field."""
-        from neurospatial.encoding.place import compute_place_field
+    def test_integration_with_compute_spatial_rate(self):
+        """Integration test: visualize computed spatial rate map."""
+        from neurospatial.encoding import compute_spatial_rate
 
         # Generate synthetic data
         rng = np.random.default_rng(42)
@@ -332,10 +332,10 @@ class TestPlotField:
         # Create environment
         env = Environment.from_samples(positions, bin_size=5.0)
 
-        # Compute place field
-        firing_rate = compute_place_field(
+        # Compute spatial rate
+        firing_rate = compute_spatial_rate(
             env, spike_times, times, positions, bandwidth=8.0
-        )
+        ).firing_rate
 
         # Visualize
         fig, ax = plt.subplots(figsize=(8, 7))

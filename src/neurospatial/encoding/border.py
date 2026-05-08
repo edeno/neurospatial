@@ -23,8 +23,8 @@ if TYPE_CHECKING:
 
 
 def border_score(
-    firing_rate: NDArray[np.float64],
     env: EnvironmentProtocol,
+    firing_rate: NDArray[np.float64],
     *,
     threshold: float = 0.3,
     min_area: float = 0.0,
@@ -39,10 +39,10 @@ def border_score(
 
     Parameters
     ----------
-    firing_rate : NDArray[np.float64], shape (n_bins,)
-        Spatial firing rate map (Hz or spikes/second).
     env : EnvironmentProtocol
         Spatial environment containing bin centers and connectivity.
+    firing_rate : NDArray[np.float64], shape (n_bins,)
+        Spatial firing rate map (Hz or spikes/second).
     threshold : float, optional
         Fraction of peak firing rate used to segment the field. Default is 0.3
         (30% of peak), following Solstad et al. (2008).
@@ -166,7 +166,7 @@ def border_score(
     >>> boundary_bins = env.boundary_bins
     >>> firing_rate[boundary_bins] = 5.0
     >>>
-    >>> score = border_score(firing_rate, env)
+    >>> score = border_score(env, firing_rate)
     >>> print(f"Border score: {score:.3f}")  # doctest: +SKIP
     Border score: 0.850
 
@@ -212,7 +212,7 @@ def border_score(
         return np.nan
 
     # Check field area (sum of bin areas)
-    from neurospatial.encoding.place import field_size
+    from neurospatial.encoding._field_metrics import field_size
 
     area = field_size(field_bins, env)
     if area < min_area:

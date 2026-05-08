@@ -52,7 +52,7 @@ from neurospatial.decoding import (
     median_decoding_error,
     shuffle_time_bins,
 )
-from neurospatial.encoding.place import compute_place_field
+from neurospatial.encoding import compute_spatial_rate
 from neurospatial.simulation import (
     PlaceCellModel,
     generate_poisson_spikes,
@@ -174,7 +174,7 @@ fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 
 for idx, ax in enumerate(axes):
     cell_idx = idx * (n_neurons // 3)
-    field = compute_place_field(
+    result_cell = compute_spatial_rate(
         env,
         spike_times_list[cell_idx],
         times,
@@ -182,6 +182,7 @@ for idx, ax in enumerate(axes):
         smoothing_method="diffusion_kde",
         bandwidth=5.0,
     )
+    field = result_cell.firing_rate
 
     # Plot field
     x_positions = env.bin_centers[:, 0]
@@ -213,14 +214,14 @@ plt.show()
 # Compute place fields for all neurons (encoding models)
 encoding_models = np.array(
     [
-        compute_place_field(
+        compute_spatial_rate(
             env,
             spike_times_list[i],
             times,
             positions,
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
-        )
+        ).firing_rate
         for i in range(n_neurons)
     ]
 )
@@ -319,7 +320,7 @@ print(f"  (n_time_bins, n_bins) = ({result.n_time_bins}, {env.n_bins})")
 # Access result properties
 print("DecodingResult Properties:")
 print(f"  posterior shape: {result.posterior.shape}")
-print(f"  posterior_mode shape: {result.posterior_mode.shape} (bin indices)")
+print(f"  map_estimate shape: {result.map_estimate.shape} (bin indices)")
 print(f"  map_position shape: {result.map_position.shape} (coordinates)")
 print(f"  mean_position shape: {result.mean_position.shape} (coordinates)")
 print(f"  uncertainty shape: {result.uncertainty.shape} (entropy in bits)")
@@ -474,7 +475,7 @@ print(f"\nDecoding correlation: {corr:.3f}")
 # %%
 # Compute confusion matrix
 actual_bins = env.bin_at(actual_positions)
-cm = confusion_matrix(env, result.posterior, actual_bins, method="map")
+cm = confusion_matrix(env, result.posterior, actual_bins, summary_method="map")
 
 # Plot
 fig, ax = plt.subplots(figsize=(8, 7))
@@ -518,7 +519,7 @@ print(f"Number of time bins: {len(segment_times)}")
 iso_result = fit_isotonic_trajectory(
     segment_posterior,
     segment_times,
-    method="expected",  # Use posterior mean
+    estimate_method="expected",  # Use posterior mean
     increasing=None,  # Auto-detect direction
 )
 
@@ -578,7 +579,7 @@ lin_result = fit_linear_trajectory(
     env,
     segment_posterior,
     segment_times,
-    method="sample",  # Monte Carlo sampling
+    fitting_method="sample",  # Monte Carlo sampling
     n_samples=1000,
     rng=42,
 )
@@ -617,7 +618,7 @@ for shuffled_spikes in shuffle_time_bins(segment_spikes, n_shuffles=n_shuffles, 
     shuffled_result = decode_position(env, shuffled_spikes, encoding_models, dt)
     # Fit isotonic trajectory
     shuffled_fit = fit_isotonic_trajectory(
-        shuffled_result.posterior, segment_times, method="expected"
+        shuffled_result.posterior, segment_times, estimate_method="expected"
     )
     null_scores.append(shuffled_fit.r_squared)
 
@@ -694,7 +695,7 @@ df.head()
 # In this notebook, you learned:
 #
 # ### Building Encoding Models
-# - Compute place fields for each neuron using `compute_place_field()`
+# - Compute place fields for each neuron using `compute_spatial_rate()` (access `.firing_rate`)
 # - Stack into encoding models array: shape `(n_neurons, n_bins)`
 #
 # ### Bayesian Decoding

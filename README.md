@@ -365,8 +365,9 @@ firing_rates = place_cell.firing_rate(positions, times)
 spike_times = generate_poisson_spikes(firing_rates, times, seed=42)
 
 # Validate with neurospatial analysis
-from neurospatial import compute_place_field
-detected_field = compute_place_field(env, spike_times, times, positions)
+from neurospatial.encoding import compute_spatial_rate
+result = compute_spatial_rate(env, spike_times, times, positions)
+detected_field = result.firing_rate
 
 # Compare detected field to ground truth
 true_center = place_cell.ground_truth['center']
@@ -418,8 +419,12 @@ from neurospatial import Environment
 from neurospatial.animation import subsample_frames
 
 # Create environment and compute fields over time
+from neurospatial.encoding import compute_spatial_rate
 env = Environment.from_samples(positions, bin_size=2.5)
-fields = [compute_place_field(env, spikes[i], times, positions) for i in range(30)]
+fields = [
+    compute_spatial_rate(env, spikes[i], times, positions).firing_rate
+    for i in range(30)
+]
 
 # Interactive Napari viewer (best for exploration)
 env.animate_fields(fields, backend="napari")

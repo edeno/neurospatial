@@ -31,7 +31,7 @@ class TestSpatialAutocorrelation:
         firing_rate[center_bin] = 10.0
 
         # Compute autocorrelation with FFT method
-        autocorr = spatial_autocorrelation(firing_rate, env, method="fft")
+        autocorr = spatial_autocorrelation(env, firing_rate, method="fft")
 
         # Should return 2D array
         assert autocorr.ndim == 2
@@ -57,7 +57,7 @@ class TestSpatialAutocorrelation:
 
         # Compute autocorrelation with graph method
         result = spatial_autocorrelation(
-            firing_rate, env, method="graph", n_distance_bins=30
+            env, firing_rate, method="graph", n_distance_bins=30
         )
 
         # Should return tuple
@@ -86,7 +86,7 @@ class TestSpatialAutocorrelation:
         firing_rate = rng.random(env.n_bins) * 5.0
 
         # Auto should work without error (returns either 2D array or tuple)
-        result = spatial_autocorrelation(firing_rate, env, method="auto")
+        result = spatial_autocorrelation(env, firing_rate, method="auto")
 
         # Should return something valid (either 2D array or tuple)
         assert result is not None
@@ -106,7 +106,7 @@ class TestSpatialAutocorrelation:
         firing_rate = np.zeros(env.n_bins + 10)  # Wrong size
 
         with pytest.raises(ValueError, match=r"firing_rate\.shape must be"):
-            spatial_autocorrelation(firing_rate, env)
+            spatial_autocorrelation(env, firing_rate)
 
     def test_raises_on_all_nan(self):
         """Test raises ValueError if all firing rates are NaN."""
@@ -121,7 +121,7 @@ class TestSpatialAutocorrelation:
         firing_rate = np.full(env.n_bins, np.nan)
 
         with pytest.raises(ValueError, match="All firing rates are NaN"):
-            spatial_autocorrelation(firing_rate, env)
+            spatial_autocorrelation(env, firing_rate)
 
     def test_raises_on_constant_rates(self):
         """Test raises ValueError if all valid firing rates are constant."""
@@ -136,7 +136,7 @@ class TestSpatialAutocorrelation:
         firing_rate = np.full(env.n_bins, 5.0)  # All constant
 
         with pytest.raises(ValueError, match="All valid firing rates are constant"):
-            spatial_autocorrelation(firing_rate, env)
+            spatial_autocorrelation(env, firing_rate)
 
     def test_raises_on_invalid_method(self):
         """Test raises ValueError on invalid method parameter."""
@@ -152,7 +152,7 @@ class TestSpatialAutocorrelation:
         firing_rate = rng.random(env.n_bins) * 5.0
 
         with pytest.raises(ValueError, match="method must be"):
-            spatial_autocorrelation(firing_rate, env, method="invalid")
+            spatial_autocorrelation(env, firing_rate, method="invalid")
 
     def test_fft_autocorr_returns_finite_values(self):
         """Test FFT autocorrelation returns finite values."""
@@ -168,7 +168,7 @@ class TestSpatialAutocorrelation:
         rng = np.random.default_rng(42)
         firing_rate = rng.random(env.n_bins) * 5.0
 
-        autocorr = spatial_autocorrelation(firing_rate, env, method="fft")
+        autocorr = spatial_autocorrelation(env, firing_rate, method="fft")
 
         # Autocorrelation should be finite everywhere
         assert np.all(np.isfinite(autocorr))

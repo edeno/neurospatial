@@ -7,11 +7,11 @@ import pytest
 from numpy.testing import assert_array_almost_equal, assert_array_equal
 
 from neurospatial import Environment
-from neurospatial.encoding.place import (
+from neurospatial.encoding.spatial import (
     DirectionalPlaceFields,
     _subset_spikes_by_time_mask,
     compute_directional_place_fields,
-    compute_place_field,
+    compute_spatial_rate,
 )
 
 
@@ -236,10 +236,10 @@ class TestComputeDirectionalPlaceFields:
         )
         return times, positions
 
-    def test_constant_labels_equals_compute_place_field(
+    def test_constant_labels_equals_compute_spatial_rate(
         self, sample_env: Environment, sample_trajectory: tuple[np.ndarray, np.ndarray]
     ) -> None:
-        """If all labels are the same, result equals compute_place_field."""
+        """If all labels are the same, result equals compute_spatial_rate."""
         times, positions = sample_trajectory
         spike_times = np.array([2.0, 5.0, 10.0, 15.0])
 
@@ -256,15 +256,15 @@ class TestComputeDirectionalPlaceFields:
             bandwidth=10.0,
         )
 
-        # Compare with compute_place_field
-        expected = compute_place_field(
+        # Compare with the canonical spatial-rate interface.
+        expected = compute_spatial_rate(
             sample_env,
             spike_times,
             times,
             positions,
             smoothing_method="binned",
             bandwidth=10.0,
-        )
+        ).firing_rate
 
         assert len(result.fields) == 1
         assert "forward" in result.fields

@@ -130,7 +130,7 @@ class GridProperties:
     ...     spatial_autocorrelation,
     ... )  # doctest: +SKIP
     >>> autocorr = spatial_autocorrelation(
-    ...     firing_rate, env, method="fft"
+    ...     env, firing_rate, method="fft"
     ... )  # doctest: +SKIP
     >>> props = grid_properties(autocorr, bin_size=2.0)  # doctest: +SKIP
     >>> print(
@@ -148,8 +148,8 @@ class GridProperties:
 
 
 def spatial_autocorrelation(
-    firing_rate: NDArray[np.float64],
     env: Environment,
+    firing_rate: NDArray[np.float64],
     *,
     method: Literal["auto", "fft", "graph"] = "auto",
     max_distance: float | None = None,
@@ -165,10 +165,10 @@ def spatial_autocorrelation(
 
     Parameters
     ----------
-    firing_rate : NDArray[np.float64], shape (n_bins,)
-        Spatial firing rate map (Hz or spikes/second).
     env : EnvironmentProtocol
         Spatial environment containing bin centers and connectivity.
+    firing_rate : NDArray[np.float64], shape (n_bins,)
+        Spatial firing rate map (Hz or spikes/second).
     method : {'auto', 'fft', 'graph'}, optional
         Autocorrelation computation method:
         - 'auto': Automatically select FFT for regular 2D grids, graph otherwise
@@ -254,14 +254,14 @@ def spatial_autocorrelation(
     >>>
     >>> # FFT method (for regular 2D grid)
     >>> autocorr_2d = spatial_autocorrelation(
-    ...     firing_rate, env, method="fft"
+    ...     env, firing_rate, method="fft"
     ... )  # doctest: +SKIP
     >>> print(autocorr_2d.shape)  # doctest: +SKIP
     (20, 20)  # doctest: +SKIP
     >>>
     >>> # Graph method (works on any topology)
     >>> distances, correlations = spatial_autocorrelation(  # doctest: +SKIP
-    ...     firing_rate, env, method="graph", n_distance_bins=30
+    ...     env, firing_rate, method="graph", n_distance_bins=30
     ... )
     >>> print(distances.shape, correlations.shape)  # doctest: +SKIP
     (30,) (30,)  # doctest: +SKIP
@@ -306,10 +306,10 @@ def spatial_autocorrelation(
 
     # Dispatch to appropriate method
     if method == "fft":
-        return _spatial_autocorrelation_fft(firing_rate, env)
+        return _spatial_autocorrelation_fft(env, firing_rate)
     else:  # method == "graph"
         return _spatial_autocorrelation_graph(
-            firing_rate, env, max_distance=max_distance, n_distance_bins=n_distance_bins
+            env, firing_rate, max_distance=max_distance, n_distance_bins=n_distance_bins
         )
 
 
@@ -351,18 +351,18 @@ def _detect_grid_method(env: Environment) -> Literal["fft", "graph"]:
 
 
 def _spatial_autocorrelation_fft(
-    firing_rate: NDArray[np.float64],
     env: Environment,
+    firing_rate: NDArray[np.float64],
 ) -> NDArray[np.float64]:
     """
     Compute 2D spatial autocorrelation using FFT (for regular grids).
 
     Parameters
     ----------
-    firing_rate : NDArray[np.float64], shape (n_bins,)
-        Firing rate map.
     env : EnvironmentProtocol
         Environment (must be regular 2D grid).
+    firing_rate : NDArray[np.float64], shape (n_bins,)
+        Firing rate map.
 
     Returns
     -------
@@ -449,8 +449,8 @@ def _spatial_autocorrelation_fft(
 
 
 def _spatial_autocorrelation_graph(
-    firing_rate: NDArray[np.float64],
     env: Environment,
+    firing_rate: NDArray[np.float64],
     *,
     max_distance: float | None = None,
     n_distance_bins: int = 50,
@@ -460,10 +460,10 @@ def _spatial_autocorrelation_graph(
 
     Parameters
     ----------
-    firing_rate : NDArray[np.float64], shape (n_bins,)
-        Firing rate map.
     env : EnvironmentProtocol
         Environment.
+    firing_rate : NDArray[np.float64], shape (n_bins,)
+        Firing rate map.
     max_distance : float, optional
         Maximum distance to compute autocorrelation. If None, uses maximum
         extent of environment.
@@ -660,7 +660,7 @@ def grid_score(
     >>>
     >>> # Compute autocorrelation
     >>> autocorr_2d = spatial_autocorrelation(
-    ...     firing_rate, env, method="fft"
+    ...     env, firing_rate, method="fft"
     ... )  # doctest: +SKIP
     >>>
     >>> # Compute grid score
@@ -856,7 +856,7 @@ def periodicity_score(
     >>>
     >>> # Compute graph-based autocorrelation
     >>> distances, correlations = spatial_autocorrelation(  # doctest: +SKIP
-    ...     firing_rate, env, method="graph", n_distance_bins=50
+    ...     env, firing_rate, method="graph", n_distance_bins=50
     ... )
     >>>
     >>> # Compute periodicity score
@@ -1115,7 +1115,7 @@ def grid_scale(
     ...     grid_scale,
     ... )  # doctest: +SKIP
     >>> autocorr = spatial_autocorrelation(
-    ...     firing_rate, env, method="fft"
+    ...     env, firing_rate, method="fft"
     ... )  # doctest: +SKIP
     >>> scale = grid_scale(autocorr, bin_size=2.0)  # doctest: +SKIP
     >>> print(f"Grid spacing: {scale:.1f} cm")  # doctest: +SKIP
@@ -1234,7 +1234,7 @@ def grid_orientation(
     ...     grid_orientation,
     ... )  # doctest: +SKIP
     >>> autocorr = spatial_autocorrelation(
-    ...     firing_rate, env, method="fft"
+    ...     env, firing_rate, method="fft"
     ... )  # doctest: +SKIP
     >>> orientation, orientation_std = grid_orientation(autocorr)  # doctest: +SKIP
     >>> print(
@@ -1407,7 +1407,7 @@ def grid_properties(
     >>> positions = np.random.randn(5000, 2) * 50
     >>> env = Environment.from_samples(positions, bin_size=2.0)
     >>> # firing_rate = ... (grid cell activity)
-    >>> # autocorr = spatial_autocorrelation(firing_rate, env, method="fft")
+    >>> # autocorr = spatial_autocorrelation(env, firing_rate, method="fft")
 
     >>> # Get all grid properties at once
     >>> # props = grid_properties(autocorr, bin_size=2.0)

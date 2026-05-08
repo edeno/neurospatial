@@ -16,8 +16,9 @@ import pytest
 
 from neurospatial import Environment
 
-# Mark all tests in this module as integration tests + napari GUI group
-pytestmark = [pytest.mark.integration, pytest.mark.xdist_group(name="napari_gui")]
+# Mark all tests in this module as integration tests. Napari-specific tests
+# carry napari/xdist markers individually so marker selection stays meaningful.
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
@@ -34,7 +35,20 @@ def shared_test_data():
     return env, fields
 
 
-def test_napari_backend_with_shared_data(shared_test_data):
+@pytest.fixture
+def close_viewer(request):
+    """Close real napari viewers created by a test."""
+
+    def register(viewer):
+        request.addfinalizer(viewer.close)
+        return viewer
+
+    return register
+
+
+@pytest.mark.napari
+@pytest.mark.xdist_group(name="napari_gui")
+def test_napari_backend_with_shared_data(shared_test_data, close_viewer):
     """Test Napari backend handles shared test data."""
     pytest.importorskip("napari")
 
@@ -43,7 +57,7 @@ def test_napari_backend_with_shared_data(shared_test_data):
     env, fields = shared_test_data
 
     # Napari should handle the data without error
-    viewer = render_napari(env, fields, vmin=0, vmax=1, fps=10)
+    viewer = close_viewer(render_napari(env, fields, vmin=0, vmax=1, fps=10))
 
     # Verify viewer created
     assert viewer is not None
@@ -129,7 +143,9 @@ def test_widget_backend_with_shared_data(shared_test_data):
         mock_widgets.Play.assert_called_once()
 
 
-def test_all_backends_handle_same_vmin_vmax(shared_test_data, tmp_path):
+@pytest.mark.napari
+@pytest.mark.xdist_group(name="napari_gui")
+def test_all_backends_handle_same_vmin_vmax(shared_test_data, tmp_path, close_viewer):
     """Test all backends respect the same vmin/vmax color scale."""
     pytest.importorskip("napari")
     pytest.importorskip("ipywidgets")
@@ -141,7 +157,7 @@ def test_all_backends_handle_same_vmin_vmax(shared_test_data, tmp_path):
     # Test napari
     from neurospatial.animation.backends.napari_backend import render_napari
 
-    viewer = render_napari(env, fields, vmin=vmin, vmax=vmax, fps=10)
+    viewer = close_viewer(render_napari(env, fields, vmin=vmin, vmax=vmax, fps=10))
     assert viewer is not None
 
     # Test HTML
@@ -172,7 +188,9 @@ def test_all_backends_handle_same_vmin_vmax(shared_test_data, tmp_path):
         mock_widgets.Image.assert_called_once()
 
 
-def test_all_backends_handle_custom_cmap(shared_test_data, tmp_path):
+@pytest.mark.napari
+@pytest.mark.xdist_group(name="napari_gui")
+def test_all_backends_handle_custom_cmap(shared_test_data, tmp_path, close_viewer):
     """Test all backends respect custom colormap."""
     pytest.importorskip("napari")
     pytest.importorskip("ipywidgets")
@@ -184,7 +202,7 @@ def test_all_backends_handle_custom_cmap(shared_test_data, tmp_path):
     # Test napari
     from neurospatial.animation.backends.napari_backend import render_napari
 
-    viewer = render_napari(env, fields, cmap=cmap, fps=10)
+    viewer = close_viewer(render_napari(env, fields, cmap=cmap, fps=10))
     assert viewer is not None
 
     # Test HTML
@@ -215,7 +233,9 @@ def test_all_backends_handle_custom_cmap(shared_test_data, tmp_path):
         mock_widgets.Image.assert_called_once()
 
 
-def test_all_backends_handle_custom_fps(shared_test_data, tmp_path):
+@pytest.mark.napari
+@pytest.mark.xdist_group(name="napari_gui")
+def test_all_backends_handle_custom_fps(shared_test_data, tmp_path, close_viewer):
     """Test all backends respect custom FPS setting."""
     pytest.importorskip("napari")
     pytest.importorskip("ipywidgets")
@@ -227,7 +247,7 @@ def test_all_backends_handle_custom_fps(shared_test_data, tmp_path):
     # Test napari
     from neurospatial.animation.backends.napari_backend import render_napari
 
-    viewer = render_napari(env, fields, fps=fps)
+    viewer = close_viewer(render_napari(env, fields, fps=fps))
     assert viewer is not None
 
     # Test HTML

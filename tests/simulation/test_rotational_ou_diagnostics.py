@@ -7,7 +7,7 @@ from neurospatial import Environment
 from neurospatial.simulation import simulate_trajectory_ou
 
 
-def test_rotational_velocity_diagnostics():
+def test_rotational_velocity_diagnostics(tmp_path):
     """Diagnose rotational velocity behavior with detailed logging."""
     # Create grid environment
     arena_size = 80.0
@@ -135,8 +135,9 @@ def test_rotational_velocity_diagnostics():
     ax.grid(True, alpha=0.3, axis="y")
 
     plt.tight_layout()
-    plt.savefig("/tmp/rotational_ou_diagnostics.png", dpi=150, bbox_inches="tight")
-    print("\nDiagnostic plot saved to: /tmp/rotational_ou_diagnostics.png")
+    diag_path = tmp_path / "rotational_ou_diagnostics.png"
+    plt.savefig(str(diag_path), dpi=150, bbox_inches="tight")
+    print(f"\nDiagnostic plot saved to: {diag_path}")
 
     # Key insight: Check if turn rates are too small
     if np.abs(turn_rates).mean() < 20:
@@ -148,4 +149,8 @@ def test_rotational_velocity_diagnostics():
 
 
 if __name__ == "__main__":
-    test_rotational_velocity_diagnostics()
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as _tmp:
+        test_rotational_velocity_diagnostics(Path(_tmp))
