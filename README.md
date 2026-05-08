@@ -215,10 +215,19 @@ You typically don't interact with layout engines directly; instead, use the `Env
 ### 1. Analyzing Animal Position Data
 
 ```python
-# Load position tracking data
-times = load_timestamps()  # Shape: (n_timepoints,) in seconds
-position = load_tracking_data()  # Shape: (n_timepoints, 2)
-speeds = load_speeds()  # Shape: (n_timepoints,)
+import numpy as np
+from neurospatial import Environment
+
+# In a real analysis, replace these three lines with your own loader:
+#   times = load_timestamps()   # shape (n_timepoints,) in seconds
+#   position = load_tracking()  # shape (n_timepoints, 2)
+#   speeds = load_speeds()      # shape (n_timepoints,)
+# Here we synthesize a 1 Hz, 60 s random walk in a 100x100 cm arena so the
+# block is runnable end-to-end.
+rng = np.random.default_rng(0)
+times = np.linspace(0.0, 60.0, 60)
+position = np.cumsum(rng.normal(0, 3.0, size=(60, 2)), axis=0) + 50.0
+speeds = np.linalg.norm(np.diff(position, axis=0, prepend=position[:1]), axis=1) / np.gradient(times)
 
 # Create environment with 5 cm bins, auto-detect active areas
 env = Environment.from_samples(

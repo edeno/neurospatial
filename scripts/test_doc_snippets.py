@@ -167,6 +167,13 @@ def extract_package_docstring_example(path: Path, index: int) -> str | None:
     at all: indexing into such a group via the manifest reports ``missing``
     (the deliberate signal "this group is not runnable in CI; mark it
     ``skip:`` in the manifest").
+
+    SKIP semantics extend to multi-line statements. When a ``>>>`` line
+    carries the directive, every following ``... `` continuation line is
+    also dropped: those continuations are part of the same Python statement
+    and would be syntactically orphaned without their ``>>>`` opener. The
+    skip-mode flag clears at the next ``>>>`` line (the next statement) or
+    at a group boundary.
     """
     tree = ast.parse(path.read_text(encoding="utf-8"))
     docstring = ast.get_docstring(tree)
@@ -175,14 +182,22 @@ def extract_package_docstring_example(path: Path, index: int) -> str | None:
     lines = docstring.splitlines()
     groups: list[list[str]] = []
     current: list[str] = []
+    in_skip_continuation = False
     for line in lines:
         stripped = line.lstrip()
-        if stripped.startswith(">>> ") or stripped.startswith("... "):
+        if stripped.startswith(">>> "):
             payload = stripped[4:]
             if DOCTEST_SKIP_RE.search(payload):
+                in_skip_continuation = True
                 continue
+            in_skip_continuation = False
             current.append(payload)
+        elif stripped.startswith("... "):
+            if in_skip_continuation:
+                continue
+            current.append(stripped[4:])
         else:
+            in_skip_continuation = False
             if current:
                 groups.append(current)
                 current = []

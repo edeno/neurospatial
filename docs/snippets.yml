@@ -36,10 +36,9 @@ snippets:
     source: README.md
     kind: markdown
     index: 1
-    skip: |
-      Uses placeholder loaders (load_timestamps, load_tracking_data,
-      load_speeds). Tracked in M6 backlog; will be replaced with a runnable
-      sample-data loader during the v0.4 example-coverage pass.
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"
 
   - id: readme_animation_napari_block
     source: README.md

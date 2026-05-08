@@ -188,6 +188,44 @@ def test_doctest_skip_lines_are_dropped_from_extraction(tmp_path, runner):
     assert all_skip is None, f"expected missing, got: {all_skip!r}"
 
 
+def test_doctest_skip_drops_multiline_continuations(tmp_path, runner):
+    """A `>>>` line carrying `+SKIP` must drop following `... ` continuations.
+
+    Regression for the second pass of review notes: previously the extractor
+    dropped only the prompted line carrying `+SKIP` and kept the matching
+    `... ` continuation lines, leaving syntactically-orphaned fragments
+    (e.g., a function call's argument lines without their opener) in the
+    extracted body. Indexing such a group from the manifest would crash on
+    `SyntaxError`.
+    """
+    py = tmp_path / "tiny.py"
+    py.write_text(
+        '"""Module docstring.\n\n'
+        "Mixed multi-line group::\n\n"
+        "    >>> safe_value = 1\n"
+        "    >>> result = compute_thing(  # doctest: +SKIP\n"
+        "    ...     env, spike_times, times, trajectory,\n"
+        "    ...     bandwidth=5.0,\n"
+        "    ... )\n"
+        "    >>> kept_after_skip = 2\n"
+        '"""\n',
+        encoding="utf-8",
+    )
+    body = runner.extract_package_docstring_example(py, index=0)
+    assert body is not None
+    # Surviving lines: the safe statements before and after the SKIP block.
+    assert "safe_value = 1" in body
+    assert "kept_after_skip = 2" in body
+    # All four lines of the SKIP statement (its `>>>` opener and three `... `
+    # continuations) must be dropped together.
+    assert "compute_thing" not in body, "SKIP'd `>>>` line leaked into body"
+    assert "env, spike_times" not in body, "continuation 1 leaked into body"
+    assert "bandwidth=5.0" not in body, "continuation 2 leaked into body"
+    assert ")" not in body or body.count(")") == 0, (
+        "closing paren of SKIP statement leaked"
+    )
+
+
 def test_subprocess_inherits_environment_with_mplbackend_overlay(
     tmp_path, runner, monkeypatch
 ):
