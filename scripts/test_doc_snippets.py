@@ -57,6 +57,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import os
 import re
 import subprocess
 import sys
@@ -145,6 +146,9 @@ def extract_markdown_block(text: str, index: int) -> str | None:
     return blocks[index].strip("\n")
 
 
+DOCTEST_SKIP_RE = re.compile(r"#\s*doctest:\s*\+SKIP\b", re.IGNORECASE)
+
+
 def extract_package_docstring_example(path: Path, index: int) -> str | None:
     """Return the Nth REPL example group from a Python module docstring.
 
@@ -152,6 +156,17 @@ def extract_package_docstring_example(path: Path, index: int) -> str | None:
     ``... ``. Lines that are purely expected-output (no prompt) are dropped,
     matching how the Examples sections in our package docstrings are
     structured for human reading rather than strict doctest harvest.
+
+    Lines carrying a ``# doctest: +SKIP`` directive are dropped from the
+    extracted group rather than executed: the directive's whole purpose is to
+    flag "do not run this in a vacuum", and silently executing such lines as
+    bare Python (the ``+SKIP`` becomes a comment) was producing
+    undefined-name failures the moment the manifest indexed into a Map /
+    Compute / Save group. A group consisting entirely of ``+SKIP`` lines
+    leaves no surviving content and is therefore not registered as a group
+    at all: indexing into such a group via the manifest reports ``missing``
+    (the deliberate signal "this group is not runnable in CI; mark it
+    ``skip:`` in the manifest").
     """
     tree = ast.parse(path.read_text(encoding="utf-8"))
     docstring = ast.get_docstring(tree)
@@ -163,7 +178,10 @@ def extract_package_docstring_example(path: Path, index: int) -> str | None:
     for line in lines:
         stripped = line.lstrip()
         if stripped.startswith(">>> ") or stripped.startswith("... "):
-            current.append(stripped[4:])
+            payload = stripped[4:]
+            if DOCTEST_SKIP_RE.search(payload):
+                continue
+            current.append(payload)
         else:
             if current:
                 groups.append(current)
@@ -207,13 +225,19 @@ def run_snippet(spec: SnippetSpec) -> SnippetResult:
     if body is None:
         return SnippetResult(spec, "missing", err)
     program = (spec.setup + "\n" if spec.setup else "") + body
+    # Inherit os.environ rather than scrub it: snippets need PATH for any
+    # imported binary, HOME for matplotlib's font cache and several scientific
+    # libraries, and SYSTEMROOT/USERPROFILE on Windows. We only force
+    # MPLBACKEND=Agg so plt.show() in a snippet does not try to open a
+    # display.
+    snippet_env = {**os.environ, "MPLBACKEND": "Agg"}
     try:
         completed = subprocess.run(
             [sys.executable, "-c", program],
             capture_output=True,
             timeout=spec.timeout,
             text=True,
-            env={"MPLBACKEND": "Agg"},
+            env=snippet_env,
             check=False,
         )
     except subprocess.TimeoutExpired:

@@ -130,15 +130,15 @@ Create environment from position data::
     >>> positions = np.random.uniform(0, 100, (1000, 2))
     >>> env = Environment.from_samples(positions, bin_size=5.0)
     >>> env.units = 'cm'
-    >>> env.n_bins > 0  # Number of bins depends on data coverage
-    True
+    >>> assert env.n_bins > 0  # Number of bins depends on data coverage
 
 Map trajectory to bins::
 
     >>> times = np.linspace(0, 10, 100)  # doctest: +SKIP
     >>> trajectory = np.random.uniform(0, 100, (100, 2))  # doctest: +SKIP
-    >>> # bin_sequence and occupancy take (times, positions); reversing the
-    >>> # arguments silently produces wrong results.
+    >>> # bin_sequence and occupancy take (times, positions). Reversing the
+    >>> # arguments raises ValueError because the first argument must be a
+    >>> # 1-D `times` array, not the 2-D positions array.
     >>> bin_sequence = env.bin_sequence(times, trajectory)  # doctest: +SKIP
     >>> occupancy = env.occupancy(times, trajectory)  # doctest: +SKIP
 

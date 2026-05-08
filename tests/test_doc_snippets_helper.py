@@ -151,3 +151,92 @@ def test_real_manifest_round_trip(runner):
     # entries are allowed to come and go without breaking this test.
     assert "readme_quickstart" in ids
     assert "docs_quickstart_basic_creation" in ids
+
+
+def test_doctest_skip_lines_are_dropped_from_extraction(tmp_path, runner):
+    """Lines carrying `# doctest: +SKIP` must be removed from the extracted body.
+
+    This is the regression for runner I1: previously the extractor preserved
+    +SKIP lines verbatim, then stripped the `>>> ` prefix and ran them as
+    plain Python (where `# doctest: +SKIP` becomes a no-op comment), which
+    surfaced as undefined-name failures whenever the manifest indexed a
+    SKIP-only group.
+    """
+    py = tmp_path / "tiny.py"
+    py.write_text(
+        '"""Module docstring.\n\n'
+        "Mixed group::\n\n"
+        "    >>> safe_call()\n"
+        "    >>> needs_data()  # doctest: +SKIP\n"
+        "    >>> safe_call_2()\n\n"
+        "All-skip group::\n\n"
+        "    >>> needs_disk()  # doctest: +SKIP\n"
+        "    >>> needs_network()  # doctest: +SKIP\n"
+        '"""\n',
+        encoding="utf-8",
+    )
+    mixed = runner.extract_package_docstring_example(py, index=0)
+    assert mixed is not None
+    assert "safe_call()" in mixed
+    assert "safe_call_2()" in mixed
+    assert "needs_data" not in mixed, "+SKIP line leaked into extracted body"
+    # All-SKIP groups leave no surviving content and are therefore not
+    # registered as a group at all; indexing into one returns None so the
+    # runner reports it as `missing`. That's the deliberate "this group is
+    # not runnable in CI; mark it `skip:` in the manifest" signal.
+    all_skip = runner.extract_package_docstring_example(py, index=1)
+    assert all_skip is None, f"expected missing, got: {all_skip!r}"
+
+
+def test_subprocess_inherits_environment_with_mplbackend_overlay(
+    tmp_path, runner, monkeypatch
+):
+    """Snippet subprocess must see PATH/HOME from the parent env, plus MPLBACKEND=Agg.
+
+    Regression for runner I3: previously the subprocess was given an empty
+    env={"MPLBACKEND": "Agg"} dict, which would crash on Windows (missing
+    SYSTEMROOT) and broke any snippet that needed PATH (ffmpeg, git) or HOME
+    (matplotlib font cache).
+    """
+    monkeypatch.setenv("DOC_SNIPPET_MARKER", "12345")
+    md = tmp_path / "doc.md"
+    md.write_text(
+        "```python\n"
+        "import os\n"
+        "assert os.environ.get('MPLBACKEND') == 'Agg', 'MPLBACKEND not overlaid'\n"
+        "assert os.environ.get('DOC_SNIPPET_MARKER') == '12345', 'parent env not inherited'\n"
+        "assert 'PATH' in os.environ, 'PATH was scrubbed'\n"
+        "```\n",
+        encoding="utf-8",
+    )
+    manifest = tmp_path / "snippets.yml"
+    _write_manifest(
+        manifest,
+        f"snippets:\n  - id: env_overlay\n    source: {md}\n    kind: markdown\n    index: 0\n",
+    )
+    specs = runner.load_manifest(manifest)
+    result = runner.run_snippet(specs[0])
+    assert result.status == "pass", result.detail
+
+
+def test_package_docstring_common_usage_extracts_environment_construction(runner):
+    """Regression for review H1: the manifest entry pointing at the package
+    docstring's Common Usage example must extract a runnable env-construction
+    snippet (not the import-only group at index 0). Catches future drift if
+    someone reorders the docstring or inserts a new submodule import group.
+    """
+    init_path = ROOT / "src" / "neurospatial" / "__init__.py"
+    manifest_path = ROOT / "docs" / "snippets.yml"
+    specs = runner.load_manifest(manifest_path)
+    by_id = {s.id: s for s in specs}
+    spec = by_id.get("package_docstring_common_usage")
+    assert spec is not None, "manifest is missing package_docstring_common_usage"
+    body = runner.extract_package_docstring_example(init_path, spec.index)
+    assert body is not None
+    assert "Environment.from_samples" in body, (
+        "Manifest index drifted: extracted body should be the Common Usage "
+        "env-construction example, not a bare import group."
+    )
+    assert "import numpy" in body, (
+        "Common Usage group should still bring numpy into scope."
+    )

@@ -215,11 +215,11 @@ This milestone has no dependencies and is the only one that can ship as v0.3.1 i
 
 **Notable tasks**:
 
-- **Four new notebooks**:
-  - `examples/21_object_vector_cells.ipynb` (fills the missing slot 21)
-  - `examples/23_head_direction_tuning.ipynb`
-  - `examples/24_peri_event_psth.ipynb`
-  - `examples/25_loading_from_nwb.ipynb` (uses a small public NWB file from DANDI)
+- **Four new notebooks** (slot 21 is already taken by `21_directional_place_fields`, moved into `examples/` during M0 task 0.7):
+  - `examples/23_object_vector_cells.ipynb`
+  - `examples/24_head_direction_tuning.ipynb`
+  - `examples/25_peri_event_psth.ipynb`
+  - `examples/26_loading_from_nwb.ipynb` (uses a small public NWB file from DANDI)
 - **Bandit dataset.** Add `data/README.md` (tracked via a `.gitignore` exception) with download instructions for the bandit `.pkl` files (Zenodo or similar). `examples/19_real_data_bandit_task.py` gates on file presence and prints a friendly skip message with the URL.
 - **README front door.** Add a "First place field" section after the existing Quickstart that walks user-owned spike-times + tracking arrays to a plotted firing-rate map in <30 lines.
 - **Glossary page.** `docs/glossary.md` defines `bin`, `node`, `cell`, `field`, `rate map`, `tuning curve`, `place cell`/`place field`, `egocentric`, `object-vector`, `allocentric`, `view field`, `linearization`. Cross-linked from `core-concepts.md`.

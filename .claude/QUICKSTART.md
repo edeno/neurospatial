@@ -748,8 +748,8 @@ basis = geodesic_rbf_basis(
 )  # Shape: (n_centers * n_sigmas, n_bins)
 
 # Create GLM design matrix from trajectory.
-# bin_sequence takes (times, positions) — order matters; reversing it silently
-# misindexes the basis matrix.
+# bin_sequence takes (times, positions). Reversing the arguments raises
+# ValueError because the first argument must be the 1-D `times` array.
 bin_indices = env.bin_sequence(times, positions)
 X_spatial = basis[:, bin_indices].T  # Shape: (n_times, n_basis)
 

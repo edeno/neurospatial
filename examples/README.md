@@ -39,6 +39,7 @@ If you have a specific neuroscience question, jump directly to the relevant note
 | Define spatial regions / zones of interest | [04](04_regions_of_interest.ipynb) |
 | Compute occupancy and a spatial firing-rate map | [08](08_spike_field_basics.ipynb), [11](11_place_field_analysis.ipynb) |
 | Detect place fields and compute place-cell metrics | [11](11_place_field_analysis.ipynb) |
+| Direction-conditioned place fields | [21](21_directional_place_fields.ipynb) |
 | Boundary / border cells | [12](12_boundary_cell_analysis.ipynb) |
 | Spatial view cells | [22](22_spatial_view_cells.ipynb) |
 | Trajectory metrics (step length, MSD, curvature) | [13](13_trajectory_analysis.ipynb) |
@@ -51,7 +52,7 @@ If you have a specific neuroscience question, jump directly to the relevant note
 | Multi-room / composite environments | [06](06_composite_environments.ipynb), [07](07_advanced_operations.ipynb) |
 | Real-data end-to-end pipeline | [19](19_real_data_bandit_task.ipynb) |
 
-> **Coverage gaps** (planned for v0.4): NWB loading, head-direction tuning, peri-event/PSTH analysis, and object-vector cells (notebook 21 placeholder). See [`docs/plans/v0.4-ux-cleanup/`](../docs/plans/v0.4-ux-cleanup/) for status.
+> **Coverage gaps** (planned for v0.4): NWB loading, head-direction tuning, peri-event/PSTH analysis, and object-vector cells. See [`docs/plans/v0.4-ux-cleanup/`](../docs/plans/v0.4-ux-cleanup/) for status.
 
 ## Notebook Series
 
@@ -113,7 +114,7 @@ Topics: gradient and divergence on graphs, applications to RL, replay analysis, 
 **File**: [10_signal_processing_primitives.ipynb](10_signal_processing_primitives.ipynb) · **Time**: 15-20 minutes · **Prerequisites**: 01-02
 Topics: `neighbor_reduce()`, `graph_convolve()` for custom filtering and local aggregation on graph-based environments.
 
-### Cell-Type Analyses (11-12, 22)
+### Cell-Type Analyses (11-12, 21-22)
 
 #### 11. Place Field Analysis
 
@@ -125,12 +126,15 @@ Topics: detecting place fields, place-field metrics (size, stability, centroid, 
 **File**: [12_boundary_cell_analysis.ipynb](12_boundary_cell_analysis.ipynb) · **Time**: 15-20 minutes · **Prerequisites**: 08, 11
 Topics: border cells (Solstad, Boccara et al. 2008), `border_score`, geodesic boundary detection.
 
+#### 21. Directional Place Fields
+
+**File**: [21_directional_place_fields.ipynb](21_directional_place_fields.ipynb) · **Time**: 20-25 minutes · **Prerequisites**: 08, 11
+Topics: direction-conditioned firing-rate maps, splitting place fields by movement direction, comparing left-vs-right traversals on a linear track, quantifying directional tuning.
+
 #### 22. Spatial View Cell Analysis
 
 **File**: [22_spatial_view_cells.ipynb](22_spatial_view_cells.ipynb) · **Time**: 20-25 minutes · **Prerequisites**: 08, 11
 Topics: cells that fire based on the *viewed* location (not the animal's position), simulating view cells, `compute_view_rate`, gaze models, classification.
-
-> Notebook 21 is a deliberate gap — it will host the object-vector-cell tutorial in v0.4.
 
 ### Behavior (13-14)
 

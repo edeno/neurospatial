@@ -392,13 +392,13 @@ Source review: [`docs/reviews/UX_REVIEW_2026-05-08.md`](../../reviews/UX_REVIEW_
 
 **Risk**: Low-medium. New notebooks add surface area.
 
-- [ ] **6.1** **Notebook: object-vector cells.** Add `examples/21_object_vector_cells.ipynb` mirroring `22_spatial_view_cells.ipynb`. Use `compute_egocentric_rate`, `is_object_vector_cell`, `object_vector_score`, `plot_object_vector_tuning`. Closes review §1.12.
+- [ ] **6.1** **Notebook: object-vector cells.** Add `examples/23_object_vector_cells.ipynb` mirroring `22_spatial_view_cells.ipynb`. Use `compute_egocentric_rate`, `is_object_vector_cell`, `object_vector_score`, `plot_object_vector_tuning`. Closes review §1.12. Slot 21 was reserved by the original review for OVC, but `21_directional_place_fields.ipynb` is already published there (moved to `examples/` in M0 task 0.7); OVC therefore takes the next free slot 23.
 
-- [ ] **6.2** **Notebook: head-direction tuning.** Add `examples/23_head_direction_tuning.ipynb`. Use `compute_directional_rate`, `is_head_direction_cell`, `rayleigh_test`, `plot_head_direction_tuning`. Closes review §1.11.
+- [ ] **6.2** **Notebook: head-direction tuning.** Add `examples/24_head_direction_tuning.ipynb`. Use `compute_directional_rate`, `is_head_direction_cell`, `rayleigh_test`, `plot_head_direction_tuning`. Closes review §1.11.
 
-- [ ] **6.3** **Notebook: peri-event PSTH.** Add `examples/24_peri_event_psth.ipynb`. Use `peri_event_histogram`, `align_spikes_to_events`, GLM regressors. Closes review §1.10.
+- [ ] **6.3** **Notebook: peri-event PSTH.** Add `examples/25_peri_event_psth.ipynb`. Use `peri_event_histogram`, `align_spikes_to_events`, GLM regressors. Closes review §1.10.
 
-- [ ] **6.4** **Notebook: NWB loading.** Add `examples/25_loading_from_nwb.ipynb`. Use a small public NWB file from DANDI (e.g., a Buzsaki-lab open-field session). Closes review §1.9.
+- [ ] **6.4** **Notebook: NWB loading.** Add `examples/26_loading_from_nwb.ipynb`. Use a small public NWB file from DANDI (e.g., a Buzsaki-lab open-field session). Closes review §1.9.
 
 - [ ] **6.5** **Bandit dataset friendly skip.**
   - Add tracked `data/README.md` with download instructions (Zenodo DOI per PLAN open question #3).

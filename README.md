@@ -332,12 +332,17 @@ neurospatial includes a comprehensive simulation subpackage for generating synth
 ### Quick Example
 
 ```python
+import numpy as np
 from neurospatial import Environment
 from neurospatial.simulation import (
     simulate_trajectory_ou,
     PlaceCellModel,
     generate_poisson_spikes,
 )
+
+# Sample positions used to infer the active region (e.g., a 100x100 cm arena).
+# In real use, replace this with your own tracking data.
+arena_data = np.random.default_rng(0).uniform(0, 100, size=(2000, 2))
 
 # Create environment
 env = Environment.from_samples(arena_data, bin_size=2.0)

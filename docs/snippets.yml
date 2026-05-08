@@ -19,6 +19,19 @@ snippets:
       import os
       os.environ["MPLBACKEND"] = "Agg"
 
+  - id: readme_simulation_quick_example
+    source: README.md
+    kind: markdown
+    # Block 5 in README.md is the "Simulation > Quick Example" block. It used
+    # to reference an undefined `arena_data` (M2 review finding); now defines
+    # it inline. Worth covering in CI because this is the canonical
+    # spike-generation -> compute_spatial_rate end-to-end demo.
+    index: 5
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"
+    timeout: 120
+
   - id: readme_common_use_cases_position_analysis
     source: README.md
     kind: markdown
@@ -63,8 +76,12 @@ snippets:
   - id: package_docstring_common_usage
     source: src/neurospatial/__init__.py
     kind: package_docstring
-    index: 0
+    # The package docstring lists each submodule's import as its own one-line
+    # REPL group (groups 0-10), so the actual "Common Usage / Create
+    # environment from position data" example sits at group 11. Subsequent
+    # groups (Map trajectory, Compute rate map, Save/load, etc.) all carry
+    # `# doctest: +SKIP` markers and are intentionally not part of CI.
+    index: 11
     setup: |
       import os
       os.environ["MPLBACKEND"] = "Agg"
-      import numpy as np
