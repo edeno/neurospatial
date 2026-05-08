@@ -1039,10 +1039,13 @@ def compute_view_rate(
         smooth_rate_map,
     )
     from neurospatial.encoding._validation import (
+        validate_env_fitted,
         validate_spike_times,
         validate_trajectory,
     )
     from neurospatial.encoding._view_binning import bin_view_spike_trains
+
+    validate_env_fitted(env, context="compute_view_rate")
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -1327,10 +1330,13 @@ def compute_view_rates(
     )
     from neurospatial.encoding._spikes import normalize_spike_times
     from neurospatial.encoding._validation import (
+        validate_env_fitted,
         validate_spike_times,
         validate_trajectory,
     )
     from neurospatial.encoding._view_binning import bin_view_spike_trains
+
+    validate_env_fitted(env, context="compute_view_rates")
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:

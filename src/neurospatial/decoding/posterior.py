@@ -320,6 +320,10 @@ def decode_position(
     log_poisson_likelihood : Likelihood function used internally
     normalize_to_posterior : Posterior normalization used internally
     """
+    from neurospatial.encoding._validation import validate_env_fitted
+
+    validate_env_fitted(env, context="decode_position")
+
     # Validate method
     if method != "poisson":
         raise ValueError(

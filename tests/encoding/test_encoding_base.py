@@ -600,3 +600,118 @@ class TestValidateSpikeTimes:
         unsorted_spikes = np.array([5.0, 1.0, 7.0])
         with pytest.raises(ValueError, match=r"monotonically non-decreasing"):
             compute_directional_rate(unsorted_spikes, times, headings)
+
+
+class TestComputeRateRequiresFittedEnv:
+    """Regression: env-consuming compute_*_rate(s) must reject unfitted envs.
+
+    Previously these public entry points accepted a bare ``Environment()``
+    or any object that quacked like one and crashed deep in a binning
+    helper with a confusing AttributeError. They should fail at the
+    boundary with EnvironmentNotFittedError so the user gets the
+    canonical "use a factory method" guidance.
+    """
+
+    def _bare_env(self):
+        """Construct an Environment without going through a factory.
+
+        ``Environment()`` requires layout=..., so build a partially-
+        initialized instance via the dataclass default path and then
+        force ``_is_fitted = False``. This mirrors what users hit when
+        they restore from a partial copy/subset/serialization that
+        doesn't run ``_setup_from_layout``.
+        """
+        from neurospatial import Environment
+
+        positions = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
+        env = Environment.from_samples(positions, bin_size=1.0)
+        env._is_fitted = False  # Simulate an unfitted env at function entry
+        return env
+
+    def test_compute_spatial_rate_rejects_unfitted_env(self) -> None:
+        from neurospatial.encoding.spatial import compute_spatial_rate
+        from neurospatial.environment.decorators import EnvironmentNotFittedError
+
+        env = self._bare_env()
+        times = np.linspace(0.0, 1.0, 10)
+        positions = np.linspace(0.0, 2.0, 10).reshape(-1, 1)
+        with pytest.raises(EnvironmentNotFittedError):
+            compute_spatial_rate(env, np.array([0.5]), times, positions)
+
+    def test_compute_spatial_rates_rejects_unfitted_env(self) -> None:
+        from neurospatial.encoding.spatial import compute_spatial_rates
+        from neurospatial.environment.decorators import EnvironmentNotFittedError
+
+        env = self._bare_env()
+        times = np.linspace(0.0, 1.0, 10)
+        positions = np.linspace(0.0, 2.0, 10).reshape(-1, 1)
+        with pytest.raises(EnvironmentNotFittedError):
+            compute_spatial_rates(env, [np.array([0.5])], times, positions)
+
+    def test_compute_view_rate_rejects_unfitted_env(self) -> None:
+        from neurospatial.encoding.view import compute_view_rate
+        from neurospatial.environment.decorators import EnvironmentNotFittedError
+
+        env = self._bare_env()
+        times = np.linspace(0.0, 1.0, 10)
+        positions = np.column_stack([np.linspace(0, 2, 10), np.linspace(0, 2, 10)])
+        headings = np.zeros(10)
+        with pytest.raises(EnvironmentNotFittedError):
+            compute_view_rate(env, np.array([0.5]), times, positions, headings)
+
+    def test_compute_egocentric_rate_rejects_unfitted_env(self) -> None:
+        """When env is supplied to egocentric, it must be fitted.
+
+        compute_egocentric_rate accepts ``env=None`` for the euclidean
+        distance path (the geodesic path needs the env-derived graph), so
+        the fitted-state check is conditional on a non-None env.
+        """
+        from neurospatial.encoding.egocentric import compute_egocentric_rate
+        from neurospatial.environment.decorators import EnvironmentNotFittedError
+
+        env = self._bare_env()
+        times = np.linspace(0.0, 1.0, 10)
+        positions = np.column_stack([np.linspace(0, 2, 10), np.linspace(0, 2, 10)])
+        headings = np.zeros(10)
+        objects = np.array([[1.0, 1.0]])
+        with pytest.raises(EnvironmentNotFittedError):
+            compute_egocentric_rate(
+                env, np.array([0.5]), times, positions, headings, objects
+            )
+
+    def test_compute_view_rates_rejects_unfitted_env(self) -> None:
+        from neurospatial.encoding.view import compute_view_rates
+        from neurospatial.environment.decorators import EnvironmentNotFittedError
+
+        env = self._bare_env()
+        times = np.linspace(0.0, 1.0, 10)
+        positions = np.column_stack([np.linspace(0, 2, 10), np.linspace(0, 2, 10)])
+        headings = np.zeros(10)
+        with pytest.raises(EnvironmentNotFittedError):
+            compute_view_rates(env, [np.array([0.5])], times, positions, headings)
+
+    def test_compute_egocentric_rates_rejects_unfitted_env(self) -> None:
+        from neurospatial.encoding.egocentric import compute_egocentric_rates
+        from neurospatial.environment.decorators import EnvironmentNotFittedError
+
+        env = self._bare_env()
+        times = np.linspace(0.0, 1.0, 10)
+        positions = np.column_stack([np.linspace(0, 2, 10), np.linspace(0, 2, 10)])
+        headings = np.zeros(10)
+        objects = np.array([[1.0, 1.0]])
+        with pytest.raises(EnvironmentNotFittedError):
+            compute_egocentric_rates(
+                env, [np.array([0.5])], times, positions, headings, objects
+            )
+
+    def test_decode_position_rejects_unfitted_env(self) -> None:
+        from neurospatial.decoding.posterior import decode_position
+        from neurospatial.environment.decorators import EnvironmentNotFittedError
+
+        env = self._bare_env()
+        # Sentinel inputs sized for one neuron x one bin: the env-fitted
+        # check should fire before downstream shape/dtype checks.
+        spike_counts = np.zeros((1, 1), dtype=np.int64)
+        encoding_models = np.zeros((1, 1), dtype=np.float64)
+        with pytest.raises(EnvironmentNotFittedError):
+            decode_position(env, spike_counts, encoding_models, dt=0.01)

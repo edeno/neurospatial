@@ -1340,9 +1340,12 @@ def compute_spatial_rate(
         smooth_rate_map,
     )
     from neurospatial.encoding._validation import (
+        validate_env_fitted,
         validate_spike_times,
         validate_trajectory,
     )
+
+    validate_env_fitted(env, context="compute_spatial_rate")
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -1560,9 +1563,12 @@ def compute_spatial_rates(
     )
     from neurospatial.encoding._spikes import normalize_spike_times
     from neurospatial.encoding._validation import (
+        validate_env_fitted,
         validate_spike_times,
         validate_trajectory,
     )
+
+    validate_env_fitted(env, context="compute_spatial_rates")
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:

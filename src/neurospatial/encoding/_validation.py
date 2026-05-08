@@ -27,10 +27,47 @@ import numpy as np
 from numpy.typing import NDArray
 
 __all__ = [
+    "validate_env_fitted",
     "validate_spike_times",
     "validate_times",
     "validate_trajectory",
 ]
+
+
+def validate_env_fitted(env: object, *, context: str) -> None:
+    """Raise ``EnvironmentNotFittedError`` if ``env`` is not fitted.
+
+    Public ``compute_*_rate(s)`` and ``decode_position`` entry points use
+    this to fail at the API boundary rather than letting an unfitted env
+    surface as a confusing ``AttributeError`` from a deep helper. The
+    ``context`` label is the user-facing function name (e.g.
+    ``"compute_spatial_rate"``); a future M3 follow-up will rename
+    ``EnvironmentNotFittedError`` to format the message with that label
+    rather than ``Environment.<context>()`` (the existing class hardcodes
+    a ``class.method`` template).
+
+    Parameters
+    ----------
+    env : object
+        Object expected to expose ``_is_fitted`` (typically an
+        ``Environment``). Untyped here because import-time importing the
+        ``Environment`` symbol would re-introduce the import cycle that
+        ``encoding._validation`` exists to avoid.
+    context : str
+        Name of the calling public function, used as the second arg to
+        ``EnvironmentNotFittedError`` for the error message.
+
+    Raises
+    ------
+    EnvironmentNotFittedError
+        If ``env`` does not have ``_is_fitted=True``.
+    """
+    # Local import to keep this module dependency-free at module load time;
+    # the encoding package imports decorators lazily for the same reason.
+    from neurospatial.environment.decorators import EnvironmentNotFittedError
+
+    if not getattr(env, "_is_fitted", False):
+        raise EnvironmentNotFittedError("Environment", context)
 
 
 def validate_times(times: NDArray[np.float64], context: str = "encoding") -> None:

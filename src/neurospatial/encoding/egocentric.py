@@ -1113,9 +1113,18 @@ def compute_egocentric_rate(
         smooth_rate_map,
     )
     from neurospatial.encoding._validation import (
+        validate_env_fitted,
         validate_spike_times,
         validate_trajectory,
     )
+
+    # `env` is optional in this function (None is permitted with the
+    # euclidean distance metric, since geodesic distance is the only
+    # path that needs an env-derived graph). Only validate fitted-state
+    # if the user supplied an env; the geodesic path raises its own
+    # explicit error a few lines below if env is None.
+    if env is not None:
+        validate_env_fitted(env, context="compute_egocentric_rate")
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -1415,9 +1424,15 @@ def compute_egocentric_rates(
     )
     from neurospatial.encoding._spikes import normalize_spike_times
     from neurospatial.encoding._validation import (
+        validate_env_fitted,
         validate_spike_times,
         validate_trajectory,
     )
+
+    # `env` is optional in this function (None is permitted with the
+    # euclidean distance metric); only validate fitted-state when supplied.
+    if env is not None:
+        validate_env_fitted(env, context="compute_egocentric_rates")
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
