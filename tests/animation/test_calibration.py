@@ -12,6 +12,10 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
+# calibrate_video reads frames via OpenCV; skip the whole module when cv2
+# is not installed (it lives in the optional `animation` extra, not `dev`).
+pytest.importorskip("cv2")
+
 from neurospatial import Environment
 from neurospatial.ops.transforms import VideoCalibration
 

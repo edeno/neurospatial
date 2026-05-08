@@ -473,6 +473,11 @@ class TestBoundsMismatchWarning:
         a warning should be emitted to alert the user that some regions will
         appear blank.
         """
+        # calibrate_video reads frames via OpenCV; both cv2 and a working
+        # imageio video plugin live in the optional `animation` extra.
+        pytest.importorskip("cv2")
+        pytest.importorskip("imageio_ffmpeg")
+
         # Create a tiny test video file
         import imageio
 
