@@ -1339,7 +1339,10 @@ def compute_spatial_rate(
         _validate_smoothing_parameters,
         smooth_rate_map,
     )
-    from neurospatial.encoding._validation import validate_trajectory
+    from neurospatial.encoding._validation import (
+        validate_spike_times,
+        validate_trajectory,
+    )
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -1359,7 +1362,8 @@ def compute_spatial_rate(
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
 
-    validate_trajectory(times, positions=positions)
+    validate_trajectory(times, positions=positions, context="compute_spatial_rate")
+    validate_spike_times(spike_times, context="compute_spatial_rate")
 
     # Bin spike train into spatial bins (always NumPy - CPU/joblib)
     spike_counts = bin_spike_train(env, spike_times, times, positions)
@@ -1555,7 +1559,10 @@ def compute_spatial_rates(
         smooth_rate_maps_batch,
     )
     from neurospatial.encoding._spikes import normalize_spike_times
-    from neurospatial.encoding._validation import validate_trajectory
+    from neurospatial.encoding._validation import (
+        validate_spike_times,
+        validate_trajectory,
+    )
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -1578,7 +1585,9 @@ def compute_spatial_rates(
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
 
-    validate_trajectory(times, positions=positions)
+    validate_trajectory(times, positions=positions, context="compute_spatial_rates")
+    for i, st in enumerate(spike_times_list):
+        validate_spike_times(st, context=f"compute_spatial_rates (neuron {i})")
 
     # Handle edge case: no neurons
     # Still compute occupancy from trajectory (occupancy is independent of neural data)

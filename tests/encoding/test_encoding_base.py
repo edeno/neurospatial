@@ -520,3 +520,83 @@ class TestValidateTrajectoryRejectsBadTimes:
         decreasing = np.array([0.0, 1.0, 0.5, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5])
         with pytest.raises(ValueError, match=r"monotonically non-decreasing"):
             compute_spatial_rate(env, np.array([0.5]), decreasing, positions)
+
+
+class TestValidateSpikeTimes:
+    """Regression: validate_spike_times rejects out-of-order / negative / NaN spikes.
+
+    Internal binning paths use ``np.searchsorted`` against the spike-time
+    array, so an out-of-order spike train silently produces wrong bin
+    assignments. The public ``compute_*_rate(s)`` entry points should call
+    this once on user input.
+    """
+
+    def test_empty_spike_train_accepted_by_default(self) -> None:
+        """A neuron with zero spikes is a valid input (silent neuron)."""
+        from neurospatial.encoding._validation import validate_spike_times
+
+        validate_spike_times(np.empty(0, dtype=np.float64))  # does not raise
+
+    def test_empty_rejected_when_disallowed(self) -> None:
+        from neurospatial.encoding._validation import validate_spike_times
+
+        with pytest.raises(ValueError, match=r"empty \(no spikes\)"):
+            validate_spike_times(np.empty(0, dtype=np.float64), allow_empty=False)
+
+    def test_two_dim_rejected(self) -> None:
+        from neurospatial.encoding._validation import validate_spike_times
+
+        with pytest.raises(ValueError, match=r"1-D"):
+            validate_spike_times(np.array([[0.5, 1.0], [1.5, 2.0]]))
+
+    def test_nan_rejected(self) -> None:
+        from neurospatial.encoding._validation import validate_spike_times
+
+        with pytest.raises(ValueError, match=r"finite"):
+            validate_spike_times(np.array([0.0, np.nan, 1.0]))
+
+    def test_inf_rejected(self) -> None:
+        from neurospatial.encoding._validation import validate_spike_times
+
+        with pytest.raises(ValueError, match=r"finite"):
+            validate_spike_times(np.array([0.0, 1.0, np.inf]))
+
+    def test_negative_rejected(self) -> None:
+        from neurospatial.encoding._validation import validate_spike_times
+
+        with pytest.raises(ValueError, match=r"non-negative"):
+            validate_spike_times(np.array([-0.1, 0.5, 1.0]))
+
+    def test_decreasing_rejected_with_actionable_message(self) -> None:
+        from neurospatial.encoding._validation import validate_spike_times
+
+        with pytest.raises(ValueError, match=r"monotonically non-decreasing.*np\.sort"):
+            validate_spike_times(np.array([0.0, 2.0, 1.0, 3.0]))
+
+    def test_sorted_with_duplicates_accepted(self) -> None:
+        """Equal-valued adjacent samples (simultaneous spikes) are allowed."""
+        from neurospatial.encoding._validation import validate_spike_times
+
+        validate_spike_times(np.array([0.0, 0.5, 0.5, 0.5, 1.0]))  # does not raise
+
+    def test_compute_spatial_rate_rejects_unsorted_spike_times(self) -> None:
+        """End-to-end: compute_spatial_rate inherits the spike-time validation."""
+        from neurospatial import Environment
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        positions = np.linspace(0.0, 100.0, 10).reshape(-1, 1)
+        env = Environment.from_samples(positions, bin_size=10.0)
+        times = np.linspace(0.0, 1.0, 10)
+        unsorted_spikes = np.array([0.5, 0.1, 0.7])
+        with pytest.raises(ValueError, match=r"monotonically non-decreasing"):
+            compute_spatial_rate(env, unsorted_spikes, times, positions)
+
+    def test_compute_directional_rate_rejects_unsorted_spike_times(self) -> None:
+        """End-to-end: compute_directional_rate inherits the validation."""
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        times = np.linspace(0.0, 10.0, 100)
+        headings = np.linspace(-np.pi, np.pi, 100)
+        unsorted_spikes = np.array([5.0, 1.0, 7.0])
+        with pytest.raises(ValueError, match=r"monotonically non-decreasing"):
+            compute_directional_rate(unsorted_spikes, times, headings)

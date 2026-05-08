@@ -1428,7 +1428,10 @@ def compute_directional_rate(
         bin_directional_spike_train,
         compute_directional_occupancy,
     )
-    from neurospatial.encoding._validation import validate_trajectory
+    from neurospatial.encoding._validation import (
+        validate_spike_times,
+        validate_trajectory,
+    )
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -1450,9 +1453,8 @@ def compute_directional_rate(
     times = np.asarray(times, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
 
-    validate_trajectory(times, headings=headings)
-    if spike_times.ndim != 1:
-        raise ValueError(f"spike_times must be 1D, got shape {spike_times.shape}")
+    validate_trajectory(times, headings=headings, context="compute_directional_rate")
+    validate_spike_times(spike_times, context="compute_directional_rate")
 
     # Compute occupancy and bin centers
     occupancy, bin_centers = compute_directional_occupancy(
@@ -1641,7 +1643,10 @@ def compute_directional_rates(
         compute_directional_occupancy,
     )
     from neurospatial.encoding._spikes import normalize_spike_times
-    from neurospatial.encoding._validation import validate_trajectory
+    from neurospatial.encoding._validation import (
+        validate_spike_times,
+        validate_trajectory,
+    )
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -1666,7 +1671,9 @@ def compute_directional_rates(
     times = np.asarray(times, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
 
-    validate_trajectory(times, headings=headings)
+    validate_trajectory(times, headings=headings, context="compute_directional_rates")
+    for i, st in enumerate(spike_times_list):
+        validate_spike_times(st, context=f"compute_directional_rates (neuron {i})")
 
     # Precompute shared quantities: occupancy and bin centers
     occupancy, bin_centers = compute_directional_occupancy(

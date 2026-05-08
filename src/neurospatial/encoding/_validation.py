@@ -27,6 +27,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 __all__ = [
+    "validate_spike_times",
     "validate_times",
     "validate_trajectory",
 ]
@@ -69,6 +70,77 @@ def validate_times(times: NDArray[np.float64], context: str = "encoding") -> Non
             f"Found {len(decreasing_indices)} decreasing interval(s) at "
             f"indices: {decreasing_indices.tolist()[:5]}"
             + (" ..." if len(decreasing_indices) > 5 else "")
+        )
+
+
+def validate_spike_times(
+    spike_times: NDArray[np.float64],
+    *,
+    context: str = "encoding",
+    allow_empty: bool = True,
+) -> None:
+    """Check that ``spike_times`` is 1-D, finite, sorted, and non-negative.
+
+    Internal helpers downstream (``bin_spike_train`` and friends) use
+    ``np.searchsorted`` against the spike-time array, so an out-of-order
+    spike train silently produces wrong bin assignments. The four public
+    ``compute_*_rate(s)`` entry points should call this once on user input.
+
+    Parameters
+    ----------
+    spike_times : ndarray, shape (n_spikes,)
+        Spike timestamps in seconds. Empty arrays are allowed by default
+        (a neuron with zero spikes is a valid input).
+    context : str, default "encoding"
+        Description of the calling function for error messages.
+    allow_empty : bool, default True
+        If False, also reject zero-length spike trains. Use this when the
+        caller cannot meaningfully proceed without at least one spike.
+
+    Raises
+    ------
+    ValueError
+        If ``spike_times`` is not 1-D, contains NaN or +/-inf, contains a
+        negative value, has any pair of adjacent samples in decreasing
+        order, or (with ``allow_empty=False``) is empty.
+    """
+    if spike_times.ndim != 1:
+        raise ValueError(
+            f"spike_times must be 1-D for {context}, got shape {spike_times.shape}"
+        )
+
+    n_spikes = len(spike_times)
+    if n_spikes == 0:
+        if not allow_empty:
+            raise ValueError(f"spike_times is empty (no spikes) for {context}")
+        return
+
+    if not np.all(np.isfinite(spike_times)):
+        n_bad = int(np.sum(~np.isfinite(spike_times)))
+        raise ValueError(
+            f"spike_times must be finite (seconds) for {context}; "
+            f"got {n_bad} NaN/inf entries"
+        )
+
+    if np.any(spike_times < 0.0):
+        n_negative = int(np.sum(spike_times < 0.0))
+        raise ValueError(
+            f"spike_times must be non-negative (seconds) for {context}; "
+            f"got {n_negative} negative entr{'y' if n_negative == 1 else 'ies'} "
+            f"(min: {float(spike_times.min()):.6g} s)"
+        )
+
+    diffs = np.diff(spike_times)
+    if np.any(diffs < 0):
+        decreasing = np.where(diffs < 0)[0]
+        sample = decreasing.tolist()[:5]
+        more = " ..." if decreasing.size > 5 else ""
+        raise ValueError(
+            "spike_times must be monotonically non-decreasing (sorted in "
+            f"ascending order) for {context}. Found {decreasing.size} "
+            f"decreasing interval(s) at indices: {sample}{more}. "
+            "If your spikes were merged from multiple sources, sort the "
+            "array with `np.sort(spike_times)` before passing it in."
         )
 
 

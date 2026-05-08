@@ -1112,7 +1112,10 @@ def compute_egocentric_rate(
         _validate_smoothing_parameters,
         smooth_rate_map,
     )
-    from neurospatial.encoding._validation import validate_trajectory
+    from neurospatial.encoding._validation import (
+        validate_spike_times,
+        validate_trajectory,
+    )
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -1150,9 +1153,10 @@ def compute_egocentric_rate(
     # Normalize object_positions: [x, y] -> [[x, y]] for single object
     object_positions = normalize_object_positions(object_positions)
 
-    validate_trajectory(times, positions=positions, headings=headings)
-    if spike_times.ndim != 1:
-        raise ValueError(f"spike_times must be 1D, got shape {spike_times.shape}")
+    validate_trajectory(
+        times, positions=positions, headings=headings, context="compute_egocentric_rate"
+    )
+    validate_spike_times(spike_times, context="compute_egocentric_rate")
 
     # Reuse the batch binning path for the single-neuron API so egocentric
     # coordinates are computed once and shared by spike counts and occupancy.
@@ -1410,7 +1414,10 @@ def compute_egocentric_rates(
         smooth_rate_maps_batch,
     )
     from neurospatial.encoding._spikes import normalize_spike_times
-    from neurospatial.encoding._validation import validate_trajectory
+    from neurospatial.encoding._validation import (
+        validate_spike_times,
+        validate_trajectory,
+    )
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -1451,7 +1458,14 @@ def compute_egocentric_rates(
     # Normalize object_positions: [x, y] -> [[x, y]] for single object
     object_positions = normalize_object_positions(object_positions)
 
-    validate_trajectory(times, positions=positions, headings=headings)
+    validate_trajectory(
+        times,
+        positions=positions,
+        headings=headings,
+        context="compute_egocentric_rates",
+    )
+    for i, st in enumerate(spike_times_list):
+        validate_spike_times(st, context=f"compute_egocentric_rates (neuron {i})")
 
     # Handle edge case: no neurons
     if n_neurons == 0:

@@ -1038,7 +1038,10 @@ def compute_view_rate(
         _validate_smoothing_parameters,
         smooth_rate_map,
     )
-    from neurospatial.encoding._validation import validate_trajectory
+    from neurospatial.encoding._validation import (
+        validate_spike_times,
+        validate_trajectory,
+    )
     from neurospatial.encoding._view_binning import bin_view_spike_trains
 
     # Validate backend
@@ -1068,7 +1071,10 @@ def compute_view_rate(
     positions = np.asarray(positions, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
 
-    validate_trajectory(times, positions=positions, headings=headings)
+    validate_trajectory(
+        times, positions=positions, headings=headings, context="compute_view_rate"
+    )
+    validate_spike_times(spike_times, context="compute_view_rate")
     n_samples = len(times)
 
     # Validate gaze_offsets if provided
@@ -1320,7 +1326,10 @@ def compute_view_rates(
         smooth_rate_maps_batch,
     )
     from neurospatial.encoding._spikes import normalize_spike_times
-    from neurospatial.encoding._validation import validate_trajectory
+    from neurospatial.encoding._validation import (
+        validate_spike_times,
+        validate_trajectory,
+    )
     from neurospatial.encoding._view_binning import bin_view_spike_trains
 
     # Validate backend
@@ -1353,7 +1362,11 @@ def compute_view_rates(
     positions = np.asarray(positions, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
 
-    validate_trajectory(times, positions=positions, headings=headings)
+    validate_trajectory(
+        times, positions=positions, headings=headings, context="compute_view_rates"
+    )
+    for i, st in enumerate(spike_times_list):
+        validate_spike_times(st, context=f"compute_view_rates (neuron {i})")
     n_samples = len(times)
 
     # Validate gaze_offsets if provided
