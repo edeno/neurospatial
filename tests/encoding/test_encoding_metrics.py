@@ -483,26 +483,27 @@ class TestEdgeCases:
 
 
 # =============================================================================
-# Backwards Compatibility
+# Public API Consistency
 # =============================================================================
 
 
-class TestBackwardsCompatibility:
-    """Test that _metrics.py matches existing place.py implementations."""
+class TestPublicApiConsistency:
+    """Test that package-level metric exports match _metrics.py."""
 
-    def test_matches_place_skaggs_information(self, place_cell_like):
-        """Should match neurospatial.encoding.place.skaggs_information."""
-        from neurospatial.encoding.place import skaggs_information as legacy_skaggs
+    def test_package_spatial_information_export_matches_metrics(
+        self, place_cell_like: tuple[np.ndarray, np.ndarray]
+    ) -> None:
+        """Package export should point to the shared metric implementation."""
+        from neurospatial.encoding import (
+            spatial_information as public_spatial_information,
+        )
 
         firing_rate, occupancy = place_cell_like
 
         new_info = spatial_information(firing_rate, occupancy)
-        legacy_info = legacy_skaggs(firing_rate, occupancy)
+        public_info = public_spatial_information(firing_rate, occupancy)
 
-        assert_allclose(new_info, legacy_info, rtol=1e-10)
-
-    # Note: test_matches_place_sparsity removed - sparsity is no longer in place.py
-    # after the encoding module reorganization. sparsity is now only in _metrics.py.
+        assert_allclose(new_info, public_info, rtol=1e-10)
 
 
 # =============================================================================

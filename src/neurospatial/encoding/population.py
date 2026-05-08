@@ -535,7 +535,7 @@ def count_place_cells(
     ----------
     spatial_information : array, shape (n_cells,)
         Spatial information (bits/spike) for each cell.
-        Typically computed using `skaggs_information()`.
+        Typically computed using `spatial_information()`.
     threshold : float, default=0.5
         Minimum spatial information (bits/spike) to classify as place cell.
         Default of 0.5 bits/spike is standard in literature (Skaggs et al., 1996).
@@ -557,7 +557,7 @@ def count_place_cells(
 
     See Also
     --------
-    skaggs_information : Compute spatial information
+    spatial_information : Compute spatial information
 
     Notes
     -----

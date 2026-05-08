@@ -366,7 +366,7 @@ class EnvironmentVisualization:
 
         See Also
         --------
-        compute_place_field : Compute firing rate maps from spike trains.
+        compute_spatial_rate : Compute firing rate maps from spike trains.
         plot : Plot environment structure (bins and connectivity).
         plot_1d : Plot 1D linearized environment.
 
@@ -399,20 +399,18 @@ class EnvironmentVisualization:
 
         >>> import numpy as np  # doctest: +SKIP
         >>> from neurospatial import Environment  # doctest: +SKIP
-        >>> from neurospatial.encoding.place import (
-        ...     compute_place_field,
-        ... )  # doctest: +SKIP
+        >>> from neurospatial.encoding import compute_spatial_rate  # doctest: +SKIP
         >>> positions = np.random.uniform(0, 100, (1000, 2))  # doctest: +SKIP
         >>> times = np.linspace(0, 100, 1000)  # doctest: +SKIP
         >>> spike_times = np.random.uniform(0, 100, 50)  # doctest: +SKIP
         >>> env = Environment.from_samples(positions, bin_size=5.0)  # doctest: +SKIP
-        >>> firing_rate = compute_place_field(  # doctest: +SKIP
+        >>> firing_rate = compute_spatial_rate(  # doctest: +SKIP
         ...     env,
         ...     spike_times,
         ...     times,
         ...     positions,
         ...     bandwidth=8.0,  # doctest: +SKIP
-        ... )  # doctest: +SKIP
+        ... ).firing_rate  # doctest: +SKIP
         >>> ax = env.plot_field(  # doctest: +SKIP
         ...     firing_rate,
         ...     cmap="hot",

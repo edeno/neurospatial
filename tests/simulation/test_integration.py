@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.encoding.place import compute_place_field
+from neurospatial.encoding import compute_spatial_rate
 from neurospatial.simulation import (
     boundary_cell_session,
     grid_cell_session,
@@ -255,10 +255,10 @@ class TestPlaceFieldDetectionAccuracy:
             # Threshold of 5 spikes ensures reliable detection
             # With 40s duration and 50 Hz max_rate, detectable cells have >5 spikes
             if len(spike_times) > 5:
-                # Compute place field
-                rate_map = compute_place_field(
+                # Compute spatial firing-rate map
+                rate_map = compute_spatial_rate(
                     env, spike_times, times, positions, smoothing_method="diffusion_kde"
-                )
+                ).firing_rate
 
                 # Find peak (detected center)
                 peak_bin = np.argmax(rate_map)
@@ -312,26 +312,26 @@ class TestPlaceFieldDetectionAccuracy:
 
         # Detect centers
         if len(spikes_short) > 0:
-            rate_map_short = compute_place_field(
+            rate_map_short = compute_spatial_rate(
                 env,
                 spikes_short,
                 times_short,
                 positions_short,
                 smoothing_method="diffusion_kde",
-            )
+            ).firing_rate
             detected_short = env.bin_centers[np.argmax(rate_map_short)]
             error_short = np.linalg.norm(center - detected_short)
         else:
             error_short = np.inf
 
         if len(spikes_long) > 0:
-            rate_map_long = compute_place_field(
+            rate_map_long = compute_spatial_rate(
                 env,
                 spikes_long,
                 times_long,
                 positions_long,
                 smoothing_method="diffusion_kde",
-            )
+            ).firing_rate
             detected_long = env.bin_centers[np.argmax(rate_map_long)]
             error_long = np.linalg.norm(center - detected_long)
         else:

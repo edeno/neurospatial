@@ -1147,7 +1147,7 @@ class TestPositionsParameterNaming:
 
     Task 2.5: Verify that from_samples() uses 'positions' instead of 'data_samples'
     for consistency with trajectory analysis methods like occupancy() and
-    compute_place_field().
+    compute_spatial_rate().
     """
 
     def test_from_samples_accepts_positions_parameter(self):

@@ -166,9 +166,8 @@ compatibility is no longer required before the first user-facing release, so
 M6 should prefer removing or hiding stale public surfaces over preserving
 numerically divergent behavior.
 
-M6.1 (parity tests) was completed and is checked in at
-[`tests/encoding/test_legacy_delegation_parity.py`](../../../tests/encoding/test_legacy_delegation_parity.py)
-as `xfail`. Every pair fails with relative differences of 50%+:
+M6.1 (parity tests) confirmed that every legacy/new pair fails with relative
+differences of 50%+:
 
 - `compute_place_field` ("binned" / "gaussian_kde" / "diffusion_kde") --
   scale mismatch with `compute_spatial_rate`; values differ by an order
@@ -184,14 +183,11 @@ as `xfail`. Every pair fails with relative differences of 50%+:
   no `firing_rate` attribute.
 
 These are not floating-point drift; they are different algorithms. Because
-there are no users yet, the preferred resolution is to update runtime call
-sites and examples to the canonical result APIs, then either remove stale
-exports or keep old modules only as internal/reference implementations with
-tests that do not advertise them as supported.
-
-The xfail tests stay in place so that any future alignment pass
-automatically lights up — they will flip to passing the moment the gap
-closes.
+there are no users yet, the resolution is to update runtime call sites and
+examples to the canonical result APIs, then delete the old modules rather than
+preserving divergent compatibility shims. The legacy parity tests were removed
+with the modules because there is no supported compatibility surface left to
+assert against.
 
 ## Verification
 

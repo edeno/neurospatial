@@ -66,7 +66,6 @@ Deshmukh, S. S., & Knierim, J. J. (2011). Representation of non-spatial and
 See Also
 --------
 neurospatial.encoding.spatial : Spatial rate computation for place cells
-neurospatial.encoding.object_vector : Legacy object-vector module
 neurospatial.ops.egocentric : Egocentric coordinate transforms
 """
 

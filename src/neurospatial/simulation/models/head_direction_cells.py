@@ -113,8 +113,7 @@ class HeadDirectionCellModel:
     --------
     PlaceCellModel : Gaussian place field model
     GridCellModel : Hexagonal grid pattern model
-    head_direction_tuning_curve : Compute HD tuning from spike data
-    head_direction_metrics : Analyze HD tuning properties
+    compute_directional_rate : Compute HD tuning from spike data
 
     Notes
     -----

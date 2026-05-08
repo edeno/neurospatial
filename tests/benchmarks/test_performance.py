@@ -23,10 +23,8 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.encoding._metrics import sparsity
-from neurospatial.encoding._metrics import spatial_information as skaggs_information
-from neurospatial.encoding.place import compute_place_field
-from neurospatial.encoding.spatial import detect_place_fields
+from neurospatial.encoding._metrics import sparsity, spatial_information
+from neurospatial.encoding.spatial import compute_spatial_rate, detect_place_fields
 from neurospatial.ops.binning import map_points_to_bins
 from neurospatial.ops.distance import pairwise_distances
 from neurospatial.ops.smoothing import compute_diffusion_kernels
@@ -34,6 +32,11 @@ from neurospatial.ops.smoothing import compute_diffusion_kernels
 # =============================================================================
 # Fixtures for Benchmark Data
 # =============================================================================
+
+
+def _compute_spatial_rate_map(*args, **kwargs):
+    """Return only the rate map so benchmarks track the old ndarray surface."""
+    return compute_spatial_rate(*args, **kwargs).firing_rate
 
 
 @pytest.fixture(scope="module")
@@ -129,15 +132,15 @@ class TestEnvironmentCreationPerformance:
 
 
 # =============================================================================
-# Place Field Computation Benchmarks
+# Spatial Rate Computation Benchmarks
 # =============================================================================
 
 
 @pytest.mark.slow
-class TestPlaceFieldComputationPerformance:
-    """Benchmark place field computation methods."""
+class TestSpatialRateComputationPerformance:
+    """Benchmark spatial rate computation methods."""
 
-    def test_place_field_diffusion_kde_small(
+    def test_spatial_rate_diffusion_kde_small(
         self, benchmark, small_env, benchmark_data_small
     ):
         """Benchmark diffusion_kde with small environment."""
@@ -145,7 +148,7 @@ class TestPlaceFieldComputationPerformance:
         positions, _, _ = benchmark_data_small
 
         result = benchmark(
-            compute_place_field,
+            _compute_spatial_rate_map,
             small_env,
             spike_times,
             times,
@@ -156,7 +159,7 @@ class TestPlaceFieldComputationPerformance:
 
         assert result.shape == (small_env.n_bins,)
 
-    def test_place_field_diffusion_kde_medium(
+    def test_spatial_rate_diffusion_kde_medium(
         self, benchmark, medium_env, benchmark_data_medium
     ):
         """Benchmark diffusion_kde with medium environment."""
@@ -164,7 +167,7 @@ class TestPlaceFieldComputationPerformance:
         positions, _, _ = benchmark_data_medium
 
         result = benchmark(
-            compute_place_field,
+            _compute_spatial_rate_map,
             medium_env,
             spike_times,
             times,
@@ -175,13 +178,15 @@ class TestPlaceFieldComputationPerformance:
 
         assert result.shape == (medium_env.n_bins,)
 
-    def test_place_field_binned_small(self, benchmark, small_env, benchmark_data_small):
+    def test_spatial_rate_binned_small(
+        self, benchmark, small_env, benchmark_data_small
+    ):
         """Benchmark binned method with small environment."""
         _, times, spike_times = benchmark_data_small
         positions, _, _ = benchmark_data_small
 
         result = benchmark(
-            compute_place_field,
+            _compute_spatial_rate_map,
             small_env,
             spike_times,
             times,
@@ -302,11 +307,13 @@ class TestMetricComputationPerformance:
         occupancy = rng.uniform(0.1, 1.0, size=medium_env.n_bins)
         return firing_rate, occupancy
 
-    def test_skaggs_information_computation(self, benchmark, firing_rate_and_occupancy):
-        """Benchmark Skaggs information computation."""
+    def test_spatial_information_computation(
+        self, benchmark, firing_rate_and_occupancy
+    ):
+        """Benchmark spatial information computation."""
         firing_rate, occupancy = firing_rate_and_occupancy
 
-        result = benchmark(skaggs_information, firing_rate, occupancy)
+        result = benchmark(spatial_information, firing_rate, occupancy)
 
         assert isinstance(result, float)
         assert result >= 0.0

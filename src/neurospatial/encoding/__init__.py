@@ -7,12 +7,12 @@ object-vector cells, and spatial view cells.
 
 Submodules
 ----------
-place : Place cell analysis
+spatial : Spatial rate analysis
 grid : Grid cell analysis
-head_direction : Head direction cell analysis
+directional : Head direction and directional-rate analysis
 border : Border/boundary cell analysis
-object_vector : Object-vector cell analysis
-spatial_view : Spatial view cell analysis
+egocentric : Object-vector and egocentric-rate analysis
+view : Spatial view cell analysis
 phase_precession : Theta phase precession analysis
 population : Population-level metrics
 """

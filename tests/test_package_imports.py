@@ -71,7 +71,7 @@ class TestNoCircularImports:
         from neurospatial import Environment  # noqa: F401
         from neurospatial.behavior.segmentation import detect_laps  # noqa: F401
         from neurospatial.decoding import decode_position  # noqa: F401
-        from neurospatial.encoding.place import compute_place_field  # noqa: F401
+        from neurospatial.encoding.spatial import compute_spatial_rate  # noqa: F401
         from neurospatial.events import peri_event_histogram  # noqa: F401
         from neurospatial.ops.egocentric import heading_from_velocity  # noqa: F401
         from neurospatial.stats.circular import rayleigh_test  # noqa: F401
@@ -81,15 +81,15 @@ class TestReExportsIdentity:
     """Test that re-exported functions are the same object as their canonical location."""
 
     def test_rayleigh_test_reexport(self):
-        """Test rayleigh_test re-exported from encoding.head_direction matches stats.circular."""
-        from neurospatial.encoding.head_direction import rayleigh_test as hd_rayleigh
+        """Test rayleigh_test re-exported from encoding.directional matches stats.circular."""
+        from neurospatial.encoding.directional import rayleigh_test as hd_rayleigh
         from neurospatial.stats.circular import rayleigh_test as stats_rayleigh
 
         assert hd_rayleigh is stats_rayleigh
 
     def test_circular_mean_reexport(self):
-        """Test circular_mean re-exported from encoding.head_direction matches stats.circular."""
-        from neurospatial.encoding.head_direction import (
+        """Test circular_mean re-exported from encoding.directional matches stats.circular."""
+        from neurospatial.encoding.directional import (
             circular_mean as hd_circular_mean,
         )
         from neurospatial.stats.circular import circular_mean as stats_circular_mean
@@ -97,26 +97,26 @@ class TestReExportsIdentity:
         assert hd_circular_mean is stats_circular_mean
 
     def test_mean_resultant_length_reexport(self):
-        """Test mean_resultant_length re-exported from encoding.head_direction matches stats.circular."""
-        from neurospatial.encoding.head_direction import (
+        """Test mean_resultant_length re-exported from encoding.directional matches stats.circular."""
+        from neurospatial.encoding.directional import (
             mean_resultant_length as hd_mrl,
         )
         from neurospatial.stats.circular import mean_resultant_length as stats_mrl
 
         assert hd_mrl is stats_mrl
 
-    def test_visibility_reexports_in_spatial_view(self):
-        """Test visibility functions re-exported in encoding.spatial_view match ops.visibility."""
-        from neurospatial.encoding.spatial_view import (
+    def test_visibility_reexports_in_view(self):
+        """Test visibility functions re-exported in encoding.view match ops.visibility."""
+        from neurospatial.encoding.view import (
             FieldOfView as SvFieldOfView,
         )
-        from neurospatial.encoding.spatial_view import (
+        from neurospatial.encoding.view import (
             compute_viewed_location as sv_cvl,
         )
-        from neurospatial.encoding.spatial_view import (
+        from neurospatial.encoding.view import (
             compute_viewshed as sv_cvs,
         )
-        from neurospatial.encoding.spatial_view import (
+        from neurospatial.encoding.view import (
             visibility_occupancy as sv_vo,
         )
         from neurospatial.ops.visibility import FieldOfView as OpsFieldOfView
@@ -169,13 +169,13 @@ class TestEncodingModuleAllExports:
                 f"'{name}' in __all__ but not importable from encoding"
             )
 
-    def test_encoding_place_all_exports(self):
-        """Test that all items in encoding.place.__all__ are importable."""
-        import neurospatial.encoding.place as place
+    def test_encoding_spatial_all_exports(self):
+        """Test that all items in encoding.spatial.__all__ are importable."""
+        import neurospatial.encoding.spatial as place
 
         for name in place.__all__:
             assert hasattr(place, name), (
-                f"'{name}' in __all__ but not importable from encoding.place"
+                f"'{name}' in __all__ but not importable from encoding.spatial"
             )
 
     def test_encoding_grid_all_exports(self):
@@ -187,13 +187,13 @@ class TestEncodingModuleAllExports:
                 f"'{name}' in __all__ but not importable from encoding.grid"
             )
 
-    def test_encoding_head_direction_all_exports(self):
-        """Test that all items in encoding.head_direction.__all__ are importable."""
-        import neurospatial.encoding.head_direction as hd
+    def test_encoding_directional_all_exports(self):
+        """Test that all items in encoding.directional.__all__ are importable."""
+        import neurospatial.encoding.directional as hd
 
         for name in hd.__all__:
             assert hasattr(hd, name), (
-                f"'{name}' in __all__ but not importable from encoding.head_direction"
+                f"'{name}' in __all__ but not importable from encoding.directional"
             )
 
     def test_encoding_border_all_exports(self):
@@ -205,22 +205,22 @@ class TestEncodingModuleAllExports:
                 f"'{name}' in __all__ but not importable from encoding.border"
             )
 
-    def test_encoding_object_vector_all_exports(self):
-        """Test that all items in encoding.object_vector.__all__ are importable."""
-        import neurospatial.encoding.object_vector as ov
+    def test_encoding_egocentric_all_exports(self):
+        """Test that all items in encoding.egocentric.__all__ are importable."""
+        import neurospatial.encoding.egocentric as ov
 
         for name in ov.__all__:
             assert hasattr(ov, name), (
-                f"'{name}' in __all__ but not importable from encoding.object_vector"
+                f"'{name}' in __all__ but not importable from encoding.egocentric"
             )
 
-    def test_encoding_spatial_view_all_exports(self):
-        """Test that all items in encoding.spatial_view.__all__ are importable."""
-        import neurospatial.encoding.spatial_view as sv
+    def test_encoding_view_all_exports(self):
+        """Test that all items in encoding.view.__all__ are importable."""
+        import neurospatial.encoding.view as sv
 
         for name in sv.__all__:
             assert hasattr(sv, name), (
-                f"'{name}' in __all__ but not importable from encoding.spatial_view"
+                f"'{name}' in __all__ but not importable from encoding.view"
             )
 
     def test_encoding_phase_precession_all_exports(self):

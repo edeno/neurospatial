@@ -271,9 +271,9 @@ where old implementations can be removed safely.
 - [x] **6.1** Add parity test
       [`tests/encoding/test_legacy_delegation_parity.py`](../../../tests/encoding/test_legacy_delegation_parity.py).
       All four pairs mismatched at `rtol=1e-6` with relative differences
-      of 50%+ — see PLAN.md §M6 for the per-pair gap. Tests are marked
-      `xfail` so they document the gap and will flip to passing if the
-      legacy/new pipelines are aligned later.
+      of 50%+ — see PLAN.md §M6 for the per-pair gap. The parity test was
+      later deleted with the legacy modules because there is no supported
+      compatibility surface left.
 
 - [x] **6.2a** Route directional place fields through
       `compute_spatial_rate`, rename its occupancy threshold to
@@ -286,27 +286,20 @@ where old implementations can be removed safely.
       for their current tests, but advertise `compute_directional_rate`,
       `compute_egocentric_rate`, and `compute_view_rate` from the package.
 
-- [ ] **6.2** ~~Replace
-      [`place.py compute_place_field`](../../../src/neurospatial/encoding/place.py)
-      and its private helpers (`_interpolate_spike_positions`,
-      `_binned_rate_map`, `_diffusion_kde`, `_gaussian_kde`, `_binned`)
-      with a thin shim that calls `compute_spatial_rate` and adapts
-      the return. Delete the helpers (~480 lines).~~ **Blocked by M6.1.**
+- [x] **6.2** Delete `place.py` and its legacy `compute_place_field` helpers.
+      Runtime call sites now use `compute_spatial_rate(...).firing_rate` when
+      they need a bare map, and `tests/test_m10_old_files_deleted.py` asserts
+      the old module import fails.
 
-- [ ] **6.3** ~~Replace
-      [`head_direction.py compute_head_direction_tuning_curve`](../../../src/neurospatial/encoding/head_direction.py)
-      with a delegator to `compute_directional_rate`. Keep the
-      `HeadDirectionMetrics` dataclass and `head_direction_metrics`
-      function as-is (they read from the rate map; no duplication).~~
-      **Blocked by M6.1.**
+- [x] **6.3** Delete `head_direction.py` and its legacy
+      `compute_head_direction_tuning_curve`, `HeadDirectionMetrics`, and
+      `head_direction_metrics` surface. Directional analyses now use
+      `compute_directional_rate` / `DirectionalRateResult`.
 
-- [ ] **6.4** ~~Replace
-      [`object_vector.py compute_object_vector_tuning`](../../../src/neurospatial/encoding/object_vector.py)
-      with a delegator to `compute_egocentric_rate`, and
-      [`spatial_view.py compute_spatial_view_field`](../../../src/neurospatial/encoding/spatial_view.py)
-      with a delegator to `compute_view_rate`. Adapt the legacy
-      `*FieldResult` / `*Metrics` constructors to wrap the new result.~~
-      **Blocked by M6.1.**
+- [x] **6.4** Delete `object_vector.py` and `spatial_view.py` rather than
+      preserving delegating shims. Egocentric and view analyses now use
+      `compute_egocentric_rate` / `EgocentricRateResult` and
+      `compute_view_rate` / `ViewRateResult`.
 
 - [ ] **6.5** ~~Final pass: also dedupe
       [`_egocentric_binning._compute_egocentric_coords` line 199](../../../src/neurospatial/encoding/_egocentric_binning.py#L199)
@@ -320,10 +313,10 @@ where old implementations can be removed safely.
       step.~~ **Independent of M6.1's parity gap; could be done later as a
       standalone refactor inside `_egocentric_binning.py`.**
 
-**Verification**: full test suite, including legacy module tests, passes
-unchanged. Notebook smoke tests in `examples/11_place_field_analysis.ipynb`
-and `examples/22_spatial_view_cells.ipynb` produce equivalent figures
-(visual diff acceptable; numeric equivalence within 1e-6).
+**Verification**: full test suite excluding deleted legacy-module tests, typing,
+linting, and docs build should pass. Notebook smoke tests in
+`examples/11_place_field_analysis.ipynb` and
+`examples/22_spatial_view_cells.ipynb` should use the canonical result APIs.
 
 ---
 

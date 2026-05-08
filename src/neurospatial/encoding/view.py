@@ -66,7 +66,6 @@ Georges-François, P., Rolls, E. T., & Robertson, R. G. (1999). Spatial view
 See Also
 --------
 neurospatial.encoding.spatial : Spatial rate computation for place cells
-neurospatial.encoding.spatial_view : Field-level spatial view utilities
 neurospatial.ops.visibility : Visibility and gaze computation
 """
 

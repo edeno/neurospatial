@@ -42,7 +42,6 @@ Examples
 
 See Also
 --------
-neurospatial.encoding.head_direction : Legacy head direction analysis module
 neurospatial.stats.circular : Circular statistics utilities
 """
 

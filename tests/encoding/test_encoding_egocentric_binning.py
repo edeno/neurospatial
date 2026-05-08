@@ -1071,60 +1071,6 @@ class TestEgocentricCoordinates:
         np.testing.assert_almost_equal(distances[0, 0], 5.0)
 
 
-class TestConsistencyWithObjectVector:
-    """Test consistency with existing object_vector.py implementation."""
-
-    def test_occupancy_matches_object_vector_tuning(
-        self,
-        env: Environment,
-        trajectory_data: dict,
-        object_positions: np.ndarray,
-        spike_times: np.ndarray,
-    ):
-        """Occupancy should match existing compute_object_vector_tuning."""
-        from neurospatial.encoding._egocentric_binning import (
-            compute_egocentric_occupancy,
-        )
-        from neurospatial.encoding.object_vector import compute_object_vector_tuning
-
-        # Compute using new binning layer
-        occupancy_new, _ego_env = compute_egocentric_occupancy(
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            object_positions,
-            distance_range=(0.0, 50.0),
-            n_distance_bins=10,
-            n_direction_bins=12,
-        )
-
-        # Compute using existing implementation
-        compute_object_vector_tuning(
-            env,
-            spike_times,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-            trajectory_data["headings"],
-            object_positions,
-            max_distance=50.0,
-            n_distance_bins=10,
-            n_direction_bins=12,
-            min_occupancy_seconds=0.0,  # No masking
-        )
-
-        # The existing implementation stores occupancy internally in 2D
-        # but we flatten to 1D. Reshape for comparison.
-        # Existing: (n_distance, n_direction) - multiply by dt to get time
-        n_distance = 10
-        n_direction = 12
-        np.median(np.diff(trajectory_data["times"]))
-
-        # Can't directly compare because existing implementation may use
-        # different internal occupancy computation. Instead verify shape.
-        assert occupancy_new.shape == (n_distance * n_direction,)
-        assert np.sum(occupancy_new) > 0  # Has some occupancy
-
-
 # =============================================================================
 # Test NaN handling in egocentric coordinate computation
 # =============================================================================

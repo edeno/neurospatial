@@ -1943,7 +1943,7 @@ class ObjectVectorOverlay:
     PositionOverlay : Single trajectory visualization
     HeadDirectionOverlay : Heading direction visualization
     ObjectVectorCellModel : Simulation model for object-vector cells
-    compute_object_vector_field : Field computation for object-vector cells
+    compute_egocentric_rate : Egocentric rate computation for object-vector cells
 
     Notes
     -----
