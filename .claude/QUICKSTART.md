@@ -13,7 +13,8 @@ from neurospatial import Environment
 import numpy as np
 
 # Generate sample position data
-positions = np.random.rand(100, 2) * 100  # 100 points in 2D space
+rng = np.random.default_rng(0)
+positions = rng.uniform(0, 100, size=(100, 2))  # 100 points in 2D space
 
 # Create environment (bin_size is REQUIRED)
 env = Environment.from_samples(positions, bin_size=2.0)
@@ -22,8 +23,10 @@ env = Environment.from_samples(positions, bin_size=2.0)
 env.units = "cm"
 env.frame = "session1"
 
-# Query the environment
-bin_idx = env.bin_at([50.0, 50.0])
+# Query the environment. bin_at expects shape (n_points, n_dims). It returns
+# -1 for points outside any active bin, so query a known sample point here.
+bin_idx = int(env.bin_at(positions[:1])[0])
+assert bin_idx >= 0  # guaranteed because positions[:1] was used to build env
 neighbors = env.neighbors(bin_idx)
 ```
 
