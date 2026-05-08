@@ -49,13 +49,10 @@ import numpy as np
 
 from neurospatial import Environment
 from neurospatial.encoding import (
+    FieldOfView,
     compute_spatial_rate,
     compute_view_rate,
     compute_viewed_location,
-)
-from neurospatial.encoding.spatial_view import (
-    FieldOfView,
-    spatial_view_cell_metrics,
 )
 from neurospatial.ops.egocentric import heading_from_velocity
 from neurospatial.simulation import (
@@ -354,56 +351,60 @@ print(
 # %% [markdown]
 # ## Part 7: Classify Cells Using Metrics
 #
-# The `spatial_view_cell_metrics` function computes statistics that help distinguish
-# spatial view cells from place cells.
+# `ViewRateResult` and `SpatialRateResult` provide the statistics needed to
+# compare view tuning against position tuning.
 
 # %%
 # Classify cells
-svc_metrics = spatial_view_cell_metrics(
-    env, svc_spikes, times, positions, headings, view_distance=15.0
-)
+svc_view_info = svc_view_result.view_spatial_information()
+svc_place_info = svc_place_result.spatial_information()
+svc_is_svc = svc_view_result.is_view_cell()
 
-pc_metrics = spatial_view_cell_metrics(
-    env, pc_spikes, times, positions, headings, view_distance=15.0
-)
+pc_view_info = pc_view_result.view_spatial_information()
+pc_place_info = pc_place_result.spatial_information()
+pc_is_svc = pc_view_result.is_view_cell()
 
 print("=" * 60)
 print("SPATIAL VIEW CELL METRICS")
 print("=" * 60)
-print(svc_metrics.interpretation())
+print(f"View field info: {svc_view_info:.3f} bits/spike")
+print(f"Place field info: {svc_place_info:.3f} bits/spike")
+print(f"Classified as SVC: {svc_is_svc}")
 
 print("\n" + "=" * 60)
 print("PLACE CELL METRICS")
 print("=" * 60)
-print(pc_metrics.interpretation())
+print(f"View field info: {pc_view_info:.3f} bits/spike")
+print(f"Place field info: {pc_place_info:.3f} bits/spike")
+print(f"Classified as SVC: {pc_is_svc}")
 
 # %%
 # Quick classification summary
 print("\n" + "=" * 60)
 print("CLASSIFICATION SUMMARY")
 print("=" * 60)
-print(f"Spatial view cell classified as SVC: {svc_metrics.is_spatial_view_cell}")
-print(f"Place cell classified as SVC: {pc_metrics.is_spatial_view_cell}")
+print(f"Spatial view cell classified as SVC: {svc_is_svc}")
+print(f"Place cell classified as SVC: {pc_is_svc}")
 
 print("\nKey metrics comparison:")
 print(f"  {'Metric':<30} {'SVC':<15} {'Place Cell':<15}")
 print(f"  {'-' * 60}")
 print(
-    f"  {'View field info (bits/spike)':<30} {svc_metrics.view_field_skaggs_info:.3f}{'':<10} {pc_metrics.view_field_skaggs_info:.3f}"
+    f"  {'View field info (bits/spike)':<30} {svc_view_info:.3f}{'':<10} {pc_view_info:.3f}"
 )
 print(
-    f"  {'Place field info (bits/spike)':<30} {svc_metrics.place_field_skaggs_info:.3f}{'':<10} {pc_metrics.place_field_skaggs_info:.3f}"
+    f"  {'Place field info (bits/spike)':<30} {svc_place_info:.3f}{'':<10} {pc_place_info:.3f}"
 )
 
 # Compute view/place ratio
 svc_ratio = (
-    svc_metrics.view_field_skaggs_info / svc_metrics.place_field_skaggs_info
-    if svc_metrics.place_field_skaggs_info > 0
+    svc_view_info / svc_place_info
+    if svc_place_info > 0
     else float("inf")
 )
 pc_ratio = (
-    pc_metrics.view_field_skaggs_info / pc_metrics.place_field_skaggs_info
-    if pc_metrics.place_field_skaggs_info > 0
+    pc_view_info / pc_place_info
+    if pc_place_info > 0
     else float("inf")
 )
 print(f"  {'View/Place info ratio':<30} {svc_ratio:.3f}{'':<10} {pc_ratio:.3f}")

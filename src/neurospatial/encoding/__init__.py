@@ -78,21 +78,6 @@ from neurospatial.encoding.grid import (
     spatial_autocorrelation,
 )
 
-# Head direction cell analysis
-from neurospatial.encoding.head_direction import (
-    HeadDirectionMetrics,
-    compute_head_direction_tuning_curve,
-    head_direction_metrics,
-)
-
-# Object-vector field analysis
-from neurospatial.encoding.object_vector import (
-    ObjectVectorFieldResult,
-    ObjectVectorMetrics,
-    compute_object_vector_field,
-    compute_object_vector_tuning,
-)
-
 # Phase precession analysis
 from neurospatial.encoding.phase_precession import (
     PhasePrecessionResult,
@@ -121,14 +106,6 @@ from neurospatial.encoding.spatial import (
     compute_spatial_rate,
     compute_spatial_rates,
     detect_place_fields,
-)
-
-# Spatial view field analysis
-from neurospatial.encoding.spatial_view import (
-    SpatialViewFieldResult,
-    SpatialViewMetrics,
-    compute_spatial_view_field,
-    spatial_view_cell_metrics,
 )
 
 # View rate (spatial view cells)
@@ -175,10 +152,6 @@ __all__ = [  # noqa: RUF022 - organized by category
     "phase_precession",
     "plot_phase_precession",
     # Object-vector cell analysis
-    "ObjectVectorFieldResult",
-    "ObjectVectorMetrics",
-    "compute_object_vector_field",
-    "compute_object_vector_tuning",
     "is_object_vector_cell",
     "object_vector_score",
     "plot_object_vector_tuning",
@@ -191,19 +164,12 @@ __all__ = [  # noqa: RUF022 - organized by category
     "periodicity_score",
     "spatial_autocorrelation",
     # Head direction cell analysis
-    "HeadDirectionMetrics",
     "circular_mean",
-    "compute_head_direction_tuning_curve",
-    "head_direction_metrics",
     "is_head_direction_cell",
     "mean_resultant_length",
     "plot_head_direction_tuning",
     "rayleigh_test",
     # Spatial view cell analysis
-    "SpatialViewFieldResult",
-    "SpatialViewMetrics",
-    "compute_spatial_view_field",
-    "spatial_view_cell_metrics",
     "is_spatial_view_cell",
     "compute_viewed_location",
     "compute_viewshed",

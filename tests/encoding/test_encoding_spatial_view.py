@@ -82,31 +82,19 @@ class TestSpatialViewImports:
 
 
 class TestEncodingPackageImports:
-    """Test imports from encoding/__init__.py."""
+    """Test canonical spatial-view imports from encoding/__init__.py."""
 
-    def test_import_SpatialViewFieldResult_from_encoding(self):
-        """SpatialViewFieldResult importable from encoding."""
-        from neurospatial.encoding import SpatialViewFieldResult
+    def test_import_ViewRateResult_from_encoding(self):
+        """ViewRateResult importable from encoding."""
+        from neurospatial.encoding import ViewRateResult
 
-        assert SpatialViewFieldResult is not None
+        assert ViewRateResult is not None
 
-    def test_import_compute_spatial_view_field_from_encoding(self):
-        """compute_spatial_view_field importable from encoding."""
-        from neurospatial.encoding import compute_spatial_view_field
+    def test_import_compute_view_rate_from_encoding(self):
+        """compute_view_rate importable from encoding."""
+        from neurospatial.encoding import compute_view_rate
 
-        assert callable(compute_spatial_view_field)
-
-    def test_import_SpatialViewMetrics_from_encoding(self):
-        """SpatialViewMetrics importable from encoding."""
-        from neurospatial.encoding import SpatialViewMetrics
-
-        assert SpatialViewMetrics is not None
-
-    def test_import_spatial_view_cell_metrics_from_encoding(self):
-        """spatial_view_cell_metrics importable from encoding."""
-        from neurospatial.encoding import spatial_view_cell_metrics
-
-        assert callable(spatial_view_cell_metrics)
+        assert callable(compute_view_rate)
 
     def test_import_is_spatial_view_cell_from_encoding(self):
         """is_spatial_view_cell importable from encoding."""

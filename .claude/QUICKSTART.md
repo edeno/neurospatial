@@ -784,7 +784,7 @@ plot_circular_basis_tuning(beta_sin, beta_cos, projection="polar")
 
 **Related functions:** (from `neurospatial.encoding` and `neurospatial.stats.circular`)
 
-- `head_direction_metrics()`: Complete head direction cell analysis
+- `compute_directional_rate()`: Complete head direction cell analysis
 - `phase_precession()`: Detect theta phase precession
 - `rayleigh_test()`: Test for circular uniformity
 

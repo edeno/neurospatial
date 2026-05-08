@@ -114,7 +114,7 @@ func(
 
 **Examples:**
 
-- `compute_head_direction_tuning_curve(spike_times, times, headings, *, bin_size=...)`
+- `compute_directional_rate(spike_times, times, headings, *, bin_size=...)`
 - `is_head_direction_cell(spike_times, times, headings, **kwargs)`
 
 #### Events/Peri-Event Functions

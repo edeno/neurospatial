@@ -541,15 +541,15 @@ viewed_locations = compute_viewed_location(
 ### Spatial View Cell Analysis
 
 ```python
-from neurospatial.encoding.spatial_view import (
-    compute_spatial_view_field,
-    spatial_view_cell_metrics,
+from neurospatial.encoding import (
+    compute_spatial_rate,
+    compute_view_rate,
     is_spatial_view_cell,
 )
 from neurospatial.simulation.models import SpatialViewCellModel
 
 # Compute view field (firing rate by *viewed location*)
-result = compute_spatial_view_field(
+result = compute_view_rate(
     env, spike_times, times, positions, headings,
     view_distance=15.0,
     gaze_model="fixed_distance",  # or "ray_cast", "boundary"
@@ -560,21 +560,13 @@ result = compute_spatial_view_field(
 # - Place field: binned by animal position
 # - View field: binned by viewed location
 
-# Compare view vs place field
-metrics = spatial_view_cell_metrics(
-    env, spike_times, times, positions, headings,
-    view_distance=15.0,
-    info_ratio=1.5,        # View info must be 1.5x place info
-    max_correlation=0.7,   # Fields must be dissimilar
+# Compare view and place field estimates
+place_result = compute_spatial_rate(env, spike_times, times, positions)
+view_info = result.view_spatial_information()
+place_info = place_result.spatial_information()
+is_svc = is_spatial_view_cell(
+    env, spike_times, times, positions, headings, view_distance=15.0
 )
-
-print(metrics.interpretation())
-# Output:
-# *** SPATIAL VIEW CELL ***
-# View field info: 1.85 bits/spike
-# Place field info: 0.62 bits/spike
-# View/Place info ratio: 2.98
-# View-place correlation: 0.32
 ```
 
 ### Simulate Spatial View Cells

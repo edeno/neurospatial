@@ -71,31 +71,19 @@ class TestEncodingObjectVectorImports:
 
 
 class TestEncodingInitObjectVectorImports:
-    """Test that object_vector functions are exported from encoding/__init__.py."""
+    """Test canonical object-vector imports from encoding/__init__.py."""
 
-    def test_import_object_vector_field_result_from_encoding(self) -> None:
-        """Test importing ObjectVectorFieldResult from encoding."""
-        from neurospatial.encoding import ObjectVectorFieldResult
+    def test_import_egocentric_rate_result_from_encoding(self) -> None:
+        """Test importing EgocentricRateResult from encoding."""
+        from neurospatial.encoding import EgocentricRateResult
 
-        assert ObjectVectorFieldResult is not None
+        assert EgocentricRateResult is not None
 
-    def test_import_compute_object_vector_field_from_encoding(self) -> None:
-        """Test importing compute_object_vector_field from encoding."""
-        from neurospatial.encoding import compute_object_vector_field
+    def test_import_compute_egocentric_rate_from_encoding(self) -> None:
+        """Test importing compute_egocentric_rate from encoding."""
+        from neurospatial.encoding import compute_egocentric_rate
 
-        assert callable(compute_object_vector_field)
-
-    def test_import_object_vector_metrics_from_encoding(self) -> None:
-        """Test importing ObjectVectorMetrics from encoding."""
-        from neurospatial.encoding import ObjectVectorMetrics
-
-        assert ObjectVectorMetrics is not None
-
-    def test_import_compute_object_vector_tuning_from_encoding(self) -> None:
-        """Test importing compute_object_vector_tuning from encoding."""
-        from neurospatial.encoding import compute_object_vector_tuning
-
-        assert callable(compute_object_vector_tuning)
+        assert callable(compute_egocentric_rate)
 
     def test_import_object_vector_score_from_encoding(self) -> None:
         """Test importing object_vector_score from encoding."""

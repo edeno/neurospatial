@@ -72,25 +72,19 @@ class TestReexportsFromStatsCircular:
 
 
 class TestImportsFromEncodingInit:
-    """Test imports from encoding/__init__.py."""
+    """Test canonical head-direction imports from encoding/__init__.py."""
 
-    def test_import_HeadDirectionMetrics_from_encoding(self) -> None:
-        """Test that HeadDirectionMetrics is importable from encoding."""
-        from neurospatial.encoding import HeadDirectionMetrics
+    def test_import_directional_rate_result_from_encoding(self) -> None:
+        """Test that DirectionalRateResult is importable from encoding."""
+        from neurospatial.encoding import DirectionalRateResult
 
-        assert HeadDirectionMetrics is not None
+        assert DirectionalRateResult is not None
 
-    def test_import_compute_head_direction_tuning_curve_from_encoding(self) -> None:
-        """Test that compute_head_direction_tuning_curve is importable from encoding."""
-        from neurospatial.encoding import compute_head_direction_tuning_curve
+    def test_import_compute_directional_rate_from_encoding(self) -> None:
+        """Test that compute_directional_rate is importable from encoding."""
+        from neurospatial.encoding import compute_directional_rate
 
-        assert callable(compute_head_direction_tuning_curve)
-
-    def test_import_head_direction_metrics_from_encoding(self) -> None:
-        """Test that head_direction_metrics is importable from encoding."""
-        from neurospatial.encoding import head_direction_metrics
-
-        assert callable(head_direction_metrics)
+        assert callable(compute_directional_rate)
 
     def test_import_is_head_direction_cell_from_encoding(self) -> None:
         """Test that is_head_direction_cell is importable from encoding."""

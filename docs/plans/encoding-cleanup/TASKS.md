@@ -280,6 +280,12 @@ where old implementations can be removed safely.
       `min_occupancy`, and update parity tests to compare against the
       canonical result API.
 
+- [x] **6.2b** Remove stale field-level head-direction,
+      object-vector, and spatial-view names from the package-level
+      `neurospatial.encoding` export surface. Keep the old modules importable
+      for their current tests, but advertise `compute_directional_rate`,
+      `compute_egocentric_rate`, and `compute_view_rate` from the package.
+
 - [ ] **6.2** ~~Replace
       [`place.py compute_place_field`](../../../src/neurospatial/encoding/place.py)
       and its private helpers (`_interpolate_spike_positions`,
