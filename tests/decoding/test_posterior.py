@@ -715,6 +715,78 @@ class TestDecodePosition:
                 prior=prior,
             )
 
+    def test_validate_catches_zero_mass_prior(
+        self,
+        simple_env: Environment,
+        simple_spike_counts: np.ndarray,
+        simple_encoding_models: np.ndarray,
+    ) -> None:
+        """validate=True rejects priors whose total mass is zero.
+
+        Regression for review follow-up: an all-zero prior was silently
+        rebuilt as a uniform prior by normalize_to_posterior's 1e-10
+        clip, producing a finite-looking posterior that did not reflect
+        the user's stated prior. The validator now rejects at the
+        boundary so the failure is visible.
+        """
+        from neurospatial.decoding.posterior import decode_position
+
+        with pytest.raises(ValueError, match=r"zero total mass"):
+            decode_position(
+                simple_env,
+                simple_spike_counts,
+                simple_encoding_models,
+                dt=0.025,
+                prior=np.zeros(simple_env.n_bins),
+            )
+
+    def test_validate_catches_time_varying_prior_with_zero_row(
+        self,
+        simple_env: Environment,
+        simple_spike_counts: np.ndarray,
+        simple_encoding_models: np.ndarray,
+    ) -> None:
+        """validate=True rejects time-varying priors with any zero-mass row."""
+        from neurospatial.decoding.posterior import decode_position
+
+        n_time = simple_spike_counts.shape[0]
+        prior = np.ones((n_time, simple_env.n_bins))
+        prior[1, :] = 0.0  # one zero-mass time bin
+        with pytest.raises(ValueError, match=r"zero total mass"):
+            decode_position(
+                simple_env,
+                simple_spike_counts,
+                simple_encoding_models,
+                dt=0.025,
+                prior=prior,
+            )
+
+    def test_validate_accepts_array_like_prior(
+        self,
+        simple_env: Environment,
+        simple_spike_counts: np.ndarray,
+        simple_encoding_models: np.ndarray,
+    ) -> None:
+        """validate=True accepts list/tuple priors via np.asarray conversion.
+
+        Regression for review follow-up: the validator was running
+        ``prior < 0`` directly on the user's input, which raised
+        ``TypeError`` for any array-like that wasn't already an ndarray
+        (e.g., a Python list). normalize_to_posterior accepts array-like
+        priors via np.asarray, so the validator must too.
+        """
+        from neurospatial.decoding.posterior import decode_position
+
+        prior_list = [1.0] * simple_env.n_bins
+        result = decode_position(
+            simple_env,
+            simple_spike_counts,
+            simple_encoding_models,
+            dt=0.025,
+            prior=prior_list,  # type: ignore[arg-type]  # runtime-only array-like
+        )
+        assert result is not None
+
     # -------------------------------------------------------------------------
     # Integration tests
     # -------------------------------------------------------------------------

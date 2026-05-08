@@ -436,27 +436,60 @@ def _validate_inputs(
             "Firing rates must be non-negative."
         )
 
-    # Check prior if provided: finite then non-negative. Internal
-    # normalization divides by the row sum, so a prior with negative
-    # entries that sum to a positive total still yields a "valid" posterior
-    # row but no longer represents a probability distribution -- reject
-    # at the boundary rather than silently propagating.
+    # Check prior if provided. Convert to ndarray first because the
+    # downstream normalize_to_posterior accepts array-like (list, tuple)
+    # priors via np.asarray; performing the finite/non-negative/sum
+    # checks on the raw object would crash with a TypeError ("<' not
+    # supported between instances of 'list' and 'int'") on a perfectly
+    # legitimate input. Then check:
+    #
+    # - finite (NaN/Inf can't pass the < 0 check cleanly),
+    # - non-negative (a probability mass cannot be negative),
+    # - has positive total mass (a zero-sum prior would otherwise be
+    #   silently rebuilt as a uniform prior by normalize_to_posterior's
+    #   1e-10 clip, which is the silent-wrong-result path the validator
+    #   exists to prevent). For time-varying priors, every row must
+    #   carry positive mass.
     if prior is not None:
-        if not np.isfinite(prior).all():
-            n_bad = int(np.sum(~np.isfinite(prior)))
+        prior_arr = np.asarray(prior, dtype=np.float64)
+        if not np.isfinite(prior_arr).all():
+            n_bad = int(np.sum(~np.isfinite(prior_arr)))
             raise ValueError(
                 f"prior contains {n_bad} NaN or Inf entries. "
                 "Prior must be finite non-negative values."
             )
-        if (prior < 0).any():
-            n_negative = int(np.sum(prior < 0))
-            worst_prior = float(prior.min())
+        if (prior_arr < 0).any():
+            n_negative = int(np.sum(prior_arr < 0))
+            worst_prior = float(prior_arr.min())
             raise ValueError(
                 f"prior contains {n_negative} negative entr"
                 f"{'y' if n_negative == 1 else 'ies'} (min: {worst_prior:.6g}). "
                 "A prior over positions is a probability mass and must "
                 "be non-negative."
             )
+        if prior_arr.ndim == 1:
+            total = float(prior_arr.sum())
+            if total <= 0:
+                raise ValueError(
+                    f"prior has zero total mass (sum={total:.6g}). A prior "
+                    "over positions must integrate to a positive total; an "
+                    "all-zero prior would otherwise be silently rebuilt as "
+                    "a uniform prior by internal normalization. Pass a "
+                    "non-zero prior, or pass `prior=None` for an explicit "
+                    "uniform."
+                )
+        elif prior_arr.ndim == 2:
+            row_sums = prior_arr.sum(axis=-1)
+            zero_rows = ~(row_sums > 0)
+            if zero_rows.any():
+                n_zero = int(zero_rows.sum())
+                raise ValueError(
+                    f"time-varying prior has {n_zero} row"
+                    f"{'' if n_zero == 1 else 's'} with zero total mass "
+                    "(e.g., prior[t, :] all zeros). Each time bin's prior "
+                    "must integrate to a positive total or it is silently "
+                    "rebuilt as a uniform prior by internal normalization."
+                )
 
 
 def _validate_output(posterior: NDArray[np.float64]) -> None:
