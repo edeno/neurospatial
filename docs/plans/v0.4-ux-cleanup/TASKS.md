@@ -22,37 +22,37 @@ Source review: [`docs/reviews/UX_REVIEW_2026-05-08.md`](../../reviews/UX_REVIEW_
 
 **Verification**: `uv run pytest tests/ -q` green; new doc-snippet smoke CI job green; manually copy-paste each fixed visible first-run snippet into a fresh Python session and confirm it runs.
 
-- [ ] **0.1** Fix `data_samples=` → `positions=` in [README.md:148, 225](../../../README.md). Closes review §1.1. Acceptance: copy-paste of each snippet into a fresh session runs without error.
+- [x] **0.1** Fix `data_samples=` → `positions=` in [README.md:148, 225](../../../README.md). Closes review §1.1. Acceptance: copy-paste of each snippet into a fresh session runs without error. _Landed in `a30dc4e`._
 
-- [ ] **0.2** Add required `frame_times=` argument to all README animation snippets at [README.md:430-440](../../../README.md). Use `frame_times = np.arange(len(fields)) / 30.0` as the canonical example. Closes review §1.2.
+- [x] **0.2** Add required `frame_times=` argument to all README animation snippets at [README.md:430-440](../../../README.md). Use `frame_times = np.arange(len(fields)) / 30.0` as the canonical example. Closes review §1.2. _Landed in `a30dc4e`; covered all four `animate_fields` calls plus the large-scale-dataset section._
 
-- [ ] **0.3** Fix four broken snippets in [.claude/QUICKSTART.md](../../../.claude/QUICKSTART.md). Closes review §1.3.
+- [x] **0.3** Fix four broken snippets in [.claude/QUICKSTART.md](../../../.claude/QUICKSTART.md). Closes review §1.3. _Landed in `a30dc4e`; an additional `bin_at` shape bug at the "Your First Environment" snippet was caught by the M0 0.10 smoke harness during authoring and fixed in `842e8c6`._
   - Line 66: change `from neurospatial import validate_environment` → `from neurospatial.layout.validation import validate_environment`.
   - Line 91: change `Environment.from_graph(G, bin_size=2.0)` → full call with `edge_order` and `edge_spacing` (use the README plus-maze example as the canonical form).
   - Line 191: define `position_bins = env.bin_sequence(times, positions)` before the `segment_trials(trajectory_bins, ...)` call; rename `trajectory_bins` → `position_bins`.
   - Line 739: swap `bin_indices = env.bin_sequence(trajectory, times)` → `bin_indices = env.bin_sequence(times, positions)`.
 
-- [ ] **0.4** Fix four broken snippets in [docs/getting-started/quickstart.md](../../../docs/getting-started/quickstart.md). Closes review §1.4.
-  - Lines 194, 202: rename `layout_type=` → `layout=`. For line 202 (triangular), additionally either remove the example or rewrite to use a supported factory path; `from_samples()` does not currently expose triangular. Document the decision in the task PR.
-  - Line 283: change `env.regions[name].polygon.contains(...)` → `env.regions[name].data.contains(...)` (since `Region.data` holds the polygon for `kind="polygon"`). Optionally use the higher-level `region_membership` API instead.
-  - Line 287: define `position_bin_indices = env.bin_sequence(times, positions)` before reference.
+- [x] **0.4** Fix four broken snippets in [docs/getting-started/quickstart.md](../../../docs/getting-started/quickstart.md). Closes review §1.4. _Landed in `a30dc4e`._
+  - Lines 194, 202: rename `layout_type=` → `layout=`. For line 202 (triangular), additionally either remove the example or rewrite to use a supported factory path; `from_samples()` does not currently expose triangular. Document the decision in the task PR. _Resolution: removed the triangular `from_samples` block (only `RegularGrid` and `Hexagonal` are supported there) and pointed readers at `from_layout` / `user-guide/layout-engines.md` for the rest._
+  - Line 283: change `env.regions[name].polygon.contains(...)` → `env.regions[name].data.contains(...)` (since `Region.data` holds the polygon for `kind="polygon"`). Optionally use the higher-level `region_membership` API instead. _Resolution: replaced the manual loop with the high-level `env.bins_in_region(name)` API._
+  - Line 287: define `position_bin_indices = env.bin_sequence(times, positions)` before reference. _Done; also fixed an additional broken `distance_between(bin_idx, target_bin)` snippet at line 258 (was passing bin indices to a coords-taking method) by switching to `env.distance_to([target_bin])`._
 
-- [ ] **0.5** Fix top-level package docstring examples in [`src/neurospatial/__init__.py:140, 190`](../../../src/neurospatial/__init__.py). Closes review §10.10.
+- [x] **0.5** Fix top-level package docstring examples in [`src/neurospatial/__init__.py:140, 190`](../../../src/neurospatial/__init__.py). Closes review §10.10. _Landed in `a30dc4e`._
   - Line 140: change `env.bin_sequence(trajectory)` → `env.bin_sequence(times, trajectory)` with `times` defined; mark as `# doctest: +SKIP` if needed.
-  - Line 190: change `env.distance_between(0, 100)` (passes bin indices to a coords-taking method) → `env.path_between(start_bin=0, goal_bin=100)` for graph distance, or `env.distance_between(point_a, point_b)` with coordinates defined.
+  - Line 190: change `env.distance_between(0, 100)` (passes bin indices to a coords-taking method) → `env.path_between(start_bin=0, goal_bin=100)` for graph distance, or `env.distance_between(point_a, point_b)` with coordinates defined. _Resolution: used `float(env.distance_to([100])[0])`. Also removed a stray invalid `units='cm'` kwarg passed to `Environment.from_samples` / `Environment.from_polygon` and replaced it with `env.units = 'cm'` after construction._
 
-- [ ] **0.6** Update [examples/README.md](../../../examples/README.md) to cover all 22 notebooks. Closes review §1.7. Specifically:
+- [x] **0.6** Update [examples/README.md](../../../examples/README.md) to cover all 22 notebooks. Closes review §1.7. _Landed in `76a236d`._
   - Replace 01-08 table with 01-22 table including title, prerequisites, estimated time.
   - Fix the misnamed reference to "08_complete_workflow.ipynb" (actual: `08_spike_field_basics.ipynb`).
   - Add a "Goal → Notebook" mapping for the most common neuroscience tasks.
 
-- [ ] **0.7** Move `docs/examples/21_directional_place_fields.{py,ipynb}` to canonical home and verify [docs/sync_notebooks.py](../../../docs/sync_notebooks.py) treats it consistently. Closes review §1.8 / §10.7.
+- [x] **0.7** Move `docs/examples/21_directional_place_fields.{py,ipynb}` to canonical home and verify [docs/sync_notebooks.py](../../../docs/sync_notebooks.py) treats it consistently. Closes review §1.8 / §10.7. _Landed in `76a236d` via `git mv` to `examples/`; ran `sync_notebooks.py` to confirm the sync pairs the new canonical source with `docs/examples/21_*.ipynb` cleanly._
 
-- [ ] **0.8** Re-execute notebooks 15 and 20 with all outputs cached. Closes review §1.18. Acceptance: `nbformat` shows non-empty `outputs` for at least one cell per code cell.
+- [x] **0.8** Re-execute notebooks 15 and 20 with all outputs cached. Closes review §1.18. Acceptance: `nbformat` shows non-empty `outputs` for at least one cell per code cell. _Landed in `842e8c6`. Notebook 15: 20/21 code cells now have outputs (was 0/21). Notebook 20: 23/24 (was 0/24). The unexecuted cell in each is a no-op cell (e.g. pure import) with no output by design._
 
-- [ ] **0.9** Fix `examples/research/distance_to_goal_benchmark.py:11` removed top-level `map_points_to_bins` import. Change to `from neurospatial.ops.binning import map_points_to_bins`. Closes review §10.22.
+- [x] **0.9** Fix `examples/research/distance_to_goal_benchmark.py:11` removed top-level `map_points_to_bins` import. Change to `from neurospatial.ops.binning import map_points_to_bins`. Closes review §10.22. _Local fix applied; **no commit** — `examples/research/` is gitignored at `.gitignore:185`, so the file is not shipped to users. End-user impact of the original audit finding is therefore zero. Documented in `76a236d` commit message so the issue is not re-opened._
 
-- [ ] **0.10** **CI smoke test for curated doc snippets.** Add `scripts/test_doc_snippets.py`, an explicit snippet manifest (for example `docs/snippets.yml`), and `.github/workflows/test_docs.yml` that:
+- [x] **0.10** **CI smoke test for curated doc snippets.** Add `scripts/test_doc_snippets.py`, an explicit snippet manifest (for example `docs/snippets.yml`), and `.github/workflows/test_docs.yml` that: _Landed in `b9a4df8`._
   1. Extracts only manifest-listed first-run snippets from `README.md`, `.claude/QUICKSTART.md`, `docs/getting-started/quickstart.md`, and the top-level package docstring.
   2. Uses a Markdown fenced-block parser for `.md` files and Python `doctest` / `ast.get_docstring` extraction for `src/neurospatial/__init__.py`; do not treat the docstring as fenced Markdown.
   3. Runs each snippet in an isolated subprocess with deterministic shared fixture setup declared in the manifest.
