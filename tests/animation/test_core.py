@@ -254,32 +254,30 @@ class TestSubsampleFrames:
         with pytest.raises(ValueError, match=r"target_fps.*cannot exceed.*source_fps"):
             subsample_frames(fields, target_fps=200, source_fps=100)
 
-    def test_subsample_memmap(self):
+    def test_subsample_memmap(self, tmp_path):
         """Test subsampling works with memory-mapped arrays."""
-        # Create memory-mapped array
-        import tempfile
-        from pathlib import Path
-
         from neurospatial.animation.core import subsample_frames
 
         rng = np.random.default_rng(42)
-        with tempfile.NamedTemporaryFile(delete=False) as tmpfile:
-            tmpfile_path = Path(tmpfile.name)
-            fields_mmap = np.memmap(
-                tmpfile.name, dtype="float32", mode="w+", shape=(1000, 50)
-            )
-            fields_mmap[:] = rng.random((1000, 50))
-            fields_mmap.flush()
+        # Use tmp_path so pytest handles cleanup. On Windows the previous
+        # `tmpfile_path.unlink()` raised PermissionError because the memmap
+        # was still mapped against the file at unlink time.
+        mmap_path = tmp_path / "test_subsample.dat"
+        fields_mmap = np.memmap(
+            str(mmap_path), dtype="float32", mode="w+", shape=(1000, 50)
+        )
+        fields_mmap[:] = rng.random((1000, 50))
+        fields_mmap.flush()
 
-            # Subsample
-            result = subsample_frames(fields_mmap, target_fps=30, source_fps=250)
+        # Subsample
+        result = subsample_frames(fields_mmap, target_fps=30, source_fps=250)
 
-            # Check it worked without loading all data
-            assert len(result) > 0
-            assert result.shape[1] == 50
+        # Check it worked without loading all data
+        assert len(result) > 0
+        assert result.shape[1] == 50
 
-        # Cleanup
-        tmpfile_path.unlink()
+        # Release the mapping before pytest cleans up tmp_path on Windows.
+        del fields_mmap
 
     def test_subsample_calculation(self):
         """Test subsampling rate calculation is correct."""
@@ -1170,52 +1168,48 @@ class TestArrayPreservation:
             assert isinstance(fields_arg, list)
             assert len(fields_arg) == 10
 
-    def test_memmap_preserved_for_napari(self):
+    def test_memmap_preserved_for_napari(self, tmp_path):
         """Test that memory-mapped arrays are preserved for napari backend.
 
         This is critical for large-session support: memmaps should not be
         converted to list (which would load all data into RAM).
         """
-        import tempfile
-        from pathlib import Path as PathlibPath
-
         from neurospatial.animation.core import animate_fields
 
         rng = np.random.default_rng(42)
         positions = rng.standard_normal((100, 2)) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
 
-        # Create memmap
-        with tempfile.NamedTemporaryFile(delete=False) as tmpfile:
-            tmpfile_path = PathlibPath(tmpfile.name)
-            fields_mmap = np.memmap(
-                tmpfile.name, dtype="float64", mode="w+", shape=(100, env.n_bins)
+        # Use tmp_path so pytest handles cleanup. The previous
+        # `tmpfile_path.unlink()` raised PermissionError on Windows because
+        # the memmap was still mapped against the file at unlink time.
+        mmap_path = tmp_path / "test_memmap_napari.dat"
+        fields_mmap = np.memmap(
+            str(mmap_path), dtype="float64", mode="w+", shape=(100, env.n_bins)
+        )
+        fields_mmap[:] = rng.random((100, env.n_bins))
+        fields_mmap.flush()
+        frame_times = np.linspace(0, 1, 100)
+
+        # Mock napari backend
+        with patch(
+            "neurospatial.animation.backends.napari_backend.render_napari"
+        ) as mock:
+            mock.return_value = MagicMock()
+
+            animate_fields(env, fields_mmap, backend="napari", frame_times=frame_times)
+
+            # Check backend received memmap (or at least ndarray)
+            call_args = mock.call_args
+            fields_arg = call_args[0][1]
+            assert isinstance(fields_arg, np.ndarray), (
+                f"Expected np.ndarray/memmap, got {type(fields_arg).__name__}"
             )
-            fields_mmap[:] = rng.random((100, env.n_bins))
-            fields_mmap.flush()
-            frame_times = np.linspace(0, 1, 100)
+            # Verify it's the same object (not a copy)
+            assert fields_arg is fields_mmap
 
-            # Mock napari backend
-            with patch(
-                "neurospatial.animation.backends.napari_backend.render_napari"
-            ) as mock:
-                mock.return_value = MagicMock()
-
-                animate_fields(
-                    env, fields_mmap, backend="napari", frame_times=frame_times
-                )
-
-                # Check backend received memmap (or at least ndarray)
-                call_args = mock.call_args
-                fields_arg = call_args[0][1]
-                assert isinstance(fields_arg, np.ndarray), (
-                    f"Expected np.ndarray/memmap, got {type(fields_arg).__name__}"
-                )
-                # Verify it's the same object (not a copy)
-                assert fields_arg is fields_mmap
-
-        # Cleanup
-        tmpfile_path.unlink()
+        # Release the mapping before pytest cleans up tmp_path on Windows.
+        del fields_mmap
 
 
 class TestEstimateColormapRangeFromSubset:

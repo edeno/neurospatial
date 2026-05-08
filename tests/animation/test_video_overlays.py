@@ -1656,8 +1656,10 @@ class TestHTMLBackendVideoOverlay:
                 dpi=50,
             )
 
-        # Read HTML and check for position overlay data
-        html_content = result_path.read_text()
+        # Read HTML and check for position overlay data. Force UTF-8 so the
+        # test works on Windows runners (Python's default text-mode codec
+        # there is `charmap`, which fails on non-ASCII bytes in the export).
+        html_content = result_path.read_text(encoding="utf-8")
         # HTML should contain the serialized position overlay
         assert "positions" in html_content
         # Position data should be present
