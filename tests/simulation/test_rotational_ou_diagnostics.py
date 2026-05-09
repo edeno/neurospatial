@@ -34,6 +34,7 @@ def test_rotational_velocity_diagnostics(tmp_path):
         rotational_velocity_coherence_time=0.08,
         boundary_mode="reflect",
         seed=seed,
+        speed_units="cm",
     )
 
     # Compute diagnostics

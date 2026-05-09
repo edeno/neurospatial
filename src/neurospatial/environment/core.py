@@ -21,10 +21,11 @@ while maintaining clean code organization.
 from __future__ import annotations
 
 import logging
+import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 import networkx as nx
 import numpy as np
@@ -341,6 +342,47 @@ class Environment(
         else:
             # Initialize with an empty Regions instance if not provided
             self.regions = Regions()
+
+    # ------------------------------------------------------------------
+    # Units validation (M4.4)
+    # ------------------------------------------------------------------
+    #: Documented unit strings. Setting ``env.units`` to a value outside
+    #: this registry warns but does not raise — the field is advisory and
+    #: free-form strings remain allowed for unusual cases (arbitrary lab
+    #: coordinate frames, calibrated pixels, etc.).
+    _UNITS_REGISTRY: ClassVar[frozenset[str]] = frozenset(
+        {"cm", "m", "mm", "px", "pixels"}
+    )
+
+    @classmethod
+    def _validate_units(cls, value: object) -> None:
+        """Warn if ``value`` is not in :attr:`_UNITS_REGISTRY`.
+
+        Called automatically when ``env.units`` is assigned. The
+        registry is intentionally small and advisory; the goal is to
+        catch typos (``"centimeters"``, ``"px "``) without preventing
+        legitimate free-form values.
+        """
+        if value is None:
+            return
+        if not isinstance(value, str):
+            raise TypeError(
+                f"Environment.units must be a str or None, got {type(value).__name__}."
+            )
+        if value not in cls._UNITS_REGISTRY:
+            warnings.warn(
+                f"Environment.units={value!r} is not in the standard "
+                f"registry {sorted(cls._UNITS_REGISTRY)}. Free-form strings "
+                "are allowed but may not be interpreted by tools that consume "
+                "`units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
+                category=UserWarning,
+                stacklevel=3,
+            )
+
+    def __setattr__(self, name: str, value: object) -> None:
+        if name == "units":
+            type(self)._validate_units(value)
+        super().__setattr__(name, value)
 
     def __eq__(self, other: object) -> bool:
         """Check equality with another Environment or string.

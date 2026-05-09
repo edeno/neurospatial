@@ -32,6 +32,7 @@ def test_rotational_ou_periodic_boundaries():
         rotational_velocity_coherence_time=0.08,
         boundary_mode="periodic",  # KEY: No reflections!
         seed=seed,
+        speed_units="cm",
     )
 
     # Compute diagnostics (skip first 5 seconds for steady state)

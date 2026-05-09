@@ -358,8 +358,12 @@ def simulate_session(
 
     # Generate trajectory (use seed directly for reproducibility)
     if trajectory_method == "ou":
+        # speed_units is required by simulate_trajectory_ou (M4.5);
+        # fall back to env.units when the caller didn't pass it.
+        ou_kwargs = dict(kwargs)
+        ou_kwargs.setdefault("speed_units", env.units)
         positions, times = simulate_trajectory_ou(
-            env, duration=duration, seed=seed, **kwargs
+            env, duration=duration, seed=seed, **ou_kwargs
         )
     elif trajectory_method == "sinusoidal":
         positions, times = simulate_trajectory_sinusoidal(

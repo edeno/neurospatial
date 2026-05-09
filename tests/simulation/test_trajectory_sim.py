@@ -20,6 +20,7 @@ class TestSimulateTrajectoryOU:
             duration=1.0,
             dt=0.01,
             seed=42,
+            speed_units="cm",
         )
 
         # Check shapes
@@ -34,6 +35,7 @@ class TestSimulateTrajectoryOU:
             duration=10.0,
             boundary_mode="reflect",
             seed=42,
+            speed_units="cm",
         )
 
         # Check all positions are within environment
@@ -49,6 +51,7 @@ class TestSimulateTrajectoryOU:
             dt=0.01,
             coherence_time=coherence_time,
             seed=42,
+            speed_units="cm",
         )
 
         # Compute velocities
@@ -84,6 +87,7 @@ class TestSimulateTrajectoryOU:
             duration=5.0,
             boundary_mode="reflect",
             seed=42,
+            speed_units="cm",
         )
 
         # All positions should be in bounds
@@ -97,6 +101,7 @@ class TestSimulateTrajectoryOU:
             duration=5.0,
             boundary_mode="periodic",
             seed=42,
+            speed_units="cm",
         )
 
         # Positions should wrap around
@@ -113,6 +118,7 @@ class TestSimulateTrajectoryOU:
             duration=5.0,
             boundary_mode="stop",
             seed=42,
+            speed_units="cm",
         )
 
         # All positions should be in bounds
@@ -125,11 +131,13 @@ class TestSimulateTrajectoryOU:
             simple_2d_env,
             duration=1.0,
             seed=42,
+            speed_units="cm",
         )
         pos2, times2 = simulate_trajectory_ou(
             simple_2d_env,
             duration=1.0,
             seed=42,
+            speed_units="cm",
         )
 
         np.testing.assert_array_equal(pos1, pos2)
@@ -137,8 +145,12 @@ class TestSimulateTrajectoryOU:
 
     def test_different_seeds_produce_different_trajectories(self, simple_2d_env):
         """Test that different seeds produce different trajectories."""
-        pos1, _ = simulate_trajectory_ou(simple_2d_env, duration=1.0, seed=42)
-        pos2, _ = simulate_trajectory_ou(simple_2d_env, duration=1.0, seed=43)
+        pos1, _ = simulate_trajectory_ou(
+            simple_2d_env, duration=1.0, seed=42, speed_units="cm"
+        )
+        pos2, _ = simulate_trajectory_ou(
+            simple_2d_env, duration=1.0, seed=43, speed_units="cm"
+        )
 
         assert not np.array_equal(pos1, pos2)
 
@@ -148,23 +160,35 @@ class TestSimulateTrajectoryOU:
         simple_2d_env.units = None
 
         with pytest.raises(ValueError, match="units must be set"):
-            simulate_trajectory_ou(simple_2d_env, duration=1.0)
+            simulate_trajectory_ou(simple_2d_env, duration=1.0, speed_units="cm")
 
-    def test_speed_units_conversion(self, simple_2d_env):
-        """Test automatic speed units conversion."""
-        # Environment in cm
+    def test_speed_units_must_match_env_units(self, simple_2d_env):
+        """speed_units must match env.units exactly (M4.5).
+
+        Auto-conversion between unit families was removed in v0.4
+        because silent rescaling was easy to miss. Callers must
+        pre-convert if their speeds are in a different unit.
+        """
         assert simple_2d_env.units == "cm"
 
-        # Simulate with speed in m/s
+        # Mismatched units must raise.
+        with pytest.raises(ValueError, match=r"speed_units .* must match env\.units"):
+            simulate_trajectory_ou(
+                simple_2d_env,
+                duration=1.0,
+                speed_mean=0.10,
+                speed_units="m",
+                seed=42,
+            )
+
+        # Matching units works.
         positions, _times = simulate_trajectory_ou(
             simple_2d_env,
             duration=1.0,
-            speed_mean=0.10,  # 0.10 m/s = 10 cm/s
-            speed_units="m",
+            speed_mean=10.0,  # cm/s
+            speed_units="cm",
             seed=42,
         )
-
-        # Check that trajectory is generated (no errors)
         assert len(positions) > 0
 
 

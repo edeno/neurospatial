@@ -26,6 +26,7 @@ def test_ou_trajectory_explores_sparse_environment_fails():
         dt=0.1,
         speed_mean=7.5,
         seed=42,
+        speed_units="cm",
     )
 
     # Trajectory now MOVES properly (previously got stuck)
@@ -59,6 +60,7 @@ def test_ou_trajectory_explores_grid_environment_succeeds():
         dt=0.1,
         speed_mean=7.5,
         seed=42,
+        speed_units="cm",
     )
 
     # Trajectory EXPLORES properly - moves >10cm in each dimension

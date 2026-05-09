@@ -60,15 +60,15 @@ def simulate_trajectory_ou(
     env: Environment,
     duration: float,
     *,
+    speed_units: str,
     dt: float = 0.01,
     start_position: NDArray[np.float64] | None = None,
-    speed_mean: float = 0.08,
-    speed_std: float = 0.04,
+    speed_mean: float = 8.0,
+    speed_std: float = 4.0,
     coherence_time: float = 0.7,
     rotational_velocity_std: float = 120 * (np.pi / 180),  # 120 deg/s in radians
     rotational_velocity_coherence_time: float = 0.08,
     boundary_mode: Literal["reflect", "periodic", "stop"] = "reflect",
-    speed_units: str | None = None,
     seed: int | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Simulate trajectory using Ornstein-Uhlenbeck process.
@@ -87,9 +87,9 @@ def simulate_trajectory_ou(
     start_position : NDArray[np.float64], shape (n_dims,), optional
         Starting position. If None, randomly chosen from bin centers.
     speed_mean : float, optional
-        Mean speed in units/second (default: 0.08 m/s = 8 cm/s).
+        Mean speed in ``speed_units`` per second (default: 8.0 cm/s).
     speed_std : float, optional
-        Speed standard deviation (default: 0.04).
+        Speed standard deviation in ``speed_units`` per second (default: 4.0 cm/s).
     coherence_time : float, optional
         Time scale for speed autocorrelation in seconds (default: 0.7s).
         Controls speed smoothness (how gradually speed changes).
@@ -118,10 +118,14 @@ def simulate_trajectory_ou(
           only for specialized analyses. NOT biologically realistic.
         - 'stop': Trajectory halts at boundaries. Can create unrealistic
           accumulation at walls.
-    speed_units : str | None, optional
-        Units for speed_mean/speed_std. If None, assumes same units as env.units.
-        If specified and different from env.units, will auto-convert.
-        Example: speed_units="m" when env.units="cm" converts m/s to cm/s.
+    speed_units : str
+        Units for ``speed_mean`` and ``speed_std``. Required keyword
+        argument: must match ``env.units`` exactly. Auto-conversion
+        between unit families (e.g. m/s -> cm/s) was removed in v0.4
+        (M4.5) because silent rescaling of speeds was easy to miss in
+        practice. Pre-convert ``speed_mean`` / ``speed_std`` into
+        ``env.units`` before calling, or call
+        :func:`_get_conversion_factor` yourself.
     seed : int | None, optional
         Random seed for reproducibility.
 
@@ -203,8 +207,8 @@ def simulate_trajectory_ou(
     >>> env = Environment.from_samples(samples, bin_size=2.0)
     >>> env.units = "cm"
     >>>
-    >>> # Simulate trajectory
-    >>> positions, times = simulate_trajectory_ou(env, duration=60.0)
+    >>> # Simulate trajectory (speed_units must match env.units exactly).
+    >>> positions, times = simulate_trajectory_ou(env, duration=60.0, speed_units="cm")
     >>> print(positions.shape)  # (6000, 2) at 100 Hz
     (6000, 2)
     >>> print(times.shape)
@@ -216,19 +220,22 @@ def simulate_trajectory_ou(
     >>> positions, times = simulate_trajectory_ou(
     ...     env,
     ...     duration=60.0,
+    ...     speed_units="cm",
     ...     speed_mean=5.0,  # cm/s
     ...     coherence_time=1.0,  # seconds
     ...     seed=42,  # reproducible
     ... )
 
-    Convert speed units automatically:
+    Pre-convert speed if your speeds are in a different unit family
+    (auto-conversion was removed in v0.4):
 
-    >>> # Specify speed in m/s, env in cm
+    >>> from neurospatial.simulation.trajectory import _get_conversion_factor
+    >>> speed_in_cm = 0.10 * _get_conversion_factor("m", env.units)
     >>> positions, times = simulate_trajectory_ou(
     ...     env,
     ...     duration=60.0,
-    ...     speed_mean=0.10,  # m/s
-    ...     speed_units="m",  # auto-converts to cm/s
+    ...     speed_units="cm",
+    ...     speed_mean=speed_in_cm,
     ... )
 
     See Also
@@ -253,11 +260,16 @@ def simulate_trajectory_ou(
         )
         raise ValueError(msg)
 
-    # Convert speed units if needed
-    if speed_units is not None and speed_units != env.units:
-        conversion_factor = _get_conversion_factor(speed_units, env.units)
-        speed_mean *= conversion_factor
-        speed_std *= conversion_factor
+    # speed_units must match env.units exactly. Auto-conversion was
+    # removed in v0.4 (M4.5) because it silently rescaled speeds in a
+    # way that was easy to miss; users must now pre-convert (or call
+    # _get_conversion_factor themselves) before calling.
+    if speed_units != env.units:
+        raise ValueError(
+            f"speed_units {speed_units!r} must match env.units {env.units!r}. "
+            "Auto-conversion was removed in v0.4. Convert speed_mean / "
+            "speed_std into env.units before calling simulate_trajectory_ou."
+        )
 
     # Initialize random number generator
     rng = np.random.default_rng(seed)

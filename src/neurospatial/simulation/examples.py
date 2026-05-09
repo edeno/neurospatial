@@ -717,7 +717,9 @@ def boundary_cell_session(
     env.units = "cm"
 
     # Generate trajectory using OU process
-    positions, times = simulate_trajectory_ou(env, duration=duration, seed=seed)
+    positions, times = simulate_trajectory_ou(
+        env, duration=duration, speed_units="cm", seed=seed
+    )
 
     # Create models: boundary cells first, then place cells
     # Use uniform coverage for field centers
@@ -954,7 +956,9 @@ def grid_cell_session(
     env.units = "cm"
 
     # Generate trajectory using OU process
-    positions, times = simulate_trajectory_ou(env, duration=duration, seed=seed)
+    positions, times = simulate_trajectory_ou(
+        env, duration=duration, speed_units="cm", seed=seed
+    )
 
     # Create grid cell models with random phases
     # Sample phase offsets uniformly from environment

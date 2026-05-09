@@ -36,6 +36,7 @@ def test_rotational_ou_small_dt():
         rotational_velocity_coherence_time=0.08,
         boundary_mode="reflect",
         seed=seed,
+        speed_units="cm",
     )
 
     # Compute diagnostics (skip first 5 seconds)
