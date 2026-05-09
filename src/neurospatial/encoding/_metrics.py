@@ -88,14 +88,24 @@ class BatchScoresResult:
         # keeps working when `scores` is a BatchScoresResult.
         return self.scores[idx]
 
-    def __array__(self, dtype: Any = None) -> NDArray[np.float64]:
+    def __array__(
+        self, dtype: Any = None, copy: bool | None = None
+    ) -> NDArray[np.float64]:
         # NumPy ufuncs (np.isnan, np.where, etc.) call __array__ when
         # given a non-ndarray input. Returning the underlying scores
         # array lets callers use BatchScoresResult anywhere they used
-        # to use a plain (n_neurons,) array of scores.
-        if dtype is None:
+        # to use a plain (n_neurons,) array of scores. The ``copy``
+        # keyword is required by NumPy 2's array protocol -- without it
+        # ``np.asarray(result, copy=False)`` raises in NumPy 2.
+        if dtype is None and not copy:
             return self.scores
-        return self.scores.astype(dtype)
+        if dtype is None:
+            return cast("NDArray[np.float64]", self.scores.copy())
+        if copy is False:
+            # np.asarray semantics: if dtype matches, no copy is fine;
+            # if it requires a cast, we must copy. astype handles both.
+            return cast("NDArray[np.float64]", self.scores.astype(dtype, copy=False))
+        return cast("NDArray[np.float64]", self.scores.astype(dtype, copy=True))
 
     @property
     def shape(self) -> tuple[int, ...]:
@@ -620,6 +630,21 @@ def batch_grid_scores(
 
     for i in range(n_neurons):
         firing_rate = firing_rates[i]
+
+        # Pre-check legitimate-NaN inputs before calling
+        # spatial_autocorrelation. Both conditions raise ValueError from
+        # inside spatial_autocorrelation, but they reflect properties of
+        # the input rate map (no spatial structure to autocorrelate),
+        # not a computation failure. Pre-checking lets the catch-all
+        # below flag only true failures.
+        finite_mask = np.isfinite(firing_rate)
+        if not np.any(finite_mask):
+            scores[i] = np.nan
+            continue
+        finite_rates = firing_rate[finite_mask]
+        if np.all(finite_rates == finite_rates[0]):
+            scores[i] = np.nan
+            continue
 
         try:
             # Compute spatial autocorrelation (FFT method for regular 2D grids)

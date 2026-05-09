@@ -700,17 +700,94 @@ class TestBatchGridScores:
         # Note: score may or may not be NaN depending on implementation
 
     def test_batch_grid_scores_with_constant_firing(self, env_2d_grid):
-        """Constant firing rate should return NaN (zero variance)."""
-        from neurospatial.encoding._metrics import batch_grid_scores
+        """Constant firing rate is a legitimate NaN, not a computation failure.
+
+        The result contract distinguishes "score is NaN because the input
+        has no spatial structure" from "score computation raised an
+        exception that we caught". Constant firing rates have zero
+        variance and so the autocorrelation is mathematically undefined,
+        but the input itself is well-formed: the failure mask must stay
+        False and no UserWarning should fire. (M1 1.5 review-response.)
+        """
+        import warnings
+
+        from neurospatial.encoding._metrics import (
+            BatchScoresResult,
+            batch_grid_scores,
+        )
 
         env = env_2d_grid
         firing_rates = np.ones((2, env.n_bins)) * 5.0  # Constant
 
-        scores = batch_grid_scores(env, firing_rates)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # promote any warning to an error
+            result = batch_grid_scores(env, firing_rates)
 
-        assert scores.shape == (2,)
-        # Constant firing → zero variance → NaN expected
-        assert np.all(np.isnan(scores))
+        assert isinstance(result, BatchScoresResult)
+        assert result.shape == (2,)
+        assert np.all(np.isnan(result.scores))
+        assert not result.failures.any()
+        assert result.n_failures == 0
+
+    def test_batch_grid_scores_all_nan_input_is_legitimate_nan(self, env_2d_grid):
+        """All-NaN firing rate is a legitimate NaN, not a computation failure.
+
+        Same contract as constant firing: the input describes a neuron
+        with no usable rate information, so the score is NaN by
+        definition; that is not a caught exception and must not flip the
+        failures mask.
+        """
+        import warnings
+
+        from neurospatial.encoding._metrics import (
+            BatchScoresResult,
+            batch_grid_scores,
+        )
+
+        env = env_2d_grid
+        firing_rates = np.full((2, env.n_bins), np.nan)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            result = batch_grid_scores(env, firing_rates)
+
+        assert isinstance(result, BatchScoresResult)
+        assert np.all(np.isnan(result.scores))
+        assert not result.failures.any()
+
+    def test_batch_scores_result_array_protocol_numpy2(self, env_2d_grid):
+        """BatchScoresResult.__array__ must accept the NumPy-2 ``copy`` kwarg.
+
+        NumPy 2 added a ``copy`` parameter to the array protocol;
+        ``np.asarray(obj, copy=False)`` warns and fails when ``__array__``
+        does not accept it. Since BatchScoresResult is intended to be a
+        drop-in replacement for the old ndarray-shaped score return,
+        regress this explicitly.
+        """
+        from neurospatial.encoding._metrics import batch_grid_scores
+
+        env = env_2d_grid
+        rng = np.random.default_rng(42)
+        firing_rates = rng.random((3, env.n_bins)) * 5.0
+        result = batch_grid_scores(env, firing_rates)
+
+        # No-copy view: should return the underlying scores array.
+        view = np.asarray(result, copy=False)
+        assert view.shape == (3,)
+        assert view is result.scores
+
+        # Forced copy: must not alias the underlying scores.
+        copied = np.asarray(result, copy=True)
+        assert copied.shape == (3,)
+        assert copied is not result.scores
+        np.testing.assert_array_equal(copied, result.scores)
+
+        # dtype cast: independent buffer, equal values.
+        as_f32 = np.asarray(result, dtype=np.float32)
+        assert as_f32.dtype == np.float32
+        np.testing.assert_allclose(
+            as_f32, result.scores.astype(np.float32), equal_nan=True
+        )
 
 
 class TestBatchGridScoresNonRegularGrid:

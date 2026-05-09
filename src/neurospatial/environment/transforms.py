@@ -686,11 +686,13 @@ class EnvironmentTransforms:
                 tightening would spuriously reject points near sparse
                 regions of the subset graph.
 
-                M1 1.1 will replace SubsetLayout with MaskedGrid, which
-                has the correct geometric containment behavior built in;
-                this fix is a stopgap so the subset path and the M1 1.2
-                ``bin_at`` switch for ``occupancy`` agree in the
-                meantime.
+                Note: 2-D / N-D grid envs took the ``from_mask`` fast
+                path above and never reach this layout. SubsetLayout is
+                retained specifically for graph (1-D linearized) envs,
+                where the 2-D embedding of a 1-D track means
+                ``from_mask`` would silently drop the embedding. A
+                registered serializable graph-subset layout is tracked
+                separately (out of M1 scope).
                 """
                 from scipy.spatial import cKDTree
 
