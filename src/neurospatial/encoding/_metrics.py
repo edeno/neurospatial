@@ -97,15 +97,28 @@ class BatchScoresResult:
         # to use a plain (n_neurons,) array of scores. The ``copy``
         # keyword is required by NumPy 2's array protocol -- without it
         # ``np.asarray(result, copy=False)`` raises in NumPy 2.
-        if dtype is None and not copy:
+        #
+        # We mirror plain ndarray semantics: copy=False with a dtype that
+        # requires a cast must raise, because the request is impossible
+        # to satisfy without allocating. Silently copying would mask a
+        # caller bug at the place where they explicitly asked for a view.
+        target_dtype = None if dtype is None else np.dtype(dtype)
+        if target_dtype is None or target_dtype == self.scores.dtype:
+            if copy:
+                return cast("NDArray[np.float64]", self.scores.copy())
             return self.scores
-        if dtype is None:
-            return cast("NDArray[np.float64]", self.scores.copy())
         if copy is False:
-            # np.asarray semantics: if dtype matches, no copy is fine;
-            # if it requires a cast, we must copy. astype handles both.
-            return cast("NDArray[np.float64]", self.scores.astype(dtype, copy=False))
-        return cast("NDArray[np.float64]", self.scores.astype(dtype, copy=True))
+            raise ValueError(
+                "Unable to avoid copy while creating an array as requested. "
+                "If using `np.array(obj, copy=False)` replace it with "
+                "`np.asarray(obj)` to allow a copy when needed (no copy is "
+                "made if not required by the dtype). Note: np.asarray with "
+                "copy=False has the same behavior."
+            )
+        return cast(
+            "NDArray[np.float64]",
+            self.scores.astype(target_dtype, copy=True),
+        )
 
     @property
     def shape(self) -> tuple[int, ...]:

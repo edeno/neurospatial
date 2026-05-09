@@ -782,12 +782,25 @@ class TestBatchGridScores:
         assert copied is not result.scores
         np.testing.assert_array_equal(copied, result.scores)
 
-        # dtype cast: independent buffer, equal values.
+        # dtype cast (default copy semantics): independent buffer.
         as_f32 = np.asarray(result, dtype=np.float32)
         assert as_f32.dtype == np.float32
         np.testing.assert_allclose(
             as_f32, result.scores.astype(np.float32), equal_nan=True
         )
+
+        # Same-dtype with copy=False: returns the underlying buffer.
+        same_dtype = np.asarray(result, dtype=np.float64, copy=False)
+        assert same_dtype is result.scores
+
+        # Cast + copy=False: must raise, matching plain-ndarray semantics.
+        # Without the raise, callers who explicitly asked for a view get a
+        # silent copy and any in-place writes go to /dev/null. Note the
+        # `np.array` form: NumPy 2 routes np.asarray(..., copy=False) ->
+        # np.array(..., copy=None) when the cast is unavoidable, so both
+        # forms must raise here.
+        with pytest.raises(ValueError, match="Unable to avoid copy"):
+            np.array(result, dtype=np.float32, copy=False)
 
 
 class TestBatchGridScoresNonRegularGrid:
