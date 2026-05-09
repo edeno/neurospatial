@@ -1806,6 +1806,19 @@ def is_head_direction_cell(
     For detailed metrics, use ``compute_directional_rate()`` and inspect
     the result's methods (``is_head_direction_cell()``, ``mean_vector_length()``, etc.).
 
+    .. note::
+
+       Like :func:`compute_directional_rate`, this function is the documented
+       exception to the v0.4 canonical "env first" argument order for
+       encoding functions (see :ref:`canonical-argument-order` in the
+       project guide). Heading is a circular angular variable, not a
+       position in a spatial environment, so this signature is
+       heading-domain native and intentionally takes no
+       :class:`Environment`. Sister classifiers
+       (:func:`is_object_vector_cell`, :func:`is_spatial_view_cell`) keep
+       their env-first signatures because they operate on spatial
+       (allocentric) firing fields.
+
     Parameters
     ----------
     spike_times : ndarray of shape (n_spikes,)

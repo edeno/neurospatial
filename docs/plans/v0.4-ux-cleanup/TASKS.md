@@ -193,37 +193,37 @@ Source review: [`docs/reviews/UX_REVIEW_2026-05-08.md`](../../reviews/UX_REVIEW_
 
 ### M2.C — Argument-order consolidation
 
-- [ ] **2.14** **Encoding `env`-first canonicalization.** Reorder to `env` first in:
+- [x] **2.14** **Encoding `env`-first canonicalization.** Reorder to `env` first in:
   - [encoding/population.py:137](../../../src/neurospatial/encoding/population.py) `population_coverage`.
   - [encoding/spatial.py:1944](../../../src/neurospatial/encoding/spatial.py) `detect_place_fields`.
   - [encoding/_field_metrics.py:49, 94, 736, 915](../../../src/neurospatial/encoding/_field_metrics.py) `field_size`, `rate_map_centroid`, `field_shift_distance`, `compute_field_emd`.
   Closes review §2.4-2.7, §2.17.
 
-- [ ] **2.15** **`compute_directional_rate` / `is_head_direction_cell` documented exception.** Keep signatures heading-domain native: no `env` positional argument and no internal `Environment` shim. Document in CLAUDE.md and both function docstrings that directional encoding operates on circular heading bins rather than spatial environments.
+- [x] **2.15** **`compute_directional_rate` / `is_head_direction_cell` documented exception.** Keep signatures heading-domain native: no `env` positional argument and no internal `Environment` shim. Document in CLAUDE.md and both function docstrings that directional encoding operates on circular heading bins rather than spatial environments.
   Files: [encoding/directional.py:1313, 1512, 1779](../../../src/neurospatial/encoding/directional.py).
   Closes review §2.1.
   Acceptance: signature tests assert `compute_spatial_rate`, `compute_egocentric_rate`, and `compute_view_rate` take `env` first, while `compute_directional_rate` and `is_head_direction_cell` do not; docs include the rationale for the exception.
 
-- [ ] **2.16** **Egocentric ops reorder.** [ops/egocentric.py:187, 313](../../../src/neurospatial/ops/egocentric.py) `allocentric_to_egocentric`, `egocentric_to_allocentric` reorder to `(positions, headings, targets)`.
+- [x] **2.16** **Egocentric ops reorder.** [ops/egocentric.py:187, 313](../../../src/neurospatial/ops/egocentric.py) `allocentric_to_egocentric`, `egocentric_to_allocentric` reorder to `(positions, headings, targets)`.
   Closes review §2.14.
 
-- [ ] **2.17** **Behavioral functions reorder.**
+- [x] **2.17** **Behavioral functions reorder.**
   - [behavior/segmentation.py:329](../../../src/neurospatial/behavior/segmentation.py) `detect_runs_between_regions`: switch first arg from `positions` to `position_bins`; force `source` and `target` after `*`.
   - [behavior/navigation.py:443, 604, 712](../../../src/neurospatial/behavior/navigation.py) `path_progress`, `distance_to_region`, `cost_to_goal`: reorder to `(position_bins, times, env, *, ...)`.
   - [behavior/decisions.py:261, 801](../../../src/neurospatial/behavior/decisions.py) `decision_region_entry_time`, `compute_decision_analysis`: force region kwargs after `*`.
   - [behavior/vte.py:591](../../../src/neurospatial/behavior/vte.py) `compute_vte_session`: reorder to `(position_bins, times, env, *, decision_region, trials, ...)`.
   Closes review §2.8-2.12.
 
-- [ ] **2.18** **Events reorder.** [events/regressors.py:487](../../../src/neurospatial/events/regressors.py) `distance_to_reward`: swap `times` and `positions` to canonical `(env, times, positions, reward_times, ...)`.
+- [x] **2.18** **Events reorder.** [events/regressors.py:487](../../../src/neurospatial/events/regressors.py) `distance_to_reward`: swap `times` and `positions` to canonical `(env, times, positions, reward_times, ...)`.
   Closes review §2.13.
 
-- [ ] **2.19** **Decoding trajectory align.** [decoding/trajectory.py:195, 355](../../../src/neurospatial/decoding/trajectory.py) `fit_isotonic_trajectory` and `fit_linear_trajectory`: align signatures to `(env, posterior, times, *, ...)`. Make `env` keyword-only with `None` allowed iff Cartesian-only metric. Standardize on `method` kwarg name (`fit_isotonic_trajectory(estimate_method)` and `fit_linear_trajectory(fitting_method)` both become `method`).
+- [x] **2.19** **Decoding trajectory align.** [decoding/trajectory.py:195, 355](../../../src/neurospatial/decoding/trajectory.py) `fit_isotonic_trajectory` and `fit_linear_trajectory`: align signatures to `(env, posterior, times, *, ...)`. Make `env` keyword-only with `None` allowed iff Cartesian-only metric. Standardize on `method` kwarg name (`fit_isotonic_trajectory(estimate_method)` and `fit_linear_trajectory(fitting_method)` both become `method`).
   Closes review §2.16, §11.5.
 
-- [ ] **2.20** **`is_object_vector_cell` raw-data signature.** Rewrite [encoding/egocentric.py:1671](../../../src/neurospatial/encoding/egocentric.py) `is_object_vector_cell` to take `(env, spike_times, times, positions, headings, object_positions, *, ...)` like sister classifiers. Keep a private `_is_object_vector_cell_from_tuning(tuning_curve, peak_rate, ...)` for internal use.
+- [x] **2.20** **`is_object_vector_cell` raw-data signature.** Rewrite [encoding/egocentric.py:1671](../../../src/neurospatial/encoding/egocentric.py) `is_object_vector_cell` to take `(env, spike_times, times, positions, headings, object_positions, *, ...)` like sister classifiers. Keep a private `_is_object_vector_cell_from_tuning(tuning_curve, peak_rate, ...)` for internal use.
   Closes review §2.15.
 
-- [ ] **2.21** **`*` separator and required-kwarg position cleanup.**
+- [x] **2.21** **`*` separator and required-kwarg position cleanup.**
   - [environment/visualization.py:544-572](../../../src/neurospatial/environment/visualization.py) `Environment.animate_fields`: move `frame_times` to be the first positional after `*` (or accept it as the second positional after `fields`).
   - All `Environment.from_*` factories: make `name` keyword-only via `*,` separator. Files: [environment/factories.py](../../../src/neurospatial/environment/factories.py).
   - [simulation/trajectory.py:59](../../../src/neurospatial/simulation/trajectory.py) `simulate_trajectory_ou`: add `*` after `duration` (data positional, settings keyword).
@@ -234,16 +234,16 @@ Source review: [`docs/reviews/UX_REVIEW_2026-05-08.md`](../../reviews/UX_REVIEW_
 
 ### M2.D — Function-name disambiguation
 
-- [ ] **2.22** **Remove `path_efficiency` (float-returning) function.** Keep `compute_path_efficiency` (returning `PathEfficiencyResult`). Update callers.
+- [x] **2.22** **Remove `path_efficiency` (float-returning) function.** Keep `compute_path_efficiency` (returning `PathEfficiencyResult`). Update callers.
   Files: [`behavior/__init__.py:38, 50`](../../../src/neurospatial/behavior/__init__.py), [behavior/navigation.py:1270, 1527](../../../src/neurospatial/behavior/navigation.py).
   Closes review §4.2.
 
-- [ ] **2.23** **Re-export hygiene.** Audit `__all__` lists; remove cross-domain re-exports so each public symbol has exactly one canonical import path:
+- [x] **2.23** **Re-export hygiene.** Audit `__all__` lists; remove cross-domain re-exports so each public symbol has exactly one canonical import path:
   - [`encoding/__init__.py:46-56, 113`](../../../src/neurospatial/encoding/__init__.py): remove re-exports of `circular_mean`, `rayleigh_test`, `mean_resultant_length`, `compute_egocentric_bearing`, `FieldOfView`, `compute_viewed_location`, `compute_viewshed`. Users import from `stats.circular`, `ops.egocentric`, `ops.visibility` only.
   - [`decoding/__init__.py:188-198`](../../../src/neurospatial/decoding/__init__.py): remove re-exports of `shuffle_*`, `compute_shuffle_pvalue`, `generate_poisson_surrogates`. Users import from `stats` only.
   Closes review §3.14-3.17, §11.
 
-- [ ] **2.24** **`events.__init__` lazy → eager.** Convert [`events/__init__.py:107`](../../../src/neurospatial/events/__init__.py) lazy `__getattr__` to eager imports for consistency with sister modules. (Or, if there's a lazy-import reason, document it.)
+- [x] **2.24** **`events.__init__` lazy → eager.** Convert [`events/__init__.py:107`](../../../src/neurospatial/events/__init__.py) lazy `__getattr__` to eager imports for consistency with sister modules. (Or, if there's a lazy-import reason, document it.)
   Closes review §3.18.
 
 ---

@@ -516,6 +516,7 @@ print(f"Number of time bins: {len(segment_times)}")
 # %%
 # Fit isotonic trajectory
 iso_result = fit_isotonic_trajectory(
+    None,  # env unused for isotonic fits
     segment_posterior,
     segment_times,
     method="expected",  # Use posterior mean
@@ -617,7 +618,7 @@ for shuffled_spikes in shuffle_time_bins(segment_spikes, n_shuffles=n_shuffles, 
     shuffled_result = decode_position(env, shuffled_spikes, encoding_models, dt)
     # Fit isotonic trajectory
     shuffled_fit = fit_isotonic_trajectory(
-        shuffled_result.posterior, segment_times, method="expected"
+        None, shuffled_result.posterior, segment_times, method="expected"
     )
     null_scores.append(shuffled_fit.r_squared)
 

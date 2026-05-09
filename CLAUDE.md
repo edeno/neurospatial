@@ -79,6 +79,14 @@ func(
 - **Use `positions`** not `trajectory` for coordinate arrays (consistency)
 - **Use `position_bins`** not `trajectory_bins` for discretized indices
 
+**Documented exception — directional encoding.** `compute_directional_rate`,
+`compute_directional_rates`, and `is_head_direction_cell` operate on
+heading (a circular angular variable, not a spatial position) and so
+take `(spike_times, times, headings, *, ...)` with no `env` parameter.
+This is intentional and is called out in each function's docstring;
+sister spatial classifiers (`is_object_vector_cell`,
+`is_spatial_view_cell`, etc.) keep the env-first signature.
+
 ---
 
 ## 📦 Package Management

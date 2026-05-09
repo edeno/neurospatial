@@ -78,7 +78,7 @@ class IsotonicFitResult:
 
     Examples
     --------
-    >>> result = fit_isotonic_trajectory(posterior, times)  # doctest: +SKIP
+    >>> result = fit_isotonic_trajectory(None, posterior, times)  # doctest: +SKIP
     >>> print(
     ...     f"R² = {result.r_squared:.3f}, direction = {result.direction}"
     ... )  # doctest: +SKIP
@@ -193,6 +193,7 @@ class RadonDetectionResult:
 
 
 def fit_isotonic_trajectory(
+    env: Environment | None,
     posterior: NDArray[np.float64],
     times: NDArray[np.float64],
     *,
@@ -207,6 +208,11 @@ def fit_isotonic_trajectory(
 
     Parameters
     ----------
+    env : Environment | None
+        Spatial environment, kept first to align with the canonical
+        ``(env, posterior, times, *, ...)`` signature shared with
+        :func:`fit_linear_trajectory`. Pass ``None`` here: this function
+        operates entirely in bin-index space and does not consult ``env``.
     posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
         Posterior probability distribution over spatial bins for each time bin.
         Each row should sum to 1.
@@ -262,10 +268,11 @@ def fit_isotonic_trajectory(
     ...     posterior[t, t * 2] = 1.0  # Delta posteriors
     >>> times = np.linspace(0, 1, n_time_bins)
     >>>
-    >>> result = fit_isotonic_trajectory(posterior, times)
+    >>> result = fit_isotonic_trajectory(None, posterior, times)
     >>> print(f"R² = {result.r_squared:.3f}, direction = {result.direction}")
     R² = 1.000, direction = increasing
     """
+    del env  # unused; kept for signature parity with fit_linear_trajectory
     from sklearn.isotonic import IsotonicRegression
 
     if method not in ("map", "expected"):
