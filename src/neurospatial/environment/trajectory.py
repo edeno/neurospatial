@@ -64,17 +64,17 @@ class BinSequenceWithRuns:
     run_starts : NDArray[np.int64], shape (n_runs,)
         Start index of each run in the original ``times`` array.
     run_lengths : NDArray[np.int64], shape (n_runs,)
-        Extent of each run in the *original* ``times`` array (always
-        >= 1 for any emitted run). The inclusive end index of run i is
-        ``run_starts[i] + run_lengths[i] - 1``.
+        Number of trajectory samples contributed by each run, equivalent
+        to the inclusive run extent in the original ``times`` array
+        (the inclusive end index is ``run_starts[i] + run_lengths[i] -
+        1``). Always >= 1 for any emitted run.
 
         With ``outside_value=None``, samples outside the environment
-        are dropped from ``bins`` but ``run_starts`` / ``run_lengths``
-        are still expressed in the original-array indexing — they
-        describe the index range each run came from before outside
-        samples were filtered, so ``run_lengths.sum()`` will exceed
-        the post-filter count of in-env samples by the number of
-        out-of-env samples that fell *between* the runs.
+        are dropped from ``bins`` *and* outside gaps split runs even
+        when consecutive in-env samples land in the same bin — so a
+        sequence ``[bin0, outside, bin0]`` becomes two runs of length
+        1, not one run of length 3. ``run_lengths.sum()`` then equals
+        the post-filter count of in-env samples.
     """
 
     bins: NDArray[np.int32]
@@ -572,19 +572,28 @@ class EnvironmentTrajectory:
         deduplicated_bins: NDArray[np.int32]
         deduplicated_indices: NDArray[np.int_]
 
-        if dedup:
-            if len(bin_indices) == 0:
-                # Already empty, nothing to deduplicate
-                deduplicated_bins = bin_indices
-                deduplicated_indices = original_indices
-            else:
-                # Find change points (where bin index changes)
-                # Prepend True to include first element
-                change_points = np.concatenate(
-                    [[True], bin_indices[1:] != bin_indices[:-1]]
+        # A new run starts whenever (a) the bin index changes, OR (b) there
+        # is a gap in original_indices (= outside samples were filtered
+        # out between consecutive valid samples). Folding the gap signal
+        # into the change-point mask prevents two same-bin visits
+        # separated by an outside gap from being merged into one run with
+        # outside_value=None — that would double-count dropped samples
+        # in run_lengths and violate "extent in the original times array".
+        if len(bin_indices) == 0:
+            change_points = np.zeros(0, dtype=bool)
+        else:
+            bin_change = np.concatenate([[True], bin_indices[1:] != bin_indices[:-1]])
+            if outside_value is None and len(original_indices) > 1:
+                gap_change = np.concatenate(
+                    [[False], (original_indices[1:] - original_indices[:-1]) > 1]
                 )
-                deduplicated_bins = bin_indices[change_points]
-                deduplicated_indices = original_indices[change_points]
+            else:
+                gap_change = np.zeros(len(bin_indices), dtype=bool)
+            change_points = bin_change | gap_change
+
+        if dedup:
+            deduplicated_bins = bin_indices[change_points]
+            deduplicated_indices = original_indices[change_points]
         else:
             deduplicated_bins = bin_indices
             deduplicated_indices = original_indices
@@ -596,45 +605,28 @@ class EnvironmentTrajectory:
                 run_lengths=empty_int64,
             )
 
-        # For each run, find start and end indices in the *original* times array
+        # For each run, find start and end indices in the *original* times
+        # array. ``change_positions`` indexes into the filtered
+        # ``original_indices`` array; the run starting at change_positions[i]
+        # ends just before change_positions[i+1], or at original_indices[-1]
+        # for the final run. With outside_value=None the gap-change above
+        # already inserted a run boundary at every drop, so the per-run
+        # extent from start to end (inclusive) covers only original-array
+        # indices that are actually in this run — outside samples do not
+        # leak into run_lengths anymore.
+        change_positions = np.where(change_points)[0]
         if dedup:
-            # deduplicated_indices already contains the start of each run
             run_starts = deduplicated_indices
-
-            # End of each run is just before the start of the next run
-            # (or the last valid index for the final run)
-            if outside_value is None:
-                # Use the last valid index from original_indices
-                run_ends = np.concatenate(
-                    [deduplicated_indices[1:] - 1, [original_indices[-1]]]
-                )
-            else:
-                # Use len(times) - 1 for the last run end
-                run_ends = np.concatenate(
-                    [deduplicated_indices[1:] - 1, [len(times) - 1]]
-                )
+            run_ends_indexer = (
+                np.concatenate([change_positions[1:], [len(original_indices)]]) - 1
+            )
+            run_ends = original_indices[run_ends_indexer]
         else:
-            # No dedup: find runs in the un-deduplicated bin_indices
-            # Find change points to identify run boundaries
-            if len(bin_indices) == 1:
-                # Single sample = single run
-                run_starts = np.array([original_indices[0]], dtype=np.int64)
-                run_ends = np.array([original_indices[0]], dtype=np.int64)
-            else:
-                # Find where bin index changes
-                # A change occurs when bin_indices[i] != bin_indices[i-1]
-                is_change = np.concatenate(
-                    [[True], bin_indices[1:] != bin_indices[:-1]]
-                )
-                change_positions = np.where(is_change)[0]
-
-                # Start of each run is at a change position
-                run_starts = original_indices[change_positions]
-
-                # End of each run is just before the next change (or last index)
-                run_ends = np.concatenate(
-                    [original_indices[change_positions[1:] - 1], [original_indices[-1]]]
-                )
+            run_starts = original_indices[change_positions]
+            run_ends_indexer = (
+                np.concatenate([change_positions[1:], [len(original_indices)]]) - 1
+            )
+            run_ends = original_indices[run_ends_indexer]
 
         # Convert (start, end) to (start, length) for the public API. ``end``
         # is inclusive, so length = end - start + 1 is always >= 1.

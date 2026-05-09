@@ -125,7 +125,7 @@ Source review: [`docs/reviews/UX_REVIEW_2026-05-08.md`](../../reviews/UX_REVIEW_
 
 ### M2.A — Parameter-name unification
 
-- [ ] **2.1** **Distance-metric kwarg rename.** Rename `distance_metric`, `distance_type`, `use_geodesic` → `metric` everywhere. Standardize physical-distance APIs to legal values `{"euclidean", "geodesic"}`.
+- [x] **2.1** **Distance-metric kwarg rename.** Rename `distance_metric`, `distance_type`, `use_geodesic` → `metric` everywhere. Standardize physical-distance APIs to legal values `{"euclidean", "geodesic"}`.
   Files (rename `distance_metric` → `metric`): [encoding/egocentric.py:950, 1215](../../../src/neurospatial/encoding/egocentric.py), [encoding/border.py:31](../../../src/neurospatial/encoding/border.py), [encoding/spatial.py:458, 946](../../../src/neurospatial/encoding/spatial.py), [simulation/models/place_cells.py:166](../../../src/neurospatial/simulation/models/place_cells.py), [simulation/models/object_vector_cells.py:227](../../../src/neurospatial/simulation/models/object_vector_cells.py), [simulation/models/boundary_cells.py:149](../../../src/neurospatial/simulation/models/boundary_cells.py).
   Files (rename `distance_type` → `metric`): [behavior/trajectory.py:171, 408](../../../src/neurospatial/behavior/trajectory.py), [behavior/navigation.py:1216](../../../src/neurospatial/behavior/navigation.py).
   Files (replace `use_geodesic: bool` with `metric: Literal["euclidean", "geodesic"]`): [encoding/_field_metrics.py:744](../../../src/neurospatial/encoding/_field_metrics.py).
@@ -134,42 +134,42 @@ Source review: [`docs/reviews/UX_REVIEW_2026-05-08.md`](../../reviews/UX_REVIEW_
   Closes review §3.1, §3.2.
   Acceptance: `grep -rn "distance_metric\|distance_type\|use_geodesic\|\"graph\"" src/neurospatial/` returns no public-API hits; `"hops"` is allowed only in `reachable_from` and its tests/docs.
 
-- [ ] **2.2** **Bandwidth kwarg rename.** Rename `smoothing_sigma`, `kernel_bandwidth` → `bandwidth` everywhere.
+- [x] **2.2** **Bandwidth kwarg rename.** Rename `smoothing_sigma`, `kernel_bandwidth` → `bandwidth` everywhere.
   Files: [encoding/directional.py:1321, 1525, 1785](../../../src/neurospatial/encoding/directional.py), [ops/egocentric.py:590](../../../src/neurospatial/ops/egocentric.py), [environment/trajectory.py:63](../../../src/neurospatial/environment/trajectory.py).
   Closes review §3.3.
 
-- [ ] **2.3** **Velocity-threshold kwarg rename.** Rename `velocity_threshold`, `speed_threshold`, `threshold` (in `segment_by_velocity`) → `min_speed`.
+- [x] **2.3** **Velocity-threshold kwarg rename.** Rename `velocity_threshold`, `speed_threshold`, `threshold` (in `segment_by_velocity`) → `min_speed`.
   Files: [behavior/segmentation.py:338, 546](../../../src/neurospatial/behavior/segmentation.py), [behavior/decisions.py:143](../../../src/neurospatial/behavior/decisions.py).
   Closes review §3.4.
 
-- [ ] **2.4** **Trajectory-data kwarg rename.** Rename `data` → `positions` in `PositionOverlay`, `data` → `headings` in `HeadDirectionOverlay`.
+- [x] **2.4** **Trajectory-data kwarg rename.** Rename `data` → `positions` in `PositionOverlay`, `data` → `headings` in `HeadDirectionOverlay`.
   Files: [animation/overlays.py:164, 512](../../../src/neurospatial/animation/overlays.py).
   Closes review §3.8.
 
 ### M2.B — Result-class consolidation
 
-- [ ] **2.5** **Result-class field rename.** `EgocentricRateResult.ego_env` → `env`; `ViewRateResult.view_occupancy` → `occupancy`. Do not add an `env` field to `DirectionalRateResult`; it is an angular histogram result, not an `Environment`-backed spatial result, and keeps `bin_centers` / `bin_size` as its domain representation.
+- [x] **2.5** **Result-class field rename.** `EgocentricRateResult.ego_env` → `env`; `ViewRateResult.view_occupancy` → `occupancy`. Do not add an `env` field to `DirectionalRateResult`; it is an angular histogram result, not an `Environment`-backed spatial result, and keeps `bin_centers` / `bin_size` as its domain representation.
   Files: [encoding/egocentric.py:199](../../../src/neurospatial/encoding/egocentric.py), [encoding/view.py:212](../../../src/neurospatial/encoding/view.py), [encoding/directional.py:166-170](../../../src/neurospatial/encoding/directional.py).
   Closes review §3.10.
   Acceptance: write a polymorphic helper for environment-backed results and assert it works on `SpatialRateResult`, `EgocentricRateResult`, `ViewRateResult`, and `DecodingResult`. Assert separately that `DirectionalRateResult` exposes angular-domain fields and does not claim `result.env`.
 
-- [ ] **2.6** **`PeriEventResult.firing_rate` attribute.** Convert from method to attribute (cached on construction). The current method (`firing_rate(self) -> NDArray`) computes from histogram + bin_size; move that computation into `__post_init__` or a `@cached_property`.
+- [x] **2.6** **`PeriEventResult.firing_rate` attribute.** Convert from method to attribute (cached on construction). The current method (`firing_rate(self) -> NDArray`) computes from histogram + bin_size; move that computation into `__post_init__` or a `@cached_property`.
   Files: [events/_core.py:75](../../../src/neurospatial/events/_core.py).
   Closes review §3.11.
   Acceptance: `result.firing_rate.max()` works on `PeriEventResult` exactly as on `SpatialRateResult`.
 
-- [ ] **2.7** **Result-class method singular/plural normalization.** Pick one convention per result-class category (single-neuron result → singular methods; batch result → plural methods). Rename:
+- [x] **2.7** **Result-class method singular/plural normalization.** Pick one convention per result-class category (single-neuron result → singular methods; batch result → plural methods). Rename:
   - `SpatialRateResult.peak_firing_rates()` → `peak_firing_rate()`.
   - `SpatialRateResult.peak_locations()` → `peak_location()`.
   - `ViewRateResult.peak_view_locations()` → `peak_view_location()`.
   Files: [encoding/spatial.py:208, 229](../../../src/neurospatial/encoding/spatial.py), [encoding/view.py:262, 638](../../../src/neurospatial/encoding/view.py), [encoding/_base.py](../../../src/neurospatial/encoding/_base.py) (mixin alias).
   Closes review §3.13.
 
-- [ ] **2.8** **`DecodingResult.uncertainty` rename.** Rename to `posterior_entropy` (matching the free function in `decoding/estimates.py`). Update tests.
+- [x] **2.8** **`DecodingResult.uncertainty` rename.** Rename to `posterior_entropy` (matching the free function in `decoding/estimates.py`). Update tests.
   Files: [decoding/_result.py:172](../../../src/neurospatial/decoding/_result.py).
   Closes review §3.12.
 
-- [ ] **2.9** **`is_X_cell` consistency.** Rename result-method abbreviations to match free functions:
+- [x] **2.9** **`is_X_cell` consistency.** Rename result-method abbreviations to match free functions:
   - `DirectionalRateResult.is_hd_cell` → `is_head_direction_cell`.
   - `EgocentricRateResult.is_ovc` → `is_object_vector_cell`.
   - `ViewRateResult.is_view_cell` → `is_spatial_view_cell`.
@@ -178,13 +178,13 @@ Source review: [`docs/reviews/UX_REVIEW_2026-05-08.md`](../../reviews/UX_REVIEW_
 - [x] **2.10** **New `PlaceFieldsResult` dataclass.** [encoding/spatial.py:1944](../../../src/neurospatial/encoding/spatial.py) `detect_place_fields` returns a frozen dataclass with `fields: list[NDArray[np.int64]]`, `excluded_reason: str | None`, `n_excluded: int`. This task finalizes any naming / helper-method polish after M1 task 1.4 introduces the structured return.
   Closes review §7.7. _Folded into M1 1.4 in the M1 review-response commit `312b7a5`. The full dataclass landed there (with `__len__`/`__getitem__`/`__iter__`/`__bool__` so existing list-style callers keep working). No further naming or helper-method polish needed in M2._
 
-- [ ] **2.11** **`bin_sequence` shape-shifting fix.** Split [environment/trajectory.py:331-342](../../../src/neurospatial/environment/trajectory.py) `bin_sequence(return_runs=True)` into two methods: `bin_sequence(times, positions) -> NDArray` (always returns indices) and `bin_sequence_with_runs(times, positions) -> BinSequenceWithRuns` (a dataclass with `bins`, `run_starts`, `run_lengths`).
+- [x] **2.11** **`bin_sequence` shape-shifting fix.** Split [environment/trajectory.py:331-342](../../../src/neurospatial/environment/trajectory.py) `bin_sequence(return_runs=True)` into two methods: `bin_sequence(times, positions) -> NDArray` (always returns indices) and `bin_sequence_with_runs(times, positions) -> BinSequenceWithRuns` (a dataclass with `bins`, `run_starts`, `run_lengths`).
   Closes review §7.2.
 
-- [ ] **2.12** **`spatial_autocorrelation` shape-shifting fix.** Same treatment for [encoding/grid.py:150](../../../src/neurospatial/encoding/grid.py): split based on `method`. Either two functions or always-tuple return.
+- [x] **2.12** **`spatial_autocorrelation` shape-shifting fix.** Same treatment for [encoding/grid.py:150](../../../src/neurospatial/encoding/grid.py): split based on `method`. Either two functions or always-tuple return.
   Closes review §7.1.
 
-- [ ] **2.13** **Misc result-type cleanup.**
+- [x] **2.13** **Misc result-type cleanup.**
   - [behavior/trajectory.py:404](../../../src/neurospatial/behavior/trajectory.py) `mean_square_displacement` → returns `MSDResult` with `lags: NDArray`, `msd: NDArray`.
   - [encoding/grid.py:1170](../../../src/neurospatial/encoding/grid.py) `grid_orientation` → absorb into `GridProperties`; remove standalone function or have it return `GridProperties` (with only orientation populated).
   - [behavior/segmentation.py:543](../../../src/neurospatial/behavior/segmentation.py) `segment_by_velocity` → returns `list[Run]` (matching siblings).

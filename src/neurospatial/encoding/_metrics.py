@@ -641,6 +641,19 @@ def batch_grid_scores(
     scores = np.empty(n_neurons, dtype=np.float64)
     failures = np.zeros(n_neurons, dtype=np.bool_)
 
+    # Environment-level legitimate-NaN: grid score requires a regular 2D
+    # grid (the FFT autocorrelation path). On irregular topologies we
+    # short-circuit every neuron to NaN with failures=False rather than
+    # spending O(n_neurons) computation re-deriving the same env-level
+    # ValueError. Callers who want a 1D distance-correlation profile
+    # should use `spatial_autocorrelation_radial` directly and feed the
+    # result into `periodicity_score`.
+    from neurospatial.encoding.grid import _detect_grid_method
+
+    if _detect_grid_method(env) != "fft":
+        scores.fill(np.nan)
+        return BatchScoresResult(scores=scores, failures=failures)
+
     for i in range(n_neurons):
         firing_rate = firing_rates[i]
 
@@ -660,12 +673,6 @@ def batch_grid_scores(
             continue
 
         try:
-            # Compute spatial autocorrelation (FFT, regular 2D grid only).
-            # Irregular environments (where the FFT path is undefined) raise
-            # ValueError, which the catch-all below converts into a recorded
-            # NaN+failure flag for the caller's failures mask. Direct callers
-            # who need autocorrelation on irregular topologies should use
-            # `spatial_autocorrelation_radial` (1D distance profile) instead.
             autocorr = spatial_autocorrelation(env, firing_rate)
             scores[i] = grid_score(
                 autocorr,

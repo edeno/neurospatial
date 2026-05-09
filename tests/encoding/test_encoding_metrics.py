@@ -824,19 +824,82 @@ class TestBatchGridScoresNonRegularGrid:
         return env
 
     def test_batch_grid_scores_sparse_env_returns_nan(self, env_sparse_grid):
-        """For sparse environments where FFT doesn't work, should handle gracefully."""
-        from neurospatial.encoding._metrics import batch_grid_scores
+        """Sparse envs that still pass the FFT detector return finite scores.
+
+        ``env_sparse_grid`` here uses 500 uniform-random points in a 100×100
+        area at bin_size=5, which produces a >=50%-active mask and so still
+        takes the FFT autocorrelation path. The original test was a
+        loose "may return NaN" check; with the M2.B 2.12 split the envs
+        that this fixture produces are still FFT-eligible, and grid_score
+        returns finite numbers. The actual irregular-env contract is
+        pinned by ``test_batch_grid_scores_graph_env_legitimate_nan``
+        below.
+        """
+        from neurospatial.encoding._metrics import (
+            BatchScoresResult,
+            batch_grid_scores,
+        )
 
         env = env_sparse_grid
         rng = np.random.default_rng(42)
         firing_rates = rng.random((2, env.n_bins)) * 5.0
 
-        # Should not raise - may return NaN for non-FFT-compatible envs
-        scores = batch_grid_scores(env, firing_rates)
+        result = batch_grid_scores(env, firing_rates)
 
-        assert scores.shape == (2,)
-        # Sparse environments may not be compatible with FFT-based grid score
-        # Implementation may return NaN or use graph-based method
+        assert isinstance(result, BatchScoresResult)
+        assert result.shape == (2,)
+        # Whatever the dense-enough fixture produces, treat it as a smoke
+        # test: the call must not raise and the failures mask must not
+        # be polluted with caught-exception flags.
+        assert not result.failures.any()
+
+    def test_batch_grid_scores_graph_env_legitimate_nan(self):
+        """Irregular env -> NaN with failures=False, no warning.
+
+        Grid score requires a regular 2D grid (the FFT autocorrelation
+        path); on irregular envs there is no grid score by construction.
+        That is an environment-level legitimate-NaN, not a per-neuron
+        computation failure — the failures mask must stay False so
+        callers using ``np.isnan(scores) & ~failures`` to count
+        legitimate-NaNs see the right count, and no
+        "computation failed for N neurons" UserWarning fires. This is
+        the regression for the post-M2.B 2.12 review-response: prior
+        to the fix, irregular envs flooded ``failures`` with True for
+        every neuron because the catch-all caught the env-level
+        ValueError from the new spatial_autocorrelation contract.
+        """
+        import warnings
+
+        import networkx as nx
+
+        from neurospatial import Environment
+        from neurospatial.encoding._metrics import (
+            BatchScoresResult,
+            batch_grid_scores,
+        )
+
+        graph = nx.path_graph(8)
+        for i, node in enumerate(graph.nodes):
+            graph.nodes[node]["pos"] = (float(i) * 5.0, 0.0)
+        for u, v in graph.edges:
+            graph.edges[u, v]["distance"] = 5.0
+        env = Environment.from_graph(
+            graph,
+            edge_order=list(graph.edges),
+            edge_spacing=0.0,
+            bin_size=2.0,
+        )
+        firing_rates = np.random.default_rng(0).random((2, env.n_bins))
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # promote any warning to an error
+            result = batch_grid_scores(env, firing_rates)
+
+        assert isinstance(result, BatchScoresResult)
+        assert result.shape == (2,)
+        assert np.all(np.isnan(result.scores))
+        assert not result.failures.any()
+        assert result.n_failures == 0
 
 
 class TestBatchScoresFailuresMask:
