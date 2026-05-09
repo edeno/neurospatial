@@ -250,3 +250,49 @@ class TestEnvironmentNotFittedErrorType:
         for test_func in test_cases:
             with pytest.raises(EnvironmentNotFittedError):
                 test_func()
+
+
+class TestEnvironmentNotFittedErrorFunctionForm:
+    """Test the free-function construction shape used by free functions
+    that take an Environment argument."""
+
+    def test_function_form_message_omits_class_qualifier(self):
+        exc = EnvironmentNotFittedError("path_progress", is_function=True)
+        message = str(exc)
+        assert "[E1004]" in message
+        assert "path_progress()" in message
+        # The bound-method form qualifies with "Class.method()"; the free
+        # function form must not.
+        assert "." not in message.split("path_progress()")[0].split("] ")[1]
+        assert "factory method" in message
+
+    def test_function_form_attributes(self):
+        exc = EnvironmentNotFittedError("path_progress", is_function=True)
+        assert exc.is_function is True
+        assert exc.class_name is None
+        assert exc.method_name == "path_progress"
+        assert exc.error_code == "E1004"
+
+    def test_function_form_supports_qualified_names(self):
+        exc = EnvironmentNotFittedError(
+            "neurospatial.behavior.navigation.path_progress",
+            is_function=True,
+        )
+        assert "neurospatial.behavior.navigation.path_progress()" in str(exc)
+        assert exc.method_name == "neurospatial.behavior.navigation.path_progress"
+
+    def test_function_form_custom_error_code(self):
+        exc = EnvironmentNotFittedError("fn", is_function=True, error_code="E9999")
+        assert "[E9999]" in str(exc)
+
+    def test_bound_method_form_still_requires_method_name(self):
+        with pytest.raises(TypeError, match="method_name"):
+            EnvironmentNotFittedError("Environment")  # missing method_name
+
+    def test_bound_method_form_unchanged(self):
+        """Existing two-arg construction still produces the qualified message."""
+        exc = EnvironmentNotFittedError("Environment", "bin_at")
+        assert exc.is_function is False
+        assert exc.class_name == "Environment"
+        assert exc.method_name == "bin_at"
+        assert "Environment.bin_at()" in str(exc)

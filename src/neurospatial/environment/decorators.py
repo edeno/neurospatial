@@ -17,25 +17,34 @@ T = TypeVar("T")
 
 
 class EnvironmentNotFittedError(RuntimeError):
-    """Exception raised when an Environment method is called before initialization.
+    """Exception raised when an unfitted Environment is consumed.
 
-    This exception is raised by the `@check_fitted` decorator when a user tries
-    to call methods on an Environment instance that was not properly initialized
-    via a factory method.
+    This exception is raised both by the :func:`check_fitted` decorator on
+    bound methods and by free functions that receive an :class:`Environment`
+    argument. It supports two construction shapes:
 
-    The error message includes:
-    - The specific method that was called
-    - Example of correct usage with factory methods
-    - Guidance on what to avoid
+    1. Bound-method form: ``EnvironmentNotFittedError(class_name, method_name)``
+       — formats the message as ``Environment.method()`` with factory-method
+       guidance.
+    2. Free-function form:
+       ``EnvironmentNotFittedError(function_name, *, is_function=True)`` —
+       formats the message as ``function()`` (no class qualifier) and the
+       same guidance about factory methods.
 
     Parameters
     ----------
-    class_name : str
-        Name of the Environment class (e.g., "Environment").
-    method_name : str
-        Name of the method that requires initialization (e.g., "bin_at").
+    class_or_function_name : str
+        For the bound-method form, the Environment class name (e.g.
+        "Environment"). For the free-function form, the qualified function
+        name (e.g. "path_progress" or "neurospatial.behavior.navigation.path_progress").
+    method_name : str, optional
+        Name of the method requiring initialization. Required for the
+        bound-method form; ignored when ``is_function=True``.
     error_code : str, optional
         Error code for documentation reference. Default is "E1004".
+    is_function : bool, optional
+        If True, format the message as a free function (omit class
+        qualifier). Default is False.
 
     Examples
     --------
@@ -45,37 +54,48 @@ class EnvironmentNotFittedError(RuntimeError):
         ...
     neurospatial.environment.decorators.EnvironmentNotFittedError: [E1004] Environment.bin_at() requires...
 
+    >>> raise EnvironmentNotFittedError("path_progress", is_function=True)
+    Traceback (most recent call last):
+        ...
+    neurospatial.environment.decorators.EnvironmentNotFittedError: [E1004] path_progress() requires...
+
     See Also
     --------
-    check_fitted : Decorator that raises this exception
+    check_fitted : Decorator that raises this exception for bound methods.
 
     Notes
     -----
-    This exception inherits from `RuntimeError` to maintain backward compatibility
-    with existing code that catches `RuntimeError`. Users can catch either:
-
-    - `EnvironmentNotFittedError` for specific handling
-    - `RuntimeError` for general error handling
+    This exception inherits from ``RuntimeError`` to maintain backward
+    compatibility with existing code that catches ``RuntimeError``. Users
+    can catch either ``EnvironmentNotFittedError`` for specific handling or
+    ``RuntimeError`` for general error handling.
 
     """
 
     def __init__(
-        self, class_name: str, method_name: str, error_code: str = "E1004"
+        self,
+        class_or_function_name: str,
+        method_name: str | None = None,
+        *,
+        is_function: bool = False,
+        error_code: str = "E1004",
     ) -> None:
-        """Initialize the EnvironmentNotFittedError.
+        if is_function:
+            qualified = f"{class_or_function_name}()"
+            class_name: str | None = None
+            method_name_resolved = class_or_function_name
+        else:
+            if method_name is None:
+                raise TypeError(
+                    "EnvironmentNotFittedError requires `method_name` "
+                    "when `is_function=False` (the default bound-method form)."
+                )
+            qualified = f"{class_or_function_name}.{method_name}()"
+            class_name = class_or_function_name
+            method_name_resolved = method_name
 
-        Parameters
-        ----------
-        class_name : str
-            Name of the Environment class.
-        method_name : str
-            Name of the method requiring initialization.
-        error_code : str, optional
-            Error code for documentation. Default is "E1004".
-
-        """
         message = (
-            f"[{error_code}] {class_name}.{method_name}() "
+            f"[{error_code}] {qualified} "
             "requires the environment to be fully initialized. "
             "Ensure it was created with a factory method.\n\n"
             "Example (correct usage):\n"
@@ -88,8 +108,9 @@ class EnvironmentNotFittedError(RuntimeError):
         )
         super().__init__(message)
         self.class_name = class_name
-        self.method_name = method_name
+        self.method_name = method_name_resolved
         self.error_code = error_code
+        self.is_function = is_function
 
 
 def check_fitted(method: Callable[..., T]) -> Callable[..., T]:
