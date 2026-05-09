@@ -215,6 +215,7 @@ class ObjectVectorCellModel:
     def __init__(
         self,
         env: Environment,
+        *,
         object_positions: NDArray[np.float64],
         preferred_distance: float,
         distance_width: float,

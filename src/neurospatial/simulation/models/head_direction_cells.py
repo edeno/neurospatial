@@ -147,6 +147,7 @@ class HeadDirectionCellModel:
 
     def __init__(
         self,
+        *,
         preferred_direction: float | None = None,
         concentration: float = 2.0,
         max_rate: float = 40.0,

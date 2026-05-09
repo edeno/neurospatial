@@ -128,6 +128,7 @@ class SimulationSession:
 def simulate_session(
     env: Environment,
     duration: float,
+    *,
     n_cells: int = 50,
     cell_type: Literal["place", "boundary", "grid", "mixed"] = "place",
     trajectory_method: Literal["ou", "sinusoidal", "laps"] = "ou",

@@ -159,6 +159,7 @@ class PlaceCellModel:
     def __init__(
         self,
         env: Environment,
+        *,
         center: NDArray[np.float64] | None = None,
         width: float | NDArray[np.float64] | None = None,
         max_rate: float = 20.0,

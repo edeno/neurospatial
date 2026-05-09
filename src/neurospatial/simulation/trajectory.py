@@ -59,6 +59,7 @@ def _get_conversion_factor(from_unit: str, to_unit: str) -> float:
 def simulate_trajectory_ou(
     env: Environment,
     duration: float,
+    *,
     dt: float = 0.01,
     start_position: NDArray[np.float64] | None = None,
     speed_mean: float = 0.08,

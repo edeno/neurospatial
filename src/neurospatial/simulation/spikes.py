@@ -12,6 +12,7 @@ from neurospatial.simulation.models.base import NeuralModel
 def generate_poisson_spikes(
     firing_rate: NDArray[np.float64],
     times: NDArray[np.float64],
+    *,
     refractory_period: float = 0.002,
     seed: int | None = None,
 ) -> NDArray[np.float64]:
@@ -161,10 +162,10 @@ def generate_population_spikes(
     models: list[NeuralModel],
     positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    *,
     refractory_period: float = 0.002,
     seed: int | None = None,
     show_progress: bool = True,
-    *,
     headings: NDArray[np.float64] | None = None,
 ) -> list[NDArray[np.float64]]:
     """Generate spike trains for population of neurons.
@@ -305,7 +306,9 @@ def generate_population_spikes(
 
         # Generate spikes with derived seed for reproducibility
         model_seed = None if base_seed is None else base_seed + i
-        spikes = generate_poisson_spikes(rates, times, refractory_period, model_seed)
+        spikes = generate_poisson_spikes(
+            rates, times, refractory_period=refractory_period, seed=model_seed
+        )
 
         spike_trains.append(spikes)
 

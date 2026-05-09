@@ -132,6 +132,7 @@ class GridCellModel:
     def __init__(
         self,
         env: Environment,
+        *,
         grid_spacing: float = 50.0,
         grid_orientation: float = 0.0,
         phase_offset: NDArray[np.float64] | None = None,

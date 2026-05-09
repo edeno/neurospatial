@@ -137,6 +137,7 @@ class EnvironmentFactories:
         cls,
         positions: NDArray[np.float64],
         bin_size: float | Sequence[float],
+        *,
         name: str = "",
         layout: LayoutType | str = LayoutType.REGULAR_GRID,
         infer_active_bins: bool = True,
@@ -348,6 +349,7 @@ class EnvironmentFactories:
         edge_order: list[tuple[Any, Any]],
         edge_spacing: float | Sequence[float],
         bin_size: float,
+        *,
         name: str = "",
     ) -> Environment:
         """Create an Environment from a user-defined graph structure.
@@ -400,6 +402,7 @@ class EnvironmentFactories:
         cls,
         polygon: PolygonType,
         bin_size: float | Sequence[float],
+        *,
         name: str = "",
         connect_diagonal_neighbors: bool = True,
     ) -> Environment:
@@ -482,6 +485,7 @@ class EnvironmentFactories:
         cls,
         active_mask: NDArray[np.bool_],
         grid_edges: tuple[NDArray[np.float64], ...],
+        *,
         name: str = "",
         connect_diagonal_neighbors: bool = True,
     ) -> Environment:
@@ -556,6 +560,7 @@ class EnvironmentFactories:
         cls,
         image_mask: NDArray[np.bool_],
         bin_size: float | tuple[float, float],
+        *,
         connect_diagonal_neighbors: bool = True,
         name: str = "",
     ) -> Environment:
@@ -623,6 +628,7 @@ class EnvironmentFactories:
         cls,
         kind: LayoutType | str,
         layout_params: dict[str, Any],
+        *,
         name: str = "",
         regions: Regions | None = None,
     ) -> Environment:
@@ -772,6 +778,7 @@ class EnvironmentFactories:
         angle_range: tuple[float, float],
         distance_bin_size: float,
         angle_bin_size: float,
+        *,
         circular_angle: bool = True,
         name: str = "",
     ) -> Environment:

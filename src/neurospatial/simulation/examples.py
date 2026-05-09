@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
 def open_field_session(
     duration: float = 180.0,
+    *,
     arena_size: float = 100.0,
     bin_size: float = 2.0,
     n_place_cells: int = 50,
@@ -173,6 +174,7 @@ def open_field_session(
 
 def linear_track_session(
     duration: float = 240.0,
+    *,
     track_length: float = 200.0,
     bin_size: float = 1.0,
     n_place_cells: int = 40,
@@ -329,6 +331,7 @@ def linear_track_session(
 
 def tmaze_alternation_session(
     duration: float = 300.0,
+    *,
     n_trials: int = 20,
     n_place_cells: int = 60,
     seed: int | None = None,
@@ -538,6 +541,7 @@ def tmaze_alternation_session(
 
 def boundary_cell_session(
     duration: float = 180.0,
+    *,
     arena_shape: str = "square",
     arena_size: float = 100.0,
     bin_size: float = 2.0,
@@ -793,6 +797,7 @@ def boundary_cell_session(
 
 def grid_cell_session(
     duration: float = 300.0,
+    *,
     arena_size: float = 150.0,
     grid_spacing: float = 50.0,
     n_grid_cells: int = 40,

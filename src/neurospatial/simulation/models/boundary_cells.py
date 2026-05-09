@@ -140,6 +140,7 @@ class BoundaryCellModel:
     def __init__(
         self,
         env: Environment,
+        *,
         preferred_distance: float = 5.0,
         distance_tolerance: float = 3.0,
         preferred_direction: float | None = None,
