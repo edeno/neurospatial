@@ -1540,6 +1540,18 @@ def compute_directional_rates(
     shared quantities (occupancy, bin centers) once and optionally parallelizes
     spike counting with joblib.
 
+    .. note::
+
+       Like :func:`compute_directional_rate`, this function is the documented
+       exception to the v0.4 canonical "env first" argument order for
+       encoding functions (see :ref:`canonical-argument-order` in the
+       project guide). Heading is a circular angular variable, not a
+       position in a spatial environment, so this signature is
+       heading-domain native and intentionally takes no
+       :class:`Environment`. Sister batch encoders
+       (:func:`compute_spatial_rates`, :func:`compute_egocentric_rates`,
+       :func:`compute_view_rates`) keep their env-first signatures.
+
     Parameters
     ----------
     spike_times : sequence of arrays or 2D array
