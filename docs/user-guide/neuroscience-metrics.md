@@ -317,8 +317,8 @@ firing_rate = compute_spatial_rate(env, spike_times, times, positions).firing_ra
 
 # Compute border score
 score = border_score(
-    firing_rate,
     env,
+    firing_rate,
     threshold=0.3,    # 30% of peak (Solstad et al. standard)
     min_area=200.0    # Minimum field area (cm²)
 )
@@ -366,7 +366,7 @@ firing_rate = np.zeros(env.n_bins)
 boundary_bins = env.boundary_bins
 firing_rate[boundary_bins] = 5.0  # High firing at boundaries
 
-score = border_score(firing_rate, env)
+score = border_score(env, firing_rate)
 print(f"Border score: {score:.3f}")  # Should be > 0.5
 
 # Visualize
@@ -519,7 +519,7 @@ from neurospatial.encoding import compute_spatial_rate
 firing_rate = compute_spatial_rate(env, spike_times, times, positions).firing_rate
 
 # Compute border score
-score = border_score(firing_rate, env, threshold=0.3, min_area=200.0)
+score = border_score(env, firing_rate, threshold=0.3, min_area=200.0)
 
 # Classify as border cell
 is_border_cell = score > 0.5  # Solstad et al. criterion
