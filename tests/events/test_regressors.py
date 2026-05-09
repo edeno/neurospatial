@@ -1174,7 +1174,7 @@ class TestDistanceToReward:
 
         with pytest.raises(ValueError, match=r"reward_positions and reward_times"):
             distance_to_reward(
-                env, positions, times, reward_times, reward_positions=reward_positions
+                env, times, positions, reward_times, reward_positions=reward_positions
             )
 
     def test_output_dtype_is_float64(self, simple_grid_env):

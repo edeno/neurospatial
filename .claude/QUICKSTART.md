@@ -878,7 +878,7 @@ from neurospatial.events import distance_to_reward, distance_to_boundary
 
 # Distance to reward location (requires Environment)
 dist_to_reward = distance_to_reward(
-    env, positions, times, reward_times,
+    env, times, positions, reward_times,
     mode="next",      # Distance to upcoming reward
     metric="geodesic" # Respects walls/obstacles
 )
