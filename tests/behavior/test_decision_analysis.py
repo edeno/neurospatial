@@ -108,9 +108,7 @@ class TestPreDecisionMetrics:
             n_samples=30,
         )
 
-        assert result.suggests_deliberation(
-            variance_threshold=0.5, speed_threshold=10.0
-        )
+        assert result.suggests_deliberation(variance_threshold=0.5, min_speed=10.0)
 
     def test_suggests_deliberation_low_variance_high_speed(self):
         """Test suggests_deliberation returns False for low variance + high speed."""
@@ -126,9 +124,7 @@ class TestPreDecisionMetrics:
             n_samples=30,
         )
 
-        assert not result.suggests_deliberation(
-            variance_threshold=0.5, speed_threshold=10.0
-        )
+        assert not result.suggests_deliberation(variance_threshold=0.5, min_speed=10.0)
 
 
 # =============================================================================

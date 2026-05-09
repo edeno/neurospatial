@@ -103,10 +103,10 @@ Step lengths are the distances between consecutive positions. Supports both Eucl
 from neurospatial.behavior.trajectory import compute_step_lengths
 
 # Euclidean distance (default, ecology standard)
-step_lengths = compute_step_lengths(positions, distance_type="euclidean")
+step_lengths = compute_step_lengths(positions, metric="euclidean")
 
 # OR: Geodesic distance for constrained environments (requires env)
-# step_lengths_geo = compute_step_lengths(positions, distance_type="geodesic", env=env)
+# step_lengths_geo = compute_step_lengths(positions, metric="geodesic", env=env)
 
 # Analyze movement statistics
 mean_step = np.mean(step_lengths)
@@ -176,12 +176,12 @@ from neurospatial.behavior.trajectory import mean_square_displacement
 
 # Compute MSD from continuous positions (Euclidean distance, ecology standard)
 tau_values, msd_values = mean_square_displacement(
-    positions, times, distance_type="euclidean", max_tau=10.0
+    positions, times, metric="euclidean", max_tau=10.0
 )
 
 # OR: Geodesic distance for constrained environments
 # tau_geo, msd_geo = mean_square_displacement(
-#     positions, times, distance_type="geodesic", env=env, max_tau=10.0
+#     positions, times, metric="geodesic", env=env, max_tau=10.0
 # )
 
 # Fit power law: MSD ~ τ^α
@@ -316,7 +316,7 @@ from neurospatial.segmentation import segment_by_velocity
 movement_epochs = segment_by_velocity(
     positions,
     times,
-    threshold=10.0,  # cm/s
+    min_speed=10.0,  # cm/s
     min_duration=0.5,  # seconds
     hysteresis=2.0,  # ratio for exit threshold
     smooth_window=0.2,  # seconds
@@ -817,7 +817,7 @@ for lap in laps:
     lap_positions = positions[mask]  # Use continuous positions
 
     turn_angles = compute_turn_angles(lap_positions)
-    step_lengths = compute_step_lengths(lap_positions, distance_type="euclidean")
+    step_lengths = compute_step_lengths(lap_positions, metric="euclidean")
 
     lap_metrics.append({
         "duration": lap.end_time - lap.start_time,
@@ -935,7 +935,7 @@ for i in range(0, len(positions) - window_size, hop_size):
     tau_vals, msd_vals = mean_square_displacement(
         window_positions,
         window_times,
-        distance_type="euclidean",
+        metric="euclidean",
         max_tau=5.0
     )
 

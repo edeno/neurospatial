@@ -341,7 +341,7 @@ class EnvironmentProtocol(Protocol):
         speed: NDArray[np.float64] | None = None,
         min_speed: float | None = None,
         max_gap: float | None = None,
-        kernel_bandwidth: float | None = None,
+        bandwidth: float | None = None,
         time_allocation: Literal["start", "linear"] = "start",
         return_seconds: bool = True,
     ) -> NDArray[np.float64]:
@@ -360,7 +360,7 @@ class EnvironmentProtocol(Protocol):
             Minimum speed threshold for inclusion.
         max_gap : float, optional
             Maximum time gap before splitting trajectory.
-        kernel_bandwidth : float, optional
+        bandwidth : float, optional
             Bandwidth for smoothing occupancy.
         time_allocation : {'start', 'linear'}, default='start'
             How to allocate time between samples.

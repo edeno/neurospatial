@@ -512,7 +512,7 @@ class SpatialRateResult(SpatialResultMixin):
         self,
         threshold: float = 0.3,
         min_area: float = 0.0,
-        distance_metric: Literal["geodesic", "euclidean"] = "geodesic",
+        metric: Literal["geodesic", "euclidean"] = "geodesic",
     ) -> float:
         """Border score (boundary proximity tuning).
 
@@ -529,7 +529,7 @@ class SpatialRateResult(SpatialResultMixin):
             Minimum field area in physical units (e.g., cm²). Fields smaller
             than this return NaN. Default 0.0 (no filtering). For rat
             hippocampal data, Solstad et al. (2008) used 200 cm².
-        distance_metric : {'geodesic', 'euclidean'}, default 'geodesic'
+        metric : {'geodesic', 'euclidean'}, default 'geodesic'
             Distance metric for computing distance from field to boundaries.
             - 'geodesic': Graph shortest path distance (respects obstacles)
             - 'euclidean': Straight-line distance in physical space
@@ -580,7 +580,7 @@ class SpatialRateResult(SpatialResultMixin):
             firing_rate,
             threshold=threshold,
             min_area=min_area,
-            distance_metric=distance_metric,
+            metric=metric,
         )
 
     def region_coverage(
@@ -1002,7 +1002,7 @@ class SpatialRatesResult(SpatialResultMixin):
         self,
         threshold: float = 0.3,
         min_area: float = 0.0,
-        distance_metric: Literal["geodesic", "euclidean"] = "geodesic",
+        metric: Literal["geodesic", "euclidean"] = "geodesic",
     ) -> BatchScoresResult:
         """Border scores (boundary proximity tuning) for all neurons.
 
@@ -1018,7 +1018,7 @@ class SpatialRatesResult(SpatialResultMixin):
         min_area : float, default 0.0
             Minimum field area in physical units (e.g., cm²). Fields smaller
             than this return NaN. Default 0.0 (no filtering).
-        distance_metric : {'geodesic', 'euclidean'}, default 'geodesic'
+        metric : {'geodesic', 'euclidean'}, default 'geodesic'
             Distance metric for computing distance from field to boundaries.
             - 'geodesic': Graph shortest path distance (respects obstacles)
             - 'euclidean': Straight-line distance in physical space
@@ -1066,7 +1066,7 @@ class SpatialRatesResult(SpatialResultMixin):
             _to_numpy(self.firing_rates),
             threshold=threshold,
             min_area=min_area,
-            distance_metric=distance_metric,
+            metric=metric,
         )
 
     def classify(

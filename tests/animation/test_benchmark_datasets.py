@@ -191,7 +191,7 @@ class TestCreateBenchmarkOverlays:
         assert len(position_overlays) >= 1
 
         pos_overlay = position_overlays[0]
-        assert pos_overlay.data.shape == (SMALL_CONFIG.n_frames, env.n_dims)
+        assert pos_overlay.positions.shape == (SMALL_CONFIG.n_frames, env.n_dims)
 
     def test_position_overlay_within_bounds(self):
         """Position overlay coordinates should be within environment bounds."""
@@ -204,8 +204,8 @@ class TestCreateBenchmarkOverlays:
             if isinstance(overlay, PositionOverlay):
                 for dim in range(env.n_dims):
                     dim_min, dim_max = env.dimension_ranges[dim]
-                    assert overlay.data[:, dim].min() >= dim_min
-                    assert overlay.data[:, dim].max() <= dim_max
+                    assert overlay.positions[:, dim].min() >= dim_min
+                    assert overlay.positions[:, dim].max() <= dim_max
 
     def test_large_config_includes_skeleton(self):
         """Large config should include bodypart overlay with skeleton."""
@@ -238,11 +238,11 @@ class TestCreateBenchmarkOverlays:
         for overlay in overlays:
             if isinstance(overlay, HeadDirectionOverlay):
                 # Implementation wraps angles to [-pi, pi]
-                assert overlay.data.min() >= -np.pi, (
-                    f"Min angle {overlay.data.min()} is below -pi"
+                assert overlay.headings.min() >= -np.pi, (
+                    f"Min angle {overlay.headings.min()} is below -pi"
                 )
-                assert overlay.data.max() <= np.pi, (
-                    f"Max angle {overlay.data.max()} exceeds pi"
+                assert overlay.headings.max() <= np.pi, (
+                    f"Max angle {overlay.headings.max()} exceeds pi"
                 )
 
     def test_head_direction_only_config(self):
@@ -265,8 +265,8 @@ class TestCreateBenchmarkOverlays:
         assert len(overlays) == 1
         assert isinstance(overlays[0], HeadDirectionOverlay)
         # Angles should be in valid range
-        assert overlays[0].data.min() >= -np.pi
-        assert overlays[0].data.max() <= np.pi
+        assert overlays[0].headings.min() >= -np.pi
+        assert overlays[0].headings.max() <= np.pi
 
     def test_reproducible_with_seed(self):
         """Same seed produces identical overlays."""
@@ -278,7 +278,7 @@ class TestCreateBenchmarkOverlays:
 
         for o1, o2 in zip(overlays1, overlays2, strict=True):
             if isinstance(o1, PositionOverlay):
-                np.testing.assert_array_equal(o1.data, o2.data)
+                np.testing.assert_array_equal(o1.positions, o2.positions)
 
 
 class TestBenchmarkConfigCustomization:

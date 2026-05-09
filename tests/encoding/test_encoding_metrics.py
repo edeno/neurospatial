@@ -1183,8 +1183,8 @@ class TestBatchBorderScores:
         assert scores_03.shape == (2,)
         assert scores_05.shape == (2,)
 
-    def test_batch_border_scores_distance_metric_parameter(self, env_2d_grid):
-        """Should accept distance_metric parameter."""
+    def test_batch_border_scores_metric_parameter(self, env_2d_grid):
+        """Should accept metric parameter."""
         from neurospatial.encoding._metrics import batch_border_scores
 
         env = env_2d_grid
@@ -1192,8 +1192,8 @@ class TestBatchBorderScores:
         firing_rates = rng.random((2, env.n_bins)) * 5.0
 
         # Test both distance metrics
-        scores_geo = batch_border_scores(env, firing_rates, distance_metric="geodesic")
-        scores_euc = batch_border_scores(env, firing_rates, distance_metric="euclidean")
+        scores_geo = batch_border_scores(env, firing_rates, metric="geodesic")
+        scores_euc = batch_border_scores(env, firing_rates, metric="euclidean")
 
         assert scores_geo.shape == (2,)
         assert scores_euc.shape == (2,)
@@ -1250,7 +1250,7 @@ class TestBorderScoreRaisesOnDijkstraFailure:
         firing_rate[0] = 10.0
 
         with pytest.raises(RuntimeError, match=r"geodesic distance"):
-            border_score(env, firing_rate, distance_metric="geodesic")
+            border_score(env, firing_rate, metric="geodesic")
 
     def test_batch_border_scores_failures_mask_catches_dijkstra_failure(self):
         """The batch wrapper now sees the border_score RuntimeError and flags it."""

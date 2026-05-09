@@ -342,7 +342,7 @@ class TestHeadingDirectionLabels:
         # All labels should be "stationary"
         assert all(label == "stationary" for label in labels)
 
-    def test_min_speed_threshold(self) -> None:
+    def test_min_min_speed(self) -> None:
         """Verify min_speed threshold is respected."""
         n_samples = 100
         times = np.linspace(0.0, 10.0, n_samples)

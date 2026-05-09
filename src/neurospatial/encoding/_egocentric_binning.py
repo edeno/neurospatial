@@ -164,7 +164,7 @@ def _compute_egocentric_coords(
     headings: NDArray[np.float64],
     object_positions: NDArray[np.float64],
     *,
-    distance_metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: Literal["euclidean", "geodesic"] = "euclidean",
     env: Environment | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Compute egocentric coordinates to nearest object at each timepoint.
@@ -177,10 +177,10 @@ def _compute_egocentric_coords(
         Animal heading at each time (radians, 0=East in allocentric frame).
     object_positions : ndarray, shape (n_objects, 2)
         Object positions in allocentric coordinates.
-    distance_metric : {"euclidean", "geodesic"}, default="euclidean"
+    metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric for computing distance to objects.
     env : Environment, optional
-        Required when distance_metric="geodesic".
+        Required when metric="geodesic".
 
     Returns
     -------
@@ -200,7 +200,7 @@ def _compute_egocentric_coords(
     n_objects = len(object_positions)
 
     # Compute distances to all objects
-    if distance_metric == "euclidean":
+    if metric == "euclidean":
         # distances: (n_time, n_objects)
         distances_all = np.linalg.norm(
             positions[:, np.newaxis, :] - object_positions[np.newaxis, :, :],
@@ -212,7 +212,7 @@ def _compute_egocentric_coords(
         # env validated by caller, this is for type narrowing
         if env is None:
             raise ValueError(
-                "env is required when distance_metric='geodesic'. "
+                "env is required when metric='geodesic'. "
                 "This is a programming error if you see this message."
             )
         distances_all = np.full((n_time, n_objects), np.nan, dtype=np.float64)
@@ -375,7 +375,7 @@ def compute_egocentric_occupancy(
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
-    distance_metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: Literal["euclidean", "geodesic"] = "euclidean",
     env: Environment | None = None,
 ) -> tuple[NDArray[np.float64], Environment]:
     """Compute egocentric occupancy (time at each distance/direction bin).
@@ -400,12 +400,12 @@ def compute_egocentric_occupancy(
         Number of distance bins.
     n_direction_bins : int, default=12
         Number of direction bins (covers full circle -pi to pi).
-    distance_metric : {"euclidean", "geodesic"}, default="euclidean"
+    metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric:
         - "euclidean": Straight-line distance
         - "geodesic": Path distance respecting environment boundaries
     env : Environment, optional
-        Required when distance_metric="geodesic". The allocentric environment
+        Required when metric="geodesic". The allocentric environment
         used to compute geodesic distances.
 
     Returns
@@ -422,8 +422,8 @@ def compute_egocentric_occupancy(
         If input arrays have mismatched lengths.
         If fewer than 2 samples provided.
         If times are not monotonically non-decreasing.
-        If distance_metric="geodesic" but env is None.
-        If distance_metric is invalid.
+        If metric="geodesic" but env is None.
+        If metric is invalid.
 
     Examples
     --------
@@ -467,17 +467,16 @@ def compute_egocentric_occupancy(
     # Validate times
     _validate_times(times, context="egocentric occupancy computation")
 
-    # Validate distance_metric
-    if distance_metric not in ("euclidean", "geodesic"):
+    # Validate metric
+    if metric not in ("euclidean", "geodesic"):
         raise ValueError(
-            f"Invalid distance_metric: '{distance_metric}'. "
-            f"Must be 'euclidean' or 'geodesic'."
+            f"Invalid metric: '{metric}'. Must be 'euclidean' or 'geodesic'."
         )
 
     # Validate env requirement for geodesic
-    if distance_metric == "geodesic" and env is None:
+    if metric == "geodesic" and env is None:
         raise ValueError(
-            "distance_metric='geodesic' requires env parameter.\n"
+            "metric='geodesic' requires env parameter.\n"
             "Pass the allocentric environment to compute geodesic distances."
         )
 
@@ -492,7 +491,7 @@ def compute_egocentric_occupancy(
         positions,
         headings,
         object_positions,
-        distance_metric=distance_metric,
+        metric=metric,
         env=env,
     )
 
@@ -536,7 +535,7 @@ def bin_egocentric_spike_train(
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
-    distance_metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: Literal["euclidean", "geodesic"] = "euclidean",
     env: Environment | None = None,
 ) -> tuple[NDArray[np.float64], Environment]:
     """Bin spike train by egocentric coordinates.
@@ -562,10 +561,10 @@ def bin_egocentric_spike_train(
         Number of distance bins.
     n_direction_bins : int, default=12
         Number of direction bins.
-    distance_metric : {"euclidean", "geodesic"}, default="euclidean"
+    metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric.
     env : Environment, optional
-        Required when distance_metric="geodesic".
+        Required when metric="geodesic".
 
     Returns
     -------
@@ -577,7 +576,7 @@ def bin_egocentric_spike_train(
     Raises
     ------
     ValueError
-        If distance_metric="geodesic" but env is None.
+        If metric="geodesic" but env is None.
         If fewer than 2 trajectory samples provided.
         If times are not monotonically non-decreasing.
 
@@ -620,16 +619,15 @@ def bin_egocentric_spike_train(
 
     n_samples = len(times)
 
-    # Validate distance_metric and env
-    if distance_metric not in ("euclidean", "geodesic"):
+    # Validate metric and env
+    if metric not in ("euclidean", "geodesic"):
         raise ValueError(
-            f"Invalid distance_metric: '{distance_metric}'. "
-            f"Must be 'euclidean' or 'geodesic'."
+            f"Invalid metric: '{metric}'. Must be 'euclidean' or 'geodesic'."
         )
 
-    if distance_metric == "geodesic" and env is None:
+    if metric == "geodesic" and env is None:
         raise ValueError(
-            "distance_metric='geodesic' requires env parameter.\n"
+            "metric='geodesic' requires env parameter.\n"
             "Pass the allocentric environment to compute geodesic distances."
         )
 
@@ -658,7 +656,7 @@ def bin_egocentric_spike_train(
         positions,
         headings,
         object_positions,
-        distance_metric=distance_metric,
+        metric=metric,
         env=env,
     )
 
@@ -703,7 +701,7 @@ def bin_egocentric_spike_trains(
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
-    distance_metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: Literal["euclidean", "geodesic"] = "euclidean",
     env: Environment | None = None,
     n_jobs: int = 1,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64], Environment]:
@@ -734,10 +732,10 @@ def bin_egocentric_spike_trains(
         Number of distance bins.
     n_direction_bins : int, default=12
         Number of direction bins.
-    distance_metric : {"euclidean", "geodesic"}, default="euclidean"
+    metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric.
     env : Environment, optional
-        Required when distance_metric="geodesic".
+        Required when metric="geodesic".
     n_jobs : int, default=1
         Number of parallel jobs for spike counting. Use -1 for all CPUs.
 
@@ -753,7 +751,7 @@ def bin_egocentric_spike_trains(
     Raises
     ------
     ValueError
-        If distance_metric="geodesic" but env is None.
+        If metric="geodesic" but env is None.
         If times are not monotonically non-decreasing.
 
     Examples
@@ -800,16 +798,15 @@ def bin_egocentric_spike_trains(
 
     n_samples = len(times)
 
-    # Validate distance_metric and env
-    if distance_metric not in ("euclidean", "geodesic"):
+    # Validate metric and env
+    if metric not in ("euclidean", "geodesic"):
         raise ValueError(
-            f"Invalid distance_metric: '{distance_metric}'. "
-            f"Must be 'euclidean' or 'geodesic'."
+            f"Invalid metric: '{metric}'. Must be 'euclidean' or 'geodesic'."
         )
 
-    if distance_metric == "geodesic" and env is None:
+    if metric == "geodesic" and env is None:
         raise ValueError(
-            "distance_metric='geodesic' requires env parameter.\n"
+            "metric='geodesic' requires env parameter.\n"
             "Pass the allocentric environment to compute geodesic distances."
         )
 
@@ -827,7 +824,7 @@ def bin_egocentric_spike_trains(
         positions,
         headings,
         object_positions,
-        distance_metric=distance_metric,
+        metric=metric,
         env=env,
     )
 

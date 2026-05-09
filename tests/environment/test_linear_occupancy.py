@@ -333,7 +333,7 @@ class TestLinearOccupancyIntegration:
             times,
             trajectory,
             time_allocation="linear",
-            kernel_bandwidth=2.0,
+            bandwidth=2.0,
             max_gap=None,
         )
 

@@ -463,7 +463,7 @@ class TestDirectionalRateResultWithJax:
             occupancy=occupancy_jax,  # type: ignore[arg-type]
             bin_centers=bin_centers_jax,  # type: ignore[arg-type]
             bin_size=np.pi / 30,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         # Should not raise
@@ -490,7 +490,7 @@ class TestDirectionalRateResultWithJax:
             occupancy=occupancy_jax,  # type: ignore[arg-type]
             bin_centers=bin_centers_jax,  # type: ignore[arg-type]
             bin_size=np.pi / 30,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         pref_dir = result.preferred_direction()
@@ -515,7 +515,7 @@ class TestDirectionalRateResultWithJax:
             occupancy=occupancy_jax,  # type: ignore[arg-type]
             bin_centers=bin_centers_jax,  # type: ignore[arg-type]
             bin_size=np.pi / 30,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         mvl = result.mean_vector_length()

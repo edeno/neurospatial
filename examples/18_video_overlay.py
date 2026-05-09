@@ -495,7 +495,7 @@ video_overlay = VideoOverlay(
 )
 
 position_overlay = PositionOverlay(
-    data=trajectory,
+    positions=trajectory,
     color="red",
     size=10.0,
     trail_length=10,
@@ -601,7 +601,7 @@ try:
                     alpha=0.5,
                 ),
                 PositionOverlay(
-                    data=trajectory[:n_demo],
+                    positions=trajectory[:n_demo],
                     color="red",
                     trail_length=10,
                 ),

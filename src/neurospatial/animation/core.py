@@ -247,7 +247,7 @@ def animate_fields(
     >>> # Position tracked at 120 Hz, fields computed at 10 Hz
     >>> from neurospatial import PositionOverlay  # doctest: +SKIP
     >>> position_overlay = PositionOverlay(
-    ...     data=trajectory_120hz,  # (n_samples_120hz, 2)
+    ...     positions=trajectory_120hz,  # (n_samples_120hz, 2)
     ...     times=timestamps_120hz,  # Overlay timestamps
     ...     color="red",
     ...     trail_length=15,

@@ -500,7 +500,7 @@ class TestWindowedLoadingIntegration:
         fields = np.ones((n_frames, simple_env.n_bins))
 
         position_overlay = PositionOverlay(
-            data=trajectory,
+            positions=trajectory,
             times=frame_times,
             color="cyan",
             size=8.0,
@@ -546,7 +546,7 @@ class TestWindowedLoadingIntegration:
         fields = np.ones((n_frames, simple_env.n_bins))
 
         position_overlay = PositionOverlay(
-            data=trajectory,
+            positions=trajectory,
             times=frame_times,
             color="cyan",
             size=8.0,
@@ -590,7 +590,7 @@ class TestWindowedLoadingIntegration:
         fields = np.ones((n_frames, simple_env.n_bins))
 
         position_overlay = PositionOverlay(
-            data=trajectory,
+            positions=trajectory,
             times=frame_times,
             color="cyan",
             size=8.0,

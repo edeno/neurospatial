@@ -36,9 +36,9 @@ class TestPositionOverlay:
     def test_basic_creation(self):
         """Test creating a PositionOverlay with required fields."""
         data = np.array([[0.0, 1.0], [2.0, 3.0], [4.0, 5.0]])
-        overlay = PositionOverlay(data=data)
+        overlay = PositionOverlay(positions=data)
 
-        assert_array_equal(overlay.data, data)
+        assert_array_equal(overlay.positions, data)
         assert overlay.times is None
         assert overlay.color == "red"
         assert overlay.size == 10.0
@@ -48,15 +48,17 @@ class TestPositionOverlay:
         """Test PositionOverlay with timestamps."""
         data = np.array([[0.0, 1.0], [2.0, 3.0]])
         times = np.array([0.0, 1.0])
-        overlay = PositionOverlay(data=data, times=times)
+        overlay = PositionOverlay(positions=data, times=times)
 
-        assert_array_equal(overlay.data, data)
+        assert_array_equal(overlay.positions, data)
         assert_array_equal(overlay.times, times)
 
     def test_custom_styling(self):
         """Test PositionOverlay with custom color, size, trail."""
         data = np.array([[0.0, 1.0], [2.0, 3.0]])
-        overlay = PositionOverlay(data=data, color="blue", size=20.0, trail_length=10)
+        overlay = PositionOverlay(
+            positions=data, color="blue", size=20.0, trail_length=10
+        )
 
         assert overlay.color == "blue"
         assert overlay.size == 20.0
@@ -65,10 +67,10 @@ class TestPositionOverlay:
     def test_3d_data(self):
         """Test PositionOverlay with 3D coordinates."""
         data = np.array([[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]])
-        overlay = PositionOverlay(data=data)
+        overlay = PositionOverlay(positions=data)
 
-        assert overlay.data.shape == (2, 3)
-        assert_array_equal(overlay.data, data)
+        assert overlay.positions.shape == (2, 3)
+        assert_array_equal(overlay.positions, data)
 
 
 class TestBodypartOverlay:
@@ -154,9 +156,9 @@ class TestHeadDirectionOverlay:
     def test_basic_creation_with_angles(self):
         """Test creating HeadDirectionOverlay with angle data."""
         data = np.array([0.0, np.pi / 2, np.pi])
-        overlay = HeadDirectionOverlay(data=data)
+        overlay = HeadDirectionOverlay(headings=data)
 
-        assert_array_equal(overlay.data, data)
+        assert_array_equal(overlay.headings, data)
         assert overlay.times is None
         assert overlay.color == "hsv"
         assert overlay.length == 15.0
@@ -164,15 +166,15 @@ class TestHeadDirectionOverlay:
     def test_with_unit_vectors(self):
         """Test HeadDirectionOverlay with unit vector data."""
         data = np.array([[1.0, 0.0], [0.0, 1.0], [-1.0, 0.0]])
-        overlay = HeadDirectionOverlay(data=data)
+        overlay = HeadDirectionOverlay(headings=data)
 
-        assert overlay.data.shape == (3, 2)
-        assert_array_equal(overlay.data, data)
+        assert overlay.headings.shape == (3, 2)
+        assert_array_equal(overlay.headings, data)
 
     def test_custom_styling(self):
         """Test HeadDirectionOverlay with custom appearance."""
         data = np.array([0.0, np.pi])
-        overlay = HeadDirectionOverlay(data=data, color="red", length=30.0)
+        overlay = HeadDirectionOverlay(headings=data, color="red", length=30.0)
 
         assert overlay.color == "red"
         assert overlay.length == 30.0
@@ -181,17 +183,17 @@ class TestHeadDirectionOverlay:
         """Test HeadDirectionOverlay with timestamps."""
         data = np.array([0.0, np.pi / 2])
         times = np.array([0.0, 1.0])
-        overlay = HeadDirectionOverlay(data=data, times=times)
+        overlay = HeadDirectionOverlay(headings=data, times=times)
 
         assert_array_equal(overlay.times, times)
 
     def test_3d_vectors(self):
         """Test HeadDirectionOverlay with 3D unit vectors."""
         data = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
-        overlay = HeadDirectionOverlay(data=data)
+        overlay = HeadDirectionOverlay(headings=data)
 
-        assert overlay.data.shape == (2, 3)
-        assert_array_equal(overlay.data, data)
+        assert overlay.headings.shape == (2, 3)
+        assert_array_equal(overlay.headings, data)
 
 
 class TestVideoOverlay:
@@ -642,7 +644,7 @@ class TestOverlayDataclassDefaults:
     def test_position_overlay_defaults(self):
         """Test PositionOverlay default values."""
         data = np.array([[0.0, 1.0]])
-        overlay = PositionOverlay(data=data)
+        overlay = PositionOverlay(positions=data)
 
         assert overlay.color == "red"
         assert overlay.size == 10.0
@@ -659,7 +661,7 @@ class TestOverlayDataclassDefaults:
     def test_head_direction_overlay_defaults(self):
         """Test HeadDirectionOverlay default values."""
         data = np.array([0.0])
-        overlay = HeadDirectionOverlay(data=data)
+        overlay = HeadDirectionOverlay(headings=data)
 
         assert overlay.color == "hsv"
         assert overlay.length == 15.0
@@ -711,12 +713,12 @@ class TestMultiAnimalSupport:
         animal1_data = np.array([[0.0, 1.0], [2.0, 3.0]])
         animal2_data = np.array([[5.0, 6.0], [7.0, 8.0]])
 
-        overlay1 = PositionOverlay(data=animal1_data, color="red")
-        overlay2 = PositionOverlay(data=animal2_data, color="blue")
+        overlay1 = PositionOverlay(positions=animal1_data, color="red")
+        overlay2 = PositionOverlay(positions=animal2_data, color="blue")
 
         assert overlay1.color == "red"
         assert overlay2.color == "blue"
-        assert not np.array_equal(overlay1.data, overlay2.data)
+        assert not np.array_equal(overlay1.positions, overlay2.positions)
 
     def test_multiple_bodypart_overlays(self):
         """Test creating multiple BodypartOverlay instances."""
@@ -1230,7 +1232,7 @@ class TestConvertOverlaysToData:
         positions = np.array([[10.0, 20.0], [30.0, 40.0], [50.0, 60.0]])
         times = np.array([0.0, 1.0, 2.0])
         overlay = PositionOverlay(
-            data=positions, times=times, color="red", size=15.0, trail_length=5
+            positions=positions, times=times, color="red", size=15.0, trail_length=5
         )
 
         # Define frame times (matching overlay times)
@@ -1264,7 +1266,7 @@ class TestConvertOverlaysToData:
 
         # Create position overlay without timestamps
         positions = np.array([[10.0, 20.0], [30.0, 40.0], [50.0, 60.0]])
-        overlay = PositionOverlay(data=positions)
+        overlay = PositionOverlay(positions=positions)
 
         # Frame times from fps
         frame_times = np.array([0.0, 1.0 / 30, 2.0 / 30])  # 30 fps
@@ -1290,7 +1292,7 @@ class TestConvertOverlaysToData:
         # Overlay at 2 Hz (0.0, 0.5, 1.0)
         positions = np.array([[0.0, 0.0], [5.0, 5.0], [10.0, 10.0]])
         times = np.array([0.0, 0.5, 1.0])
-        overlay = PositionOverlay(data=positions, times=times)
+        overlay = PositionOverlay(positions=positions, times=times)
 
         # Animation at 4 Hz (0.0, 0.25, 0.5, 0.75, 1.0)
         frame_times = np.array([0.0, 0.25, 0.5, 0.75, 1.0])
@@ -1398,7 +1400,7 @@ class TestConvertOverlaysToData:
         angles = np.array([0.0, np.pi / 2, np.pi])
         times = np.array([0.0, 1.0, 2.0])
         overlay = HeadDirectionOverlay(
-            data=angles, times=times, color="yellow", length=25.0
+            headings=angles, times=times, color="yellow", length=25.0
         )
 
         frame_times = np.array([0.0, 1.0, 2.0])
@@ -1427,7 +1429,7 @@ class TestConvertOverlaysToData:
         # Head direction as unit vectors
         vectors = np.array([[1.0, 0.0], [0.0, 1.0], [-1.0, 0.0]])
         times = np.array([0.0, 1.0, 2.0])
-        overlay = HeadDirectionOverlay(data=vectors, times=times)
+        overlay = HeadDirectionOverlay(headings=vectors, times=times)
 
         frame_times = np.array([0.0, 1.0, 2.0])
         n_frames = 3
@@ -1453,8 +1455,8 @@ class TestConvertOverlaysToData:
         animal2_pos = np.array([[50.0, 60.0], [70.0, 80.0]])
         times = np.array([0.0, 1.0])
 
-        overlay1 = PositionOverlay(data=animal1_pos, times=times, color="red")
-        overlay2 = PositionOverlay(data=animal2_pos, times=times, color="blue")
+        overlay1 = PositionOverlay(positions=animal1_pos, times=times, color="red")
+        overlay2 = PositionOverlay(positions=animal2_pos, times=times, color="blue")
 
         frame_times = np.array([0.0, 1.0])
         n_frames = 2
@@ -1484,9 +1486,9 @@ class TestConvertOverlaysToData:
         hd_data = np.array([0.0, np.pi])
         times = np.array([0.0, 1.0])
 
-        pos_overlay = PositionOverlay(data=pos_data, times=times)
+        pos_overlay = PositionOverlay(positions=pos_data, times=times)
         bodypart_overlay = BodypartOverlay(data=bodypart_data, times=times)
-        hd_overlay = HeadDirectionOverlay(data=hd_data, times=times)
+        hd_overlay = HeadDirectionOverlay(headings=hd_data, times=times)
 
         frame_times = np.array([0.0, 1.0])
         n_frames = 2
@@ -1511,7 +1513,7 @@ class TestConvertOverlaysToData:
         # Create overlay with non-monotonic times (should trigger validation error)
         positions = np.array([[10.0, 20.0], [30.0, 40.0], [50.0, 60.0]])
         times = np.array([0.0, 2.0, 1.0])  # Non-monotonic!
-        overlay = PositionOverlay(data=positions, times=times)
+        overlay = PositionOverlay(positions=positions, times=times)
 
         frame_times = np.array([0.0, 1.0, 2.0])
         n_frames = 3
@@ -1535,7 +1537,7 @@ class TestConvertOverlaysToData:
         # Create overlay with NaN values
         positions = np.array([[10.0, 20.0], [np.nan, 40.0], [50.0, 60.0]])
         times = np.array([0.0, 1.0, 2.0])
-        overlay = PositionOverlay(data=positions, times=times)
+        overlay = PositionOverlay(positions=positions, times=times)
 
         frame_times = np.array([0.0, 1.0, 2.0])
         n_frames = 3
@@ -1559,7 +1561,7 @@ class TestConvertOverlaysToData:
         # Create 3D positions but env is 2D
         positions = np.array([[10.0, 20.0, 30.0], [40.0, 50.0, 60.0]])  # 3D
         times = np.array([0.0, 1.0])
-        overlay = PositionOverlay(data=positions, times=times)
+        overlay = PositionOverlay(positions=positions, times=times)
 
         frame_times = np.array([0.0, 1.0])
         n_frames = 2
@@ -1632,7 +1634,7 @@ class TestConvertOverlaysToData:
 
         positions = np.array([[10.0, 20.0], [30.0, 40.0]])
         times = np.array([0.0, 1.0])
-        overlay = PositionOverlay(data=positions, times=times)
+        overlay = PositionOverlay(positions=positions, times=times)
 
         frame_times = np.array([0.0, 1.0])
         n_frames = 2
@@ -1661,7 +1663,7 @@ class TestConvertOverlaysToData:
         # Overlay covers [1.0, 2.0]
         positions = np.array([[10.0, 20.0], [30.0, 40.0]])
         times = np.array([1.0, 2.0])
-        overlay = PositionOverlay(data=positions, times=times)
+        overlay = PositionOverlay(positions=positions, times=times)
 
         # Frames extend beyond overlay range [0.0, 3.0]
         frame_times = np.array([0.0, 1.0, 2.0, 3.0])

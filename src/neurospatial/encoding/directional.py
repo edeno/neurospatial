@@ -37,7 +37,7 @@ Examples
 ...     occupancy=occupancy,
 ...     bin_centers=bin_centers,
 ...     bin_size=np.pi / 30,  # 6 degrees in radians
-...     smoothing_sigma=None,
+...     bandwidth=None,
 ... )
 
 See Also
@@ -105,7 +105,7 @@ class DirectionalRateResult(SpatialResultMixin):
         Center of each angular bin in radians [0, 2π). Shape is (n_bins,).
     bin_size : float
         Width of each angular bin in radians.
-    smoothing_sigma : float or None
+    bandwidth : float or None
         Gaussian smoothing bandwidth in radians, or None if unsmoothed.
 
     Attributes
@@ -118,7 +118,7 @@ class DirectionalRateResult(SpatialResultMixin):
         Angular bin centers in radians. Shape is (n_bins,).
     bin_size : float
         Angular bin width in radians.
-    smoothing_sigma : float or None
+    bandwidth : float or None
         Smoothing bandwidth in radians, or None.
 
     Notes
@@ -148,7 +148,7 @@ class DirectionalRateResult(SpatialResultMixin):
     ...     occupancy=occupancy,
     ...     bin_centers=bin_centers,
     ...     bin_size=np.pi / 30,
-    ...     smoothing_sigma=None,
+    ...     bandwidth=None,
     ... )
 
     >>> # Access fields
@@ -167,7 +167,7 @@ class DirectionalRateResult(SpatialResultMixin):
     occupancy: ArrayLike
     bin_centers: ArrayLike
     bin_size: float
-    smoothing_sigma: float | None
+    bandwidth: float | None
 
     @property
     def _bin_centers(self) -> NDArray[np.float64]:
@@ -221,7 +221,7 @@ class DirectionalRateResult(SpatialResultMixin):
         ...     occupancy=np.ones(n_bins) * 0.5,
         ...     bin_centers=bin_centers,
         ...     bin_size=np.pi / 30,
-        ...     smoothing_sigma=None,
+        ...     bandwidth=None,
         ... )
         >>> ax = result.plot()  # Creates polar plot  # doctest: +SKIP
 
@@ -293,7 +293,7 @@ class DirectionalRateResult(SpatialResultMixin):
         ...     occupancy=np.ones(n_bins) * 0.5,
         ...     bin_centers=bin_centers,
         ...     bin_size=np.pi / 30,
-        ...     smoothing_sigma=None,
+        ...     bandwidth=None,
         ... )
         >>> pref = result.preferred_direction()
         >>> np.abs(pref - np.pi / 2) < 0.1  # Close to 90 degrees
@@ -344,7 +344,7 @@ class DirectionalRateResult(SpatialResultMixin):
         ...     occupancy=np.ones(n_bins) * 0.5,
         ...     bin_centers=bin_centers,
         ...     bin_size=np.pi / 30,
-        ...     smoothing_sigma=None,
+        ...     bandwidth=None,
         ... )
         >>> pref_deg = result.preferred_direction_deg()
         >>> np.abs(pref_deg - 90) < 6  # Close to 90 degrees
@@ -375,7 +375,7 @@ class DirectionalRateResult(SpatialResultMixin):
         ...     occupancy=np.ones(n_bins) * 0.5,
         ...     bin_centers=bin_centers,
         ...     bin_size=np.pi / 30,
-        ...     smoothing_sigma=None,
+        ...     bandwidth=None,
         ... )
         >>> peak = result.peak_firing_rate()
         >>> peak > 0
@@ -432,7 +432,7 @@ class DirectionalRateResult(SpatialResultMixin):
         ...     occupancy=np.ones(n_bins) * 0.5,
         ...     bin_centers=bin_centers,
         ...     bin_size=np.pi / 30,
-        ...     smoothing_sigma=None,
+        ...     bandwidth=None,
         ... )
         >>> mvl = result.mean_vector_length()
         >>> mvl > 0.5  # Sharply tuned neuron has high MVL
@@ -500,7 +500,7 @@ class DirectionalRateResult(SpatialResultMixin):
         ...     occupancy=np.ones(n_bins) * 0.5,
         ...     bin_centers=bin_centers,
         ...     bin_size=np.pi / 30,
-        ...     smoothing_sigma=None,
+        ...     bandwidth=None,
         ... )
         >>> width = result.tuning_width()
         >>> width < np.pi / 3  # Sharp tuning < 60 degrees
@@ -587,7 +587,7 @@ class DirectionalRateResult(SpatialResultMixin):
         ...     occupancy=np.ones(n_bins) * 0.5,
         ...     bin_centers=bin_centers,
         ...     bin_size=np.pi / 30,
-        ...     smoothing_sigma=None,
+        ...     bandwidth=None,
         ... )
         >>> width_deg = result.tuning_width_deg()
         >>> width_deg < 60  # Sharp tuning < 60 degrees
@@ -645,7 +645,7 @@ class DirectionalRateResult(SpatialResultMixin):
         ...     occupancy=np.ones(n_bins) * 0.5,
         ...     bin_centers=bin_centers,
         ...     bin_size=np.pi / 30,
-        ...     smoothing_sigma=None,
+        ...     bandwidth=None,
         ... )
         >>> pval = result.rayleigh_pvalue()
         >>> pval < 0.05  # Significant non-uniformity
@@ -724,7 +724,7 @@ class DirectionalRateResult(SpatialResultMixin):
         ...     occupancy=np.ones(n_bins) * 0.5,
         ...     bin_centers=bin_centers,
         ...     bin_size=np.pi / 30,
-        ...     smoothing_sigma=None,
+        ...     bandwidth=None,
         ... )
         >>> result.is_hd_cell()  # Sharply tuned neuron should be classified as HD cell
         True
@@ -788,7 +788,7 @@ class DirectionalRateResult(SpatialResultMixin):
         ...     occupancy=np.ones(n_bins) * 0.5,
         ...     bin_centers=bin_centers,
         ...     bin_size=np.pi / 30,
-        ...     smoothing_sigma=None,
+        ...     bandwidth=None,
         ... )
         >>> print(result.interpretation())  # doctest: +SKIP
         *** HEAD DIRECTION CELL ***
@@ -866,7 +866,7 @@ class DirectionalRatesResult(SpatialResultMixin):
         Center of each angular bin in radians [0, 2π). Shape is (n_bins,).
     bin_size : float
         Width of each angular bin in radians.
-    smoothing_sigma : float or None
+    bandwidth : float or None
         Gaussian smoothing bandwidth in radians, or None if unsmoothed.
 
     Attributes
@@ -879,7 +879,7 @@ class DirectionalRatesResult(SpatialResultMixin):
         Angular bin centers in radians. Shape is (n_bins,).
     bin_size : float
         Angular bin width in radians.
-    smoothing_sigma : float or None
+    bandwidth : float or None
         Smoothing bandwidth in radians, or None.
 
     Notes
@@ -912,7 +912,7 @@ class DirectionalRatesResult(SpatialResultMixin):
     ...     occupancy=occupancy,
     ...     bin_centers=bin_centers,
     ...     bin_size=np.pi / 30,
-    ...     smoothing_sigma=None,
+    ...     bandwidth=None,
     ... )
 
     >>> # Access fields
@@ -941,7 +941,7 @@ class DirectionalRatesResult(SpatialResultMixin):
     occupancy: ArrayLike
     bin_centers: ArrayLike
     bin_size: float
-    smoothing_sigma: float | None
+    bandwidth: float | None
 
     @property
     def _bin_centers(self) -> NDArray[np.float64]:
@@ -972,7 +972,7 @@ class DirectionalRatesResult(SpatialResultMixin):
         -------
         DirectionalRateResult
             Result for the specified neuron with shared occupancy,
-            bin_centers, bin_size, and smoothing_sigma.
+            bin_centers, bin_size, and bandwidth.
 
         Examples
         --------
@@ -986,7 +986,7 @@ class DirectionalRatesResult(SpatialResultMixin):
             occupancy=self.occupancy,
             bin_centers=self.bin_centers,
             bin_size=self.bin_size,
-            smoothing_sigma=self.smoothing_sigma,
+            bandwidth=self.bandwidth,
         )
 
     def __iter__(self) -> Iterator[DirectionalRateResult]:
@@ -1318,7 +1318,7 @@ def compute_directional_rate(
     headings: NDArray[np.float64],
     bin_size: float = np.pi / 30,
     *,
-    smoothing_sigma: float | None = None,
+    bandwidth: float | None = None,
     angle_unit: Literal["rad", "deg"] = "rad",
     backend: Literal["numpy", "jax", "auto"] = "numpy",
 ) -> DirectionalRateResult:
@@ -1339,11 +1339,11 @@ def compute_directional_rate(
     bin_size : float, default=π/30 (6 degrees)
         Width of angular bins. Units match ``angle_unit``.
         Default produces 60 bins (6° resolution).
-    smoothing_sigma : float or None, default=None
+    bandwidth : float or None, default=None
         Gaussian smoothing bandwidth for the tuning curve. Units match
         ``angle_unit``. If None, no smoothing is applied.
     angle_unit : {'rad', 'deg'}, default='rad'
-        Unit of ``headings``, ``bin_size``, and ``smoothing_sigma``.
+        Unit of ``headings``, ``bin_size``, and ``bandwidth``.
 
         - 'rad': angles in radians
         - 'deg': angles in degrees
@@ -1364,7 +1364,7 @@ def compute_directional_rate(
         - ``occupancy``: Time at each direction in seconds, shape (n_bins,)
         - ``bin_centers``: Angular bin centers in radians, shape (n_bins,)
         - ``bin_size``: Bin width in radians
-        - ``smoothing_sigma``: Smoothing bandwidth in radians (or None)
+        - ``bandwidth``: Smoothing bandwidth in radians (or None)
 
     Raises
     ------
@@ -1387,7 +1387,7 @@ def compute_directional_rate(
     1. Bin spike train into angular bins based on head direction at spike time
     2. Compute occupancy (time spent at each direction)
     3. Compute raw firing rate (spike counts / occupancy)
-    4. Apply Gaussian smoothing if ``smoothing_sigma`` is provided
+    4. Apply Gaussian smoothing if ``bandwidth`` is provided
 
     **Smoothing**: Uses circular Gaussian smoothing to handle the wrap-around
     at 0/2π. The smoothing is applied to both spike counts and occupancy
@@ -1410,7 +1410,7 @@ def compute_directional_rate(
 
     >>> # With smoothing
     >>> result = compute_directional_rate(
-    ...     spike_times, times, headings, smoothing_sigma=np.pi / 6
+    ...     spike_times, times, headings, bandwidth=np.pi / 6
     ... )
 
     >>> # Using degrees
@@ -1472,18 +1472,18 @@ def compute_directional_rate(
     n_bins = len(bin_centers)
     actual_bin_size_rad = 2 * np.pi / n_bins
 
-    # Convert smoothing_sigma to radians for storage
+    # Convert bandwidth to radians for storage
     if angle_unit == "deg":
-        smoothing_sigma_rad = np.radians(smoothing_sigma) if smoothing_sigma else None
+        bandwidth_rad = np.radians(bandwidth) if bandwidth else None
     else:
-        smoothing_sigma_rad = smoothing_sigma
+        bandwidth_rad = bandwidth
 
     # Apply smoothing if requested
-    if smoothing_sigma_rad is not None:
+    if bandwidth_rad is not None:
         from scipy.ndimage import gaussian_filter1d
 
-        # Convert smoothing_sigma to number of bins
-        sigma_bins = smoothing_sigma_rad / actual_bin_size_rad
+        # Convert bandwidth to number of bins
+        sigma_bins = bandwidth_rad / actual_bin_size_rad
 
         # Apply circular Gaussian smoothing
         # Use mode='wrap' for circular boundary conditions
@@ -1514,7 +1514,7 @@ def compute_directional_rate(
         occupancy=occupancy,
         bin_centers=bin_centers,
         bin_size=actual_bin_size_rad,
-        smoothing_sigma=smoothing_sigma_rad,
+        bandwidth=bandwidth_rad,
     )
 
 
@@ -1524,7 +1524,7 @@ def compute_directional_rates(
     headings: NDArray[np.float64],
     bin_size: float = np.pi / 30,
     *,
-    smoothing_sigma: float | None = None,
+    bandwidth: float | None = None,
     angle_unit: Literal["rad", "deg"] = "rad",
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
@@ -1553,11 +1553,11 @@ def compute_directional_rates(
     bin_size : float, default=π/30 (6 degrees)
         Width of angular bins. Units match ``angle_unit``.
         Default produces 60 bins (6° resolution).
-    smoothing_sigma : float or None, default=None
+    bandwidth : float or None, default=None
         Gaussian smoothing bandwidth for the tuning curves. Units match
         ``angle_unit``. If None, no smoothing is applied.
     angle_unit : {'rad', 'deg'}, default='rad'
-        Unit of ``headings``, ``bin_size``, and ``smoothing_sigma``.
+        Unit of ``headings``, ``bin_size``, and ``bandwidth``.
 
         - 'rad': angles in radians
         - 'deg': angles in degrees
@@ -1581,7 +1581,7 @@ def compute_directional_rates(
         - ``occupancy``: Time in each bin in seconds, shape ``(n_bins,)``
         - ``bin_centers``: Angular bin centers in radians, shape ``(n_bins,)``
         - ``bin_size``: Bin width in radians
-        - ``smoothing_sigma``: Smoothing bandwidth in radians (or None)
+        - ``bandwidth``: Smoothing bandwidth in radians (or None)
 
         The result supports iteration: ``for single in result: ...``
         and indexing: ``single = result[0]``.
@@ -1686,17 +1686,17 @@ def compute_directional_rates(
     # bin spacing may differ from the requested bin_size
     actual_bin_size_rad = 2 * np.pi / n_bins
 
-    # Convert smoothing_sigma to radians for storage
+    # Convert bandwidth to radians for storage
     if angle_unit == "deg":
-        smoothing_sigma_rad = np.radians(smoothing_sigma) if smoothing_sigma else None
+        bandwidth_rad = np.radians(bandwidth) if bandwidth else None
     else:
-        smoothing_sigma_rad = smoothing_sigma
+        bandwidth_rad = bandwidth
 
     # Precompute smoothed occupancy once (instead of per-neuron)
-    if smoothing_sigma_rad is not None:
+    if bandwidth_rad is not None:
         from scipy.ndimage import gaussian_filter1d
 
-        sigma_bins = smoothing_sigma_rad / actual_bin_size_rad
+        sigma_bins = bandwidth_rad / actual_bin_size_rad
         occupancy_smooth: NDArray[np.float64] = gaussian_filter1d(
             occupancy, sigma=sigma_bins, mode="wrap"
         )
@@ -1717,7 +1717,7 @@ def compute_directional_rates(
             occupancy=occupancy,
             bin_centers=bin_centers,
             bin_size=actual_bin_size_rad,
-            smoothing_sigma=smoothing_sigma_rad,
+            bandwidth=bandwidth_rad,
         )
 
     # Helper function to process a single neuron's spike train
@@ -1728,7 +1728,7 @@ def compute_directional_rates(
         )
 
         # Apply smoothing if requested
-        if smoothing_sigma_rad is not None:
+        if bandwidth_rad is not None:
             from scipy.ndimage import gaussian_filter1d
 
             spike_counts_smooth: NDArray[np.float64] = gaussian_filter1d(
@@ -1774,7 +1774,7 @@ def compute_directional_rates(
         occupancy=occupancy,
         bin_centers=bin_centers,
         bin_size=actual_bin_size_rad,
-        smoothing_sigma=smoothing_sigma_rad,
+        bandwidth=bandwidth_rad,
     )
 
 
@@ -1789,7 +1789,7 @@ def is_head_direction_cell(
     headings: NDArray[np.float64],
     *,
     bin_size: float = np.pi / 30,
-    smoothing_sigma: float | None = None,
+    bandwidth: float | None = None,
     angle_unit: Literal["rad", "deg"] = "rad",
     min_mvl: float = 0.4,
     alpha: float = 0.05,
@@ -1812,7 +1812,7 @@ def is_head_direction_cell(
         Head direction at each time point.
     bin_size : float, default=π/30 (6 degrees)
         Width of angular bins. Units match ``angle_unit``.
-    smoothing_sigma : float or None, default=None
+    bandwidth : float or None, default=None
         Gaussian smoothing bandwidth. Units match ``angle_unit``.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of headings and bin_size.
@@ -1849,7 +1849,7 @@ def is_head_direction_cell(
             times,
             headings,
             bin_size=bin_size,
-            smoothing_sigma=smoothing_sigma,
+            bandwidth=bandwidth,
             angle_unit=angle_unit,
         )
         return result.is_hd_cell(min_mvl=min_mvl, alpha=alpha)

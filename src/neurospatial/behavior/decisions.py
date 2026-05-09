@@ -140,7 +140,7 @@ class PreDecisionMetrics:
     def suggests_deliberation(
         self,
         variance_threshold: float = 0.5,
-        speed_threshold: float = 10.0,
+        min_speed: float = 10.0,
     ) -> bool:
         """Check if metrics suggest deliberative behavior.
 
@@ -148,7 +148,7 @@ class PreDecisionMetrics:
         ----------
         variance_threshold : float, default=0.5
             Circular variance above this suggests head scanning.
-        speed_threshold : float, default=10.0
+        min_speed : float, default=10.0
             Mean speed below this (units/s) suggests slowing.
 
         Returns
@@ -158,7 +158,7 @@ class PreDecisionMetrics:
         """
         return (
             self.heading_circular_variance > variance_threshold
-            and self.mean_speed < speed_threshold
+            and self.mean_speed < min_speed
         )
 
 

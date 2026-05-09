@@ -700,7 +700,7 @@ def batch_border_scores(
     *,
     threshold: float = 0.3,
     min_area: float = 0.0,
-    distance_metric: str = "geodesic",
+    metric: str = "geodesic",
 ) -> BatchScoresResult:
     """Compute border scores for multiple neurons.
 
@@ -722,7 +722,7 @@ def batch_border_scores(
         Fields smaller than this return NaN. For rat hippocampal data,
         Solstad et al. (2008) used 200 cm². Adjust based on bin size
         and environment scale.
-    distance_metric : {"geodesic", "euclidean"}, default="geodesic"
+    metric : {"geodesic", "euclidean"}, default="geodesic"
         Distance metric for computing distance from field bins to boundary bins.
         - "geodesic": Graph shortest path distance. Respects environment
           connectivity, appropriate for irregular environments or those with obstacles.
@@ -817,7 +817,7 @@ def batch_border_scores(
                 firing_rate,
                 threshold=threshold,
                 min_area=min_area,
-                distance_metric=distance_metric,  # type: ignore[arg-type]
+                metric=metric,  # type: ignore[arg-type]
             )
         except (ValueError, RuntimeError):
             # Caught exception: record both NaN and the failure flag so

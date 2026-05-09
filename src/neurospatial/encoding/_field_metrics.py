@@ -96,7 +96,7 @@ def rate_map_centroid(
     field_bins: NDArray[np.int64],
     env: Environment,
     *,
-    method: Literal["euclidean", "graph"] = "euclidean",
+    method: Literal["euclidean", "geodesic"] = "euclidean",
 ) -> NDArray[np.float64]:
     """Compute firing-rate-weighted centroid of place field.
 
@@ -108,12 +108,12 @@ def rate_map_centroid(
         Bin indices comprising the field.
     env : EnvironmentProtocol
         Spatial environment.
-    method : {"euclidean", "graph"}, default "euclidean"
+    method : {"euclidean", "geodesic"}, default "euclidean"
         Method for computing centroid:
 
         - ``"euclidean"``: Weighted mean in Euclidean space. Fast but may
           place centroid off-track for irregular geometries.
-        - ``"graph"``: Weighted medoid using graph distances. Finds the bin
+        - ``"geodesic"``: Weighted medoid using graph distances. Finds the bin
           within the field that minimizes weighted graph distance to all
           other field bins. Always on-track and respects maze geometry.
 
@@ -134,7 +134,7 @@ def rate_map_centroid(
     where :math:`r_i` is firing rate and :math:`\\mathbf{p}_i` is position
     of bin :math:`i`.
 
-    For ``method="graph"``, the centroid is the bin that minimizes the
+    For ``method="geodesic"``, the centroid is the bin that minimizes the
     weighted sum of graph distances:
 
     .. math::
@@ -161,7 +161,9 @@ def rate_map_centroid(
 
     Use graph-based centroid for maze environments:
 
-    >>> centroid_graph = rate_map_centroid(firing_rate, field_bins, env, method="graph")
+    >>> centroid_graph = rate_map_centroid(
+    ...     firing_rate, field_bins, env, method="geodesic"
+    ... )
     """
     import networkx as nx
 
@@ -182,7 +184,7 @@ def rate_map_centroid(
                 np.sum(field_positions * field_rates[:, None], axis=0) / total_rate
             )
 
-    elif method == "graph":
+    elif method == "geodesic":
         # Compute weighted medoid using graph distances
         # Find bin that minimizes sum of (rate * graph_distance) to all other bins
 
@@ -219,7 +221,7 @@ def rate_map_centroid(
 
     else:  # pragma: no cover
         # Runtime safety check (type system enforces at compile time)
-        msg = f"Unknown method: {method}. Must be 'euclidean' or 'graph'."  # type: ignore[unreachable]
+        msg = f"Unknown method: {method}. Must be 'euclidean' or 'geodesic'."  # type: ignore[unreachable]
         raise ValueError(msg)
 
     return centroid
@@ -741,7 +743,7 @@ def field_shift_distance(
     field_bins_2: NDArray[np.int64],
     env_2: Environment,
     *,
-    use_geodesic: bool = False,
+    metric: Literal["euclidean", "geodesic"] = "euclidean",
 ) -> float:
     """Compute distance between field centroids across sessions/environments.
 
@@ -763,11 +765,12 @@ def field_shift_distance(
         Indices of bins belonging to place field in second session.
     env_2 : Environment
         Spatial environment for second session.
-    use_geodesic : bool, default=False
-        If True, compute geodesic distance (shortest path along connectivity graph)
-        instead of Euclidean distance. Requires env_1 and env_2 to be the same
-        environment or aligned environments with compatible connectivity.
-        Geodesic distance respects barriers and boundaries in the environment.
+    metric : {"euclidean", "geodesic"}, default="euclidean"
+        Distance metric. ``"euclidean"`` is straight-line distance between
+        the rate-weighted centroids. ``"geodesic"`` is the shortest path
+        along the connectivity graph and requires ``env_1`` and ``env_2``
+        to be the same environment or aligned environments with compatible
+        connectivity; geodesic distance respects barriers and boundaries.
 
     Returns
     -------
@@ -777,7 +780,7 @@ def field_shift_distance(
 
     Notes
     -----
-    **Euclidean distance** (use_geodesic=False):
+    **Euclidean distance** (``metric="euclidean"``):
 
     Computes straight-line distance between rate-weighted field centroids:
 
@@ -787,7 +790,7 @@ def field_shift_distance(
 
     where :math:`c_1` and :math:`c_2` are the centroids in continuous space.
 
-    **Geodesic distance** (use_geodesic=True):
+    **Geodesic distance** (``metric="geodesic"``):
 
     Computes shortest path distance along environment connectivity graph,
     respecting barriers and boundaries.
@@ -862,7 +865,10 @@ def field_shift_distance(
     if np.any(np.isnan(centroid_1)) or np.any(np.isnan(centroid_2)):
         return np.nan
 
-    if use_geodesic:
+    if metric not in ("euclidean", "geodesic"):
+        raise ValueError(f"metric must be 'euclidean' or 'geodesic', got '{metric}'")
+
+    if metric == "geodesic":
         # Geodesic distance using environment connectivity
         # Validate that centroids fall within environment bounds
         bin_1 = env_1.bin_at(centroid_1.reshape(1, -1))[0]

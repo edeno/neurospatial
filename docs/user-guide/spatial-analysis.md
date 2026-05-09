@@ -38,7 +38,7 @@ def occupancy(
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
-    kernel_bandwidth: float | None = None,
+    bandwidth: float | None = None,
     time_allocation: Literal["start", "linear"] = "start",
 ) -> NDArray[np.float64]:
     """
@@ -60,7 +60,7 @@ def occupancy(
         Maximum time gap in seconds. Intervals with Δt > max_gap are not
         counted toward occupancy. Default: 0.5 seconds. Set to None to
         count all intervals.
-    kernel_bandwidth : float, optional
+    bandwidth : float, optional
         If provided, apply diffusion kernel smoothing with this bandwidth
         (in physical units). Preserves total occupancy time.
     time_allocation : {'start', 'linear'}, default='start'
@@ -109,7 +109,7 @@ speed = np.concatenate([[0], speed])  # Pad to match length
 occupancy_moving = env.occupancy(times, positions, speed=speed, min_speed=2.0)
 
 # Smoothed occupancy (preserves total time)
-occupancy_smooth = env.occupancy(times, positions, kernel_bandwidth=5.0)
+occupancy_smooth = env.occupancy(times, positions, bandwidth=5.0)
 assert np.isclose(occupancy_smooth.sum(), occupancy_time.sum())
 
 # Linear allocation (more accurate for grids)

@@ -162,8 +162,8 @@ class TestOccupancy:
         times = np.array([0.0, 1.0, 2.0])
         positions = np.tile(medium_2d_env.bin_centers[0:1], (3, 1))
 
-        occ_raw = medium_2d_env.occupancy(times, positions, kernel_bandwidth=None)
-        occ_smooth = medium_2d_env.occupancy(times, positions, kernel_bandwidth=5.0)
+        occ_raw = medium_2d_env.occupancy(times, positions, bandwidth=None)
+        occ_smooth = medium_2d_env.occupancy(times, positions, bandwidth=5.0)
 
         # Smoothing should preserve total mass
         assert np.sum(occ_smooth) == pytest.approx(np.sum(occ_raw))

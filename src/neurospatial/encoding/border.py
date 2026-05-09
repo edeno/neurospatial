@@ -28,7 +28,7 @@ def border_score(
     *,
     threshold: float = 0.3,
     min_area: float = 0.0,
-    distance_metric: Literal["geodesic", "euclidean"] = "geodesic",
+    metric: Literal["geodesic", "euclidean"] = "geodesic",
 ) -> float:
     """
     Compute border score for a spatial firing rate map.
@@ -51,7 +51,7 @@ def border_score(
         smaller than this return NaN. Default is 0.0 (no filtering). For rat
         hippocampal data, Solstad et al. (2008) used 200 cm². Adjust based on
         your bin size and environment scale.
-    distance_metric : {'geodesic', 'euclidean'}, optional
+    metric : {'geodesic', 'euclidean'}, optional
         Distance metric for computing distance from field bins to boundary bins.
         - 'geodesic': Graph shortest path distance (default). Respects environment
           connectivity, appropriate for irregular environments or those with obstacles.
@@ -190,10 +190,8 @@ def border_score(
     if min_area < 0:
         raise ValueError(f"min_area must be non-negative, got {min_area}")
 
-    if distance_metric not in ("geodesic", "euclidean"):
-        raise ValueError(
-            f"distance_metric must be 'geodesic' or 'euclidean', got '{distance_metric}'"
-        )
+    if metric not in ("geodesic", "euclidean"):
+        raise ValueError(f"metric must be 'geodesic' or 'euclidean', got '{metric}'")
 
     # Handle all-NaN or all-zero
     if np.all(np.isnan(firing_rate)) or np.all(firing_rate == 0):
@@ -231,7 +229,7 @@ def border_score(
     coverage = np.sum(boundary_in_field) / len(boundary_bins)
 
     # Compute mean distance from field bins to nearest boundary bin
-    if distance_metric == "geodesic":
+    if metric == "geodesic":
         # Use multi-source Dijkstra for efficiency (single pass for all boundary bins)
         try:
             # Compute shortest distances from ALL boundary bins to all reachable nodes
@@ -253,7 +251,7 @@ def border_score(
             raise RuntimeError(
                 f"border_score: geodesic distance computation failed "
                 f"({type(exc).__name__}: {exc}). Pass "
-                "`distance_metric='euclidean'` to use straight-line "
+                "`metric='euclidean'` to use straight-line "
                 "distance instead, or check that the environment's "
                 "connectivity graph has finite 'distance' edge weights."
             ) from exc
@@ -278,7 +276,7 @@ def border_score(
 
         mean_distance = float(np.mean(distances_to_boundary))
 
-    else:  # distance_metric == "euclidean"
+    else:  # metric == "euclidean"
         # Compute Euclidean distances in physical space (vectorized)
         boundary_positions = env.bin_centers[boundary_bins]
         field_positions = env.bin_centers[field_bins]

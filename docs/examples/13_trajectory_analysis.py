@@ -422,7 +422,7 @@ plt.show()
 # %%
 # Compute step lengths using geodesic (graph) distances
 # This respects the environment topology rather than using straight-line distance
-step_lengths = compute_step_lengths(positions, distance_type="geodesic", env=env)
+step_lengths = compute_step_lengths(positions, metric="geodesic", env=env)
 
 # Note: geodesic distances may be infinite for disconnected bins
 finite_step_lengths = step_lengths[np.isfinite(step_lengths)]
@@ -627,7 +627,7 @@ plt.show()
 # %%
 # Compute MSD for different time lags using geodesic distances
 tau_values, msd_values = mean_square_displacement(
-    positions, times, distance_type="geodesic", env=env, max_tau=30.0
+    positions, times, metric="geodesic", env=env, max_tau=30.0
 )
 
 # Fit power law: MSD ~ tau^alpha

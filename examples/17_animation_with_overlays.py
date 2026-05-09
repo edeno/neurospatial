@@ -206,7 +206,7 @@ print(f"Frame times: {frame_times[0]:.2f}s to {frame_times[-1]:.2f}s (10 Hz)")
 # %%
 # Create position overlay with trail
 position_overlay = PositionOverlay(
-    data=trajectory,
+    positions=trajectory,
     color="red",
     size=12.0,
     trail_length=10,  # Show last 10 frames as trail
@@ -304,7 +304,7 @@ except ImportError:
 # %%
 # Create head direction overlay (angles in radians)
 head_direction_overlay = HeadDirectionOverlay(
-    data=head_angles,
+    headings=head_angles,
     color="yellow",
     length=15.0,  # Arrow length in cm
 )
@@ -358,11 +358,11 @@ trajectory_2 = np.clip(trajectory_2, 5, 95)  # Keep in bounds
 
 # Create overlays for both animals
 animal1_overlay = PositionOverlay(
-    data=trajectory, color="red", size=12.0, trail_length=8
+    positions=trajectory, color="red", size=12.0, trail_length=8
 )
 
 animal2_overlay = PositionOverlay(
-    data=trajectory_2, color="blue", size=12.0, trail_length=8
+    positions=trajectory_2, color="blue", size=12.0, trail_length=8
 )
 
 print("  Animal 1: red")
@@ -491,7 +491,7 @@ fields_low_freq = np.array(fields_low_freq)
 
 # Create overlay with timestamps
 position_overlay_timed = PositionOverlay(
-    data=trajectory_high_freq,
+    positions=trajectory_high_freq,
     times=timestamps_high,  # 120 Hz timestamps
     color="red",
     size=10.0,

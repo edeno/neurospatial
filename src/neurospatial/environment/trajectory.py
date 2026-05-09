@@ -58,7 +58,7 @@ class EnvironmentTrajectory:
         speed: NDArray[np.float64] | None = None,
         min_speed: float | None = None,
         max_gap: float | None = 0.5,
-        kernel_bandwidth: float | None = None,
+        bandwidth: float | None = None,
         time_allocation: Literal["start", "linear"] = "start",
         return_seconds: bool = True,
     ) -> NDArray[np.float64]:
@@ -83,7 +83,7 @@ class EnvironmentTrajectory:
             Maximum time gap in seconds. Intervals with Δt > max_gap are
             not counted toward occupancy. Default: 0.5 seconds. Set to None
             to count all intervals regardless of gap size.
-        kernel_bandwidth : float, optional
+        bandwidth : float, optional
             If provided, apply diffusion kernel smoothing with this bandwidth
             (in physical units). Uses mode='transition' to preserve total mass.
             Smoothing preserves total occupancy time.
@@ -153,7 +153,7 @@ class EnvironmentTrajectory:
         - speed[k] ≥ min_speed (if min_speed is not None)
         - positions[k] is inside environment
 
-        **Kernel smoothing**: When kernel_bandwidth is provided, smoothing
+        **Kernel smoothing**: When bandwidth is provided, smoothing
         is applied after accumulation using mode='transition' normalization
         (kernel columns sum to 1), which preserves the total occupancy mass.
 
@@ -176,7 +176,7 @@ class EnvironmentTrajectory:
         ...     positions,
         ...     speed=speeds,
         ...     min_speed=2.0,
-        ...     kernel_bandwidth=3.0,  # doctest: +SKIP
+        ...     bandwidth=3.0,  # doctest: +SKIP
         ... )  # doctest: +SKIP
 
         """
@@ -320,11 +320,11 @@ class EnvironmentTrajectory:
             )
 
         # Apply kernel smoothing if requested
-        if kernel_bandwidth is not None:
+        if bandwidth is not None:
             # Use mode='transition' for occupancy (counts), not 'density'
             # This ensures mass conservation: kernel columns sum to 1
             kernel = self.compute_kernel(
-                bandwidth=kernel_bandwidth, mode="transition", cache=True
+                bandwidth=bandwidth, mode="transition", cache=True
             )
             occupancy = kernel @ occupancy
 

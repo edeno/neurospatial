@@ -1298,13 +1298,13 @@ class TestSpatialRateResultBorderScore:
         score = result.border_score(threshold=0.5)
         assert isinstance(score, float) or np.isnan(score)
 
-    def test_border_score_accepts_distance_metric_parameter(
+    def test_border_score_accepts_metric_parameter(
         self,
         simple_env: Environment,
         border_cell_firing_rate: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """border_score() should accept a distance_metric parameter."""
+        """border_score() should accept a metric parameter."""
         from neurospatial.encoding.spatial import SpatialRateResult
 
         result = SpatialRateResult(
@@ -1315,8 +1315,8 @@ class TestSpatialRateResultBorderScore:
             bandwidth=5.0,
         )
         # Should not raise with either metric
-        score_geodesic = result.border_score(distance_metric="geodesic")
-        score_euclidean = result.border_score(distance_metric="euclidean")
+        score_geodesic = result.border_score(metric="geodesic")
+        score_euclidean = result.border_score(metric="euclidean")
         assert isinstance(score_geodesic, float) or np.isnan(score_geodesic)
         assert isinstance(score_euclidean, float) or np.isnan(score_euclidean)
 
@@ -2185,13 +2185,13 @@ class TestSpatialRatesResultBorderScores:
         scores = result.border_scores(threshold=0.5)
         assert isinstance(scores, BatchScoresResult)
 
-    def test_border_scores_accepts_distance_metric_parameter(
+    def test_border_scores_accepts_metric_parameter(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """border_scores() should accept a distance_metric parameter."""
+        """border_scores() should accept a metric parameter."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2202,8 +2202,8 @@ class TestSpatialRatesResultBorderScores:
             bandwidth=5.0,
         )
         # Should not raise with either metric
-        scores_geodesic = result.border_scores(distance_metric="geodesic")
-        scores_euclidean = result.border_scores(distance_metric="euclidean")
+        scores_geodesic = result.border_scores(metric="geodesic")
+        scores_euclidean = result.border_scores(metric="euclidean")
         assert isinstance(scores_geodesic, BatchScoresResult)
         assert isinstance(scores_euclidean, BatchScoresResult)
 

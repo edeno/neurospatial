@@ -23,7 +23,7 @@ Use these standardized names consistently across all modules:
 | Object locations | `object_positions` | `objects`, `landmarks` | For encoding functions |
 | Smoothing kernel size | `bandwidth` | `sigma`, `smoothing` | In physical units (e.g., cm) |
 | Estimation algorithm | `smoothing_method` | `method`, `estimator` | For place field computation |
-| Distance algorithm | `distance_metric` | `metric`, `distance_type` | "euclidean" or "geodesic" |
+| Distance algorithm | `metric` | `distance_metric`, `distance_type`, `use_geodesic` | "euclidean" or "geodesic" |
 
 ### Canonical Argument Order by Function Type
 

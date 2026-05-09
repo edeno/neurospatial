@@ -166,7 +166,7 @@ class TestDecodingErrorGraphMetric:
         decoded = np.array([bin_centers[0], [np.nan, np.nan], bin_centers[1]])
         actual = np.array([bin_centers[1], bin_centers[0], bin_centers[0]])
 
-        result = decoding_error(decoded, actual, metric="graph", env=small_2d_env)
+        result = decoding_error(decoded, actual, metric="geodesic", env=small_2d_env)
 
         assert np.isfinite(result[0])
         assert np.isnan(result[1])  # NaN propagates even with graph metric
@@ -179,8 +179,8 @@ class TestDecodingErrorGraphMetric:
         decoded = np.array([[1.0, 2.0], [3.0, 4.0]])
         actual = np.array([[0.0, 0.0], [0.0, 0.0]])
 
-        with pytest.raises(ValueError, match=r"env.*required.*graph"):
-            decoding_error(decoded, actual, metric="graph")
+        with pytest.raises(ValueError, match=r"env.*required.*geodesic"):
+            decoding_error(decoded, actual, metric="geodesic")
 
     def test_decoding_error_graph_metric_uses_env(self, small_2d_env):
         """Graph metric should use environment's distance_between method."""
@@ -198,7 +198,7 @@ class TestDecodingErrorGraphMetric:
         decoded = bin_centers[decoded_idx]
         actual = bin_centers[actual_idx]
 
-        result = decoding_error(decoded, actual, metric="graph", env=small_2d_env)
+        result = decoding_error(decoded, actual, metric="geodesic", env=small_2d_env)
 
         assert result.shape == (n_time_bins,)
         assert np.all(result >= 0)
@@ -216,7 +216,7 @@ class TestDecodingErrorGraphMetric:
         actual = bin_centers[[len(bin_centers) - 1]]
 
         euclidean = decoding_error(decoded, actual, metric="euclidean")
-        graph = decoding_error(decoded, actual, metric="graph", env=small_2d_env)
+        graph = decoding_error(decoded, actual, metric="geodesic", env=small_2d_env)
 
         # Graph distance should be >= Euclidean (triangle inequality)
         assert graph[0] >= euclidean[0] - 1e-10  # Small tolerance
@@ -228,7 +228,7 @@ class TestDecodingErrorGraphMetric:
         decoded = np.array([[1.0, 2.0]])
         actual = np.array([[0.0, 0.0]])
 
-        with pytest.raises(ValueError, match=r"metric.*euclidean.*graph"):
+        with pytest.raises(ValueError, match=r"metric.*euclidean.*geodesic"):
             decoding_error(decoded, actual, metric="manhattan")
 
 

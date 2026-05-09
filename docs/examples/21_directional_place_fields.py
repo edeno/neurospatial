@@ -242,7 +242,7 @@ pc_forward = PlaceCellModel(
     width=12.0,
     max_rate=15.0,
     baseline_rate=0.5,
-    distance_metric="euclidean",
+    metric="euclidean",
     seed=42,
 )
 
@@ -253,7 +253,7 @@ pc_reverse = PlaceCellModel(
     width=12.0,
     max_rate=10.0,  # Lower rate
     baseline_rate=0.5,
-    distance_metric="euclidean",
+    metric="euclidean",
     seed=43,
 )
 
@@ -512,7 +512,7 @@ pc_base = PlaceCellModel(
     width=15.0,
     max_rate=12.0,
     baseline_rate=0.2,
-    distance_metric="euclidean",
+    metric="euclidean",
     seed=200,
 )
 

@@ -78,7 +78,7 @@ def position_overlay_data():
     data = rng.uniform(0, 100, (20, 2))
     times = np.linspace(0, 2.0, 20)
     return PositionOverlay(
-        data=data,
+        positions=data,
         times=times,
         color="red",
         size=10.0,
@@ -120,7 +120,7 @@ def head_direction_overlay_data():
     times = np.linspace(0, 2.0, 20)
 
     return HeadDirectionOverlay(
-        data=angles,
+        headings=angles,
         times=times,
         color="yellow",
         length=10.0,
@@ -683,7 +683,7 @@ class TestMultiAnimalScenarios:
         rng = np.random.default_rng(42)
         overlays = [
             PositionOverlay(
-                data=rng.uniform(0, 100, (20, 2)),
+                positions=rng.uniform(0, 100, (20, 2)),
                 times=np.linspace(0, 2.0, 20),
                 color=color,
                 size=10.0,
@@ -1034,7 +1034,7 @@ class TestErrorHandling:
         # Create 3D position overlay for 2D environment
         rng = np.random.default_rng(42)
         invalid_overlay = PositionOverlay(
-            data=rng.uniform(0, 100, (20, 3)),  # 3D, but env is 2D
+            positions=rng.uniform(0, 100, (20, 3)),  # 3D, but env is 2D
             times=np.linspace(0, 2.0, 20),
             color="red",
         )

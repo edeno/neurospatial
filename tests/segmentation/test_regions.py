@@ -305,7 +305,7 @@ class TestSegmentByVelocity:
 
         # Threshold chosen to separate movement from rest
         segments = segment_by_velocity(
-            trajectory, times, threshold=2.0, min_duration=0.5, hysteresis=2.0
+            trajectory, times, min_speed=2.0, min_duration=0.5, hysteresis=2.0
         )
 
         # Should detect at least one movement period
@@ -323,13 +323,13 @@ class TestSegmentByVelocity:
 
         # With hysteresis, should have fewer segments than without
         segments_with_hysteresis = segment_by_velocity(
-            trajectory, times, threshold=1.0, min_duration=0.1, hysteresis=2.0
+            trajectory, times, min_speed=1.0, min_duration=0.1, hysteresis=2.0
         )
 
         segments_without_hysteresis = segment_by_velocity(
             trajectory,
             times,
-            threshold=1.0,
+            min_speed=1.0,
             min_duration=0.1,
             hysteresis=1.1,  # Just above 1.0
         )
@@ -352,7 +352,7 @@ class TestSegmentByVelocity:
         segments = segment_by_velocity(
             trajectory,
             times,
-            threshold=5.0,
+            min_speed=5.0,
             min_duration=1.0,  # Require 1 second
         )
 
@@ -368,7 +368,7 @@ class TestSegmentByVelocity:
 
         from neurospatial.behavior.segmentation import segment_by_velocity
 
-        segments = segment_by_velocity(trajectory, times, threshold=2.0)
+        segments = segment_by_velocity(trajectory, times, min_speed=2.0)
 
         # Should return list
         assert isinstance(segments, list)
@@ -390,7 +390,7 @@ class TestSegmentByVelocity:
 
         # This should work without error
         segments = segment_by_velocity(
-            trajectory, times, threshold=2.0, min_duration=0.5
+            trajectory, times, min_speed=2.0, min_duration=0.5
         )
         assert isinstance(segments, list)
 
@@ -453,7 +453,7 @@ class TestRegionSegmentationIntegration:
 
         # 3. Segment by velocity
         movement_segments = segment_by_velocity(
-            trajectory, times, threshold=2.0, min_duration=0.5
+            trajectory, times, min_speed=2.0, min_duration=0.5
         )
 
         # All functions should execute successfully

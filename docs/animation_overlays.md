@@ -620,7 +620,7 @@ idx = np.argsort(overlay_times)
 sorted_times = overlay_times[idx]
 sorted_data = overlay_data[idx]
 
-overlay = PositionOverlay(data=sorted_data, times=sorted_times, ...)
+overlay = PositionOverlay(positions=sorted_data, times=sorted_times, ...)
 ```
 
 ### NaN/Inf Values
@@ -645,7 +645,7 @@ mask = np.isfinite(trajectory).all(axis=1)
 clean_trajectory = trajectory[mask]
 clean_times = timestamps[mask]
 
-overlay = PositionOverlay(data=clean_trajectory, times=clean_times, ...)
+overlay = PositionOverlay(positions=clean_trajectory, times=clean_times, ...)
 ```
 
 ### Shape Mismatch
@@ -669,7 +669,7 @@ ValueError: Overlay data has incorrect shape.
 # Project to 2D
 trajectory_2d = trajectory_3d[:, :2]
 
-overlay = PositionOverlay(data=trajectory_2d, ...)
+overlay = PositionOverlay(positions=trajectory_2d, ...)
 ```
 
 ### No Temporal Overlap

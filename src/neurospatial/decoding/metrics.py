@@ -31,12 +31,12 @@ def decoding_error(
     actual_positions: NDArray[np.float64],
     env: Environment | None = None,
     *,
-    metric: Literal["euclidean", "graph"] = "euclidean",
+    metric: Literal["euclidean", "geodesic"] = "euclidean",
 ) -> NDArray[np.float64]:
     """Compute position error for each time bin.
 
     Calculates the distance between decoded and actual positions using either
-    Euclidean distance (straight-line) or graph distance (shortest path along
+    Euclidean distance (straight-line) or geodesic distance (shortest path along
     environment connectivity graph).
 
     Parameters
@@ -46,15 +46,15 @@ def decoding_error(
     actual_positions : NDArray[np.float64], shape (n_time_bins, n_dims)
         Ground truth positions.
     env : Environment, optional
-        Required when ``metric="graph"``. Used to compute graph distances
+        Required when ``metric="geodesic"``. Used to compute geodesic distances
         via ``env.distance_between()``.
-    metric : {"euclidean", "graph"}, default="euclidean"
+    metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric to use:
 
         - "euclidean": Straight-line Euclidean distance. Fast and simple.
-        - "graph": Shortest-path distance along environment graph.
-          Useful for mazes where Euclidean distance is misleading.
-          Requires ``env`` parameter.
+        - "geodesic": Shortest-path distance along the environment's
+          connectivity graph. Useful for mazes where Euclidean distance
+          is misleading. Requires ``env`` parameter.
 
     Returns
     -------
@@ -65,8 +65,8 @@ def decoding_error(
     Raises
     ------
     ValueError
-        If ``metric="graph"`` but ``env`` is None.
-        If ``metric`` is not "euclidean" or "graph".
+        If ``metric="geodesic"`` but ``env`` is None.
+        If ``metric`` is not "euclidean" or "geodesic".
 
     Notes
     -----
@@ -108,11 +108,11 @@ def decoding_error(
         diff = decoded_positions - actual_positions
         errors = cast("NDArray[np.float64]", np.linalg.norm(diff, axis=1))
 
-    elif metric == "graph":
+    elif metric == "geodesic":
         if env is None:
             raise ValueError(
-                "env is required when metric='graph'. "
-                "Provide an Environment instance for graph-based distance computation."
+                "env is required when metric='geodesic'. "
+                "Provide an Environment instance for geodesic distance computation."
             )
 
         from neurospatial.ops.distance import geodesic_distance_matrix
@@ -172,7 +172,9 @@ def decoding_error(
                 errors[valid_indices[outside_mask]] = euclidean_errors
 
     else:
-        raise ValueError(f"Invalid metric '{metric}'. Must be 'euclidean' or 'graph'.")
+        raise ValueError(
+            f"Invalid metric '{metric}'. Must be 'euclidean' or 'geodesic'."
+        )
 
     return errors
 

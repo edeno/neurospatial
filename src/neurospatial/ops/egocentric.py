@@ -587,7 +587,7 @@ def heading_from_velocity(
     dt: float,
     *,
     min_speed: float = 0.0,
-    smoothing_sigma: float = 0.0,
+    bandwidth: float = 0.0,
 ) -> NDArray[np.float64]:
     """Compute heading from position timeseries using velocity direction.
 
@@ -600,7 +600,7 @@ def heading_from_velocity(
     min_speed : float, default 0.0
         Minimum speed threshold. Samples with speed below this are
         interpolated from surrounding valid samples.
-    smoothing_sigma : float, default 0.0
+    bandwidth : float, default 0.0
         Gaussian smoothing sigma in samples. Applied to velocity before
         computing heading. Set to 0 to disable smoothing.
 
@@ -660,9 +660,9 @@ def heading_from_velocity(
     velocity = np.vstack([velocity, velocity[-1:]])
 
     # Apply Gaussian smoothing if requested
-    if smoothing_sigma > 0:
-        velocity[:, 0] = gaussian_filter1d(velocity[:, 0], smoothing_sigma)
-        velocity[:, 1] = gaussian_filter1d(velocity[:, 1], smoothing_sigma)
+    if bandwidth > 0:
+        velocity[:, 0] = gaussian_filter1d(velocity[:, 0], bandwidth)
+        velocity[:, 1] = gaussian_filter1d(velocity[:, 1], bandwidth)
 
     # Compute speed
     speed = np.sqrt(velocity[:, 0] ** 2 + velocity[:, 1] ** 2)

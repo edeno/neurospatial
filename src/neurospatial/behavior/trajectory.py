@@ -168,7 +168,7 @@ def compute_turn_angles(
 def compute_step_lengths(
     positions: NDArray[np.float64],
     *,
-    distance_type: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: Literal["euclidean", "geodesic"] = "euclidean",
     env: Environment | None = None,
 ) -> NDArray[np.float64]:
     """
@@ -182,7 +182,7 @@ def compute_step_lengths(
     ----------
     positions : NDArray[np.float64], shape (n_samples, n_dims)
         Trajectory positions in continuous space. Each row is a position vector.
-    distance_type : {"euclidean", "geodesic"}, default="euclidean"
+    metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric to use:
         - "euclidean": Straight-line distance in physical space (ecology standard).
           Fast and appropriate for open environments without obstacles.
@@ -191,7 +191,7 @@ def compute_step_lengths(
           (walls, obstacles, tracks).
     env : Environment, optional
         Environment instance for computing geodesic distances. Required if
-        distance_type="geodesic", ignored otherwise.
+        metric="geodesic", ignored otherwise.
 
     Returns
     -------
@@ -201,9 +201,9 @@ def compute_step_lengths(
     Raises
     ------
     ValueError
-        If distance_type="geodesic" but env is None.
+        If metric="geodesic" but env is None.
         If positions is not a 2D array.
-        If distance_type is not "euclidean" or "geodesic".
+        If metric is not "euclidean" or "geodesic".
 
     Notes
     -----
@@ -241,7 +241,7 @@ def compute_step_lengths(
     >>>
     >>> # Straight line trajectory with Euclidean distance
     >>> positions = np.column_stack([np.linspace(0, 100, 20), np.zeros(20)])
-    >>> step_lengths = compute_step_lengths(positions, distance_type="euclidean")
+    >>> step_lengths = compute_step_lengths(positions, metric="euclidean")
     >>> len(step_lengths)
     19
     >>> np.allclose(step_lengths, step_lengths[0], rtol=0.01)  # Uniform steps
@@ -255,7 +255,7 @@ def compute_step_lengths(
     >>> # Use bin centers as proxy positions for geodesic
     >>> bin_positions = env.bin_centers[bins]
     >>> step_lengths_geo = compute_step_lengths(
-    ...     bin_positions, distance_type="geodesic", env=env
+    ...     bin_positions, metric="geodesic", env=env
     ... )  # doctest: +SKIP
 
     References
@@ -270,26 +270,24 @@ def compute_step_lengths(
             f"positions must be 2D array (n_samples, n_dims), got {positions.ndim}D"
         )
 
-    if distance_type not in ("euclidean", "geodesic"):
-        raise ValueError(
-            f"distance_type must be 'euclidean' or 'geodesic', got '{distance_type}'"
-        )
+    if metric not in ("euclidean", "geodesic"):
+        raise ValueError(f"metric must be 'euclidean' or 'geodesic', got '{metric}'")
 
-    if distance_type == "geodesic" and env is None:
+    if metric == "geodesic" and env is None:
         raise ValueError(
-            "distance_type='geodesic' requires env parameter. "
-            "Use distance_type='euclidean' if env is not available."
+            "metric='geodesic' requires env parameter. "
+            "Use metric='euclidean' if env is not available."
         )
 
     n_steps = len(positions) - 1
     step_lengths = np.zeros(n_steps, dtype=np.float64)
 
-    if distance_type == "euclidean":
+    if metric == "euclidean":
         # Vectorized Euclidean distance computation
         displacements = np.diff(positions, axis=0)
         step_lengths = np.linalg.norm(displacements, axis=1)
 
-    else:  # distance_type == "geodesic"
+    else:  # metric == "geodesic"
         # Map positions to bins
         assert env is not None  # Already checked above, but satisfy type checker
         position_bins = env.bin_at(positions)
@@ -405,7 +403,7 @@ def mean_square_displacement(
     positions: NDArray[np.float64],
     times: NDArray[np.float64],
     *,
-    distance_type: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: Literal["euclidean", "geodesic"] = "euclidean",
     env: Environment | None = None,
     max_tau: float | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
@@ -423,7 +421,7 @@ def mean_square_displacement(
         Trajectory positions in continuous space.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps corresponding to each sample in the trajectory.
-    distance_type : {"euclidean", "geodesic"}, default="euclidean"
+    metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric for computing displacements:
         - "euclidean": Straight-line distance (ecology standard, most accurate).
           Use for diffusion analysis, comparing to ecology literature, and
@@ -432,7 +430,7 @@ def mean_square_displacement(
           Requires `env` parameter. Use for constrained navigation analysis.
     env : Environment, optional
         Environment instance for computing geodesic distances. Required if
-        distance_type="geodesic", ignored otherwise.
+        metric="geodesic", ignored otherwise.
     max_tau : float, optional
         Maximum lag time to compute. If None, uses half the total duration.
         Recommended: use max_tau ≤ T/4 where T is total duration, to ensure
@@ -448,7 +446,7 @@ def mean_square_displacement(
     Raises
     ------
     ValueError
-        If distance_type="geodesic" but env is None.
+        If metric="geodesic" but env is None.
         If positions and times have different lengths.
         If positions is not a 2D array.
 
@@ -508,7 +506,7 @@ def mean_square_displacement(
     >>>
     >>> # Compute MSD with Euclidean distance (default)
     >>> tau_values, msd_values = mean_square_displacement(
-    ...     positions, times, distance_type="euclidean", max_tau=5.0
+    ...     positions, times, metric="euclidean", max_tau=5.0
     ... )
     >>> len(tau_values) > 0
     True
@@ -545,15 +543,13 @@ def mean_square_displacement(
             f"got {len(positions)} and {len(times)}"
         )
 
-    if distance_type not in ("euclidean", "geodesic"):
-        raise ValueError(
-            f"distance_type must be 'euclidean' or 'geodesic', got '{distance_type}'"
-        )
+    if metric not in ("euclidean", "geodesic"):
+        raise ValueError(f"metric must be 'euclidean' or 'geodesic', got '{metric}'")
 
-    if distance_type == "geodesic" and env is None:
+    if metric == "geodesic" and env is None:
         raise ValueError(
-            "distance_type='geodesic' requires env parameter. "
-            "Use distance_type='euclidean' if env is not available."
+            "metric='geodesic' requires env parameter. "
+            "Use metric='euclidean' if env is not available."
         )
 
     n_samples = len(positions)
@@ -574,7 +570,7 @@ def mean_square_displacement(
     tau_values = np.linspace(dt, max_tau, n_lags)
     msd_values = np.zeros(n_lags, dtype=np.float64)
 
-    if distance_type == "euclidean":
+    if metric == "euclidean":
         # Fully vectorized Euclidean MSD computation
         for i, tau in enumerate(tau_values):
             # Find all pairs of time points separated by approximately tau
@@ -599,7 +595,7 @@ def mean_square_displacement(
             else:
                 msd_values[i] = 0.0
 
-    else:  # distance_type == "geodesic"
+    else:  # metric == "geodesic"
         # Map positions to bins for geodesic distance
         assert env is not None  # Already checked above
         position_bins = env.bin_at(positions)

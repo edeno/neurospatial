@@ -458,7 +458,7 @@ class TestDispatcherMultiFieldIntegration:
 
         # Create position overlay matching field frame count
         trajectory = rng.uniform(-50, 50, (n_frames, 2))
-        overlay = PositionOverlay(data=trajectory, color="red", size=10.0)
+        overlay = PositionOverlay(positions=trajectory, color="red", size=10.0)
 
         # Create frame_times for fields
         frame_times = np.linspace(0, 1.0, n_frames)
@@ -506,7 +506,7 @@ class TestDispatcherMultiFieldIntegration:
         rng = np.random.default_rng(42)
         trajectory = rng.uniform(-50, 50, (50, 2))
         overlay = PositionOverlay(
-            data=trajectory, times=overlay_times, color="red", size=10.0
+            positions=trajectory, times=overlay_times, color="red", size=10.0
         )
 
         # Call via dispatcher with frame_times for alignment

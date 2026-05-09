@@ -179,9 +179,7 @@ class TestDecisionAnalysisFunctionality:
             n_samples=30,
         )
 
-        assert result.suggests_deliberation(
-            variance_threshold=0.5, speed_threshold=10.0
-        )
+        assert result.suggests_deliberation(variance_threshold=0.5, min_speed=10.0)
 
     def test_decision_boundary_metrics_dataclass(self):
         """Test DecisionBoundaryMetrics can be instantiated."""

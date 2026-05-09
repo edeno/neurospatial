@@ -127,7 +127,7 @@ class ObjectVectorCellModel:
         - 'specific': Response to specific object (requires ``specific_object_index``)
     specific_object_index : int | None, optional
         Index of object to respond to when ``object_selectivity='specific'``.
-    distance_metric : {'euclidean', 'geodesic'}, optional
+    metric : {'euclidean', 'geodesic'}, optional
         Distance calculation method (default: 'euclidean').
 
         - 'euclidean': Straight-line distance
@@ -153,7 +153,7 @@ class ObjectVectorCellModel:
         Baseline firing rate in Hz.
     object_selectivity : str
         Object selectivity mode.
-    distance_metric : str
+    metric : str
         Distance metric used.
 
     Examples
@@ -224,7 +224,7 @@ class ObjectVectorCellModel:
         baseline_rate: float = 0.01,
         object_selectivity: Literal["any", "nearest", "specific"] = "nearest",
         specific_object_index: int | None = None,
-        distance_metric: Literal["euclidean", "geodesic"] = "euclidean",
+        metric: Literal["euclidean", "geodesic"] = "euclidean",
     ) -> None:
         # Convert and validate object_positions
         object_positions = np.asarray(object_positions, dtype=np.float64)
@@ -295,13 +295,10 @@ class ObjectVectorCellModel:
                 )
                 raise ValueError(msg)
 
-        # Validate distance_metric
+        # Validate metric
         valid_metrics = ("euclidean", "geodesic")
-        if distance_metric not in valid_metrics:
-            msg = (
-                f"distance_metric must be one of {valid_metrics}, "
-                f"got '{distance_metric}'"
-            )
+        if metric not in valid_metrics:
+            msg = f"metric must be one of {valid_metrics}, got '{metric}'"
             raise ValueError(msg)
 
         # Check if objects are outside environment bounds
@@ -326,11 +323,11 @@ class ObjectVectorCellModel:
         self.baseline_rate = baseline_rate
         self.object_selectivity = object_selectivity
         self.specific_object_index = specific_object_index
-        self.distance_metric = distance_metric
+        self.metric = metric
 
         # Precompute distance fields for geodesic metric
         self._distance_fields: list[NDArray[np.float64]] | None
-        if distance_metric == "geodesic":
+        if metric == "geodesic":
             self._distance_fields = []
             for obj_pos in object_positions:
                 # Find bin containing the object
@@ -397,7 +394,7 @@ class ObjectVectorCellModel:
 
         # Compute distances from positions to all objects
         # Shape: (n_time, n_objects)
-        if self.distance_metric == "euclidean":
+        if self.metric == "euclidean":
             # Euclidean distance
             # positions: (n_time, 2)
             # object_positions: (n_objects, 2)

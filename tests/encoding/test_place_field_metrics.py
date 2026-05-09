@@ -373,7 +373,9 @@ class TestFieldMetrics:
         from neurospatial.encoding._field_metrics import rate_map_centroid
 
         # Graph centroid should be one of the field bins
-        centroid_graph = rate_map_centroid(firing_rate, field_bins, env, method="graph")
+        centroid_graph = rate_map_centroid(
+            firing_rate, field_bins, env, method="geodesic"
+        )
 
         # Verify it's exactly at a bin center (on-track guarantee)
         distances_to_bins = np.linalg.norm(
@@ -415,7 +417,9 @@ class TestFieldMetrics:
         centroid_euclidean = rate_map_centroid(
             firing_rate, field_bins, env, method="euclidean"
         )
-        centroid_graph = rate_map_centroid(firing_rate, field_bins, env, method="graph")
+        centroid_graph = rate_map_centroid(
+            firing_rate, field_bins, env, method="geodesic"
+        )
 
         # Both should be 2D
         assert centroid_euclidean.shape == (2,)
@@ -439,7 +443,7 @@ class TestFieldMetrics:
 
         from neurospatial.encoding._field_metrics import rate_map_centroid
 
-        centroid = rate_map_centroid(firing_rate, field_bins, env, method="graph")
+        centroid = rate_map_centroid(firing_rate, field_bins, env, method="geodesic")
         assert_allclose(centroid, env.bin_centers[5])
 
 
@@ -1302,7 +1306,7 @@ class TestFieldShiftDistance:
             firing_rate_2,
             field_bins_2,
             env2,
-            use_geodesic=False,
+            metric="euclidean",
         )
 
         # Should be ~10 (shifted by 10 units along x-axis)
@@ -1347,7 +1351,7 @@ class TestFieldShiftDistance:
                 firing_rate_2,
                 field_bins_2,
                 env,
-                use_geodesic=True,
+                metric="geodesic",
             )
 
             # If geodesic worked, distance should be non-negative and finite
@@ -1363,7 +1367,7 @@ class TestFieldShiftDistance:
                 firing_rate_2,
                 field_bins_2,
                 env,
-                use_geodesic=False,
+                metric="euclidean",
             )
             assert shift_euclidean >= 0
             assert not np.isnan(shift_euclidean)
@@ -2276,7 +2280,7 @@ class TestFieldShiftDistanceEdgeCases:
                 firing_rate_2,
                 field_bins_2,
                 env2,
-                use_geodesic=True,
+                metric="geodesic",
             )
         # Should return either a valid distance (Euclidean fallback) or NaN (out of bounds)
         assert isinstance(result, float)

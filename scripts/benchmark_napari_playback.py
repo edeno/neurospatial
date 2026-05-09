@@ -395,7 +395,7 @@ def create_selected_overlays(
     # Position overlay
     if position:
         position_overlay = PositionOverlay(
-            data=trajectory.copy(),
+            positions=trajectory.copy(),
             color="red",
             size=12.0,
             trail_length=15,
@@ -448,7 +448,7 @@ def create_selected_overlays(
         head_angles = np.arctan2(np.sin(head_angles), np.cos(head_angles))
 
         head_direction_overlay = HeadDirectionOverlay(
-            data=head_angles,
+            headings=head_angles,
             color="yellow",
             length=3.0,
         )

@@ -344,7 +344,7 @@ import numpy as np
 # Compute heading from trajectory
 positions = np.column_stack([x, y])  # Shape: (n_time, 2)
 dt = times[1] - times[0]
-headings = heading_from_velocity(positions, dt, min_speed=2.0, smoothing_sigma=3.0)
+headings = heading_from_velocity(positions, dt, min_speed=2.0, bandwidth=3.0)
 
 # Or from pose tracking keypoints
 headings = heading_from_body_orientation(nose_positions, tail_positions)
@@ -407,7 +407,7 @@ object_positions = np.array([[50.0, 30.0], [80.0, 60.0]])  # 2 objects
 
 # Compute egocentric polar field (returns EgocentricRateResult)
 # `env` is the first positional arg; pass None for euclidean distance,
-# or pass the allocentric Environment for distance_metric="geodesic".
+# or pass the allocentric Environment for metric="geodesic".
 result = compute_egocentric_rate(
     None,                              # env (required for geodesic only)
     spike_times,                       # Spike times for one neuron
@@ -439,7 +439,7 @@ from neurospatial.encoding import compute_egocentric_rates
 # Compute fields for multiple neurons
 spike_times_list = [neuron1_spikes, neuron2_spikes, neuron3_spikes]
 result = compute_egocentric_rates(
-    None,  # env (required only for distance_metric="geodesic")
+    None,  # env (required only for metric="geodesic")
     spike_times_list, times, positions, headings, object_positions,
     distance_range=(0.0, 50.0),
     n_distance_bins=10,

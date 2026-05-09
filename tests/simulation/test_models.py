@@ -112,13 +112,13 @@ class TestPlaceCellModel:
         expected = 20.0 * np.exp(-0.5)
         assert abs(rate[0] - expected) < 0.1
 
-    def test_euclidean_distance_metric(self, simple_2d_env):
+    def test_euclidean_metric(self, simple_2d_env):
         """Test euclidean distance metric (default)."""
         pc = PlaceCellModel(
             simple_2d_env,
             center=[50.0, 50.0],
             width=10.0,
-            distance_metric="euclidean",
+            metric="euclidean",
         )
 
         positions, times = simulate_trajectory_ou(simple_2d_env, duration=1.0, seed=42)
@@ -127,13 +127,13 @@ class TestPlaceCellModel:
         assert len(rates) == len(positions)
         assert np.all(rates >= 0)  # All rates non-negative
 
-    def test_geodesic_distance_metric(self, simple_2d_env):
+    def test_geodesic_metric(self, simple_2d_env):
         """Test geodesic distance metric."""
         pc = PlaceCellModel(
             simple_2d_env,
             center=[50.0, 50.0],
             width=10.0,
-            distance_metric="geodesic",
+            metric="geodesic",
         )
 
         positions, times = simulate_trajectory_ou(simple_2d_env, duration=1.0, seed=42)
@@ -386,14 +386,14 @@ class TestBoundaryCellModel:
         bc = BoundaryCellModel(simple_2d_env, preferred_distance=5.0)
         assert isinstance(bc, NeuralModel)
 
-    def test_euclidean_distance_metric(self, simple_2d_env):
+    def test_euclidean_metric(self, simple_2d_env):
         """Test euclidean distance metric."""
         from neurospatial.simulation.models import BoundaryCellModel
 
         bc = BoundaryCellModel(
             simple_2d_env,
             preferred_distance=5.0,
-            distance_metric="euclidean",
+            metric="euclidean",
         )
 
         positions, times = simulate_trajectory_ou(simple_2d_env, duration=2.0, seed=42)
@@ -402,14 +402,14 @@ class TestBoundaryCellModel:
         assert len(rates) == len(positions)
         assert np.all(rates >= 0)
 
-    def test_geodesic_distance_metric(self, simple_2d_env):
+    def test_geodesic_metric(self, simple_2d_env):
         """Test geodesic distance metric (default)."""
         from neurospatial.simulation.models import BoundaryCellModel
 
         bc = BoundaryCellModel(
             simple_2d_env,
             preferred_distance=5.0,
-            distance_metric="geodesic",
+            metric="geodesic",
         )
 
         positions, times = simulate_trajectory_ou(simple_2d_env, duration=2.0, seed=42)

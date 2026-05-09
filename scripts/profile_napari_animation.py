@@ -175,7 +175,7 @@ def create_overlays(positions: np.ndarray, head_angles: np.ndarray | None):
 
     with timer("Creating position overlay"):
         position_overlay = PositionOverlay(
-            data=positions,
+            positions=positions,
             color="cyan",
             size=15.0,
             trail_length=15,
@@ -185,7 +185,7 @@ def create_overlays(positions: np.ndarray, head_angles: np.ndarray | None):
     if head_angles is not None:
         with timer("Creating head direction overlay"):
             head_direction_overlay = HeadDirectionOverlay(
-                data=head_angles,
+                headings=head_angles,
                 # Uses defaults: color="hsv", length=15.0, width=3.0
             )
             overlays.append(head_direction_overlay)

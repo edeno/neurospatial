@@ -93,7 +93,7 @@ positions = 50 + np.cumsum(velocities * dt, axis=0)
 positions = np.clip(positions, 10, 90)  # Stay in bounds
 
 # Compute heading from velocity
-headings = heading_from_velocity(positions, dt, min_speed=2.0, smoothing_sigma=3.0)
+headings = heading_from_velocity(positions, dt, min_speed=2.0, bandwidth=3.0)
 
 print(f"Trajectory: {n_time} samples, {times[-1]:.1f}s duration")
 print(

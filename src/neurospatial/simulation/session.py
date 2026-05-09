@@ -183,7 +183,7 @@ def simulate_session(
         - max_rate : float - Peak firing rate in Hz (default: 20.0)
         - width : float | NDArray - Field width in environment units (default: 3*bin_size)
         - baseline_rate : float - Baseline firing rate in Hz (default: 0.001)
-        - distance_metric : {'euclidean', 'geodesic'} - Distance computation method
+        - metric : {'euclidean', 'geodesic'} - Distance computation method
         - condition : Callable - Optional conditional firing function
 
         **Boundary cell parameters** (cell_type='boundary' or 'mixed'):
@@ -195,7 +195,7 @@ def simulate_session(
           Use 'boundary_width' for unambiguous parameter passing in mixed mode.
         - max_rate : float - Peak firing rate in Hz (default: 15.0)
         - baseline_rate : float - Baseline firing rate in Hz (default: 0.001)
-        - distance_metric : {'euclidean', 'geodesic'} - Distance computation method
+        - metric : {'euclidean', 'geodesic'} - Distance computation method
 
         **Grid cell parameters** (cell_type='grid' or 'mixed'):
 
@@ -322,14 +322,14 @@ def simulate_session(
     # Extract model-specific parameters from kwargs BEFORE trajectory generation
     # PlaceCellModel parameters
     place_cell_params = {}
-    for param in ["width", "max_rate", "baseline_rate", "distance_metric", "condition"]:
+    for param in ["width", "max_rate", "baseline_rate", "metric", "condition"]:
         if param in kwargs:
             place_cell_params[param] = kwargs.pop(param)
 
     # BoundaryCellModel parameters - remap convenience names to actual parameter names
     boundary_cell_params = {}
     # Direct parameters
-    for param in ["max_rate", "baseline_rate", "distance_metric"]:
+    for param in ["max_rate", "baseline_rate", "metric"]:
         if param in kwargs:
             boundary_cell_params[param] = kwargs.pop(param)
     # Remapped parameters: distance -> preferred_distance

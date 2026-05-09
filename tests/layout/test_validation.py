@@ -172,7 +172,7 @@ class TestGraphValidation:
         with pytest.raises(GraphValidationError, match="missing required attributes"):
             validate_connectivity_graph(G, n_dims=2)
 
-    def test_validate_invalid_distance_type(self):
+    def test_validate_invalid_metric(self):
         """Test error for non-numeric distance."""
         G = nx.Graph()
         G.add_node(

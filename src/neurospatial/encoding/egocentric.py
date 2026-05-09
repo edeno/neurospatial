@@ -947,7 +947,7 @@ def compute_egocentric_rate(
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
-    distance_metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: Literal["euclidean", "geodesic"] = "euclidean",
     smoothing_method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
@@ -973,7 +973,7 @@ def compute_egocentric_rate(
         Object positions in allocentric coordinates. The firing rate is
         computed relative to the *nearest* object at each timepoint.
     env : Environment, optional
-        Required when ``distance_metric="geodesic"``. The allocentric
+        Required when ``metric="geodesic"``. The allocentric
         environment used to compute geodesic distances around obstacles.
     distance_range : tuple of float, default=(0.0, 50.0)
         (min_distance, max_distance) for egocentric binning. Distances outside
@@ -983,7 +983,7 @@ def compute_egocentric_rate(
     n_direction_bins : int, default=12
         Number of direction bins in the egocentric polar grid. Covers the
         full circle (-π to π).
-    distance_metric : {"euclidean", "geodesic"}, default="euclidean"
+    metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric for computing distance to objects:
 
         - **euclidean**: Straight-line distance.
@@ -1028,8 +1028,8 @@ def compute_egocentric_rate(
     Raises
     ------
     ValueError
-        If ``distance_metric="geodesic"`` but ``env`` is None.
-        If ``distance_metric`` is not one of the valid options.
+        If ``metric="geodesic"`` but ``env`` is None.
+        If ``metric`` is not one of the valid options.
         If inputs have mismatched lengths.
 
     See Also
@@ -1137,18 +1137,17 @@ def compute_egocentric_rate(
     # This raises ImportError if backend="jax" and JAX is unavailable
     resolved_backend = get_backend_name(backend)
 
-    # Validate distance_metric
+    # Validate metric
     valid_metrics = {"euclidean", "geodesic"}
-    if distance_metric not in valid_metrics:
+    if metric not in valid_metrics:
         raise ValueError(
-            f"Invalid distance_metric: '{distance_metric}'. "
-            f"Must be one of {sorted(valid_metrics)}"
+            f"Invalid metric: '{metric}'. Must be one of {sorted(valid_metrics)}"
         )
 
     # Validate env requirement for geodesic
-    if distance_metric == "geodesic" and env is None:
+    if metric == "geodesic" and env is None:
         raise ValueError(
-            "distance_metric='geodesic' requires env parameter.\n"
+            "metric='geodesic' requires env parameter.\n"
             "Pass the allocentric environment to compute geodesic distances."
         )
 
@@ -1178,7 +1177,7 @@ def compute_egocentric_rate(
         distance_range=distance_range,
         n_distance_bins=n_distance_bins,
         n_direction_bins=n_direction_bins,
-        distance_metric=distance_metric,
+        metric=metric,
         env=env,
         n_jobs=1,
     )
@@ -1225,7 +1224,7 @@ def compute_egocentric_rates(
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
-    distance_metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: Literal["euclidean", "geodesic"] = "euclidean",
     smoothing_method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
@@ -1259,7 +1258,7 @@ def compute_egocentric_rates(
         Object positions in allocentric coordinates. The firing rate is
         computed relative to the *nearest* object at each timepoint.
     env : Environment, optional
-        Required when ``distance_metric="geodesic"``. The allocentric
+        Required when ``metric="geodesic"``. The allocentric
         environment used to compute geodesic distances around obstacles.
     distance_range : tuple of float, default=(0.0, 50.0)
         (min_distance, max_distance) for egocentric binning. Distances outside
@@ -1269,7 +1268,7 @@ def compute_egocentric_rates(
     n_direction_bins : int, default=12
         Number of direction bins in the egocentric polar grid. Covers the
         full circle (-pi to pi).
-    distance_metric : {"euclidean", "geodesic"}, default="euclidean"
+    metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric for computing distance to objects:
 
         - **euclidean**: Straight-line distance.
@@ -1318,8 +1317,8 @@ def compute_egocentric_rates(
     Raises
     ------
     ValueError
-        If ``distance_metric="geodesic"`` but ``env`` is None.
-        If ``distance_metric`` is not one of the valid options.
+        If ``metric="geodesic"`` but ``env`` is None.
+        If ``metric`` is not one of the valid options.
         If inputs have mismatched lengths.
 
     See Also
@@ -1447,18 +1446,17 @@ def compute_egocentric_rates(
 
     _validate_smoothing_parameters(smoothing_method, bandwidth)
 
-    # Validate distance_metric
+    # Validate metric
     valid_metrics = {"euclidean", "geodesic"}
-    if distance_metric not in valid_metrics:
+    if metric not in valid_metrics:
         raise ValueError(
-            f"Invalid distance_metric: '{distance_metric}'. "
-            f"Must be one of {sorted(valid_metrics)}"
+            f"Invalid metric: '{metric}'. Must be one of {sorted(valid_metrics)}"
         )
 
     # Validate env requirement for geodesic
-    if distance_metric == "geodesic" and env is None:
+    if metric == "geodesic" and env is None:
         raise ValueError(
-            "distance_metric='geodesic' requires env parameter.\n"
+            "metric='geodesic' requires env parameter.\n"
             "Pass the allocentric environment to compute geodesic distances."
         )
 
@@ -1497,7 +1495,7 @@ def compute_egocentric_rates(
             distance_range=distance_range,
             n_distance_bins=n_distance_bins,
             n_direction_bins=n_direction_bins,
-            distance_metric=distance_metric,
+            metric=metric,
             env=env,
         )
         firing_rates_result: ArrayLike = np.empty((0, ego_env.n_bins), dtype=np.float64)
@@ -1526,7 +1524,7 @@ def compute_egocentric_rates(
         distance_range=distance_range,
         n_distance_bins=n_distance_bins,
         n_direction_bins=n_direction_bins,
-        distance_metric=distance_metric,
+        metric=metric,
         env=env,
         n_jobs=n_jobs,
     )

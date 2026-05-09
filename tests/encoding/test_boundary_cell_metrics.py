@@ -305,7 +305,7 @@ class TestBorderScore:
                     f"Border score {score} out of range [-1, 1]"
                 )
 
-    def test_border_score_distance_metric_geodesic(
+    def test_border_score_metric_geodesic(
         self, dense_rectangular_grid_env: Environment
     ) -> None:
         """Test border score with geodesic distance metric (default)."""
@@ -319,7 +319,7 @@ class TestBorderScore:
         from neurospatial.encoding.border import border_score
 
         # Explicit geodesic
-        score_geodesic = border_score(env, firing_rate, distance_metric="geodesic")
+        score_geodesic = border_score(env, firing_rate, metric="geodesic")
 
         # Default should match geodesic
         score_default = border_score(env, firing_rate)
@@ -329,7 +329,7 @@ class TestBorderScore:
         )
         assert -1.0 <= score_geodesic <= 1.0
 
-    def test_border_score_distance_metric_euclidean(
+    def test_border_score_metric_euclidean(
         self, dense_rectangular_grid_env: Environment
     ) -> None:
         """Test border score with euclidean distance metric."""
@@ -342,12 +342,12 @@ class TestBorderScore:
 
         from neurospatial.encoding.border import border_score
 
-        score = border_score(env, firing_rate, distance_metric="euclidean")
+        score = border_score(env, firing_rate, metric="euclidean")
 
         # Should return valid score
         assert -1.0 <= score <= 1.0, f"Expected score in [-1, 1], got {score}"
 
-    def test_border_score_distance_metrics_differ(
+    def test_border_score_metrics_differ(
         self, dense_50x50_bin5_env: Environment
     ) -> None:
         """Test that geodesic and euclidean give different results."""
@@ -363,8 +363,8 @@ class TestBorderScore:
 
         from neurospatial.encoding.border import border_score
 
-        score_geodesic = border_score(env, firing_rate, distance_metric="geodesic")
-        score_euclidean = border_score(env, firing_rate, distance_metric="euclidean")
+        score_geodesic = border_score(env, firing_rate, metric="geodesic")
+        score_euclidean = border_score(env, firing_rate, metric="euclidean")
 
         # Both should be valid
         assert -1.0 <= score_geodesic <= 1.0
@@ -373,10 +373,8 @@ class TestBorderScore:
         # For regular grids, they might be similar, but we test they're computed
         # (exact equality would depend on environment structure)
 
-    def test_border_score_distance_metric_validation(
-        self, small_2d_env: Environment
-    ) -> None:
-        """Test validation of distance_metric parameter."""
+    def test_border_score_metric_validation(self, small_2d_env: Environment) -> None:
+        """Test validation of metric parameter."""
         env = small_2d_env
         firing_rate = np.ones(env.n_bins)
 
@@ -384,9 +382,9 @@ class TestBorderScore:
 
         # Invalid distance metric
         with pytest.raises(
-            ValueError, match=r"distance_metric must be 'geodesic' or 'euclidean'"
+            ValueError, match=r"metric must be 'geodesic' or 'euclidean'"
         ):
-            border_score(env, firing_rate, distance_metric="invalid")
+            border_score(env, firing_rate, metric="invalid")
 
     def test_border_score_euclidean_central_field(
         self, dense_50x50_bin5_env: Environment
@@ -403,7 +401,7 @@ class TestBorderScore:
 
         from neurospatial.encoding.border import border_score
 
-        score = border_score(env, firing_rate, distance_metric="euclidean")
+        score = border_score(env, firing_rate, metric="euclidean")
 
         # Central field should have low score with euclidean distance
         assert score < 0.3, (

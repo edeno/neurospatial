@@ -759,7 +759,7 @@ class TestDispatcherOverlayIntegration:
 
         # Create test overlay
         overlay_pos = rng.standard_normal((10, 2)) * 50
-        position_overlay = PositionOverlay(data=overlay_pos, color="red", size=5.0)
+        position_overlay = PositionOverlay(positions=overlay_pos, color="red", size=5.0)
 
         # Create frame times
         frame_times = np.linspace(0, 10, 10)
@@ -793,7 +793,7 @@ class TestDispatcherOverlayIntegration:
 
         # Create test overlays
         overlay_pos = rng.standard_normal((10, 2)) * 50
-        position_overlay = PositionOverlay(data=overlay_pos)
+        position_overlay = PositionOverlay(positions=overlay_pos)
         frame_times = np.linspace(0, 10, 10)
 
         # Mock conversion funnel and backend
@@ -868,7 +868,7 @@ class TestDispatcherOverlayIntegration:
 
         # Create test overlay
         overlay_pos = rng.standard_normal((10, 2)) * 50
-        position_overlay = PositionOverlay(data=overlay_pos)
+        position_overlay = PositionOverlay(positions=overlay_pos)
         frame_times = np.linspace(0, 10, 10)
 
         # Mock conversion and backend
@@ -911,7 +911,7 @@ class TestDispatcherOverlayIntegration:
 
         # Create overlay and explicit frame times
         overlay_pos = rng.standard_normal((10, 2)) * 50
-        position_overlay = PositionOverlay(data=overlay_pos)
+        position_overlay = PositionOverlay(positions=overlay_pos)
         frame_times = np.linspace(0, 5, 10)  # Custom times
 
         # Mock conversion and backend

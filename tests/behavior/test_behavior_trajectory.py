@@ -114,7 +114,7 @@ class TestComputeStepLengthsBasic:
         from neurospatial.behavior.trajectory import compute_step_lengths
 
         positions = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
-        step_lengths = compute_step_lengths(positions, distance_type="euclidean")
+        step_lengths = compute_step_lengths(positions, metric="euclidean")
 
         assert step_lengths.shape == (20,)
         assert np.all(step_lengths >= 0)
@@ -153,7 +153,7 @@ class TestMeanSquareDisplacementBasic:
         times = np.linspace(0, 10, 50)
 
         tau_values, msd_values = mean_square_displacement(
-            positions, times, distance_type="euclidean", max_tau=5.0
+            positions, times, metric="euclidean", max_tau=5.0
         )
 
         assert tau_values.ndim == 1

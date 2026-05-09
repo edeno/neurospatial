@@ -36,7 +36,7 @@ class BoundaryCellModel:
         Peak firing rate in Hz (default: 15.0).
     baseline_rate : float, optional
         Baseline firing rate away from preferred distance (default: 0.01 Hz).
-    distance_metric : {'geodesic', 'euclidean'}, optional
+    metric : {'geodesic', 'euclidean'}, optional
         Distance calculation method (default: 'geodesic').
 
         - 'geodesic': Path distance through environment connectivity graph.
@@ -59,7 +59,7 @@ class BoundaryCellModel:
         Peak firing rate in Hz.
     baseline_rate : float
         Baseline firing rate in Hz.
-    distance_metric : str
+    metric : str
         Distance metric used ('geodesic' or 'euclidean').
 
     Examples
@@ -146,7 +146,7 @@ class BoundaryCellModel:
         direction_tolerance: float = np.pi / 4,
         max_rate: float = 15.0,
         baseline_rate: float = 0.01,
-        distance_metric: Literal["geodesic", "euclidean"] = "geodesic",
+        metric: Literal["geodesic", "euclidean"] = "geodesic",
     ) -> None:
         # Validate parameters
         if preferred_distance < 0:
@@ -180,7 +180,7 @@ class BoundaryCellModel:
         self.direction_tolerance = direction_tolerance
         self.max_rate = max_rate
         self.baseline_rate = baseline_rate
-        self.distance_metric = distance_metric
+        self.metric = metric
 
         # Precompute boundary bins
         self._boundary_bins = env.boundary_bins
@@ -191,7 +191,7 @@ class BoundaryCellModel:
 
         # Precompute distance field from all boundary bins (type annotation for mypy)
         self._distance_field: NDArray[np.float64] | None
-        if distance_metric == "geodesic":
+        if metric == "geodesic":
             # Geodesic distance through graph
             self._distance_field = distance_field(
                 env.connectivity,
@@ -248,7 +248,7 @@ class BoundaryCellModel:
         boundary_centers = self.env.bin_centers[self._boundary_bins]
 
         # Compute distances to boundary
-        if self.distance_metric == "geodesic":
+        if self.metric == "geodesic":
             # Map positions to bins and lookup distances - vectorized for efficiency
             # contains() returns ndarray, so we can use it directly for batch check
             inside_mask = self.env.contains(positions)
@@ -296,7 +296,7 @@ class BoundaryCellModel:
             # Compute direction to nearest boundary for each position
             # For geodesic metric, use Euclidean distance for direction
             # (direction is inherently geometric, not path-based)
-            if self.distance_metric == "geodesic":
+            if self.metric == "geodesic":
                 # Recompute Euclidean distances for directional tuning
                 dists_to_boundaries = np.linalg.norm(
                     positions[:, np.newaxis, :] - boundary_centers[np.newaxis, :, :],

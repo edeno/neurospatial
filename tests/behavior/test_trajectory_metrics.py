@@ -108,7 +108,7 @@ class TestComputeStepLengths:
         positions = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
 
         # Euclidean distance (default)
-        step_lengths = compute_step_lengths(positions, distance_type="euclidean")
+        step_lengths = compute_step_lengths(positions, metric="euclidean")
 
         # Should have n-1 step lengths
         assert step_lengths.shape == (20,)
@@ -133,7 +133,7 @@ class TestComputeStepLengths:
             ]
         )
 
-        step_lengths = compute_step_lengths(positions, distance_type="euclidean")
+        step_lengths = compute_step_lengths(positions, metric="euclidean")
 
         # Should have n-1 step lengths
         assert step_lengths.shape == (6,)
@@ -144,7 +144,7 @@ class TestComputeStepLengths:
         assert step_lengths[4] == 0.0  # [20,0] -> [20,0]
 
     def test_step_lengths_uses_graph_distance(self):
-        """Test that step lengths with distance_type='geodesic' use graph distances."""
+        """Test that step lengths with metric='geodesic' use graph distances."""
         # Create 2D grid environment
         x = np.linspace(0, 40, 100)
         y = np.linspace(0, 40, 100)
@@ -157,9 +157,7 @@ class TestComputeStepLengths:
         positions = env.bin_centers[position_bins]
 
         # Use geodesic distance
-        step_lengths = compute_step_lengths(
-            positions, distance_type="geodesic", env=env
-        )
+        step_lengths = compute_step_lengths(positions, metric="geodesic", env=env)
 
         # Verify each step length matches nx.shortest_path_length
         import networkx as nx
@@ -186,7 +184,7 @@ class TestComputeStepLengths:
         env = Environment.from_samples(positions, bin_size=5.0)
         bin_positions = env.bin_centers[env.bin_at(positions)]
         step_lengths_geo = compute_step_lengths(
-            bin_positions, distance_type="geodesic", env=env
+            bin_positions, metric="geodesic", env=env
         )
         assert isinstance(step_lengths_geo, np.ndarray)
 
@@ -263,7 +261,7 @@ class TestMeanSquareDisplacement:
 
         # Continuous API with Euclidean distance (default)
         tau_values, msd_values = mean_square_displacement(
-            positions, times, distance_type="euclidean", max_tau=5.0
+            positions, times, metric="euclidean", max_tau=5.0
         )
 
         # Both should be 1D arrays
@@ -282,7 +280,7 @@ class TestMeanSquareDisplacement:
 
         # Continuous API with Euclidean distance
         _tau_values, msd_values = mean_square_displacement(
-            positions, times, distance_type="euclidean", max_tau=5.0
+            positions, times, metric="euclidean", max_tau=5.0
         )
 
         # MSD should generally increase with tau (monotonic for diffusion)
@@ -298,7 +296,7 @@ class TestMeanSquareDisplacement:
 
         # Continuous API
         _tau_values, msd_values = mean_square_displacement(
-            positions, times, distance_type="euclidean", max_tau=5.0
+            positions, times, metric="euclidean", max_tau=5.0
         )
 
         # All MSD values should be zero (no displacement)
@@ -310,7 +308,7 @@ class TestMeanSquareDisplacement:
         times = np.linspace(0, 10, 50)
 
         tau_values, _ = mean_square_displacement(
-            positions, times, distance_type="euclidean", max_tau=3.0
+            positions, times, metric="euclidean", max_tau=3.0
         )
 
         # All tau values should be <= max_tau
@@ -322,7 +320,7 @@ class TestMeanSquareDisplacement:
         times = np.linspace(0, 10, 50)
 
         tau_values, msd_values = mean_square_displacement(
-            positions, times, distance_type="euclidean", max_tau=5.0
+            positions, times, metric="euclidean", max_tau=5.0
         )
 
         assert tau_values.dtype == np.float64
@@ -342,7 +340,7 @@ class TestMeanSquareDisplacement:
         env = Environment.from_samples(positions, bin_size=5.0)
         bin_positions = env.bin_centers[env.bin_at(positions)]
         tau_geo, msd_geo = mean_square_displacement(
-            bin_positions, times, distance_type="geodesic", env=env, max_tau=5.0
+            bin_positions, times, metric="geodesic", env=env, max_tau=5.0
         )
         assert isinstance(tau_geo, np.ndarray)
         assert isinstance(msd_geo, np.ndarray)
@@ -362,7 +360,7 @@ class TestTrajectoryMetricsIntegration:
 
         # Continuous API: all metrics work directly on positions!
         turn_angles = compute_turn_angles(positions)
-        step_lengths = compute_step_lengths(positions, distance_type="euclidean")
+        step_lengths = compute_step_lengths(positions, metric="euclidean")
 
         # Home range still uses bins (makes sense for occupancy-based metrics)
         env = Environment.from_samples(positions, bin_size=5.0)
@@ -371,7 +369,7 @@ class TestTrajectoryMetricsIntegration:
 
         # MSD uses continuous positions
         tau_values, msd_values = mean_square_displacement(
-            positions, times, distance_type="euclidean", max_tau=10.0
+            positions, times, metric="euclidean", max_tau=10.0
         )
 
         # All metrics should be computed successfully
@@ -415,9 +413,7 @@ class TestGeodesicDistanceOptimization:
         positions = env.bin_centers[position_bins]
 
         # Get step lengths using our optimized implementation
-        step_lengths = compute_step_lengths(
-            positions, distance_type="geodesic", env=env
-        )
+        step_lengths = compute_step_lengths(positions, metric="geodesic", env=env)
 
         # Compare to NetworkX ground truth (per-step Dijkstra)
         for i in range(len(step_lengths)):
@@ -467,9 +463,7 @@ class TestGeodesicDistanceOptimization:
         position_bins = env.bin_at(positions)
         bin_positions = env.bin_centers[position_bins]
 
-        step_lengths = compute_step_lengths(
-            bin_positions, distance_type="geodesic", env=env
-        )
+        step_lengths = compute_step_lengths(bin_positions, metric="geodesic", env=env)
 
         # Step lengths should be finite for connected steps, inf for disconnected
         assert np.all(step_lengths >= 0), "All step lengths should be non-negative"

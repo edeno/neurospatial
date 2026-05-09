@@ -428,7 +428,7 @@ class TestHeadingFromVelocity:
         positions[70:, 0] = 30 + np.arange(30)
 
         headings = heading_from_velocity(
-            positions, dt=0.1, min_speed=0.5, smoothing_sigma=2.0
+            positions, dt=0.1, min_speed=0.5, bandwidth=2.0
         )
 
         # Stationary period should have smoothly interpolated headings
@@ -472,8 +472,8 @@ class TestHeadingFromVelocity:
         noise = rng.normal(0, 0.5, size=(100, 2))
         positions = np.column_stack([t * 10, np.zeros_like(t)]) + noise
 
-        headings_no_smooth = heading_from_velocity(positions, dt=0.1, smoothing_sigma=0)
-        headings_smooth = heading_from_velocity(positions, dt=0.1, smoothing_sigma=5)
+        headings_no_smooth = heading_from_velocity(positions, dt=0.1, bandwidth=0)
+        headings_smooth = heading_from_velocity(positions, dt=0.1, bandwidth=5)
 
         # Smoothed version should have less variance
         var_no_smooth = np.nanvar(headings_no_smooth[10:-10])

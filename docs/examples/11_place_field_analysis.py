@@ -142,7 +142,7 @@ place_cell = PlaceCellModel(
     width=sigma,
     max_rate=peak_rate,
     baseline_rate=0.001,  # Minimal baseline (0.001 Hz)
-    distance_metric="euclidean",  # Fast Euclidean distance
+    metric="euclidean",  # Fast Euclidean distance
     seed=42,
 )
 
@@ -635,7 +635,7 @@ pc_tmaze = PlaceCellModel(
     width=12.0,
     max_rate=15.0,
     baseline_rate=0.1,
-    distance_metric="euclidean",
+    metric="euclidean",
     seed=42,
 )
 
@@ -932,7 +932,7 @@ pc_session1 = PlaceCellModel(
     width=8.0,
     max_rate=15.0,
     baseline_rate=0.1,
-    distance_metric="euclidean",
+    metric="euclidean",
     seed=100,
 )
 
@@ -960,7 +960,7 @@ pc_session2 = PlaceCellModel(
     width=8.0,
     max_rate=15.0,
     baseline_rate=0.1,
-    distance_metric="euclidean",
+    metric="euclidean",
     seed=100,
 )
 
@@ -1025,7 +1025,7 @@ if len(fields_session1) > 0 and len(fields_session2) > 0:
         rate_session2,
         fields_session2[0],
         track_env,
-        use_geodesic=False,  # Euclidean distance
+        metric="euclidean",  # Euclidean distance
     )
 
     # Compare to ground truth
@@ -1153,7 +1153,7 @@ pc_stem = PlaceCellModel(
     width=10.0,
     max_rate=18.0,
     baseline_rate=0.1,
-    distance_metric="euclidean",
+    metric="euclidean",
     seed=200,
 )
 
@@ -1184,7 +1184,7 @@ pc_arm = PlaceCellModel(
     width=10.0,
     max_rate=18.0,
     baseline_rate=0.1,
-    distance_metric="euclidean",
+    metric="euclidean",
     seed=201,
 )
 
@@ -1238,7 +1238,7 @@ if len(fields_stem) > 0 and len(fields_arm) > 0:
         rate_arm,
         fields_arm[0],
         tmaze_env,
-        use_geodesic=False,
+        metric="euclidean",
     )
 
     # Geodesic distance (following the maze path)
@@ -1249,7 +1249,7 @@ if len(fields_stem) > 0 and len(fields_arm) > 0:
         rate_arm,
         fields_arm[0],
         tmaze_env,
-        use_geodesic=True,
+        metric="geodesic",
     )
 
     # Compute ground truth distances
@@ -1356,12 +1356,12 @@ print("\nAlways use geodesic distance for complex environments!")
 # %% [markdown]
 # ### When to Use Euclidean vs Geodesic Distance
 #
-# **Use Euclidean distance** (`use_geodesic=False`) when:
+# **Use Euclidean distance** (`metric="euclidean"`) when:
 # - Open field environments with no barriers
 # - Computational speed is critical
 # - You want to compare to older literature (most papers use Euclidean)
 #
-# **Use Geodesic distance** (`use_geodesic=True`) when:
+# **Use Geodesic distance** (`metric="geodesic"`) when:
 # - Mazes (T-maze, plus-maze, radial arm maze)
 # - Multi-room environments
 # - Environments with barriers or walls

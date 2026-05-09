@@ -335,7 +335,7 @@ def detect_runs_between_regions(
     target: str,
     min_duration: float = 0.5,
     max_duration: float = 10.0,
-    velocity_threshold: float | None = None,
+    min_speed: float | None = None,
 ) -> list[Run]:
     """Detect runs from source region to target region.
 
@@ -362,7 +362,7 @@ def detect_runs_between_regions(
     max_duration : float, optional
         Maximum run duration in seconds. Default: 10.0.
         Runs exceeding this are marked as failed (timeout).
-    velocity_threshold : float or None, optional
+    min_speed : float or None, optional
         Minimum velocity (units/second) to count as movement.
         If None, no velocity filtering is applied. Default: None.
 
@@ -512,7 +512,7 @@ def detect_runs_between_regions(
             continue
 
         # Optional velocity filter
-        if velocity_threshold is not None:
+        if min_speed is not None:
             # Compute velocity during run
             run_positions = positions[exit_idx : end_idx + 1]
             run_times = times[exit_idx : end_idx + 1]
@@ -524,7 +524,7 @@ def detect_runs_between_regions(
                 velocities = distances / dt
                 mean_velocity = np.mean(velocities)
 
-                if mean_velocity < velocity_threshold:
+                if mean_velocity < min_speed:
                     continue
 
         # Create run
@@ -543,7 +543,7 @@ def detect_runs_between_regions(
 def segment_by_velocity(
     positions: NDArray[np.float64],
     times: NDArray[np.float64],
-    threshold: float,
+    min_speed: float,
     *,
     min_duration: float = 0.5,
     hysteresis: float = 2.0,
@@ -552,8 +552,8 @@ def segment_by_velocity(
     """Segment trajectory into movement and rest periods based on velocity.
 
     Uses hysteresis thresholding to classify trajectory epochs as movement
-    (velocity above threshold) or rest (velocity below threshold). Filters
-    out brief segments shorter than min_duration. Useful for identifying
+    (velocity above ``min_speed``) or rest (velocity below it). Filters out
+    brief segments shorter than ``min_duration``. Useful for identifying
     behavioral states, analyzing exploration patterns, and preprocessing
     for place field analysis.
 
@@ -563,17 +563,17 @@ def segment_by_velocity(
         Continuous position samples (e.g., in cm).
     times : NDArray[np.float64], shape (n_samples,)
         Time stamps corresponding to positions (seconds).
-    threshold : float
+    min_speed : float
         Velocity threshold for movement classification (units/second).
-        Samples with velocity > threshold are considered movement.
+        Samples with velocity > ``min_speed`` are considered movement.
     min_duration : float, optional
         Minimum segment duration in seconds. Default: 0.5.
         Segments shorter than this are excluded.
     hysteresis : float, optional
-        Hysteresis factor for threshold. Default: 2.0.
-        - Movement starts when velocity > threshold
-        - Movement ends when velocity < threshold / hysteresis
-        Hysteresis prevents rapid switching near threshold.
+        Hysteresis factor on ``min_speed``. Default: 2.0.
+        - Movement starts when velocity > ``min_speed``
+        - Movement ends when velocity < ``min_speed / hysteresis``
+        Hysteresis prevents rapid switching near the threshold.
     smooth_window : float, optional
         Temporal window for velocity smoothing in seconds. Default: 0.2.
         Velocities are smoothed with a moving average to reduce noise.
@@ -589,7 +589,7 @@ def segment_by_velocity(
     ValueError
         If positions and times have different lengths.
     ValueError
-        If threshold <= 0 or hysteresis <= 1.
+        If ``min_speed <= 0`` or ``hysteresis <= 1``.
 
     See Also
     --------
@@ -603,8 +603,8 @@ def segment_by_velocity(
     to reduce noise from measurement errors.
 
     Hysteresis thresholding prevents "flickering" near the threshold:
-    - Movement starts when velocity exceeds threshold
-    - Movement continues until velocity drops below threshold/hysteresis
+    - Movement starts when velocity exceeds ``min_speed``
+    - Movement continues until velocity drops below ``min_speed / hysteresis``
     - This creates a "buffer zone" for stable state transitions
 
     Common use cases:
@@ -624,7 +624,7 @@ def segment_by_velocity(
     >>> times = np.linspace(0, 20, len(trajectory))
     >>> # Segment by velocity
     >>> segments = segment_by_velocity(
-    ...     trajectory, times, threshold=2.0, min_duration=0.5
+    ...     trajectory, times, min_speed=2.0, min_duration=0.5
     ... )
     >>> len(segments) > 0  # Should detect movement period
     True
@@ -640,8 +640,8 @@ def segment_by_velocity(
             f"Got {len(positions)} and {len(times)}"
         )
 
-    if threshold <= 0:
-        raise ValueError(f"threshold must be positive. Got {threshold}")
+    if min_speed <= 0:
+        raise ValueError(f"min_speed must be positive. Got {min_speed}")
 
     if hysteresis <= 1.0:
         raise ValueError(f"hysteresis must be > 1.0 for stability. Got {hysteresis}")
@@ -667,7 +667,7 @@ def segment_by_velocity(
             velocities = np.convolve(velocities, kernel, mode="same")
 
     # Hysteresis thresholding
-    lower_threshold = threshold / hysteresis
+    lower_threshold = min_speed / hysteresis
     is_moving = np.zeros(len(velocities), dtype=bool)
     currently_moving = False
 
@@ -679,8 +679,8 @@ def segment_by_velocity(
             else:
                 is_moving[i] = True
         else:
-            # Start moving when velocity exceeds threshold
-            if velocities[i] > threshold:
+            # Start moving when velocity exceeds min_speed
+            if velocities[i] > min_speed:
                 currently_moving = True
                 is_moving[i] = True
 

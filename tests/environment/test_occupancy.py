@@ -140,7 +140,7 @@ class TestOccupancyGapHandling:
 class TestOccupancySpeedFiltering:
     """Test speed filtering functionality."""
 
-    def test_occupancy_speed_threshold(self, minimal_20x20_grid_env):
+    def test_occupancy_min_speed(self, minimal_20x20_grid_env):
         """Test that slow periods are excluded when min_speed is set."""
         env = minimal_20x20_grid_env
 
@@ -208,9 +208,7 @@ class TestOccupancySmoothing:
 
         # Use max_gap=None to count the full interval
         occ_raw = env.occupancy(times, positions, max_gap=None)
-        occ_smoothed = env.occupancy(
-            times, positions, kernel_bandwidth=3.0, max_gap=None
-        )
+        occ_smoothed = env.occupancy(times, positions, bandwidth=3.0, max_gap=None)
 
         # Smoothing should spread mass to more bins
         assert (occ_smoothed > 0).sum() > (occ_raw > 0).sum()
@@ -234,9 +232,7 @@ class TestOccupancySmoothing:
 
         # Use max_gap=1.0 to allow typical intervals (default 0.5 is too small)
         occ_raw = env.occupancy(times, positions, max_gap=1.0)
-        occ_smoothed = env.occupancy(
-            times, positions, kernel_bandwidth=2.0, max_gap=1.0
-        )
+        occ_smoothed = env.occupancy(times, positions, bandwidth=2.0, max_gap=1.0)
 
         # Mass conservation
         assert_allclose(occ_smoothed.sum(), occ_raw.sum(), rtol=1e-3)

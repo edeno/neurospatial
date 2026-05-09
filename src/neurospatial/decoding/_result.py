@@ -266,7 +266,7 @@ class DecodingResult:
             # With position overlay
             from neurospatial.animation.overlays import PositionOverlay
 
-            overlay = PositionOverlay(data=positions, times=times)
+            overlay = PositionOverlay(positions=positions, times=times)
             env.animate_fields(result.posterior, overlays=[overlay])
 
         When ``times`` is provided, the x-axis shows time in seconds with

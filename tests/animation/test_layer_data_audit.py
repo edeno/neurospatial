@@ -386,7 +386,9 @@ class TestNativeTimeDimensionOverlays:
 
         positions = rng.random((100, 2)) * 100
         times = np.linspace(0, 10, 100)
-        overlay = PositionOverlay(data=positions, times=times, color="red", size=10)
+        overlay = PositionOverlay(
+            positions=positions, times=times, color="red", size=10
+        )
 
         # Create mock env with proper dimension_ranges format
         # dimension_ranges is a list of (min, max) tuples
@@ -443,7 +445,7 @@ class TestNativeTimeDimensionOverlays:
         times = np.linspace(0, 10, 100)
 
         overlay = HeadDirectionOverlay(
-            data=angles,  # Angles in radians
+            headings=angles,  # Angles in radians
             times=times,
             length=10.0,
             color="hsv",

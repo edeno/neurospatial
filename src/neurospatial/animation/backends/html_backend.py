@@ -704,7 +704,7 @@ def render_html(
             f"  1. Subsample position data:\n"
             f"     # Subsample overlay positions to match reduced frame rate\n"
             f"     positions_subsampled = positions[::5]  # Every 5th position\n"
-            f"     overlay = PositionOverlay(data=positions_subsampled, ...)\n"
+            f"     overlay = PositionOverlay(positions=positions_subsampled, ...)\n"
             f"\n"
             f"  2. Use video backend for full-fidelity overlays:\n"
             f"     env.animate_fields(fields, backend='video', save_path='output.mp4',\n"

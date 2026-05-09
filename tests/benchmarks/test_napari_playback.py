@@ -348,7 +348,7 @@ class TestNapariPlaybackIndividualOverlays:
 
         def setup_and_step():
             overlay = PositionOverlay(
-                data=trajectory.copy(),
+                positions=trajectory.copy(),
                 color="red",
                 size=12.0,
                 trail_length=15,
@@ -469,7 +469,7 @@ class TestNapariPlaybackIndividualOverlays:
 
         def setup_and_step():
             overlay = HeadDirectionOverlay(
-                data=head_angles.copy(),
+                headings=head_angles.copy(),
                 color="yellow",
                 length=3.0,
             )
@@ -766,14 +766,17 @@ class TestNapariPlaybackCombinedOverlays:
         def setup_and_step():
             overlays = [
                 PositionOverlay(
-                    data=position_data.copy(), color="red", size=12.0, trail_length=15
+                    positions=position_data.copy(),
+                    color="red",
+                    size=12.0,
+                    trail_length=15,
                 ),
                 BodypartOverlay(
                     data={k: v.copy() for k, v in bodypart_data.items()},
                     skeleton=skeleton,
                 ),
                 HeadDirectionOverlay(
-                    data=head_angles.copy(), color="yellow", length=3.0
+                    headings=head_angles.copy(), color="yellow", length=3.0
                 ),
                 EventOverlay(
                     event_times={"spikes": event_times_arr.copy()},

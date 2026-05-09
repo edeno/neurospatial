@@ -225,7 +225,7 @@ class TestComputeEgocentricOccupancy:
 
 
 class TestComputeEgocentricOccupancyDistanceMetric:
-    """Tests for distance_metric parameter."""
+    """Tests for metric parameter."""
 
     def test_euclidean_default(
         self,
@@ -268,7 +268,7 @@ class TestComputeEgocentricOccupancyDistanceMetric:
                 distance_range=(0.0, 50.0),
                 n_distance_bins=10,
                 n_direction_bins=12,
-                distance_metric="geodesic",
+                metric="geodesic",
             )
 
     def test_geodesic_with_env(
@@ -290,12 +290,12 @@ class TestComputeEgocentricOccupancyDistanceMetric:
             distance_range=(0.0, 50.0),
             n_distance_bins=10,
             n_direction_bins=12,
-            distance_metric="geodesic",
+            metric="geodesic",
             env=env,
         )
         assert occupancy.shape[0] > 0
 
-    def test_invalid_distance_metric_raises(
+    def test_invalid_metric_raises(
         self,
         trajectory_data: dict,
         object_positions: np.ndarray,
@@ -314,7 +314,7 @@ class TestComputeEgocentricOccupancyDistanceMetric:
                 distance_range=(0.0, 50.0),
                 n_distance_bins=10,
                 n_direction_bins=12,
-                distance_metric="manhattan",  # Invalid
+                metric="manhattan",  # Invalid
             )
 
 
@@ -606,7 +606,7 @@ class TestBinEgocentricSpikeTrainValidation:
 
 
 class TestBinEgocentricSpikeTrainDistanceMetric:
-    """Tests for distance_metric parameter in spike train binning."""
+    """Tests for metric parameter in spike train binning."""
 
     def test_euclidean_default(
         self,
@@ -648,7 +648,7 @@ class TestBinEgocentricSpikeTrainDistanceMetric:
                 distance_range=(0.0, 50.0),
                 n_distance_bins=10,
                 n_direction_bins=12,
-                distance_metric="geodesic",
+                metric="geodesic",
             )
 
     def test_geodesic_with_env(
@@ -670,7 +670,7 @@ class TestBinEgocentricSpikeTrainDistanceMetric:
             distance_range=(0.0, 50.0),
             n_distance_bins=10,
             n_direction_bins=12,
-            distance_metric="geodesic",
+            metric="geodesic",
             env=env,
         )
         assert spike_counts.shape[0] > 0
@@ -937,7 +937,7 @@ class TestBinEgocentricSpikeTrains:
 
 
 class TestBinEgocentricSpikeTrainsDistanceMetric:
-    """Tests for distance_metric parameter in batch spike train binning."""
+    """Tests for metric parameter in batch spike train binning."""
 
     def test_geodesic_requires_env(
         self,
@@ -960,7 +960,7 @@ class TestBinEgocentricSpikeTrainsDistanceMetric:
                 distance_range=(0.0, 50.0),
                 n_distance_bins=10,
                 n_direction_bins=12,
-                distance_metric="geodesic",
+                metric="geodesic",
             )
 
     def test_geodesic_with_env(
@@ -984,7 +984,7 @@ class TestBinEgocentricSpikeTrainsDistanceMetric:
             distance_range=(0.0, 50.0),
             n_distance_bins=10,
             n_direction_bins=12,
-            distance_metric="geodesic",
+            metric="geodesic",
             env=env,
         )
         assert spike_counts.shape[0] == len(spike_times_list)
@@ -1142,7 +1142,7 @@ class TestEgocentricNaNHandling:
             positions,
             headings,
             object_positions,
-            distance_metric="geodesic",
+            metric="geodesic",
             env=env_with_hole,
         )
 
@@ -1173,7 +1173,7 @@ class TestEgocentricNaNHandling:
             positions,
             headings,
             object_positions,
-            distance_metric="geodesic",
+            metric="geodesic",
             env=env_with_hole,
         )
 
@@ -1206,7 +1206,7 @@ class TestEgocentricNaNHandling:
             positions,
             headings,
             object_positions,
-            distance_metric="geodesic",
+            metric="geodesic",
             env=env_with_hole,
         )
 
@@ -1231,7 +1231,7 @@ class TestEgocentricNaNHandling:
             positions,
             headings,
             object_positions,
-            distance_metric="geodesic",
+            metric="geodesic",
             env=env_with_hole,
         )
 
@@ -1259,7 +1259,7 @@ class TestEgocentricNaNHandling:
             positions,
             headings,
             object_positions,
-            distance_metric="geodesic",
+            metric="geodesic",
             env=env_with_hole,
         )
 
@@ -1297,7 +1297,7 @@ class TestEgocentricNaNHandling:
             distance_range=(0.0, 50.0),
             n_distance_bins=10,
             n_direction_bins=12,
-            distance_metric="geodesic",
+            metric="geodesic",
             env=env_with_hole,
         )
 
@@ -1336,7 +1336,7 @@ class TestEgocentricNaNHandling:
             distance_range=(0.0, 50.0),
             n_distance_bins=10,
             n_direction_bins=12,
-            distance_metric="geodesic",
+            metric="geodesic",
             env=env_with_hole,
         )
 

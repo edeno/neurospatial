@@ -1213,10 +1213,7 @@ def traveled_path_length(
             "for straight-line distances."
         )
 
-    distance_type: Literal["euclidean", "geodesic"] = (
-        "geodesic" if metric == "geodesic" else "euclidean"
-    )
-    step_lengths = compute_step_lengths(positions, distance_type=distance_type, env=env)
+    step_lengths = compute_step_lengths(positions, metric=metric, env=env)
     return float(np.sum(step_lengths))
 
 

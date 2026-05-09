@@ -511,7 +511,7 @@ if NAPARI_AVAILABLE:
 
     # Create position overlay with trail
     position_overlay = PositionOverlay(
-        data=positions_subsampled,
+        positions=positions_subsampled,
         color="cyan",
         size=15.0,
         trail_length=15,  # Show last 15 positions as a trail
@@ -522,7 +522,7 @@ if NAPARI_AVAILABLE:
     if "head_orientation" in position_info.columns:
         head_angles = position_info["head_orientation"].values[::subsample_rate]
         head_direction_overlay = HeadDirectionOverlay(
-            data=head_angles,
+            headings=head_angles,
             color="yellow",
             length=10.0,  # Arrow length in cm
             width=2.0,

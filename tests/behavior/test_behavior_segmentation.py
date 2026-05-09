@@ -226,7 +226,7 @@ class TestSegmentByVelocityBasic:
         segments = segment_by_velocity(
             positions,
             times,
-            threshold=1.0,
+            min_speed=1.0,
             min_duration=0.5,
         )
 
@@ -240,7 +240,7 @@ class TestSegmentByVelocityBasic:
         times = np.linspace(0, 10, 50)
 
         with pytest.raises(ValueError, match="positive"):
-            segment_by_velocity(positions, times, threshold=-1.0)
+            segment_by_velocity(positions, times, min_speed=-1.0)
 
 
 class TestDetectLapsBasic:
