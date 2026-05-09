@@ -93,7 +93,7 @@ positions = 50 + np.cumsum(velocities * dt, axis=0)
 positions = np.clip(positions, 10, 90)  # Stay in bounds
 
 # Compute heading from velocity
-headings = heading_from_velocity(positions, dt, min_speed=2.0, smoothing_sigma=3.0)
+headings = heading_from_velocity(positions, dt, min_speed=2.0, bandwidth=3.0)
 
 print(f"Trajectory: {n_time} samples, {times[-1]:.1f}s duration")
 print(
@@ -358,11 +358,11 @@ print(
 # Classify cells
 svc_view_info = svc_view_result.view_spatial_information()
 svc_place_info = svc_place_result.spatial_information()
-svc_is_svc = svc_view_result.is_view_cell()
+svc_is_svc = svc_view_result.is_spatial_view_cell()
 
 pc_view_info = pc_view_result.view_spatial_information()
 pc_place_info = pc_place_result.spatial_information()
-pc_is_svc = pc_view_result.is_view_cell()
+pc_is_svc = pc_view_result.is_spatial_view_cell()
 
 print("=" * 60)
 print("SPATIAL VIEW CELL METRICS")

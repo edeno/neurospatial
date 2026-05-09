@@ -671,7 +671,7 @@ except ImportError:
 # ```python
 # # Simple trajectory overlay
 # from neurospatial import PositionOverlay
-# overlay = PositionOverlay(data=trajectory, color="red", trail_length=10)
+# overlay = PositionOverlay(positions=trajectory, color="red", trail_length=10)
 # env.animate_fields(fields, overlays=[overlay], backend="napari")
 #
 # # Pose with skeleton
@@ -691,7 +691,7 @@ except ImportError:
 # env.animate_fields(fields, overlays=[overlay], backend="napari")
 #
 # # Mixed-rate alignment
-# overlay = PositionOverlay(data=trajectory_120hz, times=times_120hz)
+# overlay = PositionOverlay(positions=trajectory_120hz, times=times_120hz)
 # env.animate_fields(
 #     fields_10hz,
 #     overlays=[overlay],

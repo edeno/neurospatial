@@ -235,7 +235,7 @@ for i, center in enumerate(field_centers):
         width=10.0,  # 10 cm field width
         max_rate=20.0 + i * 2.0,  # Vary peak rates slightly
         baseline_rate=0.1,
-        distance_metric="euclidean",  # Fast
+        metric="euclidean",  # Fast
         seed=42 + i,
     )
     place_cells.append(pc)
@@ -645,7 +645,7 @@ bc_south = BoundaryCellModel(
     direction_tolerance=np.pi / 6,  # ±30 degrees
     max_rate=20.0,
     baseline_rate=0.1,
-    distance_metric="geodesic",  # Use graph-based distance
+    metric="geodesic",  # Use graph-based distance
 )
 
 # Generate spikes
@@ -695,16 +695,14 @@ test_positions = positions[:1000]  # Use 1000 positions for timing
 
 # Euclidean distance (fast)
 pc_euclidean = PlaceCellModel(
-    test_env, center=np.array([50.0, 50.0]), distance_metric="euclidean"
+    test_env, center=np.array([50.0, 50.0]), metric="euclidean"
 )
 start = time.time()
 rates_euclidean = pc_euclidean.firing_rate(test_positions)
 time_euclidean = time.time() - start
 
 # Geodesic distance (slower)
-pc_geodesic = PlaceCellModel(
-    test_env, center=np.array([50.0, 50.0]), distance_metric="geodesic"
-)
+pc_geodesic = PlaceCellModel(test_env, center=np.array([50.0, 50.0]), metric="geodesic")
 start = time.time()
 rates_geodesic = pc_geodesic.firing_rate(test_positions)
 time_geodesic = time.time() - start

@@ -133,7 +133,7 @@ place_cell = PlaceCellModel(
     width=tuning_width,
     max_rate=peak_rate,
     baseline_rate=0.001,  # Minimal baseline firing
-    distance_metric="euclidean",
+    metric="euclidean",
 )
 
 # 4. Generate spike train from place cell firing rates

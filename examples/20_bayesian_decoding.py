@@ -323,13 +323,13 @@ print(f"  posterior shape: {result.posterior.shape}")
 print(f"  map_estimate shape: {result.map_estimate.shape} (bin indices)")
 print(f"  map_position shape: {result.map_position.shape} (coordinates)")
 print(f"  mean_position shape: {result.mean_position.shape} (coordinates)")
-print(f"  uncertainty shape: {result.uncertainty.shape} (entropy in bits)")
+print(f"  uncertainty shape: {result.posterior_entropy.shape} (entropy in bits)")
 print(f"  times shape: {result.times.shape if result.times is not None else 'None'}")
 
 print(
     f"\nPosterior sum check (should be ~1.0): {result.posterior.sum(axis=1).mean():.6f}"
 )
-print(f"Mean uncertainty: {result.uncertainty.mean():.2f} bits")
+print(f"Mean uncertainty: {result.posterior_entropy.mean():.2f} bits")
 print(f"Max uncertainty (uniform): {np.log2(env.n_bins):.2f} bits")
 
 # %% [markdown]
@@ -455,7 +455,7 @@ ax.legend()
 
 # Error vs uncertainty
 ax = axes[1]
-ax.scatter(result.uncertainty, errors, alpha=0.3, s=5, c=COLORS["blue"])
+ax.scatter(result.posterior_entropy, errors, alpha=0.3, s=5, c=COLORS["blue"])
 ax.set_xlabel("Uncertainty (bits)")
 ax.set_ylabel("Decoding error (cm)")
 ax.set_title("Error vs Posterior Uncertainty", fontweight="bold")

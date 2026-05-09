@@ -633,9 +633,10 @@ def segment_by_velocity(
     ... )
     >>> len(segments) > 0  # Should detect movement period
     True
-    >>> # Each segment is (start_time, end_time)
-    >>> for start, end in segments:
-    ...     duration = end - start
+    >>> # Each segment is a Run instance with start_time/end_time fields.
+    >>> # See the Run docstring for the full schema.
+    >>> for run in segments:
+    ...     duration = run.end_time - run.start_time
     ...     assert duration >= 0.5  # min_duration enforced
     """
     # Validate inputs

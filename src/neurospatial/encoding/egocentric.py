@@ -1168,7 +1168,11 @@ def compute_egocentric_rate(
 
     # Reuse the batch binning path for the single-neuron API so egocentric
     # coordinates are computed once and shared by spike counts and occupancy.
-    spike_counts_batch, occupancy, env = bin_egocentric_spike_trains(
+    # The third return is the *polar* env that indexes the (distance,
+    # direction) bins; keep it under a distinct name so the cartesian
+    # ``env`` parameter (used for geodesic distance, validated above)
+    # is not shadowed mid-function.
+    spike_counts_batch, occupancy, polar_env = bin_egocentric_spike_trains(
         [spike_times],
         times,
         positions,
@@ -1186,7 +1190,7 @@ def compute_egocentric_rate(
     # Apply smoothing to compute firing rate
     # smooth_rate_map dispatches to JAX or NumPy based on backend
     firing_rate = smooth_rate_map(
-        env,
+        polar_env,
         spike_counts,
         occupancy,
         method=smoothing_method,
@@ -1206,7 +1210,7 @@ def compute_egocentric_rate(
     return EgocentricRateResult(
         firing_rate=firing_rate,
         occupancy=occupancy,
-        env=env,
+        env=polar_env,
         distance_range=distance_range,
         n_distance_bins=n_distance_bins,
         n_direction_bins=n_direction_bins,
@@ -1487,7 +1491,10 @@ def compute_egocentric_rates(
             compute_egocentric_occupancy,
         )
 
-        occupancy, env = compute_egocentric_occupancy(
+        # The third return is the polar (distance, direction) env;
+        # bind it under a distinct name to avoid shadowing the
+        # cartesian ``env`` parameter (used for geodesic distance).
+        occupancy, polar_env = compute_egocentric_occupancy(
             times,
             positions,
             headings,
@@ -1498,7 +1505,9 @@ def compute_egocentric_rates(
             metric=metric,
             env=env,
         )
-        firing_rates_result: ArrayLike = np.empty((0, env.n_bins), dtype=np.float64)
+        firing_rates_result: ArrayLike = np.empty(
+            (0, polar_env.n_bins), dtype=np.float64
+        )
         if resolved_backend == "jax" and is_jax_available():
             import jax.numpy as jnp
 
@@ -1507,15 +1516,16 @@ def compute_egocentric_rates(
         return EgocentricRatesResult(
             firing_rates=firing_rates_result,
             occupancy=occupancy,
-            env=env,
+            env=polar_env,
             distance_range=distance_range,
             n_distance_bins=n_distance_bins,
             n_direction_bins=n_direction_bins,
         )
 
-    # Bin spike trains by egocentric coordinates and compute occupancy
-    # bin_egocentric_spike_trains returns (spike_counts, occupancy, env)
-    spike_counts, occupancy, env = bin_egocentric_spike_trains(
+    # Bin spike trains by egocentric coordinates and compute occupancy.
+    # Third return is the polar env (see above); rebind to ``polar_env``
+    # so the cartesian ``env`` parameter remains accessible.
+    spike_counts, occupancy, polar_env = bin_egocentric_spike_trains(
         spike_times_list,
         times,
         positions,
@@ -1532,7 +1542,7 @@ def compute_egocentric_rates(
     # Apply batch smoothing to compute firing rates
     # smooth_rate_maps_batch dispatches to JAX or NumPy based on backend
     firing_rates = smooth_rate_maps_batch(
-        env,
+        polar_env,
         spike_counts,
         occupancy,
         method=smoothing_method,
@@ -1552,7 +1562,7 @@ def compute_egocentric_rates(
     return EgocentricRatesResult(
         firing_rates=firing_rates,
         occupancy=occupancy,
-        env=env,
+        env=polar_env,
         distance_range=distance_range,
         n_distance_bins=n_distance_bins,
         n_direction_bins=n_direction_bins,

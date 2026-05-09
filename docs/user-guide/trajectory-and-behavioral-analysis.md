@@ -214,7 +214,8 @@ $$
 **Key Points**:
 - Uses "all pairs" estimator (standard for stationary processes)
 - Handles disconnected bins gracefully (skips invalid pairs)
-- Returns (tau_values, msd_values) for plotting
+- Returns an ``MSDResult`` dataclass with ``lags`` (tau values) and
+  ``msd`` (MSD values) fields, both shape (n_lags,)
 
 **Applications**:
 - **Movement classification**: Random vs directed search
@@ -281,7 +282,7 @@ runs = detect_runs_between_regions(
     target="goal",
     min_duration=1.0,
     max_duration=10.0,
-    velocity_threshold=5.0,  # Optional speed filter
+    min_speed=5.0,  # Optional speed filter
 )
 
 # Analyze successful vs failed runs
@@ -323,18 +324,23 @@ movement_epochs = segment_by_velocity(
     smooth_window=0.2,  # seconds
 )
 
-# Analyze movement statistics
-total_movement_time = sum(end - start for start, end in movement_epochs)
+# Analyze movement statistics. segment_by_velocity returns list[Run]
+# (matching detect_runs_between_regions, detect_laps, ...). For
+# velocity epochs, ``bins`` is empty and ``success`` is True; only
+# start_time / end_time vary.
+total_movement_time = sum(
+    run.end_time - run.start_time for run in movement_epochs
+)
 print(f"Movement time: {total_movement_time:.1f}s ({total_movement_time/times[-1]:.1%})")
 ```
 
 **Hysteresis Thresholding**:
-- Enter movement: velocity > threshold
-- Exit movement: velocity < threshold / hysteresis
+- Enter movement: velocity > min_speed
+- Exit movement: velocity < min_speed / hysteresis
 - Prevents rapid flickering between states
 
 **Key Parameters**:
-- `threshold`: Velocity threshold (same units as positions/time)
+- `min_speed`: Velocity threshold (same units as positions/time)
 - `min_duration`: Filter brief epochs
 - `hysteresis`: Exit threshold ratio (default 2.0)
 - `smooth_window`: Velocity smoothing window (seconds)

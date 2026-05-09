@@ -142,6 +142,11 @@ firing_rate[~valid_mask] = np.nan
 
 Extract the temporal sequence of bins visited during a trajectory.
 
+`Environment` exposes two related methods. ``bin_sequence`` always
+returns a 1-D array of bin indices; ``bin_sequence_with_runs`` returns
+the same indices plus the per-run start indices and lengths in a
+``BinSequenceWithRuns`` dataclass.
+
 ```python
 def bin_sequence(
     self,
@@ -149,14 +154,9 @@ def bin_sequence(
     positions: NDArray[np.float64],
     *,
     dedup: bool = True,
-    return_runs: bool = False,
     outside_value: int | None = -1,
-) -> (
-    NDArray[np.int32]
-    | tuple[NDArray[np.int32], NDArray[np.int64], NDArray[np.int64]]
-):
-    """
-    Get sequence of bins visited over time.
+) -> NDArray[np.int32]:
+    """Map a trajectory to a sequence of bin indices.
 
     Parameters
     ----------
@@ -164,26 +164,42 @@ def bin_sequence(
         Timestamps for each position sample.
     positions : array, shape (n_samples, n_dims)
         Position coordinates over time.
-    dedup : bool, optional
+    dedup : bool, default True
         If True, remove consecutive duplicate bins (compress runs).
-        Default is True.
-    return_runs : bool, optional
-        If True, return (bins, start_indices, end_indices) tuple
-        for run analysis. Default is False.
-    outside_value : int or None, optional
-        Value to use for positions outside active bins.
-        If None, raises error on out-of-bounds positions.
-        Default is -1.
+    outside_value : int or None, default -1
+        Bin index for samples outside active bins. ``None`` drops
+        them from the returned sequence.
 
     Returns
     -------
-    sequence : array, shape (n_samples,) or (n_runs,)
-        Bin indices in temporal order. If dedup=True, consecutive
+    NDArray[np.int32]
+        Bin indices in temporal order. If ``dedup=True``, consecutive
         duplicates are removed.
-    start_indices : array, shape (n_runs,), optional
-        Start indices of each run (if return_runs=True).
-    end_indices : array, shape (n_runs,), optional
-        End indices of each run (if return_runs=True).
+    """
+```
+
+```python
+def bin_sequence_with_runs(
+    self,
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    dedup: bool = True,
+    outside_value: int | None = -1,
+) -> BinSequenceWithRuns:
+    """Same mapping as ``bin_sequence`` plus per-run boundaries.
+
+    Returns a ``BinSequenceWithRuns`` dataclass with three fields:
+
+    - ``bins`` (n_runs,): bin index for each run.
+    - ``run_starts`` (n_runs,): start index of each run in the
+      original ``times``/``positions`` array.
+    - ``run_lengths`` (n_runs,): extent of each run in the original
+      array (always >= 1). ``run_starts[i] + run_lengths[i] - 1`` is
+      the inclusive end index of run i. With ``outside_value=None``,
+      starts and lengths are still expressed in the original-array
+      indexing — i.e., they describe the index range each run came
+      from before outside samples were dropped.
     """
 ```
 
@@ -193,19 +209,23 @@ def bin_sequence(
 # Get bin sequence (deduplicated by default)
 sequence = env.bin_sequence(times, positions)
 
-# Get full sequence with runs
-bins, starts, ends = env.bin_sequence(times, positions, return_runs=True)
+# Get full sequence with run boundaries
+result = env.bin_sequence_with_runs(times, positions)
+bins = result.bins
+starts = result.run_starts
+lengths = result.run_lengths
+ends = starts + lengths - 1  # inclusive end index, when needed
 
-# Analyze run durations
-run_durations = ends - starts
 print(f"Total runs: {len(bins)}")
-print(f"Mean run length: {run_durations.mean():.1f} samples")
+print(f"Mean run length: {lengths.mean():.1f} samples")
 
 # Find longest run
-longest_idx = np.argmax(run_durations)
-print(f"Longest run: {run_durations[longest_idx]} samples in bin {bins[longest_idx]}")
+longest_idx = int(np.argmax(lengths))
+print(
+    f"Longest run: {lengths[longest_idx]} samples in bin {bins[longest_idx]}"
+)
 
-# Get run times (requires timestamps)
+# Get per-run dwell time (requires timestamps)
 run_times = times[ends] - times[starts]
 print(f"Mean dwell time: {run_times.mean():.3f} seconds")
 ```
@@ -216,15 +236,16 @@ print(f"Mean dwell time: {run_times.mean():.3f} seconds")
 # Keep duplicates for fixed-rate analysis
 full_sequence = env.bin_sequence(times, positions, dedup=False)
 
-# Handle out-of-bounds strictly
-try:
-    sequence = env.bin_sequence(times, positions, outside_value=None)
-except ValueError as e:
-    print(f"Out of bounds detected: {e}")
+# Drop out-of-bounds samples instead of marking them with -1
+in_env_only = env.bin_sequence(times, positions, outside_value=None)
 
 # Analyze time outside environment
 sequence_with_invalid = env.bin_sequence(times, positions, outside_value=-1)
-time_outside = np.sum(sequence_with_invalid == -1) / len(times) * (times[-1] - times[0])
+time_outside = (
+    np.sum(sequence_with_invalid == -1)
+    / len(times)
+    * (times[-1] - times[0])
+)
 print(f"Time outside environment: {time_outside:.1f} seconds")
 ```
 
@@ -240,16 +261,21 @@ print(f"Time outside environment: {time_outside:.1f} seconds")
 
 ```python
 # Detect spatial teleportation (large jumps between consecutive bins)
-bins, starts, _ = env.bin_sequence(times, positions, return_runs=True)
+result = env.bin_sequence_with_runs(times, positions)
+bins = result.bins
+starts = result.run_starts
 spatial_jumps = []
 for i in range(len(bins) - 1):
-    dist = env.distance_between_bins(bins[i], bins[i+1])
+    dist = env.distance_between_bins(bins[i], bins[i + 1])
     if dist > 20.0:  # cm
-        jump_time = times[starts[i+1]]
+        jump_time = times[starts[i + 1]]
         spatial_jumps.append((jump_time, dist))
 
 # Compute dwell time per bin
-bins, starts, ends = env.bin_sequence(times, positions, return_runs=True)
+result = env.bin_sequence_with_runs(times, positions)
+bins = result.bins
+starts = result.run_starts
+ends = starts + result.run_lengths - 1
 dwell_times = np.zeros(env.n_bins)
 for bin_id, start, end in zip(bins, starts, ends):
     if bin_id >= 0:  # Skip out-of-bounds
