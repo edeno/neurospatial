@@ -382,10 +382,10 @@ from neurospatial.encoding import (
 ```python
 from neurospatial.encoding.grid import (
     grid_score,                             # Grid cell grid score
-    spatial_autocorrelation,                # Autocorrelation of field
-    grid_orientation,                       # Grid orientation
+    spatial_autocorrelation,                # 2D FFT autocorrelogram (regular grids)
+    spatial_autocorrelation_radial,         # 1D distance profile (irregular topologies)
     grid_scale,                             # Grid spacing
-    grid_properties,                        # Comprehensive properties
+    grid_properties,                        # Comprehensive properties (incl. orientation)
     periodicity_score,                      # Periodicity measure
     GridProperties,                         # Properties dataclass
 )

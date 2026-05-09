@@ -208,8 +208,8 @@ result = peri_event_histogram(
     bin_size=0.025,      # 25 ms bins
 )
 
-# Access results
-firing_rates = result.firing_rate()  # Convert to Hz
+# Access results (firing_rate is a cached attribute, not a method)
+firing_rates = result.firing_rate
 print(f"Peak: {firing_rates.max():.1f} Hz at {result.bin_centers[firing_rates.argmax()]:.2f}s")
 ```
 

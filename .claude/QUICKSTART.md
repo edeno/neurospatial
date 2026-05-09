@@ -123,8 +123,8 @@ result = compute_spatial_rate(
 firing_rate = result.firing_rate  # Shape: (n_bins,)
 
 # Convenience methods on result object
-peak_coords = result.peak_locations()      # (n_dims,) coordinates of peak
-peak_rate = result.peak_firing_rates()     # Scalar max firing rate
+peak_coords = result.peak_location()       # (n_dims,) coordinates of peak
+peak_rate = result.peak_firing_rate()      # Scalar max firing rate
 info = result.spatial_information()        # Skaggs info (bits/spike)
 ```
 
@@ -148,7 +148,7 @@ firing_rates = result.firing_rates  # Shape: (n_neurons, n_bins)
 # Batch metrics
 info = result.spatial_information()  # (n_neurons,)
 sparsity = result.sparsity()         # (n_neurons,)
-peaks = result.peak_locations()      # (n_neurons, n_dims)
+peaks = result.peak_location()       # (n_neurons, n_dims)
 
 # Export to DataFrame
 df = result.to_dataframe()

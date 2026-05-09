@@ -807,40 +807,39 @@ class TestBatchGridScoresNonRegularGrid:
     """Tests for batch_grid_scores with non-regular grid environments."""
 
     @pytest.fixture
-    def env_sparse_grid(self):
-        """Create a sparse (non-regular) environment for testing.
+    def env_dense_random_grid(self):
+        """RegularGrid built from random samples (still passes FFT detector).
 
-        Returns
-        -------
-        env : Environment
-            Environment with sparse coverage.
+        500 uniform-random samples over a 100×100 area at bin_size=5
+        produces a regular 2D grid with ``>=50%`` of bins active, which
+        ``_detect_grid_method`` classifies as ``fft``. The fixture name
+        used to be ``env_sparse_grid`` but the env is *not* actually
+        sparse — for the truly-irregular (graph-layout) contract see
+        ``test_batch_grid_scores_graph_env_legitimate_nan`` below.
         """
         from neurospatial import Environment
 
-        # Create sparse positions (not a regular grid)
         rng = np.random.default_rng(42)
         positions = rng.uniform(-50, 50, size=(500, 2))
-        env = Environment.from_samples(positions, bin_size=5.0)
-        return env
+        return Environment.from_samples(positions, bin_size=5.0)
 
-    def test_batch_grid_scores_sparse_env_returns_nan(self, env_sparse_grid):
-        """Sparse envs that still pass the FFT detector return finite scores.
+    def test_batch_grid_scores_dense_random_env_smoke(self, env_dense_random_grid):
+        """Smoke test: dense-enough random env still takes the FFT path.
 
-        ``env_sparse_grid`` here uses 500 uniform-random points in a 100×100
-        area at bin_size=5, which produces a >=50%-active mask and so still
-        takes the FFT autocorrelation path. The original test was a
-        loose "may return NaN" check; with the M2.B 2.12 split the envs
-        that this fixture produces are still FFT-eligible, and grid_score
-        returns finite numbers. The actual irregular-env contract is
-        pinned by ``test_batch_grid_scores_graph_env_legitimate_nan``
-        below.
+        The fixture is FFT-eligible, so ``batch_grid_scores`` runs the
+        per-neuron grid_score loop end-to-end. The contract pinned here
+        is just that (a) the call doesn't raise, (b) the result is the
+        expected ``BatchScoresResult`` shape, and (c) ``failures`` is
+        not polluted with caught-exception flags. The
+        legitimate-NaN-on-irregular-env contract is pinned below in
+        ``test_batch_grid_scores_graph_env_legitimate_nan``.
         """
         from neurospatial.encoding._metrics import (
             BatchScoresResult,
             batch_grid_scores,
         )
 
-        env = env_sparse_grid
+        env = env_dense_random_grid
         rng = np.random.default_rng(42)
         firing_rates = rng.random((2, env.n_bins)) * 5.0
 
@@ -848,9 +847,6 @@ class TestBatchGridScoresNonRegularGrid:
 
         assert isinstance(result, BatchScoresResult)
         assert result.shape == (2,)
-        # Whatever the dense-enough fixture produces, treat it as a smoke
-        # test: the call must not raise and the failures mask must not
-        # be polluted with caught-exception flags.
         assert not result.failures.any()
 
     def test_batch_grid_scores_graph_env_legitimate_nan(self):

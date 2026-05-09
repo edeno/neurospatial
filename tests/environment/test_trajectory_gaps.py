@@ -326,6 +326,33 @@ class TestBinSequenceAdvanced:
         # No double-counting of dropped outside samples.
         assert result.run_lengths.sum() == 2
 
+    def test_bin_sequence_dedup_ignores_outside_gaps(self, small_2d_env):
+        """Plain bin_sequence dedup is gap-blind by contract.
+
+        ``bin_sequence`` documents ``dedup=True`` as collapsing
+        consecutive repeats in the post-filter sequence. After
+        ``outside_value=None`` drops outside samples, the post-filter
+        sequence ``[bin0, bin0]`` (from the original ``[bin0, outside,
+        bin0]``) must dedup to a single ``[bin0]``. Only
+        ``bin_sequence_with_runs`` is gap-aware — that distinction is
+        what lets callers choose simple-sequence vs run-extent
+        semantics. Pins that the gap-split fix did not leak into
+        bin_sequence.
+        """
+        bin_0 = small_2d_env.bin_centers[0]
+        times = np.array([0.0, 1.0, 2.0])
+        positions = np.array([bin_0, [10000.0, 10000.0], bin_0])
+
+        bins_dedup = small_2d_env.bin_sequence(
+            times, positions, outside_value=None, dedup=True
+        )
+        assert_array_equal(bins_dedup, [0])
+
+        bins_no_dedup = small_2d_env.bin_sequence(
+            times, positions, outside_value=None, dedup=False
+        )
+        assert_array_equal(bins_no_dedup, [0, 0])
+
     def test_bin_sequence_validates_1d_positions(self, small_2d_env):
         """Test that 1D position array raises error.
 

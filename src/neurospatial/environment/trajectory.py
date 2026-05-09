@@ -432,7 +432,12 @@ class EnvironmentTrajectory:
 
         """
         result = EnvironmentTrajectory._bin_sequence(
-            self, times, positions, dedup=dedup, outside_value=outside_value
+            self,
+            times,
+            positions,
+            dedup=dedup,
+            outside_value=outside_value,
+            gap_splits_runs=False,
         )
         return result.bins
 
@@ -483,7 +488,12 @@ class EnvironmentTrajectory:
         >>> #   - times[result.run_starts[i]]
         """
         return EnvironmentTrajectory._bin_sequence(
-            self, times, positions, dedup=dedup, outside_value=outside_value
+            self,
+            times,
+            positions,
+            dedup=dedup,
+            outside_value=outside_value,
+            gap_splits_runs=True,
         )
 
     def _bin_sequence(
@@ -493,6 +503,7 @@ class EnvironmentTrajectory:
         *,
         dedup: bool,
         outside_value: int | None,
+        gap_splits_runs: bool,
     ) -> BinSequenceWithRuns:
         """Shared implementation for ``bin_sequence`` and
         ``bin_sequence_with_runs``: always computes both bins and runs;
@@ -572,18 +583,28 @@ class EnvironmentTrajectory:
         deduplicated_bins: NDArray[np.int32]
         deduplicated_indices: NDArray[np.int_]
 
-        # A new run starts whenever (a) the bin index changes, OR (b) there
-        # is a gap in original_indices (= outside samples were filtered
-        # out between consecutive valid samples). Folding the gap signal
-        # into the change-point mask prevents two same-bin visits
-        # separated by an outside gap from being merged into one run with
-        # outside_value=None — that would double-count dropped samples
-        # in run_lengths and violate "extent in the original times array".
+        # ``bin_change`` marks the start of every new same-bin block in
+        # the post-filter sequence. ``gap_change`` additionally marks
+        # boundaries where outside samples were dropped between two
+        # in-env neighbors (only meaningful with ``outside_value=None``).
+        #
+        # The two callers want different semantics:
+        #
+        # - plain ``bin_sequence`` (gap_splits_runs=False): dedup
+        #   collapses consecutive repeats in the post-filter sequence
+        #   per its documented contract — gaps don't split duplicates,
+        #   so ``[bin0, outside, bin0]`` with outside_value=None and
+        #   dedup=True dedups to ``[bin0]``.
+        #
+        # - ``bin_sequence_with_runs`` (gap_splits_runs=True): outside
+        #   gaps DO split runs so ``run_lengths`` only counts the
+        #   in-env samples that were actually contiguous in the
+        #   original array — same input emits two length-1 runs.
         if len(bin_indices) == 0:
             change_points = np.zeros(0, dtype=bool)
         else:
             bin_change = np.concatenate([[True], bin_indices[1:] != bin_indices[:-1]])
-            if outside_value is None and len(original_indices) > 1:
+            if gap_splits_runs and outside_value is None and len(original_indices) > 1:
                 gap_change = np.concatenate(
                     [[False], (original_indices[1:] - original_indices[:-1]) > 1]
                 )
