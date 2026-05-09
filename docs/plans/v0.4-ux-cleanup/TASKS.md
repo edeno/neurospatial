@@ -175,8 +175,8 @@ Source review: [`docs/reviews/UX_REVIEW_2026-05-08.md`](../../reviews/UX_REVIEW_
   - `ViewRateResult.is_view_cell` → `is_spatial_view_cell`.
   Closes review §4.3.
 
-- [ ] **2.10** **New `PlaceFieldsResult` dataclass.** [encoding/spatial.py:1944](../../../src/neurospatial/encoding/spatial.py) `detect_place_fields` returns a frozen dataclass with `fields: list[NDArray[np.int64]]`, `excluded_reason: str | None`, `n_excluded: int`. This task finalizes any naming / helper-method polish after M1 task 1.4 introduces the structured return.
-  Closes review §7.7.
+- [x] **2.10** **New `PlaceFieldsResult` dataclass.** [encoding/spatial.py:1944](../../../src/neurospatial/encoding/spatial.py) `detect_place_fields` returns a frozen dataclass with `fields: list[NDArray[np.int64]]`, `excluded_reason: str | None`, `n_excluded: int`. This task finalizes any naming / helper-method polish after M1 task 1.4 introduces the structured return.
+  Closes review §7.7. _Folded into M1 1.4 in the M1 review-response commit `312b7a5`. The full dataclass landed there (with `__len__`/`__getitem__`/`__iter__`/`__bool__` so existing list-style callers keep working). No further naming or helper-method polish needed in M2._
 
 - [ ] **2.11** **`bin_sequence` shape-shifting fix.** Split [environment/trajectory.py:331-342](../../../src/neurospatial/environment/trajectory.py) `bin_sequence(return_runs=True)` into two methods: `bin_sequence(times, positions) -> NDArray` (always returns indices) and `bin_sequence_with_runs(times, positions) -> BinSequenceWithRuns` (a dataclass with `bins`, `run_starts`, `run_lengths`).
   Closes review §7.2.

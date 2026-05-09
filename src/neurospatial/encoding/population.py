@@ -49,8 +49,11 @@ class PopulationCoverageResult:
         Number of neurons with at least one detected place field.
     n_fields : int
         Total number of place fields detected across all neurons.
-    place_fields : list[list[NDArray[np.int64]]]
+    place_fields : list[PlaceFieldsResult]
         Detected place fields for each neuron (output of detect_place_fields).
+        Each PlaceFieldsResult is iterable / indexable / sized like a
+        list[NDArray[np.int64]] but also carries `excluded_reason` and
+        `n_excluded` for cells filtered as putative interneurons.
     place_cell_fraction : float
         Computed property: n_place_cells / n_neurons (typical CA1: 0.3-0.5).
     fields_per_place_cell : float
