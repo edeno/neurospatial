@@ -245,22 +245,25 @@ class ObjectVectorCellModel:
 
         # Validate preferred_distance
         if preferred_distance < 0:
-            msg = f"preferred_distance must be non-negative, got {preferred_distance}"
+            msg = (
+                "preferred_distance must be non-negative (cm), "
+                f"got {preferred_distance}"
+            )
             raise ValueError(msg)
 
         # Validate distance_width
         if distance_width <= 0:
-            msg = f"distance_width must be positive, got {distance_width}"
+            msg = f"distance_width must be positive (cm), got {distance_width}"
             raise ValueError(msg)
 
         # Validate max_rate
         if max_rate <= 0:
-            msg = f"max_rate must be positive, got {max_rate}"
+            msg = f"max_rate must be positive (Hz), got {max_rate}"
             raise ValueError(msg)
 
         # Validate baseline_rate
         if baseline_rate < 0:
-            msg = f"baseline_rate must be non-negative, got {baseline_rate}"
+            msg = f"baseline_rate must be non-negative (Hz), got {baseline_rate}"
             raise ValueError(msg)
 
         if baseline_rate >= max_rate:

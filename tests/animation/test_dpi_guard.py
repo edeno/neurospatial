@@ -149,60 +149,68 @@ class TestDryRunEstimates:
         env = Environment.from_samples(positions, bin_size=5.0)
         return env
 
-    def test_dry_run_shows_frame_count(self, simple_env, capsys):
+    def test_dry_run_shows_frame_count(self, simple_env, caplog):
         """Verify dry run shows frame count."""
+        import logging
+
         from neurospatial.animation.backends.video_backend import render_video
 
         fields = [
             np.random.default_rng(42).random(simple_env.n_bins) for _ in range(10)
         ]
 
-        render_video(
-            env=simple_env,
-            fields=fields,
-            save_path="test.mp4",
-            dry_run=True,
-        )
+        with caplog.at_level(logging.INFO, logger="neurospatial.animation"):
+            render_video(
+                env=simple_env,
+                fields=fields,
+                save_path="test.mp4",
+                dry_run=True,
+            )
 
-        captured = capsys.readouterr()
-        assert "10" in captured.out, "Should show frame count"
-        assert "Frames" in captured.out, "Should label frame count"
+        log_text = caplog.text
+        assert "10" in log_text, "Should show frame count"
+        assert "Frames" in log_text, "Should label frame count"
 
-    def test_dry_run_shows_estimated_time(self, simple_env, capsys):
+    def test_dry_run_shows_estimated_time(self, simple_env, caplog):
         """Verify dry run shows estimated time."""
+        import logging
+
         from neurospatial.animation.backends.video_backend import render_video
 
         fields = [
             np.random.default_rng(42).random(simple_env.n_bins) for _ in range(10)
         ]
 
-        render_video(
-            env=simple_env,
-            fields=fields,
-            save_path="test.mp4",
-            dry_run=True,
-        )
+        with caplog.at_level(logging.INFO, logger="neurospatial.animation"):
+            render_video(
+                env=simple_env,
+                fields=fields,
+                save_path="test.mp4",
+                dry_run=True,
+            )
 
-        captured = capsys.readouterr()
-        assert "time" in captured.out.lower(), "Should mention time estimate"
+        assert "time" in caplog.text.lower(), "Should mention time estimate"
 
-    def test_dry_run_shows_estimated_size(self, simple_env, capsys):
+    def test_dry_run_shows_estimated_size(self, simple_env, caplog):
         """Verify dry run shows estimated file size."""
+        import logging
+
         from neurospatial.animation.backends.video_backend import render_video
 
         fields = [
             np.random.default_rng(42).random(simple_env.n_bins) for _ in range(10)
         ]
 
-        render_video(
-            env=simple_env,
-            fields=fields,
-            save_path="test.mp4",
-            dry_run=True,
-        )
+        with caplog.at_level(logging.INFO, logger="neurospatial.animation"):
+            render_video(
+                env=simple_env,
+                fields=fields,
+                save_path="test.mp4",
+                dry_run=True,
+            )
 
-        captured = capsys.readouterr()
-        assert "size" in captured.out.lower() or "MB" in captured.out, (
+        log_text = caplog.text
+        assert "size" in log_text.lower() or "MB" in log_text, (
             "Should show file size estimate"
         )
 

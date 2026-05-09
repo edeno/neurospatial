@@ -666,7 +666,7 @@ def field_shape_metrics(
         warnings.warn(
             f"field_shape_metrics currently only supports 2D environments, got {env.n_dims}D. "
             "Returning NaN values.",
-            UserWarning,
+            category=UserWarning,
             stacklevel=2,
         )
         return result
@@ -879,7 +879,7 @@ def field_shift_distance(
             warnings.warn(
                 "One or both centroids fall outside environment bounds. "
                 "Cannot compute geodesic distance. Returning NaN.",
-                UserWarning,
+                category=UserWarning,
                 stacklevel=2,
             )
             return np.nan
@@ -890,7 +890,7 @@ def field_shift_distance(
             warnings.warn(
                 f"Environments have different number of bins ({env_1.n_bins} vs {env_2.n_bins}). "
                 "Geodesic distance requires compatible environments. Falling back to Euclidean distance.",
-                UserWarning,
+                category=UserWarning,
                 stacklevel=2,
             )
             # Fall back to Euclidean
@@ -906,7 +906,7 @@ def field_shift_distance(
         except Exception as e:
             warnings.warn(
                 f"Failed to compute geodesic distance: {e}. Falling back to Euclidean distance.",
-                UserWarning,
+                category=UserWarning,
                 stacklevel=2,
             )
             # Fall back to Euclidean
@@ -1055,7 +1055,7 @@ def compute_field_emd(
     if np.any(~np.isfinite(firing_rate_1)) or np.any(~np.isfinite(firing_rate_2)):
         warnings.warn(
             "Firing rate distributions contain NaN values. Setting to zero.",
-            UserWarning,
+            category=UserWarning,
             stacklevel=2,
         )
         firing_rate_1[~np.isfinite(firing_rate_1)] = 0.0
@@ -1069,7 +1069,7 @@ def compute_field_emd(
         if sum1 == 0 or sum2 == 0:
             warnings.warn(
                 "One or both distributions have zero total mass. Returning NaN.",
-                UserWarning,
+                category=UserWarning,
                 stacklevel=2,
             )
             return np.nan
@@ -1138,7 +1138,7 @@ def compute_field_emd(
             warnings.warn(
                 f"Found {disconnected_count} disconnected bin pairs out of {n * (n - 1) // 2} total pairs. "
                 f"Using Euclidean distance for disconnected pairs.",
-                UserWarning,
+                category=UserWarning,
                 stacklevel=2,
             )
 
@@ -1182,7 +1182,7 @@ def compute_field_emd(
     if not result.success:
         warnings.warn(
             f"Optimal transport optimization failed: {result.message}. Returning NaN.",
-            UserWarning,
+            category=UserWarning,
             stacklevel=2,
         )
         return np.nan

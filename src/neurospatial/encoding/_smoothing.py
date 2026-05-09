@@ -403,13 +403,20 @@ def _validate_smoothing_parameters(method: str, bandwidth: float) -> None:
     if method not in valid_methods:
         raise ValueError(f"method must be one of {valid_methods}, got '{method}'")
 
-    # Validate bandwidth (binned allows 0)
+    # Validate bandwidth (binned allows 0). Bandwidth is in environment units
+    # (e.g. cm); the tuning curves and rate maps inherit those units.
     if method == "binned":
         if bandwidth < 0:
-            raise ValueError(f"bandwidth must be non-negative, got {bandwidth}")
+            raise ValueError(
+                "bandwidth must be non-negative (in environment units, e.g., cm), "
+                f"got {bandwidth}"
+            )
     else:
         if bandwidth <= 0:
-            raise ValueError(f"bandwidth must be positive, got {bandwidth}")
+            raise ValueError(
+                "bandwidth must be positive (in environment units, e.g., cm), "
+                f"got {bandwidth}"
+            )
 
 
 def _diffusion_kde(

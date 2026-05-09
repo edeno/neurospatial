@@ -1,5 +1,6 @@
 """Spike generation functions for converting firing rates to spike trains."""
 
+import logging
 from typing import Any
 
 import numpy as np
@@ -7,6 +8,8 @@ from numpy.typing import NDArray
 from tqdm.auto import tqdm
 
 from neurospatial.simulation.models.base import NeuralModel
+
+logger = logging.getLogger(__name__)
 
 
 def generate_poisson_spikes(
@@ -328,9 +331,13 @@ def generate_population_spikes(
         duration = times[-1] if len(times) > 0 else 1.0
         mean_rate = total_spikes / (len(models) * duration) if len(models) > 0 else 0.0
 
-        print(
-            f"Generated {len(models)} cells, {total_spikes:,} total spikes "
-            f"(avg {avg_spikes_per_cell:.0f} spikes/cell), mean rate {mean_rate:.1f} Hz"
+        logger.info(
+            "Generated %d cells, %d total spikes "
+            "(avg %.0f spikes/cell), mean rate %.1f Hz",
+            len(models),
+            total_spikes,
+            avg_spikes_per_cell,
+            mean_rate,
         )
 
     return spike_trains
@@ -514,7 +521,9 @@ def add_modulation(
         )
 
     if modulation_freq <= 0.0:
-        raise ValueError(f"modulation_freq must be positive, got {modulation_freq}")
+        raise ValueError(
+            f"modulation_freq must be positive (Hz), got {modulation_freq}"
+        )
 
     # Special case: zero modulation depth means no modulation (keep all spikes)
     if modulation_depth == 0.0:

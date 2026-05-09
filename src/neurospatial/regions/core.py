@@ -227,11 +227,10 @@ class Regions(MutableMapping[str, Region]):
                 f"Cannot assign region with name {value.name!r} to key {key!r}."
             )
         if key in self._store:
-            warnings.warn(
-                f"Overwriting existing region {key!r}. "
-                "Use update_region() to suppress this warning.",
-                UserWarning,
-                stacklevel=2,
+            raise KeyError(
+                f"Region {key!r} already exists. "
+                "Use Regions.update_region(...) to modify it in place, or "
+                "Regions.set(name, region) for the idempotent replace path."
             )
         self._store[key] = value
 
@@ -375,6 +374,44 @@ class Regions(MutableMapping[str, Region]):
             region = Region(name, "polygon", polygon, effective_metadata)
 
         # Use direct store access to bypass __setitem__ duplicate check
+        self._store[name] = region
+        return region
+
+    def set(self, name: str, region: Region) -> Region:
+        """Insert ``region`` under ``name`` (idempotent replace).
+
+        Unlike ``regions[name] = region`` and :meth:`add`, this method
+        accepts both new and existing names and is the documented path
+        for callers that explicitly want to replace whatever is already
+        stored under ``name``.
+
+        Parameters
+        ----------
+        name : str
+            Name of the region. Must match ``region.name``.
+        region : Region
+            Region to insert (or to use as the replacement if ``name``
+            already exists).
+
+        Returns
+        -------
+        Region
+            The stored region (the same object passed in).
+
+        Raises
+        ------
+        ValueError
+            If ``name`` does not match ``region.name``.
+
+        See Also
+        --------
+        add : Insert a new region; raises if ``name`` already exists.
+        update_region : Replace an existing region's geometry/metadata
+            in place; raises if ``name`` does not exist.
+        """
+        if name != region.name:
+            raise ValueError(f"Key {name!r} must match Region.name {region.name!r}.")
+        # Bypass __setitem__'s duplicate check; this is the idempotent path.
         self._store[name] = region
         return region
 

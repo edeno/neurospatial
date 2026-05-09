@@ -128,16 +128,19 @@ def open_field_session(
 
     # Validate parameters
     if duration <= 0:
-        msg = f"duration must be positive, got {duration}"
+        msg = f"duration must be positive (seconds), got {duration}"
         raise ValueError(msg)
     if arena_size <= 0:
-        msg = f"arena_size must be positive, got {arena_size}"
+        msg = f"arena_size must be positive (cm), got {arena_size}"
         raise ValueError(msg)
     if bin_size <= 0:
-        msg = f"bin_size must be positive, got {bin_size}"
+        msg = f"bin_size must be positive (cm), got {bin_size}"
         raise ValueError(msg)
     if bin_size >= arena_size:
-        msg = f"bin_size ({bin_size}) must be smaller than arena_size ({arena_size})"
+        msg = (
+            f"bin_size ({bin_size} cm) must be smaller than "
+            f"arena_size ({arena_size} cm)"
+        )
         raise ValueError(msg)
     if n_place_cells <= 0:
         msg = f"n_place_cells must be positive, got {n_place_cells}"

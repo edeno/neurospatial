@@ -666,19 +666,19 @@ def simulate_trajectory_laps(
         raise ValueError(msg)
 
     if speed_mean <= 0:
-        msg = f"speed_mean must be positive (got {speed_mean})"
+        msg = f"speed_mean must be positive (env units / s, got {speed_mean})"
         raise ValueError(msg)
 
     if speed_std < 0:
-        msg = f"speed_std must be non-negative (got {speed_std})"
+        msg = f"speed_std must be non-negative (env units / s, got {speed_std})"
         raise ValueError(msg)
 
     if pause_duration < 0:
-        msg = f"pause_duration must be non-negative (got {pause_duration})"
+        msg = f"pause_duration must be non-negative (seconds, got {pause_duration})"
         raise ValueError(msg)
 
     if sampling_frequency <= 0:
-        msg = f"sampling_frequency must be positive (got {sampling_frequency})"
+        msg = f"sampling_frequency must be positive (Hz, got {sampling_frequency})"
         raise ValueError(msg)
 
     # Initialize random number generator

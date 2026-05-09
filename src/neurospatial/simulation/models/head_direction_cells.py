@@ -180,14 +180,15 @@ class HeadDirectionCellModel:
 
         # Validate rates
         if max_rate < 0:
-            raise ValueError(f"max_rate must be non-negative, got {max_rate}.")
+            raise ValueError(f"max_rate must be non-negative (Hz), got {max_rate}.")
         if baseline_rate < 0:
             raise ValueError(
-                f"baseline_rate must be non-negative, got {baseline_rate}."
+                f"baseline_rate must be non-negative (Hz), got {baseline_rate}."
             )
         if baseline_rate > max_rate:
             raise ValueError(
-                f"baseline_rate ({baseline_rate}) cannot exceed max_rate ({max_rate})."
+                f"baseline_rate ({baseline_rate} Hz) cannot exceed "
+                f"max_rate ({max_rate} Hz)."
             )
 
         self.max_rate = float(max_rate)

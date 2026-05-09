@@ -1406,10 +1406,12 @@ def compute_spatial_rate(
     validate_spike_times(spike_times, context="compute_spatial_rate")
 
     # Bin spike train into spatial bins (always NumPy - CPU/joblib)
-    spike_counts = bin_spike_train(env, spike_times, times, positions)
+    spike_counts = bin_spike_train(
+        env, spike_times, times, positions, context="compute_spatial_rate"
+    )
 
     # Compute occupancy (always NumPy)
-    occupancy = compute_occupancy(env, times, positions)
+    occupancy = compute_occupancy(env, times, positions, context="compute_spatial_rate")
 
     # Apply smoothing to compute firing rate
     # When backend="jax", uses JAX for the core rate computation
@@ -1638,7 +1640,9 @@ def compute_spatial_rates(
         from neurospatial.encoding._binning import compute_occupancy
 
         # Use compute_occupancy which handles 1D position reshaping
-        occupancy = compute_occupancy(env, times, positions)
+        occupancy = compute_occupancy(
+            env, times, positions, context="compute_spatial_rates"
+        )
 
         # Convert to JAX if needed
         firing_rates_result: ArrayLike = np.empty((0, env.n_bins), dtype=np.float64)

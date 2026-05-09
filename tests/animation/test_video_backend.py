@@ -103,8 +103,10 @@ class TestFfmpegAvailability:
 class TestVideoDryRun:
     """Test dry run mode (estimation without rendering)."""
 
-    def test_dry_run_prints_estimate(self, tmp_path, capsys):
-        """Test dry run prints time and size estimate."""
+    def test_dry_run_prints_estimate(self, tmp_path, caplog):
+        """Test dry run logs time and size estimate."""
+        import logging
+
         rng = np.random.default_rng(42)
         # Create environment
         positions = rng.standard_normal((100, 2)) * 50
@@ -121,16 +123,17 @@ class TestVideoDryRun:
             "neurospatial.animation.backends.video_backend.check_ffmpeg_available",
             return_value=True,
         ):
-            # Call with dry_run=True
-            result = animate_fields(
-                env,
-                fields,
-                backend="video",
-                save_path=str(output_path),
-                frame_times=frame_times,
-                n_workers=2,
-                dry_run=True,
-            )
+            with caplog.at_level(logging.INFO, logger="neurospatial.animation"):
+                # Call with dry_run=True
+                result = animate_fields(
+                    env,
+                    fields,
+                    backend="video",
+                    save_path=str(output_path),
+                    frame_times=frame_times,
+                    n_workers=2,
+                    dry_run=True,
+                )
 
             # Should return None (no file created)
             assert result is None
@@ -138,13 +141,13 @@ class TestVideoDryRun:
             # Should NOT create file
             assert not output_path.exists()
 
-            # Check printed output
-            captured = capsys.readouterr()
-            assert "dry run" in captured.out.lower()
-            assert "frames:" in captured.out.lower()
-            assert "workers:" in captured.out.lower()
-            assert "est. total time:" in captured.out.lower()
-            assert "est. file size:" in captured.out.lower()
+            # Check logged output
+            log_text = caplog.text.lower()
+            assert "dry run" in log_text
+            assert "frames:" in log_text
+            assert "workers:" in log_text
+            assert "est. total time:" in log_text
+            assert "est. file size:" in log_text
 
     def test_dry_run_does_not_spawn_workers(self, tmp_path):
         """Test dry run doesn't spawn parallel workers."""

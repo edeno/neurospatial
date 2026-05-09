@@ -1160,7 +1160,9 @@ def grid_scale(
         raise ValueError(f"autocorr_2d must be 2D array, got {autocorr_2d.ndim}D")
 
     if bin_size <= 0:
-        raise ValueError(f"bin_size must be positive, got {bin_size}")
+        raise ValueError(
+            f"bin_size must be positive (env units, e.g., cm), got {bin_size}"
+        )
 
     if n_peaks < 1:
         raise ValueError(f"n_peaks must be >= 1, got {n_peaks}")
@@ -1302,7 +1304,9 @@ def grid_properties(
         raise ValueError(f"autocorr_2d must be 2D array, got {autocorr_2d.ndim}D")
 
     if bin_size <= 0:
-        raise ValueError(f"bin_size must be positive, got {bin_size}")
+        raise ValueError(
+            f"bin_size must be positive (env units, e.g., cm), got {bin_size}"
+        )
 
     # Compute grid score (uses rotation-correlation method)
     score = grid_score(

@@ -298,6 +298,7 @@ def _validate_circular_input(
         warnings.warn(
             f"Removed {n_nan} NaN values from {name}. "
             f"Proceeding with {len(angles)} valid samples.",
+            category=UserWarning,
             stacklevel=2,
         )
 
@@ -324,6 +325,7 @@ def _validate_circular_input(
             f"{name} contains values outside [0, 2pi]. "
             f"Range: [{angles.min():.3f}, {angles.max():.3f}]. "
             f"Values will be wrapped to [0, 2pi] using modulo.",
+            category=UserWarning,
             stacklevel=2,
         )
         angles = angles % (2 * np.pi)
@@ -385,6 +387,7 @@ def _validate_paired_input(
         warnings.warn(
             f"Removed {n_removed} pairs containing NaN values. "
             f"Proceeding with {len(arr1) - n_removed} valid pairs.",
+            category=UserWarning,
             stacklevel=2,
         )
         arr1 = arr1[~nan_mask]
@@ -666,6 +669,7 @@ def circular_linear_correlation(
         warnings.warn(
             "Linear variable has no variation (constant values). "
             "Circular-linear correlation is undefined. Returning r=0.",
+            category=RuntimeWarning,
             stacklevel=2,
         )
         return 0.0, 1.0
@@ -685,6 +689,7 @@ def circular_linear_correlation(
             "Degenerate case: cos(angles) and sin(angles) are nearly perfectly "
             "correlated. This suggests angles have very limited range. "
             "Returning r=0.",
+            category=RuntimeWarning,
             stacklevel=2,
         )
         return 0.0, 1.0
@@ -855,6 +860,7 @@ def circular_circular_correlation(
         warnings.warn(
             "No variation in one or both circular variables. "
             "This may indicate constant angles. Returning r=0.",
+            category=RuntimeWarning,
             stacklevel=2,
         )
         return 0.0, 1.0
@@ -873,6 +879,7 @@ def circular_circular_correlation(
     if l22 == 0:
         warnings.warn(
             "Cannot compute p-value: variance product is zero. Returning p=1.0.",
+            category=RuntimeWarning,
             stacklevel=2,
         )
         return rho, 1.0

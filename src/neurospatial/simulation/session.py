@@ -318,7 +318,7 @@ def simulate_session(
         raise ValueError(f"n_cells must be positive, got {n_cells}")
 
     if duration <= 0:
-        raise ValueError(f"duration must be positive, got {duration}")
+        raise ValueError(f"duration must be positive (seconds), got {duration}")
 
     # Extract model-specific parameters from kwargs BEFORE trajectory generation
     # PlaceCellModel parameters

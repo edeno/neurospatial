@@ -1,12 +1,11 @@
 """Tests for Milestone 9: Sparse top-level __init__.py exports.
 
-This test file verifies that the top-level neurospatial package exports only
-the 5 core classes per PLAN.md:
-    - Environment
-    - EnvironmentNotFittedError
-    - Region
-    - Regions
-    - CompositeEnvironment
+This test file verifies that the top-level neurospatial package exports the
+core classes plus the public exception hierarchy added in M3.4:
+    - Environment, Region, Regions, CompositeEnvironment
+    - EnvironmentNotFittedError, GraphValidationError,
+      RegionNotFoundError, BinIndexOutOfRangeError,
+      IncompatibleEnvironmentError, LayoutNotBuiltError
 
 All other functions should be accessed via explicit submodule imports.
 """
@@ -52,31 +51,40 @@ class TestSparseTopLevelExports:
         assert CompositeEnvironment is not None
 
 
-class TestAllExportsLimitedToFive:
-    """Test that __all__ contains exactly 5 items."""
+class TestAllExportsLimitedToCoreSurface:
+    """Test that ``__all__`` exposes only core classes + the exception hierarchy."""
 
-    def test_all_has_exactly_five_exports(self):
-        """Test that __all__ has exactly 5 exports."""
+    def test_all_has_core_classes_and_exceptions(self):
         import neurospatial
 
         expected = {
+            # Core classes
             "Environment",
-            "EnvironmentNotFittedError",
             "Region",
             "Regions",
             "CompositeEnvironment",
+            # Public exception hierarchy (added in M3.4)
+            "EnvironmentNotFittedError",
+            "GraphValidationError",
+            "RegionNotFoundError",
+            "BinIndexOutOfRangeError",
+            "IncompatibleEnvironmentError",
+            "LayoutNotBuiltError",
         }
         actual = set(neurospatial.__all__)
         assert actual == expected, (
-            f"Expected exactly 5 exports: {expected}, got {len(actual)}: {actual}"
+            f"Expected core classes + exceptions: {expected}, "
+            f"got {len(actual)}: {actual}"
         )
 
-    def test_all_length_is_five(self):
-        """Test that __all__ has length 5."""
+    def test_all_length_matches_expected_surface(self):
+        """The top-level surface stays small (no domain re-exports)."""
         import neurospatial
 
-        assert len(neurospatial.__all__) == 5, (
-            f"Expected 5 exports, got {len(neurospatial.__all__)}"
+        # 4 core classes + 6 exceptions = 10
+        assert len(neurospatial.__all__) == 10, (
+            f"Expected 10 exports, got {len(neurospatial.__all__)}: "
+            f"{neurospatial.__all__}"
         )
 
 

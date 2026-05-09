@@ -6,6 +6,7 @@ https://gist.github.com/edeno/652ee10a76481f00b3eb08906b41c6bf
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import subprocess
@@ -20,6 +21,8 @@ from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
+
+logger = logging.getLogger(__name__)
 
 
 def check_ffmpeg_available() -> bool:
@@ -278,7 +281,7 @@ def render_video(
 
     # Dry run: estimate time and file size
     if dry_run:
-        print("Running dry run estimation...")
+        logger.info("Running dry run estimation...")
 
         # Render one test frame to measure timing
         start = time.time()
@@ -303,21 +306,34 @@ def render_video(
             crf_factor = 1.0 + (23 - crf) * 0.1  # 23 is libx264 default
             estimated_mb = frame_size_kb * len(fields) / 1024 * crf_factor
 
-        print(f"\n{'=' * 60}")
-        print("Video Export Dry Run Estimate:")
-        print(f"{'=' * 60}")
-        print(f"  Frames:          {len(fields):,}")
-        print(f"  Workers:         {n_workers}")
-        print(f"  Frame time:      {frame_time * 1000:.1f} ms")
-        print(f"  Est. total time: {total_time / 60:.1f} minutes")
-        print(f"  Est. file size:  {estimated_mb:.0f} MB")
-        print(f"  Output path:     {save_path}")
-        print("\nTo proceed, call again with dry_run=False")
-        print(f"{'=' * 60}\n")
+        # Build the dry-run report as a single multi-line message so it
+        # arrives as one logging record (instead of fragmenting across the
+        # console).
+        report = "\n".join(
+            [
+                "=" * 60,
+                "Video Export Dry Run Estimate:",
+                "=" * 60,
+                f"  Frames:          {len(fields):,}",
+                f"  Workers:         {n_workers}",
+                f"  Frame time:      {frame_time * 1000:.1f} ms",
+                f"  Est. total time: {total_time / 60:.1f} minutes",
+                f"  Est. file size:  {estimated_mb:.0f} MB",
+                f"  Output path:     {save_path}",
+                "",
+                "To proceed, call again with dry_run=False",
+                "=" * 60,
+            ]
+        )
+        logger.info(report)
         return None
 
-    print(f"Rendering {len(fields)} frames using {n_workers} workers...")
-    print(f"Estimated time: ~{len(fields) * 0.5 / n_workers:.0f} seconds")
+    logger.info(
+        "Rendering %d frames using %d workers (est. ~%d s)",
+        len(fields),
+        n_workers,
+        len(fields) * 0.5 / n_workers,
+    )
 
     # Create temporary directory for frames
     tmpdir = tempfile.mkdtemp(prefix="neurospatial_animation_")
@@ -342,7 +358,7 @@ def render_video(
         )
 
         # Encode video with ffmpeg
-        print("Encoding video...")
+        logger.info("Encoding video...")
         output_path = Path(save_path)
 
         # Select codec
@@ -417,7 +433,7 @@ def render_video(
                 f"or 'h264_nvenc' (NVIDIA)"
             )
 
-        print(f"✓ Video saved to {output_path}")
+        logger.info("✓ Video saved to %s", output_path)
         return output_path
 
     finally:

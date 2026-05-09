@@ -6,21 +6,24 @@ animation rendering performance across all backends.
 Enable timing by setting the environment variable:
     NEUROSPATIAL_TIMING=1 uv run python your_script.py
 
-The timing output is printed to stderr with function names and elapsed time.
-For napari-specific profiling, use NAPARI_PERFMON instead.
+When enabled, timing records are emitted at ``logger.info`` level via the
+``neurospatial.animation._timing`` logger so users can route them to
+their preferred sink (stderr, a file, structured logging). For
+napari-specific profiling, use NAPARI_PERFMON instead.
 """
 
 from __future__ import annotations
 
 import contextlib
+import logging
 import os
-import sys
 import time
 from collections.abc import Callable, Generator
 from typing import ParamSpec, TypeVar
 
 # Check if timing is enabled via environment variable
 _TIMING_ENABLED = bool(os.environ.get("NEUROSPATIAL_TIMING"))
+_logger = logging.getLogger(__name__)
 
 P = ParamSpec("P")
 T = TypeVar("T")
@@ -54,7 +57,7 @@ def timing(name: str) -> Generator[None, None, None]:
         yield
     finally:
         elapsed_ms = (time.perf_counter() - start) * 1000
-        print(f"[TIMING] {name}: {elapsed_ms:.2f} ms", file=sys.stderr)
+        _logger.info("[TIMING] %s: %.2f ms", name, elapsed_ms)
 
 
 def timed(func: Callable[P, T]) -> Callable[P, T]:
@@ -106,7 +109,7 @@ def timed(func: Callable[P, T]) -> Callable[P, T]:
             return func(*args, **kwargs)
         finally:
             elapsed_ms = (time.perf_counter() - start) * 1000
-            print(f"[TIMING] {func.__name__}: {elapsed_ms:.2f} ms", file=sys.stderr)
+            _logger.info("[TIMING] %s: %.2f ms", func.__name__, elapsed_ms)
 
     return wrapper
 

@@ -922,7 +922,7 @@ def render_widget(
         initial_cache_size = min(len(fields), 500, cache_limit)
     else:
         initial_cache_size = min(initial_cache_size, len(fields), cache_limit)
-    print(f"Pre-rendering {initial_cache_size} frames for widget...")
+    _logger.info("Pre-rendering %d frames for widget...", initial_cache_size)
 
     for i in range(initial_cache_size):
         if overlay_data is not None or show_regions:

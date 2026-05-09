@@ -87,7 +87,11 @@ def plot_regions(
 
     for name in region_names:
         if name not in regions:
-            warnings.warn(f"plot_regions: '{name}' not in collection; skipping.")
+            warnings.warn(
+                f"plot_regions: '{name}' not in collection; skipping.",
+                category=UserWarning,
+                stacklevel=2,
+            )
             continue
 
         reg: Region = regions[name]
@@ -119,7 +123,11 @@ def plot_regions(
 
         elif reg.kind == "polygon":
             if _shp is None:
-                warnings.warn(f"Can't draw polygon '{name}': shapely not installed.")
+                warnings.warn(
+                    f"Can't draw polygon '{name}': shapely not installed.",
+                    category=UserWarning,
+                    stacklevel=2,
+                )
                 continue
 
             # Narrow type to Polygon
@@ -127,7 +135,11 @@ def plot_regions(
 
             poly = reg.data  # already shapely.Polygon
             if not isinstance(poly, Polygon):
-                warnings.warn(f"Region '{name}' data is not a Polygon; skipping.")
+                warnings.warn(
+                    f"Region '{name}' data is not a Polygon; skipping.",
+                    category=UserWarning,
+                    stacklevel=2,
+                )
                 continue
 
             # exterior + (optional) holes  → Path
