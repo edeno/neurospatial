@@ -1124,3 +1124,62 @@ class TestBatchBorderScores:
         assert scores_high_filter.shape == (2,)
         # With very high min_area, scores should be NaN (fields too small)
         assert np.all(np.isnan(scores_high_filter))
+
+
+class TestBorderScoreRaisesOnDijkstraFailure:
+    """Regression for M1 1.5 follow-up: border_score's Dijkstra failure
+    must propagate so batch_border_scores can flag the neuron in its
+    failures mask. Previously the single-neuron path swallowed the
+    exception and returned NaN with a RuntimeWarning, which the batch
+    wrapper couldn't see -- the failures mask read False even though
+    the score was NaN-due-to-failure.
+    """
+
+    def test_border_score_raises_on_invalid_graph(self):
+        """Negative edge weight -> multi_source_dijkstra raises -> border_score raises.
+
+        ``nx.multi_source_dijkstra_path_length`` rejects negative
+        weights (it's an O(E log V) Dijkstra, not Bellman-Ford). The
+        pre-fix path swallowed this failure to NaN with a
+        RuntimeWarning; the new path re-raises so the batch wrapper
+        can populate its `failures` mask.
+        """
+        from neurospatial import Environment
+        from neurospatial.encoding.border import border_score
+
+        x = np.linspace(-20, 20, 21)
+        xx, yy = np.meshgrid(x, x)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
+        env = Environment.from_samples(positions, bin_size=2.0)
+
+        # Inject negative weights to trigger Dijkstra failure.
+        for _, _, data in env.connectivity.edges(data=True):
+            data["distance"] = -1.0
+
+        firing_rate = np.zeros(env.n_bins)
+        firing_rate[0] = 10.0
+
+        with pytest.raises(RuntimeError, match=r"geodesic distance"):
+            border_score(env, firing_rate, distance_metric="geodesic")
+
+    def test_batch_border_scores_failures_mask_catches_dijkstra_failure(self):
+        """The batch wrapper now sees the border_score RuntimeError and flags it."""
+        from neurospatial import Environment
+        from neurospatial.encoding._metrics import batch_border_scores
+
+        x = np.linspace(-20, 20, 21)
+        xx, yy = np.meshgrid(x, x)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
+        env = Environment.from_samples(positions, bin_size=2.0)
+        for _, _, data in env.connectivity.edges(data=True):
+            data["distance"] = -1.0
+
+        firing_rates = np.zeros((2, env.n_bins))
+        firing_rates[0, 0] = 10.0
+        firing_rates[1, 5] = 10.0
+
+        with pytest.warns(UserWarning, match=r"raised an exception for 2 of 2"):
+            result = batch_border_scores(env, firing_rates)
+        assert result.n_failures == 2
+        assert bool(result.failures.all())
+        assert np.isnan(result.scores).all()

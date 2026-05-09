@@ -248,11 +248,15 @@ class TestDetectPlaceFields:
         env = Environment.from_samples(positions, bin_size=2.0)
         firing_rate = np.ones(env.n_bins)
 
-        from neurospatial.encoding.spatial import detect_place_fields
+        from neurospatial.encoding.spatial import (
+            PlaceFieldsResult,
+            detect_place_fields,
+        )
 
-        # This should work (firing_rate first)
+        # This should work (firing_rate first). Returns PlaceFieldsResult
+        # since M1 1.4 (was a bare list[NDArray] before).
         fields = detect_place_fields(firing_rate, env)
-        assert isinstance(fields, list)
+        assert isinstance(fields, PlaceFieldsResult)
 
 
 class TestFieldMetrics:
@@ -1822,7 +1826,11 @@ class TestDetectPlaceFieldsValidation:
 
         fields = detect_place_fields(firing_rate, env)
 
-        assert fields == []
+        # PlaceFieldsResult is sized + iterable; len() == 0 means no
+        # fields were detected (and excluded_reason is None because
+        # all-NaN doesn't trigger the interneuron filter).
+        assert len(fields) == 0
+        assert fields.excluded_reason is None
 
     def test_explicit_min_size_parameter(self):
         """Test that min_size parameter is respected."""
@@ -2292,3 +2300,79 @@ class TestComputeFieldEMDEdgeCases:
         # Use normalize=False since zero mass with normalize=True returns NaN
         result = compute_field_emd(firing_rate_1, firing_rate_2, env, normalize=False)
         assert result == 0.0
+
+
+class TestPlaceFieldsResult:
+    """Regression for M1 1.4 plan-drift: detect_place_fields returns PlaceFieldsResult.
+
+    Pre-fix detect_place_fields returned a bare ``list[NDArray[np.int64]]``,
+    so callers could not tell "this neuron was excluded by the
+    interneuron-rate filter" apart from "this neuron has no detectable
+    place fields" without listening for warnings. Now returns a
+    structured PlaceFieldsResult with `excluded_reason` and
+    `n_excluded` attributes; iterates / sizes like the old list for
+    backwards-compatible access.
+    """
+
+    def _build_env_and_rates(self):
+        from neurospatial import Environment
+
+        rng = np.random.default_rng(0)
+        positions = rng.uniform(-20, 20, size=(2000, 2))
+        env = Environment.from_samples(positions, bin_size=2.0)
+
+        # Slow pyramidal-rate cell with a clear gaussian place field.
+        firing_rate = np.zeros(env.n_bins)
+        for i in range(env.n_bins):
+            dist = float(np.linalg.norm(env.bin_centers[i]))
+            firing_rate[i] = 8.0 * np.exp(-(dist**2) / (2 * 5.0**2))
+        return env, firing_rate
+
+    def test_returns_place_fields_result_on_success(self):
+        from neurospatial.encoding.spatial import (
+            PlaceFieldsResult,
+            detect_place_fields,
+        )
+
+        env, firing_rate = self._build_env_and_rates()
+        result = detect_place_fields(firing_rate, env)
+        assert isinstance(result, PlaceFieldsResult)
+        assert result.excluded_reason is None
+        assert result.n_excluded == 0
+        # At least one detected field on this synthetic gaussian.
+        assert len(result) >= 1
+
+    def test_excluded_reason_set_on_interneuron(self):
+        from neurospatial.encoding.spatial import (
+            PlaceFieldsResult,
+            detect_place_fields,
+        )
+
+        env, _ = self._build_env_and_rates()
+        # Push mean rate above the default 10 Hz threshold so the
+        # interneuron filter fires.
+        firing_rate = np.full(env.n_bins, 20.0)
+        with pytest.warns(UserWarning, match=r"interneuron"):
+            result = detect_place_fields(firing_rate, env, max_mean_rate=10.0)
+        assert isinstance(result, PlaceFieldsResult)
+        assert result.excluded_reason == "mean_rate_above_threshold"
+        assert result.n_excluded == 1
+        assert len(result) == 0
+
+    def test_iterates_like_a_list(self):
+        """Existing `for f in detect_place_fields(...)` callers keep working."""
+        from neurospatial.encoding.spatial import detect_place_fields
+
+        env, firing_rate = self._build_env_and_rates()
+        result = detect_place_fields(firing_rate, env)
+        # Length, indexing, iteration, truthiness all delegate to
+        # the underlying fields list.
+        n_fields = 0
+        for field in result:
+            assert isinstance(field, np.ndarray)
+            assert field.dtype == np.int64
+            n_fields += 1
+        assert n_fields == len(result)
+        if n_fields > 0:
+            assert isinstance(result[0], np.ndarray)
+            assert bool(result) is True

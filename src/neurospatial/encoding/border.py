@@ -12,7 +12,6 @@ Solstad, T., Boccara, C. N., Kropff, E., Moser, M. B., & Moser, E. I. (2008).
 
 from __future__ import annotations
 
-import warnings
 from typing import TYPE_CHECKING, Literal
 
 import networkx as nx
@@ -244,20 +243,20 @@ def border_score(
         except Exception as exc:
             # Multi-source Dijkstra is the only failure mode reachable
             # here (NetworkXError on a graph with missing 'distance'
-            # weights, or similar). Surface the failure as a warning
-            # before returning NaN: silently substituting NaN was the
-            # silent-wrong-result path that batch_border_scores then
-            # propagated unchanged.
-            warnings.warn(
+            # weights, negative weights, or similar). Re-raise as
+            # RuntimeError rather than swallowing-to-NaN: the batch
+            # wrapper (batch_border_scores) catches RuntimeError /
+            # ValueError to populate its `failures` mask, and a
+            # silent-NaN here would be invisible to that mask. Direct
+            # callers who want lenient behavior can wrap in their own
+            # try/except.
+            raise RuntimeError(
                 f"border_score: geodesic distance computation failed "
-                f"({type(exc).__name__}: {exc}). Returning NaN. Pass "
+                f"({type(exc).__name__}: {exc}). Pass "
                 "`distance_metric='euclidean'` to use straight-line "
                 "distance instead, or check that the environment's "
-                "connectivity graph has finite 'distance' edge weights.",
-                RuntimeWarning,
-                stacklevel=2,
-            )
-            return np.nan
+                "connectivity graph has finite 'distance' edge weights."
+            ) from exc
 
         # For each field bin, get distance to nearest boundary (vectorized lookup)
         # Convert dict to array for fast indexing

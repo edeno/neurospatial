@@ -527,3 +527,131 @@ class TestPolarSerializationRoundTrip:
         loaded = from_file(path)
         assert loaded.coordinate_kind == "polar"
         assert loaded.is_polar is True
+
+
+class TestPolarBoundaryGuardsExtended:
+    """Regression coverage for review-found polar holes (M1 1.3 follow-up).
+
+    Adds boundary guards for code paths the original M1 1.3 commit
+    missed: ``Environment.contains`` (was bypassing the polar check),
+    ``Environment.plot_field`` (was silently mislabeling axes as
+    X/Y), ``apply_transform`` (was silently flipping the env back to
+    Cartesian), and the dict-round-trip (``from_dict`` was discarding
+    ``coordinate_kind`` even though ``to_dict`` wrote it).
+    """
+
+    @pytest.fixture
+    def polar_env(self):
+        return Environment.from_polar_egocentric(
+            distance_range=(0.0, 50.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=10.0,
+            angle_bin_size=np.pi / 2,
+        )
+
+    def test_contains_raises_on_polar_env(self, polar_env):
+        """Environment.contains is the boolean partner of bin_at and must refuse polar."""
+        with pytest.raises(ValueError, match=r"polar.*contains|contains.*polar"):
+            polar_env.contains(np.array([[5.0, 5.0]]))
+
+    def test_plot_field_relabels_polar_axes(self, polar_env):
+        """plot_field on a polar env labels axes Distance / Angle (rad), not X/Y."""
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        field = np.zeros(polar_env.n_bins)
+        fig, ax = plt.subplots()
+        try:
+            polar_env.plot_field(field, ax=ax)
+            assert "Distance" in ax.get_xlabel()
+            assert "Angle" in ax.get_ylabel()
+            assert "X Position" not in ax.get_xlabel()
+            assert "Y Position" not in ax.get_ylabel()
+        finally:
+            plt.close(fig)
+
+    def test_apply_transform_refuses_polar_env(self, polar_env):
+        """apply_transform_to_environment must reject polar envs.
+
+        An affine transform on (distance, angle) bin centers is not
+        geometrically meaningful, and the rebuilt env would silently
+        reset coordinate_kind to "cartesian" without raising. Refuse
+        at the boundary.
+        """
+        from neurospatial.ops.transforms import (
+            apply_transform_to_environment,
+            translate,
+        )
+
+        T = translate(1.0, 1.0)
+        with pytest.raises(ValueError, match=r"polar|coordinate_kind"):
+            apply_transform_to_environment(polar_env, T)
+
+    def test_from_dict_round_trip_preserves_coordinate_kind(self, polar_env):
+        """to_dict / from_dict must round-trip coordinate_kind for polar envs.
+
+        to_dict already writes the field; from_dict was discarding it,
+        so an in-memory dict round-trip silently flipped polar envs to
+        Cartesian even though to_file/from_file round-tripped correctly.
+        """
+        from neurospatial.io.files import from_dict, to_dict
+
+        data = to_dict(polar_env)
+        loaded = from_dict(data)
+        assert loaded.coordinate_kind == "polar"
+        assert loaded.is_polar is True
+
+
+class TestSubsetPreservesGraphLayout:
+    """Regression for the M1 1.1 review-found graph corruption.
+
+    A 1-D linearized track (Graph layout) embedded in 2-D space
+    populates ``active_mask``, ``grid_shape``, and ``grid_edges`` for
+    the linearized 1-D representation -- so the original M1 1.1
+    grid-fast-path check (looking only at those three attributes)
+    routed graph parents through ``Environment.from_mask``, which
+    rebuilt them as MaskedGrid envs with 1-D bin_centers, dropping the
+    2-D embedding and flipping ``is_1d`` to False.
+    """
+
+    def _build_graph_env(self):
+        import networkx as nx
+
+        from neurospatial import Environment
+
+        graph = nx.Graph()
+        graph.add_node("A", pos=(0.0, 0.0))
+        graph.add_node("B", pos=(10.0, 0.0))
+        graph.add_node("C", pos=(10.0, 10.0))
+        graph.add_edge("A", "B", distance=10.0)
+        graph.add_edge("B", "C", distance=10.0)
+        return Environment.from_graph(
+            graph,
+            edge_order=[("A", "B"), ("B", "C")],
+            edge_spacing=0.0,
+            bin_size=2.0,
+        )
+
+    def test_graph_subset_keeps_is_1d_and_n_dims(self):
+        env = self._build_graph_env()
+        assert env.is_1d is True and env.n_dims == 2
+
+        mask = np.zeros(env.n_bins, dtype=bool)
+        mask[:5] = True
+        sub = env.subset(bins=mask)
+
+        assert sub.is_1d is True, "graph subset must remain 1-D"
+        assert sub.n_dims == 2, "graph subset must keep its 2-D embedding"
+
+    def test_graph_subset_does_not_use_maskedgrid(self):
+        """Graph subset stays on the inline SubsetLayout fallback, not MaskedGrid.
+
+        MaskedGrid would flatten the 2-D embedding to 1-D bin_centers.
+        """
+        env = self._build_graph_env()
+        mask = np.zeros(env.n_bins, dtype=bool)
+        mask[:5] = True
+        sub = env.subset(bins=mask)
+        assert sub._layout_type_used != "MaskedGrid"

@@ -590,5 +590,12 @@ def from_dict(data: dict[str, Any]) -> Environment:
         env.units = data["units"]
     if "frame" in data:
         env.frame = data["frame"]
+    # Mirror to_dict (line 484): coordinate_kind defaults to
+    # "cartesian", and only non-default values are persisted, so a
+    # missing key falls back to the field default. Without this the
+    # in-memory dict round-trip silently flipped polar envs to
+    # Cartesian, even though to_file/from_file round-tripped correctly.
+    if "coordinate_kind" in data:
+        env.coordinate_kind = data["coordinate_kind"]
 
     return env

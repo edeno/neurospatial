@@ -100,6 +100,7 @@ from neurospatial.encoding.population import (
 # Spatial rate (place/grid/border cells)
 from neurospatial.encoding.spatial import (
     DirectionalPlaceFields,
+    PlaceFieldsResult,
     SpatialRateResult,
     SpatialRatesResult,
     compute_directional_place_fields,
@@ -177,6 +178,7 @@ __all__ = [  # noqa: RUF022 - organized by category
     "FieldOfView",
     # Place cell analysis
     "DirectionalPlaceFields",
+    "PlaceFieldsResult",
     "compute_directional_place_fields",
     "compute_field_emd",
     "detect_place_fields",

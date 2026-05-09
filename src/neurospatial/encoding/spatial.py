@@ -71,6 +71,7 @@ __all__ = [
     # Result classes
     "SpatialRateResult",
     "SpatialRatesResult",
+    "PlaceFieldsResult",
     # Compute functions
     "compute_spatial_rate",
     "compute_spatial_rates",
@@ -80,6 +81,60 @@ __all__ = [
     # Field detection
     "detect_place_fields",
 ]
+
+
+@dataclass(frozen=True)
+class PlaceFieldsResult:
+    """Result of ``detect_place_fields()``: detected fields plus exclusion metadata.
+
+    Returned by :func:`detect_place_fields`. Distinguishes "this neuron
+    has no detectable place fields" (``fields=[]``, ``excluded_reason=None``)
+    from "this neuron was excluded by the interneuron-rate filter"
+    (``fields=[]``, ``excluded_reason="mean_rate_above_threshold"``) so a
+    population pipeline can branch without listening for warnings.
+
+    Attributes
+    ----------
+    fields : list of NDArray[np.int64], length n_fields
+        Each element is a 1-D array of bin indices belonging to one
+        place field. Empty list if no fields were detected, or if the
+        neuron was excluded by the ``max_mean_rate`` filter.
+    excluded_reason : str | None
+        ``None`` when the neuron passed all filters and ``fields``
+        reflects the actual detection result. A non-None string when a
+        filter caused detection to short-circuit. The only value used
+        in M1 is ``"mean_rate_above_threshold"`` (putative interneuron);
+        future filters (e.g. ``"all_nan_rate_map"``) may add more.
+    n_excluded : int
+        ``1`` if ``excluded_reason`` is set, else ``0``. Provided so
+        downstream population aggregation can sum exclusions across
+        neurons without parsing the reason string.
+
+    Notes
+    -----
+    The result is iterable and indexable like a ``list[NDArray[np.int64]]``
+    so callers that previously wrote ``for f in detect_place_fields(...)``
+    or ``len(detect_place_fields(...))`` keep working.
+    """
+
+    fields: list[NDArray[np.int64]]
+    excluded_reason: str | None = None
+    n_excluded: int = 0
+
+    def __len__(self) -> int:
+        return len(self.fields)
+
+    def __getitem__(self, idx: int) -> NDArray[np.int64]:
+        return self.fields[idx]
+
+    def __iter__(self) -> Iterator[NDArray[np.int64]]:
+        return iter(self.fields)
+
+    def __bool__(self) -> bool:
+        # Truthy iff at least one field was detected. Matches the
+        # ergonomic of `if detect_place_fields(...): ...` against the
+        # old list[NDArray] return.
+        return len(self.fields) > 0
 
 
 @dataclass(frozen=True)
@@ -932,10 +987,12 @@ class SpatialRatesResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> result = SpatialRatesResult(...)
-        >>> scores = result.grid_scores()
-        >>> print(f"Mean grid score: {np.nanmean(scores):.3f}")
-        >>> n_grid_cells = np.sum(scores > 0.4)
+        >>> result = SpatialRatesResult(...)  # doctest: +SKIP
+        >>> scores = result.grid_scores()  # doctest: +SKIP
+        >>> # The result wraps an ndarray; reach in via .scores for math
+        >>> # operations that need a real array.
+        >>> print(f"Mean grid score: {np.nanmean(scores.scores):.3f}")  # doctest: +SKIP
+        >>> n_grid_cells = int(np.sum(scores.scores > 0.4))  # doctest: +SKIP
         """
         from neurospatial.encoding._metrics import batch_grid_scores
 
@@ -993,10 +1050,14 @@ class SpatialRatesResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> result = SpatialRatesResult(...)
-        >>> scores = result.border_scores()
-        >>> print(f"Mean border score: {np.nanmean(scores):.3f}")
-        >>> n_border_cells = np.sum(scores > 0.5)
+        >>> result = SpatialRatesResult(...)  # doctest: +SKIP
+        >>> scores = result.border_scores()  # doctest: +SKIP
+        >>> # The result wraps an ndarray; reach in via .scores for math
+        >>> # operations that need a real array.
+        >>> print(
+        ...     f"Mean border score: {np.nanmean(scores.scores):.3f}"
+        ... )  # doctest: +SKIP
+        >>> n_border_cells = int(np.sum(scores.scores > 0.5))  # doctest: +SKIP
         """
         from neurospatial.encoding._metrics import batch_border_scores
 
@@ -1970,7 +2031,7 @@ def detect_place_fields(
     min_size: int | None = None,
     max_mean_rate: float = 10.0,
     detect_subfields: bool = True,
-) -> list[NDArray[np.int64]]:
+) -> PlaceFieldsResult:
     """Detect place fields using iterative peak-based approach (neurocode method).
 
     This implements the field-standard algorithm used by neurocode (AyA Lab)
@@ -1996,9 +2057,14 @@ def detect_place_fields(
 
     Returns
     -------
-    fields : list of arrays
-        List of place fields, where each field is a 1D array of bin indices
-        (integers) belonging to that field. Empty list if no fields detected.
+    PlaceFieldsResult
+        Container with ``fields`` (list of bin-index arrays, one per
+        detected field) plus ``excluded_reason`` and ``n_excluded``
+        attributes that distinguish "no detectable fields" from
+        "neuron excluded by interneuron-rate filter". The result is
+        iterable and indexable like the underlying list, so existing
+        ``for f in result`` / ``len(result)`` / ``result[i]`` patterns
+        keep working.
 
     Notes
     -----
@@ -2062,14 +2128,13 @@ def detect_place_fields(
     if min_size is None:
         min_size = 9  # Standard minimum (3×3 bins for 2D)
 
-    # Interneuron exclusion. Emit a UserWarning before returning an empty
-    # list so a caller running detect_place_fields over a population can
-    # tell the difference between "this neuron has no detectable place
-    # fields" (an empty list with no warning) and "this neuron was
-    # excluded as a putative interneuron" (an empty list plus a
-    # documented warning). M2 task 2.10 will fold this into a richer
-    # PlaceFieldsResult dataclass with an `excluded_reason` attribute;
-    # for M1 the warning is the minimum-viable visible signal.
+    # Interneuron exclusion. Emit a UserWarning AND surface the reason
+    # in the returned PlaceFieldsResult so a caller running
+    # detect_place_fields over a population can tell "this neuron has
+    # no detectable place fields" (empty fields, excluded_reason=None)
+    # from "this neuron was excluded as a putative interneuron"
+    # (empty fields, excluded_reason="mean_rate_above_threshold").
+    # The structured signal removes the need to listen for warnings.
     mean_rate = np.nanmean(firing_rate)
     if mean_rate > max_mean_rate:
         warnings.warn(
@@ -2080,7 +2145,11 @@ def detect_place_fields(
             UserWarning,
             stacklevel=2,
         )
-        return []
+        return PlaceFieldsResult(
+            fields=[],
+            excluded_reason="mean_rate_above_threshold",
+            n_excluded=1,
+        )
 
     # Make a copy to modify during iteration
     rate_map = firing_rate.copy()
@@ -2138,7 +2207,7 @@ def detect_place_fields(
         if np.nanmax(rate_map) < threshold_rate:
             break
 
-    return fields
+    return PlaceFieldsResult(fields=fields, excluded_reason=None, n_excluded=0)
 
 
 def _extract_connected_component_scipy(

@@ -443,6 +443,12 @@ class EnvironmentVisualization:
                 "Consider using marginal plots, slicing, or 3D scatter plots instead."
             )
 
+        # Polar envs render via the same dispatch but with polar-aware
+        # axis labels and aspect ratio (M1 1.3): bin_centers[:, 0] is
+        # distance (env units), bin_centers[:, 1] is angle in radians.
+        # The label switch happens at the bottom of this method, after
+        # dispatch.
+
         # Create axes if needed
         if ax is None:
             _, ax = plt.subplots(figsize=(8, 7))
@@ -524,12 +530,21 @@ class EnvironmentVisualization:
                 cbar.set_label(colorbar_label, fontsize=12)
             cbar.ax.tick_params(labelsize=10)
 
-        # Format axes
+        # Format axes. Polar envs (from from_polar_egocentric) carry
+        # bin_centers as (distance, angle in radians), not (x, y), so
+        # the default "X Position" / "Y Position" labels are silently
+        # wrong; relabel and skip the equal-aspect lock (a polar map's
+        # angular extent is fixed by bin_centers[:, 1] but its distance
+        # extent is independent and physical).
         if not self.layout.is_1d:
-            ax.set_aspect("equal")
             unit_label = f" ({self.units})" if self.units else ""
-            ax.set_xlabel(f"X Position{unit_label}", fontsize=12)
-            ax.set_ylabel(f"Y Position{unit_label}", fontsize=12)
+            if self.is_polar:
+                ax.set_xlabel(f"Distance{unit_label}", fontsize=12)
+                ax.set_ylabel("Angle (rad)", fontsize=12)
+            else:
+                ax.set_aspect("equal")
+                ax.set_xlabel(f"X Position{unit_label}", fontsize=12)
+                ax.set_ylabel(f"Y Position{unit_label}", fontsize=12)
 
             if self.dimension_ranges and len(self.dimension_ranges) >= 2:
                 ax.set_xlim(self.dimension_ranges[0])

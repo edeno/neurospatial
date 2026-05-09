@@ -137,6 +137,14 @@ class EnvironmentQueries:
         [ True False]  # First point in environment, second outside
 
         """
+        # contains() is the boolean partner of bin_at(); both interpret
+        # `points_nd` as Cartesian (x, y[, z]) and run geometric
+        # containment via the layout. Refuse polar envs for the same
+        # reason bin_at does -- a polar env's bin_centers are
+        # (distance, angle in radians), not (x, y), so containment is
+        # nonsense and would silently return True/False on the wrong
+        # geometry.
+        self._check_cartesian("contains")
         # Optimized: compute indices once and check for -1 sentinel
         # This avoids redundant KDTree queries compared to calling bin_at() separately
         indices = self.layout.point_to_bin_index(points_nd)

@@ -1442,6 +1442,20 @@ def apply_transform_to_environment(
             "Use a factory method like Environment.from_samples()."
         )
 
+    # Refuse polar envs. An affine transform on bin_centers that
+    # actually carry (distance, angle in radians) pairs produces
+    # geometric nonsense -- and the resulting env would silently
+    # reset to coordinate_kind="cartesian" because that's the field
+    # default on the freshly built env. Fail at the boundary instead.
+    if getattr(env, "coordinate_kind", "cartesian") != "cartesian":
+        raise ValueError(
+            "apply_transform requires a Cartesian environment but got "
+            f"coordinate_kind={env.coordinate_kind!r} "
+            "(an affine transform on (distance, angle) pairs is not "
+            "geometrically meaningful). For polar envs, work in the "
+            "egocentric coordinate space directly."
+        )
+
     # Validate dimensionality match
     transform_dims = transform.n_dims if isinstance(transform, AffineND) else 2
     if env.n_dims != transform_dims:

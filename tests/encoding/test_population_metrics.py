@@ -277,12 +277,14 @@ class TestPopulationCoverage:
         firing_rates[0, 0:5] = np.array([10.0, 8.0, 6.0, 4.0, 2.0])
         firing_rates[1, 10:15] = np.array([10.0, 8.0, 6.0, 4.0, 2.0])
 
+        from neurospatial.encoding.spatial import PlaceFieldsResult
+
         result = population_coverage(firing_rates, simple_env, min_size=1)
         # Should have list of length n_neurons
         assert len(result.place_fields) == 2
-        # Each element is a list of arrays
+        # Each element is a PlaceFieldsResult that iterates as list[NDArray]
         for neuron_fields in result.place_fields:
-            assert isinstance(neuron_fields, list)
+            assert isinstance(neuron_fields, PlaceFieldsResult)
             for field in neuron_fields:
                 assert isinstance(field, np.ndarray)
                 assert field.dtype == np.int64

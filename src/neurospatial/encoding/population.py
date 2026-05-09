@@ -21,7 +21,7 @@ import numpy as np
 from matplotlib.colors import ListedColormap
 from numpy.typing import NDArray
 
-from neurospatial.encoding.spatial import detect_place_fields
+from neurospatial.encoding.spatial import PlaceFieldsResult, detect_place_fields
 from neurospatial.environment import Environment
 
 
@@ -68,7 +68,11 @@ class PopulationCoverageResult:
     n_neurons: int
     n_place_cells: int
     n_fields: int
-    place_fields: list[list[NDArray[np.int64]]]
+    # Per-neuron PlaceFieldsResult; iterates as list[NDArray[np.int64]]
+    # for backwards-compatible len/iter access, and exposes
+    # excluded_reason / n_excluded for population-level interneuron
+    # accounting.
+    place_fields: list[PlaceFieldsResult]
 
     @property
     def place_cell_fraction(self) -> float:
@@ -274,8 +278,11 @@ def population_coverage(
     n_bins = env.n_bins
     n_neurons = firing_rates.shape[0]
 
-    # Detect place fields for each neuron
-    all_fields: list[list[NDArray[np.int64]]] = []
+    # Detect place fields for each neuron. detect_place_fields returns
+    # a PlaceFieldsResult that is iterable and sized like a
+    # list[NDArray]; the existing len/iter/concatenate calls below work
+    # on it without explicit `.fields` reach-in.
+    all_fields: list[PlaceFieldsResult] = []
     for neuron_idx in range(n_neurons):
         fields = detect_place_fields(
             firing_rates[neuron_idx],
@@ -297,9 +304,11 @@ def population_coverage(
             n_place_cells += 1
             n_fields += len(neuron_fields)
             # Concatenate all field bins for this neuron and use np.add.at for vectorized increment
-            all_bins = np.concatenate(neuron_fields)
+            all_bins = np.concatenate(list(neuron_fields))
             np.add.at(field_count, all_bins, 1)
 
+    # (Drop the now-unused local re-import; PlaceFieldsResult is imported
+    # at module scope.)
     # Compute coverage
     is_covered = field_count > 0
     coverage_fraction = float(is_covered.sum() / n_bins)
@@ -459,7 +468,8 @@ def plot_population_coverage(
 
 
 def field_density_map(
-    all_place_fields: list[list[NDArray[np.int64]]], n_bins: int
+    all_place_fields: list[list[NDArray[np.int64]] | PlaceFieldsResult],
+    n_bins: int,
 ) -> NDArray[np.int64]:
     """
     Count number of overlapping place fields per bin.
@@ -469,8 +479,12 @@ def field_density_map(
 
     Parameters
     ----------
-    all_place_fields : list of list of array
-        Place fields for each cell. Format matches `detect_place_fields()` output.
+    all_place_fields : list of (list of array OR PlaceFieldsResult)
+        Place fields for each cell. Each element may be either a bare
+        ``list[NDArray[np.int64]]`` (legacy hand-built input) or a
+        ``PlaceFieldsResult`` (the canonical return of
+        :func:`detect_place_fields` since M1 1.4); both forms iterate as
+        ``Iterable[NDArray[np.int64]]``.
     n_bins : int
         Total number of bins in the environment.
 

@@ -539,23 +539,29 @@ class EnvironmentTransforms:
         # broke `to_file` / `from_file` (silent persistence loss --
         # users could subset(), save, restart, and lose the env).
         #
-        # For grid envs (RegularGrid, MaskedGrid, ImageMask, Hexagonal,
-        # ShapelyPolygon), we have a `grid_shape` + `grid_edges` +
-        # `active_mask` triple that fully describes the spatial
-        # discretization. Filter the existing active mask down to the
-        # selected bins and rebuild via `from_mask` -- the resulting env
-        # uses the canonical "MaskedGrid" layout, round-trips through
-        # `to_file` / `from_file`, and shares the existing layout
-        # serializer.
+        # For 2-D / N-D grid envs (RegularGrid, MaskedGrid, ImageMask,
+        # Hexagonal, ShapelyPolygon), we have a `grid_shape` +
+        # `grid_edges` + `active_mask` triple that fully describes the
+        # spatial discretization. Filter the existing active mask down
+        # to the selected bins and rebuild via `from_mask` -- the
+        # resulting env uses the canonical "MaskedGrid" layout,
+        # round-trips through `to_file` / `from_file`, and shares the
+        # existing layout serializer.
         #
-        # For graph envs (1-D linearized tracks) we don't have a
-        # grid_shape and fall back to the inline SubsetLayout path
-        # below; that path is still not serializable, but is preserved
-        # so existing graph-env subset call sites don't regress. The
-        # inline path will be removed once graph subset is itself
-        # backed by a registered layout type (out of M1 scope).
+        # Graph envs (1-D linearized tracks) ALSO populate `grid_shape`
+        # / `grid_edges` / `active_mask`, but they are 1-D objects
+        # embedded in a 2-D world (bin_centers shape (n_bins, 2)). If we
+        # routed them through `from_mask` we'd build a MaskedGrid whose
+        # bin_centers are flat 1-D linearized positions, dropping the
+        # 2-D embedding. Detect them via `self.is_1d` and fall through
+        # to the inline `SubsetLayout` path below; that path is still
+        # not serializable, but is preserved so existing graph-env
+        # subset call sites don't silently corrupt the dimensionality.
+        # Graph subset will get its own registered layout type later
+        # (out of M1 scope).
         is_grid_env = (
-            self.active_mask is not None
+            not self.is_1d
+            and self.active_mask is not None
             and self.grid_shape is not None
             and self.grid_edges is not None
             and len(self.grid_edges) > 0
@@ -646,13 +652,17 @@ class EnvironmentTransforms:
                 connectivity,
                 dimension_ranges: tuple[tuple[float, float], ...],
                 build_params: dict,
+                is_1d: bool = False,
             ) -> None:
                 self.bin_centers = bin_centers
                 self.connectivity = connectivity
                 self.dimension_ranges = dimension_ranges
                 self._layout_type_tag = "subset"
                 self._build_params_used = build_params
-                self.is_1d = False
+                # Preserve the parent layout's is_1d so a subset of a
+                # graph (linearized) env stays 1-D in 2-D space rather
+                # than masquerading as a fully N-D layout.
+                self.is_1d = is_1d
 
             def build(self) -> None:
                 """Build the layout (no-op for subset layouts)."""
@@ -667,11 +677,14 @@ class EnvironmentTransforms:
                 points shaped ``(n_points, n_dims)`` (a single 1-D point
                 is also tolerated for backwards compatibility) and
                 returns an array of bin indices shaped ``(n_points,)``.
-                Points farther than ``2 * typical_bin_spacing`` from the
-                nearest bin center are returned as ``-1`` so trajectory
-                callers (``Environment.bin_at`` -> ``Environment.occupancy``,
-                ``Environment.bin_sequence``) consistently flag
-                out-of-env samples.
+                Points farther than ``10 * typical_bin_spacing`` from
+                the nearest bin center are returned as ``-1`` so
+                trajectory callers (``Environment.bin_at`` ->
+                ``Environment.occupancy``, ``Environment.bin_sequence``)
+                consistently flag out-of-env samples. The 10× threshold
+                matches the heuristic in ``ops.binning.map_points_to_bins``;
+                tightening would spuriously reject points near sparse
+                regions of the subset graph.
 
                 M1 1.1 will replace SubsetLayout with MaskedGrid, which
                 has the correct geometric containment behavior built in;
@@ -762,12 +775,14 @@ class EnvironmentTransforms:
             for i in range(n_dims)
         )
 
-        # Create layout
+        # Create layout. Preserve the parent's is_1d flag so a graph
+        # subset (1-D linearized track in 2-D space) stays 1-D.
         layout = SubsetLayout(
             bin_centers=new_bin_centers,
             connectivity=new_graph,
             dimension_ranges=dimension_ranges,
             build_params={"source": "subset", "original_n_bins": self.n_bins},
+            is_1d=self.is_1d,
         )
 
         # Create new environment - directly instantiate
@@ -788,11 +803,17 @@ class EnvironmentTransforms:
 
         # --- Preserve Metadata ---
 
-        # Copy units and frame if present
+        # Copy units, frame, and coordinate_kind if present. The
+        # coordinate_kind preservation matches the grid-fast-path above
+        # (line 595) so a polar 1-D linearized track (hypothetical for
+        # now; see TASKS.md M1 1.3) doesn't silently flip to Cartesian
+        # on subset.
         if hasattr(self, "units") and self.units is not None:
             sub_env.units = self.units
         if hasattr(self, "frame") and self.frame is not None:
             sub_env.frame = self.frame
+        if hasattr(self, "coordinate_kind"):
+            sub_env.coordinate_kind = self.coordinate_kind
 
         # Note: Regions are intentionally dropped (as documented)
 
