@@ -210,7 +210,7 @@ def to_file(env: Environment, path: PathLike) -> None:
         "name": env.name,
         "n_dims": int(env.n_dims),
         "n_bins": int(env.n_bins),
-        "is_1d": bool(env.is_1d),
+        "is_linearized_track": bool(env.is_linearized_track),
         "layout_type": env.layout_type,
         "layout_parameters": env.layout_parameters,
     }
@@ -452,7 +452,7 @@ def to_dict(env: Environment) -> dict[str, Any]:
         "name": env.name,
         "n_dims": int(env.n_dims),
         "n_bins": int(env.n_bins),
-        "is_1d": bool(env.is_1d),
+        "is_linearized_track": bool(env.is_linearized_track),
         "layout_type": env.layout_type,
         "layout_parameters": env.layout_parameters,
         "bin_centers": env.bin_centers.tolist(),

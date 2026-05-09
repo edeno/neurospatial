@@ -135,7 +135,7 @@ class EnvironmentMetrics:
         Get linearization metadata for 1D environments.
 
         Returns a dictionary with linearization information, including:
-        - `is_1d`: Whether this is a 1D linearized environment
+        - `is_linearized_track`: Whether this is a 1D linearized environment
         - `linear_bin_edges`: Bin edges in linear coordinates (1D only)
         - `linear_bin_centers_1d`: Bin centers in linear coordinates (1D only)
         - `track_graph`: The underlying track graph (1D only)
@@ -144,13 +144,13 @@ class EnvironmentMetrics:
         -------
         dict[str, Any]
             Dictionary with linearization metadata. For non-1D environments,
-            only contains `{'is_1d': False}`.
+            only contains `{'is_linearized_track': False}`.
 
         Notes
         -----
         - This is a **cached property** - computed once on first access, then cached
         - Only 1D environments (created with `from_graph()`) have full linearization info
-        - For N-D environments, returns `{'is_1d': False}`
+        - For N-D environments, returns `{'is_linearized_track': False}`
 
         See Also
         --------
@@ -174,15 +174,15 @@ class EnvironmentMetrics:
         ... )  # doctest: +SKIP
         >>>
         >>> props = env.linearization_properties  # doctest: +SKIP
-        >>> print(props["is_1d"])  # doctest: +SKIP
+        >>> print(props["is_linearized_track"])  # doctest: +SKIP
         True
 
         """
-        if not self._is_1d_env:
-            return {"is_1d": False}
+        if not self._is_linearized_track_env:
+            return {"is_linearized_track": False}
 
         # For 1D environments, extract linearization metadata from layout
-        metadata: dict[str, Any] = {"is_1d": True}
+        metadata: dict[str, Any] = {"is_linearized_track": True}
         if hasattr(self.layout, "linear_bin_edges"):
             metadata["linear_bin_edges"] = self.layout.linear_bin_edges
         if hasattr(self.layout, "linear_bin_centers_1d"):
@@ -342,7 +342,7 @@ class EnvironmentMetrics:
         ------
         AttributeError
             If this environment is not 1D (does not support linearization).
-            Check `env.is_1d` before calling this method.
+            Check `env.is_linearized_track` before calling this method.
 
         Notes
         -----
@@ -354,7 +354,7 @@ class EnvironmentMetrics:
         --------
         linear_to_nd : Convert 1D linear coordinates back to N-D positions
         Environment.from_graph : Create 1D linearized environment
-        is_1d : Check if environment supports linearization
+        is_linearized_track : Check if environment supports linearization
 
         Examples
         --------
@@ -380,7 +380,7 @@ class EnvironmentMetrics:
         Linear position: 5.0
 
         """
-        if not self._is_1d_env:
+        if not self._is_linearized_track_env:
             msg = (
                 "to_linear() is only available for 1D environments (GraphLayout). "
                 f"This environment is {self.n_dims}D. "
@@ -428,7 +428,7 @@ class EnvironmentMetrics:
         ------
         AttributeError
             If this environment is not 1D (does not support linearization).
-            Check `env.is_1d` before calling this method.
+            Check `env.is_linearized_track` before calling this method.
 
         Notes
         -----
@@ -440,7 +440,7 @@ class EnvironmentMetrics:
         --------
         to_linear : Convert N-D positions to 1D linear coordinates
         Environment.from_graph : Create 1D linearized environment
-        is_1d : Check if environment supports linearization
+        is_linearized_track : Check if environment supports linearization
 
         Examples
         --------
@@ -464,7 +464,7 @@ class EnvironmentMetrics:
         2D position: [5. 0.]
 
         """
-        if not self._is_1d_env:
+        if not self._is_linearized_track_env:
             msg = (
                 "linear_to_nd() is only available for 1D environments (GraphLayout). "
                 f"This environment is {self.n_dims}D. "

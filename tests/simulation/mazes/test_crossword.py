@@ -245,7 +245,7 @@ class TestMakeCrosswordMaze:
 
         maze = make_crossword_maze(include_track=True)
         assert maze.env_track is not None
-        assert maze.env_track.is_1d
+        assert maze.env_track.is_linearized_track
 
     def test_env_track_is_connected(self):
         """Track graph should be connected."""

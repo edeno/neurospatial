@@ -282,7 +282,7 @@ class TestPlotFieldWithScaleBar:
         field = rng.random(small_1d_env.n_bins)
         # 1D graph layouts go through the 1D plotting path, not grid path
         # Check if it's a 1D layout that can be plotted
-        if small_1d_env.layout.is_1d:
+        if small_1d_env.layout.is_linearized_track:
             # 1D layouts use line plots, scale bar still works
             small_1d_env.plot_field(field, scale_bar=True)
             plt.close()

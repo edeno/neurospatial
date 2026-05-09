@@ -207,7 +207,7 @@ class TestMakeRepeatedYMaze:
 
         maze = make_repeated_y_maze(include_track=True)
         assert maze.env_track is not None
-        assert maze.env_track.is_1d
+        assert maze.env_track.is_linearized_track
 
     def test_env_track_has_correct_units(self):
         """env_track should have units set to 'cm'."""

@@ -190,9 +190,9 @@ class Environment(
         Populated by `_setup_from_layout`.
     regions : RegionManager
         Manages symbolic spatial regions defined within this environment.
-    _is_1d_env : bool
+    _is_linearized_track_env : bool
         Internal flag indicating if the environment's layout is primarily 1-dimensional.
-        Set based on `layout.is_1d`.
+        Set based on `layout.is_linearized_track`.
     _is_fitted : bool
         Internal flag indicating if the environment has been fully initialized
         and its layout-dependent attributes are populated.
@@ -258,7 +258,7 @@ class Environment(
     )
 
     # Internal state
-    _is_1d_env: bool = field(init=False)
+    _is_linearized_track_env: bool = field(init=False)
     _is_fitted: bool = field(init=False, default=False)
 
     # KD-tree cache for spatial queries (populated lazily by map_points_to_bins)
@@ -320,7 +320,7 @@ class Environment(
             else getattr(layout, "_build_params_used", {})
         )
 
-        self._is_1d_env = self.layout.is_1d
+        self._is_linearized_track_env = self.layout.is_linearized_track
 
         # Initialize attributes that will be populated by _setup_from_layout
         self.bin_centers = np.empty((0, 0))  # Placeholder
@@ -579,7 +579,11 @@ class Environment(
             rows.append(self._html_table_row("Regions", "None"))
 
         # 1D-specific info
-        if n_dims == 1 and hasattr(self, "is_1d") and self.is_1d:
+        if (
+            n_dims == 1
+            and hasattr(self, "is_linearized_track")
+            and self.is_linearized_track
+        ):
             rows.append(
                 self._html_table_row("Linearization", "Available (1D environment)")
             )
@@ -739,7 +743,7 @@ class Environment(
         lines.append("")
 
         # 1D-specific information
-        if hasattr(self, "is_1d") and self.is_1d:
+        if hasattr(self, "is_linearized_track") and self.is_linearized_track:
             lines.append("Linearization: Available (1D environment)")
             lines.append("")
 
@@ -848,7 +852,7 @@ class Environment(
         }
 
     @property
-    def is_1d(self) -> bool:
+    def is_linearized_track(self) -> bool:
         """Indicate if the environment's layout is primarily 1-dimensional.
 
         Returns
@@ -856,10 +860,10 @@ class Environment(
         bool
             True if the underlying `LayoutEngine` (`self.layout`) reports
             itself as 1-dimensional (e.g., `GraphLayout`), False otherwise.
-            This is determined by `self.layout.is_1d`.
+            This is determined by `self.layout.is_linearized_track`.
 
         """
-        return self._is_1d_env
+        return self._is_linearized_track_env
 
     @property
     def is_polar(self) -> bool:

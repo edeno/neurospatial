@@ -152,7 +152,7 @@ class GraphLayout(_KDTreeMixin):
         self._build_kdtree(points_for_tree=self.bin_centers)
 
     @property
-    def is_1d(self) -> bool:
+    def is_linearized_track(self) -> bool:
         """Graph layouts are treated as 1-dimensional due to linearization.
 
         Returns

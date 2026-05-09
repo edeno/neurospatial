@@ -30,7 +30,7 @@ class TestEnvironmentFromGraph:
         assert graph_env.name == "PlusMazeGraph"
         assert isinstance(graph_env.layout, GraphLayout)
         assert graph_env._is_fitted
-        assert graph_env.is_1d
+        assert graph_env.is_linearized_track
         assert graph_env.n_dims == 2
 
         assert graph_env.bin_centers.shape[0] == 16
@@ -210,7 +210,7 @@ class TestEnvironmentFromDataSamplesGrid:
         assert grid_env_from_samples.grid_edges is not None  # Grid layouts have edges
         # Verify fitted state through public behavior (methods work without error)
         assert grid_env_from_samples.n_bins > 0  # Fitted env has bins
-        assert not grid_env_from_samples.is_1d
+        assert not grid_env_from_samples.is_linearized_track
         assert grid_env_from_samples.n_dims == 2
 
         assert grid_env_from_samples.bin_centers is not None
@@ -278,7 +278,7 @@ class TestEnvironmentSerialization:
         assert isinstance(loaded_env, Environment)
         assert loaded_env.name == graph_env.name
         assert loaded_env._layout_type_used == graph_env._layout_type_used
-        assert loaded_env.is_1d == graph_env.is_1d
+        assert loaded_env.is_linearized_track == graph_env.is_linearized_track
         assert loaded_env.n_dims == graph_env.n_dims
         assert np.array_equal(loaded_env.bin_centers, graph_env.bin_centers)
         assert (
@@ -641,9 +641,7 @@ class TestDimensionality:
             name="1DGridTest",
         )
         assert env.n_dims == 1
-        assert (
-            not env.is_1d
-        )  # RegularGrid layout is not flagged as is_1d (which is for GraphLayout)
+        assert not env.is_linearized_track  # RegularGrid layout is not flagged as is_linearized_track (which is for GraphLayout)
         assert env.bin_centers.ndim == 2 and env.bin_centers.shape[1] == 1
         assert len(env.grid_edges) == 1
         assert len(env.grid_shape) == 1
@@ -661,7 +659,7 @@ class TestDimensionality:
             connect_diagonal_neighbors=True,
         )
         assert env.n_dims == 3
-        assert not env.is_1d
+        assert not env.is_linearized_track
         assert env.bin_centers.shape[1] == 3
         assert len(env.grid_edges) == 3
         assert len(env.grid_shape) == 3
@@ -890,7 +888,7 @@ class TestEnvironment3D:
         assert simple_3d_env.name == "Simple3DEnv"
         assert simple_3d_env._is_fitted
         assert simple_3d_env.n_dims == 3
-        assert not simple_3d_env.is_1d  # RegularGrid is never 1D
+        assert not simple_3d_env.is_linearized_track  # RegularGrid is never 1D
 
         # Verify bin_centers shape
         assert simple_3d_env.bin_centers.ndim == 2
@@ -1392,7 +1390,7 @@ class TestCacheManagement:
     def test_clear_cache_clears_linearization_properties(self, cache_test_graph_env):
         """Test that clear_cache() clears linearization_properties on 1D environments."""
         # linearization_properties only exists for 1D (GraphLayout) environments
-        if not cache_test_graph_env.is_1d:
+        if not cache_test_graph_env.is_linearized_track:
             pytest.skip("Requires 1D environment")
 
         # Access linearization properties (triggers caching)

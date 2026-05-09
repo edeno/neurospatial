@@ -613,7 +613,7 @@ class TestSubsetPreservesGraphLayout:
     grid-fast-path check (looking only at those three attributes)
     routed graph parents through ``Environment.from_mask``, which
     rebuilt them as MaskedGrid envs with 1-D bin_centers, dropping the
-    2-D embedding and flipping ``is_1d`` to False.
+    2-D embedding and flipping ``is_linearized_track`` to False.
     """
 
     def _build_graph_env(self):
@@ -636,13 +636,13 @@ class TestSubsetPreservesGraphLayout:
 
     def test_graph_subset_keeps_is_1d_and_n_dims(self):
         env = self._build_graph_env()
-        assert env.is_1d is True and env.n_dims == 2
+        assert env.is_linearized_track is True and env.n_dims == 2
 
         mask = np.zeros(env.n_bins, dtype=bool)
         mask[:5] = True
         sub = env.subset(bins=mask)
 
-        assert sub.is_1d is True, "graph subset must remain 1-D"
+        assert sub.is_linearized_track is True, "graph subset must remain 1-D"
         assert sub.n_dims == 2, "graph subset must keep its 2-D embedding"
 
     def test_graph_subset_does_not_use_maskedgrid(self):

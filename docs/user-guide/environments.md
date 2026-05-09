@@ -175,7 +175,7 @@ Access environment properties:
 # Basic properties
 print(env.n_bins)           # Number of bins
 print(env.n_dims)           # Number of dimensions
-print(env.is_1d)            # True for linearized environments
+print(env.is_linearized_track)            # True for linearized environments
 print(env.name)             # Environment name
 
 # Spatial information
@@ -194,7 +194,7 @@ Linearized track environments have additional methods:
 
 ```python
 # Check if environment is 1D
-if env.is_1d:
+if env.is_linearized_track:
     # Convert N-D coordinates to 1D
     linear_position = env.to_linear(nd_position)
 

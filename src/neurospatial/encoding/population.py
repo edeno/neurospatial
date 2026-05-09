@@ -410,7 +410,7 @@ def plot_population_coverage(
         _, ax = plt.subplots()
 
     # Handle 1D environments
-    if env.is_1d:
+    if env.is_linearized_track:
         if show_field_count:
             field_to_plot = result.field_count.astype(float)
             env.plot_field(field_to_plot, ax=ax)

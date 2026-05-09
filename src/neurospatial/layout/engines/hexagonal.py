@@ -182,7 +182,7 @@ class HexagonalLayout:
         }
 
     @property
-    def is_1d(self) -> bool:
+    def is_linearized_track(self) -> bool:
         """Hexagonal layouts are 2-dimensional.
 
         Returns

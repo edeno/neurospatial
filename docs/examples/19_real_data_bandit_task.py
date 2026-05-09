@@ -266,7 +266,7 @@ env_1d = Environment.from_graph(
 env_1d.units = "cm"
 
 print("1D Linearized Environment Created!")
-print(f"  Is 1D: {env_1d.is_1d}")
+print(f"  Is 1D: {env_1d.is_linearized_track}")
 print(f"  Number of bins: {env_1d.n_bins}")
 print(
     f"  Linear extent: [{env_1d.dimension_ranges[0][0]:.1f}, {env_1d.dimension_ranges[0][1]:.1f}] cm"
@@ -285,7 +285,7 @@ env_2d = Environment.from_samples(
 env_2d.units = "cm"
 
 print("\n2D Environment Created!")
-print(f"  Is 1D: {env_2d.is_1d}")
+print(f"  Is 1D: {env_2d.is_linearized_track}")
 print(f"  Number of bins: {env_2d.n_bins}")
 print(f"  Dimensions: {env_2d.n_dims}D")
 

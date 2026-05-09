@@ -1066,7 +1066,7 @@ class TestEnvironmentRoundTrip:
             graph, edge_order=edge_order, edge_spacing=20.0, bin_size=5.0
         )
 
-        assert env.is_1d, "GraphLayout should create a 1D environment"
+        assert env.is_linearized_track, "GraphLayout should create a 1D environment"
 
         nwb_path = tmp_path / "test_1d_graph.nwb"
 
@@ -1093,10 +1093,12 @@ class TestEnvironmentRoundTrip:
         loaded_edges = sorted(loaded_env.connectivity.edges())
         assert original_edges == loaded_edges
 
-        # is_1d property should be preserved (Graph layouts store 2D bin_centers
+        # is_linearized_track property should be preserved (Graph layouts store 2D bin_centers
         # but are conceptually 1D linearized tracks)
-        assert loaded_env.is_1d is True, "is_1d should be restored for Graph layouts"
-        assert env.is_1d is True, "Original env should be 1D"
+        assert loaded_env.is_linearized_track is True, (
+            "is_linearized_track should be restored for Graph layouts"
+        )
+        assert env.is_linearized_track is True, "Original env should be 1D"
 
         # n_dims is based on bin_centers shape (2D for projected coordinates)
         assert loaded_env.n_dims == env.n_dims

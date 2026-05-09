@@ -444,7 +444,7 @@ def simulate_trajectory_sinusoidal(
     Parameters
     ----------
     env : Environment
-        The 1D environment (must have env.is_1d == True).
+        The 1D environment (must have env.is_linearized_track == True).
     duration : float
         Total simulation duration in seconds.
     sampling_frequency : float, optional
@@ -471,7 +471,7 @@ def simulate_trajectory_sinusoidal(
     Raises
     ------
     ValueError
-        If environment is not 1D (env.is_1d == False).
+        If environment is not 1D (env.is_linearized_track == False).
 
     Examples
     --------
@@ -499,8 +499,8 @@ def simulate_trajectory_sinusoidal(
     simulate_trajectory_ou : Realistic random exploration
     simulate_trajectory_laps : Structured lap-based movement
     """
-    if not env.is_1d:
-        msg = "Sinusoidal trajectory only works for 1D environments (env.is_1d must be True)"
+    if not env.is_linearized_track:
+        msg = "Sinusoidal trajectory only works for 1D environments (env.is_linearized_track must be True)"
         raise ValueError(msg)
 
     # Get track length

@@ -46,7 +46,7 @@ class EnvironmentMetadata(TypedDict):
     layout_type: str
     n_bins: int
     n_edges: int
-    is_1d: bool
+    is_linearized_track: bool
     has_grid_data: bool
 
 
@@ -237,7 +237,7 @@ def write_environment(
             "layout_type": layout_type,
             "n_bins": env.n_bins,
             "n_edges": len(edges),  # Needed for proper deserialization
-            "is_1d": env.is_1d,  # Preserve 1D property for Graph layouts
+            "is_linearized_track": env.is_linearized_track,  # Preserve 1D property for Graph layouts
             "has_grid_data": grid_data is not None,
         }
     )
@@ -376,8 +376,8 @@ def _extract_grid_data(env: Environment) -> dict[str, Any] | None:
 
     # Don't extract grid data for 1D layouts (Graph) - they have 1D grid structure
     # but N-D bin_centers, which would cause shape mismatches on reconstruction
-    is_1d = getattr(env.layout, "is_1d", False)
-    if is_1d:
+    is_linearized_track = getattr(env.layout, "is_linearized_track", False)
+    if is_linearized_track:
         return None
 
     # Check if layout has grid_edges and active_mask (grid-based layouts)
@@ -582,10 +582,10 @@ def read_environment(
     # Store layout type info
     env._layout_type_used = layout_type
 
-    # Restore is_1d property for Graph layouts
-    is_1d = metadata.get("is_1d", False)
-    if is_1d:
-        env._is_1d_env = True
+    # Restore is_linearized_track property for Graph layouts
+    is_linearized_track = metadata.get("is_linearized_track", False)
+    if is_linearized_track:
+        env._is_linearized_track_env = True
 
     logger.debug(
         "Read environment '%s' with %d bins and %d edges",
@@ -723,10 +723,10 @@ class _ReconstructedLayout:
 
     Notes
     -----
-    The ``is_1d`` property always returns ``False`` even for layouts originally created
+    The ``is_linearized_track`` property always returns ``False`` even for layouts originally created
     from 1D Graph layouts. The original 1D property is preserved separately via
-    ``env._is_1d_env`` attribute set during reconstruction. This means ``env.is_1d``
-    will return the correct value, but ``env.layout.is_1d`` may differ.
+    ``env._is_linearized_track_env`` attribute set during reconstruction. This means ``env.is_linearized_track``
+    will return the correct value, but ``env.layout.is_linearized_track`` may differ.
     """
 
     def __init__(
@@ -753,7 +753,7 @@ class _ReconstructedLayout:
         self.active_mask = None
 
     @property
-    def is_1d(self) -> bool:
+    def is_linearized_track(self) -> bool:
         """Return False - reconstructed layouts are not 1D linearized."""
         return False
 

@@ -228,7 +228,7 @@ class TestMakeYMaze:
 
         maze = make_y_maze(include_track=True)
         assert maze.env_track is not None
-        assert maze.env_track.is_1d
+        assert maze.env_track.is_linearized_track
 
     def test_env_track_is_connected(self):
         """Track graph should be connected."""
@@ -305,7 +305,7 @@ class TestYMazeTrackGraph:
         import networkx as nx
 
         assert nx.is_connected(maze.env_track.connectivity)
-        assert maze.env_track.is_1d
+        assert maze.env_track.is_linearized_track
 
         # Find the center node in the connectivity graph
         # The center should have degree 3 (connected to 3 arms)

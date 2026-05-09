@@ -14,7 +14,7 @@ When working with this codebase, you MUST follow these rules:
 2. **NEVER create bare `Environment()`** - always use factory methods like `Environment.from_samples()`
 3. **bin_size is REQUIRED** - all Environment creation needs explicit bin_size parameter
 4. **NumPy docstring format** - all docstrings must follow NumPy style (not Google or reST)
-5. **Check `is_1d` before linearization** - only 1D environments have `to_linear()` method
+5. **Check `is_linearized_track` before linearization** - only 1D environments have `to_linear()` method
 6. **Regions are immutable** - use `env.regions.update_region()`, never modify in place
 7. **Use `@check_fitted` decorator** - methods requiring fitted state must use this decorator
 8. **Egocentric angles use animal-centered convention** - 0=ahead, π/2=left, -π/2=right (NOT allocentric 0=East)
@@ -368,7 +368,7 @@ env.regions['goal'].point = new_point  # AttributeError
 env.regions.update_region('goal', point=new_point)  # No warning
 ```
 
-### Gotcha 5: Check `is_1d` before linearization
+### Gotcha 5: Check `is_linearized_track` before linearization
 
 ❌ **Wrong:**
 
@@ -380,7 +380,7 @@ linear_pos = env.to_linear(position)  # AttributeError
 ✅ **Right:**
 
 ```python
-if env.is_1d:
+if env.is_linearized_track:
     linear_pos = env.to_linear(position)
 else:
     bin_idx = env.bin_at(position)

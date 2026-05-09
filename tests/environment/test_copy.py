@@ -297,7 +297,7 @@ class TestCopyDifferentLayouts:
         env_copy = env.copy()
 
         assert env_copy.n_bins == env.n_bins
-        assert env_copy.is_1d == env.is_1d
+        assert env_copy.is_linearized_track == env.is_linearized_track
         assert_array_equal(env_copy.bin_centers, env.bin_centers)
 
     def test_copy_grid_from_samples(self, grid_env_from_samples):

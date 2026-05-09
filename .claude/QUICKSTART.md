@@ -98,7 +98,7 @@ env = Environment.from_graph(
     edge_spacing=0.0,  # no gap between segments
     bin_size=2.0,
 )
-print(env.is_1d)  # True
+print(env.is_linearized_track)  # True
 
 # Linearization methods available
 linear_pos = env.to_linear(nd_position)

@@ -288,7 +288,7 @@ class TestLinearization:
     def test_to_linear_basic(self, graph_env: Environment) -> None:
         """Test basic to_linear conversion."""
         # graph_env is 1D
-        assert graph_env.is_1d
+        assert graph_env.is_linearized_track
 
         # Get a bin center
         nd_position = graph_env.bin_centers[:1]  # First bin
@@ -305,7 +305,7 @@ class TestLinearization:
 
     def test_linear_to_nd_basic(self, graph_env: Environment) -> None:
         """Test basic linear_to_nd conversion."""
-        assert graph_env.is_1d
+        assert graph_env.is_linearized_track
 
         # Create a linear position
         linear_pos = np.array([1.0])
@@ -323,7 +323,7 @@ class TestLinearization:
 
     def test_to_linear_round_trip(self, graph_env: Environment) -> None:
         """Test that to_linear -> linear_to_nd round trip is consistent."""
-        assert graph_env.is_1d
+        assert graph_env.is_linearized_track
 
         # Start with ND position
         nd_original = graph_env.bin_centers[:5]
@@ -340,7 +340,7 @@ class TestLinearization:
 
     def test_to_linear_raises_on_nd_env(self, medium_2d_env: Environment) -> None:
         """Test that to_linear raises error on N-D environment."""
-        assert not medium_2d_env.is_1d
+        assert not medium_2d_env.is_linearized_track
 
         with pytest.raises(
             AttributeError,
@@ -350,7 +350,7 @@ class TestLinearization:
 
     def test_linear_to_nd_raises_on_nd_env(self, medium_2d_env: Environment) -> None:
         """Test that linear_to_nd raises error on N-D environment."""
-        assert not medium_2d_env.is_1d
+        assert not medium_2d_env.is_linearized_track
 
         with pytest.raises(
             AttributeError,
@@ -360,7 +360,7 @@ class TestLinearization:
 
     def test_to_linear_batch(self, graph_env: Environment) -> None:
         """Test to_linear with batch of positions."""
-        assert graph_env.is_1d
+        assert graph_env.is_linearized_track
 
         # Batch of positions
         nd_positions = graph_env.bin_centers[:10]
@@ -377,7 +377,7 @@ class TestLinearization:
 
     def test_linear_to_nd_batch(self, graph_env: Environment) -> None:
         """Test linear_to_nd with batch of positions."""
-        assert graph_env.is_1d
+        assert graph_env.is_linearized_track
 
         # Batch of linear positions
         linear_positions = np.linspace(0, 5, 10)
@@ -399,7 +399,7 @@ class TestLinearizationProperties:
 
     def test_linearization_properties_1d_env(self, graph_env: Environment) -> None:
         """Test linearization_properties for 1D environment."""
-        assert graph_env.is_1d
+        assert graph_env.is_linearized_track
 
         props = graph_env.linearization_properties
 
@@ -407,14 +407,14 @@ class TestLinearizationProperties:
         assert isinstance(props, dict)
 
         # Should indicate 1D
-        assert props["is_1d"] is True
+        assert props["is_linearized_track"] is True
 
         # May have additional linearization metadata
         # (exact keys depend on GraphLayout implementation)
 
     def test_linearization_properties_nd_env(self, medium_2d_env: Environment) -> None:
         """Test linearization_properties for N-D environment."""
-        assert not medium_2d_env.is_1d
+        assert not medium_2d_env.is_linearized_track
 
         props = medium_2d_env.linearization_properties
 
@@ -422,9 +422,9 @@ class TestLinearizationProperties:
         assert isinstance(props, dict)
 
         # Should indicate not 1D
-        assert props["is_1d"] is False
+        assert props["is_linearized_track"] is False
 
-        # Should only have is_1d key for N-D environments
+        # Should only have is_linearized_track key for N-D environments
         assert len(props) == 1
 
     def test_linearization_properties_cached(self, graph_env: Environment) -> None:
@@ -439,7 +439,7 @@ class TestLinearizationProperties:
         self, graph_env: Environment
     ) -> None:
         """Test that 1D env has linear_bin_edges in properties."""
-        assert graph_env.is_1d
+        assert graph_env.is_linearized_track
 
         props = graph_env.linearization_properties
 
@@ -451,7 +451,7 @@ class TestLinearizationProperties:
         self, graph_env: Environment
     ) -> None:
         """Test that 1D env has track_graph in properties."""
-        assert graph_env.is_1d
+        assert graph_env.is_linearized_track
 
         props = graph_env.linearization_properties
 
@@ -565,7 +565,7 @@ class TestMetricsIntegration:
         # linearization_properties should work
         lin_props = env.linearization_properties
         assert isinstance(lin_props, dict)
-        assert "is_1d" in lin_props
+        assert "is_linearized_track" in lin_props
 
     def test_metrics_consistent_with_environment_properties(
         self, medium_2d_env: Environment

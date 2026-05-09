@@ -244,7 +244,7 @@ class TriangularMeshLayout:
         return active_triangle_idxs
 
     @property
-    def is_1d(self) -> bool:
+    def is_linearized_track(self) -> bool:
         """Always False, as this is a 2D mesh layout.
 
         Returns

@@ -117,8 +117,18 @@ class GridProperties:
         Lower values indicate more consistent/reliable orientation.
     peak_coords : NDArray[np.float64]
         Coordinates of detected peaks relative to autocorrelogram center,
-        shape (n_peaks, 2) where columns are (row_offset, col_offset).
-        Typically 6 peaks for a well-formed grid.
+        shape (n_peaks, 2) where columns are ``(x_offset, y_offset)`` in
+        bin-coordinate space (Cartesian). Typically 6 peaks for a
+        well-formed grid.
+
+        .. note::
+
+           **Breaking change in v0.4**: this attribute previously held
+           ``(row_offset, col_offset)`` (image-array convention with the
+           y-axis flipped). It now matches the rest of the package's
+           Cartesian ``(x, y)`` convention. Downstream code that read
+           ``peak_coords[:, 0]`` as a row index must swap to
+           ``peak_coords[:, 1]`` (``y``).
     n_peaks : int
         Number of peaks detected. Grid cells typically have 6.
 
@@ -1008,8 +1018,11 @@ def _find_autocorr_peaks(
     Returns
     -------
     peak_coords : NDArray[np.float64], shape (n_peaks, 2)
-        Peak coordinates relative to center, as (row_offset, col_offset).
-        Sorted by distance from center (closest first).
+        Peak coordinates relative to center, as ``(x_offset, y_offset)``
+        in Cartesian convention (x = column offset; y = row offset, with
+        positive y pointing **down** to match the underlying image-array
+        coordinates the autocorrelogram was computed in). Sorted by
+        distance from center (closest first).
     """
     from skimage.feature import peak_local_max
 
@@ -1046,10 +1059,14 @@ def _find_autocorr_peaks(
     if len(peaks) == 0:
         return np.array([]).reshape(0, 2)
 
-    # Convert to center-relative coordinates
-    peak_coords_relative = peaks.astype(np.float64) - np.array([center_y, center_x])
+    # Convert to center-relative coordinates. ``peaks`` from
+    # ``peak_local_max`` is image-indexed (row, col); we reorder to the
+    # Cartesian ``(x, y) == (col_offset, row_offset)`` convention used
+    # everywhere else in the package.
+    peak_coords_image = peaks.astype(np.float64) - np.array([center_y, center_x])
+    peak_coords_relative = peak_coords_image[:, [1, 0]]
 
-    # Compute distances from center
+    # Compute distances from center (Euclidean — independent of axis order).
     distances = np.sqrt(
         peak_coords_relative[:, 0] ** 2 + peak_coords_relative[:, 1] ** 2
     )
@@ -1341,8 +1358,9 @@ def grid_properties(
     distances_to_use = distances_pixels[: min(n_peaks, len(distances_pixels))]
     scale = float(np.median(distances_to_use)) * bin_size
 
-    # Compute orientation from peak angles
-    angles_rad = np.arctan2(peak_coords[:, 0], peak_coords[:, 1])
+    # Compute orientation from peak angles. peak_coords is now (x, y),
+    # so arctan2(y, x) reads peak_coords[:, 1] (y) and peak_coords[:, 0] (x).
+    angles_rad = np.arctan2(peak_coords[:, 1], peak_coords[:, 0])
     angles_deg = np.degrees(angles_rad) % 360
     orientations = angles_deg % 60
 

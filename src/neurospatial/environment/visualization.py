@@ -231,7 +231,7 @@ class EnvironmentVisualization:
     ) -> matplotlib.axes.Axes | None:
         """Plot a 1D representation of the environment, if applicable.
 
-        This method is primarily for environments where `is_1d` is True
+        This method is primarily for environments where `is_linearized_track` is True
         (e.g., using `GraphLayout`). It calls the `plot_linear_layout`
         method of the underlying layout if it exists and the layout is 1D.
 
@@ -256,7 +256,7 @@ class EnvironmentVisualization:
         RuntimeError
             If called before the environment is fitted.
         AttributeError
-            If `self.layout.is_1d` is True but the layout does not have a
+            If `self.layout.is_linearized_track` is True but the layout does not have a
             `plot_linear_layout` method.
 
         Examples
@@ -269,13 +269,13 @@ class EnvironmentVisualization:
         >>> env = Environment.from_graph(
         ...     track_graph, track_graph_name="test_track"
         ... )  # doctest: +SKIP
-        >>> if env.is_1d:  # doctest: +SKIP
+        >>> if env.is_linearized_track:  # doctest: +SKIP
         ...     ax = env.plot_1d()  # doctest: +SKIP
 
         """
         l_kwargs = layout_plot_kwargs if layout_plot_kwargs is not None else {}
         l_kwargs.update(kwargs)  # Allow direct kwargs to override for layout.plot
-        if self.layout.is_1d:
+        if self.layout.is_linearized_track:
             if hasattr(self.layout, "plot_linear_layout"):
                 ax = self.layout.plot_linear_layout(ax=ax, **l_kwargs)
             else:
@@ -439,7 +439,7 @@ class EnvironmentVisualization:
             )
 
         # Check dimensionality for spatial plots
-        if not self.layout.is_1d and self.n_dims > 2:
+        if not self.layout.is_linearized_track and self.n_dims > 2:
             raise NotImplementedError(
                 f"Cannot plot {self.n_dims}D fields spatially. "
                 "Only 1D and 2D environments are supported. "
@@ -518,7 +518,7 @@ class EnvironmentVisualization:
             mappable = _plot_trimesh_field(
                 self, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
             )
-        elif self.layout.is_1d:
+        elif self.layout.is_linearized_track:
             mappable = _plot_1d_field(self, field, ax, colorbar_label, **kwargs)
         else:
             mappable = _plot_scatter_field(
@@ -527,7 +527,7 @@ class EnvironmentVisualization:
 
         # Add colorbar (not for 1D)
         # Note: mappable can be None if all field values are NaN and nan_color=None
-        if colorbar and mappable is not None and not self.layout.is_1d:
+        if colorbar and mappable is not None and not self.layout.is_linearized_track:
             cbar = plt.colorbar(mappable, ax=ax)
             if colorbar_label:
                 cbar.set_label(colorbar_label, fontsize=12)
@@ -539,7 +539,7 @@ class EnvironmentVisualization:
         # wrong; relabel and skip the equal-aspect lock (a polar map's
         # angular extent is fixed by bin_centers[:, 1] but its distance
         # extent is independent and physical).
-        if not self.layout.is_1d:
+        if not self.layout.is_linearized_track:
             unit_label = f" ({self.units})" if self.units else ""
             if self.is_polar:
                 ax.set_xlabel(f"Distance{unit_label}", fontsize=12)

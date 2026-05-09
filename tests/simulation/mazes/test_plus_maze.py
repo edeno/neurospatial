@@ -215,7 +215,7 @@ class TestMakePlusMaze:
 
         maze = make_plus_maze(include_track=True)
         assert maze.env_track is not None
-        assert maze.env_track.is_1d
+        assert maze.env_track.is_linearized_track
 
     def test_env_track_is_connected(self):
         """Track graph should be connected."""
@@ -290,7 +290,7 @@ class TestPlusMazeTrackGraph:
         import networkx as nx
 
         assert nx.is_connected(maze.env_track.connectivity)
-        assert maze.env_track.is_1d
+        assert maze.env_track.is_linearized_track
 
     def test_track_nodes_have_positions(self):
         """All track graph nodes should have position attributes."""

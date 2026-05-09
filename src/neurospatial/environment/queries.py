@@ -35,7 +35,7 @@ class EnvironmentQueries:
     finding neighbors, and computing distances.
 
     Methods in this class assume they are mixed into an Environment instance
-    that provides: layout, bin_centers, connectivity, is_1d attributes.
+    that provides: layout, bin_centers, connectivity, is_linearized_track attributes.
     """
 
     @check_fitted

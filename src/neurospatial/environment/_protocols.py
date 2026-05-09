@@ -50,7 +50,7 @@ class EnvironmentProtocol(Protocol):
     ]
     _layout_type_used: str | None
     _layout_params_used: dict[str, Any]
-    _is_1d_env: bool
+    _is_linearized_track_env: bool
     _kdtree_cache: Any  # scipy.spatial.cKDTree, but avoiding import
 
     # Computed properties
@@ -79,7 +79,7 @@ class EnvironmentProtocol(Protocol):
         ...
 
     @property
-    def is_1d(self) -> bool:
+    def is_linearized_track(self) -> bool:
         """
         Whether this is a 1D (linearized) environment.
 
@@ -443,7 +443,7 @@ class EnvironmentProtocol(Protocol):
         """
         Convert N-D positions to 1D linear positions.
 
-        Only available for 1D environments (is_1d=True).
+        Only available for 1D environments (is_linearized_track=True).
 
         Parameters
         ----------
@@ -461,7 +461,7 @@ class EnvironmentProtocol(Protocol):
         """
         Convert 1D linear positions to N-D coordinates.
 
-        Only available for 1D environments (is_1d=True).
+        Only available for 1D environments (is_linearized_track=True).
 
         Parameters
         ----------

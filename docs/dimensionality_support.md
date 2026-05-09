@@ -30,7 +30,7 @@ env = Environment.from_graph(
 - `env.to_linear(nd_position)` - Convert N-D coordinates to linear position
 - `env.linear_to_nd(linear_position)` - Convert linear position to N-D coordinates
 - `env.plot_1d()` - 1D visualization
-- `env.is_1d == True`
+- `env.is_linearized_track == True`
 
 **Typical applications:**
 - Linear tracks (e.g., T-maze arms, figure-8 tracks)
@@ -224,7 +224,7 @@ env = Environment.from_samples(data, bin_size=2.0)
 print(f"Dimensions: {env.n_dims}")  # 1, 2, or 3
 
 # Check if 1D (linearized)
-if env.is_1d:
+if env.is_linearized_track:
     linear_pos = env.to_linear(nd_position)
 else:
     bin_idx = env.bin_at(nd_position)

@@ -220,7 +220,13 @@ def test_all_public_methods_present():
     core_methods = ["info", "copy"]
 
     # Properties
-    properties = ["n_dims", "n_bins", "layout_type", "layout_parameters", "is_1d"]
+    properties = [
+        "n_dims",
+        "n_bins",
+        "layout_type",
+        "layout_parameters",
+        "is_linearized_track",
+    ]
 
     all_expected = (
         factory_methods

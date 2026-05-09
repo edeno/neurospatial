@@ -2,7 +2,7 @@
 Bridge edges between sub-environments are inferred automatically via mutual-nearest-neighbor (MNN).
 
 This class exposes the same public interface as the base `Environment` class:
-  - Properties: n_dims, n_bins, bin_centers, connectivity, is_1d, dimension_ranges,
+  - Properties: n_dims, n_bins, bin_centers, connectivity, is_linearized_track, dimension_ranges,
                 grid_edges, grid_shape, active_mask, regions
   - Methods:    bin_at, contains, neighbors, distance_between, bin_center_of,
                 bins_in_region, mask_for_region, path_between, info,
@@ -126,7 +126,7 @@ class CompositeEnvironment:
         Not applicable for composite environments (set to None).
     regions : Regions
         Manages symbolic spatial regions defined within this composite environment.
-    is_1d : bool
+    is_linearized_track : bool
         True if all sub-environments are 1D, False otherwise.
     _environment_bin_ranges : Dict[str, Tuple[int, int]]
         Mapping of sub-environment names to their bin index ranges in the composite.
@@ -137,7 +137,7 @@ class CompositeEnvironment:
 
     """
 
-    is_1d: bool
+    is_linearized_track: bool
     dimension_ranges: Sequence[tuple[float, float]] | None
     grid_edges: tuple[NDArray[np.float64], ...] | None
     grid_shape: tuple[int, ...] | None
@@ -244,7 +244,7 @@ class CompositeEnvironment:
             )
 
         # Properties to match Environment interface
-        self.is_1d = False
+        self.is_linearized_track = False
         if self.bin_centers.shape[0] > 0:
             min_coords = np.min(self.bin_centers, axis=0)
             max_coords = np.max(self.bin_centers, axis=0)

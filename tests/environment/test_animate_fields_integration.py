@@ -191,7 +191,7 @@ class TestAnimateFieldsIntegration:
         )
 
         # 1D environment should work
-        assert env.is_1d
+        assert env.is_linearized_track
 
         n_frames = 3
         fields = [rng.random(env.n_bins) for _ in range(n_frames)]
@@ -201,7 +201,7 @@ class TestAnimateFieldsIntegration:
 
         # Should have been called successfully
         mock_animate.assert_called_once()
-        assert mock_animate.call_args.kwargs["env"].is_1d
+        assert mock_animate.call_args.kwargs["env"].is_linearized_track
 
     @patch("neurospatial.animation.core.animate_fields")
     def test_works_with_masked_grid(self, mock_animate):

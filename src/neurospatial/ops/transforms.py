@@ -1534,7 +1534,7 @@ def apply_transform_to_environment(
             self.bin_centers = centers
             self.connectivity = graph
             self.dimension_ranges = dim_ranges
-            self.is_1d = original_layout.is_1d
+            self.is_linearized_track = original_layout.is_linearized_track
             self._layout_type_tag = f"{original_layout._layout_type_tag}_transformed"
             self._build_params_used = {
                 **getattr(original_layout, "_build_params_used", {}),

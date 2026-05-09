@@ -414,14 +414,14 @@ class TestTriangularMeshLayoutProperties:
     """Tests for TriangularMeshLayout properties."""
 
     def test_is_1d_property(self):
-        """Test that is_1d always returns False."""
+        """Test that is_linearized_track always returns False."""
         layout = TriangularMeshLayout()
-        assert layout.is_1d is False
+        assert layout.is_linearized_track is False
 
         # Even after building
         poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
         layout.build(poly, point_spacing=3.0)
-        assert layout.is_1d is False
+        assert layout.is_linearized_track is False
 
     def test_layout_type_tag(self):
         """Test that _layout_type_tag is set correctly."""

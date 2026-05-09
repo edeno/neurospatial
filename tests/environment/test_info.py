@@ -97,7 +97,7 @@ class TestEnvironmentInfo:
         """info() should show linearization status for 1D environments."""
         result = graph_env.info()
         # Should mention linearization or 1D
-        if graph_env.is_1d:
+        if graph_env.is_linearized_track:
             assert "linear" in result.lower() or "1d" in result.lower()
 
     def test_info_handles_empty_name(self):

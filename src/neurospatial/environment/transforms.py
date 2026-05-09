@@ -555,14 +555,14 @@ class EnvironmentTransforms:
         # embedded in a 2-D world (bin_centers shape (n_bins, 2)). If we
         # routed them through `from_mask` we'd build a MaskedGrid whose
         # bin_centers are flat 1-D linearized positions, dropping the
-        # 2-D embedding. Detect them via `self.is_1d` and fall through
+        # 2-D embedding. Detect them via `self.is_linearized_track` and fall through
         # to the inline `SubsetLayout` path below; that path is still
         # not serializable, but is preserved so existing graph-env
         # subset call sites don't silently corrupt the dimensionality.
         # Graph subset will get its own registered layout type later
         # (out of M1 scope).
         is_grid_env = (
-            not self.is_1d
+            not self.is_linearized_track
             and self.active_mask is not None
             and self.grid_shape is not None
             and self.grid_edges is not None
@@ -654,17 +654,17 @@ class EnvironmentTransforms:
                 connectivity,
                 dimension_ranges: tuple[tuple[float, float], ...],
                 build_params: dict,
-                is_1d: bool = False,
+                is_linearized_track: bool = False,
             ) -> None:
                 self.bin_centers = bin_centers
                 self.connectivity = connectivity
                 self.dimension_ranges = dimension_ranges
                 self._layout_type_tag = "subset"
                 self._build_params_used = build_params
-                # Preserve the parent layout's is_1d so a subset of a
+                # Preserve the parent layout's is_linearized_track so a subset of a
                 # graph (linearized) env stays 1-D in 2-D space rather
                 # than masquerading as a fully N-D layout.
-                self.is_1d = is_1d
+                self.is_linearized_track = is_linearized_track
 
             def build(self) -> None:
                 """Build the layout (no-op for subset layouts)."""
@@ -779,14 +779,14 @@ class EnvironmentTransforms:
             for i in range(n_dims)
         )
 
-        # Create layout. Preserve the parent's is_1d flag so a graph
+        # Create layout. Preserve the parent's is_linearized_track flag so a graph
         # subset (1-D linearized track in 2-D space) stays 1-D.
         layout = SubsetLayout(
             bin_centers=new_bin_centers,
             connectivity=new_graph,
             dimension_ranges=dimension_ranges,
             build_params={"source": "subset", "original_n_bins": self.n_bins},
-            is_1d=self.is_1d,
+            is_linearized_track=self.is_linearized_track,
         )
 
         # Create new environment - directly instantiate

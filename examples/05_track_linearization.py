@@ -146,7 +146,7 @@ env_1d = Environment.from_graph(
 )
 
 print("1D Environment Created!")
-print(f"Is 1D: {env_1d.is_1d}")
+print(f"Is 1D: {env_1d.is_linearized_track}")
 print(f"Number of bins: {env_1d.n_bins}")
 print(f"Layout type: {env_1d.layout._layout_type_tag}")
 
@@ -187,7 +187,7 @@ else:
 # These methods consider trajectory, not just spatial location!
 
 # %%
-if env_1d is not None and env_1d.is_1d:
+if env_1d is not None and env_1d.is_linearized_track:
     # Map trajectory to linear position
     linear_positions = env_1d.to_linear(linear_track_data)
 
@@ -209,7 +209,7 @@ else:
     print("Skipping coordinate conversion (track-linearization not available)")
 
 # %%
-if env_1d is not None and env_1d.is_1d:
+if env_1d is not None and env_1d.is_linearized_track:
     # Visualize linear position over time
     fig, axes = plt.subplots(2, 1, figsize=(14, 8))
 
@@ -618,7 +618,7 @@ print("Result: Diluted place field, lost trajectory information")
 # Now let's see how 1D linearization handles this correctly:
 
 # %%
-if env_plus is not None and env_plus.is_1d:
+if env_plus is not None and env_plus.is_linearized_track:
     # Map to 1D bins
     bin_indices_1d = env_plus.bin_at(plus_maze_data)
 
@@ -648,7 +648,7 @@ else:
     print("Skipping 1D analysis (track-linearization not available)")
 
 # %%
-if env_plus is not None and env_plus.is_1d:
+if env_plus is not None and env_plus.is_linearized_track:
     # Visualize 1D firing rate
     fig, ax = plt.subplots(figsize=(14, 5))
 
@@ -720,7 +720,7 @@ def safe_linearize(env, position):
     linear_position : ndarray or None
         Linear position if 1D, None otherwise.
     """
-    if env.is_1d:
+    if env.is_linearized_track:
         return env.to_linear(position)
     else:
         print(f"Warning: {env.name} is not 1D (is {env.n_dims}D)")
@@ -748,10 +748,10 @@ try:
     linear = env_2d.to_linear(plus_maze_data[:10])
 except AttributeError as e:
     print(f"Error: {e}")
-    print("\nAlways check env.is_1d before calling to_linear()!")
+    print("\nAlways check env.is_linearized_track before calling to_linear()!")
 
 # ✓ CORRECT
-if env_2d.is_1d:
+if env_2d.is_linearized_track:
     linear = env_2d.to_linear(plus_maze_data[:10])
 else:
     print("Using spatial binning instead")
@@ -780,7 +780,7 @@ else:
 # 3. **Use `from_graph()`** factory method with position data and optional track structure
 # 4. **Trajectory-aware**: Same physical location → different linear positions based on path
 # 5. **Essential for track tasks**: Plus mazes, T-mazes, linear tracks, figure-8s
-# 6. **Check `env.is_1d`** before calling linearization methods
+# 6. **Check `env.is_linearized_track`** before calling linearization methods
 # 7. **Methods**:
 #    - `to_linear(nd_position)` - Convert to 1D
 #    - `linear_to_nd(linear_position)` - Convert back to N-D

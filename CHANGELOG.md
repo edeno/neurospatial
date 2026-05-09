@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Breaking changes (v0.4 UX cleanup)
+
+- **`Environment.is_1d` renamed to `Environment.is_linearized_track`** (M4.1). All
+  callers in `src/`, `tests/`, `examples/`, `docs/`, and `CLAUDE.md` are
+  migrated. The serialized environment JSON / NWB scratch metadata now uses the
+  same key — pre-v0.4 saved environments will need to be re-saved.
+- **`GridProperties.peak_coords` is now `(x_offset, y_offset)`** instead of
+  `(row_offset, col_offset)` (M4.2). This aligns with the rest of the package's
+  Cartesian `(x, y)` convention but breaks any downstream code that read
+  `peak_coords[:, 0]` as a row index. Swap to `peak_coords[:, 1]` for the y
+  component.
+
 ### Added
 
 - **Spatial View Cells**: Complete spatial view cell analysis infrastructure

@@ -152,7 +152,7 @@ with NWBHDF5IO("session.nwb", "r") as io:
 
 - ✗ Original layout engine type (reconstructed as generic layout)
 - ✗ Grid-specific metadata (`grid_shape`, `grid_edges`, `active_mask`)
-- ✗ Layout engine's `is_1d` property (always `False` for reconstructed)
+- ✗ Layout engine's `is_linearized_track` property (always `False` for reconstructed)
 
 Spatial queries still work identically after round-trip.
 
@@ -358,7 +358,7 @@ print(result.pixel_positions)  # Original pixel coordinates (preserved)
 
 # Create 1D linearized environment from result
 env = result.to_environment(bin_size=2.0)
-print(env.is_1d)  # True - ready for linearization
+print(env.is_linearized_track)  # True - ready for linearization
 
 # Override edge spacing if needed
 env = result.to_environment(bin_size=2.0, edge_spacing=[0.0, 5.0, 0.0])

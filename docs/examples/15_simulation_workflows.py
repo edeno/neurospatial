@@ -345,7 +345,7 @@ linear_track = linear_track_session(
 print(
     f"Linear track: {len(linear_track.spike_trains)} cells, {linear_track.env.n_bins} bins"
 )
-print(f"  Track is 1D: {linear_track.env.is_1d}")
+print(f"  Track is 1D: {linear_track.env.is_linearized_track}")
 
 # %% [markdown]
 # ### 4.3 T-Maze Alternation Session

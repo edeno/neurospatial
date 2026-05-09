@@ -369,7 +369,7 @@ class _GridMixin:
         )
 
     @property
-    def is_1d(self) -> bool:
+    def is_linearized_track(self) -> bool:
         """Indicate if the grid layout is 1-dimensional.
 
         Standard grid layouts (RegularGrid, etc.) are generally N-D (N>=1).

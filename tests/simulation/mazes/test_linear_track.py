@@ -153,7 +153,7 @@ class TestMakeLinearTrack:
 
         maze = make_linear_track(include_track=True)
         assert maze.env_track is not None
-        assert maze.env_track.is_1d
+        assert maze.env_track.is_linearized_track
 
     def test_env_track_is_connected(self):
         """Track graph should be connected."""
@@ -232,7 +232,7 @@ class TestLinearTrackTrackGraph:
         assert maze.env_track is not None
 
         # Linear track should be 1D and connected
-        assert maze.env_track.is_1d
+        assert maze.env_track.is_linearized_track
 
         # All nodes should be reachable from each other
         import networkx as nx
