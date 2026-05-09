@@ -58,6 +58,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._constants import IDW_MIN_DISTANCE, KDTREE_LEAF_SIZE
+from neurospatial.environment.decorators import EnvironmentNotFittedError
 
 if TYPE_CHECKING:
     from scipy.spatial import cKDTree
@@ -110,9 +111,13 @@ class ProbabilityMappingParams:
         """Validate all parameters."""
         # Check fitted state
         if not getattr(self.source_env, "_is_fitted", False):
-            raise ValueError("source_env must be fitted before mapping probabilities.")
+            raise EnvironmentNotFittedError(
+                "map_probabilities(source_env)", is_function=True
+            )
         if not getattr(self.target_env, "_is_fitted", False):
-            raise ValueError("target_env must be fitted before mapping probabilities.")
+            raise EnvironmentNotFittedError(
+                "map_probabilities(target_env)", is_function=True
+            )
 
         # Check dimension compatibility
         if self.source_env.n_dims != self.target_env.n_dims:

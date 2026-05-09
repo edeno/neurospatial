@@ -399,7 +399,9 @@ class TestAnimateFieldsValidation:
         fields = [rng.random(100) for _ in range(10)]
         frame_times = np.linspace(0, 1, 10)
 
-        with pytest.raises(RuntimeError, match="Environment must be fitted"):
+        from neurospatial.environment.decorators import EnvironmentNotFittedError
+
+        with pytest.raises(EnvironmentNotFittedError, match="animate_fields"):
             animate_fields(
                 env,
                 fields,

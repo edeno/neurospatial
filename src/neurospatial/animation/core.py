@@ -321,10 +321,9 @@ def animate_fields(
 
     # Validate environment is fitted
     if not hasattr(env, "_is_fitted") or not env._is_fitted:
-        raise RuntimeError(
-            "Environment must be fitted before animation. "
-            "Use Environment.from_samples() or other factory methods."
-        )
+        from neurospatial.environment.decorators import EnvironmentNotFittedError
+
+        raise EnvironmentNotFittedError("animate_fields", is_function=True)
 
     # Detect multi-field format (napari-specific feature)
     # Multi-field: list of sequences (e.g., [[field1, field2], [field3, field4]])

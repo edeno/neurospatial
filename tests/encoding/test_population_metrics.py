@@ -294,11 +294,13 @@ class TestPopulationCoverage:
         """Test error when environment is not fitted."""
         from unittest.mock import MagicMock
 
+        from neurospatial.environment.decorators import EnvironmentNotFittedError
+
         rng = np.random.default_rng(42)
         env = MagicMock(spec=Environment)
         env._is_fitted = False
         firing_rates = rng.random((5, 10))
-        with pytest.raises(RuntimeError, match="Environment must be fitted"):
+        with pytest.raises(EnvironmentNotFittedError, match="population_coverage"):
             population_coverage(env, firing_rates)
 
     def test_shape_mismatch_error(self, simple_env: Environment) -> None:
@@ -466,6 +468,8 @@ class TestPlotPopulationCoverage:
         """Test error when environment is not fitted."""
         from unittest.mock import MagicMock
 
+        from neurospatial.environment.decorators import EnvironmentNotFittedError
+
         env = MagicMock(spec=Environment)
         env._is_fitted = False
         # Create a minimal valid result
@@ -481,7 +485,7 @@ class TestPlotPopulationCoverage:
             n_fields=1,
             place_fields=[[np.array([0])]],
         )
-        with pytest.raises(RuntimeError, match="Environment must be fitted"):
+        with pytest.raises(EnvironmentNotFittedError, match="plot_population_coverage"):
             plot_population_coverage(env, result)
 
     def test_wrong_result_type_error(

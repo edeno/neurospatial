@@ -524,7 +524,7 @@ def path_progress(
     if not env._is_fitted:
         from neurospatial import EnvironmentNotFittedError
 
-        raise EnvironmentNotFittedError("Environment", "path_progress")
+        raise EnvironmentNotFittedError("path_progress", is_function=True)
 
     # Validate array lengths
     n_samples = len(position_bins)
@@ -660,7 +660,7 @@ def distance_to_region(
     if not env._is_fitted:
         from neurospatial import EnvironmentNotFittedError
 
-        raise EnvironmentNotFittedError("Environment", "distance_to_region")
+        raise EnvironmentNotFittedError("distance_to_region", is_function=True)
 
     is_scalar_target = np.isscalar(target_bins)
 
@@ -902,7 +902,7 @@ def graph_turn_sequence(
     if not env._is_fitted:
         from neurospatial import EnvironmentNotFittedError
 
-        raise EnvironmentNotFittedError("Environment", "graph_turn_sequence")
+        raise EnvironmentNotFittedError("graph_turn_sequence", is_function=True)
 
     consecutive_bins = np.column_stack([position_bins[:-1], position_bins[1:]])
     transition_counts = Counter(map(tuple, consecutive_bins))

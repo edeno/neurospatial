@@ -1433,13 +1433,13 @@ def apply_transform_to_environment(
 
     """
     from neurospatial.environment import Environment
+    from neurospatial.environment.decorators import EnvironmentNotFittedError
     from neurospatial.regions import Region, Regions
 
     # Validate
     if not getattr(env, "_is_fitted", False):
-        raise RuntimeError(
-            "Environment must be fitted before applying transforms. "
-            "Use a factory method like Environment.from_samples()."
+        raise EnvironmentNotFittedError(
+            "apply_transform_to_environment", is_function=True
         )
 
     # Refuse polar envs. An affine transform on bin_centers that

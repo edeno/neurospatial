@@ -27,6 +27,7 @@ from sklearn.neighbors import KDTree
 from neurospatial._constants import KDTREE_COMPOSITE_LEAF_SIZE
 from neurospatial._logging import log_composite_build
 from neurospatial.environment import Environment
+from neurospatial.environment.decorators import EnvironmentNotFittedError
 from neurospatial.regions import Regions
 
 
@@ -70,7 +71,9 @@ def _validate_subenvs(subenvs: Any) -> list[Environment]:
                 f"got {type(env).__name__}."
             )
         if not env._is_fitted:
-            raise ValueError(f"Sub-environment {i} is not fitted.")
+            raise EnvironmentNotFittedError(
+                f"CompositeEnvironment(subenvs[{i}])", is_function=True
+            )
 
     # Dimension consistency check
     first_ndims = subenvs[0].n_dims

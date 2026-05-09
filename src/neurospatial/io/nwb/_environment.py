@@ -15,6 +15,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.environment.decorators import EnvironmentNotFittedError
 from neurospatial.io.nwb._core import _require_pynwb, logger
 
 if TYPE_CHECKING:
@@ -183,11 +184,7 @@ def write_environment(
 
     # Validate environment is fitted
     if not env._is_fitted:
-        raise ValueError(
-            "Environment must be fitted before calling write_environment(). "
-            "Use factory methods like Environment.from_samples() to create "
-            "fitted environments."
-        )
+        raise EnvironmentNotFittedError("write_environment", is_function=True)
 
     # Check for existing environment
     if name in nwbfile.scratch:

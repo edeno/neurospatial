@@ -84,6 +84,16 @@ class TestTypeValidation:
 class TestValueValidation:
     """Test value validation in CompositeEnvironment constructor."""
 
+    def test_unfitted_subenv_raises_environment_not_fitted_error(self, sample_env_2d):
+        """Sub-environments must be fitted before composition."""
+        from neurospatial.environment.decorators import EnvironmentNotFittedError
+
+        unfitted = sample_env_2d.copy()
+        unfitted._is_fitted = False
+
+        with pytest.raises(EnvironmentNotFittedError, match="CompositeEnvironment"):
+            CompositeEnvironment([sample_env_2d, unfitted])
+
     def test_empty_list(self):
         """Test error for empty subenvs list."""
         with pytest.raises(

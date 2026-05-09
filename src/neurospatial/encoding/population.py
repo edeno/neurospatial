@@ -23,6 +23,7 @@ from numpy.typing import NDArray
 
 from neurospatial.encoding.spatial import PlaceFieldsResult, detect_place_fields
 from neurospatial.environment import Environment
+from neurospatial.environment.decorators import EnvironmentNotFittedError
 
 
 @dataclass(frozen=True, slots=True)
@@ -241,10 +242,7 @@ def population_coverage(
     """
     # Validate environment is fitted
     if not getattr(env, "_is_fitted", False):
-        raise RuntimeError(
-            "Environment must be fitted before computing coverage. "
-            "Use a factory method like Environment.from_samples()."
-        )
+        raise EnvironmentNotFittedError("population_coverage", is_function=True)
 
     if env.n_bins <= 0:
         raise ValueError(f"Environment has no bins (n_bins={env.n_bins})")
@@ -398,10 +396,7 @@ def plot_population_coverage(
     """
     # Validate environment is fitted
     if not getattr(env, "_is_fitted", False):
-        raise RuntimeError(
-            "Environment must be fitted before plotting coverage. "
-            "Use a factory method like Environment.from_samples()."
-        )
+        raise EnvironmentNotFittedError("plot_population_coverage", is_function=True)
 
     # Validate result type
     if not isinstance(result, PopulationCoverageResult):
