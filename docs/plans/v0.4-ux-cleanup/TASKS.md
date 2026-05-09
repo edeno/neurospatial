@@ -256,9 +256,9 @@ Source review: [`docs/reviews/UX_REVIEW_2026-05-08.md`](../../reviews/UX_REVIEW_
 
 **Verification**: Test suite includes one regression test per migrated check.
 
-- [ ] **3.1** **Free-function `EnvironmentNotFittedError` variant.** Extend [environment/decorators.py:19-92](../../../src/neurospatial/environment/decorators.py) so `EnvironmentNotFittedError` accepts either `(class_name, method_name)` or `(function_name, *, is_function=True)` and formats accordingly. Or split into two classes. Closes review §6.2.
+- [x] **3.1** **Free-function `EnvironmentNotFittedError` variant.** Extend [environment/decorators.py:19-92](../../../src/neurospatial/environment/decorators.py) so `EnvironmentNotFittedError` accepts either `(class_name, method_name)` or `(function_name, *, is_function=True)` and formats accordingly. Or split into two classes. Closes review §6.2.
 
-- [ ] **3.2** **Migrate manual "not fitted" checks to `EnvironmentNotFittedError`.** Migrate sites:
+- [x] **3.2** **Migrate manual "not fitted" checks to `EnvironmentNotFittedError`.** Migrate sites:
   - [composite.py:73](../../../src/neurospatial/composite.py) (currently `ValueError`).
   - [animation/core.py:323-327](../../../src/neurospatial/animation/core.py) (currently `RuntimeError`).
   - [encoding/population.py:236-240, 388-392](../../../src/neurospatial/encoding/population.py) (currently `RuntimeError`).
@@ -269,13 +269,13 @@ Source review: [`docs/reviews/UX_REVIEW_2026-05-08.md`](../../reviews/UX_REVIEW_
   Closes review §6.1, §6.2.
   Acceptance: a unit test does `try: ...; except EnvironmentNotFittedError: ok` for each migrated site.
 
-- [ ] **3.3** **`@check_fitted` coverage.** Apply the decorator (or equivalent runtime check) to:
+- [x] **3.3** **`@check_fitted` coverage.** Apply the decorator (or equivalent runtime check) to:
   - Methods that succeed silently on unfitted: `Environment.clear_cache`, `Environment.components`.
   - Methods that raise `AttributeError` on unfitted: `Environment.copy`, `Environment.occupancy`, `Environment.rebin`, `Environment.plot_1d`.
   - Exclude `Environment.save` / `Environment.load` from this task because M5 task 5.9 removes both methods outright.
   Closes review §6.21.
 
-- [ ] **3.4** **Custom exception classes.** Add to `src/neurospatial/_exceptions.py` (new module) or wherever `EnvironmentNotFittedError` lives:
+- [x] **3.4** **Custom exception classes.** Add to `src/neurospatial/_exceptions.py` (new module) or wherever `EnvironmentNotFittedError` lives:
   - `RegionNotFoundError(KeyError)`.
   - `BinIndexOutOfRangeError(ValueError)`.
   - `IncompatibleEnvironmentError(ValueError)`.
@@ -283,7 +283,7 @@ Source review: [`docs/reviews/UX_REVIEW_2026-05-08.md`](../../reviews/UX_REVIEW_
   Export `GraphValidationError` from public namespace (currently in `layout/validation.py`, used 22 times, not exported).
   Closes review §6.13.
 
-- [ ] **3.5** **Units in error messages.** Sweep ~30 raise sites. Representative:
+- [x] **3.5** **Units in error messages.** Sweep ~30 raise sites. Representative:
   - [encoding/_smoothing.py:409, 412](../../../src/neurospatial/encoding/_smoothing.py): `bandwidth must be positive (in environment units, e.g., cm), got {bandwidth}`.
   - [simulation/spikes.py:514](../../../src/neurospatial/simulation/spikes.py): `modulation_freq must be positive (Hz), got {modulation_freq}`.
   - [simulation/session.py:317-320](../../../src/neurospatial/simulation/session.py): `duration must be positive (seconds), got {duration}`.
@@ -294,17 +294,17 @@ Source review: [`docs/reviews/UX_REVIEW_2026-05-08.md`](../../reviews/UX_REVIEW_
   - [encoding/grid.py:1141, 1438](../../../src/neurospatial/encoding/grid.py): `bin_size` units.
   Closes review §6.15.
 
-- [ ] **3.6** **Stack-context errors.** Thread a `context: str` argument through [encoding/_binning.py:106-109](../../../src/neurospatial/encoding/_binning.py) so length-mismatch errors say "in compute_spatial_rate: ...". Closes review §6.16. Pattern already exists in [encoding/_validation.py:75-131](../../../src/neurospatial/encoding/_validation.py) `validate_trajectory`; replicate.
+- [x] **3.6** **Stack-context errors.** Thread a `context: str` argument through [encoding/_binning.py:106-109](../../../src/neurospatial/encoding/_binning.py) so length-mismatch errors say "in compute_spatial_rate: ...". Closes review §6.16. Pattern already exists in [encoding/_validation.py:75-131](../../../src/neurospatial/encoding/_validation.py) `validate_trajectory`; replicate.
 
-- [ ] **3.7** **Warning hygiene.** Sweep `warnings.warn` calls; standardize on `category=UserWarning` for data-quality, `category=RuntimeWarning` for numerical fallbacks, `stacklevel=2` everywhere.
+- [x] **3.7** **Warning hygiene.** Sweep `warnings.warn` calls; standardize on `category=UserWarning` for data-quality, `category=RuntimeWarning` for numerical fallbacks, `stacklevel=2` everywhere.
   Files: [stats/circular.py:298, 323, 666, 684, 855, 873](../../../src/neurospatial/stats/circular.py), [regions/io.py](../../../src/neurospatial/regions/io.py), [regions/plot.py:90, 122, 130](../../../src/neurospatial/regions/plot.py), [encoding/_field_metrics.py:903](../../../src/neurospatial/encoding/_field_metrics.py).
   Closes review §6.18.
 
-- [ ] **3.8** **`print()` → `logger.*`.** Replace production prints with module-level `logger.info` / `logger.debug`. Add module-level loggers where missing.
+- [x] **3.8** **`print()` → `logger.*`.** Replace production prints with module-level `logger.info` / `logger.debug`. Add module-level loggers where missing.
   Files: [animation/backends/video_backend.py:42, 44, 180, 281, 306-320, 345, 420](../../../src/neurospatial/animation/backends/video_backend.py), [animation/backends/html_backend.py:552, 749, 785, 790, 831](../../../src/neurospatial/animation/backends/html_backend.py), [animation/backends/widget_backend.py:925](../../../src/neurospatial/animation/backends/widget_backend.py), [animation/_timing.py:57](../../../src/neurospatial/animation/_timing.py), [simulation/spikes.py:328-331](../../../src/neurospatial/simulation/spikes.py).
   Closes review §6.19.
 
-- [ ] **3.9** **Region overwriting.** Change [regions/core.py:230-235](../../../src/neurospatial/regions/core.py) `Regions.__setitem__` to raise `RegionNotFoundError` (or `RegionAlreadyExistsError`) on duplicate key instead of warning-and-overwriting. Add `Regions.set(name, ...)` as the idempotent replace path. Closes review §6.22.
+- [x] **3.9** **Region overwriting.** Change [regions/core.py:230-235](../../../src/neurospatial/regions/core.py) `Regions.__setitem__` to raise `RegionNotFoundError` (or `RegionAlreadyExistsError`) on duplicate key instead of warning-and-overwriting. Add `Regions.set(name, ...)` as the idempotent replace path. Closes review §6.22.
 
 ---
 
