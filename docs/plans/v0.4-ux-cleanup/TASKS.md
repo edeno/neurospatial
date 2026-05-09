@@ -314,13 +314,13 @@ Source review: [`docs/reviews/UX_REVIEW_2026-05-08.md`](../../reviews/UX_REVIEW_
 
 **Risk**: Medium. `is_1d` rename and `peak_coords` reorder are user-visible.
 
-- [ ] **4.1** **`is_1d` rename.** Rename `Environment.is_1d` to `Environment.is_linearized_track` (current semantics: linearized 1D track in a 2D world). Add `Environment.n_dims_intrinsic` if useful for users wanting "n_dims == 1" semantics. Update all callers in `src/`, `tests/`, `examples/`, `docs/`, `CLAUDE.md`.
+- [x] **4.1** **`is_1d` rename.** Rename `Environment.is_1d` to `Environment.is_linearized_track` (current semantics: linearized 1D track in a 2D world). Add `Environment.n_dims_intrinsic` if useful for users wanting "n_dims == 1" semantics. Update all callers in `src/`, `tests/`, `examples/`, `docs/`, `CLAUDE.md`.
   Closes review §8.3.
 
-- [ ] **4.2** **`GridProperties.peak_coords` reorder.** Change [encoding/grid.py:114-117](../../../src/neurospatial/encoding/grid.py) `peak_coords` from `(row_offset, col_offset)` to `(x_offset, y_offset)`. Document the breaking change loudly in CHANGELOG (likely the most invisible-but-important breakage).
+- [x] **4.2** **`GridProperties.peak_coords` reorder.** Change [encoding/grid.py:114-117](../../../src/neurospatial/encoding/grid.py) `peak_coords` from `(row_offset, col_offset)` to `(x_offset, y_offset)`. Document the breaking change loudly in CHANGELOG (likely the most invisible-but-important breakage).
   Closes review §8.1.
 
-- [ ] **4.3** **Heading-convention docstrings.** Each function whose `headings` argument has a sign convention must state it explicitly:
+- [x] **4.3** **Heading-convention docstrings.** Each function whose `headings` argument has a sign convention must state it explicitly:
   - [encoding/directional.py:1338](../../../src/neurospatial/encoding/directional.py) `compute_directional_rate`: "headings: angles in radians, allocentric (0=East, π/2=North)".
   - [encoding/directional.py:1804](../../../src/neurospatial/encoding/directional.py) `is_head_direction_cell`: same.
   - [encoding/view.py:909](../../../src/neurospatial/encoding/view.py) `compute_view_rate`: confirm "0=East".
@@ -329,10 +329,10 @@ Source review: [`docs/reviews/UX_REVIEW_2026-05-08.md`](../../reviews/UX_REVIEW_
   - [ops/egocentric.py:600-602](../../../src/neurospatial/ops/egocentric.py) `heading_from_velocity`: state output convention and `min_speed` units.
   Closes review §8.5, §8.6.
 
-- [ ] **4.4** **`Environment.units` validation (lightweight).** Keep free-form string for v0.4.0 but add a `Environment._validate_units()` method that accepts a small registry (`{"cm", "m", "mm", "px", None}`) and warns on unknown values. Document `units` as advisory.
+- [x] **4.4** **`Environment.units` validation (lightweight).** Keep free-form string for v0.4.0 but add a `Environment._validate_units()` method that accepts a small registry (`{"cm", "m", "mm", "px", None}`) and warns on unknown values. Document `units` as advisory.
   Closes review §8.8.
 
-- [ ] **4.5** **`simulate_trajectory_ou` units.** Make [simulation/trajectory.py:70](../../../src/neurospatial/simulation/trajectory.py) `speed_units` required (no `None` default). Default speed values in cm/s rather than m/s. If `speed_units` doesn't match the constructed env's `units`, raise.
+- [x] **4.5** **`simulate_trajectory_ou` units.** Make [simulation/trajectory.py:70](../../../src/neurospatial/simulation/trajectory.py) `speed_units` required (no `None` default). Default speed values in cm/s rather than m/s. If `speed_units` doesn't match the constructed env's `units`, raise.
   Closes review §8.9.
 
 ---
