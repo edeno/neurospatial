@@ -88,7 +88,9 @@ class PlaceCellModel:
     >>> pc = PlaceCellModel(env, center=center, width=10.0, max_rate=25.0)
     >>>
     >>> # Generate trajectory and compute firing rates
-    >>> positions, times = simulate_trajectory_ou(env, duration=10.0, seed=42)
+    >>> positions, times = simulate_trajectory_ou(
+    ...     env, duration=10.0, seed=42, speed_units="cm"
+    ... )
     >>> rates = pc.firing_rate(positions)
     >>> rates.shape[0] == len(times)
     True

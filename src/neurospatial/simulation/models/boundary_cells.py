@@ -79,7 +79,9 @@ class BoundaryCellModel:
     >>> bc = BoundaryCellModel(env, preferred_distance=5.0, distance_tolerance=3.0)
     >>>
     >>> # Generate trajectory and compute firing rates
-    >>> positions, times = simulate_trajectory_ou(env, duration=10.0, seed=42)
+    >>> positions, times = simulate_trajectory_ou(
+    ...     env, duration=10.0, seed=42, speed_units="cm"
+    ... )
     >>> rates = bc.firing_rate(positions)
     >>> rates.shape[0] == len(times)
     True

@@ -111,7 +111,9 @@ class GridCellModel:
     >>> gc = GridCellModel(env, grid_spacing=50.0, grid_orientation=0.0)
     >>>
     >>> # Generate trajectory and compute rates
-    >>> positions, times = simulate_trajectory_ou(env, duration=60.0, seed=42)
+    >>> positions, times = simulate_trajectory_ou(
+    ...     env, duration=60.0, seed=42, speed_units="cm"
+    ... )
     >>> rates = gc.firing_rate(positions)
     >>> rates.shape == positions.shape[:1]
     True

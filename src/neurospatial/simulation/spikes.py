@@ -88,7 +88,9 @@ def generate_poisson_spikes(
     >>> pc = PlaceCellModel(env, center=center, width=20.0, max_rate=50.0, seed=42)
     >>>
     >>> # Generate trajectory and firing rates
-    >>> positions, times = simulate_trajectory_ou(env, duration=60.0, seed=42)
+    >>> positions, times = simulate_trajectory_ou(
+    ...     env, duration=60.0, seed=42, speed_units="cm"
+    ... )
     >>> rates = pc.firing_rate(positions)
     >>>
     >>> # Generate spikes
@@ -237,7 +239,9 @@ def generate_population_spikes(
     True
     >>>
     >>> # Generate trajectory and spikes
-    >>> positions, times = simulate_trajectory_ou(env, duration=120.0, seed=42)
+    >>> positions, times = simulate_trajectory_ou(
+    ...     env, duration=120.0, seed=42, speed_units="cm"
+    ... )
     >>> spike_trains = generate_population_spikes(
     ...     place_cells, positions, times, seed=42, show_progress=False
     ... )
@@ -473,7 +477,9 @@ def add_modulation(
     >>> pc = PlaceCellModel(env, center=center, width=20.0, max_rate=50.0, seed=42)
     >>>
     >>> # Generate trajectory and spikes
-    >>> positions, times = simulate_trajectory_ou(env, duration=60.0, seed=42)
+    >>> positions, times = simulate_trajectory_ou(
+    ...     env, duration=60.0, seed=42, speed_units="cm"
+    ... )
     >>> rates = pc.firing_rate(positions)
     >>> spike_times = generate_poisson_spikes(rates, times, seed=42)
     >>>

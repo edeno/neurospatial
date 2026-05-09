@@ -73,7 +73,9 @@ class SimulationSession:
     >>> env.units = "cm"  # doctest: +SKIP
 
     >>> # Generate trajectory
-    >>> positions, times = simulate_trajectory_ou(env, duration=60.0)  # doctest: +SKIP
+    >>> positions, times = simulate_trajectory_ou(
+    ...     env, duration=60.0, speed_units="cm"
+    ... )  # doctest: +SKIP
 
     >>> # Create place cells
     >>> models = [  # doctest: +SKIP
