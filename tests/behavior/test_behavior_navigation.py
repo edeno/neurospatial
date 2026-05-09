@@ -495,7 +495,11 @@ class TestBehavioralFunctions:
         goal_bins = np.minimum(goal_bins, simple_env.n_bins - 1)
 
         progress = path_progress(
-            simple_env, position_bins, start_bins, goal_bins, metric="euclidean"
+            position_bins,
+            simple_env,
+            start_bins=start_bins,
+            goal_bins=goal_bins,
+            metric="euclidean",
         )
 
         assert len(progress) == n_samples
@@ -512,7 +516,7 @@ class TestBehavioralFunctions:
         target_bin = min(10, simple_env.n_bins - 1)
 
         distances = distance_to_region(
-            simple_env, position_bins, target_bin, metric="euclidean"
+            position_bins, simple_env, target_bins=target_bin, metric="euclidean"
         )
 
         assert len(distances) == len(position_bins)
@@ -528,7 +532,7 @@ class TestBehavioralFunctions:
         target_bins = np.minimum(target_bins, simple_env.n_bins - 1)
 
         distances = distance_to_region(
-            simple_env, position_bins, target_bins, metric="euclidean"
+            position_bins, simple_env, target_bins=target_bins, metric="euclidean"
         )
 
         assert len(distances) == len(position_bins)

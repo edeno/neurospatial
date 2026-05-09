@@ -351,7 +351,7 @@ headings = heading_from_body_orientation(nose_positions, tail_positions)
 
 # Transform landmarks to egocentric coordinates
 landmarks = np.array([[50.0, 30.0], [80.0, 60.0]])  # 2 landmarks
-ego_landmarks = allocentric_to_egocentric(landmarks, positions, headings)
+ego_landmarks = allocentric_to_egocentric(positions, headings, landmarks)
 # ego_landmarks shape: (n_time, n_landmarks, 2)
 # ego_landmarks[t, i, :] = landmark i in animal's reference frame at time t
 

@@ -375,7 +375,7 @@ class TestFitIsotonicTrajectory:
         assert result.direction == "decreasing"
 
     def test_fit_isotonic_trajectory_method_map(self):
-        """estimate_method='map' should use argmax positions."""
+        """method='map' should use argmax positions."""
         from neurospatial.decoding.trajectory import (
             IsotonicFitResult,
             fit_isotonic_trajectory,
@@ -393,12 +393,12 @@ class TestFitIsotonicTrajectory:
             # Add some noise
             posterior[t, (pos + 1) % n_bins] = 0.1
 
-        result = fit_isotonic_trajectory(posterior, times, estimate_method="map")
+        result = fit_isotonic_trajectory(posterior, times, method="map")
 
         assert isinstance(result, IsotonicFitResult)
 
     def test_fit_isotonic_trajectory_method_expected(self):
-        """estimate_method='expected' should use weighted mean positions."""
+        """method='expected' should use weighted mean positions."""
         from neurospatial.decoding.trajectory import (
             IsotonicFitResult,
             fit_isotonic_trajectory,
@@ -412,7 +412,7 @@ class TestFitIsotonicTrajectory:
         posterior = rng.random((n_time_bins, n_bins))
         posterior /= posterior.sum(axis=1, keepdims=True)
 
-        result = fit_isotonic_trajectory(posterior, times, estimate_method="expected")
+        result = fit_isotonic_trajectory(posterior, times, method="expected")
 
         assert isinstance(result, IsotonicFitResult)
 
@@ -474,7 +474,7 @@ class TestFitIsotonicTrajectory:
         posterior /= posterior.sum(axis=1, keepdims=True)
 
         with pytest.raises(ValueError, match=r"method.*map.*expected"):
-            fit_isotonic_trajectory(posterior, times, estimate_method="invalid")
+            fit_isotonic_trajectory(posterior, times, method="invalid")
 
 
 class TestFitIsotonicTrajectorySuccessCriteria:
@@ -542,7 +542,7 @@ class TestFitLinearTrajectory:
         assert isinstance(result, LinearFitResult)
 
     def test_fit_linear_trajectory_method_map(self, simple_env):
-        """fitting_method='map' should use argmax positions for fitting."""
+        """method='map' should use argmax positions for fitting."""
         from neurospatial.decoding.trajectory import fit_linear_trajectory
 
         n_time_bins = 20
@@ -556,15 +556,13 @@ class TestFitLinearTrajectory:
         for t, pos in enumerate(map_positions):
             posterior[t, pos] = 1.0
 
-        result = fit_linear_trajectory(
-            simple_env, posterior, times, fitting_method="map"
-        )
+        result = fit_linear_trajectory(simple_env, posterior, times, method="map")
 
-        assert result.slope_std is None  # No posterior_entropy for fitting_method="map"
+        assert result.slope_std is None  # No posterior_entropy for method="map"
         assert result.slope > 0  # Increasing positions
 
     def test_fit_linear_trajectory_method_sample(self, simple_env):
-        """fitting_method='sample' should provide posterior_entropy via Monte Carlo."""
+        """method='sample' should provide posterior_entropy via Monte Carlo."""
         from neurospatial.decoding.trajectory import fit_linear_trajectory
 
         n_time_bins = 20
@@ -582,7 +580,7 @@ class TestFitLinearTrajectory:
             posterior[t, pos + 1] = 0.15
 
         result = fit_linear_trajectory(
-            simple_env, posterior, times, fitting_method="sample", rng=42
+            simple_env, posterior, times, method="sample", rng=42
         )
 
         assert result.slope_std is not None  # Should have posterior_entropy
@@ -607,10 +605,10 @@ class TestFitLinearTrajectory:
             posterior[t, pos + 1] = 0.15
 
         result1 = fit_linear_trajectory(
-            simple_env, posterior, times, fitting_method="sample", rng=42
+            simple_env, posterior, times, method="sample", rng=42
         )
         result2 = fit_linear_trajectory(
-            simple_env, posterior, times, fitting_method="sample", rng=42
+            simple_env, posterior, times, method="sample", rng=42
         )
 
         assert result1.slope == result2.slope
@@ -638,10 +636,10 @@ class TestFitLinearTrajectory:
         rng2 = np.random.default_rng(42)
 
         result1 = fit_linear_trajectory(
-            simple_env, posterior, times, fitting_method="sample", rng=rng1
+            simple_env, posterior, times, method="sample", rng=rng1
         )
         result2 = fit_linear_trajectory(
-            simple_env, posterior, times, fitting_method="sample", rng=rng2
+            simple_env, posterior, times, method="sample", rng=rng2
         )
 
         assert result1.slope == result2.slope
@@ -682,7 +680,7 @@ class TestFitLinearTrajectory:
             posterior[t, pos] = 1.0
 
         result = fit_linear_trajectory(
-            simple_env, posterior, times, fitting_method="map", rng=42
+            simple_env, posterior, times, method="map", rng=42
         )
 
         assert result.r_squared > 0.99
@@ -702,9 +700,7 @@ class TestFitLinearTrajectory:
         for t, pos in enumerate(map_positions):
             posterior[t, pos] = 1.0
 
-        result = fit_linear_trajectory(
-            simple_env, posterior, times, fitting_method="map"
-        )
+        result = fit_linear_trajectory(simple_env, posterior, times, method="map")
 
         assert result.slope < 0
 
@@ -745,13 +741,13 @@ class TestFitLinearTrajectory:
         posterior /= posterior.sum(axis=1, keepdims=True)
 
         result_100 = fit_linear_trajectory(
-            simple_env, posterior, times, fitting_method="sample", n_samples=100, rng=42
+            simple_env, posterior, times, method="sample", n_samples=100, rng=42
         )
         result_1000 = fit_linear_trajectory(
             simple_env,
             posterior,
             times,
-            fitting_method="sample",
+            method="sample",
             n_samples=1000,
             rng=43,
         )
@@ -773,9 +769,7 @@ class TestFitLinearTrajectory:
             posterior[t, t % n_bins] = 1.0
 
         with pytest.raises(ValueError, match=r"method.*map.*sample"):
-            fit_linear_trajectory(
-                simple_env, posterior, times, fitting_method="invalid"
-            )
+            fit_linear_trajectory(simple_env, posterior, times, method="invalid")
 
     def test_fit_linear_trajectory_1d_posterior_raises(self, simple_env):
         """1D posterior should raise ValueError."""
@@ -824,16 +818,16 @@ class TestFitLinearTrajectorySuccessCriteria:
 
         # Success criterion: results should be reproducible with same rng
         result1 = fit_linear_trajectory(
-            simple_env, posterior, times, fitting_method="sample", rng=42
+            simple_env, posterior, times, method="sample", rng=42
         )
         result2 = fit_linear_trajectory(
-            simple_env, posterior, times, fitting_method="sample", rng=42
+            simple_env, posterior, times, method="sample", rng=42
         )
 
         assert result1.slope == result2.slope  # Reproducible
 
     def test_success_criteria_slope_std_only_for_sample(self, simple_env):
-        """slope_std should only be present for fitting_method='sample'."""
+        """slope_std should only be present for method='sample'."""
         from neurospatial.decoding.trajectory import fit_linear_trajectory
 
         n_time_bins = 20
@@ -846,11 +840,9 @@ class TestFitLinearTrajectorySuccessCriteria:
         for t, pos in enumerate(map_positions):
             posterior[t, pos] = 1.0
 
-        result_map = fit_linear_trajectory(
-            simple_env, posterior, times, fitting_method="map"
-        )
+        result_map = fit_linear_trajectory(simple_env, posterior, times, method="map")
         result_sample = fit_linear_trajectory(
-            simple_env, posterior, times, fitting_method="sample", rng=42
+            simple_env, posterior, times, method="sample", rng=42
         )
 
         # Success criteria

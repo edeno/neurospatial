@@ -238,7 +238,9 @@ def test_path_progress_single_trial_geodesic(simple_environment_with_regions):
     goal_bins = np.full(4, goal_bin)
 
     # Compute progress
-    progress = path_progress(env, position_bins, start_bins, goal_bins)
+    progress = path_progress(
+        position_bins, env, start_bins=start_bins, goal_bins=goal_bins
+    )
 
     # Check output shape and type
     assert progress.shape == (4,)
@@ -313,7 +315,9 @@ def test_path_progress_multiple_trials(simple_environment_with_regions):
     )
 
     # Compute progress
-    progress = path_progress(env, position_bins, start_bins, goal_bins)
+    progress = path_progress(
+        position_bins, env, start_bins=start_bins, goal_bins=goal_bins
+    )
 
     # Check output
     assert progress.shape == (10,)
@@ -340,7 +344,11 @@ def test_path_progress_euclidean(simple_environment_with_regions):
 
     # Compute with euclidean metric
     progress = path_progress(
-        env, position_bins, start_bins, goal_bins, metric="euclidean"
+        position_bins,
+        env,
+        start_bins=start_bins,
+        goal_bins=goal_bins,
+        metric="euclidean",
     )
 
     # Check output
@@ -365,7 +373,9 @@ def test_path_progress_edge_case_same_start_goal(simple_environment_with_regions
     start_bins = np.array([start_bin, start_bin])
     goal_bins = np.array([start_bin, start_bin])  # Same as start
 
-    progress = path_progress(env, position_bins, start_bins, goal_bins)
+    progress = path_progress(
+        position_bins, env, start_bins=start_bins, goal_bins=goal_bins
+    )
 
     # When start == goal, progress should be 1.0 (already at goal)
     assert np.all(progress == 1.0)
@@ -384,7 +394,9 @@ def test_path_progress_edge_case_invalid_bins(simple_environment_with_regions):
     start_bins = np.array([start_bin, start_bin, -1])  # Invalid start for last point
     goal_bins = np.array([start_bin, start_bin, start_bin])
 
-    progress = path_progress(env, position_bins, start_bins, goal_bins)
+    progress = path_progress(
+        position_bins, env, start_bins=start_bins, goal_bins=goal_bins
+    )
 
     # Invalid bins should produce NaN
     assert np.isnan(progress[2])  # Invalid start_bin
@@ -419,7 +431,9 @@ def test_path_progress_edge_case_disconnected():
     start_bins = np.array([start_bin, start_bin])
     goal_bins = np.array([goal_bin, goal_bin])
 
-    progress = path_progress(env, position_bins, start_bins, goal_bins)
+    progress = path_progress(
+        position_bins, env, start_bins=start_bins, goal_bins=goal_bins
+    )
 
     # Disconnected paths should return NaN
     assert np.all(np.isnan(progress))
@@ -454,7 +468,9 @@ def test_path_progress_large_environment():
     goal_bins = np.array([goal_bin, goal_bin])
 
     # This should use the fallback strategy for large environments
-    progress = path_progress(env, position_bins, start_bins, goal_bins)
+    progress = path_progress(
+        position_bins, env, start_bins=start_bins, goal_bins=goal_bins
+    )
 
     # Check it still works correctly
     assert progress.shape == (2,)
@@ -481,7 +497,7 @@ def test_distance_to_region_scalar_target(simple_environment_with_regions):
     position_bins = np.array([start_bin, goal_bin])
 
     # Compute distance to scalar target (goal_bin)
-    distances = distance_to_region(env, position_bins, goal_bin)
+    distances = distance_to_region(position_bins, env, target_bins=goal_bin)
 
     # Check shape
     assert distances.shape == (2,)
@@ -492,7 +508,7 @@ def test_distance_to_region_scalar_target(simple_environment_with_regions):
 
     # Test euclidean metric
     distances_euclidean = distance_to_region(
-        env, position_bins, goal_bin, metric="euclidean"
+        position_bins, env, target_bins=goal_bin, metric="euclidean"
     )
     assert distances_euclidean.shape == (2,)
     assert distances_euclidean[0] > 0
@@ -523,7 +539,7 @@ def test_distance_to_region_dynamic_target(simple_environment_with_regions):
     target_bins = np.array([goal1_bin, goal2_bin])
 
     # Compute distances with dynamic targets
-    distances = distance_to_region(env, position_bins, target_bins)
+    distances = distance_to_region(position_bins, env, target_bins=target_bins)
 
     # Check shape
     assert distances.shape == (2,)
@@ -545,7 +561,7 @@ def test_distance_to_region_invalid_bins(simple_environment_with_regions):
 
     # Test 1: Invalid trajectory bins
     position_bins = np.array([0, -1, 2])  # -1 is invalid
-    distances = distance_to_region(env, position_bins, goal_bin)
+    distances = distance_to_region(position_bins, env, target_bins=goal_bin)
     assert distances.shape == (3,)
     assert not np.isnan(distances[0])  # Valid bin
     assert np.isnan(distances[1])  # Invalid bin → NaN
@@ -553,12 +569,12 @@ def test_distance_to_region_invalid_bins(simple_environment_with_regions):
 
     # Test 2: Invalid target bin (scalar)
     position_bins = np.array([0, 1, 2])
-    distances = distance_to_region(env, position_bins, -1)
+    distances = distance_to_region(position_bins, env, target_bins=-1)
     assert np.all(np.isnan(distances))  # All should be NaN with invalid target
 
     # Test 3: Dynamic targets with some invalid
     target_bins = np.array([goal_bin, -1, goal_bin])
-    distances = distance_to_region(env, position_bins, target_bins)
+    distances = distance_to_region(position_bins, env, target_bins=target_bins)
     assert not np.isnan(distances[0])  # Valid target
     assert np.isnan(distances[1])  # Invalid target → NaN
     assert not np.isnan(distances[2])  # Valid target
@@ -597,7 +613,7 @@ def test_distance_to_region_multiple_goal_bins():
     position_bins = np.array([start_bin])
 
     # Compute distance - should be to nearest goal bin
-    distances = distance_to_region(env, position_bins, target_bin)
+    distances = distance_to_region(position_bins, env, target_bins=target_bin)
 
     # Distance should be positive
     assert distances[0] > 0
@@ -628,14 +644,14 @@ def test_distance_to_region_large_environment():
 
     # Test 1: Scalar target (uses existing env.distance_to())
     position_bins = np.array([start_bin, goal_bin])
-    distances_scalar = distance_to_region(env, position_bins, goal_bin)
+    distances_scalar = distance_to_region(position_bins, env, target_bins=goal_bin)
     assert distances_scalar.shape == (2,)
     assert distances_scalar[0] > 0
     assert np.isclose(distances_scalar[1], 0.0, atol=1e-6)
 
     # Test 2: Dynamic targets (uses per-target fallback strategy)
     target_bins = np.array([goal_bin, start_bin])  # Different target each timepoint
-    distances_dynamic = distance_to_region(env, position_bins, target_bins)
+    distances_dynamic = distance_to_region(position_bins, env, target_bins=target_bins)
     assert distances_dynamic.shape == (2,)
     assert distances_dynamic[0] > 0
     assert distances_dynamic[1] > 0
@@ -1112,10 +1128,12 @@ def test_cost_to_goal_uniform(simple_environment_with_regions):
     position_bins = np.array([start_bin, 5, goal_bin])
 
     # Compute cost with uniform cost (no cost_map or terrain_difficulty)
-    cost = cost_to_goal(env, position_bins, goal_bin)
+    cost = cost_to_goal(position_bins, env, goal_bins=goal_bin)
 
     # Compute geodesic distance for comparison
-    distance = distance_to_region(env, position_bins, goal_bin, metric="geodesic")
+    distance = distance_to_region(
+        position_bins, env, target_bins=goal_bin, metric="geodesic"
+    )
 
     # With uniform cost, cost should equal geodesic distance
     np.testing.assert_array_almost_equal(cost, distance)
@@ -1145,10 +1163,12 @@ def test_cost_to_goal_with_cost_map(simple_environment_with_regions):
     position_bins = np.array([start_bin, 4, goal_bin])
 
     # Compute cost with cost map
-    cost_with_map = cost_to_goal(env, position_bins, goal_bin, cost_map=cost_map)
+    cost_with_map = cost_to_goal(
+        position_bins, env, goal_bins=goal_bin, cost_map=cost_map
+    )
 
     # Compute cost without map
-    cost_uniform = cost_to_goal(env, position_bins, goal_bin)
+    cost_uniform = cost_to_goal(position_bins, env, goal_bins=goal_bin)
 
     # Cost with punishment zone should be higher than uniform cost
     assert cost_with_map[0] > cost_uniform[0]
@@ -1177,11 +1197,11 @@ def test_cost_to_goal_terrain_difficulty(simple_environment_with_regions):
 
     # Compute cost with terrain difficulty
     cost_with_terrain = cost_to_goal(
-        env, position_bins, goal_bin, terrain_difficulty=terrain_difficulty
+        position_bins, env, goal_bins=goal_bin, terrain_difficulty=terrain_difficulty
     )
 
     # Compute cost without terrain
-    cost_uniform = cost_to_goal(env, position_bins, goal_bin)
+    cost_uniform = cost_to_goal(position_bins, env, goal_bins=goal_bin)
 
     # Cost with terrain difficulty should be higher (most bins are 2x harder)
     assert cost_with_terrain[0] > cost_uniform[0]
@@ -1214,9 +1234,9 @@ def test_cost_to_goal_combined(simple_environment_with_regions):
 
     # Compute with combined cost
     cost_combined = cost_to_goal(
-        env,
         position_bins,
-        goal_bin,
+        env,
+        goal_bins=goal_bin,
         cost_map=cost_map,
         terrain_difficulty=terrain_difficulty,
     )
@@ -1254,7 +1274,7 @@ def test_cost_to_goal_dynamic_goal(simple_environment_with_regions):
     )  # Goal changes at last step
 
     # Compute cost with dynamic goals
-    cost = cost_to_goal(env, position_bins, goal_bins_array)
+    cost = cost_to_goal(position_bins, env, goal_bins=goal_bins_array)
 
     # Check shape
     assert cost.shape == (3,)
@@ -1276,7 +1296,7 @@ def test_cost_to_goal_invalid_bins(simple_environment_with_regions):
 
     # Test 1: Invalid trajectory bins
     position_bins = np.array([0, -1, 2])  # -1 is invalid
-    cost = cost_to_goal(env, position_bins, goal_bin)
+    cost = cost_to_goal(position_bins, env, goal_bins=goal_bin)
     assert cost.shape == (3,)
     assert not np.isnan(cost[0])  # Valid bin
     assert np.isnan(cost[1])  # Invalid bin → NaN
@@ -1284,12 +1304,12 @@ def test_cost_to_goal_invalid_bins(simple_environment_with_regions):
 
     # Test 2: Invalid goal bin (scalar)
     position_bins = np.array([0, 1, 2])
-    cost = cost_to_goal(env, position_bins, -1)
+    cost = cost_to_goal(position_bins, env, goal_bins=-1)
     assert np.all(np.isnan(cost))  # All should be NaN with invalid goal
 
     # Test 3: Dynamic goals with some invalid
     goal_bins_array = np.array([goal_bin, -1, goal_bin])
-    cost = cost_to_goal(env, position_bins, goal_bins_array)
+    cost = cost_to_goal(position_bins, env, goal_bins=goal_bins_array)
     assert not np.isnan(cost[0])  # Valid goal
     assert np.isnan(cost[1])  # Invalid goal → NaN
     assert not np.isnan(cost[2])  # Valid goal
@@ -1627,8 +1647,8 @@ def test_path_progress_unfitted_environment():
     # Should raise EnvironmentNotFittedError
     with pytest.raises(EnvironmentNotFittedError, match="path_progress"):
         path_progress(
+            np.array([0, 1, 2]),
             env,
-            position_bins=np.array([0, 1, 2]),
             start_bins=np.array([0, 0, 0]),
             goal_bins=np.array([2, 2, 2]),
         )
@@ -1649,8 +1669,8 @@ def test_path_progress_array_length_mismatch():
     # Mismatched lengths
     with pytest.raises(ValueError, match="Array length mismatch"):
         path_progress(
+            np.array([0, 1, 2]),
             env,
-            position_bins=np.array([0, 1, 2]),
             start_bins=np.array([0, 0]),  # Wrong length!
             goal_bins=np.array([2, 2, 2]),
         )
@@ -1673,8 +1693,8 @@ def test_distance_to_region_unfitted_environment():
     # Should raise EnvironmentNotFittedError
     with pytest.raises(EnvironmentNotFittedError, match="distance_to_region"):
         distance_to_region(
+            np.array([0, 1, 2]),
             env,
-            position_bins=np.array([0, 1, 2]),
             target_bins=5,
         )
 
@@ -1736,9 +1756,9 @@ def test_cost_to_goal_dynamic_goal_with_cost_map(simple_environment_with_regions
 
     # Compute cost with dynamic goals
     costs = cost_to_goal(
-        env,
         position_bins,
-        goal_bins,
+        env,
+        goal_bins=goal_bins,
         cost_map=cost_map,
     )
 
@@ -1764,7 +1784,7 @@ def test_distance_to_region_invalid_scalar_target():
     position_bins = np.array([0, 1, 2, 3, 4])
 
     # Invalid scalar target
-    distances = distance_to_region(env, position_bins, target_bins=-1)
+    distances = distance_to_region(position_bins, env, target_bins=-1)
 
     # Should return all NaN
     assert distances.shape == (5,)

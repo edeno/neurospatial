@@ -47,17 +47,17 @@ __all__ = [
 
 
 def field_size(
-    field_bins: NDArray[np.int64],
     env: EnvironmentProtocol,
+    field_bins: NDArray[np.int64],
 ) -> float:
     """Compute field size (area) in physical units.
 
     Parameters
     ----------
-    field_bins : array
-        Bin indices comprising the field.
     env : EnvironmentProtocol
         Spatial environment.
+    field_bins : array
+        Bin indices comprising the field.
 
     Returns
     -------
@@ -78,7 +78,7 @@ def field_size(
     >>> positions = np.random.randn(1000, 2) * 10
     >>> env = Environment.from_samples(positions, bin_size=2.0)
     >>> field_bins = np.array([0, 1, 2, 3, 4])
-    >>> size = field_size(field_bins, env)
+    >>> size = field_size(env, field_bins)
     >>> size > 0
     True
     """
@@ -92,9 +92,9 @@ def field_size(
 
 
 def rate_map_centroid(
+    env: Environment,
     firing_rate: NDArray[np.float64],
     field_bins: NDArray[np.int64],
-    env: Environment,
     *,
     method: Literal["euclidean", "geodesic"] = "euclidean",
 ) -> NDArray[np.float64]:
@@ -102,12 +102,12 @@ def rate_map_centroid(
 
     Parameters
     ----------
+    env : Environment
+        Spatial environment.
     firing_rate : array, shape (n_bins,)
         Firing rate map (Hz).
     field_bins : array
         Bin indices comprising the field.
-    env : EnvironmentProtocol
-        Spatial environment.
     method : {"euclidean", "geodesic"}, default "euclidean"
         Method for computing centroid:
 
@@ -155,14 +155,14 @@ def rate_map_centroid(
     >>> env = Environment.from_samples(positions, bin_size=2.0)
     >>> firing_rate = np.random.rand(env.n_bins) * 5
     >>> field_bins = np.array([0, 1, 2, 3, 4])
-    >>> centroid = rate_map_centroid(firing_rate, field_bins, env)
+    >>> centroid = rate_map_centroid(env, firing_rate, field_bins)
     >>> centroid.shape
     (2,)
 
     Use graph-based centroid for maze environments:
 
     >>> centroid_graph = rate_map_centroid(
-    ...     firing_rate, field_bins, env, method="geodesic"
+    ...     env, firing_rate, field_bins, method="geodesic"
     ... )
     """
     import networkx as nx
@@ -736,12 +736,12 @@ def field_shape_metrics(
 
 
 def field_shift_distance(
+    env_1: Environment,
     firing_rate_1: NDArray[np.float64],
     field_bins_1: NDArray[np.int64],
-    env_1: Environment,
+    env_2: Environment,
     firing_rate_2: NDArray[np.float64],
     field_bins_2: NDArray[np.int64],
-    env_2: Environment,
     *,
     metric: Literal["euclidean", "geodesic"] = "euclidean",
 ) -> float:
@@ -858,8 +858,8 @@ def field_shift_distance(
            Trends Neurosci 31(9).
     """
     # Compute centroids for both fields
-    centroid_1 = rate_map_centroid(firing_rate_1, field_bins_1, env_1)
-    centroid_2 = rate_map_centroid(firing_rate_2, field_bins_2, env_2)
+    centroid_1 = rate_map_centroid(env_1, firing_rate_1, field_bins_1)
+    centroid_2 = rate_map_centroid(env_2, firing_rate_2, field_bins_2)
 
     # Check for NaN centroids
     if np.any(np.isnan(centroid_1)) or np.any(np.isnan(centroid_2)):
@@ -919,9 +919,9 @@ def field_shift_distance(
 
 
 def compute_field_emd(
+    env: Environment,
     firing_rate_1: NDArray[np.float64],
     firing_rate_2: NDArray[np.float64],
-    env: Environment,
     *,
     metric: Literal["euclidean", "geodesic"] = "euclidean",
     normalize: bool = True,
@@ -1028,7 +1028,7 @@ def compute_field_emd(
     >>> field2 = np.exp(-0.1 * np.linalg.norm(env.bin_centers - [5, 0], axis=1) ** 2)
     >>>
     >>> # Compute EMD with Euclidean distance
-    >>> emd_euclidean = compute_field_emd(field1, field2, env, metric="euclidean")
+    >>> emd_euclidean = compute_field_emd(env, field1, field2, metric="euclidean")
     >>> print(f"Euclidean EMD: {emd_euclidean:.3f}")  # doctest: +SKIP
     """
     from scipy.optimize import linprog

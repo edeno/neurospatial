@@ -100,16 +100,16 @@ class TestVTEDecisionAnalysisIntegration:
             pytest.skip("Trajectory does not have valid bins in environment")
 
         entry_from_analysis = decision_region_entry_time(
-            position_bins, times, env, "decision"
+            position_bins, times, env, region="decision"
         )
 
         # Run VTE session - should use same entry detection
         result = compute_vte_session(
             trajectory,
             times,
-            trials,
+            env,
             decision_region="decision",
-            env=env,
+            trials=trials,
             window_duration=0.5,
             min_speed=1.0,
         )
@@ -190,9 +190,9 @@ class TestVTERoundTrip:
         result = compute_vte_session(
             positions_array,
             times_array,
-            trials,
+            env,
             decision_region="decision",
-            env=env,
+            trials=trials,
             window_duration=0.8,
             min_speed=1.0,
             alpha=0.5,
@@ -294,8 +294,8 @@ class TestPathEfficiencyPathProgressConsistency:
             pytest.skip("Trajectory bins not in environment")
 
         progress = path_progress(
-            env,
             position_bins,
+            env,
             start_bins=np.full(len(position_bins), start_bin),
             goal_bins=np.full(len(position_bins), goal_bin),
             metric="geodesic",  # Use geodesic for connected environment

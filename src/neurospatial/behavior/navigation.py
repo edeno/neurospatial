@@ -87,7 +87,9 @@ Complete analysis pipeline for a spatial navigation task::
 
     # 2. Extract trial-based regressors
     start_bins, goal_bins = trials_to_region_arrays(trials, times, env)
-    progress = path_progress(env, position_bins, start_bins, goal_bins)
+    progress = path_progress(
+        position_bins, env, start_bins=start_bins, goal_bins=goal_bins
+    )
 
     # 3. Compute efficiency
     result = compute_path_efficiency(env, positions, times, goal)
@@ -407,7 +409,9 @@ def trials_to_region_arrays(
     >>> progress = path_progress(
     ...     env, position_bins, start_bins, goal_bins
     ... )  # doctest: +SKIP
-    >>> dist = distance_to_region(env, position_bins, goal_bins)  # doctest: +SKIP
+    >>> dist = distance_to_region(
+    ...     position_bins, env, target_bins=goal_bins
+    ... )  # doctest: +SKIP
 
     See Also
     --------
@@ -441,11 +445,11 @@ def trials_to_region_arrays(
 
 
 def path_progress(
-    env: Environment,
     position_bins: NDArray[np.int_],
+    env: Environment,
+    *,
     start_bins: NDArray[np.int_],
     goal_bins: NDArray[np.int_],
-    *,
     metric: Literal["geodesic", "euclidean"] = "geodesic",
 ) -> NDArray[np.float64]:
     """Compute normalized path progress from start to goal (0 -> 1).
@@ -456,10 +460,10 @@ def path_progress(
 
     Parameters
     ----------
-    env : Environment
-        Spatial environment.
     position_bins : NDArray[np.int_], shape (n_samples,)
         Current bin index at each timepoint.
+    env : Environment
+        Spatial environment.
     start_bins : NDArray[np.int_], shape (n_samples,)
         Start bin for each timepoint. Can be constant (single trial) or
         vary per-timepoint (multiple trials).
@@ -602,10 +606,10 @@ def path_progress(
 
 
 def distance_to_region(
-    env: Environment,
     position_bins: NDArray[np.int_],
-    target_bins: NDArray[np.int_] | int,
+    env: Environment,
     *,
+    target_bins: NDArray[np.int_] | int,
     metric: Literal["geodesic", "euclidean"] = "geodesic",
 ) -> NDArray[np.float64]:
     """Compute distance from each trajectory point to target region.
@@ -616,10 +620,10 @@ def distance_to_region(
 
     Parameters
     ----------
-    env : Environment
-        Spatial environment.
     position_bins : NDArray[np.int_], shape (n_samples,)
         Bin indices over time.
+    env : Environment
+        Spatial environment.
     target_bins : NDArray[np.int_] or int
         Target bin specification:
         - int: Single target bin (constant over time)
@@ -645,7 +649,9 @@ def distance_to_region(
     Examples
     --------
     >>> goal_bins = env.bins_in_region("reward_zone")  # doctest: +SKIP
-    >>> dist = distance_to_region(env, position_bins, goal_bins[0])  # doctest: +SKIP
+    >>> dist = distance_to_region(
+    ...     position_bins, env, target_bins=goal_bins[0]
+    ... )  # doctest: +SKIP
 
     See Also
     --------
@@ -710,10 +716,10 @@ def distance_to_region(
 
 
 def cost_to_goal(
-    env: Environment,
     position_bins: NDArray[np.int_],
-    goal_bins: NDArray[np.int_] | int,
+    env: Environment,
     *,
+    goal_bins: NDArray[np.int_] | int,
     cost_map: NDArray[np.float64] | None = None,
     terrain_difficulty: NDArray[np.float64] | None = None,
 ) -> NDArray[np.float64]:
@@ -746,7 +752,7 @@ def cost_to_goal(
     Examples
     --------
     >>> # Simple: uniform cost (equivalent to geodesic distance)
-    >>> cost = cost_to_goal(env, position_bins, goal_bin)  # doctest: +SKIP
+    >>> cost = cost_to_goal(position_bins, env, goal_bins=goal_bin)  # doctest: +SKIP
 
     >>> # Learned avoidance: avoid punishment zone
     >>> cost_map = np.ones(env.n_bins)  # doctest: +SKIP
@@ -763,7 +769,9 @@ def cost_to_goal(
 
     # Case 1: No cost modifications
     if cost_map is None and terrain_difficulty is None:
-        return distance_to_region(env, position_bins, goal_bins, metric="geodesic")
+        return distance_to_region(
+            position_bins, env, target_bins=goal_bins, metric="geodesic"
+        )
 
     # Case 2: Cost modifications - build weighted graph
     g_weighted = env.connectivity.copy()
@@ -1847,7 +1855,9 @@ def approach_rate(
         assert env is not None
         position_bins = env.bin_at(positions)
         goal_bin = env.bin_at(goal)
-        distances = distance_to_region(env, position_bins, goal_bin, metric="geodesic")
+        distances = distance_to_region(
+            position_bins, env, target_bins=goal_bin, metric="geodesic"
+        )
 
     dt = np.diff(times)
     d_distance = np.diff(distances)

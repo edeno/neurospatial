@@ -230,8 +230,8 @@ plt.show()
 # %%
 # Detect place fields
 place_fields = detect_place_fields(
-    firing_rate,
     env,
+    firing_rate,
     threshold=0.2,  # Segment at 20% of peak rate
     min_size=None,  # No minimum size (auto: 9 bins)
     max_mean_rate=10.0,  # Exclude interneurons (>10 Hz mean rate)
@@ -305,10 +305,10 @@ plt.show()
 # Compute field properties
 for i, field_bins in enumerate(place_fields):
     # Field size (area in physical units)
-    area = field_size(field_bins, env)
+    area = field_size(env, field_bins)
 
     # Field centroid (center of mass)
-    centroid = rate_map_centroid(firing_rate, field_bins, env)
+    centroid = rate_map_centroid(env, firing_rate, field_bins)
 
     # Distance from true center
     distance_from_true = np.linalg.norm(centroid - field_center)
@@ -468,8 +468,8 @@ def analyze_place_cell(env, spike_times, times, positions):
 
     # Step 2: Detect place fields
     place_fields = detect_place_fields(
-        firing_rate,
         env,
+        firing_rate,
         threshold=0.2,
         max_mean_rate=10.0,
         detect_subfields=True,
@@ -480,8 +480,8 @@ def analyze_place_cell(env, spike_times, times, positions):
     for field_bins in place_fields:
         field_properties.append(
             {
-                "area": field_size(field_bins, env),
-                "centroid": rate_map_centroid(firing_rate, field_bins, env),
+                "area": field_size(env, field_bins),
+                "centroid": rate_map_centroid(env, firing_rate, field_bins),
                 "peak_rate": np.max(firing_rate[field_bins]),
                 "mean_rate": np.mean(firing_rate[field_bins]),
             }
@@ -989,15 +989,15 @@ print(
 # %%
 # Detect fields in both sessions
 fields_session1 = detect_place_fields(
-    rate_session1,
     track_env,
+    rate_session1,
     threshold=0.2,
     detect_subfields=False,
 )
 
 fields_session2 = detect_place_fields(
-    rate_session2,
     track_env,
+    rate_session2,
     threshold=0.2,
     detect_subfields=False,
 )
@@ -1008,8 +1008,8 @@ print(f"  Session 2: {len(fields_session2)} field(s)")
 
 # Compute centroids
 if len(fields_session1) > 0 and len(fields_session2) > 0:
-    centroid_s1 = rate_map_centroid(rate_session1, fields_session1[0], track_env)
-    centroid_s2 = rate_map_centroid(rate_session2, fields_session2[0], track_env)
+    centroid_s1 = rate_map_centroid(track_env, rate_session1, fields_session1[0])
+    centroid_s2 = rate_map_centroid(track_env, rate_session2, fields_session2[0])
 
     print("\nDetected centroids:")
     print(f"  Session 1: ({centroid_s1[0]:.1f}, {centroid_s1[1]:.1f}) cm")
@@ -1210,15 +1210,15 @@ print(f"Session B (arm end): {len(spikes_arm)} spikes")
 # %%
 # Detect fields
 fields_stem = detect_place_fields(
-    rate_stem,
     tmaze_env,
+    rate_stem,
     threshold=0.2,
     detect_subfields=False,
 )
 
 fields_arm = detect_place_fields(
-    rate_arm,
     tmaze_env,
+    rate_arm,
     threshold=0.2,
     detect_subfields=False,
 )

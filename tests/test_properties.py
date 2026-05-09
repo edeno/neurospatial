@@ -1140,7 +1140,7 @@ class TestPlaceFieldDetectionProperties:
 
         # Detect fields
         try:
-            fields = detect_place_fields(firing_rate, env)
+            fields = detect_place_fields(env, firing_rate)
 
             # Property: all field bin indices should be valid
             for field in fields:
@@ -1183,8 +1183,8 @@ class TestPlaceFieldDetectionProperties:
         # Detect fields
         try:
             fields = detect_place_fields(
-                firing_rate,
                 env,
+                firing_rate,
                 threshold=0.5,  # Threshold for field detection
             )
 
@@ -1579,7 +1579,7 @@ class TestEgocentricTransformProperties:
     - Self position maps to origin in egocentric frame
     - Point ahead has positive x in egocentric frame
 
-    Note: API is allocentric_to_egocentric(points, positions, headings)
+    Note: API is allocentric_to_egocentric(positions, headings, points)
     Output shape: (n_time, n_points, 2)
     """
 
@@ -1604,11 +1604,11 @@ class TestEgocentricTransformProperties:
 
         # Transform to egocentric: (points, positions, headings)
         # Output: (n_time=1, n_points=1, 2)
-        ego_point = allocentric_to_egocentric(point, position, headings)
+        ego_point = allocentric_to_egocentric(position, headings, point)
 
         # Transform back to allocentric: (points, positions, headings)
         # Input shape: (n_time=1, n_points=1, 2)
-        allo_point = egocentric_to_allocentric(ego_point, position, headings)
+        allo_point = egocentric_to_allocentric(position, headings, ego_point)
 
         # Output: (n_time=1, n_points=1, 2), compare to original (n_points=1, 2)
         np.testing.assert_allclose(
@@ -1636,7 +1636,7 @@ class TestEgocentricTransformProperties:
 
         # Transform position to egocentric: (points, positions, headings)
         # Output: (n_time=1, n_points=1, 2)
-        ego_self = allocentric_to_egocentric(position, position, headings)
+        ego_self = allocentric_to_egocentric(position, headings, position)
 
         np.testing.assert_allclose(
             ego_self[0, 0],  # First time, first point
@@ -1668,7 +1668,7 @@ class TestEgocentricTransformProperties:
 
         # Transform: (points, positions, headings)
         # Output: (n_time=1, n_points=1, 2)
-        ego_ahead = allocentric_to_egocentric(point_ahead, position, headings)
+        ego_ahead = allocentric_to_egocentric(position, headings, point_ahead)
 
         # In egocentric frame, "ahead" should be positive x (or close to it)
         np.testing.assert_allclose(

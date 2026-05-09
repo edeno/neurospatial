@@ -591,10 +591,10 @@ def compute_vte_trial(
 def compute_vte_session(
     positions: NDArray[np.float64],
     times: NDArray[np.float64],
-    trials: list[Trial],
-    decision_region: str,
     env: Environment,
     *,
+    decision_region: str,
+    trials: list[Trial],
     window_duration: float = 1.0,
     min_speed: float = 5.0,
     alpha: float = 0.5,
@@ -670,7 +670,7 @@ def compute_vte_session(
 
         try:
             entry_time = decision_region_entry_time(
-                trial_bins, trial_times, env, decision_region
+                trial_bins, trial_times, env, region=decision_region
             )
         except ValueError:
             # Trial never enters decision region - skip

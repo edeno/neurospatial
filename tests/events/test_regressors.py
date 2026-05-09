@@ -976,7 +976,7 @@ class TestDistanceToReward:
         reward_times = np.array([5.0])
 
         result = distance_to_reward(
-            env, positions, times, reward_times, metric="euclidean"
+            env, times, positions, reward_times, metric="euclidean"
         )
 
         assert result.shape == (n_samples,)
@@ -1006,8 +1006,8 @@ class TestDistanceToReward:
 
         result = distance_to_reward(
             env,
-            positions,
             times,
+            positions,
             reward_times,
             reward_positions=reward_positions,
             mode="nearest",
@@ -1037,8 +1037,8 @@ class TestDistanceToReward:
 
         result = distance_to_reward(
             env,
-            positions,
             times,
+            positions,
             reward_times,
             reward_positions=reward_positions,
             mode="last",
@@ -1072,8 +1072,8 @@ class TestDistanceToReward:
 
         result = distance_to_reward(
             env,
-            positions,
             times,
+            positions,
             reward_times,
             reward_positions=reward_positions,
             mode="next",
@@ -1101,7 +1101,7 @@ class TestDistanceToReward:
         positions = np.array([[0.0, 0.0], [5.0, 5.0], [9.0, 9.0]])
         reward_times = np.array([])
 
-        result = distance_to_reward(env, positions, times, reward_times)
+        result = distance_to_reward(env, times, positions, reward_times)
 
         assert np.all(np.isnan(result))
         assert len(result) == 3
@@ -1116,7 +1116,7 @@ class TestDistanceToReward:
         positions = np.empty((0, 2))
         reward_times = np.array([1.0, 2.0])
 
-        result = distance_to_reward(env, positions, times, reward_times)
+        result = distance_to_reward(env, times, positions, reward_times)
 
         assert len(result) == 0
 
@@ -1141,7 +1141,7 @@ class TestDistanceToReward:
 
         # Without explicit reward_positions
         result = distance_to_reward(
-            env, positions, times, reward_times, metric="euclidean"
+            env, times, positions, reward_times, metric="euclidean"
         )
 
         # At t=5, animal is at ~(4.5, 4.5), reward interpolated to same
@@ -1159,7 +1159,7 @@ class TestDistanceToReward:
         reward_times = np.array([0.5])
 
         with pytest.raises(ValueError, match=r"positions and times.*same length"):
-            distance_to_reward(env, positions, times, reward_times)
+            distance_to_reward(env, times, positions, reward_times)
 
     def test_reward_positions_times_mismatch_raises(self, simple_grid_env):
         """Test mismatched reward_positions and reward_times raises ValueError."""
@@ -1187,7 +1187,7 @@ class TestDistanceToReward:
         times = np.array([0.0, 1.0])
         reward_times = np.array([0.5])
 
-        result = distance_to_reward(env, positions, times, reward_times)
+        result = distance_to_reward(env, times, positions, reward_times)
 
         assert result.dtype == np.float64
 
@@ -1206,8 +1206,8 @@ class TestDistanceToReward:
         # Geodesic distance (Manhattan-like on grid)
         result_geodesic = distance_to_reward(
             env,
-            positions,
             times,
+            positions,
             reward_times,
             reward_positions=reward_positions,
             metric="geodesic",
@@ -1216,8 +1216,8 @@ class TestDistanceToReward:
         # Euclidean distance (sqrt(2) ~= 1.41)
         result_euclidean = distance_to_reward(
             env,
-            positions,
             times,
+            positions,
             reward_times,
             reward_positions=reward_positions,
             metric="euclidean",

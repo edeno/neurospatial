@@ -486,8 +486,8 @@ def event_indicator(
 
 def distance_to_reward(
     env: Environment,
-    positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     reward_times: NDArray[np.float64],
     reward_positions: NDArray[np.float64] | None = None,
     *,
@@ -602,7 +602,7 @@ def distance_to_reward(
     >>> X = np.column_stack(  # doctest: +SKIP
     ...     [
     ...         time_to_nearest_event(times, reward_times, max_time=5.0),
-    ...         distance_to_reward(env, positions, times, reward_times),
+    ...         distance_to_reward(env, times, positions, reward_times),
     ...     ]
     ... )
 

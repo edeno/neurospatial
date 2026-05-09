@@ -142,8 +142,8 @@ class PopulationCoverageResult:
 
 
 def population_coverage(
-    firing_rates: NDArray[np.floating],
     env: Environment,
+    firing_rates: NDArray[np.floating],
     *,
     threshold: float = 0.2,
     min_size: int | None = None,
@@ -157,10 +157,10 @@ def population_coverage(
 
     Parameters
     ----------
-    firing_rates : NDArray[np.floating], shape (n_neurons, n_bins)
-        Firing rate maps for each neuron.
     env : Environment
         Fitted environment defining the spatial bins.
+    firing_rates : NDArray[np.floating], shape (n_neurons, n_bins)
+        Firing rate maps for each neuron.
     threshold : float, default=0.2
         Place field boundary threshold as fraction of peak firing rate (0-1).
         Lower values (0.1-0.2) detect larger fields, higher values (0.3-0.5)
@@ -288,8 +288,8 @@ def population_coverage(
     all_fields: list[PlaceFieldsResult] = []
     for neuron_idx in range(n_neurons):
         fields = detect_place_fields(
-            firing_rates[neuron_idx],
             env,
+            firing_rates[neuron_idx],
             threshold=threshold,
             min_size=min_size,
             max_mean_rate=max_mean_rate,

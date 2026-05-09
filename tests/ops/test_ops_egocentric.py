@@ -54,7 +54,7 @@ class TestAllocentricToEgocentric:
         landmarks = np.array([[10.0, 0.0], [0.0, 10.0]])  # 2 landmarks
         positions = np.array([[0.0, 0.0], [0.0, 0.0]])  # Animal at origin
         headings = np.array([0.0, np.pi / 2])  # Facing East, then North
-        ego = allocentric_to_egocentric(landmarks, positions, headings)
+        ego = allocentric_to_egocentric(positions, headings, landmarks)
         assert ego.shape == (2, 2, 2)
 
         # At t=0 (facing East), landmark (10, 0) is ahead
@@ -66,18 +66,18 @@ class TestAllocentricToEgocentric:
         """Test error on invalid points shape."""
         with pytest.raises(ValueError, match="Cannot transform points"):
             allocentric_to_egocentric(
-                np.array([10.0]),  # 1D, invalid
                 np.array([[0.0, 0.0]]),
                 np.array([0.0]),
+                np.array([10.0]),  # 1D, invalid
             )
 
     def test_positions_headings_mismatch(self):
         """Test error when positions and headings lengths differ."""
         with pytest.raises(ValueError, match="length mismatch"):
             allocentric_to_egocentric(
-                np.array([[10.0, 0.0]]),
                 np.array([[0.0, 0.0], [1.0, 1.0]]),  # 2 positions
                 np.array([0.0]),  # 1 heading
+                np.array([[10.0, 0.0]]),
             )
 
 
@@ -89,8 +89,8 @@ class TestEgocentricToAllocentric:
         landmarks = np.array([[10.0, 0.0], [0.0, 10.0]])
         positions = np.array([[5.0, 5.0]])
         headings = np.array([np.pi / 4])
-        ego = allocentric_to_egocentric(landmarks, positions, headings)
-        recovered = egocentric_to_allocentric(ego, positions, headings)
+        ego = allocentric_to_egocentric(positions, headings, landmarks)
+        recovered = egocentric_to_allocentric(positions, headings, ego)
         np.testing.assert_allclose(recovered[0], landmarks, atol=1e-10)
 
 

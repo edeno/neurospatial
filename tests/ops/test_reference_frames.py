@@ -148,7 +148,7 @@ class TestAllocentricToEgocentric:
         positions = np.array([[0.0, 0.0], [5.0, 5.0], [10.0, 10.0]])  # Shape: (3, 2)
         headings = np.array([0.0, np.pi / 2, np.pi])  # Shape: (3,)
 
-        ego = allocentric_to_egocentric(landmarks, positions, headings)
+        ego = allocentric_to_egocentric(positions, headings, landmarks)
 
         # Output shape: (n_time, n_points, 2) = (3, 2, 2)
         assert ego.shape == (3, 2, 2)
@@ -168,7 +168,7 @@ class TestAllocentricToEgocentric:
         positions = np.array([[0.0, 0.0], [0.0, 0.0]])  # Shape: (2, 2)
         headings = np.array([0.0, np.pi / 2])  # Shape: (2,)
 
-        ego = allocentric_to_egocentric(landmarks, positions, headings)
+        ego = allocentric_to_egocentric(positions, headings, landmarks)
 
         # Output: (n_time, n_points, 2) = (2, 1, 2)
         assert ego.shape == (2, 1, 2)
@@ -188,7 +188,7 @@ class TestAllocentricToEgocentric:
         headings = np.array([0.0])
 
         with pytest.raises(ValueError, match="points"):
-            allocentric_to_egocentric(points, positions, headings)
+            allocentric_to_egocentric(positions, headings, points)
 
     def test_positions_headings_length_mismatch(self):
         """Positions and headings must have matching length."""
@@ -199,7 +199,7 @@ class TestAllocentricToEgocentric:
         headings = np.array([0.0])  # 1 timepoint
 
         with pytest.raises(ValueError, match=r"Headings/positions length mismatch"):
-            allocentric_to_egocentric(points, positions, headings)
+            allocentric_to_egocentric(positions, headings, points)
 
 
 class TestEgocentricToAllocentric:
@@ -218,8 +218,8 @@ class TestEgocentricToAllocentric:
         positions = rng.uniform(-10, 10, size=(10, 2))
         headings = rng.uniform(-np.pi, np.pi, size=10)
 
-        ego = allocentric_to_egocentric(points, positions, headings)
-        recovered = egocentric_to_allocentric(ego, positions, headings)
+        ego = allocentric_to_egocentric(positions, headings, points)
+        recovered = egocentric_to_allocentric(positions, headings, ego)
 
         # Output should broadcast back to match input shape
         assert recovered.shape == (10, 5, 2)

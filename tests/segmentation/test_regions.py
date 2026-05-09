@@ -169,8 +169,9 @@ class TestDetectRunsBetweenRegions:
 
         from neurospatial.behavior.segmentation import detect_runs_between_regions
 
+        position_bins = env.bin_at(trajectory)
         runs = detect_runs_between_regions(
-            trajectory,
+            position_bins,
             times,
             env,
             source="source",
@@ -209,8 +210,9 @@ class TestDetectRunsBetweenRegions:
 
         from neurospatial.behavior.segmentation import detect_runs_between_regions
 
+        position_bins = env.bin_at(trajectory)
         runs = detect_runs_between_regions(
-            trajectory,
+            position_bins,
             times,
             env,
             source="source",
@@ -245,8 +247,9 @@ class TestDetectRunsBetweenRegions:
 
         from neurospatial.behavior.segmentation import detect_runs_between_regions
 
+        position_bins = env.bin_at(trajectory)
         runs = detect_runs_between_regions(
-            trajectory,
+            position_bins,
             times,
             env,
             source="source",
@@ -274,8 +277,9 @@ class TestDetectRunsBetweenRegions:
         from neurospatial.behavior.segmentation import detect_runs_between_regions
 
         # This should work without error
+        position_bins = env.bin_at(trajectory)
         runs = detect_runs_between_regions(
-            trajectory,
+            position_bins,
             times,
             env,
             source="source",
@@ -442,8 +446,9 @@ class TestRegionSegmentationIntegration:
         )
 
         # 2. Detect runs between regions
+        position_bins = env.bin_at(trajectory)
         runs = detect_runs_between_regions(
-            trajectory,
+            position_bins,
             times,
             env,
             source="source",

@@ -64,7 +64,7 @@ func(
 **Examples:**
 
 - `compute_egocentric_bearing(positions, headings, targets)`
-- `allocentric_to_egocentric(points, positions, headings)`
+- `allocentric_to_egocentric(positions, headings, points)`
 
 #### Behavioral Segmentation (laps, trials, crossings)
 

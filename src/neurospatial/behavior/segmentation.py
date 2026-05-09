@@ -327,7 +327,7 @@ def detect_region_crossings(
 
 
 def detect_runs_between_regions(
-    positions: NDArray[np.float64],
+    position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
     env: Environment,
     *,
@@ -346,10 +346,12 @@ def detect_runs_between_regions(
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Continuous position samples (e.g., in cm).
+    position_bins : NDArray[np.int64], shape (n_samples,)
+        Discretized position indices (one per sample). Use
+        ``env.bin_at(positions)`` to obtain these from continuous
+        coordinates.
     times : NDArray[np.float64], shape (n_samples,)
-        Time stamps corresponding to positions (seconds).
+        Time stamps corresponding to ``position_bins`` (seconds).
     env : Environment
         Environment containing source and target region definitions.
     source : str
@@ -363,7 +365,11 @@ def detect_runs_between_regions(
         Maximum run duration in seconds. Default: 10.0.
         Runs exceeding this are marked as failed (timeout).
     min_speed : float or None, optional
-        Minimum velocity (units/second) to count as movement.
+        Minimum velocity (bin-center units/second) to count as
+        movement. Velocity is computed from consecutive
+        ``env.bin_centers[position_bins[i]]`` rather than continuous
+        positions, so the value is bin-quantized; pre-filter on
+        continuous positions if you need true sub-bin precision.
         If None, no velocity filtering is applied. Default: None.
 
     Returns
@@ -380,7 +386,7 @@ def detect_runs_between_regions(
     ValueError
         If source or target regions not in env.regions.
     ValueError
-        If positions and times have different lengths.
+        If position_bins and times have different lengths.
 
     See Also
     --------
@@ -423,8 +429,9 @@ def detect_runs_between_regions(
     >>> traj_y = np.ones(100) * 50.0  # doctest: +SKIP
     >>> trajectory = np.column_stack([traj_x, traj_y])  # doctest: +SKIP
     >>> times = np.linspace(0, 5.0, 100)  # doctest: +SKIP
+    >>> position_bins = env.bin_at(trajectory)  # doctest: +SKIP
     >>> runs = detect_runs_between_regions(  # doctest: +SKIP
-    ...     trajectory,  # doctest: +SKIP
+    ...     position_bins,  # doctest: +SKIP
     ...     times,  # doctest: +SKIP
     ...     env,  # doctest: +SKIP
     ...     source="start",  # doctest: +SKIP
@@ -448,17 +455,16 @@ def detect_runs_between_regions(
             f"Target region '{target}' not found. Available regions: {available}"
         )
 
-    if len(positions) != len(times):
+    if len(position_bins) != len(times):
         raise ValueError(
-            f"positions and times must have same length. "
-            f"Got {len(positions)} and {len(times)}"
+            f"position_bins and times must have same length. "
+            f"Got {len(position_bins)} and {len(times)}"
         )
 
-    if len(positions) == 0:
+    if len(position_bins) == 0:
         return []
 
-    # Map positions to bins
-    position_bins = env.bin_at(positions)
+    position_bins = np.asarray(position_bins, dtype=np.int64)
 
     # Get region masks
     from neurospatial.ops.binning import regions_to_mask
@@ -511,13 +517,13 @@ def detect_runs_between_regions(
         if duration < min_duration:
             continue
 
-        # Optional velocity filter
+        # Optional velocity filter (bin-quantized)
         if min_speed is not None:
-            # Compute velocity during run
-            run_positions = positions[exit_idx : end_idx + 1]
+            run_bin_idx = position_bins[exit_idx : end_idx + 1]
             run_times = times[exit_idx : end_idx + 1]
 
             if len(run_times) > 1:
+                run_positions = env.bin_centers[run_bin_idx]
                 displacements = np.diff(run_positions, axis=0)
                 distances = np.linalg.norm(displacements, axis=1)
                 dt = np.diff(run_times)

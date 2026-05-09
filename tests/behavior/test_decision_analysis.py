@@ -283,7 +283,9 @@ class TestDecisionRegionEntryTime:
         )
         position_bins = env.bin_at(positions)
 
-        entry_time = decision_region_entry_time(position_bins, times, env, "center")
+        entry_time = decision_region_entry_time(
+            position_bins, times, env, region="center"
+        )
 
         # Center region is at y=55, trajectory goes from y=0 to y=60 over 10s
         # Entry should be around t = 10 * (55/60) ≈ 9.2s (accounting for bin discretization)
@@ -307,7 +309,7 @@ class TestDecisionRegionEntryTime:
         position_bins = env.bin_at(positions)
 
         with pytest.raises(ValueError, match="never enters"):
-            decision_region_entry_time(position_bins, times, env, "center")
+            decision_region_entry_time(position_bins, times, env, region="center")
 
 
 # =============================================================================

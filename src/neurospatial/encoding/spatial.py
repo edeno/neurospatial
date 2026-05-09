@@ -2014,8 +2014,8 @@ def compute_directional_place_fields(
 
 
 def detect_place_fields(
-    firing_rate: NDArray[np.float64],
     env: Environment,
+    firing_rate: NDArray[np.float64],
     *,
     threshold: float = 0.2,
     min_size: int | None = None,
@@ -2029,10 +2029,10 @@ def detect_place_fields(
 
     Parameters
     ----------
-    firing_rate : array, shape (n_bins,)
-        Firing rate map (Hz) from neuron.
     env : Environment
         Spatial environment for binning.
+    firing_rate : array, shape (n_bins,)
+        Firing rate map (Hz) from neuron.
     threshold : float, default=0.2
         Fraction of peak rate for field boundary detection (0-1).
         Standard value is 0.2 (20% of peak).
@@ -2090,7 +2090,7 @@ def detect_place_fields(
     >>> for i in range(env.n_bins):
     ...     dist = np.linalg.norm(env.bin_centers[i])
     ...     firing_rate[i] = 8.0 * np.exp(-(dist**2) / (2 * 3.0**2))
-    >>> fields = detect_place_fields(firing_rate, env)
+    >>> fields = detect_place_fields(env, firing_rate)
     >>> len(fields)  # doctest: +SKIP
     1
 

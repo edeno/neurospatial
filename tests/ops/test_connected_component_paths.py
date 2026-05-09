@@ -276,7 +276,7 @@ def test_detect_place_fields_uses_scipy_path():
     from neurospatial.encoding.spatial import detect_place_fields
 
     # Should use scipy path internally (grid environment)
-    fields = detect_place_fields(firing_rate, env)
+    fields = detect_place_fields(env, firing_rate)
 
     # Should detect exactly one field
     assert len(fields) == 1
@@ -300,7 +300,7 @@ def test_detect_place_fields_grid_vs_nongrid_equivalence():
     from neurospatial.encoding.spatial import detect_place_fields
 
     # Detect fields (uses scipy path for grid)
-    fields_scipy = detect_place_fields(firing_rate, env_grid)
+    fields_scipy = detect_place_fields(env_grid, firing_rate)
 
     # Temporarily disable scipy path to test graph path
     # (This is a bit of a hack - in practice, both paths should give same result)
@@ -308,7 +308,7 @@ def test_detect_place_fields_grid_vs_nongrid_equivalence():
     original_grid_shape = env_no_grid.grid_shape
     env_no_grid.grid_shape = None  # Force graph path
 
-    fields_graph = detect_place_fields(firing_rate, env_no_grid)
+    fields_graph = detect_place_fields(env_no_grid, firing_rate)
 
     env_no_grid.grid_shape = original_grid_shape  # Restore
 

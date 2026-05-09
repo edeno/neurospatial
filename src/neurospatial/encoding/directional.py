@@ -1328,6 +1328,21 @@ def compute_directional_rate(
     data. The result is a DirectionalRateResult object containing the firing
     rate map, occupancy, and metadata.
 
+    .. note::
+
+       Directional encoding is the documented exception to the v0.4
+       canonical "env first" argument order for encoding functions
+       (see :ref:`canonical-argument-order` in the project guide).
+       Heading is a circular angular variable, not a position in a
+       spatial environment, so this function operates on circular
+       heading bins (``bin_size``, ``angle_unit``) rather than an
+       :class:`Environment`. There is no ``env`` parameter and no
+       internal Environment shim — keeping the signature
+       heading-domain native is intentional. Sister classifiers
+       :func:`compute_spatial_rate`, :func:`compute_egocentric_rate`,
+       and :func:`compute_view_rate` all take ``env`` first because
+       they operate over a discretized spatial environment.
+
     Parameters
     ----------
     spike_times : ndarray, shape (n_spikes,)
