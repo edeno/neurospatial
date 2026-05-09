@@ -214,17 +214,30 @@ Create environment from polygon::
 
 import logging
 
+from neurospatial._exceptions import (
+    BinIndexOutOfRangeError,
+    EnvironmentNotFittedError,
+    GraphValidationError,
+    IncompatibleEnvironmentError,
+    LayoutNotBuiltError,
+    RegionNotFoundError,
+)
 from neurospatial.composite import CompositeEnvironment
-from neurospatial.environment import Environment, EnvironmentNotFittedError
+from neurospatial.environment import Environment
 from neurospatial.regions import Region, Regions
 
 # Add NullHandler to prevent "No handler found" warnings if user doesn't configure logging
 logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 __all__ = [
+    "BinIndexOutOfRangeError",
     "CompositeEnvironment",
     "Environment",
     "EnvironmentNotFittedError",
+    "GraphValidationError",
+    "IncompatibleEnvironmentError",
+    "LayoutNotBuiltError",
     "Region",
+    "RegionNotFoundError",
     "Regions",
 ]

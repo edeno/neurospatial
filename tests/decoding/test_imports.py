@@ -213,18 +213,25 @@ class TestPublicAPICompleteness:
         """
         import neurospatial
 
-        # Main __all__ should only have 5 core classes
+        # Top-level only re-exports the canonical core classes plus the
+        # public exception hierarchy added in M3.4. Domain-specific names
+        # (decoding, encoding, behavior, ...) must come from their submodule.
         expected_in_main = {
+            "BinIndexOutOfRangeError",
+            "CompositeEnvironment",
             "Environment",
             "EnvironmentNotFittedError",
+            "GraphValidationError",
+            "IncompatibleEnvironmentError",
+            "LayoutNotBuiltError",
             "Region",
+            "RegionNotFoundError",
             "Regions",
-            "CompositeEnvironment",
         }
 
         actual_all = set(neurospatial.__all__)
         assert actual_all == expected_in_main, (
-            f"Expected only core classes in main __all__, got: {actual_all}"
+            f"Expected core classes + exceptions in main __all__, got: {actual_all}"
         )
 
         # Decoding exports should be in decoding submodule, not main
