@@ -68,7 +68,7 @@ class HeadDirectionCellModel:
     >>>
     >>> # Peak should be near π/2
     >>> peak_idx = np.argmax(rates)
-    >>> abs(headings[peak_idx] - np.pi / 2) < 0.1
+    >>> bool(abs(headings[peak_idx] - np.pi / 2) < 0.1)
     True
 
     Multiple HD cells with uniform preferred directions:
@@ -97,6 +97,7 @@ class HeadDirectionCellModel:
     >>> # Create environment and trajectory
     >>> samples = np.random.uniform(0, 100, (1000, 2))
     >>> env = Environment.from_samples(samples, bin_size=2.0)
+    >>> env.units = "cm"  # required for simulate_trajectory_ou (M4.5)
     >>> positions, times = simulate_trajectory_ou(
     ...     env, duration=10.0, seed=42, speed_units="cm"
     ... )
