@@ -179,6 +179,7 @@ def _infer_active_elements_from_samples(
             "No candidate element centers provided for interior inference. "
             "Returning no active elements.",
             UserWarning,
+            stacklevel=2,
         )
         return (
             np.array([], dtype=bool),
@@ -201,6 +202,7 @@ def _infer_active_elements_from_samples(
             "No valid (non-NaN) positions provided for interior inference. "
             "No elements will be marked as active based on occupancy.",
             UserWarning,
+            stacklevel=2,
         )
         # All candidates will be considered non-active by occupancy
         inferred_1d_mask_on_candidates = np.zeros(n_candidates, dtype=bool)
@@ -222,6 +224,7 @@ def _infer_active_elements_from_samples(
             f"KDTree construction failed on candidate centers: {e}. "
             "Cannot infer active elements from samples.",
             RuntimeWarning,
+            stacklevel=2,
         )
         # Treat as if no elements become active by occupancy
         inferred_1d_mask_on_candidates = np.zeros(n_candidates, dtype=bool)
@@ -241,6 +244,7 @@ def _infer_active_elements_from_samples(
             f"KDTree query failed during active element inference: {e}. "
             "No elements will be marked as active based on occupancy.",
             RuntimeWarning,
+            stacklevel=2,
         )
         inferred_1d_mask_on_candidates = np.zeros(n_candidates, dtype=bool)
         final_active_centers = np.empty((0, n_dims_candidates))
@@ -264,6 +268,7 @@ def _infer_active_elements_from_samples(
             "bin_count_threshold. All elements will be considered non-active "
             "by this inference step.",
             UserWarning,
+            stacklevel=2,
         )
 
     final_active_centers = candidate_element_centers[inferred_1d_mask_on_candidates]
@@ -343,6 +348,7 @@ def _infer_dimension_ranges_from_samples(
                     f"Dimension {dim_idx} has zero extent and no buffer specified. "
                     "Using a default small buffer of 1.0 around the point.",
                     UserWarning,
+                    stacklevel=2,
                 )
                 d_min -= 0.5  # Default small extent
                 d_max += 0.5
@@ -453,6 +459,7 @@ def _generic_graph_plot(
                 warnings.warn(
                     "Attempting to add 3D edges to a non-3D Axes object. Edges may not display correctly.",
                     UserWarning,
+                    stacklevel=2,
                 )
 
     else:  # 2D case
@@ -527,6 +534,7 @@ def flat_to_multi_index(
                 f"Active flat index {active_idx} not found in node_data_lookup. "
                 "Returning NaNs for this index.",
                 UserWarning,
+                stacklevel=2,
             )
             output_nd_list.append(tuple([np.nan] * n_dims))
             continue
@@ -543,6 +551,7 @@ def flat_to_multi_index(
                     f"Node {active_idx} has invalid '{original_index_key}' attribute. "
                     "Returning NaNs.",
                     UserWarning,
+                    stacklevel=2,
                 )
                 output_nd_list.append(tuple([np.nan] * n_dims))
             else:
@@ -558,6 +567,7 @@ def flat_to_multi_index(
                     f"Cannot unravel fallback index {full_flat} for node {active_idx}. "
                     "Returning NaNs.",
                     UserWarning,
+                    stacklevel=2,
                 )
                 output_nd_list.append(tuple([np.nan] * n_dims))
         else:
@@ -565,6 +575,7 @@ def flat_to_multi_index(
                 f"Node {active_idx} missing both '{original_index_key}' and '{fallback_key}'. "
                 "Returning NaNs.",
                 UserWarning,
+                stacklevel=2,
             )
             output_nd_list.append(tuple([np.nan] * n_dims))
 
@@ -732,6 +743,7 @@ def _is_grid_boundary_node(
             f"Node {node_id} missing 'original_grid_nd_index'. "
             "Cannot use N-D grid boundary logic.",
             UserWarning,
+            stacklevel=2,
         )
         return False
 

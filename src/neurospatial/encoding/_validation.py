@@ -40,11 +40,11 @@ def validate_env_fitted(env: object, *, context: str) -> None:
     Public ``compute_*_rate(s)`` and ``decode_position`` entry points use
     this to fail at the API boundary rather than letting an unfitted env
     surface as a confusing ``AttributeError`` from a deep helper. The
-    ``context`` label is the user-facing function name (e.g.
-    ``"compute_spatial_rate"``); a future M3 follow-up will rename
-    ``EnvironmentNotFittedError`` to format the message with that label
-    rather than ``Environment.<context>()`` (the existing class hardcodes
-    a ``class.method`` template).
+    ``context`` label is the user-facing free-function name (e.g.
+    ``"compute_spatial_rate"``) and is forwarded to the free-function
+    form of :class:`EnvironmentNotFittedError` so the rendered message
+    reads ``compute_spatial_rate()`` rather than the misleading
+    ``Environment.compute_spatial_rate()``.
 
     Parameters
     ----------
@@ -54,8 +54,8 @@ def validate_env_fitted(env: object, *, context: str) -> None:
         ``Environment`` symbol would re-introduce the import cycle that
         ``encoding._validation`` exists to avoid.
     context : str
-        Name of the calling public function, used as the second arg to
-        ``EnvironmentNotFittedError`` for the error message.
+        Name of the calling public free function, used as the
+        ``EnvironmentNotFittedError`` function-name argument.
 
     Raises
     ------
@@ -67,7 +67,7 @@ def validate_env_fitted(env: object, *, context: str) -> None:
     from neurospatial.environment.decorators import EnvironmentNotFittedError
 
     if not getattr(env, "_is_fitted", False):
-        raise EnvironmentNotFittedError("Environment", context)
+        raise EnvironmentNotFittedError(context, is_function=True)
 
 
 def validate_times(times: NDArray[np.float64], context: str = "encoding") -> None:
@@ -223,18 +223,22 @@ def validate_trajectory(
 
     if positions is not None:
         if positions.ndim not in (1, 2):
-            raise ValueError(f"positions must be 1D or 2D, got shape {positions.shape}")
+            raise ValueError(
+                f"in {context}: positions must be 1D or 2D, got shape {positions.shape}"
+            )
         if len(positions) != n_samples:
             raise ValueError(
-                f"times length ({n_samples}) must match positions length "
-                f"({len(positions)})"
+                f"in {context}: times length ({n_samples}) must match "
+                f"positions length ({len(positions)})"
             )
 
     if headings is not None:
         if headings.ndim != 1:
-            raise ValueError(f"headings must be 1D, got shape {headings.shape}")
+            raise ValueError(
+                f"in {context}: headings must be 1D, got shape {headings.shape}"
+            )
         if len(headings) != n_samples:
             raise ValueError(
-                f"times length ({n_samples}) must match headings length "
-                f"({len(headings)})"
+                f"in {context}: times length ({n_samples}) must match "
+                f"headings length ({len(headings)})"
             )

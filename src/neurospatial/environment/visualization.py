@@ -283,11 +283,13 @@ class EnvironmentVisualization:
                     f"Layout '{self._layout_type_used}' is 1D but does not "
                     "have a 'plot_linear_layout' method. Skipping 1D plot.",
                     UserWarning,
+                    stacklevel=2,
                 )
         else:
             warnings.warn(
                 "Environment is not 1D. Skipping 1D plot. Use regular plot() method.",
                 UserWarning,
+                stacklevel=2,
             )
 
         return ax

@@ -169,6 +169,7 @@ def _validate_source_nodes(
                 f"Source node {src} not in graph (valid node IDs: "
                 f"{min_node} to {max_node}), skipping",
                 stacklevel=3,
+                category=UserWarning,
             )
 
     if len(valid_sources) == 0:

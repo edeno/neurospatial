@@ -121,6 +121,7 @@ class _KDTreeMixin:
                 warnings.warn(
                     f"KDTree construction failed: {e}. point_to_bin_index may not work.",
                     RuntimeWarning,
+                    stacklevel=2,
                 )
                 self._kdtree = None
                 self._kdtree_nodes_to_bin_indices_map = np.array([], dtype=np.int32)
@@ -164,6 +165,7 @@ class _KDTreeMixin:
             warnings.warn(
                 f"KDTree query failed: {e}. Returning -1 for all points.",
                 RuntimeWarning,
+                stacklevel=2,
             )
             return np.full(n_query_points, -1, dtype=np.int32)
 

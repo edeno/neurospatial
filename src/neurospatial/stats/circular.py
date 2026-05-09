@@ -1175,6 +1175,7 @@ def _wald_test_magnitude(
         warnings.warn(
             "Covariance matrix is singular. Cannot compute p-value.",
             stacklevel=3,
+            category=UserWarning,
         )
         return np.nan
 

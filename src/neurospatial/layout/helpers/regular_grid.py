@@ -220,6 +220,7 @@ def _infer_active_bins_from_regular_grid(
             "infer_active_bins is True, but no positions provided. "
             "Returning all bins inactive (no data to infer from).",
             UserWarning,
+            stacklevel=2,
         )
         return np.zeros(grid_shape, dtype=bool)
 
@@ -631,6 +632,7 @@ def _points_to_regular_grid_bin_ind(
         warnings.warn(
             "Dimensionality mismatch between points, grid_edges, or grid_shape.",
             RuntimeWarning,
+            stacklevel=2,
         )
         return output_indices
 

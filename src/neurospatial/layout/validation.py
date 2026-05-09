@@ -599,6 +599,7 @@ def validate_environment(env: Environment, *, strict: bool = True) -> None:
                 f"Consider setting env.units (e.g., 'cm', 'px', 'm') "
                 f"to prevent unit confusion in downstream analysis.",
                 stacklevel=2,
+                category=UserWarning,
             )
 
         # Warn about missing coordinate frame
@@ -608,4 +609,5 @@ def validate_environment(env: Environment, *, strict: bool = True) -> None:
                 f"Consider setting env.frame (e.g., 'world', 'camera_1') "
                 f"to prevent confusion when aligning multiple sessions.",
                 stacklevel=2,
+                category=UserWarning,
             )

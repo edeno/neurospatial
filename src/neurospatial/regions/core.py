@@ -178,7 +178,13 @@ class Regions(MutableMapping[str, Region]):
         return self._store[key]
 
     def __setitem__(self, key: str, value: Region) -> None:
-        """Assign a region to a key, following standard dict semantics.
+        """Insert a region under ``key``; refuse to silently overwrite.
+
+        ``regions[key] = region`` is the *strict* insertion path: it
+        accepts new keys but raises :class:`KeyError` if ``key`` already
+        exists. Callers that want to replace an existing region must opt
+        in explicitly via :meth:`set` (idempotent replace) or
+        :meth:`update_region` (replace geometry/metadata in place).
 
         Parameters
         ----------
@@ -190,35 +196,28 @@ class Regions(MutableMapping[str, Region]):
         Raises
         ------
         ValueError
-            If key does not match the Region's name attribute.
-
-        Warns
-        -----
-        UserWarning
-            If overwriting an existing region. To suppress this warning,
-            use `update_region()` instead.
-
-        Notes
-        -----
-        This method follows standard dictionary semantics - assignment to an
-        existing key succeeds but emits a warning to prevent accidental overwrites.
+            If ``key`` does not match ``value.name``.
+        KeyError
+            If ``key`` is already present in the collection.
 
         Examples
         --------
         >>> regions = Regions()
         >>> r1 = Region(name="goal", kind="point", data=[10.0, 20.0])
-        >>> regions["goal"] = r1  # No warning - first assignment
+        >>> regions["goal"] = r1  # OK — first assignment
         >>> r2 = Region(name="goal", kind="point", data=[15.0, 25.0])
-        >>> regions["goal"] = r2  # UserWarning - overwriting existing region
+        >>> regions["goal"] = r2  # raises KeyError
 
-        To suppress the warning, use `update_region()`:
+        To replace an existing region, pick the explicit path:
 
-        >>> _ = regions.update_region("goal", point=[15.0, 25.0])  # No warning
+        >>> regions.set("goal", r2)  # idempotent replace
+        >>> _ = regions.update_region("goal", point=[15.0, 25.0])  # in-place edit
 
         See Also
         --------
-        update_region : Explicit method for updating regions without warnings
-        add : Add a new region (raises KeyError if already exists)
+        set : Idempotent replace (accepts both new and existing names).
+        update_region : In-place geometry/metadata edit; raises if absent.
+        add : Build a new Region and insert it; raises if already exists.
 
         """
         if key != value.name:
@@ -592,5 +591,9 @@ class Regions(MutableMapping[str, Region]):
         """
         blob = json.loads(Path(path).read_text())
         if blob.get("format") != cls._FMT:
-            warnings.warn(f"Unexpected format tag {blob.get('format')!r}")
+            warnings.warn(
+                f"Unexpected format tag {blob.get('format')!r}",
+                category=UserWarning,
+                stacklevel=2,
+            )
         return cls(Region.from_dict(d) for d in blob["regions"])

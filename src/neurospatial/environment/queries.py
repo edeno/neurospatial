@@ -405,7 +405,8 @@ class EnvironmentQueries:
             warnings.warn(
                 f"No path found between active bin {source_active_bin_idx} "
                 f"and {target_active_bin_idx}.",
-                UserWarning,
+                category=UserWarning,
+                stacklevel=2,
             )
             return []
         except nx.NodeNotFound as e:
@@ -529,7 +530,7 @@ class EnvironmentQueries:
                 warnings.warn(
                     f"Region '{region_name}' contains no bins. "
                     f"All distances will be inf.",
-                    UserWarning,
+                    category=UserWarning,
                     stacklevel=2,
                 )
 

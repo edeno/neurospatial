@@ -376,7 +376,8 @@ def _map_nearest_neighbor(
     except Exception as e:
         warnings.warn(
             f"KDTree.query (nearest) failed: {e}. Returning zeros.",
-            RuntimeWarning,
+            category=RuntimeWarning,
+            stacklevel=2,
         )
         return target_probs
 
@@ -425,7 +426,8 @@ def _map_inverse_distance_weighted(
     except Exception as e:
         warnings.warn(
             f"KDTree.query (inverse-distance-weighted) failed: {e}. Returning zeros.",
-            RuntimeWarning,
+            category=RuntimeWarning,
+            stacklevel=2,
         )
         return target_probs
 
@@ -559,7 +561,8 @@ def map_probabilities(
     if n_src == 0 or n_tgt == 0:
         warnings.warn(
             "One of the environments has zero bins; returning zeros.",
-            UserWarning,
+            category=UserWarning,
+            stacklevel=2,
         )
         return np.zeros(n_tgt, dtype=float)
 
@@ -578,6 +581,7 @@ def map_probabilities(
         warnings.warn(
             f"KDTree construction on target_env failed: {e}. Returning zeros.",
             RuntimeWarning,
+            stacklevel=2,
         )
         return np.zeros(n_tgt, dtype=float)
 

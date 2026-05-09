@@ -335,6 +335,7 @@ def from_file(path: PathLike) -> Environment:
             f"Schema version mismatch: file has {schema_version!r}, "
             f"expected {_SCHEMA_VERSION!r}. Attempting to load anyway.",
             stacklevel=2,
+            category=UserWarning,
         )
 
     # Load arrays
@@ -533,6 +534,7 @@ def from_dict(data: dict[str, Any]) -> Environment:
             f"Schema version mismatch: data has {schema_version!r}, "
             f"expected {_SCHEMA_VERSION!r}. Attempting to load anyway.",
             stacklevel=2,
+            category=UserWarning,
         )
 
     # Reconstruct arrays

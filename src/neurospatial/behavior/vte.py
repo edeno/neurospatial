@@ -405,6 +405,7 @@ def normalize_vte_scores(
             "All trials have identical head sweep behavior. "
             "Z-scores will be 0, and VTE classification may not be meaningful. "
             "Consider adjusting window_duration or min_speed parameters.",
+            category=UserWarning,
             stacklevel=2,
         )
         z_head_sweeps = np.zeros_like(head_sweeps)
@@ -420,6 +421,7 @@ def normalize_vte_scores(
             "All trials have identical speed behavior. "
             "Z-scores will be 0, and VTE classification may not be meaningful. "
             "Consider adjusting window_duration or min_speed parameters.",
+            category=UserWarning,
             stacklevel=2,
         )
         z_speed_inverse = np.zeros_like(speeds)
