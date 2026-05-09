@@ -637,6 +637,21 @@ def batch_grid_scores(
             f"env has {env.n_bins} bins"
         )
 
+    # API-level validation: invalid radius fractions are programmer
+    # errors, not per-neuron failures. Raise once before the loop so the
+    # ValueError reaches the caller rather than being swallowed into
+    # ``failures=True`` for every neuron. Mirrors the validation
+    # ``grid_score`` does internally.
+    if not (0 < inner_radius_fraction < 1):
+        raise ValueError(
+            f"inner_radius_fraction must be in (0, 1), got {inner_radius_fraction}"
+        )
+    if not (inner_radius_fraction < outer_radius_fraction <= 1):
+        raise ValueError(
+            f"outer_radius_fraction must be in (inner_radius_fraction, 1], "
+            f"got {outer_radius_fraction} with inner={inner_radius_fraction}"
+        )
+
     n_neurons = firing_rates.shape[0]
     scores = np.empty(n_neurons, dtype=np.float64)
     failures = np.zeros(n_neurons, dtype=np.bool_)
@@ -808,6 +823,21 @@ def batch_border_scores(
             f"firing_rates has {firing_rates.shape[1]} bins but "
             f"env has {env.n_bins} bins"
         )
+
+    # API-level validation: invalid global parameters are programmer
+    # errors, not per-neuron failures. Raise once before the loop so the
+    # ValueError reaches the caller rather than being swallowed into
+    # ``failures=True`` for every neuron. Mirrors the validation
+    # ``border_score`` does internally.
+    if not (0 < threshold < 1):
+        raise ValueError(
+            f"threshold must be in (0, 1), got {threshold}. "
+            "Typically 0.3 (30% of peak)."
+        )
+    if min_area < 0:
+        raise ValueError(f"min_area must be non-negative, got {min_area}")
+    if metric not in ("geodesic", "euclidean"):
+        raise ValueError(f"metric must be 'geodesic' or 'euclidean', got '{metric}'")
 
     n_neurons = firing_rates.shape[0]
     scores = np.empty(n_neurons, dtype=np.float64)

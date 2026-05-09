@@ -803,6 +803,73 @@ class TestBatchGridScores:
             np.array(result, dtype=np.float32, copy=False)
 
 
+class TestBatchAPIValidation:
+    """Batch wrappers must raise ValueError on bad global params, not catch.
+
+    Invalid radius fractions (batch_grid_scores) and invalid threshold /
+    min_area / metric (batch_border_scores) are programmer errors, not
+    per-neuron failures. Without API-level validation the inner
+    try/except loop converts them into ``failures=[True, ...]`` for
+    every neuron, which is silently confusing — every probe with a typo
+    looks like a noisy data problem instead of a caller bug. Pin the
+    new pre-validation contract.
+    """
+
+    @pytest.fixture
+    def regular_env_and_rates(self):
+        from neurospatial import Environment
+
+        x = np.linspace(-50, 50, 51)
+        xx, yy = np.meshgrid(x, x)
+        env = Environment.from_samples(
+            np.column_stack([xx.ravel(), yy.ravel()]), bin_size=2.0
+        )
+        firing_rates = np.random.default_rng(0).random((2, env.n_bins))
+        return env, firing_rates
+
+    def test_batch_grid_scores_rejects_inner_radius_zero(self, regular_env_and_rates):
+        from neurospatial.encoding._metrics import batch_grid_scores
+
+        env, firing_rates = regular_env_and_rates
+        with pytest.raises(ValueError, match=r"inner_radius_fraction must be in"):
+            batch_grid_scores(env, firing_rates, inner_radius_fraction=0.0)
+
+    def test_batch_grid_scores_rejects_outer_below_inner(self, regular_env_and_rates):
+        from neurospatial.encoding._metrics import batch_grid_scores
+
+        env, firing_rates = regular_env_and_rates
+        with pytest.raises(ValueError, match=r"outer_radius_fraction must be in"):
+            batch_grid_scores(
+                env,
+                firing_rates,
+                inner_radius_fraction=0.5,
+                outer_radius_fraction=0.3,
+            )
+
+    def test_batch_border_scores_rejects_invalid_metric(self, regular_env_and_rates):
+        from neurospatial.encoding._metrics import batch_border_scores
+
+        env, firing_rates = regular_env_and_rates
+        with pytest.raises(ValueError, match=r"metric must be"):
+            batch_border_scores(env, firing_rates, metric="manhattan")  # type: ignore[arg-type]
+
+    def test_batch_border_scores_rejects_threshold_out_of_range(
+        self, regular_env_and_rates
+    ):
+        from neurospatial.encoding._metrics import batch_border_scores
+
+        env, firing_rates = regular_env_and_rates
+        with pytest.raises(ValueError, match=r"threshold must be in"):
+            batch_border_scores(env, firing_rates, threshold=2.0)
+
+    def test_batch_border_scores_rejects_negative_min_area(self, regular_env_and_rates):
+        from neurospatial.encoding._metrics import batch_border_scores
+
+        env, firing_rates = regular_env_and_rates
+        with pytest.raises(ValueError, match=r"min_area must be non-negative"):
+            batch_border_scores(env, firing_rates, min_area=-5.0)
+
+
 class TestBatchGridScoresNonRegularGrid:
     """Tests for batch_grid_scores with non-regular grid environments."""
 

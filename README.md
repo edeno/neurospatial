@@ -245,7 +245,7 @@ occupancy = env.occupancy(
     positions=position,
     speed=speeds,
     min_speed=2.5,  # cm/s - filter slow periods
-    kernel_bandwidth=10.0  # cm - smooth the occupancy map
+    bandwidth=10.0  # cm - smooth the occupancy map
 )
 
 # Analyze movement patterns
