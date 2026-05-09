@@ -1339,7 +1339,10 @@ def compute_directional_rate(
     times : ndarray, shape (n_samples,)
         Timestamps of head direction samples in seconds.
     headings : ndarray, shape (n_samples,)
-        Head direction at each time point. Units determined by ``angle_unit``.
+        Head direction at each time point. **Allocentric (world-frame)
+        convention**: 0 = East, π/2 = North, π = West, -π/2 = South,
+        wrapped to [-π, π) (or to [0, 360°) when ``angle_unit="deg"``).
+        Units determined by ``angle_unit``.
     bin_size : float, default=π/30 (6 degrees)
         Width of angular bins. Units match ``angle_unit``.
         Default produces 60 bins (6° resolution).
@@ -1565,7 +1568,10 @@ def compute_directional_rates(
     times : ndarray, shape (n_samples,)
         Timestamps of head direction samples in seconds.
     headings : ndarray, shape (n_samples,)
-        Head direction at each time point. Units determined by ``angle_unit``.
+        Head direction at each time point. **Allocentric (world-frame)
+        convention**: 0 = East, π/2 = North, π = West, -π/2 = South,
+        wrapped to [-π, π) (or to [0, 360°) when ``angle_unit="deg"``).
+        Units determined by ``angle_unit``.
     bin_size : float, default=π/30 (6 degrees)
         Width of angular bins. Units match ``angle_unit``.
         Default produces 60 bins (6° resolution).
@@ -1838,7 +1844,9 @@ def is_head_direction_cell(
     times : ndarray of shape (n_frames,)
         Timestamps corresponding to each head direction sample.
     headings : ndarray of shape (n_frames,)
-        Head direction at each time point.
+        Head direction at each time point. **Allocentric (world-frame)
+        convention**: 0 = East, π/2 = North, π = West, -π/2 = South.
+        Units determined by ``angle_unit``.
     bin_size : float, default=π/30 (6 degrees)
         Width of angular bins. Units match ``angle_unit``.
     bandwidth : float or None, default=None

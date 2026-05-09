@@ -963,7 +963,11 @@ def compute_egocentric_rate(
     positions : ndarray, shape (n_samples, 2)
         Animal position coordinates at each time sample.
     headings : ndarray, shape (n_samples,)
-        Head direction at each time sample (radians, 0=East allocentric).
+        Head direction at each time sample (radians, **allocentric
+        world-frame convention**: 0 = East, π/2 = North, π = West,
+        -π/2 = South, wrapped to [-π, π)). The allocentric→egocentric
+        transform is applied internally; pass world-frame headings, not
+        animal-frame angles.
     object_positions : ndarray, shape (n_objects, 2)
         Object positions in allocentric coordinates. The firing rate is
         computed relative to the *nearest* object at each timepoint.
@@ -1252,7 +1256,11 @@ def compute_egocentric_rates(
     positions : ndarray, shape (n_samples, 2)
         Animal position coordinates at each time sample.
     headings : ndarray, shape (n_samples,)
-        Head direction at each time sample (radians, 0=East allocentric).
+        Head direction at each time sample (radians, **allocentric
+        world-frame convention**: 0 = East, π/2 = North, π = West,
+        -π/2 = South, wrapped to [-π, π)). The allocentric→egocentric
+        transform is applied internally; pass world-frame headings, not
+        animal-frame angles.
     object_positions : ndarray, shape (n_objects, 2)
         Object positions in allocentric coordinates. The firing rate is
         computed relative to the *nearest* object at each timepoint.
@@ -1775,7 +1783,10 @@ def is_object_vector_cell(
     positions : NDArray[np.float64], shape (n_samples, 2)
         Animal position coordinates at each time sample.
     headings : NDArray[np.float64], shape (n_samples,)
-        Head direction at each time sample (radians, allocentric 0=East).
+        Head direction at each time sample (radians, **allocentric
+        world-frame convention**: 0 = East, π/2 = North, π = West,
+        -π/2 = South, wrapped to [-π, π)). The allocentric→egocentric
+        transform is applied internally.
     object_positions : NDArray[np.float64], shape (n_objects, 2)
         Object positions in allocentric coordinates.
     distance_range : tuple of float, default=(0.0, 50.0)

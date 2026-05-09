@@ -596,12 +596,14 @@ def heading_from_velocity(
     Parameters
     ----------
     positions : NDArray, shape (n_time, 2)
-        Animal positions over time.
+        Animal positions over time, in environment units (e.g. cm).
     dt : float
         Time step between samples in seconds.
     min_speed : float, default 0.0
-        Minimum speed threshold. Samples with speed below this are
-        interpolated from surrounding valid samples.
+        Minimum speed threshold in **the same units per second as
+        ``positions``** (e.g. cm/s if positions are in cm). Samples
+        with speed below this are interpolated from surrounding valid
+        samples.
     bandwidth : float, default 0.0
         Gaussian smoothing sigma in samples. Applied to velocity before
         computing heading. Set to 0 to disable smoothing.
@@ -609,8 +611,10 @@ def heading_from_velocity(
     Returns
     -------
     NDArray, shape (n_time,)
-        Heading in radians at each timepoint. If all speeds are below
-        threshold, returns NaN array.
+        Heading in radians at each timepoint, in the **allocentric
+        world-frame convention** (0 = East, π/2 = North, π = West,
+        -π/2 = South), wrapped to (-π, π]. If all speeds are below
+        threshold, returns a NaN array.
 
     Raises
     ------
