@@ -218,7 +218,7 @@ def peri_event_histogram(
 
     Convert to firing rate:
 
-    >>> rate = result.firing_rate()  # spikes/second
+    >>> rate = result.firing_rate  # spikes/second
     """
     # Validate bin_size
     if bin_size <= 0:
@@ -361,7 +361,7 @@ def population_peri_event_histogram(
 
     Get firing rates for all units:
 
-    >>> rates = result.firing_rates()  # shape: (n_units, n_bins)
+    >>> rates = result.firing_rates  # shape: (n_units, n_bins)
     """
     # Validate spike_trains
     if len(spike_trains) == 0:

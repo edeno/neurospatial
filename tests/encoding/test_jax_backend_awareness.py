@@ -145,7 +145,7 @@ class TestSpatialResultMixinWithJax:
     """Tests for SpatialResultMixin methods with JAX arrays."""
 
     def test_peak_locations_with_jax_single(self, simple_env: Environment) -> None:
-        """peak_locations() should work with JAX arrays for single neuron."""
+        """peak_location() should work with JAX arrays for single neuron."""
         import jax.numpy as jnp
 
         from neurospatial.encoding._base import SpatialResultMixin
@@ -170,13 +170,13 @@ class TestSpatialResultMixinWithJax:
             env=simple_env,
         )
 
-        peak = result.peak_locations()
+        peak = result.peak_location()
         # Should return NumPy array
         assert isinstance(peak, np.ndarray)
         np.testing.assert_array_equal(peak, simple_env.bin_centers[peak_bin])
 
     def test_peak_locations_with_jax_batch(self, simple_env: Environment) -> None:
-        """peak_locations() should work with JAX arrays for batch."""
+        """peak_location() should work with JAX arrays for batch."""
         import jax.numpy as jnp
 
         from neurospatial.encoding._base import SpatialResultMixin
@@ -203,13 +203,13 @@ class TestSpatialResultMixinWithJax:
             env=simple_env,
         )
 
-        peaks = result.peak_locations()
+        peaks = result.peak_location()
         # Should return NumPy array
         assert isinstance(peaks, np.ndarray)
         assert peaks.shape == (n_neurons, simple_env.n_dims)
 
-    def test_peak_firing_rates_with_jax_single(self, simple_env: Environment) -> None:
-        """peak_firing_rates() should work with JAX arrays for single neuron."""
+    def test_peak_firing_rate_with_jax_single(self, simple_env: Environment) -> None:
+        """peak_firing_rate() should work with JAX arrays for single neuron."""
         import jax.numpy as jnp
 
         from neurospatial.encoding._base import SpatialResultMixin
@@ -234,12 +234,12 @@ class TestSpatialResultMixinWithJax:
             env=simple_env,
         )
 
-        peak_rate = result.peak_firing_rates()
+        peak_rate = result.peak_firing_rate()
         assert isinstance(peak_rate, float)
         assert peak_rate == peak_value
 
-    def test_peak_firing_rates_with_jax_batch(self, simple_env: Environment) -> None:
-        """peak_firing_rates() should work with JAX arrays for batch."""
+    def test_peak_firing_rate_with_jax_batch(self, simple_env: Environment) -> None:
+        """peak_firing_rate() should work with JAX arrays for batch."""
         import jax.numpy as jnp
 
         from neurospatial.encoding._base import SpatialResultMixin
@@ -266,7 +266,7 @@ class TestSpatialResultMixinWithJax:
             env=simple_env,
         )
 
-        peak_rates = result.peak_firing_rates()
+        peak_rates = result.peak_firing_rate()
         assert isinstance(peak_rates, np.ndarray)
         assert peak_rates.shape == (n_neurons,)
 
@@ -541,11 +541,11 @@ class TestViewRateResultWithJax:
 
         n_bins = simple_env.n_bins
         firing_rate_jax = jnp.ones(n_bins) * 5.0
-        view_occupancy_jax = jnp.ones(n_bins)
+        occupancy_jax = jnp.ones(n_bins)
 
         result = ViewRateResult(
             firing_rate=firing_rate_jax,  # type: ignore[arg-type]
-            view_occupancy=view_occupancy_jax,  # type: ignore[arg-type]
+            occupancy=occupancy_jax,  # type: ignore[arg-type]
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
@@ -580,21 +580,21 @@ class TestEgocentricRateResultWithJax:
         n_direction_bins = 12
         distance_bin_size = 10.0  # 50.0 / 5 bins
         angle_bin_size = 2 * np.pi / n_direction_bins
-        ego_env = Environment.from_polar_egocentric(
+        env = Environment.from_polar_egocentric(
             distance_range=(0.0, 50.0),
             angle_range=(-np.pi, np.pi),
             distance_bin_size=distance_bin_size,
             angle_bin_size=angle_bin_size,
         )
 
-        n_bins = ego_env.n_bins
+        n_bins = env.n_bins
         firing_rate_jax = jnp.ones(n_bins) * 5.0
         occupancy_jax = jnp.ones(n_bins)
 
         result = EgocentricRateResult(
             firing_rate=firing_rate_jax,  # type: ignore[arg-type]
             occupancy=occupancy_jax,  # type: ignore[arg-type]
-            ego_env=ego_env,
+            env=env,
             distance_range=(0.0, 50.0),
             n_distance_bins=n_distance_bins,
             n_direction_bins=n_direction_bins,
@@ -615,14 +615,14 @@ class TestEgocentricRateResultWithJax:
         n_direction_bins = 12
         distance_bin_size = 10.0  # 50.0 / 5 bins
         angle_bin_size = 2 * np.pi / n_direction_bins
-        ego_env = Environment.from_polar_egocentric(
+        env = Environment.from_polar_egocentric(
             distance_range=(0.0, 50.0),
             angle_range=(-np.pi, np.pi),
             distance_bin_size=distance_bin_size,
             angle_bin_size=angle_bin_size,
         )
 
-        n_bins = ego_env.n_bins
+        n_bins = env.n_bins
         # Create firing rate with peak at middle bin
         firing_rate_np = np.zeros(n_bins)
         peak_bin = n_bins // 2
@@ -633,7 +633,7 @@ class TestEgocentricRateResultWithJax:
         result = EgocentricRateResult(
             firing_rate=firing_rate_jax,  # type: ignore[arg-type]
             occupancy=occupancy_jax,  # type: ignore[arg-type]
-            ego_env=ego_env,
+            env=env,
             distance_range=(0.0, 50.0),
             n_distance_bins=n_distance_bins,
             n_direction_bins=n_direction_bins,

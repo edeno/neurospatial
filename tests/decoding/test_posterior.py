@@ -814,7 +814,7 @@ class TestDecodePosition:
             simple_spike_counts.shape[0],
             simple_env.n_dims,
         )
-        assert result.uncertainty.shape == (simple_spike_counts.shape[0],)
+        assert result.posterior_entropy.shape == (simple_spike_counts.shape[0],)
 
     def test_reproducibility(
         self,

@@ -100,7 +100,7 @@ class TestPeriEventResult:
     def test_firing_rate_conversion(self, sample_peri_event_result):
         """Test firing_rate() method converts counts to Hz."""
         result = sample_peri_event_result
-        rate = result.firing_rate()
+        rate = result.firing_rate
         expected = result.histogram / result.bin_size
         assert_allclose(rate, expected)
 
@@ -148,7 +148,7 @@ class TestPopulationPeriEventResult:
     def test_firing_rates_conversion(self, sample_population_result):
         """Test firing_rates() method converts counts to Hz for all units."""
         result = sample_population_result
-        rates = result.firing_rates()
+        rates = result.firing_rates
         expected = result.histograms / result.bin_size
         assert_allclose(rates, expected)
         assert rates.shape == (5, 100)
@@ -397,7 +397,7 @@ class TestEdgeCases:
             window=(-0.1, 0.1),
             bin_size=0.2,
         )
-        rate = result.firing_rate()
+        rate = result.firing_rate
         assert_allclose(rate, np.array([25.0]))  # 5.0 / 0.2 = 25.0
 
     def test_dataframe_with_nan_timestamp_passes_type_check(self):

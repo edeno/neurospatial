@@ -382,15 +382,15 @@ distances = compute_egocentric_distance(
 
 ```python
 # Create polar grid in egocentric space
-ego_env = Environment.from_polar_egocentric(
+env = Environment.from_polar_egocentric(
     distance_range=(0, 50),     # 0-50 cm from animal
     angle_range=(-np.pi, np.pi), # Full 360° around animal
     distance_bin_size=5.0,       # 5 cm radial bins
     angle_bin_size=np.pi / 8,    # 22.5° angular bins
     circular_angle=True,         # Wrap angles at ±π
 )
-# ego_env.bin_centers[:, 0] = distances
-# ego_env.bin_centers[:, 1] = angles
+# env.bin_centers[:, 0] = distances
+# env.bin_centers[:, 1] = angles
 ```
 
 ### Object-Vector Cells
@@ -422,7 +422,7 @@ result = compute_egocentric_rate(
 
 # Access results
 firing_rate = result.firing_rate  # Firing rate in egocentric polar space
-ego_env = result.ego_env          # Egocentric polar environment
+env = result.env          # Egocentric polar environment
 occupancy = result.occupancy      # Time spent in each bin
 
 # Convenience methods
@@ -460,7 +460,7 @@ df = result.to_dataframe()
 
 ```python
 # Check classification on the canonical result object
-print(result.is_ovc(min_info=0.5))
+print(result.is_object_vector_cell(min_info=0.5))
 print(f"Preferred distance: {result.preferred_distance():.1f} cm")
 print(f"Preferred direction: {result.preferred_direction():.2f} rad")
 
@@ -536,7 +536,7 @@ result = compute_view_rate(
 
 # Access results
 view_field = result.firing_rate       # Firing rate by viewed location
-view_occupancy = result.view_occupancy  # Time viewing each bin
+occupancy = result.occupancy  # Time viewing each bin
 
 # Compare to place field (binned by position)
 from neurospatial.encoding import compute_spatial_rate
@@ -573,7 +573,7 @@ df = result.to_dataframe()
 
 ```python
 # Single-neuron result from compute_view_rate(...)
-print(single.is_view_cell(min_info=0.5))
+print(single.is_spatial_view_cell(min_info=0.5))
 print(f"View information: {single.view_spatial_information():.3f} bits/spike")
 print(f"Peak viewed location: {single.peak_view_location()}")
 

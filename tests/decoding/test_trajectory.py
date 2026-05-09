@@ -560,18 +560,18 @@ class TestFitLinearTrajectory:
             simple_env, posterior, times, fitting_method="map"
         )
 
-        assert result.slope_std is None  # No uncertainty for fitting_method="map"
+        assert result.slope_std is None  # No posterior_entropy for fitting_method="map"
         assert result.slope > 0  # Increasing positions
 
     def test_fit_linear_trajectory_method_sample(self, simple_env):
-        """fitting_method='sample' should provide uncertainty via Monte Carlo."""
+        """fitting_method='sample' should provide posterior_entropy via Monte Carlo."""
         from neurospatial.decoding.trajectory import fit_linear_trajectory
 
         n_time_bins = 20
         n_bins = simple_env.n_bins
         times = np.linspace(0, 1, n_time_bins)
 
-        # Create posterior with some uncertainty
+        # Create posterior with some posterior_entropy
         posterior = np.zeros((n_time_bins, n_bins))
         base_positions = np.linspace(5, n_bins - 5, n_time_bins)
         for t, pos in enumerate(base_positions):
@@ -585,7 +585,7 @@ class TestFitLinearTrajectory:
             simple_env, posterior, times, fitting_method="sample", rng=42
         )
 
-        assert result.slope_std is not None  # Should have uncertainty
+        assert result.slope_std is not None  # Should have posterior_entropy
         assert result.slope_std >= 0  # Non-negative std
 
     def test_fit_linear_trajectory_reproducible_with_rng_int(self, simple_env):
@@ -596,7 +596,7 @@ class TestFitLinearTrajectory:
         n_bins = simple_env.n_bins
         times = np.linspace(0, 1, n_time_bins)
 
-        # Create posterior with some uncertainty
+        # Create posterior with some posterior_entropy
         posterior = np.zeros((n_time_bins, n_bins))
         base_positions = np.linspace(5, n_bins - 5, n_time_bins)
         for t, pos in enumerate(base_positions):
@@ -624,7 +624,7 @@ class TestFitLinearTrajectory:
         n_bins = simple_env.n_bins
         times = np.linspace(0, 1, n_time_bins)
 
-        # Create posterior with some uncertainty
+        # Create posterior with some posterior_entropy
         posterior = np.zeros((n_time_bins, n_bins))
         base_positions = np.linspace(5, n_bins - 5, n_time_bins)
         for t, pos in enumerate(base_positions):
@@ -739,7 +739,7 @@ class TestFitLinearTrajectory:
         n_bins = simple_env.n_bins
         times = np.linspace(0, 1, n_time_bins)
 
-        # Create posterior with some uncertainty
+        # Create posterior with some posterior_entropy
         rng = np.random.default_rng(42)
         posterior = rng.random((n_time_bins, n_bins))
         posterior /= posterior.sum(axis=1, keepdims=True)
@@ -756,7 +756,7 @@ class TestFitLinearTrajectory:
             rng=43,
         )
 
-        # Both should have uncertainty estimates
+        # Both should have posterior_entropy estimates
         assert result_100.slope_std is not None
         assert result_1000.slope_std is not None
 

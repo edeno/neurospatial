@@ -9,7 +9,7 @@ Functions
 fit_isotonic_trajectory
     Fit monotonic trajectory using isotonic regression.
 fit_linear_trajectory
-    Fit linear trajectory with optional Monte Carlo uncertainty.
+    Fit linear trajectory with optional Monte Carlo posterior_entropy.
 detect_trajectory_radon
     Detect linear trajectory using Radon transform.
 
@@ -99,7 +99,7 @@ class LinearFitResult:
 
     Linear regression fits a straight line to the decoded position sequence.
     This provides slope (replay speed) and intercept estimates, optionally
-    with uncertainty quantification via Monte Carlo sampling.
+    with posterior_entropy quantification via Monte Carlo sampling.
 
     Attributes
     ----------
@@ -365,7 +365,7 @@ def fit_linear_trajectory(
 
     Fits a straight line to the decoded position sequence, providing slope
     (replay speed) and intercept estimates. Optionally uses Monte Carlo
-    sampling to quantify uncertainty in the slope estimate.
+    sampling to quantify posterior_entropy in the slope estimate.
 
     Parameters
     ----------
@@ -378,13 +378,13 @@ def fit_linear_trajectory(
         Time values for each time bin. Used as the independent variable (x)
         in the regression. Need not be uniformly spaced.
     n_samples : int, optional
-        Number of Monte Carlo samples from the posterior for uncertainty
+        Number of Monte Carlo samples from the posterior for posterior_entropy
         estimation (only used when fitting_method="sample"). Default is 1000.
     fitting_method : {"map", "sample"}, optional
         How to fit the linear trajectory:
-        - "map": Use argmax positions directly. Fast but ignores uncertainty.
+        - "map": Use argmax positions directly. Fast but ignores posterior_entropy.
         - "sample" (default): Sample from posterior, fit to each sample,
-          average coefficients. Provides uncertainty estimate via slope_std.
+          average coefficients. Provides posterior_entropy estimate via slope_std.
     rng : np.random.Generator | int | None, optional
         Random number generator for reproducibility (fitting_method="sample" only).
         - If Generator: Use directly

@@ -17,7 +17,9 @@ class TestSpatialAutocorrelation:
 
     def test_fft_method_on_regular_grid(self):
         """Test FFT method returns 2D autocorrelation on regular grid."""
-        from neurospatial.encoding.grid import spatial_autocorrelation
+        from neurospatial.encoding.grid import (
+            spatial_autocorrelation,
+        )
 
         # Create regular 2D grid environment using deterministic grid
         x = np.linspace(-20, 20, 21)
@@ -31,7 +33,7 @@ class TestSpatialAutocorrelation:
         firing_rate[center_bin] = 10.0
 
         # Compute autocorrelation with FFT method
-        autocorr = spatial_autocorrelation(env, firing_rate, method="fft")
+        autocorr = spatial_autocorrelation(env, firing_rate)
 
         # Should return 2D array
         assert autocorr.ndim == 2
@@ -43,7 +45,9 @@ class TestSpatialAutocorrelation:
 
     def test_graph_method_returns_tuple(self):
         """Test graph method returns (distances, correlations) tuple."""
-        from neurospatial.encoding.grid import spatial_autocorrelation
+        from neurospatial.encoding.grid import (
+            spatial_autocorrelation_radial,
+        )
 
         # Create environment using deterministic grid
         x = np.linspace(-20, 20, 21)
@@ -56,9 +60,7 @@ class TestSpatialAutocorrelation:
         firing_rate = rng.random(env.n_bins) * 5.0
 
         # Compute autocorrelation with graph method
-        result = spatial_autocorrelation(
-            env, firing_rate, method="graph", n_distance_bins=30
-        )
+        result = spatial_autocorrelation_radial(env, firing_rate, n_distance_bins=30)
 
         # Should return tuple
         assert isinstance(result, tuple)
@@ -74,7 +76,9 @@ class TestSpatialAutocorrelation:
 
     def test_auto_method_works(self):
         """Test auto method can detect appropriate method."""
-        from neurospatial.encoding.grid import spatial_autocorrelation
+        from neurospatial.encoding.grid import (
+            spatial_autocorrelation,
+        )
 
         # Create environment using deterministic grid
         x = np.linspace(-20, 20, 21)
@@ -86,7 +90,7 @@ class TestSpatialAutocorrelation:
         firing_rate = rng.random(env.n_bins) * 5.0
 
         # Auto should work without error (returns either 2D array or tuple)
-        result = spatial_autocorrelation(env, firing_rate, method="auto")
+        result = spatial_autocorrelation(env, firing_rate)
 
         # Should return something valid (either 2D array or tuple)
         assert result is not None
@@ -95,7 +99,9 @@ class TestSpatialAutocorrelation:
 
     def test_raises_on_shape_mismatch(self):
         """Test raises ValueError if firing_rate shape doesn't match env.n_bins."""
-        from neurospatial.encoding.grid import spatial_autocorrelation
+        from neurospatial.encoding.grid import (
+            spatial_autocorrelation,
+        )
 
         # Deterministic grid
         x = np.linspace(-20, 20, 21)
@@ -110,7 +116,9 @@ class TestSpatialAutocorrelation:
 
     def test_raises_on_all_nan(self):
         """Test raises ValueError if all firing rates are NaN."""
-        from neurospatial.encoding.grid import spatial_autocorrelation
+        from neurospatial.encoding.grid import (
+            spatial_autocorrelation,
+        )
 
         # Deterministic grid
         x = np.linspace(-20, 20, 21)
@@ -125,7 +133,9 @@ class TestSpatialAutocorrelation:
 
     def test_raises_on_constant_rates(self):
         """Test raises ValueError if all valid firing rates are constant."""
-        from neurospatial.encoding.grid import spatial_autocorrelation
+        from neurospatial.encoding.grid import (
+            spatial_autocorrelation,
+        )
 
         # Deterministic grid
         x = np.linspace(-20, 20, 21)
@@ -138,25 +148,37 @@ class TestSpatialAutocorrelation:
         with pytest.raises(ValueError, match="All valid firing rates are constant"):
             spatial_autocorrelation(env, firing_rate)
 
-    def test_raises_on_invalid_method(self):
-        """Test raises ValueError on invalid method parameter."""
+    def test_raises_on_irregular_env(self):
+        """spatial_autocorrelation refuses irregular envs and steers callers to the radial variant."""
+        import networkx as nx
+
+        from neurospatial import Environment
         from neurospatial.encoding.grid import spatial_autocorrelation
 
-        # Deterministic grid
-        x = np.linspace(-20, 20, 21)
-        xx, yy = np.meshgrid(x, x)
-        positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=4.0)
+        # Build a 1-D track graph (no regular 2D grid_shape) to trigger the
+        # irregular-env path. The error message must mention the radial
+        # alternative so the caller knows which function to use instead.
+        graph = nx.path_graph(8)
+        for i, node in enumerate(graph.nodes):
+            graph.nodes[node]["pos"] = (float(i) * 5.0, 0.0)
+        for u, v in graph.edges:
+            graph.edges[u, v]["distance"] = 5.0
+        env = Environment.from_graph(
+            graph,
+            edge_order=list(graph.edges),
+            edge_spacing=0.0,
+            bin_size=2.0,
+        )
+        firing_rate = np.linspace(0.0, 1.0, env.n_bins)
 
-        rng = np.random.default_rng(42)
-        firing_rate = rng.random(env.n_bins) * 5.0
-
-        with pytest.raises(ValueError, match="method must be"):
-            spatial_autocorrelation(env, firing_rate, method="invalid")
+        with pytest.raises(ValueError, match="spatial_autocorrelation_radial"):
+            spatial_autocorrelation(env, firing_rate)
 
     def test_fft_autocorr_returns_finite_values(self):
         """Test FFT autocorrelation returns finite values."""
-        from neurospatial.encoding.grid import spatial_autocorrelation
+        from neurospatial.encoding.grid import (
+            spatial_autocorrelation,
+        )
 
         # Deterministic grid
         x = np.linspace(-20, 20, 21)
@@ -168,7 +190,7 @@ class TestSpatialAutocorrelation:
         rng = np.random.default_rng(42)
         firing_rate = rng.random(env.n_bins) * 5.0
 
-        autocorr = spatial_autocorrelation(env, firing_rate, method="fft")
+        autocorr = spatial_autocorrelation(env, firing_rate)
 
         # Autocorrelation should be finite everywhere
         assert np.all(np.isfinite(autocorr))

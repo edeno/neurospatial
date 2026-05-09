@@ -296,7 +296,7 @@ class TestEntropy:
         np.testing.assert_array_almost_equal(result, np.ones(n_time_bins))
 
     def test_entropy_consistency_with_decoding_result(self, small_2d_env):
-        """entropy should match DecodingResult.uncertainty."""
+        """entropy should match DecodingResult.posterior_entropy."""
         from neurospatial.decoding import DecodingResult
         from neurospatial.decoding.estimates import posterior_entropy
 
@@ -309,9 +309,9 @@ class TestEntropy:
         # Standalone function
         standalone_result = posterior_entropy(posterior)
 
-        # DecodingResult property (named 'uncertainty')
+        # DecodingResult property (named 'posterior_entropy')
         dr = DecodingResult(posterior=posterior, env=small_2d_env)
-        property_result = dr.uncertainty
+        property_result = dr.posterior_entropy
 
         np.testing.assert_array_almost_equal(standalone_result, property_result)
 

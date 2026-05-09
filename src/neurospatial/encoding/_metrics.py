@@ -660,20 +660,18 @@ def batch_grid_scores(
             continue
 
         try:
-            # Compute spatial autocorrelation (FFT method for regular 2D grids)
-            autocorr = spatial_autocorrelation(env, firing_rate, method="auto")
-
-            # spatial_autocorrelation returns 2D array for FFT, tuple for graph
-            if isinstance(autocorr, tuple):
-                # Graph-based method not compatible with grid_score
-                scores[i] = np.nan
-            else:
-                # Compute grid score from 2D autocorrelation
-                scores[i] = grid_score(
-                    autocorr,
-                    inner_radius_fraction=inner_radius_fraction,
-                    outer_radius_fraction=outer_radius_fraction,
-                )
+            # Compute spatial autocorrelation (FFT, regular 2D grid only).
+            # Irregular environments (where the FFT path is undefined) raise
+            # ValueError, which the catch-all below converts into a recorded
+            # NaN+failure flag for the caller's failures mask. Direct callers
+            # who need autocorrelation on irregular topologies should use
+            # `spatial_autocorrelation_radial` (1D distance profile) instead.
+            autocorr = spatial_autocorrelation(env, firing_rate)
+            scores[i] = grid_score(
+                autocorr,
+                inner_radius_fraction=inner_radius_fraction,
+                outer_radius_fraction=outer_radius_fraction,
+            )
         except (ValueError, RuntimeError):
             # Caught exception: record both NaN and the failure flag so
             # the caller can distinguish this from a legitimate-NaN.

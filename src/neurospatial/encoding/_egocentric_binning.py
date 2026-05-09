@@ -18,7 +18,7 @@ Output shapes:
 - Spike counts (single neuron): (n_bins,)
 - Spike counts (batch): (n_neurons, n_bins)
 - Occupancy: (n_bins,) - always shared across neurons
-- ego_env: Environment in polar coordinates
+- env: Environment in polar coordinates
 
 The binning layer is separated from smoothing to allow:
 - Reusing occupancy across multiple neurons
@@ -39,7 +39,7 @@ Coordinate Conventions
 Notes
 -----
 Unlike spatial binning, egocentric binning creates a *new* Environment
-(``ego_env``) in polar coordinates. This environment has bins arranged
+(``env``) in polar coordinates. This environment has bins arranged
 in a (distance, direction) grid that is flattened to 1D for consistency
 with other encoding modules.
 """
@@ -413,7 +413,7 @@ def compute_egocentric_occupancy(
     occupancy : ndarray, shape (n_bins,)
         Time in seconds spent at each egocentric bin.
         n_bins = n_distance_bins * n_direction_bins.
-    ego_env : Environment
+    env : Environment
         Egocentric polar coordinate environment.
 
     Raises
@@ -440,7 +440,7 @@ def compute_egocentric_occupancy(
     >>> object_positions = np.array([[50.0, 50.0]])
 
     >>> # Compute occupancy
-    >>> occupancy, ego_env = compute_egocentric_occupancy(
+    >>> occupancy, env = compute_egocentric_occupancy(
     ...     times, positions, headings, object_positions
     ... )
     >>> occupancy.shape == (10 * 12,)  # n_distance * n_direction
@@ -481,10 +481,10 @@ def compute_egocentric_occupancy(
         )
 
     # Create egocentric environment
-    ego_env = _create_egocentric_environment(
+    polar_env = _create_egocentric_environment(
         distance_range, n_distance_bins, n_direction_bins
     )
-    n_bins = ego_env.n_bins
+    n_bins = polar_env.n_bins
 
     # Compute egocentric coordinates
     nearest_distances, nearest_bearings = _compute_egocentric_coords(
@@ -522,7 +522,7 @@ def compute_egocentric_occupancy(
     valid_dt = dt[valid_interval_mask]
     np.add.at(occupancy, valid_bins, valid_dt)
 
-    return occupancy, ego_env
+    return occupancy, polar_env
 
 
 def bin_egocentric_spike_train(
@@ -570,7 +570,7 @@ def bin_egocentric_spike_train(
     -------
     spike_counts : ndarray, shape (n_bins,)
         Number of spikes in each egocentric bin (float64 for smoothing).
-    ego_env : Environment
+    env : Environment
         Egocentric polar coordinate environment.
 
     Raises
@@ -601,10 +601,10 @@ def bin_egocentric_spike_train(
     >>> spike_times = np.sort(rng.uniform(0, 100, 100))
 
     >>> # Bin spikes
-    >>> spike_counts, ego_env = bin_egocentric_spike_train(
+    >>> spike_counts, env = bin_egocentric_spike_train(
     ...     spike_times, times, positions, headings, object_positions
     ... )
-    >>> spike_counts.shape == (ego_env.n_bins,)
+    >>> spike_counts.shape == (env.n_bins,)
     True
     """
     # Convert inputs
@@ -632,16 +632,16 @@ def bin_egocentric_spike_train(
         )
 
     # Create egocentric environment
-    ego_env = _create_egocentric_environment(
+    polar_env = _create_egocentric_environment(
         distance_range, n_distance_bins, n_direction_bins
     )
-    n_bins = ego_env.n_bins
+    n_bins = polar_env.n_bins
 
     spike_counts = np.zeros(n_bins, dtype=np.float64)
 
     # Handle empty spike train
     if len(spike_times) == 0:
-        return spike_counts, ego_env
+        return spike_counts, polar_env
 
     # Filter spikes to valid time range
     t_min, t_max = times[0], times[-1]
@@ -649,7 +649,7 @@ def bin_egocentric_spike_train(
     spike_times_valid = spike_times[valid_time_mask]
 
     if len(spike_times_valid) == 0:
-        return spike_counts, ego_env
+        return spike_counts, polar_env
 
     # Compute egocentric coordinates for all behavioral frames
     nearest_distances, nearest_bearings = _compute_egocentric_coords(
@@ -688,7 +688,7 @@ def bin_egocentric_spike_train(
     if len(valid_spike_bins) > 0:
         np.add.at(spike_counts, valid_spike_bins, 1.0)
 
-    return spike_counts, ego_env
+    return spike_counts, polar_env
 
 
 def bin_egocentric_spike_trains(
@@ -745,7 +745,7 @@ def bin_egocentric_spike_trains(
         Number of spikes in each egocentric bin for each neuron.
     occupancy : ndarray, shape (n_bins,)
         Time in seconds spent at each egocentric bin (shared across neurons).
-    ego_env : Environment
+    env : Environment
         Egocentric polar coordinate environment.
 
     Raises
@@ -774,10 +774,10 @@ def bin_egocentric_spike_trains(
     ... ]
 
     >>> # Bin spikes
-    >>> spike_counts, occupancy, ego_env = bin_egocentric_spike_trains(
+    >>> spike_counts, occupancy, env = bin_egocentric_spike_trains(
     ...     spike_times, times, positions, headings, object_positions
     ... )
-    >>> spike_counts.shape == (3, ego_env.n_bins)
+    >>> spike_counts.shape == (3, env.n_bins)
     True
 
     See Also
@@ -814,10 +814,10 @@ def bin_egocentric_spike_trains(
     _validate_times(times, context="spike binning")
 
     # Create egocentric environment
-    ego_env = _create_egocentric_environment(
+    polar_env = _create_egocentric_environment(
         distance_range, n_distance_bins, n_direction_bins
     )
-    n_bins = ego_env.n_bins
+    n_bins = polar_env.n_bins
 
     # Compute egocentric coordinates ONCE (shared across all neurons)
     nearest_distances, nearest_bearings = _compute_egocentric_coords(
@@ -853,7 +853,7 @@ def bin_egocentric_spike_trains(
     # Handle empty neuron list
     if n_neurons == 0:
         spike_counts = np.zeros((0, n_bins), dtype=np.float64)
-        return spike_counts, occupancy, ego_env
+        return spike_counts, occupancy, polar_env
 
     # Helper to bin a single neuron using precomputed bin_indices
     def _bin_single_neuron(
@@ -903,4 +903,4 @@ def bin_egocentric_spike_trains(
         )
         spike_counts = np.array(results, dtype=np.float64)
 
-    return spike_counts, occupancy, ego_env
+    return spike_counts, occupancy, polar_env

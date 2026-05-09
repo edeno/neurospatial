@@ -41,7 +41,7 @@ if TYPE_CHECKING:
 __all__ = [
     "bin_view_spike_train",
     "bin_view_spike_trains",
-    "compute_view_occupancy",
+    "compute_occupancy",
 ]
 
 
@@ -166,7 +166,7 @@ def _bin_spikes_with_precomputed_view_bins(
     return spike_counts
 
 
-def compute_view_occupancy(
+def compute_occupancy(
     env: Environment,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -233,7 +233,7 @@ def compute_view_occupancy(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.encoding._view_binning import compute_view_occupancy
+    >>> from neurospatial.encoding._view_binning import compute_occupancy
 
     >>> # Create environment
     >>> positions = np.random.rand(100, 2) * 100
@@ -251,7 +251,7 @@ def compute_view_occupancy(
     >>> headings = np.random.uniform(0, 2 * np.pi, 1000)
 
     >>> # Compute view occupancy
-    >>> view_occ = compute_view_occupancy(env, times, trajectory, headings)
+    >>> view_occ = compute_occupancy(env, times, trajectory, headings)
     >>> view_occ.shape[0] == env.n_bins
     True
     """
@@ -308,7 +308,7 @@ def compute_view_occupancy(
     # We have n_samples positions and n_samples-1 intervals.
     # Each interval[i] is assigned to the bin at position[i] (start of interval).
     # This matches Environment.occupancy() behavior (time_allocation='start').
-    view_occupancy = np.zeros(env.n_bins, dtype=np.float64)
+    occupancy = np.zeros(env.n_bins, dtype=np.float64)
 
     # Only consider positions that start valid intervals (all except last)
     # interval_bins[i] is the bin viewed during interval[i]
@@ -318,9 +318,9 @@ def compute_view_occupancy(
     # Accumulate time per bin
     valid_bins = interval_bins[valid_interval_mask]
     valid_dt = dt[valid_interval_mask]
-    np.add.at(view_occupancy, valid_bins, valid_dt)
+    np.add.at(occupancy, valid_bins, valid_dt)
 
-    return view_occupancy
+    return occupancy
 
 
 def bin_view_spike_train(
@@ -520,7 +520,7 @@ def bin_view_spike_trains(
     spike_counts : ndarray, shape (n_neurons, n_bins)
         Number of spikes in each spatial bin for each neuron,
         based on viewed location at spike time.
-    view_occupancy : ndarray, shape (n_bins,)
+    occupancy : ndarray, shape (n_bins,)
         Time in seconds spent viewing each spatial bin (shared across neurons).
 
     Raises
@@ -567,7 +567,7 @@ def bin_view_spike_trains(
     See Also
     --------
     bin_view_spike_train : Single-neuron version
-    compute_view_occupancy : Compute view occupancy only
+    compute_occupancy : Compute view occupancy only
     """
     from neurospatial.encoding._spikes import normalize_spike_times
 
@@ -595,12 +595,12 @@ def bin_view_spike_trains(
 
     # Compute view occupancy from precomputed bins
     dt = np.diff(times)
-    view_occupancy = np.zeros(env.n_bins, dtype=np.float64)
+    occupancy = np.zeros(env.n_bins, dtype=np.float64)
     interval_bins = view_bins[:-1]  # Exclude last position (no following interval)
     valid_interval_mask = interval_bins >= 0
     valid_bins = interval_bins[valid_interval_mask]
     valid_dt = dt[valid_interval_mask]
-    np.add.at(view_occupancy, valid_bins, valid_dt)
+    np.add.at(occupancy, valid_bins, valid_dt)
 
     # Process neurons using precomputed view_bins
     n_bins = env.n_bins
@@ -625,4 +625,4 @@ def bin_view_spike_trains(
         )
         spike_counts = np.array(results, dtype=np.float64)
 
-    return spike_counts, view_occupancy
+    return spike_counts, occupancy

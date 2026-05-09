@@ -172,8 +172,8 @@ class TestComputeEgocentricRatesReturnsResult:
         n_bins = n_distance_bins * n_direction_bins
         assert result.occupancy.shape == (n_bins,)
 
-    def test_ego_env_is_environment(self, trajectory_data, spike_times_list):
-        """Test that ego_env is an Environment."""
+    def test_env_is_environment(self, trajectory_data, spike_times_list):
+        """Test that env is an Environment."""
         from neurospatial.encoding.egocentric import compute_egocentric_rates
         from neurospatial.environment import Environment
 
@@ -186,10 +186,10 @@ class TestComputeEgocentricRatesReturnsResult:
             trajectory_data["object_positions"],
         )
 
-        assert isinstance(result.ego_env, Environment)
+        assert isinstance(result.env, Environment)
 
-    def test_ego_env_n_bins_matches_occupancy(self, trajectory_data, spike_times_list):
-        """Test ego_env.n_bins matches occupancy length."""
+    def test_env_n_bins_matches_occupancy(self, trajectory_data, spike_times_list):
+        """Test env.n_bins matches occupancy length."""
         from neurospatial.encoding.egocentric import compute_egocentric_rates
 
         result = compute_egocentric_rates(
@@ -201,7 +201,7 @@ class TestComputeEgocentricRatesReturnsResult:
             trajectory_data["object_positions"],
         )
 
-        assert result.ego_env.n_bins == len(result.occupancy)
+        assert result.env.n_bins == len(result.occupancy)
 
 
 # =============================================================================
@@ -908,9 +908,9 @@ class TestComputeEgocentricRatesResultMethods:
             trajectory_data["object_positions"],
         )
 
-        is_ovc = result.detect_ovcs()
-        assert len(is_ovc) == len(spike_times_list)
-        assert is_ovc.dtype == bool
+        is_object_vector_cell = result.detect_ovcs()
+        assert len(is_object_vector_cell) == len(spike_times_list)
+        assert is_object_vector_cell.dtype == bool
 
     def test_to_dataframe_method_works(self, trajectory_data, spike_times_list):
         """Test that to_dataframe method works."""

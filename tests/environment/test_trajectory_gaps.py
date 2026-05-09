@@ -202,18 +202,17 @@ class TestBinSequenceAdvanced:
             ]
         )
 
-        bins, starts, ends = small_2d_env.bin_sequence(
-            times, positions, dedup=True, return_runs=True
-        )
+        _bsr = small_2d_env.bin_sequence_with_runs(times, positions, dedup=True)
+        bins, starts, lengths = _bsr.bins, _bsr.run_starts, _bsr.run_lengths
 
         # Deduplicated: [0, 1]
         assert_array_equal(bins, [0, 1])
-        # Run 1: indices 0-2
+        # Run 1: indices 0-2 (length 3)
         assert starts[0] == 0
-        assert ends[0] == 2
-        # Run 2: indices 3-5
+        assert lengths[0] == 3
+        # Run 2: indices 3-5 (length 3)
         assert starts[1] == 3
-        assert ends[1] == 5
+        assert lengths[1] == 3
 
     def test_bin_sequence_out_of_bounds_positions(self, small_2d_env):
         """Test handling of positions outside environment bounds.
@@ -257,22 +256,20 @@ class TestBinSequenceAdvanced:
         positions = small_2d_env.bin_centers[0:1]
 
         # With dedup=True, single sample
-        bins, starts, ends = small_2d_env.bin_sequence(
-            times, positions, dedup=True, return_runs=True
-        )
+        _bsr = small_2d_env.bin_sequence_with_runs(times, positions, dedup=True)
+        bins, starts, lengths = _bsr.bins, _bsr.run_starts, _bsr.run_lengths
 
         assert_array_equal(bins, [0])
         assert_array_equal(starts, [0])
-        assert_array_equal(ends, [0])
+        assert_array_equal(lengths, [1])
 
         # With dedup=False, single sample
-        bins, starts, ends = small_2d_env.bin_sequence(
-            times, positions, dedup=False, return_runs=True
-        )
+        _bsr = small_2d_env.bin_sequence_with_runs(times, positions, dedup=False)
+        bins, starts, lengths = _bsr.bins, _bsr.run_starts, _bsr.run_lengths
 
         assert_array_equal(bins, [0])
         assert_array_equal(starts, [0])
-        assert_array_equal(ends, [0])
+        assert_array_equal(lengths, [1])
 
     def test_bin_sequence_runs_with_outside_dropped(self, small_2d_env):
         """Test run boundaries when outside values are dropped.
@@ -292,9 +289,10 @@ class TestBinSequenceAdvanced:
             ]
         )
 
-        bins, starts, ends = small_2d_env.bin_sequence(
-            times, positions, outside_value=None, dedup=True, return_runs=True
+        _bsr = small_2d_env.bin_sequence_with_runs(
+            times, positions, outside_value=None, dedup=True
         )
+        bins, starts, lengths = _bsr.bins, _bsr.run_starts, _bsr.run_lengths
 
         # After dropping outside: [0, 0, 1, 1] with original indices [0, 1, 4, 5]
         # After dedup: [0, 1]
@@ -302,13 +300,14 @@ class TestBinSequenceAdvanced:
         assert bins[0] == 0
         assert bins[1] == 1
         assert len(starts) == 2
-        assert len(ends) == 2
+        assert len(lengths) == 2
 
         # Verify runs are sensible (starts before ends, valid indices)
         for i in range(len(bins)):
+            ends_i = starts[i] + lengths[i] - 1
             assert 0 <= starts[i] < len(times)
-            assert 0 <= ends[i] < len(times)
-            assert starts[i] <= ends[i]
+            assert 0 <= ends_i < len(times)
+            assert starts[i] <= ends_i
 
         # First run should start at beginning
         assert starts[0] == 0

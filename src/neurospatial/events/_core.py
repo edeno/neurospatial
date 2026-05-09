@@ -9,7 +9,7 @@ This module provides:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -45,11 +45,9 @@ class PeriEventResult:
         Time window (start, end) relative to event in seconds.
     bin_size : float
         Width of time bins (seconds).
-
-    Methods
-    -------
-    firing_rate()
-        Convert histogram counts to firing rate (Hz).
+    firing_rate : NDArray[np.float64], shape (n_bins,)
+        Firing rate (Hz). Cached on construction as ``histogram /
+        bin_size``; treat as a read-only attribute.
 
     See Also
     --------
@@ -60,7 +58,7 @@ class PeriEventResult:
     --------
     >>> result = peri_event_histogram(spikes, events, window=(-1, 2))  # doctest: +SKIP
     >>> # Access firing rate
-    >>> rate = result.firing_rate()  # doctest: +SKIP
+    >>> rate = result.firing_rate  # doctest: +SKIP
     >>> # Find peak response time
     >>> peak_time = result.bin_centers[np.argmax(rate)]  # doctest: +SKIP
     """
@@ -71,17 +69,11 @@ class PeriEventResult:
     n_events: int
     window: tuple[float, float]
     bin_size: float
+    firing_rate: NDArray[np.float64] = field(init=False)
 
-    def firing_rate(self) -> NDArray[np.float64]:
-        """
-        Convert spike counts to firing rate (Hz).
-
-        Returns
-        -------
-        NDArray[np.float64], shape (n_bins,)
-            Firing rate in spikes per second (Hz).
-        """
-        return self.histogram / self.bin_size
+    def __post_init__(self) -> None:
+        # Frozen dataclass: bypass setattr to populate the cached field.
+        object.__setattr__(self, "firing_rate", self.histogram / self.bin_size)
 
 
 @dataclass(frozen=True)
@@ -111,10 +103,11 @@ class PopulationPeriEventResult:
     bin_size : float
         Width of time bins (seconds).
 
-    Methods
-    -------
-    firing_rates()
-        Convert histogram counts to firing rates (Hz) for all units.
+    Attributes
+    ----------
+    firing_rates : NDArray[np.float64], shape (n_units, n_bins)
+        Per-unit firing rates (Hz). Cached on construction as
+        ``histograms / bin_size``; treat as a read-only attribute.
 
     See Also
     --------
@@ -127,7 +120,7 @@ class PopulationPeriEventResult:
     ...     spike_trains, events, window=(-1, 2)
     ... )
     >>> # Get firing rates for all units
-    >>> rates = result.firing_rates()  # shape: (n_units, n_bins)  # doctest: +SKIP
+    >>> rates = result.firing_rates  # shape: (n_units, n_bins)  # doctest: +SKIP
     >>> # Get population average
     >>> pop_rate = result.mean_histogram / result.bin_size  # doctest: +SKIP
     """
@@ -140,17 +133,11 @@ class PopulationPeriEventResult:
     n_units: int
     window: tuple[float, float]
     bin_size: float
+    firing_rates: NDArray[np.float64] = field(init=False)
 
-    def firing_rates(self) -> NDArray[np.float64]:
-        """
-        Convert spike counts to firing rates (Hz) for all units.
-
-        Returns
-        -------
-        NDArray[np.float64], shape (n_units, n_bins)
-            Firing rates in spikes per second (Hz).
-        """
-        return self.histograms / self.bin_size
+    def __post_init__(self) -> None:
+        # Frozen dataclass: bypass setattr to populate the cached field.
+        object.__setattr__(self, "firing_rates", self.histograms / self.bin_size)
 
 
 # --- Validation Helpers ---
@@ -363,7 +350,7 @@ def plot_peri_event_histogram(
     # Get data to plot
     x = result.bin_centers
     if as_rate:
-        y = result.firing_rate()
+        y = result.firing_rate
         sem = result.sem / result.bin_size
     else:
         y = result.histogram

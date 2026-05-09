@@ -279,7 +279,7 @@ from neurospatial.encoding import (
     # View Rate (Spatial View Cells)
     compute_view_rate,                      # Single-neuron view field
     compute_view_rates,                     # Population view fields
-    ViewRateResult,                         # Result with view_occupancy, is_view_cell()
+    ViewRateResult,                         # Result with occupancy, is_spatial_view_cell()
     ViewRatesResult,                        # Population result
 
     # Egocentric Rate (Object-Vector Cells)
@@ -349,7 +349,7 @@ Result objects from the new API provide convenient methods:
 
 **ViewRateResult** (from `compute_view_rate`):
 - `.firing_rate` - View field (n_bins,) in Hz
-- `.view_occupancy` - Time *viewing* each bin (n_bins,) in seconds
+- `.occupancy` - Time *viewing* each bin (n_bins,) in seconds
 - `.env` - Environment used for computation
 - `.gaze_model` - Gaze model used ("fixed_distance", "ray_cast", "boundary")
 - `.view_distance` - Distance parameter for gaze model
@@ -357,7 +357,7 @@ Result objects from the new API provide convenient methods:
 **EgocentricRateResult** (from `compute_egocentric_rate`):
 - `.firing_rate` - Egocentric polar field (n_bins,) in Hz
 - `.occupancy` - Time in each egocentric bin (n_bins,) in seconds
-- `.ego_env` - Egocentric polar environment
+- `.env` - Egocentric polar environment
 - `.distance_range` - Distance range (min, max)
 - `.n_distance_bins` - Number of distance bins
 - `.n_direction_bins` - Number of direction bins
@@ -426,7 +426,7 @@ from neurospatial.encoding import (
 ```
 
 Use result methods such as `preferred_distance()`, `preferred_direction()`, and
-`is_ovc()` for classification workflows.
+`is_object_vector_cell()` for classification workflows.
 
 ### Spatial View Cells
 
@@ -434,7 +434,7 @@ Use result methods such as `preferred_distance()`, `preferred_direction()`, and
 from neurospatial.encoding import (
     compute_view_rate,                      # View field (returns ViewRateResult)
     compute_view_rates,                     # Population view fields
-    ViewRateResult,                         # Result with view_occupancy, is_view_cell(), etc.
+    ViewRateResult,                         # Result with occupancy, is_spatial_view_cell(), etc.
     ViewRatesResult,                        # Population result
     compute_viewed_location,                # Compute viewed location from gaze
     compute_viewshed,                       # Compute visible bins
@@ -630,7 +630,7 @@ from neurospatial.ops.egocentric import (
 from neurospatial import Environment
 
 # Create polar grid in egocentric space (for object-vector cells)
-ego_env = Environment.from_polar_egocentric(
+env = Environment.from_polar_egocentric(
     distance_range=(0, 50),
     angle_range=(-np.pi, np.pi),
     distance_bin_size=5.0,

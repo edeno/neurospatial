@@ -218,10 +218,10 @@ class TestMeanPosition:
 
 
 class TestUncertainty:
-    """Test posterior entropy (uncertainty) computation."""
+    """Test posterior entropy (posterior_entropy) computation."""
 
     def test_uncertainty_shape(self, small_2d_env):
-        """uncertainty should return (n_time_bins,) array."""
+        """posterior_entropy should return (n_time_bins,) array."""
         from neurospatial.decoding import DecodingResult
 
         n_time_bins = 10
@@ -229,8 +229,8 @@ class TestUncertainty:
 
         result = DecodingResult(posterior=posterior, env=small_2d_env)
 
-        assert result.uncertainty.shape == (n_time_bins,)
-        assert result.uncertainty.dtype == np.float64
+        assert result.posterior_entropy.shape == (n_time_bins,)
+        assert result.posterior_entropy.dtype == np.float64
 
     def test_uncertainty_delta_is_zero(self, small_2d_env):
         """Delta (one-hot) posterior should have zero entropy."""
@@ -244,7 +244,9 @@ class TestUncertainty:
 
         result = DecodingResult(posterior=posterior, env=small_2d_env)
 
-        np.testing.assert_array_almost_equal(result.uncertainty, np.zeros(n_time_bins))
+        np.testing.assert_array_almost_equal(
+            result.posterior_entropy, np.zeros(n_time_bins)
+        )
 
     def test_uncertainty_uniform_is_maximum(self, small_2d_env):
         """Uniform posterior should have maximum entropy = log2(n_bins)."""
@@ -258,7 +260,7 @@ class TestUncertainty:
 
         max_entropy = np.log2(n_bins)
         np.testing.assert_array_almost_equal(
-            result.uncertainty, np.full(n_time_bins, max_entropy)
+            result.posterior_entropy, np.full(n_time_bins, max_entropy)
         )
 
     def test_uncertainty_bounds(self, small_2d_env):
@@ -275,8 +277,8 @@ class TestUncertainty:
 
         result = DecodingResult(posterior=posterior, env=small_2d_env)
 
-        assert np.all(result.uncertainty >= 0)
-        assert np.all(result.uncertainty <= np.log2(n_bins) + 1e-10)
+        assert np.all(result.posterior_entropy >= 0)
+        assert np.all(result.posterior_entropy <= np.log2(n_bins) + 1e-10)
 
     def test_uncertainty_handles_exact_zeros(self, small_2d_env):
         """Uncertainty should handle exact zeros without NaN (mask-based)."""
@@ -292,9 +294,11 @@ class TestUncertainty:
         result = DecodingResult(posterior=posterior, env=small_2d_env)
 
         # Should not be NaN
-        assert np.all(np.isfinite(result.uncertainty))
+        assert np.all(np.isfinite(result.posterior_entropy))
         # Entropy of 50-50 distribution = 1 bit
-        np.testing.assert_array_almost_equal(result.uncertainty, np.ones(n_time_bins))
+        np.testing.assert_array_almost_equal(
+            result.posterior_entropy, np.ones(n_time_bins)
+        )
 
 
 class TestCachedPropertyBehavior:
@@ -345,7 +349,7 @@ class TestCachedPropertyBehavior:
         assert first_call is second_call
 
     def test_uncertainty_is_cached(self, small_2d_env):
-        """uncertainty should be computed only once (cached)."""
+        """posterior_entropy should be computed only once (cached)."""
         from neurospatial.decoding import DecodingResult
 
         n_time_bins = 5
@@ -353,8 +357,8 @@ class TestCachedPropertyBehavior:
 
         result = DecodingResult(posterior=posterior, env=small_2d_env)
 
-        first_call = result.uncertainty
-        second_call = result.uncertainty
+        first_call = result.posterior_entropy
+        second_call = result.posterior_entropy
 
         assert first_call is second_call
 
@@ -374,7 +378,7 @@ class TestEdgeCases:
         assert result.map_estimate.shape == (1,)
         assert result.map_position.shape == (1, small_2d_env.n_dims)
         assert result.mean_position.shape == (1, small_2d_env.n_dims)
-        assert result.uncertainty.shape == (1,)
+        assert result.posterior_entropy.shape == (1,)
 
     def test_single_bin_environment(self):
         """DecodingResult should work with single-bin environment."""
@@ -397,7 +401,7 @@ class TestEdgeCases:
             np.testing.assert_array_equal(result.map_estimate, np.zeros(n_time_bins))
             # Entropy of single bin is 0 (log2(1) = 0)
             np.testing.assert_array_almost_equal(
-                result.uncertainty, np.zeros(n_time_bins)
+                result.posterior_entropy, np.zeros(n_time_bins)
             )
         else:
             pytest.skip("Could not create single-bin environment")
@@ -415,7 +419,7 @@ class TestEdgeCases:
 
         # Success criteria from TASKS.md
         assert result.map_estimate.shape == (n_time_bins,)
-        assert result.uncertainty.shape == (n_time_bins,)
+        assert result.posterior_entropy.shape == (n_time_bins,)
 
 
 class TestPlotMethod:
@@ -633,7 +637,7 @@ class TestToDataFrameMethod:
         assert "mean_y" in df.columns
 
     def test_to_dataframe_has_uncertainty_column(self, small_2d_env):
-        """to_dataframe() should include uncertainty column."""
+        """to_dataframe() should include posterior_entropy column."""
         from neurospatial.decoding import DecodingResult
 
         posterior = np.ones((5, small_2d_env.n_bins)) / small_2d_env.n_bins
@@ -641,11 +645,11 @@ class TestToDataFrameMethod:
 
         df = result.to_dataframe()
 
-        assert "uncertainty" in df.columns
+        assert "posterior_entropy" in df.columns
         # Uniform posterior has max entropy
         expected_entropy = np.log2(small_2d_env.n_bins)
         np.testing.assert_array_almost_equal(
-            df["uncertainty"].values, np.full(5, expected_entropy)
+            df["posterior_entropy"].values, np.full(5, expected_entropy)
         )
 
     def test_to_dataframe_map_positions_match_property(self, small_2d_env):

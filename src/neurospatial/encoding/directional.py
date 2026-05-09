@@ -654,7 +654,7 @@ class DirectionalRateResult(SpatialResultMixin):
         See Also
         --------
         mean_vector_length : Tuning strength measure
-        is_hd_cell : Classification combining MVL and p-value
+        is_head_direction_cell : Classification combining MVL and p-value
         neurospatial.stats.circular.rayleigh_test : Underlying test function
         """
         from neurospatial.stats.circular import rayleigh_test
@@ -672,7 +672,7 @@ class DirectionalRateResult(SpatialResultMixin):
 
         return pval
 
-    def is_hd_cell(self, min_mvl: float = 0.4, alpha: float = 0.05) -> bool:
+    def is_head_direction_cell(self, min_mvl: float = 0.4, alpha: float = 0.05) -> bool:
         """Classify as head direction cell.
 
         A neuron is classified as a head direction (HD) cell if it meets
@@ -726,7 +726,7 @@ class DirectionalRateResult(SpatialResultMixin):
         ...     bin_size=np.pi / 30,
         ...     bandwidth=None,
         ... )
-        >>> result.is_hd_cell()  # Sharply tuned neuron should be classified as HD cell
+        >>> result.is_head_direction_cell()  # Sharply tuned neuron should be classified as HD cell
         True
 
         See Also
@@ -755,7 +755,7 @@ class DirectionalRateResult(SpatialResultMixin):
         ----------
         min_mvl : float, default=0.4
             Minimum mean vector length threshold for HD cell classification.
-            Same parameter as in :meth:`is_hd_cell`.
+            Same parameter as in :meth:`is_head_direction_cell`.
 
         Returns
         -------
@@ -800,7 +800,7 @@ class DirectionalRateResult(SpatialResultMixin):
 
         See Also
         --------
-        is_hd_cell : Boolean classification method
+        is_head_direction_cell : Boolean classification method
         mean_vector_length : Tuning strength
         rayleigh_pvalue : Statistical significance
         """
@@ -809,7 +809,7 @@ class DirectionalRateResult(SpatialResultMixin):
 
         mvl = self.mean_vector_length()
         pval = self.rayleigh_pvalue()
-        is_hd = self.is_hd_cell(min_mvl=min_mvl, alpha=alpha)
+        is_hd = self.is_head_direction_cell(min_mvl=min_mvl, alpha=alpha)
 
         if is_hd:
             lines.append("*** HEAD DIRECTION CELL ***")
@@ -1196,13 +1196,13 @@ class DirectionalRatesResult(SpatialResultMixin):
 
         See Also
         --------
-        DirectionalRateResult.is_hd_cell : Single-neuron method
+        DirectionalRateResult.is_head_direction_cell : Single-neuron method
         """
         n_neurons = len(self)
         is_hd = np.empty(n_neurons, dtype=np.bool_)
 
         for i in range(n_neurons):
-            is_hd[i] = self[i].is_hd_cell(min_mvl=min_mvl, alpha=alpha)
+            is_hd[i] = self[i].is_head_direction_cell(min_mvl=min_mvl, alpha=alpha)
 
         return is_hd
 
@@ -1233,7 +1233,7 @@ class DirectionalRatesResult(SpatialResultMixin):
             - tuning_width: tuning width (HWHM) in radians (0, π]
             - tuning_width_deg: tuning width (HWHM) in degrees (0, 180]
             - peak_rate: maximum firing rate (Hz)
-            - is_hd_cell: whether classified as HD cell (using default thresholds)
+            - is_head_direction_cell: whether classified as HD cell (using default thresholds)
 
         Raises
         ------
@@ -1248,7 +1248,7 @@ class DirectionalRatesResult(SpatialResultMixin):
 
         **Common pandas workflows**:
 
-        - Filter: ``df[df["is_hd_cell"] == True]``
+        - Filter: ``df[df["is_head_direction_cell"] == True]``
         - Sort: ``df.sort_values("mean_vector_length", ascending=False)``
         - Top-N: ``df.nlargest(10, "peak_rate")``
 
@@ -1260,7 +1260,7 @@ class DirectionalRatesResult(SpatialResultMixin):
            neuron_id  preferred_direction  preferred_direction_deg  ...
 
         >>> # Filter for HD cells
-        >>> hd_cells = df[df["is_hd_cell"]]
+        >>> hd_cells = df[df["is_head_direction_cell"]]
         >>> print(f"Found {len(hd_cells)} HD cells")
 
         >>> # Sort by mean vector length
@@ -1294,7 +1294,7 @@ class DirectionalRatesResult(SpatialResultMixin):
         pref_dirs = self.preferred_directions()
         mvls = self.mean_vector_lengths()
         widths = self.tuning_widths()
-        peaks = self.peak_firing_rates()
+        peaks = self.peak_firing_rate()
         is_hd = self.detect_hd_cells()
 
         # Build data dictionary
@@ -1306,7 +1306,7 @@ class DirectionalRatesResult(SpatialResultMixin):
             "tuning_width": widths,
             "tuning_width_deg": np.degrees(widths),
             "peak_rate": peaks,
-            "is_hd_cell": is_hd,
+            "is_head_direction_cell": is_hd,
         }
 
         return pd.DataFrame(data)
@@ -1800,7 +1800,7 @@ def is_head_direction_cell(
     tuning and checks if the neuron meets HD cell criteria.
 
     For detailed metrics, use ``compute_directional_rate()`` and inspect
-    the result's methods (``is_hd_cell()``, ``mean_vector_length()``, etc.).
+    the result's methods (``is_head_direction_cell()``, ``mean_vector_length()``, etc.).
 
     Parameters
     ----------
@@ -1841,7 +1841,7 @@ def is_head_direction_cell(
     See Also
     --------
     compute_directional_rate : Full directional rate computation
-    DirectionalRateResult.is_hd_cell : HD cell classification on result object
+    DirectionalRateResult.is_head_direction_cell : HD cell classification on result object
     """
     try:
         result = compute_directional_rate(
@@ -1852,7 +1852,7 @@ def is_head_direction_cell(
             bandwidth=bandwidth,
             angle_unit=angle_unit,
         )
-        return result.is_hd_cell(min_mvl=min_mvl, alpha=alpha)
+        return result.is_head_direction_cell(min_mvl=min_mvl, alpha=alpha)
     except (ValueError, RuntimeError):
         return False
 

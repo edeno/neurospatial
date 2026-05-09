@@ -185,9 +185,13 @@ class TestBinSequenceRuns:
             ]
         )
 
-        _bins, run_starts, run_ends = env.bin_sequence(
-            times, positions, dedup=False, return_runs=True
+        _bsr = env.bin_sequence_with_runs(times, positions, dedup=False)
+        _bins, run_starts, _run_ends = (
+            _bsr.bins,
+            _bsr.run_starts,
+            _bsr.run_starts + _bsr.run_lengths - 1,
         )
+        run_ends = _run_ends
 
         # Should have 3 runs
         assert len(run_starts) == 3
@@ -225,9 +229,13 @@ class TestBinSequenceRuns:
             ]
         )
 
-        bins, run_starts, run_ends = env.bin_sequence(
-            times, positions, dedup=True, return_runs=True
+        _bsr = env.bin_sequence_with_runs(times, positions, dedup=True)
+        bins, run_starts, _run_ends = (
+            _bsr.bins,
+            _bsr.run_starts,
+            _bsr.run_starts + _bsr.run_lengths - 1,
         )
+        run_ends = _run_ends
 
         # With dedup: should have 3 unique bins in sequence (0, 1, 0)
         assert len(bins) == 3
@@ -256,9 +264,13 @@ class TestBinSequenceRuns:
             ]
         )
 
-        _bins, run_starts, run_ends = env.bin_sequence(
-            times, positions, dedup=False, return_runs=True
+        _bsr = env.bin_sequence_with_runs(times, positions, dedup=False)
+        _bins, run_starts, _run_ends = (
+            _bsr.bins,
+            _bsr.run_starts,
+            _bsr.run_starts + _bsr.run_lengths - 1,
         )
+        run_ends = _run_ends
 
         # Calculate duration of first run
         duration_1 = times[run_ends[0]] - times[run_starts[0]]
@@ -278,14 +290,17 @@ class TestBinSequenceRuns:
         times = np.array([0.0])
         positions = np.array([[2.5]])
 
-        _bins, run_starts, run_ends = env.bin_sequence(
-            times, positions, return_runs=True
+        _bsr = env.bin_sequence_with_runs(times, positions)
+        _bins, run_starts, run_lengths = (
+            _bsr.bins,
+            _bsr.run_starts,
+            _bsr.run_lengths,
         )
 
         assert len(run_starts) == 1
-        assert len(run_ends) == 1
+        assert len(run_lengths) == 1
         assert run_starts[0] == 0
-        assert run_ends[0] == 0
+        assert run_lengths[0] == 1
 
 
 class TestBinSequenceOutsideBehavior:
@@ -365,9 +380,13 @@ class TestBinSequenceOutsideBehavior:
             ]
         )
 
-        _bins, run_starts, run_ends = env.bin_sequence(
-            times, positions, dedup=False, return_runs=True
+        _bsr = env.bin_sequence_with_runs(times, positions, dedup=False)
+        _bins, run_starts, _run_ends = (
+            _bsr.bins,
+            _bsr.run_starts,
+            _bsr.run_starts + _bsr.run_lengths - 1,
         )
+        run_ends = _run_ends
 
         # Should have 5 runs total:
         # Run 1: bin 0 (indices 0-1)

@@ -1391,7 +1391,7 @@ class TestDirectionalRateResultRayleighPvalue:
 
 
 class TestDirectionalRateResultIsHdCell:
-    """Test DirectionalRateResult.is_hd_cell() method."""
+    """Test DirectionalRateResult.is_head_direction_cell() method."""
 
     def test_is_hd_cell_returns_bool(
         self,
@@ -1400,7 +1400,7 @@ class TestDirectionalRateResultIsHdCell:
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """is_hd_cell() returns a boolean."""
+        """is_head_direction_cell() returns a boolean."""
         from neurospatial.encoding.directional import DirectionalRateResult
 
         result = DirectionalRateResult(
@@ -1411,7 +1411,7 @@ class TestDirectionalRateResultIsHdCell:
             bandwidth=None,
         )
 
-        is_hd = result.is_hd_cell()
+        is_hd = result.is_head_direction_cell()
         assert isinstance(is_hd, bool)
 
     def test_is_hd_cell_true_for_sharply_tuned(
@@ -1420,7 +1420,7 @@ class TestDirectionalRateResultIsHdCell:
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """is_hd_cell() returns True for sharply tuned neurons."""
+        """is_head_direction_cell() returns True for sharply tuned neurons."""
         from neurospatial.encoding.directional import DirectionalRateResult
 
         # Very sharply tuned neuron (kappa=5)
@@ -1436,7 +1436,7 @@ class TestDirectionalRateResultIsHdCell:
         )
 
         # Should be classified as HD cell (high MVL, low p-value)
-        assert result.is_hd_cell() is True
+        assert result.is_head_direction_cell() is True
 
     def test_is_hd_cell_false_for_uniform(
         self,
@@ -1445,7 +1445,7 @@ class TestDirectionalRateResultIsHdCell:
         bin_size: float,
         n_bins: int,
     ) -> None:
-        """is_hd_cell() returns False for uniform firing."""
+        """is_head_direction_cell() returns False for uniform firing."""
         from neurospatial.encoding.directional import DirectionalRateResult
 
         # Uniform firing rate
@@ -1460,7 +1460,7 @@ class TestDirectionalRateResultIsHdCell:
         )
 
         # Should NOT be classified as HD cell
-        assert result.is_hd_cell() is False
+        assert result.is_head_direction_cell() is False
 
     def test_is_hd_cell_uses_min_mvl_threshold(
         self,
@@ -1468,7 +1468,7 @@ class TestDirectionalRateResultIsHdCell:
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """is_hd_cell() respects min_mvl parameter."""
+        """is_head_direction_cell() respects min_mvl parameter."""
         from neurospatial.encoding.directional import DirectionalRateResult
 
         # Moderately tuned neuron (kappa=2 gives MVL around 0.3-0.4)
@@ -1486,10 +1486,10 @@ class TestDirectionalRateResultIsHdCell:
         mvl = result.mean_vector_length()
 
         # With high threshold (above MVL), should be False
-        assert result.is_hd_cell(min_mvl=mvl + 0.1) is False
+        assert result.is_head_direction_cell(min_mvl=mvl + 0.1) is False
 
         # With low threshold (below MVL), should be True
-        assert result.is_hd_cell(min_mvl=mvl - 0.1) is True
+        assert result.is_head_direction_cell(min_mvl=mvl - 0.1) is True
 
     def test_is_hd_cell_uses_alpha_threshold(
         self,
@@ -1497,7 +1497,7 @@ class TestDirectionalRateResultIsHdCell:
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """is_hd_cell() respects alpha parameter."""
+        """is_head_direction_cell() respects alpha parameter."""
         from neurospatial.encoding.directional import DirectionalRateResult
 
         # Sharply tuned neuron
@@ -1516,10 +1516,10 @@ class TestDirectionalRateResultIsHdCell:
 
         # With very strict alpha (below p-value), should be False
         # Note: sharply tuned will have very low p-value, so use even lower alpha
-        assert result.is_hd_cell(alpha=pval / 10) is False
+        assert result.is_head_direction_cell(alpha=pval / 10) is False
 
         # With permissive alpha (above p-value), should be True
-        assert result.is_hd_cell(alpha=0.1) is True
+        assert result.is_head_direction_cell(alpha=0.1) is True
 
     def test_is_hd_cell_default_thresholds(
         self,
@@ -1528,7 +1528,7 @@ class TestDirectionalRateResultIsHdCell:
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """is_hd_cell() uses default thresholds of min_mvl=0.4, alpha=0.05."""
+        """is_head_direction_cell() uses default thresholds of min_mvl=0.4, alpha=0.05."""
         from neurospatial.encoding.directional import DirectionalRateResult
 
         result = DirectionalRateResult(
@@ -1540,8 +1540,8 @@ class TestDirectionalRateResultIsHdCell:
         )
 
         # Calling with no arguments should use defaults
-        is_hd_default = result.is_hd_cell()
-        is_hd_explicit = result.is_hd_cell(min_mvl=0.4, alpha=0.05)
+        is_hd_default = result.is_head_direction_cell()
+        is_hd_explicit = result.is_head_direction_cell(min_mvl=0.4, alpha=0.05)
         assert is_hd_default == is_hd_explicit
 
     def test_is_hd_cell_requires_both_criteria(
@@ -1550,7 +1550,7 @@ class TestDirectionalRateResultIsHdCell:
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """is_hd_cell() requires BOTH MVL > threshold AND p-value < alpha."""
+        """is_head_direction_cell() requires BOTH MVL > threshold AND p-value < alpha."""
         from neurospatial.encoding.directional import DirectionalRateResult
 
         # Create tuned neuron
@@ -1571,11 +1571,14 @@ class TestDirectionalRateResultIsHdCell:
         # Set thresholds so only MVL criterion is met
         # (high alpha threshold that is below the p-value)
         if pval > 0:
-            assert result.is_hd_cell(min_mvl=mvl - 0.1, alpha=pval / 10) is False
+            assert (
+                result.is_head_direction_cell(min_mvl=mvl - 0.1, alpha=pval / 10)
+                is False
+            )
 
         # Set thresholds so only p-value criterion is met
         # (high MVL threshold that is above the actual MVL)
-        assert result.is_hd_cell(min_mvl=mvl + 0.1, alpha=0.1) is False
+        assert result.is_head_direction_cell(min_mvl=mvl + 0.1, alpha=0.1) is False
 
 
 class TestDirectionalRateResultInterpretation:
@@ -2244,7 +2247,7 @@ class TestDirectionalRatesResultDetectHdCells:
         is_hd = result.detect_hd_cells()
 
         for i, single in enumerate(result):
-            assert is_hd[i] == single.is_hd_cell()
+            assert is_hd[i] == single.is_head_direction_cell()
 
     def test_detect_hd_cells_respects_min_mvl(
         self,
@@ -2325,16 +2328,16 @@ class TestDirectionalRatesResultDetectHdCells:
 
 
 class TestDirectionalRatesResultPeakFiringRates:
-    """Test DirectionalRatesResult.peak_firing_rates() method."""
+    """Test DirectionalRatesResult.peak_firing_rate() method."""
 
-    def test_peak_firing_rates_returns_array(
+    def test_peak_firing_rate_returns_array(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """peak_firing_rates() returns numpy array."""
+        """peak_firing_rate() returns numpy array."""
         from neurospatial.encoding.directional import DirectionalRatesResult
 
         result = DirectionalRatesResult(
@@ -2345,10 +2348,10 @@ class TestDirectionalRatesResultPeakFiringRates:
             bandwidth=None,
         )
 
-        peaks = result.peak_firing_rates()
+        peaks = result.peak_firing_rate()
         assert isinstance(peaks, np.ndarray)
 
-    def test_peak_firing_rates_shape(
+    def test_peak_firing_rate_shape(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
@@ -2356,7 +2359,7 @@ class TestDirectionalRatesResultPeakFiringRates:
         bin_size: float,
         n_neurons: int,
     ) -> None:
-        """peak_firing_rates() returns (n_neurons,) array."""
+        """peak_firing_rate() returns (n_neurons,) array."""
         from neurospatial.encoding.directional import DirectionalRatesResult
 
         result = DirectionalRatesResult(
@@ -2367,17 +2370,17 @@ class TestDirectionalRatesResultPeakFiringRates:
             bandwidth=None,
         )
 
-        peaks = result.peak_firing_rates()
+        peaks = result.peak_firing_rate()
         assert peaks.shape == (n_neurons,)
 
-    def test_peak_firing_rates_matches_single(
+    def test_peak_firing_rate_matches_single(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """peak_firing_rates() matches iteration over single results."""
+        """peak_firing_rate() matches iteration over single results."""
         from neurospatial.encoding.directional import DirectionalRatesResult
 
         result = DirectionalRatesResult(
@@ -2388,19 +2391,19 @@ class TestDirectionalRatesResultPeakFiringRates:
             bandwidth=None,
         )
 
-        peaks = result.peak_firing_rates()
+        peaks = result.peak_firing_rate()
 
         for i, single in enumerate(result):
             np.testing.assert_allclose(peaks[i], single.peak_firing_rate())
 
-    def test_peak_firing_rates_nonnegative(
+    def test_peak_firing_rate_nonnegative(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """peak_firing_rates() values are non-negative."""
+        """peak_firing_rate() values are non-negative."""
         from neurospatial.encoding.directional import DirectionalRatesResult
 
         result = DirectionalRatesResult(
@@ -2411,7 +2414,7 @@ class TestDirectionalRatesResultPeakFiringRates:
             bandwidth=None,
         )
 
-        peaks = result.peak_firing_rates()
+        peaks = result.peak_firing_rate()
         assert np.all(peaks >= 0)
 
 
@@ -2629,7 +2632,7 @@ class TestDirectionalRatesResultToDataframe:
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """to_dataframe() includes is_hd_cell column."""
+        """to_dataframe() includes is_head_direction_cell column."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2642,7 +2645,7 @@ class TestDirectionalRatesResultToDataframe:
         )
 
         df = result.to_dataframe()
-        assert "is_hd_cell" in df.columns
+        assert "is_head_direction_cell" in df.columns
 
     def test_to_dataframe_neuron_id_default_integers(
         self,
@@ -2842,7 +2845,7 @@ class TestDirectionalRatesResultToDataframe:
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """to_dataframe() peak_rate matches peak_firing_rates()."""
+        """to_dataframe() peak_rate matches peak_firing_rate()."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2855,7 +2858,7 @@ class TestDirectionalRatesResultToDataframe:
         )
 
         df = result.to_dataframe()
-        peaks = result.peak_firing_rates()
+        peaks = result.peak_firing_rate()
         np.testing.assert_allclose(df["peak_rate"].values, peaks)
 
     def test_to_dataframe_is_hd_cell_matches_method(
@@ -2865,7 +2868,7 @@ class TestDirectionalRatesResultToDataframe:
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """to_dataframe() is_hd_cell matches detect_hd_cells()."""
+        """to_dataframe() is_head_direction_cell matches detect_hd_cells()."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2879,7 +2882,7 @@ class TestDirectionalRatesResultToDataframe:
 
         df = result.to_dataframe()
         is_hd = result.detect_hd_cells()
-        np.testing.assert_array_equal(df["is_hd_cell"].values, is_hd)
+        np.testing.assert_array_equal(df["is_head_direction_cell"].values, is_hd)
 
     def test_to_dataframe_empty_result(
         self,
@@ -3355,7 +3358,7 @@ class TestComputeDirectionalRateResultMethods:
         assert 0 <= mvl <= 1
 
     def test_is_hd_cell_method(self) -> None:
-        """Result has working is_hd_cell method."""
+        """Result has working is_head_direction_cell method."""
         from neurospatial.encoding.directional import compute_directional_rate
 
         np.random.seed(42)
@@ -3366,7 +3369,7 @@ class TestComputeDirectionalRateResultMethods:
 
         result = compute_directional_rate(spike_times, times, headings)
 
-        is_hd = result.is_hd_cell()
+        is_hd = result.is_head_direction_cell()
         assert isinstance(is_hd, bool)
 
     def test_plot_method(self) -> None:
@@ -3973,7 +3976,7 @@ class TestComputeDirectionalRatesResultMethods:
         assert "neuron_id" in df.columns
         assert "preferred_direction" in df.columns
         assert "mean_vector_length" in df.columns
-        assert "is_hd_cell" in df.columns
+        assert "is_head_direction_cell" in df.columns
 
 
 class TestComputeDirectionalRatesInputValidation:
@@ -4073,7 +4076,7 @@ class TestDirectionalRateResultNaNHandling:
         assert 0 <= pval <= 1
 
     def test_is_hd_cell_with_nans(self) -> None:
-        """is_hd_cell handles NaN values in firing_rate."""
+        """is_head_direction_cell handles NaN values in firing_rate."""
         from neurospatial.encoding.directional import DirectionalRateResult
 
         n_bins = 60
@@ -4088,7 +4091,7 @@ class TestDirectionalRateResultNaNHandling:
             bin_size=np.pi / 30,
             bandwidth=None,
         )
-        is_hd = result.is_hd_cell()
+        is_hd = result.is_head_direction_cell()
 
         # Should return a boolean (not error or NaN comparison issue)
         assert isinstance(is_hd, bool)

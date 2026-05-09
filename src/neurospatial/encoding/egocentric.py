@@ -41,15 +41,15 @@ Examples
 >>> # Create environment representing egocentric polar space
 >>> from neurospatial import Environment
 >>> positions = np.random.rand(100, 2) * 50
->>> ego_env = Environment.from_samples(positions, bin_size=5.0)
+>>> env = Environment.from_samples(positions, bin_size=5.0)
 
 >>> # Create result (typically from compute_egocentric_rate)
->>> firing_rate = np.random.rand(ego_env.n_bins) * 10
->>> occupancy = np.ones(ego_env.n_bins)
+>>> firing_rate = np.random.rand(env.n_bins) * 10
+>>> occupancy = np.ones(env.n_bins)
 >>> result = EgocentricRateResult(
 ...     firing_rate=firing_rate,
 ...     occupancy=occupancy,
-...     ego_env=ego_env,
+...     env=env,
 ...     distance_range=(0.0, 50.0),
 ...     n_distance_bins=10,
 ...     n_direction_bins=12,
@@ -125,7 +125,7 @@ class EgocentricRateResult(SpatialResultMixin):
         occupancy.
     occupancy : ArrayLike
         Time spent in each egocentric bin in seconds. Shape is (n_bins,).
-    ego_env : Environment
+    env : Environment
         The egocentric polar environment used for the computation. This is
         typically created via ``Environment.from_polar_egocentric()`` and
         represents the (distance, direction) space centered on the animal.
@@ -142,7 +142,7 @@ class EgocentricRateResult(SpatialResultMixin):
         Firing rate by egocentric coordinates in Hz. Shape is (n_bins,).
     occupancy : ArrayLike
         Time in each bin in seconds. Shape is (n_bins,).
-    ego_env : Environment
+    env : Environment
         The egocentric polar environment.
     distance_range : tuple[float, float]
         Distance range (min, max).
@@ -156,7 +156,7 @@ class EgocentricRateResult(SpatialResultMixin):
     This is a frozen dataclass (immutable). All fields are set at construction
     and cannot be modified afterward.
 
-    **Egocentric polar environment**: The ``ego_env`` represents a polar
+    **Egocentric polar environment**: The ``env`` represents a polar
     coordinate system centered on the animal. Each bin corresponds to a
     (distance, direction) combination relative to the animal's heading.
 
@@ -168,15 +168,15 @@ class EgocentricRateResult(SpatialResultMixin):
 
     >>> # Create a simple egocentric environment
     >>> positions = np.random.rand(100, 2) * 50
-    >>> ego_env = Environment.from_samples(positions, bin_size=5.0)
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
 
     >>> # Create result
-    >>> firing_rate = np.random.rand(ego_env.n_bins) * 10
-    >>> occupancy = np.ones(ego_env.n_bins)
+    >>> firing_rate = np.random.rand(env.n_bins) * 10
+    >>> occupancy = np.ones(env.n_bins)
     >>> result = EgocentricRateResult(
     ...     firing_rate=firing_rate,
     ...     occupancy=occupancy,
-    ...     ego_env=ego_env,
+    ...     env=env,
     ...     distance_range=(0.0, 50.0),
     ...     n_distance_bins=10,
     ...     n_direction_bins=12,
@@ -196,7 +196,7 @@ class EgocentricRateResult(SpatialResultMixin):
 
     firing_rate: ArrayLike
     occupancy: ArrayLike
-    ego_env: Environment
+    env: Environment
     distance_range: tuple[float, float]
     n_distance_bins: int
     n_direction_bins: int
@@ -204,8 +204,8 @@ class EgocentricRateResult(SpatialResultMixin):
     @property
     def _bin_centers(self) -> NDArray[np.float64]:
         # Override SpatialResultMixin: egocentric results index polar bins
-        # via ego_env, not a world-coordinate Environment.
-        bin_centers: NDArray[np.float64] = self.ego_env.bin_centers
+        # via env, not a world-coordinate Environment.
+        bin_centers: NDArray[np.float64] = self.env.bin_centers
         return bin_centers
 
     def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
@@ -219,7 +219,7 @@ class EgocentricRateResult(SpatialResultMixin):
         ax : matplotlib.axes.Axes, optional
             Axes to plot on. If None, creates a new figure and axes.
         **kwargs
-            Additional keyword arguments passed to ego_env.plot_field().
+            Additional keyword arguments passed to env.plot_field().
             Common options include:
             - cmap : str or Colormap, default="viridis"
             - vmin, vmax : float, colorbar limits
@@ -250,7 +250,7 @@ class EgocentricRateResult(SpatialResultMixin):
         preferred_distance : Get distance component of peak response
         preferred_direction : Get direction component of peak response
         """
-        return self.ego_env.plot_field(_to_numpy(self.firing_rate), ax=ax, **kwargs)
+        return self.env.plot_field(_to_numpy(self.firing_rate), ax=ax, **kwargs)
 
     def preferred_distance(self) -> float:
         """Distance to object at peak firing rate.
@@ -287,7 +287,7 @@ class EgocentricRateResult(SpatialResultMixin):
         """
         firing_rate = _to_numpy(self.firing_rate)
         peak_bin = np.nanargmax(firing_rate)
-        bin_centers: NDArray[np.float64] = self.ego_env.bin_centers
+        bin_centers: NDArray[np.float64] = self.env.bin_centers
         return float(bin_centers[peak_bin, 0])
 
     def preferred_direction(self) -> float:
@@ -335,7 +335,7 @@ class EgocentricRateResult(SpatialResultMixin):
         """
         firing_rate = _to_numpy(self.firing_rate)
         peak_bin = np.nanargmax(firing_rate)
-        bin_centers: NDArray[np.float64] = self.ego_env.bin_centers
+        bin_centers: NDArray[np.float64] = self.env.bin_centers
         return float(bin_centers[peak_bin, 1])
 
     def egocentric_spatial_information(self) -> float:
@@ -382,7 +382,7 @@ class EgocentricRateResult(SpatialResultMixin):
 
         See Also
         --------
-        is_ovc : Classify as object-vector cell based on this metric
+        is_object_vector_cell : Classify as object-vector cell based on this metric
         """
         from neurospatial.encoding._metrics import spatial_information
 
@@ -390,7 +390,7 @@ class EgocentricRateResult(SpatialResultMixin):
         occupancy = _to_numpy(self.occupancy)
         return spatial_information(firing_rate, occupancy)
 
-    def is_ovc(self, min_info: float = 0.3) -> bool:
+    def is_object_vector_cell(self, min_info: float = 0.3) -> bool:
         """Classify as object-vector cell based on egocentric spatial information.
 
         A neuron is classified as an object-vector cell (OVC) if its egocentric
@@ -454,9 +454,9 @@ class EgocentricRateResult(SpatialResultMixin):
         Examples
         --------
         >>> result = EgocentricRateResult(...)
-        >>> if result.is_ovc():
+        >>> if result.is_object_vector_cell():
         ...     print("This is an object-vector cell!")
-        >>> if result.is_ovc(min_info=0.5):
+        >>> if result.is_object_vector_cell(min_info=0.5):
         ...     print("This is a strong object-vector cell!")
 
         See Also
@@ -484,7 +484,7 @@ class EgocentricRatesResult(SpatialResultMixin):
         Time spent in each egocentric bin in seconds. Shape is (n_bins,).
         This is shared across all neurons since the animal's trajectory
         (and thus egocentric occupancy) is the same for all neurons.
-    ego_env : Environment
+    env : Environment
         The egocentric polar environment used for the computation.
     distance_range : tuple[float, float]
         Range of distances (min, max) covered by the egocentric environment.
@@ -499,7 +499,7 @@ class EgocentricRatesResult(SpatialResultMixin):
         Firing rates for all neurons. Shape is (n_neurons, n_bins).
     occupancy : ArrayLike
         Time in each bin in seconds. Shape is (n_bins,). Shared.
-    ego_env : Environment
+    env : Environment
         The egocentric polar environment.
     distance_range : tuple[float, float]
         Distance range (min, max).
@@ -525,15 +525,15 @@ class EgocentricRatesResult(SpatialResultMixin):
 
     >>> # Create a simple egocentric environment
     >>> positions = np.random.rand(100, 2) * 50
-    >>> ego_env = Environment.from_samples(positions, bin_size=5.0)
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
 
     >>> # Create batch result for 3 neurons
-    >>> firing_rates = np.random.rand(3, ego_env.n_bins) * 10
-    >>> occupancy = np.ones(ego_env.n_bins)
+    >>> firing_rates = np.random.rand(3, env.n_bins) * 10
+    >>> occupancy = np.ones(env.n_bins)
     >>> result = EgocentricRatesResult(
     ...     firing_rates=firing_rates,
     ...     occupancy=occupancy,
-    ...     ego_env=ego_env,
+    ...     env=env,
     ...     distance_range=(0.0, 50.0),
     ...     n_distance_bins=10,
     ...     n_direction_bins=12,
@@ -557,7 +557,7 @@ class EgocentricRatesResult(SpatialResultMixin):
 
     firing_rates: ArrayLike
     occupancy: ArrayLike
-    ego_env: Environment
+    env: Environment
     distance_range: tuple[float, float]
     n_distance_bins: int
     n_direction_bins: int
@@ -565,8 +565,8 @@ class EgocentricRatesResult(SpatialResultMixin):
     @property
     def _bin_centers(self) -> NDArray[np.float64]:
         # Override SpatialResultMixin: egocentric results index polar bins
-        # via ego_env, not a world-coordinate Environment.
-        bin_centers: NDArray[np.float64] = self.ego_env.bin_centers
+        # via env, not a world-coordinate Environment.
+        bin_centers: NDArray[np.float64] = self.env.bin_centers
         return bin_centers
 
     def __len__(self) -> int:
@@ -606,7 +606,7 @@ class EgocentricRatesResult(SpatialResultMixin):
         return EgocentricRateResult(
             firing_rate=self.firing_rates[idx],  # type: ignore[index]
             occupancy=self.occupancy,
-            ego_env=self.ego_env,
+            env=self.env,
             distance_range=self.distance_range,
             n_distance_bins=self.n_distance_bins,
             n_direction_bins=self.n_direction_bins,
@@ -641,7 +641,7 @@ class EgocentricRatesResult(SpatialResultMixin):
         ax : matplotlib.axes.Axes, optional
             Axes to plot on. If None, creates a new figure and axes.
         **kwargs
-            Additional keyword arguments passed to ego_env.plot_field().
+            Additional keyword arguments passed to env.plot_field().
             Common options include:
             - cmap : str or Colormap, default="viridis"
             - vmin, vmax : float, colorbar limits
@@ -673,7 +673,7 @@ class EgocentricRatesResult(SpatialResultMixin):
         preferred_distances : Get distance preferences for all neurons
         EgocentricRateResult.plot : Plot for single-neuron result
         """
-        return self.ego_env.plot_field(
+        return self.env.plot_field(
             _to_numpy(self.firing_rates[idx]),  # type: ignore[index]
             ax=ax,
             **kwargs,
@@ -710,7 +710,7 @@ class EgocentricRatesResult(SpatialResultMixin):
         """
         firing_rates = _to_numpy(self.firing_rates)
         n_neurons = firing_rates.shape[0]
-        bin_centers: NDArray[np.float64] = self.ego_env.bin_centers
+        bin_centers: NDArray[np.float64] = self.env.bin_centers
 
         distances = np.empty(n_neurons, dtype=np.float64)
         for i in range(n_neurons):
@@ -754,7 +754,7 @@ class EgocentricRatesResult(SpatialResultMixin):
         """
         firing_rates = _to_numpy(self.firing_rates)
         n_neurons = firing_rates.shape[0]
-        bin_centers: NDArray[np.float64] = self.ego_env.bin_centers
+        bin_centers: NDArray[np.float64] = self.env.bin_centers
 
         directions = np.empty(n_neurons, dtype=np.float64)
         for i in range(n_neurons):
@@ -806,7 +806,7 @@ class EgocentricRatesResult(SpatialResultMixin):
         ----------
         min_info : float, default=0.3
             Minimum egocentric spatial information threshold in bits/spike.
-            See EgocentricRateResult.is_ovc() for threshold rationale.
+            See EgocentricRateResult.is_object_vector_cell() for threshold rationale.
 
         Returns
         -------
@@ -821,15 +821,15 @@ class EgocentricRatesResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> is_ovc = result.detect_ovcs()
-        >>> print(f"Found {is_ovc.sum()} OVCs")
+        >>> is_object_vector_cell = result.detect_ovcs()
+        >>> print(f"Found {is_object_vector_cell.sum()} OVCs")
 
         >>> # Use stricter threshold
-        >>> is_ovc = result.detect_ovcs(min_info=0.5)
+        >>> is_object_vector_cell = result.detect_ovcs(min_info=0.5)
 
         See Also
         --------
-        EgocentricRateResult.is_ovc : Single-neuron classification
+        EgocentricRateResult.is_object_vector_cell : Single-neuron classification
         egocentric_spatial_information : The metric used for classification
         """
         info = self.egocentric_spatial_information()
@@ -860,7 +860,7 @@ class EgocentricRatesResult(SpatialResultMixin):
             - preferred_direction: preferred direction to object (radians, 0=ahead)
             - preferred_direction_deg: preferred direction (degrees)
             - peak_rate: maximum firing rate (Hz)
-            - is_ovc: whether classified as OVC (using default threshold)
+            - is_object_vector_cell: whether classified as OVC (using default threshold)
 
         Raises
         ------
@@ -875,7 +875,7 @@ class EgocentricRatesResult(SpatialResultMixin):
 
         **Common pandas workflows**:
 
-        - Filter: ``df[df["is_ovc"] == True]``
+        - Filter: ``df[df["is_object_vector_cell"] == True]``
         - Sort: ``df.sort_values("preferred_distance")``
         - Top-N: ``df.nlargest(10, "peak_rate")``
 
@@ -887,7 +887,7 @@ class EgocentricRatesResult(SpatialResultMixin):
            neuron_id  preferred_distance  preferred_direction  ...
 
         >>> # Filter for OVCs only
-        >>> ovcs = df[df["is_ovc"]]
+        >>> ovcs = df[df["is_object_vector_cell"]]
         >>> print(f"Found {len(ovcs)} OVCs")
 
         >>> # Sort by preferred distance
@@ -920,8 +920,8 @@ class EgocentricRatesResult(SpatialResultMixin):
         # Compute all metrics
         pref_dists = self.preferred_distances()
         pref_dirs = self.preferred_directions()
-        peak_rates = self.peak_firing_rates()
-        is_ovc = self.detect_ovcs()
+        peak_rates = self.peak_firing_rate()
+        is_object_vector_cell = self.detect_ovcs()
 
         # Build DataFrame
         data: dict[str, Any] = {
@@ -930,7 +930,7 @@ class EgocentricRatesResult(SpatialResultMixin):
             "preferred_direction": pref_dirs,
             "preferred_direction_deg": np.degrees(pref_dirs),
             "peak_rate": peak_rates,
-            "is_ovc": is_ovc,
+            "is_object_vector_cell": is_object_vector_cell,
         }
 
         return pd.DataFrame(data)
@@ -1020,7 +1020,7 @@ def compute_egocentric_rate(
           shape (n_bins,)
         - ``occupancy``: Time in each egocentric bin in seconds,
           shape (n_bins,)
-        - ``ego_env``: The egocentric polar environment
+        - ``env``: The egocentric polar environment
         - ``distance_range``: Distance range used
         - ``n_distance_bins``: Number of distance bins
         - ``n_direction_bins``: Number of direction bins
@@ -1089,7 +1089,7 @@ def compute_egocentric_rate(
     >>> pref_dist = result.preferred_distance()
     >>> pref_dir = result.preferred_direction()
     >>> info = result.egocentric_spatial_information()
-    >>> is_ovc = result.is_ovc()
+    >>> is_object_vector_cell = result.is_object_vector_cell()
 
     >>> # Plot the egocentric rate map
     >>> ax = result.plot()
@@ -1168,7 +1168,7 @@ def compute_egocentric_rate(
 
     # Reuse the batch binning path for the single-neuron API so egocentric
     # coordinates are computed once and shared by spike counts and occupancy.
-    spike_counts_batch, occupancy, ego_env = bin_egocentric_spike_trains(
+    spike_counts_batch, occupancy, env = bin_egocentric_spike_trains(
         [spike_times],
         times,
         positions,
@@ -1186,7 +1186,7 @@ def compute_egocentric_rate(
     # Apply smoothing to compute firing rate
     # smooth_rate_map dispatches to JAX or NumPy based on backend
     firing_rate = smooth_rate_map(
-        ego_env,
+        env,
         spike_counts,
         occupancy,
         method=smoothing_method,
@@ -1206,7 +1206,7 @@ def compute_egocentric_rate(
     return EgocentricRateResult(
         firing_rate=firing_rate,
         occupancy=occupancy,
-        ego_env=ego_env,
+        env=env,
         distance_range=distance_range,
         n_distance_bins=n_distance_bins,
         n_direction_bins=n_direction_bins,
@@ -1306,7 +1306,7 @@ def compute_egocentric_rates(
 
         - ``firing_rates``: Firing rate maps, shape ``(n_neurons, n_bins)``
         - ``occupancy``: Time in each egocentric bin in seconds, shape ``(n_bins,)``
-        - ``ego_env``: The egocentric polar environment
+        - ``env``: The egocentric polar environment
         - ``distance_range``: Distance range used
         - ``n_distance_bins``: Number of distance bins
         - ``n_direction_bins``: Number of direction bins
@@ -1487,7 +1487,7 @@ def compute_egocentric_rates(
             compute_egocentric_occupancy,
         )
 
-        occupancy, ego_env = compute_egocentric_occupancy(
+        occupancy, env = compute_egocentric_occupancy(
             times,
             positions,
             headings,
@@ -1498,7 +1498,7 @@ def compute_egocentric_rates(
             metric=metric,
             env=env,
         )
-        firing_rates_result: ArrayLike = np.empty((0, ego_env.n_bins), dtype=np.float64)
+        firing_rates_result: ArrayLike = np.empty((0, env.n_bins), dtype=np.float64)
         if resolved_backend == "jax" and is_jax_available():
             import jax.numpy as jnp
 
@@ -1507,15 +1507,15 @@ def compute_egocentric_rates(
         return EgocentricRatesResult(
             firing_rates=firing_rates_result,
             occupancy=occupancy,
-            ego_env=ego_env,
+            env=env,
             distance_range=distance_range,
             n_distance_bins=n_distance_bins,
             n_direction_bins=n_direction_bins,
         )
 
     # Bin spike trains by egocentric coordinates and compute occupancy
-    # bin_egocentric_spike_trains returns (spike_counts, occupancy, ego_env)
-    spike_counts, occupancy, ego_env = bin_egocentric_spike_trains(
+    # bin_egocentric_spike_trains returns (spike_counts, occupancy, env)
+    spike_counts, occupancy, env = bin_egocentric_spike_trains(
         spike_times_list,
         times,
         positions,
@@ -1532,7 +1532,7 @@ def compute_egocentric_rates(
     # Apply batch smoothing to compute firing rates
     # smooth_rate_maps_batch dispatches to JAX or NumPy based on backend
     firing_rates = smooth_rate_maps_batch(
-        ego_env,
+        env,
         spike_counts,
         occupancy,
         method=smoothing_method,
@@ -1552,7 +1552,7 @@ def compute_egocentric_rates(
     return EgocentricRatesResult(
         firing_rates=firing_rates,
         occupancy=occupancy,
-        ego_env=ego_env,
+        env=env,
         distance_range=distance_range,
         n_distance_bins=n_distance_bins,
         n_direction_bins=n_direction_bins,
@@ -1737,7 +1737,7 @@ def is_object_vector_cell(
     See Also
     --------
     object_vector_score : Compute OVC score
-    EgocentricRateResult.is_ovc : OVC classification on result object
+    EgocentricRateResult.is_object_vector_cell : OVC classification on result object
     """
     if peak_rate < min_peak_rate:
         return False

@@ -139,13 +139,13 @@ class TestComputeViewRateReturnsResult:
         )
         assert np.asarray(result.firing_rate).shape == (simple_env.n_bins,)
 
-    def test_view_occupancy_shape(
+    def test_occupancy_shape(
         self,
         simple_env: Environment,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
         spike_times: np.ndarray,
     ) -> None:
-        """view_occupancy should have shape (n_bins,)."""
+        """occupancy should have shape (n_bins,)."""
         from neurospatial.encoding.view import compute_view_rate
 
         times, positions, headings = trajectory_data
@@ -156,7 +156,7 @@ class TestComputeViewRateReturnsResult:
             positions,
             headings,
         )
-        assert np.asarray(result.view_occupancy).shape == (simple_env.n_bins,)
+        assert np.asarray(result.occupancy).shape == (simple_env.n_bins,)
 
     def test_result_has_correct_env(
         self,
@@ -418,7 +418,7 @@ class TestComputeViewRateEmptySpikes:
         if np.any(valid_mask):
             assert np.all(firing_rate[valid_mask] == 0.0)
 
-    def test_empty_spikes_still_has_view_occupancy(
+    def test_empty_spikes_still_has_occupancy(
         self,
         simple_env: Environment,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
@@ -435,9 +435,9 @@ class TestComputeViewRateEmptySpikes:
             positions,
             headings,
         )
-        view_occupancy = np.asarray(result.view_occupancy)
+        occupancy = np.asarray(result.occupancy)
         # Should have some positive occupancy from trajectory
-        assert np.sum(view_occupancy) > 0
+        assert np.sum(occupancy) > 0
 
 
 # ==============================================================================
@@ -469,7 +469,7 @@ class TestComputeViewRateCorrectness:
         valid_mask = ~np.isnan(firing_rate)
         assert np.all(firing_rate[valid_mask] >= 0)
 
-    def test_view_occupancy_non_negative(
+    def test_occupancy_non_negative(
         self,
         simple_env: Environment,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
@@ -486,8 +486,8 @@ class TestComputeViewRateCorrectness:
             positions,
             headings,
         )
-        view_occupancy = np.asarray(result.view_occupancy)
-        assert np.all(view_occupancy >= 0)
+        occupancy = np.asarray(result.occupancy)
+        assert np.all(occupancy >= 0)
 
     def test_uses_view_binning_not_spatial_binning(
         self,
@@ -517,9 +517,9 @@ class TestComputeViewRateCorrectness:
 
         # View occupancy and spatial occupancy should be different
         # because they measure different things
-        view_occupancy = np.asarray(result.view_occupancy)
+        occupancy = np.asarray(result.occupancy)
         # They should not be identical (unless trajectory is contrived)
-        assert not np.allclose(view_occupancy, standard_occupancy)
+        assert not np.allclose(occupancy, standard_occupancy)
 
 
 # ==============================================================================
@@ -598,7 +598,7 @@ class TestComputeViewRateResultMethods:
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
         spike_times: np.ndarray,
     ) -> None:
-        """Result should have is_view_cell() method that works."""
+        """Result should have is_spatial_view_cell() method that works."""
         from neurospatial.encoding.view import compute_view_rate
 
         times, positions, headings = trajectory_data
@@ -609,7 +609,7 @@ class TestComputeViewRateResultMethods:
             positions,
             headings,
         )
-        is_cell = result.is_view_cell()
+        is_cell = result.is_spatial_view_cell()
         assert isinstance(is_cell, bool)
 
 
@@ -837,12 +837,12 @@ class TestComputeViewRatesReturnsResult:
 
         assert result.firing_rates.shape == (3, simple_env.n_bins)
 
-    def test_result_has_correct_view_occupancy_shape(
+    def test_result_has_correct_occupancy_shape(
         self,
         simple_env: Environment,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
     ) -> None:
-        """view_occupancy should have shape (n_bins,) - shared across neurons."""
+        """occupancy should have shape (n_bins,) - shared across neurons."""
         from neurospatial.encoding.view import compute_view_rates
 
         times, positions, headings = trajectory_data
@@ -855,7 +855,7 @@ class TestComputeViewRatesReturnsResult:
             simple_env, spike_times_list, times, positions, headings
         )
 
-        assert result.view_occupancy.shape == (simple_env.n_bins,)
+        assert result.occupancy.shape == (simple_env.n_bins,)
 
 
 class TestComputeViewRatesSpikeTimeFormats:
@@ -1272,7 +1272,7 @@ class TestComputeViewRatesConsistencyWithSingle:
             batch_result.firing_rates[0], single_result.firing_rate
         )
         np.testing.assert_array_almost_equal(
-            batch_result.view_occupancy, single_result.view_occupancy
+            batch_result.occupancy, single_result.occupancy
         )
 
 
@@ -1409,9 +1409,7 @@ class TestComputeViewRateGazeOffsets:
         )
 
         # View occupancy should be different (looking in different directions)
-        assert not np.allclose(
-            result_no_offset.view_occupancy, result_with_offset.view_occupancy
-        )
+        assert not np.allclose(result_no_offset.occupancy, result_with_offset.occupancy)
 
     def test_gaze_offsets_mismatched_length_raises(
         self,
@@ -1497,7 +1495,7 @@ class TestComputeViewRateGazeOffsets:
             result_none.firing_rate, result_zero.firing_rate
         )
         np.testing.assert_array_almost_equal(
-            result_none.view_occupancy, result_zero.view_occupancy
+            result_none.occupancy, result_zero.occupancy
         )
 
 
@@ -1618,9 +1616,7 @@ class TestComputeViewRatesGazeOffsets:
         )
 
         # View occupancy should differ
-        assert not np.allclose(
-            result_no_offset.view_occupancy, result_with_offset.view_occupancy
-        )
+        assert not np.allclose(result_no_offset.occupancy, result_with_offset.occupancy)
 
     def test_gaze_offsets_mismatched_length_raises(
         self,
@@ -1681,7 +1677,7 @@ class TestComputeViewRatesGazeOffsets:
             batch_result.firing_rates[0], single_result.firing_rate
         )
         np.testing.assert_array_almost_equal(
-            batch_result.view_occupancy, single_result.view_occupancy
+            batch_result.occupancy, single_result.occupancy
         )
 
     def test_gaze_offsets_keyword_only(self) -> None:

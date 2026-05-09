@@ -242,7 +242,7 @@ class TestSpatialResultMixin:
     """Tests for SpatialResultMixin class."""
 
     def test_peak_locations_single_neuron(self, simple_env: Environment) -> None:
-        """peak_locations() should return (n_dims,) for single neuron result."""
+        """peak_location() should return (n_dims,) for single neuron result."""
         from neurospatial.encoding._base import SpatialResultMixin
 
         # Create a mock single-neuron result class
@@ -264,14 +264,14 @@ class TestSpatialResultMixin:
             env=simple_env,
         )
 
-        peak = result.peak_locations()
+        peak = result.peak_location()
         assert isinstance(peak, np.ndarray)
         assert peak.shape == (simple_env.n_dims,)
         # Peak should be at the bin center of the peak bin
         np.testing.assert_array_equal(peak, simple_env.bin_centers[peak_bin])
 
     def test_peak_locations_multiple_neurons(self, simple_env: Environment) -> None:
-        """peak_locations() should return (n_neurons, n_dims) for batch result."""
+        """peak_location() should return (n_neurons, n_dims) for batch result."""
         from neurospatial.encoding._base import SpatialResultMixin
 
         # Create a mock batch result class
@@ -296,14 +296,14 @@ class TestSpatialResultMixin:
             env=simple_env,
         )
 
-        peaks = result.peak_locations()
+        peaks = result.peak_location()
         assert isinstance(peaks, np.ndarray)
         assert peaks.shape == (n_neurons, simple_env.n_dims)
         for i, peak_bin in enumerate(peak_bins):
             np.testing.assert_array_equal(peaks[i], simple_env.bin_centers[peak_bin])
 
-    def test_peak_firing_rates_single_neuron(self, simple_env: Environment) -> None:
-        """peak_firing_rates() should return scalar for single neuron result."""
+    def test_peak_firing_rate_single_neuron(self, simple_env: Environment) -> None:
+        """peak_firing_rate() should return scalar for single neuron result."""
         from neurospatial.encoding._base import SpatialResultMixin
 
         @dataclass
@@ -323,12 +323,12 @@ class TestSpatialResultMixin:
             env=simple_env,
         )
 
-        peak_rate = result.peak_firing_rates()
+        peak_rate = result.peak_firing_rate()
         assert isinstance(peak_rate, float)
         assert peak_rate == peak_value
 
-    def test_peak_firing_rates_multiple_neurons(self, simple_env: Environment) -> None:
-        """peak_firing_rates() should return (n_neurons,) for batch result."""
+    def test_peak_firing_rate_multiple_neurons(self, simple_env: Environment) -> None:
+        """peak_firing_rate() should return (n_neurons,) for batch result."""
         from neurospatial.encoding._base import SpatialResultMixin
 
         @dataclass
@@ -351,13 +351,13 @@ class TestSpatialResultMixin:
             env=simple_env,
         )
 
-        peak_rates = result.peak_firing_rates()
+        peak_rates = result.peak_firing_rate()
         assert isinstance(peak_rates, np.ndarray)
         assert peak_rates.shape == (n_neurons,)
         np.testing.assert_array_equal(peak_rates, peak_values)
 
     def test_peak_locations_with_nan(self, simple_env: Environment) -> None:
-        """peak_locations() should handle NaN values correctly using nanargmax."""
+        """peak_location() should handle NaN values correctly using nanargmax."""
         from neurospatial.encoding._base import SpatialResultMixin
 
         @dataclass
@@ -380,12 +380,12 @@ class TestSpatialResultMixin:
             env=simple_env,
         )
 
-        peak = result.peak_locations()
+        peak = result.peak_location()
         # Should still find the peak correctly, ignoring NaNs
         np.testing.assert_array_equal(peak, simple_env.bin_centers[peak_bin])
 
-    def test_peak_firing_rates_with_nan(self, simple_env: Environment) -> None:
-        """peak_firing_rates() should handle NaN values correctly using nanmax."""
+    def test_peak_firing_rate_with_nan(self, simple_env: Environment) -> None:
+        """peak_firing_rate() should handle NaN values correctly using nanmax."""
         from neurospatial.encoding._base import SpatialResultMixin
 
         @dataclass
@@ -407,11 +407,11 @@ class TestSpatialResultMixin:
             env=simple_env,
         )
 
-        peak_rate = result.peak_firing_rates()
+        peak_rate = result.peak_firing_rate()
         assert peak_rate == peak_value
 
     def test_peak_locations_1d_environment(self, simple_1d_env: Environment) -> None:
-        """peak_locations() should work correctly for 1D environments."""
+        """peak_location() should work correctly for 1D environments."""
         from neurospatial.encoding._base import SpatialResultMixin
 
         @dataclass
@@ -431,7 +431,7 @@ class TestSpatialResultMixin:
             env=simple_1d_env,
         )
 
-        peak = result.peak_locations()
+        peak = result.peak_location()
         assert isinstance(peak, np.ndarray)
         # 1D env still has (n_dims,) shape for bin_centers
         np.testing.assert_array_equal(peak, simple_1d_env.bin_centers[peak_bin])

@@ -83,6 +83,7 @@ __all__ = [
     "grid_score",
     "periodicity_score",
     "spatial_autocorrelation",
+    "spatial_autocorrelation_radial",
 ]
 
 # Axis flip detection threshold for orientation consensus algorithm.
@@ -150,55 +151,37 @@ class GridProperties:
 def spatial_autocorrelation(
     env: Environment,
     firing_rate: NDArray[np.float64],
-    *,
-    method: Literal["auto", "fft", "graph"] = "auto",
-    max_distance: float | None = None,
-    n_distance_bins: int = 50,
-) -> NDArray[np.float64] | tuple[NDArray[np.float64], NDArray[np.float64]]:
+) -> NDArray[np.float64]:
     """
-    Compute spatial autocorrelation of a firing rate map.
+    Compute 2D FFT-based spatial autocorrelation of a firing rate map.
 
-    Spatial autocorrelation measures the similarity between a cell's firing pattern
-    and shifted versions of itself. For grid cells, this reveals the characteristic
-    hexagonal periodicity. This implementation supports both regular 2D grids
-    (FFT-based, opexebo-compatible) and irregular graph topologies (graph-based).
+    Spatial autocorrelation measures the similarity between a cell's firing
+    pattern and shifted versions of itself; for grid cells this reveals the
+    characteristic hexagonal periodicity. This entry point computes the
+    opexebo-compatible 2D autocorrelogram and is the input to
+    :func:`grid_score`. For irregular environments without a regular 2D grid
+    layout, use :func:`spatial_autocorrelation_radial` instead, which returns
+    a 1D distance-correlation profile from the connectivity graph.
 
     Parameters
     ----------
     env : EnvironmentProtocol
-        Spatial environment containing bin centers and connectivity.
+        Spatial environment with a regular 2D grid layout.
     firing_rate : NDArray[np.float64], shape (n_bins,)
         Spatial firing rate map (Hz or spikes/second).
-    method : {'auto', 'fft', 'graph'}, optional
-        Autocorrelation computation method:
-        - 'auto': Automatically select FFT for regular 2D grids, graph otherwise
-        - 'fft': FFT-based 2D autocorrelation (requires regular 2D grid)
-        - 'graph': Graph-based distance autocorrelation (works on any topology)
-        Default is 'auto'.
-    max_distance : float, optional
-        Maximum distance for graph-based method (in physical units). If None,
-        uses the environment's maximum extent. Ignored for FFT method.
-    n_distance_bins : int, optional
-        Number of distance bins for graph-based method. Default is 50.
-        Ignored for FFT method.
 
     Returns
     -------
-    autocorr : NDArray[np.float64], shape (height, width) OR tuple
-        **FFT method** ('fft' or 'auto' on regular grid):
-            Returns 2D autocorrelation map with same shape as environment grid.
-            Center corresponds to zero lag. Values in [-1, 1].
-
-        **Graph method** ('graph' or 'auto' on irregular topology):
-            Returns tuple (distances, correlations):
-            - distances : NDArray, shape (n_distance_bins,) - Distance bin centers
-            - correlations : NDArray, shape (n_distance_bins,) - Autocorrelation at each distance
+    autocorr : NDArray[np.float64], shape (height, width)
+        2D autocorrelation map with the same shape as the environment grid.
+        Center corresponds to zero lag. Values in [-1, 1].
 
     Raises
     ------
     ValueError
-        If firing_rate shape doesn't match env.n_bins.
-        If method='fft' but environment is not a regular 2D grid.
+        If ``firing_rate.shape != (env.n_bins,)``.
+        If ``env`` is not a regular 2D grid (use
+        :func:`spatial_autocorrelation_radial` instead).
         If all firing rates are NaN or constant.
 
     Notes
@@ -259,57 +242,115 @@ def spatial_autocorrelation(
     >>> print(autocorr_2d.shape)  # doctest: +SKIP
     (20, 20)  # doctest: +SKIP
     >>>
-    >>> # Graph method (works on any topology)
-    >>> distances, correlations = spatial_autocorrelation(  # doctest: +SKIP
-    ...     env, firing_rate, method="graph", n_distance_bins=30
+    >>> # For irregular environments, use spatial_autocorrelation_radial
+    >>> distances, correlations = spatial_autocorrelation_radial(  # doctest: +SKIP
+    ...     env, firing_rate, n_distance_bins=30
     ... )
     >>> print(distances.shape, correlations.shape)  # doctest: +SKIP
     (30,) (30,)  # doctest: +SKIP
 
     See Also
     --------
-    grid_score : Compute grid score from 2D autocorrelation
-    periodicity_score : Graph-based periodicity metric
+    grid_score : Compute grid score from this 2D autocorrelogram.
+    spatial_autocorrelation_radial : 1D distance-correlation profile
+        for irregular environments.
+    periodicity_score : Graph-based periodicity metric.
 
     References
     ----------
     Sargolini et al. (2006). Conjunctive representation of position, direction,
         and velocity in entorhinal cortex. Science, 312(5774), 758-762.
     """
-    # Validate inputs
-    if firing_rate.shape != (env.n_bins,):
+    _validate_autocorr_input(env, firing_rate)
+
+    if _detect_grid_method(env) != "fft":
         raise ValueError(
-            f"firing_rate.shape must be ({env.n_bins},), got {firing_rate.shape}"
+            "spatial_autocorrelation requires a regular 2D grid environment "
+            "(grid_shape attribute on layout, with >=50% of bins active). "
+            "For irregular environments, use spatial_autocorrelation_radial "
+            "to obtain a 1D distance-correlation profile."
         )
 
-    if method not in ("auto", "fft", "graph"):
-        raise ValueError(f"method must be 'auto', 'fft', or 'graph', got '{method}'")
+    return _spatial_autocorrelation_fft(env, firing_rate)
+
+
+def spatial_autocorrelation_radial(
+    env: Environment,
+    firing_rate: NDArray[np.float64],
+    *,
+    max_distance: float | None = None,
+    n_distance_bins: int = 50,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Compute 1D distance-binned spatial autocorrelation.
+
+    For each distance bin, computes the Pearson correlation between firing
+    rates of bin pairs separated by that geodesic distance. Use this on
+    irregular topologies (graphs, masked grids) where the FFT-based
+    :func:`spatial_autocorrelation` is undefined.
+
+    Parameters
+    ----------
+    env : EnvironmentProtocol
+        Spatial environment containing bin centers and connectivity.
+    firing_rate : NDArray[np.float64], shape (n_bins,)
+        Spatial firing rate map (Hz or spikes/second).
+    max_distance : float, optional
+        Maximum geodesic distance to consider. If None, uses the environment's
+        maximum extent.
+    n_distance_bins : int, default=50
+        Number of distance bins.
+
+    Returns
+    -------
+    distances : NDArray[np.float64], shape (n_distance_bins,)
+        Distance bin centers.
+    correlations : NDArray[np.float64], shape (n_distance_bins,)
+        Autocorrelation at each distance.
+
+    Raises
+    ------
+    ValueError
+        If ``firing_rate.shape != (env.n_bins,)``.
+        If ``n_distance_bins <= 0``.
+        If all firing rates are NaN or constant.
+
+    See Also
+    --------
+    spatial_autocorrelation : 2D FFT-based autocorrelogram for regular grids.
+    """
+    _validate_autocorr_input(env, firing_rate)
 
     if n_distance_bins <= 0:
         raise ValueError(f"n_distance_bins must be positive, got {n_distance_bins}")
 
-    # Handle all-NaN
+    return _spatial_autocorrelation_graph(
+        env,
+        firing_rate,
+        max_distance=max_distance,
+        n_distance_bins=n_distance_bins,
+    )
+
+
+def _validate_autocorr_input(
+    env: Environment, firing_rate: NDArray[np.float64]
+) -> None:
+    """Shared input validation for the public autocorrelation entry points.
+
+    Pulled out so :func:`spatial_autocorrelation` and
+    :func:`spatial_autocorrelation_radial` apply the same shape /
+    legitimate-NaN checks before dispatching to the method-specific
+    implementation.
+    """
+    if firing_rate.shape != (env.n_bins,):
+        raise ValueError(
+            f"firing_rate.shape must be ({env.n_bins},), got {firing_rate.shape}"
+        )
     if np.all(np.isnan(firing_rate)):
         raise ValueError("All firing rates are NaN")
-
-    # Handle constant firing rate
     valid_rates = firing_rate[np.isfinite(firing_rate)]
     if len(valid_rates) > 0 and np.all(valid_rates == valid_rates[0]):
         raise ValueError(
             "All valid firing rates are constant. Autocorrelation undefined."
-        )
-
-    # Determine method
-    if method == "auto":
-        # Check if environment is a regular 2D grid
-        method = _detect_grid_method(env)
-
-    # Dispatch to appropriate method
-    if method == "fft":
-        return _spatial_autocorrelation_fft(env, firing_rate)
-    else:  # method == "graph"
-        return _spatial_autocorrelation_graph(
-            env, firing_rate, max_distance=max_distance, n_distance_bins=n_distance_bins
         )
 
 

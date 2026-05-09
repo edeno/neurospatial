@@ -40,8 +40,8 @@ Examples
 ... )
 
 >>> # Use inherited mixin methods
->>> peak = result.peak_locations()  # (n_dims,) coordinates of peak
->>> peak_rate = result.peak_firing_rates()  # scalar max firing rate
+>>> peak = result.peak_location()  # (n_dims,) coordinates of peak
+>>> peak_rate = result.peak_firing_rate()  # scalar max firing rate
 """
 
 from __future__ import annotations
@@ -143,8 +143,8 @@ class SpatialRateResult(SpatialResultMixin):
 
     This class wraps a spatial firing rate map with its associated metadata
     (occupancy, environment, smoothing parameters). It inherits from
-    `SpatialResultMixin` for common methods like `peak_locations()` and
-    `peak_firing_rates()`.
+    `SpatialResultMixin` for common methods like `peak_location()` and
+    `peak_firing_rate()`.
 
     Parameters
     ----------
@@ -182,8 +182,8 @@ class SpatialRateResult(SpatialResultMixin):
 
     Inherits from `SpatialResultMixin`, which provides:
 
-    - `peak_locations()`: Returns (n_dims,) coordinates of peak firing
-    - `peak_firing_rates()`: Returns scalar max firing rate
+    - `peak_location()`: Returns (n_dims,) coordinates of peak firing
+    - `peak_firing_rate()`: Returns scalar max firing rate
 
     Examples
     --------
@@ -213,14 +213,14 @@ class SpatialRateResult(SpatialResultMixin):
     'diffusion_kde'
 
     >>> # Use mixin methods
-    >>> peak_coords = result.peak_locations()  # (n_dims,)
-    >>> max_rate = result.peak_firing_rates()  # float
+    >>> peak_coords = result.peak_location()  # (n_dims,)
+    >>> max_rate = result.peak_firing_rate()  # float
 
     See Also
     --------
     SpatialRatesResult : Batch version for multiple neurons
     compute_spatial_rate : Function to compute this result
-    SpatialResultMixin : Provides peak_locations() and peak_firing_rates()
+    SpatialResultMixin : Provides peak_location() and peak_firing_rate()
     """
 
     firing_rate: ArrayLike
@@ -261,29 +261,6 @@ class SpatialRateResult(SpatialResultMixin):
         >>> result.plot(ax=ax, cmap="hot", vmax=20.0)
         """
         return self.env.plot_field(_to_numpy(self.firing_rate), ax=ax, **kwargs)
-
-    def peak_location(self) -> NDArray[np.float64]:
-        """Coordinates of peak firing rate.
-
-        Convenience alias for `peak_locations()` for single-neuron results.
-
-        Returns
-        -------
-        ndarray, shape (n_dims,)
-            Spatial coordinates of the bin with maximum firing rate.
-
-        See Also
-        --------
-        peak_locations : Inherited method that handles both single and batch
-        peak_firing_rates : Get the maximum firing rate value
-
-        Examples
-        --------
-        >>> result = SpatialRateResult(...)
-        >>> peak = result.peak_location()
-        >>> print(f"Peak at ({peak[0]:.1f}, {peak[1]:.1f}) cm")
-        """
-        return self.peak_locations()
 
     def spatial_information(self) -> float | Any:
         """Skaggs spatial information (bits per spike).
@@ -430,17 +407,13 @@ class SpatialRateResult(SpatialResultMixin):
         firing_rate = _to_numpy(self.firing_rate)
 
         try:
-            # Use "auto" method like batch_grid_scores for consistency
-            autocorr = spatial_autocorrelation(self.env, firing_rate, method="auto")
-
-            # spatial_autocorrelation returns 2D array for FFT, tuple for graph
-            if isinstance(autocorr, tuple):
-                # Graph-based method not compatible with grid_score
-                return np.nan
-
+            autocorr = spatial_autocorrelation(self.env, firing_rate)
             return gs_func(autocorr)
         except (ValueError, RuntimeError):
-            # Handle errors gracefully (e.g., non-2D grid, constant firing, all NaN)
+            # Irregular env, constant firing, or all-NaN: grid_score is
+            # undefined. Return NaN; callers using batch_grid_scores can
+            # see the same NaN with the failures mask separating
+            # legitimate-NaN from caught failures.
             return np.nan
 
     def grid_properties(self) -> GridProperties:
@@ -500,10 +473,7 @@ class SpatialRateResult(SpatialResultMixin):
         from neurospatial.encoding.grid import spatial_autocorrelation
 
         firing_rate = _to_numpy(self.firing_rate)
-        autocorr = spatial_autocorrelation(self.env, firing_rate, method="fft")
-        # FFT method always returns 2D array, not tuple
-        if isinstance(autocorr, tuple):
-            raise RuntimeError("FFT autocorrelation should return array, not tuple")
+        autocorr = spatial_autocorrelation(self.env, firing_rate)
         # Use minimum bin size for grid properties (typically same for isotropic grids)
         bin_size = float(np.min(self.env.bin_sizes))
         return gp_func(autocorr, bin_size=bin_size)
@@ -702,8 +672,8 @@ class SpatialRatesResult(SpatialResultMixin):
 
     **Inherited Methods from SpatialResultMixin**:
 
-    - `peak_locations()`: Returns (n_neurons, n_dims) coordinates of peaks
-    - `peak_firing_rates()`: Returns (n_neurons,) max firing rates
+    - `peak_location()`: Returns (n_neurons, n_dims) coordinates of peaks
+    - `peak_firing_rate()`: Returns (n_neurons,) max firing rates
 
     Examples
     --------
@@ -740,17 +710,17 @@ class SpatialRatesResult(SpatialResultMixin):
 
     >>> # Iterate over neurons
     >>> for i, r in enumerate(result):
-    ...     print(f"Neuron {i}: peak rate = {r.peak_firing_rates():.2f} Hz")
+    ...     print(f"Neuron {i}: peak rate = {r.peak_firing_rate():.2f} Hz")
 
     >>> # Use mixin methods (batch)
-    >>> peak_coords = result.peak_locations()  # (n_neurons, n_dims)
-    >>> max_rates = result.peak_firing_rates()  # (n_neurons,)
+    >>> peak_coords = result.peak_location()  # (n_neurons, n_dims)
+    >>> max_rates = result.peak_firing_rate()  # (n_neurons,)
 
     See Also
     --------
     SpatialRateResult : Single-neuron version
     compute_spatial_rates : Function to compute this result
-    SpatialResultMixin : Provides peak_locations() and peak_firing_rates()
+    SpatialResultMixin : Provides peak_location() and peak_firing_rate()
     """
 
     firing_rates: ArrayLike
@@ -810,7 +780,7 @@ class SpatialRatesResult(SpatialResultMixin):
         Examples
         --------
         >>> for result in results:
-        ...     print(result.peak_firing_rates())
+        ...     print(result.peak_firing_rate())
         """
         for i in range(len(self)):
             yield self[i]
@@ -1248,7 +1218,7 @@ class SpatialRatesResult(SpatialResultMixin):
                 )
 
         # Compute peak locations
-        peaks = self.peak_locations()
+        peaks = self.peak_location()
         n_dims = peaks.shape[1] if peaks.ndim > 1 else 1
 
         # Build data dictionary
@@ -1256,7 +1226,7 @@ class SpatialRatesResult(SpatialResultMixin):
             "neuron_id": neuron_ids_list,
             "peak_x": peaks[:, 0],
             "peak_y": peaks[:, 1] if n_dims > 1 else np.full(n_neurons, np.nan),
-            "peak_rate": self.peak_firing_rates(),
+            "peak_rate": self.peak_firing_rate(),
             "spatial_info": self.spatial_information(),
             "sparsity": self.sparsity(),
             "grid_score": self.grid_scores().scores,
@@ -1389,7 +1359,7 @@ def compute_spatial_rate(
     ... )
 
     >>> # Access results
-    >>> print(f"Peak rate: {result.peak_firing_rates():.2f} Hz")
+    >>> print(f"Peak rate: {result.peak_firing_rate():.2f} Hz")
     >>> print(f"Peak location: {result.peak_location()}")
     >>> print(f"Spatial information: {result.spatial_information():.2f} bits/spike")
 
@@ -1599,11 +1569,11 @@ def compute_spatial_rates(
     >>> # Access results
     >>> print(f"Number of neurons: {len(result)}")
     >>> print(f"Firing rates shape: {result.firing_rates.shape}")
-    >>> print(f"Peak rates: {result.peak_firing_rates()}")
+    >>> print(f"Peak rates: {result.peak_firing_rate()}")
 
     >>> # Iterate over neurons
     >>> for i, single in enumerate(result):
-    ...     print(f"Neuron {i}: peak = {single.peak_firing_rates():.2f} Hz")
+    ...     print(f"Neuron {i}: peak = {single.peak_firing_rate():.2f} Hz")
 
     >>> # Get metrics for all neurons
     >>> df = result.to_dataframe()

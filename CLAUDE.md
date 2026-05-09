@@ -266,7 +266,7 @@ result = compute_egocentric_rate(
     n_direction_bins=12,         # angular resolution (full circle)
 )
 # result.firing_rate: firing rate in egocentric polar bins
-# result.ego_env: the egocentric polar environment
+# result.env: the egocentric polar environment
 # result.occupancy: time spent in each bin
 # result.preferred_distance(), result.preferred_direction(): peak location
 ```
@@ -287,8 +287,8 @@ result = compute_view_rate(
     bandwidth=5.0,
 )
 # result.firing_rate: firing rate at each spatial bin (indexed by where animal looked)
-# result.view_occupancy: time spent viewing each bin
-# result.is_view_cell(): classification method
+# result.occupancy: time spent viewing each bin
+# result.is_spatial_view_cell(): classification method
 # result.view_spatial_information(): spatial information metric
 ```
 

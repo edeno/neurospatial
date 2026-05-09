@@ -505,7 +505,7 @@ viewsheds = compute_viewshed_trajectory(
 )
 
 # Accumulate time each bin was visible
-view_occupancy = visibility_occupancy(
+occupancy = visibility_occupancy(
     env, viewsheds, times=timestamps  # Weighted by time spent
 )
 ```

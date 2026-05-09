@@ -154,7 +154,7 @@ class TestComputeEgocentricRateReturnsResult:
             object_positions,
         )
         assert np.asarray(result.firing_rate).ndim == 1
-        assert np.asarray(result.firing_rate).shape == (result.ego_env.n_bins,)
+        assert np.asarray(result.firing_rate).shape == (result.env.n_bins,)
 
     def test_occupancy_shape(
         self,
@@ -174,15 +174,15 @@ class TestComputeEgocentricRateReturnsResult:
             headings,
             object_positions,
         )
-        assert np.asarray(result.occupancy).shape == (result.ego_env.n_bins,)
+        assert np.asarray(result.occupancy).shape == (result.env.n_bins,)
 
-    def test_ego_env_is_environment(
+    def test_env_is_environment(
         self,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
         object_positions: np.ndarray,
         spike_times: np.ndarray,
     ) -> None:
-        """ego_env should be an Environment."""
+        """env should be an Environment."""
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
         times, positions, headings = trajectory_data
@@ -194,7 +194,7 @@ class TestComputeEgocentricRateReturnsResult:
             headings,
             object_positions,
         )
-        assert isinstance(result.ego_env, Environment)
+        assert isinstance(result.env, Environment)
 
 
 # ==============================================================================
@@ -338,7 +338,7 @@ class TestComputeEgocentricRateBinCounts:
         object_positions: np.ndarray,
         spike_times: np.ndarray,
     ) -> None:
-        """ego_env.n_bins should equal n_distance_bins * n_direction_bins."""
+        """env.n_bins should equal n_distance_bins * n_direction_bins."""
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
         times, positions, headings = trajectory_data
@@ -354,7 +354,7 @@ class TestComputeEgocentricRateBinCounts:
             n_distance_bins=n_dist,
             n_direction_bins=n_dir,
         )
-        assert result.ego_env.n_bins == n_dist * n_dir
+        assert result.env.n_bins == n_dist * n_dir
 
 
 # ==============================================================================
@@ -851,7 +851,7 @@ class TestComputeEgocentricRateResultMethods:
         object_positions: np.ndarray,
         spike_times: np.ndarray,
     ) -> None:
-        """is_ovc() should return a bool."""
+        """is_object_vector_cell() should return a bool."""
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
         times, positions, headings = trajectory_data
@@ -863,8 +863,8 @@ class TestComputeEgocentricRateResultMethods:
             headings,
             object_positions,
         )
-        is_ovc = result.is_ovc()
-        assert isinstance(is_ovc, (bool, np.bool_))
+        is_object_vector_cell = result.is_object_vector_cell()
+        assert isinstance(is_object_vector_cell, (bool, np.bool_))
 
 
 # ==============================================================================

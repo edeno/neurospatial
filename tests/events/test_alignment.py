@@ -429,7 +429,7 @@ class TestPeriEventHistogram:
         )
 
         # First bin has 10 spikes in 0.1s → 100 Hz
-        rates = result.firing_rate()
+        rates = result.firing_rate
         assert rates[0] == pytest.approx(100.0, rel=0.01)
 
     def test_sem_with_multiple_events(self):
@@ -612,8 +612,8 @@ class TestPeriEventHistogram:
 
         assert result.n_events == len(stim_times)
         # Post-stimulus bins should have higher rate than pre-stimulus
-        pre_stim_rate = result.firing_rate()[: len(result.bin_centers) // 3].mean()
-        post_stim_rate = result.firing_rate()[
+        pre_stim_rate = result.firing_rate[: len(result.bin_centers) // 3].mean()
+        post_stim_rate = result.firing_rate[
             len(result.bin_centers) // 3 : 2 * len(result.bin_centers) // 3
         ].mean()
         assert post_stim_rate > pre_stim_rate
@@ -696,7 +696,7 @@ class TestPopulationPeriEventHistogram:
             spike_trains, event_times, window, bin_size=bin_size
         )
 
-        rates = result.firing_rates()
+        rates = result.firing_rates
         assert rates.shape == result.histograms.shape
         # Unit 1: 10 spikes in 0.1s = 100 Hz
         # Unit 2: 5 spikes in 0.1s = 50 Hz
@@ -845,7 +845,7 @@ class TestPopulationPeriEventHistogram:
         assert result.n_units == n_units
         assert result.n_events == len(event_times)
         # Higher-rate units should have higher mean firing
-        rates = result.firing_rates().mean(axis=1)  # Mean rate per unit
+        rates = result.firing_rates.mean(axis=1)  # Mean rate per unit
         assert np.all(np.diff(rates) > 0)  # Should increase with unit index
 
 

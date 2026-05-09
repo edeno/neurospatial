@@ -440,7 +440,7 @@ class TestComputeViewRateJaxBackend:
         assert result is not None
         assert result.firing_rate.shape == (simple_env.n_bins,)
         assert _is_jax_array(result.firing_rate)
-        assert _is_jax_array(result.view_occupancy)
+        assert _is_jax_array(result.occupancy)
 
     def test_jax_backend_matches_numpy(
         self,
@@ -488,8 +488,8 @@ class TestComputeViewRateJaxBackend:
             atol=1e-14,
         )
         assert_allclose(
-            np.asarray(result_jax.view_occupancy),
-            result_numpy.view_occupancy,
+            np.asarray(result_jax.occupancy),
+            result_numpy.occupancy,
             rtol=1e-10,
             atol=1e-14,
         )
@@ -579,7 +579,7 @@ class TestComputeViewRatesJaxBackend:
         assert result is not None
         assert result.firing_rates.shape == (len(spike_times_batch), simple_env.n_bins)
         assert _is_jax_array(result.firing_rates)
-        assert _is_jax_array(result.view_occupancy)
+        assert _is_jax_array(result.occupancy)
 
     def test_jax_backend_matches_numpy(
         self,
@@ -670,7 +670,7 @@ class TestComputeEgocentricRateJaxBackend:
 
         # Basic sanity checks
         assert result is not None
-        assert result.firing_rate.shape == (result.ego_env.n_bins,)
+        assert result.firing_rate.shape == (result.env.n_bins,)
         assert _is_jax_array(result.firing_rate)
         assert _is_jax_array(result.occupancy)
 
@@ -769,7 +769,7 @@ class TestComputeEgocentricRatesJaxBackend:
         assert result is not None
         assert result.firing_rates.shape == (
             len(spike_times_batch),
-            result.ego_env.n_bins,
+            result.env.n_bins,
         )
         assert _is_jax_array(result.firing_rates)
         assert _is_jax_array(result.occupancy)

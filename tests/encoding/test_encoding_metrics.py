@@ -659,7 +659,7 @@ class TestBatchGridScores:
         # Single neuron computation for comparison
         single_scores = []
         for i in range(firing_rates.shape[0]):
-            autocorr = spatial_autocorrelation(env, firing_rates[i], method="fft")
+            autocorr = spatial_autocorrelation(env, firing_rates[i])
             score = grid_score(autocorr)
             single_scores.append(score)
 

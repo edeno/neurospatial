@@ -56,7 +56,7 @@ fit_isotonic_trajectory : Monotonic trajectory fitting
     Isotonic regression on posterior sequence.
 
 fit_linear_trajectory : Linear trajectory fitting
-    Linear regression with optional Monte Carlo uncertainty.
+    Linear regression with optional Monte Carlo posterior_entropy.
 
 detect_trajectory_radon : Radon transform trajectory detection
     Detect linear trajectories in posterior images.
@@ -121,7 +121,7 @@ Basic decoding workflow::
     ... ])
     >>> result = decode_position(env, spike_counts, encoding_models, dt=0.025)  # doctest: +SKIP
     >>> print(f"Decoded positions: {result.map_position[:5]}")  # doctest: +SKIP
-    >>> print(f"Uncertainty: {result.uncertainty.mean():.2f} bits")  # doctest: +SKIP
+    >>> print(f"Uncertainty: {result.posterior_entropy.mean():.2f} bits")  # doctest: +SKIP
 
 See Also
 --------

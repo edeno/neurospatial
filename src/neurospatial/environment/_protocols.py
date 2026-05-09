@@ -199,9 +199,8 @@ class EnvironmentProtocol(Protocol):
         positions: NDArray[np.float64],
         *,
         dedup: bool = True,
-        return_runs: bool = False,
         outside_value: int | None = -1,
-    ) -> Any:
+    ) -> NDArray[np.int32]:
         """
         Convert a trajectory to a sequence of bin indices.
 
@@ -213,15 +212,30 @@ class EnvironmentProtocol(Protocol):
             Spatial coordinates at each time point.
         dedup : bool, default=True
             If True, remove consecutive duplicate bin indices.
-        return_runs : bool, default=False
-            If True, return run-length encoded sequence.
         outside_value : int or None, default=-1
             Value to use for positions outside environment.
 
         Returns
         -------
-        ndarray or tuple
-            Bin indices, or (bins, run_lengths) if return_runs=True.
+        ndarray
+            Bin indices. Use ``bin_sequence_with_runs`` to also obtain
+            run-length boundaries.
+        """
+        ...
+
+    def bin_sequence_with_runs(
+        self,
+        times: NDArray[np.float64],
+        positions: NDArray[np.float64],
+        *,
+        dedup: bool = True,
+        outside_value: int | None = -1,
+    ) -> Any:
+        """
+        Convert a trajectory to a bin sequence plus per-run boundaries.
+
+        Returns a ``BinSequenceWithRuns`` dataclass with ``bins``,
+        ``run_starts``, and ``run_lengths``.
         """
         ...
 
