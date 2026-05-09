@@ -62,7 +62,7 @@
 # - `validate_simulation()` - Automated validation against ground truth
 #
 # **Low-level (for fine-grained control)**:
-# - `simulate_trajectory_ou()`, `simulate_trajectory_laps()` - Manual trajectory generation
+# - `simulate_trajectory_ou(speed_units="cm")`, `simulate_trajectory_laps()` - Manual trajectory generation
 # - `PlaceCellModel`, `BoundaryCellModel`, `GridCellModel` - Individual neural models
 # - `generate_poisson_spikes()`, `generate_population_spikes()` - Manual spike generation
 
@@ -177,6 +177,7 @@ positions, times = simulate_trajectory_ou(
     coherence_time=0.7,  # Velocity correlation time (seconds)
     boundary_mode="reflect",  # Bounce off walls
     seed=42,
+    speed_units="cm",
 )
 
 print(f"Generated trajectory: {len(times)} time points")
@@ -588,6 +589,7 @@ speed_positions, speed_times = simulate_trajectory_ou(
     speed_std=6.0,  # High variability
     coherence_time=0.5,
     seed=201,
+    speed_units="cm",
 )
 
 # Generate spikes
@@ -655,6 +657,7 @@ bc_positions, bc_times = simulate_trajectory_ou(
     speed_mean=8.0,
     coherence_time=0.7,
     seed=202,
+    speed_units="cm",
 )
 
 spikes_boundary = generate_poisson_spikes(

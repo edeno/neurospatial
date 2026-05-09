@@ -114,6 +114,7 @@ positions, times = simulate_trajectory_ou(
     coherence_time=0.5,
     boundary_mode="reflect",
     seed=42,
+    speed_units="cm",
 )
 
 print(f"Trajectory duration: {times[-1]:.1f} seconds")

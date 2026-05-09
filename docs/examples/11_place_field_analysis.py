@@ -69,7 +69,7 @@ np.random.seed(42)
 #
 # **Note**: This notebook now uses the `neurospatial.simulation` subpackage for generating synthetic data.
 # The simulation subpackage provides:
-# - Realistic trajectory generation (`simulate_trajectory_ou()`)
+# - Realistic trajectory generation (`simulate_trajectory_ou(speed_units="cm")`)
 # - Neural models (`PlaceCellModel`, `BoundaryCellModel`, `GridCellModel`)
 # - Spike generation (`generate_poisson_spikes()`)
 # - Pre-configured examples (`open_field_session()`, `tmaze_alternation_session()`)
@@ -112,6 +112,7 @@ positions, times = simulate_trajectory_ou(
     coherence_time=0.7,  # Natural exploration smoothness
     boundary_mode="reflect",  # Wrap at boundaries (avoids edge artifacts)
     seed=42,
+    speed_units="cm",
 )
 
 print(f"Environment: {arena_size:.0f}x{arena_size:.0f} cm open field")
@@ -611,6 +612,7 @@ tmaze_positions, tmaze_times = simulate_trajectory_ou(
     coherence_time=0.8,  # Longer coherence for smoother paths
     boundary_mode="reflect",
     seed=42,
+    speed_units="cm",
 )
 
 print(f"\nT-Maze Environment: {tmaze_env.n_bins} bins")
@@ -895,6 +897,7 @@ track_positions, track_times = simulate_trajectory_ou(
     coherence_time=0.5,  # More exploration
     boundary_mode="reflect",
     seed=100,
+    speed_units="cm",
 )
 
 print(f"Linear track environment: {track_env.n_bins} bins")

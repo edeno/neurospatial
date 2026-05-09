@@ -613,8 +613,9 @@ def heading_from_velocity(
     NDArray, shape (n_time,)
         Heading in radians at each timepoint, in the **allocentric
         world-frame convention** (0 = East, π/2 = North, π = West,
-        -π/2 = South), wrapped to (-π, π]. If all speeds are below
-        threshold, returns a NaN array.
+        -π/2 = South), wrapped to ``[-π, π]`` per ``numpy.arctan2``
+        (so westward motion returns +π, not -π). If all speeds are
+        below threshold, returns a NaN array.
 
     Raises
     ------

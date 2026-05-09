@@ -80,6 +80,7 @@ positions, times = simulate_trajectory_ou(
     coherence_time=0.7,  # Smooth, persistent movement
     boundary_mode="periodic",  # Wrap at boundaries (avoids edge artifacts)
     seed=42,
+    speed_units="cm",
 )
 
 print(f"Environment: {arena_size:.0f}x{arena_size:.0f} cm square arena")

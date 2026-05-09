@@ -895,7 +895,7 @@ def compute_view_rate(
     headings : ndarray, shape (n_samples,)
         Head direction at each time sample (radians, **allocentric
         world-frame convention**: 0 = East, π/2 = North, π = West,
-        -π/2 = South, wrapped to [-π, π)). Internally combined with
+        -π/2 = South, wrapped to [-π, π]). Internally combined with
         ``positions`` to project the gaze cone outwards into the
         allocentric arena.
     gaze_model : {"fixed_distance", "ray_cast", "boundary"}, default="fixed_distance"
@@ -1171,7 +1171,7 @@ def compute_view_rates(
     headings : ndarray, shape (n_samples,)
         Head direction at each time sample (radians, **allocentric
         world-frame convention**: 0 = East, π/2 = North, π = West,
-        -π/2 = South, wrapped to [-π, π)). Internally combined with
+        -π/2 = South, wrapped to [-π, π]). Internally combined with
         ``positions`` to project the gaze cone outwards into the
         allocentric arena.
     gaze_model : {"fixed_distance", "ray_cast", "boundary"}, default="fixed_distance"
@@ -1496,7 +1496,7 @@ def is_spatial_view_cell(
     headings : NDArray[np.float64], shape (n_time,)
         Animal heading at each time (radians, **allocentric world-frame
         convention**: 0 = East, π/2 = North, π = West, -π/2 = South,
-        wrapped to [-π, π)).
+        wrapped to [-π, π]).
     view_distance : float, default=10.0
         Distance for fixed_distance gaze model.
     gaze_model : {"fixed_distance", "ray_cast", "boundary"}, default="fixed_distance"

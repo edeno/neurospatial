@@ -965,7 +965,7 @@ def compute_egocentric_rate(
     headings : ndarray, shape (n_samples,)
         Head direction at each time sample (radians, **allocentric
         world-frame convention**: 0 = East, π/2 = North, π = West,
-        -π/2 = South, wrapped to [-π, π)). The allocentric→egocentric
+        -π/2 = South, wrapped to [-π, π]). The allocentric→egocentric
         transform is applied internally; pass world-frame headings, not
         animal-frame angles.
     object_positions : ndarray, shape (n_objects, 2)
@@ -1258,7 +1258,7 @@ def compute_egocentric_rates(
     headings : ndarray, shape (n_samples,)
         Head direction at each time sample (radians, **allocentric
         world-frame convention**: 0 = East, π/2 = North, π = West,
-        -π/2 = South, wrapped to [-π, π)). The allocentric→egocentric
+        -π/2 = South, wrapped to [-π, π]). The allocentric→egocentric
         transform is applied internally; pass world-frame headings, not
         animal-frame angles.
     object_positions : ndarray, shape (n_objects, 2)
@@ -1785,7 +1785,7 @@ def is_object_vector_cell(
     headings : NDArray[np.float64], shape (n_samples,)
         Head direction at each time sample (radians, **allocentric
         world-frame convention**: 0 = East, π/2 = North, π = West,
-        -π/2 = South, wrapped to [-π, π)). The allocentric→egocentric
+        -π/2 = South, wrapped to [-π, π]). The allocentric→egocentric
         transform is applied internally.
     object_positions : NDArray[np.float64], shape (n_objects, 2)
         Object positions in allocentric coordinates.

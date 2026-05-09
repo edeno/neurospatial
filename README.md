@@ -357,11 +357,13 @@ arena_data = np.random.default_rng(0).uniform(0, 100, size=(2000, 2))
 env = Environment.from_samples(arena_data, bin_size=2.0)
 env.units = "cm"  # Required for trajectory simulation
 
-# Generate realistic trajectory using Ornstein-Uhlenbeck process
+# Generate realistic trajectory using Ornstein-Uhlenbeck process.
+# speed_units must match env.units exactly (no auto-conversion in v0.4).
 positions, times = simulate_trajectory_ou(
     env,
     duration=120.0,  # seconds
-    speed_mean=0.08,  # m/s (8 cm/s)
+    speed_units="cm",
+    speed_mean=8.0,  # cm/s
     coherence_time=0.7,  # smoothness parameter
     seed=42
 )

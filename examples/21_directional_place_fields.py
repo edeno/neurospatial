@@ -149,6 +149,7 @@ positions, times = simulate_trajectory_ou(
     coherence_time=0.5,
     boundary_mode="reflect",  # Bounces off walls
     seed=42,
+    speed_units="cm",
 )
 
 print(f"Generated {len(positions)} trajectory points over {duration:.0f}s")
@@ -451,6 +452,7 @@ arena_positions, arena_times = simulate_trajectory_ou(
     coherence_time=0.8,  # Smooth trajectories
     boundary_mode="reflect",
     seed=100,
+    speed_units="cm",
 )
 
 print(f"Generated {len(arena_positions)} trajectory points over {arena_duration:.0f}s")
