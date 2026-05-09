@@ -131,12 +131,18 @@ class TestShortestPathLength:
 
 
 class TestPathEfficiency:
-    """Test path_efficiency function."""
+    """Test the efficiency ratio reported by compute_path_efficiency."""
+
+    def _efficiency(self, env, positions, goal):
+        from neurospatial.behavior.navigation import compute_path_efficiency
+
+        times = np.linspace(0.0, 1.0, len(positions))
+        return compute_path_efficiency(
+            env, positions, times, goal, metric="euclidean"
+        ).efficiency
 
     def test_straight_path_efficiency_is_one(self):
         """Test that straight path from start to goal has efficiency 1.0."""
-        from neurospatial.behavior.navigation import path_efficiency
-
         # Create grid environment
         x = np.linspace(0, 100, 100)
         y = np.linspace(0, 100, 100)
@@ -148,15 +154,13 @@ class TestPathEfficiency:
         positions = np.column_stack([np.linspace(0, 50, 11), np.zeros(11)])
         goal = np.array([50.0, 0.0])
 
-        eff = path_efficiency(env, positions, goal, metric="euclidean")
+        eff = self._efficiency(env, positions, goal)
 
         # Straight path should be close to 1.0
         assert_allclose(eff, 1.0, rtol=0.05)
 
     def test_u_turn_path_efficiency(self):
         """Test that U-turn path has efficiency ~0.5."""
-        from neurospatial.behavior.navigation import path_efficiency
-
         # Create grid environment
         x = np.linspace(0, 100, 100)
         y = np.linspace(0, 100, 100)
@@ -178,29 +182,25 @@ class TestPathEfficiency:
         positions = np.column_stack([x_coords, np.zeros_like(x_coords)])
         goal = np.array([25.0, 0.0])
 
-        eff = path_efficiency(env, positions, goal, metric="euclidean")
+        eff = self._efficiency(env, positions, goal)
 
         # Efficiency should be low due to backtracking
         assert eff < 0.5
 
     def test_less_than_two_positions_returns_nan(self):
         """Test that < 2 positions returns NaN efficiency."""
-        from neurospatial.behavior.navigation import path_efficiency
-
         positions = np.array([[50.0, 50.0]])
         env = Environment.from_samples(
             np.column_stack([np.linspace(0, 100, 50), np.zeros(50)]), bin_size=5.0
         )
         goal = np.array([60.0, 0.0])
 
-        eff = path_efficiency(env, positions, goal, metric="euclidean")
+        eff = self._efficiency(env, positions, goal)
 
         assert np.isnan(eff)
 
     def test_zero_traveled_returns_nan(self):
         """Test that zero traveled distance returns NaN efficiency."""
-        from neurospatial.behavior.navigation import path_efficiency
-
         # All positions identical
         positions = np.tile([50.0, 50.0], (5, 1))
         env = Environment.from_samples(
@@ -208,7 +208,7 @@ class TestPathEfficiency:
         )
         goal = np.array([60.0, 0.0])
 
-        eff = path_efficiency(env, positions, goal, metric="euclidean")
+        eff = self._efficiency(env, positions, goal)
 
         assert np.isnan(eff)
 

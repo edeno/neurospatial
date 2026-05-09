@@ -243,7 +243,7 @@ class TestPathEfficiencyPathProgressConsistency:
 
     def test_straight_path_efficiency_equals_one(self) -> None:
         """Straight path should have efficiency = 1.0."""
-        from neurospatial.behavior.navigation import path_efficiency
+        from neurospatial.behavior.navigation import compute_path_efficiency
 
         # Create environment
         rng = np.random.default_rng(42)
@@ -257,9 +257,12 @@ class TestPathEfficiencyPathProgressConsistency:
                 np.full(50, 50.0),
             ]
         )
+        times = np.linspace(0.0, 1.0, len(trajectory))
         goal = np.array([90.0, 50.0])
 
-        efficiency = path_efficiency(env, trajectory, goal, metric="euclidean")
+        efficiency = compute_path_efficiency(
+            env, trajectory, times, goal, metric="euclidean"
+        ).efficiency
 
         # Should be very close to 1.0 for straight path
         assert 0.95 <= efficiency <= 1.0
@@ -309,7 +312,7 @@ class TestPathEfficiencyPathProgressConsistency:
 
     def test_efficiency_and_progress_both_handle_detours(self) -> None:
         """Both metrics should handle detours reasonably."""
-        from neurospatial.behavior.navigation import path_efficiency
+        from neurospatial.behavior.navigation import compute_path_efficiency
 
         # Create dense environment to ensure trajectory bins exist
         # Note: rng not used here since we use linspace grid, but kept for consistency
@@ -334,10 +337,13 @@ class TestPathEfficiencyPathProgressConsistency:
             ]
         )
         trajectory = np.column_stack([x_traj, y_traj])
+        times = np.linspace(0.0, 1.0, len(trajectory))
         goal = np.array([10.0, 50.0])  # Back at start
 
         # Path efficiency should be low (traveled much more than needed)
-        efficiency = path_efficiency(env, trajectory, goal, metric="euclidean")
+        efficiency = compute_path_efficiency(
+            env, trajectory, times, goal, metric="euclidean"
+        ).efficiency
         assert efficiency < 0.1  # Should be very inefficient
 
 

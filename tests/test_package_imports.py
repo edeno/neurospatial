@@ -511,7 +511,7 @@ class TestPLANMDExampleUsage:
         from neurospatial.behavior import navigation, segmentation, trajectory
 
         assert hasattr(segmentation, "detect_laps")
-        assert hasattr(navigation, "path_efficiency")
+        assert hasattr(navigation, "compute_path_efficiency")
         assert hasattr(trajectory, "mean_square_displacement")
 
     def test_plan_md_events_pattern(self):

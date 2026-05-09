@@ -765,7 +765,6 @@ from neurospatial.behavior.navigation import (
     SubgoalEfficiencyResult,        # Multi-waypoint efficiency
     traveled_path_length,           # Total distance traveled
     shortest_path_length,           # Geodesic/Euclidean distance
-    path_efficiency,                # Ratio: shortest / traveled
     time_efficiency,                # Ratio: T_optimal / T_actual
     angular_efficiency,             # 1 - mean(|delta_theta|) / pi
     subgoal_efficiency,             # Per-segment efficiency

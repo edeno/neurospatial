@@ -10,7 +10,7 @@ Functions being moved:
   goal_pair_direction_labels, heading_direction_labels,
   compute_trajectory_curvature (already in behavior/trajectory.py)
 - From metrics/path_efficiency.py: PathEfficiencyResult, SubgoalEfficiencyResult,
-  traveled_path_length, shortest_path_length, path_efficiency, time_efficiency,
+  traveled_path_length, shortest_path_length, time_efficiency,
   angular_efficiency, subgoal_efficiency, compute_path_efficiency
 - From metrics/goal_directed.py: GoalDirectedMetrics, goal_vector, goal_direction,
   instantaneous_goal_alignment, goal_bias, approach_rate, compute_goal_directed_metrics
@@ -95,12 +95,6 @@ class TestNavigationImports:
         from neurospatial.behavior.navigation import shortest_path_length
 
         assert callable(shortest_path_length)
-
-    def test_import_path_efficiency(self):
-        """Test path_efficiency is importable from behavior.navigation."""
-        from neurospatial.behavior.navigation import path_efficiency
-
-        assert callable(path_efficiency)
 
     def test_import_time_efficiency(self):
         """Test time_efficiency is importable from behavior.navigation."""
@@ -195,12 +189,6 @@ class TestBehaviorModuleReExports:
         from neurospatial.behavior import time_to_goal
 
         assert callable(time_to_goal)
-
-    def test_import_path_efficiency_from_behavior(self):
-        """Test path_efficiency is re-exported from behavior module."""
-        from neurospatial.behavior import path_efficiency
-
-        assert callable(path_efficiency)
 
     def test_import_goal_bias_from_behavior(self):
         """Test goal_bias is re-exported from behavior module."""
@@ -329,19 +317,22 @@ class TestNavigationFunctionality:
         assert "stationary" in labels or any("0" in str(label) for label in labels[1:])
 
     def test_path_efficiency_with_env(self, simple_env):
-        """Test path_efficiency works with environment."""
-        from neurospatial.behavior.navigation import path_efficiency
+        """Test compute_path_efficiency.efficiency works with environment."""
+        from neurospatial.behavior.navigation import compute_path_efficiency
 
         # Create a trajectory
         positions = np.array(
             [[10.0, 10.0], [20.0, 15.0], [30.0, 20.0], [40.0, 25.0], [50.0, 30.0]]
         )
+        times = np.linspace(0.0, 1.0, len(positions))
         goal = np.array([50.0, 30.0])
 
-        eff = path_efficiency(simple_env, positions, goal, metric="euclidean")
+        result = compute_path_efficiency(
+            simple_env, positions, times, goal, metric="euclidean"
+        )
 
         # Efficiency should be between 0 and 1
-        assert 0.0 < eff <= 1.0
+        assert 0.0 < result.efficiency <= 1.0
 
     def test_compute_goal_directed_metrics_basic(self, simple_env):
         """Test compute_goal_directed_metrics returns valid metrics."""

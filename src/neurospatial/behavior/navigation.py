@@ -29,7 +29,6 @@ All navigation functions are importable from ``behavior.navigation``::
         SubgoalEfficiencyResult,
         traveled_path_length,
         shortest_path_length,
-        path_efficiency,
         time_efficiency,
         angular_efficiency,
         subgoal_efficiency,
@@ -46,7 +45,7 @@ All navigation functions are importable from ``behavior.navigation``::
 
 Or from the behavior module::
 
-    from neurospatial.behavior import path_progress, path_efficiency, goal_bias
+    from neurospatial.behavior import path_progress, compute_path_efficiency, goal_bias
 
 Typical Workflows
 -----------------
@@ -136,7 +135,6 @@ __all__ = [  # noqa: RUF022
     "SubgoalEfficiencyResult",
     "angular_efficiency",
     "compute_path_efficiency",
-    "path_efficiency",
     "shortest_path_length",
     "subgoal_efficiency",
     "time_efficiency",
@@ -1270,55 +1268,6 @@ def shortest_path_length(
     distances = distance_field(env.connectivity, [int(goal_bin)], metric="geodesic")
 
     return float(distances[start_bin])
-
-
-def path_efficiency(
-    env: Environment,
-    positions: NDArray[np.float64],
-    goal: NDArray[np.float64],
-    *,
-    metric: Literal["geodesic", "euclidean"] = "geodesic",
-) -> float:
-    """Compute path efficiency: ratio of shortest to traveled distance.
-
-    Parameters
-    ----------
-    env : Environment
-        Spatial environment.
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Trajectory positions.
-    goal : NDArray[np.float64], shape (n_dims,)
-        Goal position.
-    metric : {"geodesic", "euclidean"}, default="geodesic"
-        Distance metric for both traveled and shortest path.
-
-    Returns
-    -------
-    float
-        Efficiency ratio in range (0, 1]. Returns NaN if:
-        - Trajectory has < 2 positions
-        - Traveled length is 0 (stationary)
-
-    Examples
-    --------
-    >>> eff = path_efficiency(env, positions, goal)  # doctest: +SKIP
-    >>> print(f"Efficiency: {eff:.1%}")  # doctest: +SKIP
-    """
-    if len(positions) < 2:
-        return np.nan
-
-    traveled = traveled_path_length(positions, metric=metric, env=env)
-
-    if traveled == 0.0 or np.isnan(traveled):
-        return np.nan
-
-    start = positions[0]
-    shortest = shortest_path_length(env, start, goal, metric=metric)
-
-    if np.isinf(shortest):
-        return np.nan
-
-    return float(shortest / traveled)
 
 
 def time_efficiency(

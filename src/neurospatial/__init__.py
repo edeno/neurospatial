@@ -106,7 +106,7 @@ Explicit submodule imports for all else (recommended)::
 
     # Behavioral analysis
     from neurospatial.behavior.segmentation import detect_laps
-    from neurospatial.behavior.navigation import path_efficiency
+    from neurospatial.behavior.navigation import compute_path_efficiency
 
     # Events
     from neurospatial.events import peri_event_histogram
