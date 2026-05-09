@@ -494,13 +494,14 @@ class TestWriteEnvironment:
         assert "spatial_environment" in empty_nwb.scratch
 
     def test_error_on_unfitted_environment(self, empty_nwb, sample_environment):
-        """Test ValueError when writing unfitted Environment."""
+        """Test EnvironmentNotFittedError when writing unfitted Environment."""
+        from neurospatial.environment.decorators import EnvironmentNotFittedError
         from neurospatial.io.nwb import write_environment
 
         # Manually mark environment as unfitted to test validation
         sample_environment._is_fitted = False
 
-        with pytest.raises(ValueError, match="must be fitted"):
+        with pytest.raises(EnvironmentNotFittedError, match="write_environment"):
             write_environment(empty_nwb, sample_environment)
 
 

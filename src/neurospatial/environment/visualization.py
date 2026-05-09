@@ -222,6 +222,7 @@ class EnvironmentVisualization:
 
         return ax
 
+    @check_fitted
     def plot_1d(
         self: SelfEnv,
         ax: matplotlib.axes.Axes | None = None,

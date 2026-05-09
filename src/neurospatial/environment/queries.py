@@ -734,6 +734,7 @@ class EnvironmentQueries:
 
         return reachable
 
+    @check_fitted
     def components(
         self: SelfEnv,
         *,

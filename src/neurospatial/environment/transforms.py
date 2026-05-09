@@ -14,6 +14,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.environment._protocols import SelfEnv
+from neurospatial.environment.decorators import check_fitted
 
 if TYPE_CHECKING:
     import shapely
@@ -27,6 +28,7 @@ from neurospatial.regions import Regions
 class EnvironmentTransforms:
     """Mixin providing environment transformation methods."""
 
+    @check_fitted
     def rebin(
         self: SelfEnv,
         factor: int | tuple[int, ...],

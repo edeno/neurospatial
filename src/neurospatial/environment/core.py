@@ -1039,6 +1039,7 @@ class Environment(
         """
         return compute_differential_operator(self)
 
+    @check_fitted
     def copy(self, *, deep: bool = True) -> Environment:
         """Create a copy of the environment.
 
@@ -1164,6 +1165,7 @@ class Environment(
         if kernels:
             self._kernel_cache = {}
 
+    @check_fitted
     def clear_cache(
         self,
         *,

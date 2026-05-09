@@ -33,6 +33,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.environment._protocols import SelfEnv
+from neurospatial.environment.decorators import check_fitted
 
 if TYPE_CHECKING:
     import scipy.sparse
@@ -88,6 +89,7 @@ class EnvironmentTrajectory:
     Provides methods for analyzing trajectories through environments.
     """
 
+    @check_fitted
     def occupancy(
         self: SelfEnv,
         times: NDArray[np.float64],
