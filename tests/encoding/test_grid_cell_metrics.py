@@ -625,46 +625,39 @@ class TestGridScale:
         assert abs(scale2 / scale1 - 2.0) < 0.1
 
 
-class TestGridOrientation:
-    """Tests for grid_orientation function."""
+class TestGridOrientationViaGridProperties:
+    """Tests for grid orientation, accessed through ``GridProperties``.
 
-    def test_grid_orientation_anchor_horizontal_grid(self):
-        """Anchor test: Grid aligned with horizontal axis should have orientation ~0°.
+    The standalone ``grid_orientation`` function was folded into
+    :func:`grid_properties` in M2.B 2.13. These tests pin the same
+    contract on ``grid_properties(...).orientation`` /
+    ``.orientation_std`` so the behavior is preserved.
+    """
 
-        Mathematical reasoning:
-        - Peaks at 0°, 60°, 120°, 180°, 240°, 300° relative to horizontal
-        - First peak at 0° (horizontal)
-        - Orientation should be close to 0° (or equivalently ~60°)
-        """
-        from neurospatial.encoding.grid import grid_orientation
+    def test_orientation_anchor_horizontal_grid(self):
+        """Grid aligned with horizontal axis should have orientation in [0, 60)."""
+        from neurospatial.encoding.grid import grid_properties
 
         autocorr = _create_hexagonal_autocorr()
+        props = grid_properties(autocorr, bin_size=1.0)
 
-        orientation, orientation_std = grid_orientation(autocorr)
+        assert props.orientation >= 0.0
+        assert props.orientation < 60.0
+        assert props.orientation_std < 15.0
 
-        # Orientation should be near 0° or 60° (equivalent due to symmetry)
-        assert orientation >= 0.0
-        assert orientation < 60.0
-        # Std should be relatively low for clean pattern
-        assert orientation_std < 15.0
+    def test_orientation_anchor_rotated_grid(self):
+        """Grid rotated by 30° should have orientation ~30°."""
+        from neurospatial.encoding.grid import grid_properties
 
-    def test_grid_orientation_anchor_rotated_grid(self):
-        """Anchor test: Grid rotated by 30° should have orientation ~30°."""
-        from neurospatial.encoding.grid import grid_orientation
-
-        # Create hexagonal pattern rotated by 30°
         size = 100
         autocorr = np.zeros((size, size))
         center = size // 2
         radius = 20.0
-
         y_grid, x_grid = np.ogrid[:size, :size]
 
-        # Central peak
         dist_from_center = np.sqrt((y_grid - center) ** 2 + (x_grid - center) ** 2)
         autocorr = np.exp(-(dist_from_center**2) / (2 * 5**2))
 
-        # Add 6 peaks at 60° intervals, starting from 30° (not 0°)
         for angle_deg in [30, 90, 150, 210, 270, 330]:
             angle_rad = np.radians(angle_deg)
             peak_y = center + int(radius * np.sin(angle_rad))
@@ -673,45 +666,30 @@ class TestGridOrientation:
             autocorr += 0.8 * np.exp(-(peak_dist**2) / (2 * 5**2))
 
         autocorr = autocorr / autocorr.max()
+        props = grid_properties(autocorr, bin_size=1.0)
 
-        orientation, _orientation_std = grid_orientation(autocorr)
-
-        # Orientation should be near 30°
-        assert 20.0 < orientation < 40.0, (
-            f"Expected orientation ~30°, got {orientation}"
+        assert 20.0 < props.orientation < 40.0, (
+            f"Expected orientation ~30°, got {props.orientation}"
         )
 
-    def test_grid_orientation_returns_nan_on_flat_input(self):
-        """Test returns NaN when no clear peaks detected (flat data)."""
-        from neurospatial.encoding.grid import grid_orientation
+    def test_orientation_returns_nan_on_flat_input(self):
+        """No detectable peaks -> orientation NaN."""
+        from neurospatial.encoding.grid import grid_properties
 
-        # Truly flat data (no local maxima possible)
         autocorr = np.ones((50, 50)) * 0.5
+        props = grid_properties(autocorr, bin_size=1.0)
 
-        orientation, orientation_std = grid_orientation(autocorr)
+        assert np.isnan(props.orientation)
+        assert np.isnan(props.orientation_std)
 
-        # Should return NaN (no peaks in flat data)
-        assert np.isnan(orientation)
-        assert np.isnan(orientation_std)
-
-    def test_grid_orientation_in_valid_range(self):
-        """Test orientation is in range [0, 60)."""
-        from neurospatial.encoding.grid import grid_orientation
+    def test_orientation_in_valid_range(self):
+        """Orientation is in [0, 60)."""
+        from neurospatial.encoding.grid import grid_properties
 
         autocorr = _create_hexagonal_autocorr()
+        props = grid_properties(autocorr, bin_size=1.0)
 
-        orientation, _ = grid_orientation(autocorr)
-
-        assert 0.0 <= orientation < 60.0
-
-    def test_grid_orientation_raises_on_1d_input(self):
-        """Test raises ValueError on 1D input."""
-        from neurospatial.encoding.grid import grid_orientation
-
-        autocorr = np.zeros(100)
-
-        with pytest.raises(ValueError, match="autocorr_2d must be 2D"):
-            grid_orientation(autocorr)
+        assert 0.0 <= props.orientation < 60.0
 
 
 class TestGridProperties:
@@ -761,7 +739,6 @@ class TestGridProperties:
     def test_grid_properties_matches_individual_functions(self):
         """Test grid_properties matches individual function outputs."""
         from neurospatial.encoding.grid import (
-            grid_orientation,
             grid_properties,
             grid_scale,
             grid_score,
@@ -776,16 +753,12 @@ class TestGridProperties:
         # Get individual function outputs
         score_individual = grid_score(autocorr)
         scale_individual = grid_scale(autocorr, bin_size=bin_size)
-        orientation_individual, _std_individual = grid_orientation(autocorr)
 
         # Score should match exactly
         assert props.score == score_individual
 
         # Scale should match (within tolerance due to peak detection variance)
         assert abs(props.scale - scale_individual) < 5.0
-
-        # Orientation should be close (within tolerance)
-        assert abs(props.orientation - orientation_individual) < 5.0
 
     def test_grid_properties_raises_on_invalid_input(self):
         """Test raises ValueError on invalid input."""

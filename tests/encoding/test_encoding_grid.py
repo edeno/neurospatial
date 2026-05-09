@@ -42,12 +42,6 @@ class TestEncodingGridImports:
 
         assert callable(spatial_autocorrelation)
 
-    def test_import_grid_orientation(self) -> None:
-        """grid_orientation should be importable from encoding.grid."""
-        from neurospatial.encoding.grid import grid_orientation
-
-        assert callable(grid_orientation)
-
     def test_import_grid_scale(self) -> None:
         """grid_scale should be importable from encoding.grid."""
         from neurospatial.encoding.grid import grid_scale
@@ -186,16 +180,16 @@ class TestEncodingGridFunctionality:
         assert isinstance(scale, float)
         assert scale > 0
 
-    def test_grid_orientation_runs(self) -> None:
-        """grid_orientation should run and return tuple of floats."""
-        from neurospatial.encoding.grid import grid_orientation
+    def test_grid_orientation_via_grid_properties_runs(self) -> None:
+        """Orientation is now exposed via grid_properties (M2.B 2.13)."""
+        from neurospatial.encoding.grid import grid_properties
 
         autocorr = _create_hexagonal_autocorr()
-        orientation, orientation_std = grid_orientation(autocorr)
+        props = grid_properties(autocorr, bin_size=1.0)
 
-        assert isinstance(orientation, float)
-        assert isinstance(orientation_std, float)
-        assert 0.0 <= orientation < 60.0
+        assert isinstance(props.orientation, float)
+        assert isinstance(props.orientation_std, float)
+        assert 0.0 <= props.orientation < 60.0
 
     def test_periodicity_score_runs(self) -> None:
         """periodicity_score should run and return float."""

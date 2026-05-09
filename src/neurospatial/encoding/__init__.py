@@ -70,7 +70,6 @@ from neurospatial.encoding.egocentric import (
 # Grid cell analysis
 from neurospatial.encoding.grid import (
     GridProperties,
-    grid_orientation,
     grid_properties,
     grid_scale,
     grid_score,
@@ -158,7 +157,6 @@ __all__ = [  # noqa: RUF022 - organized by category
     "plot_object_vector_tuning",
     # Grid cell analysis
     "GridProperties",
-    "grid_orientation",
     "grid_properties",
     "grid_scale",
     "grid_score",

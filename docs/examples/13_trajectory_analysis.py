@@ -626,9 +626,10 @@ plt.show()
 
 # %%
 # Compute MSD for different time lags using geodesic distances
-tau_values, msd_values = mean_square_displacement(
+_msd = mean_square_displacement(
     positions, times, metric="geodesic", env=env, max_tau=30.0
 )
+tau_values, msd_values = _msd.lags, _msd.msd
 
 # Fit power law: MSD ~ tau^alpha
 # Use log-log fit: log(MSD) = alpha * log(tau) + const

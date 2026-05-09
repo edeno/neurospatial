@@ -1710,10 +1710,17 @@ class DirectionalPlaceFields:
 
     Attributes
     ----------
-    fields : Mapping[str, NDArray[np.float64]]
+    firing_rates : Mapping[str, NDArray[np.float64]]
         Dictionary mapping direction labels (e.g., "A→B", "forward") to
         firing rate arrays. Each array has shape (n_bins,) matching the
         environment's bin structure.
+    occupancy : Mapping[str, NDArray[np.float64]]
+        Per-direction occupancy (time spent in each bin) in seconds.
+        Shape (n_bins,). Same keys as ``firing_rates``.
+    env : Environment
+        Spatial environment used to compute the per-direction fields.
+        Shared across all labels (the per-direction split is over time,
+        not over space).
     labels : tuple[str, ...]
         Tuple of direction labels in iteration order. Preserves the order
         in which directions were processed, enabling reproducible iteration.
@@ -1721,25 +1728,33 @@ class DirectionalPlaceFields:
     Examples
     --------
     >>> import numpy as np
-    >>> fields = {
+    >>> from neurospatial import Environment
+    >>> env = Environment.from_samples(
+    ...     np.linspace(0, 10, 11)[:, None], bin_size=1.0
+    ... )  # doctest: +SKIP
+    >>> firing_rates = {
     ...     "home→goal": np.array([1.0, 2.0, 3.0]),
     ...     "goal→home": np.array([3.0, 2.0, 1.0]),
     ... }
-    >>> result = DirectionalPlaceFields(
-    ...     fields=fields,
+    >>> occupancy = {
+    ...     "home→goal": np.array([1.0, 1.0, 1.0]),
+    ...     "goal→home": np.array([1.0, 1.0, 1.0]),
+    ... }
+    >>> result = DirectionalPlaceFields(  # doctest: +SKIP
+    ...     firing_rates=firing_rates,
+    ...     occupancy=occupancy,
+    ...     env=env,
     ...     labels=("home→goal", "goal→home"),
     ... )
-    >>> result.fields["home→goal"]
-    array([1., 2., 3.])
-    >>> result.labels
-    ('home→goal', 'goal→home')
 
     See Also
     --------
     compute_directional_place_fields : Compute directional place fields from spike data.
     """
 
-    fields: Mapping[str, NDArray[np.float64]]
+    firing_rates: Mapping[str, NDArray[np.float64]]
+    occupancy: Mapping[str, NDArray[np.float64]]
+    env: Environment
     labels: tuple[str, ...]
 
 
@@ -1891,7 +1906,9 @@ def compute_directional_place_fields(
     -------
     DirectionalPlaceFields
         Container with:
-        - ``fields``: Mapping from direction label to firing rate array (n_bins,)
+        - ``firing_rates``: Mapping from direction label to firing rate array (n_bins,)
+        - ``occupancy``: Mapping from direction label to per-bin occupancy (n_bins,)
+        - ``env``: Spatial environment shared across labels
         - ``labels``: Tuple of direction labels in iteration order
 
     Raises
@@ -1936,9 +1953,9 @@ def compute_directional_place_fields(
     >>> result = compute_directional_place_fields(
     ...     env, spike_times, times, positions, labels, bandwidth=10.0
     ... )
-    >>> "forward" in result.fields
+    >>> "forward" in result.firing_rates
     True
-    >>> "backward" in result.fields
+    >>> "backward" in result.firing_rates
     True
     """
     # Validate direction_labels length matches times
@@ -1958,7 +1975,8 @@ def compute_directional_place_fields(
     unique_labels = sorted(unique_labels, key=str)
 
     # Compute place field for each direction
-    fields_dict: dict[str, NDArray[np.float64]] = {}
+    firing_rates_dict: dict[str, NDArray[np.float64]] = {}
+    occupancy_dict: dict[str, NDArray[np.float64]] = {}
 
     for label in unique_labels:
         # Build mask for this direction
@@ -1970,22 +1988,24 @@ def compute_directional_place_fields(
         )
         positions_sub = positions[mask]
 
-        field = np.asarray(
-            compute_spatial_rate(
-                env,
-                spike_times_sub,
-                times_sub,
-                positions_sub,
-                smoothing_method=smoothing_method,
-                bandwidth=bandwidth,
-                min_occupancy=min_occupancy,
-            ).firing_rate,
-            dtype=np.float64,
+        single = compute_spatial_rate(
+            env,
+            spike_times_sub,
+            times_sub,
+            positions_sub,
+            smoothing_method=smoothing_method,
+            bandwidth=bandwidth,
+            min_occupancy=min_occupancy,
         )
+        firing_rates_dict[str(label)] = np.asarray(single.firing_rate, dtype=np.float64)
+        occupancy_dict[str(label)] = np.asarray(single.occupancy, dtype=np.float64)
 
-        fields_dict[label] = field
-
-    return DirectionalPlaceFields(fields=fields_dict, labels=tuple(unique_labels))
+    return DirectionalPlaceFields(
+        firing_rates=firing_rates_dict,
+        occupancy=occupancy_dict,
+        env=env,
+        labels=tuple(str(label) for label in unique_labels),
+    )
 
 
 # ==============================================================================

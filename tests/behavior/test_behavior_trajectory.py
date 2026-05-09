@@ -152,9 +152,10 @@ class TestMeanSquareDisplacementBasic:
         positions = np.column_stack([np.linspace(0, 100, 50), np.zeros(50)])
         times = np.linspace(0, 10, 50)
 
-        tau_values, msd_values = mean_square_displacement(
+        _msd = mean_square_displacement(
             positions, times, metric="euclidean", max_tau=5.0
         )
+        tau_values, msd_values = _msd.lags, _msd.msd
 
         assert tau_values.ndim == 1
         assert msd_values.ndim == 1

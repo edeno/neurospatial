@@ -358,28 +358,29 @@ class TestSegmentByVelocity:
 
         # Brief movement should be filtered
         # All segments should have duration >= min_duration
-        for start, end in segments:
-            assert end - start >= 1.0 - 1e-6  # Allow small numerical error
+        for run in segments:
+            assert run.end_time - run.start_time >= 1.0 - 1e-6
 
-    def test_returns_list_of_tuples(self):
-        """Test that function returns list of (start_time, end_time) tuples."""
+    def test_returns_list_of_runs(self):
+        """Test that function returns list[Run] (matching siblings)."""
         trajectory = np.linspace(0, 100, 100)[:, None]
         times = np.linspace(0, 10, 100)
 
-        from neurospatial.behavior.segmentation import segment_by_velocity
+        from neurospatial.behavior.segmentation import Run, segment_by_velocity
 
         segments = segment_by_velocity(trajectory, times, min_speed=2.0)
 
-        # Should return list
         assert isinstance(segments, list)
-        # Each element should be a tuple of two floats
-        for segment in segments:
-            assert isinstance(segment, tuple)
-            assert len(segment) == 2
-            start, end = segment
-            assert isinstance(start, (int, float, np.number))
-            assert isinstance(end, (int, float, np.number))
-            assert start < end  # Start before end
+        for run in segments:
+            assert isinstance(run, Run)
+            assert isinstance(run.start_time, (int, float, np.number))
+            assert isinstance(run.end_time, (int, float, np.number))
+            assert run.start_time < run.end_time
+            # segment_by_velocity-emitted Runs use the documented sentinels:
+            # bins is empty (movement is not region-bounded) and success
+            # is True (every emitted run satisfied min_speed/min_duration).
+            assert run.bins.shape == (0,)
+            assert run.success is True
 
     def test_parameter_order(self):
         """Test parameter order is (positions, times, threshold, *, ...)."""

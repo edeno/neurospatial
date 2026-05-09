@@ -175,9 +175,10 @@ Mean square displacement (MSD) classifies diffusion processes based on scaling e
 from neurospatial.behavior.trajectory import mean_square_displacement
 
 # Compute MSD from continuous positions (Euclidean distance, ecology standard)
-tau_values, msd_values = mean_square_displacement(
+_msd = mean_square_displacement(
     positions, times, metric="euclidean", max_tau=10.0
 )
+tau_values, msd_values = _msd.lags, _msd.msd
 
 # OR: Geodesic distance for constrained environments
 # tau_geo, msd_geo = mean_square_displacement(
@@ -932,12 +933,13 @@ for i in range(0, len(positions) - window_size, hop_size):
     window_times = times[i:i+window_size]
 
     # Use continuous positions for accurate diffusion exponent
-    tau_vals, msd_vals = mean_square_displacement(
+    _msd = mean_square_displacement(
         window_positions,
         window_times,
         metric="euclidean",
         max_tau=5.0
     )
+    tau_vals, msd_vals = _msd.lags, _msd.msd
 
     if len(tau_vals) > 3:
         log_tau = np.log(tau_vals[1:])

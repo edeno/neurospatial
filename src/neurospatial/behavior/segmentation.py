@@ -548,7 +548,7 @@ def segment_by_velocity(
     min_duration: float = 0.5,
     hysteresis: float = 2.0,
     smooth_window: float = 0.2,
-) -> list[tuple[float, float]]:
+) -> list[Run]:
     """Segment trajectory into movement and rest periods based on velocity.
 
     Uses hysteresis thresholding to classify trajectory epochs as movement
@@ -580,9 +580,14 @@ def segment_by_velocity(
 
     Returns
     -------
-    list[tuple[float, float]]
-        List of movement segments as (start_time, end_time) tuples.
-        Times are in seconds. Segments are sorted chronologically.
+    list[Run]
+        List of movement epochs as :class:`Run` instances. Matches the
+        sibling segmentation functions (``detect_runs_between_regions``,
+        ``detect_laps``, etc.) so callers can treat all behavioral
+        epochs uniformly. Each entry has ``start_time`` and ``end_time``
+        populated; ``bins`` is empty (movement epochs are not
+        region-bounded) and ``success`` is always ``True`` (every
+        emitted epoch satisfied ``min_speed`` / ``min_duration``).
 
     Raises
     ------
@@ -685,39 +690,35 @@ def segment_by_velocity(
                 is_moving[i] = True
 
     # Detect segments (note: velocities correspond to transitions, so index times[1:])
-    segments = []
+    epochs: list[Run] = []
     in_segment = False
-    segment_start = None
+    segment_start: float | None = None
+    empty_bins = np.array([], dtype=np.int64)
+
+    def _emit(start: float, end: float) -> None:
+        if (end - start) >= min_duration:
+            epochs.append(
+                Run(start_time=start, end_time=end, bins=empty_bins, success=True)
+            )
 
     for i in range(len(is_moving)):
         time_idx = i + 1  # Velocity at i corresponds to transition from i to i+1
 
         if is_moving[i] and not in_segment:
-            # Start new segment
             in_segment = True
             segment_start = times[time_idx]
 
         elif not is_moving[i] and in_segment:
-            # End segment
-            segment_end = times[time_idx]
             assert segment_start is not None  # Type narrowing for mypy
-            duration = segment_end - segment_start
-
-            if duration >= min_duration:
-                segments.append((segment_start, segment_end))
-
+            _emit(segment_start, times[time_idx])
             in_segment = False
 
     # Handle case where trajectory ends while moving
     if in_segment:
-        segment_end = times[-1]
         assert segment_start is not None  # Type narrowing for mypy
-        duration = segment_end - segment_start
+        _emit(segment_start, times[-1])
 
-        if duration >= min_duration:
-            segments.append((segment_start, segment_end))
-
-    return segments
+    return epochs
 
 
 # =============================================================================

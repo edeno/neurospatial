@@ -26,9 +26,23 @@ class TestDirectionalPlaceFieldsDataclass:
         }
         labels = ("A→B", "B→A")
 
-        result = DirectionalPlaceFields(fields=fields, labels=labels)
+        # Test stub: DirectionalPlaceFields requires firing_rates,
+        # occupancy, env, labels (M2.B 2.13). For pure dataclass
+        # construction tests we synthesize the new fields with
+        # zero occupancy and a tiny synthetic env.
+        _fields_for_dpf = fields
+        _occ_for_dpf = {k: np.zeros_like(v) for k, v in _fields_for_dpf.items()}
+        _env_for_dpf = Environment.from_samples(
+            np.linspace(0, 10, 11)[:, None], bin_size=1.0
+        )
+        result = DirectionalPlaceFields(
+            firing_rates=_fields_for_dpf,
+            occupancy=_occ_for_dpf,
+            env=_env_for_dpf,
+            labels=labels,
+        )
 
-        assert result.fields == fields
+        assert result.firing_rates == fields
         assert result.labels == labels
 
     def test_dataclass_is_frozen(self) -> None:
@@ -36,14 +50,28 @@ class TestDirectionalPlaceFieldsDataclass:
         fields = {"A→B": np.array([1.0, 2.0, 3.0])}
         labels = ("A→B",)
 
-        result = DirectionalPlaceFields(fields=fields, labels=labels)
+        # Test stub: DirectionalPlaceFields requires firing_rates,
+        # occupancy, env, labels (M2.B 2.13). For pure dataclass
+        # construction tests we synthesize the new fields with
+        # zero occupancy and a tiny synthetic env.
+        _fields_for_dpf = fields
+        _occ_for_dpf = {k: np.zeros_like(v) for k, v in _fields_for_dpf.items()}
+        _env_for_dpf = Environment.from_samples(
+            np.linspace(0, 10, 11)[:, None], bin_size=1.0
+        )
+        result = DirectionalPlaceFields(
+            firing_rates=_fields_for_dpf,
+            occupancy=_occ_for_dpf,
+            env=_env_for_dpf,
+            labels=labels,
+        )
 
         # Should raise FrozenInstanceError when trying to modify
         with pytest.raises(AttributeError):
             result.labels = ("B→A",)  # type: ignore[misc]
 
         with pytest.raises(AttributeError):
-            result.fields = {}  # type: ignore[misc]
+            result.firing_rates = {}  # type: ignore[misc]
 
     def test_labels_is_tuple(self) -> None:
         """Test that labels preserves iteration order as tuple."""
@@ -54,7 +82,21 @@ class TestDirectionalPlaceFieldsDataclass:
         }
         labels = ("first", "second", "third")
 
-        result = DirectionalPlaceFields(fields=fields, labels=labels)
+        # Test stub: DirectionalPlaceFields requires firing_rates,
+        # occupancy, env, labels (M2.B 2.13). For pure dataclass
+        # construction tests we synthesize the new fields with
+        # zero occupancy and a tiny synthetic env.
+        _fields_for_dpf = fields
+        _occ_for_dpf = {k: np.zeros_like(v) for k, v in _fields_for_dpf.items()}
+        _env_for_dpf = Environment.from_samples(
+            np.linspace(0, 10, 11)[:, None], bin_size=1.0
+        )
+        result = DirectionalPlaceFields(
+            firing_rates=_fields_for_dpf,
+            occupancy=_occ_for_dpf,
+            env=_env_for_dpf,
+            labels=labels,
+        )
 
         assert isinstance(result.labels, tuple)
         assert result.labels == ("first", "second", "third")
@@ -64,17 +106,45 @@ class TestDirectionalPlaceFieldsDataclass:
         fields = {"A→B": np.array([1.0, 2.0])}
         labels = ("A→B",)
 
-        result = DirectionalPlaceFields(fields=fields, labels=labels)
+        # Test stub: DirectionalPlaceFields requires firing_rates,
+        # occupancy, env, labels (M2.B 2.13). For pure dataclass
+        # construction tests we synthesize the new fields with
+        # zero occupancy and a tiny synthetic env.
+        _fields_for_dpf = fields
+        _occ_for_dpf = {k: np.zeros_like(v) for k, v in _fields_for_dpf.items()}
+        _env_for_dpf = Environment.from_samples(
+            np.linspace(0, 10, 11)[:, None], bin_size=1.0
+        )
+        result = DirectionalPlaceFields(
+            firing_rates=_fields_for_dpf,
+            occupancy=_occ_for_dpf,
+            env=_env_for_dpf,
+            labels=labels,
+        )
 
         # Should support dict-like access
-        assert "A→B" in result.fields
-        assert_array_equal(result.fields["A→B"], np.array([1.0, 2.0]))
+        assert "A→B" in result.firing_rates
+        assert_array_equal(result.firing_rates["A→B"], np.array([1.0, 2.0]))
 
     def test_empty_fields(self) -> None:
         """Test creation with empty fields."""
-        result = DirectionalPlaceFields(fields={}, labels=())
+        # Test stub: DirectionalPlaceFields requires firing_rates,
+        # occupancy, env, labels (M2.B 2.13). For pure dataclass
+        # construction tests we synthesize the new fields with
+        # zero occupancy and a tiny synthetic env.
+        _fields_for_dpf = {}
+        _occ_for_dpf = {k: np.zeros_like(v) for k, v in _fields_for_dpf.items()}
+        _env_for_dpf = Environment.from_samples(
+            np.linspace(0, 10, 11)[:, None], bin_size=1.0
+        )
+        result = DirectionalPlaceFields(
+            firing_rates=_fields_for_dpf,
+            occupancy=_occ_for_dpf,
+            env=_env_for_dpf,
+            labels=(),
+        )
 
-        assert len(result.fields) == 0
+        assert len(result.firing_rates) == 0
         assert len(result.labels) == 0
 
     def test_single_direction(self) -> None:
@@ -82,9 +152,23 @@ class TestDirectionalPlaceFieldsDataclass:
         fields = {"forward": np.array([1.0, 2.0, 3.0, 4.0])}
         labels = ("forward",)
 
-        result = DirectionalPlaceFields(fields=fields, labels=labels)
+        # Test stub: DirectionalPlaceFields requires firing_rates,
+        # occupancy, env, labels (M2.B 2.13). For pure dataclass
+        # construction tests we synthesize the new fields with
+        # zero occupancy and a tiny synthetic env.
+        _fields_for_dpf = fields
+        _occ_for_dpf = {k: np.zeros_like(v) for k, v in _fields_for_dpf.items()}
+        _env_for_dpf = Environment.from_samples(
+            np.linspace(0, 10, 11)[:, None], bin_size=1.0
+        )
+        result = DirectionalPlaceFields(
+            firing_rates=_fields_for_dpf,
+            occupancy=_occ_for_dpf,
+            env=_env_for_dpf,
+            labels=labels,
+        )
 
-        assert len(result.fields) == 1
+        assert len(result.firing_rates) == 1
         assert len(result.labels) == 1
         assert result.labels[0] == "forward"
 
@@ -266,11 +350,11 @@ class TestComputeDirectionalPlaceFields:
             bandwidth=10.0,
         ).firing_rate
 
-        assert len(result.fields) == 1
-        assert "forward" in result.fields
+        assert len(result.firing_rates) == 1
+        assert "forward" in result.firing_rates
         assert result.labels == ("forward",)
         # Should be numerically close
-        assert_array_almost_equal(result.fields["forward"], expected, decimal=5)
+        assert_array_almost_equal(result.firing_rates["forward"], expected, decimal=5)
 
     def test_two_directions_partition(
         self, sample_env: Environment, sample_trajectory: tuple[np.ndarray, np.ndarray]
@@ -294,14 +378,14 @@ class TestComputeDirectionalPlaceFields:
             bandwidth=10.0,
         )
 
-        assert len(result.fields) == 2
-        assert "A" in result.fields
-        assert "B" in result.fields
+        assert len(result.firing_rates) == 2
+        assert "A" in result.firing_rates
+        assert "B" in result.firing_rates
         assert set(result.labels) == {"A", "B"}
 
         # Each field should have shape (n_bins,)
-        assert result.fields["A"].shape == (sample_env.n_bins,)
-        assert result.fields["B"].shape == (sample_env.n_bins,)
+        assert result.firing_rates["A"].shape == (sample_env.n_bins,)
+        assert result.firing_rates["B"].shape == (sample_env.n_bins,)
 
     def test_other_label_excluded(
         self, sample_env: Environment, sample_trajectory: tuple[np.ndarray, np.ndarray]
@@ -326,11 +410,11 @@ class TestComputeDirectionalPlaceFields:
         )
 
         # "other" should NOT be in results
-        assert "other" not in result.fields
+        assert "other" not in result.firing_rates
         assert "other" not in result.labels
-        assert len(result.fields) == 2
-        assert "forward" in result.fields
-        assert "backward" in result.fields
+        assert len(result.firing_rates) == 2
+        assert "forward" in result.firing_rates
+        assert "backward" in result.firing_rates
 
     def test_no_spikes_returns_zero_or_nan_fields(
         self, sample_env: Environment, sample_trajectory: tuple[np.ndarray, np.ndarray]
@@ -351,9 +435,9 @@ class TestComputeDirectionalPlaceFields:
             bandwidth=10.0,
         )
 
-        assert "forward" in result.fields
+        assert "forward" in result.firing_rates
         # Field should be all zeros or NaN (depending on occupancy)
-        field = result.fields["forward"]
+        field = result.firing_rates["forward"]
         assert np.all(np.isnan(field) | (field == 0))
 
     def test_result_structure(
@@ -379,14 +463,14 @@ class TestComputeDirectionalPlaceFields:
         assert isinstance(result, DirectionalPlaceFields)
 
         # fields should be a mapping
-        assert hasattr(result.fields, "__getitem__")
+        assert hasattr(result.firing_rates, "__getitem__")
 
         # labels should be a tuple
         assert isinstance(result.labels, tuple)
 
         # All fields should have correct shape
         for label in result.labels:
-            assert result.fields[label].shape == (sample_env.n_bins,)
+            assert result.firing_rates[label].shape == (sample_env.n_bins,)
 
     def test_length_mismatch_raises_error(
         self, sample_env: Environment, sample_trajectory: tuple[np.ndarray, np.ndarray]
@@ -428,5 +512,5 @@ class TestComputeDirectionalPlaceFields:
             bandwidth=10.0,
         )
 
-        assert len(result.fields) == 0
+        assert len(result.firing_rates) == 0
         assert len(result.labels) == 0

@@ -18,6 +18,7 @@ References
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
@@ -25,6 +26,24 @@ from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
+
+
+@dataclass(frozen=True)
+class MSDResult:
+    """Mean square displacement curve returned by ``mean_square_displacement``.
+
+    Attributes
+    ----------
+    lags : NDArray[np.float64], shape (n_lags,)
+        Lag times τ (in the same units as the input ``times`` array) at
+        which MSD was computed. Always strictly increasing and starts at
+        the median sample interval.
+    msd : NDArray[np.float64], shape (n_lags,)
+        Mean square displacement values, one per lag.
+    """
+
+    lags: NDArray[np.float64]
+    msd: NDArray[np.float64]
 
 
 def compute_turn_angles(
@@ -406,7 +425,7 @@ def mean_square_displacement(
     metric: Literal["euclidean", "geodesic"] = "euclidean",
     env: Environment | None = None,
     max_tau: float | None = None,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+) -> MSDResult:
     """
     Compute mean square displacement (MSD) from continuous trajectory positions.
 
@@ -438,10 +457,9 @@ def mean_square_displacement(
 
     Returns
     -------
-    tau_values : NDArray[np.float64], shape (n_lags,)
-        Lag times at which MSD was computed.
-    msd_values : NDArray[np.float64], shape (n_lags,)
-        Mean square displacement values at each lag time.
+    MSDResult
+        Frozen dataclass with ``lags`` (lag times) and ``msd`` (MSD values)
+        fields, each of shape ``(n_lags,)``.
 
     Raises
     ------
@@ -505,17 +523,17 @@ def mean_square_displacement(
     >>> times = np.arange(n_steps) * 0.1
     >>>
     >>> # Compute MSD with Euclidean distance (default)
-    >>> tau_values, msd_values = mean_square_displacement(
+    >>> result = mean_square_displacement(
     ...     positions, times, metric="euclidean", max_tau=5.0
     ... )
-    >>> len(tau_values) > 0
+    >>> len(result.lags) > 0
     True
-    >>> bool(msd_values[-1] > msd_values[0])  # MSD increases with lag
+    >>> bool(result.msd[-1] > result.msd[0])  # MSD increases with lag
     True
     >>>
     >>> # Estimate diffusion exponent from log-log fit
-    >>> log_tau = np.log(tau_values)
-    >>> log_msd = np.log(msd_values + 1e-10)  # Add small constant to avoid log(0)
+    >>> log_tau = np.log(result.lags)
+    >>> log_msd = np.log(result.msd + 1e-10)  # Add small constant to avoid log(0)
     >>> alpha = np.polyfit(log_tau, log_msd, 1)[0]  # doctest: +SKIP
     >>> print(f"Diffusion exponent: {alpha:.2f}")  # doctest: +SKIP
     Diffusion exponent: 1.02  # ≈ 1.0 (diffusive motion)
@@ -634,7 +652,7 @@ def mean_square_displacement(
             else:
                 msd_values[i] = 0.0
 
-    return tau_values, msd_values
+    return MSDResult(lags=tau_values, msd=msd_values)
 
 
 def compute_trajectory_curvature(
