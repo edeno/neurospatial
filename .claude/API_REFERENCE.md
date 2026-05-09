@@ -506,14 +506,17 @@ from neurospatial.decoding import (
     # Quality metrics
     confusion_matrix,
     decoding_correlation,
-
-    # Shuffle testing (re-exported from stats)
-    shuffle_time_bins,
-    shuffle_cell_identity,
-    compute_shuffle_pvalue,
-    ShuffleTestResult,
-    generate_poisson_surrogates,
 )
+
+# Shuffle controls and surrogates live under stats/ — import from their canonical
+# locations rather than from neurospatial.decoding (the re-exports were removed in v0.4).
+from neurospatial.stats.shuffle import (
+    ShuffleTestResult,
+    compute_shuffle_pvalue,
+    shuffle_cell_identity,
+    shuffle_time_bins,
+)
+from neurospatial.stats.surrogates import generate_poisson_surrogates
 ```
 
 ---

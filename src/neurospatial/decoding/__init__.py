@@ -90,22 +90,10 @@ AssemblyDetectionResult : Results from assembly detection
 ExplainedVarianceResult : Results from explained variance analysis
     Contains EV, reversed EV, partial correlation, and n_pairs.
 
-Shuffle Controls (Re-exported from neurospatial.stats)
-------------------------------------------------------
-shuffle_time_bins : Shuffle temporal order of time bins
-    Test that sequential structure is significant.
-
-shuffle_cell_identity : Shuffle cell identity labels
-    Test that spatial code coherence is significant.
-
-compute_shuffle_pvalue : Compute p-value from null distribution
-    Statistical significance from shuffle controls.
-
-ShuffleTestResult : Container for shuffle test results
-    Stores observed score, null distribution, and p-value.
-
-generate_poisson_surrogates : Generate rate-matched Poisson surrogates
-    Test that observed structure exceeds rate-based expectations.
+Shuffle controls and Poisson surrogates live under :mod:`neurospatial.stats`
+(``neurospatial.stats.shuffle`` and ``neurospatial.stats.surrogates``). They
+are no longer re-exported here — import them directly from their canonical
+locations.
 
 Examples
 --------

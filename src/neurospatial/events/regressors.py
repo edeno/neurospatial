@@ -508,11 +508,11 @@ def distance_to_reward(
     ----------
     env : Environment
         Fitted spatial environment.
+    times : NDArray[np.float64], shape (n_samples,)
+        Sample timestamps (seconds).
     positions : NDArray[np.float64], shape (n_samples, n_dims)
         Position coordinates at each sample time. Must match environment
         dimensionality (e.g., 2D for grid environments).
-    times : NDArray[np.float64], shape (n_samples,)
-        Sample timestamps (seconds).
     reward_times : NDArray[np.float64], shape (n_events,)
         Reward event timestamps (seconds).
     reward_positions : NDArray[np.float64], shape (n_events, n_dims), optional
@@ -573,8 +573,8 @@ def distance_to_reward(
     >>> # Distance to nearest reward (default)
     >>> dist = distance_to_reward(  # doctest: +SKIP
     ...     env,
-    ...     positions,
     ...     times,
+    ...     positions,
     ...     reward_times,
     ...     metric="geodesic",
     ...     mode="nearest",
@@ -583,8 +583,8 @@ def distance_to_reward(
     >>> # Distance to most recent reward
     >>> dist_last = distance_to_reward(  # doctest: +SKIP
     ...     env,
-    ...     positions,
     ...     times,
+    ...     positions,
     ...     reward_times,
     ...     mode="last",
     ... )
@@ -592,8 +592,8 @@ def distance_to_reward(
     >>> # Distance to next upcoming reward
     >>> dist_next = distance_to_reward(  # doctest: +SKIP
     ...     env,
-    ...     positions,
     ...     times,
+    ...     positions,
     ...     reward_times,
     ...     mode="next",
     ... )

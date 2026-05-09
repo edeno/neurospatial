@@ -42,7 +42,6 @@ import numpy as np
 
 from neurospatial import Environment
 from neurospatial.decoding import (
-    compute_shuffle_pvalue,
     confusion_matrix,
     decode_position,
     decoding_correlation,
@@ -50,7 +49,6 @@ from neurospatial.decoding import (
     fit_isotonic_trajectory,
     fit_linear_trajectory,
     median_decoding_error,
-    shuffle_time_bins,
 )
 from neurospatial.encoding import compute_spatial_rate
 from neurospatial.simulation import (
@@ -58,6 +56,7 @@ from neurospatial.simulation import (
     generate_poisson_spikes,
     simulate_trajectory_ou,
 )
+from neurospatial.stats.shuffle import compute_shuffle_pvalue, shuffle_time_bins
 
 # Set random seed for reproducibility
 np.random.seed(42)
