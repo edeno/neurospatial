@@ -1705,18 +1705,14 @@ def object_vector_score(
     return float(np.clip(score, 0.0, 1.0))
 
 
-def is_object_vector_cell(
+def _is_object_vector_cell_from_tuning(
     tuning_curve: NDArray[np.float64],
     peak_rate: float,
     *,
     score_threshold: float = 0.3,
     min_peak_rate: float = 5.0,
 ) -> bool:
-    """Classify neuron as object-vector cell.
-
-    A neuron is classified as an OVC if it has:
-    1. Object-vector score above threshold
-    2. Peak firing rate above minimum
+    """Internal: classify OVC from an already-computed tuning curve.
 
     Parameters
     ----------
@@ -1733,21 +1729,6 @@ def is_object_vector_cell(
     -------
     bool
         True if classified as object-vector cell.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from neurospatial.encoding.egocentric import is_object_vector_cell
-    >>> # Sharp tuning with high rate
-    >>> tc = np.zeros((10, 12)) + 0.1
-    >>> tc[5, 6] = 25.0
-    >>> is_object_vector_cell(tc, peak_rate=25.0, score_threshold=0.3)
-    True
-
-    See Also
-    --------
-    object_vector_score : Compute OVC score
-    EgocentricRateResult.is_object_vector_cell : OVC classification on result object
     """
     if peak_rate < min_peak_rate:
         return False
@@ -1758,6 +1739,116 @@ def is_object_vector_cell(
         return False
 
     return bool(score >= score_threshold)
+
+
+def is_object_vector_cell(
+    env: Environment,
+    spike_times: NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    object_positions: NDArray[np.float64],
+    *,
+    distance_range: tuple[float, float] = (0.0, 50.0),
+    n_distance_bins: int = 10,
+    n_direction_bins: int = 12,
+    metric: Literal["euclidean", "geodesic"] = "euclidean",
+    score_threshold: float = 0.3,
+    min_peak_rate: float = 5.0,
+) -> bool:
+    """Quick check: Is this an object-vector cell?
+
+    Convenience function for fast screening of neurons. Computes the egocentric
+    rate map for the supplied trajectory + spikes and classifies the cell as an
+    object-vector cell (OVC) if both criteria are met:
+
+    1. Object-vector score above ``score_threshold``
+    2. Peak firing rate above ``min_peak_rate``
+
+    For detailed metrics, use :func:`compute_egocentric_rate` and inspect
+    the result's methods (``is_object_vector_cell()``, ``preferred_distance()``,
+    etc.).
+
+    Parameters
+    ----------
+    env : Environment
+        Allocentric environment (used for geodesic metric and visualization).
+    spike_times : NDArray[np.float64], shape (n_spikes,)
+        Spike times in seconds. Can be empty.
+    times : NDArray[np.float64], shape (n_samples,)
+        Timestamps of trajectory samples in seconds.
+    positions : NDArray[np.float64], shape (n_samples, 2)
+        Animal position coordinates at each time sample.
+    headings : NDArray[np.float64], shape (n_samples,)
+        Head direction at each time sample (radians, allocentric 0=East).
+    object_positions : NDArray[np.float64], shape (n_objects, 2)
+        Object positions in allocentric coordinates.
+    distance_range : tuple of float, default=(0.0, 50.0)
+        (min_distance, max_distance) for egocentric binning.
+    n_distance_bins : int, default=10
+        Number of distance bins.
+    n_direction_bins : int, default=12
+        Number of direction bins (covers full circle).
+    metric : {"euclidean", "geodesic"}, default="euclidean"
+        Distance metric for computing distance to objects.
+    score_threshold : float, default=0.3
+        Minimum object-vector score to classify as OVC.
+    min_peak_rate : float, default=5.0
+        Minimum peak firing rate in Hz.
+
+    Returns
+    -------
+    bool
+        True if neuron passes OVC criteria.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding.egocentric import is_object_vector_cell
+    >>> positions = np.random.rand(1000, 2) * 100
+    >>> env = Environment.from_samples(positions, bin_size=2.0)
+    >>> times = np.linspace(0, 60, 1000)
+    >>> headings = np.random.uniform(-np.pi, np.pi, 1000)
+    >>> objects = np.array([[50.0, 50.0]])
+    >>> spike_times = np.random.uniform(0, 60, 100)
+    >>> result = is_object_vector_cell(
+    ...     env, spike_times, times, positions, headings, objects
+    ... )
+    >>> type(result)
+    <class 'bool'>
+
+    See Also
+    --------
+    compute_egocentric_rate : Full egocentric rate computation
+    object_vector_score : Compute OVC score from a tuning curve
+    EgocentricRateResult.is_object_vector_cell : OVC classification on result object
+    """
+    try:
+        result = compute_egocentric_rate(
+            env,
+            spike_times,
+            times,
+            positions,
+            headings,
+            object_positions,
+            distance_range=distance_range,
+            n_distance_bins=n_distance_bins,
+            n_direction_bins=n_direction_bins,
+            metric=metric,
+        )
+    except (ValueError, RuntimeError):
+        return False
+
+    firing_rate = np.asarray(result.firing_rate, dtype=np.float64)
+    tuning_curve = firing_rate.reshape(n_distance_bins, n_direction_bins)
+    peak_rate = float(np.nanmax(firing_rate)) if firing_rate.size else 0.0
+    return _is_object_vector_cell_from_tuning(
+        tuning_curve,
+        peak_rate,
+        score_threshold=score_threshold,
+        min_peak_rate=min_peak_rate,
+    )
 
 
 def plot_object_vector_tuning(
