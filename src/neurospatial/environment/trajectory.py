@@ -446,14 +446,15 @@ class EnvironmentTrajectory:
         times: NDArray[np.float64],
         positions: NDArray[np.float64],
         *,
-        dedup: bool = True,
         outside_value: int | None = -1,
     ) -> BinSequenceWithRuns:
         """Map trajectory to bin sequence plus per-run boundaries.
 
-        Same mapping as :meth:`bin_sequence`, but also returns the
-        run-length encoding so callers can recover per-run durations
-        from the original ``times`` array.
+        Returns the run-length encoding of the trajectory so callers
+        can recover per-run durations from the original ``times`` array.
+        ``bins``, ``run_starts``, and ``run_lengths`` all share shape
+        ``(n_runs,)``: the per-run view is intrinsically deduplicated.
+        For per-sample bins use :meth:`bin_sequence` with ``dedup=False``.
 
         Parameters
         ----------
@@ -461,24 +462,23 @@ class EnvironmentTrajectory:
             Timestamps in seconds. Should be monotonically increasing.
         positions : NDArray[np.float64], shape (n_samples, n_dims)
             Position coordinates matching environment dimensions.
-        dedup : bool, default=True
-            If True, each run contributes one entry to ``bins``. If False,
-            ``bins`` has one entry per sample (run boundaries still
-            describe the maximal same-bin runs).
         outside_value : int or None, default=-1
             Bin index for samples outside environment bounds (see
-            :meth:`bin_sequence`).
+            :meth:`bin_sequence`). With ``outside_value=None``, outside
+            gaps split runs even when consecutive in-env samples land
+            in the same bin (so ``run_lengths.sum()`` equals the
+            post-filter count of in-env samples).
 
         Returns
         -------
         BinSequenceWithRuns
             Frozen dataclass with ``bins``, ``run_starts``, and
-            ``run_lengths`` fields. See :class:`BinSequenceWithRuns` for
-            the precise contract.
+            ``run_lengths`` fields, all shape ``(n_runs,)``. See
+            :class:`BinSequenceWithRuns` for the precise contract.
 
         See Also
         --------
-        bin_sequence : Returns just the bin sequence.
+        bin_sequence : Returns just the bin sequence (supports ``dedup``).
 
         Examples
         --------
@@ -491,7 +491,7 @@ class EnvironmentTrajectory:
             self,
             times,
             positions,
-            dedup=dedup,
+            dedup=True,
             outside_value=outside_value,
             gap_splits_runs=True,
         )

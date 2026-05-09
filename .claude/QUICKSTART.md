@@ -826,8 +826,8 @@ result = peri_event_histogram(
     bin_size=0.025,       # 25 ms bins
 )
 
-# Access results
-print(f"Peak firing rate: {result.firing_rate().max():.1f} Hz")
+# Access results (firing_rate is a cached attribute, not a method)
+print(f"Peak firing rate: {result.firing_rate.max():.1f} Hz")
 print(f"Number of events: {result.n_events}")
 
 # Plot PSTH

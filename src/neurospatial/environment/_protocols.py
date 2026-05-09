@@ -228,14 +228,14 @@ class EnvironmentProtocol(Protocol):
         times: NDArray[np.float64],
         positions: NDArray[np.float64],
         *,
-        dedup: bool = True,
         outside_value: int | None = -1,
     ) -> Any:
         """
         Convert a trajectory to a bin sequence plus per-run boundaries.
 
         Returns a ``BinSequenceWithRuns`` dataclass with ``bins``,
-        ``run_starts``, and ``run_lengths``.
+        ``run_starts``, and ``run_lengths`` — all shape ``(n_runs,)``.
+        For per-sample bins use ``bin_sequence(dedup=False)`` instead.
         """
         ...
 

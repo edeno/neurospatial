@@ -202,7 +202,7 @@ class TestBinSequenceAdvanced:
             ]
         )
 
-        _bsr = small_2d_env.bin_sequence_with_runs(times, positions, dedup=True)
+        _bsr = small_2d_env.bin_sequence_with_runs(times, positions)
         bins, starts, lengths = _bsr.bins, _bsr.run_starts, _bsr.run_lengths
 
         # Deduplicated: [0, 1]
@@ -256,7 +256,7 @@ class TestBinSequenceAdvanced:
         positions = small_2d_env.bin_centers[0:1]
 
         # With dedup=True, single sample
-        _bsr = small_2d_env.bin_sequence_with_runs(times, positions, dedup=True)
+        _bsr = small_2d_env.bin_sequence_with_runs(times, positions)
         bins, starts, lengths = _bsr.bins, _bsr.run_starts, _bsr.run_lengths
 
         assert_array_equal(bins, [0])
@@ -264,7 +264,7 @@ class TestBinSequenceAdvanced:
         assert_array_equal(lengths, [1])
 
         # With dedup=False, single sample
-        _bsr = small_2d_env.bin_sequence_with_runs(times, positions, dedup=False)
+        _bsr = small_2d_env.bin_sequence_with_runs(times, positions)
         bins, starts, lengths = _bsr.bins, _bsr.run_starts, _bsr.run_lengths
 
         assert_array_equal(bins, [0])
@@ -289,9 +289,7 @@ class TestBinSequenceAdvanced:
             ]
         )
 
-        _bsr = small_2d_env.bin_sequence_with_runs(
-            times, positions, outside_value=None, dedup=True
-        )
+        _bsr = small_2d_env.bin_sequence_with_runs(times, positions, outside_value=None)
         bins, starts, lengths = _bsr.bins, _bsr.run_starts, _bsr.run_lengths
 
         # After dropping outside: [0, 0, 1, 1] with original indices [0, 1, 4, 5]
@@ -318,7 +316,7 @@ class TestBinSequenceAdvanced:
         positions = np.array([bin_0, [10000.0, 10000.0], bin_0])
 
         result = small_2d_env.bin_sequence_with_runs(
-            times, positions, outside_value=None, dedup=True
+            times, positions, outside_value=None
         )
         assert_array_equal(result.bins, [0, 0])
         assert_array_equal(result.run_starts, [0, 2])

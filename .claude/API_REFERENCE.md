@@ -333,8 +333,8 @@ Result objects from the new API provide convenient methods:
 - `.firing_rate` - Firing rate map (n_bins,) in Hz
 - `.occupancy` - Time in each bin (n_bins,) in seconds
 - `.env` - Environment used for computation
-- `.peak_locations()` - Coordinates of peak firing (n_dims,)
-- `.peak_firing_rates()` - Maximum firing rate (scalar)
+- `.peak_location()` - Coordinates of peak firing (n_dims,)
+- `.peak_firing_rate()` - Maximum firing rate (scalar)
 
 **DirectionalRateResult** (from `compute_directional_rate`):
 - `.firing_rate` - Tuning curve (n_bins,) in Hz

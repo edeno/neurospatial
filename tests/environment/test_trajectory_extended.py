@@ -294,7 +294,7 @@ class TestBinSequence:
             ]
         )
 
-        _bsr = small_2d_env.bin_sequence_with_runs(times, positions, dedup=True)
+        _bsr = small_2d_env.bin_sequence_with_runs(times, positions)
         bins, starts, lengths = _bsr.bins, _bsr.run_starts, _bsr.run_lengths
 
         # Deduplicated bins: [0, 1, 2]
@@ -357,8 +357,14 @@ class TestBinSequence:
         # All dropped
         assert len(bins) == 0
 
-    def test_bin_sequence_runs_without_dedup(self, small_2d_env):
-        """Test run boundaries without deduplication."""
+    def test_bin_sequence_with_runs_per_run_shape(self, small_2d_env):
+        """``bin_sequence_with_runs`` always returns one entry per run.
+
+        The per-run view is intrinsically deduplicated — ``bins``,
+        ``run_starts``, and ``run_lengths`` all share shape
+        ``(n_runs,)``. For per-sample bins use
+        ``bin_sequence(dedup=False)``.
+        """
         times = np.array([0.0, 1.0, 2.0, 3.0])
         positions = np.array(
             [
@@ -369,11 +375,12 @@ class TestBinSequence:
             ]
         )
 
-        _bsr = small_2d_env.bin_sequence_with_runs(times, positions, dedup=False)
+        _bsr = small_2d_env.bin_sequence_with_runs(times, positions)
         bins, starts, lengths = _bsr.bins, _bsr.run_starts, _bsr.run_lengths
 
-        # No dedup: bins = [0, 0, 1, 1]
-        assert_array_equal(bins, [0, 0, 1, 1])
+        # One entry per run (n_runs=2 here).
+        assert_array_equal(bins, [0, 1])
+        assert bins.shape == starts.shape == lengths.shape == (2,)
         # Run 1: indices 0-1 (bin 0, length 2)
         assert starts[0] == 0
         assert lengths[0] == 2
@@ -668,7 +675,7 @@ class TestTrajectoryIntegration:
         occ = small_2d_env.occupancy(times, positions)
 
         # Get bin sequence with runs
-        _bsr = small_2d_env.bin_sequence_with_runs(times, positions, dedup=True)
+        _bsr = small_2d_env.bin_sequence_with_runs(times, positions)
         bins, starts, ends = _bsr.bins, _bsr.run_starts, _bsr.run_lengths
 
         # Compute occupancy from runs

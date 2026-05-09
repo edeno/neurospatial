@@ -185,7 +185,7 @@ class TestBinSequenceRuns:
             ]
         )
 
-        _bsr = env.bin_sequence_with_runs(times, positions, dedup=False)
+        _bsr = env.bin_sequence_with_runs(times, positions)
         _bins, run_starts, _run_ends = (
             _bsr.bins,
             _bsr.run_starts,
@@ -229,7 +229,7 @@ class TestBinSequenceRuns:
             ]
         )
 
-        _bsr = env.bin_sequence_with_runs(times, positions, dedup=True)
+        _bsr = env.bin_sequence_with_runs(times, positions)
         bins, run_starts, _run_ends = (
             _bsr.bins,
             _bsr.run_starts,
@@ -264,7 +264,7 @@ class TestBinSequenceRuns:
             ]
         )
 
-        _bsr = env.bin_sequence_with_runs(times, positions, dedup=False)
+        _bsr = env.bin_sequence_with_runs(times, positions)
         _bins, run_starts, _run_ends = (
             _bsr.bins,
             _bsr.run_starts,
@@ -380,7 +380,7 @@ class TestBinSequenceOutsideBehavior:
             ]
         )
 
-        _bsr = env.bin_sequence_with_runs(times, positions, dedup=False)
+        _bsr = env.bin_sequence_with_runs(times, positions)
         _bins, run_starts, _run_ends = (
             _bsr.bins,
             _bsr.run_starts,

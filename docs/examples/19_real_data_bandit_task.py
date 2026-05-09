@@ -630,7 +630,7 @@ for unit_idx in example_units:
         )
 
         # Mark centroid using graph-based method (respects maze geometry)
-        centroid = rate_map_centroid(field, field_bins, env_2d, method="graph")
+        centroid = rate_map_centroid(field, field_bins, env_2d, method="geodesic")
         ax.scatter(
             centroid[0],
             centroid[1],
