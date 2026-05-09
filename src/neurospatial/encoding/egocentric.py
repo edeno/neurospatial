@@ -87,10 +87,7 @@ if TYPE_CHECKING:
 
     from neurospatial import Environment
 
-# Re-export egocentric ops for convenience in OVC workflow
-from neurospatial.ops.egocentric import compute_egocentric_bearing
 
-# ruff: noqa: RUF022 - intentionally grouped by category
 __all__ = [
     # Result classes
     "EgocentricRateResult",
@@ -102,8 +99,6 @@ __all__ = [
     "is_object_vector_cell",
     "object_vector_score",
     "plot_object_vector_tuning",
-    # Re-exports from ops.egocentric
-    "compute_egocentric_bearing",
 ]
 
 

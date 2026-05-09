@@ -86,15 +86,7 @@ if TYPE_CHECKING:
 
     from neurospatial import Environment
 
-# Re-export visibility functions for convenience in view cell workflow
-from neurospatial.ops.visibility import (
-    FieldOfView,
-    compute_viewed_location,
-    compute_viewshed,
-    visibility_occupancy,
-)
 
-# ruff: noqa: RUF022 - intentionally grouped by category
 __all__ = [
     # Result classes
     "ViewRateResult",
@@ -104,11 +96,6 @@ __all__ = [
     "compute_view_rates",
     # Convenience functions
     "is_spatial_view_cell",
-    # Re-exports from ops.visibility
-    "FieldOfView",
-    "compute_viewed_location",
-    "compute_viewshed",
-    "visibility_occupancy",
 ]
 
 

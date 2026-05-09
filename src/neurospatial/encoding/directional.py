@@ -59,15 +59,8 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
     from matplotlib.projections.polar import PolarAxes
 
-# Re-export circular statistics for convenience in HD workflow
 from neurospatial.encoding._base import SpatialResultMixin
-from neurospatial.stats.circular import (
-    circular_mean,
-    mean_resultant_length,
-    rayleigh_test,
-)
 
-# ruff: noqa: RUF022 - intentionally grouped by category
 __all__ = [
     # Result classes
     "DirectionalRateResult",
@@ -78,10 +71,6 @@ __all__ = [
     # Convenience functions
     "is_head_direction_cell",
     "plot_head_direction_tuning",
-    # Circular statistics (re-exported from stats.circular)
-    "circular_mean",
-    "mean_resultant_length",
-    "rayleigh_test",
 ]
 
 

@@ -183,19 +183,6 @@ from neurospatial.decoding.trajectory import (
     fit_linear_trajectory,
 )
 
-# Re-export shuffle controls from stats for discoverability in decoding workflows.
-# Canonical location: neurospatial.stats.shuffle
-from neurospatial.stats.shuffle import (
-    ShuffleTestResult,
-    compute_shuffle_pvalue,
-    shuffle_cell_identity,
-    shuffle_time_bins,
-)
-
-# Re-export surrogate generation from stats for discoverability in decoding workflows.
-# Canonical location: neurospatial.stats.surrogates
-from neurospatial.stats.surrogates import generate_poisson_surrogates
-
 # =============================================================================
 # Public API exports
 # =============================================================================
@@ -209,14 +196,11 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "IsotonicFitResult",
     "LinearFitResult",
     "RadonDetectionResult",
-    "ShuffleTestResult",
     # Cell assembly detection
     "assembly_activation",
     # Metrics
     "confusion_matrix",
     "credible_region",
-    # Shuffle controls (re-exported from stats)
-    "compute_shuffle_pvalue",
     # Core decoding
     "decode_position",
     "decoding_correlation",
@@ -227,8 +211,6 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "explained_variance_reactivation",
     "fit_isotonic_trajectory",
     "fit_linear_trajectory",
-    # Surrogates (re-exported from stats)
-    "generate_poisson_surrogates",
     # Likelihood
     "log_poisson_likelihood",
     # Estimates
@@ -242,7 +224,4 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "pairwise_correlations",
     "poisson_likelihood",
     "reactivation_strength",
-    # Shuffle controls (re-exported from stats)
-    "shuffle_cell_identity",
-    "shuffle_time_bins",
 ]

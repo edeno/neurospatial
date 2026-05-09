@@ -77,86 +77,6 @@ class TestNoCircularImports:
         from neurospatial.stats.circular import rayleigh_test  # noqa: F401
 
 
-class TestReExportsIdentity:
-    """Test that re-exported functions are the same object as their canonical location."""
-
-    def test_rayleigh_test_reexport(self):
-        """Test rayleigh_test re-exported from encoding.directional matches stats.circular."""
-        from neurospatial.encoding.directional import rayleigh_test as hd_rayleigh
-        from neurospatial.stats.circular import rayleigh_test as stats_rayleigh
-
-        assert hd_rayleigh is stats_rayleigh
-
-    def test_circular_mean_reexport(self):
-        """Test circular_mean re-exported from encoding.directional matches stats.circular."""
-        from neurospatial.encoding.directional import (
-            circular_mean as hd_circular_mean,
-        )
-        from neurospatial.stats.circular import circular_mean as stats_circular_mean
-
-        assert hd_circular_mean is stats_circular_mean
-
-    def test_mean_resultant_length_reexport(self):
-        """Test mean_resultant_length re-exported from encoding.directional matches stats.circular."""
-        from neurospatial.encoding.directional import (
-            mean_resultant_length as hd_mrl,
-        )
-        from neurospatial.stats.circular import mean_resultant_length as stats_mrl
-
-        assert hd_mrl is stats_mrl
-
-    def test_visibility_reexports_in_view(self):
-        """Test visibility functions re-exported in encoding.view match ops.visibility."""
-        from neurospatial.encoding.view import (
-            FieldOfView as SvFieldOfView,
-        )
-        from neurospatial.encoding.view import (
-            compute_viewed_location as sv_cvl,
-        )
-        from neurospatial.encoding.view import (
-            compute_viewshed as sv_cvs,
-        )
-        from neurospatial.encoding.view import (
-            visibility_occupancy as sv_vo,
-        )
-        from neurospatial.ops.visibility import FieldOfView as OpsFieldOfView
-        from neurospatial.ops.visibility import compute_viewed_location as ops_cvl
-        from neurospatial.ops.visibility import compute_viewshed as ops_cvs
-        from neurospatial.ops.visibility import visibility_occupancy as ops_vo
-
-        assert SvFieldOfView is OpsFieldOfView
-        assert sv_cvl is ops_cvl
-        assert sv_cvs is ops_cvs
-        assert sv_vo is ops_vo
-
-    def test_shuffle_reexports_in_decoding(self):
-        """Test shuffle functions re-exported in decoding match stats.shuffle."""
-        from neurospatial.decoding import ShuffleTestResult as DecShuffleTestResult
-        from neurospatial.decoding import compute_shuffle_pvalue as dec_pval
-        from neurospatial.decoding import shuffle_cell_identity as dec_sci
-        from neurospatial.decoding import shuffle_time_bins as dec_stb
-        from neurospatial.stats.shuffle import (
-            ShuffleTestResult as StatsShuffleTestResult,
-        )
-        from neurospatial.stats.shuffle import compute_shuffle_pvalue as stats_pval
-        from neurospatial.stats.shuffle import shuffle_cell_identity as stats_sci
-        from neurospatial.stats.shuffle import shuffle_time_bins as stats_stb
-
-        assert DecShuffleTestResult is StatsShuffleTestResult
-        assert dec_pval is stats_pval
-        assert dec_sci is stats_sci
-        assert dec_stb is stats_stb
-
-    def test_surrogates_reexport_in_decoding(self):
-        """Test surrogate generation re-exported in decoding matches stats.surrogates."""
-        from neurospatial.decoding import generate_poisson_surrogates as dec_gps
-        from neurospatial.stats.surrogates import (
-            generate_poisson_surrogates as stats_gps,
-        )
-
-        assert dec_gps is stats_gps
-
-
 class TestEncodingModuleAllExports:
     """Test that all encoding module exports are importable and in __all__."""
 
@@ -496,9 +416,9 @@ class TestPLANMDExampleUsage:
 
     def test_plan_md_neural_decoding_pattern(self):
         """Test the neural decoding import pattern from PLAN.md."""
-        from neurospatial.decoding import (
+        from neurospatial.decoding import decode_position
+        from neurospatial.stats.shuffle import (
             compute_shuffle_pvalue,
-            decode_position,
             shuffle_time_bins,
         )
 

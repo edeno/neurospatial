@@ -167,7 +167,6 @@ class TestPublicAPICompleteness:
             "IsotonicFitResult",
             "LinearFitResult",
             "RadonDetectionResult",
-            "ShuffleTestResult",
             # Cell assembly detection
             "assembly_activation",
             "detect_assemblies",
@@ -197,11 +196,6 @@ class TestPublicAPICompleteness:
             "decoding_correlation",
             "decoding_error",
             "median_decoding_error",
-            # Re-exported from stats (for discoverability in decoding workflows)
-            "compute_shuffle_pvalue",
-            "generate_poisson_surrogates",
-            "shuffle_cell_identity",
-            "shuffle_time_bins",
         ]
 
         actual_all = set(neurospatial.decoding.__all__)

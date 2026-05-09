@@ -46,20 +46,16 @@ from neurospatial.encoding.border import (
 from neurospatial.encoding.directional import (
     DirectionalRateResult,
     DirectionalRatesResult,
-    circular_mean,
     compute_directional_rate,
     compute_directional_rates,
     is_head_direction_cell,
-    mean_resultant_length,
     plot_head_direction_tuning,
-    rayleigh_test,
 )
 
 # Egocentric rate (object vector cells)
 from neurospatial.encoding.egocentric import (
     EgocentricRateResult,
     EgocentricRatesResult,
-    compute_egocentric_bearing,
     compute_egocentric_rate,
     compute_egocentric_rates,
     is_object_vector_cell,
@@ -110,15 +106,11 @@ from neurospatial.encoding.spatial import (
 
 # View rate (spatial view cells)
 from neurospatial.encoding.view import (
-    FieldOfView,
     ViewRateResult,
     ViewRatesResult,
     compute_view_rate,
     compute_view_rates,
-    compute_viewed_location,
-    compute_viewshed,
     is_spatial_view_cell,
-    visibility_occupancy,
 )
 
 __all__ = [  # noqa: RUF022 - organized by category
@@ -133,7 +125,6 @@ __all__ = [  # noqa: RUF022 - organized by category
     # Egocentric rate (object vector cells)
     "EgocentricRateResult",
     "EgocentricRatesResult",
-    "compute_egocentric_bearing",
     "compute_egocentric_rate",
     "compute_egocentric_rates",
     # Spatial rate (place/grid/border cells)
@@ -163,17 +154,10 @@ __all__ = [  # noqa: RUF022 - organized by category
     "periodicity_score",
     "spatial_autocorrelation",
     # Head direction cell analysis
-    "circular_mean",
     "is_head_direction_cell",
-    "mean_resultant_length",
     "plot_head_direction_tuning",
-    "rayleigh_test",
     # Spatial view cell analysis
     "is_spatial_view_cell",
-    "compute_viewed_location",
-    "compute_viewshed",
-    "visibility_occupancy",
-    "FieldOfView",
     # Place cell analysis
     "DirectionalPlaceFields",
     "PlaceFieldsResult",
