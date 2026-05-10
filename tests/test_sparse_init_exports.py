@@ -1,321 +1,109 @@
-"""Tests for Milestone 9: Sparse top-level __init__.py exports.
+"""Pin the surface of the top-level ``neurospatial`` package.
 
-This test file verifies that the top-level neurospatial package exports the
-core classes plus the public exception hierarchy added in M3.4:
-    - Environment, Region, Regions, CompositeEnvironment
-    - EnvironmentNotFittedError, GraphValidationError,
-      RegionNotFoundError, BinIndexOutOfRangeError,
-      IncompatibleEnvironmentError, LayoutNotBuiltError
+v0.4 ships a sparse top-level surface — four core classes plus the public
+exception hierarchy added in M3.4. Everything else lives in submodules,
+on purpose, so that ``from neurospatial import *`` doesn't haul in
+hundreds of names.
 
-All other functions should be accessed via explicit submodule imports.
+The earlier version of this file had ~18 tests: per-name "is importable"
+tautologies, per-domain "submodule imports still work" passthroughs, and
+a docstring-prose audit. Those are subsumed by:
+
+- ``test_all_has_core_classes_and_exceptions`` — pin the exact ``__all__``.
+- ``test_old_export_not_in_all`` (parametrized) — pin the removed names
+  to "not in __all__"; this is the real regression check that catches
+  accidental re-exports.
 """
-
-import importlib
-import sys
 
 import pytest
 
 
-class TestSparseTopLevelExports:
-    """Test that top-level __init__.py has only 5 core exports."""
+def test_all_has_core_classes_and_exceptions():
+    """``neurospatial.__all__`` is exactly the core surface, no more."""
+    import neurospatial
 
-    def test_environment_importable_from_top_level(self):
-        """Test Environment can be imported from top level."""
-        from neurospatial import Environment
-
-        assert Environment is not None
-
-    def test_environment_not_fitted_error_importable_from_top_level(self):
-        """Test EnvironmentNotFittedError can be imported from top level."""
-        from neurospatial import EnvironmentNotFittedError
-
-        assert EnvironmentNotFittedError is not None
-        assert issubclass(EnvironmentNotFittedError, Exception)
-
-    def test_region_importable_from_top_level(self):
-        """Test Region can be imported from top level."""
-        from neurospatial import Region
-
-        assert Region is not None
-
-    def test_regions_importable_from_top_level(self):
-        """Test Regions can be imported from top level."""
-        from neurospatial import Regions
-
-        assert Regions is not None
-
-    def test_composite_environment_importable_from_top_level(self):
-        """Test CompositeEnvironment can be imported from top level."""
-        from neurospatial import CompositeEnvironment
-
-        assert CompositeEnvironment is not None
-
-
-class TestAllExportsLimitedToCoreSurface:
-    """Test that ``__all__`` exposes only core classes + the exception hierarchy."""
-
-    def test_all_has_core_classes_and_exceptions(self):
-        import neurospatial
-
-        expected = {
-            # Core classes
-            "Environment",
-            "Region",
-            "Regions",
-            "CompositeEnvironment",
-            # Public exception hierarchy (added in M3.4)
-            "EnvironmentNotFittedError",
-            "GraphValidationError",
-            "RegionNotFoundError",
-            "BinIndexOutOfRangeError",
-            "IncompatibleEnvironmentError",
-            "LayoutNotBuiltError",
-        }
-        actual = set(neurospatial.__all__)
-        assert actual == expected, (
-            f"Expected core classes + exceptions: {expected}, "
-            f"got {len(actual)}: {actual}"
-        )
-
-    def test_all_length_matches_expected_surface(self):
-        """The top-level surface stays small (no domain re-exports)."""
-        import neurospatial
-
-        # 4 core classes + 6 exceptions = 10
-        assert len(neurospatial.__all__) == 10, (
-            f"Expected 10 exports, got {len(neurospatial.__all__)}: "
-            f"{neurospatial.__all__}"
-        )
-
-
-class TestOldExportsNotAtTopLevel:
-    """Test that old exports are NOT available at top level.
-
-    These should now require explicit submodule imports.
-    """
-
-    @pytest.mark.parametrize(
-        "old_export",
-        [
-            # Decoding - should use neurospatial.decoding
-            "decode_position",
-            "DecodingResult",
-            "decoding_error",
-            "median_decoding_error",
-            # Animation overlays - should use neurospatial.animation
-            "PositionOverlay",
-            "EventOverlay",
-            "SpikeOverlay",
-            "HeadDirectionOverlay",
-            "BodypartOverlay",
-            "VideoOverlay",
-            "ScaleBarConfig",
-            # Annotation - should use neurospatial.annotation
-            "annotate_video",
-            "AnnotationResult",
-            # Layout - should use neurospatial.layout
-            "LayoutType",
-            "list_available_layouts",
-            "get_layout_parameters",
-            # I/O - should use neurospatial.io
-            "to_file",
-            "from_file",
-            "to_dict",
-            "from_dict",
-            # Encoding metrics - should use neurospatial.encoding
-            "detect_place_fields",
-            "spatial_information",
-            "sparsity",
-            "selectivity",
-            "border_score",
-            "grid_score",
-            "population_vector_correlation",
-            # Behavioral - should use neurospatial.behavior
-            "detect_laps",
-            "segment_trials",
-            "detect_region_crossings",
-            "path_progress",
-            "cost_to_goal",
-            # Events - should use neurospatial.events
-            "peri_event_histogram",
-            "align_spikes_to_events",
-            "time_to_nearest_event",
-            # Ops - should use neurospatial.ops
-            "map_points_to_bins",
-            "distance_field",
-            "normalize_field",
-            "gradient",
-            "divergence",
-            "heading_from_velocity",
-            "compute_viewshed",
-            # Simulation - should use neurospatial.simulation
-            "SpatialViewCellModel",
-        ],
+    expected = {
+        # Core classes
+        "Environment",
+        "Region",
+        "Regions",
+        "CompositeEnvironment",
+        # Public exception hierarchy (M3.4)
+        "EnvironmentNotFittedError",
+        "GraphValidationError",
+        "RegionNotFoundError",
+        "BinIndexOutOfRangeError",
+        "IncompatibleEnvironmentError",
+        "LayoutNotBuiltError",
+    }
+    actual = set(neurospatial.__all__)
+    assert actual == expected, (
+        f"Top-level surface drift. Expected: {expected}. Got: {actual}."
     )
-    def test_old_export_not_in_all(self, old_export):
-        """Test that old exports are not in __all__."""
-        import neurospatial
-
-        assert old_export not in neurospatial.__all__, (
-            f"{old_export} should not be in top-level __all__, "
-            f"it should be imported from a submodule"
-        )
 
 
-class TestSubmoduleImportsStillWork:
-    """Test that removed top-level exports are still accessible via submodules."""
+@pytest.mark.parametrize(
+    "old_export",
+    [
+        # Decoding
+        "decode_position",
+        "DecodingResult",
+        "decoding_error",
+        "median_decoding_error",
+        # Animation overlays
+        "PositionOverlay",
+        "EventOverlay",
+        "SpikeOverlay",
+        "HeadDirectionOverlay",
+        "BodypartOverlay",
+        "VideoOverlay",
+        "ScaleBarConfig",
+        # Annotation
+        "annotate_video",
+        "AnnotationResult",
+        # Layout
+        "LayoutType",
+        "list_available_layouts",
+        "get_layout_parameters",
+        # I/O
+        "to_file",
+        "from_file",
+        "to_dict",
+        "from_dict",
+        # Encoding metrics
+        "detect_place_fields",
+        "spatial_information",
+        "sparsity",
+        "selectivity",
+        "border_score",
+        "grid_score",
+        "population_vector_correlation",
+        # Behavioral
+        "detect_laps",
+        "segment_trials",
+        "detect_region_crossings",
+        "path_progress",
+        "cost_to_goal",
+        # Events
+        "peri_event_histogram",
+        "align_spikes_to_events",
+        "time_to_nearest_event",
+        # Ops
+        "map_points_to_bins",
+        "distance_field",
+        "normalize_field",
+        "gradient",
+        "divergence",
+        "heading_from_velocity",
+        "compute_viewshed",
+        # Simulation
+        "SpatialViewCellModel",
+    ],
+)
+def test_old_export_not_in_all(old_export):
+    """Names that used to live at the top level must require an explicit submodule import."""
+    import neurospatial
 
-    def test_decoding_imports(self):
-        """Test decoding functions accessible from decoding submodule."""
-        from neurospatial.decoding import (
-            DecodingResult,
-            decode_position,
-            decoding_error,
-            median_decoding_error,
-        )
-
-        assert decode_position is not None
-        assert DecodingResult is not None
-        assert decoding_error is not None
-        assert median_decoding_error is not None
-
-    def test_encoding_imports(self):
-        """Test encoding functions accessible from encoding submodule."""
-        from neurospatial.encoding import (
-            border_score,
-            detect_place_fields,
-            grid_score,
-            selectivity,
-            sparsity,
-            spatial_information,
-        )
-
-        assert detect_place_fields is not None
-        assert spatial_information is not None
-        assert sparsity is not None
-        assert selectivity is not None
-        assert border_score is not None
-        assert grid_score is not None
-
-    def test_behavior_imports(self):
-        """Test behavior functions accessible from behavior submodule."""
-        from neurospatial.behavior import (
-            detect_laps,
-            detect_region_crossings,
-            segment_trials,
-        )
-        from neurospatial.behavior.navigation import (
-            cost_to_goal,
-            path_progress,
-        )
-
-        assert detect_laps is not None
-        assert segment_trials is not None
-        assert detect_region_crossings is not None
-        assert path_progress is not None
-        assert cost_to_goal is not None
-
-    def test_events_imports(self):
-        """Test events functions accessible from events submodule."""
-        from neurospatial.events import (
-            align_spikes_to_events,
-            peri_event_histogram,
-            time_to_nearest_event,
-        )
-
-        assert peri_event_histogram is not None
-        assert align_spikes_to_events is not None
-        assert time_to_nearest_event is not None
-
-    def test_ops_imports(self):
-        """Test ops functions accessible from ops submodule."""
-        from neurospatial.ops import (
-            distance_field,
-            divergence,
-            gradient,
-            heading_from_velocity,
-            map_points_to_bins,
-            normalize_field,
-        )
-
-        assert map_points_to_bins is not None
-        assert distance_field is not None
-        assert normalize_field is not None
-        assert gradient is not None
-        assert divergence is not None
-        assert heading_from_velocity is not None
-
-    def test_io_imports(self):
-        """Test I/O functions accessible from io submodule."""
-        from neurospatial.io import from_dict, from_file, to_dict, to_file
-
-        assert to_file is not None
-        assert from_file is not None
-        assert to_dict is not None
-        assert from_dict is not None
-
-    def test_animation_imports(self):
-        """Test animation overlays accessible from animation submodule."""
-        from neurospatial.animation import (
-            EventOverlay,
-            SpikeOverlay,
-            VideoOverlay,
-        )
-        from neurospatial.animation.config import ScaleBarConfig
-
-        # These are exported from animation/__init__.py
-        assert EventOverlay is not None
-        assert SpikeOverlay is not None
-        assert VideoOverlay is not None
-        assert ScaleBarConfig is not None
-
-        # These require direct import from overlays module
-        from neurospatial.animation.overlays import (
-            BodypartOverlay,
-            HeadDirectionOverlay,
-            PositionOverlay,
-        )
-
-        assert PositionOverlay is not None
-        assert HeadDirectionOverlay is not None
-        assert BodypartOverlay is not None
-
-
-class TestDocstringUpdated:
-    """Test that the module docstring reflects sparse exports."""
-
-    def test_docstring_mentions_explicit_submodule_imports(self):
-        """Test docstring explains explicit submodule import pattern."""
-        import neurospatial
-
-        docstring = neurospatial.__doc__
-        assert docstring is not None
-        # Should mention explicit imports from submodules
-        assert "encoding" in docstring.lower() or "explicit" in docstring.lower()
-
-
-class TestNoCircularImports:
-    """Test that importing neurospatial doesn't cause circular imports."""
-
-    def test_import_neurospatial_succeeds(self):
-        """Test basic import works without circular import errors."""
-        # Force fresh import
-        if "neurospatial" in sys.modules:
-            # Already imported, just verify it works
-            import neurospatial
-
-            assert neurospatial is not None
-        else:
-            import neurospatial
-
-            assert neurospatial is not None
-
-    def test_fresh_import_from_string(self):
-        """Test import via importlib."""
-        ns = importlib.import_module("neurospatial")
-        assert ns is not None
-        assert hasattr(ns, "Environment")
-        assert hasattr(ns, "Region")
-        assert hasattr(ns, "Regions")
-        assert hasattr(ns, "CompositeEnvironment")
-        assert hasattr(ns, "EnvironmentNotFittedError")
+    assert old_export not in neurospatial.__all__, (
+        f"{old_export!r} should not be in top-level __all__; import from its submodule."
+    )
