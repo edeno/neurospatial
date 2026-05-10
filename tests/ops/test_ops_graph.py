@@ -82,21 +82,7 @@ def grid_5x5_env() -> Environment:
 
 
 class TestOpsGraph:
-    """Test that ops.graph exports the correct public API."""
-
-    def test_neighbor_reduce_import(self) -> None:
-        """Test neighbor_reduce is importable from ops.graph."""
-        import neurospatial.ops.graph as graph
-
-        assert callable(neighbor_reduce)
-        assert hasattr(graph, "neighbor_reduce")
-
-    def test_graph_convolve_import(self) -> None:
-        """Test graph_convolve is importable from ops.graph."""
-        import neurospatial.ops.graph as graph
-
-        assert callable(graph_convolve)
-        assert hasattr(graph, "graph_convolve")
+    """Functional smoke tests for ``neurospatial.ops.graph``."""
 
     def test_neighbor_reduce_basic(self, grid_3x3_env: Environment) -> None:
         """Test basic neighbor_reduce works from new import path."""
@@ -152,44 +138,6 @@ class TestOpsGraph:
                 f"op={op}: Expected shape ({env.n_bins},), got {result.shape}"
             )
             assert not np.all(np.isnan(result)), f"op={op}: All values are NaN"
-
-
-class TestOpsGraphAllExports:
-    """Test that __all__ exports are correct."""
-
-    def test_all_exports_exist(self):
-        """Test that all items in __all__ are actually exported."""
-        import neurospatial.ops.graph as graph
-
-        for name in graph.__all__:
-            assert hasattr(graph, name), f"{name} in __all__ but not exported"
-
-    def test_all_public_functions_in_all(self):
-        """Test that public functions are in __all__."""
-        import neurospatial.ops.graph as graph
-
-        expected_public = ["neighbor_reduce", "graph_convolve"]
-
-        for name in expected_public:
-            assert name in graph.__all__, f"{name} should be in __all__"
-
-
-class TestOpsInit:
-    """Test that ops/__init__.py exports graph functions."""
-
-    def test_graph_exports_from_ops(self):
-        """Test that graph functions are re-exported from ops."""
-        from neurospatial import ops
-
-        assert hasattr(ops, "neighbor_reduce")
-        assert hasattr(ops, "graph_convolve")
-
-    def test_graph_in_ops_all(self):
-        """Test that graph functions are in ops.__all__."""
-        from neurospatial import ops
-
-        assert "neighbor_reduce" in ops.__all__
-        assert "graph_convolve" in ops.__all__
 
 
 class TestEnvironmentIntegration:

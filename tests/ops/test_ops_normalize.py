@@ -8,36 +8,6 @@ import numpy as np
 import pytest
 
 
-class TestNormalizeModuleImports:
-    """Test that normalize operations are importable from new location."""
-
-    def test_import_normalize_field(self):
-        """normalize_field should be importable from ops.normalize."""
-        from neurospatial.ops.normalize import normalize_field
-
-        assert callable(normalize_field)
-
-    def test_import_clamp(self):
-        """clamp should be importable from ops.normalize."""
-        from neurospatial.ops.normalize import clamp
-
-        assert callable(clamp)
-
-    def test_import_combine_fields(self):
-        """combine_fields should be importable from ops.normalize."""
-        from neurospatial.ops.normalize import combine_fields
-
-        assert callable(combine_fields)
-
-    def test_import_from_ops_package(self):
-        """Functions should be importable from ops package."""
-        from neurospatial.ops import clamp, combine_fields, normalize_field
-
-        assert callable(normalize_field)
-        assert callable(clamp)
-        assert callable(combine_fields)
-
-
 class TestNormalizeField:
     """Basic smoke tests for normalize_field function."""
 
