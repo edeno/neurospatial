@@ -268,26 +268,35 @@ class TestEnvironmentFromDataSamplesGrid:
 class TestEnvironmentSerialization:
     """Tests for saving, loading, and dictionary conversion."""
 
-    def test_save_load(self, graph_env: Environment, tmp_path: Path):
-        """Test saving and loading Environment object."""
-        file_path = tmp_path / "test_env.pkl"
-        graph_env.save(str(file_path))
-        assert file_path.exists()
+    def test_to_file_from_file(
+        self, grid_env_from_samples: Environment, tmp_path: Path
+    ):
+        """Round-trip an Environment through ``to_file`` / ``from_file``.
 
-        loaded_env = Environment.load(str(file_path))
+        Uses a RegularGrid env: ``Environment.save`` / ``Environment.load``
+        are gone (M5.9), so the JSON+npz path defined by ``to_file`` is the
+        only persistence channel a v0.4 user has.
+        """
+        env = grid_env_from_samples
+        base = tmp_path / "test_env"
+        env.to_file(str(base))
+        assert base.with_suffix(".json").exists()
+        assert base.with_suffix(".npz").exists()
+
+        loaded_env = Environment.from_file(str(base))
         assert isinstance(loaded_env, Environment)
-        assert loaded_env.name == graph_env.name
-        assert loaded_env._layout_type_used == graph_env._layout_type_used
-        assert loaded_env.is_linearized_track == graph_env.is_linearized_track
-        assert loaded_env.n_dims == graph_env.n_dims
-        assert np.array_equal(loaded_env.bin_centers, graph_env.bin_centers)
+        assert loaded_env.name == env.name
+        assert loaded_env._layout_type_used == env._layout_type_used
+        assert loaded_env.is_linearized_track == env.is_linearized_track
+        assert loaded_env.n_dims == env.n_dims
+        assert np.array_equal(loaded_env.bin_centers, env.bin_centers)
         assert (
             loaded_env.connectivity.number_of_nodes()
-            == graph_env.connectivity.number_of_nodes()
+            == env.connectivity.number_of_nodes()
         )
         assert (
             loaded_env.connectivity.number_of_edges()
-            == graph_env.connectivity.number_of_edges()
+            == env.connectivity.number_of_edges()
         )
 
 

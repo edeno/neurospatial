@@ -440,7 +440,7 @@ class Environment(
         Notes
         -----
         This representation is designed for interactive use and debugging, not
-        for reconstruction. For serialization, use the `save()` method instead.
+        for reconstruction. For serialization, use the `to_file()` method.
 
         Examples
         --------

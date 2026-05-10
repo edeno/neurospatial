@@ -183,12 +183,11 @@ def to_file(env: Environment, path: PathLike) -> None:
     See Also
     --------
     from_file : Load environment from saved files
-    Environment.save : Legacy pickle-based serialization (less safe)
 
     Notes
     -----
-    This format is safer than pickle (no arbitrary code execution) and
-    more portable across Python versions and platforms.
+    The JSON + npz format does not execute arbitrary code at load time and
+    is portable across Python versions and platforms.
 
     For security, paths are validated to prevent directory traversal attacks.
     Use absolute paths or relative paths without '..' components.
@@ -303,7 +302,6 @@ def from_file(path: PathLike) -> Environment:
     See Also
     --------
     to_file : Save environment to files
-    Environment.load : Legacy pickle-based deserialization
 
     Notes
     -----
