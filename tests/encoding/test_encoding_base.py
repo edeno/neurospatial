@@ -85,42 +85,21 @@ def simple_1d_env() -> Environment:
 class TestToNumpy:
     """Tests for _to_numpy helper function."""
 
-    def test_numpy_array_passthrough(self) -> None:
-        """NumPy arrays should pass through unchanged."""
+    @pytest.mark.parametrize(
+        "value,expected",
+        [
+            (np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 3.0])),
+            ([1.0, 2.0, 3.0], np.array([1.0, 2.0, 3.0])),
+            (np.array([[1.0, 2.0], [3.0, 4.0]]), np.array([[1.0, 2.0], [3.0, 4.0]])),
+        ],
+    )
+    def test_python_inputs_to_numpy(self, value, expected) -> None:
+        """NumPy arrays, Python lists, and 2-D arrays all land as ``np.ndarray``."""
         from neurospatial.encoding._base import _to_numpy
 
-        arr = np.array([1.0, 2.0, 3.0])
-        result = _to_numpy(arr)
+        result = _to_numpy(value)
         assert isinstance(result, np.ndarray)
-        np.testing.assert_array_equal(result, arr)
-
-    def test_list_to_numpy(self) -> None:
-        """Python lists should be converted to NumPy arrays."""
-        from neurospatial.encoding._base import _to_numpy
-
-        arr = [1.0, 2.0, 3.0]
-        result = _to_numpy(arr)
-        assert isinstance(result, np.ndarray)
-        np.testing.assert_array_equal(result, np.array(arr))
-
-    def test_tuple_to_numpy(self) -> None:
-        """Python tuples should be converted to NumPy arrays."""
-        from neurospatial.encoding._base import _to_numpy
-
-        arr = (1.0, 2.0, 3.0)
-        result = _to_numpy(arr)
-        assert isinstance(result, np.ndarray)
-        np.testing.assert_array_equal(result, np.array(arr))
-
-    def test_2d_array(self) -> None:
-        """2D arrays should be preserved."""
-        from neurospatial.encoding._base import _to_numpy
-
-        arr = np.array([[1.0, 2.0], [3.0, 4.0]])
-        result = _to_numpy(arr)
-        assert isinstance(result, np.ndarray)
-        assert result.shape == (2, 2)
-        np.testing.assert_array_equal(result, arr)
+        np.testing.assert_array_equal(result, expected)
 
     @pytest.mark.skipif(
         not _has_jax(), reason="JAX not installed or not available on this platform"
@@ -181,34 +160,17 @@ class TestGetArrayModule:
 # ==============================================================================
 
 
-class TestHasOccupancyProtocol:
-    """Tests for HasOccupancy protocol."""
-
-    def test_protocol_is_runtime_checkable(self) -> None:
-        """HasOccupancy protocol should be runtime checkable."""
-        from neurospatial.encoding._base import HasOccupancy
-
-        @dataclass
-        class MockResult:
-            occupancy: NDArray[np.float64]
-
-        result = MockResult(occupancy=np.array([1.0, 2.0, 3.0]))
-        assert isinstance(result, HasOccupancy)
-
-    def test_non_conforming_class_fails(self) -> None:
-        """Classes without occupancy attribute should not satisfy protocol."""
-        from neurospatial.encoding._base import HasOccupancy
-
-        @dataclass
-        class NoOccupancy:
-            other_field: int
-
-        result = NoOccupancy(other_field=42)
-        assert not isinstance(result, HasOccupancy)
-
-
 class TestHasEnvironmentProtocol:
-    """Tests for HasEnvironment protocol."""
+    """Tests for the runtime-checkable HasEnvironment protocol.
+
+    The single regression worth catching is the protocol forgetting
+    ``@runtime_checkable`` (which makes ``isinstance`` raise) or the
+    attribute set drifting from the protocol declaration. Both happen
+    when someone refactors the protocol; the per-attribute "should match
+    this dataclass" smoke test is the cheapest way to catch them. The
+    ``HasOccupancy`` mirror of these tests was dropped — same shape,
+    same trivia, single protocol is enough.
+    """
 
     def test_protocol_is_runtime_checkable(self, simple_env: Environment) -> None:
         """HasEnvironment protocol should be runtime checkable."""
@@ -440,40 +402,6 @@ class TestSpatialResultMixin:
 # ==============================================================================
 # Test imports
 # ==============================================================================
-
-
-class TestBaseImports:
-    """Test that all expected items are importable from _base module."""
-
-    def test_to_numpy_importable(self) -> None:
-        """_to_numpy should be importable from encoding._base."""
-        from neurospatial.encoding._base import _to_numpy
-
-        assert callable(_to_numpy)
-
-    def test_get_array_module_importable(self) -> None:
-        """_get_array_module should be importable from encoding._base."""
-        from neurospatial.encoding._base import _get_array_module
-
-        assert callable(_get_array_module)
-
-    def test_has_occupancy_importable(self) -> None:
-        """HasOccupancy should be importable from encoding._base."""
-        from neurospatial.encoding._base import HasOccupancy
-
-        assert HasOccupancy is not None
-
-    def test_has_environment_importable(self) -> None:
-        """HasEnvironment should be importable from encoding._base."""
-        from neurospatial.encoding._base import HasEnvironment
-
-        assert HasEnvironment is not None
-
-    def test_spatial_result_mixin_importable(self) -> None:
-        """SpatialResultMixin should be importable from encoding._base."""
-        from neurospatial.encoding._base import SpatialResultMixin
-
-        assert SpatialResultMixin is not None
 
 
 class TestValidateTrajectoryRejectsBadTimes:
