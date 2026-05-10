@@ -78,22 +78,6 @@ def batch_firing_rates(simple_env: Environment, n_neurons: int) -> np.ndarray:
 # ==============================================================================
 
 
-class TestViewRateResultImport:
-    """Test that ViewRateResult can be imported."""
-
-    def test_import_from_view(self) -> None:
-        """ViewRateResult can be imported from encoding.view."""
-        from neurospatial.encoding.view import ViewRateResult
-
-        assert ViewRateResult is not None
-
-    def test_import_from_encoding(self) -> None:
-        """ViewRateResult can be imported from encoding package."""
-        from neurospatial.encoding import ViewRateResult
-
-        assert ViewRateResult is not None
-
-
 class TestViewRateResultCreation:
     """Test ViewRateResult dataclass creation."""
 
@@ -216,22 +200,6 @@ class TestViewRateResultFields:
 # ==============================================================================
 # ViewRatesResult Tests - Task 4.1
 # ==============================================================================
-
-
-class TestViewRatesResultImport:
-    """Test that ViewRatesResult can be imported."""
-
-    def test_import_from_view(self) -> None:
-        """ViewRatesResult can be imported from encoding.view."""
-        from neurospatial.encoding.view import ViewRatesResult
-
-        assert ViewRatesResult is not None
-
-    def test_import_from_encoding(self) -> None:
-        """ViewRatesResult can be imported from encoding package."""
-        from neurospatial.encoding import ViewRatesResult
-
-        assert ViewRatesResult is not None
 
 
 class TestViewRatesResultCreation:
@@ -559,35 +527,15 @@ class TestViewRatesResultEdgeCases:
 
 
 class TestViewRateResultPlot:
-    """Test ViewRateResult.plot() method."""
+    """Test ViewRateResult.plot() method.
 
-    def test_plot_returns_axes(
-        self,
-        simple_env: Environment,
-        single_firing_rate: np.ndarray,
-        single_occupancy: np.ndarray,
-    ) -> None:
-        """plot() should return matplotlib Axes."""
-        from neurospatial.encoding.view import ViewRateResult
-
-        result = ViewRateResult(
-            firing_rate=single_firing_rate,
-            occupancy=single_occupancy,
-            env=simple_env,
-            gaze_model="fixed_distance",
-            view_distance=10.0,
-            smoothing_method="diffusion_kde",
-            bandwidth=5.0,
-        )
-
-        import matplotlib
-
-        matplotlib.use("Agg")  # Non-interactive backend for testing
-        import matplotlib.pyplot as plt
-
-        ax = result.plot()
-        assert ax is not None
-        plt.close()
+    Only the ax-passthrough test is kept. The previous file had three
+    tests in this class — ``test_plot_returns_axes``, this one, and
+    ``test_plot_accepts_kwargs`` — and all three ended with
+    ``assert ax is not None`` after a call that has a non-Optional
+    return type. ``test_plot_accepts_ax_argument`` is the only one
+    that pins meaningful behavior (the user-supplied ax is reused).
+    """
 
     def test_plot_accepts_ax_argument(
         self,
@@ -595,7 +543,7 @@ class TestViewRateResultPlot:
         single_firing_rate: np.ndarray,
         single_occupancy: np.ndarray,
     ) -> None:
-        """plot() should accept existing axes."""
+        """plot() should reuse the provided axes."""
         from neurospatial.encoding.view import ViewRateResult
 
         result = ViewRateResult(
@@ -618,60 +566,9 @@ class TestViewRateResultPlot:
         assert ax_out is ax_in
         plt.close()
 
-    def test_plot_accepts_kwargs(
-        self,
-        simple_env: Environment,
-        single_firing_rate: np.ndarray,
-        single_occupancy: np.ndarray,
-    ) -> None:
-        """plot() should pass through kwargs to env.plot_field()."""
-        from neurospatial.encoding.view import ViewRateResult
-
-        result = ViewRateResult(
-            firing_rate=single_firing_rate,
-            occupancy=single_occupancy,
-            env=simple_env,
-            gaze_model="fixed_distance",
-            view_distance=10.0,
-            smoothing_method="diffusion_kde",
-            bandwidth=5.0,
-        )
-
-        import matplotlib
-
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-
-        # Should not raise - kwargs are passed through
-        ax = result.plot(cmap="hot", vmax=25.0)
-        assert ax is not None
-        plt.close()
-
 
 class TestViewRateResultPeakViewLocation:
     """Test ViewRateResult.peak_view_location() method."""
-
-    def test_peak_view_location_returns_ndarray(
-        self,
-        simple_env: Environment,
-        single_firing_rate: np.ndarray,
-        single_occupancy: np.ndarray,
-    ) -> None:
-        """peak_view_location() should return ndarray."""
-        from neurospatial.encoding.view import ViewRateResult
-
-        result = ViewRateResult(
-            firing_rate=single_firing_rate,
-            occupancy=single_occupancy,
-            env=simple_env,
-            gaze_model="fixed_distance",
-            view_distance=10.0,
-            smoothing_method="diffusion_kde",
-            bandwidth=5.0,
-        )
-
-        peak = result.peak_view_location()
-        assert isinstance(peak, np.ndarray)
 
     def test_peak_view_location_shape(
         self,
@@ -1057,35 +954,14 @@ class TestViewRateResultIsViewCell:
 
 
 class TestViewRatesResultPlot:
-    """Test ViewRatesResult.plot() method."""
+    """Test ViewRatesResult.plot() method.
 
-    def test_plot_returns_axes(
-        self,
-        simple_env: Environment,
-        batch_firing_rates: np.ndarray,
-        single_occupancy: np.ndarray,
-    ) -> None:
-        """plot() should return matplotlib Axes."""
-        from neurospatial.encoding.view import ViewRatesResult
-
-        result = ViewRatesResult(
-            firing_rates=batch_firing_rates,
-            occupancy=single_occupancy,
-            env=simple_env,
-            gaze_model="fixed_distance",
-            view_distance=10.0,
-            smoothing_method="diffusion_kde",
-            bandwidth=5.0,
-        )
-
-        import matplotlib
-
-        matplotlib.use("Agg")  # Non-interactive backend for testing
-        import matplotlib.pyplot as plt
-
-        ax = result.plot(idx=0)
-        assert ax is not None
-        plt.close()
+    Same trim as ``TestViewRateResultPlot`` plus one regression: ``idx``
+    must be passed (the batch result has no single neuron to plot
+    without it). The ``test_plot_returns_axes`` and
+    ``test_plot_accepts_kwargs`` variants only asserted
+    ``assert ax is not None``.
+    """
 
     def test_plot_requires_idx(
         self,
@@ -1093,7 +969,7 @@ class TestViewRatesResultPlot:
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
     ) -> None:
-        """plot() should require idx parameter."""
+        """plot() should require an explicit ``idx`` argument."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1106,7 +982,6 @@ class TestViewRatesResultPlot:
             bandwidth=5.0,
         )
 
-        # Should raise TypeError if idx is not provided
         with pytest.raises(TypeError):
             result.plot()  # type: ignore[call-arg]
 
@@ -1116,7 +991,7 @@ class TestViewRatesResultPlot:
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
     ) -> None:
-        """plot() should accept existing axes."""
+        """plot() should reuse the provided axes."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1139,60 +1014,9 @@ class TestViewRatesResultPlot:
         assert ax_out is ax_in
         plt.close()
 
-    def test_plot_accepts_kwargs(
-        self,
-        simple_env: Environment,
-        batch_firing_rates: np.ndarray,
-        single_occupancy: np.ndarray,
-    ) -> None:
-        """plot() should pass through kwargs to env.plot_field()."""
-        from neurospatial.encoding.view import ViewRatesResult
-
-        result = ViewRatesResult(
-            firing_rates=batch_firing_rates,
-            occupancy=single_occupancy,
-            env=simple_env,
-            gaze_model="fixed_distance",
-            view_distance=10.0,
-            smoothing_method="diffusion_kde",
-            bandwidth=5.0,
-        )
-
-        import matplotlib
-
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-
-        # Should not raise - kwargs are passed through
-        ax = result.plot(idx=0, cmap="hot", vmax=25.0)
-        assert ax is not None
-        plt.close()
-
 
 class TestViewRatesResultPeakViewLocations:
     """Test ViewRatesResult.peak_view_location() method."""
-
-    def test_peak_view_location_returns_ndarray(
-        self,
-        simple_env: Environment,
-        batch_firing_rates: np.ndarray,
-        single_occupancy: np.ndarray,
-    ) -> None:
-        """peak_view_location() should return ndarray."""
-        from neurospatial.encoding.view import ViewRatesResult
-
-        result = ViewRatesResult(
-            firing_rates=batch_firing_rates,
-            occupancy=single_occupancy,
-            env=simple_env,
-            gaze_model="fixed_distance",
-            view_distance=10.0,
-            smoothing_method="diffusion_kde",
-            bandwidth=5.0,
-        )
-
-        peaks = result.peak_view_location()
-        assert isinstance(peaks, np.ndarray)
 
     def test_peak_view_location_shape(
         self,
