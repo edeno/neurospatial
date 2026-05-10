@@ -17,42 +17,6 @@ import pytest
 from numpy.testing import assert_array_equal
 
 
-class TestSurrogatesImports:
-    """Test that all surrogate functions can be imported from stats.surrogates."""
-
-    def test_import_generate_poisson_surrogates(self) -> None:
-        """Should be importable from stats.surrogates."""
-        from neurospatial.stats.surrogates import generate_poisson_surrogates
-
-        assert callable(generate_poisson_surrogates)
-
-    def test_import_generate_inhomogeneous_poisson_surrogates(self) -> None:
-        """Should be importable from stats.surrogates."""
-        from neurospatial.stats.surrogates import (
-            generate_inhomogeneous_poisson_surrogates,
-        )
-
-        assert callable(generate_inhomogeneous_poisson_surrogates)
-
-    def test_import_generate_jittered_spikes(self) -> None:
-        """Should be importable from stats.surrogates (NEW function per PLAN.md)."""
-        from neurospatial.stats.surrogates import generate_jittered_spikes
-
-        assert callable(generate_jittered_spikes)
-
-    def test_import_from_stats_package(self) -> None:
-        """Should be importable from top-level stats package."""
-        from neurospatial.stats import (
-            generate_inhomogeneous_poisson_surrogates,
-            generate_jittered_spikes,
-            generate_poisson_surrogates,
-        )
-
-        assert callable(generate_poisson_surrogates)
-        assert callable(generate_inhomogeneous_poisson_surrogates)
-        assert callable(generate_jittered_spikes)
-
-
 class TestGeneratePoissonSurrogatesNew:
     """Tests for generate_poisson_surrogates from new location."""
 
