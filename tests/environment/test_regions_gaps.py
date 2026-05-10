@@ -855,21 +855,22 @@ class TestRegionErrorHandling:
         with pytest.raises(KeyError):
             env.regions.update_region("does_not_exist", point=(5.0, 5.0))
 
-    def test_region_remove_nonexistent_silent(self):
-        """Test removing non-existent region is silent.
+    def test_region_remove_nonexistent_raises(self):
+        """``regions.remove(...)`` on a missing name raises (M5.5).
 
-        Notes
-        -----
-        Tests that remove() on non-existent region doesn't raise error
-        (per docstring: "No error if absent").
+        The previous behavior — silent absorb — masked typos and
+        double-removes. The full M5.5 contract is that every Region
+        mutation (``add`` / ``update_region`` / ``__setitem__`` /
+        ``__delitem__`` / ``remove``) raises rather than silently
+        agreeing with the caller's wrong mental model.
         """
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
-        # remove() should not raise error for non-existent region
-        env.regions.remove("does_not_exist")  # Should be silent
+        with pytest.raises(KeyError):
+            env.regions.remove("does_not_exist")
 
-        # But del should raise KeyError
+        # ``del regions[name]`` continues to raise as well.
         with pytest.raises(KeyError):
             del env.regions["does_not_exist"]
 

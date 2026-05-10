@@ -420,10 +420,18 @@ class Regions(MutableMapping[str, Region]):
         Parameters
         ----------
         name : str
-            Name of region to remove. No error if absent.
+            Name of region to remove.
 
+        Raises
+        ------
+        KeyError
+            If ``name`` is not in the collection. Mirrors ``del regions[name]``
+            and the rest of the M5.5 contract: every Region API
+            (``add``, ``update_region``, ``__setitem__``, ``__delitem__``,
+            ``remove``) raises rather than silently absorbing the case where
+            the caller's mental model of the collection disagrees with reality.
         """
-        self._store.pop(name, None)
+        del self._store[name]
 
     def list_names(self) -> list[str]:
         """Get list of region names in insertion order.

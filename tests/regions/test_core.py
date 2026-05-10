@@ -197,9 +197,16 @@ def test_regions_area_point():
     assert regs.area("pt") == 0.0
 
 
-def test_regions_remove_absent():
+def test_regions_remove_absent_raises():
+    """Regions.remove now raises on missing name (M5.5).
+
+    The previous behavior silently absorbed missing names, masking
+    typos and double-removes. The full M5.5 contract is that every
+    Region mutation API raises on the disagree-with-reality case.
+    """
     regs = Regions()
-    regs.remove("nope")  # Should not raise
+    with pytest.raises(KeyError):
+        regs.remove("nope")
 
 
 def test_regions_repr():
