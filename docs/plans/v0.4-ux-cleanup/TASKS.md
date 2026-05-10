@@ -343,23 +343,23 @@ Source review: [`docs/reviews/UX_REVIEW_2026-05-08.md`](../../reviews/UX_REVIEW_
 
 **Risk**: Medium.
 
-- [ ] **5.1** **Mutability via version counter.** Add `_state_version: int = 0` to `Environment`. Increment on `_setup_from_layout` and on `subset()`/`apply_transform()`/`rebin()`. Cached properties verify the version on access; mismatch → recompute. Mutations of `bin_centers` or `connectivity` are detected via a hash check on first access after the documented mutation paths.
+- [x] **5.1** **Mutability via version counter.** Add `_state_version: int = 0` to `Environment`. Increment on `_setup_from_layout` and on `subset()`/`apply_transform()`/`rebin()`. Cached properties verify the version on access; mismatch → recompute. Mutations of `bin_centers` or `connectivity` are detected via a hash check on first access after the documented mutation paths.
   Files: [environment/core.py](../../../src/neurospatial/environment/core.py), [environment/metrics.py](../../../src/neurospatial/environment/metrics.py), [environment/fields.py](../../../src/neurospatial/environment/fields.py).
   Closes review §9.2.
   Note: this is the lighter alternative to `@dataclass(frozen=True)`. If the maintainer chooses frozen instead (per PLAN open question #2), this task is replaced by a full migration to immutable Environment.
 
-- [ ] **5.2** **`SubsetLayout` KDTree caching.** Cache the KDTree on the layout instance; invalidate on env state-version change.
+- [x] **5.2** **`SubsetLayout` KDTree caching.** Cache the KDTree on the layout instance; invalidate on env state-version change.
   Files: [environment/transforms.py:613-617](../../../src/neurospatial/environment/transforms.py).
   Closes review §9.3.
   Acceptance: benchmark `bin_at` on a subset env over 10⁴ queries; assert at most one KDTree construction.
 
-- [ ] **5.3** **`from_image` / `from_mask` rename.** Rename to `from_pixel_mask(image_mask, pixel_size, ...)` and `from_grid_mask(active_mask, grid_edges, ...)`. The old names `from_image` and `from_mask` are removed outright (no aliases). Update CLAUDE.md to remove the misleading "bin_size is REQUIRED" rule (it is required only for grid-inferring factories).
+- [x] **5.3** **`from_image` / `from_mask` rename.** Rename to `from_pixel_mask(image_mask, pixel_size, ...)` and `from_grid_mask(active_mask, grid_edges, ...)`. The old names `from_image` and `from_mask` are removed outright (no aliases). Update CLAUDE.md to remove the misleading "bin_size is REQUIRED" rule (it is required only for grid-inferring factories).
   Files: [environment/factories.py:482-487, 558](../../../src/neurospatial/environment/factories.py).
   Closes review §9.6, §9.4.
 
-- [ ] **5.4** **`from_graph` examples.** Add 2-3 `Examples` blocks to [environment/factories.py:353-389](../../../src/neurospatial/environment/factories.py) `from_graph` docstring (T-maze, plus-maze, linear track). Closes review §9.7.
+- [x] **5.4** **`from_graph` examples.** Add 2-3 `Examples` blocks to [environment/factories.py:353-389](../../../src/neurospatial/environment/factories.py) `from_graph` docstring (T-maze, plus-maze, linear track). Closes review §9.7.
 
-- [ ] **5.5** **Region API consolidation.**
+- [x] **5.5** **Region API consolidation.**
   - `Regions.add(name, ...)` raises on duplicate.
   - `Regions.update_region(name, ...)` raises on missing.
   - `Regions.__setitem__(name, region)` raises on duplicate (M3 task 3.9).
@@ -368,19 +368,19 @@ Source review: [`docs/reviews/UX_REVIEW_2026-05-08.md`](../../reviews/UX_REVIEW_
   Files: [regions/core.py](../../../src/neurospatial/regions/core.py).
   Closes review §9.9, §9.10.
 
-- [ ] **5.6** **`bin_attributes`, `edge_attributes`, `differential_operator` cost.** Convert from `@cached_property` to methods (`get_bin_attributes()`, `get_edge_attributes()`, `get_differential_operator()`) so the cost is visible in code and tab completion.
+- [x] **5.6** **`bin_attributes`, `edge_attributes`, `differential_operator` cost.** Convert from `@cached_property` to methods (`get_bin_attributes()`, `get_edge_attributes()`, `get_differential_operator()`) so the cost is visible in code and tab completion.
   Files: [environment/metrics.py:236-252, 299-316](../../../src/neurospatial/environment/metrics.py), [environment/fields.py:91-103](../../../src/neurospatial/environment/fields.py).
   Closes review §9.11, §9.12.
 
-- [ ] **5.7** **Remove `mask_for_region`; standardize on `region_mask`.** Delete `Environment.mask_for_region` outright. `region_mask` is the canonical method (accepts name / list / `Region` / `Regions`). Use `covers` as the containment predicate (inclusive of polygon-boundary bins). Migrate all callers in `src/`, `tests/`, `examples/`, `docs/`. No alias.
+- [x] **5.7** **Remove `mask_for_region`; standardize on `region_mask`.** Delete `Environment.mask_for_region` outright. `region_mask` is the canonical method (accepts name / list / `Region` / `Regions`). Use `covers` as the containment predicate (inclusive of polygon-boundary bins). Migrate all callers in `src/`, `tests/`, `examples/`, `docs/`. No alias.
   Files: [environment/regions.py](../../../src/neurospatial/environment/regions.py).
   Closes review §9.8.
 
-- [ ] **5.8** **`__repr__` and `__str__`.** Fix the `name=None` repr bug for empty-string names (use `repr(self.name)` to make empty string visible). Add `__str__` returning `info()`.
+- [x] **5.8** **`__repr__` and `__str__`.** Fix the `name=None` repr bug for empty-string names (use `repr(self.name)` to make empty string visible). Add `__str__` returning `info()`.
   Files: [environment/core.py:387-390](../../../src/neurospatial/environment/core.py).
   Closes review §9.18, §9.19.
 
-- [ ] **5.9** **Remove `Environment.save`/`load`.** Delete both methods outright. The pickle-based serialization path is replaced by `to_file`/`from_file` (JSON metadata + npz arrays). Audit the codebase and tests for any internal use of `save`/`load` and migrate them to `to_file`/`from_file` in the same task. No `DeprecationWarning` — the methods simply do not exist in v0.4.0.
+- [x] **5.9** **Remove `Environment.save`/`load`.** Delete both methods outright. The pickle-based serialization path is replaced by `to_file`/`from_file` (JSON metadata + npz arrays). Audit the codebase and tests for any internal use of `save`/`load` and migrate them to `to_file`/`from_file` in the same task. No `DeprecationWarning` — the methods simply do not exist in v0.4.0.
   Files: [environment/serialization.py:239-241](../../../src/neurospatial/environment/serialization.py).
   Closes review §9.20.
 
