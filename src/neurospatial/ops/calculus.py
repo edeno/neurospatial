@@ -106,7 +106,7 @@ def compute_differential_operator(
 
     See Also
     --------
-    Environment.get_differential_operator() : Cached property for accessing this operator
+    Environment.get_differential_operator() : Cached method that builds and reuses this operator on the Environment.
 
     References
     ----------
@@ -240,7 +240,7 @@ def gradient(
     --------
     divergence : Compute divergence of an edge field
     compute_differential_operator : Construct the differential operator matrix
-    Environment.get_differential_operator() : Cached differential operator property
+    Environment.get_differential_operator() : Cached method on the Environment
 
     References
     ----------
@@ -257,7 +257,7 @@ def gradient(
 
     # Compute gradient using differential operator transpose
     # gradient(f) = D.T @ f
-    diff_op = env.get_differential_operator()  # Use cached property
+    diff_op = env.get_differential_operator()
     gradient_field = diff_op.T @ field
 
     # Convert result to dense array and ensure proper dtype
@@ -361,7 +361,7 @@ def divergence(
     --------
     gradient : Compute gradient of a scalar field
     compute_differential_operator : Construct the differential operator matrix
-    Environment.get_differential_operator() : Cached differential operator property
+    Environment.get_differential_operator() : Cached method on the Environment
 
     References
     ----------
@@ -381,7 +381,7 @@ def divergence(
 
     # Compute divergence using differential operator
     # divergence(g) = D @ g
-    diff_op = env.get_differential_operator()  # Use cached property
+    diff_op = env.get_differential_operator()
     divergence_field = diff_op @ edge_field
 
     # Convert result to dense array and ensure proper dtype

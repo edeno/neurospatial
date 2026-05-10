@@ -153,18 +153,30 @@ class EnvironmentProtocol(Protocol):
 
     def get_differential_operator(self) -> sparse.csc_matrix:
         """
-        Graph Laplacian matrix for diffusion operations.
+        Build (or fetch a cached) edge-oriented differential operator.
+
+        The differential operator ``D`` encodes the oriented edges of
+        the connectivity graph: for each edge ``e = (i, j)`` with weight
+        ``w_e``, ``D[i, e] = -sqrt(w_e)`` and ``D[j, e] = +sqrt(w_e)``.
+        This is **not** the graph Laplacian; the Laplacian is the
+        derived quantity ``L = D @ D.T`` (shape ``(n_bins, n_bins)``).
 
         Returns
         -------
-        scipy.sparse.csc_matrix of shape (n_bins, n_bins)
+        scipy.sparse.csc_matrix of shape (n_bins, n_edges)
             Sparse differential operator matrix.
 
         Notes
         -----
         Method (not property) since v0.4: the underlying computation
         scales with the connectivity-graph size, so the call surface
-        keeps that cost visible at the call site.
+        keeps that cost visible at the call site. The result is cached
+        and invalidated by ``_state_version`` bumps (M5.1).
+
+        See Also
+        --------
+        neurospatial.ops.calculus.compute_differential_operator :
+            The free function that builds ``D`` from an Environment.
         """
         ...
 

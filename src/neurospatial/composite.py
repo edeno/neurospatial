@@ -1,15 +1,31 @@
 """CompositeEnvironment: merges multiple Environment instances into a single unified Environment-like API.
 Bridge edges between sub-environments are inferred automatically via mutual-nearest-neighbor (MNN).
 
-This class exposes the same public interface as the base `Environment` class:
-  - Properties: n_dims, n_bins, bin_centers, connectivity, is_linearized_track, dimension_ranges,
-                grid_edges, grid_shape, active_mask, regions
-  - Methods:    bin_at, contains, neighbors, distance_between, bin_center_of,
-                bins_in_region, region_mask, path_between, info,
-                save, load, bin_attributes, edge_attributes, plot
+This class exposes a deliberately Environment-shaped surface so that
+spatial-analysis code can accept either an :class:`Environment` or a
+:class:`CompositeEnvironment`. It is **not** a strict superset of
+``Environment`` — the two surfaces drift in places, and v0.4 widened
+some of those gaps. In particular:
 
-(Note: factory methods like from_layout are not included, since CompositeEnvironment
-wraps pre-fitted sub-environments. plot_1d is not applicable for composite environments.)
+- ``CompositeEnvironment`` still exposes ``save`` / ``load`` (pickle)
+  while ``Environment`` switched to ``to_file`` / ``from_file`` in M5.9.
+- ``CompositeEnvironment`` still exposes ``bin_attributes`` /
+  ``edge_attributes`` as cached properties while ``Environment``
+  surfaced them as ``get_bin_attributes()`` / ``get_edge_attributes()``
+  methods in M5.6 to keep the cost visible at the call site.
+
+What the composite provides:
+
+- Properties: n_dims, n_bins, bin_centers, connectivity,
+  is_linearized_track, dimension_ranges, grid_edges, grid_shape,
+  active_mask, regions, bin_attributes, edge_attributes.
+- Methods: bin_at, contains, neighbors, distance_between,
+  bin_center_of, bins_in_region, region_mask, path_between, info,
+  save, load, plot.
+
+Factory methods like ``from_layout`` are intentionally absent — a
+CompositeEnvironment wraps already-fitted sub-environments. ``plot_1d``
+is not applicable.
 """
 
 from collections.abc import Sequence
