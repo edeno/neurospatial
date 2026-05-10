@@ -388,6 +388,88 @@ class EnvironmentFactories:
         from_samples : Create environment by binning position data.
         from_layout : Create environment with custom LayoutEngine.
 
+        Examples
+        --------
+        Linear track. Three nodes laid out left-to-right; one edge per
+        segment, all in centimeters:
+
+        >>> import networkx as nx
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>>
+        >>> g = nx.Graph()
+        >>> g.add_node(0, pos=(0.0,))
+        >>> g.add_node(1, pos=(50.0,))
+        >>> g.add_node(2, pos=(100.0,))
+        >>> g.add_edge(0, 1, distance=50.0)
+        >>> g.add_edge(1, 2, distance=50.0)
+        >>>
+        >>> env = Environment.from_graph(
+        ...     graph=g,
+        ...     edge_order=[(0, 1), (1, 2)],
+        ...     edge_spacing=0.0,
+        ...     bin_size=2.0,
+        ... )
+        >>> env.is_linearized_track
+        True
+        >>> env.n_bins
+        50
+
+        T-maze. A central stem with two arms branching at the
+        decision point. ``edge_order`` controls the linearization
+        sequence (here: stem first, then left arm, then right arm).
+        ``edge_spacing`` inserts a gap between non-contiguous arm
+        endpoints so the linearized coordinate doesn't fold both
+        arms onto the same range:
+
+        >>> g = nx.Graph()
+        >>> g.add_nodes_from(
+        ...     [
+        ...         (0, {"pos": (0.0, 0.0)}),  # stem start
+        ...         (1, {"pos": (0.0, 40.0)}),  # decision point
+        ...         (2, {"pos": (-30.0, 40.0)}),  # left arm tip
+        ...         (3, {"pos": (30.0, 40.0)}),  # right arm tip
+        ...     ]
+        ... )
+        >>> g.add_edge(0, 1, distance=40.0)
+        >>> g.add_edge(1, 2, distance=30.0)
+        >>> g.add_edge(1, 3, distance=30.0)
+        >>>
+        >>> env = Environment.from_graph(
+        ...     graph=g,
+        ...     edge_order=[(0, 1), (1, 2), (1, 3)],
+        ...     edge_spacing=10.0,  # 10 cm gap between left and right arms
+        ...     bin_size=5.0,
+        ... )
+
+        Plus-maze (cross). Four arms meeting at the centre node.
+        ``edge_order`` lists each arm in turn so the linearized
+        coordinate runs N -> E -> S -> W:
+
+        >>> g = nx.Graph()
+        >>> g.add_node("center", pos=(0.0, 0.0))
+        >>> g.add_nodes_from(
+        ...     [
+        ...         ("N", {"pos": (0.0, 50.0)}),
+        ...         ("E", {"pos": (50.0, 0.0)}),
+        ...         ("S", {"pos": (0.0, -50.0)}),
+        ...         ("W", {"pos": (-50.0, 0.0)}),
+        ...     ]
+        ... )
+        >>> for arm in ("N", "E", "S", "W"):
+        ...     g.add_edge("center", arm, distance=50.0)
+        >>>
+        >>> env = Environment.from_graph(
+        ...     graph=g,
+        ...     edge_order=[
+        ...         ("center", "N"),
+        ...         ("center", "E"),
+        ...         ("center", "S"),
+        ...         ("center", "W"),
+        ...     ],
+        ...     edge_spacing=5.0,
+        ...     bin_size=2.0,
+        ... )
         """
         layout_params = {
             "graph_definition": graph,
