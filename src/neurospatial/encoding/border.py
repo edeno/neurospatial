@@ -365,7 +365,7 @@ def compute_region_coverage(
     >>>
     >>> # Create field along north wall
     >>> firing_rate = np.zeros(env.n_bins)
-    >>> north_bins = np.where(env.mask_for_region("north"))[0]
+    >>> north_bins = np.where(env.region_mask("north"))[0]
     >>> firing_rate[north_bins] = 5.0
     >>> field_bins = np.where(firing_rate > 0)[0]
     >>>
@@ -410,7 +410,7 @@ def compute_region_coverage(
     coverage = {}
     for region_name in regions:
         # Get bins in this region
-        region_mask = env.mask_for_region(region_name)
+        region_mask = env.region_mask(region_name)
         region_bins = np.where(region_mask)[0]
 
         if len(region_bins) == 0:

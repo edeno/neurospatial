@@ -32,10 +32,11 @@ class EnvironmentRegions:
     -------
     bins_in_region(region_name)
         Get active bin indices that fall within a specified named region.
-    mask_for_region(region_name)
-        Get a boolean mask over active bins indicating membership in a region.
     region_mask(regions, *, include_boundary=True)
-        Get boolean mask for one or more regions (accepts names, Region, or Regions).
+        Get boolean mask for one or more regions (accepts a name, list
+        of names, ``Region``, or ``Regions``). Canonical method form
+        for "is this bin in this region?" — replaces the v0.3
+        ``mask_for_region(name)``.
     region_membership(regions=None, *, include_boundary=True)
         Check which bins belong to which regions (returns 2D array).
 
@@ -112,7 +113,8 @@ class EnvironmentRegions:
 
         See Also
         --------
-        mask_for_region : Get boolean mask for region membership
+        region_mask : Get boolean mask for one or more regions (canonical
+            method form for "is this bin in this region?").
         neurospatial.regions.Region : Region data structure
 
         """
@@ -152,77 +154,6 @@ class EnvironmentRegions:
 
         # pragma: no cover
         raise ValueError(f"Unsupported region kind: {region.kind}")
-
-    @check_fitted
-    def mask_for_region(self: SelfEnv, region_name: str) -> NDArray[np.bool_]:
-        """Get a boolean mask over active bins indicating membership in a region.
-
-        This method creates a boolean array of length n_active_bins where True
-        indicates that the corresponding bin falls within the named region.
-        This is useful for filtering data arrays indexed by bin ID.
-
-        Parameters
-        ----------
-        region_name : str
-            Name of region to query.
-
-        Returns
-        -------
-        NDArray[np.bool_]
-            Boolean array of shape (n_active_bins,). True if an active bin
-            is part of the region, False otherwise. All False if no bins
-            fall within the region.
-
-        Raises
-        ------
-        KeyError
-            If `region_name` is not found in `self.regions`.
-        ValueError
-            If region geometry is incompatible with environment (see
-            `bins_in_region` for details).
-        RuntimeError
-            If polygon region is requested but shapely is not installed.
-
-        Notes
-        -----
-        This method is implemented by calling `bins_in_region()` and converting
-        the result to a boolean mask. It provides a convenient way to filter
-        data arrays by region membership.
-
-        The mask length equals the number of active bins (`n_bins`), making it
-        suitable for indexing arrays that store per-bin data.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial import Environment
-        >>> data = np.random.rand(100, 2) * 10
-        >>> env = Environment.from_samples(data, bin_size=2.0)
-        >>> _ = env.regions.add("center", point=(5.0, 5.0))
-        >>> mask = env.mask_for_region("center")
-        >>> mask.shape  # doctest: +ELLIPSIS
-        (...,)
-        >>> int(mask.sum())
-        1
-
-        Use the mask to filter per-bin data:
-
-        >>> occupancy = np.random.rand(env.n_bins)  # doctest: +SKIP
-        >>> region_occupancy = occupancy[mask]  # doctest: +SKIP
-        >>> region_occupancy.shape  # doctest: +SKIP
-        (1,)  # doctest: +SKIP
-
-        See Also
-        --------
-        bins_in_region : Get array of bin indices in region
-        neurospatial.regions.Region : Region data structure
-
-        """
-        active_bins_for_mask = self.bins_in_region(region_name)
-        mask = np.zeros(self.bin_centers.shape[0], dtype=bool)
-        if active_bins_for_mask.size > 0:
-            mask[active_bins_for_mask] = True
-        return mask
 
     def region_membership(
         self: SelfEnv,
@@ -522,17 +453,64 @@ class EnvironmentRegions:
         --------
         region_membership : 2D membership array for all regions
         bins_in_region : Get bin indices for a specific region
-        mask_for_region : Get boolean mask for a single region name
         neurospatial.spatial.regions_to_mask : Free function version
 
+        Notes
+        -----
+        **Point regions**: ``region_mask`` reports the single bin
+        whose center is closest to the point (via :meth:`bins_in_region`,
+        which uses :meth:`bin_at`). The free-function
+        :func:`regions_to_mask` returns an empty mask for points
+        because points have no area; the method-form here special-cases
+        them so ``env.region_mask("goal")`` matches what users mean
+        when they write that.
         """
         # Import here to avoid circular dependency
         from typing import cast
 
         from neurospatial.environment.core import Environment
         from neurospatial.ops.binning import regions_to_mask
+        from neurospatial.regions import Region as _Region
+        from neurospatial.regions import Regions as _Regions
 
-        # Delegate to the free function (cast for mypy compatibility)
-        return regions_to_mask(
-            cast("Environment", self), regions, include_boundary=include_boundary
-        )
+        # Resolve `regions` into the list of Region objects we'll union over.
+        # Strings (single or list) refer to entries in self.regions.
+        resolved: list[_Region]
+        if isinstance(regions, str):
+            resolved = [self.regions[regions]]
+        elif isinstance(regions, list):
+            resolved = [self.regions[r] if isinstance(r, str) else r for r in regions]
+        elif isinstance(regions, _Region):
+            resolved = [regions]
+        elif isinstance(regions, _Regions):
+            resolved = list(regions.values())
+        else:
+            raise TypeError(
+                "regions must be str, list[str], Region, or Regions; "
+                f"got {type(regions).__name__}."
+            )
+
+        mask = np.zeros(self.bin_centers.shape[0], dtype=bool)
+
+        # Point regions: use bin_at (the free-function regions_to_mask
+        # would return empty because points have no area).
+        polygon_regions = _Regions()
+        for region in resolved:
+            if region.kind == "point":
+                bin_idx = self.bin_at(np.asarray(region.data).reshape(1, -1))
+                if bin_idx[0] != -1:
+                    mask[bin_idx[0]] = True
+            else:
+                polygon_regions[region.name] = region
+
+        # Polygon (and other area-bearing) regions: delegate to the
+        # canonical containment predicate.
+        if len(polygon_regions) > 0:
+            poly_mask = regions_to_mask(
+                cast("Environment", self),
+                polygon_regions,
+                include_boundary=include_boundary,
+            )
+            mask |= poly_mask
+
+        return mask

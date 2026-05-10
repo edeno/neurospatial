@@ -201,7 +201,7 @@ def test_all_public_methods_present():
     ]
 
     # Region methods
-    region_methods = ["bins_in_region", "mask_for_region"]
+    region_methods = ["bins_in_region", "region_mask"]
 
     # Visualization methods
     visualization_methods = ["plot", "plot_1d"]

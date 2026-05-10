@@ -3,7 +3,7 @@ Comprehensive tests for Environment region operations (regions.py module).
 
 This module tests the region operations mixin for Environment, covering:
 - bins_in_region() method
-- mask_for_region() method
+- region_mask() method
 - Region addition with various geometries
 - Region buffering operations
 - Region queries and updates
@@ -146,16 +146,16 @@ class TestBinsInRegion:
 
 
 class TestMaskForRegion:
-    """Tests for Environment.mask_for_region() method."""
+    """Tests for Environment.region_mask() method."""
 
     def test_mask_for_region_basic(self):
-        """Test basic mask_for_region functionality."""
+        """Test basic region_mask functionality."""
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
         env.regions.add("center", polygon=box(3, 3, 7, 7))
 
-        mask = env.mask_for_region("center")
+        mask = env.region_mask("center")
 
         # Should be boolean array with length n_bins
         assert isinstance(mask, np.ndarray)
@@ -166,41 +166,49 @@ class TestMaskForRegion:
         assert np.any(mask)
         assert not np.all(mask)
 
-    def test_mask_for_region_matches_bins_in_region(self):
-        """Test that mask_for_region matches bins_in_region."""
+    def test_mask_for_region_is_superset_of_bins_in_region(self):
+        """``region_mask`` (covers) is a superset of ``bins_in_region`` (contains).
+
+        M5.7 standardised ``region_mask`` on the inclusive
+        ``shapely.covers`` predicate so polygon-boundary bins count as
+        inside; ``bins_in_region`` keeps the strict ``shapely.contains``
+        predicate. Every bin reported by ``bins_in_region`` must
+        therefore appear in the mask, but the mask may include extras
+        that touch the polygon boundary.
+        """
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
         env.regions.add("test", polygon=box(2, 2, 8, 8))
 
         bins = env.bins_in_region("test")
-        mask = env.mask_for_region("test")
-
-        # Bins where mask is True should match bins_in_region
+        mask = env.region_mask("test")
         masked_bins = np.where(mask)[0]
-        np.testing.assert_array_equal(sorted(bins), sorted(masked_bins))
+
+        assert set(bins.tolist()).issubset(set(masked_bins.tolist()))
+        assert mask.sum() >= len(bins)
 
     def test_mask_for_region_empty(self):
-        """Test mask_for_region with region containing no bins."""
+        """Test region_mask with region containing no bins."""
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
         env.regions.add("outside", polygon=box(100, 100, 110, 110))
 
-        mask = env.mask_for_region("outside")
+        mask = env.region_mask("outside")
 
         # Should be all False
         assert len(mask) == env.n_bins
         assert not np.any(mask)
 
     def test_mask_for_region_point(self):
-        """Test mask_for_region with point region."""
+        """Test region_mask with point region."""
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
         env.regions.add("point", point=(5.0, 5.0))
 
-        mask = env.mask_for_region("point")
+        mask = env.region_mask("point")
 
         # Should have exactly one True value
         assert mask.sum() == 1
@@ -216,7 +224,7 @@ class TestMaskForRegion:
         # Create per-bin data
         occupancy = rng.random(env.n_bins)
 
-        mask = env.mask_for_region("center")
+        mask = env.region_mask("center")
 
         # Should be able to index and get subset
         region_occupancy = occupancy[mask]

@@ -9,7 +9,7 @@ The module is organized using a mixin pattern for better maintainability:
 - factories: Factory classmethods for creating environments
 - queries: Spatial query methods (bin_at, contains, neighbors, etc.)
 - serialization: Save/load methods (to_file, from_file, to_dict, from_dict)
-- regions: Region-related operations (bins_in_region, mask_for_region)
+- regions: Region-related operations (bins_in_region, region_mask)
 - visualization: Plotting methods (plot, plot_1d)
 - analysis: Analysis methods (boundary_bins, bin_attributes, etc.)
 - decorators: Utility decorators (check_fitted)

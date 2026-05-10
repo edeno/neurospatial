@@ -6,7 +6,7 @@ functionality from specialized mixin classes:
 - EnvironmentFactories: Factory methods (from_samples, from_graph, etc.)
 - EnvironmentQueries: Spatial queries (bin_at, contains, neighbors, etc.)
 - EnvironmentSerialization: Save/load methods (to_file, from_file, etc.)
-- EnvironmentRegions: Region operations (bins_in_region, mask_for_region)
+- EnvironmentRegions: Region operations (bins_in_region, region_mask)
 - EnvironmentVisualization: Plotting methods (plot, plot_1d)
 - EnvironmentMetrics: Environment metrics (boundary_bins, bin_attributes, to_linear, etc.)
 - EnvironmentFields: Spatial field operations (compute_kernel, smooth, interpolate)

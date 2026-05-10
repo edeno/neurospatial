@@ -691,7 +691,7 @@ if not is_connected:
 # ## Example 4: CompositeEnvironment Methods
 #
 # `CompositeEnvironment` has full API parity with `Environment` class, including:
-# - Region queries: `bins_in_region()`, `mask_for_region()`
+# - Region queries: `bins_in_region()`, `region_mask()`
 # - Pathfinding: `path_between()`
 # - Diagnostics: `info()`
 # - Serialization: `save()` and `load()`
@@ -737,7 +737,7 @@ junction_bins = tmaze_with_regions.bins_in_region("junction_center")
 print(f"\nBins in 'junction_center' region: {len(junction_bins)} bins")
 
 # Get boolean mask for a region
-junction_mask = tmaze_with_regions.mask_for_region("junction_center")
+junction_mask = tmaze_with_regions.region_mask("junction_center")
 print(f"Mask shape: {junction_mask.shape}, True count: {np.sum(junction_mask)}")
 
 # %% [markdown]
@@ -872,7 +872,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
 #
 # 4. **Full API parity with Environment**:
 #    - Spatial queries: `bin_at()`, `distance_between()`, `contains()`
-#    - Region queries: `bins_in_region()`, `mask_for_region()`
+#    - Region queries: `bins_in_region()`, `region_mask()`
 #    - Pathfinding: `path_between()` (works across bridges!)
 #    - Diagnostics: `info()` (shows composite structure and bridge stats)
 #    - Serialization: `save()` and `load()` (persist composite environments)

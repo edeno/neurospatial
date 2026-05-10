@@ -5,7 +5,7 @@ This class exposes the same public interface as the base `Environment` class:
   - Properties: n_dims, n_bins, bin_centers, connectivity, is_linearized_track, dimension_ranges,
                 grid_edges, grid_shape, active_mask, regions
   - Methods:    bin_at, contains, neighbors, distance_between, bin_center_of,
-                bins_in_region, mask_for_region, path_between, info,
+                bins_in_region, region_mask, path_between, info,
                 save, load, bin_attributes, edge_attributes, plot
 
 (Note: factory methods like from_layout are not included, since CompositeEnvironment
@@ -719,44 +719,45 @@ class CompositeEnvironment:
             f"Supported kinds: 'point', 'polygon'."
         )
 
-    def mask_for_region(self, region_name: str) -> NDArray[np.bool_]:
-        """Get boolean mask for bins in a specified region.
+    def region_mask(self, regions: str | list[str]) -> NDArray[np.bool_]:
+        """Get boolean mask for bins in one or more named regions.
+
+        Mirrors :meth:`Environment.region_mask`'s name and signature so
+        downstream code that switches between ``Environment`` and
+        ``CompositeEnvironment`` doesn't need to special-case the call.
+        Currently only the name-based path is supported here (a list of
+        names also works); for free ``Region`` / ``Regions`` instances
+        use :class:`Environment` directly.
 
         Parameters
         ----------
-        region_name : str
-            Name of a defined region in `self.regions`.
+        regions : str or list[str]
+            Region name (or list of region names) defined in ``self.regions``.
 
         Returns
         -------
         NDArray[np.bool_], shape (n_bins,)
-            Boolean mask where True indicates the bin is within the region.
+            Boolean mask where True indicates the bin is within the
+            region (or any of the named regions).
 
         Raises
         ------
         KeyError
-            If `region_name` is not found in `self.regions`.
-        ValueError
-            If region type is unsupported or dimensions mismatch.
-
-        Notes
-        -----
-        This is a convenience method that returns a boolean mask instead of
-        bin indices. Equivalent to:
-            mask = np.zeros(env.n_bins, dtype=bool)
-            mask[env.bins_in_region(region_name)] = True
+            If a region name is not found in ``self.regions``.
 
         Examples
         --------
         >>> comp = CompositeEnvironment([env1, env2])  # doctest: +SKIP
         >>> comp.regions.add("arena", polygon=shapely_polygon)  # doctest: +SKIP
-        >>> arena_mask = comp.mask_for_region("arena")  # doctest: +SKIP
+        >>> arena_mask = comp.region_mask("arena")  # doctest: +SKIP
         >>> occupancy_in_arena = occupancy[arena_mask]  # doctest: +SKIP
 
         """
+        names = [regions] if isinstance(regions, str) else list(regions)
         mask = np.zeros(self.n_bins, dtype=bool)
-        bins = self.bins_in_region(region_name)
-        mask[bins] = True
+        for name in names:
+            bins = self.bins_in_region(name)
+            mask[bins] = True
         return mask
 
     def path_between(

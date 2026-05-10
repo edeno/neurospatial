@@ -454,7 +454,7 @@ class TestComplexPolygonGeometries:
 class TestRegionQueriesComplex:
     """Complex region query operations.
 
-    Tests for bins_in_region and mask_for_region with complex
+    Tests for bins_in_region and region_mask with complex
     polygon configurations.
     """
 
@@ -500,7 +500,7 @@ class TestRegionQueriesComplex:
 
         env.regions.add("donut", polygon=donut)
 
-        mask = env.mask_for_region("donut")
+        mask = env.region_mask("donut")
 
         # Should have bins
         assert mask.shape == (env.n_bins,)
@@ -788,7 +788,7 @@ class TestRegionIntegrationAdvanced:
             env.bins_in_region("nonexistent")
 
         with pytest.raises(KeyError):
-            env.mask_for_region("nonexistent")
+            env.region_mask("nonexistent")
 
         # Test 2: Wrong dimension point
         env.regions.add("wrong_dim", point=(1.0, 2.0, 3.0))
@@ -837,7 +837,7 @@ class TestRegionErrorHandling:
             env.bins_in_region("does_not_exist")
 
         with pytest.raises(KeyError):
-            env.mask_for_region("does_not_exist")
+            env.region_mask("does_not_exist")
 
         with pytest.raises(KeyError):
             env.regions["does_not_exist"]
@@ -892,7 +892,7 @@ class TestRegionErrorHandling:
         bins = env.bins_in_region("empty")
         assert len(bins) == 0
 
-        mask = env.mask_for_region("empty")
+        mask = env.region_mask("empty")
         assert not np.any(mask)
 
     def test_point_region_outside_environment(self):
@@ -910,7 +910,7 @@ class TestRegionErrorHandling:
         bins = env.bins_in_region("far_away")
         assert len(bins) == 0
 
-        mask = env.mask_for_region("far_away")
+        mask = env.region_mask("far_away")
         assert not np.any(mask)
 
     def test_polygon_region_outside_environment(self):
@@ -928,7 +928,7 @@ class TestRegionErrorHandling:
         bins = env.bins_in_region("far_away")
         assert len(bins) == 0
 
-        mask = env.mask_for_region("far_away")
+        mask = env.region_mask("far_away")
         assert not np.any(mask)
 
 

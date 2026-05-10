@@ -437,7 +437,7 @@ class TestComputeRegionCoverage:
 
         # Create field along north wall
         firing_rate = np.zeros(env.n_bins)
-        north_bins = np.where(env.mask_for_region("north"))[0]
+        north_bins = np.where(env.region_mask("north"))[0]
         firing_rate[north_bins] = 5.0
         field_bins = np.where(firing_rate > 0)[0]
 
@@ -474,7 +474,7 @@ class TestComputeRegionCoverage:
 
         # Create field in region1
         firing_rate = np.zeros(env.n_bins)
-        region1_bins = np.where(env.mask_for_region("region1"))[0]
+        region1_bins = np.where(env.region_mask("region1"))[0]
         firing_rate[region1_bins] = 5.0
         field_bins = np.where(firing_rate > 0)[0]
 
@@ -502,7 +502,7 @@ class TestComputeRegionCoverage:
         env.regions.add("region2", polygon=box(0, 0, 20, 20))
 
         firing_rate = np.zeros(env.n_bins)
-        region1_bins = np.where(env.mask_for_region("region1"))[0]
+        region1_bins = np.where(env.region_mask("region1"))[0]
         firing_rate[region1_bins] = 5.0
         field_bins = np.where(firing_rate > 0)[0]
 
@@ -593,7 +593,7 @@ class TestComputeRegionCoverage:
         env.regions.add("center", polygon=box(15, 15, 25, 25))
 
         # Create field that covers all of center region
-        center_bins = np.where(env.mask_for_region("center"))[0]
+        center_bins = np.where(env.region_mask("center"))[0]
         field_bins = center_bins
 
         from neurospatial.encoding.border import compute_region_coverage
@@ -620,7 +620,7 @@ class TestComputeRegionCoverage:
         env.regions.add("south", polygon=box(0, 0, 40, 10))
 
         # Create field only in north
-        north_bins = np.where(env.mask_for_region("north"))[0]
+        north_bins = np.where(env.region_mask("north"))[0]
         field_bins = north_bins
 
         from neurospatial.encoding.border import compute_region_coverage

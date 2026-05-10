@@ -260,19 +260,30 @@ class EnvironmentProtocol(Protocol):
         """
         ...
 
-    def mask_for_region(self, region_name: str) -> NDArray[np.bool_]:
+    def region_mask(
+        self,
+        regions: object,
+        *,
+        include_boundary: bool = True,
+    ) -> NDArray[np.bool_]:
         """
-        Get boolean mask for bins within a named region.
+        Get boolean mask for one or more regions.
 
         Parameters
         ----------
-        region_name : str
-            Name of the region to query.
+        regions : str, list[str], Region, or Regions
+            Region(s) to test against. Strings are looked up in
+            ``self.regions``.
+        include_boundary : bool, default=True
+            Whether bins whose centers lie on a polygon region boundary
+            count as inside (covers vs. contains).
 
         Returns
         -------
         ndarray of shape (n_bins,)
-            Boolean mask where True indicates bin is in region.
+            Boolean mask where True indicates the bin is in any of the
+            named regions. Point regions select the bin containing the
+            point.
         """
         ...
 

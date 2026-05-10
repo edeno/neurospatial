@@ -181,31 +181,31 @@ class TestBinsInRegionErrorPaths:
 
 
 class TestMaskForRegionErrorPaths:
-    """Test error handling in Environment.mask_for_region()."""
+    """Test error handling in Environment.region_mask()."""
 
     def test_mask_for_region_nonexistent_region(self):
-        """Test mask_for_region with region that doesn't exist."""
+        """Test region_mask with region that doesn't exist."""
         env = Environment.from_samples(SAMPLE_DATA_2D, bin_size=2.0)
 
         with pytest.raises(KeyError, match="nonexistent"):
-            env.mask_for_region("nonexistent")
+            env.region_mask("nonexistent")
 
     def test_mask_for_region_point_region(self):
-        """Test mask_for_region with point region."""
+        """Test region_mask with point region."""
         env = Environment.from_samples(SAMPLE_DATA_2D, bin_size=2.0)
 
         # Use a point that's definitely in an active bin
         point_in_bin = env.bin_centers[0]
         env.regions.add("test_point", point=point_in_bin.tolist())
 
-        mask = env.mask_for_region("test_point")
+        mask = env.region_mask("test_point")
         assert isinstance(mask, np.ndarray)
         assert mask.dtype == bool
         assert mask.shape == (env.n_bins,)
         assert np.sum(mask) >= 1  # At least one bin selected
 
     def test_mask_for_region_polygon_region(self):
-        """Test mask_for_region with polygon region."""
+        """Test region_mask with polygon region."""
         from shapely.geometry import Polygon as ShapelyPolygon
 
         env = Environment.from_samples(SAMPLE_DATA_2D, bin_size=2.0)
@@ -214,7 +214,7 @@ class TestMaskForRegionErrorPaths:
         shapely_poly = ShapelyPolygon(polygon_coords)
         env.regions.add("box", polygon=shapely_poly)
 
-        mask = env.mask_for_region("box")
+        mask = env.region_mask("box")
         assert isinstance(mask, np.ndarray)
         assert mask.dtype == bool
         assert mask.shape == (env.n_bins,)
