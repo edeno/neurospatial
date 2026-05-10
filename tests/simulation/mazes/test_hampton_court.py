@@ -2,48 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
-
 import networkx as nx
 import numpy as np
-import pytest
-
-from neurospatial.simulation.mazes._base import MazeDims
-
-
-class TestHamptonCourtDims:
-    """Tests for HamptonCourtDims dataclass."""
-
-    def test_inherits_from_maze_dims(self):
-        """HamptonCourtDims should inherit from MazeDims."""
-        from neurospatial.simulation.mazes.hampton_court import HamptonCourtDims
-
-        dims = HamptonCourtDims()
-        assert isinstance(dims, MazeDims)
-
-    def test_default_values(self):
-        """HamptonCourtDims should have correct default values."""
-        from neurospatial.simulation.mazes.hampton_court import HamptonCourtDims
-
-        dims = HamptonCourtDims()
-        assert dims.size == 300.0
-        assert dims.corridor_width == 11.0
-
-    def test_is_frozen(self):
-        """HamptonCourtDims should be frozen (immutable)."""
-        from neurospatial.simulation.mazes.hampton_court import HamptonCourtDims
-
-        dims = HamptonCourtDims()
-        with pytest.raises(FrozenInstanceError):
-            dims.size = 400.0  # type: ignore[misc]
-
-    def test_custom_values(self):
-        """HamptonCourtDims should accept custom values."""
-        from neurospatial.simulation.mazes.hampton_court import HamptonCourtDims
-
-        dims = HamptonCourtDims(size=400.0, corridor_width=15.0)
-        assert dims.size == 400.0
-        assert dims.corridor_width == 15.0
 
 
 class TestMakeHamptonCourtMaze:

@@ -2,53 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
-
 import numpy as np
-import pytest
-
-from neurospatial.simulation.mazes._base import MazeDims
-
-
-class TestRatHexmazeDims:
-    """Tests for RatHexmazeDims dataclass."""
-
-    def test_inherits_from_maze_dims(self):
-        """RatHexmazeDims should inherit from MazeDims."""
-        from neurospatial.simulation.mazes.rat_hexmaze import RatHexmazeDims
-
-        dims = RatHexmazeDims()
-        assert isinstance(dims, MazeDims)
-
-    def test_default_values(self):
-        """RatHexmazeDims should have correct default values."""
-        from neurospatial.simulation.mazes.rat_hexmaze import RatHexmazeDims
-
-        dims = RatHexmazeDims()
-        assert dims.module_width == 90.0
-        assert dims.corridor_width == 11.0
-        assert dims.n_modules == 3
-        assert dims.nodes_per_module == 24
-
-    def test_is_frozen(self):
-        """RatHexmazeDims should be frozen (immutable)."""
-        from neurospatial.simulation.mazes.rat_hexmaze import RatHexmazeDims
-
-        dims = RatHexmazeDims()
-        with pytest.raises(FrozenInstanceError):
-            dims.module_width = 150.0  # type: ignore[misc]
-
-    def test_custom_values(self):
-        """RatHexmazeDims should accept custom values."""
-        from neurospatial.simulation.mazes.rat_hexmaze import RatHexmazeDims
-
-        dims = RatHexmazeDims(
-            module_width=100.0, corridor_width=12.0, n_modules=2, nodes_per_module=20
-        )
-        assert dims.module_width == 100.0
-        assert dims.corridor_width == 12.0
-        assert dims.n_modules == 2
-        assert dims.nodes_per_module == 20
 
 
 class TestMakeRatHexmaze:

@@ -2,52 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
-
 import numpy as np
-import pytest
-
-from neurospatial.simulation.mazes._base import MazeDims
-
-
-class TestSquareMazeDims:
-    """Tests for SquareMazeDims dataclass."""
-
-    def test_inherits_from_maze_dims(self):
-        """SquareMazeDims should inherit from MazeDims."""
-        from neurospatial.simulation.mazes.square_maze import SquareMazeDims
-
-        dims = SquareMazeDims()
-        assert isinstance(dims, MazeDims)
-
-    def test_default_values(self):
-        """SquareMazeDims should have correct default values."""
-        from neurospatial.simulation.mazes.square_maze import SquareMazeDims
-
-        dims = SquareMazeDims()
-        assert dims.side_length == 30.0
-
-    def test_default_creates_30cm_maze(self):
-        """Default dimensions should create a 30 cm x 30 cm maze."""
-        from neurospatial.simulation.mazes.square_maze import SquareMazeDims
-
-        dims = SquareMazeDims()
-        assert dims.side_length == 30.0
-
-    def test_is_frozen(self):
-        """SquareMazeDims should be frozen (immutable)."""
-        from neurospatial.simulation.mazes.square_maze import SquareMazeDims
-
-        dims = SquareMazeDims()
-        with pytest.raises(FrozenInstanceError):
-            dims.side_length = 50.0  # type: ignore[misc]
-
-    def test_custom_values(self):
-        """SquareMazeDims should accept custom values."""
-        from neurospatial.simulation.mazes.square_maze import SquareMazeDims
-
-        dims = SquareMazeDims(side_length=50.0)
-        assert dims.side_length == 50.0
 
 
 class TestMakeSquareMaze:

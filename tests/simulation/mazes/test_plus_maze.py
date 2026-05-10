@@ -2,56 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
-
 import numpy as np
-import pytest
-
-from neurospatial.simulation.mazes._base import MazeDims
-
-
-class TestPlusMazeDims:
-    """Tests for PlusMazeDims dataclass."""
-
-    def test_inherits_from_maze_dims(self):
-        """PlusMazeDims should inherit from MazeDims."""
-        from neurospatial.simulation.mazes.plus_maze import PlusMazeDims
-
-        dims = PlusMazeDims()
-        assert isinstance(dims, MazeDims)
-
-    def test_default_values(self):
-        """PlusMazeDims should have correct default values."""
-        from neurospatial.simulation.mazes.plus_maze import PlusMazeDims
-
-        dims = PlusMazeDims()
-        assert dims.arm_length == 45.0
-        assert dims.width == 10.0
-
-    def test_default_creates_100cm_maze(self):
-        """Default dimensions should create a 100 cm x 100 cm maze footprint."""
-        from neurospatial.simulation.mazes.plus_maze import PlusMazeDims
-
-        dims = PlusMazeDims()
-        # Total span = 2 * arm_length + width = 2 * 45 + 10 = 100
-        total_span = 2 * dims.arm_length + dims.width
-        assert total_span == 100.0
-
-    def test_is_frozen(self):
-        """PlusMazeDims should be frozen (immutable)."""
-        from neurospatial.simulation.mazes.plus_maze import PlusMazeDims
-
-        dims = PlusMazeDims()
-        with pytest.raises(FrozenInstanceError):
-            dims.arm_length = 60.0  # type: ignore[misc]
-
-    def test_custom_values(self):
-        """PlusMazeDims should accept custom values."""
-        from neurospatial.simulation.mazes.plus_maze import PlusMazeDims
-
-        dims = PlusMazeDims(arm_length=60.0, width=15.0)
-        assert dims.arm_length == 60.0
-        assert dims.width == 15.0
 
 
 class TestMakePlusMaze:

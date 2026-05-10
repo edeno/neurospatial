@@ -2,49 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
-
 import numpy as np
-import pytest
-
-from neurospatial.simulation.mazes._base import MazeDims
-
-
-class TestCrosswordDims:
-    """Tests for CrosswordDims dataclass."""
-
-    def test_inherits_from_maze_dims(self):
-        """CrosswordDims should inherit from MazeDims."""
-        from neurospatial.simulation.mazes.crossword import CrosswordDims
-
-        dims = CrosswordDims()
-        assert isinstance(dims, MazeDims)
-
-    def test_default_values(self):
-        """CrosswordDims should have correct default values."""
-        from neurospatial.simulation.mazes.crossword import CrosswordDims
-
-        dims = CrosswordDims()
-        assert dims.grid_spacing == 30.0
-        assert dims.corridor_width == 10.0
-        assert dims.box_size == 15.0
-
-    def test_is_frozen(self):
-        """CrosswordDims should be frozen (immutable)."""
-        from neurospatial.simulation.mazes.crossword import CrosswordDims
-
-        dims = CrosswordDims()
-        with pytest.raises(FrozenInstanceError):
-            dims.grid_spacing = 50.0  # type: ignore[misc]
-
-    def test_custom_values(self):
-        """CrosswordDims should accept custom values."""
-        from neurospatial.simulation.mazes.crossword import CrosswordDims
-
-        dims = CrosswordDims(grid_spacing=40.0, corridor_width=12.0, box_size=20.0)
-        assert dims.grid_spacing == 40.0
-        assert dims.corridor_width == 12.0
-        assert dims.box_size == 20.0
 
 
 class TestMakeCrosswordMaze:

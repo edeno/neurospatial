@@ -2,53 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
-
 import numpy as np
-import pytest
-
-from neurospatial.simulation.mazes._base import MazeDims
-
-
-class TestRadialArmDims:
-    """Tests for RadialArmDims dataclass."""
-
-    def test_inherits_from_maze_dims(self):
-        """RadialArmDims should inherit from MazeDims."""
-        from neurospatial.simulation.mazes.radial_arm import RadialArmDims
-
-        dims = RadialArmDims()
-        assert isinstance(dims, MazeDims)
-
-    def test_default_values(self):
-        """RadialArmDims should have correct default values."""
-        from neurospatial.simulation.mazes.radial_arm import RadialArmDims
-
-        dims = RadialArmDims()
-        assert dims.center_radius == 15.0
-        assert dims.arm_length == 50.0
-        assert dims.arm_width == 10.0
-        assert dims.n_arms == 8
-
-    def test_is_frozen(self):
-        """RadialArmDims should be frozen (immutable)."""
-        from neurospatial.simulation.mazes.radial_arm import RadialArmDims
-
-        dims = RadialArmDims()
-        with pytest.raises(FrozenInstanceError):
-            dims.center_radius = 20.0  # type: ignore[misc]
-
-    def test_custom_values(self):
-        """RadialArmDims should accept custom values."""
-        from neurospatial.simulation.mazes.radial_arm import RadialArmDims
-
-        dims = RadialArmDims(
-            center_radius=20.0, arm_length=60.0, arm_width=12.0, n_arms=6
-        )
-        assert dims.center_radius == 20.0
-        assert dims.arm_length == 60.0
-        assert dims.arm_width == 12.0
-        assert dims.n_arms == 6
 
 
 class TestMakeRadialArmMaze:

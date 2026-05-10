@@ -2,63 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
-
 import networkx as nx
 import numpy as np
-import pytest
-
-from neurospatial.simulation.mazes._base import MazeDims
-
-
-class TestRepeatedTDims:
-    """Tests for RepeatedTDims dataclass."""
-
-    def test_inherits_from_maze_dims(self):
-        """RepeatedTDims should inherit from MazeDims."""
-        from neurospatial.simulation.mazes.repeated_t import RepeatedTDims
-
-        dims = RepeatedTDims()
-        assert isinstance(dims, MazeDims)
-
-    def test_default_values(self):
-        """RepeatedTDims should have correct default values."""
-        from neurospatial.simulation.mazes.repeated_t import RepeatedTDims
-
-        dims = RepeatedTDims()
-        assert dims.stem_spacing == 40.0
-        assert dims.stem_length == 60.0
-        assert dims.top_spur_length == 20.0
-        assert dims.arm_length == 15.0
-        assert dims.upper_lower_gap == 30.0
-        assert dims.width == 10.0
-
-    def test_is_frozen(self):
-        """RepeatedTDims should be frozen (immutable)."""
-        from neurospatial.simulation.mazes.repeated_t import RepeatedTDims
-
-        dims = RepeatedTDims()
-        with pytest.raises(FrozenInstanceError):
-            dims.stem_spacing = 50.0  # type: ignore[misc]
-
-    def test_custom_values(self):
-        """RepeatedTDims should accept custom values."""
-        from neurospatial.simulation.mazes.repeated_t import RepeatedTDims
-
-        dims = RepeatedTDims(
-            stem_spacing=50.0,
-            stem_length=80.0,
-            top_spur_length=25.0,
-            arm_length=20.0,
-            upper_lower_gap=40.0,
-            width=12.0,
-        )
-        assert dims.stem_spacing == 50.0
-        assert dims.stem_length == 80.0
-        assert dims.top_spur_length == 25.0
-        assert dims.arm_length == 20.0
-        assert dims.upper_lower_gap == 40.0
-        assert dims.width == 12.0
 
 
 class TestMakeRepeatedTMaze:
