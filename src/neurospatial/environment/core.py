@@ -451,33 +451,44 @@ class Environment(
         "Environment(name='MyEnv', 2D, 25 bins, RegularGrid)"
 
         """
-        # Handle unfitted environments
+        # Use ``repr(self.name)`` so the empty-string case ``name=""``
+        # is visibly distinct from the unset case ``name=None`` (M5.8).
+        # The previous ``f"'{name}'" if name else 'None'`` collapsed the
+        # two into the same string and hid the difference from users
+        # debugging an Environment they thought they had named.
         if not self._is_fitted:
-            name_str = f"'{self.name}'" if self.name else "None"
-            return f"Environment(name={name_str}, not fitted)"
+            return f"Environment(name={self.name!r}, not fitted)"
 
-        # Fitted environments: show name, dims, bins, layout
-        # Truncate very long names
-        name = self.name if self.name else ""
-        if len(name) > 40:
+        # Fitted environments: show name, dims, bins, layout. Truncate
+        # very long names but keep ``None`` distinct from ``""`` (M5.8).
+        name = self.name
+        if isinstance(name, str) and len(name) > 40:
             name = name[:37] + "..."
-        name_str = f"'{name}'" if name else "None"
 
-        # Get dimensionality
         try:
             dims_str = f"{self.n_dims}D"
         except (RuntimeError, AttributeError):
             dims_str = "?D"
 
-        # Get bin count
         n_bins = self.bin_centers.shape[0] if hasattr(self, "bin_centers") else 0
 
-        # Get layout type (remove 'Layout' suffix for brevity if present)
         layout_type = self._layout_type_used or "Unknown"
         if layout_type.endswith("Layout"):
             layout_type = layout_type[:-6]  # Remove 'Layout' suffix
 
-        return f"Environment(name={name_str}, {dims_str}, {n_bins} bins, {layout_type})"
+        return f"Environment(name={name!r}, {dims_str}, {n_bins} bins, {layout_type})"
+
+    def __str__(self) -> str:
+        """Human-readable summary, equivalent to :meth:`info` (M5.8).
+
+        ``str(env)`` returns the same multi-line summary that
+        ``env.info()`` produces. ``repr(env)`` keeps its single-line
+        ``Environment(name=..., 2D, 100 bins, RegularGrid)`` shape for
+        interactive debugging and logs.
+        """
+        if not self._is_fitted:
+            return self.__repr__()
+        return self.info()
 
     @staticmethod
     def _html_table_row(label: str, value: str, highlight: bool = False) -> str:

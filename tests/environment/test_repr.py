@@ -51,24 +51,34 @@ class TestEnvironmentRepr:
         assert "\n" not in result
 
     def test_repr_handles_empty_name(self):
-        """__repr__ should handle environments with empty names gracefully."""
+        """__repr__ should distinguish empty-string from None (M5.8)."""
         rng = np.random.default_rng(42)
         data = rng.random((100, 2)) * 10
         env = Environment.from_samples(data, bin_size=2.0, name="")
         result = repr(env)
-        # Should still be valid and show other info
+        # The empty string must be visibly distinct from the None case.
+        # repr(env) for an empty name now contains ``name=''``.
         assert isinstance(result, str)
         assert "Environment" in result
+        assert "name=''" in result
+        assert "name=None" not in result
         assert str(env.n_bins) in result
 
     def test_repr_handles_none_name(self):
-        """__repr__ should handle environments with None names gracefully."""
+        """``repr`` shows ``name=None`` when the env truly carries None.
+
+        ``from_samples(name=None)`` collapses to the empty-string default,
+        so to exercise the None branch we set the attribute directly.
+        """
         rng = np.random.default_rng(42)
         data = rng.random((100, 2)) * 10
-        env = Environment.from_samples(data, bin_size=2.0, name=None)
+        env = Environment.from_samples(data, bin_size=2.0, name="x")
+        env.name = None  # type: ignore[assignment]
+
         result = repr(env)
         assert isinstance(result, str)
         assert "Environment" in result
+        assert "name=None" in result
 
     def test_repr_works_for_1d_environment(self, graph_env):
         """__repr__ should work for Graph environments."""
@@ -79,6 +89,18 @@ class TestEnvironmentRepr:
         assert graph_env.name in result
         # Check it shows the correct dimensionality
         assert f"{graph_env.n_dims}D" in result
+
+    def test_str_returns_info_summary(self, grid_env_from_samples):
+        """``str(env)`` returns the same multi-line summary as ``env.info()`` (M5.8)."""
+        assert str(grid_env_from_samples) == grid_env_from_samples.info()
+
+    def test_str_falls_back_to_repr_for_unfitted(self):
+        """``str(env)`` for an unfitted env mirrors ``repr(env)`` (no info()."""
+        env = Environment.__new__(Environment)
+        env.name = ""
+        # Set up the minimum state ``__repr__`` reads when ``_is_fitted`` is False.
+        env._is_fitted = False
+        assert str(env) == repr(env)
 
     def test_repr_works_for_different_layout_types(self):
         """__repr__ should show different layout types correctly."""
