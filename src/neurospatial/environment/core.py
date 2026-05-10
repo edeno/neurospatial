@@ -33,7 +33,7 @@ from numpy.typing import NDArray
 from scipy import sparse
 
 from neurospatial._logging import log_environment_created, log_graph_validation
-from neurospatial.environment.decorators import check_fitted
+from neurospatial.environment.decorators import check_fitted, versioned_cached_property
 from neurospatial.environment.factories import EnvironmentFactories
 from neurospatial.environment.fields import EnvironmentFields
 from neurospatial.environment.metrics import EnvironmentMetrics
@@ -1032,9 +1032,8 @@ class Environment(
         """
         return int(self.bin_centers.shape[0])
 
-    @cached_property
     @check_fitted
-    def differential_operator(self) -> sparse.csc_matrix:
+    def get_differential_operator(self) -> sparse.csc_matrix:
         """Compute and cache the differential operator matrix for graph signal processing.
 
         The differential operator D is a sparse matrix of shape (n_bins, n_edges)
@@ -1076,11 +1075,11 @@ class Environment(
         >>> data = np.array([[0.0], [1.0], [2.0], [3.0]])
         >>> env = Environment.from_samples(data, bin_size=1.0)
         >>> # Access differential operator (computed and cached)
-        >>> D = env.differential_operator
+        >>> D = env.get_differential_operator()
         >>> D.shape
         (4, 3)
         >>> # Subsequent access reuses cached matrix
-        >>> D2 = env.differential_operator
+        >>> D2 = env.get_differential_operator()
         >>> D is D2
         True
 
@@ -1095,6 +1094,10 @@ class Environment(
         .. [2] Shuman et al. (2013). "The emerging field of signal processing on graphs."
                IEEE Signal Processing Magazine, 30(3), 83-98.
         """
+        return self._differential_operator_cached
+
+    @versioned_cached_property
+    def _differential_operator_cached(self) -> sparse.csc_matrix:
         return compute_differential_operator(self)
 
     @check_fitted
@@ -1291,14 +1294,14 @@ class Environment(
         >>> env = Environment.from_samples(data, bin_size=5.0)
         >>>
         >>> # Access some cached properties
-        >>> _ = env.differential_operator
+        >>> _ = env.get_differential_operator()
         >>> _ = env.boundary_bins
         >>>
         >>> # Clear all caches
         >>> env.clear_cache()
         >>>
         >>> # Properties will be recomputed on next access
-        >>> _ = env.differential_operator  # Triggers recomputation
+        >>> _ = env.get_differential_operator()  # Triggers recomputation
 
         Clear only specific cache types:
 
@@ -1314,13 +1317,19 @@ class Environment(
         # Clear explicit caches (KDTree, kernels) selectively
         self._clear_explicit_caches(kdtree=kdtree, kernels=kernels)
 
-        # Clear @cached_property values from instance __dict__ if requested
+        # Clear @cached_property AND @versioned_cached_property values from
+        # instance __dict__ if requested. This avoids maintaining a hardcoded
+        # list that can become stale when adding new cached properties.
         if cached_properties:
-            # Dynamically discover all @cached_property attributes across the class hierarchy
-            # This avoids maintaining a hardcoded list that can become stale when adding
-            # new cached properties to Environment or its mixins.
             for cls in type(self).__mro__:
                 for name, attr in vars(cls).items():
                     if isinstance(attr, cached_property):
-                        # Remove from __dict__ if present (cached_property stores value here)
                         self.__dict__.pop(name, None)
+                    elif isinstance(attr, versioned_cached_property):
+                        # versioned_cached_property uses two keys: the
+                        # value at "_versioned_cache__<name>" and the
+                        # captured version at
+                        # "_versioned_cache__<name>__version".
+                        value_key = f"_versioned_cache__{name}"
+                        self.__dict__.pop(value_key, None)
+                        self.__dict__.pop(f"{value_key}__version", None)

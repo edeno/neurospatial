@@ -107,11 +107,12 @@ class TestEnvironmentCachedProperty:
     """Test differential_operator cached property on Environment."""
 
     def test_differential_operator_property_exists(self):
-        """Test that Environment has differential_operator property."""
+        """Environment exposes get_differential_operator() (M5.6 method form)."""
         data = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
         env = Environment.from_samples(data, bin_size=1.0)
 
-        assert hasattr(env, "differential_operator")
+        assert hasattr(env, "get_differential_operator")
+        assert callable(env.get_differential_operator)
 
     def test_differential_operator_caching(self):
         """Test that differential_operator is cached (same object on repeated access)."""
@@ -119,8 +120,8 @@ class TestEnvironmentCachedProperty:
         env = Environment.from_samples(data, bin_size=1.0)
 
         # Access twice
-        D1 = env.differential_operator
-        D2 = env.differential_operator
+        D1 = env.get_differential_operator()
+        D2 = env.get_differential_operator()
 
         # Should be the same object (cached)
         assert D1 is D2
@@ -131,7 +132,7 @@ class TestEnvironmentCachedProperty:
         data = rng.random((50, 2)) * 10
         env = Environment.from_samples(data, bin_size=2.0)
 
-        D = env.differential_operator
+        D = env.get_differential_operator()
 
         n_bins = env.n_bins
         n_edges = len(env.connectivity.edges)
@@ -142,7 +143,7 @@ class TestEnvironmentCachedProperty:
         data = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
         env = Environment.from_samples(data, bin_size=1.0)
 
-        D_property = env.differential_operator
+        D_property = env.get_differential_operator()
         D_function = compute_differential_operator(env)
 
         # Should produce identical matrices
@@ -157,7 +158,7 @@ class TestDifferentialOperatorEdgeCases:
         data = np.array([[i, j] for i in range(5) for j in range(5)])
         env = Environment.from_samples(data, bin_size=1.0)
 
-        D = env.differential_operator
+        D = env.get_differential_operator()
 
         # Should have correct shape
         n_bins = env.n_bins
@@ -175,7 +176,7 @@ class TestDifferentialOperatorEdgeCases:
         data = rng.random((20, 2)) * 10
         env = Environment.from_samples(data, bin_size=2.0)
 
-        D = env.differential_operator
+        D = env.get_differential_operator()
 
         # Should still satisfy Laplacian relationship
         L_from_D = (D @ D.T).toarray()
@@ -188,7 +189,7 @@ class TestDifferentialOperatorEdgeCases:
         data = rng.random((30, 2)) * 10
         env = Environment.from_samples(data, bin_size=2.0)
 
-        D = env.differential_operator
+        D = env.get_differential_operator()
         L = (D @ D.T).toarray()
 
         # Laplacian should be symmetric

@@ -209,8 +209,11 @@ def test_all_public_methods_present():
     # Analysis methods
     analysis_methods = [
         "boundary_bins",
-        "bin_attributes",
-        "edge_attributes",
+        # M5.6: bin_attributes / edge_attributes converted from
+        # @cached_property to method form so the cost is visible at
+        # the call site.
+        "get_bin_attributes",
+        "get_edge_attributes",
         "to_linear",
         "linear_to_nd",
         "linearization_properties",

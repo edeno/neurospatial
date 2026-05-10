@@ -182,7 +182,7 @@ class TestEnvironmentFromGraph:
 
     def test_graph_attributes_dataframe(self, graph_env: Environment):
         """Test retrieval of bin attributes as a DataFrame."""
-        df = graph_env.bin_attributes
+        df = graph_env.get_bin_attributes()
         assert isinstance(df, pd.DataFrame)
         assert df.shape[0] == 16
         assert "pos_dim0" in df.columns
@@ -192,7 +192,7 @@ class TestEnvironmentFromGraph:
         assert "pos_1D" in df.columns
         assert "source_edge_id" in df.columns
 
-        df = graph_env.edge_attributes
+        df = graph_env.get_edge_attributes()
         assert isinstance(df, pd.DataFrame)
         assert df.shape[0] == 15
         assert "distance" in df.columns
@@ -1300,25 +1300,21 @@ class TestCacheManagement:
 
     def test_clear_cache_clears_differential_operator(self, cache_test_env):
         """Test that clear_cache() clears the differential_operator cache."""
-        # Access differential_operator (expensive computation)
-        diff_op_original = cache_test_env.differential_operator
+        # M5.6 changed differential_operator from @cached_property to a
+        # method backed by a versioned_cached_property. The on-instance
+        # cache key is now ``_versioned_cache__<name>`` instead of just
+        # ``<name>``.
+        cache_key = "_versioned_cache___differential_operator_cached"
 
-        # Verify it's cached
-        assert "differential_operator" in cache_test_env.__dict__
-        assert cache_test_env.differential_operator is diff_op_original  # Same object
+        diff_op_original = cache_test_env.get_differential_operator()
+        assert cache_key in cache_test_env.__dict__
+        assert cache_test_env.get_differential_operator() is diff_op_original
 
-        # Clear caches
         cache_test_env.clear_cache()
+        assert cache_key not in cache_test_env.__dict__
 
-        # Verify it's cleared
-        assert "differential_operator" not in cache_test_env.__dict__
-
-        # Can recompute
-        diff_op_new = cache_test_env.differential_operator
+        diff_op_new = cache_test_env.get_differential_operator()
         assert diff_op_new is not None
-
-        # New object was created (not the same reference)
-        # But values should be equal
         assert diff_op_new.shape == diff_op_original.shape
         assert np.allclose(diff_op_new.toarray(), diff_op_original.toarray())
 
@@ -1354,38 +1350,41 @@ class TestCacheManagement:
 
     def test_clear_cache_with_all_cached_properties(self, cache_test_env):
         """Test clearing when ALL cached properties are populated."""
-        # Populate ALL caches (not just some)
         from neurospatial.ops.binning import map_points_to_bins
 
         _ = cache_test_env.boundary_bins
         _ = cache_test_env.bin_sizes
-        _ = cache_test_env.differential_operator
+        _ = cache_test_env.get_differential_operator()
         _ = cache_test_env._source_flat_to_active_node_id_map
-        _ = cache_test_env.bin_attributes  # Added
-        _ = cache_test_env.edge_attributes  # Added
+        _ = cache_test_env.get_bin_attributes()
+        _ = cache_test_env.get_edge_attributes()
         # linearization_properties only exists for 1D environments - skip for 2D grid
         map_points_to_bins(np.array([[5.0, 5.0]]), cache_test_env)
 
-        # Verify all are cached
+        # M5.6 keys for the three method-form caches.
+        diff_key = "_versioned_cache___differential_operator_cached"
+        bin_key = "_versioned_cache___bin_attributes_cached"
+        edge_key = "_versioned_cache___edge_attributes_cached"
+
+        # Verify all are cached.
         assert cache_test_env._kdtree_cache is not None
         assert "boundary_bins" in cache_test_env.__dict__
         assert "bin_sizes" in cache_test_env.__dict__
-        assert "differential_operator" in cache_test_env.__dict__
+        assert diff_key in cache_test_env.__dict__
         assert "_source_flat_to_active_node_id_map" in cache_test_env.__dict__
-        assert "bin_attributes" in cache_test_env.__dict__  # Added
-        assert "edge_attributes" in cache_test_env.__dict__  # Added
+        assert bin_key in cache_test_env.__dict__
+        assert edge_key in cache_test_env.__dict__
 
-        # Clear all
         cache_test_env.clear_cache()
 
-        # Verify ALL are cleared
+        # Verify ALL are cleared.
         assert cache_test_env._kdtree_cache is None
         assert "boundary_bins" not in cache_test_env.__dict__
         assert "bin_sizes" not in cache_test_env.__dict__
-        assert "differential_operator" not in cache_test_env.__dict__
+        assert diff_key not in cache_test_env.__dict__
         assert "_source_flat_to_active_node_id_map" not in cache_test_env.__dict__
-        assert "bin_attributes" not in cache_test_env.__dict__  # Added
-        assert "edge_attributes" not in cache_test_env.__dict__  # Added
+        assert bin_key not in cache_test_env.__dict__
+        assert edge_key not in cache_test_env.__dict__
 
     def test_clear_cache_clears_linearization_properties(self, cache_test_graph_env):
         """Test that clear_cache() clears linearization_properties on 1D environments."""

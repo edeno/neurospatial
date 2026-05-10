@@ -119,7 +119,7 @@ class TestBinAttributes:
 
     def test_bin_attributes_returns_dataframe(self, medium_2d_env: Environment) -> None:
         """Test that bin_attributes returns a DataFrame."""
-        df = medium_2d_env.bin_attributes
+        df = medium_2d_env.get_bin_attributes()
 
         assert isinstance(df, pd.DataFrame)
         assert len(df) == medium_2d_env.n_bins
@@ -128,7 +128,7 @@ class TestBinAttributes:
         self, small_2d_env: Environment
     ) -> None:
         """Test that bin_attributes has required columns."""
-        df = small_2d_env.bin_attributes
+        df = small_2d_env.get_bin_attributes()
 
         # Should have standard columns
         assert "source_grid_flat_index" in df.columns
@@ -140,7 +140,7 @@ class TestBinAttributes:
 
     def test_bin_attributes_indexed_by_node_id(self, small_2d_env: Environment) -> None:
         """Test that bin_attributes DataFrame is indexed by node_id."""
-        df = small_2d_env.bin_attributes
+        df = small_2d_env.get_bin_attributes()
 
         # Index should be named 'node_id'
         assert df.index.name == "node_id"
@@ -154,7 +154,7 @@ class TestBinAttributes:
         self, small_2d_env: Environment
     ) -> None:
         """Test that position columns match bin_centers."""
-        df = small_2d_env.bin_attributes
+        df = small_2d_env.get_bin_attributes()
 
         # Extract positions from DataFrame
         pos_cols = [col for col in df.columns if col.startswith("pos_dim")]
@@ -165,15 +165,15 @@ class TestBinAttributes:
 
     def test_bin_attributes_cached(self, medium_2d_env: Environment) -> None:
         """Test that bin_attributes is cached."""
-        df1 = medium_2d_env.bin_attributes
-        df2 = medium_2d_env.bin_attributes
+        df1 = medium_2d_env.get_bin_attributes()
+        df2 = medium_2d_env.get_bin_attributes()
 
         # Should be the same object
         assert df1 is df2
 
     def test_bin_attributes_1d_env(self, small_1d_env: Environment) -> None:
         """Test bin_attributes for 1D environment."""
-        df = small_1d_env.bin_attributes
+        df = small_1d_env.get_bin_attributes()
 
         assert isinstance(df, pd.DataFrame)
         assert len(df) == small_1d_env.n_bins
@@ -184,7 +184,7 @@ class TestBinAttributes:
 
     def test_bin_attributes_3d_env(self, simple_3d_env: Environment) -> None:
         """Test bin_attributes for 3D environment."""
-        df = simple_3d_env.bin_attributes
+        df = simple_3d_env.get_bin_attributes()
 
         assert isinstance(df, pd.DataFrame)
         assert len(df) == simple_3d_env.n_bins
@@ -202,7 +202,7 @@ class TestEdgeAttributes:
         self, medium_2d_env: Environment
     ) -> None:
         """Test that edge_attributes returns a DataFrame."""
-        df = medium_2d_env.edge_attributes
+        df = medium_2d_env.get_edge_attributes()
 
         assert isinstance(df, pd.DataFrame)
         assert len(df) == medium_2d_env.connectivity.number_of_edges()
@@ -211,7 +211,7 @@ class TestEdgeAttributes:
         self, small_2d_env: Environment
     ) -> None:
         """Test that edge_attributes has required columns."""
-        df = small_2d_env.edge_attributes
+        df = small_2d_env.get_edge_attributes()
 
         # Should have standard edge attributes
         assert "source" in df.columns
@@ -223,7 +223,7 @@ class TestEdgeAttributes:
         self, medium_2d_env: Environment
     ) -> None:
         """Test that all edge distances are positive."""
-        df = medium_2d_env.edge_attributes
+        df = medium_2d_env.get_edge_attributes()
 
         assert (df["distance"] > 0).all()
 
@@ -231,7 +231,7 @@ class TestEdgeAttributes:
         self, small_2d_env: Environment
     ) -> None:
         """Test that source and target bin IDs are valid."""
-        df = small_2d_env.edge_attributes
+        df = small_2d_env.get_edge_attributes()
 
         # All sources and targets should be valid bin IDs
         assert df["source"].min() >= 0
@@ -241,8 +241,8 @@ class TestEdgeAttributes:
 
     def test_edge_attributes_cached(self, medium_2d_env: Environment) -> None:
         """Test that edge_attributes is cached."""
-        df1 = medium_2d_env.edge_attributes
-        df2 = medium_2d_env.edge_attributes
+        df1 = medium_2d_env.get_edge_attributes()
+        df2 = medium_2d_env.get_edge_attributes()
 
         # Should be the same object
         assert df1 is df2
@@ -251,7 +251,7 @@ class TestEdgeAttributes:
         self, small_2d_env: Environment
     ) -> None:
         """Test that edge_attributes expands vector into separate columns."""
-        df = small_2d_env.edge_attributes
+        df = small_2d_env.get_edge_attributes()
 
         # Should have vector column
         assert "vector" in df.columns
@@ -264,7 +264,7 @@ class TestEdgeAttributes:
         self, small_2d_env: Environment
     ) -> None:
         """Test that expanded vector dimensions match original vector."""
-        df = small_2d_env.edge_attributes
+        df = small_2d_env.get_edge_attributes()
 
         if len(df) > 0:
             # Check first edge
@@ -275,7 +275,7 @@ class TestEdgeAttributes:
 
     def test_edge_attributes_graph_env(self, graph_env: Environment) -> None:
         """Test edge_attributes for graph-based environment."""
-        df = graph_env.edge_attributes
+        df = graph_env.get_edge_attributes()
 
         assert isinstance(df, pd.DataFrame)
         assert len(df) == graph_env.connectivity.number_of_edges()
@@ -514,7 +514,7 @@ class TestSpatialMetrics:
         self, small_2d_env: Environment
     ) -> None:
         """Test that edge distances match actual bin center separation."""
-        df = small_2d_env.edge_attributes
+        df = small_2d_env.get_edge_attributes()
 
         if len(df) > 0:
             # Check first edge
@@ -553,12 +553,12 @@ class TestMetricsIntegration:
         assert len(boundary) > 0
 
         # bin_attributes should work
-        bin_df = env.bin_attributes
+        bin_df = env.get_bin_attributes()
         assert isinstance(bin_df, pd.DataFrame)
         assert len(bin_df) == env.n_bins
 
         # edge_attributes should work
-        edge_df = env.edge_attributes
+        edge_df = env.get_edge_attributes()
         assert isinstance(edge_df, pd.DataFrame)
         assert len(edge_df) == env.connectivity.number_of_edges()
 
@@ -572,11 +572,11 @@ class TestMetricsIntegration:
     ) -> None:
         """Test that metrics are consistent with environment properties."""
         # bin_attributes should have same number of rows as n_bins
-        assert len(medium_2d_env.bin_attributes) == medium_2d_env.n_bins
+        assert len(medium_2d_env.get_bin_attributes()) == medium_2d_env.n_bins
 
         # edge_attributes should have same number of rows as graph edges
         assert (
-            len(medium_2d_env.edge_attributes)
+            len(medium_2d_env.get_edge_attributes())
             == medium_2d_env.connectivity.number_of_edges()
         )
 
@@ -590,8 +590,8 @@ class TestMetricsIntegration:
         # Access all cached properties multiple times
         for _ in range(3):
             _ = small_2d_env.boundary_bins
-            _ = small_2d_env.bin_attributes
-            _ = small_2d_env.edge_attributes
+            _ = small_2d_env.get_bin_attributes()
+            _ = small_2d_env.get_edge_attributes()
             _ = small_2d_env.linearization_properties
 
         # Should not raise errors and should be fast (cached)
@@ -603,7 +603,7 @@ class TestMetricsIntegration:
 
         # Access metrics
         _ = env.boundary_bins
-        _ = env.bin_attributes
+        _ = env.get_bin_attributes()
 
         # Clear cache
         env.clear_cache()
@@ -612,5 +612,5 @@ class TestMetricsIntegration:
         boundary = env.boundary_bins
         assert len(boundary) > 0
 
-        bin_df = env.bin_attributes
+        bin_df = env.get_bin_attributes()
         assert len(bin_df) == env.n_bins

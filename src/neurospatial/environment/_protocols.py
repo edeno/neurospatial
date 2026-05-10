@@ -151,8 +151,7 @@ class EnvironmentProtocol(Protocol):
         """
         ...
 
-    @property
-    def differential_operator(self) -> sparse.csc_matrix:
+    def get_differential_operator(self) -> sparse.csc_matrix:
         """
         Graph Laplacian matrix for diffusion operations.
 
@@ -160,6 +159,12 @@ class EnvironmentProtocol(Protocol):
         -------
         scipy.sparse.csc_matrix of shape (n_bins, n_bins)
             Sparse differential operator matrix.
+
+        Notes
+        -----
+        Method (not property) since v0.4: the underlying computation
+        scales with the connectivity-graph size, so the call surface
+        keeps that cost visible at the call site.
         """
         ...
 

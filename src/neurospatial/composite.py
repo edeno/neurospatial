@@ -595,7 +595,7 @@ class CompositeEnvironment:
         for block in self._subenvs_info:
             env_i = block["env"]
             base = block["start_idx"]
-            df = env_i.bin_attributes.copy()
+            df = env_i.get_bin_attributes().copy()
             df["child_active_bin_id"] = df.index
             df["composite_bin_id"] = df.index + base
             dfs.append(df)
@@ -617,7 +617,7 @@ class CompositeEnvironment:
         for block in self._subenvs_info:
             env_i = block["env"]
             base = block["start_idx"]
-            df = env_i.edge_attributes.copy()
+            df = env_i.get_edge_attributes().copy()
             df["composite_source_bin"] = df["source_bin"] + base
             df["composite_target_bin"] = df["target_bin"] + base
             dfs.append(df)
