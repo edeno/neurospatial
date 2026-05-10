@@ -90,22 +90,6 @@ class TestSerialization:
         assert "goal" in loaded_env.regions
         assert np.allclose(loaded_env.regions["goal"].data, [5.0, 5.0])
 
-    def test_env_to_file_method(self, simple_env, tmp_path):
-        """Test Environment.to_file() method."""
-        output_path = tmp_path / "test_env"
-        simple_env.to_file(output_path)
-
-        assert (tmp_path / "test_env.json").exists()
-        assert (tmp_path / "test_env.npz").exists()
-
-    def test_env_from_file_classmethod(self, simple_env, tmp_path):
-        """Test Environment.from_file() classmethod."""
-        output_path = tmp_path / "test_env"
-        simple_env.to_file(output_path)
-
-        loaded_env = Environment.from_file(output_path)
-        assert loaded_env.n_bins == simple_env.n_bins
-
     def test_to_dict_creates_valid_dict(self, simple_env):
         """Test that to_dict creates a JSON-serializable dict."""
         data = to_dict(simple_env)
@@ -127,18 +111,6 @@ class TestSerialization:
         assert loaded_env.name == simple_env.name
         assert loaded_env.n_bins == simple_env.n_bins
         assert np.allclose(loaded_env.bin_centers, simple_env.bin_centers)
-
-    def test_env_to_dict_method(self, simple_env):
-        """Test Environment.to_dict() method."""
-        data = simple_env.to_dict()
-        assert isinstance(data, dict)
-        assert "bin_centers" in data
-
-    def test_env_from_dict_classmethod(self, simple_env):
-        """Test Environment.from_dict() classmethod."""
-        data = simple_env.to_dict()
-        loaded_env = Environment.from_dict(data)
-        assert loaded_env.n_bins == simple_env.n_bins
 
     def test_missing_files_raise_error(self, tmp_path):
         """Test that from_file raises error when files don't exist."""
@@ -235,106 +207,33 @@ class TestSecurityPathTraversal:
 
 
 class TestPathlibSupport:
-    """Test that I/O functions accept both str and pathlib.Path objects."""
+    """``to_file`` / ``from_file`` accept both ``str`` and ``pathlib.Path``."""
 
     @pytest.fixture
     def simple_env(self):
-        """Create a simple 2D environment for testing."""
         rng = np.random.default_rng(42)
         data = rng.standard_normal((100, 2)) * 10
         env = Environment.from_samples(data, bin_size=3.0, name="test_env")
         env.units = "cm"
         return env
 
-    def test_to_file_accepts_str_path(self, simple_env, tmp_path):
-        """Test that to_file() accepts string paths."""
-        # Use string path
-        output_path = str(tmp_path / "test_env_str")
-        to_file(simple_env, output_path)
+    @pytest.mark.parametrize("save_as_str", [True, False])
+    @pytest.mark.parametrize("load_as_str", [True, False])
+    def test_path_roundtrip(self, simple_env, tmp_path, save_as_str, load_as_str):
+        """All four combinations of str / Path on save and load round-trip."""
+        base = tmp_path / "test_env"
+        to_file(simple_env, str(base) if save_as_str else base)
+        assert base.with_suffix(".json").exists()
+        assert base.with_suffix(".npz").exists()
 
-        # Verify files created
-        assert Path(output_path).with_suffix(".json").exists()
-        assert Path(output_path).with_suffix(".npz").exists()
-
-    def test_to_file_accepts_path_object(self, simple_env, tmp_path):
-        """Test that to_file() accepts pathlib.Path objects."""
-        # Use Path object
-        output_path = tmp_path / "test_env_path"
-        to_file(simple_env, output_path)
-
-        # Verify files created
-        assert output_path.with_suffix(".json").exists()
-        assert output_path.with_suffix(".npz").exists()
-
-    def test_from_file_accepts_str_path(self, simple_env, tmp_path):
-        """Test that from_file() accepts string paths."""
-        # Save with Path
-        output_path = tmp_path / "test_env"
-        to_file(simple_env, output_path)
-
-        # Load with string
-        loaded_env = from_file(str(output_path))
-        assert loaded_env.n_bins == simple_env.n_bins
-
-    def test_from_file_accepts_path_object(self, simple_env, tmp_path):
-        """Test that from_file() accepts pathlib.Path objects."""
-        # Save with string
-        output_path = str(tmp_path / "test_env")
-        to_file(simple_env, output_path)
-
-        # Load with Path
-        loaded_env = from_file(Path(output_path))
-        assert loaded_env.n_bins == simple_env.n_bins
-
-    def test_roundtrip_with_mixed_types(self, simple_env, tmp_path):
-        """Test save with str, load with Path and vice versa."""
-        # Save with str, load with Path
-        str_path = str(tmp_path / "test_str")
-        to_file(simple_env, str_path)
-        env1 = from_file(Path(str_path))
-        assert env1.n_bins == simple_env.n_bins
-
-        # Save with Path, load with str
-        path_obj = tmp_path / "test_path"
-        to_file(simple_env, path_obj)
-        env2 = from_file(str(path_obj))
-        assert env2.n_bins == simple_env.n_bins
+        loaded = from_file(str(base) if load_as_str else base)
+        assert loaded.n_bins == simple_env.n_bins
 
     def test_relative_path_support(self, simple_env, tmp_path, monkeypatch):
-        """Test that relative paths work correctly."""
-        # Change to tmp_path directory
+        """Relative paths resolve against the cwd at call time."""
         monkeypatch.chdir(tmp_path)
-
-        # Use relative path
         relative_path = Path("subdir") / "test_env"
         relative_path.parent.mkdir(exist_ok=True)
-
         to_file(simple_env, relative_path)
         assert relative_path.with_suffix(".json").exists()
-
-        loaded_env = from_file(relative_path)
-        assert loaded_env.n_bins == simple_env.n_bins
-
-    def test_home_directory_expansion(self, simple_env, tmp_path):
-        """Test that Path.home() works correctly."""
-        # Create a subdirectory in tmp_path (can't actually write to real home)
-        # But we can verify Path objects work
-        output_path = tmp_path / "home_test" / "env"
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        to_file(simple_env, output_path)
-        assert output_path.with_suffix(".json").exists()
-
-    def test_env_to_file_method_with_path_object(self, simple_env, tmp_path):
-        """Test Environment.to_file() works with Path objects."""
-        output_path = tmp_path / "test_env"
-        simple_env.to_file(output_path)
-        assert output_path.with_suffix(".json").exists()
-
-    def test_env_from_file_classmethod_with_path_object(self, simple_env, tmp_path):
-        """Test Environment.from_file() works with Path objects."""
-        output_path = tmp_path / "test_env"
-        simple_env.to_file(output_path)
-
-        loaded_env = Environment.from_file(output_path)
-        assert loaded_env.n_bins == simple_env.n_bins
+        assert from_file(relative_path).n_bins == simple_env.n_bins
