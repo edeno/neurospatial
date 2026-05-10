@@ -343,10 +343,11 @@ Source review: [`docs/reviews/UX_REVIEW_2026-05-08.md`](../../reviews/UX_REVIEW_
 
 **Risk**: Medium.
 
-- [x] **5.1** **Mutability via version counter.** Add `_state_version: int = 0` to `Environment`. Increment on `_setup_from_layout` and on `subset()`/`apply_transform()`/`rebin()`. Cached properties verify the version on access; mismatch → recompute. Mutations of `bin_centers` or `connectivity` are detected via a hash check on first access after the documented mutation paths.
+- [x] **5.1** **Mutability via version counter.** Add `_state_version: int = 0` to `Environment`. Increment on `_setup_from_layout` and on `subset()`/`apply_transform()`/`rebin()`. Cached properties verify the version on access; mismatch → recompute.
   Files: [environment/core.py](../../../src/neurospatial/environment/core.py), [environment/metrics.py](../../../src/neurospatial/environment/metrics.py), [environment/fields.py](../../../src/neurospatial/environment/fields.py).
   Closes review §9.2.
   Note: this is the lighter alternative to `@dataclass(frozen=True)`. If the maintainer chooses frozen instead (per PLAN open question #2), this task is replaced by a full migration to immutable Environment.
+  **Scope of detection.** ``_state_version`` only catches mutation paths that bump it (the ``_setup_from_layout`` rebuild plus ``subset``/``apply_transform``/``rebin``). Direct in-place mutation of ``env.bin_centers`` / ``env.connectivity`` is **not** detected — there is no per-attribute hash fingerprint. Code that reaches in to mutate those structures (which is unsupported in v0.4) must call ``env.clear_cache()`` to drop versioned caches before re-reading derived properties. The earlier "hash check on first access" idea was scoped out: a fingerprint check on every cache access would defeat the cache, and a fingerprint check on first-access alone still misses mid-session mutations.
 
 - [x] **5.2** **`SubsetLayout` KDTree caching.** Cache the KDTree on the layout instance; invalidate on env state-version change.
   Files: [environment/transforms.py:613-617](../../../src/neurospatial/environment/transforms.py).

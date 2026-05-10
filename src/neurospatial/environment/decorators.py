@@ -186,14 +186,28 @@ class versioned_cached_property(Generic[T]):  # noqa: N801 — mimics functools.
     ``_state_version``; on mismatch the underlying function is re-run
     and the new value is cached.
 
-    This decorator is the M5.1 mechanism for invalidating derived
-    quantities (bin attributes, distance fields, …) when the
-    Environment is mutated through the documented paths
-    (``_setup_from_layout``, ``subset``, ``apply_transform``,
-    ``rebin``). The host class must expose an integer attribute
-    named ``_state_version`` and must allow per-instance attribute
-    storage (no ``__slots__`` without ``_state_version`` plus the
-    versioned cache keys).
+    This decorator is the mechanism for invalidating derived quantities
+    (bin attributes, distance fields, …) when the Environment is mutated
+    through the documented paths (``_setup_from_layout``, ``subset``,
+    ``apply_transform``, ``rebin``). The host class must expose an
+    integer attribute named ``_state_version`` and must allow
+    per-instance attribute storage (no ``__slots__`` without
+    ``_state_version`` plus the versioned cache keys).
+
+    Limitations
+    -----------
+    Invalidation is **only** triggered by ``_state_version`` bumps. The
+    descriptor does **not** fingerprint the underlying state, so direct
+    in-place mutation of e.g. ``env.bin_centers`` or ``env.connectivity``
+    (writing into the array, calling ``add_node`` on the graph) is not
+    detected — versioned-cached values will keep returning the
+    pre-mutation result. Such mutation is unsupported in v0.4; if a
+    caller absolutely must reach in, they must call
+    ``env.clear_cache()`` to drop versioned caches before re-reading
+    derived attributes. A first-access fingerprint check was considered
+    and dropped: it would catch the first stale read but still miss
+    later mutations, so it would not actually deliver the invariant the
+    user wants.
 
     Cache layout
     ------------

@@ -57,8 +57,10 @@ from shapely.geometry import Polygon
 polygon = Polygon([(0, 0), (100, 0), (100, 100), (0, 100)])
 env = Environment.from_polygon(polygon, bin_size=2.0)
 
-# From image mask
-env = Environment.from_image("arena_mask.png", bin_size_cm=2.0, pixels_per_cm=10)
+# From a pixel / image mask (boolean array, not a file path)
+import imageio.v3 as iio
+image_mask = iio.imread("arena_mask.png").astype(bool)
+env = Environment.from_pixel_mask(image_mask, pixel_size=0.1)  # cm/pixel
 ```
 
 **Layout engines available:**

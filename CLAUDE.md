@@ -439,7 +439,7 @@ env = Environment.from_samples(positions, bin_size=2.0, dilate=True, fill_holes=
 ### Tier 2 - Core
 
 - **`environment/`** - Main user-facing class using **mixin pattern** for 6,000+ lines of functionality
-  - Factory methods: `from_samples()`, `from_graph()`, `from_polygon()`, `from_mask()`, `from_image()`, `from_polar_egocentric()`
+  - Factory methods: `from_samples()`, `from_graph()`, `from_polygon()`, `from_grid_mask()`, `from_pixel_mask()`, `from_polar_egocentric()`
 
 ### Tier 3 - Primitives
 

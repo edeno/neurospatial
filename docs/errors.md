@@ -317,11 +317,13 @@ env = Environment.from_graph(graph, bin_size=1.0, units='cm')
 # For polygon boundaries
 env = Environment.from_polygon(polygon, bin_size=5.0, units='cm')
 
-# For boolean masks
-env = Environment.from_mask(mask, dimension_ranges=ranges, units='cm')
+# For pre-built N-D boolean masks (use grid_edges to describe geometry)
+env = Environment.from_grid_mask(active_mask, grid_edges=grid_edges)
+env.units = 'cm'
 
-# For image masks
-env = Environment.from_image(image_path, bin_size=1.0, units='pixels')
+# For 2-D pixel / image masks (boolean array)
+env = Environment.from_pixel_mask(image_mask, pixel_size=1.0)
+env.units = 'pixels'
 ```
 
 #### Solution 3: Load from file
@@ -336,8 +338,8 @@ env.bin_at([10.0, 20.0])  # Works!
 - `Environment.from_samples()` - Most common, discretizes sample data
 - `Environment.from_graph()` - For 1D track linearization
 - `Environment.from_polygon()` - For polygon-bounded regions
-- `Environment.from_mask()` - For pre-defined boolean masks
-- `Environment.from_image()` - For binary image masks
+- `Environment.from_grid_mask()` - For pre-defined N-D boolean masks with explicit grid edges
+- `Environment.from_pixel_mask()` - For 2-D boolean / image pixel masks
 - `Environment.from_layout()` - For custom layout engines
 - `Environment.from_file()` - Load from saved file
 
