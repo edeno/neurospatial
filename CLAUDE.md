@@ -12,7 +12,7 @@ When working with this codebase, you MUST follow these rules:
 
 1. **ALWAYS use `uv run`** before Python commands - never use bare `python`, `pip`, or `pytest`
 2. **NEVER create bare `Environment()`** - always use factory methods like `Environment.from_samples()`
-3. **bin_size is REQUIRED** - all Environment creation needs explicit bin_size parameter
+3. **bin-size argument is REQUIRED for grid-inferring factories** — `from_samples`, `from_polygon`, `from_graph` need an explicit ``bin_size``; `from_pixel_mask` needs ``pixel_size``; `from_grid_mask` reads bin geometry from explicit ``grid_edges`` and accepts neither. (No bare ``Environment()`` — always go through a factory.)
 4. **NumPy docstring format** - all docstrings must follow NumPy style (not Google or reST)
 5. **Check `is_linearized_track` before linearization** - only 1D environments have `to_linear()` method
 6. **Regions are immutable** - use `env.regions.update_region()`, never modify in place

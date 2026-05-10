@@ -122,9 +122,9 @@ env = Environment.from_samples(positions, bin_size=2.5, layout_type="triangular"
 **Setup complexity**: ⭐⭐ (requires image preprocessing)
 
 ```python
-env = Environment.from_image(
+env = Environment.from_pixel_mask(
     image_path="arena_mask.png",
-    bin_size=2.5,
+    pixel_size=2.5,
     dimension_ranges=[(0, 100), (0, 100)]
 )
 ```
@@ -219,7 +219,7 @@ env = Environment.from_samples(
 # Use factory method for specific geometry
 env = Environment.from_polygon(polygon, bin_size=2.5)
 # or
-env = Environment.from_image(image_path, bin_size=2.5, dimension_ranges=[(0,100), (0,100)])
+env = Environment.from_pixel_mask(image_path, pixel_size=2.5, dimension_ranges=[(0,100), (0,100)])
 ```
 
 ## Summary

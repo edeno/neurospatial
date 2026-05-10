@@ -84,7 +84,7 @@ env = Environment.from_graph(
 )
 ```
 
-### from_mask()
+### from_grid_mask()
 
 Create from a pre-defined N-D boolean mask:
 
@@ -93,7 +93,7 @@ Create from a pre-defined N-D boolean mask:
 mask = np.zeros((50, 50), dtype=bool)
 mask[10:40, 10:40] = True  # Active region
 
-env = Environment.from_mask(
+env = Environment.from_grid_mask(
     mask=mask,
     bin_size=2.0,
     dimension_ranges=[(0, 100), (0, 100)],
@@ -101,14 +101,14 @@ env = Environment.from_mask(
 )
 ```
 
-### from_image()
+### from_pixel_mask()
 
 Create from a binary image file:
 
 ```python
-env = Environment.from_image(
+env = Environment.from_pixel_mask(
     image_path="arena_mask.png",
-    bin_size=2.0,
+    pixel_size=2.0,
     dimension_ranges=[(0, 100), (0, 100)],
     name="ImageEnvironment"
 )

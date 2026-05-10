@@ -532,7 +532,7 @@ class TestSubsetRoundTripsThroughToFileFromFile:
 
         The 'subset' layout kind was not registered with the layout
         factory, which is why the round-trip was broken. After M1 1.1
-        the env is built via Environment.from_mask, so its
+        the env is built via Environment.from_grid_mask, so its
         layout_type_used is the canonical 'MaskedGrid'.
         """
         env = self._build_grid_env()

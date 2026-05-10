@@ -136,17 +136,17 @@ class Environment(
 
     **Specialized Use Cases**
 
-    4. **from_mask** - Create environment from pre-computed mask
+    4. **from_grid_mask** - Create environment from pre-computed mask
        Use when you have already determined which bins should be active (e.g.,
        from external analysis) as an N-D boolean array. Requires explicit
        specification of grid edges.
-       See `from_mask()`.
+       See `from_grid_mask()`.
 
-    5. **from_image** - Create environment from binary image
+    5. **from_pixel_mask** - Create environment from binary image
        Use when your environment boundary is defined by a binary image (e.g.,
        segmentation mask, overhead camera view). Each white pixel becomes a
        potential bin.
-       See `from_image()`.
+       See `from_pixel_mask()`.
 
     **Advanced**
 
@@ -243,7 +243,7 @@ class Environment(
     frame: str | None = field(init=False, default=None)
 
     # Coordinate-system flag. Cartesian envs (``from_samples``,
-    # ``from_polygon``, ``from_mask``, ``from_image``, ``from_graph``,
+    # ``from_polygon``, ``from_grid_mask``, ``from_pixel_mask``, ``from_graph``,
     # ``from_layout`` for any non-polar layout) hold (x, y[, z]) bin
     # centers and tolerate Euclidean distance on those centers. The
     # ``polar`` value comes from ``from_polar_egocentric`` and means
@@ -952,7 +952,7 @@ class Environment(
                 "(neighbors, path_between, reachable_from, or "
                 "distance_to(metric='geodesic')) instead, or build "
                 "an allocentric Cartesian env via from_samples / "
-                "from_polygon / from_mask."
+                "from_polygon / from_grid_mask."
             )
 
     @property

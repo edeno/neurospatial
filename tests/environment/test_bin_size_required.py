@@ -74,20 +74,20 @@ class TestBinSizeRequired:
         env = Environment.from_polygon(polygon, bin_size=2.0)
         assert env.n_bins > 0
 
-    def test_from_image_requires_bin_size(self):
-        """from_image() should raise TypeError if bin_size not provided."""
+    def test_from_image_requires_pixel_size(self):
+        """from_pixel_mask() should raise TypeError if pixel_size not provided."""
         image_mask = np.ones((10, 10), dtype=bool)
 
-        # Should raise TypeError when bin_size is missing
-        with pytest.raises(TypeError, match=r"missing.*required.*bin_size"):
-            Environment.from_image(image_mask)
+        # Should raise TypeError when pixel_size is missing
+        with pytest.raises(TypeError, match=r"missing.*required.*pixel_size"):
+            Environment.from_pixel_mask(image_mask)
 
-    def test_from_image_accepts_explicit_bin_size(self):
-        """from_image() should work when bin_size is explicitly provided."""
+    def test_from_image_accepts_explicit_pixel_size(self):
+        """from_pixel_mask() should work when pixel_size is explicitly provided."""
         image_mask = np.ones((10, 10), dtype=bool)
 
-        # Should work with explicit bin_size
-        env = Environment.from_image(image_mask, bin_size=1.0)
+        # Should work with explicit pixel_size
+        env = Environment.from_pixel_mask(image_mask, pixel_size=1.0)
         assert env.n_bins > 0
 
 
@@ -142,16 +142,16 @@ class TestNoDefaults:
         )
 
     def test_from_image_signature_has_no_default(self):
-        """Verify from_image() signature shows bin_size as required."""
+        """Verify from_pixel_mask() signature shows pixel_size as required."""
         import inspect
 
-        sig = inspect.signature(Environment.from_image)
-        bin_size_param = sig.parameters["bin_size"]
+        sig = inspect.signature(Environment.from_pixel_mask)
+        pixel_size_param = sig.parameters["pixel_size"]
 
         # Should have no default value
-        assert bin_size_param.default is inspect.Parameter.empty, (
-            f"from_image() should have no default for bin_size, "
-            f"but found: {bin_size_param.default}"
+        assert pixel_size_param.default is inspect.Parameter.empty, (
+            f"from_pixel_mask() should have no default for pixel_size, "
+            f"but found: {pixel_size_param.default}"
         )
 
     def test_from_graph_signature_has_no_default(self):
@@ -200,16 +200,17 @@ class TestDocstringConsistency:
         )
 
     def test_from_image_docstring_shows_required(self):
-        """from_image() docstring should not say 'optional' or show 'default'."""
-        docstring = inspect.getdoc(Environment.from_image) or ""
+        """from_pixel_mask() docstring should not say 'optional' or show 'default'."""
+        docstring = inspect.getdoc(Environment.from_pixel_mask) or ""
 
-        assert "bin_size" in docstring
-        bin_size_text = _bin_size_section(docstring)
+        assert "pixel_size" in docstring
+        # Reuse the existing helper but on the renamed parameter.
+        pixel_size_text = _bin_size_section(docstring.replace("pixel_size", "bin_size"))
 
-        assert "optional" not in bin_size_text, (
-            "from_image() docstring should not describe bin_size as optional"
+        assert "optional" not in pixel_size_text, (
+            "from_pixel_mask() docstring should not describe pixel_size as optional"
         )
         # Note: "Defaults to 1.0" should be removed
-        assert "defaults to" not in bin_size_text, (
-            "from_image() docstring should not mention a default value for bin_size"
+        assert "defaults to" not in pixel_size_text, (
+            "from_pixel_mask() docstring should not mention a default value for pixel_size"
         )

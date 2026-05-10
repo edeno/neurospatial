@@ -459,7 +459,7 @@ class TestApplyTransformToEnvironment3D:
         # Bin edges at [0, 2, 4, 6, 8, 10] → 5 bins per dimension
         mask = np.ones((5, 5, 5), dtype=bool)
         edges = np.array([0.0, 2.0, 4.0, 6.0, 8.0, 10.0])
-        env = Environment.from_mask(
+        env = Environment.from_grid_mask(
             active_mask=mask,
             grid_edges=(edges, edges, edges),
             name="test_3d_regions",

@@ -307,7 +307,7 @@ def env_all_active_2x2() -> Environment:
     """
     active_mask = np.array([[True, True], [True, True]], dtype=bool)
     grid_edges = (np.array([0.0, 1.0, 2.0]), np.array([0.0, 1.0, 2.0]))
-    return Environment.from_mask(
+    return Environment.from_grid_mask(
         active_mask=active_mask,
         grid_edges=grid_edges,
         name="AllActive2x2",
@@ -626,7 +626,7 @@ def simple_3d_env() -> Environment:
     Creates a fully populated 5x5x5 grid (125 bins) with diagonal connectivity.
     Uses bin_size=2.0 covering [0, 10] in each dimension.
 
-    Deterministic: Uses from_mask() with all-True mask for reproducible
+    Deterministic: Uses from_grid_mask() with all-True mask for reproducible
     bin structure across all runs.
 
     Session-scoped for performance: Environment is read-only in tests,
@@ -638,7 +638,7 @@ def simple_3d_env() -> Environment:
     edges = np.array([0.0, 2.0, 4.0, 6.0, 8.0, 10.0])
     grid_edges = (edges, edges, edges)
 
-    env = Environment.from_mask(
+    env = Environment.from_grid_mask(
         active_mask=mask,
         grid_edges=grid_edges,
         name="Simple3DEnv",

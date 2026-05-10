@@ -94,9 +94,9 @@ class EnvironmentFactories:
         Create 1D linearized track environment from graph structure.
     from_polygon(polygon, bin_size, ...)
         Create 2D grid environment masked by Shapely polygon.
-    from_mask(active_mask, grid_edges, ...)
+    from_grid_mask(active_mask, grid_edges, ...)
         Create environment from pre-defined boolean mask and grid edges.
-    from_image(image_mask, bin_size, ...)
+    from_pixel_mask(image_mask, bin_size, ...)
         Create 2D environment from binary image mask.
     from_layout(kind, layout_params, ...)
         Create environment with specified layout type and parameters.
@@ -198,8 +198,8 @@ class EnvironmentFactories:
         See Also
         --------
         from_polygon : Create environment with polygon-defined boundary.
-        from_mask : Create environment from pre-defined boolean mask.
-        from_image : Create environment from binary image mask.
+        from_grid_mask : Create environment from pre-defined boolean mask.
+        from_pixel_mask : Create environment from binary image mask.
         from_graph : Create 1D linearized track environment.
         from_layout : Create environment with custom LayoutEngine.
         neurospatial.layout.factories.list_available_layouts : Get all available layout types.
@@ -306,7 +306,7 @@ class EnvironmentFactories:
             raise NotImplementedError(
                 f"Layout '{layout_str}' (normalized: '{layout_normalized}') is not supported "
                 f"by from_samples(). Only 'RegularGrid' and 'Hexagonal' layouts are supported. "
-                f"For other layouts, use from_layout() or from_mask(). "
+                f"For other layouts, use from_layout() or from_grid_mask(). "
                 f"Available layouts: {', '.join(available)}"
             )
 
@@ -439,8 +439,8 @@ class EnvironmentFactories:
         See Also
         --------
         from_samples : Create environment by binning position data.
-        from_mask : Create environment from pre-defined boolean mask.
-        from_image : Create environment from binary image mask.
+        from_grid_mask : Create environment from pre-defined boolean mask.
+        from_pixel_mask : Create environment from binary image mask.
 
         Examples
         --------
@@ -481,7 +481,7 @@ class EnvironmentFactories:
         )
 
     @classmethod
-    def from_mask(
+    def from_grid_mask(
         cls,
         active_mask: NDArray[np.bool_],
         grid_edges: tuple[NDArray[np.float64], ...],
@@ -492,7 +492,8 @@ class EnvironmentFactories:
         """Create an Environment from a pre-defined N-D boolean mask and grid edges.
 
         This factory method allows for precise specification of active bins in
-        an N-dimensional grid.
+        an N-dimensional grid. Use it when you already have an N-D boolean mask
+        and the explicit grid-edge arrays describing the bin boundaries.
 
         Parameters
         ----------
@@ -520,7 +521,7 @@ class EnvironmentFactories:
         --------
         from_samples : Create environment by binning position data.
         from_polygon : Create environment with polygon-defined boundary.
-        from_image : Create environment from binary image mask.
+        from_pixel_mask : Create environment from binary image / pixel mask.
 
         Examples
         --------
@@ -536,7 +537,7 @@ class EnvironmentFactories:
         ...     np.linspace(0, 100, 11),  # x edges in cm
         ...     np.linspace(0, 100, 11),  # y edges in cm
         ... )
-        >>> env = Environment.from_mask(
+        >>> env = Environment.from_grid_mask(
         ...     active_mask=mask, grid_edges=grid_edges, name="center_region"
         ... )
         >>> env.n_bins
@@ -556,28 +557,30 @@ class EnvironmentFactories:
         )
 
     @classmethod
-    def from_image(
+    def from_pixel_mask(
         cls,
         image_mask: NDArray[np.bool_],
-        bin_size: float | tuple[float, float],
+        pixel_size: float | tuple[float, float],
         *,
         connect_diagonal_neighbors: bool = True,
         name: str = "",
     ) -> Environment:
-        """Create a 2D Environment from a binary image mask.
+        """Create a 2D Environment from a binary image / pixel mask.
 
-        Each `True` pixel in the `image_mask` becomes an active bin in the
-        environment. The `bin_size` determines the spatial scale of these pixels.
+        Each ``True`` pixel in the ``image_mask`` becomes an active bin in the
+        environment. ``pixel_size`` determines the spatial scale of those
+        pixels in physical units.
 
         Parameters
         ----------
         image_mask : NDArray[np.bool_], shape (n_rows, n_cols)
-            A 2D boolean array where `True` pixels define active bins.
-        bin_size : float or tuple of (float, float)
-            The spatial size of each pixel in physical units (e.g., cm, meters).
-            If a float, pixels are square. If a tuple `(width, height)`, specifies
-            pixel dimensions. For example, if your camera captures images where
-            each pixel represents 0.5cm, use bin_size=0.5.
+            A 2D boolean array where ``True`` pixels define active bins.
+        pixel_size : float or tuple of (float, float)
+            The spatial size of each pixel in physical units (e.g., cm,
+            meters). If a float, pixels are square. If a tuple
+            ``(width, height)``, specifies pixel dimensions. For example,
+            if your camera captures images where each pixel represents
+            0.5 cm, pass ``pixel_size=0.5``.
         connect_diagonal_neighbors : bool, optional
             Whether to connect diagonally adjacent active pixel-bins.
             Defaults to True.
@@ -587,11 +590,12 @@ class EnvironmentFactories:
         Returns
         -------
         Environment
-            A new Environment instance with an `ImageMaskLayout`.
+            A new Environment instance with an ``ImageMaskLayout``.
 
         See Also
         --------
-        from_mask : Create environment from pre-defined boolean mask.
+        from_grid_mask : Create environment from pre-defined boolean mask
+            with explicit grid edges.
         from_polygon : Create environment with polygon-defined boundary.
         from_samples : Create environment by binning position data.
 
@@ -606,9 +610,9 @@ class EnvironmentFactories:
         >>> mask = np.zeros((image_height, image_width), dtype=bool)
         >>> # Mark a rectangular region as active
         >>> mask[100:400, 150:500] = True
-        >>> env = Environment.from_image(
+        >>> env = Environment.from_pixel_mask(
         ...     image_mask=mask,
-        ...     bin_size=0.5,  # Each pixel = 0.5cm
+        ...     pixel_size=0.5,  # Each pixel = 0.5cm
         ...     name="arena_from_image",
         ... )
         >>> env.n_dims
@@ -617,7 +621,10 @@ class EnvironmentFactories:
         """
         layout_params = {
             "image_mask": image_mask,
-            "bin_size": bin_size,
+            # ImageMaskLayout still uses the legacy "bin_size" key
+            # internally; we accept ``pixel_size`` at the public surface
+            # and forward it.
+            "bin_size": pixel_size,
             "connect_diagonal_neighbors": connect_diagonal_neighbors,
         }
 
@@ -657,8 +664,8 @@ class EnvironmentFactories:
         --------
         from_samples : Create environment by binning position data.
         from_polygon : Create environment with polygon-defined boundary.
-        from_mask : Create environment from pre-defined boolean mask.
-        from_image : Create environment from binary image mask.
+        from_grid_mask : Create environment from pre-defined boolean mask.
+        from_pixel_mask : Create environment from binary image mask.
         from_graph : Create 1D linearized track environment.
 
         """
@@ -866,7 +873,7 @@ class EnvironmentFactories:
         See Also
         --------
         from_samples : Create environment from position samples.
-        from_mask : Create environment from pre-defined boolean mask.
+        from_grid_mask : Create environment from pre-defined boolean mask.
         neurospatial.reference_frames : Functions for egocentric transforms.
 
         """
@@ -903,8 +910,8 @@ class EnvironmentFactories:
         # Create all-active mask
         active_mask = np.ones((n_distance, n_angle), dtype=bool)
 
-        # Build the environment using from_mask
-        env = cls.from_mask(
+        # Build the environment using from_grid_mask
+        env = cls.from_grid_mask(
             active_mask=active_mask,
             grid_edges=grid_edges,
             name=name,

@@ -321,8 +321,8 @@ Methods requiring a fitted environment use the `@check_fitted` decorator to prev
 | `Environment.from_samples()` | Create from data points |
 | `Environment.from_graph()` | Create 1D linearized track |
 | `Environment.from_polygon()` | Grid bounded by polygon |
-| `Environment.from_mask()` | Pre-defined N-D boolean mask |
-| `Environment.from_image()` | Binary image mask |
+| `Environment.from_grid_mask()` | Pre-defined N-D boolean mask |
+| `Environment.from_pixel_mask()` | Binary image mask |
 | `Environment.from_layout()` | Direct layout specification |
 
 Factory methods ensure:

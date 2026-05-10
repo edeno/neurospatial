@@ -16,7 +16,7 @@ def linearized_subset_env() -> Environment:
     """Build a graph (linearized) env, then take a subset of it.
 
     Subsetting a graph env routes through ``SubsetLayout`` (the
-    Cartesian fast path uses ``from_mask`` instead and never touches
+    Cartesian fast path uses ``from_grid_mask`` instead and never touches
     the layout we are testing).
     """
     g = nx.Graph()

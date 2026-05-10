@@ -174,8 +174,8 @@ def test_all_public_methods_present():
         "from_samples",
         "from_graph",
         "from_polygon",
-        "from_mask",
-        "from_image",
+        "from_grid_mask",
+        "from_pixel_mask",
         "from_layout",
     ]
 

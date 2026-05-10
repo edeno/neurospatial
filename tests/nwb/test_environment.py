@@ -1121,7 +1121,7 @@ class TestEnvironmentRoundTrip:
         x_edges = np.linspace(0, 50, 11)  # 10 bins from 0 to 50
         y_edges = np.linspace(0, 50, 11)
 
-        env = Environment.from_mask(
+        env = Environment.from_grid_mask(
             active_mask=mask,
             grid_edges=(x_edges, y_edges),
         )
@@ -1161,9 +1161,9 @@ class TestEnvironmentRoundTrip:
         radius = 20
         mask = ((x - center[0]) ** 2 + (y - center[1]) ** 2) <= radius**2
 
-        env = Environment.from_image(
+        env = Environment.from_pixel_mask(
             image_mask=mask,  # Boolean mask
-            bin_size=2.0,
+            pixel_size=2.0,
         )
 
         nwb_path = tmp_path / "test_image_mask.nwb"
@@ -1286,7 +1286,7 @@ def _create_masked_grid_env():
     mask[2:8, 2:8] = True
     x_edges = np.linspace(0, 50, 11)
     y_edges = np.linspace(0, 50, 11)
-    env = Environment.from_mask(active_mask=mask, grid_edges=(x_edges, y_edges))
+    env = Environment.from_grid_mask(active_mask=mask, grid_edges=(x_edges, y_edges))
     return env
 
 
@@ -1298,7 +1298,7 @@ def _create_image_mask_env():
     center = (25, 25)
     radius = 20
     mask = ((x - center[0]) ** 2 + (y - center[1]) ** 2) <= radius**2
-    env = Environment.from_image(image_mask=mask, bin_size=2.0)
+    env = Environment.from_pixel_mask(image_mask=mask, pixel_size=2.0)
     return env
 
 

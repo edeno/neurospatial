@@ -9,7 +9,7 @@ Core Classes (Top-Level Exports)
 --------------------------------
 Environment : Main spatial discretization class
     Discretizes continuous space into bins with connectivity graph.
-    Factory methods: from_samples, from_polygon, from_graph, from_mask, from_image.
+    Factory methods: from_samples, from_polygon, from_graph, from_grid_mask, from_pixel_mask.
 EnvironmentNotFittedError : Exception for unfitted environments
     Raised when methods requiring fitted state are called on unfitted environment.
 Region : Immutable region of interest (ROI)

@@ -534,7 +534,7 @@ class EnvironmentTransforms:
                 f"No bins selected. Selection resulted in empty mask. (invert={invert})"
             )
 
-        # --- Grid-env fast path: build via Environment.from_mask ----------
+        # --- Grid-env fast path: build via Environment.from_grid_mask ----------
         #
         # Pre-M1 the subset path produced an inline `SubsetLayout` whose
         # _layout_type_tag was the unregistered string "subset", which
@@ -545,7 +545,7 @@ class EnvironmentTransforms:
         # Hexagonal, ShapelyPolygon), we have a `grid_shape` +
         # `grid_edges` + `active_mask` triple that fully describes the
         # spatial discretization. Filter the existing active mask down
-        # to the selected bins and rebuild via `from_mask` -- the
+        # to the selected bins and rebuild via `from_grid_mask` -- the
         # resulting env uses the canonical "MaskedGrid" layout,
         # round-trips through `to_file` / `from_file`, and shares the
         # existing layout serializer.
@@ -553,7 +553,7 @@ class EnvironmentTransforms:
         # Graph envs (1-D linearized tracks) ALSO populate `grid_shape`
         # / `grid_edges` / `active_mask`, but they are 1-D objects
         # embedded in a 2-D world (bin_centers shape (n_bins, 2)). If we
-        # routed them through `from_mask` we'd build a MaskedGrid whose
+        # routed them through `from_grid_mask` we'd build a MaskedGrid whose
         # bin_centers are flat 1-D linearized positions, dropping the
         # 2-D embedding. Detect them via `self.is_linearized_track` and fall through
         # to the inline `SubsetLayout` path below; that path is still
@@ -581,14 +581,14 @@ class EnvironmentTransforms:
             new_active_mask = new_mask_flat.reshape(self.active_mask.shape)
 
             # Preserve the parent's diagonal-neighbor setting if it had
-            # one; default to True (matches Environment.from_mask).
+            # one; default to True (matches Environment.from_grid_mask).
             parent_params = self._layout_params_used or {}
             connect_diagonal = bool(
                 parent_params.get("connect_diagonal_neighbors", True)
             )
 
             env_cls = cast("type[Environment]", self.__class__)
-            sub_env = env_cls.from_mask(
+            sub_env = env_cls.from_grid_mask(
                 active_mask=new_active_mask,
                 grid_edges=self.grid_edges,
                 name="",
@@ -713,11 +713,11 @@ class EnvironmentTransforms:
                 tightening would spuriously reject points near sparse
                 regions of the subset graph.
 
-                Note: 2-D / N-D grid envs took the ``from_mask`` fast
+                Note: 2-D / N-D grid envs took the ``from_grid_mask`` fast
                 path above and never reach this layout. SubsetLayout is
                 retained specifically for graph (1-D linearized) envs,
                 where the 2-D embedding of a 1-D track means
-                ``from_mask`` would silently drop the embedding. A
+                ``from_grid_mask`` would silently drop the embedding. A
                 registered serializable graph-subset layout is tracked
                 separately (out of M1 scope).
                 """

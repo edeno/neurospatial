@@ -424,7 +424,7 @@ class TestOccupancyMultipleLayouts:
         grid_edges_x = np.linspace(0, 20, 11)
         grid_edges_y = np.linspace(0, 20, 11)
 
-        env = Environment.from_mask(
+        env = Environment.from_grid_mask(
             active_mask=mask, grid_edges=(grid_edges_x, grid_edges_y)
         )
 

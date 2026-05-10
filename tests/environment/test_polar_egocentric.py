@@ -440,7 +440,7 @@ class TestPolarCoordinateKindFlag:
         assert polar_env.is_polar is True
 
     def test_cartesian_factories_default_to_cartesian(self, cartesian_env):
-        """from_samples / from_polygon / from_mask / etc. produce Cartesian envs."""
+        """from_samples / from_polygon / from_grid_mask / etc. produce Cartesian envs."""
         assert cartesian_env.coordinate_kind == "cartesian"
         assert cartesian_env.is_polar is False
 
@@ -611,7 +611,7 @@ class TestSubsetPreservesGraphLayout:
     populates ``active_mask``, ``grid_shape``, and ``grid_edges`` for
     the linearized 1-D representation -- so the original M1 1.1
     grid-fast-path check (looking only at those three attributes)
-    routed graph parents through ``Environment.from_mask``, which
+    routed graph parents through ``Environment.from_grid_mask``, which
     rebuilt them as MaskedGrid envs with 1-D bin_centers, dropping the
     2-D embedding and flipping ``is_linearized_track`` to False.
     """

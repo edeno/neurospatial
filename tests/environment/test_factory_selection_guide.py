@@ -23,8 +23,8 @@ def test_factory_guide_mentions_all_six_methods():
     factory_methods = [
         "from_samples",
         "from_polygon",
-        "from_mask",
-        "from_image",
+        "from_grid_mask",
+        "from_pixel_mask",
         "from_graph",
         "from_layout",
     ]
@@ -44,8 +44,8 @@ def test_factory_guide_has_use_case_descriptions():
     use_case_keywords = [
         "position",  # from_samples use case
         "polygon",  # from_polygon use case
-        "mask",  # from_mask use case
-        "image",  # from_image use case
+        "mask",  # from_grid_mask use case
+        "image",  # from_pixel_mask use case
         "track",  # from_graph use case (linearization)
     ]
 
