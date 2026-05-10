@@ -262,6 +262,14 @@ class Environment(
     _is_linearized_track_env: bool = field(init=False)
     _is_fitted: bool = field(init=False, default=False)
 
+    #: Monotonic counter incremented on every documented mutation
+    #: (``_setup_from_layout``, ``subset``, ``apply_transform``, ``rebin``).
+    #: Downstream caches can read this to detect "was the environment
+    #: mutated since I last looked?" without diffing the underlying
+    #: arrays. The :func:`versioned_cached_property` decorator uses this
+    #: as the cache-invalidation key.
+    _state_version: int = field(init=False, default=0)
+
     # KD-tree cache for spatial queries (populated lazily by map_points_to_bins)
     _kdtree_cache: Any = field(init=False, default=None, repr=False)
 
@@ -849,6 +857,10 @@ class Environment(
             self.active_mask = np.ones(self.bin_centers.shape[0], dtype=bool)
 
         self._is_fitted = True
+        # Bump the state version so any downstream cache (including the
+        # versioned_cached_property values from this and other mixins)
+        # treats this environment as a "freshly built" object.
+        self._state_version += 1
 
         # Log environment creation
         n_bins = self.bin_centers.shape[0] if self.bin_centers is not None else 0

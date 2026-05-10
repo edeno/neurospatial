@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from functools import wraps
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, overload
 
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
@@ -169,3 +169,106 @@ def check_fitted(method: Callable[..., T]) -> Callable[..., T]:
         return method(self, *args, **kwargs)
 
     return _inner
+
+
+# ----------------------------------------------------------------------
+# Versioned cached property (M5.1)
+# ----------------------------------------------------------------------
+
+
+class versioned_cached_property(Generic[T]):  # noqa: N801 — mimics functools.cached_property
+    """Cached property that auto-invalidates on Environment ``_state_version`` bump.
+
+    Behaves like :func:`functools.cached_property`, but the cached
+    value is keyed by the host instance's ``_state_version`` integer.
+    When a property is accessed, the wrapper compares the version
+    captured at cache time against the instance's current
+    ``_state_version``; on mismatch the underlying function is re-run
+    and the new value is cached.
+
+    This decorator is the M5.1 mechanism for invalidating derived
+    quantities (bin attributes, distance fields, …) when the
+    Environment is mutated through the documented paths
+    (``_setup_from_layout``, ``subset``, ``apply_transform``,
+    ``rebin``). The host class must expose an integer attribute
+    named ``_state_version`` and must allow per-instance attribute
+    storage (no ``__slots__`` without ``_state_version`` plus the
+    versioned cache keys).
+
+    Cache layout
+    ------------
+    The cached value lives at
+    ``instance.__dict__[f"_versioned_cache__{attr_name}"]`` and the
+    captured version at
+    ``instance.__dict__[f"_versioned_cache__{attr_name}__version"]``.
+    These keys are intentionally not the bare attribute name so the
+    descriptor is invoked on every access (Python only short-circuits
+    a non-data descriptor when an instance attribute of the same name
+    exists).
+
+    Examples
+    --------
+    >>> class Env:
+    ...     _state_version = 0
+    ...
+    ...     @versioned_cached_property
+    ...     def expensive(self) -> int:
+    ...         print("computing")
+    ...         return 42
+    >>> e = Env()
+    >>> e.expensive
+    computing
+    42
+    >>> e.expensive  # cached
+    42
+    >>> e._state_version += 1
+    >>> e.expensive  # recomputes after version bump
+    computing
+    42
+    """
+
+    def __init__(self, func: Callable[[Any], T]) -> None:
+        self.func = func
+        self.attrname: str | None = None
+        self.__doc__ = func.__doc__
+
+    def __set_name__(self, owner: type, name: str) -> None:
+        if self.attrname is None:
+            self.attrname = name
+        elif self.attrname != name:
+            raise TypeError(
+                "Cannot assign the same versioned_cached_property to two "
+                f"different names ({self.attrname!r} and {name!r})."
+            )
+
+    @overload
+    def __get__(
+        self, instance: None, owner: type | None = None
+    ) -> versioned_cached_property[T]: ...
+
+    @overload
+    def __get__(self, instance: object, owner: type | None = None) -> T: ...
+
+    def __get__(
+        self, instance: object | None, owner: type | None = None
+    ) -> T | versioned_cached_property[T]:
+        if instance is None:
+            return self
+        if self.attrname is None:
+            raise TypeError(
+                "Cannot use versioned_cached_property without calling __set_name__ on it."
+            )
+        cache = instance.__dict__
+        # Use distinct keys so the descriptor is always invoked.
+        # Setting `cache[self.attrname]` directly would shadow the
+        # descriptor on subsequent attribute access (because non-data
+        # descriptors lose to instance __dict__ in MRO lookup).
+        value_key = f"_versioned_cache__{self.attrname}"
+        version_key = f"{value_key}__version"
+        current_version = getattr(instance, "_state_version", 0)
+        if value_key in cache and cache.get(version_key) == current_version:
+            return cache[value_key]  # type: ignore[no-any-return]
+        value = self.func(instance)
+        cache[value_key] = value
+        cache[version_key] = current_version
+        return value
