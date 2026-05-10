@@ -140,42 +140,6 @@ class TestFrameNamingPattern:
             )
 
 
-class TestFrameNamingDigitCalculation:
-    """Tests for digit calculation based on frame count."""
-
-    def test_small_frame_count_uses_5_digits(self):
-        """Verify small frame counts use minimum 5 digits."""
-        # For 10 frames, max index is 9 (1 digit needed)
-        # But minimum is 5 digits
-        n_frames = 10
-        digits = max(5, len(str(max(0, n_frames - 1))))
-        assert digits == 5
-
-    def test_medium_frame_count_uses_5_digits(self):
-        """Verify medium frame counts (5k) use 5 digits."""
-        n_frames = 5000
-        digits = max(5, len(str(max(0, n_frames - 1))))
-        assert digits == 5  # 4999 has 4 digits, but min is 5
-
-    def test_large_frame_count_uses_5_digits(self):
-        """Verify large frame counts (100k) use appropriate digits."""
-        n_frames = 100_000
-        digits = max(5, len(str(max(0, n_frames - 1))))
-        assert digits == 5  # 99999 has 5 digits
-
-    def test_very_large_frame_count_uses_6_digits(self):
-        """Verify very large frame counts (1M) expand to 6 digits."""
-        n_frames = 1_000_000
-        digits = max(5, len(str(max(0, n_frames - 1))))
-        assert digits == 6  # 999999 has 6 digits
-
-    def test_extreme_frame_count_uses_7_digits(self):
-        """Verify extreme frame counts expand appropriately."""
-        n_frames = 10_000_000
-        digits = max(5, len(str(max(0, n_frames - 1))))
-        assert digits == 7  # 9999999 has 7 digits
-
-
 class TestFrameNamingIntegration:
     """Integration tests for frame naming in video export."""
 
@@ -321,23 +285,3 @@ class TestFrameNamingEdgeCases:
         png_files = list(tmp_path.glob("frame_*.png"))
         assert len(png_files) == 1
         assert png_files[0].name == "frame_00000.png"
-
-    def test_exact_boundary_99999_frames(self):
-        """Verify boundary case at exactly 99999 frames uses 5 digits."""
-        n_frames = 99999
-        digits = max(5, len(str(max(0, n_frames - 1))))
-        assert digits == 5  # 99998 has 5 digits
-
-    def test_boundary_100000_frames(self):
-        """Verify boundary case at 100000 frames uses 6 digits."""
-        n_frames = 100000
-        digits = max(5, len(str(max(0, n_frames - 1))))
-        # 99999 has 5 digits, so 5 digits is still sufficient
-        assert digits == 5
-
-    def test_boundary_100001_frames(self):
-        """Verify just over 100k frames still uses 5 digits."""
-        n_frames = 100001
-        digits = max(5, len(str(max(0, n_frames - 1))))
-        # 100000 has 6 digits
-        assert digits == 6
