@@ -665,6 +665,31 @@ class EnvironmentTransforms:
                 # graph (linearized) env stays 1-D in 2-D space rather
                 # than masquerading as a fully N-D layout.
                 self.is_linearized_track = is_linearized_track
+                # Lazy KDTree + nearest-neighbor-distance cache (M5.2). The
+                # KDTree was previously rebuilt on every point_to_bin_index
+                # call, which is O(n log n) per query and dominated cost
+                # for trajectory binning. A cached subset env now spends
+                # ~one KDTree construction per layout lifetime.
+                self._kdtree: Any = None
+                self._oof_threshold: float | None = None
+
+            def _ensure_kdtree(self) -> None:
+                """Build the KDTree (and out-of-env distance threshold) once."""
+                if self._kdtree is not None:
+                    return
+                from scipy.spatial import cKDTree
+
+                tree = cKDTree(self.bin_centers)
+                self._kdtree = tree
+                # Pre-compute the out-of-env threshold from the median
+                # nearest-neighbor distance. For a 1-bin layout we leave
+                # it as None and short-circuit thresholding below.
+                if len(self.bin_centers) > 1:
+                    nearest_neighbor_dist = tree.query(
+                        self.bin_centers, k=2, workers=-1
+                    )[0][:, 1]
+                    typical_bin_spacing = float(np.median(nearest_neighbor_dist))
+                    self._oof_threshold = 10.0 * typical_bin_spacing
 
             def build(self) -> None:
                 """Build the layout (no-op for subset layouts)."""
@@ -696,29 +721,21 @@ class EnvironmentTransforms:
                 registered serializable graph-subset layout is tracked
                 separately (out of M1 scope).
                 """
-                from scipy.spatial import cKDTree
-
                 pts = np.atleast_2d(np.asarray(points, dtype=np.float64))
-                tree = cKDTree(self.bin_centers)
-                distances, indices = tree.query(pts, k=1, workers=-1)
+                self._ensure_kdtree()
+                distances, indices = self._kdtree.query(pts, k=1, workers=-1)
 
                 # Apply the same "10x typical spacing" outside heuristic
                 # used by ops.binning.map_points_to_bins so subset envs
                 # behave like Cartesian envs do for clearly out-of-env
-                # samples. We deliberately keep the threshold loose
+                # samples. The threshold itself is precomputed once in
+                # _ensure_kdtree (M5.2). We deliberately keep it loose
                 # (10x) here because SubsetLayout has no notion of an
                 # active mask -- only a graph -- and tightening would
                 # spuriously reject points near sparse regions.
-                if len(self.bin_centers) > 1:
-                    nearest_neighbor_dist = tree.query(
-                        self.bin_centers, k=2, workers=-1
-                    )[0][:, 1]
-                    typical_bin_spacing = float(np.median(nearest_neighbor_dist))
-                    threshold = 10.0 * typical_bin_spacing
-                    indices = indices.astype(np.int64)
-                    indices[distances > threshold] = -1
-                else:
-                    indices = indices.astype(np.int64)
+                indices = indices.astype(np.int64)
+                if self._oof_threshold is not None:
+                    indices[distances > self._oof_threshold] = -1
                 return cast("NDArray[np.int_]", indices)
 
             def bin_sizes(self) -> NDArray[np.float64]:
