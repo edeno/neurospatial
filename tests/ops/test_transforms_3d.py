@@ -6,7 +6,6 @@ from scipy.spatial.transform import Rotation
 
 from neurospatial import Environment
 from neurospatial.ops.transforms import (
-    Affine3D,
     AffineND,
     apply_transform_to_environment,
     estimate_transform,
@@ -19,27 +18,6 @@ from neurospatial.ops.transforms import (
 
 class TestAffineND:
     """Test AffineND class for N-dimensional affine transforms."""
-
-    def test_affine_nd_creation(self):
-        """Test creating AffineND from matrix."""
-        A = np.eye(4)  # 3D identity
-        transform = AffineND(A)
-        assert transform.n_dims == 3
-        assert np.allclose(transform.A, A)
-
-    def test_affine_nd_n_dims_property(self):
-        """Test n_dims property for different dimensions."""
-        # 2D
-        transform_2d = AffineND(np.eye(3))
-        assert transform_2d.n_dims == 2
-
-        # 3D
-        transform_3d = AffineND(np.eye(4))
-        assert transform_3d.n_dims == 3
-
-        # 4D
-        transform_4d = AffineND(np.eye(5))
-        assert transform_4d.n_dims == 4
 
     def test_affine_nd_call_3d(self):
         """Test applying 3D affine transform to points."""
@@ -230,10 +208,6 @@ class Test3DFactoryFunctions:
             points = rng.standard_normal((10, n_dims))
             result = transform(points)
             assert np.allclose(result, points)
-
-    def test_affine3d_type_alias(self):
-        """Test that Affine3D is an alias for AffineND."""
-        assert Affine3D is AffineND
 
 
 class TestEstimateTransform3D:

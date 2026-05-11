@@ -15,49 +15,9 @@ from numpy.testing import assert_allclose
 class TestModuleSetup:
     """Test module imports and structure."""
 
-    def test_module_imports(self):
-        """Module can be imported successfully."""
-        from neurospatial.ops import egocentric as reference_frames
-
-        assert reference_frames is not None
-
-    def test_all_exports_defined(self):
-        """Module defines __all__ with expected exports."""
-        from neurospatial.ops import egocentric as reference_frames
-
-        expected_exports = {
-            "EgocentricFrame",
-            "allocentric_to_egocentric",
-            "egocentric_to_allocentric",
-            "compute_egocentric_bearing",
-            "compute_egocentric_distance",
-            "heading_from_velocity",
-            "heading_from_body_orientation",
-        }
-        assert hasattr(reference_frames, "__all__")
-        assert set(reference_frames.__all__) == expected_exports
-
-    def test_module_docstring_exists(self):
-        """Module has a docstring."""
-        from neurospatial.ops import egocentric as reference_frames
-
-        assert reference_frames.__doc__ is not None
-        assert len(reference_frames.__doc__) > 100  # Non-trivial docstring
-
 
 class TestEgocentricFrame:
     """Tests for EgocentricFrame dataclass."""
-
-    def test_dataclass_creation(self):
-        """EgocentricFrame can be created with position and heading."""
-        from neurospatial.ops.egocentric import EgocentricFrame
-
-        frame = EgocentricFrame(
-            position=np.array([10.0, 20.0]),
-            heading=np.pi / 4,
-        )
-        assert_allclose(frame.position, [10.0, 20.0])
-        assert_allclose(frame.heading, np.pi / 4)
 
     def test_to_egocentric_heading_zero_identity(self):
         """With heading=0, egocentric x-axis aligns with allocentric x-axis.

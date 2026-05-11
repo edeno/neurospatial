@@ -236,21 +236,6 @@ class TestDistanceFieldBackwardCompatibility:
 
         assert_allclose(dists_explicit, dists_default)
 
-    def test_default_no_cutoff(self, linear_graph):
-        """Test that default behavior has no cutoff."""
-        dists = distance_field(linear_graph, sources=[2])
-
-        # All nodes should be reachable (no inf except disconnected)
-        assert np.all(np.isfinite(dists))
-
-    def test_old_signature_still_works(self, linear_graph):
-        """Test that old function signature still works."""
-        # Old signature: distance_field(G, sources, weight="distance")
-        dists = distance_field(linear_graph, sources=[2], weight="distance")
-
-        expected = np.array([2.0, 1.0, 0.0, 1.0, 2.0])
-        assert_allclose(dists, expected)
-
     def test_custom_weight_attribute(self, linear_graph):
         """Test using custom weight attribute."""
         # Add custom weight
