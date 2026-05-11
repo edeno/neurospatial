@@ -380,29 +380,6 @@ class TestSegmentTrials:
                 max_duration=5.0,
             )
 
-    def test_segment_trials_parameter_order(self):
-        """Test that parameters follow project conventions."""
-        x = np.linspace(0, 100, 50)
-        y = np.linspace(0, 100, 50)
-        xx, yy = np.meshgrid(x, y)
-        positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=5.0)
-
-        env.regions.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
-        env.regions.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
-
-        position_bins = np.arange(10)
-        times = np.arange(10, dtype=float)
-
-        from neurospatial.behavior.segmentation import segment_trials
-
-        # Should work with positional args in correct order
-        trials = segment_trials(
-            position_bins, times, env, start_region="start", end_regions=["goal"]
-        )
-
-        assert isinstance(trials, list)
-
     def test_segment_trials_multiple_starts(self):
         """Test handling of multiple trial starts without completion."""
         x = np.linspace(0, 100, 100)

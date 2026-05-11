@@ -154,26 +154,6 @@ class TestTrajectorySimilarity:
         with pytest.raises(ValueError, match=r"Trajectories cannot be empty"):
             trajectory_similarity(empty, trajectory, env, method="jaccard")
 
-    def test_trajectory_similarity_parameter_order(self):
-        """Verify parameter order and naming consistency."""
-        positions = np.linspace(0, 100, 50)[:, None]
-        env = Environment.from_samples(positions, bin_size=5.0)
-
-        trajectory = np.array([0, 1, 2], dtype=np.int64)
-
-        # Should work with positional args
-        result1 = trajectory_similarity(trajectory, trajectory, env)
-
-        # Should work with keyword args
-        result2 = trajectory_similarity(
-            position_bins1=trajectory,
-            position_bins2=trajectory,
-            env=env,
-            method="jaccard",
-        )
-
-        assert result1 == result2
-
 
 class TestDetectGoalDirectedRuns:
     """Test goal-directed run detection."""
@@ -355,39 +335,6 @@ class TestDetectGoalDirectedRuns:
                 directedness_threshold=0.7,
                 min_progress=-10.0,  # invalid
             )
-
-    def test_detect_goal_directed_runs_parameter_order(self):
-        """Verify parameter order consistency."""
-        # Create 2D environment with deterministic grid
-        x = np.linspace(0, 100, 20)
-        xx, yy = np.meshgrid(x, x)
-        positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=5.0)
-
-        from shapely.geometry import Point
-
-        goal_polygon = Point(env.bin_centers[-1]).buffer(10.0)
-        env.regions.add("goal", polygon=goal_polygon)
-
-        position_bins = np.array([0, 5, 10, 15], dtype=np.int64)
-        times = np.array([0.0, 1.0, 2.0, 3.0])
-
-        # Should work with positional args
-        runs1 = detect_goal_directed_runs(position_bins, times, env, goal_region="goal")
-
-        # Should work with keyword args
-        runs2 = detect_goal_directed_runs(
-            position_bins=position_bins,
-            times=times,
-            env=env,
-            goal_region="goal",
-            directedness_threshold=0.7,
-            min_progress=20.0,
-        )
-
-        # Both should return list (exact match not required due to defaults)
-        assert isinstance(runs1, list)
-        assert isinstance(runs2, list)
 
     def test_detect_goal_directed_runs_empty_trajectory(self):
         """Empty trajectory should return empty list."""

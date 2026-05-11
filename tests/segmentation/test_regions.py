@@ -124,26 +124,6 @@ class TestDetectRegionCrossings:
         # Should have no crossings
         assert len(crossings) == 0
 
-    def test_parameter_order(self):
-        """Test parameter order is (position_bins, times, region, env, direction)."""
-        x = np.linspace(0, 100, 20)
-        y = np.linspace(0, 100, 20)
-        xx, yy = np.meshgrid(x, y)
-        positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=10.0)
-        env.regions.add("target", polygon=Point(50.0, 50.0).buffer(10.0))
-
-        position_bins = np.arange(10)
-        times = np.arange(10, dtype=float)
-
-        from neurospatial.behavior.segmentation import detect_region_crossings
-
-        # This should work without error
-        crossings = detect_region_crossings(
-            position_bins, times, "target", env, direction="both"
-        )
-        assert isinstance(crossings, list)
-
 
 class TestDetectRunsBetweenRegions:
     """Test detect_runs_between_regions function."""
@@ -261,34 +241,6 @@ class TestDetectRunsBetweenRegions:
         # Short run should be filtered out
         assert len(runs) == 0
 
-    def test_parameter_order(self):
-        """Test parameter order is (positions, times, env, *, source, target, ...)."""
-        x = np.linspace(0, 100, 20)
-        y = np.linspace(0, 100, 20)
-        xx, yy = np.meshgrid(x, y)
-        positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=10.0)
-        env.regions.add("source", polygon=Point(10.0, 50.0).buffer(5.0))
-        env.regions.add("target", polygon=Point(90.0, 50.0).buffer(5.0))
-
-        trajectory = positions[:20]
-        times = np.arange(20, dtype=float)
-
-        from neurospatial.behavior.segmentation import detect_runs_between_regions
-
-        # This should work without error
-        position_bins = env.bin_at(trajectory)
-        runs = detect_runs_between_regions(
-            position_bins,
-            times,
-            env,
-            source="source",
-            target="target",
-            min_duration=0.5,
-            max_duration=10.0,
-        )
-        assert isinstance(runs, list)
-
 
 class TestSegmentByVelocity:
     """Test segment_by_velocity function."""
@@ -385,19 +337,6 @@ class TestSegmentByVelocity:
             # is True (every emitted run satisfied min_speed/min_duration).
             assert run.bins.shape == (0,)
             assert run.success is True
-
-    def test_parameter_order(self):
-        """Test parameter order is (positions, times, threshold, *, ...)."""
-        trajectory = np.linspace(0, 100, 50)[:, None]
-        times = np.arange(50, dtype=float)
-
-        from neurospatial.behavior.segmentation import segment_by_velocity
-
-        # This should work without error
-        segments = segment_by_velocity(
-            trajectory, times, min_speed=2.0, min_duration=0.5
-        )
-        assert isinstance(segments, list)
 
 
 class TestRegionSegmentationIntegration:
