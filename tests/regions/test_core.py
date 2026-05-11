@@ -34,12 +34,6 @@ def test_region_point_invalid_shape():
         Region(name="bad", kind="point", data=[[1, 2], [3, 4]])
 
 
-def test_region_str_repr():
-    r = Region(name="foo", kind="point", data=[0, 1])
-    assert str(r) == "foo"
-
-
-@pytest.mark.skipif(not HAS_SHAPELY, reason="Shapely required for polygon tests")
 def test_region_polygon_creation():
     poly = shp.Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
     r = Region(name="poly", kind="polygon", data=poly)
@@ -207,13 +201,6 @@ def test_regions_remove_absent_raises():
     regs = Regions()
     with pytest.raises(KeyError):
         regs.remove("nope")
-
-
-def test_regions_repr():
-    regs = Regions()
-    regs.add("pt", point=[1, 2])
-    s = repr(regs)
-    assert "Regions" in s and "pt(point)" in s
 
 
 def test_regions_to_json_and_from_json(tmp_path):

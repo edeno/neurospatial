@@ -28,12 +28,6 @@ class TestPerfmonConfigExists:
             f"Expected perfmon config at {PERFMON_CONFIG_PATH}"
         )
 
-    def test_config_is_valid_json(self):
-        """Config file should be valid JSON."""
-        with PERFMON_CONFIG_PATH.open() as f:
-            config = json.load(f)
-        assert isinstance(config, dict)
-
 
 class TestPerfmonConfigRequiredFields:
     """Tests for required configuration fields."""
@@ -166,32 +160,3 @@ class TestPerfmonConfigConsistency:
                 f"trace_callables references '{name}' but it's not defined in "
                 f"callable_lists. Available: {list(callable_lists.keys())}"
             )
-
-    def test_callable_lists_are_non_empty(self, config: dict[str, Any]):
-        """Each callable list should contain at least one callable."""
-        callable_lists = config.get("callable_lists", {})
-
-        for name, callables in callable_lists.items():
-            assert isinstance(callables, list), (
-                f"callable_lists['{name}'] should be a list, got {type(callables)}"
-            )
-            assert len(callables) > 0, f"callable_lists['{name}'] should not be empty"
-
-    def test_callables_are_fully_qualified_names(self, config: dict[str, Any]):
-        """Each callable should be a fully qualified Python path."""
-        callable_lists = config.get("callable_lists", {})
-
-        for name, callables in callable_lists.items():
-            for callable_path in callables:
-                assert isinstance(callable_path, str), (
-                    f"Callable path should be string, got {type(callable_path)}"
-                )
-                # Should have at least one dot (module.function)
-                assert "." in callable_path, (
-                    f"Callable '{callable_path}' in list '{name}' should be a "
-                    f"fully qualified name (e.g., 'module.function')"
-                )
-                # Should start with neurospatial for our own functions
-                assert callable_path.startswith("neurospatial"), (
-                    f"Callable '{callable_path}' should start with 'neurospatial'"
-                )

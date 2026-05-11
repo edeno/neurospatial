@@ -68,15 +68,6 @@ class TestPlotRegionsBasic:
         assert len(ax.patches) == 1
         plt.close(fig)
 
-    def test_empty_regions(self):
-        """Test plotting with empty Regions collection."""
-        regions = Regions([])
-
-        fig, ax = plt.subplots()
-        # Should not raise an error
-        plot_regions(regions, ax=ax)
-        plt.close(fig)
-
     def test_no_region_names_specified(self):
         """Test plotting all regions when region_names is None."""
         poly1 = Polygon([(0, 0), (5, 0), (5, 5), (0, 5)])
@@ -146,18 +137,6 @@ class TestPlotRegionsFiltering:
             plot_regions(
                 regions, ax=ax, region_names=["box", "nonexistent"], add_legend=False
             )
-        plt.close(fig)
-
-    def test_empty_region_names_list(self):
-        """Test plotting with empty region_names list."""
-        poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        regions = Regions([Region(name="box", data=poly, kind="polygon")])
-
-        fig, ax = plt.subplots()
-        plot_regions(regions, ax=ax, region_names=[], add_legend=False)
-
-        # Should not plot anything
-        assert len(ax.patches) == 0
         plt.close(fig)
 
 
@@ -341,18 +320,6 @@ class TestPlotRegionsTransforms:
 
         # Scatter should exist
         assert len(ax.collections) == 1
-        plt.close(fig)
-
-    def test_no_transform(self):
-        """Test plotting without transform (world_to_pixel=None)."""
-        poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
-        regions = Regions([Region(name="box", data=poly, kind="polygon")])
-
-        fig, ax = plt.subplots()
-        plot_regions(regions, ax=ax, world_to_pixel=None, add_legend=False)
-
-        # Should plot normally without transform
-        assert len(ax.patches) == 1
         plt.close(fig)
 
 

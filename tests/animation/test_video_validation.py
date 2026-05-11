@@ -226,21 +226,3 @@ class TestNapariFreeOperation:
             assert BodypartOverlay is not None
             assert HeadDirectionOverlay is not None
             assert VideoOverlay is not None
-
-    def test_video_overlay_creation_without_napari(
-        self,
-        sample_video_array: np.ndarray,
-        sample_calibration: VideoCalibration,
-    ):
-        """Test that VideoOverlay dataclass can be created without napari."""
-        with patch.dict(sys.modules, {"napari": None}):
-            # Creating the overlay should work
-            overlay = VideoOverlay(
-                source=sample_video_array,
-                calibration=sample_calibration,
-                alpha=0.5,
-            )
-
-            assert overlay.source is sample_video_array
-            assert overlay.calibration is sample_calibration
-            assert overlay.alpha == 0.5

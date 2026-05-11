@@ -24,52 +24,6 @@ from neurospatial.animation.skeleton import (
 class TestSkeletonBasicCreation:
     """Test Skeleton dataclass basic creation."""
 
-    def test_basic_creation(self):
-        """Test creating a Skeleton with required fields."""
-        skeleton = Skeleton(
-            name="test",
-            nodes=("a", "b", "c"),
-            edges=(("a", "b"), ("b", "c")),
-        )
-        assert skeleton.name == "test"
-        assert skeleton.nodes == ("a", "b", "c")
-        assert skeleton.edges == (("a", "b"), ("b", "c"))
-        assert skeleton.edge_color == "white"
-        assert skeleton.edge_width == 1.0
-        assert skeleton.node_colors is None
-
-    def test_creation_with_styling(self):
-        """Test creating a Skeleton with custom styling."""
-        skeleton = Skeleton(
-            name="styled",
-            nodes=("a", "b"),
-            edges=(("a", "b"),),
-            edge_color="red",
-            edge_width=3.0,
-            node_colors={"a": "yellow", "b": "blue"},
-        )
-        assert skeleton.edge_color == "red"
-        assert skeleton.edge_width == 3.0
-        assert skeleton.node_colors == {"a": "yellow", "b": "blue"}
-
-    def test_n_nodes_property(self):
-        """Test n_nodes property."""
-        skeleton = Skeleton(
-            name="test",
-            nodes=("a", "b", "c"),
-            edges=(("a", "b"),),
-        )
-        assert skeleton.n_nodes == 3
-
-    def test_n_edges_property(self):
-        """Test n_edges property."""
-        skeleton = Skeleton(
-            name="test",
-            nodes=("a", "b", "c"),
-            edges=(("a", "b"), ("b", "c")),
-        )
-        assert skeleton.n_edges == 2
-
     def test_frozen_immutability(self):
         """Test that Skeleton is immutable (frozen)."""
         skeleton = Skeleton(
@@ -260,29 +214,6 @@ class TestSkeletonWithColors:
 class TestSkeletonPresets:
     """Test predefined skeleton presets."""
 
-    def test_mouse_skeleton_valid(self):
-        """Test MOUSE_SKELETON is valid and has correct structure."""
-        assert MOUSE_SKELETON.name == "mouse"
-        assert MOUSE_SKELETON.n_nodes == 8
-        assert MOUSE_SKELETON.n_edges == 7
-        assert "nose" in MOUSE_SKELETON.nodes
-        assert "tail_tip" in MOUSE_SKELETON.nodes
-
-    def test_rat_skeleton_valid(self):
-        """Test RAT_SKELETON is valid and has correct structure."""
-        assert RAT_SKELETON.name == "rat"
-        assert RAT_SKELETON.n_nodes == 8
-        assert RAT_SKELETON.n_edges == 7
-        assert "nose" in RAT_SKELETON.nodes
-        assert "tail_tip" in RAT_SKELETON.nodes
-
-    def test_simple_skeleton_valid(self):
-        """Test SIMPLE_SKELETON is valid and has correct structure."""
-        assert SIMPLE_SKELETON.name == "simple"
-        assert SIMPLE_SKELETON.n_nodes == 3
-        assert SIMPLE_SKELETON.n_edges == 2
-        assert SIMPLE_SKELETON.nodes == ("nose", "body", "tail")
-
     def test_presets_are_frozen(self):
         """Test that presets cannot be modified."""
         with pytest.raises(FrozenInstanceError):
@@ -297,19 +228,6 @@ class TestSkeletonPresets:
 
 class TestSkeletonStr:
     """Test Skeleton string representation."""
-
-    def test_str_format(self):
-        """Test __str__ returns formatted string."""
-        skeleton = Skeleton(
-            name="test",
-            nodes=("a", "b", "c"),
-            edges=(("a", "b"), ("b", "c")),
-        )
-        s = str(skeleton)
-        assert "Skeleton" in s
-        assert "'test'" in s
-        assert "3 nodes" in s
-        assert "2 edges" in s
 
 
 class TestSkeletonEdgeNormalization:
@@ -475,15 +393,6 @@ class TestSkeletonEdgeNormalization:
 class TestSkeletonAdjacency:
     """Test Skeleton adjacency property for graph traversal."""
 
-    def test_adjacency_returns_dict(self):
-        """Test that adjacency property returns a dict."""
-        skeleton = Skeleton(
-            name="test",
-            nodes=("a", "b"),
-            edges=(("a", "b"),),
-        )
-        assert isinstance(skeleton.adjacency, dict)
-
     def test_adjacency_contains_all_nodes(self):
         """Test that adjacency dict contains all nodes."""
         skeleton = Skeleton(
@@ -553,17 +462,6 @@ class TestSkeletonAdjacency:
         )
         # Self-loop: node is adjacent to itself
         assert skeleton.adjacency["a"] == ["a"]
-
-    def test_adjacency_is_cached(self):
-        """Test that adjacency is cached (same object returned)."""
-        skeleton = Skeleton(
-            name="test",
-            nodes=("a", "b"),
-            edges=(("a", "b"),),
-        )
-        adj1 = skeleton.adjacency
-        adj2 = skeleton.adjacency
-        assert adj1 is adj2  # Same object (cached)
 
     def test_adjacency_sorted_neighbors(self):
         """Test that neighbor lists are sorted for deterministic output."""

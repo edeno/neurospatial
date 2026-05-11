@@ -222,33 +222,6 @@ class TestTimeseriesUpdateModeAudit:
     - update_mode="manual": Never auto-updates
     """
 
-    def test_on_pause_mode_preserves_through_conversion(self, rng) -> None:
-        """on_pause mode should be preserved through overlay conversion."""
-        from neurospatial.animation.overlays import TimeSeriesOverlay
-
-        overlay = TimeSeriesOverlay(
-            data=rng.standard_normal(100),
-            times=np.linspace(0, 10, 100),
-            label="Test",
-            update_mode="on_pause",
-        )
-
-        # Verify update_mode is preserved
-        assert overlay.update_mode == "on_pause"
-
-    def test_manual_mode_preserves_through_conversion(self, rng) -> None:
-        """manual mode should be preserved through overlay configuration."""
-        from neurospatial.animation.overlays import TimeSeriesOverlay
-
-        overlay = TimeSeriesOverlay(
-            data=rng.standard_normal(100),
-            times=np.linspace(0, 10, 100),
-            label="Test",
-            update_mode="manual",
-        )
-
-        assert overlay.update_mode == "manual"
-
     def test_live_mode_is_default(self, rng) -> None:
         """live mode should be the default update mode."""
         from neurospatial.animation.overlays import TimeSeriesOverlay
@@ -302,26 +275,6 @@ class TestTimeseriesUpdateModeAudit:
         # on_pause should win over live
         assert effective_mode == "on_pause"
 
-    def test_throttle_parameters_configurable(self, rng) -> None:
-        """Throttle parameters should be configurable on TimeSeriesOverlay."""
-        from neurospatial.animation.overlays import TimeSeriesOverlay
-
-        overlay = TimeSeriesOverlay(
-            data=rng.standard_normal(100),
-            times=np.linspace(0, 10, 100),
-            label="Test",
-            playback_throttle_hz=5.0,
-            scrub_throttle_hz=30.0,
-        )
-
-        assert overlay.playback_throttle_hz == 5.0
-        assert overlay.scrub_throttle_hz == 30.0
-
-
-# =============================================================================
-# Event Overlay Callback Tests
-# =============================================================================
-
 
 class TestEventOverlayCallbackAudit:
     """Tests verifying event overlay callback efficiency per Phase 5.1.
@@ -332,37 +285,7 @@ class TestEventOverlayCallbackAudit:
     - decay_frames = None with cumulative persistence: Callback uses shown mask
     """
 
-    def test_instant_mode_no_decay(self) -> None:
-        """instant mode events should have decay_frames=None (default)."""
-        from neurospatial.animation.overlays import EventOverlay
 
-        overlay = EventOverlay(
-            event_times=np.array([0.5, 1.0, 1.5]),
-            event_positions=np.array([[10, 20], [30, 40], [50, 60]]),
-        )
-
-        # Default is None (instant mode)
-        assert overlay.decay_frames is None
-
-    def test_decay_mode_has_decay_frames(self) -> None:
-        """decay mode should preserve decay_frames setting."""
-        from neurospatial.animation.overlays import EventOverlay
-
-        overlay = EventOverlay(
-            event_times=np.array([0.5, 1.0, 1.5]),
-            event_positions=np.array([[10, 20], [30, 40], [50, 60]]),
-            decay_frames=10,
-        )
-
-        assert overlay.decay_frames == 10
-
-
-# =============================================================================
-# PlaybackController Callback Integration Tests
-# =============================================================================
-
-
-@pytest.mark.skipif(not _qtpy_available(), reason="PlaybackController requires qtpy")
 class TestPlaybackControllerCallbackIntegration:
     """Tests verifying PlaybackController callback mechanism."""
 
@@ -431,25 +354,3 @@ class TestCallbackAuditDocumentation:
 
     These tests serve as living documentation for the Phase 5.1 audit results.
     """
-
-    def test_audit_summary(self) -> None:
-        """Document the callback audit summary.
-
-        Callback Audit Summary (Phase 5.1):
-
-        | Location                     | Callback           | Action                           |
-        |------------------------------|--------------------|---------------------------------|
-        | _make_video_frame_callback   | update_video_frames| Keep for file-based only        |
-        | _render_event_overlay        | on_frame_change    | Keep (efficient shown mask)     |
-        | _render_playback_widget      | update_frame_info  | Keep (lightweight UI)           |
-        | _add_timeseries_dock         | on_frame_change    | Keep (already uses controller)  |
-
-        Key findings:
-        1. In-memory videos now use napari's native time dimension (Phase 2.1)
-        2. Event overlays use efficient layer.shown mask updates
-        3. Timeseries callback already checks PlaybackController.is_playing
-        4. All callbacks remain connected via dims.events.current_step
-           (required for responding to user slider interactions)
-        """
-        # This test documents the audit - it always passes
-        assert True

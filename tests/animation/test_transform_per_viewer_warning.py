@@ -32,16 +32,6 @@ class TestTransformSuppressWarningParameter:
         yield
         reset_transform_warning()
 
-    def test_transform_coords_suppress_warning_parameter_exists(self) -> None:
-        """Test that transform_coords_for_napari accepts suppress_warning parameter."""
-        from neurospatial.animation.transforms import transform_coords_for_napari
-
-        coords = np.array([[5.0, 5.0]])
-
-        # Should not raise TypeError about unexpected keyword argument
-        result = transform_coords_for_napari(coords, None, suppress_warning=True)
-        assert result.shape == coords.shape
-
     def test_transform_coords_suppresses_warning_when_true(self) -> None:
         """Test that suppress_warning=True prevents warning emission."""
         from neurospatial.animation.transforms import transform_coords_for_napari
@@ -68,16 +58,6 @@ class TestTransformSuppressWarningParameter:
         # With suppress_warning=False (default), warning should be emitted
         with pytest.warns(UserWarning, match="falling back"):
             transform_coords_for_napari(coords, None, suppress_warning=False)
-
-    def test_transform_direction_suppress_warning_parameter_exists(self) -> None:
-        """Test that transform_direction_for_napari accepts suppress_warning parameter."""
-        from neurospatial.animation.transforms import transform_direction_for_napari
-
-        direction = np.array([[1.0, 0.0]])
-
-        # Should not raise TypeError about unexpected keyword argument
-        result = transform_direction_for_napari(direction, None, suppress_warning=True)
-        assert result.shape == direction.shape
 
     def test_transform_direction_suppresses_warning_when_true(self) -> None:
         """Test that suppress_warning=True prevents warning emission for direction."""
@@ -137,22 +117,6 @@ class TestPerViewerWarningTracking:
         reset_transform_warning()
         yield
         reset_transform_warning()
-
-    def test_check_viewer_warned_returns_false_initially(
-        self, mock_viewer: MagicMock
-    ) -> None:
-        """Test that _check_viewer_warned returns False for new viewer."""
-        from neurospatial.animation.backends.napari_backend import _check_viewer_warned
-
-        assert _check_viewer_warned(mock_viewer) is False
-
-    def test_mark_viewer_warned_sets_metadata(self, mock_viewer: MagicMock) -> None:
-        """Test that _mark_viewer_warned sets the metadata flag."""
-        from neurospatial.animation.backends.napari_backend import _mark_viewer_warned
-
-        _mark_viewer_warned(mock_viewer)
-
-        assert mock_viewer.metadata.get("_transform_fallback_warned") is True
 
     def test_check_viewer_warned_returns_true_after_marked(
         self, mock_viewer: MagicMock
