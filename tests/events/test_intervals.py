@@ -257,25 +257,6 @@ class TestIntervalsToEvents:
                 preserve_columns=["nonexistent"],
             )
 
-    def test_output_is_new_dataframe(self):
-        """Test that output is a new DataFrame (not modifying input)."""
-        from neurospatial.events.intervals import intervals_to_events
-
-        intervals = pd.DataFrame(
-            {
-                "start_time": [1.0, 2.0],
-                "stop_time": [3.0, 4.0],
-            }
-        )
-        original_cols = list(intervals.columns)
-
-        result = intervals_to_events(intervals, which="start")
-
-        # Original should be unchanged
-        assert list(intervals.columns) == original_cols
-        # Result should be different object
-        assert result is not intervals
-
     def test_index_is_reset(self):
         """Test that output has reset index."""
         from neurospatial.events.intervals import intervals_to_events

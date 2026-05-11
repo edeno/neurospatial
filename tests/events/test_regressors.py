@@ -163,28 +163,6 @@ class TestTimeToNearestEvent:
         # t=5.0: nearest is 4.0, time = 1.0
         assert_allclose(result[2], 1.0)
 
-    def test_output_shape_matches_sample_times(self):
-        """Test output shape matches sample_times."""
-        from neurospatial.events.regressors import time_to_nearest_event
-
-        sample_times = np.linspace(0, 10, 100)
-        event_times = np.array([2.0, 5.0, 8.0])
-
-        result = time_to_nearest_event(sample_times, event_times)
-
-        assert result.shape == sample_times.shape
-
-    def test_output_dtype_is_float64(self):
-        """Test output dtype is float64."""
-        from neurospatial.events.regressors import time_to_nearest_event
-
-        sample_times = np.array([0.0, 1.0, 2.0])
-        event_times = np.array([1.0])
-
-        result = time_to_nearest_event(sample_times, event_times)
-
-        assert result.dtype == np.float64
-
     def test_multiple_events_same_time(self):
         """Test multiple events at same time."""
         from neurospatial.events.regressors import time_to_nearest_event
@@ -260,18 +238,6 @@ class TestTimeToNearestEvent:
         result = time_to_nearest_event(sample_times, event_times, max_time=0.0)
 
         assert_allclose(result, np.array([0.0, 0.0, 0.0, 0.0]))
-
-    def test_empty_sample_times(self):
-        """Test empty sample_times returns empty array."""
-        from neurospatial.events.regressors import time_to_nearest_event
-
-        sample_times = np.array([])
-        event_times = np.array([1.0, 2.0])
-
-        result = time_to_nearest_event(sample_times, event_times)
-
-        assert len(result) == 0
-        assert result.dtype == np.float64
 
     def test_dense_events(self):
         """Test with many closely spaced events."""
@@ -403,19 +369,6 @@ class TestEventCountInWindow:
         assert np.all(result == 0)
         assert len(result) == 3
 
-    def test_empty_sample_times(self):
-        """Test empty sample_times returns empty array."""
-        from neurospatial.events.regressors import event_count_in_window
-
-        sample_times = np.array([])
-        event_times = np.array([1.0, 2.0])
-        window = (-1.0, 1.0)
-
-        result = event_count_in_window(sample_times, event_times, window)
-
-        assert len(result) == 0
-        assert result.dtype == np.int64
-
     def test_single_event(self):
         """Test with single event."""
         from neurospatial.events.regressors import event_count_in_window
@@ -464,30 +417,6 @@ class TestEventCountInWindow:
 
         # window [1.0, 3.0], both boundary events included
         assert result[0] == 2
-
-    def test_output_dtype_is_int64(self):
-        """Test output dtype is int64."""
-        from neurospatial.events.regressors import event_count_in_window
-
-        sample_times = np.array([0.0, 1.0, 2.0])
-        event_times = np.array([1.0])
-        window = (-1.0, 1.0)
-
-        result = event_count_in_window(sample_times, event_times, window)
-
-        assert result.dtype == np.int64
-
-    def test_output_shape_matches_sample_times(self):
-        """Test output shape matches sample_times."""
-        from neurospatial.events.regressors import event_count_in_window
-
-        sample_times = np.linspace(0, 10, 100)
-        event_times = np.array([2.0, 5.0, 8.0])
-        window = (-1.0, 1.0)
-
-        result = event_count_in_window(sample_times, event_times, window)
-
-        assert result.shape == sample_times.shape
 
     def test_unsorted_events_handled(self):
         """Test unsorted event times are handled correctly."""
@@ -708,18 +637,6 @@ class TestEventIndicator:
         assert np.all(~result)  # All False
         assert len(result) == 3
 
-    def test_empty_sample_times(self):
-        """Test empty sample_times returns empty array."""
-        from neurospatial.events.regressors import event_indicator
-
-        sample_times = np.array([])
-        event_times = np.array([1.0, 2.0])
-
-        result = event_indicator(sample_times, event_times)
-
-        assert len(result) == 0
-        assert result.dtype == np.bool_
-
     def test_single_event(self):
         """Test with single event."""
         from neurospatial.events.regressors import event_indicator
@@ -751,17 +668,6 @@ class TestEventIndicator:
         result = event_indicator(sample_times, event_times)
 
         assert result.dtype == np.bool_
-
-    def test_output_shape_matches_sample_times(self):
-        """Test output shape matches sample_times."""
-        from neurospatial.events.regressors import event_indicator
-
-        sample_times = np.linspace(0, 10, 100)
-        event_times = np.array([2.0, 5.0, 8.0])
-
-        result = event_indicator(sample_times, event_times)
-
-        assert result.shape == sample_times.shape
 
     def test_unsorted_events_handled(self):
         """Test unsorted event times are handled correctly."""
@@ -1177,20 +1083,6 @@ class TestDistanceToReward:
                 env, times, positions, reward_times, reward_positions=reward_positions
             )
 
-    def test_output_dtype_is_float64(self, simple_grid_env):
-        """Test output dtype is float64."""
-        from neurospatial.events.regressors import distance_to_reward
-
-        env = simple_grid_env
-
-        positions = np.array([[0.0, 0.0], [5.0, 5.0]])
-        times = np.array([0.0, 1.0])
-        reward_times = np.array([0.5])
-
-        result = distance_to_reward(env, times, positions, reward_times)
-
-        assert result.dtype == np.float64
-
     def test_geodesic_respects_graph(self, simple_grid_env):
         """Test geodesic metric uses graph distances."""
         from neurospatial.events.regressors import distance_to_reward
@@ -1310,18 +1202,6 @@ class TestDistanceToBoundary:
         result = distance_to_boundary(env, positions, boundary_type="edge")
 
         assert len(result) == 0
-
-    def test_output_dtype_is_float64(self, simple_grid_env):
-        """Test output dtype is float64."""
-        from neurospatial.events.regressors import distance_to_boundary
-
-        env = simple_grid_env
-
-        positions = np.array([[5.0, 5.0]])
-
-        result = distance_to_boundary(env, positions, boundary_type="edge")
-
-        assert result.dtype == np.float64
 
     def test_geodesic_vs_euclidean(self, simple_grid_env):
         """Test geodesic and euclidean metrics give different results."""

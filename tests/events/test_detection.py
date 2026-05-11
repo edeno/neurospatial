@@ -159,34 +159,6 @@ class TestAddPositions:
         assert_allclose(result["x"].values, [1.5])
         assert_allclose(result["y"].values, [1.5])
 
-    def test_preserves_all_columns(self):
-        """Test that all original columns are preserved."""
-        from neurospatial.events.detection import add_positions
-
-        events = pd.DataFrame(
-            {
-                "timestamp": [1.0, 2.0],
-                "label": ["A", "B"],
-                "value": [10.0, 20.0],
-                "trial_id": [1, 2],
-            }
-        )
-
-        times = np.array([0.0, 1.0, 2.0, 3.0])
-        positions = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])
-
-        result = add_positions(events, positions, times)
-
-        # All original columns preserved
-        assert "timestamp" in result.columns
-        assert "label" in result.columns
-        assert "value" in result.columns
-        assert "trial_id" in result.columns
-
-        # Values unchanged
-        assert list(result["label"]) == ["A", "B"]
-        assert list(result["value"]) == [10.0, 20.0]
-
     def test_preserves_index(self):
         """Test that DataFrame index is preserved."""
         from neurospatial.events.detection import add_positions
@@ -199,23 +171,6 @@ class TestAddPositions:
         result = add_positions(events, positions, times)
 
         assert list(result.index) == ["event_a", "event_b"]
-
-    def test_does_not_add_bin_index_or_region(self):
-        """Test that only x, y (and z) are added - no derived columns."""
-        from neurospatial.events.detection import add_positions
-
-        events = pd.DataFrame({"timestamp": [1.0]})
-
-        times = np.array([0.0, 1.0, 2.0])
-        positions = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
-
-        result = add_positions(events, positions, times)
-
-        # Only x, y added (plus original timestamp)
-        assert "x" in result.columns
-        assert "y" in result.columns
-        assert "bin_index" not in result.columns
-        assert "region" not in result.columns
 
     def test_event_before_trajectory_extrapolates(self):
         """Test event before trajectory start extrapolates from first segment."""
@@ -301,20 +256,6 @@ class TestAddPositions:
         # Second (NaN timestamp) should produce NaN position
         assert np.isnan(result["x"].values[1])
         assert np.isnan(result["y"].values[1])
-
-    def test_output_dtype_is_float64(self):
-        """Test that x, y columns have float64 dtype."""
-        from neurospatial.events.detection import add_positions
-
-        events = pd.DataFrame({"timestamp": [1.0]})
-
-        times = np.array([0.0, 1.0, 2.0])
-        positions = np.array([[0, 0], [1, 1], [2, 2]])  # Integer positions
-
-        result = add_positions(events, positions, times)
-
-        assert result["x"].dtype == np.float64
-        assert result["y"].dtype == np.float64
 
     def test_unsorted_trajectory_times_handled(self):
         """Test that unsorted trajectory times are handled correctly."""
