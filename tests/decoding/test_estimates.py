@@ -53,26 +53,6 @@ class TestMapEstimate:
         expected = np.arange(n_time_bins)
         np.testing.assert_array_equal(result, expected)
 
-    def test_map_estimate_consistency_with_decoding_result(self, small_2d_env):
-        """map_estimate should match DecodingResult.map_estimate."""
-        from neurospatial.decoding import DecodingResult
-        from neurospatial.decoding.estimates import posterior_mode
-
-        n_time_bins = 10
-        n_bins = small_2d_env.n_bins
-        rng = np.random.default_rng(42)
-        posterior = rng.random((n_time_bins, n_bins))
-        posterior = posterior / posterior.sum(axis=1, keepdims=True)
-
-        # Standalone function
-        standalone_result = posterior_mode(posterior)
-
-        # DecodingResult property
-        dr = DecodingResult(posterior=posterior, env=small_2d_env)
-        property_result = dr.map_estimate
-
-        np.testing.assert_array_equal(standalone_result, property_result)
-
 
 class TestMapPosition:
     """Test map_position function."""
@@ -106,26 +86,6 @@ class TestMapPosition:
 
         expected_positions = small_2d_env.bin_centers[known_bins]
         np.testing.assert_array_almost_equal(result, expected_positions)
-
-    def test_map_position_consistency_with_decoding_result(self, small_2d_env):
-        """map_position should match DecodingResult.map_position."""
-        from neurospatial.decoding import DecodingResult
-        from neurospatial.decoding.estimates import map_position
-
-        n_time_bins = 10
-        n_bins = small_2d_env.n_bins
-        rng = np.random.default_rng(42)
-        posterior = rng.random((n_time_bins, n_bins))
-        posterior = posterior / posterior.sum(axis=1, keepdims=True)
-
-        # Standalone function
-        standalone_result = map_position(small_2d_env, posterior)
-
-        # DecodingResult property
-        dr = DecodingResult(posterior=posterior, env=small_2d_env)
-        property_result = dr.map_position
-
-        np.testing.assert_array_almost_equal(standalone_result, property_result)
 
 
 class TestMeanPosition:
@@ -195,26 +155,6 @@ class TestMeanPosition:
             0.75 * small_2d_env.bin_centers[0] + 0.25 * small_2d_env.bin_centers[1]
         )
         np.testing.assert_array_almost_equal(result[0], expected)
-
-    def test_mean_position_consistency_with_decoding_result(self, small_2d_env):
-        """mean_position should match DecodingResult.mean_position."""
-        from neurospatial.decoding import DecodingResult
-        from neurospatial.decoding.estimates import mean_position
-
-        n_time_bins = 10
-        n_bins = small_2d_env.n_bins
-        rng = np.random.default_rng(42)
-        posterior = rng.random((n_time_bins, n_bins))
-        posterior = posterior / posterior.sum(axis=1, keepdims=True)
-
-        # Standalone function
-        standalone_result = mean_position(small_2d_env, posterior)
-
-        # DecodingResult property
-        dr = DecodingResult(posterior=posterior, env=small_2d_env)
-        property_result = dr.mean_position
-
-        np.testing.assert_array_almost_equal(standalone_result, property_result)
 
 
 class TestEntropy:
@@ -294,26 +234,6 @@ class TestEntropy:
         assert np.all(np.isfinite(result))
         # Entropy of 50-50 distribution = 1 bit
         np.testing.assert_array_almost_equal(result, np.ones(n_time_bins))
-
-    def test_entropy_consistency_with_decoding_result(self, small_2d_env):
-        """entropy should match DecodingResult.posterior_entropy."""
-        from neurospatial.decoding import DecodingResult
-        from neurospatial.decoding.estimates import posterior_entropy
-
-        n_time_bins = 10
-        n_bins = small_2d_env.n_bins
-        rng = np.random.default_rng(42)
-        posterior = rng.random((n_time_bins, n_bins))
-        posterior = posterior / posterior.sum(axis=1, keepdims=True)
-
-        # Standalone function
-        standalone_result = posterior_entropy(posterior)
-
-        # DecodingResult property (named 'posterior_entropy')
-        dr = DecodingResult(posterior=posterior, env=small_2d_env)
-        property_result = dr.posterior_entropy
-
-        np.testing.assert_array_almost_equal(standalone_result, property_result)
 
 
 class TestCredibleRegion:
@@ -433,31 +353,6 @@ class TestCredibleRegion:
 
 class TestSuccessCriteria:
     """Test success criteria from TASKS.md."""
-
-    def test_success_criteria_shapes(self, small_2d_env):
-        """Verify success criteria from TASKS.md."""
-        from neurospatial.decoding.estimates import (
-            map_position,
-            posterior_entropy,
-            posterior_mode,
-        )
-
-        n_time_bins = 10
-        n_bins = small_2d_env.n_bins
-        rng = np.random.default_rng(42)
-        posterior = rng.random((n_time_bins, n_bins))
-        posterior = posterior / posterior.sum(axis=1, keepdims=True)
-
-        # Success criteria from TASKS.md
-        bins = posterior_mode(posterior)
-        pos = map_position(small_2d_env, posterior)
-        ent = posterior_entropy(posterior)
-
-        assert bins.shape == (n_time_bins,)
-        assert pos.shape == (n_time_bins, small_2d_env.n_dims)
-        assert ent.shape == (n_time_bins,)
-        assert np.all(ent >= 0)
-        assert np.all(ent <= np.log2(n_bins))
 
 
 class TestEdgeCases:

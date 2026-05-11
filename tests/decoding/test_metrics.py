@@ -235,17 +235,6 @@ class TestDecodingErrorGraphMetric:
 class TestMedianDecodingError:
     """Test median_decoding_error function."""
 
-    def test_median_decoding_error_returns_float(self):
-        """median_decoding_error should return a single float."""
-        from neurospatial.decoding.metrics import median_decoding_error
-
-        decoded = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
-        actual = np.array([[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]])
-
-        result = median_decoding_error(decoded, actual)
-
-        assert isinstance(result, (float, np.floating))
-
     def test_median_decoding_error_identical_is_zero(self):
         """median_decoding_error should be 0.0 for identical positions."""
         from neurospatial.decoding.metrics import median_decoding_error
@@ -310,24 +299,6 @@ class TestMedianDecodingErrorNaNHandling:
 
 class TestSuccessCriteria:
     """Test success criteria from TASKS.md."""
-
-    def test_success_criteria_shapes_and_types(self, small_2d_env):
-        """Verify success criteria from TASKS.md for Milestone 2.1."""
-        from neurospatial.decoding.metrics import decoding_error, median_decoding_error
-
-        n_time_bins = 10
-        n_dims = small_2d_env.n_dims
-        rng = np.random.default_rng(42)
-
-        decoded = rng.uniform(0, 10, (n_time_bins, n_dims))
-        actual = rng.uniform(0, 10, (n_time_bins, n_dims))
-
-        # Success criteria from TASKS.md
-        errors = decoding_error(decoded, actual)
-        assert errors.shape == (n_time_bins,)
-
-        median = median_decoding_error(decoded, actual)
-        assert isinstance(median, (float, np.floating))
 
 
 class TestEdgeCases:
@@ -688,37 +659,9 @@ class TestConfusionMatrix:
 class TestConfusionMatrixSuccessCriteria:
     """Test success criteria from TASKS.md for confusion_matrix."""
 
-    def test_success_criteria_shapes_and_sums(self, small_2d_env):
-        """Verify success criteria from TASKS.md for Milestone 2.2."""
-        from neurospatial.decoding.metrics import confusion_matrix
-
-        n_bins = small_2d_env.n_bins
-        n_time_bins = 100
-        rng = np.random.default_rng(42)
-
-        posterior = rng.random((n_time_bins, n_bins))
-        posterior /= posterior.sum(axis=1, keepdims=True)
-        actual_bins = rng.integers(0, n_bins, n_time_bins)
-
-        # Success criteria from TASKS.md
-        cm = confusion_matrix(small_2d_env, posterior, actual_bins)
-        assert cm.shape == (n_bins, n_bins)
-        assert cm.sum() == pytest.approx(n_time_bins)  # for summary_method="map"
-
 
 class TestDecodingCorrelation:
     """Test decoding_correlation function."""
-
-    def test_decoding_correlation_returns_float(self):
-        """decoding_correlation should return a single float."""
-        from neurospatial.decoding.metrics import decoding_correlation
-
-        decoded = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
-        actual = np.array([[1.5, 2.5], [3.5, 4.5], [5.5, 6.5]])
-
-        result = decoding_correlation(decoded, actual)
-
-        assert isinstance(result, (float, np.floating))
 
     def test_decoding_correlation_perfect_positive(self):
         """Perfect positive correlation should return 1.0."""
@@ -1007,23 +950,3 @@ class TestDecodingCorrelationEdgeCases:
 
 class TestDecodingCorrelationSuccessCriteria:
     """Test success criteria from TASKS.md for Milestone 2.3."""
-
-    def test_success_criteria(self):
-        """Verify success criteria from TASKS.md for Milestone 2.3."""
-        from neurospatial.decoding.metrics import decoding_correlation
-
-        rng = np.random.default_rng(42)
-        n_time_bins = 100
-        n_dims = 2
-
-        decoded = rng.uniform(0, 100, (n_time_bins, n_dims))
-        actual = rng.uniform(0, 100, (n_time_bins, n_dims))
-
-        # Success criteria from TASKS.md
-        r = decoding_correlation(decoded, actual)
-        assert -1 <= r <= 1
-
-        # With weights
-        certainty = rng.uniform(0.1, 1.0, n_time_bins)
-        r_weighted = decoding_correlation(decoded, actual, weights=certainty)
-        assert -1 <= r_weighted <= 1

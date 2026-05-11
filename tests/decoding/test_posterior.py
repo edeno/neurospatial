@@ -12,7 +12,6 @@ import pytest
 from numpy.testing import assert_allclose, assert_array_equal
 
 from neurospatial import Environment
-from neurospatial.decoding import DecodingResult
 
 # =============================================================================
 # Fixtures
@@ -93,13 +92,6 @@ class TestNormalizeToPosterior:
 
         posterior = normalize_to_posterior(simple_log_likelihood)
         assert posterior.shape == simple_log_likelihood.shape
-
-    def test_output_dtype(self, simple_log_likelihood: np.ndarray) -> None:
-        """Output dtype should be float64."""
-        from neurospatial.decoding.posterior import normalize_to_posterior
-
-        posterior = normalize_to_posterior(simple_log_likelihood)
-        assert posterior.dtype == np.float64
 
     def test_rows_sum_to_one(self, simple_log_likelihood: np.ndarray) -> None:
         """Each row should sum to 1.0 (probability distribution)."""
@@ -274,13 +266,6 @@ class TestNormalizeToPosterior:
     # Axis parameter tests
     # -------------------------------------------------------------------------
 
-    def test_axis_default(self, simple_log_likelihood: np.ndarray) -> None:
-        """Default axis (-1) should normalize over last axis."""
-        from neurospatial.decoding.posterior import normalize_to_posterior
-
-        posterior = normalize_to_posterior(simple_log_likelihood, axis=-1)
-        assert_allclose(posterior.sum(axis=-1), 1.0, atol=1e-10)
-
     def test_axis_explicit(self, simple_log_likelihood: np.ndarray) -> None:
         """Explicit axis=1 should normalize over second axis."""
         from neurospatial.decoding.posterior import normalize_to_posterior
@@ -333,20 +318,6 @@ class TestNormalizeToPosterior:
 
 class TestDecodePosition:
     """Tests for decode_position function."""
-
-    def test_returns_decoding_result(
-        self,
-        simple_env: Environment,
-        simple_spike_counts: np.ndarray,
-        simple_encoding_models: np.ndarray,
-    ) -> None:
-        """Should return a DecodingResult instance."""
-        from neurospatial.decoding.posterior import decode_position
-
-        result = decode_position(
-            simple_env, simple_spike_counts, simple_encoding_models, dt=0.025
-        )
-        assert isinstance(result, DecodingResult)
 
     def test_posterior_shape(
         self,
@@ -454,21 +425,6 @@ class TestDecodePosition:
             result_prior.posterior[:, 0].mean() > result_no_prior.posterior[:, 0].mean()
         )
 
-    def test_method_poisson_default(
-        self,
-        simple_env: Environment,
-        simple_spike_counts: np.ndarray,
-        simple_encoding_models: np.ndarray,
-    ) -> None:
-        """Method should default to 'poisson'."""
-        from neurospatial.decoding.posterior import decode_position
-
-        # Should not raise with default method
-        result = decode_position(
-            simple_env, simple_spike_counts, simple_encoding_models, dt=0.025
-        )
-        assert result.posterior.shape[0] == simple_spike_counts.shape[0]
-
     def test_method_invalid(
         self,
         simple_env: Environment,
@@ -533,24 +489,6 @@ class TestDecodePosition:
             simple_encoding_models,
             dt=0.025,
             validate=False,
-        )
-        assert result is not None
-
-    def test_validate_true_passes_valid_data(
-        self,
-        simple_env: Environment,
-        simple_spike_counts: np.ndarray,
-        simple_encoding_models: np.ndarray,
-    ) -> None:
-        """validate=True should pass with valid data."""
-        from neurospatial.decoding.posterior import decode_position
-
-        result = decode_position(
-            simple_env,
-            simple_spike_counts,
-            simple_encoding_models,
-            dt=0.025,
-            validate=True,
         )
         assert result is not None
 

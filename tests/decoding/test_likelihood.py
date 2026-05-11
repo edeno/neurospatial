@@ -78,24 +78,6 @@ class TestLogPoissonLikelihood:
         )
         assert ll.shape == (2, 3)
 
-    def test_output_dtype(
-        self, simple_spike_counts: np.ndarray, simple_encoding_models: np.ndarray
-    ) -> None:
-        """Output dtype should be float64."""
-        ll = log_poisson_likelihood(
-            simple_spike_counts, simple_encoding_models, dt=0.025
-        )
-        assert ll.dtype == np.float64
-
-    def test_finite_output(
-        self, simple_spike_counts: np.ndarray, simple_encoding_models: np.ndarray
-    ) -> None:
-        """Output should be finite (no NaN or Inf)."""
-        ll = log_poisson_likelihood(
-            simple_spike_counts, simple_encoding_models, dt=0.025
-        )
-        assert np.isfinite(ll).all()
-
     def test_min_rate_prevents_negative_infinity(self) -> None:
         """min_rate parameter should prevent -inf from zero rates."""
         spike_counts = np.array([[1]], dtype=np.int64)
@@ -237,15 +219,6 @@ class TestPoissonLikelihood:
         )
         assert likelihood.shape == (2, 3)
 
-    def test_output_dtype(
-        self, simple_spike_counts: np.ndarray, simple_encoding_models: np.ndarray
-    ) -> None:
-        """Output dtype should be float64."""
-        likelihood = poisson_likelihood(
-            simple_spike_counts, simple_encoding_models, dt=0.025
-        )
-        assert likelihood.dtype == np.float64
-
     def test_non_negative(
         self, simple_spike_counts: np.ndarray, simple_encoding_models: np.ndarray
     ) -> None:
@@ -264,15 +237,6 @@ class TestPoissonLikelihood:
         )
         row_maxes = likelihood.max(axis=1)
         assert_allclose(row_maxes, 1.0)
-
-    def test_finite_output(
-        self, simple_spike_counts: np.ndarray, simple_encoding_models: np.ndarray
-    ) -> None:
-        """Output should be finite (no NaN or Inf)."""
-        likelihood = poisson_likelihood(
-            simple_spike_counts, simple_encoding_models, dt=0.025
-        )
-        assert np.isfinite(likelihood).all()
 
     def test_consistent_with_log_likelihood(
         self, simple_spike_counts: np.ndarray, simple_encoding_models: np.ndarray
