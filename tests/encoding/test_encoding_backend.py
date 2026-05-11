@@ -36,11 +36,29 @@ def _has_jax() -> bool:
 
 @pytest.fixture(autouse=True)
 def _clear_backend_availability_cache():
-    """Keep platform-mocking tests from leaking cached JAX availability."""
+    """Restore ``_backend`` to a clean state after each test.
+
+    Several tests in this file mock ``sys.platform`` and then call
+    ``importlib.reload(backend_module)`` to re-evaluate the module
+    under the mocked platform. The ``@patch`` decorator restores
+    ``sys.platform`` itself when the test exits, but the module is
+    left in whatever state the perturbed reload produced. Without a
+    teardown, subsequent tests run against that perturbed module —
+    and which test runs next is order-dependent under xdist.
+
+    The teardown reloads the module under the *real* (post-patch)
+    ``sys.platform``, so every test starts from a known clean state.
+    The ``is_jax_available`` LRU cache is also cleared explicitly,
+    in case the reload didn't reset it on this Python version.
+    """
     yield
+
+    import importlib
 
     import neurospatial.encoding._backend as backend_module
 
+    backend_module.is_jax_available.cache_clear()
+    importlib.reload(backend_module)
     backend_module.is_jax_available.cache_clear()
 
 

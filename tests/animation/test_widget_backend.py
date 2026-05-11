@@ -10,6 +10,24 @@ import pytest
 from neurospatial import Environment
 
 
+@pytest.fixture(autouse=True)
+def _restore_widget_backend_module():
+    """Restore ``widget_backend`` after tests that ``importlib.reload`` it.
+
+    ``test_ipywidgets_available_flag_when_installed`` reloads
+    ``widget_backend`` under a patched ``sys.modules`` to flip
+    ``IPYWIDGETS_AVAILABLE``. Without this teardown the module stays
+    perturbed for the next test and order-dependence sets in.
+    """
+    yield
+
+    import importlib
+
+    from neurospatial.animation.backends import widget_backend
+
+    importlib.reload(widget_backend)
+
+
 # Mock ipywidgets module
 class MockIntSlider:
     """Mock ipywidgets.IntSlider."""

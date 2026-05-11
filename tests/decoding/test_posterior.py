@@ -472,16 +472,18 @@ class TestDecodePosition:
         simple_env: Environment,
         simple_encoding_models: np.ndarray,
     ) -> None:
-        """validate=False is still available as an explicit opt-out for hot loops.
+        """validate=False is an explicit opt-out for hot loops.
 
         Users running decode_position inside a tight loop and confident
         their inputs are clean can skip the per-call validation overhead.
+        The contract is that the call doesn't raise on bad input —
+        even though ``validate=True`` would catch it. The matching
+        positive assertion is that the clean rows still produce a
+        well-formed row-stochastic posterior, so we know the call did
+        more than "return a stub".
         """
         from neurospatial.decoding.posterior import decode_position
 
-        # NaN input that validate=True would reject; with validate=False
-        # the runner does not check and returns a result (which will
-        # contain NaNs, but that's the user's call).
         spike_counts_nan = np.array([[0, np.nan], [1, 0], [0, 1]])
         result = decode_position(
             simple_env,
@@ -490,7 +492,15 @@ class TestDecodePosition:
             dt=0.025,
             validate=False,
         )
-        assert result is not None
+        posterior = np.asarray(result.posterior)
+        # No exception was raised (validate=False skipped the check).
+        # The clean rows (1 and 2) must still produce well-formed
+        # probability distributions — proves the call actually ran the
+        # decoder, not just bailed out.
+        np.testing.assert_allclose(posterior[1].sum(), 1.0, atol=1e-9)
+        np.testing.assert_allclose(posterior[2].sum(), 1.0, atol=1e-9)
+        assert np.all(np.isfinite(posterior[1]))
+        assert np.all(np.isfinite(posterior[2]))
 
     def test_validate_catches_nan_input(
         self,
@@ -613,17 +623,30 @@ class TestDecodePosition:
         ergonomic reasons (mixed dataframes, JAX backends). Validating
         only the *value* (np.equal(x, floor(x))) -- not the dtype --
         lets those legitimate cases through while still catching truly
-        fractional inputs.
+        fractional inputs. The float and int paths must produce the
+        same posterior up to floating-point tolerance.
         """
         from neurospatial.decoding.posterior import decode_position
 
         n_bins = simple_env.n_bins
         encoding_models = np.ones((2, n_bins))
         spike_counts_float = np.array([[0.0, 1.0], [2.0, 0.0]], dtype=np.float64)
-        result = decode_position(
+        spike_counts_int = spike_counts_float.astype(np.int64)
+
+        result_float = decode_position(
             simple_env, spike_counts_float, encoding_models, dt=0.025
         )
-        assert result is not None
+        result_int = decode_position(
+            simple_env, spike_counts_int, encoding_models, dt=0.025
+        )
+        # Float path with integer values must match the int path exactly
+        # (modulo dtype-promotion rounding) and must yield a well-formed
+        # row-stochastic posterior.
+        posterior_float = np.asarray(result_float.posterior)
+        posterior_int = np.asarray(result_int.posterior)
+        np.testing.assert_allclose(posterior_float, posterior_int, atol=1e-10)
+        assert np.all(np.isfinite(posterior_float))
+        np.testing.assert_allclose(posterior_float.sum(axis=-1), 1.0, atol=1e-9)
 
     def test_validate_catches_negative_prior(
         self,
@@ -712,18 +735,35 @@ class TestDecodePosition:
         ``TypeError`` for any array-like that wasn't already an ndarray
         (e.g., a Python list). normalize_to_posterior accepts array-like
         priors via np.asarray, so the validator must too.
+
+        The list-prior and ndarray-prior paths must produce identical
+        posteriors — verifying that the conversion is faithful and not
+        just that the call returned without error.
         """
         from neurospatial.decoding.posterior import decode_position
 
         prior_list = [1.0] * simple_env.n_bins
-        result = decode_position(
+        prior_array = np.asarray(prior_list)
+
+        result_list = decode_position(
             simple_env,
             simple_spike_counts,
             simple_encoding_models,
             dt=0.025,
             prior=prior_list,  # type: ignore[arg-type]  # runtime-only array-like
         )
-        assert result is not None
+        result_array = decode_position(
+            simple_env,
+            simple_spike_counts,
+            simple_encoding_models,
+            dt=0.025,
+            prior=prior_array,
+        )
+        posterior_list = np.asarray(result_list.posterior)
+        posterior_array = np.asarray(result_array.posterior)
+        np.testing.assert_allclose(posterior_list, posterior_array, atol=1e-12)
+        assert np.all(np.isfinite(posterior_list))
+        np.testing.assert_allclose(posterior_list.sum(axis=-1), 1.0, atol=1e-9)
 
     # -------------------------------------------------------------------------
     # Integration tests

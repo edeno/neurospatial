@@ -172,7 +172,14 @@ class TestDetectRunsBetweenRegions:
                 assert run.end_time - run.start_time >= 0.5  # min_duration
 
     def test_detect_failed_runs_timeout(self):
-        """Test detection of failed runs (timeout before reaching target)."""
+        """A trajectory that never reaches the target must produce a
+        failed run when ``max_duration`` is exceeded.
+
+        Construct a trajectory that leaves the source region and then
+        stalls in the middle of the arena — never touching the target.
+        The detector should yield at least one ``Run`` whose
+        ``success`` flag is ``False`` (timeout).
+        """
         x = np.linspace(0, 100, 50)
         y = np.linspace(0, 100, 50)
         xx, yy = np.meshgrid(x, y)
@@ -182,11 +189,13 @@ class TestDetectRunsBetweenRegions:
         env.regions.add("source", polygon=Point(10.0, 50.0).buffer(5.0))
         env.regions.add("target", polygon=Point(90.0, 50.0).buffer(5.0))
 
-        # Create trajectory that exits source but never reaches target
-        x_traj = np.linspace(10.0, 50.0, 100)
-        y_traj = np.ones(100) * 50.0
+        # Trajectory leaves source (10, 50), moves to mid-arena (50, 50)
+        # over 1.5 s, then dwells there. ``max_duration=1.0`` < dwell
+        # time ⇒ at least one timeout failure must be reported.
+        x_traj = np.concatenate([np.linspace(10.0, 50.0, 30), np.full(70, 50.0)])
+        y_traj = np.full(100, 50.0)
         trajectory = np.column_stack([x_traj, y_traj])
-        times = np.linspace(0, 20.0, 100)  # 20 seconds, longer than max_duration
+        times = np.linspace(0, 20.0, 100)
 
         from neurospatial.behavior.segmentation import detect_runs_between_regions
 
@@ -198,15 +207,21 @@ class TestDetectRunsBetweenRegions:
             source="source",
             target="target",
             min_duration=0.5,
-            max_duration=5.0,  # Will timeout
+            max_duration=1.0,  # Will timeout — trajectory dwells past this
         )
 
-        # Should detect runs, but some may be unsuccessful
-        if len(runs) > 0:
-            # Check that unsuccessful runs exist
-            unsuccessful_runs = [r for r in runs if not r.success]
-            # At least some runs should fail due to timeout
-            assert len(unsuccessful_runs) >= 0  # May or may not have failed runs
+        assert len(runs) >= 1, "Expected at least one run to be reported."
+        # At least one run must be a documented failure (not success).
+        # No real run can succeed because the trajectory never reaches
+        # ``target``.
+        assert any(not r.success for r in runs), (
+            "Trajectory never reached target; at least one failed run "
+            f"should be reported, got runs={runs}."
+        )
+        assert not any(r.success for r in runs), (
+            "No run can succeed since the trajectory never touches "
+            f"`target`; got runs={runs}."
+        )
 
     def test_min_duration_filter(self):
         """Test that runs shorter than min_duration are filtered."""
@@ -268,32 +283,39 @@ class TestSegmentByVelocity:
         assert len(segments) > 0
 
     def test_hysteresis_prevents_flickering(self):
-        """Test that hysteresis prevents rapid switching."""
-        # Create trajectory with noisy velocity near threshold
+        """Higher hysteresis must produce no more segments than lower.
+
+        Construct a velocity time series that oscillates just above and
+        below the threshold. A wide hysteresis band suppresses crossings
+        in the middle of the band; a narrow band lets every crossing
+        through. The test asserts the monotone direction
+        (wide ≤ narrow), which is the contract — not just that both
+        calls returned a ``list``.
+        """
         rng = np.random.default_rng(42)
-        n = 100
-        trajectory = np.cumsum(rng.standard_normal(n) * 0.5)[:, None]
-        times = np.linspace(0, 10, n)
+        n = 200
+        # Trajectory whose first-difference (≈ speed) wanders around the
+        # threshold of 1.0, generating many crossings.
+        velocity = 1.0 + 0.5 * rng.standard_normal(n)
+        trajectory = np.cumsum(velocity)[:, None]
+        times = np.linspace(0, 20, n)
 
         from neurospatial.behavior.segmentation import segment_by_velocity
 
-        # With hysteresis, should have fewer segments than without
-        segments_with_hysteresis = segment_by_velocity(
-            trajectory, times, min_speed=1.0, min_duration=0.1, hysteresis=2.0
+        wide = segment_by_velocity(
+            trajectory, times, min_speed=1.0, min_duration=0.0, hysteresis=2.0
+        )
+        narrow = segment_by_velocity(
+            trajectory, times, min_speed=1.0, min_duration=0.0, hysteresis=1.01
         )
 
-        segments_without_hysteresis = segment_by_velocity(
-            trajectory,
-            times,
-            min_speed=1.0,
-            min_duration=0.1,
-            hysteresis=1.1,  # Just above 1.0
+        # Wide hysteresis band ⇒ fewer (or equal) transitions, hence
+        # fewer segments. A strict ``<`` would over-fit this noise; the
+        # real contract is the monotone direction.
+        assert len(wide) <= len(narrow), (
+            f"Wider hysteresis produced more segments "
+            f"({len(wide)} vs {len(narrow)}) — flickering not suppressed."
         )
-
-        # Hysteresis should reduce number of rapid transitions
-        # (This is a soft assertion - hysteresis should help stability)
-        assert isinstance(segments_with_hysteresis, list)
-        assert isinstance(segments_without_hysteresis, list)
 
     def test_min_duration_filter(self):
         """Test that brief segments are filtered out."""
