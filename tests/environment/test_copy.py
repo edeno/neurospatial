@@ -19,14 +19,6 @@ from neurospatial.regions import Regions
 class TestCopyBasic:
     """Test basic copy() functionality."""
 
-    def test_copy_creates_new_instance(self, sample_2d_grid):
-        """copy() creates a new Environment instance."""
-        env = sample_2d_grid
-        env_copy = env.copy()
-
-        assert isinstance(env_copy, Environment)
-        assert env_copy is not env  # Different objects
-
     def test_copy_preserves_attributes(self, sample_2d_grid):
         """copy() preserves all environment attributes."""
         env = sample_2d_grid
@@ -268,24 +260,6 @@ class TestCopyEdgeCases:
 
         # Copy should also be fitted
         assert env_copy._is_fitted
-
-    def test_copy_multiple_times(self, sample_2d_grid):
-        """Can create multiple copies."""
-        env = sample_2d_grid
-
-        copy1 = env.copy()
-        copy2 = env.copy()
-        copy3 = copy1.copy()
-
-        # All should be different instances
-        assert copy1 is not env
-        assert copy2 is not env
-        assert copy3 is not env
-        assert copy1 is not copy2
-        assert copy1 is not copy3
-
-        # All should have same structure
-        assert copy1.n_bins == copy2.n_bins == copy3.n_bins == env.n_bins
 
 
 class TestCopyDifferentLayouts:

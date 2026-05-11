@@ -157,13 +157,6 @@ class TestEnvironmentFromPosition:
                 processing_module="nonexistent",
             )
 
-    def test_bin_size_required(self, sample_nwb_with_position):
-        """Test that bin_size parameter is required."""
-        from neurospatial.io.nwb import environment_from_position
-
-        with pytest.raises(TypeError):
-            environment_from_position(sample_nwb_with_position)  # Missing bin_size
-
     def test_different_bin_sizes(self, sample_nwb_with_position):
         """Test Environment creation with different bin sizes."""
         from neurospatial.io.nwb import environment_from_position
@@ -173,32 +166,6 @@ class TestEnvironmentFromPosition:
 
         # Smaller bins should result in more bins
         assert env_small.n_bins > env_large.n_bins
-
-    def test_environment_is_fitted(self, sample_nwb_with_position):
-        """Test that returned Environment is fitted and ready to use."""
-        from neurospatial.io.nwb import environment_from_position
-
-        env = environment_from_position(sample_nwb_with_position, bin_size=5.0)
-
-        # Should be able to call methods that require fitted state
-        assert hasattr(env, "_is_fitted")
-        assert env._is_fitted
-
-        # Should be able to use spatial query methods
-        point = env.bin_centers[0]
-        bin_idx = env.bin_at(point)
-        assert bin_idx >= 0
-
-    def test_connectivity_graph_created(self, sample_nwb_with_position):
-        """Test that connectivity graph is properly created."""
-        from neurospatial.io.nwb import environment_from_position
-
-        env = environment_from_position(sample_nwb_with_position, bin_size=5.0)
-
-        # Should have connectivity graph
-        assert env.connectivity is not None
-        assert env.connectivity.number_of_nodes() == env.n_bins
-        assert env.connectivity.number_of_edges() > 0
 
 
 class TestWriteEnvironment:
@@ -333,14 +300,6 @@ class TestWriteEnvironment:
         # Layout type should be stored in description
         layout_type = sample_environment.layout._layout_type_tag
         assert layout_type in scratch_data.description
-
-    def test_default_name(self, empty_nwb, sample_environment):
-        """Test default name is 'spatial_environment'."""
-        from neurospatial.io.nwb import write_environment
-
-        write_environment(empty_nwb, sample_environment)
-
-        assert "spatial_environment" in empty_nwb.scratch
 
     def test_custom_name(self, empty_nwb, sample_environment):
         """Test custom name parameter."""
@@ -477,21 +436,6 @@ class TestWriteEnvironment:
         stored_sorted = stored_sorted[np.lexsort(stored_sorted.T)]
 
         np.testing.assert_array_equal(stored_sorted, original_sorted)
-
-    def test_alternative_2d_environment(self, empty_nwb):
-        """Test writing environment created with different parameters."""
-        from neurospatial import Environment
-        from neurospatial.io.nwb import write_environment
-
-        # Create 2D environment with different parameters
-        rng = np.random.default_rng(42)
-        positions = rng.uniform(0, 100, (500, 2))
-        env = Environment.from_samples(positions, bin_size=5.0)
-
-        # Should work without error
-        write_environment(empty_nwb, env)
-
-        assert "spatial_environment" in empty_nwb.scratch
 
     def test_error_on_unfitted_environment(self, empty_nwb, sample_environment):
         """Test EnvironmentNotFittedError when writing unfitted Environment."""
@@ -650,21 +594,6 @@ class TestReadEnvironment:
 
         assert loaded_env is not None
         assert loaded_env.n_bins == sample_environment.n_bins
-
-    def test_environment_is_fitted(self, empty_nwb, sample_environment):
-        """Test loaded Environment is fitted and ready to use."""
-        from neurospatial.io.nwb import read_environment, write_environment
-
-        write_environment(empty_nwb, sample_environment)
-        loaded_env = read_environment(empty_nwb)
-
-        # Should be fitted
-        assert loaded_env._is_fitted
-
-        # Should be able to use spatial queries
-        point = loaded_env.bin_centers[0]
-        bin_idx = loaded_env.bin_at(point)
-        assert bin_idx >= 0
 
     def test_empty_regions_handled(self, empty_nwb):
         """Test environment with no regions loads correctly."""

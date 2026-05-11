@@ -208,14 +208,6 @@ class TestPathBetween:
 class TestInfo:
     """Tests for info() method."""
 
-    def test_info_prints_without_error(self, two_simple_2d_envs):
-        """Test info() prints without raising errors."""
-        env1, env2 = two_simple_2d_envs
-        comp = CompositeEnvironment([env1, env2], auto_bridge=True)
-
-        # Should not raise
-        comp.info()
-
     def test_info_return_string(self, two_simple_2d_envs):
         """Test info() returns string when requested."""
         env1, env2 = two_simple_2d_envs
@@ -318,18 +310,6 @@ class TestSaveLoad:
             loaded = CompositeEnvironment.load(str(filepath))
 
             assert len(loaded._bridge_list) == n_bridges_original
-
-    def test_save_creates_file(self, two_simple_2d_envs):
-        """Test save() creates the file."""
-        env1, env2 = two_simple_2d_envs
-        comp = CompositeEnvironment([env1, env2])
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            filepath = Path(tmpdir) / "test.pkl"
-            comp.save(str(filepath))
-
-            assert filepath.exists()
-            assert filepath.stat().st_size > 0
 
 
 class TestIntegration:

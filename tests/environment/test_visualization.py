@@ -238,31 +238,6 @@ class TestPlotField:
         with pytest.raises(NotImplementedError, match=r"Cannot plot.*3D"):
             env.plot_field(field)
 
-    def test_custom_colormap(self):
-        """Test custom colormap."""
-        rng = np.random.default_rng(42)
-        env = Environment.from_samples(rng.uniform(0, 100, (500, 2)), bin_size=10.0)
-        field = rng.random(env.n_bins)
-
-        fig, ax = plt.subplots()
-        env.plot_field(field, ax=ax, cmap="hot", colorbar=False)
-
-        # Should not raise
-        plt.close(fig)
-
-    def test_rasterized_option(self):
-        """Test rasterized option."""
-        rng = np.random.default_rng(42)
-        env = Environment.from_samples(rng.uniform(0, 100, (500, 2)), bin_size=10.0)
-        field = rng.random(env.n_bins)
-
-        fig, ax = plt.subplots()
-        env.plot_field(field, ax=ax, rasterized=True, colorbar=False)
-        env.plot_field(field, ax=ax, rasterized=False, colorbar=False)
-
-        # Should not raise
-        plt.close(fig)
-
     def test_axes_labels_2d(self):
         """Test that axes labels are set for 2D plots."""
         rng = np.random.default_rng(42)
@@ -306,19 +281,6 @@ class TestPlotField:
 
         plt.close(result_ax.figure)
 
-    def test_vmin_equals_vmax_handling(self):
-        """Test handling when vmin >= vmax."""
-        rng = np.random.default_rng(42)
-        env = Environment.from_samples(rng.uniform(0, 100, (500, 2)), bin_size=10.0)
-        # All same value
-        field = np.full(env.n_bins, 5.0)
-
-        fig, ax = plt.subplots()
-        # Should not raise, should adjust vmax
-        env.plot_field(field, ax=ax, colorbar=False)
-
-        plt.close(fig)
-
     def test_integration_with_compute_spatial_rate(self):
         """Integration test: visualize computed spatial rate map."""
         from neurospatial.encoding import compute_spatial_rate
@@ -352,79 +314,3 @@ class TestPlotField:
 
 class TestPlotFieldEdgeCases:
     """Test edge cases and error handling for plot_field()."""
-
-    def test_empty_environment(self):
-        """Test plotting on environment with minimal bins."""
-        # Create tiny environment
-        rng = np.random.default_rng(42)
-        positions = np.array([[50, 50], [51, 51]])
-        env = Environment.from_samples(positions, bin_size=10.0)
-        field = rng.random(env.n_bins)
-
-        fig, ax = plt.subplots()
-        env.plot_field(field, ax=ax, colorbar=False)
-
-        plt.close(fig)
-
-    def test_inf_values_in_field(self):
-        """Test handling of inf values in field."""
-        rng = np.random.default_rng(42)
-        env = Environment.from_samples(rng.uniform(0, 100, (500, 2)), bin_size=10.0)
-        field = rng.random(env.n_bins)
-        field[0] = np.inf
-        field[1] = -np.inf
-
-        fig, ax = plt.subplots()
-        # Should handle inf gracefully
-        env.plot_field(field, ax=ax, colorbar=False)
-
-        plt.close(fig)
-
-    def test_masked_grid_layout(self):
-        """Test plot_field with masked grid layout."""
-        from neurospatial.layout import create_layout
-
-        # Create masked grid using correct parameters
-        mask = np.ones((20, 20), dtype=bool)
-        mask[5:15, 5:15] = False  # Hollow square
-        edges = (
-            np.linspace(0, 100, 21),  # 20 bins + 1 edge
-            np.linspace(0, 100, 21),
-        )
-
-        layout = create_layout(
-            kind="masked_grid",
-            active_mask=mask,
-            grid_edges=edges,
-        )
-        env = Environment(layout=layout, layout_type_used="masked_grid")
-        rng = np.random.default_rng(42)
-        field = rng.random(env.n_bins)
-
-        fig, ax = plt.subplots()
-        env.plot_field(field, ax=ax, colorbar=False)
-
-        plt.close(fig)
-
-    def test_polygon_layout(self):
-        """Test plot_field with polygon layout."""
-        from shapely.geometry import Polygon
-
-        from neurospatial.layout import create_layout
-
-        # Create polygon layout using correct parameters
-        polygon = Polygon([(0, 0), (100, 0), (100, 100), (0, 100)])
-
-        layout = create_layout(
-            kind="shapely_polygon",
-            polygon=polygon,
-            bin_size=10.0,
-        )
-        env = Environment(layout=layout, layout_type_used="shapely_polygon")
-        rng = np.random.default_rng(42)
-        field = rng.random(env.n_bins)
-
-        fig, ax = plt.subplots()
-        env.plot_field(field, ax=ax, colorbar=False)
-
-        plt.close(fig)

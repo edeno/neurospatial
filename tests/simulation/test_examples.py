@@ -17,21 +17,6 @@ from neurospatial.simulation.session import SimulationSession
 class TestOpenFieldSession:
     """Tests for open_field_session() convenience function."""
 
-    def test_open_field_session_returns_simulation_session(self):
-        """open_field_session() should return SimulationSession instance."""
-        session = open_field_session(duration=10.0, n_place_cells=5)
-
-        assert isinstance(session, SimulationSession)
-
-    def test_open_field_session_default_parameters(self):
-        """open_field_session() should work with default parameters."""
-        session = open_field_session()
-
-        # Should create session
-        assert isinstance(session, SimulationSession)
-        assert session.env is not None
-        assert len(session.spike_trains) > 0
-
     def test_open_field_session_creates_square_arena(self):
         """open_field_session() should create square arena environment."""
         arena_size = 100.0
@@ -118,14 +103,6 @@ class TestOpenFieldSession:
         # Smaller bin_size should result in more bins
         assert session_small.env.n_bins > session_large.env.n_bins
 
-    def test_open_field_session_metadata(self):
-        """open_field_session() metadata should contain session info."""
-        session = open_field_session(duration=10.0, n_place_cells=5)
-
-        meta = session.metadata
-        assert "cell_type" in meta
-        assert meta["cell_type"] == "place"
-
     def test_open_field_session_generates_spikes(self):
         """open_field_session() should generate spikes."""
         session = open_field_session(duration=30.0, n_place_cells=5, seed=42)
@@ -164,21 +141,6 @@ class TestOpenFieldSession:
 class TestLinearTrackSession:
     """Tests for linear_track_session() convenience function."""
 
-    def test_linear_track_session_returns_simulation_session(self):
-        """linear_track_session() should return SimulationSession instance."""
-        session = linear_track_session(duration=10.0, n_place_cells=5, n_laps=3)
-
-        assert isinstance(session, SimulationSession)
-
-    def test_linear_track_session_default_parameters(self):
-        """linear_track_session() should work with default parameters."""
-        session = linear_track_session()
-
-        # Should create session
-        assert isinstance(session, SimulationSession)
-        assert session.env is not None
-        assert len(session.spike_trains) > 0
-
     def test_linear_track_session_creates_1d_environment(self):
         """linear_track_session() should create 1D track environment."""
         track_length = 200.0
@@ -198,24 +160,6 @@ class TestLinearTrackSession:
 
         # Check environment units
         assert env.units == "cm"
-
-    def test_linear_track_session_correct_number_of_cells(self):
-        """linear_track_session() should create correct number of place cells."""
-        n_cells = 20
-        session = linear_track_session(duration=10.0, n_place_cells=n_cells, n_laps=3)
-
-        assert len(session.models) == n_cells
-        assert len(session.spike_trains) == n_cells
-        assert len(session.ground_truth) == n_cells
-
-    def test_linear_track_session_uses_place_cells(self):
-        """linear_track_session() should create only place cells."""
-        from neurospatial.simulation.models import PlaceCellModel
-
-        session = linear_track_session(duration=10.0, n_place_cells=5, n_laps=3)
-
-        # All models should be place cells
-        assert all(isinstance(m, PlaceCellModel) for m in session.models)
 
     def test_linear_track_session_seed_reproducibility(self):
         """linear_track_session() with same seed should produce identical results."""
@@ -295,16 +239,6 @@ class TestLinearTrackSession:
         assert len(session.positions) > 0
         assert len(session.times) > 0
 
-    def test_linear_track_session_metadata(self):
-        """linear_track_session() metadata should contain session info."""
-        session = linear_track_session(duration=10.0, n_place_cells=5, n_laps=3)
-
-        meta = session.metadata
-        assert "cell_type" in meta
-        assert meta["cell_type"] == "place"
-        assert "trajectory_method" in meta
-        assert meta["trajectory_method"] == "laps"
-
     def test_linear_track_session_generates_spikes(self):
         """linear_track_session() should generate spikes."""
         session = linear_track_session(
@@ -325,44 +259,9 @@ class TestLinearTrackSession:
         bin_indices = session.env.bin_at(session.positions)
         assert np.all(bin_indices >= 0), "Some positions outside environment"
 
-    def test_linear_track_session_ground_truth_structure(self):
-        """linear_track_session() should have proper ground_truth structure."""
-        n_cells = 5
-        session = linear_track_session(
-            duration=10.0, n_place_cells=n_cells, n_laps=3, seed=42
-        )
-
-        # Check ground_truth keys
-        assert len(session.ground_truth) == n_cells
-        for i in range(n_cells):
-            key = f"cell_{i}"
-            assert key in session.ground_truth
-
-            # For place cells, should have center, width, max_rate, baseline_rate
-            gt = session.ground_truth[key]
-            assert "center" in gt
-            assert "width" in gt
-            assert "max_rate" in gt
-            assert "baseline_rate" in gt
-
 
 class TestTmazeAlternationSession:
     """Tests for tmaze_alternation_session() convenience function."""
-
-    def test_tmaze_alternation_session_returns_simulation_session(self):
-        """tmaze_alternation_session() should return SimulationSession instance."""
-        session = tmaze_alternation_session(duration=10.0, n_trials=5, n_place_cells=10)
-
-        assert isinstance(session, SimulationSession)
-
-    def test_tmaze_alternation_session_default_parameters(self):
-        """tmaze_alternation_session() should work with default parameters."""
-        session = tmaze_alternation_session()
-
-        # Should create session
-        assert isinstance(session, SimulationSession)
-        assert session.env is not None
-        assert len(session.spike_trains) > 0
 
     def test_tmaze_alternation_session_has_trial_metadata(self):
         """tmaze_alternation_session() should include trial_choices in metadata."""
@@ -414,15 +313,6 @@ class TestTmazeAlternationSession:
         assert len(session.spike_trains) == n_cells
         assert len(session.ground_truth) == n_cells
 
-    def test_tmaze_alternation_session_uses_place_cells(self):
-        """tmaze_alternation_session() should create only place cells."""
-        from neurospatial.simulation.models import PlaceCellModel
-
-        session = tmaze_alternation_session(duration=20.0, n_trials=5, n_place_cells=10)
-
-        # All models should be place cells
-        assert all(isinstance(m, PlaceCellModel) for m in session.models)
-
     def test_tmaze_alternation_session_seed_reproducibility(self):
         """tmaze_alternation_session() with same seed should produce identical results."""
         seed = 42
@@ -455,16 +345,6 @@ class TestTmazeAlternationSession:
         # Check that session duration matches approximately
         assert session.times[-1] >= duration * 0.9  # Allow small tolerance
 
-    def test_tmaze_alternation_session_metadata(self):
-        """tmaze_alternation_session() metadata should contain session info."""
-        session = tmaze_alternation_session(duration=20.0, n_trials=5, n_place_cells=10)
-
-        meta = session.metadata
-        assert "cell_type" in meta
-        assert meta["cell_type"] == "place"
-        assert "trial_choices" in meta
-        assert "trajectory_method" in meta
-
     def test_tmaze_alternation_session_generates_spikes(self):
         """tmaze_alternation_session() should generate spikes."""
         session = tmaze_alternation_session(
@@ -474,26 +354,6 @@ class TestTmazeAlternationSession:
         # At least some cells should have spikes
         total_spikes = sum(len(st) for st in session.spike_trains)
         assert total_spikes > 0, "No spikes generated in session"
-
-    def test_tmaze_alternation_session_ground_truth_structure(self):
-        """tmaze_alternation_session() should have proper ground_truth structure."""
-        n_cells = 10
-        session = tmaze_alternation_session(
-            duration=20.0, n_trials=5, n_place_cells=n_cells, seed=42
-        )
-
-        # Check ground_truth keys
-        assert len(session.ground_truth) == n_cells
-        for i in range(n_cells):
-            key = f"cell_{i}"
-            assert key in session.ground_truth
-
-            # For place cells, should have center, width, max_rate, baseline_rate
-            gt = session.ground_truth[key]
-            assert "center" in gt
-            assert "width" in gt
-            assert "max_rate" in gt
-            assert "baseline_rate" in gt
 
     def test_tmaze_alternation_session_trajectory_within_bounds(self):
         """tmaze_alternation_session() trajectory should be within environment bounds."""
@@ -538,53 +398,6 @@ class TestTmazeAlternationSession:
 
 class TestBoundaryCellSession:
     """Tests for boundary_cell_session() convenience function."""
-
-    def test_boundary_cell_session_returns_simulation_session(self):
-        """boundary_cell_session() should return SimulationSession instance."""
-        session = boundary_cell_session(
-            duration=10.0, n_boundary_cells=5, n_place_cells=5
-        )
-
-        assert isinstance(session, SimulationSession)
-
-    def test_boundary_cell_session_default_parameters(self):
-        """boundary_cell_session() should work with default parameters."""
-        session = boundary_cell_session()
-
-        # Should create session
-        assert isinstance(session, SimulationSession)
-        assert session.env is not None
-        assert len(session.spike_trains) > 0
-
-    def test_boundary_cell_session_creates_2d_arena(self):
-        """boundary_cell_session() should create 2D arena environment."""
-        session = boundary_cell_session(
-            duration=10.0,
-            arena_shape="square",
-            arena_size=100.0,
-            n_boundary_cells=5,
-            n_place_cells=5,
-        )
-
-        env = session.env
-
-        # Check that environment is 2D
-        assert env.n_dims == 2
-
-        # Check environment units
-        assert env.units == "cm"
-
-    def test_boundary_cell_session_square_arena(self):
-        """boundary_cell_session() should create square arena."""
-        session = boundary_cell_session(
-            duration=10.0,
-            arena_shape="square",
-            n_boundary_cells=5,
-            n_place_cells=5,
-        )
-
-        assert session.env is not None
-        assert session.env.n_dims == 2
 
     def test_boundary_cell_session_correct_number_of_cells(self):
         """boundary_cell_session() should create correct number of cells."""

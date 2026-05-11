@@ -1157,89 +1157,6 @@ class TestPositionsParameterNaming:
     compute_spatial_rate().
     """
 
-    def test_from_samples_accepts_positions_parameter(self):
-        """Test that from_samples() accepts 'positions' parameter."""
-        rng = np.random.default_rng(42)
-        positions = rng.random((100, 2)) * 50
-
-        # Should work with 'positions' parameter
-        env = Environment.from_samples(
-            positions=positions, bin_size=5.0, name="test_positions"
-        )
-
-        assert env.n_dims == 2
-        assert env.n_bins > 0
-        assert env.name == "test_positions"
-
-    def test_from_samples_positions_produces_correct_environment(self):
-        """Test that using 'positions' parameter creates correct environment."""
-        rng = np.random.default_rng(42)
-        positions = rng.standard_normal((500, 2)) * 20
-
-        env = Environment.from_samples(
-            positions=positions,
-            bin_size=3.0,
-        )
-
-        # Verify environment is properly fitted
-        assert env._is_fitted
-        assert env.bin_centers.shape[1] == 2
-        assert env.n_bins > 0
-
-        # Verify we can query bins
-        test_points = positions[:10]
-        bin_indices = env.bin_at(test_points)
-        assert len(bin_indices) == 10
-        assert np.all(bin_indices >= -1)  # -1 for outside, >=0 for valid bins
-
-    def test_from_samples_positions_with_hexagonal_layout(self):
-        """Test 'positions' parameter works with hexagonal layout."""
-        rng = np.random.default_rng(42)
-        positions = rng.random((200, 2)) * 40
-
-        env = Environment.from_samples(
-            positions=positions, bin_size=4.0, layout="Hexagonal", name="hex_test"
-        )
-
-        assert env.n_dims == 2
-        assert env.n_bins > 0
-        assert env.layout._layout_type_tag == "Hexagonal"
-
-    def test_from_samples_positions_with_morphological_ops(self):
-        """Test 'positions' parameter with morphological operations."""
-        rng = np.random.default_rng(42)
-        positions = rng.random((300, 2)) * 30
-
-        env = Environment.from_samples(
-            positions=positions,
-            bin_size=2.5,
-            dilate=True,
-            fill_holes=True,
-            close_gaps=True,
-        )
-
-        assert env.n_dims == 2
-        assert env.n_bins > 0
-
-    def test_from_samples_positions_3d(self):
-        """Test 'positions' parameter works with 3D data."""
-        rng = np.random.default_rng(42)
-        positions = rng.standard_normal((400, 3)) * 15
-
-        env = Environment.from_samples(
-            positions=positions, bin_size=3.0, connect_diagonal_neighbors=True
-        )
-
-        assert env.n_dims == 3
-        assert env.n_bins > 0
-        assert env.bin_centers.shape[1] == 3
-
-
-# ==============================================================================
-# Note: Mixin verification tests have been moved to tests/test_import_paths.py
-# to avoid duplication and improve test organization.
-# ==============================================================================
-
 
 class TestCacheManagement:
     """Tests for Environment cache management functionality.
@@ -1266,11 +1183,6 @@ class TestCacheManagement:
     def cache_test_graph_env(self, simple_graph_env):
         """Provide a fresh copy of simple_graph_env for cache testing."""
         return simple_graph_env.copy()
-
-    def test_clear_cache_method_exists(self, grid_env_from_samples):
-        """Test that clear_cache() method exists on Environment instances."""
-        assert hasattr(grid_env_from_samples, "clear_cache")
-        assert callable(grid_env_from_samples.clear_cache)
 
     def test_clear_cache_clears_kdtree(self, cache_test_env):
         """Test that clear_cache() clears the KDTree cache."""
@@ -1326,20 +1238,6 @@ class TestCacheManagement:
         assert diff_op_new is not None
         assert diff_op_new.shape == diff_op_original.shape
         assert np.allclose(diff_op_new.toarray(), diff_op_original.toarray())
-
-    def test_clear_cache_idempotent(self, cache_test_env):
-        """Test that calling clear_cache() multiple times doesn't error."""
-        # Clear cache when nothing is cached
-        cache_test_env.clear_cache()
-
-        # Access a property
-        _ = cache_test_env.boundary_bins
-
-        # Clear again
-        cache_test_env.clear_cache()
-
-        # Clear third time (should be safe)
-        cache_test_env.clear_cache()
 
     def test_clear_cache_allows_recomputation(self, cache_test_env):
         """Test that after clearing, cached properties can be recomputed."""

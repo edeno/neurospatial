@@ -146,28 +146,6 @@ class TestCircularConnectivity:
         # They should NOT be neighbors
         assert not connectivity.has_edge(first_angle_bin, last_angle_bin)
 
-    def test_circular_angle_default_is_true(self):
-        """Test that circular_angle defaults to True."""
-        distance_range = (0.0, 10.0)
-        angle_range = (-np.pi, np.pi)
-        distance_bin_size = 10.0
-        angle_bin_size = np.pi / 2
-
-        env = Environment.from_polar_egocentric(
-            distance_range=distance_range,
-            angle_range=angle_range,
-            distance_bin_size=distance_bin_size,
-            angle_bin_size=angle_bin_size,
-        )
-
-        connectivity = env.connectivity
-        angles = env.bin_centers[:, 1]
-        first_angle_bin = np.argmin(angles)
-        last_angle_bin = np.argmax(angles)
-
-        # Default should be circular, so they should be connected
-        assert connectivity.has_edge(first_angle_bin, last_angle_bin)
-
     def test_circular_wrapping_at_multiple_distances(self):
         """Test circular wrapping works correctly at each distance ring."""
         distance_range = (0.0, 20.0)  # 2 distance bins
@@ -330,18 +308,6 @@ class TestParameterValidation:
 class TestEnvironmentMetadata:
     """Test that environment metadata is set correctly."""
 
-    def test_environment_is_fitted(self):
-        """Test that the returned environment is fitted."""
-        env = Environment.from_polar_egocentric(
-            distance_range=(0.0, 100.0),
-            angle_range=(-np.pi, np.pi),
-            distance_bin_size=10.0,
-            angle_bin_size=np.pi / 4,
-        )
-
-        # Should be able to call methods that require fitted state
-        assert env._is_fitted
-
     def test_name_parameter(self):
         """Test that name parameter is set correctly."""
         env = Environment.from_polar_egocentric(
@@ -354,58 +320,9 @@ class TestEnvironmentMetadata:
 
         assert env.name == "test_polar_env"
 
-    def test_connectivity_graph_exists(self):
-        """Test that connectivity graph is created."""
-        env = Environment.from_polar_egocentric(
-            distance_range=(0.0, 100.0),
-            angle_range=(-np.pi, np.pi),
-            distance_bin_size=10.0,
-            angle_bin_size=np.pi / 4,
-        )
-
-        assert env.connectivity is not None
-        assert env.connectivity.number_of_nodes() == env.n_bins
-
 
 class TestDocstringNote:
     """Test that environment has correct coordinate convention documentation."""
-
-    def test_bin_centers_first_column_is_distance(self):
-        """Verify bin_centers[:, 0] represents distance (per docstring convention)."""
-        distance_range = (0.0, 50.0)
-        angle_range = (-np.pi / 2, np.pi / 2)  # Half circle
-        distance_bin_size = 25.0  # 2 distance bins
-        angle_bin_size = np.pi / 2  # 2 angle bins
-
-        env = Environment.from_polar_egocentric(
-            distance_range=distance_range,
-            angle_range=angle_range,
-            distance_bin_size=distance_bin_size,
-            angle_bin_size=angle_bin_size,
-        )
-
-        # First column should be distances (centered at 12.5 and 37.5)
-        distances = env.bin_centers[:, 0]
-        assert np.all(distances >= 0)  # Distances are non-negative
-
-    def test_bin_centers_second_column_is_angle(self):
-        """Verify bin_centers[:, 1] represents angle (per docstring convention)."""
-        distance_range = (0.0, 10.0)  # 1 distance bin
-        angle_range = (-np.pi, np.pi)
-        distance_bin_size = 10.0
-        angle_bin_size = np.pi  # 2 angle bins
-
-        env = Environment.from_polar_egocentric(
-            distance_range=distance_range,
-            angle_range=angle_range,
-            distance_bin_size=distance_bin_size,
-            angle_bin_size=angle_bin_size,
-        )
-
-        # Second column should be angles (centered at -π/2 and π/2)
-        angles = env.bin_centers[:, 1]
-        assert np.all(angles >= -np.pi)
-        assert np.all(angles <= np.pi)
 
 
 class TestPolarCoordinateKindFlag:

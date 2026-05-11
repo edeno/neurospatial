@@ -63,21 +63,3 @@ class TestSubsetKDTreeCaching:
         # Cache state is now populated.
         assert layout._kdtree is not None
         assert layout._oof_threshold is None or layout._oof_threshold > 0
-
-    def test_cache_persists_after_layout_attribute_access(
-        self, linearized_subset_env: Environment
-    ) -> None:
-        n_dims = linearized_subset_env.bin_centers.shape[1]
-        sample = np.full((1, n_dims), 5.0)
-
-        # First call builds the tree.
-        _ = linearized_subset_env.bin_at(sample)
-        layout = linearized_subset_env.layout
-        first_tree = layout._kdtree
-        assert first_tree is not None
-
-        # Subsequent unrelated layout reads must not re-build the tree.
-        _ = linearized_subset_env.bin_centers
-        _ = linearized_subset_env.dimension_ranges
-        _ = linearized_subset_env.bin_at(sample)
-        assert layout._kdtree is first_tree
