@@ -529,16 +529,6 @@ class TestHeadingDirectionLabels:
         assert len(labels) == n_samples
         assert labels.dtype == object
 
-    def test_output_dtype_is_object(self) -> None:
-        """Output array has dtype=object for string labels."""
-        n_samples = 50
-        speed = np.full(n_samples, 10.0)
-        heading = np.zeros(n_samples)
-
-        labels = heading_direction_labels(speed=speed, heading=heading)
-
-        assert labels.dtype == object
-
     def test_empty_arrays(self) -> None:
         """Empty input arrays return empty output array."""
         times = np.array([], dtype=np.float64)

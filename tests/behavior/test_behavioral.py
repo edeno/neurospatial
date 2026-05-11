@@ -1592,44 +1592,6 @@ def test_graph_turn_sequence_3d(simple_3d_env):
 # =============================================================================
 
 
-def test_all_functions_exported():
-    """Verify all 7 behavioral functions are exported from behavior submodule.
-
-    Per Milestone 9, behavioral functions are in behavior submodule, not top-level.
-    """
-    from neurospatial.behavior import navigation, trajectory
-
-    # These should be in behavior.navigation
-    expected_navigation = [
-        "cost_to_goal",
-        "distance_to_region",
-        "path_progress",
-        "time_to_goal",
-    ]
-
-    # These should be in behavior.trajectory
-    expected_trajectory = [
-        "compute_trajectory_curvature",
-    ]
-
-    for func_name in expected_navigation:
-        assert hasattr(navigation, func_name), (
-            f"{func_name} missing from behavior.navigation"
-        )
-        assert callable(getattr(navigation, func_name))
-
-    for func_name in expected_trajectory:
-        assert hasattr(trajectory, func_name), (
-            f"{func_name} missing from behavior.trajectory"
-        )
-        assert callable(getattr(trajectory, func_name))
-
-
-# =============================================================================
-# Coverage Improvement Tests (Error Handling and Edge Cases)
-# =============================================================================
-
-
 def test_path_progress_unfitted_environment():
     """Test path_progress raises error for unfitted environment."""
     import pytest

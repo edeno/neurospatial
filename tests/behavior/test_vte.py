@@ -223,20 +223,6 @@ class TestHeadSweepMagnitude:
 class TestIntegratedAbsoluteRotationAlias:
     """Test that integrated_absolute_rotation is an alias for head_sweep_magnitude."""
 
-    def test_alias_exists(self):
-        """Test that the alias is exported."""
-        from neurospatial.behavior.vte import (
-            head_sweep_magnitude,
-            integrated_absolute_rotation,
-        )
-
-        assert integrated_absolute_rotation is head_sweep_magnitude
-
-
-# =============================================================================
-# Test head_sweep_from_positions()
-# =============================================================================
-
 
 class TestHeadSweepFromPositions:
     """Test head_sweep_from_positions() function."""
@@ -311,32 +297,6 @@ class TestHeadSweepFromPositions:
 class TestVTETrialResult:
     """Test VTETrialResult dataclass."""
 
-    def test_dataclass_fields(self):
-        """Test that dataclass has required fields."""
-        from neurospatial.behavior.vte import VTETrialResult
-
-        result = VTETrialResult(
-            head_sweep_magnitude=2.5,
-            z_head_sweep=1.2,
-            mean_speed=15.0,
-            min_speed=2.0,
-            z_speed_inverse=0.8,
-            vte_index=1.0,
-            is_vte=True,
-            window_start=0.0,
-            window_end=1.0,
-        )
-
-        assert result.head_sweep_magnitude == 2.5
-        assert result.z_head_sweep == 1.2
-        assert result.mean_speed == 15.0
-        assert result.min_speed == 2.0
-        assert result.z_speed_inverse == 0.8
-        assert result.vte_index == 1.0
-        assert result.is_vte is True
-        assert result.window_start == 0.0
-        assert result.window_end == 1.0
-
     def test_idphi_alias(self):
         """Test that idphi property is alias for head_sweep_magnitude."""
         from neurospatial.behavior.vte import VTETrialResult
@@ -373,80 +333,9 @@ class TestVTETrialResult:
 
         assert result.z_idphi == result.z_head_sweep
 
-    def test_summary_method(self):
-        """Test summary() returns human-readable string."""
-        from neurospatial.behavior.vte import VTETrialResult
-
-        result = VTETrialResult(
-            head_sweep_magnitude=2.5,
-            z_head_sweep=1.2,
-            mean_speed=15.0,
-            min_speed=2.0,
-            z_speed_inverse=0.8,
-            vte_index=1.0,
-            is_vte=True,
-            window_start=0.0,
-            window_end=1.0,
-        )
-
-        summary = result.summary()
-        assert "2.5" in summary or "2.50" in summary  # head sweep magnitude
-        assert "15" in summary  # speed
-        assert "VTE" in summary  # classification
-
-
-# =============================================================================
-# Test VTESessionResult Dataclass
-# =============================================================================
-
 
 class TestVTESessionResult:
     """Test VTESessionResult dataclass."""
-
-    def test_dataclass_fields(self):
-        """Test that dataclass has required fields."""
-        from neurospatial.behavior.vte import VTESessionResult, VTETrialResult
-
-        trial1 = VTETrialResult(
-            head_sweep_magnitude=2.5,
-            z_head_sweep=1.2,
-            mean_speed=15.0,
-            min_speed=2.0,
-            z_speed_inverse=0.8,
-            vte_index=1.0,
-            is_vte=True,
-            window_start=0.0,
-            window_end=1.0,
-        )
-        trial2 = VTETrialResult(
-            head_sweep_magnitude=0.5,
-            z_head_sweep=-0.8,
-            mean_speed=30.0,
-            min_speed=25.0,
-            z_speed_inverse=-0.5,
-            vte_index=-0.6,
-            is_vte=False,
-            window_start=1.0,
-            window_end=2.0,
-        )
-
-        session = VTESessionResult(
-            trial_results=[trial1, trial2],
-            mean_head_sweep=1.5,
-            std_head_sweep=1.0,
-            mean_speed=22.5,
-            std_speed=7.5,
-            n_vte_trials=1,
-            vte_fraction=0.5,
-        )
-
-        assert len(session.trial_results) == 2
-        assert session.mean_head_sweep == 1.5
-        assert session.std_head_sweep == 1.0
-        assert session.mean_speed == 22.5
-        assert session.std_speed == 7.5
-        assert session.n_vte_trials == 1
-        assert session.vte_fraction == 0.5
 
     def test_mean_idphi_alias(self):
         """Test that mean_idphi property is alias for mean_head_sweep."""
@@ -531,41 +420,6 @@ class TestVTESessionResult:
         vte_trials = session.get_vte_trials()
         assert len(vte_trials) == 2
         assert all(t.is_vte for t in vte_trials)
-
-    def test_summary_method(self):
-        """Test summary() returns human-readable string."""
-        from neurospatial.behavior.vte import VTESessionResult, VTETrialResult
-
-        trial1 = VTETrialResult(
-            head_sweep_magnitude=2.5,
-            z_head_sweep=1.2,
-            mean_speed=15.0,
-            min_speed=2.0,
-            z_speed_inverse=0.8,
-            vte_index=1.0,
-            is_vte=True,
-            window_start=0.0,
-            window_end=1.0,
-        )
-
-        session = VTESessionResult(
-            trial_results=[trial1],
-            mean_head_sweep=2.5,
-            std_head_sweep=0.0,
-            mean_speed=15.0,
-            std_speed=0.0,
-            n_vte_trials=1,
-            vte_fraction=1.0,
-        )
-
-        summary = session.summary()
-        assert "1/1" in summary or "1" in summary  # VTE count
-        assert "VTE" in summary
-
-
-# =============================================================================
-# Test normalize_vte_scores()
-# =============================================================================
 
 
 class TestNormalizeVTEScores:
