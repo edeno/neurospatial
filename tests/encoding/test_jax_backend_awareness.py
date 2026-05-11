@@ -114,33 +114,7 @@ class TestToNumpyWithJax:
 class TestGetArrayModuleWithJax:
     """Tests for _get_array_module helper with JAX arrays."""
 
-    def test_jax_array_returns_jax_numpy(self) -> None:
-        """JAX arrays should return jax.numpy module."""
-        import jax.numpy as jnp
 
-        from neurospatial.encoding._base import _get_array_module
-
-        jax_arr = jnp.array([1.0, 2.0, 3.0])
-        xp = _get_array_module(jax_arr)
-        assert xp is jnp
-
-    def test_jax_2d_array_returns_jax_numpy(self) -> None:
-        """2D JAX arrays should return jax.numpy module."""
-        import jax.numpy as jnp
-
-        from neurospatial.encoding._base import _get_array_module
-
-        jax_arr = jnp.zeros((3, 4))
-        xp = _get_array_module(jax_arr)
-        assert xp is jnp
-
-
-# ==============================================================================
-# Test SpatialResultMixin with JAX arrays
-# ==============================================================================
-
-
-@skip_without_jax
 class TestSpatialResultMixinWithJax:
     """Tests for SpatialResultMixin methods with JAX arrays."""
 

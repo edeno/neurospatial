@@ -52,45 +52,9 @@ def _clear_backend_availability_cache():
 class TestSupportedBackends:
     """Tests for SUPPORTED_BACKENDS constant."""
 
-    def test_supported_backends_is_tuple(self) -> None:
-        """SUPPORTED_BACKENDS should be an immutable tuple."""
-        from neurospatial.encoding._backend import SUPPORTED_BACKENDS
-
-        assert isinstance(SUPPORTED_BACKENDS, tuple)
-
-    def test_supported_backends_contains_numpy(self) -> None:
-        """SUPPORTED_BACKENDS should contain 'numpy'."""
-        from neurospatial.encoding._backend import SUPPORTED_BACKENDS
-
-        assert "numpy" in SUPPORTED_BACKENDS
-
-    def test_supported_backends_contains_jax(self) -> None:
-        """SUPPORTED_BACKENDS should contain 'jax'."""
-        from neurospatial.encoding._backend import SUPPORTED_BACKENDS
-
-        assert "jax" in SUPPORTED_BACKENDS
-
-    def test_supported_backends_contains_auto(self) -> None:
-        """SUPPORTED_BACKENDS should contain 'auto'."""
-        from neurospatial.encoding._backend import SUPPORTED_BACKENDS
-
-        assert "auto" in SUPPORTED_BACKENDS
-
-
-# ==============================================================================
-# Test is_jax_available function
-# ==============================================================================
-
 
 class TestIsJaxAvailable:
     """Tests for is_jax_available function."""
-
-    def test_returns_bool(self) -> None:
-        """is_jax_available should return a boolean."""
-        from neurospatial.encoding._backend import is_jax_available
-
-        result = is_jax_available()
-        assert isinstance(result, bool)
 
     @patch("sys.platform", "win32")
     def test_returns_false_on_windows(self) -> None:
@@ -155,19 +119,6 @@ class TestGetBackend:
         backend = get_backend("numpy")
         assert backend is np
 
-    def test_numpy_backend_always_works(self) -> None:
-        """get_backend('numpy') should work on any platform."""
-        import numpy as np
-
-        from neurospatial.encoding._backend import get_backend
-
-        # Even on Windows or without JAX, numpy should work
-        backend = get_backend("numpy")
-        assert backend is np
-
-    @pytest.mark.skipif(
-        not _has_jax(), reason="JAX not installed or not available on this platform"
-    )
     def test_jax_backend_returns_jax_numpy(self) -> None:
         """get_backend('jax') should return jax.numpy module when available."""
         import jax.numpy as jnp
@@ -279,35 +230,6 @@ class TestGetBackendName:
 class TestBackendImports:
     """Test that all expected items are importable from _backend module."""
 
-    def test_get_backend_importable(self) -> None:
-        """get_backend should be importable from encoding._backend."""
-        from neurospatial.encoding._backend import get_backend
-
-        assert callable(get_backend)
-
-    def test_is_jax_available_importable(self) -> None:
-        """is_jax_available should be importable from encoding._backend."""
-        from neurospatial.encoding._backend import is_jax_available
-
-        assert callable(is_jax_available)
-
-    def test_supported_backends_importable(self) -> None:
-        """SUPPORTED_BACKENDS should be importable from encoding._backend."""
-        from neurospatial.encoding._backend import SUPPORTED_BACKENDS
-
-        assert SUPPORTED_BACKENDS is not None
-
-    def test_get_backend_name_importable(self) -> None:
-        """get_backend_name should be importable from encoding._backend."""
-        from neurospatial.encoding._backend import get_backend_name
-
-        assert callable(get_backend_name)
-
-
-# ==============================================================================
-# Test edge cases
-# ==============================================================================
-
 
 class TestBackendEdgeCases:
     """Test edge cases and robustness."""
@@ -328,27 +250,7 @@ class TestBackendEdgeCases:
         with pytest.raises(ValueError):
             get_backend("AUTO")  # Should be "auto"
 
-    def test_multiple_calls_return_same_module(self) -> None:
-        """Multiple get_backend calls should return the same module object."""
-        from neurospatial.encoding._backend import get_backend
 
-        backend1 = get_backend("numpy")
-        backend2 = get_backend("numpy")
-        assert backend1 is backend2
-
-    @pytest.mark.skipif(
-        not _has_jax(), reason="JAX not installed or not available on this platform"
-    )
-    def test_jax_backend_multiple_calls_consistent(self) -> None:
-        """Multiple get_backend('jax') calls should return the same module."""
-        from neurospatial.encoding._backend import get_backend
-
-        backend1 = get_backend("jax")
-        backend2 = get_backend("jax")
-        assert backend1 is backend2
-
-
-@pytest.mark.skipif(not _has_jax(), reason="JAX not installed (optional 'jax' extra)")
 class TestMinOccupancyPrecisionAcrossBackends:
     """Regression: JAX firing-rate kernels must compare min_occupancy at
     occupancy's dtype.

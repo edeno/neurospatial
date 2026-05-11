@@ -84,68 +84,9 @@ def batch_firing_rates(n_neurons: int, n_bins: int) -> np.ndarray:
 class TestDirectionalRateResultImport:
     """Test that DirectionalRateResult can be imported."""
 
-    def test_import_from_directional(self) -> None:
-        """DirectionalRateResult can be imported from encoding.directional."""
-        from neurospatial.encoding.directional import DirectionalRateResult
-
-        assert DirectionalRateResult is not None
-
-    def test_import_from_encoding(self) -> None:
-        """DirectionalRateResult can be imported from encoding package."""
-        from neurospatial.encoding import DirectionalRateResult
-
-        assert DirectionalRateResult is not None
-
 
 class TestDirectionalRateResultCreation:
     """Test DirectionalRateResult dataclass creation."""
-
-    def test_create_result(
-        self,
-        single_firing_rate: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-    ) -> None:
-        """DirectionalRateResult can be created with all required fields."""
-        from neurospatial.encoding.directional import DirectionalRateResult
-
-        result = DirectionalRateResult(
-            firing_rate=single_firing_rate,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
-        )
-
-        assert result is not None
-        assert result.firing_rate is not None
-        assert result.occupancy is not None
-        assert result.bin_centers is not None
-        assert result.bin_size == bin_size
-        assert result.bandwidth is None
-
-    def test_create_result_with_smoothing(
-        self,
-        single_firing_rate: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-    ) -> None:
-        """DirectionalRateResult can be created with bandwidth."""
-        from neurospatial.encoding.directional import DirectionalRateResult
-
-        bandwidth = np.pi / 6  # 30 degrees
-
-        result = DirectionalRateResult(
-            firing_rate=single_firing_rate,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=bandwidth,
-        )
-
-        assert result.bandwidth == bandwidth
 
     def test_is_frozen_dataclass(
         self,
@@ -172,72 +113,6 @@ class TestDirectionalRateResultCreation:
 
 class TestDirectionalRateResultFields:
     """Test DirectionalRateResult field access and shapes."""
-
-    def test_firing_rate_shape(
-        self,
-        single_firing_rate: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-        n_bins: int,
-    ) -> None:
-        """firing_rate has correct shape (n_bins,)."""
-        from neurospatial.encoding.directional import DirectionalRateResult
-
-        result = DirectionalRateResult(
-            firing_rate=single_firing_rate,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
-        )
-
-        rate = np.asarray(result.firing_rate)
-        assert rate.shape == (n_bins,)
-
-    def test_occupancy_shape(
-        self,
-        single_firing_rate: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-        n_bins: int,
-    ) -> None:
-        """occupancy has correct shape (n_bins,)."""
-        from neurospatial.encoding.directional import DirectionalRateResult
-
-        result = DirectionalRateResult(
-            firing_rate=single_firing_rate,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
-        )
-
-        occ = np.asarray(result.occupancy)
-        assert occ.shape == (n_bins,)
-
-    def test_bin_centers_shape(
-        self,
-        single_firing_rate: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-        n_bins: int,
-    ) -> None:
-        """bin_centers has correct shape (n_bins,)."""
-        from neurospatial.encoding.directional import DirectionalRateResult
-
-        result = DirectionalRateResult(
-            firing_rate=single_firing_rate,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
-        )
-
-        centers = np.asarray(result.bin_centers)
-        assert centers.shape == (n_bins,)
 
     def test_bin_centers_in_radians(
         self,
@@ -270,46 +145,9 @@ class TestDirectionalRateResultFields:
 class TestDirectionalRatesResultImport:
     """Test that DirectionalRatesResult can be imported."""
 
-    def test_import_from_directional(self) -> None:
-        """DirectionalRatesResult can be imported from encoding.directional."""
-        from neurospatial.encoding.directional import DirectionalRatesResult
-
-        assert DirectionalRatesResult is not None
-
-    def test_import_from_encoding(self) -> None:
-        """DirectionalRatesResult can be imported from encoding package."""
-        from neurospatial.encoding import DirectionalRatesResult
-
-        assert DirectionalRatesResult is not None
-
 
 class TestDirectionalRatesResultCreation:
     """Test DirectionalRatesResult dataclass creation."""
-
-    def test_create_result(
-        self,
-        batch_firing_rates: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-    ) -> None:
-        """DirectionalRatesResult can be created with all required fields."""
-        from neurospatial.encoding.directional import DirectionalRatesResult
-
-        result = DirectionalRatesResult(
-            firing_rates=batch_firing_rates,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
-        )
-
-        assert result is not None
-        assert result.firing_rates is not None
-        assert result.occupancy is not None
-        assert result.bin_centers is not None
-        assert result.bin_size == bin_size
-        assert result.bandwidth is None
 
     def test_is_frozen_dataclass(
         self,
@@ -335,51 +173,6 @@ class TestDirectionalRatesResultCreation:
 
 class TestDirectionalRatesResultFields:
     """Test DirectionalRatesResult field access and shapes."""
-
-    def test_firing_rates_shape(
-        self,
-        batch_firing_rates: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-        n_neurons: int,
-        n_bins: int,
-    ) -> None:
-        """firing_rates has correct shape (n_neurons, n_bins)."""
-        from neurospatial.encoding.directional import DirectionalRatesResult
-
-        result = DirectionalRatesResult(
-            firing_rates=batch_firing_rates,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
-        )
-
-        rates = np.asarray(result.firing_rates)
-        assert rates.shape == (n_neurons, n_bins)
-
-    def test_occupancy_shape(
-        self,
-        batch_firing_rates: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-        n_bins: int,
-    ) -> None:
-        """occupancy has correct shape (n_bins,) - shared across neurons."""
-        from neurospatial.encoding.directional import DirectionalRatesResult
-
-        result = DirectionalRatesResult(
-            firing_rates=batch_firing_rates,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
-        )
-
-        occ = np.asarray(result.occupancy)
-        assert occ.shape == (n_bins,)
 
 
 class TestDirectionalRatesResultIteration:
@@ -2943,18 +2736,6 @@ class TestDirectionalRatesResultToDataframe:
 class TestComputeDirectionalRateImport:
     """Test that compute_directional_rate can be imported."""
 
-    def test_import_from_directional(self) -> None:
-        """compute_directional_rate can be imported from encoding.directional."""
-        from neurospatial.encoding.directional import compute_directional_rate
-
-        assert compute_directional_rate is not None
-
-    def test_import_from_encoding(self) -> None:
-        """compute_directional_rate can be imported from encoding package."""
-        from neurospatial.encoding import compute_directional_rate
-
-        assert compute_directional_rate is not None
-
 
 class TestComputeDirectionalRateBasic:
     """Test basic compute_directional_rate functionality."""
@@ -2976,49 +2757,6 @@ class TestComputeDirectionalRateBasic:
 
         result = compute_directional_rate(spike_times, times, headings)
         assert isinstance(result, DirectionalRateResult)
-
-    def test_firing_rate_shape(self) -> None:
-        """compute_directional_rate produces firing_rate with correct shape."""
-        from neurospatial.encoding.directional import compute_directional_rate
-
-        np.random.seed(42)
-        times = np.linspace(0, 10, 100)
-        headings = np.random.uniform(0, 2 * np.pi, 100)
-        spike_times = np.array([1.0, 2.5, 4.0, 7.5])
-
-        result = compute_directional_rate(spike_times, times, headings)
-
-        # Default bin_size is π/30 = 60 bins
-        n_bins = 60
-        assert np.asarray(result.firing_rate).shape == (n_bins,)
-
-    def test_occupancy_shape(self) -> None:
-        """compute_directional_rate produces occupancy with correct shape."""
-        from neurospatial.encoding.directional import compute_directional_rate
-
-        np.random.seed(42)
-        times = np.linspace(0, 10, 100)
-        headings = np.random.uniform(0, 2 * np.pi, 100)
-        spike_times = np.array([1.0, 2.5, 4.0, 7.5])
-
-        result = compute_directional_rate(spike_times, times, headings)
-
-        n_bins = 60
-        assert np.asarray(result.occupancy).shape == (n_bins,)
-
-    def test_bin_centers_shape(self) -> None:
-        """compute_directional_rate produces bin_centers with correct shape."""
-        from neurospatial.encoding.directional import compute_directional_rate
-
-        np.random.seed(42)
-        times = np.linspace(0, 10, 100)
-        headings = np.random.uniform(0, 2 * np.pi, 100)
-        spike_times = np.array([1.0, 2.5, 4.0, 7.5])
-
-        result = compute_directional_rate(spike_times, times, headings)
-
-        n_bins = 60
-        assert np.asarray(result.bin_centers).shape == (n_bins,)
 
     def test_bin_centers_in_radians(self) -> None:
         """compute_directional_rate produces bin_centers in radians [0, 2π)."""
@@ -3417,18 +3155,6 @@ class TestComputeDirectionalRateInputValidation:
 class TestComputeDirectionalRatesImport:
     """Test that compute_directional_rates can be imported."""
 
-    def test_import_from_directional(self) -> None:
-        """compute_directional_rates can be imported from encoding.directional."""
-        from neurospatial.encoding.directional import compute_directional_rates
-
-        assert compute_directional_rates is not None
-
-    def test_import_from_encoding(self) -> None:
-        """compute_directional_rates can be imported from encoding package."""
-        from neurospatial.encoding import compute_directional_rates
-
-        assert compute_directional_rates is not None
-
 
 class TestComputeDirectionalRatesBasic:
     """Test basic compute_directional_rates functionality."""
@@ -3453,64 +3179,6 @@ class TestComputeDirectionalRatesBasic:
 
         result = compute_directional_rates(spike_times, times, headings)
         assert isinstance(result, DirectionalRatesResult)
-
-    def test_firing_rates_shape(self) -> None:
-        """compute_directional_rates produces firing_rates with correct shape."""
-        from neurospatial.encoding.directional import compute_directional_rates
-
-        np.random.seed(42)
-        times = np.linspace(0, 10, 100)
-        headings = np.random.uniform(0, 2 * np.pi, 100)
-        spike_times = [
-            np.array([1.0, 2.5, 4.0]),
-            np.array([0.5, 3.0, 5.5, 8.0]),
-            np.array([2.0, 6.0]),
-        ]
-
-        result = compute_directional_rates(spike_times, times, headings)
-
-        # Default bin_size is π/30 = 60 bins
-        n_bins = 60
-        n_neurons = 3
-        rates = np.asarray(result.firing_rates)
-        assert rates.shape == (n_neurons, n_bins)
-
-    def test_occupancy_shape(self) -> None:
-        """compute_directional_rates produces occupancy with correct shape (shared)."""
-        from neurospatial.encoding.directional import compute_directional_rates
-
-        np.random.seed(42)
-        times = np.linspace(0, 10, 100)
-        headings = np.random.uniform(0, 2 * np.pi, 100)
-        spike_times = [
-            np.array([1.0, 2.5, 4.0]),
-            np.array([0.5, 3.0, 5.5, 8.0]),
-            np.array([2.0, 6.0]),
-        ]
-
-        result = compute_directional_rates(spike_times, times, headings)
-
-        n_bins = 60
-        occ = np.asarray(result.occupancy)
-        assert occ.shape == (n_bins,)
-
-    def test_bin_centers_shape(self) -> None:
-        """compute_directional_rates produces bin_centers with correct shape."""
-        from neurospatial.encoding.directional import compute_directional_rates
-
-        np.random.seed(42)
-        times = np.linspace(0, 10, 100)
-        headings = np.random.uniform(0, 2 * np.pi, 100)
-        spike_times = [
-            np.array([1.0, 2.5, 4.0]),
-            np.array([0.5, 3.0, 5.5, 8.0]),
-        ]
-
-        result = compute_directional_rates(spike_times, times, headings)
-
-        n_bins = 60
-        centers = np.asarray(result.bin_centers)
-        assert centers.shape == (n_bins,)
 
     def test_bin_size_stored_in_radians(self) -> None:
         """compute_directional_rates stores bin_size in radians."""

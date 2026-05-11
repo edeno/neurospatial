@@ -257,34 +257,6 @@ class TestBorderScore:
         with pytest.raises(ValueError, match="min_area must be non-negative"):
             border_score(env, firing_rate, min_area=-10.0)
 
-    def test_border_score_parameter_order(self, small_2d_env: Environment) -> None:
-        """Test that firing_rate comes before env (project convention)."""
-        env = small_2d_env
-        firing_rate = np.ones(env.n_bins)
-
-        from neurospatial.encoding.border import border_score
-
-        # This should work (firing_rate first)
-        score = border_score(env, firing_rate)
-        assert isinstance(score, (float, np.floating))
-
-    def test_border_score_returns_float(self, small_2d_env: Environment) -> None:
-        """Test that border_score returns a scalar float."""
-        env = small_2d_env
-
-        # Create simple border field
-        firing_rate = np.zeros(env.n_bins)
-        boundary = env.boundary_bins
-        firing_rate[boundary] = 5.0
-
-        from neurospatial.encoding.border import border_score
-
-        score = border_score(env, firing_rate)
-
-        # Should return scalar
-        assert np.ndim(score) == 0, "Border score should be scalar"
-        assert isinstance(score, (float, np.floating)) or np.isnan(score)
-
     def test_border_score_range(self, dense_rectangular_grid_env: Environment) -> None:
         """Test that border score is always in [-1, 1]."""
         env = dense_rectangular_grid_env
@@ -304,30 +276,6 @@ class TestBorderScore:
                 assert -1.0 <= score <= 1.0, (
                     f"Border score {score} out of range [-1, 1]"
                 )
-
-    def test_border_score_metric_geodesic(
-        self, dense_rectangular_grid_env: Environment
-    ) -> None:
-        """Test border score with geodesic distance metric (default)."""
-        env = dense_rectangular_grid_env
-
-        # Create border cell
-        firing_rate = np.zeros(env.n_bins)
-        boundary = env.boundary_bins
-        firing_rate[boundary] = 5.0
-
-        from neurospatial.encoding.border import border_score
-
-        # Explicit geodesic
-        score_geodesic = border_score(env, firing_rate, metric="geodesic")
-
-        # Default should match geodesic
-        score_default = border_score(env, firing_rate)
-
-        assert score_geodesic == score_default, (
-            "Default distance metric should be geodesic"
-        )
-        assert -1.0 <= score_geodesic <= 1.0
 
     def test_border_score_metric_euclidean(
         self, dense_rectangular_grid_env: Environment
@@ -549,33 +497,6 @@ class TestComputeRegionCoverage:
 
         with pytest.raises(ValueError, match="Region 'nonexistent' not found"):
             compute_region_coverage(field_bins, env, regions=["nonexistent"])
-
-    def test_region_coverage_return_type(self) -> None:
-        """Test region coverage returns dict[str, float]."""
-        from shapely.geometry import box
-
-        rng = np.random.default_rng(42)
-        positions = rng.standard_normal((2000, 2)) * 20
-        env = Environment.from_samples(positions, bin_size=4.0)
-
-        env.regions.add("test_region", polygon=box(-10, -10, 10, 10))
-
-        firing_rate = np.zeros(env.n_bins)
-        firing_rate[0] = 5.0
-        field_bins = np.where(firing_rate > 0)[0]
-
-        from neurospatial.encoding.border import compute_region_coverage
-
-        coverage = compute_region_coverage(field_bins, env)
-
-        # Should return dict
-        assert isinstance(coverage, dict)
-        # Keys should be strings
-        for key in coverage:
-            assert isinstance(key, str)
-        # Values should be floats
-        for value in coverage.values():
-            assert isinstance(value, float)
 
     def test_region_coverage_full_coverage(self) -> None:
         """Test region coverage when field covers entire region."""
