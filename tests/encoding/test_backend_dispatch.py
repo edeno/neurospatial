@@ -219,8 +219,28 @@ def _firing_rate_array(result):
     )
 
 
+def _backend_array_module(backend: str):
+    """Module the function's output should originate from for this backend."""
+    if backend == "numpy":
+        return np
+    if backend == "jax":
+        import jax.numpy as jnp
+
+        return jnp
+    raise ValueError(f"Unknown backend: {backend}")
+
+
+def _is_jax_array(arr) -> bool:
+    """True if ``arr`` is a ``jax.numpy`` array."""
+    if not _has_jax():
+        return False
+    import jax
+
+    return isinstance(arr, jax.Array)
+
+
 @pytest.mark.parametrize("func_name", COMPUTE_FUNCTION_NAMES)
-@pytest.mark.parametrize("backend", ["numpy", "jax"])
+@pytest.mark.parametrize("backend", ["numpy", "jax", "auto"])
 def test_backend_smoke_computes_finite_result(
     func_name,
     backend,
@@ -232,18 +252,24 @@ def test_backend_smoke_computes_finite_result(
     trajectory_headings,
     object_positions,
 ):
-    """Every entry point computes a finite result on both backends.
+    """Every entry point computes a finite result on every backend.
 
     Tripwire if dispatch wiring routes a backend to a no-op or stub.
-    The audit found that the previous spatial-only smoke would have
-    missed a regression in ``compute_directional_rate(s)`` ignoring
-    ``backend="jax"`` entirely, since the only positive smoke covered
-    spatial. This parametrized version walks every compute function on
-    both NumPy and JAX.
+    The audit found that:
 
-    Skipped per (function, backend) pair if JAX isn't installed.
+    - The previous spatial-only smoke would have missed a regression in
+      ``compute_directional_rate(s)`` ignoring ``backend="jax"``.
+    - The previous "finite values" assertion would have *also* missed a
+      regression where the JAX path silently returned NumPy arrays —
+      the values would still be finite. The contract for
+      ``backend="jax"`` (see ``directional.py:1511`` and ``:1786``) is
+      that the output is a ``jax.Array``, so we assert that explicitly.
+    - ``backend="auto"`` had no smoke coverage outside spatial.
+
+    Per (function, backend) pair skips if JAX isn't installed and the
+    backend would need it.
     """
-    if backend == "jax" and not _has_jax():
+    if backend in ("jax", "auto") and not _has_jax():
         pytest.skip("JAX not installed (optional 'jax' extra)")
 
     call = _make_call(
@@ -257,7 +283,40 @@ def test_backend_smoke_computes_finite_result(
         object_positions,
     )
     result = call(backend)
-    firing_rate = _firing_rate_array(result)
+    # Pull the raw firing-rate array (un-converted) off the result so we
+    # can check its origin module — the helper ``_firing_rate_array``
+    # would np.asarray it and erase JAX-ness.
+    raw = (
+        getattr(result, "firing_rate", None)
+        if hasattr(result, "firing_rate")
+        else result.firing_rates
+    )
+
+    if backend == "jax":
+        # ``backend="jax"`` documented contract: output is a JAX array.
+        # If the implementation silently dropped through to NumPy this
+        # would be the test that catches it.
+        assert _is_jax_array(raw), (
+            f"{func_name} with backend='jax' returned "
+            f"type={type(raw).__name__}; expected a jax.Array."
+        )
+    elif backend == "auto":
+        # ``backend="auto"`` resolves to JAX when available, else NumPy.
+        # We're inside the ``_has_jax()`` branch (skipped above
+        # otherwise), so JAX is available and the result should be a
+        # JAX array.
+        assert _is_jax_array(raw), (
+            f"{func_name} with backend='auto' returned "
+            f"type={type(raw).__name__}; expected a jax.Array since "
+            "JAX is installed."
+        )
+    else:  # backend == "numpy"
+        assert isinstance(raw, np.ndarray), (
+            f"{func_name} with backend='numpy' returned "
+            f"type={type(raw).__name__}; expected np.ndarray."
+        )
+
+    firing_rate = np.asarray(raw)
     # Output must be non-empty and contain at least one finite value
     # (bins with zero occupancy are NaN by design — that's documented
     # behavior, not a failure). The contract is that the call actually

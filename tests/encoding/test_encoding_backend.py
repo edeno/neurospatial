@@ -137,6 +137,9 @@ class TestGetBackend:
         backend = get_backend("numpy")
         assert backend is np
 
+    @pytest.mark.skipif(
+        not _has_jax(), reason="JAX not installed (optional 'jax' extra)"
+    )
     def test_jax_backend_returns_jax_numpy(self) -> None:
         """get_backend('jax') should return jax.numpy module when available."""
         import jax.numpy as jnp
