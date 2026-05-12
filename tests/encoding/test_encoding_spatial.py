@@ -425,8 +425,10 @@ class TestSpatialRateResultPlot:
         )
         _fig, ax = plt.subplots()
         returned_ax = result.plot(ax=ax)
-        # Should use the provided axes
-        assert returned_ax is ax or returned_ax is not None
+        # Should reuse the caller-supplied axes — the disjunction
+        # in the previous assertion accepted *any* non-None axes, so a
+        # regression that created a new figure would have passed.
+        assert returned_ax is ax
         plt.close("all")
 
 
@@ -1385,7 +1387,10 @@ class TestSpatialRatesResultPlot:
         )
         _fig, ax = plt.subplots()
         returned_ax = result.plot(idx=1, ax=ax)
-        assert returned_ax is ax or returned_ax is not None
+        # Should reuse the caller-supplied axes — the disjunction
+        # in the previous assertion accepted *any* non-None axes, so a
+        # regression that created a new figure would have passed.
+        assert returned_ax is ax
         plt.close("all")
 
     def test_plot_different_neurons(

@@ -269,6 +269,7 @@ class TestBackendEdgeCases:
             get_backend("AUTO")  # Should be "auto"
 
 
+@pytest.mark.skipif(not _has_jax(), reason="JAX not installed (optional 'jax' extra)")
 class TestMinOccupancyPrecisionAcrossBackends:
     """Regression: JAX firing-rate kernels must compare min_occupancy at
     occupancy's dtype.
@@ -279,6 +280,10 @@ class TestMinOccupancyPrecisionAcrossBackends:
     truncates `jnp.asarray(float64_arr, dtype=jnp.float64)` to float32, so the
     same divergence reappeared even after switching to dtype-preserving casts.
     The `_core_jax` module enables x64 globally at import time to fix that.
+
+    Skipped if the optional ``jax`` extra is not installed: the test bodies
+    ``import jax.numpy as jnp`` and would raise ``ModuleNotFoundError`` on a
+    JAX-less dev environment without this guard.
     """
 
     def test_jax_matches_numpy_at_subfloat32_threshold_singular(self) -> None:

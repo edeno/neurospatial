@@ -198,27 +198,75 @@ def test_invalid_backend_raises(
         call("invalid")
 
 
-def test_numpy_backend_smoke_for_spatial_rate(
+def _has_jax() -> bool:
+    """Check if JAX is available on this platform."""
+    import importlib.util
+
+    return importlib.util.find_spec("jax") is not None
+
+
+def _firing_rate_array(result):
+    """Pull the firing-rate array out of a single- or batch-rate result.
+
+    Single-rate results expose ``.firing_rate``; batch-rate results
+    expose ``.firing_rates`` (n_neurons, n_bins). Both are valid output
+    shapes for this smoke test.
+    """
+    return np.asarray(
+        getattr(result, "firing_rate", None)
+        if hasattr(result, "firing_rate")
+        else result.firing_rates
+    )
+
+
+@pytest.mark.parametrize("func_name", COMPUTE_FUNCTION_NAMES)
+@pytest.mark.parametrize("backend", ["numpy", "jax"])
+def test_backend_smoke_computes_finite_result(
+    func_name,
+    backend,
     simple_env,
     spike_times,
+    multi_spike_times,
     trajectory_times,
     trajectory_positions,
+    trajectory_headings,
+    object_positions,
 ):
-    """Sanity check that ``backend="numpy"`` actually computes a result.
+    """Every entry point computes a finite result on both backends.
 
-    Acts as a tripwire if the dispatch wiring is changed in a way that
-    routes ``"numpy"`` to a no-op or stub. The shape match is the load-
-    bearing assertion; the per-function passthrough variants of this
-    test in the previous file simply asserted ``result is not None``,
-    which is automatic for any function with a non-Optional return type.
+    Tripwire if dispatch wiring routes a backend to a no-op or stub.
+    The audit found that the previous spatial-only smoke would have
+    missed a regression in ``compute_directional_rate(s)`` ignoring
+    ``backend="jax"`` entirely, since the only positive smoke covered
+    spatial. This parametrized version walks every compute function on
+    both NumPy and JAX.
+
+    Skipped per (function, backend) pair if JAX isn't installed.
     """
-    from neurospatial.encoding.spatial import compute_spatial_rate
+    if backend == "jax" and not _has_jax():
+        pytest.skip("JAX not installed (optional 'jax' extra)")
 
-    result = compute_spatial_rate(
+    call = _make_call(
+        func_name,
         simple_env,
         spike_times,
+        multi_spike_times,
         trajectory_times,
         trajectory_positions,
-        backend="numpy",
+        trajectory_headings,
+        object_positions,
     )
-    assert np.asarray(result.firing_rate).shape == (simple_env.n_bins,)
+    result = call(backend)
+    firing_rate = _firing_rate_array(result)
+    # Output must be non-empty and contain at least one finite value
+    # (bins with zero occupancy are NaN by design — that's documented
+    # behavior, not a failure). The contract is that the call actually
+    # produced *some* meaningful firing-rate estimate, not just a stub.
+    assert firing_rate.size > 0
+    finite = np.isfinite(firing_rate)
+    assert finite.any(), (
+        f"{func_name} with backend={backend!r} returned all-NaN firing "
+        "rate — call did not produce a real result."
+    )
+    # Finite values must be non-negative (firing rate cannot be < 0).
+    assert (firing_rate[finite] >= 0).all()

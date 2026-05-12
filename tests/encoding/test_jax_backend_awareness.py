@@ -115,6 +115,7 @@ class TestGetArrayModuleWithJax:
     """Tests for _get_array_module helper with JAX arrays."""
 
 
+@skip_without_jax
 class TestSpatialResultMixinWithJax:
     """Tests for SpatialResultMixin methods with JAX arrays."""
 
