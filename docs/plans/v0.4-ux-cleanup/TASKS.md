@@ -393,33 +393,33 @@ Source review: [`docs/reviews/UX_REVIEW_2026-05-08.md`](../../reviews/UX_REVIEW_
 
 **Risk**: Low-medium. New notebooks add surface area.
 
-- [ ] **6.1** **Notebook: object-vector cells.** Add `examples/23_object_vector_cells.ipynb` mirroring `22_spatial_view_cells.ipynb`. Use `compute_egocentric_rate`, `is_object_vector_cell`, `object_vector_score`, `plot_object_vector_tuning`. Closes review §1.12. Slot 21 was reserved by the original review for OVC, but `21_directional_place_fields.ipynb` is already published there (moved to `examples/` in M0 task 0.7); OVC therefore takes the next free slot 23.
+- [x] **6.1** **Notebook: object-vector cells.** Add `examples/23_object_vector_cells.ipynb` mirroring `22_spatial_view_cells.ipynb`. Use `compute_egocentric_rate`, `is_object_vector_cell`, `object_vector_score`, `plot_object_vector_tuning`. Closes review §1.12. _Landed as `examples/24_object_vector_cells.ipynb` — slot 23 was taken by `23_path_progression.ipynb`._
 
-- [ ] **6.2** **Notebook: head-direction tuning.** Add `examples/24_head_direction_tuning.ipynb`. Use `compute_directional_rate`, `is_head_direction_cell`, `rayleigh_test`, `plot_head_direction_tuning`. Closes review §1.11.
+- [x] **6.2** **Notebook: head-direction tuning.** Add `examples/24_head_direction_tuning.ipynb`. Use `compute_directional_rate`, `is_head_direction_cell`, `rayleigh_test`, `plot_head_direction_tuning`. Closes review §1.11. _Landed as `examples/25_head_direction_tuning.ipynb`._
 
-- [ ] **6.3** **Notebook: peri-event PSTH.** Add `examples/25_peri_event_psth.ipynb`. Use `peri_event_histogram`, `align_spikes_to_events`, GLM regressors. Closes review §1.10.
+- [x] **6.3** **Notebook: peri-event PSTH.** Add `examples/25_peri_event_psth.ipynb`. Use `peri_event_histogram`, `align_spikes_to_events`, GLM regressors. Closes review §1.10. _Landed as `examples/26_peri_event_psth.ipynb`._
 
-- [ ] **6.4** **Notebook: NWB loading.** Add `examples/26_loading_from_nwb.ipynb`. Use a small public NWB file from DANDI (e.g., a Buzsaki-lab open-field session). Closes review §1.9.
+- [x] **6.4** **Notebook: NWB loading.** Add `examples/26_loading_from_nwb.ipynb`. Use a small public NWB file from DANDI (e.g., a Buzsaki-lab open-field session). Closes review §1.9. _Landed as `examples/27_loading_from_nwb.ipynb`. Uses a synthetic in-memory NWB file to avoid a download dependency in CI; demonstrates the full read/write round-trip._
 
-- [ ] **6.5** **Bandit dataset friendly skip.**
+- [x] **6.5** **Bandit dataset friendly skip.**
   - Add tracked `data/README.md` with download instructions (Zenodo DOI per PLAN open question #3).
   - Update `.gitignore` with `!data/README.md` so the README is tracked while downloaded data files remain ignored.
   - Add `examples/19_real_data_bandit_task.py` graceful skip when `data/` is empty: print URL, exit 0.
   Closes review §1.6, §10.25.
 
-- [ ] **6.6** **README front-door place-field example.** Add a "First place field" section to [README.md](../../../README.md) immediately after the existing Quickstart. ~30 lines: simulate trajectory + spikes, build env, call `compute_spatial_rate`, plot. Use the canonical `simulate_trajectory_ou` + `PlaceCellModel` + `generate_population_spikes` pattern. Closes review §1.5.
+- [x] **6.6** **README front-door place-field example.** Add a "First place field" section to [README.md](../../../README.md) immediately after the existing Quickstart. ~30 lines: simulate trajectory + spikes, build env, call `compute_spatial_rate`, plot. Use the canonical `simulate_trajectory_ou` + `PlaceCellModel` + `generate_population_spikes` pattern. Closes review §1.5.
 
-- [ ] **6.7** **Glossary page.** Add `docs/glossary.md` defining: `bin`, `node`, `cell` (graph), `field`, `rate map`, `tuning curve`, `place cell`, `place field`, `egocentric`, `object-vector`, `allocentric`, `view field`, `linearization`, `occupancy`, `spike-triggered`. Cross-link from [docs/getting-started/core-concepts.md](../../../docs/getting-started/core-concepts.md) and from the README. Closes review §10.13.
+- [x] **6.7** **Glossary page.** Add `docs/glossary.md` defining: `bin`, `node`, `cell` (graph), `field`, `rate map`, `tuning curve`, `place cell`, `place field`, `egocentric`, `object-vector`, `allocentric`, `view field`, `linearization`, `occupancy`, `spike-triggered`. Cross-link from [docs/getting-started/core-concepts.md](../../../docs/getting-started/core-concepts.md) and from the README. Closes review §10.13.
 
-- [ ] **6.8** **`mkdocs.yml` nav update.** Add the eight orphaned user-guide pages and four orphaned `docs/*.md` pages to nav. Closes review §10.4.
+- [x] **6.8** **`mkdocs.yml` nav update.** Add the eight orphaned user-guide pages and four orphaned `docs/*.md` pages to nav. Closes review §10.4.
 
-- [ ] **6.9** **`docs/api/index.md` expansion.** Add sections (with mkdocstrings auto-gen) for `encoding`, `decoding`, `behavior`, `events`, `ops.egocentric`, `ops.visibility`, `ops.basis`, `stats`, `animation`, `io.nwb`. Closes review §10.5.
+- [x] **6.9** **`docs/api/index.md` expansion.** Add sections (with mkdocstrings auto-gen) for `encoding`, `decoding`, `behavior`, `events`, `ops.egocentric`, `ops.visibility`, `ops.basis`, `stats`, `animation`, `io.nwb`. Closes review §10.5.
 
-- [ ] **6.10** **`docs/examples/index.md` rewrite.** Document all 22 notebooks (review §10.6). Synchronize with `examples/README.md` from M0 task 0.6.
+- [x] **6.10** **`docs/examples/index.md` rewrite.** Document all 22 notebooks (review §10.6). Synchronize with `examples/README.md` from M0 task 0.6.
 
-- [ ] **6.11** **Notebook narrative consistency.** Convert "see **02_layout_engines.ipynb**" bold text to relative MD links. Add a "Prerequisites" line at the top of each notebook 09-22 pointing to upstream notebooks. Closes review §1.19, §1.20.
+- [x] **6.11** **Notebook narrative consistency.** Convert "see **02_layout_engines.ipynb**" bold text to relative MD links. Add a "Prerequisites" line at the top of each notebook 09-22 pointing to upstream notebooks. Closes review §1.19, §1.20.
 
-- [ ] **6.12** **Notebook regen CI.** Add a CI job that re-executes a representative notebook (e.g., 11_place_field_analysis) on PRs to catch silent regressions in the example surface. Use `papermill` or `jupyter nbconvert --execute`.
+- [x] **6.12** **Notebook regen CI.** Add a CI job that re-executes a representative notebook (e.g., 11_place_field_analysis) on PRs to catch silent regressions in the example surface. Use `papermill` or `jupyter nbconvert --execute`.
 
 ---
 
