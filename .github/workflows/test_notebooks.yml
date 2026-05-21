@@ -1,0 +1,46 @@
+name: Notebook regen smoke
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+# Runs ONE representative notebook end-to-end to catch silent
+# regressions in the example surface that ``test_doc_snippets`` (which
+# only exercises hand-curated snippets) wouldn't see. The choice of
+# notebook is intentional: 11_place_field_analysis exercises
+# ``Environment.from_samples`` → ``compute_spatial_rate`` →
+# ``detect_place_fields`` → the metrics suite, which is the most
+# commonly-failing axis in practice.
+jobs:
+  re-execute-place-field-notebook:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: latest
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Re-execute 11_place_field_analysis.ipynb
+        env:
+          MPLBACKEND: Agg
+        run: |
+          uv run jupyter nbconvert \
+            --to notebook \
+            --execute \
+            --inplace \
+            --ExecutePreprocessor.timeout=600 \
+            examples/11_place_field_analysis.ipynb

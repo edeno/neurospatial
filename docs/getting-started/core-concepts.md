@@ -349,3 +349,4 @@ Key takeaways:
 - **[User Guide](../user-guide/index.md)**: Detailed feature guides
 - **[API Reference](../api/index.md)**: Complete API documentation
 - **[Examples](../examples/index.md)**: Real-world use cases
+- **[Glossary](../glossary.md)**: Spatial-coding vocabulary reference

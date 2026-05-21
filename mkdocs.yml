@@ -160,8 +160,20 @@ nav:
       - Composite Environments: user-guide/composite-environments.md
       - Alignment & Transforms: user-guide/alignment.md
       - Spatial Analysis: user-guide/spatial-analysis.md
+      - Spike-Field Primitives: user-guide/spike-field-primitives.md
+      - Signal Processing Primitives: user-guide/signal-processing-primitives.md
+      - Differential Operators: user-guide/differential-operators.md
+      - Neuroscience Metrics: user-guide/neuroscience-metrics.md
+      - Trajectory & Behavioral Analysis: user-guide/trajectory-and-behavioral-analysis.md
+      - RL Primitives: user-guide/rl-primitives.md
       - Field Animation: user-guide/animation.md
+      - Animation Overlays: animation_overlays.md
+      - Dimensionality Support: dimensionality_support.md
       - Complete Workflows: user-guide/workflows.md
+      - Performance: user-guide/performance.md
+  - Reference:
+      - Errors: errors.md
+      - Glossary: glossary.md
   - API Reference:
       - api/index.md
   - Examples:

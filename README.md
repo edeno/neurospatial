@@ -172,6 +172,63 @@ env.plot(ax=ax)
 plt.show()
 ```
 
+### Your First Place Field
+
+A neuroscientist's first task is usually: "I have an animal moving
+around and spikes from a neuron — show me where the cell fires." Here
+is the end-to-end pipeline using simulated data so you can run it
+right now without any setup:
+
+```python
+import numpy as np
+import matplotlib.pyplot as plt
+
+from neurospatial import Environment
+from neurospatial.encoding import compute_spatial_rate
+from neurospatial.simulation import generate_population_spikes
+from neurospatial.simulation.models import PlaceCellModel
+from neurospatial.simulation.trajectory import simulate_trajectory_ou
+
+# 1. Build a square open-field environment (60 × 60 cm, 2 cm bins).
+xx, yy = np.meshgrid(np.linspace(0, 60, 31), np.linspace(0, 60, 31))
+arena_corners = np.column_stack([xx.ravel(), yy.ravel()])
+env = Environment.from_samples(arena_corners, bin_size=2.0)
+env.units = "cm"
+
+# 2. Simulate ten minutes of foraging.
+positions_t, times = simulate_trajectory_ou(
+    env, duration=600.0, speed_units="cm", seed=42,
+)
+
+# 3. Build a place cell tuned to the middle of the arena.
+cell = PlaceCellModel(env, center=np.array([30.0, 30.0]), width=8.0,
+                      max_rate=15.0, seed=42)
+
+# 4. Generate the spike train from the cell's firing model + trajectory.
+spike_times = generate_population_spikes(
+    [cell], positions_t, times, seed=42, show_progress=False,
+)[0]
+
+# 5. Recover the place field from spikes + trajectory.
+result = compute_spatial_rate(
+    env, spike_times, times, positions_t,
+    smoothing_method="diffusion_kde", bandwidth=5.0,
+)
+
+# 6. Plot.
+fig, ax = plt.subplots()
+result.plot(ax=ax)
+ax.set_title("Place field recovered from simulated spikes")
+plt.show()
+```
+
+The recovered field will be a Gaussian-like blob centered near `(30,
+30)` — the same location we put the simulated cell. From here you can
+swap in real spike times, change the trajectory, add more cells, or
+detect place fields with [`detect_place_fields`](https://edeno.github.io/neurospatial/api/).
+See [example 11](https://github.com/edeno/neurospatial/blob/main/examples/11_place_field_analysis.ipynb)
+for the full tutorial.
+
 ## Core Concepts
 
 ### Bins and Active Bins
@@ -512,6 +569,7 @@ env.animate_fields(
 - **[User Guide](https://edeno.github.io/neurospatial/user-guide/)**: Detailed feature documentation
 - **[API Reference](https://edeno.github.io/neurospatial/api/)**: Auto-generated API documentation
 - **[Examples](https://edeno.github.io/neurospatial/examples/)**: Jupyter notebooks with real-world use cases
+- **[Glossary](https://edeno.github.io/neurospatial/glossary/)**: Spatial-coding vocabulary reference
 - **[Contributing](https://edeno.github.io/neurospatial/contributing/)**: Guidelines for contributors
 - **[CLAUDE.md](CLAUDE.md)**: Development guide for Claude Code users
 - **[GitHub Issues](https://github.com/edeno/neurospatial/issues)**: Bug reports and feature requests

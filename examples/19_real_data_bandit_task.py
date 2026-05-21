@@ -74,7 +74,36 @@ except NameError:
     _start_path = Path.cwd().resolve()
 _base_path = _find_project_root(_start_path)
 
-_loader_path = _base_path / "data" / "load_bandit_data.py"
+# Required data files for this notebook. If any are missing, print a
+# download URL and bail with sys.exit(0) so the docs build / notebook
+# regen CI doesn't fail on a clean checkout. Raw datasets are gitignored.
+_session_id = "j1620210710_02_r1"
+_required_files = [
+    f"{_session_id}_position_info.pkl",
+    f"{_session_id}_HPC_spike_times.pkl",
+    f"{_session_id}_track_graph.pkl",
+    f"{_session_id}_linear_edge_order.pkl",
+    f"{_session_id}_linear_edge_spacing.pkl",
+]
+_data_dir = _base_path / "data"
+_missing = [name for name in _required_files if not (_data_dir / name).exists()]
+if _missing:
+    import sys
+
+    print("=" * 70)
+    print("J16 BANDIT DATASET NOT FOUND")
+    print("=" * 70)
+    print(f"\nMissing files in {_data_dir}:")
+    for name in _missing:
+        print(f"  - {name}")
+    print(
+        "\nDownload from Zenodo (see data/README.md for the published "
+        "DOI / download links), then re-run this notebook."
+    )
+    print("Exiting cleanly so the notebook regen CI doesn't fail.")
+    sys.exit(0)
+
+_loader_path = _data_dir / "load_bandit_data.py"
 _loader_spec = importlib.util.spec_from_file_location("load_bandit_data", _loader_path)
 if _loader_spec is None or _loader_spec.loader is None:
     raise ImportError(f"Could not load bandit data helper from {_loader_path}")
