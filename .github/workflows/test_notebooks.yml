@@ -32,7 +32,7 @@ jobs:
           version: latest
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: uv sync --extra dev --extra notebooks
 
       - name: Re-execute 11_place_field_analysis.ipynb
         env:

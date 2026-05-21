@@ -19,14 +19,14 @@ snippets:
       import os
       os.environ["MPLBACKEND"] = "Agg"
 
-  - id: readme_simulation_quick_example
+  - id: readme_your_first_place_field
     source: README.md
     kind: markdown
-    # Block 5 in README.md is the "Simulation > Quick Example" block. It used
-    # to reference an undefined `arena_data` (M2 review finding); now defines
-    # it inline. Worth covering in CI because this is the canonical
-    # spike-generation -> compute_spatial_rate end-to-end demo.
-    index: 5
+    # Block 1 in README.md is the "Your First Place Field" section, the
+    # front-door end-to-end example added in v0.4 (simulate_trajectory_ou
+    # + PlaceCellModel + generate_population_spikes + compute_spatial_rate).
+    # Sized to run in ~10 s on CI.
+    index: 1
     setup: |
       import os
       os.environ["MPLBACKEND"] = "Agg"
@@ -35,15 +35,28 @@ snippets:
   - id: readme_common_use_cases_position_analysis
     source: README.md
     kind: markdown
-    index: 1
+    index: 2
     setup: |
       import os
       os.environ["MPLBACKEND"] = "Agg"
 
+  - id: readme_simulation_quick_example
+    source: README.md
+    kind: markdown
+    # Block 6 in README.md is the "Simulation > Quick Example" block. It used
+    # to reference an undefined `arena_data` (M2 review finding); now defines
+    # it inline. Worth covering in CI because this is the canonical
+    # spike-generation -> compute_spatial_rate end-to-end demo.
+    index: 6
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"
+    timeout: 120
+
   - id: readme_animation_napari_block
     source: README.md
     kind: markdown
-    index: 6
+    index: 7
     skip: |
       Animation snippet requires napari + GPU/X11 + ffmpeg; not appropriate
       for a CI smoke test. Animation behavior is exercised by notebooks
@@ -52,7 +65,7 @@ snippets:
   - id: readme_animation_large_dataset_block
     source: README.md
     kind: markdown
-    index: 7
+    index: 8
     skip: |
       Same as readme_animation_napari_block: requires napari/ffmpeg.
 
