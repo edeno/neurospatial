@@ -8,8 +8,6 @@ from typing import Any
 import numpy as np
 import pytest
 
-from neurospatial.encoding._backend import is_jax_available
-
 
 @pytest.fixture(autouse=True)
 def restore_numpy_random_state() -> Generator[None, None, None]:
@@ -23,7 +21,15 @@ def restore_numpy_random_state() -> Generator[None, None, None]:
 @pytest.fixture(autouse=True)
 def restore_jax_x64_config() -> Generator[None, None, None]:
     """Keep tests that enable JAX x64 from leaking global config state."""
-    if not is_jax_available():
+    # Resolve ``is_jax_available`` dynamically. ``restore_backend_availability_cache``
+    # below calls ``importlib.reload(backend_module)`` on teardown, which
+    # rebinds ``is_jax_available`` to a fresh function inside the module —
+    # a module-level ``from … import is_jax_available`` here would silently
+    # point at the *pre-reload* function (with its own stale LRU cache) on
+    # every test after the first.
+    import neurospatial.encoding._backend as backend_module
+
+    if not backend_module.is_jax_available():
         yield
         return
 
@@ -39,12 +45,15 @@ def restore_jax_x64_config() -> Generator[None, None, None]:
 def restore_backend_availability_cache() -> Generator[None, None, None]:
     """Isolate the ``_backend`` module's LRU cache across tests.
 
-    Tests that monkeypatch ``sys.platform`` and call ``cache_clear()``
-    (or ``importlib.reload(backend_module)``) leave the module holding
-    stale state once ``sys.platform`` is restored. Without a teardown,
-    subsequent tests run against that perturbed module — order-dependent
-    under xdist. Clearing pre-yield and reloading on teardown gives
-    every test in the ``encoding`` suite a clean cache.
+    Tests that monkeypatch ``sys.platform`` or call ``cache_clear()``
+    leave the module holding stale availability state once
+    ``sys.platform`` is restored. Without a teardown, subsequent tests
+    run against that perturbed module — order-dependent under xdist.
+
+    Autouse so any test in the encoding suite that mutates platform or
+    reloads ``_backend`` is cleaned up, even if it forgets to request
+    the fixture. Clears pre-yield and reloads the module on teardown,
+    giving every test a fresh ``is_jax_available()`` lookup.
     """
     import importlib
 

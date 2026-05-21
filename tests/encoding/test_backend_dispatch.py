@@ -6,10 +6,12 @@ JAX backend is available, ``"auto"`` falls back to NumPy otherwise.
 This file pins three contracts per entry point:
 
 1. ``backend="invalid"`` raises ``ValueError("Unknown backend")``.
-2. The configured backend's array type appears on the result's
-   ``firing_rate`` / ``firing_rates`` field.
+2. ``backend={"numpy","jax","auto"}`` produces a non-empty firing-rate
+   array of the expected type (``jax.Array`` when JAX resolves,
+   ``np.ndarray`` otherwise), with at least one finite, non-negative
+   bin.
 3. ``backend="jax"`` raises ``ImportError`` when JAX is unavailable;
-   ``backend="auto"`` falls back to NumPy.
+   ``backend="auto"`` falls back to NumPy on the same platforms.
 """
 
 from __future__ import annotations
@@ -75,37 +77,55 @@ def compute_inputs(
     trajectory_positions: NDArray[np.float64],
     trajectory_headings: NDArray[np.float64],
     object_positions: NDArray[np.float64],
-) -> tuple:
-    """Bundle the seven raw input fixtures every compute function needs.
+) -> dict[str, object]:
+    """Bundle the seven raw input fixtures the compute functions consume.
 
-    Each parametrized test below would otherwise list all seven in its
-    signature and forward them positionally to ``_make_call``.
+    ``_make_call`` selects the subset each entry point needs (e.g.
+    ``compute_directional_rate`` skips ``simple_env`` and
+    ``object_positions``). Returning a ``dict`` rather than a tuple
+    means callers spread with ``**compute_inputs`` and the fixture is
+    addressed by keyword inside ``_make_call`` — silent-fail-free even
+    if the bundle gains or reorders entries later.
     """
-    return (
-        simple_env,
-        spike_times,
-        multi_spike_times,
-        trajectory_times,
-        trajectory_positions,
-        trajectory_headings,
-        object_positions,
-    )
+    return {
+        "simple_env": simple_env,
+        "spike_times": spike_times,
+        "multi_spike_times": multi_spike_times,
+        "trajectory_times": trajectory_times,
+        "trajectory_positions": trajectory_positions,
+        "trajectory_headings": trajectory_headings,
+        "object_positions": object_positions,
+    }
 
 
 def _simulate_jax_unavailable(monkeypatch) -> None:
     """Force ``is_jax_available()`` to return ``False`` for this test.
 
-    Patches ``sys.platform`` to ``"win32"`` (the documented JAX-
-    unavailable trigger at ``_backend.py:81``) and clears the LRU cache
-    so the next ``is_jax_available()`` call re-evaluates under the
-    patched platform. The conftest-level
-    ``restore_backend_availability_cache`` fixture restores state on
-    teardown.
+    Patches ``sys.platform`` to ``"win32"`` — JAX has no Windows wheels,
+    so ``is_jax_available()`` short-circuits to ``False`` before
+    attempting any ``import jax``. The cache clear must come **after**
+    the patch: doing it the other way leaves a stale ``True`` in the
+    LRU if anything reads the predicate between the clear and the
+    patch. The conftest-level ``restore_backend_availability_cache``
+    fixture restores state on teardown.
+
+    Asserts after the patch that the predicate now reports ``False``.
+    This catches two silent-failure modes: the patch failing to take
+    effect (e.g., someone reorders the two operations), and the test
+    being run on a JAX-less CI where the predicate is *already* False
+    for a different reason — in which case this helper trivially
+    "works" without exercising the win32 branch it claims to test.
     """
     import neurospatial.encoding._backend as backend_module
 
     monkeypatch.setattr(sys, "platform", "win32")
     backend_module.is_jax_available.cache_clear()
+    assert not backend_module.is_jax_available(), (
+        "Could not simulate JAX-unavailable: either the patch did not "
+        "take effect, or this test is running on a platform where JAX "
+        "is genuinely unavailable. The win32 short-circuit path is not "
+        "being exercised."
+    )
 
 
 def _make_call(
@@ -213,7 +233,7 @@ COMPUTE_FUNCTION_NAMES = [
 @pytest.mark.parametrize("func_name", COMPUTE_FUNCTION_NAMES)
 def test_invalid_backend_raises(func_name, compute_inputs):
     """``backend="invalid"`` raises ``ValueError("Unknown backend")``."""
-    call = _make_call(func_name, *compute_inputs)
+    call = _make_call(func_name, **compute_inputs)
     with pytest.raises(ValueError, match="Unknown backend"):
         call("invalid")
 
@@ -229,7 +249,7 @@ def test_backend_smoke_computes_finite_result(func_name, backend, compute_inputs
     expect_jax = backend == "jax" or (backend == "auto" and jax_available)
     expected_type = "jax.Array" if expect_jax else "np.ndarray"
 
-    call = _make_call(func_name, *compute_inputs)
+    call = _make_call(func_name, **compute_inputs)
     result = call(backend)
     raw = result.firing_rate if hasattr(result, "firing_rate") else result.firing_rates
 
@@ -263,7 +283,7 @@ def test_auto_backend_falls_back_to_numpy_when_jax_backend_unavailable(
     """``backend="auto"`` returns NumPy when the JAX backend is unavailable."""
     _simulate_jax_unavailable(monkeypatch)
 
-    call = _make_call(func_name, *compute_inputs)
+    call = _make_call(func_name, **compute_inputs)
     result = call("auto")
     raw = result.firing_rate if hasattr(result, "firing_rate") else result.firing_rates
 
@@ -287,6 +307,6 @@ def test_jax_backend_propagates_import_error_when_unavailable(
     surfaces immediately.
     """
     _simulate_jax_unavailable(monkeypatch)
-    call = _make_call(func_name, *compute_inputs)
+    call = _make_call(func_name, **compute_inputs)
     with pytest.raises(ImportError, match="JAX"):
         call("jax")
