@@ -441,7 +441,7 @@ print("All environments created successfully!")
 #
 # ## Next Steps
 #
-# In the next notebook (**03_morphological_operations.ipynb**), you'll learn:
+# In the next notebook ([03_morphological_operations.ipynb](03_morphological_operations.ipynb)), you'll learn:
 # - How to handle sparse or patchy data
 # - Morphological operations: dilate, fill_holes, close_gaps
 # - Controlling active bin inference

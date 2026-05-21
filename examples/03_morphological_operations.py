@@ -699,7 +699,7 @@ check_environment_quality(env_fixed)
 #
 # ## Next Steps
 #
-# In the next notebook (**04_regions_of_interest.ipynb**), you'll learn:
+# In the next notebook ([04_regions_of_interest.ipynb](04_regions_of_interest.ipynb)), you'll learn:
 # - How to define named regions (goal locations, reward zones)
 # - Point vs polygon regions
 # - Querying spatial relationships

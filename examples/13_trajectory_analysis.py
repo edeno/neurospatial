@@ -20,6 +20,8 @@
 #
 # **Estimated time**: 10-15 minutes
 #
+# **Prerequisites**: [01_introduction_basics.ipynb](01_introduction_basics.ipynb)
+#
 # ## Learning Objectives
 #
 # By the end of this notebook, you will be able to:

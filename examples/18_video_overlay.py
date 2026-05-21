@@ -28,6 +28,8 @@
 #
 # **Estimated time**: 15-20 minutes
 #
+# **Prerequisites**: [17_animation_with_overlays.ipynb](17_animation_with_overlays.ipynb)
+#
 # ## Learning Objectives
 #
 # By the end of this notebook, you will be able to:

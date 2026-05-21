@@ -893,7 +893,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
 #
 # ## Next Steps
 #
-# In the next notebook (**07_advanced_operations.ipynb**), you'll learn:
+# In the next notebook ([07_advanced_operations.ipynb](07_advanced_operations.ipynb)), you'll learn:
 # - Advanced path finding and geodesic distances
 # - Alignment and coordinate transformations
 # - Mapping probability distributions between environments

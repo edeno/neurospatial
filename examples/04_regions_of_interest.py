@@ -579,7 +579,7 @@ print("Updated region successfully using update_region()")
 #
 # ## Next Steps
 #
-# In the next notebook (**05_track_linearization.ipynb**), you'll learn:
+# In the next notebook ([05_track_linearization.ipynb](05_track_linearization.ipynb)), you'll learn:
 # - 1D linearized tracks with GraphLayout
 # - Converting between N-D and linear coordinates
 # - Plus maze analysis example
