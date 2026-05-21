@@ -51,15 +51,18 @@ from neurospatial.simulation import (
 # Set random seed for reproducibility
 np.random.seed(42)
 
-# Configure matplotlib for clear, readable figures
-plt.rcParams["figure.figsize"] = (14, 5)
-plt.rcParams["font.size"] = 12
-plt.rcParams["axes.labelsize"] = 13
-plt.rcParams["axes.titlesize"] = 14
-plt.rcParams["xtick.labelsize"] = 11
-plt.rcParams["ytick.labelsize"] = 11
-plt.rcParams["legend.fontsize"] = 11
-plt.rcParams["figure.titlesize"] = 15
+# Shared styling (Okabe-Ito palette, consistent figure / font sizes)
+import sys  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+_here = (
+    str(Path(__file__).resolve().parent) if "__file__" in globals() else str(Path.cwd())
+)
+if _here not in sys.path:
+    sys.path.insert(0, _here)
+from _style import apply_style  # noqa: E402
+
+apply_style(figsize=(14, 5), font_size=12)
 
 # Use colorblind-friendly colors (Wong palette)
 WONG_COLORS = {

@@ -89,8 +89,17 @@ _loader_module = importlib.util.module_from_spec(_loader_spec)
 _loader_spec.loader.exec_module(_loader_module)
 load_neural_recording_from_files = _loader_module.load_neural_recording_from_files
 
-plt.rcParams["figure.figsize"] = (12, 8)
-plt.rcParams["font.size"] = 11
+# Shared styling (Okabe-Ito palette, consistent figure / font sizes)
+import sys  # noqa: E402
+
+_here = (
+    str(Path(__file__).resolve().parent) if "__file__" in globals() else str(Path.cwd())
+)
+if _here not in sys.path:
+    sys.path.insert(0, _here)
+from _style import apply_style  # noqa: E402
+
+apply_style(figsize=(12, 8), font_size=11)
 
 # %% [markdown]
 # ## 1. Load the bandit-task recording

@@ -65,11 +65,18 @@ from neurospatial.stats.shuffle import compute_shuffle_pvalue, shuffle_time_bins
 # Set random seed for reproducibility
 np.random.seed(42)
 
-# Configure matplotlib for clear figures
-plt.rcParams["figure.figsize"] = (12, 5)
-plt.rcParams["font.size"] = 12
-plt.rcParams["axes.labelsize"] = 13
-plt.rcParams["axes.titlesize"] = 14
+# Shared styling (Okabe-Ito palette, consistent figure / font sizes)
+import sys  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+_here = (
+    str(Path(__file__).resolve().parent) if "__file__" in globals() else str(Path.cwd())
+)
+if _here not in sys.path:
+    sys.path.insert(0, _here)
+from _style import apply_style  # noqa: E402
+
+apply_style(figsize=(12, 5), font_size=12)
 
 # Colorblind-friendly palette
 COLORS = {

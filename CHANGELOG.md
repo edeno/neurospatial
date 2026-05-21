@@ -161,9 +161,10 @@ clean delete-and-replace. Pin to `<0.4.0` if you need the old surface.
   re-executes `11_place_field_analysis.ipynb` per PR to catch silent
   regressions in the example surface.
 - **Shared example styling.** `examples/_style.py` Wong / Okabe-Ito
-  palette and fixed figure sizes. Wired into the four new advanced
-  notebooks (24-27); legacy notebooks 01-22 keep their inline rcParams
-  blocks for now.
+  palette and fixed figure sizes. Wired into every tutorial notebook
+  that previously set matplotlib rcParams inline (01-08, 19, 20,
+  22-27). Notebooks 09-18 and 21 had no rcParams blocks and
+  intentionally keep matplotlib defaults.
 
 ### Changed
 

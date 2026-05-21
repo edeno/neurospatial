@@ -60,8 +60,18 @@ from shapely.geometry import Point
 from neurospatial import CompositeEnvironment, Environment
 
 np.random.seed(42)
-plt.rcParams["figure.figsize"] = (14, 10)
-plt.rcParams["font.size"] = 11
+# Shared styling (Okabe-Ito palette, consistent figure / font sizes)
+import sys  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+_here = (
+    str(Path(__file__).resolve().parent) if "__file__" in globals() else str(Path.cwd())
+)
+if _here not in sys.path:
+    sys.path.insert(0, _here)
+from _style import apply_style  # noqa: E402
+
+apply_style(figsize=(14, 10), font_size=11)
 
 # %% [markdown]
 # ## Example 1: Two-Room Experiment
@@ -821,7 +831,6 @@ print(f"Path result: {path} (empty list indicates no path exists)")
 
 # %%
 import tempfile  # noqa: E402
-from pathlib import Path  # noqa: E402
 
 # Save composite environment to file
 with tempfile.TemporaryDirectory() as tmpdir:

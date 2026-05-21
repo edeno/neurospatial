@@ -61,9 +61,18 @@ from neurospatial import Environment
 # Set random seed for reproducibility
 np.random.seed(42)
 
-# Configure matplotlib
-plt.rcParams["figure.figsize"] = (10, 8)
-plt.rcParams["font.size"] = 11
+# Shared styling (Okabe-Ito palette, consistent figure / font sizes)
+import sys  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+_here = (
+    str(Path(__file__).resolve().parent) if "__file__" in globals() else str(Path.cwd())
+)
+if _here not in sys.path:
+    sys.path.insert(0, _here)
+from _style import apply_style  # noqa: E402
+
+apply_style(figsize=(10, 8), font_size=11)
 
 # %% [markdown]
 # ## Creating Synthetic Position Data
