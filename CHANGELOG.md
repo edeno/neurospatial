@@ -13,9 +13,10 @@ clean delete-and-replace. Pin to `<0.4.0` if you need the old surface.
 
 - **`distance_metric` / `distance_type` / `use_geodesic` → `metric`** across
   all physical-distance APIs. Legal values are `{"euclidean", "geodesic"}`.
-  Affects `Environment.distance_to`, `Environment.distance_between`,
-  `compute_egocentric_rate(s)`, `compute_egocentric_distance`,
-  `ObjectVectorCellModel`, and the boundary / border modules. (M2.1)
+  Affects `Environment.distance_to`, `compute_egocentric_rate(s)`,
+  `compute_egocentric_distance`, `compute_spatial_rate(s)`,
+  `ObjectVectorCellModel`, `PlaceCellModel`, `BoundaryCellModel`, and the
+  boundary / border modules. (M2.1)
 - **`smoothing_sigma` / `kernel_bandwidth` → `bandwidth`** across smoothing
   APIs (`compute_spatial_rate(s)`, `compute_view_rate(s)`,
   `compute_egocentric_rate(s)`, `Environment.smooth`, KDE helpers). (M2.2)
@@ -36,8 +37,9 @@ clean delete-and-replace. Pin to `<0.4.0` if you need the old surface.
   function in `decoding/estimates.py`). (M2.8)
 - **Singular vs plural method/attribute normalization** on result classes
   (single-neuron results use singular methods; batch results use plural).
-  Notable renames include `SpatialRatesResult.detect_place_field(s)` and
-  similar across the encoding module. (M2.7)
+  Renames: `SpatialRateResult.peak_firing_rates()` → `peak_firing_rate()`,
+  `SpatialRateResult.peak_locations()` → `peak_location()`,
+  `ViewRateResult.peak_view_locations()` → `peak_view_location()`. (M2.7)
 - **`is_X_cell` method names** normalized to match the free-function names
   (`is_object_vector_cell`, `is_spatial_view_cell`,
   `is_head_direction_cell`). (M2.9)
@@ -150,7 +152,9 @@ clean delete-and-replace. Pin to `<0.4.0` if you need the old surface.
   re-executes `11_place_field_analysis.ipynb` per PR to catch silent
   regressions in the example surface. (M6.12)
 - **Shared example styling.** `examples/_style.py` Wong / Okabe-Ito
-  palette and fixed figure sizes for all tutorial notebooks. (M7.4)
+  palette and fixed figure sizes. Wired into the four new advanced
+  notebooks (24-27); legacy notebooks 01-22 keep their inline rcParams
+  blocks for now. (M7.4)
 
 ### Changed
 
@@ -218,53 +222,57 @@ clean delete-and-replace. Pin to `<0.4.0` if you need the old surface.
 ### Major feature additions (v0.3.x development cycle)
 
 The following features were developed during the v0.3.x development
-line and ship as part of v0.4.0.
+line and ship as part of v0.4.0. The names below reflect the final
+v0.4 surface — many of these symbols were introduced under earlier
+names that were renamed during the M2 consolidation pass (see
+**Breaking changes** above for the v0.3 → v0.4 mapping).
 
 #### Added (features)
 
-- **Spatial View Cells**: Complete spatial view cell analysis infrastructure
-  - `compute_spatial_view_field()` - Compute firing fields indexed by viewed location (not position)
-  - `SpatialViewFieldResult` frozen dataclass with field, view_occupancy
-  - `SpatialViewMetrics` frozen dataclass with Skaggs info, sparsity, coherence, classification
-  - `spatial_view_cell_metrics()` - Compare view fields vs place fields
-  - `is_spatial_view_cell()` - Classify based on view info > place info
-  - `SpatialViewCellModel` simulation model with gaze models (fixed_distance, ray_cast, boundary)
-  - 83 new tests for spatial view cell modules
+- **Spatial View Cells**: Firing-rate fields indexed by gaze location
+  - `compute_view_rate()` / `compute_view_rates()` — single / batch
+  - `ViewRateResult` frozen dataclass (`firing_rate`, `occupancy`,
+    `env`, plus `view_spatial_information()`, `is_spatial_view_cell()`,
+    `sparsity()`, `selectivity()` methods)
+  - `is_spatial_view_cell()` free-function classifier
+  - `SpatialViewCellModel` simulation model with three gaze models
+    (`fixed_distance`, `ray_cast`, `boundary`)
 
-- **Visibility and Gaze Analysis**: Ray-casting visibility for spatial view cells
-  - `FieldOfView` frozen dataclass with species presets (rat ~320°, primate ~180°)
-  - `ViewshedResult` frozen dataclass with visible bins, cues, occlusion map
-  - `compute_viewed_location()` - Gaze-directed location computation
-  - `compute_viewshed()` - Ray-casting visibility analysis from observer position
-  - `compute_view_field()` - Binary visibility mask
-  - `visible_cues()` - Check line-of-sight to cue/landmark positions
-  - `compute_viewshed_trajectory()` - Viewshed analysis along trajectory
-  - `visibility_occupancy()` - Time each bin was visible during trajectory
-  - 45 new tests for visibility module
+- **Visibility and Gaze**: Ray-casting visibility for view cells
+  - `FieldOfView` frozen dataclass with species presets
+    (`FieldOfView.rat()`, `FieldOfView.primate()`)
+  - `ViewshedResult` frozen dataclass (visible bins + visibility
+    fraction)
+  - `compute_viewed_location()` — gaze-directed location projection
+  - `compute_viewshed()` / `compute_viewshed_trajectory()` /
+    `compute_view_field()` — observer-position visibility analysis
+  - `visible_cues()` — line-of-sight check to cue / landmark positions
+  - `visibility_occupancy()` — time each bin was visible
 
-- **Object-Vector Cells**: Complete object-vector cell analysis infrastructure
-  - `compute_object_vector_field()` - Compute firing fields in egocentric polar coordinates
-  - `ObjectVectorFieldResult` frozen dataclass with field, ego_env, occupancy
-  - `ObjectVectorMetrics` frozen dataclass with tuning curve, selectivity scores
-  - `compute_object_vector_tuning()` - Bin spikes by egocentric distance/direction to objects
-  - `object_vector_score()` - Combined distance and direction selectivity metric
-  - `is_object_vector_cell()` - Classify based on score threshold
-  - `plot_object_vector_tuning()` - Polar heatmap visualization
-  - `ObjectVectorCellModel` simulation model with distance/direction tuning
-  - `ObjectVectorOverlay` for animation with object-animal vectors
-  - 84 new tests for object-vector cell modules
+- **Object-Vector Cells**: Firing fields in egocentric polar coordinates
+  - `compute_egocentric_rate()` / `compute_egocentric_rates()`
+  - `EgocentricRateResult` / `EgocentricRatesResult` frozen dataclasses
+    (`firing_rate`, `occupancy`, `env`, plus `preferred_distance()`,
+    `preferred_direction()`, `egocentric_spatial_information()`,
+    `is_object_vector_cell()` methods)
+  - `object_vector_score()` — distance × direction selectivity metric
+  - `is_object_vector_cell()` free-function classifier
+  - `plot_object_vector_tuning()` — polar heatmap visualization
+  - `ObjectVectorCellModel` simulation model with von Mises directional
+    tuning
+  - `ObjectVectorOverlay` for animation with object–animal vectors
 
-- **Egocentric Reference Frames**: Foundation for object-vector and spatial view cells
-  - `EgocentricFrame` dataclass with `to_egocentric()` / `to_allocentric()` transforms
-  - `allocentric_to_egocentric()` - Batch transform world→animal coordinates
-  - `egocentric_to_allocentric()` - Batch inverse transform
-  - `compute_egocentric_bearing()` - Angle to targets relative to heading (0=ahead, π/2=left)
-  - `compute_egocentric_distance()` - Euclidean and geodesic distance metrics
-  - `heading_from_velocity()` - Compute heading from position timeseries with smoothing
-  - `heading_from_body_orientation()` - Compute heading from pose keypoints (nose-tail)
-  - `Environment.from_polar_egocentric()` - Create egocentric polar coordinate environment
-  - Circular connectivity option for full-circle polar environments
-  - 56 new tests for reference frame and polar environment modules
+- **Egocentric Reference Frames**: Foundation for object-vector and view cells
+  - `EgocentricFrame` dataclass with `to_egocentric()` / `to_allocentric()`
+  - `allocentric_to_egocentric()` / `egocentric_to_allocentric()` —
+    batch frame transforms
+  - `compute_egocentric_bearing()` — angle to targets relative to
+    heading (egocentric convention: 0 = ahead, +π/2 = left)
+  - `compute_egocentric_distance()` — Euclidean and geodesic distance
+  - `heading_from_velocity()` / `heading_from_body_orientation()` —
+    derive heading from tracking data
+  - `Environment.from_polar_egocentric()` — egocentric polar coordinate
+    environment with optional circular connectivity
 
 - **3D Transform Support**: Full N-dimensional affine transformation capabilities
   - New `AffineND` class for N-dimensional affine transforms using (N+1)×(N+1) homogeneous matrices

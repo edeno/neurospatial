@@ -260,14 +260,20 @@ print(
 #
 # ``read_environment`` reconstructs the full ``Environment`` (active
 # bins, connectivity graph, regions, layout) from the stored bin
-# centres and edge list. The reconstructed object is functionally
-# equivalent to the original.
+# centres and edge list. Check the pieces we care about to confirm
+# the round-trip is structurally faithful:
 
 # %%
 env_back = read_environment(nwbfile, name="my_environment")
 print(f"Original env:   {env.n_bins} bins, units={env.units}")
 print(f"Round-trip env: {env_back.n_bins} bins, units={env_back.units}")
 print(f"bin_centers match: {np.allclose(env.bin_centers, env_back.bin_centers)}")
+print(
+    f"n_edges match:     {env.connectivity.number_of_edges() == env_back.connectivity.number_of_edges()}"
+)
+print(f"units match:       {env.units == env_back.units}")
+# Note: regions and layout class are also preserved; see read_environment
+# documentation for the full equivalence contract.
 
 # %% [markdown]
 # ## Summary

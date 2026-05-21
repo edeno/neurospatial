@@ -171,16 +171,20 @@ ax_raster.set_title("Peri-Event Raster + PSTH")
 ax_raster.legend(loc="upper right")
 
 # PSTH (firing rate +/- SEM)
+# result.sem is in count units; divide by bin_size to get Hz.
+# With a single event the SEM is undefined and the library returns NaN
+# (see peri_event_histogram docstring); skip the band in that case.
 firing_rate_curve = result.firing_rate
-sem_rate = np.asarray(result.sem) / bin_size  # SEM of counts -> Hz
+sem_rate = np.asarray(result.sem) / bin_size
 ax_psth.plot(result.bin_centers, firing_rate_curve, "tab:blue", linewidth=2)
-ax_psth.fill_between(
-    result.bin_centers,
-    firing_rate_curve - sem_rate,
-    firing_rate_curve + sem_rate,
-    color="tab:blue",
-    alpha=0.3,
-)
+if np.any(np.isfinite(sem_rate)):
+    ax_psth.fill_between(
+        result.bin_centers,
+        firing_rate_curve - sem_rate,
+        firing_rate_curve + sem_rate,
+        color="tab:blue",
+        alpha=0.3,
+    )
 ax_psth.axvline(0.0, color="tab:red", linewidth=1.5, linestyle="--")
 ax_psth.set_xlabel("Time relative to reward (s)")
 ax_psth.set_ylabel("Firing rate (Hz)")

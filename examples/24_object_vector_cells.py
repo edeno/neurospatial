@@ -61,17 +61,16 @@ from neurospatial import Environment
 from neurospatial.encoding import (
     compute_egocentric_rate,
     compute_spatial_rate,
+    is_object_vector_cell,
     object_vector_score,
     plot_object_vector_tuning,
 )
 from neurospatial.ops.egocentric import heading_from_velocity
 from neurospatial.simulation import (
+    ObjectVectorCellModel,
     PlaceCellModel,
     generate_poisson_spikes,
     simulate_trajectory_ou,
-)
-from neurospatial.simulation.models.object_vector_cells import (
-    ObjectVectorCellModel,
 )
 
 # Shared styling (Okabe-Ito palette, consistent figure / font sizes)
@@ -384,8 +383,9 @@ print("- Place cell: egocentric field is diffuse")
 # default OVC classifier.
 
 # %%
-ovc_tuning = np.asarray(ovc_result.firing_rate).reshape(10, 12)
-pc_tuning = np.asarray(pc_result.firing_rate).reshape(10, 12)
+_shape = (ovc_result.n_distance_bins, ovc_result.n_direction_bins)
+ovc_tuning = np.asarray(ovc_result.firing_rate).reshape(_shape)
+pc_tuning = np.asarray(pc_result.firing_rate).reshape(_shape)
 
 ovc_score = object_vector_score(ovc_tuning)
 pc_score = object_vector_score(pc_tuning)
@@ -415,31 +415,74 @@ print(f"{'Allocentric info':<30} {ovc_alloc_info:<12.3f} {pc_alloc_info:<12.3f}"
 # %% [markdown]
 # ## Part 9: Two-Sided Classification
 #
-# Object-vector score and egocentric spatial information cleanly
-# separate the simulated OVC from the place cell. Picking a threshold
-# is recording-specific (see the ``is_object_vector_cell`` docstring),
-# but for this simulation both metrics agree:
+# Two ways to classify a candidate OVC, with a caveat about which
+# tuning curve each one uses:
+#
+# 1. **``is_object_vector_cell``** — the library's one-shot screener.
+#    It internally calls ``compute_egocentric_rate`` with the default
+#    smoothing (``method="binned"``, no bandwidth, no occupancy
+#    threshold) and compares ``object_vector_score`` to its default
+#    ``score_threshold=0.3``. This is fast but the raw-binned tuning
+#    is noisy in egocentric polar coordinates, so the score is
+#    typically lower than what you would get on a smoothed tuning.
+# 2. **Manual two-criterion check** on the *smoothed* tuning we
+#    already computed: ``object_vector_score`` plus
+#    ``egocentric_spatial_information``. Smoothing buys a much cleaner
+#    score but requires picking smoothing parameters explicitly, so
+#    thresholds need to be tuned to your recording.
+#
+# We show both. They generally agree about whether a cell is an OVC,
+# but the score values themselves differ — pick one workflow and stick
+# with it. See the ``is_object_vector_cell`` docstring for guidance
+# on choosing thresholds.
 
 # %%
+# 1. Library one-shot screener (raw-binned tuning, default thresholds)
+ovc_is_ovc = is_object_vector_cell(
+    env,
+    ovc_spikes,
+    times,
+    positions,
+    headings,
+    object_positions,
+    distance_range=(0.0, 50.0),
+    n_distance_bins=10,
+    n_direction_bins=12,
+)
+pc_is_ovc = is_object_vector_cell(
+    env,
+    pc_spikes,
+    times,
+    positions,
+    headings,
+    object_positions,
+    distance_range=(0.0, 50.0),
+    n_distance_bins=10,
+    n_direction_bins=12,
+)
+print("is_object_vector_cell (library, default thresholds):")
+print(f"  OVC -> {ovc_is_ovc}")
+print(f"  Place cell -> {pc_is_ovc}")
+
+# 2. Manual screening on the smoothed tuning we computed in Part 5.
+# Thresholds chosen for this simulation; tune to your data.
 score_threshold = 0.1
 info_threshold = 1.0
-
-print(f"{'Metric':<32} {'Threshold':<11} {'OVC':<8} {'Place':<8}")
-print("-" * 60)
 print(
-    f"{'Object-vector score':<32} {score_threshold:<11.2f} "
-    f"{ovc_score:<8.3f} {pc_score:<8.3f}"
+    "\nManual screening (smoothed tuning, demo thresholds "
+    f"score>{score_threshold}, info>{info_threshold} bits/spike):"
 )
+print(f"  {'Metric':<32} {'OVC':<10} {'Place':<10}")
+print(f"  {'Object-vector score':<32} {ovc_score:<10.3f} {pc_score:<10.3f}")
 print(
-    f"{'Egocentric info (bits/spike)':<32} {info_threshold:<11.2f} "
-    f"{ovc_egoc_info:<8.3f} {pc_egoc_info:<8.3f}"
+    f"  {'Egocentric info (bits/spike)':<32} {ovc_egoc_info:<10.3f} "
+    f"{pc_egoc_info:<10.3f}"
 )
 
 ovc_passes = ovc_score > score_threshold and ovc_egoc_info > info_threshold
 pc_passes = pc_score > score_threshold and pc_egoc_info > info_threshold
-print("-" * 60)
-print(f"OVC classified as object-vector cell:        {ovc_passes}")
-print(f"Place cell classified as object-vector cell: {pc_passes}")
+print(f"  OVC -> {ovc_passes}")
+print(f"  Place cell -> {pc_passes}")
 
 # %% [markdown]
 # ## Summary
@@ -449,10 +492,16 @@ print(f"Place cell classified as object-vector cell: {pc_passes}")
 # ### Key Concepts
 # - **Object-vector cells** fire when an object is at a specific
 #   (distance, egocentric direction) from the animal
-# - **Egocentric rate maps** index firing by polar coordinates relative
-#   to the *nearest* object (configurable via ``object_selectivity``)
+# - **Egocentric rate maps** (``compute_egocentric_rate``) index firing
+#   by polar coordinates relative to the *nearest* object at each
+#   timepoint
 # - The animal's heading determines the egocentric reference frame:
 #   0 = ahead, +π/2 = left, -π/2 = right
+# - ``ObjectVectorCellModel`` exposes an ``object_selectivity``
+#   parameter (``"nearest"`` / ``"any"`` / ``"specific"``) for
+#   simulating cells that respond to a specific object or the maximum
+#   response across all objects; the analysis function
+#   ``compute_egocentric_rate`` always uses the nearest object
 #
 # ### API
 # - ``ObjectVectorCellModel`` simulates a ground-truth OVC with
@@ -469,10 +518,14 @@ print(f"Place cell classified as object-vector cell: {pc_passes}")
 #   polar axis
 #
 # ### Classification
-# - OVCs typically have score ≥ 0.3 and egocentric spatial info ≥ 0.3
-#   bits/spike; place cells score low on both
-# - Comparing egocentric vs allocentric spatial information is a useful
-#   sanity check (OVCs are higher in the egocentric frame)
+# - The library default ``is_object_vector_cell`` uses
+#   ``score_threshold=0.3`` and ``min_peak_rate=5`` Hz on the
+#   *raw-binned* tuning - fast screen, conservative
+# - Computing the score on a smoothed tuning (as in Part 5) gives
+#   higher absolute scores but requires picking smoothing parameters
+#   and thresholds appropriate to your recording
+# - Comparing egocentric vs allocentric spatial information (Part 8)
+#   is a useful sanity check: OVCs are higher in the egocentric frame
 #
 # ### Next Steps
 # - Apply to real recordings with tracked head direction and known

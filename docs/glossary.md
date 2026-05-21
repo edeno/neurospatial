@@ -14,7 +14,7 @@ space; an allocentric bearing is measured against compass directions
 (east is the standard zero in neurospatial). Contrast with
 [*egocentric*](#egocentric). See
 [`ops.egocentric.allocentric_to_egocentric`](api/index.md) and
-[`05_track_linearization`](examples/05_track_linearization.ipynb).
+[`24_object_vector_cells`](examples/24_object_vector_cells.ipynb).
 
 ### Bin
 
@@ -39,8 +39,9 @@ is the animal's current position, and angles are measured relative to
 its current heading: `0 = ahead`, `π/2 = left`, `-π/2 = right`. Used
 to describe how the animal perceives nearby objects regardless of
 which compass direction it's currently facing. See
-[`compute_egocentric_rate`](api/index.md) and
-[`08_spike_field_basics`](examples/08_spike_field_basics.ipynb).
+[`compute_egocentric_rate`](api/index.md),
+[`22_spatial_view_cells`](examples/22_spatial_view_cells.ipynb), and
+[`24_object_vector_cells`](examples/24_object_vector_cells.ipynb).
 
 ### Field
 
