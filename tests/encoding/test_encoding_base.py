@@ -19,18 +19,7 @@ import pytest
 from numpy.typing import NDArray
 
 from neurospatial import Environment
-
-# ==============================================================================
-# Helper function (must be defined before used in decorators)
-# ==============================================================================
-
-
-def _has_jax() -> bool:
-    """Check if JAX is available on this platform."""
-    import importlib.util
-
-    return importlib.util.find_spec("jax") is not None
-
+from neurospatial.encoding._backend import is_jax_available
 
 # ==============================================================================
 # Test fixtures
@@ -102,7 +91,8 @@ class TestToNumpy:
         np.testing.assert_array_equal(result, expected)
 
     @pytest.mark.skipif(
-        not _has_jax(), reason="JAX not installed or not available on this platform"
+        not is_jax_available(),
+        reason="JAX not installed or not available on this platform",
     )
     def test_jax_array_conversion(self) -> None:
         """JAX arrays should be converted to NumPy arrays."""
@@ -142,7 +132,8 @@ class TestGetArrayModule:
         assert xp is np
 
     @pytest.mark.skipif(
-        not _has_jax(), reason="JAX not installed or not available on this platform"
+        not is_jax_available(),
+        reason="JAX not installed or not available on this platform",
     )
     def test_jax_array_returns_jax_numpy(self) -> None:
         """JAX arrays should return jax.numpy module."""

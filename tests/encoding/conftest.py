@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import importlib.util
 from collections.abc import Generator
 from typing import Any
 
 import numpy as np
 import pytest
+
+from neurospatial.encoding._backend import is_jax_available
 
 
 @pytest.fixture(autouse=True)
@@ -22,7 +23,7 @@ def restore_numpy_random_state() -> Generator[None, None, None]:
 @pytest.fixture(autouse=True)
 def restore_jax_x64_config() -> Generator[None, None, None]:
     """Keep tests that enable JAX x64 from leaking global config state."""
-    if importlib.util.find_spec("jax") is None:
+    if not is_jax_available():
         yield
         return
 

@@ -11,7 +11,6 @@ TDD approach: Tests written first, implementation follows.
 
 from __future__ import annotations
 
-import importlib.util
 from dataclasses import dataclass
 
 import numpy as np
@@ -19,19 +18,15 @@ import pytest
 from numpy.typing import NDArray
 
 from neurospatial import Environment
+from neurospatial.encoding._backend import is_jax_available
 
 # ==============================================================================
-# Helper functions
+# Skip marker
 # ==============================================================================
-
-
-def _has_jax() -> bool:
-    """Check if JAX is available on this platform."""
-    return importlib.util.find_spec("jax") is not None
 
 
 skip_without_jax = pytest.mark.skipif(
-    not _has_jax(),
+    not is_jax_available(),
     reason="JAX not installed or not available on this platform",
 )
 
