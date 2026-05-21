@@ -1655,7 +1655,7 @@ def object_vector_score(
     See Also
     --------
     is_object_vector_cell : Classify neuron as OVC
-    EgocentricRateResult.object_vector_score : Score method on result object
+    EgocentricRateResult.is_object_vector_cell : Classifier method on result object
     """
     if max_distance_selectivity <= 1.0:
         raise ValueError(
