@@ -31,8 +31,11 @@ jobs:
           version: "latest"
 
       - name: Install dependencies
+        # animation extra brings ipywidgets + napari[all] (which pulls in qtpy);
+        # the widget-backend and callback-audit tests skip cleanly only when
+        # those imports succeed. Without it the matrix loses ~15 tests.
         run: |
-          uv sync --extra dev
+          uv sync --extra dev --extra animation
         env:
           UV_PYTHON: python${{ matrix.python-version }}
 

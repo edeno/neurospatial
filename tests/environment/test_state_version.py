@@ -83,7 +83,11 @@ class TestVersionedCachedProperty:
         # invariant that names are stable.
         descriptor = versioned_cached_property(lambda self: 0)
 
-        with pytest.raises(TypeError, match="two different names"):
+        # Python 3.10/3.11 wraps exceptions raised in __set_name__ in a
+        # RuntimeError (with the original exception as __cause__); 3.12+
+        # propagates the original exception as-is. Accept both shapes and
+        # unwrap if needed before checking the underlying message.
+        with pytest.raises((TypeError, RuntimeError)) as exc_info:
 
             class Stub:
                 _state_version = 0
@@ -91,3 +95,9 @@ class TestVersionedCachedProperty:
                 second = descriptor
 
             _ = Stub  # silence unused warning
+
+        err: BaseException | None = exc_info.value
+        if isinstance(err, RuntimeError) and err.__cause__ is not None:
+            err = err.__cause__
+        assert isinstance(err, TypeError)
+        assert "two different names" in str(err)

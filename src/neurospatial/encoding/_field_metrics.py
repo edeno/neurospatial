@@ -753,18 +753,18 @@ def field_shift_distance(
 
     Parameters
     ----------
+    env_1 : Environment
+        Spatial environment for first session.
     firing_rate_1 : NDArray[np.float64], shape (n_bins_1,)
         Firing rate map from first session (Hz or spikes/second).
     field_bins_1 : NDArray[np.int64], shape (n_field_bins_1,)
         Indices of bins belonging to place field in first session.
-    env_1 : Environment
-        Spatial environment for first session.
+    env_2 : Environment
+        Spatial environment for second session.
     firing_rate_2 : NDArray[np.float64], shape (n_bins_2,)
         Firing rate map from second session (Hz or spikes/second).
     field_bins_2 : NDArray[np.int64], shape (n_field_bins_2,)
         Indices of bins belonging to place field in second session.
-    env_2 : Environment
-        Spatial environment for second session.
     metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric. ``"euclidean"`` is straight-line distance between
         the rate-weighted centroids. ``"geodesic"`` is the shortest path
@@ -833,14 +833,14 @@ def field_shift_distance(
     >>> field_bins_2 = np.where(field_mask_2)[0]
     >>> firing_rate_2[field_bins_2] = 10.0
     >>>
-    >>> # Compute shift distance
+    >>> # Compute shift distance (env-first canonical argument order)
     >>> shift = field_shift_distance(
+    ...     env1,
     ...     firing_rate_1,
     ...     field_bins_1,
-    ...     env1,
+    ...     env2,
     ...     firing_rate_2,
     ...     field_bins_2,
-    ...     env2,
     ... )
     >>> print(f"Field shifted by: {shift:.1f} units")  # doctest: +SKIP
     Field shifted by: 7.1 units

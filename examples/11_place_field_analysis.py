@@ -1024,12 +1024,12 @@ if len(fields_session1) > 0 and len(fields_session2) > 0:
 # Measure place field shift using field_shift_distance()
 if len(fields_session1) > 0 and len(fields_session2) > 0:
     shift_distance = field_shift_distance(
+        track_env,
         rate_session1,
         fields_session1[0],
         track_env,
         rate_session2,
         fields_session2[0],
-        track_env,
         metric="euclidean",  # Euclidean distance
     )
 
@@ -1237,23 +1237,23 @@ print(f"  Arm end: {len(fields_arm)} field(s)")
 if len(fields_stem) > 0 and len(fields_arm) > 0:
     # Euclidean distance (straight line)
     shift_euclidean = field_shift_distance(
+        tmaze_env,
         rate_stem,
         fields_stem[0],
         tmaze_env,
         rate_arm,
         fields_arm[0],
-        tmaze_env,
         metric="euclidean",
     )
 
     # Geodesic distance (following the maze path)
     shift_geodesic = field_shift_distance(
+        tmaze_env,
         rate_stem,
         fields_stem[0],
         tmaze_env,
         rate_arm,
         fields_arm[0],
-        tmaze_env,
         metric="geodesic",
     )
 
