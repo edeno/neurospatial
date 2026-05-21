@@ -51,6 +51,18 @@ clean delete-and-replace. Pin to `<0.4.0` if you need the old surface.
   Affects `compute_spatial_rate(s)`, `compute_egocentric_rate(s)`,
   `compute_view_rate(s)`, `detect_place_fields`, `is_spatial_view_cell`,
   `is_object_vector_cell`, `is_border_cell`, and friends.
+
+  ```python
+  # v0.3
+  compute_spatial_rate(spike_times, times, positions, env)
+  compute_egocentric_rate(spike_times, times, positions, headings,
+                          object_positions, env=env)
+  # v0.4
+  compute_spatial_rate(env, spike_times, times, positions)
+  compute_egocentric_rate(env, spike_times, times, positions,
+                          headings, object_positions)
+  ```
+
 - **`compute_directional_rate` / `is_head_direction_cell`** keep the
   heading-domain-native `(spike_times, times, headings, *, ...)`
   signature — this is the documented exception to the env-first rule

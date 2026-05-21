@@ -956,6 +956,10 @@ def compute_egocentric_rate(
 
     Parameters
     ----------
+    env : Environment or None
+        The allocentric environment. Required when
+        ``metric="geodesic"`` (used to compute distances around
+        obstacles). May be ``None`` when ``metric="euclidean"``.
     spike_times : ndarray, shape (n_spikes,)
         Times of spike events in seconds. Can be empty.
     times : ndarray, shape (n_samples,)
@@ -971,9 +975,6 @@ def compute_egocentric_rate(
     object_positions : ndarray, shape (n_objects, 2)
         Object positions in allocentric coordinates. The firing rate is
         computed relative to the *nearest* object at each timepoint.
-    env : Environment, optional
-        Required when ``metric="geodesic"``. The allocentric
-        environment used to compute geodesic distances around obstacles.
     distance_range : tuple of float, default=(0.0, 50.0)
         (min_distance, max_distance) for egocentric binning. Distances outside
         this range are not included in the rate map.
@@ -1243,6 +1244,10 @@ def compute_egocentric_rates(
 
     Parameters
     ----------
+    env : Environment or None
+        The allocentric environment. Required when
+        ``metric="geodesic"`` (used to compute distances around
+        obstacles). May be ``None`` when ``metric="euclidean"``.
     spike_times : sequence of arrays or 2D array
         Spike times for each neuron. Accepted formats:
 
@@ -1264,9 +1269,6 @@ def compute_egocentric_rates(
     object_positions : ndarray, shape (n_objects, 2)
         Object positions in allocentric coordinates. The firing rate is
         computed relative to the *nearest* object at each timepoint.
-    env : Environment, optional
-        Required when ``metric="geodesic"``. The allocentric
-        environment used to compute geodesic distances around obstacles.
     distance_range : tuple of float, default=(0.0, 50.0)
         (min_distance, max_distance) for egocentric binning. Distances outside
         this range are not included in the rate map.

@@ -488,11 +488,18 @@ Visualize how spatial fields evolve over time with multi-backend animation suppo
 ### Quick Example
 
 ```python
+import numpy as np
+
 from neurospatial import Environment
 from neurospatial.animation import subsample_frames
-
-# Create environment and compute fields over time
 from neurospatial.encoding import compute_spatial_rate
+
+# Assumes you already have:
+#   positions: shape (n_samples, 2) animal trajectory
+#   times:     shape (n_samples,)   timestamps in seconds
+#   spikes:    list of length 30, each entry is a 1-D array of spike
+#              times for one cell (see "Your First Place Field" above
+#              for an end-to-end simulation that produces these arrays)
 env = Environment.from_samples(positions, bin_size=2.5)
 fields = [
     compute_spatial_rate(env, spikes[i], times, positions).firing_rate

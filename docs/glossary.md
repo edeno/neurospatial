@@ -16,6 +16,22 @@ space; an allocentric bearing is measured against compass directions
 [`ops.egocentric.allocentric_to_egocentric`](api/index.md) and
 [`24_object_vector_cells`](examples/24_object_vector_cells.ipynb).
 
+### Bayesian decoding
+
+Reading the animal's position back out from a population of neurons.
+Given a vector of spike counts across cells in a short window,
+Bayesian decoding computes a probability ("posterior") over every
+spatial bin: how likely the animal is to be there given the observed
+firing pattern. From the posterior you can extract a single
+best-guess location (the **MAP estimate**, the bin with the highest
+probability) or the posterior mean. The discrepancy between the
+estimate and the animal's actual position is the **decoding error**.
+The required inputs are a *rate map* per cell (the "encoding model"
+— what each cell fires across space, built from a training segment
+of the recording) and the spike counts during the segment you want
+to decode. See [`decode_position`](api/index.md) and
+[`20_bayesian_decoding`](examples/20_bayesian_decoding.ipynb).
+
 ### Bin
 
 A single discrete cell of the discretized environment. Each bin

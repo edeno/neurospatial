@@ -42,17 +42,20 @@ If you have a specific neuroscience question, jump directly to the relevant note
 | Direction-conditioned place fields | [21](21_directional_place_fields.ipynb) |
 | Boundary / border cells | [12](12_boundary_cell_analysis.ipynb) |
 | Spatial view cells | [22](22_spatial_view_cells.ipynb) |
+| Object-vector cells | [24](24_object_vector_cells.ipynb) |
+| Head-direction tuning | [25](25_head_direction_tuning.ipynb) |
+| Peri-event histograms (PSTH) | [26](26_peri_event_psth.ipynb) |
+| Load data from an NWB file | [27](27_loading_from_nwb.ipynb) |
 | Trajectory metrics (step length, MSD, curvature) | [13](13_trajectory_analysis.ipynb) |
 | Detect laps, trials, and region crossings | [14](14_behavioral_segmentation.ipynb) |
 | Bayesian decoding from population spikes | [20](20_bayesian_decoding.ipynb) |
 | Animate fields over time (napari / video / html / widget) | [16](16_field_animation.ipynb), [17](17_animation_with_overlays.ipynb) |
 | Composite raw behavioral video with spatial fields | [18](18_video_overlay.ipynb) |
 | Simulate trajectories and spike trains | [15](15_simulation_workflows.ipynb) |
+| Path progression along a linearized track | [23](23_path_progression.ipynb) |
 | Differential operators, signal processing on graphs | [09](09_differential_operators.ipynb), [10](10_signal_processing_primitives.ipynb) |
 | Multi-room / composite environments | [06](06_composite_environments.ipynb), [07](07_advanced_operations.ipynb) |
 | Real-data end-to-end pipeline | [19](19_real_data_bandit_task.ipynb) |
-
-> **Coverage gaps** (planned for v0.4): NWB loading, head-direction tuning, peri-event/PSTH analysis, and object-vector cells. See [`docs/plans/v0.4-ux-cleanup/`](../docs/plans/v0.4-ux-cleanup/) for status.
 
 ## Notebook Series
 
