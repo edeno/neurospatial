@@ -26,15 +26,29 @@ if TYPE_CHECKING:
     from numpy.typing import NDArray
 
 
-# Helper to check if qtpy is available for PlaybackController tests
+# Helper to check if a real Qt backend is available for PlaybackController
+# tests. ``qtpy`` is a shim package; what we actually need is one of PyQt5,
+# PyQt6, PySide2, or PySide6 to be importable, otherwise constructing a
+# ``PlaybackController`` raises ``qtpy.QtBindingsNotFoundError``.
 def _qtpy_available() -> bool:
-    """Check if qtpy is available."""
+    """Check whether a real Qt binding is importable (not just qtpy)."""
     try:
-        import qtpy  # noqa: F401
-
-        return True
-    except ImportError:
+        # Importing QtCore triggers binding resolution and raises
+        # qtpy.QtBindingsNotFoundError on a system with qtpy installed
+        # but no underlying PyQt/PySide.
+        from qtpy import QtCore  # noqa: F401
+    except Exception:
         return False
+    return True
+
+
+# Class-level skip: PlaybackController construction requires a real Qt
+# binding (PyQt5/PyQt6/PySide2/PySide6). On a headless matrix CI runner
+# without one of those installed, the whole class is skipped.
+_requires_qt = pytest.mark.skipif(
+    not _qtpy_available(),
+    reason="No Qt binding installed (PyQt5/PyQt6/PySide2/PySide6).",
+)
 
 
 # =============================================================================
@@ -286,6 +300,7 @@ class TestEventOverlayCallbackAudit:
     """
 
 
+@_requires_qt
 class TestPlaybackControllerCallbackIntegration:
     """Tests verifying PlaybackController callback mechanism."""
 
