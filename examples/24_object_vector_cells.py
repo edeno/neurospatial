@@ -465,7 +465,12 @@ print(f"  OVC -> {ovc_is_ovc}")
 print(f"  Place cell -> {pc_is_ovc}")
 
 # 2. Manual screening on the smoothed tuning we computed in Part 5.
-# Thresholds chosen for this simulation; tune to your data.
+# Thresholds chosen for this simulation - 0.1 is permissive given the
+# small absolute scores typical of smoothed egocentric polar maps;
+# 1.0 bits/spike is well above the library's 0.3-default but
+# comfortably below the strong-OVC range (0.5-1.5+) the
+# ``EgocentricRateResult.is_object_vector_cell`` docstring discusses.
+# Tune both to your recording.
 score_threshold = 0.1
 info_threshold = 1.0
 print(

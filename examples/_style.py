@@ -11,15 +11,35 @@ safe and prints well in greyscale.
 
 Usage
 -----
-At the top of an example notebook::
+``_style`` is a local helper next to the example notebooks rather
+than part of the installed package, so each notebook prepends
+``examples/`` to ``sys.path`` before importing it. The canonical
+prologue (used in notebooks 24-27) is::
 
-    from _style import apply_style, OKABE_ITO
+    import sys
+    from pathlib import Path
 
-    apply_style()
+    _here = (
+        str(Path(__file__).resolve().parent)
+        if "__file__" in globals()
+        else str(Path.cwd())
+    )
+    if _here not in sys.path:
+        sys.path.insert(0, _here)
+    from _style import apply_style  # noqa: E402
 
-To override the figure size for a single notebook::
+    apply_style(figsize=(12, 10))
 
-    apply_style(figsize=(14, 10))
+Direct import works inside a Jupyter kernel that was started from
+the ``examples/`` directory; the ``sys.path`` dance covers the case
+of running the paired ``.py`` script from the repository root.
+
+Caveat
+------
+``apply_style`` mutates the global ``matplotlib.pyplot.rcParams``
+object. There is no restore mechanism. This is fine for notebooks
+(each kernel starts fresh), but do not import this module into
+library code or test suites.
 
 References
 ----------
@@ -64,6 +84,11 @@ def apply_style(
     palette : sequence of str, optional
         Hex colour list used as the property cycle. Default is the
         Okabe-Ito colour-vision-deficiency-safe palette.
+
+    Notes
+    -----
+    Mutates ``matplotlib.pyplot.rcParams`` globally; no restore. Safe
+    for notebooks; do not call from library code or test suites.
     """
     plt.rcParams["figure.figsize"] = figsize
     plt.rcParams["font.size"] = font_size

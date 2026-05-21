@@ -16,33 +16,33 @@ clean delete-and-replace. Pin to `<0.4.0` if you need the old surface.
   Affects `Environment.distance_to`, `compute_egocentric_rate(s)`,
   `compute_egocentric_distance`, `compute_spatial_rate(s)`,
   `ObjectVectorCellModel`, `PlaceCellModel`, `BoundaryCellModel`, and the
-  boundary / border modules. (M2.1)
+  boundary / border modules.
 - **`smoothing_sigma` / `kernel_bandwidth` → `bandwidth`** across smoothing
   APIs (`compute_spatial_rate(s)`, `compute_view_rate(s)`,
-  `compute_egocentric_rate(s)`, `Environment.smooth`, KDE helpers). (M2.2)
+  `compute_egocentric_rate(s)`, `Environment.smooth`, KDE helpers).
 - **`velocity_threshold` / `speed_threshold` / `threshold` → `min_speed`**
   across velocity-based behaviour segmentation
-  (`segment_by_velocity`, `heading_from_velocity`, etc.). (M2.3)
+  (`segment_by_velocity`, `heading_from_velocity`, etc.).
 - **Overlay `data=` → semantic name.** `PositionOverlay(data=...)` →
   `PositionOverlay(positions=...)`; `HeadDirectionOverlay(data=...)` →
-  `HeadDirectionOverlay(headings=...)`. (M2.4)
+  `HeadDirectionOverlay(headings=...)`.
 
 #### Result-class field renames
 
 - **`EgocentricRateResult.ego_env` → `env`**;
-  **`ViewRateResult.view_occupancy` → `occupancy`**. (M2.5)
+  **`ViewRateResult.view_occupancy` → `occupancy`**.
 - **`PeriEventResult.firing_rate`** is now a cached attribute, not a method.
-  Replace `result.firing_rate()` with `result.firing_rate`. (M2.6)
+  Replace `result.firing_rate()` with `result.firing_rate`.
 - **`DecodingResult.uncertainty` → `posterior_entropy`** (matches the free
-  function in `decoding/estimates.py`). (M2.8)
+  function in `decoding/estimates.py`).
 - **Singular vs plural method/attribute normalization** on result classes
   (single-neuron results use singular methods; batch results use plural).
   Renames: `SpatialRateResult.peak_firing_rates()` → `peak_firing_rate()`,
   `SpatialRateResult.peak_locations()` → `peak_location()`,
-  `ViewRateResult.peak_view_locations()` → `peak_view_location()`. (M2.7)
+  `ViewRateResult.peak_view_locations()` → `peak_view_location()`.
 - **`is_X_cell` method names** normalized to match the free-function names
   (`is_object_vector_cell`, `is_spatial_view_cell`,
-  `is_head_direction_cell`). (M2.9)
+  `is_head_direction_cell`).
 
 #### Argument-order canonicalization
 
@@ -50,25 +50,24 @@ clean delete-and-replace. Pin to `<0.4.0` if you need the old surface.
   `(env, spike_times, times, positions, headings?, object_positions?, *, ...)`.
   Affects `compute_spatial_rate(s)`, `compute_egocentric_rate(s)`,
   `compute_view_rate(s)`, `detect_place_fields`, `is_spatial_view_cell`,
-  `is_object_vector_cell`, `is_border_cell`, and friends. (M2.14, M2.20)
+  `is_object_vector_cell`, `is_border_cell`, and friends.
 - **`compute_directional_rate` / `is_head_direction_cell`** keep the
   heading-domain-native `(spike_times, times, headings, *, ...)`
   signature — this is the documented exception to the env-first rule
   (heading is a circular angular variable, not a spatial position).
   See the function docstrings and `CLAUDE.md` "Canonical Argument
-  Order". (M2.15)
+  Order".
 - **Egocentric ops** `allocentric_to_egocentric` /
   `egocentric_to_allocentric` reorder to `(positions, headings, targets)`.
-  (M2.16)
 - **Behavioural segmentation** functions reordered to
-  `(position_bins, times, env, *, ...)`. (M2.17)
+  `(position_bins, times, env, *, ...)`.
 - **`distance_to_reward`** in `events.regressors` reordered to
-  `(env, times, positions, reward_times, ...)`. (M2.18)
+  `(env, times, positions, reward_times, ...)`.
 - **`fit_isotonic_trajectory` / `fit_linear_trajectory`** reordered to
   `(env, posterior, times, *, ...)` with a standardized `method`
-  keyword. (M2.19)
+  keyword.
 - **`*` keyword-only separator** added consistently across the public
-  API. Numerical parameters and verbose flags become keyword-only. (M2.21)
+  API. Numerical parameters and verbose flags become keyword-only.
 
 #### Coordinate / convention changes
 
@@ -76,29 +75,28 @@ clean delete-and-replace. Pin to `<0.4.0` if you need the old surface.
   semantics (a 1-D graph track embedded in 2-D world coordinates); the
   new name resolves the historical "is this n_dims==1 or a 2-D track?"
   ambiguity. Serialized environment metadata uses the new key — pre-v0.4
-  saved environments will need to be re-saved. (M4.1)
+  saved environments will need to be re-saved.
 - **`GridProperties.peak_coords` is now `(x_offset, y_offset)`** instead
   of `(row_offset, col_offset)`. Swap `peak_coords[:, 0]` (was row) for
-  `peak_coords[:, 1]` (now y) when reading the second component. (M4.2)
+  `peak_coords[:, 1]` (now y) when reading the second component.
 - **`simulate_trajectory_ou(speed_units=...)`** is now required (was
   defaulted). Speed defaults switch from m/s to cm/s. Mismatch between
   `speed_units` and `env.units` raises rather than silently rescaling.
-  (M4.5)
 
 #### Removed (no aliases, no deprecation)
 
 - **`Environment.save` / `Environment.load`.** The pickle path is gone.
   Use `Environment.to_file` / `Environment.from_file` (JSON metadata
-  plus npz arrays). (M5.9)
-- **`Environment.mask_for_region`.** Use `Environment.region_mask`. (M5.7)
+  plus npz arrays).
+- **`Environment.mask_for_region`.** Use `Environment.region_mask`.
 - **`from_image` / `from_mask` factory aliases.** Replaced by
   `from_pixel_mask(image_mask, pixel_size, ...)` and
-  `from_grid_mask(active_mask, grid_edges, ...)`. (M5.3)
+  `from_grid_mask(active_mask, grid_edges, ...)`.
 - **`path_efficiency` (float-returning).** Use `compute_path_efficiency`
-  which returns a `PathEfficiencyResult`. (M2.22)
+  which returns a `PathEfficiencyResult`.
 - **Cross-domain re-exports.** Each public symbol now has exactly one
   canonical import path; the top-level `neurospatial` namespace no
-  longer re-exports symbols from `encoding`, `decoding`, etc. (M2.23)
+  longer re-exports symbols from `encoding`, `decoding`, etc.
 
 ### Added
 
@@ -106,118 +104,117 @@ clean delete-and-replace. Pin to `<0.4.0` if you need the old surface.
   frozen dataclass with `fields`, `excluded_reason`, and `n_excluded`
   fields. Still iterable / sized / indexable, so existing `for f in
   detect_place_fields(...)` and `len(...)` patterns keep working.
-  Closes the "silent drop when mean rate too high" failure mode. (M1.4, M2.10)
+  Closes the "silent drop when mean rate too high" failure mode.
 - **`BinSequenceWithRuns` dataclass + new method.**
   `Environment.bin_sequence` always returns an `ndarray`;
   `Environment.bin_sequence_with_runs` returns a dataclass with `bins`,
-  `run_starts`, `run_lengths`. (M2.11)
+  `run_starts`, `run_lengths`.
 - **`MSDResult` and friends.** Misc result-type cleanup in trajectory
   analysis: `MSDResult`, `SpatialAutocorrelationResult`,
-  `PathEfficiencyResult`. (M2.12, M2.13, M2.22)
+  `PathEfficiencyResult`.
 - **`Environment.is_polar` property and `coordinate_kind` attribute.**
   `from_polar_egocentric` sets `coordinate_kind="polar"`. Methods that
   assume Cartesian (`distance_to`, `distance_between`,
   `Environment.contains`, `apply_transform`, `bin_at` on `(x, y)`
   input) raise on polar environments with a clear error.
   `plot_field` switches axis labels and skips the equal-aspect call so
-  egocentric polar firing fields still render correctly. (M1.3)
+  egocentric polar firing fields still render correctly.
 - **Custom exception classes.** `EnvironmentNotFittedError` (already
   existed) now has a free-function variant; added `RegionNotFoundError`,
   `RegionAlreadyExistsError`, and three more in `_exceptions.py`.
-  (M3.1, M3.4)
 - **`Environment.from_pixel_mask` and `Environment.from_grid_mask`
-  factories** (replacing `from_image` / `from_mask`). (M5.3)
+  factories** (replacing `from_image` / `from_mask`).
 - **`Environment._state_version` invalidation token.** Cached
   properties verify the version on access; subset / transform / rebin
   bump it, so stale caches are surfaced loudly instead of returning
-  silently-wrong results. (M5.1)
-- **`Environment.__str__` returns `info()`** for quick inspection. (M5.8)
+  silently-wrong results.
+- **`Environment.__str__` returns `info()`** for quick inspection.
 - **Glossary page** at [docs/glossary.md](docs/glossary.md) defining 14
   core terms. Linked from `docs/getting-started/core-concepts.md` and
-  the README. (M6.7)
+  the README.
 - **`docs/api/index.md` expansion.** Structured sections for
   `encoding`, `decoding`, `behavior`, `events`, `ops.egocentric`,
-  `ops.visibility`, `ops.basis`, `stats`, `animation`, `io.nwb`. (M6.9)
+  `ops.visibility`, `ops.basis`, `stats`, `animation`, `io.nwb`.
 - **`docs/examples/index.md` rewrite.** Goal → notebook table plus
-  full per-notebook entries with Time + Prerequisites. (M6.10)
+  full per-notebook entries with Time + Prerequisites.
 - **Notebooks 24–27.** Object-vector cells, head-direction tuning,
-  peri-event PSTH, and NWB loading round-trip. (M6.1–M6.4)
+  peri-event PSTH, and NWB loading round-trip.
 - **README "Your First Place Field" front-door example.** Canonical
   pattern using `simulate_trajectory_ou`, `PlaceCellModel`,
-  `generate_population_spikes`, and `compute_spatial_rate`. (M6.6)
+  `generate_population_spikes`, and `compute_spatial_rate`.
 - **CI doc-snippet test.** `scripts/test_doc_snippets.py` plus
   `.github/workflows/test_docs.yml` re-executes a curated manifest of
-  doc snippets on every PR. (M0.10)
+  doc snippets on every PR.
 - **CI notebook regen test.** `.github/workflows/test_notebooks.yml`
   re-executes `11_place_field_analysis.ipynb` per PR to catch silent
-  regressions in the example surface. (M6.12)
+  regressions in the example surface.
 - **Shared example styling.** `examples/_style.py` Wong / Okabe-Ito
   palette and fixed figure sizes. Wired into the four new advanced
   notebooks (24-27); legacy notebooks 01-22 keep their inline rcParams
-  blocks for now. (M7.4)
+  blocks for now.
 
 ### Changed
 
 - **Silent failures replaced with loud failures.**
   - `subset()` round-trip now returns a `MaskedGrid` instead of a one-off
-    `subset` layout kind, so the result is fully serializable. (M1.1)
+    `subset` layout kind, so the result is fully serializable.
   - `bin_at` vs `map_points_to_bins` standardize on `-1` for
-    out-of-environment samples in trajectory contexts. (M1.2)
+    out-of-environment samples in trajectory contexts.
   - `detect_place_fields` returns a `PlaceFieldsResult` with
-    `excluded_reason` set instead of silently returning `[]`. (M1.4)
+    `excluded_reason` set instead of silently returning `[]`.
   - `batch_grid_scores` / `batch_border_scores` use NaN as the explicit
-    failure marker and warn once per batch. (M1.5)
+    failure marker and warn once per batch.
   - Fitted-state checks at entry of `compute_spatial_rate(s)`,
     `compute_egocentric_rate(s)`, `compute_view_rate(s)`,
     `decode_position` raise immediately instead of failing deep in the
-    call stack. (M1.6)
+    call stack.
   - `spike_times` validation rejects unsorted / negative / non-finite
-    values with diagnostic messages. (M1.7)
+    values with diagnostic messages.
   - `decode_position(validate=True)` is the default; rejects negative
-    spike counts and posteriors that don't sum to 1. (M1.8)
+    spike counts and posteriors that don't sum to 1.
 - **Canonical exception types** throughout. Manual "not fitted" checks
   migrated to `EnvironmentNotFittedError`; warning-and-overwrite paths
-  in `Regions.__setitem__` now raise. (M3.2, M3.3, M3.9)
+  in `Regions.__setitem__` now raise.
 - **Errors carry units and stack context.** Length-mismatch errors
   from `_binning` include a `context` arg so messages say "in
   compute_spatial_rate: ..."; magnitude errors include the offending
-  unit. (M3.5, M3.6)
+  unit.
 - **Warning hygiene.** `UserWarning` for data-quality, `RuntimeWarning`
-  for numerical fallbacks, `stacklevel=2` everywhere. (M3.7)
+  for numerical fallbacks, `stacklevel=2` everywhere.
 - **Production `print()` calls** replaced with module-level
-  `logger.info` / `logger.debug`. (M3.8)
+  `logger.info` / `logger.debug`.
 - **`Environment.bin_attributes`, `edge_attributes`,
   `differential_operator`** converted from `@cached_property` to
-  methods (`get_bin_attributes()`, etc.) so the cost is visible. (M5.6)
+  methods (`get_bin_attributes()`, etc.) so the cost is visible.
 - **`Environment.units`** validated against a small registry (`{"cm",
   "m", "mm", "px", None}`) with a `UserWarning` for unknown values.
-  Documented as advisory. (M4.4)
+  Documented as advisory.
 - **Heading convention** documented explicitly in every function that
   takes a `headings` argument (allocentric world-frame: 0 = East,
-  +π/2 = North; egocentric for OVC tuning: 0 = ahead, +π/2 = left). (M4.3)
-- **`events.__init__`** is now eager (was lazy). (M2.24)
+  +π/2 = North; egocentric for OVC tuning: 0 = ahead, +π/2 = left).
+- **`events.__init__`** is now eager (was lazy).
 - **Bandit-task notebook** prints the download URL and exits cleanly
-  when `data/` is missing; CI no longer fails on the example. (M6.5)
+  when `data/` is missing; CI no longer fails on the example.
 
 ### Fixed
 
 - **`repr(env)` `name=None` bug** for empty-string names. Now uses
-  `repr(self.name)` so empty strings are visible as `''`. (M5.8)
+  `repr(self.name)` so empty strings are visible as `''`.
 - **`Environment._state_version` cache invalidation** prevents
-  stale-cache reads after mutating operations. (M5.1)
+  stale-cache reads after mutating operations.
 - **Polar environment misuse** is now an error instead of producing
-  silently-wrong distances or transforms. (M1.3)
+  silently-wrong distances or transforms.
 
 ### Removed
 
 - **`Environment.save` / `Environment.load`** (pickle). Replaced by
-  `to_file` / `from_file`. (M5.9)
-- **`Environment.mask_for_region`.** Use `region_mask`. (M5.7)
+  `to_file` / `from_file`.
+- **`Environment.mask_for_region`.** Use `region_mask`.
 - **`from_image` / `from_mask` factory aliases.** Replaced by
-  `from_pixel_mask` / `from_grid_mask`. (M5.3)
+  `from_pixel_mask` / `from_grid_mask`.
 - **`path_efficiency` float-returning function.** Use
-  `compute_path_efficiency`. (M2.22)
-- **All cross-domain re-exports** from top-level `neurospatial`. (M2.23)
+  `compute_path_efficiency`.
+- **All cross-domain re-exports** from top-level `neurospatial`.
 
 ### Major feature additions (v0.3.x development cycle)
 

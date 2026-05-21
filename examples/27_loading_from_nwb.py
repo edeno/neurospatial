@@ -67,10 +67,15 @@ import numpy as np
 try:
     from pynwb import NWBFile  # type: ignore[import-not-found]
     from pynwb.behavior import Position, SpatialSeries  # type: ignore[import-not-found]
-except ImportError:
-    print("pynwb is required for this notebook.")
-    print("Install with: uv add pynwb (or pip install pynwb)")
-    sys.exit(0)
+except ImportError as err:
+    # pynwb ships as a required dependency, so this should not happen
+    # in a normal install. If it does, surface a clear actionable error
+    # rather than failing deep in the analysis cells. RuntimeError shows
+    # cleanly in a Jupyter cell (no SystemExit traceback box).
+    raise RuntimeError(
+        "pynwb is not installed. Run: pip install pynwb (or uv add pynwb), "
+        "then restart the kernel."
+    ) from err
 
 from neurospatial import Environment
 from neurospatial.encoding import compute_spatial_rate
@@ -233,8 +238,9 @@ plt.show()
 # %% [markdown]
 # ## Part 5: Write Results Back into the NWB File
 #
-# Neurospatial provides ``write_environment`` (stores discretization
-# + connectivity in scratch/) and ``write_place_field`` (stores the
+# Neurospatial provides ``write_environment`` (stores environment
+# metadata, bin centres, and the edge list in scratch/) and
+# ``write_place_field`` (stores the
 # rate map aligned to bin centers in analysis/). Both attach to an
 # in-memory NWBFile; persist with ``NWBHDF5IO(...).write(nwbfile)``.
 
@@ -288,8 +294,8 @@ print(f"units match:       {env.units == env_back.units}")
 #   and calls ``Environment.from_samples``
 # - ``read_environment`` reads back a previously-written environment,
 #   reconstructing the layout, active bins, and connectivity graph
-# - ``write_environment`` stores environment metadata + bin centres in
-#   ``scratch/``
+# - ``write_environment`` stores environment metadata, bin centres,
+#   and the edge list in ``scratch/``
 # - ``write_place_field`` stores a rate map aligned to bin centres in
 #   ``analysis/``
 #

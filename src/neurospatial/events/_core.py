@@ -38,7 +38,10 @@ class PeriEventResult:
     histogram : NDArray[np.float64], shape (n_bins,)
         Mean spike count per time bin across events.
     sem : NDArray[np.float64], shape (n_bins,)
-        Standard error of the mean across events.
+        Standard error of the mean across events, in **count units**
+        (matching ``histogram``). Divide by ``bin_size`` to convert to
+        Hz when plotting alongside ``firing_rate``. NaN with a single
+        event (SEM is undefined).
     n_events : int
         Number of events used in analysis.
     window : tuple[float, float]
@@ -91,7 +94,9 @@ class PopulationPeriEventResult:
     histograms : NDArray[np.float64], shape (n_units, n_bins)
         Per-unit spike count per time bin.
     sem : NDArray[np.float64], shape (n_units, n_bins)
-        Per-unit standard error of the mean across events.
+        Per-unit standard error of the mean across events, in **count
+        units** (matching ``histograms``). Divide by ``bin_size`` to
+        convert to Hz.
     mean_histogram : NDArray[np.float64], shape (n_bins,)
         Population average histogram across all units.
     n_events : int
