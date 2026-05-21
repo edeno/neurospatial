@@ -58,6 +58,7 @@
 # %%
 import sys
 from datetime import datetime
+from pathlib import Path
 from uuid import uuid4
 
 import matplotlib.pyplot as plt
@@ -86,7 +87,14 @@ from neurospatial.simulation import (
     simulate_trajectory_ou,
 )
 
-plt.rcParams["figure.figsize"] = (10, 8)
+_here = (
+    str(Path(__file__).resolve().parent) if "__file__" in globals() else str(Path.cwd())
+)
+if _here not in sys.path:
+    sys.path.insert(0, _here)
+from _style import apply_style  # noqa: E402
+
+apply_style(figsize=(10, 8))
 
 # %% [markdown]
 # ## Part 1: Build a Synthetic NWB File

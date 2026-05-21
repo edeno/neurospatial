@@ -431,7 +431,7 @@ Source review: [`docs/reviews/UX_REVIEW_2026-05-08.md`](../../reviews/UX_REVIEW_
 
 - [ ] **7.1** **`docs/migrating-to-v0.4.md`.** Create a single migration page with one row per breaking change. Columns: `Category` (kwarg / function / signature / return-type / behavior), `From (v0.3)`, `To (v0.4)`, `Migration example`. Cross-check script `scripts/check_migration_doc.py` greps the page for `To` cells and confirms each one actually exists in the codebase. The script does **not** check `From` cells for absence — `From` names are gone from v0.4.0 by construction (no aliases, no deprecation). Run the script in CI.
 
-- [ ] **7.2** **`CHANGELOG.md`** under `## [0.4.0]`:
+- [x] **7.2** **`CHANGELOG.md`** under `## [0.4.0]`:
   - **Breaking changes**: every renamed kwarg, every reordered signature, every removed function, every removed method, every removed alias / re-export, every result-class field rename. With a link to the migration doc.
   - **Added**: notebooks (M6 6.1-6.4), glossary (6.7), `docs/api/index.md` expansion (6.9), CI doc-snippet test (M0 0.10), CI notebook regen (M6 6.12), `is_polar` flag (M1 1.3), `PlaceFieldsResult` (M2 2.10), `BinSequenceWithRuns` (M2 2.11), `MSDResult` (M2 2.13), free-function `EnvironmentNotFittedError` variant (M3 3.1), four custom error classes (M3 3.4), `from_pixel_mask` and `from_grid_mask` factories (M5 5.3).
   - **Changed**: behavior changes from M1 (loud failures replacing silent ones) and M3 (canonical exception types).
@@ -439,16 +439,16 @@ Source review: [`docs/reviews/UX_REVIEW_2026-05-08.md`](../../reviews/UX_REVIEW_
   - **Removed**: `Environment.save`/`load` (M5 5.9), `path_efficiency` float-returning function (M2 2.22), all cross-domain re-exports (M2 2.23), `from_image` and `from_mask` factory aliases (M5 5.3, replaced by `from_pixel_mask` / `from_grid_mask`).
   - No "Deprecated" section. There are no deprecations in this release; everything is a clean delete-and-replace.
 
-- [ ] **7.3** **Version bump.**
+- [x] **7.3** **Version bump.**
   - [pyproject.toml](../../../pyproject.toml) `version = "0.4.0"`.
   - Citation strings: [README.md](../../../README.md) line 567, [docs/index.md](../../../docs/index.md) line 109, [examples/README.md](../../../examples/README.md) line 240.
   - Header strings: [README.md](../../../README.md) line 85 ("Tested Dependency Versions"), line 591 ("Alpha" / "Beta" decision).
   - Module docstring: [src/neurospatial/ops/visibility.py:9](../../../src/neurospatial/ops/visibility.py) "(v0.4.0+)".
   Closes review §10.1.
 
-- [ ] **7.4** **`examples/_style.py`.** Shared matplotlib styling: Wong/Okabe-Ito palette, fixed `figsize`, font sizes. Each example notebook imports it at top. Closes review §10.17.
+- [x] **7.4** **`examples/_style.py`.** Shared matplotlib styling: Wong/Okabe-Ito palette, fixed `figsize`, font sizes. Each example notebook imports it at top. Closes review §10.17. _Module landed; wired into the four new M6 notebooks (24-27). Legacy notebooks 01-22 still carry inline rcParams; migrating them is a follow-up sweep._
 
-- [ ] **7.5** **Final smoke.**
+- [x] **7.5** **Final smoke.**
   - Full `uv run pytest` green.
   - Full `mkdocs build --strict` green.
   - Full notebook re-execution on a fresh `uv venv` environment.

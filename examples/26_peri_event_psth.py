@@ -42,6 +42,9 @@
 # ## Setup
 
 # %%
+import sys
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -51,8 +54,14 @@ from neurospatial.events import (
     time_to_nearest_event,
 )
 
-plt.rcParams["figure.figsize"] = (12, 8)
-plt.rcParams["font.size"] = 11
+_here = (
+    str(Path(__file__).resolve().parent) if "__file__" in globals() else str(Path.cwd())
+)
+if _here not in sys.path:
+    sys.path.insert(0, _here)
+from _style import apply_style  # noqa: E402
+
+apply_style(figsize=(12, 8))
 
 # %% [markdown]
 # ## Part 1: Simulate Reward Events and an Event-Locked Neuron

@@ -82,7 +82,7 @@ pip install -e ".[dev]"
 
 ### Tested Dependency Versions
 
-neurospatial v0.2.0 has been tested with the following dependency versions:
+neurospatial v0.4.0 has been tested with the following dependency versions:
 
 | Package | Tested Version |
 |---------|---------------|
@@ -645,12 +645,12 @@ See [CLAUDE.md](CLAUDE.md) for detailed development guidelines.
 If you use neurospatial in your research, please cite:
 
 ```bibtex
-@software{neurospatial2025,
+@software{neurospatial2026,
   author = {Denovellis, Eric},
   title = {neurospatial: Spatial environment discretization for neuroscience},
-  year = {2025},
+  year = {2026},
   url = {https://github.com/edeno/neurospatial},
-  version = {0.3.0}
+  version = {0.4.0}
 }
 ```
 

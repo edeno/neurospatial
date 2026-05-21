@@ -51,6 +51,9 @@
 # ## Setup
 
 # %%
+import sys
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -71,9 +74,15 @@ from neurospatial.simulation.models.object_vector_cells import (
     ObjectVectorCellModel,
 )
 
-# Configure matplotlib
-plt.rcParams["figure.figsize"] = (12, 10)
-plt.rcParams["font.size"] = 11
+# Shared styling (Okabe-Ito palette, consistent figure / font sizes)
+_here = (
+    str(Path(__file__).resolve().parent) if "__file__" in globals() else str(Path.cwd())
+)
+if _here not in sys.path:
+    sys.path.insert(0, _here)
+from _style import apply_style  # noqa: E402
+
+apply_style(figsize=(12, 10))
 
 # %% [markdown]
 # ## Part 1: Create Environment and Trajectory

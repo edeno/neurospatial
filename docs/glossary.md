@@ -107,7 +107,7 @@ Anything indexed by spike times rather than time bins. A
 location at the moment each spike fired; a *spike-triggered
 event-aligned histogram* (PSTH) does the analogous slicing around
 event times. See [`peri_event_histogram`](api/index.md) and
-[`25_peri_event_psth`](examples/25_peri_event_psth.ipynb).
+[`26_peri_event_psth`](examples/26_peri_event_psth.ipynb).
 
 ### Tuning curve
 
