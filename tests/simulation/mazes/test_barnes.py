@@ -2,49 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
-
 import numpy as np
-import pytest
-
-from neurospatial.simulation.mazes._base import MazeDims
-
-
-class TestBarnesDims:
-    """Tests for BarnesDims dataclass."""
-
-    def test_inherits_from_maze_dims(self):
-        """BarnesDims should inherit from MazeDims."""
-        from neurospatial.simulation.mazes.barnes import BarnesDims
-
-        dims = BarnesDims()
-        assert isinstance(dims, MazeDims)
-
-    def test_default_values(self):
-        """BarnesDims should have correct default values (Barnes 1979)."""
-        from neurospatial.simulation.mazes.barnes import BarnesDims
-
-        dims = BarnesDims()
-        assert dims.diameter == 120.0
-        assert dims.n_holes == 18  # Original Barnes 1979 design
-        assert dims.hole_radius == 2.5
-
-    def test_is_frozen(self):
-        """BarnesDims should be frozen (immutable)."""
-        from neurospatial.simulation.mazes.barnes import BarnesDims
-
-        dims = BarnesDims()
-        with pytest.raises(FrozenInstanceError):
-            dims.diameter = 150.0  # type: ignore[misc]
-
-    def test_custom_values(self):
-        """BarnesDims should accept custom values."""
-        from neurospatial.simulation.mazes.barnes import BarnesDims
-
-        dims = BarnesDims(diameter=150.0, n_holes=20, hole_radius=3.0)
-        assert dims.diameter == 150.0
-        assert dims.n_holes == 20
-        assert dims.hole_radius == 3.0
 
 
 class TestMakeBarnesMaze:

@@ -31,8 +31,14 @@ jobs:
           version: "latest"
 
       - name: Install dependencies
+        # ipywidgets is needed by tests/animation/test_widget_overlays.py;
+        # qtpy is needed by tests/animation/test_callback_audit.py.
+        # We install them directly rather than via --extra animation
+        # because napari[all] doesn't install cleanly on Windows runners.
+        # napari itself is exercised by the dedicated "napari" job below.
         run: |
           uv sync --extra dev
+          uv pip install "ipywidgets>=8.0,<9.0" qtpy
         env:
           UV_PYTHON: python${{ matrix.python-version }}
 

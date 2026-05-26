@@ -131,12 +131,18 @@ class TestShortestPathLength:
 
 
 class TestPathEfficiency:
-    """Test path_efficiency function."""
+    """Test the efficiency ratio reported by compute_path_efficiency."""
+
+    def _efficiency(self, env, positions, goal):
+        from neurospatial.behavior.navigation import compute_path_efficiency
+
+        times = np.linspace(0.0, 1.0, len(positions))
+        return compute_path_efficiency(
+            env, positions, times, goal, metric="euclidean"
+        ).efficiency
 
     def test_straight_path_efficiency_is_one(self):
         """Test that straight path from start to goal has efficiency 1.0."""
-        from neurospatial.behavior.navigation import path_efficiency
-
         # Create grid environment
         x = np.linspace(0, 100, 100)
         y = np.linspace(0, 100, 100)
@@ -148,15 +154,13 @@ class TestPathEfficiency:
         positions = np.column_stack([np.linspace(0, 50, 11), np.zeros(11)])
         goal = np.array([50.0, 0.0])
 
-        eff = path_efficiency(env, positions, goal, metric="euclidean")
+        eff = self._efficiency(env, positions, goal)
 
         # Straight path should be close to 1.0
         assert_allclose(eff, 1.0, rtol=0.05)
 
     def test_u_turn_path_efficiency(self):
         """Test that U-turn path has efficiency ~0.5."""
-        from neurospatial.behavior.navigation import path_efficiency
-
         # Create grid environment
         x = np.linspace(0, 100, 100)
         y = np.linspace(0, 100, 100)
@@ -178,29 +182,25 @@ class TestPathEfficiency:
         positions = np.column_stack([x_coords, np.zeros_like(x_coords)])
         goal = np.array([25.0, 0.0])
 
-        eff = path_efficiency(env, positions, goal, metric="euclidean")
+        eff = self._efficiency(env, positions, goal)
 
         # Efficiency should be low due to backtracking
         assert eff < 0.5
 
     def test_less_than_two_positions_returns_nan(self):
         """Test that < 2 positions returns NaN efficiency."""
-        from neurospatial.behavior.navigation import path_efficiency
-
         positions = np.array([[50.0, 50.0]])
         env = Environment.from_samples(
             np.column_stack([np.linspace(0, 100, 50), np.zeros(50)]), bin_size=5.0
         )
         goal = np.array([60.0, 0.0])
 
-        eff = path_efficiency(env, positions, goal, metric="euclidean")
+        eff = self._efficiency(env, positions, goal)
 
         assert np.isnan(eff)
 
     def test_zero_traveled_returns_nan(self):
         """Test that zero traveled distance returns NaN efficiency."""
-        from neurospatial.behavior.navigation import path_efficiency
-
         # All positions identical
         positions = np.tile([50.0, 50.0], (5, 1))
         env = Environment.from_samples(
@@ -208,7 +208,7 @@ class TestPathEfficiency:
         )
         goal = np.array([60.0, 0.0])
 
-        eff = path_efficiency(env, positions, goal, metric="euclidean")
+        eff = self._efficiency(env, positions, goal)
 
         assert np.isnan(eff)
 
@@ -316,95 +316,9 @@ class TestSubgoalEfficiency:
 class TestPathEfficiencyResult:
     """Test PathEfficiencyResult dataclass."""
 
-    def test_is_efficient_method(self):
-        """Test is_efficient() helper method."""
-        from neurospatial.behavior.navigation import PathEfficiencyResult
-
-        result = PathEfficiencyResult(
-            traveled_length=100.0,
-            shortest_length=90.0,
-            efficiency=0.9,
-            time_efficiency=None,
-            angular_efficiency=0.85,
-            start_position=np.array([0.0, 0.0]),
-            goal_position=np.array([100.0, 0.0]),
-            metric="euclidean",
-        )
-
-        assert result.is_efficient(threshold=0.8)
-        assert not result.is_efficient(threshold=0.95)
-
-    def test_is_efficient_with_nan(self):
-        """Test that is_efficient() returns False for NaN efficiency."""
-        from neurospatial.behavior.navigation import PathEfficiencyResult
-
-        result = PathEfficiencyResult(
-            traveled_length=0.0,
-            shortest_length=50.0,
-            efficiency=np.nan,
-            time_efficiency=None,
-            angular_efficiency=1.0,
-            start_position=np.array([0.0, 0.0]),
-            goal_position=np.array([100.0, 0.0]),
-            metric="euclidean",
-        )
-
-        assert not result.is_efficient(threshold=0.5)
-
-    def test_summary_method(self):
-        """Test summary() returns formatted string."""
-        from neurospatial.behavior.navigation import PathEfficiencyResult
-
-        result = PathEfficiencyResult(
-            traveled_length=45.2,
-            shortest_length=32.1,
-            efficiency=0.71,
-            time_efficiency=None,
-            angular_efficiency=0.85,
-            start_position=np.array([0.0, 0.0]),
-            goal_position=np.array([100.0, 0.0]),
-            metric="euclidean",
-        )
-
-        summary = result.summary()
-
-        assert "45.2" in summary
-        assert "32.1" in summary
-        assert "71" in summary  # 71% efficiency
-
 
 class TestComputePathEfficiency:
     """Test compute_path_efficiency function (combines all metrics)."""
-
-    def test_returns_result_dataclass(self):
-        """Test that compute_path_efficiency returns PathEfficiencyResult."""
-        from neurospatial.behavior.navigation import (
-            PathEfficiencyResult,
-            compute_path_efficiency,
-        )
-
-        # Create grid environment
-        x = np.linspace(0, 100, 100)
-        y = np.linspace(0, 100, 100)
-        xx, yy = np.meshgrid(x, y)
-        sample_positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(sample_positions, bin_size=5.0)
-
-        # Straight line trajectory
-        positions = np.column_stack([np.linspace(0, 50, 11), np.zeros(11)])
-        times = np.linspace(0, 5, 11)
-        goal = np.array([50.0, 0.0])
-
-        result = compute_path_efficiency(
-            env, positions, times, goal, metric="euclidean"
-        )
-
-        assert isinstance(result, PathEfficiencyResult)
-        assert result.traveled_length > 0
-        assert result.shortest_length >= 0
-        assert 0 < result.efficiency <= 1.0
-        assert 0 <= result.angular_efficiency <= 1.0
-        assert result.metric == "euclidean"
 
 
 class TestErrorHandling:

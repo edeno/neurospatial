@@ -195,17 +195,24 @@ class TestRegionMaskEdgeCases:
         # No bins should be inside
         assert not np.any(mask)
 
-    def test_point_region_returns_false(self):
-        """Test that point regions return all False (points have no area)."""
+    def test_point_region_marks_containing_bin(self):
+        """Point regions select the single bin containing the point (M5.7).
+
+        This is the same behavior as the v0.3 ``mask_for_region``; the
+        M5.7 successor ``region_mask`` preserves it. The free function
+        ``regions_to_mask`` still returns empty for points (points have
+        no area, so the polygon-coverage predicate has nothing to
+        report); the env method special-cases points so users can write
+        ``env.region_mask("goal")`` and get the bin that ``bin_at``
+        would return.
+        """
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
         env.regions.add("point", point=(5.0, 5.0))
 
         mask = env.region_mask("point")
-
-        # Points have no area, so no bins can be "inside"
-        assert not np.any(mask)
+        assert int(mask.sum()) == 1
 
     def test_mixed_point_and_polygon(self):
         """Test with both point and polygon regions in list."""

@@ -182,7 +182,7 @@ class HexagonalLayout:
         }
 
     @property
-    def is_1d(self) -> bool:
+    def is_linearized_track(self) -> bool:
         """Hexagonal layouts are 2-dimensional.
 
         Returns
@@ -321,6 +321,7 @@ class HexagonalLayout:
                 "HexagonalLayout is not fully initialized or has no active bins. "
                 "Cannot map points to bin indices.",
                 RuntimeWarning,
+                stacklevel=2,
             )
             return np.full(points.shape[0], -1, dtype=int)
 

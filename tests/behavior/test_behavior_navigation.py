@@ -1,212 +1,12 @@
-"""Tests for behavior/navigation.py module (new location).
+"""Tests for behavior/navigation functions.
 
-This test file verifies that all navigation functions are importable from
-the new location and work correctly. These tests follow TDD - written before
-the implementation is moved.
-
-Functions being moved:
-- From behavioral.py: path_progress, distance_to_region, cost_to_goal,
-  time_to_goal, trials_to_region_arrays, graph_turn_sequence,
-  goal_pair_direction_labels, heading_direction_labels,
-  compute_trajectory_curvature (already in behavior/trajectory.py)
-- From metrics/path_efficiency.py: PathEfficiencyResult, SubgoalEfficiencyResult,
-  traveled_path_length, shortest_path_length, path_efficiency, time_efficiency,
-  angular_efficiency, subgoal_efficiency, compute_path_efficiency
-- From metrics/goal_directed.py: GoalDirectedMetrics, goal_vector, goal_direction,
-  instantaneous_goal_alignment, goal_bias, approach_rate, compute_goal_directed_metrics
+We test public-API behavior — input -> output assertions — not that
+functions are importable (Python's import system handles that).
 """
 
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
-
-
-class TestNavigationImports:
-    """Test that all navigation functions are importable from new location."""
-
-    def test_import_path_progress(self):
-        """Test path_progress is importable from behavior.navigation."""
-        from neurospatial.behavior.navigation import path_progress
-
-        assert callable(path_progress)
-
-    def test_import_distance_to_region(self):
-        """Test distance_to_region is importable from behavior.navigation."""
-        from neurospatial.behavior.navigation import distance_to_region
-
-        assert callable(distance_to_region)
-
-    def test_import_cost_to_goal(self):
-        """Test cost_to_goal is importable from behavior.navigation."""
-        from neurospatial.behavior.navigation import cost_to_goal
-
-        assert callable(cost_to_goal)
-
-    def test_import_time_to_goal(self):
-        """Test time_to_goal is importable from behavior.navigation."""
-        from neurospatial.behavior.navigation import time_to_goal
-
-        assert callable(time_to_goal)
-
-    def test_import_trials_to_region_arrays(self):
-        """Test trials_to_region_arrays is importable from behavior.navigation."""
-        from neurospatial.behavior.navigation import trials_to_region_arrays
-
-        assert callable(trials_to_region_arrays)
-
-    def test_import_graph_turn_sequence(self):
-        """Test graph_turn_sequence is importable from behavior.navigation."""
-        from neurospatial.behavior.navigation import graph_turn_sequence
-
-        assert callable(graph_turn_sequence)
-
-    def test_import_goal_pair_direction_labels(self):
-        """Test goal_pair_direction_labels is importable from behavior.navigation."""
-        from neurospatial.behavior.navigation import goal_pair_direction_labels
-
-        assert callable(goal_pair_direction_labels)
-
-    def test_import_heading_direction_labels(self):
-        """Test heading_direction_labels is importable from behavior.navigation."""
-        from neurospatial.behavior.navigation import heading_direction_labels
-
-        assert callable(heading_direction_labels)
-
-    def test_import_path_efficiency_result(self):
-        """Test PathEfficiencyResult is importable from behavior.navigation."""
-        from neurospatial.behavior.navigation import PathEfficiencyResult
-
-        assert PathEfficiencyResult is not None
-
-    def test_import_subgoal_efficiency_result(self):
-        """Test SubgoalEfficiencyResult is importable from behavior.navigation."""
-        from neurospatial.behavior.navigation import SubgoalEfficiencyResult
-
-        assert SubgoalEfficiencyResult is not None
-
-    def test_import_traveled_path_length(self):
-        """Test traveled_path_length is importable from behavior.navigation."""
-        from neurospatial.behavior.navigation import traveled_path_length
-
-        assert callable(traveled_path_length)
-
-    def test_import_shortest_path_length(self):
-        """Test shortest_path_length is importable from behavior.navigation."""
-        from neurospatial.behavior.navigation import shortest_path_length
-
-        assert callable(shortest_path_length)
-
-    def test_import_path_efficiency(self):
-        """Test path_efficiency is importable from behavior.navigation."""
-        from neurospatial.behavior.navigation import path_efficiency
-
-        assert callable(path_efficiency)
-
-    def test_import_time_efficiency(self):
-        """Test time_efficiency is importable from behavior.navigation."""
-        from neurospatial.behavior.navigation import time_efficiency
-
-        assert callable(time_efficiency)
-
-    def test_import_angular_efficiency(self):
-        """Test angular_efficiency is importable from behavior.navigation."""
-        from neurospatial.behavior.navigation import angular_efficiency
-
-        assert callable(angular_efficiency)
-
-    def test_import_subgoal_efficiency(self):
-        """Test subgoal_efficiency is importable from behavior.navigation."""
-        from neurospatial.behavior.navigation import subgoal_efficiency
-
-        assert callable(subgoal_efficiency)
-
-    def test_import_compute_path_efficiency(self):
-        """Test compute_path_efficiency is importable from behavior.navigation."""
-        from neurospatial.behavior.navigation import compute_path_efficiency
-
-        assert callable(compute_path_efficiency)
-
-    def test_import_goal_directed_metrics(self):
-        """Test GoalDirectedMetrics is importable from behavior.navigation."""
-        from neurospatial.behavior.navigation import GoalDirectedMetrics
-
-        assert GoalDirectedMetrics is not None
-
-    def test_import_goal_vector(self):
-        """Test goal_vector is importable from behavior.navigation."""
-        from neurospatial.behavior.navigation import goal_vector
-
-        assert callable(goal_vector)
-
-    def test_import_goal_direction(self):
-        """Test goal_direction is importable from behavior.navigation."""
-        from neurospatial.behavior.navigation import goal_direction
-
-        assert callable(goal_direction)
-
-    def test_import_instantaneous_goal_alignment(self):
-        """Test instantaneous_goal_alignment is importable from behavior.navigation."""
-        from neurospatial.behavior.navigation import instantaneous_goal_alignment
-
-        assert callable(instantaneous_goal_alignment)
-
-    def test_import_goal_bias(self):
-        """Test goal_bias is importable from behavior.navigation."""
-        from neurospatial.behavior.navigation import goal_bias
-
-        assert callable(goal_bias)
-
-    def test_import_approach_rate(self):
-        """Test approach_rate is importable from behavior.navigation."""
-        from neurospatial.behavior.navigation import approach_rate
-
-        assert callable(approach_rate)
-
-    def test_import_compute_goal_directed_metrics(self):
-        """Test compute_goal_directed_metrics is importable from behavior.navigation."""
-        from neurospatial.behavior.navigation import compute_goal_directed_metrics
-
-        assert callable(compute_goal_directed_metrics)
-
-
-class TestBehaviorModuleReExports:
-    """Test that navigation functions are re-exported from behavior/__init__.py."""
-
-    def test_import_path_progress_from_behavior(self):
-        """Test path_progress is re-exported from behavior module."""
-        from neurospatial.behavior import path_progress
-
-        assert callable(path_progress)
-
-    def test_import_distance_to_region_from_behavior(self):
-        """Test distance_to_region is re-exported from behavior module."""
-        from neurospatial.behavior import distance_to_region
-
-        assert callable(distance_to_region)
-
-    def test_import_cost_to_goal_from_behavior(self):
-        """Test cost_to_goal is re-exported from behavior module."""
-        from neurospatial.behavior import cost_to_goal
-
-        assert callable(cost_to_goal)
-
-    def test_import_time_to_goal_from_behavior(self):
-        """Test time_to_goal is re-exported from behavior module."""
-        from neurospatial.behavior import time_to_goal
-
-        assert callable(time_to_goal)
-
-    def test_import_path_efficiency_from_behavior(self):
-        """Test path_efficiency is re-exported from behavior module."""
-        from neurospatial.behavior import path_efficiency
-
-        assert callable(path_efficiency)
-
-    def test_import_goal_bias_from_behavior(self):
-        """Test goal_bias is re-exported from behavior module."""
-        from neurospatial.behavior import goal_bias
-
-        assert callable(goal_bias)
 
 
 class TestNavigationFunctionality:
@@ -329,19 +129,22 @@ class TestNavigationFunctionality:
         assert "stationary" in labels or any("0" in str(label) for label in labels[1:])
 
     def test_path_efficiency_with_env(self, simple_env):
-        """Test path_efficiency works with environment."""
-        from neurospatial.behavior.navigation import path_efficiency
+        """Test compute_path_efficiency.efficiency works with environment."""
+        from neurospatial.behavior.navigation import compute_path_efficiency
 
         # Create a trajectory
         positions = np.array(
             [[10.0, 10.0], [20.0, 15.0], [30.0, 20.0], [40.0, 25.0], [50.0, 30.0]]
         )
+        times = np.linspace(0.0, 1.0, len(positions))
         goal = np.array([50.0, 30.0])
 
-        eff = path_efficiency(simple_env, positions, goal, metric="euclidean")
+        result = compute_path_efficiency(
+            simple_env, positions, times, goal, metric="euclidean"
+        )
 
         # Efficiency should be between 0 and 1
-        assert 0.0 < eff <= 1.0
+        assert 0.0 < result.efficiency <= 1.0
 
     def test_compute_goal_directed_metrics_basic(self, simple_env):
         """Test compute_goal_directed_metrics returns valid metrics."""
@@ -495,7 +298,11 @@ class TestBehavioralFunctions:
         goal_bins = np.minimum(goal_bins, simple_env.n_bins - 1)
 
         progress = path_progress(
-            simple_env, position_bins, start_bins, goal_bins, metric="euclidean"
+            position_bins,
+            simple_env,
+            start_bins=start_bins,
+            goal_bins=goal_bins,
+            metric="euclidean",
         )
 
         assert len(progress) == n_samples
@@ -512,7 +319,7 @@ class TestBehavioralFunctions:
         target_bin = min(10, simple_env.n_bins - 1)
 
         distances = distance_to_region(
-            simple_env, position_bins, target_bin, metric="euclidean"
+            position_bins, simple_env, target_bins=target_bin, metric="euclidean"
         )
 
         assert len(distances) == len(position_bins)
@@ -528,7 +335,7 @@ class TestBehavioralFunctions:
         target_bins = np.minimum(target_bins, simple_env.n_bins - 1)
 
         distances = distance_to_region(
-            simple_env, position_bins, target_bins, metric="euclidean"
+            position_bins, simple_env, target_bins=target_bins, metric="euclidean"
         )
 
         assert len(distances) == len(position_bins)

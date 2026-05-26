@@ -73,6 +73,7 @@ from __future__ import annotations
 import base64
 import html as html_module
 import json
+import logging
 import os
 import warnings
 from pathlib import Path
@@ -85,6 +86,8 @@ from tqdm import tqdm
 if TYPE_CHECKING:
     from neurospatial.animation.overlays import OverlayData
     from neurospatial.environment.core import Environment
+
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -704,7 +707,7 @@ def render_html(
             f"  1. Subsample position data:\n"
             f"     # Subsample overlay positions to match reduced frame rate\n"
             f"     positions_subsampled = positions[::5]  # Every 5th position\n"
-            f"     overlay = PositionOverlay(data=positions_subsampled, ...)\n"
+            f"     overlay = PositionOverlay(positions=positions_subsampled, ...)\n"
             f"\n"
             f"  2. Use video backend for full-fidelity overlays:\n"
             f"     env.animate_fields(fields, backend='video', save_path='output.mp4',\n"
@@ -746,7 +749,7 @@ def render_html(
             raise ValueError(f"n_workers must be positive (got {n_workers})")
 
         # Use parallel renderer for speed & consistency
-        print(f"Rendering {n_frames} frames to {frames_dir}...")
+        logger.info("Rendering %d frames to %s...", n_frames, frames_dir)
         _ = parallel_render_frames(
             env=env,
             fields=fields,
@@ -782,12 +785,12 @@ def render_html(
         # Write HTML
         output_path.write_text(html, encoding="utf-8")
 
-        print(f"✓ HTML saved to {output_path} (frames in {frames_dir})")
+        logger.info("✓ HTML saved to %s (frames in %s)", output_path, frames_dir)
         return output_path
 
     # ---- Embedded mode (original behavior) ----
     # Pre-render all frames to base64 with overlays baked in
-    print(f"Rendering {n_frames} frames to {image_format.upper()}...")
+    logger.info("Rendering %d frames to %s...", n_frames, image_format.upper())
     frames_b64 = []
 
     for frame_idx, field in enumerate(tqdm(fields, desc="Encoding frames")):
@@ -828,7 +831,7 @@ def render_html(
     output_path.write_text(html, encoding="utf-8")
 
     file_size_mb = output_path.stat().st_size / 1e6
-    print(f"✓ HTML saved to {output_path} ({file_size_mb:.1f} MB)")
+    logger.info("✓ HTML saved to %s (%.1f MB)", output_path, file_size_mb)
 
     return output_path
 

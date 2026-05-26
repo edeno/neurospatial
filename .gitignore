@@ -184,4 +184,11 @@ cython_debug/
 # Research/experimental code (not for distribution)
 examples/research/
 docs/research/
-data/
+# Ignore everything in data/ EXCEPT the documentation file and the
+# public data-loading helper. We can't ignore the directory itself
+# and then re-include files under it (git's gitignore semantics
+# forbid re-including under an excluded parent), so we exclude
+# entries directly with ``data/*`` and add explicit negations.
+data/*
+!data/README.md
+!data/load_bandit_data.py

@@ -97,7 +97,7 @@ class TestComputeEgocentricOccupancy:
             compute_egocentric_occupancy,
         )
 
-        occupancy, _ego_env = compute_egocentric_occupancy(
+        occupancy, _env = compute_egocentric_occupancy(
             trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
@@ -108,7 +108,7 @@ class TestComputeEgocentricOccupancy:
         )
         assert isinstance(occupancy, np.ndarray)
 
-    def test_returns_ego_env(
+    def test_returns_env(
         self,
         env: Environment,
         trajectory_data: dict,
@@ -119,7 +119,7 @@ class TestComputeEgocentricOccupancy:
             compute_egocentric_occupancy,
         )
 
-        _occupancy, ego_env = compute_egocentric_occupancy(
+        _occupancy, env = compute_egocentric_occupancy(
             trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
@@ -128,21 +128,21 @@ class TestComputeEgocentricOccupancy:
             n_distance_bins=10,
             n_direction_bins=12,
         )
-        assert isinstance(ego_env, Environment)
+        assert isinstance(env, Environment)
 
     def test_occupancy_shape(
         self,
         trajectory_data: dict,
         object_positions: np.ndarray,
     ):
-        """Occupancy shape matches ego_env.n_bins."""
+        """Occupancy shape matches env.n_bins."""
         from neurospatial.encoding._egocentric_binning import (
             compute_egocentric_occupancy,
         )
 
         n_distance_bins = 10
         n_direction_bins = 12
-        occupancy, ego_env = compute_egocentric_occupancy(
+        occupancy, env = compute_egocentric_occupancy(
             trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
@@ -153,7 +153,7 @@ class TestComputeEgocentricOccupancy:
         )
         expected_n_bins = n_distance_bins * n_direction_bins
         assert occupancy.shape == (expected_n_bins,)
-        assert len(occupancy) == ego_env.n_bins
+        assert len(occupancy) == env.n_bins
 
     def test_occupancy_non_negative(
         self,
@@ -225,7 +225,7 @@ class TestComputeEgocentricOccupancy:
 
 
 class TestComputeEgocentricOccupancyDistanceMetric:
-    """Tests for distance_metric parameter."""
+    """Tests for metric parameter."""
 
     def test_euclidean_default(
         self,
@@ -268,7 +268,7 @@ class TestComputeEgocentricOccupancyDistanceMetric:
                 distance_range=(0.0, 50.0),
                 n_distance_bins=10,
                 n_direction_bins=12,
-                distance_metric="geodesic",
+                metric="geodesic",
             )
 
     def test_geodesic_with_env(
@@ -290,12 +290,12 @@ class TestComputeEgocentricOccupancyDistanceMetric:
             distance_range=(0.0, 50.0),
             n_distance_bins=10,
             n_direction_bins=12,
-            distance_metric="geodesic",
+            metric="geodesic",
             env=env,
         )
         assert occupancy.shape[0] > 0
 
-    def test_invalid_distance_metric_raises(
+    def test_invalid_metric_raises(
         self,
         trajectory_data: dict,
         object_positions: np.ndarray,
@@ -314,7 +314,7 @@ class TestComputeEgocentricOccupancyDistanceMetric:
                 distance_range=(0.0, 50.0),
                 n_distance_bins=10,
                 n_direction_bins=12,
-                distance_metric="manhattan",  # Invalid
+                metric="manhattan",  # Invalid
             )
 
 
@@ -429,7 +429,7 @@ class TestBinEgocentricSpikeTrain:
         """Function returns numpy array."""
         from neurospatial.encoding._egocentric_binning import bin_egocentric_spike_train
 
-        spike_counts, _ego_env = bin_egocentric_spike_train(
+        spike_counts, _env = bin_egocentric_spike_train(
             spike_times,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -447,12 +447,12 @@ class TestBinEgocentricSpikeTrain:
         object_positions: np.ndarray,
         spike_times: np.ndarray,
     ):
-        """Spike counts shape matches ego_env.n_bins."""
+        """Spike counts shape matches env.n_bins."""
         from neurospatial.encoding._egocentric_binning import bin_egocentric_spike_train
 
         n_distance_bins = 10
         n_direction_bins = 12
-        spike_counts, ego_env = bin_egocentric_spike_train(
+        spike_counts, env = bin_egocentric_spike_train(
             spike_times,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -464,7 +464,7 @@ class TestBinEgocentricSpikeTrain:
         )
         expected_n_bins = n_distance_bins * n_direction_bins
         assert spike_counts.shape == (expected_n_bins,)
-        assert len(spike_counts) == ego_env.n_bins
+        assert len(spike_counts) == env.n_bins
 
     def test_spike_counts_non_negative(
         self,
@@ -539,7 +539,7 @@ class TestBinEgocentricSpikeTrain:
         from neurospatial.encoding._egocentric_binning import bin_egocentric_spike_train
 
         spike_times = np.array([])
-        spike_counts, ego_env = bin_egocentric_spike_train(
+        spike_counts, env = bin_egocentric_spike_train(
             spike_times,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -550,7 +550,7 @@ class TestBinEgocentricSpikeTrain:
             n_direction_bins=12,
         )
         assert np.sum(spike_counts) == 0
-        assert spike_counts.shape == (ego_env.n_bins,)
+        assert spike_counts.shape == (env.n_bins,)
 
 
 class TestBinEgocentricSpikeTrainValidation:
@@ -606,7 +606,7 @@ class TestBinEgocentricSpikeTrainValidation:
 
 
 class TestBinEgocentricSpikeTrainDistanceMetric:
-    """Tests for distance_metric parameter in spike train binning."""
+    """Tests for metric parameter in spike train binning."""
 
     def test_euclidean_default(
         self,
@@ -648,7 +648,7 @@ class TestBinEgocentricSpikeTrainDistanceMetric:
                 distance_range=(0.0, 50.0),
                 n_distance_bins=10,
                 n_direction_bins=12,
-                distance_metric="geodesic",
+                metric="geodesic",
             )
 
     def test_geodesic_with_env(
@@ -670,7 +670,7 @@ class TestBinEgocentricSpikeTrainDistanceMetric:
             distance_range=(0.0, 50.0),
             n_distance_bins=10,
             n_direction_bins=12,
-            distance_metric="geodesic",
+            metric="geodesic",
             env=env,
         )
         assert spike_counts.shape[0] > 0
@@ -698,7 +698,7 @@ class TestBinEgocentricSpikeTrains:
         object_positions: np.ndarray,
         spike_times_list: list[np.ndarray],
     ):
-        """Function returns tuple of (spike_counts, occupancy, ego_env)."""
+        """Function returns tuple of (spike_counts, occupancy, env)."""
         from neurospatial.encoding._egocentric_binning import (
             bin_egocentric_spike_trains,
         )
@@ -732,7 +732,7 @@ class TestBinEgocentricSpikeTrains:
         n_direction_bins = 12
         expected_n_bins = n_distance_bins * n_direction_bins
 
-        spike_counts, _occupancy, ego_env = bin_egocentric_spike_trains(
+        spike_counts, _occupancy, env = bin_egocentric_spike_trains(
             spike_times_list,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -743,7 +743,7 @@ class TestBinEgocentricSpikeTrains:
             n_direction_bins=n_direction_bins,
         )
         assert spike_counts.shape == (n_neurons, expected_n_bins)
-        assert spike_counts.shape[1] == ego_env.n_bins
+        assert spike_counts.shape[1] == env.n_bins
 
     def test_occupancy_shape(
         self,
@@ -760,7 +760,7 @@ class TestBinEgocentricSpikeTrains:
         n_direction_bins = 12
         expected_n_bins = n_distance_bins * n_direction_bins
 
-        _spike_counts, occupancy, ego_env = bin_egocentric_spike_trains(
+        _spike_counts, occupancy, env = bin_egocentric_spike_trains(
             spike_times_list,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -771,7 +771,7 @@ class TestBinEgocentricSpikeTrains:
             n_direction_bins=n_direction_bins,
         )
         assert occupancy.shape == (expected_n_bins,)
-        assert len(occupancy) == ego_env.n_bins
+        assert len(occupancy) == env.n_bins
 
     def test_dtypes(
         self,
@@ -810,22 +810,20 @@ class TestBinEgocentricSpikeTrains:
         )
 
         # Batch
-        spike_counts_batch, _occupancy_batch, _ego_env_batch = (
-            bin_egocentric_spike_trains(
-                spike_times_list,
-                trajectory_data["times"],
-                trajectory_data["positions"],
-                trajectory_data["headings"],
-                object_positions,
-                distance_range=(0.0, 50.0),
-                n_distance_bins=10,
-                n_direction_bins=12,
-            )
+        spike_counts_batch, _occupancy_batch, _env_batch = bin_egocentric_spike_trains(
+            spike_times_list,
+            trajectory_data["times"],
+            trajectory_data["positions"],
+            trajectory_data["headings"],
+            object_positions,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
         )
 
         # Single
         for i, spike_times in enumerate(spike_times_list):
-            spike_counts_single, _ego_env_single = bin_egocentric_spike_train(
+            spike_counts_single, _env_single = bin_egocentric_spike_train(
                 spike_times,
                 trajectory_data["times"],
                 trajectory_data["positions"],
@@ -854,7 +852,7 @@ class TestBinEgocentricSpikeTrains:
         n_direction_bins = 12
         expected_n_bins = n_distance_bins * n_direction_bins
 
-        spike_counts, occupancy, _ego_env = bin_egocentric_spike_trains(
+        spike_counts, occupancy, _env = bin_egocentric_spike_trains(
             spike_times_list,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -923,7 +921,7 @@ class TestBinEgocentricSpikeTrains:
         for i, s in enumerate(spike_times_list):
             spike_times_2d[i, : len(s)] = s
 
-        spike_counts, _occupancy, _ego_env = bin_egocentric_spike_trains(
+        spike_counts, _occupancy, _env = bin_egocentric_spike_trains(
             spike_times_2d,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -937,7 +935,7 @@ class TestBinEgocentricSpikeTrains:
 
 
 class TestBinEgocentricSpikeTrainsDistanceMetric:
-    """Tests for distance_metric parameter in batch spike train binning."""
+    """Tests for metric parameter in batch spike train binning."""
 
     def test_geodesic_requires_env(
         self,
@@ -960,7 +958,7 @@ class TestBinEgocentricSpikeTrainsDistanceMetric:
                 distance_range=(0.0, 50.0),
                 n_distance_bins=10,
                 n_direction_bins=12,
-                distance_metric="geodesic",
+                metric="geodesic",
             )
 
     def test_geodesic_with_env(
@@ -975,7 +973,7 @@ class TestBinEgocentricSpikeTrainsDistanceMetric:
             bin_egocentric_spike_trains,
         )
 
-        spike_counts, _occupancy, _ego_env = bin_egocentric_spike_trains(
+        spike_counts, _occupancy, _env = bin_egocentric_spike_trains(
             spike_times_list,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -984,7 +982,7 @@ class TestBinEgocentricSpikeTrainsDistanceMetric:
             distance_range=(0.0, 50.0),
             n_distance_bins=10,
             n_direction_bins=12,
-            distance_metric="geodesic",
+            metric="geodesic",
             env=env,
         )
         assert spike_counts.shape[0] == len(spike_times_list)
@@ -1142,7 +1140,7 @@ class TestEgocentricNaNHandling:
             positions,
             headings,
             object_positions,
-            distance_metric="geodesic",
+            metric="geodesic",
             env=env_with_hole,
         )
 
@@ -1173,7 +1171,7 @@ class TestEgocentricNaNHandling:
             positions,
             headings,
             object_positions,
-            distance_metric="geodesic",
+            metric="geodesic",
             env=env_with_hole,
         )
 
@@ -1206,7 +1204,7 @@ class TestEgocentricNaNHandling:
             positions,
             headings,
             object_positions,
-            distance_metric="geodesic",
+            metric="geodesic",
             env=env_with_hole,
         )
 
@@ -1231,7 +1229,7 @@ class TestEgocentricNaNHandling:
             positions,
             headings,
             object_positions,
-            distance_metric="geodesic",
+            metric="geodesic",
             env=env_with_hole,
         )
 
@@ -1259,7 +1257,7 @@ class TestEgocentricNaNHandling:
             positions,
             headings,
             object_positions,
-            distance_metric="geodesic",
+            metric="geodesic",
             env=env_with_hole,
         )
 
@@ -1289,7 +1287,7 @@ class TestEgocentricNaNHandling:
         object_positions = np.array([[75.0, 75.0]])
 
         # Should not raise an error
-        occupancy, _ego_env = compute_egocentric_occupancy(
+        occupancy, _env = compute_egocentric_occupancy(
             times,
             positions,
             headings,
@@ -1297,7 +1295,7 @@ class TestEgocentricNaNHandling:
             distance_range=(0.0, 50.0),
             n_distance_bins=10,
             n_direction_bins=12,
-            distance_metric="geodesic",
+            metric="geodesic",
             env=env_with_hole,
         )
 
@@ -1327,7 +1325,7 @@ class TestEgocentricNaNHandling:
         )
 
         # Should not raise an error
-        spike_counts, _ego_env = bin_egocentric_spike_train(
+        spike_counts, _env = bin_egocentric_spike_train(
             spike_times,
             times,
             positions,
@@ -1336,7 +1334,7 @@ class TestEgocentricNaNHandling:
             distance_range=(0.0, 50.0),
             n_distance_bins=10,
             n_direction_bins=12,
-            distance_metric="geodesic",
+            metric="geodesic",
             env=env_with_hole,
         )
 

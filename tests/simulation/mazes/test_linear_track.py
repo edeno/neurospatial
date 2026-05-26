@@ -2,47 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
-
 import numpy as np
-import pytest
-
-from neurospatial.simulation.mazes._base import MazeDims
-
-
-class TestLinearTrackDims:
-    """Tests for LinearTrackDims dataclass."""
-
-    def test_inherits_from_maze_dims(self):
-        """LinearTrackDims should inherit from MazeDims."""
-        from neurospatial.simulation.mazes.linear_track import LinearTrackDims
-
-        dims = LinearTrackDims()
-        assert isinstance(dims, MazeDims)
-
-    def test_default_values(self):
-        """LinearTrackDims should have correct default values."""
-        from neurospatial.simulation.mazes.linear_track import LinearTrackDims
-
-        dims = LinearTrackDims()
-        assert dims.length == 150.0
-        assert dims.width == 10.0
-
-    def test_is_frozen(self):
-        """LinearTrackDims should be frozen (immutable)."""
-        from neurospatial.simulation.mazes.linear_track import LinearTrackDims
-
-        dims = LinearTrackDims()
-        with pytest.raises(FrozenInstanceError):
-            dims.length = 200.0  # type: ignore[misc]
-
-    def test_custom_values(self):
-        """LinearTrackDims should accept custom values."""
-        from neurospatial.simulation.mazes.linear_track import LinearTrackDims
-
-        dims = LinearTrackDims(length=200.0, width=15.0)
-        assert dims.length == 200.0
-        assert dims.width == 15.0
 
 
 class TestMakeLinearTrack:
@@ -153,7 +113,7 @@ class TestMakeLinearTrack:
 
         maze = make_linear_track(include_track=True)
         assert maze.env_track is not None
-        assert maze.env_track.is_1d
+        assert maze.env_track.is_linearized_track
 
     def test_env_track_is_connected(self):
         """Track graph should be connected."""
@@ -232,7 +192,7 @@ class TestLinearTrackTrackGraph:
         assert maze.env_track is not None
 
         # Linear track should be 1D and connected
-        assert maze.env_track.is_1d
+        assert maze.env_track.is_linearized_track
 
         # All nodes should be reachable from each other
         import networkx as nx

@@ -1,37 +1,34 @@
-"""Tests for backend dispatch in compute functions.
+"""Tests for the ``backend`` parameter on the encoding compute functions.
 
-This module tests that all compute functions properly support the backend parameter:
-- compute_spatial_rate(s)
-- compute_directional_rate(s)
-- compute_view_rate(s)
-- compute_egocentric_rate(None, s)
+The eight ``compute_*_rate(s)`` functions accept ``backend`` in
+``{"numpy", "jax", "auto"}``. ``"jax"`` returns JAX arrays when the
+JAX backend is available, ``"auto"`` falls back to NumPy otherwise.
+This file pins three contracts per entry point:
 
-TDD approach: Tests written first, implementation follows.
-
-Design requirements (from TASKS.md Task 6.4):
-- All compute functions should accept backend parameter
-- backend should be validated against SUPPORTED_BACKENDS
-- "numpy" backend should always work
-- "jax" backend should raise NotImplementedError (until implemented)
-- "auto" backend should use NumPy fallback (until JAX is fully implemented)
+1. ``backend="invalid"`` raises ``ValueError("Unknown backend")``.
+2. ``backend={"numpy","jax","auto"}`` produces a non-empty firing-rate
+   array of the expected type (``jax.Array`` when JAX resolves,
+   ``np.ndarray`` otherwise), with at least one finite, non-negative
+   bin.
+3. ``backend="jax"`` raises ``ImportError`` when JAX is unavailable;
+   ``backend="auto"`` falls back to NumPy on the same platforms.
 """
 
 from __future__ import annotations
+
+import sys
 
 import numpy as np
 import pytest
 from numpy.typing import NDArray
 
 from neurospatial import Environment
-
-# ==============================================================================
-# Fixtures
-# ==============================================================================
+from neurospatial.encoding._backend import is_jax_available
+from neurospatial.encoding._base import _is_jax_array
 
 
 @pytest.fixture
 def simple_env() -> Environment:
-    """Create a simple 2D environment for testing."""
     rng = np.random.default_rng(42)
     positions = rng.uniform(-50, 50, (1000, 2))
     return Environment.from_samples(positions, bin_size=5.0)
@@ -39,651 +36,277 @@ def simple_env() -> Environment:
 
 @pytest.fixture
 def trajectory_times() -> NDArray[np.float64]:
-    """Trajectory timestamps (10 seconds at 100 Hz)."""
     return np.linspace(0, 10, 1000)
 
 
 @pytest.fixture
 def trajectory_positions() -> NDArray[np.float64]:
-    """Trajectory positions covering the environment."""
     rng = np.random.default_rng(42)
     return rng.uniform(-50, 50, (1000, 2))
 
 
 @pytest.fixture
 def trajectory_headings() -> NDArray[np.float64]:
-    """Head direction data (random walk)."""
     rng = np.random.default_rng(42)
     return np.cumsum(rng.uniform(-0.1, 0.1, 1000)) % (2 * np.pi)
 
 
 @pytest.fixture
 def spike_times() -> NDArray[np.float64]:
-    """Simple spike train for testing."""
     rng = np.random.default_rng(42)
     return np.sort(rng.uniform(0, 10, 50))
 
 
 @pytest.fixture
 def multi_spike_times() -> list[NDArray[np.float64]]:
-    """Multiple spike trains for batch testing."""
     rng = np.random.default_rng(42)
     return [np.sort(rng.uniform(0, 10, 50)) for _ in range(3)]
 
 
 @pytest.fixture
 def object_positions() -> NDArray[np.float64]:
-    """Object positions for egocentric tests."""
     return np.array([[10.0, 10.0], [-20.0, 15.0]])
 
 
-# ==============================================================================
-# Test compute_spatial_rate backend parameter
-# ==============================================================================
+@pytest.fixture
+def compute_inputs(
+    simple_env: Environment,
+    spike_times: NDArray[np.float64],
+    multi_spike_times: list[NDArray[np.float64]],
+    trajectory_times: NDArray[np.float64],
+    trajectory_positions: NDArray[np.float64],
+    trajectory_headings: NDArray[np.float64],
+    object_positions: NDArray[np.float64],
+) -> dict[str, object]:
+    """Bundle the seven raw input fixtures the compute functions consume.
+
+    ``_make_call`` selects the subset each entry point needs (e.g.
+    ``compute_directional_rate`` skips ``simple_env`` and
+    ``object_positions``). Returning a ``dict`` rather than a tuple
+    means callers spread with ``**compute_inputs`` and the fixture is
+    addressed by keyword inside ``_make_call`` — silent-fail-free even
+    if the bundle gains or reorders entries later.
+    """
+    return {
+        "simple_env": simple_env,
+        "spike_times": spike_times,
+        "multi_spike_times": multi_spike_times,
+        "trajectory_times": trajectory_times,
+        "trajectory_positions": trajectory_positions,
+        "trajectory_headings": trajectory_headings,
+        "object_positions": object_positions,
+    }
 
 
-class TestComputeSpatialRateBackend:
-    """Tests for backend parameter in compute_spatial_rate."""
+def _simulate_jax_unavailable(monkeypatch) -> None:
+    """Force ``is_jax_available()`` to return ``False`` for this test.
 
-    def test_accepts_numpy_backend(
-        self,
-        simple_env: Environment,
-        spike_times: NDArray[np.float64],
-        trajectory_times: NDArray[np.float64],
-        trajectory_positions: NDArray[np.float64],
-    ) -> None:
-        """compute_spatial_rate accepts backend='numpy'."""
-        from neurospatial.encoding.spatial import compute_spatial_rate
+    Patches ``sys.platform`` to ``"win32"`` — JAX has no Windows wheels,
+    so ``is_jax_available()`` short-circuits to ``False`` before
+    attempting any ``import jax``. The cache clear must come **after**
+    the patch: doing it the other way leaves a stale ``True`` in the
+    LRU if anything reads the predicate between the clear and the
+    patch. The conftest-level ``restore_backend_availability_cache``
+    fixture restores state on teardown.
 
-        result = compute_spatial_rate(
+    Asserts after the patch that the predicate now reports ``False``.
+    This catches two silent-failure modes: the patch failing to take
+    effect (e.g., someone reorders the two operations), and the test
+    being run on a JAX-less CI where the predicate is *already* False
+    for a different reason — in which case this helper trivially
+    "works" without exercising the win32 branch it claims to test.
+    """
+    import neurospatial.encoding._backend as backend_module
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    backend_module.is_jax_available.cache_clear()
+    assert not backend_module.is_jax_available(), (
+        "Could not simulate JAX-unavailable: either the patch did not "
+        "take effect, or this test is running on a platform where JAX "
+        "is genuinely unavailable. The win32 short-circuit path is not "
+        "being exercised."
+    )
+
+
+def _make_call(
+    func_name: str,
+    simple_env,
+    spike_times,
+    multi_spike_times,
+    trajectory_times,
+    trajectory_positions,
+    trajectory_headings,
+    object_positions,
+):
+    """Build a callable for each compute_* entry point that takes ``backend``."""
+    from neurospatial.encoding.directional import (
+        compute_directional_rate,
+        compute_directional_rates,
+    )
+    from neurospatial.encoding.egocentric import (
+        compute_egocentric_rate,
+        compute_egocentric_rates,
+    )
+    from neurospatial.encoding.spatial import (
+        compute_spatial_rate,
+        compute_spatial_rates,
+    )
+    from neurospatial.encoding.view import compute_view_rate, compute_view_rates
+
+    table = {
+        "compute_spatial_rate": lambda backend: compute_spatial_rate(
             simple_env,
             spike_times,
             trajectory_times,
             trajectory_positions,
-            backend="numpy",
-        )
-        assert result is not None
-        assert np.asarray(result.firing_rate).shape == (simple_env.n_bins,)
-
-    def test_accepts_auto_backend(
-        self,
-        simple_env: Environment,
-        spike_times: NDArray[np.float64],
-        trajectory_times: NDArray[np.float64],
-        trajectory_positions: NDArray[np.float64],
-    ) -> None:
-        """compute_spatial_rate accepts backend='auto'."""
-        from neurospatial.encoding.spatial import compute_spatial_rate
-
-        result = compute_spatial_rate(
-            simple_env,
-            spike_times,
-            trajectory_times,
-            trajectory_positions,
-            backend="auto",
-        )
-        assert result is not None
-
-    def test_rejects_invalid_backend(
-        self,
-        simple_env: Environment,
-        spike_times: NDArray[np.float64],
-        trajectory_times: NDArray[np.float64],
-        trajectory_positions: NDArray[np.float64],
-    ) -> None:
-        """compute_spatial_rate raises ValueError for invalid backend."""
-        from neurospatial.encoding.spatial import compute_spatial_rate
-
-        with pytest.raises(ValueError, match="Unknown backend"):
-            compute_spatial_rate(
-                simple_env,
-                spike_times,
-                trajectory_times,
-                trajectory_positions,
-                backend="invalid",  # type: ignore[arg-type]
-            )
-
-
-class TestComputeSpatialRatesBackend:
-    """Tests for backend parameter in compute_spatial_rates."""
-
-    def test_accepts_numpy_backend(
-        self,
-        simple_env: Environment,
-        multi_spike_times: list[NDArray[np.float64]],
-        trajectory_times: NDArray[np.float64],
-        trajectory_positions: NDArray[np.float64],
-    ) -> None:
-        """compute_spatial_rates accepts backend='numpy'."""
-        from neurospatial.encoding.spatial import compute_spatial_rates
-
-        result = compute_spatial_rates(
+            backend=backend,
+        ),
+        "compute_spatial_rates": lambda backend: compute_spatial_rates(
             simple_env,
             multi_spike_times,
             trajectory_times,
             trajectory_positions,
-            backend="numpy",
-        )
-        assert result is not None
-        assert np.asarray(result.firing_rates).shape == (3, simple_env.n_bins)
-
-    def test_accepts_auto_backend(
-        self,
-        simple_env: Environment,
-        multi_spike_times: list[NDArray[np.float64]],
-        trajectory_times: NDArray[np.float64],
-        trajectory_positions: NDArray[np.float64],
-    ) -> None:
-        """compute_spatial_rates accepts backend='auto'."""
-        from neurospatial.encoding.spatial import compute_spatial_rates
-
-        result = compute_spatial_rates(
-            simple_env,
-            multi_spike_times,
-            trajectory_times,
-            trajectory_positions,
-            backend="auto",
-        )
-        assert result is not None
-
-    def test_rejects_invalid_backend(
-        self,
-        simple_env: Environment,
-        multi_spike_times: list[NDArray[np.float64]],
-        trajectory_times: NDArray[np.float64],
-        trajectory_positions: NDArray[np.float64],
-    ) -> None:
-        """compute_spatial_rates raises ValueError for invalid backend."""
-        from neurospatial.encoding.spatial import compute_spatial_rates
-
-        with pytest.raises(ValueError, match="Unknown backend"):
-            compute_spatial_rates(
-                simple_env,
-                multi_spike_times,
-                trajectory_times,
-                trajectory_positions,
-                backend="invalid",  # type: ignore[arg-type]
-            )
-
-
-# ==============================================================================
-# Test compute_directional_rate backend parameter
-# ==============================================================================
-
-
-class TestComputeDirectionalRateBackend:
-    """Tests for backend parameter in compute_directional_rate."""
-
-    def test_accepts_numpy_backend(
-        self,
-        spike_times: NDArray[np.float64],
-        trajectory_times: NDArray[np.float64],
-        trajectory_headings: NDArray[np.float64],
-    ) -> None:
-        """compute_directional_rate accepts backend='numpy'."""
-        from neurospatial.encoding.directional import compute_directional_rate
-
-        result = compute_directional_rate(
+            backend=backend,
+        ),
+        "compute_directional_rate": lambda backend: compute_directional_rate(
             spike_times,
             trajectory_times,
             trajectory_headings,
-            backend="numpy",
-        )
-        assert result is not None
-
-    def test_accepts_auto_backend(
-        self,
-        spike_times: NDArray[np.float64],
-        trajectory_times: NDArray[np.float64],
-        trajectory_headings: NDArray[np.float64],
-    ) -> None:
-        """compute_directional_rate accepts backend='auto'."""
-        from neurospatial.encoding.directional import compute_directional_rate
-
-        result = compute_directional_rate(
-            spike_times,
-            trajectory_times,
-            trajectory_headings,
-            backend="auto",
-        )
-        assert result is not None
-
-    def test_rejects_invalid_backend(
-        self,
-        spike_times: NDArray[np.float64],
-        trajectory_times: NDArray[np.float64],
-        trajectory_headings: NDArray[np.float64],
-    ) -> None:
-        """compute_directional_rate raises ValueError for invalid backend."""
-        from neurospatial.encoding.directional import compute_directional_rate
-
-        with pytest.raises(ValueError, match="Unknown backend"):
-            compute_directional_rate(
-                spike_times,
-                trajectory_times,
-                trajectory_headings,
-                backend="invalid",  # type: ignore[arg-type]
-            )
-
-
-class TestComputeDirectionalRatesBackend:
-    """Tests for backend parameter in compute_directional_rates."""
-
-    def test_accepts_numpy_backend(
-        self,
-        multi_spike_times: list[NDArray[np.float64]],
-        trajectory_times: NDArray[np.float64],
-        trajectory_headings: NDArray[np.float64],
-    ) -> None:
-        """compute_directional_rates accepts backend='numpy'."""
-        from neurospatial.encoding.directional import compute_directional_rates
-
-        result = compute_directional_rates(
+            backend=backend,
+        ),
+        "compute_directional_rates": lambda backend: compute_directional_rates(
             multi_spike_times,
             trajectory_times,
             trajectory_headings,
-            backend="numpy",
-        )
-        assert result is not None
-        assert np.asarray(result.firing_rates).shape[0] == 3
-
-    def test_accepts_auto_backend(
-        self,
-        multi_spike_times: list[NDArray[np.float64]],
-        trajectory_times: NDArray[np.float64],
-        trajectory_headings: NDArray[np.float64],
-    ) -> None:
-        """compute_directional_rates accepts backend='auto'."""
-        from neurospatial.encoding.directional import compute_directional_rates
-
-        result = compute_directional_rates(
-            multi_spike_times,
-            trajectory_times,
-            trajectory_headings,
-            backend="auto",
-        )
-        assert result is not None
-
-    def test_rejects_invalid_backend(
-        self,
-        multi_spike_times: list[NDArray[np.float64]],
-        trajectory_times: NDArray[np.float64],
-        trajectory_headings: NDArray[np.float64],
-    ) -> None:
-        """compute_directional_rates raises ValueError for invalid backend."""
-        from neurospatial.encoding.directional import compute_directional_rates
-
-        with pytest.raises(ValueError, match="Unknown backend"):
-            compute_directional_rates(
-                multi_spike_times,
-                trajectory_times,
-                trajectory_headings,
-                backend="invalid",  # type: ignore[arg-type]
-            )
-
-
-# ==============================================================================
-# Test compute_view_rate backend parameter
-# ==============================================================================
-
-
-class TestComputeViewRateBackend:
-    """Tests for backend parameter in compute_view_rate."""
-
-    def test_accepts_numpy_backend(
-        self,
-        simple_env: Environment,
-        spike_times: NDArray[np.float64],
-        trajectory_times: NDArray[np.float64],
-        trajectory_positions: NDArray[np.float64],
-        trajectory_headings: NDArray[np.float64],
-    ) -> None:
-        """compute_view_rate accepts backend='numpy'."""
-        from neurospatial.encoding.view import compute_view_rate
-
-        result = compute_view_rate(
+            backend=backend,
+        ),
+        "compute_view_rate": lambda backend: compute_view_rate(
             simple_env,
             spike_times,
             trajectory_times,
             trajectory_positions,
             trajectory_headings,
-            backend="numpy",
-        )
-        assert result is not None
-
-    def test_accepts_auto_backend(
-        self,
-        simple_env: Environment,
-        spike_times: NDArray[np.float64],
-        trajectory_times: NDArray[np.float64],
-        trajectory_positions: NDArray[np.float64],
-        trajectory_headings: NDArray[np.float64],
-    ) -> None:
-        """compute_view_rate accepts backend='auto'."""
-        from neurospatial.encoding.view import compute_view_rate
-
-        result = compute_view_rate(
-            simple_env,
-            spike_times,
-            trajectory_times,
-            trajectory_positions,
-            trajectory_headings,
-            backend="auto",
-        )
-        assert result is not None
-
-    def test_rejects_invalid_backend(
-        self,
-        simple_env: Environment,
-        spike_times: NDArray[np.float64],
-        trajectory_times: NDArray[np.float64],
-        trajectory_positions: NDArray[np.float64],
-        trajectory_headings: NDArray[np.float64],
-    ) -> None:
-        """compute_view_rate raises ValueError for invalid backend."""
-        from neurospatial.encoding.view import compute_view_rate
-
-        with pytest.raises(ValueError, match="Unknown backend"):
-            compute_view_rate(
-                simple_env,
-                spike_times,
-                trajectory_times,
-                trajectory_positions,
-                trajectory_headings,
-                backend="invalid",  # type: ignore[arg-type]
-            )
-
-
-class TestComputeViewRatesBackend:
-    """Tests for backend parameter in compute_view_rates."""
-
-    def test_accepts_numpy_backend(
-        self,
-        simple_env: Environment,
-        multi_spike_times: list[NDArray[np.float64]],
-        trajectory_times: NDArray[np.float64],
-        trajectory_positions: NDArray[np.float64],
-        trajectory_headings: NDArray[np.float64],
-    ) -> None:
-        """compute_view_rates accepts backend='numpy'."""
-        from neurospatial.encoding.view import compute_view_rates
-
-        result = compute_view_rates(
+            backend=backend,
+        ),
+        "compute_view_rates": lambda backend: compute_view_rates(
             simple_env,
             multi_spike_times,
             trajectory_times,
             trajectory_positions,
             trajectory_headings,
-            backend="numpy",
-        )
-        assert result is not None
-        assert np.asarray(result.firing_rates).shape[0] == 3
-
-    def test_accepts_auto_backend(
-        self,
-        simple_env: Environment,
-        multi_spike_times: list[NDArray[np.float64]],
-        trajectory_times: NDArray[np.float64],
-        trajectory_positions: NDArray[np.float64],
-        trajectory_headings: NDArray[np.float64],
-    ) -> None:
-        """compute_view_rates accepts backend='auto'."""
-        from neurospatial.encoding.view import compute_view_rates
-
-        result = compute_view_rates(
-            simple_env,
-            multi_spike_times,
-            trajectory_times,
-            trajectory_positions,
-            trajectory_headings,
-            backend="auto",
-        )
-        assert result is not None
-
-    def test_rejects_invalid_backend(
-        self,
-        simple_env: Environment,
-        multi_spike_times: list[NDArray[np.float64]],
-        trajectory_times: NDArray[np.float64],
-        trajectory_positions: NDArray[np.float64],
-        trajectory_headings: NDArray[np.float64],
-    ) -> None:
-        """compute_view_rates raises ValueError for invalid backend."""
-        from neurospatial.encoding.view import compute_view_rates
-
-        with pytest.raises(ValueError, match="Unknown backend"):
-            compute_view_rates(
-                simple_env,
-                multi_spike_times,
-                trajectory_times,
-                trajectory_positions,
-                trajectory_headings,
-                backend="invalid",  # type: ignore[arg-type]
-            )
-
-
-# ==============================================================================
-# Test compute_egocentric_rate backend parameter
-# ==============================================================================
-
-
-class TestComputeEgocentricRateBackend:
-    """Tests for backend parameter in compute_egocentric_rate."""
-
-    def test_accepts_numpy_backend(
-        self,
-        spike_times: NDArray[np.float64],
-        trajectory_times: NDArray[np.float64],
-        trajectory_positions: NDArray[np.float64],
-        trajectory_headings: NDArray[np.float64],
-        object_positions: NDArray[np.float64],
-    ) -> None:
-        """compute_egocentric_rate accepts backend='numpy'."""
-        from neurospatial.encoding.egocentric import compute_egocentric_rate
-
-        result = compute_egocentric_rate(
+            backend=backend,
+        ),
+        "compute_egocentric_rate": lambda backend: compute_egocentric_rate(
             None,
             spike_times,
             trajectory_times,
             trajectory_positions,
             trajectory_headings,
             object_positions,
-            backend="numpy",
-        )
-        assert result is not None
-
-    def test_accepts_auto_backend(
-        self,
-        spike_times: NDArray[np.float64],
-        trajectory_times: NDArray[np.float64],
-        trajectory_positions: NDArray[np.float64],
-        trajectory_headings: NDArray[np.float64],
-        object_positions: NDArray[np.float64],
-    ) -> None:
-        """compute_egocentric_rate accepts backend='auto'."""
-        from neurospatial.encoding.egocentric import compute_egocentric_rate
-
-        result = compute_egocentric_rate(
-            None,
-            spike_times,
-            trajectory_times,
-            trajectory_positions,
-            trajectory_headings,
-            object_positions,
-            backend="auto",
-        )
-        assert result is not None
-
-    def test_rejects_invalid_backend(
-        self,
-        spike_times: NDArray[np.float64],
-        trajectory_times: NDArray[np.float64],
-        trajectory_positions: NDArray[np.float64],
-        trajectory_headings: NDArray[np.float64],
-        object_positions: NDArray[np.float64],
-    ) -> None:
-        """compute_egocentric_rate raises ValueError for invalid backend."""
-        from neurospatial.encoding.egocentric import compute_egocentric_rate
-
-        with pytest.raises(ValueError, match="Unknown backend"):
-            compute_egocentric_rate(
-                None,
-                spike_times,
-                trajectory_times,
-                trajectory_positions,
-                trajectory_headings,
-                object_positions,
-                backend="invalid",  # type: ignore[arg-type]
-            )
-
-
-class TestComputeEgocentricRatesBackend:
-    """Tests for backend parameter in compute_egocentric_rates."""
-
-    def test_accepts_numpy_backend(
-        self,
-        multi_spike_times: list[NDArray[np.float64]],
-        trajectory_times: NDArray[np.float64],
-        trajectory_positions: NDArray[np.float64],
-        trajectory_headings: NDArray[np.float64],
-        object_positions: NDArray[np.float64],
-    ) -> None:
-        """compute_egocentric_rates accepts backend='numpy'."""
-        from neurospatial.encoding.egocentric import compute_egocentric_rates
-
-        result = compute_egocentric_rates(
+            backend=backend,
+        ),
+        "compute_egocentric_rates": lambda backend: compute_egocentric_rates(
             None,
             multi_spike_times,
             trajectory_times,
             trajectory_positions,
             trajectory_headings,
             object_positions,
-            backend="numpy",
+            backend=backend,
+        ),
+    }
+    return table[func_name]
+
+
+COMPUTE_FUNCTION_NAMES = [
+    "compute_spatial_rate",
+    "compute_spatial_rates",
+    "compute_directional_rate",
+    "compute_directional_rates",
+    "compute_view_rate",
+    "compute_view_rates",
+    "compute_egocentric_rate",
+    "compute_egocentric_rates",
+]
+
+
+@pytest.mark.parametrize("func_name", COMPUTE_FUNCTION_NAMES)
+def test_invalid_backend_raises(func_name, compute_inputs):
+    """``backend="invalid"`` raises ``ValueError("Unknown backend")``."""
+    call = _make_call(func_name, **compute_inputs)
+    with pytest.raises(ValueError, match="Unknown backend"):
+        call("invalid")
+
+
+@pytest.mark.parametrize("func_name", COMPUTE_FUNCTION_NAMES)
+@pytest.mark.parametrize("backend", ["numpy", "jax", "auto"])
+def test_backend_smoke_computes_finite_result(func_name, backend, compute_inputs):
+    """The configured backend dictates the output array type and a real result is produced."""
+    jax_available = is_jax_available()
+    if backend == "jax" and not jax_available:
+        pytest.skip("JAX not installed (optional 'jax' extra)")
+
+    expect_jax = backend == "jax" or (backend == "auto" and jax_available)
+    expected_type = "jax.Array" if expect_jax else "np.ndarray"
+
+    call = _make_call(func_name, **compute_inputs)
+    result = call(backend)
+    raw = result.firing_rate if hasattr(result, "firing_rate") else result.firing_rates
+
+    if expect_jax:
+        assert _is_jax_array(raw), (
+            f"{func_name} with backend={backend!r} returned "
+            f"type={type(raw).__name__}; expected {expected_type}."
         )
-        assert result is not None
-        assert np.asarray(result.firing_rates).shape[0] == 3
-
-    def test_accepts_auto_backend(
-        self,
-        multi_spike_times: list[NDArray[np.float64]],
-        trajectory_times: NDArray[np.float64],
-        trajectory_positions: NDArray[np.float64],
-        trajectory_headings: NDArray[np.float64],
-        object_positions: NDArray[np.float64],
-    ) -> None:
-        """compute_egocentric_rates accepts backend='auto'."""
-        from neurospatial.encoding.egocentric import compute_egocentric_rates
-
-        result = compute_egocentric_rates(
-            None,
-            multi_spike_times,
-            trajectory_times,
-            trajectory_positions,
-            trajectory_headings,
-            object_positions,
-            backend="auto",
+    else:
+        assert isinstance(raw, np.ndarray), (
+            f"{func_name} with backend={backend!r} returned "
+            f"type={type(raw).__name__}; expected {expected_type}."
         )
-        assert result is not None
 
-    def test_rejects_invalid_backend(
-        self,
-        multi_spike_times: list[NDArray[np.float64]],
-        trajectory_times: NDArray[np.float64],
-        trajectory_positions: NDArray[np.float64],
-        trajectory_headings: NDArray[np.float64],
-        object_positions: NDArray[np.float64],
-    ) -> None:
-        """compute_egocentric_rates raises ValueError for invalid backend."""
-        from neurospatial.encoding.egocentric import compute_egocentric_rates
-
-        with pytest.raises(ValueError, match="Unknown backend"):
-            compute_egocentric_rates(
-                None,
-                multi_spike_times,
-                trajectory_times,
-                trajectory_positions,
-                trajectory_headings,
-                object_positions,
-                backend="invalid",  # type: ignore[arg-type]
-            )
+    firing_rate = np.asarray(raw)
+    # Bins with zero occupancy are NaN by design; the contract is that
+    # *some* finite bin exists (the call wasn't a stub) and finite
+    # values are non-negative.
+    assert firing_rate.size > 0
+    finite = np.isfinite(firing_rate)
+    assert finite.any(), (
+        f"{func_name} with backend={backend!r} returned all-NaN firing rate."
+    )
+    assert (firing_rate[finite] >= 0).all()
 
 
-# ==============================================================================
-# Test backend consistency across modules
-# ==============================================================================
+@pytest.mark.parametrize("func_name", COMPUTE_FUNCTION_NAMES)
+def test_auto_backend_falls_back_to_numpy_when_jax_backend_unavailable(
+    func_name, compute_inputs, monkeypatch
+):
+    """``backend="auto"`` returns NumPy when the JAX backend is unavailable."""
+    _simulate_jax_unavailable(monkeypatch)
+
+    call = _make_call(func_name, **compute_inputs)
+    result = call("auto")
+    raw = result.firing_rate if hasattr(result, "firing_rate") else result.firing_rates
+
+    assert isinstance(raw, np.ndarray), (
+        f"{func_name} with backend='auto' returned "
+        f"type={type(raw).__name__}; expected np.ndarray when the "
+        "JAX backend is unavailable."
+    )
 
 
-class TestBackendConsistency:
-    """Test that backend parameter is consistent across all compute functions."""
+@pytest.mark.parametrize("func_name", COMPUTE_FUNCTION_NAMES)
+def test_jax_backend_propagates_import_error_when_unavailable(
+    func_name, compute_inputs, monkeypatch
+):
+    """``backend="jax"`` propagates ``ImportError`` end-to-end when JAX is unavailable.
 
-    def test_all_functions_have_backend_parameter(self) -> None:
-        """All compute functions should have backend parameter."""
-        import inspect
-
-        from neurospatial.encoding.directional import (
-            compute_directional_rate,
-            compute_directional_rates,
-        )
-        from neurospatial.encoding.egocentric import (
-            compute_egocentric_rate,
-            compute_egocentric_rates,
-        )
-        from neurospatial.encoding.spatial import (
-            compute_spatial_rate,
-            compute_spatial_rates,
-        )
-        from neurospatial.encoding.view import compute_view_rate, compute_view_rates
-
-        functions = [
-            compute_spatial_rate,
-            compute_spatial_rates,
-            compute_directional_rate,
-            compute_directional_rates,
-            compute_view_rate,
-            compute_view_rates,
-            compute_egocentric_rate,
-            compute_egocentric_rates,
-        ]
-
-        for func in functions:
-            sig = inspect.signature(func)  # type: ignore[arg-type]
-            assert "backend" in sig.parameters, (
-                f"{func.__name__} should have 'backend' parameter"
-            )
-
-    def test_all_functions_default_to_numpy(self) -> None:
-        """All compute functions should default to backend='numpy'."""
-        import inspect
-
-        from neurospatial.encoding.directional import (
-            compute_directional_rate,
-            compute_directional_rates,
-        )
-        from neurospatial.encoding.egocentric import (
-            compute_egocentric_rate,
-            compute_egocentric_rates,
-        )
-        from neurospatial.encoding.spatial import (
-            compute_spatial_rate,
-            compute_spatial_rates,
-        )
-        from neurospatial.encoding.view import compute_view_rate, compute_view_rates
-
-        functions = [
-            compute_spatial_rate,
-            compute_spatial_rates,
-            compute_directional_rate,
-            compute_directional_rates,
-            compute_view_rate,
-            compute_view_rates,
-            compute_egocentric_rate,
-            compute_egocentric_rates,
-        ]
-
-        for func in functions:
-            sig = inspect.signature(func)  # type: ignore[arg-type]
-            backend_param = sig.parameters["backend"]
-            assert backend_param.default == "numpy", (
-                f"{func.__name__} should default to backend='numpy', "
-                f"got default={backend_param.default}"
-            )
+    ``test_encoding_backend.py::test_jax_backend_raises_when_unavailable``
+    covers only ``get_backend("jax")`` at the unit layer; this test
+    fires the same condition through every compute entry point so a
+    future catches-and-falls-back regression inside any of them
+    surfaces immediately.
+    """
+    _simulate_jax_unavailable(monkeypatch)
+    call = _make_call(func_name, **compute_inputs)
+    with pytest.raises(ImportError, match="JAX"):
+        call("jax")

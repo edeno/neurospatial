@@ -1,52 +1,288 @@
 # Changelog
 
-## [Unreleased]
+## [0.4.0] - 2026-05-21
+
+This release is the v0.4 UX cleanup: a wide-ranging consolidation of
+public-API names, argument orders, return types, error semantics, and
+example coverage. There are **no deprecations**; every change is a
+clean delete-and-replace. Pin to `<0.4.0` if you need the old surface.
+
+### Breaking changes
+
+#### Parameter renames
+
+- **`distance_metric` / `distance_type` / `use_geodesic` → `metric`** across
+  all physical-distance APIs. Legal values are `{"euclidean", "geodesic"}`.
+  Affects `Environment.distance_to`, `compute_egocentric_rate(s)`,
+  `compute_egocentric_distance`, `compute_spatial_rate(s)`,
+  `ObjectVectorCellModel`, `PlaceCellModel`, `BoundaryCellModel`, and the
+  boundary / border modules.
+- **`smoothing_sigma` / `kernel_bandwidth` → `bandwidth`** across smoothing
+  APIs (`compute_spatial_rate(s)`, `compute_view_rate(s)`,
+  `compute_egocentric_rate(s)`, `Environment.smooth`, KDE helpers).
+- **`velocity_threshold` / `speed_threshold` / `threshold` → `min_speed`**
+  across velocity-based behaviour segmentation
+  (`segment_by_velocity`, `heading_from_velocity`, etc.).
+- **Overlay `data=` → semantic name.** `PositionOverlay(data=...)` →
+  `PositionOverlay(positions=...)`; `HeadDirectionOverlay(data=...)` →
+  `HeadDirectionOverlay(headings=...)`.
+
+#### Result-class field renames
+
+- **`EgocentricRateResult.ego_env` → `env`**;
+  **`ViewRateResult.view_occupancy` → `occupancy`**.
+- **`PeriEventResult.firing_rate`** is now a cached attribute, not a method.
+  Replace `result.firing_rate()` with `result.firing_rate`.
+- **`DecodingResult.uncertainty` → `posterior_entropy`** (matches the free
+  function in `decoding/estimates.py`).
+- **Singular vs plural method/attribute normalization** on result classes
+  (single-neuron results use singular methods; batch results use plural).
+  Renames: `SpatialRateResult.peak_firing_rates()` → `peak_firing_rate()`,
+  `SpatialRateResult.peak_locations()` → `peak_location()`,
+  `ViewRateResult.peak_view_locations()` → `peak_view_location()`.
+- **`is_X_cell` method names** normalized to match the free-function names
+  (`is_object_vector_cell`, `is_spatial_view_cell`,
+  `is_head_direction_cell`).
+
+#### Argument-order canonicalization
+
+- **Encoding functions are now `env`-first**, with the canonical order
+  `(env, spike_times, times, positions, headings?, object_positions?, *, ...)`.
+  Affects `compute_spatial_rate(s)`, `compute_egocentric_rate(s)`,
+  `compute_view_rate(s)`, `detect_place_fields`, `is_spatial_view_cell`,
+  `is_object_vector_cell`, `is_border_cell`, and friends.
+
+  ```python
+  # v0.3
+  compute_spatial_rate(spike_times, times, positions, env)
+  compute_egocentric_rate(spike_times, times, positions, headings,
+                          object_positions, env=env)
+  # v0.4
+  compute_spatial_rate(env, spike_times, times, positions)
+  compute_egocentric_rate(env, spike_times, times, positions,
+                          headings, object_positions)
+  ```
+
+- **`compute_directional_rate` / `is_head_direction_cell`** keep the
+  heading-domain-native `(spike_times, times, headings, *, ...)`
+  signature — this is the documented exception to the env-first rule
+  (heading is a circular angular variable, not a spatial position).
+  See the function docstrings and `CLAUDE.md` "Canonical Argument
+  Order".
+- **Egocentric ops** `allocentric_to_egocentric` /
+  `egocentric_to_allocentric` reorder to `(positions, headings, targets)`.
+- **Behavioural segmentation** functions reordered to
+  `(position_bins, times, env, *, ...)`.
+- **`distance_to_reward`** in `events.regressors` reordered to
+  `(env, times, positions, reward_times, ...)`.
+- **`fit_isotonic_trajectory` / `fit_linear_trajectory`** reordered to
+  `(env, posterior, times, *, ...)` with a standardized `method`
+  keyword.
+- **`*` keyword-only separator** added consistently across the public
+  API. Numerical parameters and verbose flags become keyword-only.
+
+#### Coordinate / convention changes
+
+- **`Environment.is_1d` → `Environment.is_linearized_track`.** Same
+  semantics (a 1-D graph track embedded in 2-D world coordinates); the
+  new name resolves the historical "is this n_dims==1 or a 2-D track?"
+  ambiguity. Serialized environment metadata uses the new key — pre-v0.4
+  saved environments will need to be re-saved.
+- **`GridProperties.peak_coords` is now `(x_offset, y_offset)`** instead
+  of `(row_offset, col_offset)`. Swap `peak_coords[:, 0]` (was row) for
+  `peak_coords[:, 1]` (now y) when reading the second component.
+- **`simulate_trajectory_ou(speed_units=...)`** is now required (was
+  defaulted). Speed defaults switch from m/s to cm/s. Mismatch between
+  `speed_units` and `env.units` raises rather than silently rescaling.
+
+#### Removed (no aliases, no deprecation)
+
+- **`Environment.save` / `Environment.load`.** The pickle path is gone.
+  Use `Environment.to_file` / `Environment.from_file` (JSON metadata
+  plus npz arrays).
+- **`Environment.mask_for_region`.** Use `Environment.region_mask`.
+- **`from_image` / `from_mask` factory aliases.** Replaced by
+  `from_pixel_mask(image_mask, pixel_size, ...)` and
+  `from_grid_mask(active_mask, grid_edges, ...)`.
+- **`path_efficiency` (float-returning).** Use `compute_path_efficiency`
+  which returns a `PathEfficiencyResult`.
+- **Cross-domain re-exports.** Each public symbol now has exactly one
+  canonical import path; the top-level `neurospatial` namespace no
+  longer re-exports symbols from `encoding`, `decoding`, etc.
 
 ### Added
 
-- **Spatial View Cells**: Complete spatial view cell analysis infrastructure
-  - `compute_spatial_view_field()` - Compute firing fields indexed by viewed location (not position)
-  - `SpatialViewFieldResult` frozen dataclass with field, view_occupancy
-  - `SpatialViewMetrics` frozen dataclass with Skaggs info, sparsity, coherence, classification
-  - `spatial_view_cell_metrics()` - Compare view fields vs place fields
-  - `is_spatial_view_cell()` - Classify based on view info > place info
-  - `SpatialViewCellModel` simulation model with gaze models (fixed_distance, ray_cast, boundary)
-  - 83 new tests for spatial view cell modules
+- **`PlaceFieldsResult` dataclass.** `detect_place_fields` returns a
+  frozen dataclass with `fields`, `excluded_reason`, and `n_excluded`
+  fields. Still iterable / sized / indexable, so existing `for f in
+  detect_place_fields(...)` and `len(...)` patterns keep working.
+  Closes the "silent drop when mean rate too high" failure mode.
+- **`BinSequenceWithRuns` dataclass + new method.**
+  `Environment.bin_sequence` always returns an `ndarray`;
+  `Environment.bin_sequence_with_runs` returns a dataclass with `bins`,
+  `run_starts`, `run_lengths`.
+- **`MSDResult` and friends.** Misc result-type cleanup in trajectory
+  analysis: `MSDResult`, `SpatialAutocorrelationResult`,
+  `PathEfficiencyResult`.
+- **`Environment.is_polar` property and `coordinate_kind` attribute.**
+  `from_polar_egocentric` sets `coordinate_kind="polar"`. Methods that
+  assume Cartesian (`distance_to`, `distance_between`,
+  `Environment.contains`, `apply_transform`, `bin_at` on `(x, y)`
+  input) raise on polar environments with a clear error.
+  `plot_field` switches axis labels and skips the equal-aspect call so
+  egocentric polar firing fields still render correctly.
+- **Custom exception classes.** `EnvironmentNotFittedError` (already
+  existed) now has a free-function variant; added `RegionNotFoundError`,
+  `RegionAlreadyExistsError`, and three more in `_exceptions.py`.
+- **`Environment.from_pixel_mask` and `Environment.from_grid_mask`
+  factories** (replacing `from_image` / `from_mask`).
+- **`Environment._state_version` invalidation token.** Cached
+  properties verify the version on access; subset / transform / rebin
+  bump it, so stale caches are surfaced loudly instead of returning
+  silently-wrong results.
+- **`Environment.__str__` returns `info()`** for quick inspection.
+- **Glossary page** at [docs/glossary.md](docs/glossary.md) defining 14
+  core terms. Linked from `docs/getting-started/core-concepts.md` and
+  the README.
+- **`docs/api/index.md` expansion.** Structured sections for
+  `encoding`, `decoding`, `behavior`, `events`, `ops.egocentric`,
+  `ops.visibility`, `ops.basis`, `stats`, `animation`, `io.nwb`.
+- **`docs/examples/index.md` rewrite.** Goal → notebook table plus
+  full per-notebook entries with Time + Prerequisites.
+- **Notebooks 24–27.** Object-vector cells, head-direction tuning,
+  peri-event PSTH, and NWB loading round-trip.
+- **README "Your First Place Field" front-door example.** Canonical
+  pattern using `simulate_trajectory_ou`, `PlaceCellModel`,
+  `generate_population_spikes`, and `compute_spatial_rate`.
+- **CI doc-snippet test.** `scripts/test_doc_snippets.py` plus
+  `.github/workflows/test_docs.yml` re-executes a curated manifest of
+  doc snippets on every PR.
+- **CI notebook regen test.** `.github/workflows/test_notebooks.yml`
+  re-executes `11_place_field_analysis.ipynb` per PR to catch silent
+  regressions in the example surface.
+- **Shared example styling.** `examples/_style.py` Wong / Okabe-Ito
+  palette and fixed figure sizes. Wired into every tutorial notebook
+  that previously set matplotlib rcParams inline (01-08, 19, 20,
+  22-27). Notebooks 09-18 and 21 had no rcParams blocks and
+  intentionally keep matplotlib defaults.
 
-- **Visibility and Gaze Analysis**: Ray-casting visibility for spatial view cells
-  - `FieldOfView` frozen dataclass with species presets (rat ~320°, primate ~180°)
-  - `ViewshedResult` frozen dataclass with visible bins, cues, occlusion map
-  - `compute_viewed_location()` - Gaze-directed location computation
-  - `compute_viewshed()` - Ray-casting visibility analysis from observer position
-  - `compute_view_field()` - Binary visibility mask
-  - `visible_cues()` - Check line-of-sight to cue/landmark positions
-  - `compute_viewshed_trajectory()` - Viewshed analysis along trajectory
-  - `visibility_occupancy()` - Time each bin was visible during trajectory
-  - 45 new tests for visibility module
+### Changed
 
-- **Object-Vector Cells**: Complete object-vector cell analysis infrastructure
-  - `compute_object_vector_field()` - Compute firing fields in egocentric polar coordinates
-  - `ObjectVectorFieldResult` frozen dataclass with field, ego_env, occupancy
-  - `ObjectVectorMetrics` frozen dataclass with tuning curve, selectivity scores
-  - `compute_object_vector_tuning()` - Bin spikes by egocentric distance/direction to objects
-  - `object_vector_score()` - Combined distance and direction selectivity metric
-  - `is_object_vector_cell()` - Classify based on score threshold
-  - `plot_object_vector_tuning()` - Polar heatmap visualization
-  - `ObjectVectorCellModel` simulation model with distance/direction tuning
-  - `ObjectVectorOverlay` for animation with object-animal vectors
-  - 84 new tests for object-vector cell modules
+- **Silent failures replaced with loud failures.**
+  - `subset()` round-trip now returns a `MaskedGrid` instead of a one-off
+    `subset` layout kind, so the result is fully serializable.
+  - `bin_at` vs `map_points_to_bins` standardize on `-1` for
+    out-of-environment samples in trajectory contexts.
+  - `detect_place_fields` returns a `PlaceFieldsResult` with
+    `excluded_reason` set instead of silently returning `[]`.
+  - `batch_grid_scores` / `batch_border_scores` use NaN as the explicit
+    failure marker and warn once per batch.
+  - Fitted-state checks at entry of `compute_spatial_rate(s)`,
+    `compute_egocentric_rate(s)`, `compute_view_rate(s)`,
+    `decode_position` raise immediately instead of failing deep in the
+    call stack.
+  - `spike_times` validation rejects unsorted / negative / non-finite
+    values with diagnostic messages.
+  - `decode_position(validate=True)` is the default; rejects negative
+    spike counts and posteriors that don't sum to 1.
+- **Canonical exception types** throughout. Manual "not fitted" checks
+  migrated to `EnvironmentNotFittedError`; warning-and-overwrite paths
+  in `Regions.__setitem__` now raise.
+- **Errors carry units and stack context.** Length-mismatch errors
+  from `_binning` include a `context` arg so messages say "in
+  compute_spatial_rate: ..."; magnitude errors include the offending
+  unit.
+- **Warning hygiene.** `UserWarning` for data-quality, `RuntimeWarning`
+  for numerical fallbacks, `stacklevel=2` everywhere.
+- **Production `print()` calls** replaced with module-level
+  `logger.info` / `logger.debug`.
+- **`Environment.bin_attributes`, `edge_attributes`,
+  `differential_operator`** converted from `@cached_property` to
+  methods (`get_bin_attributes()`, etc.) so the cost is visible.
+- **`Environment.units`** validated against a small registry (`{"cm",
+  "m", "mm", "px", None}`) with a `UserWarning` for unknown values.
+  Documented as advisory.
+- **Heading convention** documented explicitly in every function that
+  takes a `headings` argument (allocentric world-frame: 0 = East,
+  +π/2 = North; egocentric for OVC tuning: 0 = ahead, +π/2 = left).
+- **`events.__init__`** is now eager (was lazy).
+- **Bandit-task notebook** prints the download URL and exits cleanly
+  when `data/` is missing; CI no longer fails on the example.
 
-- **Egocentric Reference Frames**: Foundation for object-vector and spatial view cells
-  - `EgocentricFrame` dataclass with `to_egocentric()` / `to_allocentric()` transforms
-  - `allocentric_to_egocentric()` - Batch transform world→animal coordinates
-  - `egocentric_to_allocentric()` - Batch inverse transform
-  - `compute_egocentric_bearing()` - Angle to targets relative to heading (0=ahead, π/2=left)
-  - `compute_egocentric_distance()` - Euclidean and geodesic distance metrics
-  - `heading_from_velocity()` - Compute heading from position timeseries with smoothing
-  - `heading_from_body_orientation()` - Compute heading from pose keypoints (nose-tail)
-  - `Environment.from_polar_egocentric()` - Create egocentric polar coordinate environment
-  - Circular connectivity option for full-circle polar environments
-  - 56 new tests for reference frame and polar environment modules
+### Fixed
+
+- **`repr(env)` `name=None` bug** for empty-string names. Now uses
+  `repr(self.name)` so empty strings are visible as `''`.
+- **`Environment._state_version` cache invalidation** prevents
+  stale-cache reads after mutating operations.
+- **Polar environment misuse** is now an error instead of producing
+  silently-wrong distances or transforms.
+
+### Removed
+
+- **`Environment.save` / `Environment.load`** (pickle). Replaced by
+  `to_file` / `from_file`.
+- **`Environment.mask_for_region`.** Use `region_mask`.
+- **`from_image` / `from_mask` factory aliases.** Replaced by
+  `from_pixel_mask` / `from_grid_mask`.
+- **`path_efficiency` float-returning function.** Use
+  `compute_path_efficiency`.
+- **All cross-domain re-exports** from top-level `neurospatial`.
+
+### Major feature additions (v0.3.x development cycle)
+
+The following features were developed during the v0.3.x development
+line and ship as part of v0.4.0. The names below reflect the final
+v0.4 surface — many of these symbols were introduced under earlier
+names that were renamed during the M2 consolidation pass (see
+**Breaking changes** above for the v0.3 → v0.4 mapping).
+
+#### Added (features)
+
+- **Spatial View Cells**: Firing-rate fields indexed by gaze location
+  - `compute_view_rate()` / `compute_view_rates()` — single / batch
+  - `ViewRateResult` frozen dataclass (`firing_rate`, `occupancy`,
+    `env`, plus `view_spatial_information()`, `is_spatial_view_cell()`,
+    `sparsity()`, `selectivity()` methods)
+  - `is_spatial_view_cell()` free-function classifier
+  - `SpatialViewCellModel` simulation model with three gaze models
+    (`fixed_distance`, `ray_cast`, `boundary`)
+
+- **Visibility and Gaze**: Ray-casting visibility for view cells
+  - `FieldOfView` frozen dataclass with species presets
+    (`FieldOfView.rat()`, `FieldOfView.primate()`)
+  - `ViewshedResult` frozen dataclass (visible bins + visibility
+    fraction)
+  - `compute_viewed_location()` — gaze-directed location projection
+  - `compute_viewshed()` / `compute_viewshed_trajectory()` /
+    `compute_view_field()` — observer-position visibility analysis
+  - `visible_cues()` — line-of-sight check to cue / landmark positions
+  - `visibility_occupancy()` — time each bin was visible
+
+- **Object-Vector Cells**: Firing fields in egocentric polar coordinates
+  - `compute_egocentric_rate()` / `compute_egocentric_rates()`
+  - `EgocentricRateResult` / `EgocentricRatesResult` frozen dataclasses
+    (`firing_rate`, `occupancy`, `env`, plus `preferred_distance()`,
+    `preferred_direction()`, `egocentric_spatial_information()`,
+    `is_object_vector_cell()` methods)
+  - `object_vector_score()` — distance × direction selectivity metric
+  - `is_object_vector_cell()` free-function classifier
+  - `plot_object_vector_tuning()` — polar heatmap visualization
+  - `ObjectVectorCellModel` simulation model with von Mises directional
+    tuning
+  - `ObjectVectorOverlay` for animation with object–animal vectors
+
+- **Egocentric Reference Frames**: Foundation for object-vector and view cells
+  - `EgocentricFrame` dataclass with `to_egocentric()` / `to_allocentric()`
+  - `allocentric_to_egocentric()` / `egocentric_to_allocentric()` —
+    batch frame transforms
+  - `compute_egocentric_bearing()` — angle to targets relative to
+    heading (egocentric convention: 0 = ahead, +π/2 = left)
+  - `compute_egocentric_distance()` — Euclidean and geodesic distance
+  - `heading_from_velocity()` / `heading_from_body_orientation()` —
+    derive heading from tracking data
+  - `Environment.from_polar_egocentric()` — egocentric polar coordinate
+    environment with optional circular connectivity
 
 - **3D Transform Support**: Full N-dimensional affine transformation capabilities
   - New `AffineND` class for N-dimensional affine transforms using (N+1)×(N+1) homogeneous matrices
@@ -64,7 +300,7 @@
   - For 2D: Use `get_2d_rotation_matrix(angle_degrees)`
   - For 3D: Use `scipy.spatial.transform.Rotation.as_matrix()`
 
-### Changed
+#### Changed (internal)
 
 - **Internal**: Refactored `environment.py` (5,335 lines) into modular package structure for improved maintainability
   - Split into 11 focused modules: `core.py` (1,023 lines), `factories.py` (630 lines), `queries.py` (897 lines), `trajectory.py` (1,222 lines), `transforms.py` (634 lines), `fields.py` (564 lines), `metrics.py` (469 lines), `regions.py` (398 lines), `serialization.py` (315 lines), `visualization.py` (211 lines), `decorators.py` (77 lines)
@@ -74,7 +310,7 @@
   - Improved code organization for easier contribution and maintenance
   - Largest module is trajectory.py at 1,222 lines (down from original analysis.py at 2,104 lines)
 
-### Documentation
+#### Documentation
 
 - **3D Support**: Updated dimensionality support documentation to reflect 3D transforms availability
   - Updated `docs/dimensionality_support.md` with 3D transform examples and feature matrix

@@ -12,9 +12,9 @@ When working with this codebase, you MUST follow these rules:
 
 1. **ALWAYS use `uv run`** before Python commands - never use bare `python`, `pip`, or `pytest`
 2. **NEVER create bare `Environment()`** - always use factory methods like `Environment.from_samples()`
-3. **bin_size is REQUIRED** - all Environment creation needs explicit bin_size parameter
+3. **bin-size argument is REQUIRED for grid-inferring factories** — `from_samples`, `from_polygon`, `from_graph` need an explicit ``bin_size``; `from_pixel_mask` needs ``pixel_size``; `from_grid_mask` reads bin geometry from explicit ``grid_edges`` and accepts neither. (No bare ``Environment()`` — always go through a factory.)
 4. **NumPy docstring format** - all docstrings must follow NumPy style (not Google or reST)
-5. **Check `is_1d` before linearization** - only 1D environments have `to_linear()` method
+5. **Check `is_linearized_track` before linearization** - only 1D environments have `to_linear()` method
 6. **Regions are immutable** - use `env.regions.update_region()`, never modify in place
 7. **Use `@check_fitted` decorator** - methods requiring fitted state must use this decorator
 8. **Egocentric angles use animal-centered convention** - 0=ahead, π/2=left, -π/2=right (NOT allocentric 0=East)
@@ -78,6 +78,14 @@ func(
 - **Data before metadata** (spike_times before times, positions before headings)
 - **Use `positions`** not `trajectory` for coordinate arrays (consistency)
 - **Use `position_bins`** not `trajectory_bins` for discretized indices
+
+**Documented exception — directional encoding.** `compute_directional_rate`,
+`compute_directional_rates`, and `is_head_direction_cell` operate on
+heading (a circular angular variable, not a spatial position) and so
+take `(spike_times, times, headings, *, ...)` with no `env` parameter.
+This is intentional and is called out in each function's docstring;
+sister spatial classifiers (`is_object_vector_cell`,
+`is_spatial_view_cell`, etc.) keep the env-first signature.
 
 ---
 
@@ -208,8 +216,8 @@ result = peri_event_histogram(
     bin_size=0.025,      # 25 ms bins
 )
 
-# Access results
-firing_rates = result.firing_rate()  # Convert to Hz
+# Access results (firing_rate is a cached attribute, not a method)
+firing_rates = result.firing_rate
 print(f"Peak: {firing_rates.max():.1f} Hz at {result.bin_centers[firing_rates.argmax()]:.2f}s")
 ```
 
@@ -266,7 +274,7 @@ result = compute_egocentric_rate(
     n_direction_bins=12,         # angular resolution (full circle)
 )
 # result.firing_rate: firing rate in egocentric polar bins
-# result.ego_env: the egocentric polar environment
+# result.env: the egocentric polar environment
 # result.occupancy: time spent in each bin
 # result.preferred_distance(), result.preferred_direction(): peak location
 ```
@@ -287,8 +295,8 @@ result = compute_view_rate(
     bandwidth=5.0,
 )
 # result.firing_rate: firing rate at each spatial bin (indexed by where animal looked)
-# result.view_occupancy: time spent viewing each bin
-# result.is_view_cell(): classification method
+# result.occupancy: time spent viewing each bin
+# result.is_spatial_view_cell(): classification method
 # result.view_spatial_information(): spatial information metric
 ```
 
@@ -360,7 +368,7 @@ env.regions['goal'].point = new_point  # AttributeError
 env.regions.update_region('goal', point=new_point)  # No warning
 ```
 
-### Gotcha 5: Check `is_1d` before linearization
+### Gotcha 5: Check `is_linearized_track` before linearization
 
 ❌ **Wrong:**
 
@@ -372,7 +380,7 @@ linear_pos = env.to_linear(position)  # AttributeError
 ✅ **Right:**
 
 ```python
-if env.is_1d:
+if env.is_linearized_track:
     linear_pos = env.to_linear(position)
 else:
     bin_idx = env.bin_at(position)
@@ -431,7 +439,7 @@ env = Environment.from_samples(positions, bin_size=2.0, dilate=True, fill_holes=
 ### Tier 2 - Core
 
 - **`environment/`** - Main user-facing class using **mixin pattern** for 6,000+ lines of functionality
-  - Factory methods: `from_samples()`, `from_graph()`, `from_polygon()`, `from_mask()`, `from_image()`, `from_polar_egocentric()`
+  - Factory methods: `from_samples()`, `from_graph()`, `from_polygon()`, `from_grid_mask()`, `from_pixel_mask()`, `from_polar_egocentric()`
 
 ### Tier 3 - Primitives
 

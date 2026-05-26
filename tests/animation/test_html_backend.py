@@ -555,7 +555,7 @@ class TestOverlayJSONSchema:
         rng = np.random.default_rng(42)
         trajectory = rng.standard_normal((10, 2)) * 20
         overlay = PositionOverlay(
-            data=trajectory, color="red", size=10.0, trail_length=5
+            positions=trajectory, color="red", size=10.0, trail_length=5
         )
 
         frame_times = np.linspace(0, 1, 10)

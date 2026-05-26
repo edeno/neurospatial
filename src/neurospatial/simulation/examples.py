@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
 def open_field_session(
     duration: float = 180.0,
+    *,
     arena_size: float = 100.0,
     bin_size: float = 2.0,
     n_place_cells: int = 50,
@@ -127,16 +128,19 @@ def open_field_session(
 
     # Validate parameters
     if duration <= 0:
-        msg = f"duration must be positive, got {duration}"
+        msg = f"duration must be positive (seconds), got {duration}"
         raise ValueError(msg)
     if arena_size <= 0:
-        msg = f"arena_size must be positive, got {arena_size}"
+        msg = f"arena_size must be positive (cm), got {arena_size}"
         raise ValueError(msg)
     if bin_size <= 0:
-        msg = f"bin_size must be positive, got {bin_size}"
+        msg = f"bin_size must be positive (cm), got {bin_size}"
         raise ValueError(msg)
     if bin_size >= arena_size:
-        msg = f"bin_size ({bin_size}) must be smaller than arena_size ({arena_size})"
+        msg = (
+            f"bin_size ({bin_size} cm) must be smaller than "
+            f"arena_size ({arena_size} cm)"
+        )
         raise ValueError(msg)
     if n_place_cells <= 0:
         msg = f"n_place_cells must be positive, got {n_place_cells}"
@@ -173,6 +177,7 @@ def open_field_session(
 
 def linear_track_session(
     duration: float = 240.0,
+    *,
     track_length: float = 200.0,
     bin_size: float = 1.0,
     n_place_cells: int = 40,
@@ -329,6 +334,7 @@ def linear_track_session(
 
 def tmaze_alternation_session(
     duration: float = 300.0,
+    *,
     n_trials: int = 20,
     n_place_cells: int = 60,
     seed: int | None = None,
@@ -538,6 +544,7 @@ def tmaze_alternation_session(
 
 def boundary_cell_session(
     duration: float = 180.0,
+    *,
     arena_shape: str = "square",
     arena_size: float = 100.0,
     bin_size: float = 2.0,
@@ -710,7 +717,9 @@ def boundary_cell_session(
     env.units = "cm"
 
     # Generate trajectory using OU process
-    positions, times = simulate_trajectory_ou(env, duration=duration, seed=seed)
+    positions, times = simulate_trajectory_ou(
+        env, duration=duration, speed_units="cm", seed=seed
+    )
 
     # Create models: boundary cells first, then place cells
     # Use uniform coverage for field centers
@@ -793,6 +802,7 @@ def boundary_cell_session(
 
 def grid_cell_session(
     duration: float = 300.0,
+    *,
     arena_size: float = 150.0,
     grid_spacing: float = 50.0,
     n_grid_cells: int = 40,
@@ -946,7 +956,9 @@ def grid_cell_session(
     env.units = "cm"
 
     # Generate trajectory using OU process
-    positions, times = simulate_trajectory_ou(env, duration=duration, seed=seed)
+    positions, times = simulate_trajectory_ou(
+        env, duration=duration, speed_units="cm", seed=seed
+    )
 
     # Create grid cell models with random phases
     # Sample phase offsets uniformly from environment

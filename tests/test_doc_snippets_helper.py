@@ -1,0 +1,280 @@
+"""Regression tests for ``scripts/test_doc_snippets.py``.
+
+The doc-snippet smoke runner is itself a piece of CI infrastructure: it
+needs to stay strict (fail loudly on a broken snippet), accurate (treat a
+missing block as a hard failure rather than a silent skip), and stable
+(its argparse / manifest plumbing should keep working). These tests
+cover each of those three properties with small synthetic manifests.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import sys
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parent.parent
+SCRIPT_PATH = ROOT / "scripts" / "test_doc_snippets.py"
+
+
+def _load_runner_module():
+    """Import scripts/test_doc_snippets.py as a module, once per session."""
+    if "test_doc_snippets" in sys.modules:
+        return sys.modules["test_doc_snippets"]
+    spec = importlib.util.spec_from_file_location("test_doc_snippets", SCRIPT_PATH)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["test_doc_snippets"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture(scope="module")
+def runner():
+    """The imported runner module — reused across tests in this file."""
+    return _load_runner_module()
+
+
+def _write_manifest(path: Path, body: str) -> None:
+    path.write_text(body, encoding="utf-8")
+
+
+def test_pass_on_runnable_snippet(tmp_path, runner):
+    """A trivial snippet that prints 'ok' should report status='pass'."""
+    md = tmp_path / "doc.md"
+    md.write_text("```python\nprint('ok')\n```\n", encoding="utf-8")
+    manifest = tmp_path / "snippets.yml"
+    _write_manifest(
+        manifest,
+        f"snippets:\n  - id: ok\n    source: {md}\n    kind: markdown\n    index: 0\n",
+    )
+    specs = runner.load_manifest(manifest)
+    assert len(specs) == 1
+    result = runner.run_snippet(specs[0])
+    assert result.status == "pass", result.detail
+
+
+def test_fail_on_broken_snippet(tmp_path, runner):
+    """A snippet that raises must report status='fail' with a non-empty detail."""
+    md = tmp_path / "doc.md"
+    md.write_text("```python\nraise RuntimeError('boom')\n```\n", encoding="utf-8")
+    manifest = tmp_path / "snippets.yml"
+    _write_manifest(
+        manifest,
+        f"snippets:\n  - id: broken\n    source: {md}\n    kind: markdown\n    index: 0\n",
+    )
+    specs = runner.load_manifest(manifest)
+    result = runner.run_snippet(specs[0])
+    assert result.status == "fail"
+    assert "RuntimeError" in result.detail or "boom" in result.detail
+
+
+def test_missing_block_index_reports_missing(tmp_path, runner):
+    """Pointing at index N when the file has fewer than N+1 blocks must not pass."""
+    md = tmp_path / "doc.md"
+    md.write_text("```python\nprint('only one block')\n```\n", encoding="utf-8")
+    manifest = tmp_path / "snippets.yml"
+    _write_manifest(
+        manifest,
+        f"snippets:\n  - id: oob\n    source: {md}\n    kind: markdown\n    index: 5\n",
+    )
+    specs = runner.load_manifest(manifest)
+    result = runner.run_snippet(specs[0])
+    assert result.status == "missing"
+    assert "index 5" in result.detail
+
+
+def test_skip_entry_is_honored(tmp_path, runner):
+    """An entry with a ``skip`` reason must be reported as skip, not fail."""
+    md = tmp_path / "doc.md"
+    md.write_text("```python\nprint('would-have-run')\n```\n", encoding="utf-8")
+    manifest = tmp_path / "snippets.yml"
+    _write_manifest(
+        manifest,
+        f"snippets:\n  - id: skipme\n    source: {md}\n    kind: markdown\n    index: 0\n"
+        f"    skip: 'requires external dataset'\n",
+    )
+    specs = runner.load_manifest(manifest)
+    result = runner.run_snippet(specs[0])
+    assert result.status == "skip"
+    assert "external dataset" in result.detail
+
+
+def test_setup_is_prepended_to_snippet(tmp_path, runner):
+    """The ``setup`` block runs before the snippet, providing fixture vars."""
+    md = tmp_path / "doc.md"
+    md.write_text(
+        "```python\nassert MAGIC == 42, 'setup did not run'\n```\n",
+        encoding="utf-8",
+    )
+    manifest = tmp_path / "snippets.yml"
+    _write_manifest(
+        manifest,
+        "snippets:\n"
+        f"  - id: with_setup\n    source: {md}\n    kind: markdown\n    index: 0\n"
+        "    setup: |\n      MAGIC = 42\n",
+    )
+    specs = runner.load_manifest(manifest)
+    result = runner.run_snippet(specs[0])
+    assert result.status == "pass", result.detail
+
+
+def test_package_docstring_extraction(tmp_path, runner):
+    """REPL example groups in a module docstring are extractable by index."""
+    py = tmp_path / "tiny_module.py"
+    py.write_text(
+        '"""Module docstring.\n\n'
+        "First example::\n\n"
+        "    >>> x = 1\n"
+        "    >>> assert x == 1\n\n"
+        "Second example::\n\n"
+        "    >>> y = 2\n"
+        "    >>> assert y == 2\n"
+        '"""\n',
+        encoding="utf-8",
+    )
+    body = runner.extract_package_docstring_example(py, index=1)
+    assert body is not None
+    assert "y = 2" in body and "y == 2" in body
+    out_of_range = runner.extract_package_docstring_example(py, index=5)
+    assert out_of_range is None
+
+
+def test_real_manifest_round_trip(runner):
+    """The shipped manifest parses cleanly and lists the curated entries."""
+    manifest_path = ROOT / "docs" / "snippets.yml"
+    specs = runner.load_manifest(manifest_path)
+    ids = {s.id for s in specs}
+    # Sanity: at least the canonical first-run entries are present. Other
+    # entries are allowed to come and go without breaking this test.
+    assert "readme_quickstart" in ids
+    assert "docs_quickstart_basic_creation" in ids
+
+
+def test_doctest_skip_lines_are_dropped_from_extraction(tmp_path, runner):
+    """Lines carrying `# doctest: +SKIP` must be removed from the extracted body.
+
+    This is the regression for runner I1: previously the extractor preserved
+    +SKIP lines verbatim, then stripped the `>>> ` prefix and ran them as
+    plain Python (where `# doctest: +SKIP` becomes a no-op comment), which
+    surfaced as undefined-name failures whenever the manifest indexed a
+    SKIP-only group.
+    """
+    py = tmp_path / "tiny.py"
+    py.write_text(
+        '"""Module docstring.\n\n'
+        "Mixed group::\n\n"
+        "    >>> safe_call()\n"
+        "    >>> needs_data()  # doctest: +SKIP\n"
+        "    >>> safe_call_2()\n\n"
+        "All-skip group::\n\n"
+        "    >>> needs_disk()  # doctest: +SKIP\n"
+        "    >>> needs_network()  # doctest: +SKIP\n"
+        '"""\n',
+        encoding="utf-8",
+    )
+    mixed = runner.extract_package_docstring_example(py, index=0)
+    assert mixed is not None
+    assert "safe_call()" in mixed
+    assert "safe_call_2()" in mixed
+    assert "needs_data" not in mixed, "+SKIP line leaked into extracted body"
+    # All-SKIP groups leave no surviving content and are therefore not
+    # registered as a group at all; indexing into one returns None so the
+    # runner reports it as `missing`. That's the deliberate "this group is
+    # not runnable in CI; mark it `skip:` in the manifest" signal.
+    all_skip = runner.extract_package_docstring_example(py, index=1)
+    assert all_skip is None, f"expected missing, got: {all_skip!r}"
+
+
+def test_doctest_skip_drops_multiline_continuations(tmp_path, runner):
+    """A `>>>` line carrying `+SKIP` must drop following `... ` continuations.
+
+    Regression for the second pass of review notes: previously the extractor
+    dropped only the prompted line carrying `+SKIP` and kept the matching
+    `... ` continuation lines, leaving syntactically-orphaned fragments
+    (e.g., a function call's argument lines without their opener) in the
+    extracted body. Indexing such a group from the manifest would crash on
+    `SyntaxError`.
+    """
+    py = tmp_path / "tiny.py"
+    py.write_text(
+        '"""Module docstring.\n\n'
+        "Mixed multi-line group::\n\n"
+        "    >>> safe_value = 1\n"
+        "    >>> result = compute_thing(  # doctest: +SKIP\n"
+        "    ...     env, spike_times, times, trajectory,\n"
+        "    ...     bandwidth=5.0,\n"
+        "    ... )\n"
+        "    >>> kept_after_skip = 2\n"
+        '"""\n',
+        encoding="utf-8",
+    )
+    body = runner.extract_package_docstring_example(py, index=0)
+    assert body is not None
+    # Surviving lines: the safe statements before and after the SKIP block.
+    assert "safe_value = 1" in body
+    assert "kept_after_skip = 2" in body
+    # All four lines of the SKIP statement (its `>>>` opener and three `... `
+    # continuations) must be dropped together.
+    assert "compute_thing" not in body, "SKIP'd `>>>` line leaked into body"
+    assert "env, spike_times" not in body, "continuation 1 leaked into body"
+    assert "bandwidth=5.0" not in body, "continuation 2 leaked into body"
+    assert ")" not in body or body.count(")") == 0, (
+        "closing paren of SKIP statement leaked"
+    )
+
+
+def test_subprocess_inherits_environment_with_mplbackend_overlay(
+    tmp_path, runner, monkeypatch
+):
+    """Snippet subprocess must see PATH/HOME from the parent env, plus MPLBACKEND=Agg.
+
+    Regression for runner I3: previously the subprocess was given an empty
+    env={"MPLBACKEND": "Agg"} dict, which would crash on Windows (missing
+    SYSTEMROOT) and broke any snippet that needed PATH (ffmpeg, git) or HOME
+    (matplotlib font cache).
+    """
+    monkeypatch.setenv("DOC_SNIPPET_MARKER", "12345")
+    md = tmp_path / "doc.md"
+    md.write_text(
+        "```python\n"
+        "import os\n"
+        "assert os.environ.get('MPLBACKEND') == 'Agg', 'MPLBACKEND not overlaid'\n"
+        "assert os.environ.get('DOC_SNIPPET_MARKER') == '12345', 'parent env not inherited'\n"
+        "assert 'PATH' in os.environ, 'PATH was scrubbed'\n"
+        "```\n",
+        encoding="utf-8",
+    )
+    manifest = tmp_path / "snippets.yml"
+    _write_manifest(
+        manifest,
+        f"snippets:\n  - id: env_overlay\n    source: {md}\n    kind: markdown\n    index: 0\n",
+    )
+    specs = runner.load_manifest(manifest)
+    result = runner.run_snippet(specs[0])
+    assert result.status == "pass", result.detail
+
+
+def test_package_docstring_common_usage_extracts_environment_construction(runner):
+    """Regression for review H1: the manifest entry pointing at the package
+    docstring's Common Usage example must extract a runnable env-construction
+    snippet (not the import-only group at index 0). Catches future drift if
+    someone reorders the docstring or inserts a new submodule import group.
+    """
+    init_path = ROOT / "src" / "neurospatial" / "__init__.py"
+    manifest_path = ROOT / "docs" / "snippets.yml"
+    specs = runner.load_manifest(manifest_path)
+    by_id = {s.id: s for s in specs}
+    spec = by_id.get("package_docstring_common_usage")
+    assert spec is not None, "manifest is missing package_docstring_common_usage"
+    body = runner.extract_package_docstring_example(init_path, spec.index)
+    assert body is not None
+    assert "Environment.from_samples" in body, (
+        "Manifest index drifted: extracted body should be the Common Usage "
+        "env-construction example, not a bare import group."
+    )
+    assert "import numpy" in body, (
+        "Common Usage group should still bring numpy into scope."
+    )

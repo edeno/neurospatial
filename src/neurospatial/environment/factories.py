@@ -94,9 +94,9 @@ class EnvironmentFactories:
         Create 1D linearized track environment from graph structure.
     from_polygon(polygon, bin_size, ...)
         Create 2D grid environment masked by Shapely polygon.
-    from_mask(active_mask, grid_edges, ...)
+    from_grid_mask(active_mask, grid_edges, ...)
         Create environment from pre-defined boolean mask and grid edges.
-    from_image(image_mask, bin_size, ...)
+    from_pixel_mask(image_mask, bin_size, ...)
         Create 2D environment from binary image mask.
     from_layout(kind, layout_params, ...)
         Create environment with specified layout type and parameters.
@@ -137,6 +137,7 @@ class EnvironmentFactories:
         cls,
         positions: NDArray[np.float64],
         bin_size: float | Sequence[float],
+        *,
         name: str = "",
         layout: LayoutType | str = LayoutType.REGULAR_GRID,
         infer_active_bins: bool = True,
@@ -197,8 +198,8 @@ class EnvironmentFactories:
         See Also
         --------
         from_polygon : Create environment with polygon-defined boundary.
-        from_mask : Create environment from pre-defined boolean mask.
-        from_image : Create environment from binary image mask.
+        from_grid_mask : Create environment from pre-defined boolean mask.
+        from_pixel_mask : Create environment from binary image mask.
         from_graph : Create 1D linearized track environment.
         from_layout : Create environment with custom LayoutEngine.
         neurospatial.layout.factories.list_available_layouts : Get all available layout types.
@@ -305,7 +306,7 @@ class EnvironmentFactories:
             raise NotImplementedError(
                 f"Layout '{layout_str}' (normalized: '{layout_normalized}') is not supported "
                 f"by from_samples(). Only 'RegularGrid' and 'Hexagonal' layouts are supported. "
-                f"For other layouts, use from_layout() or from_mask(). "
+                f"For other layouts, use from_layout() or from_grid_mask(). "
                 f"Available layouts: {', '.join(available)}"
             )
 
@@ -348,6 +349,7 @@ class EnvironmentFactories:
         edge_order: list[tuple[Any, Any]],
         edge_spacing: float | Sequence[float],
         bin_size: float,
+        *,
         name: str = "",
     ) -> Environment:
         """Create an Environment from a user-defined graph structure.
@@ -386,6 +388,88 @@ class EnvironmentFactories:
         from_samples : Create environment by binning position data.
         from_layout : Create environment with custom LayoutEngine.
 
+        Examples
+        --------
+        Linear track. Three nodes laid out left-to-right; one edge per
+        segment, all in centimeters:
+
+        >>> import networkx as nx
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>>
+        >>> g = nx.Graph()
+        >>> g.add_node(0, pos=(0.0,))
+        >>> g.add_node(1, pos=(50.0,))
+        >>> g.add_node(2, pos=(100.0,))
+        >>> g.add_edge(0, 1, distance=50.0)
+        >>> g.add_edge(1, 2, distance=50.0)
+        >>>
+        >>> env = Environment.from_graph(
+        ...     graph=g,
+        ...     edge_order=[(0, 1), (1, 2)],
+        ...     edge_spacing=0.0,
+        ...     bin_size=2.0,
+        ... )
+        >>> env.is_linearized_track
+        True
+        >>> env.n_bins
+        50
+
+        T-maze. A central stem with two arms branching at the
+        decision point. ``edge_order`` controls the linearization
+        sequence (here: stem first, then left arm, then right arm).
+        ``edge_spacing`` inserts a gap between non-contiguous arm
+        endpoints so the linearized coordinate doesn't fold both
+        arms onto the same range:
+
+        >>> g = nx.Graph()
+        >>> g.add_nodes_from(
+        ...     [
+        ...         (0, {"pos": (0.0, 0.0)}),  # stem start
+        ...         (1, {"pos": (0.0, 40.0)}),  # decision point
+        ...         (2, {"pos": (-30.0, 40.0)}),  # left arm tip
+        ...         (3, {"pos": (30.0, 40.0)}),  # right arm tip
+        ...     ]
+        ... )
+        >>> g.add_edge(0, 1, distance=40.0)
+        >>> g.add_edge(1, 2, distance=30.0)
+        >>> g.add_edge(1, 3, distance=30.0)
+        >>>
+        >>> env = Environment.from_graph(
+        ...     graph=g,
+        ...     edge_order=[(0, 1), (1, 2), (1, 3)],
+        ...     edge_spacing=10.0,  # 10 cm gap between left and right arms
+        ...     bin_size=5.0,
+        ... )
+
+        Plus-maze (cross). Four arms meeting at the centre node.
+        ``edge_order`` lists each arm in turn so the linearized
+        coordinate runs N -> E -> S -> W:
+
+        >>> g = nx.Graph()
+        >>> g.add_node("center", pos=(0.0, 0.0))
+        >>> g.add_nodes_from(
+        ...     [
+        ...         ("N", {"pos": (0.0, 50.0)}),
+        ...         ("E", {"pos": (50.0, 0.0)}),
+        ...         ("S", {"pos": (0.0, -50.0)}),
+        ...         ("W", {"pos": (-50.0, 0.0)}),
+        ...     ]
+        ... )
+        >>> for arm in ("N", "E", "S", "W"):
+        ...     g.add_edge("center", arm, distance=50.0)
+        >>>
+        >>> env = Environment.from_graph(
+        ...     graph=g,
+        ...     edge_order=[
+        ...         ("center", "N"),
+        ...         ("center", "E"),
+        ...         ("center", "S"),
+        ...         ("center", "W"),
+        ...     ],
+        ...     edge_spacing=5.0,
+        ...     bin_size=2.0,
+        ... )
         """
         layout_params = {
             "graph_definition": graph,
@@ -400,6 +484,7 @@ class EnvironmentFactories:
         cls,
         polygon: PolygonType,
         bin_size: float | Sequence[float],
+        *,
         name: str = "",
         connect_diagonal_neighbors: bool = True,
     ) -> Environment:
@@ -436,8 +521,8 @@ class EnvironmentFactories:
         See Also
         --------
         from_samples : Create environment by binning position data.
-        from_mask : Create environment from pre-defined boolean mask.
-        from_image : Create environment from binary image mask.
+        from_grid_mask : Create environment from pre-defined boolean mask.
+        from_pixel_mask : Create environment from binary image mask.
 
         Examples
         --------
@@ -478,17 +563,19 @@ class EnvironmentFactories:
         )
 
     @classmethod
-    def from_mask(
+    def from_grid_mask(
         cls,
         active_mask: NDArray[np.bool_],
         grid_edges: tuple[NDArray[np.float64], ...],
+        *,
         name: str = "",
         connect_diagonal_neighbors: bool = True,
     ) -> Environment:
         """Create an Environment from a pre-defined N-D boolean mask and grid edges.
 
         This factory method allows for precise specification of active bins in
-        an N-dimensional grid.
+        an N-dimensional grid. Use it when you already have an N-D boolean mask
+        and the explicit grid-edge arrays describing the bin boundaries.
 
         Parameters
         ----------
@@ -516,7 +603,7 @@ class EnvironmentFactories:
         --------
         from_samples : Create environment by binning position data.
         from_polygon : Create environment with polygon-defined boundary.
-        from_image : Create environment from binary image mask.
+        from_pixel_mask : Create environment from binary image / pixel mask.
 
         Examples
         --------
@@ -532,7 +619,7 @@ class EnvironmentFactories:
         ...     np.linspace(0, 100, 11),  # x edges in cm
         ...     np.linspace(0, 100, 11),  # y edges in cm
         ... )
-        >>> env = Environment.from_mask(
+        >>> env = Environment.from_grid_mask(
         ...     active_mask=mask, grid_edges=grid_edges, name="center_region"
         ... )
         >>> env.n_bins
@@ -552,27 +639,30 @@ class EnvironmentFactories:
         )
 
     @classmethod
-    def from_image(
+    def from_pixel_mask(
         cls,
         image_mask: NDArray[np.bool_],
-        bin_size: float | tuple[float, float],
+        pixel_size: float | tuple[float, float],
+        *,
         connect_diagonal_neighbors: bool = True,
         name: str = "",
     ) -> Environment:
-        """Create a 2D Environment from a binary image mask.
+        """Create a 2D Environment from a binary image / pixel mask.
 
-        Each `True` pixel in the `image_mask` becomes an active bin in the
-        environment. The `bin_size` determines the spatial scale of these pixels.
+        Each ``True`` pixel in the ``image_mask`` becomes an active bin in the
+        environment. ``pixel_size`` determines the spatial scale of those
+        pixels in physical units.
 
         Parameters
         ----------
         image_mask : NDArray[np.bool_], shape (n_rows, n_cols)
-            A 2D boolean array where `True` pixels define active bins.
-        bin_size : float or tuple of (float, float)
-            The spatial size of each pixel in physical units (e.g., cm, meters).
-            If a float, pixels are square. If a tuple `(width, height)`, specifies
-            pixel dimensions. For example, if your camera captures images where
-            each pixel represents 0.5cm, use bin_size=0.5.
+            A 2D boolean array where ``True`` pixels define active bins.
+        pixel_size : float or tuple of (float, float)
+            The spatial size of each pixel in physical units (e.g., cm,
+            meters). If a float, pixels are square. If a tuple
+            ``(width, height)``, specifies pixel dimensions. For example,
+            if your camera captures images where each pixel represents
+            0.5 cm, pass ``pixel_size=0.5``.
         connect_diagonal_neighbors : bool, optional
             Whether to connect diagonally adjacent active pixel-bins.
             Defaults to True.
@@ -582,11 +672,12 @@ class EnvironmentFactories:
         Returns
         -------
         Environment
-            A new Environment instance with an `ImageMaskLayout`.
+            A new Environment instance with an ``ImageMaskLayout``.
 
         See Also
         --------
-        from_mask : Create environment from pre-defined boolean mask.
+        from_grid_mask : Create environment from pre-defined boolean mask
+            with explicit grid edges.
         from_polygon : Create environment with polygon-defined boundary.
         from_samples : Create environment by binning position data.
 
@@ -601,9 +692,9 @@ class EnvironmentFactories:
         >>> mask = np.zeros((image_height, image_width), dtype=bool)
         >>> # Mark a rectangular region as active
         >>> mask[100:400, 150:500] = True
-        >>> env = Environment.from_image(
+        >>> env = Environment.from_pixel_mask(
         ...     image_mask=mask,
-        ...     bin_size=0.5,  # Each pixel = 0.5cm
+        ...     pixel_size=0.5,  # Each pixel = 0.5cm
         ...     name="arena_from_image",
         ... )
         >>> env.n_dims
@@ -612,7 +703,10 @@ class EnvironmentFactories:
         """
         layout_params = {
             "image_mask": image_mask,
-            "bin_size": bin_size,
+            # ImageMaskLayout still uses the legacy "bin_size" key
+            # internally; we accept ``pixel_size`` at the public surface
+            # and forward it.
+            "bin_size": pixel_size,
             "connect_diagonal_neighbors": connect_diagonal_neighbors,
         }
 
@@ -623,6 +717,7 @@ class EnvironmentFactories:
         cls,
         kind: LayoutType | str,
         layout_params: dict[str, Any],
+        *,
         name: str = "",
         regions: Regions | None = None,
     ) -> Environment:
@@ -651,8 +746,8 @@ class EnvironmentFactories:
         --------
         from_samples : Create environment by binning position data.
         from_polygon : Create environment with polygon-defined boundary.
-        from_mask : Create environment from pre-defined boolean mask.
-        from_image : Create environment from binary image mask.
+        from_grid_mask : Create environment from pre-defined boolean mask.
+        from_pixel_mask : Create environment from binary image mask.
         from_graph : Create 1D linearized track environment.
 
         """
@@ -772,6 +867,7 @@ class EnvironmentFactories:
         angle_range: tuple[float, float],
         distance_bin_size: float,
         angle_bin_size: float,
+        *,
         circular_angle: bool = True,
         name: str = "",
     ) -> Environment:
@@ -859,7 +955,7 @@ class EnvironmentFactories:
         See Also
         --------
         from_samples : Create environment from position samples.
-        from_mask : Create environment from pre-defined boolean mask.
+        from_grid_mask : Create environment from pre-defined boolean mask.
         neurospatial.reference_frames : Functions for egocentric transforms.
 
         """
@@ -896,13 +992,19 @@ class EnvironmentFactories:
         # Create all-active mask
         active_mask = np.ones((n_distance, n_angle), dtype=bool)
 
-        # Build the environment using from_mask
-        env = cls.from_mask(
+        # Build the environment using from_grid_mask
+        env = cls.from_grid_mask(
             active_mask=active_mask,
             grid_edges=grid_edges,
             name=name,
             connect_diagonal_neighbors=True,
         )
+
+        # Mark the env as polar so downstream callers can refuse to run
+        # Cartesian-only operations on bin_centers (which here hold
+        # (distance, angle) pairs, not (x, y)). See
+        # ``Environment._check_cartesian`` and ``Environment.is_polar``.
+        env.coordinate_kind = "polar"
 
         # If circular_angle is True, add edges between first and last angle bins
         if circular_angle and n_angle > 1:

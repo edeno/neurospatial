@@ -2,51 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
-
 import numpy as np
-import pytest
-
-from neurospatial.simulation.mazes._base import MazeDims
-
-
-class TestWMazeDims:
-    """Tests for WMazeDims dataclass."""
-
-    def test_inherits_from_maze_dims(self):
-        """WMazeDims should inherit from MazeDims."""
-        from neurospatial.simulation.mazes.w_maze import WMazeDims
-
-        dims = WMazeDims()
-        assert isinstance(dims, MazeDims)
-
-    def test_default_values(self):
-        """WMazeDims should have correct default values."""
-        from neurospatial.simulation.mazes.w_maze import WMazeDims
-
-        dims = WMazeDims()
-        assert dims.width == 120.0
-        assert dims.height == 80.0
-        assert dims.corridor_width == 10.0
-        assert dims.n_wells == 3
-
-    def test_is_frozen(self):
-        """WMazeDims should be frozen (immutable)."""
-        from neurospatial.simulation.mazes.w_maze import WMazeDims
-
-        dims = WMazeDims()
-        with pytest.raises(FrozenInstanceError):
-            dims.width = 150.0  # type: ignore[misc]
-
-    def test_custom_values(self):
-        """WMazeDims should accept custom values."""
-        from neurospatial.simulation.mazes.w_maze import WMazeDims
-
-        dims = WMazeDims(width=150.0, height=100.0, corridor_width=15.0, n_wells=4)
-        assert dims.width == 150.0
-        assert dims.height == 100.0
-        assert dims.corridor_width == 15.0
-        assert dims.n_wells == 4
 
 
 class TestMakeWMaze:
@@ -167,7 +123,7 @@ class TestMakeWMaze:
 
         maze = make_w_maze(include_track=True)
         assert maze.env_track is not None
-        assert maze.env_track.is_1d
+        assert maze.env_track.is_linearized_track
 
     def test_env_track_is_connected(self):
         """Track graph should be connected."""
@@ -244,7 +200,7 @@ class TestWMazeTrackGraph:
         import networkx as nx
 
         assert nx.is_connected(maze.env_track.connectivity)
-        assert maze.env_track.is_1d
+        assert maze.env_track.is_linearized_track
 
     def test_track_nodes_have_positions(self):
         """All track graph nodes should have position attributes."""

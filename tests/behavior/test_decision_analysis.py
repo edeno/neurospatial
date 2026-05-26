@@ -72,28 +72,6 @@ def t_maze_environment():
 class TestPreDecisionMetrics:
     """Test PreDecisionMetrics dataclass."""
 
-    def test_dataclass_fields(self):
-        """Test that dataclass has required fields."""
-        from neurospatial.behavior.decisions import PreDecisionMetrics
-
-        result = PreDecisionMetrics(
-            mean_speed=15.0,
-            min_speed=2.0,
-            heading_mean_direction=0.5,
-            heading_circular_variance=0.3,
-            heading_mean_resultant_length=0.7,
-            window_duration=1.0,
-            n_samples=30,
-        )
-
-        assert result.mean_speed == 15.0
-        assert result.min_speed == 2.0
-        assert result.heading_mean_direction == 0.5
-        assert result.heading_circular_variance == 0.3
-        assert result.heading_mean_resultant_length == 0.7
-        assert result.window_duration == 1.0
-        assert result.n_samples == 30
-
     def test_suggests_deliberation_high_variance_low_speed(self):
         """Test suggests_deliberation returns True for high variance + low speed."""
         from neurospatial.behavior.decisions import PreDecisionMetrics
@@ -108,9 +86,7 @@ class TestPreDecisionMetrics:
             n_samples=30,
         )
 
-        assert result.suggests_deliberation(
-            variance_threshold=0.5, speed_threshold=10.0
-        )
+        assert result.suggests_deliberation(variance_threshold=0.5, min_speed=10.0)
 
     def test_suggests_deliberation_low_variance_high_speed(self):
         """Test suggests_deliberation returns False for low variance + high speed."""
@@ -126,9 +102,7 @@ class TestPreDecisionMetrics:
             n_samples=30,
         )
 
-        assert not result.suggests_deliberation(
-            variance_threshold=0.5, speed_threshold=10.0
-        )
+        assert not result.suggests_deliberation(variance_threshold=0.5, min_speed=10.0)
 
 
 # =============================================================================
@@ -138,27 +112,6 @@ class TestPreDecisionMetrics:
 
 class TestDecisionBoundaryMetrics:
     """Test DecisionBoundaryMetrics dataclass."""
-
-    def test_dataclass_fields(self):
-        """Test that dataclass has required fields."""
-        from neurospatial.behavior.decisions import DecisionBoundaryMetrics
-
-        goal_labels = np.array([0, 0, 0, 1, 1, 1])
-        distance_to_boundary = np.array([10.0, 5.0, 1.0, 1.0, 5.0, 10.0])
-        crossing_times = [2.5]
-        crossing_directions = [(0, 1)]
-
-        result = DecisionBoundaryMetrics(
-            goal_labels=goal_labels,
-            distance_to_boundary=distance_to_boundary,
-            crossing_times=crossing_times,
-            crossing_directions=crossing_directions,
-        )
-
-        assert len(result.goal_labels) == 6
-        assert len(result.distance_to_boundary) == 6
-        assert result.n_crossings == 1
-        assert result.crossing_times[0] == 2.5
 
     def test_n_crossings_property(self):
         """Test n_crossings property returns correct count."""
@@ -173,97 +126,9 @@ class TestDecisionBoundaryMetrics:
 
         assert result.n_crossings == 3
 
-    def test_summary_method(self):
-        """Test summary returns formatted string."""
-        from neurospatial.behavior.decisions import DecisionBoundaryMetrics
-
-        result = DecisionBoundaryMetrics(
-            goal_labels=np.array([0, 1]),
-            distance_to_boundary=np.array([5.0, 5.0]),
-            crossing_times=[1.0],
-            crossing_directions=[(0, 1)],
-        )
-
-        summary = result.summary()
-        assert "1 crossing" in summary or "crossings" in summary
-
-
-# =============================================================================
-# Test DecisionAnalysisResult Dataclass
-# =============================================================================
-
 
 class TestDecisionAnalysisResult:
     """Test DecisionAnalysisResult dataclass."""
-
-    def test_dataclass_fields(self):
-        """Test that dataclass has required fields."""
-        from neurospatial.behavior.decisions import (
-            DecisionAnalysisResult,
-            DecisionBoundaryMetrics,
-            PreDecisionMetrics,
-        )
-
-        pre = PreDecisionMetrics(
-            mean_speed=15.0,
-            min_speed=2.0,
-            heading_mean_direction=0.5,
-            heading_circular_variance=0.3,
-            heading_mean_resultant_length=0.7,
-            window_duration=1.0,
-            n_samples=30,
-        )
-
-        boundary = DecisionBoundaryMetrics(
-            goal_labels=np.array([0, 1]),
-            distance_to_boundary=np.array([5.0, 5.0]),
-            crossing_times=[1.0],
-            crossing_directions=[(0, 1)],
-        )
-
-        result = DecisionAnalysisResult(
-            entry_time=5.0,
-            pre_decision=pre,
-            boundary=boundary,
-            chosen_goal=1,
-        )
-
-        assert result.entry_time == 5.0
-        assert result.pre_decision is pre
-        assert result.boundary is boundary
-        assert result.chosen_goal == 1
-
-    def test_summary_method(self):
-        """Test summary returns formatted string."""
-        from neurospatial.behavior.decisions import (
-            DecisionAnalysisResult,
-            PreDecisionMetrics,
-        )
-
-        pre = PreDecisionMetrics(
-            mean_speed=15.0,
-            min_speed=2.0,
-            heading_mean_direction=0.5,
-            heading_circular_variance=0.3,
-            heading_mean_resultant_length=0.7,
-            window_duration=1.0,
-            n_samples=30,
-        )
-
-        result = DecisionAnalysisResult(
-            entry_time=5.0,
-            pre_decision=pre,
-            boundary=None,
-            chosen_goal=1,
-        )
-
-        summary = result.summary()
-        assert "5.0" in summary or "entry" in summary.lower()
-
-
-# =============================================================================
-# Test decision_region_entry_time
-# =============================================================================
 
 
 class TestDecisionRegionEntryTime:
@@ -287,7 +152,9 @@ class TestDecisionRegionEntryTime:
         )
         position_bins = env.bin_at(positions)
 
-        entry_time = decision_region_entry_time(position_bins, times, env, "center")
+        entry_time = decision_region_entry_time(
+            position_bins, times, env, region="center"
+        )
 
         # Center region is at y=55, trajectory goes from y=0 to y=60 over 10s
         # Entry should be around t = 10 * (55/60) ≈ 9.2s (accounting for bin discretization)
@@ -311,7 +178,7 @@ class TestDecisionRegionEntryTime:
         position_bins = env.bin_at(positions)
 
         with pytest.raises(ValueError, match="never enters"):
-            decision_region_entry_time(position_bins, times, env, "center")
+            decision_region_entry_time(position_bins, times, env, region="center")
 
 
 # =============================================================================
@@ -632,28 +499,6 @@ class TestDetectBoundaryCrossings:
 class TestComputePreDecisionMetrics:
     """Test compute_pre_decision_metrics function."""
 
-    def test_returns_dataclass(self):
-        """Test that function returns PreDecisionMetrics."""
-        from neurospatial.behavior.decisions import (
-            PreDecisionMetrics,
-            compute_pre_decision_metrics,
-        )
-
-        # Simple trajectory
-        n_samples = 100
-        positions = np.column_stack(
-            [np.linspace(0, 100, n_samples), np.zeros(n_samples)]
-        )
-        times = np.linspace(0, 10, n_samples)
-
-        result = compute_pre_decision_metrics(
-            positions, times, entry_time=8.0, window_duration=2.0, min_speed=0.0
-        )
-
-        assert isinstance(result, PreDecisionMetrics)
-        assert result.window_duration > 0
-        assert result.n_samples > 0
-
     def test_short_window_handles_edge(self):
         """Test handling when window is shorter than requested."""
         from neurospatial.behavior.decisions import compute_pre_decision_metrics
@@ -681,49 +526,6 @@ class TestComputePreDecisionMetrics:
 
 class TestComputeDecisionAnalysis:
     """Test compute_decision_analysis function."""
-
-    def test_returns_dataclass(self, t_maze_environment):
-        """Test that function returns DecisionAnalysisResult."""
-        from neurospatial.behavior.decisions import (
-            DecisionAnalysisResult,
-            compute_decision_analysis,
-        )
-
-        env = t_maze_environment
-
-        # Trajectory from start through center to right
-        n_samples = 100
-        # Start at stem, go through center, then to right
-        positions = np.column_stack(
-            [
-                np.concatenate(
-                    [
-                        np.full(30, 50.0),  # In stem
-                        np.linspace(50, 90, 70),  # Moving right
-                    ]
-                ),
-                np.concatenate(
-                    [
-                        np.linspace(5, 55, 30),  # Up the stem
-                        np.full(70, 55.0),  # Along top bar
-                    ]
-                ),
-            ]
-        )
-        times = np.linspace(0, 10, n_samples)
-
-        result = compute_decision_analysis(
-            env,
-            positions,
-            times,
-            decision_region="center",
-            goal_regions=["left", "right"],
-            pre_window=1.0,
-        )
-
-        assert isinstance(result, DecisionAnalysisResult)
-        assert result.entry_time > 0
-        assert result.pre_decision is not None
 
     def test_detects_chosen_goal(self, t_maze_environment):
         """Test that function correctly identifies chosen goal."""

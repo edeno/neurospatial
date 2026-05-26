@@ -2,48 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
-
 import networkx as nx
 import numpy as np
-import pytest
-
-from neurospatial.simulation.mazes._base import MazeDims
-
-
-class TestHoneycombDims:
-    """Tests for HoneycombDims dataclass."""
-
-    def test_inherits_from_maze_dims(self):
-        """HoneycombDims should inherit from MazeDims."""
-        from neurospatial.simulation.mazes.honeycomb import HoneycombDims
-
-        dims = HoneycombDims()
-        assert isinstance(dims, MazeDims)
-
-    def test_default_values(self):
-        """HoneycombDims should have correct default values."""
-        from neurospatial.simulation.mazes.honeycomb import HoneycombDims
-
-        dims = HoneycombDims()
-        assert dims.spacing == 25.0
-        assert dims.n_rings == 3
-
-    def test_is_frozen(self):
-        """HoneycombDims should be frozen (immutable)."""
-        from neurospatial.simulation.mazes.honeycomb import HoneycombDims
-
-        dims = HoneycombDims()
-        with pytest.raises(FrozenInstanceError):
-            dims.spacing = 30.0  # type: ignore[misc]
-
-    def test_custom_values(self):
-        """HoneycombDims should accept custom values."""
-        from neurospatial.simulation.mazes.honeycomb import HoneycombDims
-
-        dims = HoneycombDims(spacing=30.0, n_rings=4)
-        assert dims.spacing == 30.0
-        assert dims.n_rings == 4
 
 
 class TestMakeHoneycombMaze:
@@ -155,7 +115,7 @@ class TestMakeHoneycombMaze:
 
         maze = make_honeycomb_maze(include_track=True)
         assert maze.env_track is not None
-        assert maze.env_track.is_1d
+        assert maze.env_track.is_linearized_track
 
     def test_env_track_has_correct_units(self):
         """env_track should have units set to 'cm'."""

@@ -1,0 +1,99 @@
+# Curated documentation-snippet manifest for scripts/test_doc_snippets.py.
+#
+# Each entry is one fenced ```python block (in a Markdown file) or one REPL
+# example group (in the top-level package docstring) that we want CI to
+# execute on every PR. The point of the manifest is to make snippet-test
+# coverage a deliberate, opt-in surface rather than a fragile auto-collect.
+#
+# Add new entries when introducing a new first-run snippet that a new user
+# would copy-paste. Skip entries that intrinsically require external assets
+# (FFmpeg, real video files, NWB files, large datasets) with a short reason;
+# such snippets belong in a notebook, not in CI smoke tests.
+
+snippets:
+  - id: readme_quickstart
+    source: README.md
+    kind: markdown
+    index: 0
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"
+
+  - id: readme_your_first_place_field
+    source: README.md
+    kind: markdown
+    # Block 1 in README.md is the "Your First Place Field" section, the
+    # front-door end-to-end example added in v0.4 (simulate_trajectory_ou
+    # + PlaceCellModel + generate_population_spikes + compute_spatial_rate).
+    # Sized to run in ~10 s on CI.
+    index: 1
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"
+    timeout: 120
+
+  - id: readme_common_use_cases_position_analysis
+    source: README.md
+    kind: markdown
+    index: 2
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"
+
+  - id: readme_simulation_quick_example
+    source: README.md
+    kind: markdown
+    # Block 6 in README.md is the "Simulation > Quick Example" block. It used
+    # to reference an undefined `arena_data` (M2 review finding); now defines
+    # it inline. Worth covering in CI because this is the canonical
+    # spike-generation -> compute_spatial_rate end-to-end demo.
+    index: 6
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"
+    timeout: 120
+
+  - id: readme_animation_napari_block
+    source: README.md
+    kind: markdown
+    index: 7
+    skip: |
+      Animation snippet requires napari + GPU/X11 + ffmpeg; not appropriate
+      for a CI smoke test. Animation behavior is exercised by notebooks
+      16-18 and the dedicated animation tests.
+
+  - id: readme_animation_large_dataset_block
+    source: README.md
+    kind: markdown
+    index: 8
+    skip: |
+      Same as readme_animation_napari_block: requires napari/ffmpeg.
+
+  - id: quickstart_first_environment
+    source: .claude/QUICKSTART.md
+    kind: markdown
+    index: 0
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"
+
+  - id: docs_quickstart_basic_creation
+    source: docs/getting-started/quickstart.md
+    kind: markdown
+    index: 0
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"
+
+  - id: package_docstring_common_usage
+    source: src/neurospatial/__init__.py
+    kind: package_docstring
+    # The package docstring lists each submodule's import as its own one-line
+    # REPL group (groups 0-10), so the actual "Common Usage / Create
+    # environment from position data" example sits at group 11. Subsequent
+    # groups (Map trajectory, Compute rate map, Save/load, etc.) all carry
+    # `# doctest: +SKIP` markers and are intentionally not part of CI.
+    index: 11
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"

@@ -2,53 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
-
 import numpy as np
-import pytest
-
-from neurospatial.simulation.mazes._base import MazeDims
-
-
-class TestRadialArmDims:
-    """Tests for RadialArmDims dataclass."""
-
-    def test_inherits_from_maze_dims(self):
-        """RadialArmDims should inherit from MazeDims."""
-        from neurospatial.simulation.mazes.radial_arm import RadialArmDims
-
-        dims = RadialArmDims()
-        assert isinstance(dims, MazeDims)
-
-    def test_default_values(self):
-        """RadialArmDims should have correct default values."""
-        from neurospatial.simulation.mazes.radial_arm import RadialArmDims
-
-        dims = RadialArmDims()
-        assert dims.center_radius == 15.0
-        assert dims.arm_length == 50.0
-        assert dims.arm_width == 10.0
-        assert dims.n_arms == 8
-
-    def test_is_frozen(self):
-        """RadialArmDims should be frozen (immutable)."""
-        from neurospatial.simulation.mazes.radial_arm import RadialArmDims
-
-        dims = RadialArmDims()
-        with pytest.raises(FrozenInstanceError):
-            dims.center_radius = 20.0  # type: ignore[misc]
-
-    def test_custom_values(self):
-        """RadialArmDims should accept custom values."""
-        from neurospatial.simulation.mazes.radial_arm import RadialArmDims
-
-        dims = RadialArmDims(
-            center_radius=20.0, arm_length=60.0, arm_width=12.0, n_arms=6
-        )
-        assert dims.center_radius == 20.0
-        assert dims.arm_length == 60.0
-        assert dims.arm_width == 12.0
-        assert dims.n_arms == 6
 
 
 class TestMakeRadialArmMaze:
@@ -210,7 +164,7 @@ class TestMakeRadialArmMaze:
 
         maze = make_radial_arm_maze(include_track=True)
         assert maze.env_track is not None
-        assert maze.env_track.is_1d
+        assert maze.env_track.is_linearized_track
 
     def test_env_track_is_connected(self):
         """Track graph should be connected."""
@@ -292,7 +246,7 @@ class TestRadialArmTrackGraph:
         import networkx as nx
 
         assert nx.is_connected(maze.env_track.connectivity)
-        assert maze.env_track.is_1d
+        assert maze.env_track.is_linearized_track
 
     def test_track_nodes_have_positions(self):
         """All track graph nodes should have position attributes."""

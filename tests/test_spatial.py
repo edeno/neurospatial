@@ -147,7 +147,7 @@ class TestEnvironmentClearCache:
         _ = env.compute_kernel(bandwidth=10.0)
 
         # Populate cached properties
-        _ = env.differential_operator
+        _ = env.get_differential_operator()
         _ = env.boundary_bins
         _ = env.bin_sizes
 
@@ -169,7 +169,7 @@ class TestEnvironmentClearCache:
         # Get values before clearing
         bins_before = map_points_to_bins(points, env)
         kernel_before = env.compute_kernel(bandwidth=10.0)
-        diff_op_before = env.differential_operator.copy()
+        diff_op_before = env.get_differential_operator().copy()
         boundary_before = env.boundary_bins.copy()
 
         # Clear all caches
@@ -178,7 +178,7 @@ class TestEnvironmentClearCache:
         # Recompute and verify identical results
         bins_after = map_points_to_bins(points, env)
         kernel_after = env.compute_kernel(bandwidth=10.0)
-        diff_op_after = env.differential_operator
+        diff_op_after = env.get_differential_operator()
         boundary_after = env.boundary_bins
 
         np.testing.assert_array_equal(bins_before, bins_after)
@@ -251,7 +251,7 @@ class TestEnvironmentClearCache:
         env.clear_cache(kdtree=False, kernels=False, cached_properties=True)
 
         # Properties should recompute correctly
-        diff_op_after = env.differential_operator
+        diff_op_after = env.get_differential_operator()
         boundary_after = env.boundary_bins
         # Differential operator shape is (n_bins, n_edges), not square
         n_edges = env.connectivity.number_of_edges()

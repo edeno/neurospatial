@@ -30,7 +30,7 @@ env = Environment.from_graph(
 - `env.to_linear(nd_position)` - Convert N-D coordinates to linear position
 - `env.linear_to_nd(linear_position)` - Convert linear position to N-D coordinates
 - `env.plot_1d()` - 1D visualization
-- `env.is_1d == True`
+- `env.is_linearized_track == True`
 
 **Typical applications:**
 - Linear tracks (e.g., T-maze arms, figure-8 tracks)
@@ -57,8 +57,10 @@ from shapely.geometry import Polygon
 polygon = Polygon([(0, 0), (100, 0), (100, 100), (0, 100)])
 env = Environment.from_polygon(polygon, bin_size=2.0)
 
-# From image mask
-env = Environment.from_image("arena_mask.png", bin_size_cm=2.0, pixels_per_cm=10)
+# From a pixel / image mask (boolean array, not a file path)
+import imageio.v3 as iio
+image_mask = iio.imread("arena_mask.png").astype(bool)
+env = Environment.from_pixel_mask(image_mask, pixel_size=0.1)  # cm/pixel
 ```
 
 **Layout engines available:**
@@ -224,7 +226,7 @@ env = Environment.from_samples(data, bin_size=2.0)
 print(f"Dimensions: {env.n_dims}")  # 1, 2, or 3
 
 # Check if 1D (linearized)
-if env.is_1d:
+if env.is_linearized_track:
     linear_pos = env.to_linear(nd_position)
 else:
     bin_idx = env.bin_at(nd_position)

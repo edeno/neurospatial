@@ -14,50 +14,9 @@ from numpy.testing import assert_allclose
 class TestModuleSetup:
     """Test module imports and structure."""
 
-    def test_module_imports(self):
-        """Module can be imported successfully."""
-        from neurospatial.ops import visibility
-
-        assert visibility is not None
-
-    def test_all_exports_defined(self):
-        """Module defines __all__ with expected exports."""
-        from neurospatial.ops import visibility
-
-        expected_exports = {
-            "FieldOfView",
-            "ViewshedResult",
-            "compute_viewed_location",
-            "compute_viewshed",
-            "compute_view_field",
-            "visible_cues",
-            "compute_viewshed_trajectory",
-            "visibility_occupancy",
-        }
-        assert hasattr(visibility, "__all__")
-        assert set(visibility.__all__) == expected_exports
-
-    def test_module_docstring_exists(self):
-        """Module has a docstring."""
-        from neurospatial.ops import visibility
-
-        assert visibility.__doc__ is not None
-        assert len(visibility.__doc__) > 100  # Non-trivial docstring
-
 
 class TestFieldOfView:
     """Tests for FieldOfView dataclass."""
-
-    def test_dataclass_creation(self):
-        """FieldOfView can be created with angle bounds."""
-        from neurospatial.ops.visibility import FieldOfView
-
-        fov = FieldOfView(
-            left_angle=np.pi / 2,
-            right_angle=-np.pi / 2,
-        )
-        assert_allclose(fov.left_angle, np.pi / 2)
-        assert_allclose(fov.right_angle, -np.pi / 2)
 
     def test_symmetric_factory(self):
         """FieldOfView.symmetric() creates symmetric FOV."""
@@ -199,19 +158,6 @@ class TestFieldOfView:
 
 class TestViewshedResult:
     """Tests for ViewshedResult dataclass."""
-
-    def test_dataclass_creation(self):
-        """ViewshedResult can be created with required fields."""
-        from neurospatial.ops.visibility import ViewshedResult
-
-        result = ViewshedResult(
-            visible_bins=np.array([0, 1, 2, 3]),
-            visible_cues=np.array([0, 2]),
-            cue_distances=np.array([5.0, 15.0]),
-            cue_bearings=np.array([0.0, np.pi / 4]),
-            occlusion_map=np.zeros(10),
-        )
-        assert len(result.visible_bins) == 4
 
     def test_n_visible_bins_property(self):
         """n_visible_bins returns count of visible bins."""

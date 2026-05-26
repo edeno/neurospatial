@@ -2,47 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
-
 import numpy as np
-import pytest
-
-from neurospatial.simulation.mazes._base import MazeDims
-
-
-class TestWatermazeDims:
-    """Tests for WatermazeDims dataclass."""
-
-    def test_inherits_from_maze_dims(self):
-        """WatermazeDims should inherit from MazeDims."""
-        from neurospatial.simulation.mazes.watermaze import WatermazeDims
-
-        dims = WatermazeDims()
-        assert isinstance(dims, MazeDims)
-
-    def test_default_values(self):
-        """WatermazeDims should have correct default values."""
-        from neurospatial.simulation.mazes.watermaze import WatermazeDims
-
-        dims = WatermazeDims()
-        assert dims.pool_diameter == 150.0
-        assert dims.platform_radius == 5.0
-
-    def test_is_frozen(self):
-        """WatermazeDims should be frozen (immutable)."""
-        from neurospatial.simulation.mazes.watermaze import WatermazeDims
-
-        dims = WatermazeDims()
-        with pytest.raises(FrozenInstanceError):
-            dims.pool_diameter = 200.0  # type: ignore[misc]
-
-    def test_custom_values(self):
-        """WatermazeDims should accept custom values."""
-        from neurospatial.simulation.mazes.watermaze import WatermazeDims
-
-        dims = WatermazeDims(pool_diameter=200.0, platform_radius=10.0)
-        assert dims.pool_diameter == 200.0
-        assert dims.platform_radius == 10.0
 
 
 class TestMakeWatermaze:

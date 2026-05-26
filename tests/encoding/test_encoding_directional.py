@@ -84,68 +84,9 @@ def batch_firing_rates(n_neurons: int, n_bins: int) -> np.ndarray:
 class TestDirectionalRateResultImport:
     """Test that DirectionalRateResult can be imported."""
 
-    def test_import_from_directional(self) -> None:
-        """DirectionalRateResult can be imported from encoding.directional."""
-        from neurospatial.encoding.directional import DirectionalRateResult
-
-        assert DirectionalRateResult is not None
-
-    def test_import_from_encoding(self) -> None:
-        """DirectionalRateResult can be imported from encoding package."""
-        from neurospatial.encoding import DirectionalRateResult
-
-        assert DirectionalRateResult is not None
-
 
 class TestDirectionalRateResultCreation:
     """Test DirectionalRateResult dataclass creation."""
-
-    def test_create_result(
-        self,
-        single_firing_rate: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-    ) -> None:
-        """DirectionalRateResult can be created with all required fields."""
-        from neurospatial.encoding.directional import DirectionalRateResult
-
-        result = DirectionalRateResult(
-            firing_rate=single_firing_rate,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            smoothing_sigma=None,
-        )
-
-        assert result is not None
-        assert result.firing_rate is not None
-        assert result.occupancy is not None
-        assert result.bin_centers is not None
-        assert result.bin_size == bin_size
-        assert result.smoothing_sigma is None
-
-    def test_create_result_with_smoothing(
-        self,
-        single_firing_rate: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-    ) -> None:
-        """DirectionalRateResult can be created with smoothing_sigma."""
-        from neurospatial.encoding.directional import DirectionalRateResult
-
-        smoothing_sigma = np.pi / 6  # 30 degrees
-
-        result = DirectionalRateResult(
-            firing_rate=single_firing_rate,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            smoothing_sigma=smoothing_sigma,
-        )
-
-        assert result.smoothing_sigma == smoothing_sigma
 
     def test_is_frozen_dataclass(
         self,
@@ -162,7 +103,7 @@ class TestDirectionalRateResultCreation:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         # Attempting to modify should raise FrozenInstanceError
@@ -172,72 +113,6 @@ class TestDirectionalRateResultCreation:
 
 class TestDirectionalRateResultFields:
     """Test DirectionalRateResult field access and shapes."""
-
-    def test_firing_rate_shape(
-        self,
-        single_firing_rate: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-        n_bins: int,
-    ) -> None:
-        """firing_rate has correct shape (n_bins,)."""
-        from neurospatial.encoding.directional import DirectionalRateResult
-
-        result = DirectionalRateResult(
-            firing_rate=single_firing_rate,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            smoothing_sigma=None,
-        )
-
-        rate = np.asarray(result.firing_rate)
-        assert rate.shape == (n_bins,)
-
-    def test_occupancy_shape(
-        self,
-        single_firing_rate: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-        n_bins: int,
-    ) -> None:
-        """occupancy has correct shape (n_bins,)."""
-        from neurospatial.encoding.directional import DirectionalRateResult
-
-        result = DirectionalRateResult(
-            firing_rate=single_firing_rate,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            smoothing_sigma=None,
-        )
-
-        occ = np.asarray(result.occupancy)
-        assert occ.shape == (n_bins,)
-
-    def test_bin_centers_shape(
-        self,
-        single_firing_rate: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-        n_bins: int,
-    ) -> None:
-        """bin_centers has correct shape (n_bins,)."""
-        from neurospatial.encoding.directional import DirectionalRateResult
-
-        result = DirectionalRateResult(
-            firing_rate=single_firing_rate,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            smoothing_sigma=None,
-        )
-
-        centers = np.asarray(result.bin_centers)
-        assert centers.shape == (n_bins,)
 
     def test_bin_centers_in_radians(
         self,
@@ -254,7 +129,7 @@ class TestDirectionalRateResultFields:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         centers = np.asarray(result.bin_centers)
@@ -270,46 +145,9 @@ class TestDirectionalRateResultFields:
 class TestDirectionalRatesResultImport:
     """Test that DirectionalRatesResult can be imported."""
 
-    def test_import_from_directional(self) -> None:
-        """DirectionalRatesResult can be imported from encoding.directional."""
-        from neurospatial.encoding.directional import DirectionalRatesResult
-
-        assert DirectionalRatesResult is not None
-
-    def test_import_from_encoding(self) -> None:
-        """DirectionalRatesResult can be imported from encoding package."""
-        from neurospatial.encoding import DirectionalRatesResult
-
-        assert DirectionalRatesResult is not None
-
 
 class TestDirectionalRatesResultCreation:
     """Test DirectionalRatesResult dataclass creation."""
-
-    def test_create_result(
-        self,
-        batch_firing_rates: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-    ) -> None:
-        """DirectionalRatesResult can be created with all required fields."""
-        from neurospatial.encoding.directional import DirectionalRatesResult
-
-        result = DirectionalRatesResult(
-            firing_rates=batch_firing_rates,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            smoothing_sigma=None,
-        )
-
-        assert result is not None
-        assert result.firing_rates is not None
-        assert result.occupancy is not None
-        assert result.bin_centers is not None
-        assert result.bin_size == bin_size
-        assert result.smoothing_sigma is None
 
     def test_is_frozen_dataclass(
         self,
@@ -326,7 +164,7 @@ class TestDirectionalRatesResultCreation:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         with pytest.raises(FrozenInstanceError):
@@ -335,51 +173,6 @@ class TestDirectionalRatesResultCreation:
 
 class TestDirectionalRatesResultFields:
     """Test DirectionalRatesResult field access and shapes."""
-
-    def test_firing_rates_shape(
-        self,
-        batch_firing_rates: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-        n_neurons: int,
-        n_bins: int,
-    ) -> None:
-        """firing_rates has correct shape (n_neurons, n_bins)."""
-        from neurospatial.encoding.directional import DirectionalRatesResult
-
-        result = DirectionalRatesResult(
-            firing_rates=batch_firing_rates,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            smoothing_sigma=None,
-        )
-
-        rates = np.asarray(result.firing_rates)
-        assert rates.shape == (n_neurons, n_bins)
-
-    def test_occupancy_shape(
-        self,
-        batch_firing_rates: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-        n_bins: int,
-    ) -> None:
-        """occupancy has correct shape (n_bins,) - shared across neurons."""
-        from neurospatial.encoding.directional import DirectionalRatesResult
-
-        result = DirectionalRatesResult(
-            firing_rates=batch_firing_rates,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            smoothing_sigma=None,
-        )
-
-        occ = np.asarray(result.occupancy)
-        assert occ.shape == (n_bins,)
 
 
 class TestDirectionalRatesResultIteration:
@@ -401,7 +194,7 @@ class TestDirectionalRatesResultIteration:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         assert len(result) == n_neurons
@@ -424,7 +217,7 @@ class TestDirectionalRatesResultIteration:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         single = result[0]
@@ -437,17 +230,17 @@ class TestDirectionalRatesResultIteration:
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """__getitem__ preserves occupancy, bin_centers, bin_size, smoothing_sigma."""
+        """__getitem__ preserves occupancy, bin_centers, bin_size, bandwidth."""
         from neurospatial.encoding.directional import DirectionalRatesResult
 
-        smoothing_sigma = np.pi / 6
+        bandwidth = np.pi / 6
 
         result = DirectionalRatesResult(
             firing_rates=batch_firing_rates,
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=smoothing_sigma,
+            bandwidth=bandwidth,
         )
 
         single = result[0]
@@ -455,7 +248,7 @@ class TestDirectionalRatesResultIteration:
         assert_array_equal(np.asarray(single.occupancy), single_occupancy)
         assert_array_equal(np.asarray(single.bin_centers), bin_centers)
         assert single.bin_size == bin_size
-        assert single.smoothing_sigma == smoothing_sigma
+        assert single.bandwidth == bandwidth
 
     def test_getitem_extracts_correct_firing_rate(
         self,
@@ -472,7 +265,7 @@ class TestDirectionalRatesResultIteration:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         for i in range(batch_firing_rates.shape[0]):
@@ -498,7 +291,7 @@ class TestDirectionalRatesResultIteration:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         items = list(result)
@@ -521,7 +314,7 @@ class TestDirectionalRatesResultIteration:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         for i, single in enumerate(result):
@@ -549,7 +342,7 @@ class TestDirectionalRatesResultEdgeCases:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         assert len(result) == 1
@@ -574,7 +367,7 @@ class TestDirectionalRatesResultEdgeCases:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         assert len(result) == 0
@@ -605,7 +398,7 @@ class TestDirectionalRateResultPlot:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         ax = result.plot()
@@ -631,7 +424,7 @@ class TestDirectionalRateResultPlot:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         ax = result.plot(polar=True)
@@ -655,7 +448,7 @@ class TestDirectionalRateResultPlot:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         ax = result.plot(polar=False)
@@ -678,7 +471,7 @@ class TestDirectionalRateResultPlot:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         _, ax_provided = plt.subplots(subplot_kw={"projection": "polar"})
@@ -701,7 +494,7 @@ class TestDirectionalRateResultPlot:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         # Should not raise an error with valid kwargs
@@ -727,7 +520,7 @@ class TestDirectionalRateResultPreferredDirection:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         pref_dir = result.preferred_direction()
@@ -748,7 +541,7 @@ class TestDirectionalRateResultPreferredDirection:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         pref_dir = result.preferred_direction()
@@ -775,7 +568,7 @@ class TestDirectionalRateResultPreferredDirection:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         pref_dir = result.preferred_direction()
@@ -803,7 +596,7 @@ class TestDirectionalRateResultPreferredDirection:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         # For uniform firing, circular_mean with uniform weights should return
@@ -831,7 +624,7 @@ class TestDirectionalRateResultPreferredDirectionDeg:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         pref_dir_deg = result.preferred_direction_deg()
@@ -852,7 +645,7 @@ class TestDirectionalRateResultPreferredDirectionDeg:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         pref_dir_rad = result.preferred_direction()
@@ -874,7 +667,7 @@ class TestDirectionalRateResultPreferredDirectionDeg:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         pref_dir_deg = result.preferred_direction_deg()
@@ -899,7 +692,7 @@ class TestDirectionalRateResultPeakFiringRate:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         peak = result.peak_firing_rate()
@@ -920,7 +713,7 @@ class TestDirectionalRateResultPeakFiringRate:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         peak = result.peak_firing_rate()
@@ -947,7 +740,7 @@ class TestDirectionalRateResultPeakFiringRate:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         peak = result.peak_firing_rate()
@@ -968,7 +761,7 @@ class TestDirectionalRateResultPeakFiringRate:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         peak = result.peak_firing_rate()
@@ -998,7 +791,7 @@ class TestDirectionalRateResultMeanVectorLength:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         mvl = result.mean_vector_length()
@@ -1019,7 +812,7 @@ class TestDirectionalRateResultMeanVectorLength:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         mvl = result.mean_vector_length()
@@ -1044,7 +837,7 @@ class TestDirectionalRateResultMeanVectorLength:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         # Uniform firing rate (untuned)
@@ -1055,7 +848,7 @@ class TestDirectionalRateResultMeanVectorLength:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         assert tuned_result.mean_vector_length() > uniform_result.mean_vector_length()
@@ -1078,7 +871,7 @@ class TestDirectionalRateResultMeanVectorLength:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         mvl = result.mean_vector_length()
@@ -1104,7 +897,7 @@ class TestDirectionalRateResultMeanVectorLength:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         mvl = result.mean_vector_length()
@@ -1130,7 +923,7 @@ class TestDirectionalRateResultTuningWidth:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         width = result.tuning_width()
@@ -1151,7 +944,7 @@ class TestDirectionalRateResultTuningWidth:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         width = result.tuning_width()
@@ -1178,7 +971,7 @@ class TestDirectionalRateResultTuningWidth:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         # Broadly tuned (kappa=1)
@@ -1188,7 +981,7 @@ class TestDirectionalRateResultTuningWidth:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         assert sharp_result.tuning_width() < broad_result.tuning_width()
@@ -1211,7 +1004,7 @@ class TestDirectionalRateResultTuningWidth:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         width = result.tuning_width()
@@ -1237,7 +1030,7 @@ class TestDirectionalRateResultTuningWidthDeg:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         width_deg = result.tuning_width_deg()
@@ -1258,7 +1051,7 @@ class TestDirectionalRateResultTuningWidthDeg:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         width_rad = result.tuning_width()
@@ -1280,7 +1073,7 @@ class TestDirectionalRateResultTuningWidthDeg:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         width_deg = result.tuning_width_deg()
@@ -1307,7 +1100,7 @@ class TestDirectionalRateResultRayleighPvalue:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         pval = result.rayleigh_pvalue()
@@ -1328,7 +1121,7 @@ class TestDirectionalRateResultRayleighPvalue:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         pval = result.rayleigh_pvalue()
@@ -1352,7 +1145,7 @@ class TestDirectionalRateResultRayleighPvalue:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         pval = result.rayleigh_pvalue()
@@ -1377,7 +1170,7 @@ class TestDirectionalRateResultRayleighPvalue:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         pval = result.rayleigh_pvalue()
@@ -1391,7 +1184,7 @@ class TestDirectionalRateResultRayleighPvalue:
 
 
 class TestDirectionalRateResultIsHdCell:
-    """Test DirectionalRateResult.is_hd_cell() method."""
+    """Test DirectionalRateResult.is_head_direction_cell() method."""
 
     def test_is_hd_cell_returns_bool(
         self,
@@ -1400,7 +1193,7 @@ class TestDirectionalRateResultIsHdCell:
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """is_hd_cell() returns a boolean."""
+        """is_head_direction_cell() returns a boolean."""
         from neurospatial.encoding.directional import DirectionalRateResult
 
         result = DirectionalRateResult(
@@ -1408,10 +1201,10 @@ class TestDirectionalRateResultIsHdCell:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
-        is_hd = result.is_hd_cell()
+        is_hd = result.is_head_direction_cell()
         assert isinstance(is_hd, bool)
 
     def test_is_hd_cell_true_for_sharply_tuned(
@@ -1420,7 +1213,7 @@ class TestDirectionalRateResultIsHdCell:
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """is_hd_cell() returns True for sharply tuned neurons."""
+        """is_head_direction_cell() returns True for sharply tuned neurons."""
         from neurospatial.encoding.directional import DirectionalRateResult
 
         # Very sharply tuned neuron (kappa=5)
@@ -1432,11 +1225,11 @@ class TestDirectionalRateResultIsHdCell:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         # Should be classified as HD cell (high MVL, low p-value)
-        assert result.is_hd_cell() is True
+        assert result.is_head_direction_cell() is True
 
     def test_is_hd_cell_false_for_uniform(
         self,
@@ -1445,7 +1238,7 @@ class TestDirectionalRateResultIsHdCell:
         bin_size: float,
         n_bins: int,
     ) -> None:
-        """is_hd_cell() returns False for uniform firing."""
+        """is_head_direction_cell() returns False for uniform firing."""
         from neurospatial.encoding.directional import DirectionalRateResult
 
         # Uniform firing rate
@@ -1456,11 +1249,11 @@ class TestDirectionalRateResultIsHdCell:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         # Should NOT be classified as HD cell
-        assert result.is_hd_cell() is False
+        assert result.is_head_direction_cell() is False
 
     def test_is_hd_cell_uses_min_mvl_threshold(
         self,
@@ -1468,7 +1261,7 @@ class TestDirectionalRateResultIsHdCell:
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """is_hd_cell() respects min_mvl parameter."""
+        """is_head_direction_cell() respects min_mvl parameter."""
         from neurospatial.encoding.directional import DirectionalRateResult
 
         # Moderately tuned neuron (kappa=2 gives MVL around 0.3-0.4)
@@ -1480,16 +1273,16 @@ class TestDirectionalRateResultIsHdCell:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         mvl = result.mean_vector_length()
 
         # With high threshold (above MVL), should be False
-        assert result.is_hd_cell(min_mvl=mvl + 0.1) is False
+        assert result.is_head_direction_cell(min_mvl=mvl + 0.1) is False
 
         # With low threshold (below MVL), should be True
-        assert result.is_hd_cell(min_mvl=mvl - 0.1) is True
+        assert result.is_head_direction_cell(min_mvl=mvl - 0.1) is True
 
     def test_is_hd_cell_uses_alpha_threshold(
         self,
@@ -1497,7 +1290,7 @@ class TestDirectionalRateResultIsHdCell:
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """is_hd_cell() respects alpha parameter."""
+        """is_head_direction_cell() respects alpha parameter."""
         from neurospatial.encoding.directional import DirectionalRateResult
 
         # Sharply tuned neuron
@@ -1509,17 +1302,17 @@ class TestDirectionalRateResultIsHdCell:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         pval = result.rayleigh_pvalue()
 
         # With very strict alpha (below p-value), should be False
         # Note: sharply tuned will have very low p-value, so use even lower alpha
-        assert result.is_hd_cell(alpha=pval / 10) is False
+        assert result.is_head_direction_cell(alpha=pval / 10) is False
 
         # With permissive alpha (above p-value), should be True
-        assert result.is_hd_cell(alpha=0.1) is True
+        assert result.is_head_direction_cell(alpha=0.1) is True
 
     def test_is_hd_cell_default_thresholds(
         self,
@@ -1528,7 +1321,7 @@ class TestDirectionalRateResultIsHdCell:
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """is_hd_cell() uses default thresholds of min_mvl=0.4, alpha=0.05."""
+        """is_head_direction_cell() uses default thresholds of min_mvl=0.4, alpha=0.05."""
         from neurospatial.encoding.directional import DirectionalRateResult
 
         result = DirectionalRateResult(
@@ -1536,12 +1329,12 @@ class TestDirectionalRateResultIsHdCell:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         # Calling with no arguments should use defaults
-        is_hd_default = result.is_hd_cell()
-        is_hd_explicit = result.is_hd_cell(min_mvl=0.4, alpha=0.05)
+        is_hd_default = result.is_head_direction_cell()
+        is_hd_explicit = result.is_head_direction_cell(min_mvl=0.4, alpha=0.05)
         assert is_hd_default == is_hd_explicit
 
     def test_is_hd_cell_requires_both_criteria(
@@ -1550,7 +1343,7 @@ class TestDirectionalRateResultIsHdCell:
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """is_hd_cell() requires BOTH MVL > threshold AND p-value < alpha."""
+        """is_head_direction_cell() requires BOTH MVL > threshold AND p-value < alpha."""
         from neurospatial.encoding.directional import DirectionalRateResult
 
         # Create tuned neuron
@@ -1562,7 +1355,7 @@ class TestDirectionalRateResultIsHdCell:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         mvl = result.mean_vector_length()
@@ -1571,11 +1364,14 @@ class TestDirectionalRateResultIsHdCell:
         # Set thresholds so only MVL criterion is met
         # (high alpha threshold that is below the p-value)
         if pval > 0:
-            assert result.is_hd_cell(min_mvl=mvl - 0.1, alpha=pval / 10) is False
+            assert (
+                result.is_head_direction_cell(min_mvl=mvl - 0.1, alpha=pval / 10)
+                is False
+            )
 
         # Set thresholds so only p-value criterion is met
         # (high MVL threshold that is above the actual MVL)
-        assert result.is_hd_cell(min_mvl=mvl + 0.1, alpha=0.1) is False
+        assert result.is_head_direction_cell(min_mvl=mvl + 0.1, alpha=0.1) is False
 
 
 class TestDirectionalRateResultInterpretation:
@@ -1596,7 +1392,7 @@ class TestDirectionalRateResultInterpretation:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         interp = result.interpretation()
@@ -1620,7 +1416,7 @@ class TestDirectionalRateResultInterpretation:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         interp = result.interpretation()
@@ -1655,7 +1451,7 @@ class TestDirectionalRateResultInterpretation:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         interp = result.interpretation()
@@ -1684,7 +1480,7 @@ class TestDirectionalRateResultInterpretation:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         interp = result.interpretation()
@@ -1710,7 +1506,7 @@ class TestDirectionalRateResultInterpretation:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         mvl = result.mean_vector_length()
@@ -1738,7 +1534,7 @@ class TestDirectionalRateResultInterpretation:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         custom_threshold = 0.5
@@ -1772,7 +1568,7 @@ class TestDirectionalRatesResultPlot:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         ax = result.plot(0)
@@ -1795,7 +1591,7 @@ class TestDirectionalRatesResultPlot:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         # Should raise TypeError if idx not provided
@@ -1820,7 +1616,7 @@ class TestDirectionalRatesResultPlot:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         ax = result.plot(0, polar=True)
@@ -1844,7 +1640,7 @@ class TestDirectionalRatesResultPlot:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         ax = result.plot(0, polar=False)
@@ -1866,7 +1662,7 @@ class TestDirectionalRatesResultPlot:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         _, ax_provided = plt.subplots(subplot_kw={"projection": "polar"})
@@ -1889,7 +1685,7 @@ class TestDirectionalRatesResultPlot:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         # Should not raise an error with valid kwargs
@@ -1915,7 +1711,7 @@ class TestDirectionalRatesResultPreferredDirections:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         pref_dirs = result.preferred_directions()
@@ -1937,7 +1733,7 @@ class TestDirectionalRatesResultPreferredDirections:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         pref_dirs = result.preferred_directions()
@@ -1958,7 +1754,7 @@ class TestDirectionalRatesResultPreferredDirections:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         pref_dirs = result.preferred_directions()
@@ -1981,7 +1777,7 @@ class TestDirectionalRatesResultPreferredDirections:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         pref_dirs = result.preferred_directions()
@@ -2007,7 +1803,7 @@ class TestDirectionalRatesResultMeanVectorLengths:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         mvls = result.mean_vector_lengths()
@@ -2029,7 +1825,7 @@ class TestDirectionalRatesResultMeanVectorLengths:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         mvls = result.mean_vector_lengths()
@@ -2050,7 +1846,7 @@ class TestDirectionalRatesResultMeanVectorLengths:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         mvls = result.mean_vector_lengths()
@@ -2073,7 +1869,7 @@ class TestDirectionalRatesResultMeanVectorLengths:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         mvls = result.mean_vector_lengths()
@@ -2099,7 +1895,7 @@ class TestDirectionalRatesResultTuningWidths:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         widths = result.tuning_widths()
@@ -2121,7 +1917,7 @@ class TestDirectionalRatesResultTuningWidths:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         widths = result.tuning_widths()
@@ -2142,7 +1938,7 @@ class TestDirectionalRatesResultTuningWidths:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         widths = result.tuning_widths()
@@ -2165,7 +1961,7 @@ class TestDirectionalRatesResultTuningWidths:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         widths = result.tuning_widths()
@@ -2194,7 +1990,7 @@ class TestDirectionalRatesResultDetectHdCells:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         is_hd = result.detect_hd_cells()
@@ -2216,7 +2012,7 @@ class TestDirectionalRatesResultDetectHdCells:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         is_hd = result.detect_hd_cells()
@@ -2238,13 +2034,13 @@ class TestDirectionalRatesResultDetectHdCells:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         is_hd = result.detect_hd_cells()
 
         for i, single in enumerate(result):
-            assert is_hd[i] == single.is_hd_cell()
+            assert is_hd[i] == single.is_head_direction_cell()
 
     def test_detect_hd_cells_respects_min_mvl(
         self,
@@ -2261,7 +2057,7 @@ class TestDirectionalRatesResultDetectHdCells:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         # Very permissive threshold
@@ -2288,7 +2084,7 @@ class TestDirectionalRatesResultDetectHdCells:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         # Very permissive alpha
@@ -2315,7 +2111,7 @@ class TestDirectionalRatesResultDetectHdCells:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         is_hd_default = result.detect_hd_cells()
@@ -2325,16 +2121,16 @@ class TestDirectionalRatesResultDetectHdCells:
 
 
 class TestDirectionalRatesResultPeakFiringRates:
-    """Test DirectionalRatesResult.peak_firing_rates() method."""
+    """Test DirectionalRatesResult.peak_firing_rate() method."""
 
-    def test_peak_firing_rates_returns_array(
+    def test_peak_firing_rate_returns_array(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """peak_firing_rates() returns numpy array."""
+        """peak_firing_rate() returns numpy array."""
         from neurospatial.encoding.directional import DirectionalRatesResult
 
         result = DirectionalRatesResult(
@@ -2342,13 +2138,13 @@ class TestDirectionalRatesResultPeakFiringRates:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
-        peaks = result.peak_firing_rates()
+        peaks = result.peak_firing_rate()
         assert isinstance(peaks, np.ndarray)
 
-    def test_peak_firing_rates_shape(
+    def test_peak_firing_rate_shape(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
@@ -2356,7 +2152,7 @@ class TestDirectionalRatesResultPeakFiringRates:
         bin_size: float,
         n_neurons: int,
     ) -> None:
-        """peak_firing_rates() returns (n_neurons,) array."""
+        """peak_firing_rate() returns (n_neurons,) array."""
         from neurospatial.encoding.directional import DirectionalRatesResult
 
         result = DirectionalRatesResult(
@@ -2364,20 +2160,20 @@ class TestDirectionalRatesResultPeakFiringRates:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
-        peaks = result.peak_firing_rates()
+        peaks = result.peak_firing_rate()
         assert peaks.shape == (n_neurons,)
 
-    def test_peak_firing_rates_matches_single(
+    def test_peak_firing_rate_matches_single(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """peak_firing_rates() matches iteration over single results."""
+        """peak_firing_rate() matches iteration over single results."""
         from neurospatial.encoding.directional import DirectionalRatesResult
 
         result = DirectionalRatesResult(
@@ -2385,22 +2181,22 @@ class TestDirectionalRatesResultPeakFiringRates:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
-        peaks = result.peak_firing_rates()
+        peaks = result.peak_firing_rate()
 
         for i, single in enumerate(result):
             np.testing.assert_allclose(peaks[i], single.peak_firing_rate())
 
-    def test_peak_firing_rates_nonnegative(
+    def test_peak_firing_rate_nonnegative(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """peak_firing_rates() values are non-negative."""
+        """peak_firing_rate() values are non-negative."""
         from neurospatial.encoding.directional import DirectionalRatesResult
 
         result = DirectionalRatesResult(
@@ -2408,10 +2204,10 @@ class TestDirectionalRatesResultPeakFiringRates:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
-        peaks = result.peak_firing_rates()
+        peaks = result.peak_firing_rate()
         assert np.all(peaks >= 0)
 
 
@@ -2439,7 +2235,7 @@ class TestDirectionalRatesResultToDataframe:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         df = result.to_dataframe()
@@ -2462,7 +2258,7 @@ class TestDirectionalRatesResultToDataframe:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         df = result.to_dataframe()
@@ -2484,7 +2280,7 @@ class TestDirectionalRatesResultToDataframe:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         df = result.to_dataframe()
@@ -2506,7 +2302,7 @@ class TestDirectionalRatesResultToDataframe:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         df = result.to_dataframe()
@@ -2528,7 +2324,7 @@ class TestDirectionalRatesResultToDataframe:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         df = result.to_dataframe()
@@ -2550,7 +2346,7 @@ class TestDirectionalRatesResultToDataframe:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         df = result.to_dataframe()
@@ -2572,7 +2368,7 @@ class TestDirectionalRatesResultToDataframe:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         df = result.to_dataframe()
@@ -2594,7 +2390,7 @@ class TestDirectionalRatesResultToDataframe:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         df = result.to_dataframe()
@@ -2616,7 +2412,7 @@ class TestDirectionalRatesResultToDataframe:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         df = result.to_dataframe()
@@ -2629,7 +2425,7 @@ class TestDirectionalRatesResultToDataframe:
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """to_dataframe() includes is_hd_cell column."""
+        """to_dataframe() includes is_head_direction_cell column."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2638,11 +2434,11 @@ class TestDirectionalRatesResultToDataframe:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         df = result.to_dataframe()
-        assert "is_hd_cell" in df.columns
+        assert "is_head_direction_cell" in df.columns
 
     def test_to_dataframe_neuron_id_default_integers(
         self,
@@ -2661,7 +2457,7 @@ class TestDirectionalRatesResultToDataframe:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         df = result.to_dataframe()
@@ -2685,7 +2481,7 @@ class TestDirectionalRatesResultToDataframe:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         custom_ids = [f"unit_{i}" for i in range(n_neurons)]
@@ -2708,7 +2504,7 @@ class TestDirectionalRatesResultToDataframe:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         # Wrong number of neuron_ids
@@ -2731,7 +2527,7 @@ class TestDirectionalRatesResultToDataframe:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         df = result.to_dataframe()
@@ -2754,7 +2550,7 @@ class TestDirectionalRatesResultToDataframe:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         df = result.to_dataframe()
@@ -2779,7 +2575,7 @@ class TestDirectionalRatesResultToDataframe:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         df = result.to_dataframe()
@@ -2802,7 +2598,7 @@ class TestDirectionalRatesResultToDataframe:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         df = result.to_dataframe()
@@ -2825,7 +2621,7 @@ class TestDirectionalRatesResultToDataframe:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         df = result.to_dataframe()
@@ -2842,7 +2638,7 @@ class TestDirectionalRatesResultToDataframe:
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """to_dataframe() peak_rate matches peak_firing_rates()."""
+        """to_dataframe() peak_rate matches peak_firing_rate()."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2851,11 +2647,11 @@ class TestDirectionalRatesResultToDataframe:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         df = result.to_dataframe()
-        peaks = result.peak_firing_rates()
+        peaks = result.peak_firing_rate()
         np.testing.assert_allclose(df["peak_rate"].values, peaks)
 
     def test_to_dataframe_is_hd_cell_matches_method(
@@ -2865,7 +2661,7 @@ class TestDirectionalRatesResultToDataframe:
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """to_dataframe() is_hd_cell matches detect_hd_cells()."""
+        """to_dataframe() is_head_direction_cell matches detect_hd_cells()."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2874,12 +2670,12 @@ class TestDirectionalRatesResultToDataframe:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         df = result.to_dataframe()
         is_hd = result.detect_hd_cells()
-        np.testing.assert_array_equal(df["is_hd_cell"].values, is_hd)
+        np.testing.assert_array_equal(df["is_head_direction_cell"].values, is_hd)
 
     def test_to_dataframe_empty_result(
         self,
@@ -2900,7 +2696,7 @@ class TestDirectionalRatesResultToDataframe:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         df = result.to_dataframe()
@@ -2925,7 +2721,7 @@ class TestDirectionalRatesResultToDataframe:
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         df = result.to_dataframe()
@@ -2939,18 +2735,6 @@ class TestDirectionalRatesResultToDataframe:
 
 class TestComputeDirectionalRateImport:
     """Test that compute_directional_rate can be imported."""
-
-    def test_import_from_directional(self) -> None:
-        """compute_directional_rate can be imported from encoding.directional."""
-        from neurospatial.encoding.directional import compute_directional_rate
-
-        assert compute_directional_rate is not None
-
-    def test_import_from_encoding(self) -> None:
-        """compute_directional_rate can be imported from encoding package."""
-        from neurospatial.encoding import compute_directional_rate
-
-        assert compute_directional_rate is not None
 
 
 class TestComputeDirectionalRateBasic:
@@ -2973,49 +2757,6 @@ class TestComputeDirectionalRateBasic:
 
         result = compute_directional_rate(spike_times, times, headings)
         assert isinstance(result, DirectionalRateResult)
-
-    def test_firing_rate_shape(self) -> None:
-        """compute_directional_rate produces firing_rate with correct shape."""
-        from neurospatial.encoding.directional import compute_directional_rate
-
-        np.random.seed(42)
-        times = np.linspace(0, 10, 100)
-        headings = np.random.uniform(0, 2 * np.pi, 100)
-        spike_times = np.array([1.0, 2.5, 4.0, 7.5])
-
-        result = compute_directional_rate(spike_times, times, headings)
-
-        # Default bin_size is π/30 = 60 bins
-        n_bins = 60
-        assert np.asarray(result.firing_rate).shape == (n_bins,)
-
-    def test_occupancy_shape(self) -> None:
-        """compute_directional_rate produces occupancy with correct shape."""
-        from neurospatial.encoding.directional import compute_directional_rate
-
-        np.random.seed(42)
-        times = np.linspace(0, 10, 100)
-        headings = np.random.uniform(0, 2 * np.pi, 100)
-        spike_times = np.array([1.0, 2.5, 4.0, 7.5])
-
-        result = compute_directional_rate(spike_times, times, headings)
-
-        n_bins = 60
-        assert np.asarray(result.occupancy).shape == (n_bins,)
-
-    def test_bin_centers_shape(self) -> None:
-        """compute_directional_rate produces bin_centers with correct shape."""
-        from neurospatial.encoding.directional import compute_directional_rate
-
-        np.random.seed(42)
-        times = np.linspace(0, 10, 100)
-        headings = np.random.uniform(0, 2 * np.pi, 100)
-        spike_times = np.array([1.0, 2.5, 4.0, 7.5])
-
-        result = compute_directional_rate(spike_times, times, headings)
-
-        n_bins = 60
-        assert np.asarray(result.bin_centers).shape == (n_bins,)
 
     def test_bin_centers_in_radians(self) -> None:
         """compute_directional_rate produces bin_centers in radians [0, 2π)."""
@@ -3044,7 +2785,7 @@ class TestComputeDirectionalRateBasic:
         result = compute_directional_rate(spike_times, times, headings)
 
         assert result.bin_size == np.pi / 30
-        assert result.smoothing_sigma is None
+        assert result.bandwidth is None
 
     def test_firing_rate_non_negative(self) -> None:
         """compute_directional_rate produces non-negative firing rates."""
@@ -3166,10 +2907,10 @@ class TestComputeDirectionalRateAngleUnit:
 
 
 class TestComputeDirectionalRateSmoothing:
-    """Test compute_directional_rate smoothing_sigma parameter."""
+    """Test compute_directional_rate bandwidth parameter."""
 
-    def test_smoothing_sigma_none_default(self) -> None:
-        """compute_directional_rate returns None smoothing_sigma by default."""
+    def test_bandwidth_none_default(self) -> None:
+        """compute_directional_rate returns None bandwidth by default."""
         from neurospatial.encoding.directional import compute_directional_rate
 
         np.random.seed(42)
@@ -3178,10 +2919,10 @@ class TestComputeDirectionalRateSmoothing:
         spike_times = np.array([1.0, 2.5, 4.0, 7.5])
 
         result = compute_directional_rate(spike_times, times, headings)
-        assert result.smoothing_sigma is None
+        assert result.bandwidth is None
 
-    def test_smoothing_sigma_stored(self) -> None:
-        """compute_directional_rate stores smoothing_sigma in result."""
+    def test_bandwidth_stored(self) -> None:
+        """compute_directional_rate stores bandwidth in result."""
         from neurospatial.encoding.directional import compute_directional_rate
 
         np.random.seed(42)
@@ -3189,11 +2930,11 @@ class TestComputeDirectionalRateSmoothing:
         headings = np.random.uniform(0, 2 * np.pi, 100)
         spike_times = np.array([1.0, 2.5, 4.0, 7.5])
 
-        smoothing_sigma = np.pi / 6  # 30 degrees
+        bandwidth = np.pi / 6  # 30 degrees
         result = compute_directional_rate(
-            spike_times, times, headings, smoothing_sigma=smoothing_sigma
+            spike_times, times, headings, bandwidth=bandwidth
         )
-        assert result.smoothing_sigma == smoothing_sigma
+        assert result.bandwidth == bandwidth
 
     def test_smoothing_produces_smoother_curve(self) -> None:
         """compute_directional_rate with smoothing produces smoother curves."""
@@ -3206,7 +2947,7 @@ class TestComputeDirectionalRateSmoothing:
 
         result_raw = compute_directional_rate(spike_times, times, headings)
         result_smooth = compute_directional_rate(
-            spike_times, times, headings, smoothing_sigma=np.pi / 6
+            spike_times, times, headings, bandwidth=np.pi / 6
         )
 
         rates_raw = np.asarray(result_raw.firing_rate)
@@ -3223,8 +2964,8 @@ class TestComputeDirectionalRateSmoothing:
         # Smoothed curve has smaller local variance (more gradual changes)
         assert var_smooth <= var_raw
 
-    def test_smoothing_sigma_degrees(self) -> None:
-        """compute_directional_rate smoothing_sigma with angle_unit=deg."""
+    def test_bandwidth_degrees(self) -> None:
+        """compute_directional_rate bandwidth with angle_unit=deg."""
         from neurospatial.encoding.directional import compute_directional_rate
 
         np.random.seed(42)
@@ -3238,12 +2979,12 @@ class TestComputeDirectionalRateSmoothing:
             times,
             headings,
             bin_size=6.0,
-            smoothing_sigma=30.0,
+            bandwidth=30.0,
             angle_unit="deg",
         )
 
-        # smoothing_sigma is stored in radians
-        np.testing.assert_allclose(result.smoothing_sigma, np.radians(30.0))
+        # bandwidth is stored in radians
+        np.testing.assert_allclose(result.bandwidth, np.radians(30.0))
 
 
 class TestComputeDirectionalRateEdgeCases:
@@ -3355,7 +3096,7 @@ class TestComputeDirectionalRateResultMethods:
         assert 0 <= mvl <= 1
 
     def test_is_hd_cell_method(self) -> None:
-        """Result has working is_hd_cell method."""
+        """Result has working is_head_direction_cell method."""
         from neurospatial.encoding.directional import compute_directional_rate
 
         np.random.seed(42)
@@ -3366,7 +3107,7 @@ class TestComputeDirectionalRateResultMethods:
 
         result = compute_directional_rate(spike_times, times, headings)
 
-        is_hd = result.is_hd_cell()
+        is_hd = result.is_head_direction_cell()
         assert isinstance(is_hd, bool)
 
     def test_plot_method(self) -> None:
@@ -3414,18 +3155,6 @@ class TestComputeDirectionalRateInputValidation:
 class TestComputeDirectionalRatesImport:
     """Test that compute_directional_rates can be imported."""
 
-    def test_import_from_directional(self) -> None:
-        """compute_directional_rates can be imported from encoding.directional."""
-        from neurospatial.encoding.directional import compute_directional_rates
-
-        assert compute_directional_rates is not None
-
-    def test_import_from_encoding(self) -> None:
-        """compute_directional_rates can be imported from encoding package."""
-        from neurospatial.encoding import compute_directional_rates
-
-        assert compute_directional_rates is not None
-
 
 class TestComputeDirectionalRatesBasic:
     """Test basic compute_directional_rates functionality."""
@@ -3451,64 +3180,6 @@ class TestComputeDirectionalRatesBasic:
         result = compute_directional_rates(spike_times, times, headings)
         assert isinstance(result, DirectionalRatesResult)
 
-    def test_firing_rates_shape(self) -> None:
-        """compute_directional_rates produces firing_rates with correct shape."""
-        from neurospatial.encoding.directional import compute_directional_rates
-
-        np.random.seed(42)
-        times = np.linspace(0, 10, 100)
-        headings = np.random.uniform(0, 2 * np.pi, 100)
-        spike_times = [
-            np.array([1.0, 2.5, 4.0]),
-            np.array([0.5, 3.0, 5.5, 8.0]),
-            np.array([2.0, 6.0]),
-        ]
-
-        result = compute_directional_rates(spike_times, times, headings)
-
-        # Default bin_size is π/30 = 60 bins
-        n_bins = 60
-        n_neurons = 3
-        rates = np.asarray(result.firing_rates)
-        assert rates.shape == (n_neurons, n_bins)
-
-    def test_occupancy_shape(self) -> None:
-        """compute_directional_rates produces occupancy with correct shape (shared)."""
-        from neurospatial.encoding.directional import compute_directional_rates
-
-        np.random.seed(42)
-        times = np.linspace(0, 10, 100)
-        headings = np.random.uniform(0, 2 * np.pi, 100)
-        spike_times = [
-            np.array([1.0, 2.5, 4.0]),
-            np.array([0.5, 3.0, 5.5, 8.0]),
-            np.array([2.0, 6.0]),
-        ]
-
-        result = compute_directional_rates(spike_times, times, headings)
-
-        n_bins = 60
-        occ = np.asarray(result.occupancy)
-        assert occ.shape == (n_bins,)
-
-    def test_bin_centers_shape(self) -> None:
-        """compute_directional_rates produces bin_centers with correct shape."""
-        from neurospatial.encoding.directional import compute_directional_rates
-
-        np.random.seed(42)
-        times = np.linspace(0, 10, 100)
-        headings = np.random.uniform(0, 2 * np.pi, 100)
-        spike_times = [
-            np.array([1.0, 2.5, 4.0]),
-            np.array([0.5, 3.0, 5.5, 8.0]),
-        ]
-
-        result = compute_directional_rates(spike_times, times, headings)
-
-        n_bins = 60
-        centers = np.asarray(result.bin_centers)
-        assert centers.shape == (n_bins,)
-
     def test_bin_size_stored_in_radians(self) -> None:
         """compute_directional_rates stores bin_size in radians."""
         from neurospatial.encoding.directional import compute_directional_rates
@@ -3523,8 +3194,8 @@ class TestComputeDirectionalRatesBasic:
         # Default bin_size is π/30
         np.testing.assert_allclose(result.bin_size, np.pi / 30)
 
-    def test_smoothing_sigma_none_default(self) -> None:
-        """compute_directional_rates returns None smoothing_sigma by default."""
+    def test_bandwidth_none_default(self) -> None:
+        """compute_directional_rates returns None bandwidth by default."""
         from neurospatial.encoding.directional import compute_directional_rates
 
         np.random.seed(42)
@@ -3533,7 +3204,7 @@ class TestComputeDirectionalRatesBasic:
         spike_times = [np.array([1.0, 2.5])]
 
         result = compute_directional_rates(spike_times, times, headings)
-        assert result.smoothing_sigma is None
+        assert result.bandwidth is None
 
     def test_len_returns_n_neurons(self) -> None:
         """len() of result returns number of neurons."""
@@ -3735,10 +3406,10 @@ class TestComputeDirectionalRatesAngleUnit:
 
 
 class TestComputeDirectionalRatesSmoothing:
-    """Test compute_directional_rates smoothing_sigma parameter."""
+    """Test compute_directional_rates bandwidth parameter."""
 
-    def test_smoothing_sigma_stored(self) -> None:
-        """compute_directional_rates stores smoothing_sigma in result."""
+    def test_bandwidth_stored(self) -> None:
+        """compute_directional_rates stores bandwidth in result."""
         from neurospatial.encoding.directional import compute_directional_rates
 
         np.random.seed(42)
@@ -3746,11 +3417,11 @@ class TestComputeDirectionalRatesSmoothing:
         headings = np.random.uniform(0, 2 * np.pi, 100)
         spike_times = [np.array([1.0, 2.5, 4.0])]
 
-        smoothing_sigma = np.pi / 6  # 30 degrees
+        bandwidth = np.pi / 6  # 30 degrees
         result = compute_directional_rates(
-            spike_times, times, headings, smoothing_sigma=smoothing_sigma
+            spike_times, times, headings, bandwidth=bandwidth
         )
-        assert result.smoothing_sigma == smoothing_sigma
+        assert result.bandwidth == bandwidth
 
     def test_smoothing_produces_smoother_curves(self) -> None:
         """compute_directional_rates with smoothing produces smoother curves."""
@@ -3763,7 +3434,7 @@ class TestComputeDirectionalRatesSmoothing:
 
         result_raw = compute_directional_rates(spike_times, times, headings)
         result_smooth = compute_directional_rates(
-            spike_times, times, headings, smoothing_sigma=np.pi / 6
+            spike_times, times, headings, bandwidth=np.pi / 6
         )
 
         rates_raw = np.asarray(result_raw.firing_rates[0])
@@ -3973,7 +3644,7 @@ class TestComputeDirectionalRatesResultMethods:
         assert "neuron_id" in df.columns
         assert "preferred_direction" in df.columns
         assert "mean_vector_length" in df.columns
-        assert "is_hd_cell" in df.columns
+        assert "is_head_direction_cell" in df.columns
 
 
 class TestComputeDirectionalRatesInputValidation:
@@ -4019,7 +3690,7 @@ class TestDirectionalRateResultNaNHandling:
             occupancy=np.ones(n_bins) * 0.5,
             bin_centers=bin_centers,
             bin_size=np.pi / 30,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
         pref_dir = result.preferred_direction()
 
@@ -4042,7 +3713,7 @@ class TestDirectionalRateResultNaNHandling:
             occupancy=np.ones(n_bins) * 0.5,
             bin_centers=bin_centers,
             bin_size=np.pi / 30,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
         mvl = result.mean_vector_length()
 
@@ -4064,7 +3735,7 @@ class TestDirectionalRateResultNaNHandling:
             occupancy=np.ones(n_bins) * 0.5,
             bin_centers=bin_centers,
             bin_size=np.pi / 30,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
         pval = result.rayleigh_pvalue()
 
@@ -4073,7 +3744,7 @@ class TestDirectionalRateResultNaNHandling:
         assert 0 <= pval <= 1
 
     def test_is_hd_cell_with_nans(self) -> None:
-        """is_hd_cell handles NaN values in firing_rate."""
+        """is_head_direction_cell handles NaN values in firing_rate."""
         from neurospatial.encoding.directional import DirectionalRateResult
 
         n_bins = 60
@@ -4086,9 +3757,9 @@ class TestDirectionalRateResultNaNHandling:
             occupancy=np.ones(n_bins) * 0.5,
             bin_centers=bin_centers,
             bin_size=np.pi / 30,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
-        is_hd = result.is_hd_cell()
+        is_hd = result.is_head_direction_cell()
 
         # Should return a boolean (not error or NaN comparison issue)
         assert isinstance(is_hd, bool)
@@ -4106,7 +3777,7 @@ class TestDirectionalRateResultNaNHandling:
             occupancy=np.zeros(n_bins),  # All unvisited
             bin_centers=bin_centers,
             bin_size=np.pi / 30,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         # All metrics should return NaN
@@ -4140,7 +3811,7 @@ class TestDirectionalBatchNaNHandling:
             occupancy=np.ones(n_bins) * 0.5,
             bin_centers=bin_centers,
             bin_size=2 * np.pi / n_bins,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         batch = result.preferred_directions()
@@ -4164,7 +3835,7 @@ class TestDirectionalBatchNaNHandling:
             occupancy=np.ones(n_bins) * 0.5,
             bin_centers=bin_centers,
             bin_size=2 * np.pi / n_bins,
-            smoothing_sigma=None,
+            bandwidth=None,
         )
 
         batch = result.mean_vector_lengths()

@@ -250,7 +250,7 @@ def main():
 
         # Create overlays
         position_overlay = PositionOverlay(
-            data=trajectory,
+            positions=trajectory,
             color="red",
             size=10.0,
             trail_length=15,
@@ -263,7 +263,7 @@ def main():
             skeleton_width=2.0,
         )
         head_direction_overlay = HeadDirectionOverlay(
-            data=head_angles,
+            headings=head_angles,
             color="yellow",
             length=10.0,
         )
@@ -304,7 +304,7 @@ def main():
         trajectory = np.clip(trajectory, 5, extent - 5)
 
         position_overlay = PositionOverlay(
-            data=trajectory,
+            positions=trajectory,
             color="red",
             size=12.0,
             trail_length=20,

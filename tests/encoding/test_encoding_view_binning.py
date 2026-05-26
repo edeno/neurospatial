@@ -8,7 +8,7 @@ TDD approach: Tests written first, implementation follows.
 Task 4.6: Implement binning layer for view encoding
 - Create helper to compute view occupancy (time viewing each spatial bin)
 - Support gaze models: "fixed_distance", "ray_cast", "boundary"
-- Convert (spike_times, times, positions, headings, gaze_model) -> (spike_counts, view_occupancy)
+- Convert (spike_times, times, positions, headings, gaze_model) -> (spike_counts, occupancy)
 """
 
 from __future__ import annotations
@@ -82,72 +82,72 @@ def multiple_neuron_spikes() -> list[NDArray[np.float64]]:
 
 
 # ==============================================================================
-# Test compute_view_occupancy
+# Test compute_occupancy
 # ==============================================================================
 
 
 class TestComputeViewOccupancy:
-    """Tests for compute_view_occupancy function."""
+    """Tests for compute_occupancy function."""
 
     def test_function_is_importable(self) -> None:
-        """compute_view_occupancy should be importable from encoding._view_binning."""
-        from neurospatial.encoding._view_binning import compute_view_occupancy
+        """compute_occupancy should be importable from encoding._view_binning."""
+        from neurospatial.encoding._view_binning import compute_occupancy
 
-        assert compute_view_occupancy is not None
+        assert compute_occupancy is not None
 
-    def test_returns_view_occupancy_array(
+    def test_returns_occupancy_array(
         self,
         simple_env: Environment,
         trajectory_data: dict,
     ) -> None:
-        """compute_view_occupancy should return view occupancy array in seconds."""
-        from neurospatial.encoding._view_binning import compute_view_occupancy
+        """compute_occupancy should return view occupancy array in seconds."""
+        from neurospatial.encoding._view_binning import compute_occupancy
 
-        view_occupancy = compute_view_occupancy(
+        occupancy = compute_occupancy(
             simple_env,
             trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
         )
 
-        assert isinstance(view_occupancy, np.ndarray)
-        assert view_occupancy.dtype == np.float64
+        assert isinstance(occupancy, np.ndarray)
+        assert occupancy.dtype == np.float64
 
-    def test_view_occupancy_shape(
+    def test_occupancy_shape(
         self,
         simple_env: Environment,
         trajectory_data: dict,
     ) -> None:
-        """compute_view_occupancy should return array with shape (n_bins,)."""
-        from neurospatial.encoding._view_binning import compute_view_occupancy
+        """compute_occupancy should return array with shape (n_bins,)."""
+        from neurospatial.encoding._view_binning import compute_occupancy
 
-        view_occupancy = compute_view_occupancy(
+        occupancy = compute_occupancy(
             simple_env,
             trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
         )
 
-        assert view_occupancy.shape == (simple_env.n_bins,)
+        assert occupancy.shape == (simple_env.n_bins,)
 
-    def test_view_occupancy_non_negative(
+    def test_occupancy_non_negative(
         self,
         simple_env: Environment,
         trajectory_data: dict,
     ) -> None:
         """View occupancy should all be non-negative."""
-        from neurospatial.encoding._view_binning import compute_view_occupancy
+        from neurospatial.encoding._view_binning import compute_occupancy
 
-        view_occupancy = compute_view_occupancy(
+        occupancy = compute_occupancy(
             simple_env,
             trajectory_data["times"],
             trajectory_data["positions"],
             trajectory_data["headings"],
         )
 
-        assert np.all(view_occupancy >= 0)
+        assert np.all(occupancy >= 0)
 
-    def test_total_view_occupancy_less_than_duration(
+    def test_total_occupancy_less_than_duration(
         self,
         simple_env: Environment,
         trajectory_data: dict,
@@ -158,9 +158,9 @@ class TestComputeViewOccupancy:
         - Viewed locations falling outside the environment (reduces occupancy)
         - Floating point accumulation in dt computation (may slightly exceed)
         """
-        from neurospatial.encoding._view_binning import compute_view_occupancy
+        from neurospatial.encoding._view_binning import compute_occupancy
 
-        view_occupancy = compute_view_occupancy(
+        occupancy = compute_occupancy(
             simple_env,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -168,12 +168,12 @@ class TestComputeViewOccupancy:
         )
 
         total_duration = trajectory_data["times"][-1] - trajectory_data["times"][0]
-        total_occupancy = np.sum(view_occupancy)
+        total_occupancy = np.sum(occupancy)
 
         # Allow 2% tolerance for floating point accumulation
         assert total_occupancy <= total_duration * 1.02
 
-    def test_view_occupancy_differs_from_position_occupancy(
+    def test_occupancy_differs_from_position_occupancy(
         self,
         simple_env: Environment,
         trajectory_data: dict,
@@ -183,9 +183,9 @@ class TestComputeViewOccupancy:
         This tests the key concept: view occupancy is time *viewing* each bin,
         not time *at* each bin.
         """
-        from neurospatial.encoding._view_binning import compute_view_occupancy
+        from neurospatial.encoding._view_binning import compute_occupancy
 
-        view_occupancy = compute_view_occupancy(
+        occupancy = compute_occupancy(
             simple_env,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -199,11 +199,11 @@ class TestComputeViewOccupancy:
         )
 
         # They should be different arrays
-        assert not np.allclose(view_occupancy, position_occupancy)
+        assert not np.allclose(occupancy, position_occupancy)
 
 
 class TestComputeViewOccupancyGazeModels:
-    """Tests for gaze_model parameter in compute_view_occupancy."""
+    """Tests for gaze_model parameter in compute_occupancy."""
 
     def test_fixed_distance_default(
         self,
@@ -211,9 +211,9 @@ class TestComputeViewOccupancyGazeModels:
         trajectory_data: dict,
     ) -> None:
         """Default gaze_model should be 'fixed_distance'."""
-        from neurospatial.encoding._view_binning import compute_view_occupancy
+        from neurospatial.encoding._view_binning import compute_occupancy
 
-        view_occupancy = compute_view_occupancy(
+        occupancy = compute_occupancy(
             simple_env,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -221,8 +221,8 @@ class TestComputeViewOccupancyGazeModels:
         )
 
         # Should run without error and return valid array
-        assert view_occupancy.shape == (simple_env.n_bins,)
-        assert np.any(view_occupancy > 0)  # Some bins should be viewed
+        assert occupancy.shape == (simple_env.n_bins,)
+        assert np.any(occupancy > 0)  # Some bins should be viewed
 
     def test_fixed_distance_explicit(
         self,
@@ -230,9 +230,9 @@ class TestComputeViewOccupancyGazeModels:
         trajectory_data: dict,
     ) -> None:
         """Explicit 'fixed_distance' should work."""
-        from neurospatial.encoding._view_binning import compute_view_occupancy
+        from neurospatial.encoding._view_binning import compute_occupancy
 
-        view_occupancy = compute_view_occupancy(
+        occupancy = compute_occupancy(
             simple_env,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -241,7 +241,7 @@ class TestComputeViewOccupancyGazeModels:
             view_distance=10.0,
         )
 
-        assert view_occupancy.shape == (simple_env.n_bins,)
+        assert occupancy.shape == (simple_env.n_bins,)
 
     def test_ray_cast_gaze_model(
         self,
@@ -249,9 +249,9 @@ class TestComputeViewOccupancyGazeModels:
         trajectory_data: dict,
     ) -> None:
         """'ray_cast' gaze model should work."""
-        from neurospatial.encoding._view_binning import compute_view_occupancy
+        from neurospatial.encoding._view_binning import compute_occupancy
 
-        view_occupancy = compute_view_occupancy(
+        occupancy = compute_occupancy(
             simple_env,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -259,7 +259,7 @@ class TestComputeViewOccupancyGazeModels:
             gaze_model="ray_cast",
         )
 
-        assert view_occupancy.shape == (simple_env.n_bins,)
+        assert occupancy.shape == (simple_env.n_bins,)
 
     def test_boundary_gaze_model(
         self,
@@ -267,9 +267,9 @@ class TestComputeViewOccupancyGazeModels:
         trajectory_data: dict,
     ) -> None:
         """'boundary' gaze model should work."""
-        from neurospatial.encoding._view_binning import compute_view_occupancy
+        from neurospatial.encoding._view_binning import compute_occupancy
 
-        view_occupancy = compute_view_occupancy(
+        occupancy = compute_occupancy(
             simple_env,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -277,7 +277,7 @@ class TestComputeViewOccupancyGazeModels:
             gaze_model="boundary",
         )
 
-        assert view_occupancy.shape == (simple_env.n_bins,)
+        assert occupancy.shape == (simple_env.n_bins,)
 
     def test_different_gaze_models_give_different_results(
         self,
@@ -285,9 +285,9 @@ class TestComputeViewOccupancyGazeModels:
         trajectory_data: dict,
     ) -> None:
         """Different gaze models should produce different view occupancies."""
-        from neurospatial.encoding._view_binning import compute_view_occupancy
+        from neurospatial.encoding._view_binning import compute_occupancy
 
-        occ_fixed = compute_view_occupancy(
+        occ_fixed = compute_occupancy(
             simple_env,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -296,7 +296,7 @@ class TestComputeViewOccupancyGazeModels:
             view_distance=10.0,
         )
 
-        occ_ray = compute_view_occupancy(
+        occ_ray = compute_occupancy(
             simple_env,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -313,9 +313,9 @@ class TestComputeViewOccupancyGazeModels:
         trajectory_data: dict,
     ) -> None:
         """Different view_distance values should give different results."""
-        from neurospatial.encoding._view_binning import compute_view_occupancy
+        from neurospatial.encoding._view_binning import compute_occupancy
 
-        occ_short = compute_view_occupancy(
+        occ_short = compute_occupancy(
             simple_env,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -324,7 +324,7 @@ class TestComputeViewOccupancyGazeModels:
             view_distance=5.0,
         )
 
-        occ_long = compute_view_occupancy(
+        occ_long = compute_occupancy(
             simple_env,
             trajectory_data["times"],
             trajectory_data["positions"],
@@ -612,13 +612,13 @@ class TestBinViewSpikeTrains:
 
         assert bin_view_spike_trains is not None
 
-    def test_returns_spike_counts_and_view_occupancy(
+    def test_returns_spike_counts_and_occupancy(
         self,
         simple_env: Environment,
         trajectory_data: dict,
         multiple_neuron_spikes: list[NDArray[np.float64]],
     ) -> None:
-        """bin_view_spike_trains should return (spike_counts, view_occupancy) tuple."""
+        """bin_view_spike_trains should return (spike_counts, occupancy) tuple."""
         from neurospatial.encoding._view_binning import bin_view_spike_trains
 
         result = bin_view_spike_trains(
@@ -631,9 +631,9 @@ class TestBinViewSpikeTrains:
 
         assert isinstance(result, tuple)
         assert len(result) == 2
-        spike_counts, view_occupancy = result
+        spike_counts, occupancy = result
         assert isinstance(spike_counts, np.ndarray)
-        assert isinstance(view_occupancy, np.ndarray)
+        assert isinstance(occupancy, np.ndarray)
 
     def test_spike_counts_shape(
         self,
@@ -655,7 +655,7 @@ class TestBinViewSpikeTrains:
         n_neurons = len(multiple_neuron_spikes)
         assert spike_counts.shape == (n_neurons, simple_env.n_bins)
 
-    def test_view_occupancy_shape(
+    def test_occupancy_shape(
         self,
         simple_env: Environment,
         trajectory_data: dict,
@@ -664,7 +664,7 @@ class TestBinViewSpikeTrains:
         """View occupancy should have shape (n_bins,)."""
         from neurospatial.encoding._view_binning import bin_view_spike_trains
 
-        _, view_occupancy = bin_view_spike_trains(
+        _, occupancy = bin_view_spike_trains(
             simple_env,
             multiple_neuron_spikes,
             trajectory_data["times"],
@@ -672,7 +672,7 @@ class TestBinViewSpikeTrains:
             trajectory_data["headings"],
         )
 
-        assert view_occupancy.shape == (simple_env.n_bins,)
+        assert occupancy.shape == (simple_env.n_bins,)
 
     def test_spike_counts_dtype(
         self,
@@ -693,7 +693,7 @@ class TestBinViewSpikeTrains:
 
         assert spike_counts.dtype == np.float64
 
-    def test_view_occupancy_dtype(
+    def test_occupancy_dtype(
         self,
         simple_env: Environment,
         trajectory_data: dict,
@@ -702,7 +702,7 @@ class TestBinViewSpikeTrains:
         """View occupancy should be float64."""
         from neurospatial.encoding._view_binning import bin_view_spike_trains
 
-        _, view_occupancy = bin_view_spike_trains(
+        _, occupancy = bin_view_spike_trains(
             simple_env,
             multiple_neuron_spikes,
             trajectory_data["times"],
@@ -710,7 +710,7 @@ class TestBinViewSpikeTrains:
             trajectory_data["headings"],
         )
 
-        assert view_occupancy.dtype == np.float64
+        assert occupancy.dtype == np.float64
 
     def test_empty_neuron_has_zero_counts(
         self,
@@ -744,7 +744,7 @@ class TestBinViewSpikeTrains:
             bin_view_spike_trains,
         )
 
-        spike_counts_batch, _view_occupancy_batch = bin_view_spike_trains(
+        spike_counts_batch, _occupancy_batch = bin_view_spike_trains(
             simple_env,
             multiple_neuron_spikes,
             trajectory_data["times"],
@@ -772,7 +772,7 @@ class TestBinViewSpikeTrains:
         """n_jobs parameter should not change results."""
         from neurospatial.encoding._view_binning import bin_view_spike_trains
 
-        spike_counts_serial, view_occupancy_serial = bin_view_spike_trains(
+        spike_counts_serial, occupancy_serial = bin_view_spike_trains(
             simple_env,
             multiple_neuron_spikes,
             trajectory_data["times"],
@@ -781,7 +781,7 @@ class TestBinViewSpikeTrains:
             n_jobs=1,
         )
 
-        spike_counts_parallel, view_occupancy_parallel = bin_view_spike_trains(
+        spike_counts_parallel, occupancy_parallel = bin_view_spike_trains(
             simple_env,
             multiple_neuron_spikes,
             trajectory_data["times"],
@@ -791,7 +791,7 @@ class TestBinViewSpikeTrains:
         )
 
         np.testing.assert_array_equal(spike_counts_serial, spike_counts_parallel)
-        np.testing.assert_array_equal(view_occupancy_serial, view_occupancy_parallel)
+        np.testing.assert_array_equal(occupancy_serial, occupancy_parallel)
 
     def test_single_neuron_list(
         self,
@@ -804,7 +804,7 @@ class TestBinViewSpikeTrains:
 
         spike_times_list = [single_neuron_spikes]
 
-        spike_counts, view_occupancy = bin_view_spike_trains(
+        spike_counts, occupancy = bin_view_spike_trains(
             simple_env,
             spike_times_list,
             trajectory_data["times"],
@@ -813,7 +813,7 @@ class TestBinViewSpikeTrains:
         )
 
         assert spike_counts.shape == (1, simple_env.n_bins)
-        assert view_occupancy.shape == (simple_env.n_bins,)
+        assert occupancy.shape == (simple_env.n_bins,)
 
     def test_normalizes_input_via_normalize_spike_times(
         self,
@@ -832,7 +832,7 @@ class TestBinViewSpikeTrains:
             ]
         )
 
-        spike_counts, _view_occupancy = bin_view_spike_trains(
+        spike_counts, _occupancy = bin_view_spike_trains(
             simple_env,
             spikes_2d,  # type: ignore[arg-type]
             trajectory_data["times"],
@@ -856,14 +856,14 @@ class TestViewBinningEdgeCases:
         simple_env: Environment,
     ) -> None:
         """Constant heading should view along one direction."""
-        from neurospatial.encoding._view_binning import compute_view_occupancy
+        from neurospatial.encoding._view_binning import compute_occupancy
 
         times = np.linspace(0, 10.0, 1000)
         # Animal at center, looking east (heading=0)
         positions = np.tile([50, 50], (1000, 1))
         headings = np.zeros(1000)  # Constant heading east
 
-        view_occupancy = compute_view_occupancy(
+        occupancy = compute_occupancy(
             simple_env,
             times,
             positions,
@@ -874,21 +874,21 @@ class TestViewBinningEdgeCases:
 
         # Should have high occupancy in bins east of center
         # Viewed location is at (60, 50) for view_distance=10
-        assert np.any(view_occupancy > 0)
+        assert np.any(occupancy > 0)
 
     def test_view_outside_environment(
         self,
         simple_env: Environment,
     ) -> None:
         """Views outside environment should not contribute to occupancy."""
-        from neurospatial.encoding._view_binning import compute_view_occupancy
+        from neurospatial.encoding._view_binning import compute_occupancy
 
         times = np.linspace(0, 10.0, 1000)
         # Animal at edge, looking outward
         positions = np.tile([5, 50], (1000, 1))
         headings = np.ones(1000) * np.pi  # Looking west (outside)
 
-        view_occupancy = compute_view_occupancy(
+        occupancy = compute_occupancy(
             simple_env,
             times,
             positions,
@@ -899,7 +899,7 @@ class TestViewBinningEdgeCases:
 
         # Total occupancy should be less than duration due to invalid views
         total_duration = times[-1] - times[0]
-        assert np.sum(view_occupancy) < total_duration * 0.5
+        assert np.sum(occupancy) < total_duration * 0.5
 
     def test_all_spikes_at_same_viewed_location(
         self,
@@ -939,28 +939,28 @@ class TestViewBinningInputValidation:
         simple_env: Environment,
     ) -> None:
         """Should raise error if times and positions have different lengths."""
-        from neurospatial.encoding._view_binning import compute_view_occupancy
+        from neurospatial.encoding._view_binning import compute_occupancy
 
         times = np.linspace(0, 10, 100)
         positions = np.random.rand(50, 2) * 100  # Different length
         headings = np.random.uniform(0, 2 * np.pi, 100)
 
         with pytest.raises(ValueError, match=r"length|shape|mismatch"):
-            compute_view_occupancy(simple_env, times, positions, headings)
+            compute_occupancy(simple_env, times, positions, headings)
 
     def test_mismatched_times_headings_length(
         self,
         simple_env: Environment,
     ) -> None:
         """Should raise error if times and headings have different lengths."""
-        from neurospatial.encoding._view_binning import compute_view_occupancy
+        from neurospatial.encoding._view_binning import compute_occupancy
 
         times = np.linspace(0, 10, 100)
         positions = np.random.rand(100, 2) * 100
         headings = np.random.uniform(0, 2 * np.pi, 50)  # Different length
 
         with pytest.raises(ValueError, match=r"length|shape|mismatch"):
-            compute_view_occupancy(simple_env, times, positions, headings)
+            compute_occupancy(simple_env, times, positions, headings)
 
     def test_invalid_gaze_model(
         self,
@@ -968,10 +968,10 @@ class TestViewBinningInputValidation:
         trajectory_data: dict,
     ) -> None:
         """Should raise error for invalid gaze_model."""
-        from neurospatial.encoding._view_binning import compute_view_occupancy
+        from neurospatial.encoding._view_binning import compute_occupancy
 
         with pytest.raises(ValueError, match=r"gaze_model|invalid"):
-            compute_view_occupancy(
+            compute_occupancy(
                 simple_env,
                 trajectory_data["times"],
                 trajectory_data["positions"],
@@ -984,14 +984,14 @@ class TestViewBinningInputValidation:
         simple_env: Environment,
     ) -> None:
         """Should raise error with fewer than 2 samples."""
-        from neurospatial.encoding._view_binning import compute_view_occupancy
+        from neurospatial.encoding._view_binning import compute_occupancy
 
         times = np.array([0.0])  # Only 1 sample - need at least 2
         positions = np.array([[50, 50]])
         headings = np.array([0.0])
 
         with pytest.raises(ValueError, match=r"2|samples"):
-            compute_view_occupancy(simple_env, times, positions, headings)
+            compute_occupancy(simple_env, times, positions, headings)
 
 
 # ==============================================================================
@@ -1002,7 +1002,7 @@ class TestViewBinningInputValidation:
 class TestViewOccupancyNonUniformSampling:
     """Tests for correct handling of non-uniform time sampling.
 
-    Bug: view_occupancy used median(dt) constant instead of per-sample deltas.
+    Bug: occupancy used median(dt) constant instead of per-sample deltas.
     This inflates occupancy when sampling is non-uniform.
     """
 
@@ -1015,7 +1015,7 @@ class TestViewOccupancyNonUniformSampling:
         With non-uniform sampling, using median(dt) instead of actual dt
         gives incorrect total occupancy.
         """
-        from neurospatial.encoding._view_binning import compute_view_occupancy
+        from neurospatial.encoding._view_binning import compute_occupancy
 
         # Create non-uniform time samples: first half at 10Hz, second half at 100Hz
         times_slow = np.linspace(0, 5, 51)  # 50 intervals of 0.1s
@@ -1026,7 +1026,7 @@ class TestViewOccupancyNonUniformSampling:
         positions = np.tile([50, 50], (n_samples, 1))  # Stationary
         headings = np.zeros(n_samples)  # Looking east
 
-        view_occupancy = compute_view_occupancy(
+        occupancy = compute_occupancy(
             simple_env,
             times,
             positions,
@@ -1038,7 +1038,7 @@ class TestViewOccupancyNonUniformSampling:
         # Expected total: sum of all actual time deltas
         # = (5-0) + (10-5.01) = 5 + 4.99 = ~9.99 seconds
         total_duration = times[-1] - times[0]  # ~10s
-        total_occupancy = np.sum(view_occupancy)
+        total_occupancy = np.sum(occupancy)
 
         # With correct implementation, total should equal sum of deltas
         # (which equals times[-1] - times[0] minus any invalid frames)
@@ -1057,13 +1057,13 @@ class TestViewOccupancyNonUniformSampling:
         Occupancy uses (n-1) intervals from n samples. The last sample
         has no following interval to contribute.
         """
-        from neurospatial.encoding._view_binning import compute_view_occupancy
+        from neurospatial.encoding._view_binning import compute_occupancy
 
         times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])  # 5 samples, 4 intervals
         positions = np.tile([50, 50], (5, 1))
         headings = np.zeros(5)
 
-        view_occupancy = compute_view_occupancy(
+        occupancy = compute_occupancy(
             simple_env,
             times,
             positions,
@@ -1073,7 +1073,7 @@ class TestViewOccupancyNonUniformSampling:
         )
 
         # With 4 intervals of 1s each, total should be 4s (not 5s)
-        total_occupancy = np.sum(view_occupancy)
+        total_occupancy = np.sum(occupancy)
         assert abs(total_occupancy - 4.0) < 0.01, (
             f"Expected 4.0s (4 intervals), got {total_occupancy:.3f}s. "
             "Last frame may be incorrectly contributing to occupancy."
@@ -1092,14 +1092,14 @@ class TestTimesValidation:
         searchsorted assumes sorted input. Unsorted times will silently
         produce incorrect results without validation.
         """
-        from neurospatial.encoding._view_binning import compute_view_occupancy
+        from neurospatial.encoding._view_binning import compute_occupancy
 
         times = np.array([0.0, 2.0, 1.0, 3.0])  # Not sorted
         positions = np.tile([50, 50], (4, 1))
         headings = np.zeros(4)
 
         with pytest.raises(ValueError, match=r"monotonic|sorted|increasing"):
-            compute_view_occupancy(
+            compute_occupancy(
                 simple_env,
                 times,
                 positions,
@@ -1115,13 +1115,13 @@ class TestTimesValidation:
         Times like [0, 1, 1, 2] are valid (non-decreasing but not strictly
         increasing). The duplicate contributes 0 seconds.
         """
-        from neurospatial.encoding._view_binning import compute_view_occupancy
+        from neurospatial.encoding._view_binning import compute_occupancy
 
         times = np.array([0.0, 1.0, 1.0, 2.0])  # Duplicate at t=1
         positions = np.tile([50, 50], (4, 1))
         headings = np.zeros(4)
 
-        view_occupancy = compute_view_occupancy(
+        occupancy = compute_occupancy(
             simple_env,
             times,
             positions,
@@ -1131,7 +1131,7 @@ class TestTimesValidation:
         )
 
         # 3 intervals: 1s, 0s, 1s = 2s total
-        total_occupancy = np.sum(view_occupancy)
+        total_occupancy = np.sum(occupancy)
         assert abs(total_occupancy - 2.0) < 0.01
 
 
@@ -1216,7 +1216,7 @@ class TestBinViewSpikeTrainsPrecomputation:
 
 
 class TestBinViewSpikeTrainsValidation:
-    """Tests that bin_view_spike_trains validates times like compute_view_occupancy."""
+    """Tests that bin_view_spike_trains validates times like compute_occupancy."""
 
     def test_unsorted_times_raises_error(
         self,

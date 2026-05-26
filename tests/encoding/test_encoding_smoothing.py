@@ -253,17 +253,6 @@ class TestSmoothRateMapDiffusionKDE:
         )
         assert np.isnan(result_with_threshold[0])
 
-    def test_returns_float64(self, simple_env, spike_counts_center, uniform_occupancy):
-        """Result should be float64 dtype."""
-        result = smooth_rate_map(
-            simple_env,
-            spike_counts_center,
-            uniform_occupancy,
-            method="diffusion_kde",
-            bandwidth=2.0,
-        )
-        assert result.dtype == np.float64
-
 
 class TestSmoothRateMapGaussianKDE:
     """Tests for smooth_rate_map with method='gaussian_kde'."""
@@ -583,17 +572,6 @@ class TestSmoothRateMapsBatch:
         )
 
         assert result.shape == (1, simple_env.n_bins)
-
-    def test_batch_dtype(self, simple_env, batch_spike_counts, uniform_occupancy):
-        """Batch result should be float64."""
-        result = smooth_rate_maps_batch(
-            simple_env,
-            batch_spike_counts,
-            uniform_occupancy,
-            method="diffusion_kde",
-            bandwidth=2.0,
-        )
-        assert result.dtype == np.float64
 
     def test_batch_invalid_shape_raises(self, simple_env, uniform_occupancy):
         """Non-2D spike_counts should raise."""

@@ -1,203 +1,251 @@
 # Examples
 
-Real-world examples demonstrating neurospatial's capabilities through interactive Jupyter notebooks.
+Real-world examples demonstrating neurospatial's capabilities through
+interactive Jupyter notebooks. Notebooks are paired with `.py`
+(jupytext, percent format) and `.ipynb` files; either can be edited
+and the pair syncs via `docs/sync_notebooks.py`.
 
-## Available Notebooks
+This index mirrors `examples/README.md` in the repo.
 
-### 1. Introduction & Basics
+## Goal → Notebook
 
-Get started with neurospatial basics:
+If you have a specific neuroscience question, jump straight to the
+relevant notebook.
 
-- Creating environments from data
-- Basic spatial queries
-- Visualizing environments
-- Understanding bin centers and connectivity
+| Goal | Notebook(s) |
+| --- | --- |
+| Build an environment from position data | [01](01_introduction_basics.ipynb), [03](03_morphological_operations.ipynb) |
+| Pick the right layout (grid / hex / polygon / graph) | [02](02_layout_engines.ipynb), [05](05_track_linearization.ipynb) |
+| Define spatial regions / zones of interest | [04](04_regions_of_interest.ipynb) |
+| Compute occupancy and a spatial firing-rate map | [08](08_spike_field_basics.ipynb), [11](11_place_field_analysis.ipynb) |
+| Detect place fields and compute place-cell metrics | [11](11_place_field_analysis.ipynb) |
+| Direction-conditioned place fields | [21](21_directional_place_fields.ipynb) |
+| Boundary / border cells | [12](12_boundary_cell_analysis.ipynb) |
+| Spatial view cells | [22](22_spatial_view_cells.ipynb) |
+| Object-vector cells | [24](24_object_vector_cells.ipynb) |
+| Head-direction tuning | [25](25_head_direction_tuning.ipynb) |
+| Peri-event histograms (PSTH) | [26](26_peri_event_psth.ipynb) |
+| Load data from an NWB file | [27](27_loading_from_nwb.ipynb) |
+| Trajectory metrics (step length, MSD, curvature) | [13](13_trajectory_analysis.ipynb) |
+| Detect laps, trials, and region crossings | [14](14_behavioral_segmentation.ipynb) |
+| Bayesian decoding from population spikes | [20](20_bayesian_decoding.ipynb) |
+| Animate fields (napari / video / HTML / widget) | [16](16_field_animation.ipynb), [17](17_animation_with_overlays.ipynb) |
+| Composite raw video with spatial fields | [18](18_video_overlay.ipynb) |
+| Simulate trajectories and spike trains | [15](15_simulation_workflows.ipynb) |
+| Differential operators, signal processing on graphs | [09](09_differential_operators.ipynb), [10](10_signal_processing_primitives.ipynb) |
+| Multi-room / composite environments | [06](06_composite_environments.ipynb), [07](07_advanced_operations.ipynb) |
+| Real-data end-to-end pipeline | [19](19_real_data_bandit_task.ipynb) |
 
-**[Open notebook: 01_introduction_basics.ipynb](01_introduction_basics.ipynb)** | **Recommended for**: First-time users
+## Foundations (01-07)
 
-### 2. Layout Engines
+### [01. Introduction & Basics](01_introduction_basics.ipynb)
 
-Explore different discretization strategies:
+**Time**: 15-20 min · **Prerequisites**: none
 
-- Regular grids
-- Hexagonal tessellations
-- Triangular meshes
-- Comparing layout engines
+Spatial discretization, creating an environment from position data,
+`bin_size` and active bins, basic spatial queries (`bin_at`,
+`contains`, `neighbors`), visualization, common pitfalls. **Start
+here.**
 
-**[Open notebook: 02_layout_engines.ipynb](02_layout_engines.ipynb)** | **Recommended for**: Understanding spatial discretization options
+### [02. Layout Engines](02_layout_engines.ipynb)
 
-### 3. Morphological Operations
+**Time**: 20-25 min · **Prerequisites**: 01
 
-Master automatic active bin detection:
+Regular grids vs hexagonal tessellations, polygon-bounded
+environments, connectivity patterns, side-by-side comparison.
 
-- Dilation and closing operations
-- Filling holes
-- Thresholding strategies
-- Handling sparse data
+### [03. Morphological Operations](03_morphological_operations.ipynb)
 
-**[Open notebook: 03_morphological_operations.ipynb](03_morphological_operations.ipynb)** | **Recommended for**: Working with real experimental data
+**Time**: 15-20 min · **Prerequisites**: 01
 
-### 4. Regions of Interest
+Active bin inference, `dilate` / `fill_holes` / `close_gaps`,
+`bin_count_threshold`, fixing fragmented environments.
 
-Define and manage spatial regions:
+### [04. Regions of Interest](04_regions_of_interest.ipynb)
 
-- Creating point and polygon regions
-- Region operations (buffering, area calculation)
-- Using regions in analysis
-- Region serialization
+**Time**: 15-20 min · **Prerequisites**: 01
 
-**[Open notebook: 04_regions_of_interest.ipynb](04_regions_of_interest.ipynb)** | **Recommended for**: Defining experimental zones and ROIs
+Creating point and polygon regions, region operations, using regions
+in analysis, serialization.
 
-### 5. Track Linearization
+### [05. Track Linearization](05_track_linearization.ipynb)
 
-Work with maze and track experiments:
+**Time**: 20-25 min · **Prerequisites**: 01, 02
 
-- Creating 1D linearized environments
-- Converting between 2D and 1D coordinates
-- T-maze and plus maze examples
-- Sequential analysis
+Building 1D environments from track graphs, mapping 2D position to
+linear coordinates, T-maze / W-maze / plus-maze examples.
 
-**[Open notebook: 05_track_linearization.ipynb](05_track_linearization.ipynb)** | **Recommended for**: Track-based experiments
+### [06. Composite Environments](06_composite_environments.ipynb)
 
-### 6. Composite Environments
+**Time**: 25-30 min · **Prerequisites**: 01, 02
 
-Merge multiple environments:
+Multi-room arenas, automatic bridge edges via mutual nearest neighbors,
+querying across rooms, plus-maze with separate compartments.
 
-- Creating composite environments
-- Automatic bridge inference
-- Multi-arena experiments
-- Cross-environment queries
+### [07. Advanced Operations](07_advanced_operations.ipynb)
 
-**[Open notebook: 06_composite_environments.ipynb](06_composite_environments.ipynb)** | **Recommended for**: Multi-environment studies
+**Time**: 20-30 min · **Prerequisites**: 01, 06
 
-### 7. Advanced Operations
+Subsetting, applying transforms, custom layouts via `from_layout`.
 
-Advanced features and techniques:
+## Spatial Coding (08-12)
 
-- Custom spatial queries
-- Graph operations
-- Performance optimization
-- Edge cases and troubleshooting
+### [08. Spike-Field Basics](08_spike_field_basics.ipynb)
 
-**[Open notebook: 07_advanced_operations.ipynb](07_advanced_operations.ipynb)** | **Recommended for**: Power users
+**Time**: 25-35 min · **Prerequisites**: 01
 
-### 8. Spike & Field Basics
+Mapping spike times to bin indices, computing occupancy and rate maps
+from scratch, smoothing methods (diffusion KDE, gaussian KDE, binned).
 
-Introduction to place field analysis:
+### [09. Differential Operators](09_differential_operators.ipynb)
 
-- Generating synthetic trajectories
-- Simulating place cell activity
-- Computing place fields from spikes
-- Validating detection accuracy
+**Time**: 25-35 min · **Prerequisites**: 02
 
-**[Open notebook: 08_spike_field_basics.ipynb](08_spike_field_basics.ipynb)** | **Recommended for**: Neural data analysis
+Edge-oriented differential operator, gradient and divergence on graphs,
+laplacian, signal-processing primitives.
 
-### 9. Differential Operators
+### [10. Signal Processing Primitives](10_signal_processing_primitives.ipynb)
 
-Spatial derivatives and gradients:
+**Time**: 25-35 min · **Prerequisites**: 09
 
-- Computing spatial gradients
-- Directional derivatives
-- Laplacian operators
-- Applications to field analysis
+Graph kernels, spatial basis functions (geodesic RBF, heat kernel,
+Chebyshev), smoothing with `compute_kernel` and `apply_kernel`.
 
-**[Open notebook: 09_differential_operators.ipynb](09_differential_operators.ipynb)** | **Recommended for**: Advanced spatial analysis
+### [11. Place Field Analysis](11_place_field_analysis.ipynb)
 
-### 10. Signal Processing Primitives
+**Time**: 30-40 min · **Prerequisites**: 08
 
-Spatial signal processing tools:
+Build place fields from spike trains, detect place fields with
+`detect_place_fields`, compute spatial information / sparsity /
+selectivity, analyze field sizes and centroids.
 
-- Smoothing and filtering
-- Convolution operations
-- Kernel methods
-- Boundary handling
+### [12. Boundary Cell Analysis](12_boundary_cell_analysis.ipynb)
 
-**[Open notebook: 10_signal_processing_primitives.ipynb](10_signal_processing_primitives.ipynb)** | **Recommended for**: Signal processing workflows
+**Time**: 25-35 min · **Prerequisites**: 11
 
-### 11. Place Field Analysis
+Distance-to-boundary fields, border score, classifying boundary cells.
 
-Complete place field analysis pipeline:
+## Behavior (13-15)
 
-- Trajectory generation
-- Place cell models
-- Field detection and characterization
-- T-maze spatial alternation
+### [13. Trajectory Analysis](13_trajectory_analysis.ipynb)
 
-**[Open notebook: 11_place_field_analysis.ipynb](11_place_field_analysis.ipynb)** | **Recommended for**: Hippocampal place cell analysis
+**Time**: 25-35 min · **Prerequisites**: 01
 
-### 12. Boundary Cell Analysis
+Step lengths, turn angles, MSD, curvature, home range, persistence.
 
-Analyzing boundary-tuned neurons:
+### [14. Behavioral Segmentation](14_behavioral_segmentation.ipynb)
 
-- Boundary detection
-- Distance-to-boundary metrics
-- Border cells and boundary vector cells
-- Validation metrics
+**Time**: 25-35 min · **Prerequisites**: 04, 13
 
-**[Open notebook: 12_boundary_cell_analysis.ipynb](12_boundary_cell_analysis.ipynb)** | **Recommended for**: Border cell analysis
+Lap detection, trial segmentation, region crossings, velocity-based
+movement / rest segmentation.
 
-### 13. Trajectory Analysis
+### [15. Simulation Workflows](15_simulation_workflows.ipynb)
 
-Analyzing movement patterns:
+**Time**: 30-40 min · **Prerequisites**: 11
 
-- Trajectory metrics
-- Speed and acceleration
-- Goal-directed behavior
-- Path analysis
+Generate synthetic trajectories and spike trains, ground-truth
+validation, `simulate_session` API, pre-configured examples.
 
-**[Open notebook: 13_trajectory_analysis.ipynb](13_trajectory_analysis.ipynb)** | **Recommended for**: Behavioral analysis
+## Animation & Visualization (16-18)
 
-### 14. Behavioral Segmentation
+### [16. Field Animation](16_field_animation.ipynb)
 
-Segmenting behavior into states:
+**Time**: 20-30 min · **Prerequisites**: 08
 
-- State detection algorithms
-- Exploratory vs goal-directed behavior
-- Transition analysis
-- Behavioral bout detection
+Animate spatial fields over time using napari / HTML / widget / video
+backends.
 
-**[Open notebook: 14_behavioral_segmentation.ipynb](14_behavioral_segmentation.ipynb)** | **Recommended for**: Behavioral state analysis
+### [17. Animation with Overlays](17_animation_with_overlays.ipynb)
 
-### 15. Simulation Workflows
+**Time**: 25-35 min · **Prerequisites**: 16
 
-Comprehensive simulation tutorial:
+Position, pose, head-direction, event, and spike overlays composed on
+field animations.
 
-- Quick start with pre-configured sessions
-- Low-level API (trajectory + models + spikes)
-- All cell types (place, boundary, grid)
-- Validation and visualization
-- Customization examples
+### [18. Video Overlay](18_video_overlay.ipynb)
 
-**[Open notebook: 15_simulation_workflows.ipynb](15_simulation_workflows.ipynb)** | **Recommended for**: Generating synthetic data for testing
+**Time**: 25-35 min · **Prerequisites**: 17
 
-## Viewing on GitHub
+Composite raw behavioral video with spatial-field overlays for
+publication / talks.
 
-All example notebooks are available on GitHub with rendered outputs:
+## Advanced Neural Coding (19-27)
 
-[View examples on GitHub](https://github.com/edeno/neurospatial/tree/main/examples)
+### [19. Real-Data Bandit Task](19_real_data_bandit_task.ipynb)
 
-## Running Examples
+**Time**: 40-60 min · **Prerequisites**: 05, 11, 13
 
-To run the examples locally:
+End-to-end pipeline on a hippocampal recording from a plus-maze
+bandit task. Loads the J16 dataset (see `data/README.md` for download
+instructions); the notebook prints the download URL and exits cleanly
+if the data files are missing.
 
-```bash
-# Clone the repository
-git clone https://github.com/edeno/neurospatial.git
-cd neurospatial
+### [20. Bayesian Decoding](20_bayesian_decoding.ipynb)
 
-# Install with dependencies
-uv sync
+**Time**: 35-45 min · **Prerequisites**: 11, 15
 
-# Start Jupyter
-uv run jupyter notebook examples/
-```
+Decode position from population spike counts, MAP / posterior-mean
+estimates, decoding-error metrics, sequential decoders.
 
-## Contributing Examples
+### [21. Directional Place Fields](21_directional_place_fields.ipynb)
 
-Have a useful example? We welcome contributions! See the [Contributing Guide](../contributing.md) for details.
+**Time**: 25-35 min · **Prerequisites**: 11
 
-!!! note "For Documentation Contributors"
-    The notebooks displayed here are automatically synced from the `examples/` directory.
+Direction-conditioned place fields on linear tracks; building rate
+maps separately per running direction.
+
+### [22. Spatial View Cells](22_spatial_view_cells.ipynb)
+
+**Time**: 30-40 min · **Prerequisites**: 11
+
+Build firing-rate fields indexed by gaze direction rather than
+position. Three gaze models (fixed-distance, ray-cast, boundary).
+Classification via `is_spatial_view_cell`.
+
+### [23. Path Progression](23_path_progression.ipynb)
+
+**Time**: 25-35 min · **Prerequisites**: 05, 14
+
+Path progression along linearized tracks; per-trial alignment for
+sequential analyses.
+
+### [24. Object-Vector Cells](24_object_vector_cells.ipynb)
+
+**Time**: 30-40 min · **Prerequisites**: 11
+
+Object-vector cells: firing tuned to (distance, egocentric direction)
+to external landmarks. Uses `compute_egocentric_rate` and
+`is_object_vector_cell` classification.
+
+### [25. Head-Direction Tuning](25_head_direction_tuning.ipynb)
+
+**Time**: 25-35 min · **Prerequisites**: 08
+
+Build a circular tuning curve over head direction, Rayleigh test for
+significant directionality, `is_head_direction_cell` classification,
+polar plotting.
+
+### [26. Peri-Event PSTH](26_peri_event_psth.ipynb)
+
+**Time**: 25-35 min · **Prerequisites**: 11
+
+Align spikes to discrete event times (reward arrivals, lap starts).
+Compute peri-event histograms, plot rasters, build GLM regressors.
+
+### [27. Loading from NWB](27_loading_from_nwb.ipynb)
+
+**Time**: 25-35 min · **Prerequisites**: 01, 11
+
+Read position, spikes, and environment metadata from an NWB file
+(public DANDI dataset). Build a `neurospatial` environment, recover
+place fields, write derived results back into the NWB.
+
+---
+
+!!! note "Editing notebooks"
+    The notebooks displayed here are automatically synced from the
+    `examples/` directory.
 
     **To update notebooks in the documentation:**
 
@@ -205,4 +253,5 @@ Have a useful example? We welcome contributions! See the [Contributing Guide](..
     2. Run `uv run python docs/sync_notebooks.py` before building docs
     3. The GitHub Actions workflow automatically syncs notebooks on deployment
 
-    **Do not** edit `.ipynb` files directly in `docs/examples/` - they will be overwritten.
+    **Do not** edit `.ipynb` files directly in `docs/examples/` - they
+    will be overwritten.

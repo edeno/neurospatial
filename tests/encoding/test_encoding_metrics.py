@@ -8,6 +8,8 @@ Following TDD approach: tests written before implementation.
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
@@ -657,7 +659,7 @@ class TestBatchGridScores:
         # Single neuron computation for comparison
         single_scores = []
         for i in range(firing_rates.shape[0]):
-            autocorr = spatial_autocorrelation(env, firing_rates[i], method="fft")
+            autocorr = spatial_autocorrelation(env, firing_rates[i])
             score = grid_score(autocorr)
             single_scores.append(score)
 
@@ -698,53 +700,372 @@ class TestBatchGridScores:
         # Note: score may or may not be NaN depending on implementation
 
     def test_batch_grid_scores_with_constant_firing(self, env_2d_grid):
-        """Constant firing rate should return NaN (zero variance)."""
-        from neurospatial.encoding._metrics import batch_grid_scores
+        """Constant firing rate is a legitimate NaN, not a computation failure.
+
+        The result contract distinguishes "score is NaN because the input
+        has no spatial structure" from "score computation raised an
+        exception that we caught". Constant firing rates have zero
+        variance and so the autocorrelation is mathematically undefined,
+        but the input itself is well-formed: the failure mask must stay
+        False and no UserWarning should fire. (M1 1.5 review-response.)
+        """
+        import warnings
+
+        from neurospatial.encoding._metrics import (
+            BatchScoresResult,
+            batch_grid_scores,
+        )
 
         env = env_2d_grid
         firing_rates = np.ones((2, env.n_bins)) * 5.0  # Constant
 
-        scores = batch_grid_scores(env, firing_rates)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # promote any warning to an error
+            result = batch_grid_scores(env, firing_rates)
 
-        assert scores.shape == (2,)
-        # Constant firing → zero variance → NaN expected
-        assert np.all(np.isnan(scores))
+        assert isinstance(result, BatchScoresResult)
+        assert result.shape == (2,)
+        assert np.all(np.isnan(result.scores))
+        assert not result.failures.any()
+        assert result.n_failures == 0
+
+    def test_batch_grid_scores_all_nan_input_is_legitimate_nan(self, env_2d_grid):
+        """All-NaN firing rate is a legitimate NaN, not a computation failure.
+
+        Same contract as constant firing: the input describes a neuron
+        with no usable rate information, so the score is NaN by
+        definition; that is not a caught exception and must not flip the
+        failures mask.
+        """
+        import warnings
+
+        from neurospatial.encoding._metrics import (
+            BatchScoresResult,
+            batch_grid_scores,
+        )
+
+        env = env_2d_grid
+        firing_rates = np.full((2, env.n_bins), np.nan)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            result = batch_grid_scores(env, firing_rates)
+
+        assert isinstance(result, BatchScoresResult)
+        assert np.all(np.isnan(result.scores))
+        assert not result.failures.any()
+
+    def test_batch_scores_result_array_protocol_numpy2(self, env_2d_grid):
+        """BatchScoresResult.__array__ must accept the NumPy-2 ``copy`` kwarg.
+
+        NumPy 2 added a ``copy`` parameter to the array protocol;
+        ``np.asarray(obj, copy=False)`` warns and fails when ``__array__``
+        does not accept it. Since BatchScoresResult is intended to be a
+        drop-in replacement for the old ndarray-shaped score return,
+        regress this explicitly.
+        """
+        from neurospatial.encoding._metrics import batch_grid_scores
+
+        env = env_2d_grid
+        rng = np.random.default_rng(42)
+        firing_rates = rng.random((3, env.n_bins)) * 5.0
+        result = batch_grid_scores(env, firing_rates)
+
+        # No-copy view: should return the underlying scores array.
+        view = np.asarray(result, copy=False)
+        assert view.shape == (3,)
+        assert view is result.scores
+
+        # Forced copy: must not alias the underlying scores.
+        copied = np.asarray(result, copy=True)
+        assert copied.shape == (3,)
+        assert copied is not result.scores
+        np.testing.assert_array_equal(copied, result.scores)
+
+        # dtype cast (default copy semantics): independent buffer.
+        as_f32 = np.asarray(result, dtype=np.float32)
+        assert as_f32.dtype == np.float32
+        np.testing.assert_allclose(
+            as_f32, result.scores.astype(np.float32), equal_nan=True
+        )
+
+        # Same-dtype with copy=False: returns the underlying buffer.
+        same_dtype = np.asarray(result, dtype=np.float64, copy=False)
+        assert same_dtype is result.scores
+
+        # Cast + copy=False: must raise, matching plain-ndarray semantics.
+        # Without the raise, callers who explicitly asked for a view get a
+        # silent copy and any in-place writes go to /dev/null. Note the
+        # `np.array` form: NumPy 2 routes np.asarray(..., copy=False) ->
+        # np.array(..., copy=None) when the cast is unavoidable, so both
+        # forms must raise here.
+        with pytest.raises(ValueError, match="Unable to avoid copy"):
+            np.array(result, dtype=np.float32, copy=False)
+
+
+class TestBatchAPIValidation:
+    """Batch wrappers must raise ValueError on bad global params, not catch.
+
+    Invalid radius fractions (batch_grid_scores) and invalid threshold /
+    min_area / metric (batch_border_scores) are programmer errors, not
+    per-neuron failures. Without API-level validation the inner
+    try/except loop converts them into ``failures=[True, ...]`` for
+    every neuron, which is silently confusing — every probe with a typo
+    looks like a noisy data problem instead of a caller bug. Pin the
+    new pre-validation contract.
+    """
+
+    @pytest.fixture
+    def regular_env_and_rates(self):
+        from neurospatial import Environment
+
+        x = np.linspace(-50, 50, 51)
+        xx, yy = np.meshgrid(x, x)
+        env = Environment.from_samples(
+            np.column_stack([xx.ravel(), yy.ravel()]), bin_size=2.0
+        )
+        firing_rates = np.random.default_rng(0).random((2, env.n_bins))
+        return env, firing_rates
+
+    def test_batch_grid_scores_rejects_inner_radius_zero(self, regular_env_and_rates):
+        from neurospatial.encoding._metrics import batch_grid_scores
+
+        env, firing_rates = regular_env_and_rates
+        with pytest.raises(ValueError, match=r"inner_radius_fraction must be in"):
+            batch_grid_scores(env, firing_rates, inner_radius_fraction=0.0)
+
+    def test_batch_grid_scores_rejects_outer_below_inner(self, regular_env_and_rates):
+        from neurospatial.encoding._metrics import batch_grid_scores
+
+        env, firing_rates = regular_env_and_rates
+        with pytest.raises(ValueError, match=r"outer_radius_fraction must be in"):
+            batch_grid_scores(
+                env,
+                firing_rates,
+                inner_radius_fraction=0.5,
+                outer_radius_fraction=0.3,
+            )
+
+    def test_batch_border_scores_rejects_invalid_metric(self, regular_env_and_rates):
+        from neurospatial.encoding._metrics import batch_border_scores
+
+        env, firing_rates = regular_env_and_rates
+        with pytest.raises(ValueError, match=r"metric must be"):
+            batch_border_scores(env, firing_rates, metric="manhattan")  # type: ignore[arg-type]
+
+    def test_batch_border_scores_rejects_threshold_out_of_range(
+        self, regular_env_and_rates
+    ):
+        from neurospatial.encoding._metrics import batch_border_scores
+
+        env, firing_rates = regular_env_and_rates
+        with pytest.raises(ValueError, match=r"threshold must be in"):
+            batch_border_scores(env, firing_rates, threshold=2.0)
+
+    def test_batch_border_scores_rejects_negative_min_area(self, regular_env_and_rates):
+        from neurospatial.encoding._metrics import batch_border_scores
+
+        env, firing_rates = regular_env_and_rates
+        with pytest.raises(ValueError, match=r"min_area must be non-negative"):
+            batch_border_scores(env, firing_rates, min_area=-5.0)
 
 
 class TestBatchGridScoresNonRegularGrid:
     """Tests for batch_grid_scores with non-regular grid environments."""
 
     @pytest.fixture
-    def env_sparse_grid(self):
-        """Create a sparse (non-regular) environment for testing.
+    def env_dense_random_grid(self):
+        """RegularGrid built from random samples (still passes FFT detector).
 
-        Returns
-        -------
-        env : Environment
-            Environment with sparse coverage.
+        500 uniform-random samples over a 100×100 area at bin_size=5
+        produces a regular 2D grid with ``>=50%`` of bins active, which
+        ``_detect_grid_method`` classifies as ``fft``. The fixture name
+        used to be ``env_sparse_grid`` but the env is *not* actually
+        sparse — for the truly-irregular (graph-layout) contract see
+        ``test_batch_grid_scores_graph_env_legitimate_nan`` below.
         """
         from neurospatial import Environment
 
-        # Create sparse positions (not a regular grid)
         rng = np.random.default_rng(42)
         positions = rng.uniform(-50, 50, size=(500, 2))
-        env = Environment.from_samples(positions, bin_size=5.0)
-        return env
+        return Environment.from_samples(positions, bin_size=5.0)
 
-    def test_batch_grid_scores_sparse_env_returns_nan(self, env_sparse_grid):
-        """For sparse environments where FFT doesn't work, should handle gracefully."""
-        from neurospatial.encoding._metrics import batch_grid_scores
+    def test_batch_grid_scores_dense_random_env_smoke(self, env_dense_random_grid):
+        """Smoke test: dense-enough random env still takes the FFT path.
 
-        env = env_sparse_grid
+        The fixture is FFT-eligible, so ``batch_grid_scores`` runs the
+        per-neuron grid_score loop end-to-end. The contract pinned here
+        is just that (a) the call doesn't raise, (b) the result is the
+        expected ``BatchScoresResult`` shape, and (c) ``failures`` is
+        not polluted with caught-exception flags. The
+        legitimate-NaN-on-irregular-env contract is pinned below in
+        ``test_batch_grid_scores_graph_env_legitimate_nan``.
+        """
+        from neurospatial.encoding._metrics import (
+            BatchScoresResult,
+            batch_grid_scores,
+        )
+
+        env = env_dense_random_grid
         rng = np.random.default_rng(42)
         firing_rates = rng.random((2, env.n_bins)) * 5.0
 
-        # Should not raise - may return NaN for non-FFT-compatible envs
-        scores = batch_grid_scores(env, firing_rates)
+        result = batch_grid_scores(env, firing_rates)
 
-        assert scores.shape == (2,)
-        # Sparse environments may not be compatible with FFT-based grid score
-        # Implementation may return NaN or use graph-based method
+        assert isinstance(result, BatchScoresResult)
+        assert result.shape == (2,)
+        assert not result.failures.any()
+
+    def test_batch_grid_scores_graph_env_legitimate_nan(self):
+        """Irregular env -> NaN with failures=False, no warning.
+
+        Grid score requires a regular 2D grid (the FFT autocorrelation
+        path); on irregular envs there is no grid score by construction.
+        That is an environment-level legitimate-NaN, not a per-neuron
+        computation failure — the failures mask must stay False so
+        callers using ``np.isnan(scores) & ~failures`` to count
+        legitimate-NaNs see the right count, and no
+        "computation failed for N neurons" UserWarning fires. This is
+        the regression for the post-M2.B 2.12 review-response: prior
+        to the fix, irregular envs flooded ``failures`` with True for
+        every neuron because the catch-all caught the env-level
+        ValueError from the new spatial_autocorrelation contract.
+        """
+        import warnings
+
+        import networkx as nx
+
+        from neurospatial import Environment
+        from neurospatial.encoding._metrics import (
+            BatchScoresResult,
+            batch_grid_scores,
+        )
+
+        graph = nx.path_graph(8)
+        for i, node in enumerate(graph.nodes):
+            graph.nodes[node]["pos"] = (float(i) * 5.0, 0.0)
+        for u, v in graph.edges:
+            graph.edges[u, v]["distance"] = 5.0
+        env = Environment.from_graph(
+            graph,
+            edge_order=list(graph.edges),
+            edge_spacing=0.0,
+            bin_size=2.0,
+        )
+        firing_rates = np.random.default_rng(0).random((2, env.n_bins))
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # promote any warning to an error
+            result = batch_grid_scores(env, firing_rates)
+
+        assert isinstance(result, BatchScoresResult)
+        assert result.shape == (2,)
+        assert np.all(np.isnan(result.scores))
+        assert not result.failures.any()
+        assert result.n_failures == 0
+
+
+class TestBatchScoresFailuresMask:
+    """Regressions for M1 1.5: batch metric failures must be visible.
+
+    Previously batch_grid_scores and batch_border_scores swallowed
+    (ValueError, RuntimeError) and substituted NaN per neuron with no
+    indication. A caller running "fraction of grid cells" on the
+    output silently treated failures as zeros and tests passed.
+    Now both batch functions:
+
+    1. Track per-neuron failures in a parallel boolean mask.
+    2. Emit a UserWarning summarizing the failure count.
+    3. Return a BatchScoresResult so the mask is reachable.
+    """
+
+    @pytest.fixture
+    def env_2d_grid(self):
+        """Small regular 2D grid suitable for batch scoring."""
+        from neurospatial import Environment
+
+        x = np.linspace(-20, 20, 21)
+        xx, yy = np.meshgrid(x, x)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
+        return Environment.from_samples(positions, bin_size=2.0)
+
+    def test_batch_grid_scores_returns_result_class(self, env_2d_grid):
+        """batch_grid_scores returns BatchScoresResult, not a bare ndarray."""
+        from neurospatial.encoding._metrics import (
+            BatchScoresResult,
+            batch_grid_scores,
+        )
+
+        env = env_2d_grid
+        rng = np.random.default_rng(0)
+        firing_rates = rng.random((3, env.n_bins)) * 5.0
+        result = batch_grid_scores(env, firing_rates)
+        assert isinstance(result, BatchScoresResult)
+        assert result.scores.shape == (3,)
+        assert result.failures.shape == (3,)
+        assert result.failures.dtype == np.bool_
+
+    def test_batch_grid_scores_no_failures_no_warning(self, env_2d_grid):
+        """When every neuron's score computes cleanly, no warning fires."""
+        from neurospatial.encoding._metrics import batch_grid_scores
+
+        env = env_2d_grid
+        rng = np.random.default_rng(0)
+        firing_rates = rng.random((3, env.n_bins)) * 5.0
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # any warning becomes a failure
+            result = batch_grid_scores(env, firing_rates)
+        assert result.n_failures == 0
+        assert not result.failures.any()
+
+    def test_batch_border_scores_warns_and_flags_failed_neurons(
+        self,
+        env_2d_grid,
+    ):
+        """A monkey-patched border_score that raises must populate failures.
+
+        Patches ``neurospatial.encoding.border.border_score`` so the
+        first neuron raises ValueError. The batch wrapper must:
+
+        1. Continue computing the remaining neurons.
+        2. Set failures[0]=True (and not flag the others).
+        3. Set scores[0]=NaN (and leave the others finite).
+        4. Emit a UserWarning that mentions the failure count.
+        """
+        from neurospatial.encoding import _metrics
+
+        env = env_2d_grid
+        rng = np.random.default_rng(0)
+        firing_rates = rng.random((3, env.n_bins)) * 5.0
+
+        call_count = {"n": 0}
+
+        def fake_border_score(*args, **kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                raise ValueError("intentional test failure on neuron 0")
+            return 0.5  # something finite for the other two
+
+        # batch_border_scores does `from neurospatial.encoding.border
+        # import border_score` inside the function body, so patching the
+        # source module is the right place for the test to intercept.
+        import neurospatial.encoding.border as border_mod
+
+        original = border_mod.border_score
+        try:
+            border_mod.border_score = fake_border_score
+            with pytest.warns(
+                UserWarning, match=r"raised an exception for 1 of 3 neurons"
+            ):
+                result = _metrics.batch_border_scores(env, firing_rates)
+        finally:
+            border_mod.border_score = original
+
+        assert result.n_failures == 1
+        assert result.failures[0] and not result.failures[1] and not result.failures[2]
+        assert np.isnan(result.scores[0])
+        assert result.scores[1] == pytest.approx(0.5)
+        assert result.scores[2] == pytest.approx(0.5)
 
 
 # =============================================================================
@@ -988,8 +1309,8 @@ class TestBatchBorderScores:
         assert scores_03.shape == (2,)
         assert scores_05.shape == (2,)
 
-    def test_batch_border_scores_distance_metric_parameter(self, env_2d_grid):
-        """Should accept distance_metric parameter."""
+    def test_batch_border_scores_metric_parameter(self, env_2d_grid):
+        """Should accept metric parameter."""
         from neurospatial.encoding._metrics import batch_border_scores
 
         env = env_2d_grid
@@ -997,8 +1318,8 @@ class TestBatchBorderScores:
         firing_rates = rng.random((2, env.n_bins)) * 5.0
 
         # Test both distance metrics
-        scores_geo = batch_border_scores(env, firing_rates, distance_metric="geodesic")
-        scores_euc = batch_border_scores(env, firing_rates, distance_metric="euclidean")
+        scores_geo = batch_border_scores(env, firing_rates, metric="geodesic")
+        scores_euc = batch_border_scores(env, firing_rates, metric="euclidean")
 
         assert scores_geo.shape == (2,)
         assert scores_euc.shape == (2,)
@@ -1019,3 +1340,62 @@ class TestBatchBorderScores:
         assert scores_high_filter.shape == (2,)
         # With very high min_area, scores should be NaN (fields too small)
         assert np.all(np.isnan(scores_high_filter))
+
+
+class TestBorderScoreRaisesOnDijkstraFailure:
+    """Regression for M1 1.5 follow-up: border_score's Dijkstra failure
+    must propagate so batch_border_scores can flag the neuron in its
+    failures mask. Previously the single-neuron path swallowed the
+    exception and returned NaN with a RuntimeWarning, which the batch
+    wrapper couldn't see -- the failures mask read False even though
+    the score was NaN-due-to-failure.
+    """
+
+    def test_border_score_raises_on_invalid_graph(self):
+        """Negative edge weight -> multi_source_dijkstra raises -> border_score raises.
+
+        ``nx.multi_source_dijkstra_path_length`` rejects negative
+        weights (it's an O(E log V) Dijkstra, not Bellman-Ford). The
+        pre-fix path swallowed this failure to NaN with a
+        RuntimeWarning; the new path re-raises so the batch wrapper
+        can populate its `failures` mask.
+        """
+        from neurospatial import Environment
+        from neurospatial.encoding.border import border_score
+
+        x = np.linspace(-20, 20, 21)
+        xx, yy = np.meshgrid(x, x)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
+        env = Environment.from_samples(positions, bin_size=2.0)
+
+        # Inject negative weights to trigger Dijkstra failure.
+        for _, _, data in env.connectivity.edges(data=True):
+            data["distance"] = -1.0
+
+        firing_rate = np.zeros(env.n_bins)
+        firing_rate[0] = 10.0
+
+        with pytest.raises(RuntimeError, match=r"geodesic distance"):
+            border_score(env, firing_rate, metric="geodesic")
+
+    def test_batch_border_scores_failures_mask_catches_dijkstra_failure(self):
+        """The batch wrapper now sees the border_score RuntimeError and flags it."""
+        from neurospatial import Environment
+        from neurospatial.encoding._metrics import batch_border_scores
+
+        x = np.linspace(-20, 20, 21)
+        xx, yy = np.meshgrid(x, x)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
+        env = Environment.from_samples(positions, bin_size=2.0)
+        for _, _, data in env.connectivity.edges(data=True):
+            data["distance"] = -1.0
+
+        firing_rates = np.zeros((2, env.n_bins))
+        firing_rates[0, 0] = 10.0
+        firing_rates[1, 5] = 10.0
+
+        with pytest.warns(UserWarning, match=r"raised an exception for 2 of 2"):
+            result = batch_border_scores(env, firing_rates)
+        assert result.n_failures == 2
+        assert bool(result.failures.all())
+        assert np.isnan(result.scores).all()

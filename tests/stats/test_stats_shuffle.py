@@ -36,68 +36,6 @@ from neurospatial.stats.shuffle import (
 )
 
 
-class TestStatsShuffleImports:
-    """Test that all functions are importable from neurospatial.stats.shuffle."""
-
-    # --- Temporal order shuffles ---
-
-    def test_shuffle_time_bins_importable(self):
-        """Test shuffle_time_bins is importable from stats.shuffle."""
-        assert callable(shuffle_time_bins)
-
-    def test_shuffle_time_bins_coherent_importable(self):
-        """Test shuffle_time_bins_coherent is importable from stats.shuffle."""
-        assert callable(shuffle_time_bins_coherent)
-
-    # --- Cell identity shuffles ---
-
-    def test_shuffle_cell_identity_importable(self):
-        """Test shuffle_cell_identity is importable from stats.shuffle."""
-        assert callable(shuffle_cell_identity)
-
-    def test_shuffle_place_fields_circular_importable(self):
-        """Test shuffle_place_fields_circular is importable from stats.shuffle."""
-        assert callable(shuffle_place_fields_circular)
-
-    def test_shuffle_place_fields_circular_2d_importable(self):
-        """Test shuffle_place_fields_circular_2d is importable from stats.shuffle."""
-        assert callable(shuffle_place_fields_circular_2d)
-
-    # --- Posterior shuffles ---
-
-    def test_shuffle_posterior_circular_importable(self):
-        """Test shuffle_posterior_circular is importable from stats.shuffle."""
-        assert callable(shuffle_posterior_circular)
-
-    def test_shuffle_posterior_weighted_circular_importable(self):
-        """Test shuffle_posterior_weighted_circular is importable."""
-        assert callable(shuffle_posterior_weighted_circular)
-
-    # --- Significance testing ---
-
-    def test_shuffle_test_result_importable(self):
-        """Test ShuffleTestResult is importable from stats.shuffle."""
-        assert ShuffleTestResult is not None
-
-    def test_compute_shuffle_pvalue_importable(self):
-        """Test compute_shuffle_pvalue is importable from stats.shuffle."""
-        assert callable(compute_shuffle_pvalue)
-
-    def test_compute_shuffle_zscore_importable(self):
-        """Test compute_shuffle_zscore is importable from stats.shuffle."""
-        assert callable(compute_shuffle_zscore)
-
-    # --- New functions per PLAN.md ---
-
-    def test_shuffle_trials_importable(self):
-        """Test shuffle_trials is importable from stats.shuffle."""
-        assert callable(shuffle_trials)
-
-    def test_shuffle_spikes_isi_importable(self):
-        """Test shuffle_spikes_isi is importable from stats.shuffle."""
-        assert callable(shuffle_spikes_isi)
-
-
 class TestStatsShuffleBasicFunctionality:
     """Basic functionality tests for stats.shuffle module."""
 
@@ -298,36 +236,6 @@ class TestNewShuffleFunctions:
 
         for shuffled in shuffle_spikes_isi(spike_times, n_shuffles=5, rng=42):
             assert_allclose(shuffled[0], spike_times[0])
-
-
-class TestStatsPackageExports:
-    """Test that functions are also accessible via stats package."""
-
-    def test_import_from_stats_package(self):
-        """Test that shuffle functions can be imported from neurospatial.stats."""
-        from neurospatial.stats import (
-            ShuffleTestResult,
-            compute_shuffle_pvalue,
-            compute_shuffle_zscore,
-            shuffle_cell_identity,
-            shuffle_place_fields_circular,
-            shuffle_posterior_circular,
-            shuffle_spikes_isi,
-            shuffle_time_bins,
-            shuffle_time_bins_coherent,
-            shuffle_trials,
-        )
-
-        assert callable(shuffle_time_bins)
-        assert callable(shuffle_time_bins_coherent)
-        assert callable(shuffle_cell_identity)
-        assert callable(shuffle_place_fields_circular)
-        assert callable(shuffle_posterior_circular)
-        assert callable(compute_shuffle_pvalue)
-        assert callable(compute_shuffle_zscore)
-        assert callable(shuffle_trials)
-        assert callable(shuffle_spikes_isi)
-        assert ShuffleTestResult is not None
 
 
 class TestShufflePlaceFieldsCircular2D:

@@ -20,6 +20,8 @@
 #
 # **Estimated time**: 15-20 minutes
 #
+# **Prerequisites**: [11_place_field_analysis.ipynb](11_place_field_analysis.ipynb)
+#
 # ## Learning Objectives
 #
 # By the end of this notebook, you will be able to:
@@ -80,6 +82,7 @@ positions, times = simulate_trajectory_ou(
     coherence_time=0.7,  # Smooth, persistent movement
     boundary_mode="periodic",  # Wrap at boundaries (avoids edge artifacts)
     seed=42,
+    speed_units="cm",
 )
 
 print(f"Environment: {arena_size:.0f}x{arena_size:.0f} cm square arena")
@@ -153,7 +156,7 @@ plt.show()
 
 # %%
 # Compute border score with default threshold (30% of peak rate)
-score = border_score(border_cell_rate, env, threshold=0.3)
+score = border_score(env, border_cell_rate, threshold=0.3)
 
 print(f"Border Score: {score:.3f}")
 print("\nInterpretation:")
@@ -175,7 +178,7 @@ else:
 # Test different thresholds
 thresholds: list[float] = [0.1, 0.2, 0.3, 0.4, 0.5]
 scores: list[float] = [
-    border_score(border_cell_rate, env, threshold=t) for t in thresholds
+    border_score(env, border_cell_rate, threshold=t) for t in thresholds
 ]
 
 fig, ax = plt.subplots(figsize=(8, 5), constrained_layout=True)
@@ -318,8 +321,8 @@ sigma = 15.0  # cm
 place_cell_rate = 10.0 * np.exp(-0.5 * (distances_from_center / sigma) ** 2)
 
 # Compute border scores
-border_score_border = border_score(border_cell_rate, env, threshold=0.3)
-border_score_place = border_score(place_cell_rate, env, threshold=0.3)
+border_score_border = border_score(env, border_cell_rate, threshold=0.3)
+border_score_place = border_score(env, place_cell_rate, threshold=0.3)
 
 # Visualize comparison
 fig, axes = plt.subplots(2, 2, figsize=(12, 10), constrained_layout=True)

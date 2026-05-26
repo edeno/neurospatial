@@ -149,6 +149,7 @@ positions, times = simulate_trajectory_ou(
     coherence_time=0.5,
     boundary_mode="reflect",  # Bounces off walls
     seed=42,
+    speed_units="cm",
 )
 
 print(f"Generated {len(positions)} trajectory points over {duration:.0f}s")
@@ -242,7 +243,7 @@ pc_forward = PlaceCellModel(
     width=12.0,
     max_rate=15.0,
     baseline_rate=0.5,
-    distance_metric="euclidean",
+    metric="euclidean",
     seed=42,
 )
 
@@ -253,7 +254,7 @@ pc_reverse = PlaceCellModel(
     width=12.0,
     max_rate=10.0,  # Lower rate
     baseline_rate=0.5,
-    distance_metric="euclidean",
+    metric="euclidean",
     seed=43,
 )
 
@@ -301,7 +302,7 @@ directional_fields = compute_directional_place_fields(
 print("\nDirectional Place Fields:")
 print(f"  Labels: {directional_fields.labels}")
 for label in directional_fields.labels:
-    field = directional_fields.fields[label]
+    field = directional_fields.firing_rates[label]
     print(f"  {label}: peak={np.nanmax(field):.2f} Hz, mean={np.nanmean(field):.2f} Hz")
 
 # %% [markdown]
@@ -309,8 +310,8 @@ for label in directional_fields.labels:
 
 # %%
 # Get fields for each direction
-outbound_field = directional_fields.fields["home\u2192goal"]
-inbound_field = directional_fields.fields["goal\u2192home"]
+outbound_field = directional_fields.firing_rates["home\u2192goal"]
+inbound_field = directional_fields.firing_rates["goal\u2192home"]
 
 # Also compute overall (non-directional) place field for comparison
 overall_field = compute_spatial_rate(
@@ -451,6 +452,7 @@ arena_positions, arena_times = simulate_trajectory_ou(
     coherence_time=0.8,  # Smooth trajectories
     boundary_mode="reflect",
     seed=100,
+    speed_units="cm",
 )
 
 print(f"Generated {len(arena_positions)} trajectory points over {arena_duration:.0f}s")
@@ -512,7 +514,7 @@ pc_base = PlaceCellModel(
     width=15.0,
     max_rate=12.0,
     baseline_rate=0.2,
-    distance_metric="euclidean",
+    metric="euclidean",
     seed=200,
 )
 
@@ -562,7 +564,7 @@ directional_fields_heading = compute_directional_place_fields(
 print("\nHeading-Based Directional Place Fields:")
 print(f"  Directions: {directional_fields_heading.labels}")
 for label in directional_fields_heading.labels:
-    field = directional_fields_heading.fields[label]
+    field = directional_fields_heading.firing_rates[label]
     print(f"  {label}: peak={np.nanmax(field):.2f} Hz, mean={np.nanmean(field):.2f} Hz")
 
 # %% [markdown]
@@ -590,14 +592,14 @@ label_map = {
 
 # Get max rate for consistent color scaling (skip NaN-only fields like stationary)
 all_rates = [
-    directional_fields_heading.fields[lbl]
+    directional_fields_heading.firing_rates[lbl]
     for lbl in directional_fields_heading.labels
-    if not np.all(np.isnan(directional_fields_heading.fields[lbl]))
+    if not np.all(np.isnan(directional_fields_heading.firing_rates[lbl]))
 ]
 vmax = max(np.nanmax(r) for r in all_rates) if all_rates else 1.0
 
 for label in directional_fields_heading.labels:
-    field = directional_fields_heading.fields[label]
+    field = directional_fields_heading.firing_rates[label]
 
     # Skip stationary or other labels that are all NaN
     if np.all(np.isnan(field)) or "stationary" in label.lower():
@@ -665,8 +667,8 @@ for label in directional_fields_heading.labels:
         west_label = label  # "-180–-90°"
 
 if east_label and west_label:
-    east_field = directional_fields_heading.fields[east_label]
-    west_field = directional_fields_heading.fields[west_label]
+    east_field = directional_fields_heading.firing_rates[east_label]
+    west_field = directional_fields_heading.firing_rates[west_label]
 
     # Compute directional index (east vs west): (east - west) / (east + west + eps)
     ew_index = (east_field - west_field) / (east_field + west_field + 1e-9)
@@ -752,8 +754,8 @@ if east_label and west_label:
 # result = compute_directional_place_fields(env, spike_times, times, positions, labels)
 #
 # # Quantify directionality (simple formula)
-# outbound = result.fields["home→goal"]
-# inbound = result.fields["goal→home"]
+# outbound = result.firing_rates["home→goal"]
+# inbound = result.firing_rates["goal→home"]
 # index = (outbound - inbound) / (outbound + inbound + 1e-9)
 # ```
 #

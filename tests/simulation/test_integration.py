@@ -298,14 +298,20 @@ class TestPlaceFieldDetectionAccuracy:
 
         # Short duration
         positions_short, times_short = simulate_trajectory_ou(
-            env, duration=30.0, seed=42
+            env,
+            duration=30.0,
+            seed=42,
+            speed_units="cm",
         )
         rates_short = model.firing_rate(positions_short, times_short)
         spikes_short = generate_poisson_spikes(rates_short, times_short, seed=42)
 
         # Long duration
         positions_long, times_long = simulate_trajectory_ou(
-            env, duration=180.0, seed=42
+            env,
+            duration=180.0,
+            seed=42,
+            speed_units="cm",
         )
         rates_long = model.firing_rate(positions_long, times_long)
         spikes_long = generate_poisson_spikes(rates_long, times_long, seed=42)

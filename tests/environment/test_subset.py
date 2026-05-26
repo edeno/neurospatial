@@ -443,3 +443,100 @@ class TestSubsetCropExample:
         y_min, y_max = sub_env.bin_centers[:, 1].min(), sub_env.bin_centers[:, 1].max()
         assert y_min < 20  # Near bottom
         assert y_max > 80  # Near top
+
+
+class TestSubsetRoundTripsThroughToFileFromFile:
+    """Regression for M1 1.1: subset envs must serialize round-trip cleanly.
+
+    Pre-fix subset() returned an Environment whose layout_type_used was
+    "subset" -- a string the layout factory didn't recognize, so
+    Environment.from_file raised
+    ``ValueError: Unknown layout kind 'subset'`` while to_file silently
+    succeeded. The audit flagged this as a HIGH-severity silent
+    persistence loss: a user could subset(), save, restart, and lose
+    the env entirely.
+
+    Subset is rewritten to return a real ``MaskedGrid`` for grid-based
+    envs so the env survives the canonical to_file/from_file path.
+    """
+
+    def _build_grid_env(self):
+        from neurospatial import Environment
+
+        x = np.linspace(0.0, 20.0, 11)
+        xx, yy = np.meshgrid(x, x)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
+        return Environment.from_samples(positions, bin_size=2.0, name="parent")
+
+    def test_subset_to_file_from_file_round_trip(self, tmp_path):
+        """The acceptance test from TASKS.md: subset -> to_file -> from_file."""
+        from neurospatial.io.files import from_file, to_file
+
+        env = self._build_grid_env()
+        # Boolean-mask subset selecting three specific active bins.
+        mask = np.zeros(env.n_bins, dtype=bool)
+        mask[[0, 5, 10]] = True
+        env_sub = env.subset(bins=mask)
+
+        path = tmp_path / "sub"
+        to_file(env_sub, path)
+        loaded = from_file(path)
+
+        assert loaded.n_bins == env_sub.n_bins
+        # bin_centers may differ in row order if the subset's row-major
+        # order differs from the original active mask's flattened order;
+        # compare as sets of points instead.
+        loaded_centers_sorted = np.array(sorted(loaded.bin_centers.tolist()))
+        sub_centers_sorted = np.array(sorted(env_sub.bin_centers.tolist()))
+        np.testing.assert_array_equal(loaded_centers_sorted, sub_centers_sorted)
+
+    def test_subset_polygon_round_trip(self, tmp_path):
+        """A polygon-cropped subset also round-trips."""
+        from shapely.geometry import box
+
+        from neurospatial.io.files import from_file, to_file
+
+        env = self._build_grid_env()
+        crop = box(2.0, 2.0, 12.0, 12.0)
+        env_sub = env.subset(polygon=crop)
+
+        path = tmp_path / "sub_poly"
+        to_file(env_sub, path)
+        loaded = from_file(path)
+
+        assert loaded.n_bins == env_sub.n_bins
+
+    def test_subset_metadata_survives_round_trip(self, tmp_path):
+        """units / frame must persist through subset + to_file + from_file."""
+        from neurospatial.io.files import from_file, to_file
+
+        env = self._build_grid_env()
+        env.units = "cm"
+        env.frame = "session1"
+
+        mask = np.zeros(env.n_bins, dtype=bool)
+        mask[[0, 5, 10]] = True
+        env_sub = env.subset(bins=mask)
+        # Subset preserves units/frame on the env it returns.
+        assert env_sub.units == "cm"
+        assert env_sub.frame == "session1"
+
+        path = tmp_path / "sub_meta"
+        to_file(env_sub, path)
+        loaded = from_file(path)
+        assert loaded.units == "cm"
+        assert loaded.frame == "session1"
+
+    def test_subset_layout_type_is_maskedgrid_for_grid_parent(self):
+        """Grid-parent subset envs report MaskedGrid as their layout, not 'subset'.
+
+        The 'subset' layout kind was not registered with the layout
+        factory, which is why the round-trip was broken. After M1 1.1
+        the env is built via Environment.from_grid_mask, so its
+        layout_type_used is the canonical 'MaskedGrid'.
+        """
+        env = self._build_grid_env()
+        mask = np.zeros(env.n_bins, dtype=bool)
+        mask[[0, 5, 10]] = True
+        env_sub = env.subset(bins=mask)
+        assert env_sub._layout_type_used == "MaskedGrid"

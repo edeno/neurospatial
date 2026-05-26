@@ -165,7 +165,7 @@ class SpatialResultMixin:
       ``self.env.bin_centers``; subclasses may override).
 
     Result classes should inherit this mixin to get consistent implementations
-    of `peak_locations()` and `peak_firing_rates()`. Do NOT reimplement these
+    of `peak_location()` and `peak_firing_rate()`. Do NOT reimplement these
     methods in subclasses.
 
     Notes
@@ -186,9 +186,8 @@ class SpatialResultMixin:
         """Bin centers in the relevant coordinate space.
 
         Default implementation reads ``self.env.bin_centers``. Subclasses
-        may override to read from a different attribute (e.g. ``ego_env``
-        for egocentric polar results, or a directly stored ``bin_centers``
-        for directional results).
+        may override to read from a directly stored ``bin_centers``
+        (e.g. for directional results that have no Environment).
         """
         env: Any = self.env  # type: ignore[attr-defined]
         bin_centers: NDArray[np.float64] = env.bin_centers
@@ -206,7 +205,7 @@ class SpatialResultMixin:
             return self.firing_rates
         return self.firing_rate  # type: ignore[attr-defined]
 
-    def peak_locations(self) -> NDArray[np.float64]:
+    def peak_location(self) -> NDArray[np.float64]:
         """Peak firing locations in the result's coordinate space.
 
         Returns the bin-center coordinates of the maximum firing rate.
@@ -234,7 +233,7 @@ class SpatialResultMixin:
         result = bin_centers[peak_indices]
         return result
 
-    def peak_firing_rates(self) -> NDArray[np.float64] | float:
+    def peak_firing_rate(self) -> NDArray[np.float64] | float:
         """Peak firing rate values.
 
         Returns the maximum firing rate for each neuron.

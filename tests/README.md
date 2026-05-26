@@ -160,7 +160,7 @@ def test_place_field_pipeline(medium_2d_env):
     ).firing_rate
 
     # Detect place fields
-    fields = detect_place_fields(firing_rate, medium_2d_env)
+    fields = detect_place_fields(medium_2d_env, firing_rate)
 
     assert len(fields) > 0
 ```

@@ -16,6 +16,10 @@
 # %% [markdown]
 # # Bayesian Position Decoding
 #
+# **Estimated time**: 35-45 minutes
+#
+# **Prerequisites**: [11_place_field_analysis.ipynb](11_place_field_analysis.ipynb), [15_simulation_workflows.ipynb](15_simulation_workflows.ipynb)
+#
 # ## Learning Objectives
 #
 # By the end of this notebook, you will be able to:
@@ -42,7 +46,6 @@ import numpy as np
 
 from neurospatial import Environment
 from neurospatial.decoding import (
-    compute_shuffle_pvalue,
     confusion_matrix,
     decode_position,
     decoding_correlation,
@@ -50,7 +53,6 @@ from neurospatial.decoding import (
     fit_isotonic_trajectory,
     fit_linear_trajectory,
     median_decoding_error,
-    shuffle_time_bins,
 )
 from neurospatial.encoding import compute_spatial_rate
 from neurospatial.simulation import (
@@ -58,15 +60,23 @@ from neurospatial.simulation import (
     generate_poisson_spikes,
     simulate_trajectory_ou,
 )
+from neurospatial.stats.shuffle import compute_shuffle_pvalue, shuffle_time_bins
 
 # Set random seed for reproducibility
 np.random.seed(42)
 
-# Configure matplotlib for clear figures
-plt.rcParams["figure.figsize"] = (12, 5)
-plt.rcParams["font.size"] = 12
-plt.rcParams["axes.labelsize"] = 13
-plt.rcParams["axes.titlesize"] = 14
+# Shared styling (Okabe-Ito palette, consistent figure / font sizes)
+import sys  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+_here = (
+    str(Path(__file__).resolve().parent) if "__file__" in globals() else str(Path.cwd())
+)
+if _here not in sys.path:
+    sys.path.insert(0, _here)
+from _style import apply_style  # noqa: E402
+
+apply_style(figsize=(12, 5), font_size=12)
 
 # Colorblind-friendly palette
 COLORS = {
@@ -115,6 +125,7 @@ positions, times = simulate_trajectory_ou(
     coherence_time=0.5,
     boundary_mode="reflect",
     seed=42,
+    speed_units="cm",
 )
 
 print(f"Trajectory duration: {times[-1]:.1f} seconds")
@@ -323,13 +334,13 @@ print(f"  posterior shape: {result.posterior.shape}")
 print(f"  map_estimate shape: {result.map_estimate.shape} (bin indices)")
 print(f"  map_position shape: {result.map_position.shape} (coordinates)")
 print(f"  mean_position shape: {result.mean_position.shape} (coordinates)")
-print(f"  uncertainty shape: {result.uncertainty.shape} (entropy in bits)")
+print(f"  uncertainty shape: {result.posterior_entropy.shape} (entropy in bits)")
 print(f"  times shape: {result.times.shape if result.times is not None else 'None'}")
 
 print(
     f"\nPosterior sum check (should be ~1.0): {result.posterior.sum(axis=1).mean():.6f}"
 )
-print(f"Mean uncertainty: {result.uncertainty.mean():.2f} bits")
+print(f"Mean uncertainty: {result.posterior_entropy.mean():.2f} bits")
 print(f"Max uncertainty (uniform): {np.log2(env.n_bins):.2f} bits")
 
 # %% [markdown]
@@ -455,7 +466,7 @@ ax.legend()
 
 # Error vs uncertainty
 ax = axes[1]
-ax.scatter(result.uncertainty, errors, alpha=0.3, s=5, c=COLORS["blue"])
+ax.scatter(result.posterior_entropy, errors, alpha=0.3, s=5, c=COLORS["blue"])
 ax.set_xlabel("Uncertainty (bits)")
 ax.set_ylabel("Decoding error (cm)")
 ax.set_title("Error vs Posterior Uncertainty", fontweight="bold")
@@ -517,9 +528,10 @@ print(f"Number of time bins: {len(segment_times)}")
 # %%
 # Fit isotonic trajectory
 iso_result = fit_isotonic_trajectory(
+    None,  # env unused for isotonic fits
     segment_posterior,
     segment_times,
-    estimate_method="expected",  # Use posterior mean
+    method="expected",  # Use posterior mean
     increasing=None,  # Auto-detect direction
 )
 
@@ -579,7 +591,7 @@ lin_result = fit_linear_trajectory(
     env,
     segment_posterior,
     segment_times,
-    fitting_method="sample",  # Monte Carlo sampling
+    method="sample",  # Monte Carlo sampling
     n_samples=1000,
     rng=42,
 )
@@ -618,7 +630,7 @@ for shuffled_spikes in shuffle_time_bins(segment_spikes, n_shuffles=n_shuffles, 
     shuffled_result = decode_position(env, shuffled_spikes, encoding_models, dt)
     # Fit isotonic trajectory
     shuffled_fit = fit_isotonic_trajectory(
-        shuffled_result.posterior, segment_times, estimate_method="expected"
+        None, shuffled_result.posterior, segment_times, method="expected"
     )
     null_scores.append(shuffled_fit.r_squared)
 

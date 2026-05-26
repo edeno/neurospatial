@@ -404,7 +404,7 @@ class TestCircularLinearCorrelation:
         phases = np.linspace(0, 2 * np.pi, 50)
         positions = np.ones(50) * 50.0  # Constant position
 
-        with pytest.warns(UserWarning, match="[Dd]egenerate|constant|variation"):
+        with pytest.warns(RuntimeWarning, match="[Dd]egenerate|constant|variation"):
             r, _p = circular_linear_correlation(phases, positions)
         assert r == 0.0 or np.isnan(r)
 
@@ -611,7 +611,7 @@ class TestCircularCircularCorrelation:
         angles1 = np.ones(50) * np.pi
         angles2 = np.ones(50) * np.pi
 
-        with pytest.warns(UserWarning, match="[Nn]o variation|constant"):
+        with pytest.warns(RuntimeWarning, match="[Nn]o variation|constant"):
             r, p = circular_circular_correlation(angles1, angles2)
         assert r == 0.0
         assert p == 1.0

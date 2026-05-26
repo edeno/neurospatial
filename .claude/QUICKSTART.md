@@ -13,7 +13,8 @@ from neurospatial import Environment
 import numpy as np
 
 # Generate sample position data
-positions = np.random.rand(100, 2) * 100  # 100 points in 2D space
+rng = np.random.default_rng(0)
+positions = rng.uniform(0, 100, size=(100, 2))  # 100 points in 2D space
 
 # Create environment (bin_size is REQUIRED)
 env = Environment.from_samples(positions, bin_size=2.0)
@@ -22,8 +23,10 @@ env = Environment.from_samples(positions, bin_size=2.0)
 env.units = "cm"
 env.frame = "session1"
 
-# Query the environment
-bin_idx = env.bin_at([50.0, 50.0])
+# Query the environment. bin_at expects shape (n_points, n_dims). It returns
+# -1 for points outside any active bin, so query a known sample point here.
+bin_idx = int(env.bin_at(positions[:1])[0])
+assert bin_idx >= 0  # guaranteed because positions[:1] was used to build env
 neighbors = env.neighbors(bin_idx)
 ```
 
@@ -63,7 +66,7 @@ env.to_file("my_environment")  # Creates .json + .npz files
 loaded_env = Environment.from_file("my_environment")
 
 # Validate
-from neurospatial import validate_environment
+from neurospatial.layout.validation import validate_environment
 validate_environment(env, strict=True)  # Warns if units/frame missing
 ```
 
@@ -88,8 +91,14 @@ G = nx.Graph()
 G.add_nodes_from([(0, {"pos": (0, 0)}), (1, {"pos": (50, 0)}), (2, {"pos": (100, 0)})])
 G.add_edges_from([(0, 1), (1, 2)])
 
-env = Environment.from_graph(G, bin_size=2.0)
-print(env.is_1d)  # True
+# from_graph requires edge_order (linearization order) and edge_spacing (gap between edges)
+env = Environment.from_graph(
+    G,
+    edge_order=[(0, 1), (1, 2)],
+    edge_spacing=0.0,  # no gap between segments
+    bin_size=2.0,
+)
+print(env.is_linearized_track)  # True
 
 # Linearization methods available
 linear_pos = env.to_linear(nd_position)
@@ -114,8 +123,8 @@ result = compute_spatial_rate(
 firing_rate = result.firing_rate  # Shape: (n_bins,)
 
 # Convenience methods on result object
-peak_coords = result.peak_locations()      # (n_dims,) coordinates of peak
-peak_rate = result.peak_firing_rates()     # Scalar max firing rate
+peak_coords = result.peak_location()       # (n_dims,) coordinates of peak
+peak_rate = result.peak_firing_rate()      # Scalar max firing rate
 info = result.spatial_information()        # Skaggs info (bits/spike)
 ```
 
@@ -139,7 +148,7 @@ firing_rates = result.firing_rates  # Shape: (n_neurons, n_bins)
 # Batch metrics
 info = result.spatial_information()  # (n_neurons,)
 sparsity = result.sparsity()         # (n_neurons,)
-peaks = result.peak_locations()      # (n_neurons, n_dims)
+peaks = result.peak_location()       # (n_neurons, n_dims)
 
 # Export to DataFrame
 df = result.to_dataframe()
@@ -186,9 +195,12 @@ result.plot(show_map=True, colorbar=True)
 ```python
 from neurospatial.behavior.segmentation import segment_trials
 
+# Discretize trajectory: positions (n_time, n_dims) -> bin indices (n_time,)
+position_bins = env.bin_sequence(times, positions)
+
 # Segment trials from trajectory
 trials = segment_trials(
-    trajectory_bins, times, env,
+    position_bins, times, env,
     start_region="home",
     end_regions=["reward_left", "reward_right"],
 )
@@ -332,14 +344,14 @@ import numpy as np
 # Compute heading from trajectory
 positions = np.column_stack([x, y])  # Shape: (n_time, 2)
 dt = times[1] - times[0]
-headings = heading_from_velocity(positions, dt, min_speed=2.0, smoothing_sigma=3.0)
+headings = heading_from_velocity(positions, dt, min_speed=2.0, bandwidth=3.0)
 
 # Or from pose tracking keypoints
 headings = heading_from_body_orientation(nose_positions, tail_positions)
 
 # Transform landmarks to egocentric coordinates
 landmarks = np.array([[50.0, 30.0], [80.0, 60.0]])  # 2 landmarks
-ego_landmarks = allocentric_to_egocentric(landmarks, positions, headings)
+ego_landmarks = allocentric_to_egocentric(positions, headings, landmarks)
 # ego_landmarks shape: (n_time, n_landmarks, 2)
 # ego_landmarks[t, i, :] = landmark i in animal's reference frame at time t
 
@@ -370,15 +382,15 @@ distances = compute_egocentric_distance(
 
 ```python
 # Create polar grid in egocentric space
-ego_env = Environment.from_polar_egocentric(
+env = Environment.from_polar_egocentric(
     distance_range=(0, 50),     # 0-50 cm from animal
     angle_range=(-np.pi, np.pi), # Full 360° around animal
     distance_bin_size=5.0,       # 5 cm radial bins
     angle_bin_size=np.pi / 8,    # 22.5° angular bins
     circular_angle=True,         # Wrap angles at ±π
 )
-# ego_env.bin_centers[:, 0] = distances
-# ego_env.bin_centers[:, 1] = angles
+# env.bin_centers[:, 0] = distances
+# env.bin_centers[:, 1] = angles
 ```
 
 ### Object-Vector Cells
@@ -395,7 +407,7 @@ object_positions = np.array([[50.0, 30.0], [80.0, 60.0]])  # 2 objects
 
 # Compute egocentric polar field (returns EgocentricRateResult)
 # `env` is the first positional arg; pass None for euclidean distance,
-# or pass the allocentric Environment for distance_metric="geodesic".
+# or pass the allocentric Environment for metric="geodesic".
 result = compute_egocentric_rate(
     None,                              # env (required for geodesic only)
     spike_times,                       # Spike times for one neuron
@@ -410,7 +422,7 @@ result = compute_egocentric_rate(
 
 # Access results
 firing_rate = result.firing_rate  # Firing rate in egocentric polar space
-ego_env = result.ego_env          # Egocentric polar environment
+env = result.env          # Egocentric polar environment
 occupancy = result.occupancy      # Time spent in each bin
 
 # Convenience methods
@@ -427,7 +439,7 @@ from neurospatial.encoding import compute_egocentric_rates
 # Compute fields for multiple neurons
 spike_times_list = [neuron1_spikes, neuron2_spikes, neuron3_spikes]
 result = compute_egocentric_rates(
-    None,  # env (required only for distance_metric="geodesic")
+    None,  # env (required only for metric="geodesic")
     spike_times_list, times, positions, headings, object_positions,
     distance_range=(0.0, 50.0),
     n_distance_bins=10,
@@ -448,7 +460,7 @@ df = result.to_dataframe()
 
 ```python
 # Check classification on the canonical result object
-print(result.is_ovc(min_info=0.5))
+print(result.is_object_vector_cell(min_info=0.5))
 print(f"Preferred distance: {result.preferred_distance():.1f} cm")
 print(f"Preferred direction: {result.preferred_direction():.2f} rad")
 
@@ -524,7 +536,7 @@ result = compute_view_rate(
 
 # Access results
 view_field = result.firing_rate       # Firing rate by viewed location
-view_occupancy = result.view_occupancy  # Time viewing each bin
+occupancy = result.occupancy  # Time viewing each bin
 
 # Compare to place field (binned by position)
 from neurospatial.encoding import compute_spatial_rate
@@ -561,7 +573,7 @@ df = result.to_dataframe()
 
 ```python
 # Single-neuron result from compute_view_rate(...)
-print(single.is_view_cell(min_info=0.5))
+print(single.is_spatial_view_cell(min_info=0.5))
 print(f"View information: {single.view_spatial_information():.3f} bits/spike")
 print(f"Peak viewed location: {single.peak_view_location()}")
 
@@ -735,8 +747,10 @@ basis = geodesic_rbf_basis(
     sigma=[5.0, 10.0],   # Bandwidths in cm (multi-scale)
 )  # Shape: (n_centers * n_sigmas, n_bins)
 
-# Create GLM design matrix from trajectory
-bin_indices = env.bin_sequence(trajectory, times)
+# Create GLM design matrix from trajectory.
+# bin_sequence takes (times, positions). Reversing the arguments raises
+# ValueError because the first argument must be the 1-D `times` array.
+bin_indices = env.bin_sequence(times, positions)
 X_spatial = basis[:, bin_indices].T  # Shape: (n_times, n_basis)
 
 # Fit GLM (example with statsmodels)
@@ -812,8 +826,8 @@ result = peri_event_histogram(
     bin_size=0.025,       # 25 ms bins
 )
 
-# Access results
-print(f"Peak firing rate: {result.firing_rate().max():.1f} Hz")
+# Access results (firing_rate is a cached attribute, not a method)
+print(f"Peak firing rate: {result.firing_rate.max():.1f} Hz")
 print(f"Number of events: {result.n_events}")
 
 # Plot PSTH
@@ -864,7 +878,7 @@ from neurospatial.events import distance_to_reward, distance_to_boundary
 
 # Distance to reward location (requires Environment)
 dist_to_reward = distance_to_reward(
-    env, positions, times, reward_times,
+    env, times, positions, reward_times,
     mode="next",      # Distance to upcoming reward
     metric="geodesic" # Respects walls/obstacles
 )

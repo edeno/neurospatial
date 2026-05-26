@@ -140,7 +140,9 @@ class TestGeneratePopulationSpikes:
         ]
 
         # Generate trajectory
-        positions, times = simulate_trajectory_ou(simple_2d_env, duration=10.0, seed=42)
+        positions, times = simulate_trajectory_ou(
+            simple_2d_env, duration=10.0, seed=42, speed_units="cm"
+        )
 
         # Generate spikes (no progress bar for tests)
         spike_trains = generate_population_spikes(
@@ -158,7 +160,9 @@ class TestGeneratePopulationSpikes:
             PlaceCellModel(simple_2d_env, width=8.0, seed=i) for i in range(n_cells)
         ]
 
-        positions, times = simulate_trajectory_ou(simple_2d_env, duration=5.0, seed=42)
+        positions, times = simulate_trajectory_ou(
+            simple_2d_env, duration=5.0, seed=42, speed_units="cm"
+        )
 
         spike_trains = generate_population_spikes(
             place_cells, positions, times, seed=42, show_progress=False
@@ -178,7 +182,8 @@ class TestGeneratePopulationSpikes:
         positions, times = simulate_trajectory_ou(
             simple_2d_env,
             duration=30.0,
-            seed=42,  # Longer duration
+            seed=42,  # Longer duration,
+            speed_units="cm",
         )
 
         spike_trains = generate_population_spikes(
@@ -203,7 +208,9 @@ class TestGeneratePopulationSpikes:
             PlaceCellModel(simple_2d_env, width=8.0, seed=i) for i in range(n_cells)
         ]
 
-        positions, times = simulate_trajectory_ou(simple_2d_env, duration=5.0, seed=42)
+        positions, times = simulate_trajectory_ou(
+            simple_2d_env, duration=5.0, seed=42, speed_units="cm"
+        )
 
         spike_trains1 = generate_population_spikes(
             place_cells, positions, times, seed=42, show_progress=False
@@ -222,7 +229,9 @@ class TestGeneratePopulationSpikes:
             PlaceCellModel(simple_2d_env, width=8.0, seed=i) for i in range(5)
         ]
 
-        positions, times = simulate_trajectory_ou(simple_2d_env, duration=10.0, seed=42)
+        positions, times = simulate_trajectory_ou(
+            simple_2d_env, duration=10.0, seed=42, speed_units="cm"
+        )
 
         spike_trains = generate_population_spikes(
             place_cells, positions, times, seed=42, show_progress=False
@@ -240,7 +249,9 @@ class TestGeneratePopulationSpikes:
             PlaceCellModel(simple_2d_env, width=8.0, seed=i) for i in range(3)
         ]
 
-        positions, times = simulate_trajectory_ou(simple_2d_env, duration=1.0, seed=42)
+        positions, times = simulate_trajectory_ou(
+            simple_2d_env, duration=1.0, seed=42, speed_units="cm"
+        )
 
         # Generate without progress bar
         generate_population_spikes(
@@ -259,7 +270,9 @@ class TestGeneratePopulationSpikes:
             for i in range(5)
         ]
 
-        positions, times = simulate_trajectory_ou(simple_2d_env, duration=10.0, seed=42)
+        positions, times = simulate_trajectory_ou(
+            simple_2d_env, duration=10.0, seed=42, speed_units="cm"
+        )
 
         refractory_period = 0.003  # 3ms
         spike_trains = generate_population_spikes(

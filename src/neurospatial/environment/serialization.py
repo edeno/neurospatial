@@ -3,8 +3,7 @@
 This module provides serialization and deserialization methods for the
 Environment class, including:
 
-- Modern JSON + npz format (recommended)
-- Legacy pickle format (deprecated, for backward compatibility)
+- JSON + npz format (the on-disk persistence path)
 - In-memory dictionary format
 
 The methods in this mixin delegate to the implementations in `neurospatial.io`
@@ -13,7 +12,7 @@ to maintain separation of concerns and avoid code duplication.
 Classes
 -------
 EnvironmentSerialization
-    Mixin class providing save/load and serialization methods.
+    Mixin class providing serialization methods.
 
 Notes
 -----
@@ -27,8 +26,6 @@ providing type hints for IDEs and type checkers.
 
 from __future__ import annotations
 
-import logging
-import pickle
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -37,33 +34,27 @@ from neurospatial.environment._protocols import EnvironmentProtocol, SelfEnv
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
 
-logger = logging.getLogger(__name__)
-
 
 class EnvironmentSerialization:
     """Mixin providing serialization and deserialization methods.
 
     This mixin provides methods for saving and loading Environment instances
-    using various formats:
+    using two complementary formats:
 
-    - **JSON + npz** (recommended): Stable, cross-platform, no arbitrary code execution
-    - **Pickle** (deprecated): Legacy format, security risk, use only for trusted files
-    - **Dictionary**: In-memory representation for programmatic access
+    - **JSON + npz**: Stable, cross-platform, no arbitrary code execution.
+      The disk persistence path.
+    - **Dictionary**: In-memory representation for programmatic access.
 
     Methods
     -------
     to_file(path)
-        Save environment to JSON + npz files (recommended).
+        Save environment to JSON + npz files.
     from_file(path)
-        Load environment from JSON + npz files (recommended).
+        Load environment from JSON + npz files.
     to_dict()
         Convert environment to dictionary representation.
     from_dict(data)
         Reconstruct environment from dictionary.
-    save(filename)
-        Save environment using pickle (deprecated, security risk).
-    load(filename)
-        Load environment from pickle file (deprecated, security risk).
 
     Notes
     -----
@@ -92,8 +83,8 @@ class EnvironmentSerialization:
     def to_file(self: SelfEnv, path: str | Path) -> None:
         """Save Environment to versioned JSON + npz files.
 
-        This method provides stable, reproducible serialization that is safer
-        than pickle and compatible across Python versions. Creates two files:
+        This method provides stable, reproducible serialization compatible
+        across Python versions. Creates two files:
         `{path}.json` (metadata) and `{path}.npz` (arrays).
 
         Parameters
@@ -110,16 +101,13 @@ class EnvironmentSerialization:
         See Also
         --------
         from_file : Load environment from saved files
-        save : Legacy pickle-based serialization
         to_dict : Convert to dictionary for in-memory use
 
         Notes
         -----
-        This format is safer than pickle (no arbitrary code execution) and
-        more portable across Python versions and platforms.
-
-        The JSON file contains metadata, regions, and serialization version,
-        while the npz file contains numpy arrays for efficiency.
+        The JSON file contains metadata, regions, and the serialization
+        version, while the npz file holds numpy arrays in efficient binary
+        form. No arbitrary code is executed at load time.
 
         """
         from neurospatial.io import to_file as _to_file
@@ -153,7 +141,6 @@ class EnvironmentSerialization:
         See Also
         --------
         to_file : Save environment to files
-        load : Legacy pickle-based deserialization
         from_dict : Reconstruct from dictionary
 
         Notes
@@ -232,89 +219,6 @@ class EnvironmentSerialization:
         from neurospatial.io import from_dict as _from_dict
 
         return _from_dict(data)
-
-    def save(self: SelfEnv, filename: str = "environment.pkl") -> None:
-        """Save the Environment object to a file using pickle.
-
-        .. deprecated:: 0.1.0
-            Use `to_file()` instead. Pickle is less secure and less portable.
-
-        Parameters
-        ----------
-        filename : str, optional
-            The name of the file to save the environment to.
-            Defaults to "environment.pkl".
-
-        Warnings
-        --------
-        This method uses pickle for serialization. Pickle files can execute
-        arbitrary code during deserialization. Only share pickle files with
-        trusted users and only load files from trusted sources.
-
-        **Security Risk**: Do not use pickle files from untrusted sources.
-
-        See Also
-        --------
-        load : Load an Environment from a pickle file.
-        to_file : Recommended alternative using JSON + npz format.
-
-        Notes
-        -----
-        This method is retained for backward compatibility but is deprecated.
-        New code should use `to_file()` which is safer and more portable.
-
-        """
-        with Path(filename).open("wb") as fh:
-            pickle.dump(self, fh, protocol=pickle.HIGHEST_PROTOCOL)
-        logger.info("Environment saved to %s", filename)
-
-    @classmethod
-    def load(cls: type[EnvironmentProtocol], filename: str) -> Environment:
-        """Load an Environment object from a pickled file.
-
-        .. deprecated:: 0.1.0
-            Use `from_file()` instead. Pickle is less secure and less portable.
-
-        Parameters
-        ----------
-        filename : str
-            The name of the file to load the environment from.
-
-        Returns
-        -------
-        Environment
-            The loaded Environment object.
-
-        Raises
-        ------
-        TypeError
-            If the loaded object is not an instance of the Environment class.
-
-        Warnings
-        --------
-        This method uses pickle for deserialization. **Only load files from
-        trusted sources**, as pickle can execute arbitrary code during
-        deserialization. Do not load pickle files from untrusted or
-        unknown sources.
-
-        **Security Risk**: Pickle can execute arbitrary code during loading.
-
-        See Also
-        --------
-        save : Save an Environment to a pickle file.
-        from_file : Recommended alternative using JSON + npz format.
-
-        Notes
-        -----
-        This method is retained for backward compatibility but is deprecated.
-        New code should use `from_file()` which is safer and more portable.
-
-        """
-        with Path(filename).open("rb") as fh:
-            environment = pickle.load(fh)
-        if not isinstance(environment, cls):
-            raise TypeError(f"Loaded object is not type {cls.__name__}")
-        return cast("Environment", environment)
 
     def to_nwb(
         self: EnvironmentProtocol,

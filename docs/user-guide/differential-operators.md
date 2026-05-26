@@ -62,14 +62,15 @@ import numpy as np
 # Create environment
 env = Environment.from_samples(trajectory_data, bin_size=2.5)
 
-# Access differential operator (automatically cached)
-D = env.differential_operator  # Shape: (n_bins, n_edges)
+# Build (or fetch a cached) differential operator
+D = env.get_differential_operator()  # Shape: (n_bins, n_edges)
 
 print(f"Shape: {D.shape}")
 print(f"Sparse format: {D.format}")  # CSC (compressed sparse column)
 
-# Repeated access returns the same cached object (fast)
-D2 = env.differential_operator
+# Repeated calls return the same cached object until the env's
+# state version changes (subset / apply_transform / rebin).
+D2 = env.get_differential_operator()
 assert D is D2  # Same object in memory
 ```
 
@@ -476,6 +477,6 @@ plt.show()
 - `neurospatial.compute_differential_operator(env)` - Build differential operator matrix
 - `neurospatial.gradient(field, env)` - Compute gradient (scalar → edge field)
 - `neurospatial.divergence(edge_field, env)` - Compute divergence (edge → scalar field)
-- `env.differential_operator` - Cached differential operator property
+- `env.get_differential_operator()` - Cached differential operator method
 - `neurospatial.distance_field(graph, sources)` - Multi-source geodesic distances
 - `env.smooth(field, bandwidth)` - Gaussian smoothing on graph

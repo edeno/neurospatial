@@ -10,7 +10,7 @@ Functions
 posterior_mode : Maximum a posteriori bin index
 map_position : MAP position in environment coordinates
 mean_position : Posterior mean position (expected value)
-posterior_entropy : Posterior entropy in bits (uncertainty measure)
+posterior_entropy : Posterior entropy in bits (posterior_entropy measure)
 credible_region : Highest posterior density region
 
 Notes
@@ -24,7 +24,7 @@ Examples
 >>> from neurospatial.decoding.estimates import posterior_mode, posterior_entropy
 >>> import numpy as np
 >>>
->>> # Uniform posterior (maximum uncertainty)
+>>> # Uniform posterior (maximum posterior_entropy)
 >>> posterior = np.ones((10, 100)) / 100
 >>> bins = posterior_mode(posterior)
 >>> ent = posterior_entropy(posterior)
@@ -200,9 +200,9 @@ def mean_position(
 def posterior_entropy(
     posterior: NDArray[np.float64],
 ) -> NDArray[np.float64]:
-    """Posterior entropy in bits (uncertainty measure).
+    """Posterior entropy in bits (posterior_entropy measure).
 
-    Measures the uncertainty in the position estimate. Higher values
+    Measures the posterior_entropy in the position estimate. Higher values
     indicate more spread-out (uncertain) posteriors.
 
     Parameters
@@ -230,12 +230,12 @@ def posterior_entropy(
     Maximum entropy (uniform distribution) is ``log2(n_bins)``.
     Minimum entropy (delta distribution) is 0.
 
-    This function mirrors ``DecodingResult.uncertainty`` (named ``entropy``
+    This function mirrors ``DecodingResult.posterior_entropy`` (named ``entropy``
     here to be precise about the statistic being computed).
 
     See Also
     --------
-    DecodingResult.uncertainty : Property version on result container
+    DecodingResult.posterior_entropy : Property version on result container
 
     Examples
     --------
@@ -312,7 +312,7 @@ def credible_region(
 
     See Also
     --------
-    posterior_entropy : Scalar uncertainty measure
+    posterior_entropy : Scalar posterior_entropy measure
     posterior_mode : Point estimate (mode)
 
     Examples

@@ -254,13 +254,13 @@ Read out from population activity:
 
 ### 1D vs N-D Environments
 
-- **1D**: `GraphLayout` with `is_1d=True`, provides `to_linear()` and `linear_to_nd()`
+- **1D**: `GraphLayout` with `is_linearized_track=True`, provides `to_linear()` and `linear_to_nd()`
 - **N-D**: Grid-based layouts with spatial queries in original coordinates
 
 **Always check before linearization:**
 
 ```python
-if env.is_1d:
+if env.is_linearized_track:
     linear_pos = env.to_linear(nd_position)
 else:
     bin_idx = env.bin_at(position)  # Use N-D queries

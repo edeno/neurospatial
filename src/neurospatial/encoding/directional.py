@@ -37,7 +37,7 @@ Examples
 ...     occupancy=occupancy,
 ...     bin_centers=bin_centers,
 ...     bin_size=np.pi / 30,  # 6 degrees in radians
-...     smoothing_sigma=None,
+...     bandwidth=None,
 ... )
 
 See Also
@@ -59,15 +59,8 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
     from matplotlib.projections.polar import PolarAxes
 
-# Re-export circular statistics for convenience in HD workflow
 from neurospatial.encoding._base import SpatialResultMixin
-from neurospatial.stats.circular import (
-    circular_mean,
-    mean_resultant_length,
-    rayleigh_test,
-)
 
-# ruff: noqa: RUF022 - intentionally grouped by category
 __all__ = [
     # Result classes
     "DirectionalRateResult",
@@ -78,10 +71,6 @@ __all__ = [
     # Convenience functions
     "is_head_direction_cell",
     "plot_head_direction_tuning",
-    # Circular statistics (re-exported from stats.circular)
-    "circular_mean",
-    "mean_resultant_length",
-    "rayleigh_test",
 ]
 
 
@@ -105,7 +94,7 @@ class DirectionalRateResult(SpatialResultMixin):
         Center of each angular bin in radians [0, 2π). Shape is (n_bins,).
     bin_size : float
         Width of each angular bin in radians.
-    smoothing_sigma : float or None
+    bandwidth : float or None
         Gaussian smoothing bandwidth in radians, or None if unsmoothed.
 
     Attributes
@@ -118,7 +107,7 @@ class DirectionalRateResult(SpatialResultMixin):
         Angular bin centers in radians. Shape is (n_bins,).
     bin_size : float
         Angular bin width in radians.
-    smoothing_sigma : float or None
+    bandwidth : float or None
         Smoothing bandwidth in radians, or None.
 
     Notes
@@ -148,7 +137,7 @@ class DirectionalRateResult(SpatialResultMixin):
     ...     occupancy=occupancy,
     ...     bin_centers=bin_centers,
     ...     bin_size=np.pi / 30,
-    ...     smoothing_sigma=None,
+    ...     bandwidth=None,
     ... )
 
     >>> # Access fields
@@ -167,7 +156,7 @@ class DirectionalRateResult(SpatialResultMixin):
     occupancy: ArrayLike
     bin_centers: ArrayLike
     bin_size: float
-    smoothing_sigma: float | None
+    bandwidth: float | None
 
     @property
     def _bin_centers(self) -> NDArray[np.float64]:
@@ -221,7 +210,7 @@ class DirectionalRateResult(SpatialResultMixin):
         ...     occupancy=np.ones(n_bins) * 0.5,
         ...     bin_centers=bin_centers,
         ...     bin_size=np.pi / 30,
-        ...     smoothing_sigma=None,
+        ...     bandwidth=None,
         ... )
         >>> ax = result.plot()  # Creates polar plot  # doctest: +SKIP
 
@@ -293,7 +282,7 @@ class DirectionalRateResult(SpatialResultMixin):
         ...     occupancy=np.ones(n_bins) * 0.5,
         ...     bin_centers=bin_centers,
         ...     bin_size=np.pi / 30,
-        ...     smoothing_sigma=None,
+        ...     bandwidth=None,
         ... )
         >>> pref = result.preferred_direction()
         >>> np.abs(pref - np.pi / 2) < 0.1  # Close to 90 degrees
@@ -344,7 +333,7 @@ class DirectionalRateResult(SpatialResultMixin):
         ...     occupancy=np.ones(n_bins) * 0.5,
         ...     bin_centers=bin_centers,
         ...     bin_size=np.pi / 30,
-        ...     smoothing_sigma=None,
+        ...     bandwidth=None,
         ... )
         >>> pref_deg = result.preferred_direction_deg()
         >>> np.abs(pref_deg - 90) < 6  # Close to 90 degrees
@@ -375,7 +364,7 @@ class DirectionalRateResult(SpatialResultMixin):
         ...     occupancy=np.ones(n_bins) * 0.5,
         ...     bin_centers=bin_centers,
         ...     bin_size=np.pi / 30,
-        ...     smoothing_sigma=None,
+        ...     bandwidth=None,
         ... )
         >>> peak = result.peak_firing_rate()
         >>> peak > 0
@@ -432,7 +421,7 @@ class DirectionalRateResult(SpatialResultMixin):
         ...     occupancy=np.ones(n_bins) * 0.5,
         ...     bin_centers=bin_centers,
         ...     bin_size=np.pi / 30,
-        ...     smoothing_sigma=None,
+        ...     bandwidth=None,
         ... )
         >>> mvl = result.mean_vector_length()
         >>> mvl > 0.5  # Sharply tuned neuron has high MVL
@@ -500,7 +489,7 @@ class DirectionalRateResult(SpatialResultMixin):
         ...     occupancy=np.ones(n_bins) * 0.5,
         ...     bin_centers=bin_centers,
         ...     bin_size=np.pi / 30,
-        ...     smoothing_sigma=None,
+        ...     bandwidth=None,
         ... )
         >>> width = result.tuning_width()
         >>> width < np.pi / 3  # Sharp tuning < 60 degrees
@@ -587,7 +576,7 @@ class DirectionalRateResult(SpatialResultMixin):
         ...     occupancy=np.ones(n_bins) * 0.5,
         ...     bin_centers=bin_centers,
         ...     bin_size=np.pi / 30,
-        ...     smoothing_sigma=None,
+        ...     bandwidth=None,
         ... )
         >>> width_deg = result.tuning_width_deg()
         >>> width_deg < 60  # Sharp tuning < 60 degrees
@@ -645,7 +634,7 @@ class DirectionalRateResult(SpatialResultMixin):
         ...     occupancy=np.ones(n_bins) * 0.5,
         ...     bin_centers=bin_centers,
         ...     bin_size=np.pi / 30,
-        ...     smoothing_sigma=None,
+        ...     bandwidth=None,
         ... )
         >>> pval = result.rayleigh_pvalue()
         >>> pval < 0.05  # Significant non-uniformity
@@ -654,7 +643,7 @@ class DirectionalRateResult(SpatialResultMixin):
         See Also
         --------
         mean_vector_length : Tuning strength measure
-        is_hd_cell : Classification combining MVL and p-value
+        is_head_direction_cell : Classification combining MVL and p-value
         neurospatial.stats.circular.rayleigh_test : Underlying test function
         """
         from neurospatial.stats.circular import rayleigh_test
@@ -672,7 +661,7 @@ class DirectionalRateResult(SpatialResultMixin):
 
         return pval
 
-    def is_hd_cell(self, min_mvl: float = 0.4, alpha: float = 0.05) -> bool:
+    def is_head_direction_cell(self, min_mvl: float = 0.4, alpha: float = 0.05) -> bool:
         """Classify as head direction cell.
 
         A neuron is classified as a head direction (HD) cell if it meets
@@ -724,9 +713,9 @@ class DirectionalRateResult(SpatialResultMixin):
         ...     occupancy=np.ones(n_bins) * 0.5,
         ...     bin_centers=bin_centers,
         ...     bin_size=np.pi / 30,
-        ...     smoothing_sigma=None,
+        ...     bandwidth=None,
         ... )
-        >>> result.is_hd_cell()  # Sharply tuned neuron should be classified as HD cell
+        >>> result.is_head_direction_cell()  # Sharply tuned neuron should be classified as HD cell
         True
 
         See Also
@@ -755,7 +744,7 @@ class DirectionalRateResult(SpatialResultMixin):
         ----------
         min_mvl : float, default=0.4
             Minimum mean vector length threshold for HD cell classification.
-            Same parameter as in :meth:`is_hd_cell`.
+            Same parameter as in :meth:`is_head_direction_cell`.
 
         Returns
         -------
@@ -788,7 +777,7 @@ class DirectionalRateResult(SpatialResultMixin):
         ...     occupancy=np.ones(n_bins) * 0.5,
         ...     bin_centers=bin_centers,
         ...     bin_size=np.pi / 30,
-        ...     smoothing_sigma=None,
+        ...     bandwidth=None,
         ... )
         >>> print(result.interpretation())  # doctest: +SKIP
         *** HEAD DIRECTION CELL ***
@@ -800,7 +789,7 @@ class DirectionalRateResult(SpatialResultMixin):
 
         See Also
         --------
-        is_hd_cell : Boolean classification method
+        is_head_direction_cell : Boolean classification method
         mean_vector_length : Tuning strength
         rayleigh_pvalue : Statistical significance
         """
@@ -809,7 +798,7 @@ class DirectionalRateResult(SpatialResultMixin):
 
         mvl = self.mean_vector_length()
         pval = self.rayleigh_pvalue()
-        is_hd = self.is_hd_cell(min_mvl=min_mvl, alpha=alpha)
+        is_hd = self.is_head_direction_cell(min_mvl=min_mvl, alpha=alpha)
 
         if is_hd:
             lines.append("*** HEAD DIRECTION CELL ***")
@@ -866,7 +855,7 @@ class DirectionalRatesResult(SpatialResultMixin):
         Center of each angular bin in radians [0, 2π). Shape is (n_bins,).
     bin_size : float
         Width of each angular bin in radians.
-    smoothing_sigma : float or None
+    bandwidth : float or None
         Gaussian smoothing bandwidth in radians, or None if unsmoothed.
 
     Attributes
@@ -879,7 +868,7 @@ class DirectionalRatesResult(SpatialResultMixin):
         Angular bin centers in radians. Shape is (n_bins,).
     bin_size : float
         Angular bin width in radians.
-    smoothing_sigma : float or None
+    bandwidth : float or None
         Smoothing bandwidth in radians, or None.
 
     Notes
@@ -912,7 +901,7 @@ class DirectionalRatesResult(SpatialResultMixin):
     ...     occupancy=occupancy,
     ...     bin_centers=bin_centers,
     ...     bin_size=np.pi / 30,
-    ...     smoothing_sigma=None,
+    ...     bandwidth=None,
     ... )
 
     >>> # Access fields
@@ -941,7 +930,7 @@ class DirectionalRatesResult(SpatialResultMixin):
     occupancy: ArrayLike
     bin_centers: ArrayLike
     bin_size: float
-    smoothing_sigma: float | None
+    bandwidth: float | None
 
     @property
     def _bin_centers(self) -> NDArray[np.float64]:
@@ -972,7 +961,7 @@ class DirectionalRatesResult(SpatialResultMixin):
         -------
         DirectionalRateResult
             Result for the specified neuron with shared occupancy,
-            bin_centers, bin_size, and smoothing_sigma.
+            bin_centers, bin_size, and bandwidth.
 
         Examples
         --------
@@ -986,7 +975,7 @@ class DirectionalRatesResult(SpatialResultMixin):
             occupancy=self.occupancy,
             bin_centers=self.bin_centers,
             bin_size=self.bin_size,
-            smoothing_sigma=self.smoothing_sigma,
+            bandwidth=self.bandwidth,
         )
 
     def __iter__(self) -> Iterator[DirectionalRateResult]:
@@ -1196,13 +1185,13 @@ class DirectionalRatesResult(SpatialResultMixin):
 
         See Also
         --------
-        DirectionalRateResult.is_hd_cell : Single-neuron method
+        DirectionalRateResult.is_head_direction_cell : Single-neuron method
         """
         n_neurons = len(self)
         is_hd = np.empty(n_neurons, dtype=np.bool_)
 
         for i in range(n_neurons):
-            is_hd[i] = self[i].is_hd_cell(min_mvl=min_mvl, alpha=alpha)
+            is_hd[i] = self[i].is_head_direction_cell(min_mvl=min_mvl, alpha=alpha)
 
         return is_hd
 
@@ -1233,7 +1222,7 @@ class DirectionalRatesResult(SpatialResultMixin):
             - tuning_width: tuning width (HWHM) in radians (0, π]
             - tuning_width_deg: tuning width (HWHM) in degrees (0, 180]
             - peak_rate: maximum firing rate (Hz)
-            - is_hd_cell: whether classified as HD cell (using default thresholds)
+            - is_head_direction_cell: whether classified as HD cell (using default thresholds)
 
         Raises
         ------
@@ -1248,7 +1237,7 @@ class DirectionalRatesResult(SpatialResultMixin):
 
         **Common pandas workflows**:
 
-        - Filter: ``df[df["is_hd_cell"] == True]``
+        - Filter: ``df[df["is_head_direction_cell"] == True]``
         - Sort: ``df.sort_values("mean_vector_length", ascending=False)``
         - Top-N: ``df.nlargest(10, "peak_rate")``
 
@@ -1260,7 +1249,7 @@ class DirectionalRatesResult(SpatialResultMixin):
            neuron_id  preferred_direction  preferred_direction_deg  ...
 
         >>> # Filter for HD cells
-        >>> hd_cells = df[df["is_hd_cell"]]
+        >>> hd_cells = df[df["is_head_direction_cell"]]
         >>> print(f"Found {len(hd_cells)} HD cells")
 
         >>> # Sort by mean vector length
@@ -1294,7 +1283,7 @@ class DirectionalRatesResult(SpatialResultMixin):
         pref_dirs = self.preferred_directions()
         mvls = self.mean_vector_lengths()
         widths = self.tuning_widths()
-        peaks = self.peak_firing_rates()
+        peaks = self.peak_firing_rate()
         is_hd = self.detect_hd_cells()
 
         # Build data dictionary
@@ -1306,7 +1295,7 @@ class DirectionalRatesResult(SpatialResultMixin):
             "tuning_width": widths,
             "tuning_width_deg": np.degrees(widths),
             "peak_rate": peaks,
-            "is_hd_cell": is_hd,
+            "is_head_direction_cell": is_hd,
         }
 
         return pd.DataFrame(data)
@@ -1316,9 +1305,9 @@ def compute_directional_rate(
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
     headings: NDArray[np.float64],
-    bin_size: float = np.pi / 30,
     *,
-    smoothing_sigma: float | None = None,
+    bin_size: float = np.pi / 30,
+    bandwidth: float | None = None,
     angle_unit: Literal["rad", "deg"] = "rad",
     backend: Literal["numpy", "jax", "auto"] = "numpy",
 ) -> DirectionalRateResult:
@@ -1328,6 +1317,21 @@ def compute_directional_rate(
     data. The result is a DirectionalRateResult object containing the firing
     rate map, occupancy, and metadata.
 
+    .. note::
+
+       Directional encoding is the documented exception to the v0.4
+       canonical "env first" argument order for encoding functions
+       (see :ref:`canonical-argument-order` in the project guide).
+       Heading is a circular angular variable, not a position in a
+       spatial environment, so this function operates on circular
+       heading bins (``bin_size``, ``angle_unit``) rather than an
+       :class:`Environment`. There is no ``env`` parameter and no
+       internal Environment shim — keeping the signature
+       heading-domain native is intentional. Sister classifiers
+       :func:`compute_spatial_rate`, :func:`compute_egocentric_rate`,
+       and :func:`compute_view_rate` all take ``env`` first because
+       they operate over a discretized spatial environment.
+
     Parameters
     ----------
     spike_times : ndarray, shape (n_spikes,)
@@ -1335,15 +1339,18 @@ def compute_directional_rate(
     times : ndarray, shape (n_samples,)
         Timestamps of head direction samples in seconds.
     headings : ndarray, shape (n_samples,)
-        Head direction at each time point. Units determined by ``angle_unit``.
+        Head direction at each time point. **Allocentric (world-frame)
+        convention**: 0 = East, π/2 = North, π = West, -π/2 = South,
+        wrapped to [-π, π] (or to [0, 360°) when ``angle_unit="deg"``).
+        Units determined by ``angle_unit``.
     bin_size : float, default=π/30 (6 degrees)
         Width of angular bins. Units match ``angle_unit``.
         Default produces 60 bins (6° resolution).
-    smoothing_sigma : float or None, default=None
+    bandwidth : float or None, default=None
         Gaussian smoothing bandwidth for the tuning curve. Units match
         ``angle_unit``. If None, no smoothing is applied.
     angle_unit : {'rad', 'deg'}, default='rad'
-        Unit of ``headings``, ``bin_size``, and ``smoothing_sigma``.
+        Unit of ``headings``, ``bin_size``, and ``bandwidth``.
 
         - 'rad': angles in radians
         - 'deg': angles in degrees
@@ -1364,7 +1371,7 @@ def compute_directional_rate(
         - ``occupancy``: Time at each direction in seconds, shape (n_bins,)
         - ``bin_centers``: Angular bin centers in radians, shape (n_bins,)
         - ``bin_size``: Bin width in radians
-        - ``smoothing_sigma``: Smoothing bandwidth in radians (or None)
+        - ``bandwidth``: Smoothing bandwidth in radians (or None)
 
     Raises
     ------
@@ -1387,7 +1394,7 @@ def compute_directional_rate(
     1. Bin spike train into angular bins based on head direction at spike time
     2. Compute occupancy (time spent at each direction)
     3. Compute raw firing rate (spike counts / occupancy)
-    4. Apply Gaussian smoothing if ``smoothing_sigma`` is provided
+    4. Apply Gaussian smoothing if ``bandwidth`` is provided
 
     **Smoothing**: Uses circular Gaussian smoothing to handle the wrap-around
     at 0/2π. The smoothing is applied to both spike counts and occupancy
@@ -1410,7 +1417,7 @@ def compute_directional_rate(
 
     >>> # With smoothing
     >>> result = compute_directional_rate(
-    ...     spike_times, times, headings, smoothing_sigma=np.pi / 6
+    ...     spike_times, times, headings, bandwidth=np.pi / 6
     ... )
 
     >>> # Using degrees
@@ -1428,7 +1435,10 @@ def compute_directional_rate(
         bin_directional_spike_train,
         compute_directional_occupancy,
     )
-    from neurospatial.encoding._validation import validate_trajectory
+    from neurospatial.encoding._validation import (
+        validate_spike_times,
+        validate_trajectory,
+    )
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -1450,9 +1460,8 @@ def compute_directional_rate(
     times = np.asarray(times, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
 
-    validate_trajectory(times, headings=headings)
-    if spike_times.ndim != 1:
-        raise ValueError(f"spike_times must be 1D, got shape {spike_times.shape}")
+    validate_trajectory(times, headings=headings, context="compute_directional_rate")
+    validate_spike_times(spike_times, context="compute_directional_rate")
 
     # Compute occupancy and bin centers
     occupancy, bin_centers = compute_directional_occupancy(
@@ -1470,18 +1479,18 @@ def compute_directional_rate(
     n_bins = len(bin_centers)
     actual_bin_size_rad = 2 * np.pi / n_bins
 
-    # Convert smoothing_sigma to radians for storage
+    # Convert bandwidth to radians for storage
     if angle_unit == "deg":
-        smoothing_sigma_rad = np.radians(smoothing_sigma) if smoothing_sigma else None
+        bandwidth_rad = np.radians(bandwidth) if bandwidth else None
     else:
-        smoothing_sigma_rad = smoothing_sigma
+        bandwidth_rad = bandwidth
 
     # Apply smoothing if requested
-    if smoothing_sigma_rad is not None:
+    if bandwidth_rad is not None:
         from scipy.ndimage import gaussian_filter1d
 
-        # Convert smoothing_sigma to number of bins
-        sigma_bins = smoothing_sigma_rad / actual_bin_size_rad
+        # Convert bandwidth to number of bins
+        sigma_bins = bandwidth_rad / actual_bin_size_rad
 
         # Apply circular Gaussian smoothing
         # Use mode='wrap' for circular boundary conditions
@@ -1512,7 +1521,7 @@ def compute_directional_rate(
         occupancy=occupancy,
         bin_centers=bin_centers,
         bin_size=actual_bin_size_rad,
-        smoothing_sigma=smoothing_sigma_rad,
+        bandwidth=bandwidth_rad,
     )
 
 
@@ -1520,9 +1529,9 @@ def compute_directional_rates(
     spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
     times: NDArray[np.float64],
     headings: NDArray[np.float64],
-    bin_size: float = np.pi / 30,
     *,
-    smoothing_sigma: float | None = None,
+    bin_size: float = np.pi / 30,
+    bandwidth: float | None = None,
     angle_unit: Literal["rad", "deg"] = "rad",
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
@@ -1533,6 +1542,18 @@ def compute_directional_rates(
     processes multiple neurons with shared trajectory data. It precomputes
     shared quantities (occupancy, bin centers) once and optionally parallelizes
     spike counting with joblib.
+
+    .. note::
+
+       Like :func:`compute_directional_rate`, this function is the documented
+       exception to the v0.4 canonical "env first" argument order for
+       encoding functions (see :ref:`canonical-argument-order` in the
+       project guide). Heading is a circular angular variable, not a
+       position in a spatial environment, so this signature is
+       heading-domain native and intentionally takes no
+       :class:`Environment`. Sister batch encoders
+       (:func:`compute_spatial_rates`, :func:`compute_egocentric_rates`,
+       :func:`compute_view_rates`) keep their env-first signatures.
 
     Parameters
     ----------
@@ -1547,15 +1568,18 @@ def compute_directional_rates(
     times : ndarray, shape (n_samples,)
         Timestamps of head direction samples in seconds.
     headings : ndarray, shape (n_samples,)
-        Head direction at each time point. Units determined by ``angle_unit``.
+        Head direction at each time point. **Allocentric (world-frame)
+        convention**: 0 = East, π/2 = North, π = West, -π/2 = South,
+        wrapped to [-π, π] (or to [0, 360°) when ``angle_unit="deg"``).
+        Units determined by ``angle_unit``.
     bin_size : float, default=π/30 (6 degrees)
         Width of angular bins. Units match ``angle_unit``.
         Default produces 60 bins (6° resolution).
-    smoothing_sigma : float or None, default=None
+    bandwidth : float or None, default=None
         Gaussian smoothing bandwidth for the tuning curves. Units match
         ``angle_unit``. If None, no smoothing is applied.
     angle_unit : {'rad', 'deg'}, default='rad'
-        Unit of ``headings``, ``bin_size``, and ``smoothing_sigma``.
+        Unit of ``headings``, ``bin_size``, and ``bandwidth``.
 
         - 'rad': angles in radians
         - 'deg': angles in degrees
@@ -1579,7 +1603,7 @@ def compute_directional_rates(
         - ``occupancy``: Time in each bin in seconds, shape ``(n_bins,)``
         - ``bin_centers``: Angular bin centers in radians, shape ``(n_bins,)``
         - ``bin_size``: Bin width in radians
-        - ``smoothing_sigma``: Smoothing bandwidth in radians (or None)
+        - ``bandwidth``: Smoothing bandwidth in radians (or None)
 
         The result supports iteration: ``for single in result: ...``
         and indexing: ``single = result[0]``.
@@ -1641,7 +1665,10 @@ def compute_directional_rates(
         compute_directional_occupancy,
     )
     from neurospatial.encoding._spikes import normalize_spike_times
-    from neurospatial.encoding._validation import validate_trajectory
+    from neurospatial.encoding._validation import (
+        validate_spike_times,
+        validate_trajectory,
+    )
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -1666,7 +1693,9 @@ def compute_directional_rates(
     times = np.asarray(times, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
 
-    validate_trajectory(times, headings=headings)
+    validate_trajectory(times, headings=headings, context="compute_directional_rates")
+    for i, st in enumerate(spike_times_list):
+        validate_spike_times(st, context=f"compute_directional_rates (neuron {i})")
 
     # Precompute shared quantities: occupancy and bin centers
     occupancy, bin_centers = compute_directional_occupancy(
@@ -1679,17 +1708,17 @@ def compute_directional_rates(
     # bin spacing may differ from the requested bin_size
     actual_bin_size_rad = 2 * np.pi / n_bins
 
-    # Convert smoothing_sigma to radians for storage
+    # Convert bandwidth to radians for storage
     if angle_unit == "deg":
-        smoothing_sigma_rad = np.radians(smoothing_sigma) if smoothing_sigma else None
+        bandwidth_rad = np.radians(bandwidth) if bandwidth else None
     else:
-        smoothing_sigma_rad = smoothing_sigma
+        bandwidth_rad = bandwidth
 
     # Precompute smoothed occupancy once (instead of per-neuron)
-    if smoothing_sigma_rad is not None:
+    if bandwidth_rad is not None:
         from scipy.ndimage import gaussian_filter1d
 
-        sigma_bins = smoothing_sigma_rad / actual_bin_size_rad
+        sigma_bins = bandwidth_rad / actual_bin_size_rad
         occupancy_smooth: NDArray[np.float64] = gaussian_filter1d(
             occupancy, sigma=sigma_bins, mode="wrap"
         )
@@ -1710,7 +1739,7 @@ def compute_directional_rates(
             occupancy=occupancy,
             bin_centers=bin_centers,
             bin_size=actual_bin_size_rad,
-            smoothing_sigma=smoothing_sigma_rad,
+            bandwidth=bandwidth_rad,
         )
 
     # Helper function to process a single neuron's spike train
@@ -1721,7 +1750,7 @@ def compute_directional_rates(
         )
 
         # Apply smoothing if requested
-        if smoothing_sigma_rad is not None:
+        if bandwidth_rad is not None:
             from scipy.ndimage import gaussian_filter1d
 
             spike_counts_smooth: NDArray[np.float64] = gaussian_filter1d(
@@ -1767,7 +1796,7 @@ def compute_directional_rates(
         occupancy=occupancy,
         bin_centers=bin_centers,
         bin_size=actual_bin_size_rad,
-        smoothing_sigma=smoothing_sigma_rad,
+        bandwidth=bandwidth_rad,
     )
 
 
@@ -1782,7 +1811,7 @@ def is_head_direction_cell(
     headings: NDArray[np.float64],
     *,
     bin_size: float = np.pi / 30,
-    smoothing_sigma: float | None = None,
+    bandwidth: float | None = None,
     angle_unit: Literal["rad", "deg"] = "rad",
     min_mvl: float = 0.4,
     alpha: float = 0.05,
@@ -1793,7 +1822,20 @@ def is_head_direction_cell(
     tuning and checks if the neuron meets HD cell criteria.
 
     For detailed metrics, use ``compute_directional_rate()`` and inspect
-    the result's methods (``is_hd_cell()``, ``mean_vector_length()``, etc.).
+    the result's methods (``is_head_direction_cell()``, ``mean_vector_length()``, etc.).
+
+    .. note::
+
+       Like :func:`compute_directional_rate`, this function is the documented
+       exception to the v0.4 canonical "env first" argument order for
+       encoding functions (see :ref:`canonical-argument-order` in the
+       project guide). Heading is a circular angular variable, not a
+       position in a spatial environment, so this signature is
+       heading-domain native and intentionally takes no
+       :class:`Environment`. Sister classifiers
+       (:func:`is_object_vector_cell`, :func:`is_spatial_view_cell`) keep
+       their env-first signatures because they operate on spatial
+       (allocentric) firing fields.
 
     Parameters
     ----------
@@ -1802,10 +1844,13 @@ def is_head_direction_cell(
     times : ndarray of shape (n_frames,)
         Timestamps corresponding to each head direction sample.
     headings : ndarray of shape (n_frames,)
-        Head direction at each time point.
+        Head direction at each time point. **Allocentric (world-frame)
+        convention**: 0 = East, π/2 = North, π = West, -π/2 = South,
+        wrapped to ``[-π, π]`` (or ``[0, 360°]`` when
+        ``angle_unit="deg"``). Units determined by ``angle_unit``.
     bin_size : float, default=π/30 (6 degrees)
         Width of angular bins. Units match ``angle_unit``.
-    smoothing_sigma : float or None, default=None
+    bandwidth : float or None, default=None
         Gaussian smoothing bandwidth. Units match ``angle_unit``.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of headings and bin_size.
@@ -1834,7 +1879,7 @@ def is_head_direction_cell(
     See Also
     --------
     compute_directional_rate : Full directional rate computation
-    DirectionalRateResult.is_hd_cell : HD cell classification on result object
+    DirectionalRateResult.is_head_direction_cell : HD cell classification on result object
     """
     try:
         result = compute_directional_rate(
@@ -1842,10 +1887,10 @@ def is_head_direction_cell(
             times,
             headings,
             bin_size=bin_size,
-            smoothing_sigma=smoothing_sigma,
+            bandwidth=bandwidth,
             angle_unit=angle_unit,
         )
-        return result.is_hd_cell(min_mvl=min_mvl, alpha=alpha)
+        return result.is_head_direction_cell(min_mvl=min_mvl, alpha=alpha)
     except (ValueError, RuntimeError):
         return False
 

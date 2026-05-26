@@ -74,7 +74,7 @@ def position_overlay_from_nwb(
 
     # Create and return PositionOverlay
     return PositionOverlay(
-        data=positions,
+        positions=positions,
         times=timestamps,
         color=color,
         size=size,
@@ -214,7 +214,7 @@ def head_direction_overlay_from_nwb(
 
     # Create and return HeadDirectionOverlay
     return HeadDirectionOverlay(
-        data=angles,
+        headings=angles,
         times=timestamps,
         color=color,
         length=length,

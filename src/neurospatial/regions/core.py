@@ -178,7 +178,13 @@ class Regions(MutableMapping[str, Region]):
         return self._store[key]
 
     def __setitem__(self, key: str, value: Region) -> None:
-        """Assign a region to a key, following standard dict semantics.
+        """Insert a region under ``key``; refuse to silently overwrite.
+
+        ``regions[key] = region`` is the *strict* insertion path: it
+        accepts new keys but raises :class:`KeyError` if ``key`` already
+        exists. Callers that want to replace an existing region must opt
+        in explicitly via :meth:`set` (idempotent replace) or
+        :meth:`update_region` (replace geometry/metadata in place).
 
         Parameters
         ----------
@@ -190,35 +196,28 @@ class Regions(MutableMapping[str, Region]):
         Raises
         ------
         ValueError
-            If key does not match the Region's name attribute.
-
-        Warns
-        -----
-        UserWarning
-            If overwriting an existing region. To suppress this warning,
-            use `update_region()` instead.
-
-        Notes
-        -----
-        This method follows standard dictionary semantics - assignment to an
-        existing key succeeds but emits a warning to prevent accidental overwrites.
+            If ``key`` does not match ``value.name``.
+        KeyError
+            If ``key`` is already present in the collection.
 
         Examples
         --------
         >>> regions = Regions()
         >>> r1 = Region(name="goal", kind="point", data=[10.0, 20.0])
-        >>> regions["goal"] = r1  # No warning - first assignment
+        >>> regions["goal"] = r1  # OK — first assignment
         >>> r2 = Region(name="goal", kind="point", data=[15.0, 25.0])
-        >>> regions["goal"] = r2  # UserWarning - overwriting existing region
+        >>> regions["goal"] = r2  # raises KeyError
 
-        To suppress the warning, use `update_region()`:
+        To replace an existing region, pick the explicit path:
 
-        >>> _ = regions.update_region("goal", point=[15.0, 25.0])  # No warning
+        >>> regions.set("goal", r2)  # idempotent replace
+        >>> _ = regions.update_region("goal", point=[15.0, 25.0])  # in-place edit
 
         See Also
         --------
-        update_region : Explicit method for updating regions without warnings
-        add : Add a new region (raises KeyError if already exists)
+        set : Idempotent replace (accepts both new and existing names).
+        update_region : In-place geometry/metadata edit; raises if absent.
+        add : Build a new Region and insert it; raises if already exists.
 
         """
         if key != value.name:
@@ -227,11 +226,10 @@ class Regions(MutableMapping[str, Region]):
                 f"Cannot assign region with name {value.name!r} to key {key!r}."
             )
         if key in self._store:
-            warnings.warn(
-                f"Overwriting existing region {key!r}. "
-                "Use update_region() to suppress this warning.",
-                UserWarning,
-                stacklevel=2,
+            raise KeyError(
+                f"Region {key!r} already exists. "
+                "Use Regions.update_region(...) to modify it in place, or "
+                "Regions.set(name, region) for the idempotent replace path."
             )
         self._store[key] = value
 
@@ -378,16 +376,62 @@ class Regions(MutableMapping[str, Region]):
         self._store[name] = region
         return region
 
+    def set(self, name: str, region: Region) -> Region:
+        """Insert ``region`` under ``name`` (idempotent replace).
+
+        Unlike ``regions[name] = region`` and :meth:`add`, this method
+        accepts both new and existing names and is the documented path
+        for callers that explicitly want to replace whatever is already
+        stored under ``name``.
+
+        Parameters
+        ----------
+        name : str
+            Name of the region. Must match ``region.name``.
+        region : Region
+            Region to insert (or to use as the replacement if ``name``
+            already exists).
+
+        Returns
+        -------
+        Region
+            The stored region (the same object passed in).
+
+        Raises
+        ------
+        ValueError
+            If ``name`` does not match ``region.name``.
+
+        See Also
+        --------
+        add : Insert a new region; raises if ``name`` already exists.
+        update_region : Replace an existing region's geometry/metadata
+            in place; raises if ``name`` does not exist.
+        """
+        if name != region.name:
+            raise ValueError(f"Key {name!r} must match Region.name {region.name!r}.")
+        # Bypass __setitem__'s duplicate check; this is the idempotent path.
+        self._store[name] = region
+        return region
+
     def remove(self, name: str) -> None:
         """Delete a region by name.
 
         Parameters
         ----------
         name : str
-            Name of region to remove. No error if absent.
+            Name of region to remove.
 
+        Raises
+        ------
+        KeyError
+            If ``name`` is not in the collection. Mirrors ``del regions[name]``
+            and the rest of the M5.5 contract: every Region API
+            (``add``, ``update_region``, ``__setitem__``, ``__delitem__``,
+            ``remove``) raises rather than silently absorbing the case where
+            the caller's mental model of the collection disagrees with reality.
         """
-        self._store.pop(name, None)
+        del self._store[name]
 
     def list_names(self) -> list[str]:
         """Get list of region names in insertion order.
@@ -555,5 +599,9 @@ class Regions(MutableMapping[str, Region]):
         """
         blob = json.loads(Path(path).read_text())
         if blob.get("format") != cls._FMT:
-            warnings.warn(f"Unexpected format tag {blob.get('format')!r}")
+            warnings.warn(
+                f"Unexpected format tag {blob.get('format')!r}",
+                category=UserWarning,
+                stacklevel=2,
+            )
         return cls(Region.from_dict(d) for d in blob["regions"])

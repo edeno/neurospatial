@@ -54,7 +54,7 @@ def test_create_layout_regular_grid():
     assert layout.connectivity is not None
     assert layout.active_mask is not None
     assert layout.grid_edges is not None
-    assert not layout.is_1d
+    assert not layout.is_linearized_track
 
 
 def test_regular_grid_point_to_bin_index():
@@ -100,7 +100,7 @@ def test_create_layout_hexagonal():
     assert hasattr(layout, "bin_centers")
     assert layout.bin_centers.ndim == 2
     assert layout.connectivity is not None
-    assert not layout.is_1d
+    assert not layout.is_linearized_track
 
 
 def test_hexagonal_point_to_bin_index():
@@ -148,7 +148,7 @@ def test_create_layout_masked_grid():
     assert layout.bin_centers.ndim == 2
     assert layout.bin_centers.shape[0] == np.sum(mask)  # Should be 9
     assert layout.connectivity is not None
-    assert not layout.is_1d
+    assert not layout.is_linearized_track
 
 
 def test_create_layout_image_mask():
@@ -162,7 +162,7 @@ def test_create_layout_image_mask():
     assert hasattr(layout, "bin_centers")
     assert layout.bin_centers.ndim == 2
     assert layout.connectivity is not None
-    assert not layout.is_1d
+    assert not layout.is_linearized_track
 
 
 def test_image_mask_point_to_bin_index():
@@ -199,7 +199,7 @@ def test_create_layout_graph():
     # Graph: 0 --1m-- 1 --1m-- 2. Total length 2m. Bin size 0.5m. Expected 4 bins.
     assert layout.bin_centers.shape[0] == 4
     assert layout.connectivity is not None
-    assert layout.is_1d
+    assert layout.is_linearized_track
 
 
 def test_graph_point_to_bin_index():
@@ -342,7 +342,9 @@ def test_layout_engine_protocol_adherence(
     assert hasattr(layout, "_build_params_used"), (
         f"{layout_kind} missing _build_params_used"
     )
-    assert hasattr(layout, "is_1d"), f"{layout_kind} missing is_1d property"
+    assert hasattr(layout, "is_linearized_track"), (
+        f"{layout_kind} missing is_linearized_track property"
+    )
 
     # 2. Check basic types and consistency
     assert isinstance(layout.bin_centers, np.ndarray), (
@@ -362,7 +364,9 @@ def test_layout_engine_protocol_adherence(
         ):  # If there are active bins, graph should not be None
             assert layout.connectivity.number_of_nodes() == layout.bin_centers.shape[0]
 
-    assert isinstance(layout.is_1d, bool), f"{layout_kind}.is_1d not bool"
+    assert isinstance(layout.is_linearized_track, bool), (
+        f"{layout_kind}.is_linearized_track not bool"
+    )
     assert layout._layout_type_tag == layout_kind, (
         f"{layout_kind}._layout_type_tag mismatch"
     )

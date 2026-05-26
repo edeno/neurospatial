@@ -84,7 +84,7 @@ env = Environment.from_graph(
 )
 ```
 
-### from_mask()
+### from_grid_mask()
 
 Create from a pre-defined N-D boolean mask:
 
@@ -93,7 +93,7 @@ Create from a pre-defined N-D boolean mask:
 mask = np.zeros((50, 50), dtype=bool)
 mask[10:40, 10:40] = True  # Active region
 
-env = Environment.from_mask(
+env = Environment.from_grid_mask(
     mask=mask,
     bin_size=2.0,
     dimension_ranges=[(0, 100), (0, 100)],
@@ -101,14 +101,14 @@ env = Environment.from_mask(
 )
 ```
 
-### from_image()
+### from_pixel_mask()
 
 Create from a binary image file:
 
 ```python
-env = Environment.from_image(
+env = Environment.from_pixel_mask(
     image_path="arena_mask.png",
-    bin_size=2.0,
+    pixel_size=2.0,
     dimension_ranges=[(0, 100), (0, 100)],
     name="ImageEnvironment"
 )
@@ -175,7 +175,7 @@ Access environment properties:
 # Basic properties
 print(env.n_bins)           # Number of bins
 print(env.n_dims)           # Number of dimensions
-print(env.is_1d)            # True for linearized environments
+print(env.is_linearized_track)            # True for linearized environments
 print(env.name)             # Environment name
 
 # Spatial information
@@ -194,7 +194,7 @@ Linearized track environments have additional methods:
 
 ```python
 # Check if environment is 1D
-if env.is_1d:
+if env.is_linearized_track:
     # Convert N-D coordinates to 1D
     linear_position = env.to_linear(nd_position)
 

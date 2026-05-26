@@ -6,7 +6,7 @@ functionality from specialized mixin classes:
 - EnvironmentFactories: Factory methods (from_samples, from_graph, etc.)
 - EnvironmentQueries: Spatial queries (bin_at, contains, neighbors, etc.)
 - EnvironmentSerialization: Save/load methods (to_file, from_file, etc.)
-- EnvironmentRegions: Region operations (bins_in_region, mask_for_region)
+- EnvironmentRegions: Region operations (bins_in_region, region_mask)
 - EnvironmentVisualization: Plotting methods (plot, plot_1d)
 - EnvironmentMetrics: Environment metrics (boundary_bins, bin_attributes, to_linear, etc.)
 - EnvironmentFields: Spatial field operations (compute_kernel, smooth, interpolate)
@@ -21,10 +21,11 @@ while maintaining clean code organization.
 from __future__ import annotations
 
 import logging
+import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 import networkx as nx
 import numpy as np
@@ -32,7 +33,7 @@ from numpy.typing import NDArray
 from scipy import sparse
 
 from neurospatial._logging import log_environment_created, log_graph_validation
-from neurospatial.environment.decorators import check_fitted
+from neurospatial.environment.decorators import check_fitted, versioned_cached_property
 from neurospatial.environment.factories import EnvironmentFactories
 from neurospatial.environment.fields import EnvironmentFields
 from neurospatial.environment.metrics import EnvironmentMetrics
@@ -135,17 +136,17 @@ class Environment(
 
     **Specialized Use Cases**
 
-    4. **from_mask** - Create environment from pre-computed mask
+    4. **from_grid_mask** - Create environment from pre-computed mask
        Use when you have already determined which bins should be active (e.g.,
        from external analysis) as an N-D boolean array. Requires explicit
        specification of grid edges.
-       See `from_mask()`.
+       See `from_grid_mask()`.
 
-    5. **from_image** - Create environment from binary image
+    5. **from_pixel_mask** - Create environment from binary image
        Use when your environment boundary is defined by a binary image (e.g.,
        segmentation mask, overhead camera view). Each white pixel becomes a
        potential bin.
-       See `from_image()`.
+       See `from_pixel_mask()`.
 
     **Advanced**
 
@@ -190,9 +191,9 @@ class Environment(
         Populated by `_setup_from_layout`.
     regions : RegionManager
         Manages symbolic spatial regions defined within this environment.
-    _is_1d_env : bool
+    _is_linearized_track_env : bool
         Internal flag indicating if the environment's layout is primarily 1-dimensional.
-        Set based on `layout.is_1d`.
+        Set based on `layout.is_linearized_track`.
     _is_fitted : bool
         Internal flag indicating if the environment has been fully initialized
         and its layout-dependent attributes are populated.
@@ -241,9 +242,33 @@ class Environment(
     units: str | None = field(init=False, default=None)
     frame: str | None = field(init=False, default=None)
 
+    # Coordinate-system flag. Cartesian envs (``from_samples``,
+    # ``from_polygon``, ``from_grid_mask``, ``from_pixel_mask``, ``from_graph``,
+    # ``from_layout`` for any non-polar layout) hold (x, y[, z]) bin
+    # centers and tolerate Euclidean distance on those centers. The
+    # ``polar`` value comes from ``from_polar_egocentric`` and means
+    # ``bin_centers[:, 0]`` is *distance* and ``bin_centers[:, 1]`` is
+    # *angle in radians*. A handful of methods (``bin_at``,
+    # ``distance_between``, ``distance_to(metric="euclidean")``)
+    # silently treat (distance, angle) pairs as (x, y) and produce
+    # nonsense; those methods raise on a polar env via
+    # ``_check_cartesian``. Geodesic operations remain valid because
+    # they read only the connectivity graph.
+    coordinate_kind: Literal["cartesian", "polar"] = field(
+        init=False, default="cartesian"
+    )
+
     # Internal state
-    _is_1d_env: bool = field(init=False)
+    _is_linearized_track_env: bool = field(init=False)
     _is_fitted: bool = field(init=False, default=False)
+
+    #: Monotonic counter incremented on every documented mutation
+    #: (``_setup_from_layout``, ``subset``, ``apply_transform``, ``rebin``).
+    #: Downstream caches can read this to detect "was the environment
+    #: mutated since I last looked?" without diffing the underlying
+    #: arrays. The :func:`versioned_cached_property` decorator uses this
+    #: as the cache-invalidation key.
+    _state_version: int = field(init=False, default=0)
 
     # KD-tree cache for spatial queries (populated lazily by map_points_to_bins)
     _kdtree_cache: Any = field(init=False, default=None, repr=False)
@@ -304,7 +329,7 @@ class Environment(
             else getattr(layout, "_build_params_used", {})
         )
 
-        self._is_1d_env = self.layout.is_1d
+        self._is_linearized_track_env = self.layout.is_linearized_track
 
         # Initialize attributes that will be populated by _setup_from_layout
         self.bin_centers = np.empty((0, 0))  # Placeholder
@@ -325,6 +350,47 @@ class Environment(
         else:
             # Initialize with an empty Regions instance if not provided
             self.regions = Regions()
+
+    # ------------------------------------------------------------------
+    # Units validation (M4.4)
+    # ------------------------------------------------------------------
+    #: Documented unit strings. Setting ``env.units`` to a value outside
+    #: this registry warns but does not raise — the field is advisory and
+    #: free-form strings remain allowed for unusual cases (arbitrary lab
+    #: coordinate frames, calibrated pixels, etc.).
+    _UNITS_REGISTRY: ClassVar[frozenset[str]] = frozenset(
+        {"cm", "m", "mm", "px", "pixels"}
+    )
+
+    @classmethod
+    def _validate_units(cls, value: object) -> None:
+        """Warn if ``value`` is not in :attr:`_UNITS_REGISTRY`.
+
+        Called automatically when ``env.units`` is assigned. The
+        registry is intentionally small and advisory; the goal is to
+        catch typos (``"centimeters"``, ``"px "``) without preventing
+        legitimate free-form values.
+        """
+        if value is None:
+            return
+        if not isinstance(value, str):
+            raise TypeError(
+                f"Environment.units must be a str or None, got {type(value).__name__}."
+            )
+        if value not in cls._UNITS_REGISTRY:
+            warnings.warn(
+                f"Environment.units={value!r} is not in the standard "
+                f"registry {sorted(cls._UNITS_REGISTRY)}. Free-form strings "
+                "are allowed but may not be interpreted by tools that consume "
+                "`units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
+                category=UserWarning,
+                stacklevel=3,
+            )
+
+    def __setattr__(self, name: str, value: object) -> None:
+        if name == "units":
+            type(self)._validate_units(value)
+        super().__setattr__(name, value)
 
     def __eq__(self, other: object) -> bool:
         """Check equality with another Environment or string.
@@ -374,7 +440,7 @@ class Environment(
         Notes
         -----
         This representation is designed for interactive use and debugging, not
-        for reconstruction. For serialization, use the `save()` method instead.
+        for reconstruction. For serialization, use the `to_file()` method.
 
         Examples
         --------
@@ -385,33 +451,44 @@ class Environment(
         "Environment(name='MyEnv', 2D, 25 bins, RegularGrid)"
 
         """
-        # Handle unfitted environments
+        # Use ``repr(self.name)`` so the empty-string case ``name=""``
+        # is visibly distinct from the unset case ``name=None`` (M5.8).
+        # The previous ``f"'{name}'" if name else 'None'`` collapsed the
+        # two into the same string and hid the difference from users
+        # debugging an Environment they thought they had named.
         if not self._is_fitted:
-            name_str = f"'{self.name}'" if self.name else "None"
-            return f"Environment(name={name_str}, not fitted)"
+            return f"Environment(name={self.name!r}, not fitted)"
 
-        # Fitted environments: show name, dims, bins, layout
-        # Truncate very long names
-        name = self.name if self.name else ""
-        if len(name) > 40:
+        # Fitted environments: show name, dims, bins, layout. Truncate
+        # very long names but keep ``None`` distinct from ``""`` (M5.8).
+        name = self.name
+        if isinstance(name, str) and len(name) > 40:
             name = name[:37] + "..."
-        name_str = f"'{name}'" if name else "None"
 
-        # Get dimensionality
         try:
             dims_str = f"{self.n_dims}D"
         except (RuntimeError, AttributeError):
             dims_str = "?D"
 
-        # Get bin count
         n_bins = self.bin_centers.shape[0] if hasattr(self, "bin_centers") else 0
 
-        # Get layout type (remove 'Layout' suffix for brevity if present)
         layout_type = self._layout_type_used or "Unknown"
         if layout_type.endswith("Layout"):
             layout_type = layout_type[:-6]  # Remove 'Layout' suffix
 
-        return f"Environment(name={name_str}, {dims_str}, {n_bins} bins, {layout_type})"
+        return f"Environment(name={name!r}, {dims_str}, {n_bins} bins, {layout_type})"
+
+    def __str__(self) -> str:
+        """Human-readable summary, equivalent to :meth:`info` (M5.8).
+
+        ``str(env)`` returns the same multi-line summary that
+        ``env.info()`` produces. ``repr(env)`` keeps its single-line
+        ``Environment(name=..., 2D, 100 bins, RegularGrid)`` shape for
+        interactive debugging and logs.
+        """
+        if not self._is_fitted:
+            return self.__repr__()
+        return self.info()
 
     @staticmethod
     def _html_table_row(label: str, value: str, highlight: bool = False) -> str:
@@ -563,7 +640,11 @@ class Environment(
             rows.append(self._html_table_row("Regions", "None"))
 
         # 1D-specific info
-        if n_dims == 1 and hasattr(self, "is_1d") and self.is_1d:
+        if (
+            n_dims == 1
+            and hasattr(self, "is_linearized_track")
+            and self.is_linearized_track
+        ):
             rows.append(
                 self._html_table_row("Linearization", "Available (1D environment)")
             )
@@ -723,7 +804,7 @@ class Environment(
         lines.append("")
 
         # 1D-specific information
-        if hasattr(self, "is_1d") and self.is_1d:
+        if hasattr(self, "is_linearized_track") and self.is_linearized_track:
             lines.append("Linearization: Available (1D environment)")
             lines.append("")
 
@@ -787,6 +868,10 @@ class Environment(
             self.active_mask = np.ones(self.bin_centers.shape[0], dtype=bool)
 
         self._is_fitted = True
+        # Bump the state version so any downstream cache (including the
+        # versioned_cached_property values from this and other mixins)
+        # treats this environment as a "freshly built" object.
+        self._state_version += 1
 
         # Log environment creation
         n_bins = self.bin_centers.shape[0] if self.bin_centers is not None else 0
@@ -832,7 +917,7 @@ class Environment(
         }
 
     @property
-    def is_1d(self) -> bool:
+    def is_linearized_track(self) -> bool:
         """Indicate if the environment's layout is primarily 1-dimensional.
 
         Returns
@@ -840,10 +925,46 @@ class Environment(
         bool
             True if the underlying `LayoutEngine` (`self.layout`) reports
             itself as 1-dimensional (e.g., `GraphLayout`), False otherwise.
-            This is determined by `self.layout.is_1d`.
+            This is determined by `self.layout.is_linearized_track`.
 
         """
-        return self._is_1d_env
+        return self._is_linearized_track_env
+
+    @property
+    def is_polar(self) -> bool:
+        """True iff the environment lives in egocentric polar coordinates.
+
+        Convenience wrapper over ``coordinate_kind == "polar"``. A polar
+        env's ``bin_centers[:, 0]`` is distance and ``bin_centers[:, 1]``
+        is angle in radians, not (x, y); methods that compute Euclidean
+        operations on bin_centers (``bin_at``, ``distance_between``,
+        ``distance_to(metric="euclidean")``) raise rather than return
+        silently-wrong numbers.
+        """
+        return self.coordinate_kind == "polar"
+
+    def _check_cartesian(self, method_name: str) -> None:
+        """Raise if this env is polar and the calling method assumes Cartesian.
+
+        Centralises the "this method only makes sense on (x, y[, z])
+        bin centers" check so each guarded method has a one-line call
+        and a uniform error message. The error names the offending
+        method and points the user at the geodesic alternative when
+        one exists.
+        """
+        if self.coordinate_kind != "cartesian":
+            raise ValueError(
+                f"Environment.{method_name}() assumes Cartesian "
+                f"coordinates but this environment is "
+                f"coordinate_kind={self.coordinate_kind!r} "
+                "(bin_centers[:, 0]=distance, bin_centers[:, 1]=angle "
+                "for polar envs from from_polar_egocentric). For "
+                "polar envs, use connectivity-graph operations "
+                "(neighbors, path_between, reachable_from, or "
+                "distance_to(metric='geodesic')) instead, or build "
+                "an allocentric Cartesian env via from_samples / "
+                "from_polygon / from_grid_mask."
+            )
 
     @property
     @check_fitted
@@ -922,9 +1043,8 @@ class Environment(
         """
         return int(self.bin_centers.shape[0])
 
-    @cached_property
     @check_fitted
-    def differential_operator(self) -> sparse.csc_matrix:
+    def get_differential_operator(self) -> sparse.csc_matrix:
         """Compute and cache the differential operator matrix for graph signal processing.
 
         The differential operator D is a sparse matrix of shape (n_bins, n_edges)
@@ -966,11 +1086,11 @@ class Environment(
         >>> data = np.array([[0.0], [1.0], [2.0], [3.0]])
         >>> env = Environment.from_samples(data, bin_size=1.0)
         >>> # Access differential operator (computed and cached)
-        >>> D = env.differential_operator
+        >>> D = env.get_differential_operator()
         >>> D.shape
         (4, 3)
         >>> # Subsequent access reuses cached matrix
-        >>> D2 = env.differential_operator
+        >>> D2 = env.get_differential_operator()
         >>> D is D2
         True
 
@@ -985,8 +1105,13 @@ class Environment(
         .. [2] Shuman et al. (2013). "The emerging field of signal processing on graphs."
                IEEE Signal Processing Magazine, 30(3), 83-98.
         """
+        return self._differential_operator_cached
+
+    @versioned_cached_property
+    def _differential_operator_cached(self) -> sparse.csc_matrix:
         return compute_differential_operator(self)
 
+    @check_fitted
     def copy(self, *, deep: bool = True) -> Environment:
         """Create a copy of the environment.
 
@@ -1071,6 +1196,7 @@ class Environment(
             # Copy metadata
             env_copy.units = self.units
             env_copy.frame = self.frame
+            env_copy.coordinate_kind = self.coordinate_kind
         else:
             # Shallow copy: share references
             env_copy = Environment(
@@ -1084,6 +1210,7 @@ class Environment(
             # Copy metadata
             env_copy.units = self.units
             env_copy.frame = self.frame
+            env_copy.coordinate_kind = self.coordinate_kind
 
         # Always clear caches (regardless of deep/shallow)
         # This ensures caches are rebuilt for the new environment object
@@ -1110,6 +1237,7 @@ class Environment(
         if kernels:
             self._kernel_cache = {}
 
+    @check_fitted
     def clear_cache(
         self,
         *,
@@ -1177,14 +1305,14 @@ class Environment(
         >>> env = Environment.from_samples(data, bin_size=5.0)
         >>>
         >>> # Access some cached properties
-        >>> _ = env.differential_operator
+        >>> _ = env.get_differential_operator()
         >>> _ = env.boundary_bins
         >>>
         >>> # Clear all caches
         >>> env.clear_cache()
         >>>
         >>> # Properties will be recomputed on next access
-        >>> _ = env.differential_operator  # Triggers recomputation
+        >>> _ = env.get_differential_operator()  # Triggers recomputation
 
         Clear only specific cache types:
 
@@ -1200,13 +1328,19 @@ class Environment(
         # Clear explicit caches (KDTree, kernels) selectively
         self._clear_explicit_caches(kdtree=kdtree, kernels=kernels)
 
-        # Clear @cached_property values from instance __dict__ if requested
+        # Clear @cached_property AND @versioned_cached_property values from
+        # instance __dict__ if requested. This avoids maintaining a hardcoded
+        # list that can become stale when adding new cached properties.
         if cached_properties:
-            # Dynamically discover all @cached_property attributes across the class hierarchy
-            # This avoids maintaining a hardcoded list that can become stale when adding
-            # new cached properties to Environment or its mixins.
             for cls in type(self).__mro__:
                 for name, attr in vars(cls).items():
                     if isinstance(attr, cached_property):
-                        # Remove from __dict__ if present (cached_property stores value here)
                         self.__dict__.pop(name, None)
+                    elif isinstance(attr, versioned_cached_property):
+                        # versioned_cached_property uses two keys: the
+                        # value at "_versioned_cache__<name>" and the
+                        # captured version at
+                        # "_versioned_cache__<name>__version".
+                        value_key = f"_versioned_cache__{name}"
+                        self.__dict__.pop(value_key, None)
+                        self.__dict__.pop(f"{value_key}__version", None)

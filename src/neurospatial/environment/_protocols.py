@@ -39,13 +39,18 @@ class EnvironmentProtocol(Protocol):
     regions: Regions
     units: str | None
     frame: str | None
+    # "cartesian" for envs whose bin_centers hold (x, y[, z]); "polar"
+    # for envs from from_polar_egocentric where bin_centers[:, 0] is
+    # distance and bin_centers[:, 1] is angle in radians.
+    coordinate_kind: Literal["cartesian", "polar"]
 
     # Internal/cache attributes that mixins access
     _kernel_cache: dict[
         tuple[float, Literal["transition", "density"]], NDArray[np.float64]
     ]
     _layout_type_used: str | None
-    _is_1d_env: bool
+    _layout_params_used: dict[str, Any]
+    _is_linearized_track_env: bool
     _kdtree_cache: Any  # scipy.spatial.cKDTree, but avoiding import
 
     # Computed properties
@@ -74,7 +79,7 @@ class EnvironmentProtocol(Protocol):
         ...
 
     @property
-    def is_1d(self) -> bool:
+    def is_linearized_track(self) -> bool:
         """
         Whether this is a 1D (linearized) environment.
 
@@ -82,6 +87,30 @@ class EnvironmentProtocol(Protocol):
         -------
         bool
             True if environment supports linearization methods.
+        """
+        ...
+
+    @property
+    def is_polar(self) -> bool:
+        """
+        Whether this environment lives in polar coordinates.
+
+        Returns
+        -------
+        bool
+            True iff ``coordinate_kind == "polar"`` (envs created by
+            ``Environment.from_polar_egocentric``).
+        """
+        ...
+
+    def _check_cartesian(self, method_name: str) -> None:
+        """Raise ``ValueError`` if this env is not Cartesian.
+
+        Mixin methods that interpret inputs as ``(x, y[, z])`` (e.g.
+        ``bin_at``, ``distance_between``, the Euclidean branch of
+        ``distance_to``) call this at the top to fail at the API
+        boundary on a polar env rather than silently treating
+        ``(distance, angle)`` pairs as Cartesian.
         """
         ...
 
@@ -122,15 +151,32 @@ class EnvironmentProtocol(Protocol):
         """
         ...
 
-    @property
-    def differential_operator(self) -> sparse.csc_matrix:
+    def get_differential_operator(self) -> sparse.csc_matrix:
         """
-        Graph Laplacian matrix for diffusion operations.
+        Build (or fetch a cached) edge-oriented differential operator.
+
+        The differential operator ``D`` encodes the oriented edges of
+        the connectivity graph: for each edge ``e = (i, j)`` with weight
+        ``w_e``, ``D[i, e] = -sqrt(w_e)`` and ``D[j, e] = +sqrt(w_e)``.
+        This is **not** the graph Laplacian; the Laplacian is the
+        derived quantity ``L = D @ D.T`` (shape ``(n_bins, n_bins)``).
 
         Returns
         -------
-        scipy.sparse.csc_matrix of shape (n_bins, n_bins)
+        scipy.sparse.csc_matrix of shape (n_bins, n_edges)
             Sparse differential operator matrix.
+
+        Notes
+        -----
+        Method (not property) since v0.4: the underlying computation
+        scales with the connectivity-graph size, so the call surface
+        keeps that cost visible at the call site. The result is cached
+        and invalidated by ``_state_version`` bumps (M5.1).
+
+        See Also
+        --------
+        neurospatial.ops.calculus.compute_differential_operator :
+            The free function that builds ``D`` from an Environment.
         """
         ...
 
@@ -170,9 +216,8 @@ class EnvironmentProtocol(Protocol):
         positions: NDArray[np.float64],
         *,
         dedup: bool = True,
-        return_runs: bool = False,
         outside_value: int | None = -1,
-    ) -> Any:
+    ) -> NDArray[np.int32]:
         """
         Convert a trajectory to a sequence of bin indices.
 
@@ -184,15 +229,30 @@ class EnvironmentProtocol(Protocol):
             Spatial coordinates at each time point.
         dedup : bool, default=True
             If True, remove consecutive duplicate bin indices.
-        return_runs : bool, default=False
-            If True, return run-length encoded sequence.
         outside_value : int or None, default=-1
             Value to use for positions outside environment.
 
         Returns
         -------
-        ndarray or tuple
-            Bin indices, or (bins, run_lengths) if return_runs=True.
+        ndarray
+            Bin indices. Use ``bin_sequence_with_runs`` to also obtain
+            run-length boundaries.
+        """
+        ...
+
+    def bin_sequence_with_runs(
+        self,
+        times: NDArray[np.float64],
+        positions: NDArray[np.float64],
+        *,
+        outside_value: int | None = -1,
+    ) -> Any:
+        """
+        Convert a trajectory to a bin sequence plus per-run boundaries.
+
+        Returns a ``BinSequenceWithRuns`` dataclass with ``bins``,
+        ``run_starts``, and ``run_lengths`` — all shape ``(n_runs,)``.
+        For per-sample bins use ``bin_sequence(dedup=False)`` instead.
         """
         ...
 
@@ -212,19 +272,30 @@ class EnvironmentProtocol(Protocol):
         """
         ...
 
-    def mask_for_region(self, region_name: str) -> NDArray[np.bool_]:
+    def region_mask(
+        self,
+        regions: object,
+        *,
+        include_boundary: bool = True,
+    ) -> NDArray[np.bool_]:
         """
-        Get boolean mask for bins within a named region.
+        Get boolean mask for one or more regions.
 
         Parameters
         ----------
-        region_name : str
-            Name of the region to query.
+        regions : str, list[str], Region, or Regions
+            Region(s) to test against. Strings are looked up in
+            ``self.regions``.
+        include_boundary : bool, default=True
+            Whether bins whose centers lie on a polygon region boundary
+            count as inside (covers vs. contains).
 
         Returns
         -------
         ndarray of shape (n_bins,)
-            Boolean mask where True indicates bin is in region.
+            Boolean mask where True indicates the bin is in any of the
+            named regions. Point regions select the bin containing the
+            point.
         """
         ...
 
@@ -312,7 +383,7 @@ class EnvironmentProtocol(Protocol):
         speed: NDArray[np.float64] | None = None,
         min_speed: float | None = None,
         max_gap: float | None = None,
-        kernel_bandwidth: float | None = None,
+        bandwidth: float | None = None,
         time_allocation: Literal["start", "linear"] = "start",
         return_seconds: bool = True,
     ) -> NDArray[np.float64]:
@@ -331,7 +402,7 @@ class EnvironmentProtocol(Protocol):
             Minimum speed threshold for inclusion.
         max_gap : float, optional
             Maximum time gap before splitting trajectory.
-        kernel_bandwidth : float, optional
+        bandwidth : float, optional
             Bandwidth for smoothing occupancy.
         time_allocation : {'start', 'linear'}, default='start'
             How to allocate time between samples.
@@ -400,7 +471,7 @@ class EnvironmentProtocol(Protocol):
         """
         Convert N-D positions to 1D linear positions.
 
-        Only available for 1D environments (is_1d=True).
+        Only available for 1D environments (is_linearized_track=True).
 
         Parameters
         ----------
@@ -418,7 +489,7 @@ class EnvironmentProtocol(Protocol):
         """
         Convert 1D linear positions to N-D coordinates.
 
-        Only available for 1D environments (is_1d=True).
+        Only available for 1D environments (is_linearized_track=True).
 
         Parameters
         ----------

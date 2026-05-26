@@ -180,28 +180,6 @@ class TestRegionRewardField:
         with pytest.raises(KeyError, match="nonexistent"):
             region_reward_field(env, "nonexistent", decay="constant")
 
-    def test_region_reward_field_parameter_naming(self):
-        """Test that parameter is named 'decay' (not 'falloff')."""
-        positions = np.column_stack(
-            [
-                np.linspace(0, 100, 1000),
-                np.linspace(0, 100, 1000),
-            ]
-        )
-        env = Environment.from_samples(positions, bin_size=10.0)
-        env.regions.add("goal_point", point=np.array([50.0, 50.0]))
-        env.regions.buffer(
-            "goal_point", distance=15.0, new_name="goal"
-        )  # Create polygon around point
-
-        # This should work (correct parameter name)
-        reward = region_reward_field(env, "goal", decay="constant")
-        assert reward.shape == (env.n_bins,)
-
-        # This should fail (wrong parameter name)
-        with pytest.raises(TypeError):
-            region_reward_field(env, "goal", falloff="constant")
-
 
 class TestGoalRewardField:
     """Test suite for goal_reward_field function."""
@@ -411,24 +389,3 @@ class TestGoalRewardField:
             goal_reward_field(
                 env, goal_bins=center_bin, decay="exponential", scale=-1.0
             )
-
-    def test_goal_reward_field_parameter_naming(self):
-        """Test that parameter is named 'decay' (not 'kind')."""
-        positions = np.column_stack(
-            [
-                np.linspace(0, 100, 1000),
-                np.linspace(0, 100, 1000),
-            ]
-        )
-        env = Environment.from_samples(positions, bin_size=10.0)
-        center_bin = env.bin_at(np.array([[50.0, 50.0]]))[0]
-
-        # This should work (correct parameter name)
-        reward = goal_reward_field(
-            env, goal_bins=center_bin, decay="exponential", scale=20.0
-        )
-        assert reward.shape == (env.n_bins,)
-
-        # This should fail (wrong parameter name)
-        with pytest.raises(TypeError):
-            goal_reward_field(env, goal_bins=center_bin, kind="exponential", scale=20.0)

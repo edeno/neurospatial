@@ -307,7 +307,7 @@ def env_all_active_2x2() -> Environment:
     """
     active_mask = np.array([[True, True], [True, True]], dtype=bool)
     grid_edges = (np.array([0.0, 1.0, 2.0]), np.array([0.0, 1.0, 2.0]))
-    return Environment.from_mask(
+    return Environment.from_grid_mask(
         active_mask=active_mask,
         grid_edges=grid_edges,
         name="AllActive2x2",
@@ -568,14 +568,24 @@ def minimal_2d_grid_env() -> Environment:
 
 @pytest.fixture(scope="session")
 def minimal_20x20_grid_env() -> Environment:
-    """Small 20x20 grid for trajectory tests.
+    """Small dense 20x20 grid (every bin active) for trajectory tests.
 
-    Slightly larger than minimal_2d_grid_env for tests needing
-    more spatial resolution.
+    Slightly larger than minimal_2d_grid_env for tests needing more
+    spatial resolution. Every bin in the active mask is covered by a
+    sample so occupancy tests can confidently assert "this position
+    lands in this bin" rather than relying on KDTree nearest-neighbor
+    smearing out-of-mask samples to the nearest in-env corner. (The
+    earlier fixture built the env from just the two sample points
+    [(0,0), (20,20)], so every intermediate coordinate fell outside the
+    active mask -- the M1 1.2 ``bin_at`` switch in
+    ``Environment.occupancy`` exposed this implicit dependency on the
+    silent-wrong behavior.)
 
     Use for: Trajectory occupancy tests, gap handling tests.
     """
-    data = np.array([[0, 0], [20, 20]], dtype=np.float64)
+    x = np.linspace(0.0, 20.0, 21)
+    xx, yy = np.meshgrid(x, x)
+    data = np.column_stack([xx.ravel(), yy.ravel()])
     return Environment.from_samples(data, bin_size=5.0)
 
 
@@ -616,7 +626,7 @@ def simple_3d_env() -> Environment:
     Creates a fully populated 5x5x5 grid (125 bins) with diagonal connectivity.
     Uses bin_size=2.0 covering [0, 10] in each dimension.
 
-    Deterministic: Uses from_mask() with all-True mask for reproducible
+    Deterministic: Uses from_grid_mask() with all-True mask for reproducible
     bin structure across all runs.
 
     Session-scoped for performance: Environment is read-only in tests,
@@ -628,7 +638,7 @@ def simple_3d_env() -> Environment:
     edges = np.array([0.0, 2.0, 4.0, 6.0, 8.0, 10.0])
     grid_edges = (edges, edges, edges)
 
-    env = Environment.from_mask(
+    env = Environment.from_grid_mask(
         active_mask=mask,
         grid_edges=grid_edges,
         name="Simple3DEnv",

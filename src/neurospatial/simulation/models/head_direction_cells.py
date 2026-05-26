@@ -68,7 +68,7 @@ class HeadDirectionCellModel:
     >>>
     >>> # Peak should be near π/2
     >>> peak_idx = np.argmax(rates)
-    >>> abs(headings[peak_idx] - np.pi / 2) < 0.1
+    >>> bool(abs(headings[peak_idx] - np.pi / 2) < 0.1)
     True
 
     Multiple HD cells with uniform preferred directions:
@@ -97,7 +97,10 @@ class HeadDirectionCellModel:
     >>> # Create environment and trajectory
     >>> samples = np.random.uniform(0, 100, (1000, 2))
     >>> env = Environment.from_samples(samples, bin_size=2.0)
-    >>> positions, times = simulate_trajectory_ou(env, duration=10.0, seed=42)
+    >>> env.units = "cm"  # required for simulate_trajectory_ou (M4.5)
+    >>> positions, times = simulate_trajectory_ou(
+    ...     env, duration=10.0, seed=42, speed_units="cm"
+    ... )
     >>>
     >>> # Compute heading from velocity
     >>> dt = times[1] - times[0]
@@ -147,6 +150,7 @@ class HeadDirectionCellModel:
 
     def __init__(
         self,
+        *,
         preferred_direction: float | None = None,
         concentration: float = 2.0,
         max_rate: float = 40.0,
@@ -179,14 +183,15 @@ class HeadDirectionCellModel:
 
         # Validate rates
         if max_rate < 0:
-            raise ValueError(f"max_rate must be non-negative, got {max_rate}.")
+            raise ValueError(f"max_rate must be non-negative (Hz), got {max_rate}.")
         if baseline_rate < 0:
             raise ValueError(
-                f"baseline_rate must be non-negative, got {baseline_rate}."
+                f"baseline_rate must be non-negative (Hz), got {baseline_rate}."
             )
         if baseline_rate > max_rate:
             raise ValueError(
-                f"baseline_rate ({baseline_rate}) cannot exceed max_rate ({max_rate})."
+                f"baseline_rate ({baseline_rate} Hz) cannot exceed "
+                f"max_rate ({max_rate} Hz)."
             )
 
         self.max_rate = float(max_rate)

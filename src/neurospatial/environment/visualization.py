@@ -222,6 +222,7 @@ class EnvironmentVisualization:
 
         return ax
 
+    @check_fitted
     def plot_1d(
         self: SelfEnv,
         ax: matplotlib.axes.Axes | None = None,
@@ -230,7 +231,7 @@ class EnvironmentVisualization:
     ) -> matplotlib.axes.Axes | None:
         """Plot a 1D representation of the environment, if applicable.
 
-        This method is primarily for environments where `is_1d` is True
+        This method is primarily for environments where `is_linearized_track` is True
         (e.g., using `GraphLayout`). It calls the `plot_linear_layout`
         method of the underlying layout if it exists and the layout is 1D.
 
@@ -255,7 +256,7 @@ class EnvironmentVisualization:
         RuntimeError
             If called before the environment is fitted.
         AttributeError
-            If `self.layout.is_1d` is True but the layout does not have a
+            If `self.layout.is_linearized_track` is True but the layout does not have a
             `plot_linear_layout` method.
 
         Examples
@@ -268,13 +269,13 @@ class EnvironmentVisualization:
         >>> env = Environment.from_graph(
         ...     track_graph, track_graph_name="test_track"
         ... )  # doctest: +SKIP
-        >>> if env.is_1d:  # doctest: +SKIP
+        >>> if env.is_linearized_track:  # doctest: +SKIP
         ...     ax = env.plot_1d()  # doctest: +SKIP
 
         """
         l_kwargs = layout_plot_kwargs if layout_plot_kwargs is not None else {}
         l_kwargs.update(kwargs)  # Allow direct kwargs to override for layout.plot
-        if self.layout.is_1d:
+        if self.layout.is_linearized_track:
             if hasattr(self.layout, "plot_linear_layout"):
                 ax = self.layout.plot_linear_layout(ax=ax, **l_kwargs)
             else:
@@ -282,11 +283,13 @@ class EnvironmentVisualization:
                     f"Layout '{self._layout_type_used}' is 1D but does not "
                     "have a 'plot_linear_layout' method. Skipping 1D plot.",
                     UserWarning,
+                    stacklevel=2,
                 )
         else:
             warnings.warn(
                 "Environment is not 1D. Skipping 1D plot. Use regular plot() method.",
                 UserWarning,
+                stacklevel=2,
             )
 
         return ax
@@ -436,12 +439,18 @@ class EnvironmentVisualization:
             )
 
         # Check dimensionality for spatial plots
-        if not self.layout.is_1d and self.n_dims > 2:
+        if not self.layout.is_linearized_track and self.n_dims > 2:
             raise NotImplementedError(
                 f"Cannot plot {self.n_dims}D fields spatially. "
                 "Only 1D and 2D environments are supported. "
                 "Consider using marginal plots, slicing, or 3D scatter plots instead."
             )
+
+        # Polar envs render via the same dispatch but with polar-aware
+        # axis labels and aspect ratio (M1 1.3): bin_centers[:, 0] is
+        # distance (env units), bin_centers[:, 1] is angle in radians.
+        # The label switch happens at the bottom of this method, after
+        # dispatch.
 
         # Create axes if needed
         if ax is None:
@@ -509,7 +518,7 @@ class EnvironmentVisualization:
             mappable = _plot_trimesh_field(
                 self, field, ax, cmap, vmin, vmax, nan_color, rasterized, **kwargs
             )
-        elif self.layout.is_1d:
+        elif self.layout.is_linearized_track:
             mappable = _plot_1d_field(self, field, ax, colorbar_label, **kwargs)
         else:
             mappable = _plot_scatter_field(
@@ -518,18 +527,27 @@ class EnvironmentVisualization:
 
         # Add colorbar (not for 1D)
         # Note: mappable can be None if all field values are NaN and nan_color=None
-        if colorbar and mappable is not None and not self.layout.is_1d:
+        if colorbar and mappable is not None and not self.layout.is_linearized_track:
             cbar = plt.colorbar(mappable, ax=ax)
             if colorbar_label:
                 cbar.set_label(colorbar_label, fontsize=12)
             cbar.ax.tick_params(labelsize=10)
 
-        # Format axes
-        if not self.layout.is_1d:
-            ax.set_aspect("equal")
+        # Format axes. Polar envs (from from_polar_egocentric) carry
+        # bin_centers as (distance, angle in radians), not (x, y), so
+        # the default "X Position" / "Y Position" labels are silently
+        # wrong; relabel and skip the equal-aspect lock (a polar map's
+        # angular extent is fixed by bin_centers[:, 1] but its distance
+        # extent is independent and physical).
+        if not self.layout.is_linearized_track:
             unit_label = f" ({self.units})" if self.units else ""
-            ax.set_xlabel(f"X Position{unit_label}", fontsize=12)
-            ax.set_ylabel(f"Y Position{unit_label}", fontsize=12)
+            if self.is_polar:
+                ax.set_xlabel(f"Distance{unit_label}", fontsize=12)
+                ax.set_ylabel("Angle (rad)", fontsize=12)
+            else:
+                ax.set_aspect("equal")
+                ax.set_xlabel(f"X Position{unit_label}", fontsize=12)
+                ax.set_ylabel(f"Y Position{unit_label}", fontsize=12)
 
             if self.dimension_ranges and len(self.dimension_ranges) >= 2:
                 ax.set_xlim(self.dimension_ranges[0])
@@ -545,6 +563,7 @@ class EnvironmentVisualization:
         self: SelfEnv,
         fields: Sequence[NDArray[np.float64]] | NDArray[np.float64],
         *,
+        frame_times: NDArray[np.float64],
         backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",
         save_path: str | None = None,
         speed: float = 1.0,
@@ -565,7 +584,6 @@ class EnvironmentVisualization:
         show_colorbar: bool = False,
         colorbar_label: str = "",
         overlays: list[OverlayProtocol] | None = None,
-        frame_times: NDArray[np.float64],
         show_regions: bool | list[str] = False,
         region_alpha: float = 0.3,
         scale_bar: bool | ScaleBarConfig = False,

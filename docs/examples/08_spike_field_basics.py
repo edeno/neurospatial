@@ -91,7 +91,7 @@ WONG_COLORS = {
 #
 # We'll use the `neurospatial.simulation` subpackage to generate realistic trajectories and spike trains. This subpackage provides:
 #
-# - **`simulate_trajectory_ou()`**: Ornstein-Uhlenbeck random walk with biologically-realistic movement
+# - **`simulate_trajectory_ou(speed_units="cm")`**: Ornstein-Uhlenbeck random walk with biologically-realistic movement
 # - **`PlaceCellModel`**: Gaussian place field model with ground truth tracking
 # - **`generate_poisson_spikes()`**: Poisson spike generation with refractory period handling
 #
@@ -119,7 +119,8 @@ positions, times = simulate_trajectory_ou(
     speed_std=0.4,  # cm/s (speed variability)
     coherence_time=0.7,  # seconds (smooth, persistent movement)
     boundary_mode="reflect",  # Reflect at boundaries for better 2D exploration
-    seed=42,  # Seed produces uniform spatial coverage with rotational OU
+    seed=42,  # Seed produces uniform spatial coverage with rotational OU,
+    speed_units="cm",
 )
 
 # 3. Create place cell model with Gaussian tuning
@@ -133,7 +134,7 @@ place_cell = PlaceCellModel(
     width=tuning_width,
     max_rate=peak_rate,
     baseline_rate=0.001,  # Minimal baseline firing
-    distance_metric="euclidean",
+    metric="euclidean",
 )
 
 # 4. Generate spike train from place cell firing rates

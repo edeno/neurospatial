@@ -162,8 +162,8 @@ class TestOccupancy:
         times = np.array([0.0, 1.0, 2.0])
         positions = np.tile(medium_2d_env.bin_centers[0:1], (3, 1))
 
-        occ_raw = medium_2d_env.occupancy(times, positions, kernel_bandwidth=None)
-        occ_smooth = medium_2d_env.occupancy(times, positions, kernel_bandwidth=5.0)
+        occ_raw = medium_2d_env.occupancy(times, positions, bandwidth=None)
+        occ_smooth = medium_2d_env.occupancy(times, positions, bandwidth=5.0)
 
         # Smoothing should preserve total mass
         assert np.sum(occ_smooth) == pytest.approx(np.sum(occ_raw))
@@ -294,21 +294,20 @@ class TestBinSequence:
             ]
         )
 
-        bins, starts, ends = small_2d_env.bin_sequence(
-            times, positions, dedup=True, return_runs=True
-        )
+        _bsr = small_2d_env.bin_sequence_with_runs(times, positions)
+        bins, starts, lengths = _bsr.bins, _bsr.run_starts, _bsr.run_lengths
 
         # Deduplicated bins: [0, 1, 2]
         assert_array_equal(bins, [0, 1, 2])
-        # Run 1: indices 0-1
+        # Run 1: indices 0-1 (length 2)
         assert starts[0] == 0
-        assert ends[0] == 1
-        # Run 2: indices 2-3
+        assert lengths[0] == 2
+        # Run 2: indices 2-3 (length 2)
         assert starts[1] == 2
-        assert ends[1] == 3
-        # Run 3: indices 4-5
+        assert lengths[1] == 2
+        # Run 3: indices 4-5 (length 2)
         assert starts[2] == 4
-        assert ends[2] == 5
+        assert lengths[2] == 2
 
     def test_bin_sequence_empty_input(self, small_2d_env):
         """Test bin sequence with empty input."""
@@ -324,13 +323,12 @@ class TestBinSequence:
         times = np.array([])
         positions = np.empty((0, small_2d_env.n_dims))
 
-        bins, starts, ends = small_2d_env.bin_sequence(
-            times, positions, return_runs=True
-        )
+        _bsr = small_2d_env.bin_sequence_with_runs(times, positions)
+        bins, starts, lengths = _bsr.bins, _bsr.run_starts, _bsr.run_lengths
 
         assert len(bins) == 0
         assert len(starts) == 0
-        assert len(ends) == 0
+        assert len(lengths) == 0
 
     def test_bin_sequence_validates_monotonic_times(self, small_2d_env):
         """Test that non-monotonic times raise error."""
@@ -359,8 +357,14 @@ class TestBinSequence:
         # All dropped
         assert len(bins) == 0
 
-    def test_bin_sequence_runs_without_dedup(self, small_2d_env):
-        """Test run boundaries without deduplication."""
+    def test_bin_sequence_with_runs_per_run_shape(self, small_2d_env):
+        """``bin_sequence_with_runs`` always returns one entry per run.
+
+        The per-run view is intrinsically deduplicated — ``bins``,
+        ``run_starts``, and ``run_lengths`` all share shape
+        ``(n_runs,)``. For per-sample bins use
+        ``bin_sequence(dedup=False)``.
+        """
         times = np.array([0.0, 1.0, 2.0, 3.0])
         positions = np.array(
             [
@@ -371,18 +375,18 @@ class TestBinSequence:
             ]
         )
 
-        bins, starts, ends = small_2d_env.bin_sequence(
-            times, positions, dedup=False, return_runs=True
-        )
+        _bsr = small_2d_env.bin_sequence_with_runs(times, positions)
+        bins, starts, lengths = _bsr.bins, _bsr.run_starts, _bsr.run_lengths
 
-        # No dedup: bins = [0, 0, 1, 1]
-        assert_array_equal(bins, [0, 0, 1, 1])
-        # Run 1: indices 0-1 (bin 0)
+        # One entry per run (n_runs=2 here).
+        assert_array_equal(bins, [0, 1])
+        assert bins.shape == starts.shape == lengths.shape == (2,)
+        # Run 1: indices 0-1 (bin 0, length 2)
         assert starts[0] == 0
-        assert ends[0] == 1
-        # Run 2: indices 2-3 (bin 1)
+        assert lengths[0] == 2
+        # Run 2: indices 2-3 (bin 1, length 2)
         assert starts[1] == 2
-        assert ends[1] == 3
+        assert lengths[1] == 2
 
 
 class TestTransitionMatrix:
@@ -671,9 +675,8 @@ class TestTrajectoryIntegration:
         occ = small_2d_env.occupancy(times, positions)
 
         # Get bin sequence with runs
-        bins, starts, ends = small_2d_env.bin_sequence(
-            times, positions, dedup=True, return_runs=True
-        )
+        _bsr = small_2d_env.bin_sequence_with_runs(times, positions)
+        bins, starts, ends = _bsr.bins, _bsr.run_starts, _bsr.run_lengths
 
         # Compute occupancy from runs
         occ_from_runs = np.zeros(small_2d_env.n_bins)

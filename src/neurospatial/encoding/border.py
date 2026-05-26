@@ -28,7 +28,7 @@ def border_score(
     *,
     threshold: float = 0.3,
     min_area: float = 0.0,
-    distance_metric: Literal["geodesic", "euclidean"] = "geodesic",
+    metric: Literal["geodesic", "euclidean"] = "geodesic",
 ) -> float:
     """
     Compute border score for a spatial firing rate map.
@@ -51,7 +51,7 @@ def border_score(
         smaller than this return NaN. Default is 0.0 (no filtering). For rat
         hippocampal data, Solstad et al. (2008) used 200 cm². Adjust based on
         your bin size and environment scale.
-    distance_metric : {'geodesic', 'euclidean'}, optional
+    metric : {'geodesic', 'euclidean'}, optional
         Distance metric for computing distance from field bins to boundary bins.
         - 'geodesic': Graph shortest path distance (default). Respects environment
           connectivity, appropriate for irregular environments or those with obstacles.
@@ -190,10 +190,8 @@ def border_score(
     if min_area < 0:
         raise ValueError(f"min_area must be non-negative, got {min_area}")
 
-    if distance_metric not in ("geodesic", "euclidean"):
-        raise ValueError(
-            f"distance_metric must be 'geodesic' or 'euclidean', got '{distance_metric}'"
-        )
+    if metric not in ("geodesic", "euclidean"):
+        raise ValueError(f"metric must be 'geodesic' or 'euclidean', got '{metric}'")
 
     # Handle all-NaN or all-zero
     if np.all(np.isnan(firing_rate)) or np.all(firing_rate == 0):
@@ -214,7 +212,7 @@ def border_score(
     # Check field area (sum of bin areas)
     from neurospatial.encoding._field_metrics import field_size
 
-    area = field_size(field_bins, env)
+    area = field_size(env, field_bins)
     if area < min_area:
         return np.nan
 
@@ -231,7 +229,7 @@ def border_score(
     coverage = np.sum(boundary_in_field) / len(boundary_bins)
 
     # Compute mean distance from field bins to nearest boundary bin
-    if distance_metric == "geodesic":
+    if metric == "geodesic":
         # Use multi-source Dijkstra for efficiency (single pass for all boundary bins)
         try:
             # Compute shortest distances from ALL boundary bins to all reachable nodes
@@ -240,8 +238,23 @@ def border_score(
                 sources=boundary_bins.tolist(),
                 weight="distance",
             )
-        except Exception:
-            return np.nan
+        except Exception as exc:
+            # Multi-source Dijkstra is the only failure mode reachable
+            # here (NetworkXError on a graph with missing 'distance'
+            # weights, negative weights, or similar). Re-raise as
+            # RuntimeError rather than swallowing-to-NaN: the batch
+            # wrapper (batch_border_scores) catches RuntimeError /
+            # ValueError to populate its `failures` mask, and a
+            # silent-NaN here would be invisible to that mask. Direct
+            # callers who want lenient behavior can wrap in their own
+            # try/except.
+            raise RuntimeError(
+                f"border_score: geodesic distance computation failed "
+                f"({type(exc).__name__}: {exc}). Pass "
+                "`metric='euclidean'` to use straight-line "
+                "distance instead, or check that the environment's "
+                "connectivity graph has finite 'distance' edge weights."
+            ) from exc
 
         # For each field bin, get distance to nearest boundary (vectorized lookup)
         # Convert dict to array for fast indexing
@@ -263,7 +276,7 @@ def border_score(
 
         mean_distance = float(np.mean(distances_to_boundary))
 
-    else:  # distance_metric == "euclidean"
+    else:  # metric == "euclidean"
         # Compute Euclidean distances in physical space (vectorized)
         boundary_positions = env.bin_centers[boundary_bins]
         field_positions = env.bin_centers[field_bins]
@@ -352,7 +365,7 @@ def compute_region_coverage(
     >>>
     >>> # Create field along north wall
     >>> firing_rate = np.zeros(env.n_bins)
-    >>> north_bins = np.where(env.mask_for_region("north"))[0]
+    >>> north_bins = np.where(env.region_mask("north"))[0]
     >>> firing_rate[north_bins] = 5.0
     >>> field_bins = np.where(firing_rate > 0)[0]
     >>>
@@ -397,7 +410,7 @@ def compute_region_coverage(
     coverage = {}
     for region_name in regions:
         # Get bins in this region
-        region_mask = env.mask_for_region(region_name)
+        region_mask = env.region_mask(region_name)
         region_bins = np.where(region_mask)[0]
 
         if len(region_bins) == 0:

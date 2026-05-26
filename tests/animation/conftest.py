@@ -219,7 +219,7 @@ def masked_env() -> Environment:
     # mask shape must match (len(x_edges)-1, len(y_edges)-1) = (20, 16)
     mask = np.ones((20, 16), dtype=bool)
 
-    return Environment.from_mask(
+    return Environment.from_grid_mask(
         mask,
         grid_edges=(x_edges, y_edges),
         name="MaskedGridEnv",

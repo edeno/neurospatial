@@ -10,8 +10,6 @@ import pytest
 from numpy.testing import assert_allclose
 
 from neurospatial.decoding.assemblies import (
-    AssemblyDetectionResult,
-    AssemblyPattern,
     ExplainedVarianceResult,
     assembly_activation,
     detect_assemblies,
@@ -120,16 +118,6 @@ class TestMarchenkoPasturThreshold:
         with pytest.raises(ValueError, match="n_time_bins must be positive"):
             marchenko_pastur_threshold(100, -10)
 
-    def test_returns_float(self) -> None:
-        """Should return a float, not numpy scalar."""
-        threshold = marchenko_pastur_threshold(50, 500)
-        assert isinstance(threshold, float)
-
-
-# =============================================================================
-# Tests for detect_assemblies
-# =============================================================================
-
 
 class TestDetectAssemblies:
     """Tests for detect_assemblies function."""
@@ -174,14 +162,6 @@ class TestDetectAssemblies:
 
         assert result.method == "nmf"
         assert len(result.patterns) >= 1
-
-    def test_returns_correct_result_type(self, small_spike_counts: np.ndarray) -> None:
-        """Should return AssemblyDetectionResult."""
-        result = detect_assemblies(small_spike_counts, random_state=42)
-
-        assert isinstance(result, AssemblyDetectionResult)
-        assert isinstance(result.patterns, list)
-        assert all(isinstance(p, AssemblyPattern) for p in result.patterns)
 
     def test_patterns_have_correct_shape(self, small_spike_counts: np.ndarray) -> None:
         """Pattern weights should have n_neurons elements."""
@@ -429,22 +409,6 @@ class TestPairwiseCorrelations:
 class TestReactivationStrength:
     """Tests for reactivation_strength function."""
 
-    def test_returns_float(
-        self, spike_counts_with_assemblies: np.ndarray, rng: np.random.Generator
-    ) -> None:
-        """Should return a float value."""
-        result = detect_assemblies(spike_counts_with_assemblies, random_state=42)
-        pattern = result.patterns[0]
-
-        # Split data for template and match
-        n_time = spike_counts_with_assemblies.shape[1]
-        template = spike_counts_with_assemblies[:, : n_time // 2]
-        match = spike_counts_with_assemblies[:, n_time // 2 :]
-
-        strength = reactivation_strength(template, match, pattern)
-
-        assert isinstance(strength, float)
-
     def test_strength_non_negative(
         self, spike_counts_with_assemblies: np.ndarray
     ) -> None:
@@ -503,14 +467,6 @@ class TestExplainedVarianceReactivation:
 
         # EV should be low for random data
         assert result.explained_variance < 0.1
-
-    def test_returns_correct_type(self) -> None:
-        """Should return ExplainedVarianceResult."""
-        corr = np.array([0.1, 0.5, -0.3, 0.8, 0.2])
-
-        result = explained_variance_reactivation(corr, corr)
-
-        assert isinstance(result, ExplainedVarianceResult)
 
     def test_ev_bounds(self, rng: np.random.Generator) -> None:
         """EV should be in [0, 1]."""

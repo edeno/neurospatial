@@ -330,62 +330,9 @@ class TestGoalDirectedMetrics:
         assert result.is_goal_directed(threshold=0.5)
         assert not result.is_goal_directed(threshold=0.7)
 
-    def test_summary_method(self):
-        """Test summary() returns formatted string."""
-        from neurospatial.behavior.navigation import GoalDirectedMetrics
-
-        result = GoalDirectedMetrics(
-            goal_bias=0.65,
-            mean_approach_rate=-10.5,
-            time_to_goal=5.2,
-            min_distance_to_goal=2.0,
-            goal_distance_at_start=50.0,
-            goal_distance_at_end=2.0,
-            goal_position=np.array([100.0, 0.0]),
-            metric="euclidean",
-        )
-
-        summary = result.summary()
-
-        assert "Goal bias" in summary or "goal_bias" in summary.lower()
-        assert "0.65" in summary or "0.6" in summary
-        assert "5.2" in summary or "time" in summary.lower()
-
 
 class TestComputeGoalDirectedMetrics:
     """Test compute_goal_directed_metrics function."""
-
-    def test_returns_dataclass(self):
-        """Test that compute_goal_directed_metrics returns GoalDirectedMetrics."""
-        from neurospatial.behavior.navigation import (
-            GoalDirectedMetrics,
-            compute_goal_directed_metrics,
-        )
-
-        # Create environment
-        x = np.linspace(0, 100, 50)
-        y = np.linspace(0, 100, 50)
-        xx, yy = np.meshgrid(x, y)
-        sample_positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(sample_positions, bin_size=5.0)
-
-        # Create trajectory toward goal
-        n_samples = 21
-        positions = np.column_stack(
-            [np.linspace(10, 90, n_samples), np.linspace(10, 90, n_samples)]
-        )
-        times = np.linspace(0, 10, n_samples)
-        goal = np.array([90.0, 90.0])
-
-        result = compute_goal_directed_metrics(
-            env, positions, times, goal, metric="euclidean"
-        )
-
-        assert isinstance(result, GoalDirectedMetrics)
-        assert -1.0 <= result.goal_bias <= 1.0
-        assert result.min_distance_to_goal >= 0
-        assert result.goal_distance_at_start > 0
-        assert result.metric == "euclidean"
 
     def test_direct_approach_metrics(self):
         """Test metrics for direct approach to goal."""

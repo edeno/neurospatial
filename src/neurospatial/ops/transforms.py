@@ -1433,13 +1433,27 @@ def apply_transform_to_environment(
 
     """
     from neurospatial.environment import Environment
+    from neurospatial.environment.decorators import EnvironmentNotFittedError
     from neurospatial.regions import Region, Regions
 
     # Validate
     if not getattr(env, "_is_fitted", False):
-        raise RuntimeError(
-            "Environment must be fitted before applying transforms. "
-            "Use a factory method like Environment.from_samples()."
+        raise EnvironmentNotFittedError(
+            "apply_transform_to_environment", is_function=True
+        )
+
+    # Refuse polar envs. An affine transform on bin_centers that
+    # actually carry (distance, angle in radians) pairs produces
+    # geometric nonsense -- and the resulting env would silently
+    # reset to coordinate_kind="cartesian" because that's the field
+    # default on the freshly built env. Fail at the boundary instead.
+    if getattr(env, "coordinate_kind", "cartesian") != "cartesian":
+        raise ValueError(
+            "apply_transform requires a Cartesian environment but got "
+            f"coordinate_kind={env.coordinate_kind!r} "
+            "(an affine transform on (distance, angle) pairs is not "
+            "geometrically meaningful). For polar envs, work in the "
+            "egocentric coordinate space directly."
         )
 
     # Validate dimensionality match
@@ -1520,7 +1534,7 @@ def apply_transform_to_environment(
             self.bin_centers = centers
             self.connectivity = graph
             self.dimension_ranges = dim_ranges
-            self.is_1d = original_layout.is_1d
+            self.is_linearized_track = original_layout.is_linearized_track
             self._layout_type_tag = f"{original_layout._layout_type_tag}_transformed"
             self._build_params_used = {
                 **getattr(original_layout, "_build_params_used", {}),

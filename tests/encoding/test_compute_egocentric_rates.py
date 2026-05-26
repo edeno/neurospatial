@@ -5,7 +5,7 @@ Tests cover:
 - Import and API surface
 - Return type and shapes
 - Spike time formats (list of arrays, 2D NaN-padded)
-- Parameter handling (distance_range, n_bins, distance_metric, smoothing)
+- Parameter handling (distance_range, n_bins, metric, smoothing)
 - Edge cases (empty list, single neuron, empty spike trains)
 - Input validation
 - Consistency with single-neuron compute_egocentric_rate(None)
@@ -172,8 +172,8 @@ class TestComputeEgocentricRatesReturnsResult:
         n_bins = n_distance_bins * n_direction_bins
         assert result.occupancy.shape == (n_bins,)
 
-    def test_ego_env_is_environment(self, trajectory_data, spike_times_list):
-        """Test that ego_env is an Environment."""
+    def test_env_is_environment(self, trajectory_data, spike_times_list):
+        """Test that env is an Environment."""
         from neurospatial.encoding.egocentric import compute_egocentric_rates
         from neurospatial.environment import Environment
 
@@ -186,10 +186,10 @@ class TestComputeEgocentricRatesReturnsResult:
             trajectory_data["object_positions"],
         )
 
-        assert isinstance(result.ego_env, Environment)
+        assert isinstance(result.env, Environment)
 
-    def test_ego_env_n_bins_matches_occupancy(self, trajectory_data, spike_times_list):
-        """Test ego_env.n_bins matches occupancy length."""
+    def test_env_n_bins_matches_occupancy(self, trajectory_data, spike_times_list):
+        """Test env.n_bins matches occupancy length."""
         from neurospatial.encoding.egocentric import compute_egocentric_rates
 
         result = compute_egocentric_rates(
@@ -201,7 +201,7 @@ class TestComputeEgocentricRatesReturnsResult:
             trajectory_data["object_positions"],
         )
 
-        assert result.ego_env.n_bins == len(result.occupancy)
+        assert result.env.n_bins == len(result.occupancy)
 
 
 # =============================================================================
@@ -325,8 +325,8 @@ class TestComputeEgocentricRatesParameters:
 
         assert result.n_direction_bins == n_direction_bins
 
-    def test_distance_metric_euclidean_default(self, trajectory_data, spike_times_list):
-        """Test that distance_metric defaults to euclidean."""
+    def test_metric_euclidean_default(self, trajectory_data, spike_times_list):
+        """Test that metric defaults to euclidean."""
         from neurospatial.encoding.egocentric import compute_egocentric_rates
 
         # Should work without env parameter
@@ -522,11 +522,11 @@ class TestComputeEgocentricRatesInputValidation:
                 smoothing_method="invalid",  # type: ignore[arg-type]
             )
 
-    def test_invalid_distance_metric_raises(self, trajectory_data, spike_times_list):
-        """Test that invalid distance_metric raises ValueError."""
+    def test_invalid_metric_raises(self, trajectory_data, spike_times_list):
+        """Test that invalid metric raises ValueError."""
         from neurospatial.encoding.egocentric import compute_egocentric_rates
 
-        with pytest.raises(ValueError, match="Invalid distance_metric"):
+        with pytest.raises(ValueError, match="Invalid metric"):
             compute_egocentric_rates(
                 None,
                 spike_times_list,
@@ -534,7 +534,7 @@ class TestComputeEgocentricRatesInputValidation:
                 trajectory_data["positions"],
                 trajectory_data["headings"],
                 trajectory_data["object_positions"],
-                distance_metric="invalid",
+                metric="invalid",
             )
 
     def test_geodesic_without_env_raises(self, trajectory_data, spike_times_list):
@@ -549,7 +549,7 @@ class TestComputeEgocentricRatesInputValidation:
                 trajectory_data["positions"],
                 trajectory_data["headings"],
                 trajectory_data["object_positions"],
-                distance_metric="geodesic",
+                metric="geodesic",
             )
 
     def test_mismatched_times_positions_raises(self, trajectory_data, spike_times_list):
@@ -726,7 +726,7 @@ class TestComputeEgocentricRatesSignature:
             "distance_range",
             "n_distance_bins",
             "n_direction_bins",
-            "distance_metric",
+            "metric",
             "smoothing_method",
             "bandwidth",
             "min_occupancy",
@@ -764,7 +764,7 @@ class TestComputeEgocentricRatesGeodesic:
             trajectory_data["positions"],
             trajectory_data["headings"],
             trajectory_data["object_positions"],
-            distance_metric="geodesic",
+            metric="geodesic",
         )
 
         assert result is not None
@@ -908,9 +908,9 @@ class TestComputeEgocentricRatesResultMethods:
             trajectory_data["object_positions"],
         )
 
-        is_ovc = result.detect_ovcs()
-        assert len(is_ovc) == len(spike_times_list)
-        assert is_ovc.dtype == bool
+        is_object_vector_cell = result.detect_ovcs()
+        assert len(is_object_vector_cell) == len(spike_times_list)
+        assert is_object_vector_cell.dtype == bool
 
     def test_to_dataframe_method_works(self, trajectory_data, spike_times_list):
         """Test that to_dataframe method works."""

@@ -56,7 +56,7 @@ Transform landmark positions to egocentric coordinates:
 >>> landmarks = np.array([[10.0, 0.0], [0.0, 10.0]])  # 2 landmarks
 >>> positions = np.array([[0.0, 0.0]])  # Animal at origin
 >>> headings = np.array([0.0])  # Facing East
->>> ego = allocentric_to_egocentric(landmarks, positions, headings)
+>>> ego = allocentric_to_egocentric(positions, headings, landmarks)
 >>> ego.shape
 (1, 2, 2)
 
@@ -185,20 +185,20 @@ class EgocentricFrame:
 
 
 def allocentric_to_egocentric(
-    points: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
+    points: NDArray[np.float64],
 ) -> NDArray[np.float64]:
     """Batch transform allocentric points to egocentric coordinates.
 
     Parameters
     ----------
-    points : NDArray, shape (n_points, 2) or (n_time, n_points, 2)
-        Points to transform. If 2D, same points transformed at each time.
     positions : NDArray, shape (n_time, 2)
         Animal position at each time.
     headings : NDArray, shape (n_time,)
         Animal heading at each time (radians).
+    points : NDArray, shape (n_points, 2) or (n_time, n_points, 2)
+        Points to transform. If 2D, same points transformed at each time.
 
     Returns
     -------
@@ -215,7 +215,7 @@ def allocentric_to_egocentric(
     >>> landmarks = np.array([[10.0, 0.0], [0.0, 10.0]])  # 2 landmarks
     >>> positions = np.array([[0.0, 0.0], [0.0, 0.0]])  # Animal at origin
     >>> headings = np.array([0.0, np.pi / 2])  # Facing East, then North
-    >>> ego = allocentric_to_egocentric(landmarks, positions, headings)
+    >>> ego = allocentric_to_egocentric(positions, headings, landmarks)
     >>> ego.shape
     (2, 2, 2)
 
@@ -311,9 +311,9 @@ def allocentric_to_egocentric(
 
 
 def egocentric_to_allocentric(
-    ego_points: NDArray[np.float64],
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
+    ego_points: NDArray[np.float64],
 ) -> NDArray[np.float64]:
     """Batch transform egocentric points to allocentric coordinates.
 
@@ -321,10 +321,12 @@ def egocentric_to_allocentric(
 
     Parameters
     ----------
-    ego_points : NDArray, shape (n_time, n_points, 2)
-        Points in egocentric coordinates.
     positions : NDArray, shape (n_time, 2)
         Animal position at each time in allocentric coordinates.
+    headings : NDArray, shape (n_time,)
+        Animal heading at each time (radians).
+    ego_points : NDArray, shape (n_time, n_points, 2)
+        Points in egocentric coordinates.
     headings : NDArray, shape (n_time,)
         Animal heading at each time (radians).
 
@@ -346,8 +348,8 @@ def egocentric_to_allocentric(
     >>> landmarks = np.array([[10.0, 0.0], [0.0, 10.0]])
     >>> positions = np.array([[5.0, 5.0]])
     >>> headings = np.array([np.pi / 4])
-    >>> ego = allocentric_to_egocentric(landmarks, positions, headings)
-    >>> recovered = egocentric_to_allocentric(ego, positions, headings)
+    >>> ego = allocentric_to_egocentric(positions, headings, landmarks)
+    >>> recovered = egocentric_to_allocentric(positions, headings, ego)
     >>> np.allclose(recovered[0], landmarks)
     True
     """
@@ -424,7 +426,7 @@ def compute_egocentric_bearing(
     True
     """
     # Transform targets to egocentric coordinates
-    ego = allocentric_to_egocentric(targets, positions, headings)
+    ego = allocentric_to_egocentric(positions, headings, targets)
 
     # Compute bearing using arctan2
     bearing = np.arctan2(ego[..., 1], ego[..., 0])
@@ -587,28 +589,33 @@ def heading_from_velocity(
     dt: float,
     *,
     min_speed: float = 0.0,
-    smoothing_sigma: float = 0.0,
+    bandwidth: float = 0.0,
 ) -> NDArray[np.float64]:
     """Compute heading from position timeseries using velocity direction.
 
     Parameters
     ----------
     positions : NDArray, shape (n_time, 2)
-        Animal positions over time.
+        Animal positions over time, in environment units (e.g. cm).
     dt : float
         Time step between samples in seconds.
     min_speed : float, default 0.0
-        Minimum speed threshold. Samples with speed below this are
-        interpolated from surrounding valid samples.
-    smoothing_sigma : float, default 0.0
+        Minimum speed threshold in **the same units per second as
+        ``positions``** (e.g. cm/s if positions are in cm). Samples
+        with speed below this are interpolated from surrounding valid
+        samples.
+    bandwidth : float, default 0.0
         Gaussian smoothing sigma in samples. Applied to velocity before
         computing heading. Set to 0 to disable smoothing.
 
     Returns
     -------
     NDArray, shape (n_time,)
-        Heading in radians at each timepoint. If all speeds are below
-        threshold, returns NaN array.
+        Heading in radians at each timepoint, in the **allocentric
+        world-frame convention** (0 = East, π/2 = North, π = West,
+        -π/2 = South), wrapped to ``[-π, π]`` per ``numpy.arctan2``
+        (so westward motion returns +π, not -π). If all speeds are
+        below threshold, returns a NaN array.
 
     Raises
     ------
@@ -660,9 +667,9 @@ def heading_from_velocity(
     velocity = np.vstack([velocity, velocity[-1:]])
 
     # Apply Gaussian smoothing if requested
-    if smoothing_sigma > 0:
-        velocity[:, 0] = gaussian_filter1d(velocity[:, 0], smoothing_sigma)
-        velocity[:, 1] = gaussian_filter1d(velocity[:, 1], smoothing_sigma)
+    if bandwidth > 0:
+        velocity[:, 0] = gaussian_filter1d(velocity[:, 0], bandwidth)
+        velocity[:, 1] = gaussian_filter1d(velocity[:, 1], bandwidth)
 
     # Compute speed
     speed = np.sqrt(velocity[:, 0] ** 2 + velocity[:, 1] ** 2)

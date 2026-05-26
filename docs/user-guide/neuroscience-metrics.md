@@ -28,9 +28,7 @@ env = Environment.from_samples(positions, bin_size=2.5)
 firing_rate = compute_spatial_rate(env, spike_times, times, positions).firing_rate
 
 # Detect place fields
-fields = detect_place_fields(
-    firing_rate,
-    env,
+fields = detect_place_fields(env, firing_rate,
     threshold=0.2,          # 20% of peak rate
     min_size=None,          # Auto-compute from bin size
     max_mean_rate=10.0,     # Exclude interneurons (>10 Hz)
@@ -64,7 +62,7 @@ Compute the physical area of a place field:
 from neurospatial.encoding import field_size
 
 # Get size of first detected field
-area = field_size(fields[0], env)
+area = field_size(env, fields[0])
 # Returns: area in squared physical units (e.g., cm²)
 ```
 
@@ -78,7 +76,7 @@ Compute the firing-rate-weighted center of mass of a place field:
 from neurospatial.encoding import rate_map_centroid
 
 # Compute centroid of first field
-center = rate_map_centroid(firing_rate, fields[0], env)
+center = rate_map_centroid(env, firing_rate, fields[0])
 # Returns: array of shape (n_dims,) with N-D coordinates
 ```
 
@@ -185,7 +183,7 @@ import numpy as np
 firing_rates = np.array([rate_map_cell1, rate_map_cell2, rate_map_cell3])
 
 # Compute coverage (runs detect_place_fields internally)
-result = population_coverage(firing_rates, env)
+result = population_coverage(env, firing_rates)
 
 # Access results
 print(f"Coverage: {result.coverage_fraction:.1%}")
@@ -317,8 +315,8 @@ firing_rate = compute_spatial_rate(env, spike_times, times, positions).firing_ra
 
 # Compute border score
 score = border_score(
-    firing_rate,
     env,
+    firing_rate,
     threshold=0.3,    # 30% of peak (Solstad et al. standard)
     min_area=200.0    # Minimum field area (cm²)
 )
@@ -366,7 +364,7 @@ firing_rate = np.zeros(env.n_bins)
 boundary_bins = env.boundary_bins
 firing_rate[boundary_bins] = 5.0  # High firing at boundaries
 
-score = border_score(firing_rate, env)
+score = border_score(env, firing_rate)
 print(f"Border score: {score:.3f}")  # Should be > 0.5
 
 # Visualize
@@ -446,13 +444,13 @@ firing_rate = compute_spatial_rate(
 ).firing_rate
 
 # 2. Detect place fields
-fields = detect_place_fields(firing_rate, env, detect_subfields=True)
+fields = detect_place_fields(env, firing_rate, detect_subfields=True)
 print(f"Detected {len(fields)} place fields")
 
 # 3. Compute field properties
 for i, field in enumerate(fields):
-    area = field_size(field, env)
-    center = rate_map_centroid(firing_rate, field, env)
+    area = field_size(env, field)
+    center = rate_map_centroid(env, firing_rate, field)
     print(f"Field {i+1}: area={area:.1f} cm², center={center}")
 
 # 4. Compute single-cell metrics
@@ -487,7 +485,7 @@ for cell_spikes in all_spike_trains:
 firing_rates = np.array(firing_rates)
 
 # Analyze population coverage (runs detect_place_fields internally)
-result = population_coverage(firing_rates, env)
+result = population_coverage(env, firing_rates)
 
 print(f"Population coverage: {result.coverage_fraction:.1%}")
 print(f"Place cells: {result.n_place_cells}/{result.n_neurons}")
@@ -519,7 +517,7 @@ from neurospatial.encoding import compute_spatial_rate
 firing_rate = compute_spatial_rate(env, spike_times, times, positions).firing_rate
 
 # Compute border score
-score = border_score(firing_rate, env, threshold=0.3, min_area=200.0)
+score = border_score(env, firing_rate, threshold=0.3, min_area=200.0)
 
 # Classify as border cell
 is_border_cell = score > 0.5  # Solstad et al. criterion

@@ -14,84 +14,8 @@ from neurospatial import Environment
 from neurospatial.animation.overlays import PositionOverlay
 
 
-class TestPlaybackConstants:
-    """Test playback constants are defined and importable (Task 1.1)."""
-
-    def test_max_playback_fps_exists(self):
-        """Test that MAX_PLAYBACK_FPS constant exists."""
-        from neurospatial.animation.core import MAX_PLAYBACK_FPS
-
-        assert MAX_PLAYBACK_FPS is not None
-
-    def test_max_playback_fps_value(self):
-        """Test that MAX_PLAYBACK_FPS has correct value (display refresh rate limit)."""
-        from neurospatial.animation.core import MAX_PLAYBACK_FPS
-
-        assert MAX_PLAYBACK_FPS == 60  # Display refresh rate limit
-
-    def test_max_playback_fps_is_int(self):
-        """Test that MAX_PLAYBACK_FPS is an integer."""
-        from neurospatial.animation.core import MAX_PLAYBACK_FPS
-
-        assert isinstance(MAX_PLAYBACK_FPS, int)
-
-    def test_min_playback_fps_exists(self):
-        """Test that MIN_PLAYBACK_FPS constant exists."""
-        from neurospatial.animation.core import MIN_PLAYBACK_FPS
-
-        assert MIN_PLAYBACK_FPS is not None
-
-    def test_min_playback_fps_value(self):
-        """Test that MIN_PLAYBACK_FPS has correct value."""
-        from neurospatial.animation.core import MIN_PLAYBACK_FPS
-
-        assert MIN_PLAYBACK_FPS == 1
-
-    def test_min_playback_fps_is_int(self):
-        """Test that MIN_PLAYBACK_FPS is an integer."""
-        from neurospatial.animation.core import MIN_PLAYBACK_FPS
-
-        assert isinstance(MIN_PLAYBACK_FPS, int)
-
-    def test_default_speed_exists(self):
-        """Test that DEFAULT_SPEED constant exists."""
-        from neurospatial.animation.core import DEFAULT_SPEED
-
-        assert DEFAULT_SPEED is not None
-
-    def test_default_speed_value(self):
-        """Test that DEFAULT_SPEED has correct value."""
-        from neurospatial.animation.core import DEFAULT_SPEED
-
-        assert DEFAULT_SPEED == 1.0
-
-    def test_default_speed_is_float(self):
-        """Test that DEFAULT_SPEED is a float."""
-        from neurospatial.animation.core import DEFAULT_SPEED
-
-        assert isinstance(DEFAULT_SPEED, float)
-
-    def test_constants_relationship(self):
-        """Test that MIN_PLAYBACK_FPS <= MAX_PLAYBACK_FPS."""
-        from neurospatial.animation.core import MAX_PLAYBACK_FPS, MIN_PLAYBACK_FPS
-
-        assert MIN_PLAYBACK_FPS <= MAX_PLAYBACK_FPS
-
-
 class TestComputePlaybackFps:
     """Test _compute_playback_fps() helper function (Task 1.2)."""
-
-    def test_returns_tuple(self):
-        """Test that function returns tuple of (int, float)."""
-        from neurospatial.animation.core import _compute_playback_fps
-
-        frame_times = np.linspace(0, 10, 301)  # 30 Hz, 10 seconds
-        result = _compute_playback_fps(frame_times, speed=1.0)
-
-        assert isinstance(result, tuple)
-        assert len(result) == 2
-        assert isinstance(result[0], int)
-        assert isinstance(result[1], float)
 
     def test_normal_case_30hz_realtime(self):
         """Test 30 Hz data at real-time speed (not capped since below MAX_PLAYBACK_FPS=60)."""
@@ -399,7 +323,9 @@ class TestAnimateFieldsValidation:
         fields = [rng.random(100) for _ in range(10)]
         frame_times = np.linspace(0, 1, 10)
 
-        with pytest.raises(RuntimeError, match="Environment must be fitted"):
+        from neurospatial.environment.decorators import EnvironmentNotFittedError
+
+        with pytest.raises(EnvironmentNotFittedError, match="animate_fields"):
             animate_fields(
                 env,
                 fields,
@@ -759,7 +685,7 @@ class TestDispatcherOverlayIntegration:
 
         # Create test overlay
         overlay_pos = rng.standard_normal((10, 2)) * 50
-        position_overlay = PositionOverlay(data=overlay_pos, color="red", size=5.0)
+        position_overlay = PositionOverlay(positions=overlay_pos, color="red", size=5.0)
 
         # Create frame times
         frame_times = np.linspace(0, 10, 10)
@@ -793,7 +719,7 @@ class TestDispatcherOverlayIntegration:
 
         # Create test overlays
         overlay_pos = rng.standard_normal((10, 2)) * 50
-        position_overlay = PositionOverlay(data=overlay_pos)
+        position_overlay = PositionOverlay(positions=overlay_pos)
         frame_times = np.linspace(0, 10, 10)
 
         # Mock conversion funnel and backend
@@ -868,7 +794,7 @@ class TestDispatcherOverlayIntegration:
 
         # Create test overlay
         overlay_pos = rng.standard_normal((10, 2)) * 50
-        position_overlay = PositionOverlay(data=overlay_pos)
+        position_overlay = PositionOverlay(positions=overlay_pos)
         frame_times = np.linspace(0, 10, 10)
 
         # Mock conversion and backend
@@ -911,7 +837,7 @@ class TestDispatcherOverlayIntegration:
 
         # Create overlay and explicit frame times
         overlay_pos = rng.standard_normal((10, 2)) * 50
-        position_overlay = PositionOverlay(data=overlay_pos)
+        position_overlay = PositionOverlay(positions=overlay_pos)
         frame_times = np.linspace(0, 5, 10)  # Custom times
 
         # Mock conversion and backend

@@ -997,6 +997,7 @@ def _estimate_spectral_radius(laplacian: Any) -> float:
             f"eigsh failed ({e}), using max-degree bound {max_degree_bound:.2f}. "
             f"This may be slightly inaccurate for highly irregular graphs.",
             stacklevel=3,
+            category=UserWarning,
         )
         return max_degree_bound
 

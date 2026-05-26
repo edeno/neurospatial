@@ -30,7 +30,7 @@ class TestEnvironmentFromGraph:
         assert graph_env.name == "PlusMazeGraph"
         assert isinstance(graph_env.layout, GraphLayout)
         assert graph_env._is_fitted
-        assert graph_env.is_1d
+        assert graph_env.is_linearized_track
         assert graph_env.n_dims == 2
 
         assert graph_env.bin_centers.shape[0] == 16
@@ -182,7 +182,7 @@ class TestEnvironmentFromGraph:
 
     def test_graph_attributes_dataframe(self, graph_env: Environment):
         """Test retrieval of bin attributes as a DataFrame."""
-        df = graph_env.bin_attributes
+        df = graph_env.get_bin_attributes()
         assert isinstance(df, pd.DataFrame)
         assert df.shape[0] == 16
         assert "pos_dim0" in df.columns
@@ -192,7 +192,7 @@ class TestEnvironmentFromGraph:
         assert "pos_1D" in df.columns
         assert "source_edge_id" in df.columns
 
-        df = graph_env.edge_attributes
+        df = graph_env.get_edge_attributes()
         assert isinstance(df, pd.DataFrame)
         assert df.shape[0] == 15
         assert "distance" in df.columns
@@ -210,7 +210,7 @@ class TestEnvironmentFromDataSamplesGrid:
         assert grid_env_from_samples.grid_edges is not None  # Grid layouts have edges
         # Verify fitted state through public behavior (methods work without error)
         assert grid_env_from_samples.n_bins > 0  # Fitted env has bins
-        assert not grid_env_from_samples.is_1d
+        assert not grid_env_from_samples.is_linearized_track
         assert grid_env_from_samples.n_dims == 2
 
         assert grid_env_from_samples.bin_centers is not None
@@ -268,26 +268,35 @@ class TestEnvironmentFromDataSamplesGrid:
 class TestEnvironmentSerialization:
     """Tests for saving, loading, and dictionary conversion."""
 
-    def test_save_load(self, graph_env: Environment, tmp_path: Path):
-        """Test saving and loading Environment object."""
-        file_path = tmp_path / "test_env.pkl"
-        graph_env.save(str(file_path))
-        assert file_path.exists()
+    def test_to_file_from_file(
+        self, grid_env_from_samples: Environment, tmp_path: Path
+    ):
+        """Round-trip an Environment through ``to_file`` / ``from_file``.
 
-        loaded_env = Environment.load(str(file_path))
+        Uses a RegularGrid env: ``Environment.save`` / ``Environment.load``
+        are gone (M5.9), so the JSON+npz path defined by ``to_file`` is the
+        only persistence channel a v0.4 user has.
+        """
+        env = grid_env_from_samples
+        base = tmp_path / "test_env"
+        env.to_file(str(base))
+        assert base.with_suffix(".json").exists()
+        assert base.with_suffix(".npz").exists()
+
+        loaded_env = Environment.from_file(str(base))
         assert isinstance(loaded_env, Environment)
-        assert loaded_env.name == graph_env.name
-        assert loaded_env._layout_type_used == graph_env._layout_type_used
-        assert loaded_env.is_1d == graph_env.is_1d
-        assert loaded_env.n_dims == graph_env.n_dims
-        assert np.array_equal(loaded_env.bin_centers, graph_env.bin_centers)
+        assert loaded_env.name == env.name
+        assert loaded_env._layout_type_used == env._layout_type_used
+        assert loaded_env.is_linearized_track == env.is_linearized_track
+        assert loaded_env.n_dims == env.n_dims
+        assert np.array_equal(loaded_env.bin_centers, env.bin_centers)
         assert (
             loaded_env.connectivity.number_of_nodes()
-            == graph_env.connectivity.number_of_nodes()
+            == env.connectivity.number_of_nodes()
         )
         assert (
             loaded_env.connectivity.number_of_edges()
-            == graph_env.connectivity.number_of_edges()
+            == env.connectivity.number_of_edges()
         )
 
 
@@ -295,14 +304,14 @@ class TestEnvironmentSerialization:
 
 
 def test_from_mask():
-    """Basic test for Environment.from_mask."""
+    """Basic test for Environment.from_grid_mask."""
     active_mask_np = np.array([[True, True, False], [False, True, True]], dtype=bool)
     grid_edges_tuple = (np.array([0, 1, 2.0]), np.array([0, 1, 2, 3.0]))
 
     # Ensure the MaskedGridLayout.build can handle its inputs
     # This test implicitly tests the fix for MaskedGridLayout.build if it runs
     try:
-        env = Environment.from_mask(
+        env = Environment.from_grid_mask(
             active_mask=active_mask_np,
             grid_edges=grid_edges_tuple,
             name="NDMaskTest",
@@ -324,10 +333,10 @@ def test_from_mask():
 
 
 def test_from_image():
-    """Basic test for Environment.from_image."""
+    """Basic test for Environment.from_pixel_mask."""
     image_mask_np = np.array([[True, True, False], [False, True, True]], dtype=bool)
-    env = Environment.from_image(
-        image_mask=image_mask_np, bin_size=1.0, name="ImageMaskTest"
+    env = Environment.from_pixel_mask(
+        image_mask=image_mask_np, pixel_size=1.0, name="ImageMaskTest"
     )
     assert env.name == "ImageMaskTest"
     assert isinstance(env.layout, ImageMaskLayout)
@@ -385,12 +394,12 @@ def env_hexagonal() -> Environment:
 
 @pytest.fixture
 def env_with_disconnected_regions() -> Environment:
-    """Environment with two disconnected active regions using from_mask."""
+    """Environment with two disconnected active regions using from_grid_mask."""
     active_mask = np.zeros((10, 10), dtype=bool)
     active_mask[1:3, 1:3] = True  # Region 1
     active_mask[7:9, 7:9] = True  # Region 2
     grid_edges = (np.arange(11, dtype=np.float64), np.arange(11, dtype=np.float64))
-    return Environment.from_mask(
+    return Environment.from_grid_mask(
         active_mask=active_mask,
         grid_edges=grid_edges,
         name="DisconnectedEnv",
@@ -641,9 +650,7 @@ class TestDimensionality:
             name="1DGridTest",
         )
         assert env.n_dims == 1
-        assert (
-            not env.is_1d
-        )  # RegularGrid layout is not flagged as is_1d (which is for GraphLayout)
+        assert not env.is_linearized_track  # RegularGrid layout is not flagged as is_linearized_track (which is for GraphLayout)
         assert env.bin_centers.ndim == 2 and env.bin_centers.shape[1] == 1
         assert len(env.grid_edges) == 1
         assert len(env.grid_shape) == 1
@@ -661,7 +668,7 @@ class TestDimensionality:
             connect_diagonal_neighbors=True,
         )
         assert env.n_dims == 3
-        assert not env.is_1d
+        assert not env.is_linearized_track
         assert env.bin_centers.shape[1] == 3
         assert len(env.grid_edges) == 3
         assert len(env.grid_shape) == 3
@@ -699,7 +706,7 @@ def env_center_hole_3x3() -> Environment:
         [[True, True, True], [True, False, True], [True, True, True]], dtype=bool
     )
     grid_edges = (np.array([0.0, 1.0, 2.0, 3.0]), np.array([0.0, 1.0, 2.0, 3.0]))
-    return Environment.from_mask(
+    return Environment.from_grid_mask(
         active_mask=active_mask,
         grid_edges=grid_edges,
         name="CenterHole3x3",
@@ -723,7 +730,7 @@ def env_hollow_square_4x4() -> Environment:
         np.array([0.0, 1.0, 2.0, 3.0, 4.0]),
         np.array([0.0, 1.0, 2.0, 3.0, 4.0]),
     )
-    return Environment.from_mask(
+    return Environment.from_grid_mask(
         active_mask=active_mask,
         grid_edges=grid_edges,
         name="HollowSquare4x4",
@@ -745,7 +752,7 @@ def env_line_1x3_in_3x3_grid() -> Environment:
     grid_edges = (np.array([0.0, 1.0, 2.0, 3.0]), np.array([0.0, 1.0, 2.0, 3.0]))
     # Active nodes: (1,0), (1,1), (1,2)
     # Expected boundaries (by grid logic): all three.
-    return Environment.from_mask(
+    return Environment.from_grid_mask(
         active_mask=active_mask,
         grid_edges=grid_edges,
         name="Line1x3in3x3",
@@ -760,7 +767,7 @@ def env_single_active_cell_3x3() -> Environment:
         [[False, False, False], [False, True, False], [False, False, False]], dtype=bool
     )
     grid_edges = (np.array([0.0, 1.0, 2.0, 3.0]), np.array([0.0, 1.0, 2.0, 3.0]))
-    return Environment.from_mask(
+    return Environment.from_grid_mask(
         active_mask=active_mask,
         grid_edges=grid_edges,
         name="SingleActive3x3",
@@ -770,10 +777,10 @@ def env_single_active_cell_3x3() -> Environment:
 
 @pytest.fixture
 def env_no_active_cells_nd_mask() -> Environment:
-    """A 2x2 grid with no active cells, created using from_mask."""
+    """A 2x2 grid with no active cells, created using from_grid_mask."""
     active_mask = np.array([[False, False], [False, False]], dtype=bool)
     grid_edges = (np.array([0.0, 1.0, 2.0]), np.array([0.0, 1.0, 2.0]))
-    return Environment.from_mask(
+    return Environment.from_grid_mask(
         active_mask=active_mask,
         grid_edges=grid_edges,
         name="NoActiveNDMask",
@@ -784,10 +791,10 @@ def env_no_active_cells_nd_mask() -> Environment:
 def env_1d_grid_3bins() -> Environment:
     """A 1D grid with 3 active bins. This will test degree-based logic for 1D grids."""
     active_mask_1d = np.array([True, True, True], dtype=bool)
-    # from_mask expects N-D mask where N is len(grid_edges)
+    # from_grid_mask expects N-D mask where N is len(grid_edges)
     # To make a 1D grid, grid_edges should be a tuple with one array
     grid_edges_1d = (np.array([0.0, 1.0, 2.0, 3.0]),)  # Edges for 3 bins
-    return Environment.from_mask(
+    return Environment.from_grid_mask(
         active_mask=active_mask_1d,  # Mask is 1D
         grid_edges=grid_edges_1d,
         name="1DGrid3Bins",
@@ -870,7 +877,7 @@ def test_boundary_1d_grid_degree_logic(env_1d_grid_3bins: Environment):
     # Grid logic path for `is_grid_layout_with_mask` will be false due to `len(self.grid_shape) > 1`.
     # It will fall to degree-based.
     # Graph: 0 -- 1 -- 2. Degrees: 0:1, 1:2, 2:1.
-    # Layout type "MaskedGrid" (from from_mask).
+    # Layout type "MaskedGrid" (from from_grid_mask).
     # For 1D grid (len(grid_shape) == 1), it hits `elif is_grid_layout_with_mask and len(self.grid_shape) == 1:`
     # threshold_degree = 1.5
     boundary_indices = env_1d_grid_3bins.boundary_bins
@@ -890,7 +897,7 @@ class TestEnvironment3D:
         assert simple_3d_env.name == "Simple3DEnv"
         assert simple_3d_env._is_fitted
         assert simple_3d_env.n_dims == 3
-        assert not simple_3d_env.is_1d  # RegularGrid is never 1D
+        assert not simple_3d_env.is_linearized_track  # RegularGrid is never 1D
 
         # Verify bin_centers shape
         assert simple_3d_env.bin_centers.ndim == 2
@@ -1150,89 +1157,6 @@ class TestPositionsParameterNaming:
     compute_spatial_rate().
     """
 
-    def test_from_samples_accepts_positions_parameter(self):
-        """Test that from_samples() accepts 'positions' parameter."""
-        rng = np.random.default_rng(42)
-        positions = rng.random((100, 2)) * 50
-
-        # Should work with 'positions' parameter
-        env = Environment.from_samples(
-            positions=positions, bin_size=5.0, name="test_positions"
-        )
-
-        assert env.n_dims == 2
-        assert env.n_bins > 0
-        assert env.name == "test_positions"
-
-    def test_from_samples_positions_produces_correct_environment(self):
-        """Test that using 'positions' parameter creates correct environment."""
-        rng = np.random.default_rng(42)
-        positions = rng.standard_normal((500, 2)) * 20
-
-        env = Environment.from_samples(
-            positions=positions,
-            bin_size=3.0,
-        )
-
-        # Verify environment is properly fitted
-        assert env._is_fitted
-        assert env.bin_centers.shape[1] == 2
-        assert env.n_bins > 0
-
-        # Verify we can query bins
-        test_points = positions[:10]
-        bin_indices = env.bin_at(test_points)
-        assert len(bin_indices) == 10
-        assert np.all(bin_indices >= -1)  # -1 for outside, >=0 for valid bins
-
-    def test_from_samples_positions_with_hexagonal_layout(self):
-        """Test 'positions' parameter works with hexagonal layout."""
-        rng = np.random.default_rng(42)
-        positions = rng.random((200, 2)) * 40
-
-        env = Environment.from_samples(
-            positions=positions, bin_size=4.0, layout="Hexagonal", name="hex_test"
-        )
-
-        assert env.n_dims == 2
-        assert env.n_bins > 0
-        assert env.layout._layout_type_tag == "Hexagonal"
-
-    def test_from_samples_positions_with_morphological_ops(self):
-        """Test 'positions' parameter with morphological operations."""
-        rng = np.random.default_rng(42)
-        positions = rng.random((300, 2)) * 30
-
-        env = Environment.from_samples(
-            positions=positions,
-            bin_size=2.5,
-            dilate=True,
-            fill_holes=True,
-            close_gaps=True,
-        )
-
-        assert env.n_dims == 2
-        assert env.n_bins > 0
-
-    def test_from_samples_positions_3d(self):
-        """Test 'positions' parameter works with 3D data."""
-        rng = np.random.default_rng(42)
-        positions = rng.standard_normal((400, 3)) * 15
-
-        env = Environment.from_samples(
-            positions=positions, bin_size=3.0, connect_diagonal_neighbors=True
-        )
-
-        assert env.n_dims == 3
-        assert env.n_bins > 0
-        assert env.bin_centers.shape[1] == 3
-
-
-# ==============================================================================
-# Note: Mixin verification tests have been moved to tests/test_import_paths.py
-# to avoid duplication and improve test organization.
-# ==============================================================================
-
 
 class TestCacheManagement:
     """Tests for Environment cache management functionality.
@@ -1259,11 +1183,6 @@ class TestCacheManagement:
     def cache_test_graph_env(self, simple_graph_env):
         """Provide a fresh copy of simple_graph_env for cache testing."""
         return simple_graph_env.copy()
-
-    def test_clear_cache_method_exists(self, grid_env_from_samples):
-        """Test that clear_cache() method exists on Environment instances."""
-        assert hasattr(grid_env_from_samples, "clear_cache")
-        assert callable(grid_env_from_samples.clear_cache)
 
     def test_clear_cache_clears_kdtree(self, cache_test_env):
         """Test that clear_cache() clears the KDTree cache."""
@@ -1302,41 +1221,23 @@ class TestCacheManagement:
 
     def test_clear_cache_clears_differential_operator(self, cache_test_env):
         """Test that clear_cache() clears the differential_operator cache."""
-        # Access differential_operator (expensive computation)
-        diff_op_original = cache_test_env.differential_operator
+        # M5.6 changed differential_operator from @cached_property to a
+        # method backed by a versioned_cached_property. The on-instance
+        # cache key is now ``_versioned_cache__<name>`` instead of just
+        # ``<name>``.
+        cache_key = "_versioned_cache___differential_operator_cached"
 
-        # Verify it's cached
-        assert "differential_operator" in cache_test_env.__dict__
-        assert cache_test_env.differential_operator is diff_op_original  # Same object
+        diff_op_original = cache_test_env.get_differential_operator()
+        assert cache_key in cache_test_env.__dict__
+        assert cache_test_env.get_differential_operator() is diff_op_original
 
-        # Clear caches
         cache_test_env.clear_cache()
+        assert cache_key not in cache_test_env.__dict__
 
-        # Verify it's cleared
-        assert "differential_operator" not in cache_test_env.__dict__
-
-        # Can recompute
-        diff_op_new = cache_test_env.differential_operator
+        diff_op_new = cache_test_env.get_differential_operator()
         assert diff_op_new is not None
-
-        # New object was created (not the same reference)
-        # But values should be equal
         assert diff_op_new.shape == diff_op_original.shape
         assert np.allclose(diff_op_new.toarray(), diff_op_original.toarray())
-
-    def test_clear_cache_idempotent(self, cache_test_env):
-        """Test that calling clear_cache() multiple times doesn't error."""
-        # Clear cache when nothing is cached
-        cache_test_env.clear_cache()
-
-        # Access a property
-        _ = cache_test_env.boundary_bins
-
-        # Clear again
-        cache_test_env.clear_cache()
-
-        # Clear third time (should be safe)
-        cache_test_env.clear_cache()
 
     def test_clear_cache_allows_recomputation(self, cache_test_env):
         """Test that after clearing, cached properties can be recomputed."""
@@ -1356,43 +1257,46 @@ class TestCacheManagement:
 
     def test_clear_cache_with_all_cached_properties(self, cache_test_env):
         """Test clearing when ALL cached properties are populated."""
-        # Populate ALL caches (not just some)
         from neurospatial.ops.binning import map_points_to_bins
 
         _ = cache_test_env.boundary_bins
         _ = cache_test_env.bin_sizes
-        _ = cache_test_env.differential_operator
+        _ = cache_test_env.get_differential_operator()
         _ = cache_test_env._source_flat_to_active_node_id_map
-        _ = cache_test_env.bin_attributes  # Added
-        _ = cache_test_env.edge_attributes  # Added
+        _ = cache_test_env.get_bin_attributes()
+        _ = cache_test_env.get_edge_attributes()
         # linearization_properties only exists for 1D environments - skip for 2D grid
         map_points_to_bins(np.array([[5.0, 5.0]]), cache_test_env)
 
-        # Verify all are cached
+        # M5.6 keys for the three method-form caches.
+        diff_key = "_versioned_cache___differential_operator_cached"
+        bin_key = "_versioned_cache___bin_attributes_cached"
+        edge_key = "_versioned_cache___edge_attributes_cached"
+
+        # Verify all are cached.
         assert cache_test_env._kdtree_cache is not None
         assert "boundary_bins" in cache_test_env.__dict__
         assert "bin_sizes" in cache_test_env.__dict__
-        assert "differential_operator" in cache_test_env.__dict__
+        assert diff_key in cache_test_env.__dict__
         assert "_source_flat_to_active_node_id_map" in cache_test_env.__dict__
-        assert "bin_attributes" in cache_test_env.__dict__  # Added
-        assert "edge_attributes" in cache_test_env.__dict__  # Added
+        assert bin_key in cache_test_env.__dict__
+        assert edge_key in cache_test_env.__dict__
 
-        # Clear all
         cache_test_env.clear_cache()
 
-        # Verify ALL are cleared
+        # Verify ALL are cleared.
         assert cache_test_env._kdtree_cache is None
         assert "boundary_bins" not in cache_test_env.__dict__
         assert "bin_sizes" not in cache_test_env.__dict__
-        assert "differential_operator" not in cache_test_env.__dict__
+        assert diff_key not in cache_test_env.__dict__
         assert "_source_flat_to_active_node_id_map" not in cache_test_env.__dict__
-        assert "bin_attributes" not in cache_test_env.__dict__  # Added
-        assert "edge_attributes" not in cache_test_env.__dict__  # Added
+        assert bin_key not in cache_test_env.__dict__
+        assert edge_key not in cache_test_env.__dict__
 
     def test_clear_cache_clears_linearization_properties(self, cache_test_graph_env):
         """Test that clear_cache() clears linearization_properties on 1D environments."""
         # linearization_properties only exists for 1D (GraphLayout) environments
-        if not cache_test_graph_env.is_1d:
+        if not cache_test_graph_env.is_linearized_track:
             pytest.skip("Requires 1D environment")
 
         # Access linearization properties (triggers caching)

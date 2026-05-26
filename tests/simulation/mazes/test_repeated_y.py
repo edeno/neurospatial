@@ -2,50 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
-
 import numpy as np
-import pytest
-
-from neurospatial.simulation.mazes._base import MazeDims
-
-
-class TestRepeatedYDims:
-    """Tests for RepeatedYDims dataclass."""
-
-    def test_inherits_from_maze_dims(self):
-        """RepeatedYDims should inherit from MazeDims."""
-        from neurospatial.simulation.mazes.repeated_y import RepeatedYDims
-
-        dims = RepeatedYDims()
-        assert isinstance(dims, MazeDims)
-
-    def test_default_values(self):
-        """RepeatedYDims should have correct default values."""
-        from neurospatial.simulation.mazes.repeated_y import RepeatedYDims
-
-        dims = RepeatedYDims()
-        assert dims.n_junctions == 4
-        assert dims.arm_length == 25.0
-        assert dims.fork_length == 12.0
-        assert dims.width == 8.0
-
-    def test_is_frozen(self):
-        """RepeatedYDims should be frozen (immutable)."""
-        from neurospatial.simulation.mazes.repeated_y import RepeatedYDims
-
-        dims = RepeatedYDims()
-        with pytest.raises(FrozenInstanceError):
-            dims.n_junctions = 5  # type: ignore[misc]
-
-    def test_custom_values(self):
-        """RepeatedYDims should accept custom values."""
-        from neurospatial.simulation.mazes.repeated_y import RepeatedYDims
-
-        dims = RepeatedYDims(n_junctions=6, arm_length=30.0, width=10.0)
-        assert dims.n_junctions == 6
-        assert dims.arm_length == 30.0
-        assert dims.width == 10.0
 
 
 class TestMakeRepeatedYMaze:
@@ -207,7 +164,7 @@ class TestMakeRepeatedYMaze:
 
         maze = make_repeated_y_maze(include_track=True)
         assert maze.env_track is not None
-        assert maze.env_track.is_1d
+        assert maze.env_track.is_linearized_track
 
     def test_env_track_has_correct_units(self):
         """env_track should have units set to 'cm'."""

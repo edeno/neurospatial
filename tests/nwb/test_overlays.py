@@ -31,8 +31,8 @@ class TestPositionOverlayFromNwb:
         assert isinstance(overlay, PositionOverlay)
 
         # Data should have correct shape (1000 samples, 2D)
-        assert overlay.data.shape == (1000, 2)
-        assert overlay.data.dtype == np.float64
+        assert overlay.positions.shape == (1000, 2)
+        assert overlay.positions.dtype == np.float64
 
         # Times should be populated from timestamps
         assert overlay.times is not None
@@ -50,7 +50,7 @@ class TestPositionOverlayFromNwb:
         # Get original data for comparison
         positions, timestamps = read_position(sample_nwb_with_position)
 
-        np.testing.assert_array_almost_equal(overlay.data, positions)
+        np.testing.assert_array_almost_equal(overlay.positions, positions)
         np.testing.assert_array_almost_equal(overlay.times, timestamps)
 
     def test_color_parameter_passed_through(self, sample_nwb_with_position):
@@ -115,8 +115,8 @@ class TestPositionOverlayFromNwb:
         # Read with explicit module
         overlay = position_overlay_from_nwb(nwbfile, processing_module="tracking")
 
-        assert overlay.data.shape == (50, 2)
-        np.testing.assert_array_almost_equal(overlay.data, np.ones((50, 2)) * 42.0)
+        assert overlay.positions.shape == (50, 2)
+        np.testing.assert_array_almost_equal(overlay.positions, np.ones((50, 2)) * 42.0)
 
     def test_position_name_forwarded(self, sample_nwb_with_position_multiple_series):
         """Test that position_name parameter is forwarded to read_position."""
@@ -129,7 +129,7 @@ class TestPositionOverlayFromNwb:
         )
 
         # Check we got the 'body' series (500 samples)
-        assert overlay.data.shape == (500, 2)
+        assert overlay.positions.shape == (500, 2)
 
     def test_additional_kwargs_passed_through(self, sample_nwb_with_position):
         """Test that additional kwargs are passed to PositionOverlay."""
@@ -337,8 +337,8 @@ class TestHeadDirectionOverlayFromNwb:
         assert isinstance(overlay, HeadDirectionOverlay)
 
         # Data should have correct shape (1000 samples, 1D angles)
-        assert overlay.data.shape == (1000,)
-        assert overlay.data.dtype == np.float64
+        assert overlay.headings.shape == (1000,)
+        assert overlay.headings.dtype == np.float64
 
         # Times should be populated from timestamps
         assert overlay.times is not None
@@ -359,7 +359,7 @@ class TestHeadDirectionOverlayFromNwb:
         # Get original data for comparison
         angles, timestamps = read_head_direction(sample_nwb_with_head_direction)
 
-        np.testing.assert_array_almost_equal(overlay.data, angles)
+        np.testing.assert_array_almost_equal(overlay.headings, angles)
         np.testing.assert_array_almost_equal(overlay.times, timestamps)
 
     def test_color_parameter_passed_through(self, sample_nwb_with_head_direction):
@@ -419,8 +419,8 @@ class TestHeadDirectionOverlayFromNwb:
         # Read with explicit module
         overlay = head_direction_overlay_from_nwb(nwbfile, processing_module="tracking")
 
-        assert overlay.data.shape == (50,)
-        np.testing.assert_array_almost_equal(overlay.data, np.ones(50) * 1.5)
+        assert overlay.headings.shape == (50,)
+        np.testing.assert_array_almost_equal(overlay.headings, np.ones(50) * 1.5)
 
     def test_compass_name_forwarded(self, empty_nwb):
         """Test that compass_name parameter is forwarded to read_head_direction."""
@@ -459,8 +459,8 @@ class TestHeadDirectionOverlayFromNwb:
         overlay = head_direction_overlay_from_nwb(nwbfile, compass_name="body_angle")
 
         # Check we got the 'body_angle' series (40 samples)
-        assert overlay.data.shape == (40,)
-        np.testing.assert_array_almost_equal(overlay.data, np.ones(40) * 2.0)
+        assert overlay.headings.shape == (40,)
+        np.testing.assert_array_almost_equal(overlay.headings, np.ones(40) * 2.0)
 
     def test_additional_kwargs_passed_through(self, sample_nwb_with_head_direction):
         """Test that additional kwargs are passed to HeadDirectionOverlay."""

@@ -54,7 +54,18 @@ from shapely.geometry import Point, Polygon
 from neurospatial import Environment
 
 np.random.seed(42)
-plt.rcParams["figure.figsize"] = (12, 10)
+# Shared styling (Okabe-Ito palette, consistent figure / font sizes)
+import sys  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+_here = (
+    str(Path(__file__).resolve().parent) if "__file__" in globals() else str(Path.cwd())
+)
+if _here not in sys.path:
+    sys.path.insert(0, _here)
+from _style import apply_style  # noqa: E402
+
+apply_style(figsize=(12, 10), font_size=11)
 
 # %% [markdown]
 # ## 1. Regular Grid Layout (Default)
@@ -441,7 +452,7 @@ print("All environments created successfully!")
 #
 # ## Next Steps
 #
-# In the next notebook (**03_morphological_operations.ipynb**), you'll learn:
+# In the next notebook ([03_morphological_operations.ipynb](03_morphological_operations.ipynb)), you'll learn:
 # - How to handle sparse or patchy data
 # - Morphological operations: dilate, fill_holes, close_gaps
 # - Controlling active bin inference

@@ -180,7 +180,7 @@ Layout engines implement a **protocol** (not inheritance):
 # - bin_centers: NDArray of shape (n_bins, n_dims)
 # - connectivity: nx.Graph with mandatory attributes
 # - dimension_ranges: List of (min, max) tuples
-# - is_1d: bool (True for linearized layouts)
+# - is_linearized_track: bool (True for linearized layouts)
 # - build(): Method to construct the layout
 # - point_to_bin_index(): Map points to bins
 # - bin_sizes(): Compute bin sizes
@@ -207,7 +207,7 @@ Most environments are **N-dimensional** (typically 2D or 3D):
 # 2D environment
 env_2d = Environment.from_samples(data_2d, bin_size=2.0)
 print(f"Dimensionality: {env_2d.n_dims}D")
-print(f"Is 1D: {env_2d.is_1d}")  # False
+print(f"Is 1D: {env_2d.is_linearized_track}")  # False
 
 # Spatial queries use 2D coordinates
 point_2d = np.array([[10.0, 15.0]])
@@ -240,7 +240,7 @@ env_1d = Environment.from_graph(
     bin_size=2.0
 )
 
-print(f"Is 1D: {env_1d.is_1d}")  # True
+print(f"Is 1D: {env_1d.is_linearized_track}")  # True
 
 # Convert 2D position to 1D linear coordinate
 position_2d = np.array([[15.0, 0.0]])
@@ -321,8 +321,8 @@ Methods requiring a fitted environment use the `@check_fitted` decorator to prev
 | `Environment.from_samples()` | Create from data points |
 | `Environment.from_graph()` | Create 1D linearized track |
 | `Environment.from_polygon()` | Grid bounded by polygon |
-| `Environment.from_mask()` | Pre-defined N-D boolean mask |
-| `Environment.from_image()` | Binary image mask |
+| `Environment.from_grid_mask()` | Pre-defined N-D boolean mask |
+| `Environment.from_pixel_mask()` | Binary image mask |
 | `Environment.from_layout()` | Direct layout specification |
 
 Factory methods ensure:
@@ -349,3 +349,4 @@ Key takeaways:
 - **[User Guide](../user-guide/index.md)**: Detailed feature guides
 - **[API Reference](../api/index.md)**: Complete API documentation
 - **[Examples](../examples/index.md)**: Real-world use cases
+- **[Glossary](../glossary.md)**: Spatial-coding vocabulary reference

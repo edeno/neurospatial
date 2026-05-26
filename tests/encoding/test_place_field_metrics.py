@@ -6,6 +6,8 @@ Following TDD: Tests written FIRST before implementation.
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
@@ -51,13 +53,13 @@ def test_place_field_workflow_integration():
     from neurospatial.encoding.spatial import detect_place_fields
 
     # Detect fields
-    fields = detect_place_fields(firing_rate, env)
+    fields = detect_place_fields(env, firing_rate)
     assert len(fields) > 0
 
     # Measure first field
     field = fields[0]
-    size = field_size(field, env)
-    centroid = rate_map_centroid(firing_rate, field, env)
+    size = field_size(env, field)
+    centroid = rate_map_centroid(env, firing_rate, field)
 
     assert size > 0
     assert centroid.shape == (2,)
@@ -119,7 +121,7 @@ class TestDetectPlaceFields:
         from neurospatial.encoding.spatial import detect_place_fields
 
         # Detect fields
-        fields = detect_place_fields(firing_rate, env)
+        fields = detect_place_fields(env, firing_rate)
 
         # Should detect exactly one field
         assert len(fields) == 1
@@ -153,7 +155,7 @@ class TestDetectPlaceFields:
 
         # With subfield detection enabled (default)
         fields_with_subfields = detect_place_fields(
-            firing_rate, env, detect_subfields=True
+            env, firing_rate, detect_subfields=True
         )
 
         # Should detect 2 subfields
@@ -161,14 +163,21 @@ class TestDetectPlaceFields:
 
         # Without subfield detection
         fields_no_subfields = detect_place_fields(
-            firing_rate, env, detect_subfields=False
+            env, firing_rate, detect_subfields=False
         )
 
         # Should merge into one field
         assert len(fields_no_subfields) == 1
 
     def test_detect_place_fields_interneuron_exclusion(self):
-        """Test interneuron exclusion (high mean rate > 10 Hz)."""
+        """Test interneuron exclusion (high mean rate > 10 Hz).
+
+        The function emits a UserWarning before returning [], so a
+        caller running detect_place_fields over a population can tell
+        the difference between "no detectable fields" and "excluded as
+        putative interneuron". The empty-list return is preserved (M2
+        task 2.10 will fold this into a richer PlaceFieldsResult).
+        """
         rng = np.random.default_rng(42)
         positions = rng.standard_normal((5000, 2)) * 10
         env = Environment.from_samples(positions, bin_size=2.0)
@@ -178,10 +187,34 @@ class TestDetectPlaceFields:
 
         from neurospatial.encoding.spatial import detect_place_fields
 
-        # Should detect no fields (excluded as interneuron)
-        fields = detect_place_fields(firing_rate, env, max_mean_rate=10.0)
+        # Should detect no fields (excluded as interneuron) and warn.
+        with pytest.warns(UserWarning, match=r"putative interneuron.*15\.00 Hz"):
+            fields = detect_place_fields(env, firing_rate, max_mean_rate=10.0)
 
         assert len(fields) == 0
+
+    def test_detect_place_fields_no_warning_for_typical_pyramidal_cell(self):
+        """Pyramidal-rate cells should NOT emit the interneuron warning.
+
+        Regression for M1 1.4: the warning must fire ONLY when the
+        max_mean_rate threshold is crossed. Don't bother quiet
+        well-formed pyramidal cells with a noisy log.
+        """
+        rng = np.random.default_rng(0)
+        positions = rng.standard_normal((5000, 2)) * 10
+        env = Environment.from_samples(positions, bin_size=2.0)
+
+        firing_rate = np.zeros(env.n_bins)
+        # Gaussian field at the centre, peak ~8 Hz, mean well under 10.
+        for i in range(env.n_bins):
+            dist = float(np.linalg.norm(env.bin_centers[i]))
+            firing_rate[i] = 8.0 * np.exp(-(dist**2) / (2 * 3.0**2))
+
+        from neurospatial.encoding.spatial import detect_place_fields
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # turn any warning into a failure
+            detect_place_fields(env, firing_rate, max_mean_rate=10.0)
 
     def test_detect_place_fields_uniform_rate(self):
         """Test detection with uniform firing rate.
@@ -200,7 +233,7 @@ class TestDetectPlaceFields:
 
         from neurospatial.encoding.spatial import detect_place_fields
 
-        fields = detect_place_fields(firing_rate, env)
+        fields = detect_place_fields(env, firing_rate)
 
         # Uniform firing creates one large field (all bins above threshold)
         # This is correct behavior: uniform rate has no spatial selectivity
@@ -215,11 +248,15 @@ class TestDetectPlaceFields:
         env = Environment.from_samples(positions, bin_size=2.0)
         firing_rate = np.ones(env.n_bins)
 
-        from neurospatial.encoding.spatial import detect_place_fields
+        from neurospatial.encoding.spatial import (
+            PlaceFieldsResult,
+            detect_place_fields,
+        )
 
-        # This should work (firing_rate first)
-        fields = detect_place_fields(firing_rate, env)
-        assert isinstance(fields, list)
+        # This should work (firing_rate first). Returns PlaceFieldsResult
+        # since M1 1.4 (was a bare list[NDArray] before).
+        fields = detect_place_fields(env, firing_rate)
+        assert isinstance(fields, PlaceFieldsResult)
 
 
 class TestFieldMetrics:
@@ -237,7 +274,7 @@ class TestFieldMetrics:
 
         from neurospatial.encoding._field_metrics import field_size
 
-        size = field_size(field_bins, env)
+        size = field_size(env, field_bins)
 
         # Size should be positive
         assert size > 0
@@ -257,7 +294,7 @@ class TestFieldMetrics:
 
         from neurospatial.encoding._field_metrics import field_size
 
-        size = field_size(field_bins, env)
+        size = field_size(env, field_bins)
 
         # Single bin size should be approximately bin_size²
         assert size > 0
@@ -288,7 +325,7 @@ class TestFieldMetrics:
 
         from neurospatial.encoding._field_metrics import rate_map_centroid
 
-        centroid = rate_map_centroid(firing_rate, field_bins, env)
+        centroid = rate_map_centroid(env, firing_rate, field_bins)
 
         # Centroid should be near (10, 10)
         assert centroid.shape == (2,)
@@ -312,7 +349,7 @@ class TestFieldMetrics:
 
         from neurospatial.encoding._field_metrics import rate_map_centroid
 
-        centroid = rate_map_centroid(firing_rate, field_bins, env)
+        centroid = rate_map_centroid(env, firing_rate, field_bins)
 
         # Centroid should be near peak
         assert_allclose(centroid, peak_pos, atol=2.0)
@@ -336,7 +373,9 @@ class TestFieldMetrics:
         from neurospatial.encoding._field_metrics import rate_map_centroid
 
         # Graph centroid should be one of the field bins
-        centroid_graph = rate_map_centroid(firing_rate, field_bins, env, method="graph")
+        centroid_graph = rate_map_centroid(
+            env, firing_rate, field_bins, method="geodesic"
+        )
 
         # Verify it's exactly at a bin center (on-track guarantee)
         distances_to_bins = np.linalg.norm(
@@ -376,9 +415,11 @@ class TestFieldMetrics:
         from neurospatial.encoding._field_metrics import rate_map_centroid
 
         centroid_euclidean = rate_map_centroid(
-            firing_rate, field_bins, env, method="euclidean"
+            env, firing_rate, field_bins, method="euclidean"
         )
-        centroid_graph = rate_map_centroid(firing_rate, field_bins, env, method="graph")
+        centroid_graph = rate_map_centroid(
+            env, firing_rate, field_bins, method="geodesic"
+        )
 
         # Both should be 2D
         assert centroid_euclidean.shape == (2,)
@@ -402,7 +443,7 @@ class TestFieldMetrics:
 
         from neurospatial.encoding._field_metrics import rate_map_centroid
 
-        centroid = rate_map_centroid(firing_rate, field_bins, env, method="graph")
+        centroid = rate_map_centroid(env, firing_rate, field_bins, method="geodesic")
         assert_allclose(centroid, env.bin_centers[5])
 
 
@@ -1225,12 +1266,12 @@ class TestFieldShiftDistance:
         from neurospatial.encoding._field_metrics import field_shift_distance
 
         shift = field_shift_distance(
+            env1,
             firing_rate_1,
             field_bins_1,
-            env1,
+            env2,
             firing_rate_2,
             field_bins_2,
-            env2,
         )
 
         # Should be ~0 (no shift)
@@ -1259,13 +1300,13 @@ class TestFieldShiftDistance:
         from neurospatial.encoding._field_metrics import field_shift_distance
 
         shift = field_shift_distance(
+            env1,
             firing_rate_1,
             field_bins_1,
-            env1,
+            env2,
             firing_rate_2,
             field_bins_2,
-            env2,
-            use_geodesic=False,
+            metric="euclidean",
         )
 
         # Should be ~10 (shifted by 10 units along x-axis)
@@ -1304,13 +1345,13 @@ class TestFieldShiftDistance:
         # Fallback to Euclidean if geodesic fails
         try:
             shift = field_shift_distance(
+                env,
                 firing_rate_1,
                 field_bins_1,
                 env,
                 firing_rate_2,
                 field_bins_2,
-                env,
-                use_geodesic=True,
+                metric="geodesic",
             )
 
             # If geodesic worked, distance should be non-negative and finite
@@ -1320,13 +1361,13 @@ class TestFieldShiftDistance:
             # Geodesic distance can fail in some configurations
             # Just check that Euclidean works
             shift_euclidean = field_shift_distance(
+                env,
                 firing_rate_1,
                 field_bins_1,
                 env,
                 firing_rate_2,
                 field_bins_2,
-                env,
-                use_geodesic=False,
+                metric="euclidean",
             )
             assert shift_euclidean >= 0
             assert not np.isnan(shift_euclidean)
@@ -1353,7 +1394,7 @@ class TestComputeFieldEMD:
         firing_rate = np.exp(-0.05 * np.linalg.norm(centers - [0, 0], axis=1) ** 2)
 
         # EMD of distribution with itself should be zero
-        emd = compute_field_emd(firing_rate, firing_rate, env, metric="euclidean")
+        emd = compute_field_emd(env, firing_rate, firing_rate, metric="euclidean")
         assert_allclose(emd, 0.0, atol=1e-10)
 
     def test_emd_uniform_distributions(self):
@@ -1376,14 +1417,14 @@ class TestComputeFieldEMD:
 
         # EMD should be zero (identical after normalization)
         emd = compute_field_emd(
-            firing_rate_1, firing_rate_2, env, metric="euclidean", normalize=True
+            env, firing_rate_1, firing_rate_2, metric="euclidean", normalize=True
         )
         assert_allclose(emd, 0.0, atol=1e-10)
 
         # Also test with different uniform rates (still identical after normalization)
         firing_rate_3 = np.ones(env.n_bins) * 10.0  # Different uniform rate
         emd_different_rates = compute_field_emd(
-            firing_rate_1, firing_rate_3, env, metric="euclidean", normalize=True
+            env, firing_rate_1, firing_rate_3, metric="euclidean", normalize=True
         )
         assert_allclose(emd_different_rates, 0.0, atol=1e-10)
 
@@ -1409,7 +1450,7 @@ class TestComputeFieldEMD:
         field2[dist_from_center2 < 5] = 1.0
 
         # EMD should be positive
-        emd = compute_field_emd(field1, field2, env, metric="euclidean")
+        emd = compute_field_emd(env, field1, field2, metric="euclidean")
         assert emd > 0
         assert not np.isnan(emd)
 
@@ -1434,7 +1475,7 @@ class TestComputeFieldEMD:
         field2[dist_from_center2 < 5] = 1.0
 
         # EMD should be positive
-        emd = compute_field_emd(field1, field2, env, metric="geodesic")
+        emd = compute_field_emd(env, field1, field2, metric="geodesic")
         assert emd > 0
         assert not np.isnan(emd)
 
@@ -1459,14 +1500,14 @@ class TestComputeFieldEMD:
 
         # Should work with normalize=True
         emd_normalized = compute_field_emd(
-            field1, field2, env, metric="euclidean", normalize=True
+            env, field1, field2, metric="euclidean", normalize=True
         )
         assert emd_normalized > 0
         assert not np.isnan(emd_normalized)
 
         # Should fail with normalize=False (unequal mass)
         with pytest.raises(ValueError, match="equal total mass"):
-            compute_field_emd(field1, field2, env, metric="euclidean", normalize=False)
+            compute_field_emd(env, field1, field2, metric="euclidean", normalize=False)
 
     def test_emd_nan_handling(self):
         """Test EMD handles NaN values gracefully."""
@@ -1493,7 +1534,7 @@ class TestComputeFieldEMD:
 
         # Should warn and set NaN to zero
         with pytest.warns(UserWarning, match="NaN values"):
-            emd = compute_field_emd(field1, field2, env, metric="euclidean")
+            emd = compute_field_emd(env, field1, field2, metric="euclidean")
             assert emd > 0
             assert not np.isnan(emd)
 
@@ -1510,7 +1551,7 @@ class TestComputeFieldEMD:
         field2 = np.zeros(env.n_bins)
 
         with pytest.warns(UserWarning, match="zero total mass"):
-            emd = compute_field_emd(field1, field2, env, metric="euclidean")
+            emd = compute_field_emd(env, field1, field2, metric="euclidean")
             assert np.isnan(emd)
 
     def test_emd_single_bin(self):
@@ -1528,7 +1569,7 @@ class TestComputeFieldEMD:
         field2[10] = 1.0
 
         # EMD should be zero (same bin)
-        emd = compute_field_emd(field1, field2, env, metric="euclidean")
+        emd = compute_field_emd(env, field1, field2, metric="euclidean")
         assert_allclose(emd, 0.0, atol=1e-10)
 
     def test_emd_dimension_mismatch_raises_error(self):
@@ -1543,7 +1584,7 @@ class TestComputeFieldEMD:
         field2 = np.ones(env.n_bins + 10)  # Wrong size
 
         with pytest.raises(ValueError, match="same length"):
-            compute_field_emd(field1, field2, env, metric="euclidean")
+            compute_field_emd(env, field1, field2, metric="euclidean")
 
     def test_emd_invalid_metric_raises_error(self):
         """Test EMD raises error with invalid metric."""
@@ -1557,7 +1598,7 @@ class TestComputeFieldEMD:
         field2 = np.ones(env.n_bins)
 
         with pytest.raises(ValueError, match="metric must be"):
-            compute_field_emd(field1, field2, env, metric="invalid")
+            compute_field_emd(env, field1, field2, metric="invalid")
 
     def test_emd_wrong_n_bins_raises_error(self):
         """Test EMD raises error when arrays don't match env.n_bins."""
@@ -1572,7 +1613,7 @@ class TestComputeFieldEMD:
         field2 = np.ones(50)
 
         with pytest.raises(ValueError, match=r"match env.n_bins"):
-            compute_field_emd(field1, field2, env, metric="euclidean")
+            compute_field_emd(env, field1, field2, metric="euclidean")
 
     def test_emd_sparse_fields(self):
         """Test EMD with sparse fields (few non-zero bins)."""
@@ -1592,7 +1633,7 @@ class TestComputeFieldEMD:
             field2[15:20] = np.array([0.1, 0.2, 0.3, 0.2, 0.1])
 
             # EMD should be positive (different locations)
-            emd = compute_field_emd(field1, field2, env, metric="euclidean")
+            emd = compute_field_emd(env, field1, field2, metric="euclidean")
             assert emd > 0
             assert not np.isnan(emd)
 
@@ -1617,8 +1658,8 @@ class TestComputeFieldEMD:
         field2[dist_from_center2 < 5] = 1.0
 
         # Compute both
-        emd_euclidean = compute_field_emd(field1, field2, env, metric="euclidean")
-        emd_geodesic = compute_field_emd(field1, field2, env, metric="geodesic")
+        emd_euclidean = compute_field_emd(env, field1, field2, metric="euclidean")
+        emd_geodesic = compute_field_emd(env, field1, field2, metric="geodesic")
 
         # In open field, should be similar (within 20%)
         # Note: They won't be identical due to discretization effects
@@ -1646,8 +1687,8 @@ class TestComputeFieldEMD:
         field2[dist_from_center2 < 5] = 1.0
 
         # Compute EMD in both directions
-        emd_forward = compute_field_emd(field1, field2, env, metric="euclidean")
-        emd_reverse = compute_field_emd(field2, field1, env, metric="euclidean")
+        emd_forward = compute_field_emd(env, field1, field2, metric="euclidean")
+        emd_reverse = compute_field_emd(env, field2, field1, metric="euclidean")
 
         # Should be identical (symmetric property of EMD)
         assert_allclose(emd_forward, emd_reverse, rtol=1e-10)
@@ -1685,8 +1726,8 @@ class TestComputeFieldEMD:
         field2[dist_from_corner2 < 3] = 1.0
 
         # Compute both EMDs
-        emd_euclidean = compute_field_emd(field1, field2, env, metric="euclidean")
-        emd_geodesic = compute_field_emd(field1, field2, env, metric="geodesic")
+        emd_euclidean = compute_field_emd(env, field1, field2, metric="euclidean")
+        emd_geodesic = compute_field_emd(env, field1, field2, metric="geodesic")
 
         # Geodesic should be larger (needs to go around the corner)
         # Euclidean distance ~ sqrt((17.5-2.5)^2 + (2.5-17.5)^2) ~ 21.2
@@ -1726,7 +1767,7 @@ class TestComputeFieldEMD:
 
         # Should warn about disconnected pairs
         with pytest.warns(UserWarning, match="disconnected bin pairs"):
-            emd = compute_field_emd(field1, field2, env, metric="geodesic")
+            emd = compute_field_emd(env, field1, field2, metric="geodesic")
 
             # Should still return a valid result (using Euclidean fallback)
             assert emd > 0
@@ -1754,7 +1795,7 @@ class TestDetectPlaceFieldsValidation:
         with pytest.raises(
             ValueError, match=r"firing_rate shape.*does not match.*n_bins"
         ):
-            detect_place_fields(wrong_firing_rate, env)
+            detect_place_fields(env, wrong_firing_rate)
 
     def test_threshold_out_of_range_raises_error(self):
         """Test that ValueError is raised when threshold is not in (0, 1)."""
@@ -1766,16 +1807,16 @@ class TestDetectPlaceFieldsValidation:
         from neurospatial.encoding.spatial import detect_place_fields
 
         with pytest.raises(ValueError, match="threshold must be in \\(0, 1\\)"):
-            detect_place_fields(firing_rate, env, threshold=0.0)
+            detect_place_fields(env, firing_rate, threshold=0.0)
 
         with pytest.raises(ValueError, match="threshold must be in \\(0, 1\\)"):
-            detect_place_fields(firing_rate, env, threshold=1.0)
+            detect_place_fields(env, firing_rate, threshold=1.0)
 
         with pytest.raises(ValueError, match="threshold must be in \\(0, 1\\)"):
-            detect_place_fields(firing_rate, env, threshold=-0.1)
+            detect_place_fields(env, firing_rate, threshold=-0.1)
 
         with pytest.raises(ValueError, match="threshold must be in \\(0, 1\\)"):
-            detect_place_fields(firing_rate, env, threshold=1.5)
+            detect_place_fields(env, firing_rate, threshold=1.5)
 
     def test_all_nan_firing_rate_returns_empty(self):
         """Test that all-NaN firing rate returns empty field list."""
@@ -1787,9 +1828,13 @@ class TestDetectPlaceFieldsValidation:
 
         firing_rate = np.full(env.n_bins, np.nan)
 
-        fields = detect_place_fields(firing_rate, env)
+        fields = detect_place_fields(env, firing_rate)
 
-        assert fields == []
+        # PlaceFieldsResult is sized + iterable; len() == 0 means no
+        # fields were detected (and excluded_reason is None because
+        # all-NaN doesn't trigger the interneuron filter).
+        assert len(fields) == 0
+        assert fields.excluded_reason is None
 
     def test_explicit_min_size_parameter(self):
         """Test that min_size parameter is respected."""
@@ -1805,7 +1850,7 @@ class TestDetectPlaceFieldsValidation:
         for neighbor in env.neighbors(peak_idx):
             firing_rate[neighbor] = 3.0
 
-        fields = detect_place_fields(firing_rate, env, min_size=20)
+        fields = detect_place_fields(env, firing_rate, min_size=20)
         assert len(fields) == 0 or all(len(f) >= 20 for f in fields)
 
     def test_subfields_extension_path(self):
@@ -1830,11 +1875,11 @@ class TestDetectPlaceFieldsValidation:
             )
 
         fields_with_subfields = detect_place_fields(
-            firing_rate, env, detect_subfields=True, threshold=0.2
+            env, firing_rate, detect_subfields=True, threshold=0.2
         )
 
         fields_without_subfields = detect_place_fields(
-            firing_rate, env, detect_subfields=False, threshold=0.2
+            env, firing_rate, detect_subfields=False, threshold=0.2
         )
 
         assert len(fields_with_subfields) >= len(fields_without_subfields)
@@ -1855,7 +1900,7 @@ class TestFieldCentroidEdgeCases:
         firing_rate = np.zeros(env.n_bins)
         firing_rate[field_bins] = 0.0
 
-        centroid = rate_map_centroid(firing_rate, field_bins, env)
+        centroid = rate_map_centroid(env, firing_rate, field_bins)
 
         expected_centroid = env.bin_centers[field_bins].mean(axis=0)
         assert_allclose(centroid, expected_centroid, rtol=1e-10)
@@ -2199,7 +2244,7 @@ class TestFieldShiftDistanceEdgeCases:
         field_bins_2 = np.array([40, 50, 60])
 
         result = field_shift_distance(
-            firing_rate_1, field_bins_1, env, firing_rate_2, field_bins_2, env
+            env, firing_rate_1, field_bins_1, env, firing_rate_2, field_bins_2
         )
         assert np.isnan(result)
 
@@ -2229,13 +2274,13 @@ class TestFieldShiftDistanceEdgeCases:
             UserWarning, match="(different number of bins|centroids fall outside)"
         ):
             result = field_shift_distance(
+                env1,
                 firing_rate_1,
                 field_bins_1,
-                env1,
+                env2,
                 firing_rate_2,
                 field_bins_2,
-                env2,
-                use_geodesic=True,
+                metric="geodesic",
             )
         # Should return either a valid distance (Euclidean fallback) or NaN (out of bounds)
         assert isinstance(result, float)
@@ -2257,5 +2302,81 @@ class TestComputeFieldEMDEdgeCases:
         firing_rate_2 = np.zeros(env.n_bins)
 
         # Use normalize=False since zero mass with normalize=True returns NaN
-        result = compute_field_emd(firing_rate_1, firing_rate_2, env, normalize=False)
+        result = compute_field_emd(env, firing_rate_1, firing_rate_2, normalize=False)
         assert result == 0.0
+
+
+class TestPlaceFieldsResult:
+    """Regression for M1 1.4 plan-drift: detect_place_fields returns PlaceFieldsResult.
+
+    Pre-fix detect_place_fields returned a bare ``list[NDArray[np.int64]]``,
+    so callers could not tell "this neuron was excluded by the
+    interneuron-rate filter" apart from "this neuron has no detectable
+    place fields" without listening for warnings. Now returns a
+    structured PlaceFieldsResult with `excluded_reason` and
+    `n_excluded` attributes; iterates / sizes like the old list for
+    backwards-compatible access.
+    """
+
+    def _build_env_and_rates(self):
+        from neurospatial import Environment
+
+        rng = np.random.default_rng(0)
+        positions = rng.uniform(-20, 20, size=(2000, 2))
+        env = Environment.from_samples(positions, bin_size=2.0)
+
+        # Slow pyramidal-rate cell with a clear gaussian place field.
+        firing_rate = np.zeros(env.n_bins)
+        for i in range(env.n_bins):
+            dist = float(np.linalg.norm(env.bin_centers[i]))
+            firing_rate[i] = 8.0 * np.exp(-(dist**2) / (2 * 5.0**2))
+        return env, firing_rate
+
+    def test_returns_place_fields_result_on_success(self):
+        from neurospatial.encoding.spatial import (
+            PlaceFieldsResult,
+            detect_place_fields,
+        )
+
+        env, firing_rate = self._build_env_and_rates()
+        result = detect_place_fields(env, firing_rate)
+        assert isinstance(result, PlaceFieldsResult)
+        assert result.excluded_reason is None
+        assert result.n_excluded == 0
+        # At least one detected field on this synthetic gaussian.
+        assert len(result) >= 1
+
+    def test_excluded_reason_set_on_interneuron(self):
+        from neurospatial.encoding.spatial import (
+            PlaceFieldsResult,
+            detect_place_fields,
+        )
+
+        env, _ = self._build_env_and_rates()
+        # Push mean rate above the default 10 Hz threshold so the
+        # interneuron filter fires.
+        firing_rate = np.full(env.n_bins, 20.0)
+        with pytest.warns(UserWarning, match=r"interneuron"):
+            result = detect_place_fields(env, firing_rate, max_mean_rate=10.0)
+        assert isinstance(result, PlaceFieldsResult)
+        assert result.excluded_reason == "mean_rate_above_threshold"
+        assert result.n_excluded == 1
+        assert len(result) == 0
+
+    def test_iterates_like_a_list(self):
+        """Existing `for f in detect_place_fields(...)` callers keep working."""
+        from neurospatial.encoding.spatial import detect_place_fields
+
+        env, firing_rate = self._build_env_and_rates()
+        result = detect_place_fields(env, firing_rate)
+        # Length, indexing, iteration, truthiness all delegate to
+        # the underlying fields list.
+        n_fields = 0
+        for field in result:
+            assert isinstance(field, np.ndarray)
+            assert field.dtype == np.int64
+            n_fields += 1
+        assert n_fields == len(result)
+        if n_fields > 0:
+            assert isinstance(result[0], np.ndarray)
+            assert bool(result) is True

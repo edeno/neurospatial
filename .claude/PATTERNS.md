@@ -174,7 +174,7 @@ Layout engines implement the `LayoutEngine` Protocol, **not inheritance**.
 - `bin_centers`: NDArray[np.float64]
 - `connectivity`: nx.Graph
 - `dimension_ranges`: list[tuple[float, float]]
-- `is_1d`: bool
+- `is_linearized_track`: bool
 - `_layout_type_tag`: str
 - `_build_params_used`: dict
 
@@ -256,13 +256,13 @@ env.regions['goal'] = new_region  # UserWarning: Overwriting existing region
 
 Environments can be 1D (linearized tracks) or N-D (grids):
 
-- **1D**: `GraphLayout` with `is_1d=True`, provides `to_linear()` and `linear_to_nd()`
+- **1D**: `GraphLayout` with `is_linearized_track=True`, provides `to_linear()` and `linear_to_nd()`
 - **N-D**: Grid-based layouts with spatial queries in original coordinate space
 
 **Always check before linearization:**
 
 ```python
-if env.is_1d:
+if env.is_linearized_track:
     linear_pos = env.to_linear(nd_position)
 else:
     bin_idx = env.bin_at(position)  # Use N-D queries

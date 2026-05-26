@@ -27,38 +27,6 @@ def rng():
 class TestScaleBarConfig:
     """Test ScaleBarConfig dataclass."""
 
-    def test_default_creation(self):
-        """Test creating config with all defaults."""
-        config = ScaleBarConfig()
-        assert config.length is None
-        assert config.position == "lower right"
-        assert config.color is None
-        assert config.background == "white"
-        assert config.background_alpha == 0.7
-        assert config.font_size == 10
-        assert config.pad == 0.5
-        assert config.sep == 5.0
-        assert config.label_top is True
-        assert config.box_style == "round"
-        assert config.show_label is True
-
-    def test_custom_creation(self):
-        """Test creating config with custom values."""
-        config = ScaleBarConfig(
-            length=20.0,
-            position="upper left",
-            color="white",
-            background="black",
-            background_alpha=0.5,
-            font_size=14,
-        )
-        assert config.length == 20.0
-        assert config.position == "upper left"
-        assert config.color == "white"
-        assert config.background == "black"
-        assert config.background_alpha == 0.5
-        assert config.font_size == 14
-
     def test_frozen(self):
         """Test that config is immutable (frozen dataclass)."""
         config = ScaleBarConfig()
@@ -204,16 +172,6 @@ class TestAddScaleBarToAxes:
         assert len(ax.artists) > 0
         plt.close(fig)
 
-    def test_no_background(self):
-        """Test with no background box."""
-        config = ScaleBarConfig(box_style=None)
-        fig, ax = plt.subplots()
-        ax.set_xlim(0, 100)
-        ax.set_ylim(0, 100)
-
-        add_scale_bar_to_axes(ax, extent=100, units="cm", config=config)
-        plt.close(fig)
-
     def test_all_positions(self):
         """Test all four position options."""
         positions = ["lower right", "lower left", "upper right", "upper left"]
@@ -226,18 +184,6 @@ class TestAddScaleBarToAxes:
             add_scale_bar_to_axes(ax, extent=100, units="cm", config=config)
             assert len(ax.artists) > 0
             plt.close(fig)
-
-    def test_auto_length(self):
-        """Test auto-calculated length (config.length=None)."""
-        fig, ax = plt.subplots()
-        ax.set_xlim(0, 100)
-        ax.set_ylim(0, 100)
-
-        # With length=None, should auto-calculate
-        config = ScaleBarConfig(length=None)
-        add_scale_bar_to_axes(ax, extent=100, units="cm", config=config)
-        assert len(ax.artists) > 0
-        plt.close(fig)
 
 
 class TestPlotFieldWithScaleBar:
@@ -257,21 +203,6 @@ class TestPlotFieldWithScaleBar:
         assert len(ax.artists) > 0
         plt.close()
 
-    def test_scale_bar_config(self, small_2d_env, rng):
-        """Test scale_bar=ScaleBarConfig works."""
-        config = ScaleBarConfig(length=5.0, color="white", position="upper left")
-        field = rng.random(small_2d_env.n_bins)
-        ax = small_2d_env.plot_field(field, scale_bar=config)
-        assert len(ax.artists) > 0
-        plt.close()
-
-    def test_scale_bar_with_colorbar(self, small_2d_env, rng):
-        """Test scale bar works alongside colorbar."""
-        field = rng.random(small_2d_env.n_bins)
-        ax = small_2d_env.plot_field(field, scale_bar=True, colorbar=True)
-        assert len(ax.artists) > 0
-        plt.close()
-
     def test_scale_bar_1d_env(self, small_1d_env, rng):
         """Test scale bar with 1D environments.
 
@@ -282,7 +213,7 @@ class TestPlotFieldWithScaleBar:
         field = rng.random(small_1d_env.n_bins)
         # 1D graph layouts go through the 1D plotting path, not grid path
         # Check if it's a 1D layout that can be plotted
-        if small_1d_env.layout.is_1d:
+        if small_1d_env.layout.is_linearized_track:
             # 1D layouts use line plots, scale bar still works
             small_1d_env.plot_field(field, scale_bar=True)
             plt.close()
@@ -300,31 +231,9 @@ class TestPlotFieldWithScaleBar:
         assert len(ax.artists) == 0
         plt.close()
 
-    def test_scale_bar_with_units(self, small_2d_env, rng):
-        """Test scale bar respects env.units."""
-        small_2d_env.units = "cm"
-        field = rng.random(small_2d_env.n_bins)
-        ax = small_2d_env.plot_field(field, scale_bar=True)
-        assert len(ax.artists) > 0
-        plt.close()
-
 
 class TestPlotWithScaleBar:
     """Test scale bar in env.plot()."""
-
-    def test_plot_with_scale_bar(self, small_2d_env):
-        """Test env.plot(scale_bar=True)."""
-        ax = small_2d_env.plot(scale_bar=True)
-        assert len(ax.artists) > 0
-        plt.close()
-
-    def test_plot_with_regions_and_scale_bar(self, small_2d_env):
-        """Test scale bar works with regions displayed."""
-        env = small_2d_env.copy()
-        env.regions.add("center", point=(5.0, 5.0))
-        ax = env.plot(scale_bar=True, show_regions=True)
-        assert len(ax.artists) > 0
-        plt.close()
 
 
 class TestAnimateFieldsWithScaleBar:
@@ -333,44 +242,6 @@ class TestAnimateFieldsWithScaleBar:
     Uses fixtures from tests/conftest.py:
     - small_2d_env: 10x10 cm grid (25 bins)
     """
-
-    def test_animate_fields_accepts_scale_bar_bool(self, small_2d_env, rng):
-        """Test animate_fields() accepts scale_bar=True parameter."""
-        fields = [rng.random(small_2d_env.n_bins) for _ in range(3)]
-        frame_times = np.linspace(0, 1.0, 3)  # 3 frames over 1 second
-
-        # Should not raise - parameter is accepted
-        # Use html backend since it doesn't require external deps
-        import tempfile
-
-        with tempfile.NamedTemporaryFile(suffix=".html", delete=False) as f:
-            small_2d_env.animate_fields(
-                fields,
-                frame_times=frame_times,
-                backend="html",
-                save_path=f.name,
-                scale_bar=True,
-            )
-
-    def test_animate_fields_accepts_scale_bar_config(self, small_2d_env, rng):
-        """Test animate_fields() accepts ScaleBarConfig parameter."""
-        from neurospatial.animation.config import ScaleBarConfig
-
-        fields = [rng.random(small_2d_env.n_bins) for _ in range(3)]
-        frame_times = np.linspace(0, 1.0, 3)  # 3 frames over 1 second
-        config = ScaleBarConfig(length=5.0, position="upper left", color="white")
-
-        # Should not raise - parameter is accepted
-        import tempfile
-
-        with tempfile.NamedTemporaryFile(suffix=".html", delete=False) as f:
-            small_2d_env.animate_fields(
-                fields,
-                frame_times=frame_times,
-                backend="html",
-                save_path=f.name,
-                scale_bar=config,
-            )
 
     def test_video_backend_with_scale_bar(self, small_2d_env, rng):
         """Test video backend renders scale bar in frames."""

@@ -168,8 +168,8 @@ class PositionOverlay:
       Provide coordinates in your tracking/environment format (x, y).
       DO NOT pre-convert to napari (row, col) - handled automatically.
 
-      ✓ CORRECT:  data=positions  # Your tracking coordinates
-      ✗ INCORRECT: data=positions[:, ::-1]  # Don't swap axes manually
+      ✓ CORRECT:  positions=trajectory  # Your tracking coordinates
+      ✗ INCORRECT: positions=trajectory[:, ::-1]  # Don't swap axes manually
 
     Represents position data for a single entity (e.g., animal, object) over time.
     Can be rendered with a trail showing recent history. For multi-animal tracking,
@@ -177,7 +177,7 @@ class PositionOverlay:
 
     Parameters
     ----------
-    data : ndarray of shape (n_samples, n_dims), dtype float64
+    positions : ndarray of shape (n_samples, n_dims), dtype float64
         Position coordinates in **environment (x, y) format**. Each row is a
         position at a time point. Dimensionality must match the environment
         (env.n_dims). The animation system handles coordinate transformation
@@ -201,7 +201,7 @@ class PositionOverlay:
 
     Attributes
     ----------
-    data : NDArray[np.float64]
+    positions : NDArray[np.float64]
         Position coordinates.
     times : NDArray[np.float64] | None
         Optional timestamps.
@@ -232,8 +232,8 @@ class PositionOverlay:
     Basic trajectory without trail:
 
     >>> import numpy as np
-    >>> positions = np.array([[0.0, 1.0], [2.0, 3.0], [4.0, 5.0]])
-    >>> overlay = PositionOverlay(data=positions)
+    >>> trajectory = np.array([[0.0, 1.0], [2.0, 3.0], [4.0, 5.0]])
+    >>> overlay = PositionOverlay(positions=trajectory)
     >>> overlay.color
     'red'
     >>> overlay.trail_length is None
@@ -241,10 +241,10 @@ class PositionOverlay:
 
     Trajectory with timestamps and trail:
 
-    >>> positions = np.array([[0.0, 1.0], [2.0, 3.0], [4.0, 5.0]])
+    >>> trajectory = np.array([[0.0, 1.0], [2.0, 3.0], [4.0, 5.0]])
     >>> times = np.array([0.0, 0.5, 1.0])
     >>> overlay = PositionOverlay(
-    ...     data=positions, times=times, color="blue", trail_length=10
+    ...     positions=trajectory, times=times, color="blue", trail_length=10
     ... )
     >>> overlay.trail_length
     10
@@ -253,14 +253,14 @@ class PositionOverlay:
 
     >>> positions1 = np.array([[0.0, 1.0], [2.0, 3.0]])
     >>> positions2 = np.array([[5.0, 6.0], [7.0, 8.0]])
-    >>> animal1 = PositionOverlay(data=positions1, color="red")
-    >>> animal2 = PositionOverlay(data=positions2, color="blue")
+    >>> animal1 = PositionOverlay(positions=positions1, color="red")
+    >>> animal2 = PositionOverlay(positions=positions2, color="blue")
     >>> overlays = [animal1, animal2]
     >>> len(overlays)
     2
     """
 
-    data: NDArray[np.float64]
+    positions: NDArray[np.float64]
     times: NDArray[np.float64] | None = None
     color: str = "red"
     size: float = 10.0
@@ -290,12 +290,12 @@ class PositionOverlay:
             Internal data container aligned to frame times.
         """
         # Validate position data
-        _validate_finite_values(self.data, name="PositionOverlay.data")
-        _validate_shape(self.data, env.n_dims, name="PositionOverlay.data")
+        _validate_finite_values(self.positions, name="PositionOverlay.positions")
+        _validate_shape(self.positions, env.n_dims, name="PositionOverlay.positions")
 
         # Align to frame times (validates times if provided)
         aligned_data = _align_to_frame_times(
-            self.data,
+            self.positions,
             self.times,
             frame_times,
             n_frames,
@@ -307,7 +307,7 @@ class PositionOverlay:
         _validate_bounds(
             aligned_data,
             env.dimension_ranges,
-            name="PositionOverlay.data",
+            name="PositionOverlay.positions",
             threshold=0.1,
         )
 
@@ -522,7 +522,7 @@ class HeadDirectionOverlay:
 
     Parameters
     ----------
-    data : ndarray of shape (n_samples,) or (n_samples, n_dims), dtype float64
+    headings : ndarray of shape (n_samples,) or (n_samples, n_dims), dtype float64
         Heading data in one of two formats:
 
         - Angles: shape (n_samples,), dtype float64, in radians where 0 is
@@ -561,7 +561,7 @@ class HeadDirectionOverlay:
 
     Attributes
     ----------
-    data : NDArray[np.float64]
+    headings : NDArray[np.float64]
         Heading angles or unit vectors.
     times : NDArray[np.float64] | None
         Optional timestamps.
@@ -600,8 +600,8 @@ class HeadDirectionOverlay:
 
     >>> import numpy as np
     >>> angles = np.array([0.0, np.pi / 2, np.pi, 3 * np.pi / 2])
-    >>> overlay = HeadDirectionOverlay(data=angles)
-    >>> overlay.data.shape
+    >>> overlay = HeadDirectionOverlay(headings=angles)
+    >>> overlay.headings.shape
     (4,)
     >>> overlay.color
     'hsv'
@@ -609,14 +609,14 @@ class HeadDirectionOverlay:
     Head direction as unit vectors (2D):
 
     >>> vectors = np.array([[1.0, 0.0], [0.0, 1.0], [-1.0, 0.0]])
-    >>> overlay = HeadDirectionOverlay(data=vectors, color="twilight")
-    >>> overlay.data.shape
+    >>> overlay = HeadDirectionOverlay(headings=vectors, color="twilight")
+    >>> overlay.headings.shape
     (3, 2)
 
     Custom styling with visible offset and size:
 
     >>> overlay = HeadDirectionOverlay(
-    ...     data=angles, color="purple", length=20.0, width=4.0
+    ...     headings=angles, color="purple", length=20.0, width=4.0
     ... )
     >>> overlay.length
     20.0
@@ -626,12 +626,12 @@ class HeadDirectionOverlay:
     With timestamps for temporal alignment:
 
     >>> times = np.array([0.0, 0.5, 1.0, 1.5])
-    >>> overlay = HeadDirectionOverlay(data=angles, times=times)
+    >>> overlay = HeadDirectionOverlay(headings=angles, times=times)
     >>> overlay.times.shape
     (4,)
     """
 
-    data: NDArray[np.float64]
+    headings: NDArray[np.float64]
     times: NDArray[np.float64] | None = None
     color: str = "hsv"
     length: float = 15.0
@@ -661,15 +661,17 @@ class HeadDirectionOverlay:
             Internal data container aligned to frame times.
         """
         # Validate head direction data
-        _validate_finite_values(self.data, name="HeadDirectionOverlay.data")
+        _validate_finite_values(self.headings, name="HeadDirectionOverlay.headings")
 
         # For head direction, validate shape only if 2D (vectors)
-        if self.data.ndim == 2:
-            _validate_shape(self.data, env.n_dims, name="HeadDirectionOverlay.data")
+        if self.headings.ndim == 2:
+            _validate_shape(
+                self.headings, env.n_dims, name="HeadDirectionOverlay.headings"
+            )
 
         # Align to frame times (validates times if provided)
         aligned_data = _align_to_frame_times(
-            self.data,
+            self.headings,
             self.times,
             frame_times,
             n_frames,
@@ -4134,7 +4136,7 @@ def _convert_overlays_to_data(
     >>> # Create overlay
     >>> trajectory = np.array([[10.0, 20.0], [30.0, 40.0], [50.0, 60.0]])
     >>> times = np.array([0.0, 1.0, 2.0])
-    >>> overlay = PositionOverlay(data=trajectory, times=times)
+    >>> overlay = PositionOverlay(positions=trajectory, times=times)
     >>>
     >>> # Convert
     >>> frame_times = np.array([0.0, 1.0, 2.0])

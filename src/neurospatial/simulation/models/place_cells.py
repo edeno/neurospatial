@@ -32,7 +32,7 @@ class PlaceCellModel:
         Peak firing rate in Hz (default: 20.0).
     baseline_rate : float, optional
         Baseline firing rate outside field (default: 0.01 Hz).
-    distance_metric : {'euclidean', 'geodesic'}, optional
+    metric : {'euclidean', 'geodesic'}, optional
         Method for computing distance from positions to field center.
 
         - 'euclidean': Straight-line distance (default). Fast but ignores
@@ -65,7 +65,7 @@ class PlaceCellModel:
         Peak firing rate in Hz.
     baseline_rate : float
         Baseline firing rate in Hz.
-    distance_metric : str
+    metric : str
         Distance metric used ('euclidean' or 'geodesic').
     condition : Callable | None
         Condition function for gated firing.
@@ -88,7 +88,9 @@ class PlaceCellModel:
     >>> pc = PlaceCellModel(env, center=center, width=10.0, max_rate=25.0)
     >>>
     >>> # Generate trajectory and compute firing rates
-    >>> positions, times = simulate_trajectory_ou(env, duration=10.0, seed=42)
+    >>> positions, times = simulate_trajectory_ou(
+    ...     env, duration=10.0, seed=42, speed_units="cm"
+    ... )
     >>> rates = pc.firing_rate(positions)
     >>> rates.shape[0] == len(times)
     True
@@ -131,7 +133,7 @@ class PlaceCellModel:
     ...     env,
     ...     center=[50.0, 50.0],
     ...     width=10.0,
-    ...     distance_metric="geodesic",
+    ...     metric="geodesic",
     ... )
     >>> rates_geodesic = pc_geodesic.firing_rate(positions)
 
@@ -159,11 +161,12 @@ class PlaceCellModel:
     def __init__(
         self,
         env: Environment,
+        *,
         center: NDArray[np.float64] | None = None,
         width: float | NDArray[np.float64] | None = None,
         max_rate: float = 20.0,
         baseline_rate: float = 0.01,
-        distance_metric: Literal["euclidean", "geodesic"] = "euclidean",
+        metric: Literal["euclidean", "geodesic"] = "euclidean",
         condition: Callable[
             [NDArray[np.float64], NDArray[np.float64] | None], NDArray[np.bool_]
         ]
@@ -173,7 +176,7 @@ class PlaceCellModel:
         self.env = env
         self.max_rate = max_rate
         self.baseline_rate = baseline_rate
-        self.distance_metric = distance_metric
+        self.metric = metric
         self.condition = condition
 
         # Initialize random number generator for center selection
@@ -197,20 +200,20 @@ class PlaceCellModel:
             self.width = width
 
         # Validate width compatibility with distance metric
-        if distance_metric == "geodesic":
+        if metric == "geodesic":
             width_arr = np.asarray(self.width)
             if width_arr.ndim > 0 and len(width_arr) > 1:
                 msg = (
                     "Anisotropic width (array-like) is not supported with "
-                    "distance_metric='geodesic'. Geodesic distance is a scalar "
+                    "metric='geodesic'. Geodesic distance is a scalar "
                     "(path length through graph) without directional components. "
-                    "Use scalar width or distance_metric='euclidean'."
+                    "Use scalar width or metric='euclidean'."
                 )
                 raise ValueError(msg)
 
         # Precompute distance field for geodesic metric
         self._distance_field: NDArray[np.float64] | None
-        if distance_metric == "geodesic":
+        if metric == "geodesic":
             # Find bin containing the center
             # Always use contains check first to avoid errors
             # Note: contains() returns ndarray, so we need [0] for single point
@@ -272,11 +275,11 @@ class PlaceCellModel:
         - Lookup distances (O(1) per position)
         """
         # Compute distances
-        if self.distance_metric == "euclidean":
+        if self.metric == "euclidean":
             # Straight-line distance
             distances = np.linalg.norm(positions - self.center, axis=1)
 
-        elif self.distance_metric == "geodesic":
+        elif self.metric == "geodesic":
             # Graph-based distance (path through connectivity)
             # Map positions to bins - vectorized for efficiency
             # contains() returns ndarray, so we can use it directly for batch check

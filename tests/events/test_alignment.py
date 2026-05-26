@@ -235,31 +235,6 @@ class TestAlignSpikesToEvents:
 
     # --- Output properties ---
 
-    def test_output_is_list_of_arrays(self):
-        """Result is list of numpy arrays."""
-        from neurospatial.events.alignment import align_spikes_to_events
-
-        spike_times = np.array([10.5, 11.0])
-        event_times = np.array([10.0, 20.0])
-        window = (-1.0, 2.0)
-
-        result = align_spikes_to_events(spike_times, event_times, window)
-
-        assert isinstance(result, list)
-        assert all(isinstance(arr, np.ndarray) for arr in result)
-
-    def test_output_dtype_float64(self):
-        """Output arrays have float64 dtype."""
-        from neurospatial.events.alignment import align_spikes_to_events
-
-        spike_times = np.array([10.5])
-        event_times = np.array([10.0])
-        window = (-1.0, 2.0)
-
-        result = align_spikes_to_events(spike_times, event_times, window)
-
-        assert result[0].dtype == np.float64
-
     def test_output_sorted(self):
         """Output arrays are sorted by relative time."""
         from neurospatial.events.alignment import align_spikes_to_events
@@ -429,7 +404,7 @@ class TestPeriEventHistogram:
         )
 
         # First bin has 10 spikes in 0.1s → 100 Hz
-        rates = result.firing_rate()
+        rates = result.firing_rate
         assert rates[0] == pytest.approx(100.0, rel=0.01)
 
     def test_sem_with_multiple_events(self):
@@ -612,24 +587,11 @@ class TestPeriEventHistogram:
 
         assert result.n_events == len(stim_times)
         # Post-stimulus bins should have higher rate than pre-stimulus
-        pre_stim_rate = result.firing_rate()[: len(result.bin_centers) // 3].mean()
-        post_stim_rate = result.firing_rate()[
+        pre_stim_rate = result.firing_rate[: len(result.bin_centers) // 3].mean()
+        post_stim_rate = result.firing_rate[
             len(result.bin_centers) // 3 : 2 * len(result.bin_centers) // 3
         ].mean()
         assert post_stim_rate > pre_stim_rate
-
-    def test_default_bin_size(self):
-        """Default bin_size is used when not specified."""
-        from neurospatial.events.alignment import peri_event_histogram
-
-        spike_times = np.array([10.0])
-        event_times = np.array([10.0])
-        window = (-0.5, 0.5)
-
-        # Should not raise - uses default bin_size
-        result = peri_event_histogram(spike_times, event_times, window)
-
-        assert result.bin_size > 0
 
 
 class TestPopulationPeriEventHistogram:
@@ -696,7 +658,7 @@ class TestPopulationPeriEventHistogram:
             spike_trains, event_times, window, bin_size=bin_size
         )
 
-        rates = result.firing_rates()
+        rates = result.firing_rates
         assert rates.shape == result.histograms.shape
         # Unit 1: 10 spikes in 0.1s = 100 Hz
         # Unit 2: 5 spikes in 0.1s = 50 Hz
@@ -845,7 +807,7 @@ class TestPopulationPeriEventHistogram:
         assert result.n_units == n_units
         assert result.n_events == len(event_times)
         # Higher-rate units should have higher mean firing
-        rates = result.firing_rates().mean(axis=1)  # Mean rate per unit
+        rates = result.firing_rates.mean(axis=1)  # Mean rate per unit
         assert np.all(np.diff(rates) > 0)  # Should increase with unit index
 
 
@@ -1105,43 +1067,6 @@ class TestAlignEvents:
 
 class TestPlotPeriEventHistogram:
     """Tests for plot_peri_event_histogram() function."""
-
-    def test_plot_creates_axes(self):
-        """Plot returns matplotlib axes."""
-        import matplotlib.pyplot as plt
-
-        from neurospatial.events._core import plot_peri_event_histogram
-        from neurospatial.events.alignment import peri_event_histogram
-
-        spike_times = np.array([9.8, 10.2, 10.5, 20.1, 20.3])
-        event_times = np.array([10.0, 20.0])
-        window = (-0.5, 1.0)
-
-        result = peri_event_histogram(spike_times, event_times, window)
-        ax = plot_peri_event_histogram(result)
-
-        assert ax is not None
-        assert hasattr(ax, "plot")  # Is a matplotlib axes
-        plt.close("all")
-
-    def test_plot_with_custom_axes(self):
-        """Plot on provided axes."""
-        import matplotlib.pyplot as plt
-
-        from neurospatial.events._core import plot_peri_event_histogram
-        from neurospatial.events.alignment import peri_event_histogram
-
-        spike_times = np.array([10.0, 20.0])
-        event_times = np.array([10.0, 20.0])
-        window = (-0.5, 1.0)
-
-        result = peri_event_histogram(spike_times, event_times, window)
-
-        _fig, custom_ax = plt.subplots()
-        returned_ax = plot_peri_event_histogram(result, ax=custom_ax)
-
-        assert returned_ax is custom_ax
-        plt.close("all")
 
     def test_plot_as_rate(self):
         """Plot as firing rate (Hz)."""

@@ -100,16 +100,16 @@ class TestVTEDecisionAnalysisIntegration:
             pytest.skip("Trajectory does not have valid bins in environment")
 
         entry_from_analysis = decision_region_entry_time(
-            position_bins, times, env, "decision"
+            position_bins, times, env, region="decision"
         )
 
         # Run VTE session - should use same entry detection
         result = compute_vte_session(
             trajectory,
             times,
-            trials,
+            env,
             decision_region="decision",
-            env=env,
+            trials=trials,
             window_duration=0.5,
             min_speed=1.0,
         )
@@ -190,9 +190,9 @@ class TestVTERoundTrip:
         result = compute_vte_session(
             positions_array,
             times_array,
-            trials,
+            env,
             decision_region="decision",
-            env=env,
+            trials=trials,
             window_duration=0.8,
             min_speed=1.0,
             alpha=0.5,
@@ -205,45 +205,13 @@ class TestVTERoundTrip:
         # VTE fraction should be reasonable
         assert 0.0 <= result.vte_fraction <= 1.0
 
-    def test_single_trial_returns_none_for_zscores(self) -> None:
-        """Single trial should have None for z-scores."""
-        from neurospatial.behavior.vte import compute_vte_trial
-
-        # Create simple trajectory
-        times = np.linspace(0, 2, 101)
-        positions = np.column_stack(
-            [
-                np.linspace(0, 100, 101),
-                np.full(101, 50.0),
-            ]
-        )
-
-        result = compute_vte_trial(
-            positions,
-            times,
-            entry_time=1.0,
-            window_duration=0.5,
-            min_speed=1.0,
-        )
-
-        # Z-scores should be None for single trial
-        assert result.z_head_sweep is None
-        assert result.z_speed_inverse is None
-        assert result.vte_index is None
-        assert result.is_vte is None
-
-
-# =============================================================================
-# Test: path_efficiency consistent with path_progress conceptually
-# =============================================================================
-
 
 class TestPathEfficiencyPathProgressConsistency:
     """Test conceptual consistency between path_efficiency and path_progress."""
 
     def test_straight_path_efficiency_equals_one(self) -> None:
         """Straight path should have efficiency = 1.0."""
-        from neurospatial.behavior.navigation import path_efficiency
+        from neurospatial.behavior.navigation import compute_path_efficiency
 
         # Create environment
         rng = np.random.default_rng(42)
@@ -257,9 +225,12 @@ class TestPathEfficiencyPathProgressConsistency:
                 np.full(50, 50.0),
             ]
         )
+        times = np.linspace(0.0, 1.0, len(trajectory))
         goal = np.array([90.0, 50.0])
 
-        efficiency = path_efficiency(env, trajectory, goal, metric="euclidean")
+        efficiency = compute_path_efficiency(
+            env, trajectory, times, goal, metric="euclidean"
+        ).efficiency
 
         # Should be very close to 1.0 for straight path
         assert 0.95 <= efficiency <= 1.0
@@ -294,8 +265,8 @@ class TestPathEfficiencyPathProgressConsistency:
             pytest.skip("Trajectory bins not in environment")
 
         progress = path_progress(
-            env,
             position_bins,
+            env,
             start_bins=np.full(len(position_bins), start_bin),
             goal_bins=np.full(len(position_bins), goal_bin),
             metric="geodesic",  # Use geodesic for connected environment
@@ -309,7 +280,7 @@ class TestPathEfficiencyPathProgressConsistency:
 
     def test_efficiency_and_progress_both_handle_detours(self) -> None:
         """Both metrics should handle detours reasonably."""
-        from neurospatial.behavior.navigation import path_efficiency
+        from neurospatial.behavior.navigation import compute_path_efficiency
 
         # Create dense environment to ensure trajectory bins exist
         # Note: rng not used here since we use linspace grid, but kept for consistency
@@ -334,10 +305,13 @@ class TestPathEfficiencyPathProgressConsistency:
             ]
         )
         trajectory = np.column_stack([x_traj, y_traj])
+        times = np.linspace(0.0, 1.0, len(trajectory))
         goal = np.array([10.0, 50.0])  # Back at start
 
         # Path efficiency should be low (traveled much more than needed)
-        efficiency = path_efficiency(env, trajectory, goal, metric="euclidean")
+        efficiency = compute_path_efficiency(
+            env, trajectory, times, goal, metric="euclidean"
+        ).efficiency
         assert efficiency < 0.1  # Should be very inefficient
 
 

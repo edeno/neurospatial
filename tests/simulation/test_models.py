@@ -112,31 +112,35 @@ class TestPlaceCellModel:
         expected = 20.0 * np.exp(-0.5)
         assert abs(rate[0] - expected) < 0.1
 
-    def test_euclidean_distance_metric(self, simple_2d_env):
+    def test_euclidean_metric(self, simple_2d_env):
         """Test euclidean distance metric (default)."""
         pc = PlaceCellModel(
             simple_2d_env,
             center=[50.0, 50.0],
             width=10.0,
-            distance_metric="euclidean",
+            metric="euclidean",
         )
 
-        positions, times = simulate_trajectory_ou(simple_2d_env, duration=1.0, seed=42)
+        positions, times = simulate_trajectory_ou(
+            simple_2d_env, duration=1.0, seed=42, speed_units="cm"
+        )
         rates = pc.firing_rate(positions, times)
 
         assert len(rates) == len(positions)
         assert np.all(rates >= 0)  # All rates non-negative
 
-    def test_geodesic_distance_metric(self, simple_2d_env):
+    def test_geodesic_metric(self, simple_2d_env):
         """Test geodesic distance metric."""
         pc = PlaceCellModel(
             simple_2d_env,
             center=[50.0, 50.0],
             width=10.0,
-            distance_metric="geodesic",
+            metric="geodesic",
         )
 
-        positions, times = simulate_trajectory_ou(simple_2d_env, duration=1.0, seed=42)
+        positions, times = simulate_trajectory_ou(
+            simple_2d_env, duration=1.0, seed=42, speed_units="cm"
+        )
         rates = pc.firing_rate(positions, times)
 
         assert len(rates) == len(positions)
@@ -278,7 +282,9 @@ class TestBoundaryCellModel:
         )
 
         # Generate trajectory
-        positions, times = simulate_trajectory_ou(simple_2d_env, duration=10.0, seed=42)
+        positions, times = simulate_trajectory_ou(
+            simple_2d_env, duration=10.0, seed=42, speed_units="cm"
+        )
         rates = bc.firing_rate(positions, times)
 
         # Should have some firing (non-zero rates)
@@ -296,7 +302,9 @@ class TestBoundaryCellModel:
             preferred_direction=None,  # Omnidirectional
         )
 
-        positions, times = simulate_trajectory_ou(simple_2d_env, duration=5.0, seed=42)
+        positions, times = simulate_trajectory_ou(
+            simple_2d_env, duration=5.0, seed=42, speed_units="cm"
+        )
         rates = bc.firing_rate(positions, times)
 
         # Should fire near all boundaries
@@ -315,7 +323,9 @@ class TestBoundaryCellModel:
             direction_tolerance=np.pi / 6,
         )
 
-        positions, times = simulate_trajectory_ou(simple_2d_env, duration=5.0, seed=42)
+        positions, times = simulate_trajectory_ou(
+            simple_2d_env, duration=5.0, seed=42, speed_units="cm"
+        )
         rates = bc_south.firing_rate(positions, times)
 
         # Should have some firing
@@ -335,7 +345,9 @@ class TestBoundaryCellModel:
         )
 
         # Test that firing falls off with distance from preferred_distance
-        positions, times = simulate_trajectory_ou(simple_2d_env, duration=5.0, seed=42)
+        positions, times = simulate_trajectory_ou(
+            simple_2d_env, duration=5.0, seed=42, speed_units="cm"
+        )
         rates = bc.firing_rate(positions, times)
 
         # Rates should be bounded
@@ -386,33 +398,37 @@ class TestBoundaryCellModel:
         bc = BoundaryCellModel(simple_2d_env, preferred_distance=5.0)
         assert isinstance(bc, NeuralModel)
 
-    def test_euclidean_distance_metric(self, simple_2d_env):
+    def test_euclidean_metric(self, simple_2d_env):
         """Test euclidean distance metric."""
         from neurospatial.simulation.models import BoundaryCellModel
 
         bc = BoundaryCellModel(
             simple_2d_env,
             preferred_distance=5.0,
-            distance_metric="euclidean",
+            metric="euclidean",
         )
 
-        positions, times = simulate_trajectory_ou(simple_2d_env, duration=2.0, seed=42)
+        positions, times = simulate_trajectory_ou(
+            simple_2d_env, duration=2.0, seed=42, speed_units="cm"
+        )
         rates = bc.firing_rate(positions, times)
 
         assert len(rates) == len(positions)
         assert np.all(rates >= 0)
 
-    def test_geodesic_distance_metric(self, simple_2d_env):
+    def test_geodesic_metric(self, simple_2d_env):
         """Test geodesic distance metric (default)."""
         from neurospatial.simulation.models import BoundaryCellModel
 
         bc = BoundaryCellModel(
             simple_2d_env,
             preferred_distance=5.0,
-            distance_metric="geodesic",
+            metric="geodesic",
         )
 
-        positions, times = simulate_trajectory_ou(simple_2d_env, duration=2.0, seed=42)
+        positions, times = simulate_trajectory_ou(
+            simple_2d_env, duration=2.0, seed=42, speed_units="cm"
+        )
         rates = bc.firing_rate(positions, times)
 
         assert len(rates) == len(positions)
@@ -585,7 +601,9 @@ class TestGridCellModel:
 
         gc = GridCellModel(simple_2d_env, grid_spacing=50.0)
 
-        positions, times = simulate_trajectory_ou(simple_2d_env, duration=2.0, seed=42)
+        positions, times = simulate_trajectory_ou(
+            simple_2d_env, duration=2.0, seed=42, speed_units="cm"
+        )
         rates = gc.firing_rate(positions, times)
 
         assert len(rates) == len(positions)
@@ -604,7 +622,9 @@ class TestGridCellModel:
             baseline_rate=baseline,
         )
 
-        positions, times = simulate_trajectory_ou(simple_2d_env, duration=5.0, seed=42)
+        positions, times = simulate_trajectory_ou(
+            simple_2d_env, duration=5.0, seed=42, speed_units="cm"
+        )
         rates = gc.firing_rate(positions, times)
 
         # All rates should be between baseline and max_rate

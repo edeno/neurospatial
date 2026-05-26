@@ -202,18 +202,17 @@ class TestBinSequenceAdvanced:
             ]
         )
 
-        bins, starts, ends = small_2d_env.bin_sequence(
-            times, positions, dedup=True, return_runs=True
-        )
+        _bsr = small_2d_env.bin_sequence_with_runs(times, positions)
+        bins, starts, lengths = _bsr.bins, _bsr.run_starts, _bsr.run_lengths
 
         # Deduplicated: [0, 1]
         assert_array_equal(bins, [0, 1])
-        # Run 1: indices 0-2
+        # Run 1: indices 0-2 (length 3)
         assert starts[0] == 0
-        assert ends[0] == 2
-        # Run 2: indices 3-5
+        assert lengths[0] == 3
+        # Run 2: indices 3-5 (length 3)
         assert starts[1] == 3
-        assert ends[1] == 5
+        assert lengths[1] == 3
 
     def test_bin_sequence_out_of_bounds_positions(self, small_2d_env):
         """Test handling of positions outside environment bounds.
@@ -257,22 +256,20 @@ class TestBinSequenceAdvanced:
         positions = small_2d_env.bin_centers[0:1]
 
         # With dedup=True, single sample
-        bins, starts, ends = small_2d_env.bin_sequence(
-            times, positions, dedup=True, return_runs=True
-        )
+        _bsr = small_2d_env.bin_sequence_with_runs(times, positions)
+        bins, starts, lengths = _bsr.bins, _bsr.run_starts, _bsr.run_lengths
 
         assert_array_equal(bins, [0])
         assert_array_equal(starts, [0])
-        assert_array_equal(ends, [0])
+        assert_array_equal(lengths, [1])
 
         # With dedup=False, single sample
-        bins, starts, ends = small_2d_env.bin_sequence(
-            times, positions, dedup=False, return_runs=True
-        )
+        _bsr = small_2d_env.bin_sequence_with_runs(times, positions)
+        bins, starts, lengths = _bsr.bins, _bsr.run_starts, _bsr.run_lengths
 
         assert_array_equal(bins, [0])
         assert_array_equal(starts, [0])
-        assert_array_equal(ends, [0])
+        assert_array_equal(lengths, [1])
 
     def test_bin_sequence_runs_with_outside_dropped(self, small_2d_env):
         """Test run boundaries when outside values are dropped.
@@ -292,26 +289,67 @@ class TestBinSequenceAdvanced:
             ]
         )
 
-        bins, starts, ends = small_2d_env.bin_sequence(
-            times, positions, outside_value=None, dedup=True, return_runs=True
-        )
+        _bsr = small_2d_env.bin_sequence_with_runs(times, positions, outside_value=None)
+        bins, starts, lengths = _bsr.bins, _bsr.run_starts, _bsr.run_lengths
 
         # After dropping outside: [0, 0, 1, 1] with original indices [0, 1, 4, 5]
-        # After dedup: [0, 1]
+        # After dedup with outside_value=None: outside gaps split runs even
+        # for same-bin neighbors, so this gives 2 runs of length 2 each.
         assert len(bins) == 2
         assert bins[0] == 0
         assert bins[1] == 1
-        assert len(starts) == 2
-        assert len(ends) == 2
+        assert_array_equal(starts, [0, 4])
+        assert_array_equal(lengths, [2, 2])
+        # ``run_lengths.sum()`` equals the post-filter in-env sample count.
+        assert lengths.sum() == 4
 
-        # Verify runs are sensible (starts before ends, valid indices)
-        for i in range(len(bins)):
-            assert 0 <= starts[i] < len(times)
-            assert 0 <= ends[i] < len(times)
-            assert starts[i] <= ends[i]
+    def test_bin_sequence_outside_gap_splits_same_bin_runs(self, small_2d_env):
+        """outside_value=None breaks same-bin runs at outside gaps.
 
-        # First run should start at beginning
-        assert starts[0] == 0
+        Probe: [bin0, outside, bin0] used to be reported as one run with
+        length 3 (covering the dropped outside sample). The fix detects
+        gaps in original_indices and inserts a run boundary there, so
+        the same input now reports two runs of length 1 each.
+        """
+        bin_0 = small_2d_env.bin_centers[0]
+        times = np.array([0.0, 1.0, 2.0])
+        positions = np.array([bin_0, [10000.0, 10000.0], bin_0])
+
+        result = small_2d_env.bin_sequence_with_runs(
+            times, positions, outside_value=None
+        )
+        assert_array_equal(result.bins, [0, 0])
+        assert_array_equal(result.run_starts, [0, 2])
+        assert_array_equal(result.run_lengths, [1, 1])
+        # No double-counting of dropped outside samples.
+        assert result.run_lengths.sum() == 2
+
+    def test_bin_sequence_dedup_ignores_outside_gaps(self, small_2d_env):
+        """Plain bin_sequence dedup is gap-blind by contract.
+
+        ``bin_sequence`` documents ``dedup=True`` as collapsing
+        consecutive repeats in the post-filter sequence. After
+        ``outside_value=None`` drops outside samples, the post-filter
+        sequence ``[bin0, bin0]`` (from the original ``[bin0, outside,
+        bin0]``) must dedup to a single ``[bin0]``. Only
+        ``bin_sequence_with_runs`` is gap-aware — that distinction is
+        what lets callers choose simple-sequence vs run-extent
+        semantics. Pins that the gap-split fix did not leak into
+        bin_sequence.
+        """
+        bin_0 = small_2d_env.bin_centers[0]
+        times = np.array([0.0, 1.0, 2.0])
+        positions = np.array([bin_0, [10000.0, 10000.0], bin_0])
+
+        bins_dedup = small_2d_env.bin_sequence(
+            times, positions, outside_value=None, dedup=True
+        )
+        assert_array_equal(bins_dedup, [0])
+
+        bins_no_dedup = small_2d_env.bin_sequence(
+            times, positions, outside_value=None, dedup=False
+        )
+        assert_array_equal(bins_no_dedup, [0, 0])
 
     def test_bin_sequence_validates_1d_positions(self, small_2d_env):
         """Test that 1D position array raises error.

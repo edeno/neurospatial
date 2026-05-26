@@ -1023,7 +1023,7 @@ class TestConvertOverlaysToDataWithEvents:
         )
 
         position_overlay = PositionOverlay(
-            data=np.array([[10.0, 20.0], [30.0, 40.0]]),
+            positions=np.array([[10.0, 20.0], [30.0, 40.0]]),
             times=np.array([0.0, 10.0]),
         )
         event_overlay = EventOverlay(

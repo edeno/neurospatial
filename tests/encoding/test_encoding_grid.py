@@ -36,15 +36,11 @@ class TestEncodingGridImports:
 
     def test_import_spatial_autocorrelation(self) -> None:
         """spatial_autocorrelation should be importable from encoding.grid."""
-        from neurospatial.encoding.grid import spatial_autocorrelation
+        from neurospatial.encoding.grid import (
+            spatial_autocorrelation,
+        )
 
         assert callable(spatial_autocorrelation)
-
-    def test_import_grid_orientation(self) -> None:
-        """grid_orientation should be importable from encoding.grid."""
-        from neurospatial.encoding.grid import grid_orientation
-
-        assert callable(grid_orientation)
 
     def test_import_grid_scale(self) -> None:
         """grid_scale should be importable from encoding.grid."""
@@ -139,22 +135,24 @@ class TestEncodingGridFunctionality:
 
     def test_spatial_autocorrelation_fft_runs(self, env_and_data) -> None:
         """spatial_autocorrelation (FFT) should run and return correct shape."""
-        from neurospatial.encoding.grid import spatial_autocorrelation
+        from neurospatial.encoding.grid import (
+            spatial_autocorrelation,
+        )
 
         env, firing_rate = env_and_data
-        result = spatial_autocorrelation(env, firing_rate, method="fft")
+        result = spatial_autocorrelation(env, firing_rate)
 
         assert result.ndim == 2
         assert result.shape == env.layout.grid_shape
 
     def test_spatial_autocorrelation_graph_runs(self, env_and_data) -> None:
         """spatial_autocorrelation (graph) should run and return tuple."""
-        from neurospatial.encoding.grid import spatial_autocorrelation
+        from neurospatial.encoding.grid import (
+            spatial_autocorrelation_radial,
+        )
 
         env, firing_rate = env_and_data
-        result = spatial_autocorrelation(
-            env, firing_rate, method="graph", n_distance_bins=30
-        )
+        result = spatial_autocorrelation_radial(env, firing_rate, n_distance_bins=30)
 
         assert isinstance(result, tuple)
         assert len(result) == 2
@@ -182,16 +180,16 @@ class TestEncodingGridFunctionality:
         assert isinstance(scale, float)
         assert scale > 0
 
-    def test_grid_orientation_runs(self) -> None:
-        """grid_orientation should run and return tuple of floats."""
-        from neurospatial.encoding.grid import grid_orientation
+    def test_grid_orientation_via_grid_properties_runs(self) -> None:
+        """Orientation is now exposed via grid_properties (M2.B 2.13)."""
+        from neurospatial.encoding.grid import grid_properties
 
         autocorr = _create_hexagonal_autocorr()
-        orientation, orientation_std = grid_orientation(autocorr)
+        props = grid_properties(autocorr, bin_size=1.0)
 
-        assert isinstance(orientation, float)
-        assert isinstance(orientation_std, float)
-        assert 0.0 <= orientation < 60.0
+        assert isinstance(props.orientation, float)
+        assert isinstance(props.orientation_std, float)
+        assert 0.0 <= props.orientation < 60.0
 
     def test_periodicity_score_runs(self) -> None:
         """periodicity_score should run and return float."""

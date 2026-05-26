@@ -51,15 +51,18 @@ from neurospatial.simulation import (
 # Set random seed for reproducibility
 np.random.seed(42)
 
-# Configure matplotlib for clear, readable figures
-plt.rcParams["figure.figsize"] = (14, 5)
-plt.rcParams["font.size"] = 12
-plt.rcParams["axes.labelsize"] = 13
-plt.rcParams["axes.titlesize"] = 14
-plt.rcParams["xtick.labelsize"] = 11
-plt.rcParams["ytick.labelsize"] = 11
-plt.rcParams["legend.fontsize"] = 11
-plt.rcParams["figure.titlesize"] = 15
+# Shared styling (Okabe-Ito palette, consistent figure / font sizes)
+import sys  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+_here = (
+    str(Path(__file__).resolve().parent) if "__file__" in globals() else str(Path.cwd())
+)
+if _here not in sys.path:
+    sys.path.insert(0, _here)
+from _style import apply_style  # noqa: E402
+
+apply_style(figsize=(14, 5), font_size=12)
 
 # Use colorblind-friendly colors (Wong palette)
 WONG_COLORS = {
@@ -91,7 +94,7 @@ WONG_COLORS = {
 #
 # We'll use the `neurospatial.simulation` subpackage to generate realistic trajectories and spike trains. This subpackage provides:
 #
-# - **`simulate_trajectory_ou()`**: Ornstein-Uhlenbeck random walk with biologically-realistic movement
+# - **`simulate_trajectory_ou(speed_units="cm")`**: Ornstein-Uhlenbeck random walk with biologically-realistic movement
 # - **`PlaceCellModel`**: Gaussian place field model with ground truth tracking
 # - **`generate_poisson_spikes()`**: Poisson spike generation with refractory period handling
 #
@@ -119,7 +122,8 @@ positions, times = simulate_trajectory_ou(
     speed_std=0.4,  # cm/s (speed variability)
     coherence_time=0.7,  # seconds (smooth, persistent movement)
     boundary_mode="reflect",  # Reflect at boundaries for better 2D exploration
-    seed=42,  # Seed produces uniform spatial coverage with rotational OU
+    seed=42,  # Seed produces uniform spatial coverage with rotational OU,
+    speed_units="cm",
 )
 
 # 3. Create place cell model with Gaussian tuning
@@ -133,7 +137,7 @@ place_cell = PlaceCellModel(
     width=tuning_width,
     max_rate=peak_rate,
     baseline_rate=0.001,  # Minimal baseline firing
-    distance_metric="euclidean",
+    metric="euclidean",
 )
 
 # 4. Generate spike train from place cell firing rates

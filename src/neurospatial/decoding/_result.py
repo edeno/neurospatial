@@ -69,7 +69,7 @@ class DecodingResult:
     >>> print(f"MAP estimate shape: {result.map_estimate.shape}")
     MAP estimate shape: (100,)
     >>> print(
-    ...     f"Mean uncertainty: {result.uncertainty.mean():.2f} bits"
+    ...     f"Mean posterior_entropy: {result.posterior_entropy.mean():.2f} bits"
     ... )  # doctest: +SKIP
 
     Notes
@@ -169,10 +169,10 @@ class DecodingResult:
         return self.posterior @ self.env.bin_centers
 
     @cached_property
-    def uncertainty(self) -> NDArray[np.float64]:
+    def posterior_entropy(self) -> NDArray[np.float64]:
         """Posterior entropy in bits.
 
-        Measures the uncertainty in the position estimate. Higher values
+        Measures the posterior_entropy in the position estimate. Higher values
         indicate more spread-out (uncertain) posteriors.
 
         Returns
@@ -197,7 +197,7 @@ class DecodingResult:
 
         See Also
         --------
-        map_estimate : Point estimate with zero uncertainty consideration
+        map_estimate : Point estimate with zero posterior_entropy consideration
         """
         p = np.clip(self.posterior, 0.0, 1.0)
         # Vectorized mask-based entropy: avoid log(0) by using np.where
@@ -266,7 +266,7 @@ class DecodingResult:
             # With position overlay
             from neurospatial.animation.overlays import PositionOverlay
 
-            overlay = PositionOverlay(data=positions, times=times)
+            overlay = PositionOverlay(positions=positions, times=times)
             env.animate_fields(result.posterior, overlays=[overlay])
 
         When ``times`` is provided, the x-axis shows time in seconds with
@@ -349,7 +349,7 @@ class DecodingResult:
         """Convert to pandas DataFrame with times and position estimates.
 
         Creates a DataFrame with one row per time bin, containing the
-        decoded position estimates and uncertainty measures.
+        decoded position estimates and posterior_entropy measures.
 
         Returns
         -------
@@ -360,7 +360,7 @@ class DecodingResult:
             - ``map_bin`` : Bin index of maximum posterior probability
             - ``map_x``, ``map_y``, ... : MAP position coordinates
             - ``mean_x``, ``mean_y``, ... : Mean position coordinates
-            - ``uncertainty`` : Posterior entropy in bits
+            - ``posterior_entropy`` : Posterior entropy in bits
 
         Notes
         -----
@@ -406,7 +406,7 @@ class DecodingResult:
         for i, name in enumerate(dim_names):
             data[f"mean_{name}"] = self.mean_position[:, i]
 
-        # Add uncertainty
-        data["uncertainty"] = self.uncertainty
+        # Add posterior_entropy
+        data["posterior_entropy"] = self.posterior_entropy
 
         return pd.DataFrame(data)

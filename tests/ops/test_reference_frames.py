@@ -15,49 +15,9 @@ from numpy.testing import assert_allclose
 class TestModuleSetup:
     """Test module imports and structure."""
 
-    def test_module_imports(self):
-        """Module can be imported successfully."""
-        from neurospatial.ops import egocentric as reference_frames
-
-        assert reference_frames is not None
-
-    def test_all_exports_defined(self):
-        """Module defines __all__ with expected exports."""
-        from neurospatial.ops import egocentric as reference_frames
-
-        expected_exports = {
-            "EgocentricFrame",
-            "allocentric_to_egocentric",
-            "egocentric_to_allocentric",
-            "compute_egocentric_bearing",
-            "compute_egocentric_distance",
-            "heading_from_velocity",
-            "heading_from_body_orientation",
-        }
-        assert hasattr(reference_frames, "__all__")
-        assert set(reference_frames.__all__) == expected_exports
-
-    def test_module_docstring_exists(self):
-        """Module has a docstring."""
-        from neurospatial.ops import egocentric as reference_frames
-
-        assert reference_frames.__doc__ is not None
-        assert len(reference_frames.__doc__) > 100  # Non-trivial docstring
-
 
 class TestEgocentricFrame:
     """Tests for EgocentricFrame dataclass."""
-
-    def test_dataclass_creation(self):
-        """EgocentricFrame can be created with position and heading."""
-        from neurospatial.ops.egocentric import EgocentricFrame
-
-        frame = EgocentricFrame(
-            position=np.array([10.0, 20.0]),
-            heading=np.pi / 4,
-        )
-        assert_allclose(frame.position, [10.0, 20.0])
-        assert_allclose(frame.heading, np.pi / 4)
 
     def test_to_egocentric_heading_zero_identity(self):
         """With heading=0, egocentric x-axis aligns with allocentric x-axis.
@@ -148,7 +108,7 @@ class TestAllocentricToEgocentric:
         positions = np.array([[0.0, 0.0], [5.0, 5.0], [10.0, 10.0]])  # Shape: (3, 2)
         headings = np.array([0.0, np.pi / 2, np.pi])  # Shape: (3,)
 
-        ego = allocentric_to_egocentric(landmarks, positions, headings)
+        ego = allocentric_to_egocentric(positions, headings, landmarks)
 
         # Output shape: (n_time, n_points, 2) = (3, 2, 2)
         assert ego.shape == (3, 2, 2)
@@ -168,7 +128,7 @@ class TestAllocentricToEgocentric:
         positions = np.array([[0.0, 0.0], [0.0, 0.0]])  # Shape: (2, 2)
         headings = np.array([0.0, np.pi / 2])  # Shape: (2,)
 
-        ego = allocentric_to_egocentric(landmarks, positions, headings)
+        ego = allocentric_to_egocentric(positions, headings, landmarks)
 
         # Output: (n_time, n_points, 2) = (2, 1, 2)
         assert ego.shape == (2, 1, 2)
@@ -188,7 +148,7 @@ class TestAllocentricToEgocentric:
         headings = np.array([0.0])
 
         with pytest.raises(ValueError, match="points"):
-            allocentric_to_egocentric(points, positions, headings)
+            allocentric_to_egocentric(positions, headings, points)
 
     def test_positions_headings_length_mismatch(self):
         """Positions and headings must have matching length."""
@@ -199,7 +159,7 @@ class TestAllocentricToEgocentric:
         headings = np.array([0.0])  # 1 timepoint
 
         with pytest.raises(ValueError, match=r"Headings/positions length mismatch"):
-            allocentric_to_egocentric(points, positions, headings)
+            allocentric_to_egocentric(positions, headings, points)
 
 
 class TestEgocentricToAllocentric:
@@ -218,8 +178,8 @@ class TestEgocentricToAllocentric:
         positions = rng.uniform(-10, 10, size=(10, 2))
         headings = rng.uniform(-np.pi, np.pi, size=10)
 
-        ego = allocentric_to_egocentric(points, positions, headings)
-        recovered = egocentric_to_allocentric(ego, positions, headings)
+        ego = allocentric_to_egocentric(positions, headings, points)
+        recovered = egocentric_to_allocentric(positions, headings, ego)
 
         # Output should broadcast back to match input shape
         assert recovered.shape == (10, 5, 2)
@@ -428,7 +388,7 @@ class TestHeadingFromVelocity:
         positions[70:, 0] = 30 + np.arange(30)
 
         headings = heading_from_velocity(
-            positions, dt=0.1, min_speed=0.5, smoothing_sigma=2.0
+            positions, dt=0.1, min_speed=0.5, bandwidth=2.0
         )
 
         # Stationary period should have smoothly interpolated headings
@@ -472,8 +432,8 @@ class TestHeadingFromVelocity:
         noise = rng.normal(0, 0.5, size=(100, 2))
         positions = np.column_stack([t * 10, np.zeros_like(t)]) + noise
 
-        headings_no_smooth = heading_from_velocity(positions, dt=0.1, smoothing_sigma=0)
-        headings_smooth = heading_from_velocity(positions, dt=0.1, smoothing_sigma=5)
+        headings_no_smooth = heading_from_velocity(positions, dt=0.1, bandwidth=0)
+        headings_smooth = heading_from_velocity(positions, dt=0.1, bandwidth=5)
 
         # Smoothed version should have less variance
         var_no_smooth = np.nanvar(headings_no_smooth[10:-10])

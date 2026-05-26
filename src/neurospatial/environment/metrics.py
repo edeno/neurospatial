@@ -42,7 +42,7 @@ This class is not used directly. Instead, it's mixed into Environment:
     Found ... boundary bins
     >>>
     >>> # Get bin attributes as DataFrame
-    >>> df = env.bin_attributes
+    >>> df = env.get_bin_attributes()
     >>> print(df.columns.tolist())
     ['source_grid_flat_index', 'original_grid_nd_index', 'pos_dim0', 'pos_dim1']
 
@@ -58,7 +58,7 @@ import pandas as pd
 from numpy.typing import NDArray
 
 from neurospatial.environment._protocols import SelfEnv
-from neurospatial.environment.decorators import check_fitted
+from neurospatial.environment.decorators import check_fitted, versioned_cached_property
 from neurospatial.layout.helpers.utils import find_boundary_nodes
 
 
@@ -135,7 +135,7 @@ class EnvironmentMetrics:
         Get linearization metadata for 1D environments.
 
         Returns a dictionary with linearization information, including:
-        - `is_1d`: Whether this is a 1D linearized environment
+        - `is_linearized_track`: Whether this is a 1D linearized environment
         - `linear_bin_edges`: Bin edges in linear coordinates (1D only)
         - `linear_bin_centers_1d`: Bin centers in linear coordinates (1D only)
         - `track_graph`: The underlying track graph (1D only)
@@ -144,13 +144,13 @@ class EnvironmentMetrics:
         -------
         dict[str, Any]
             Dictionary with linearization metadata. For non-1D environments,
-            only contains `{'is_1d': False}`.
+            only contains `{'is_linearized_track': False}`.
 
         Notes
         -----
         - This is a **cached property** - computed once on first access, then cached
         - Only 1D environments (created with `from_graph()`) have full linearization info
-        - For N-D environments, returns `{'is_1d': False}`
+        - For N-D environments, returns `{'is_linearized_track': False}`
 
         See Also
         --------
@@ -174,15 +174,15 @@ class EnvironmentMetrics:
         ... )  # doctest: +SKIP
         >>>
         >>> props = env.linearization_properties  # doctest: +SKIP
-        >>> print(props["is_1d"])  # doctest: +SKIP
+        >>> print(props["is_linearized_track"])  # doctest: +SKIP
         True
 
         """
-        if not self._is_1d_env:
-            return {"is_1d": False}
+        if not self._is_linearized_track_env:
+            return {"is_linearized_track": False}
 
         # For 1D environments, extract linearization metadata from layout
-        metadata: dict[str, Any] = {"is_1d": True}
+        metadata: dict[str, Any] = {"is_linearized_track": True}
         if hasattr(self.layout, "linear_bin_edges"):
             metadata["linear_bin_edges"] = self.layout.linear_bin_edges
         if hasattr(self.layout, "linear_bin_centers_1d"):
@@ -192,9 +192,8 @@ class EnvironmentMetrics:
 
         return metadata
 
-    @cached_property
-    @check_fitted  # Check only on first access, then value is cached
-    def bin_attributes(self: SelfEnv) -> pd.DataFrame:
+    @check_fitted
+    def get_bin_attributes(self: SelfEnv) -> pd.DataFrame:
         """
         Extract bin (node) attributes as a pandas DataFrame.
 
@@ -211,13 +210,20 @@ class EnvironmentMetrics:
 
         Notes
         -----
-        - This is a **cached property** - computed once on first access, then cached
-        - For large environments (>100,000 bins), initial computation may take a few seconds
-        - Memory usage: ~8 bytes per attribute per bin (e.g., 10 attributes × 10k bins = 800 KB)
+        - Method (not property) since v0.4: the construction cost
+          (one DataFrame allocation per bin) is now visible at the
+          call site. Repeated calls within one environment state
+          version are O(1) — the result is cached internally via
+          :class:`versioned_cached_property` and invalidates whenever
+          the environment is rebuilt.
+        - For large environments (>100,000 bins), the first call may
+          take a few seconds.
+        - Memory usage: ~8 bytes per attribute per bin (e.g., 10
+          attributes × 10k bins = 800 KB).
 
         See Also
         --------
-        edge_attributes : Extract edge attributes as a DataFrame
+        get_edge_attributes : Extract edge attributes as a DataFrame.
 
         Examples
         --------
@@ -226,13 +232,17 @@ class EnvironmentMetrics:
         >>> data = np.random.rand(50, 2) * 10
         >>> env = Environment.from_samples(data, bin_size=2.0)
         >>>
-        >>> df = env.bin_attributes
+        >>> df = env.get_bin_attributes()
         >>> print(df.columns.tolist())  # doctest: +SKIP
         ['source_grid_flat_index', 'original_grid_nd_index', 'pos_dim0', 'pos_dim1']
         >>> print(df.shape)  # doctest: +SKIP
         (30, 4)
 
         """
+        return self._bin_attributes_cached  # type: ignore[attr-defined]
+
+    @versioned_cached_property
+    def _bin_attributes_cached(self: SelfEnv) -> pd.DataFrame:
         # Extract node attributes from connectivity graph
         node_attrs = []
         for node_id in self.connectivity.nodes():
@@ -251,9 +261,8 @@ class EnvironmentMetrics:
 
         return df.set_index("node_id")
 
-    @cached_property
-    @check_fitted  # Check only on first access, then value is cached
-    def edge_attributes(self: SelfEnv) -> pd.DataFrame:
+    @check_fitted
+    def get_edge_attributes(self: SelfEnv) -> pd.DataFrame:
         """
         Extract edge attributes as a pandas DataFrame.
 
@@ -274,13 +283,19 @@ class EnvironmentMetrics:
 
         Notes
         -----
-        - This is a **cached property** - computed once on first access, then cached
-        - For large environments (>100,000 edges), initial computation may take a few seconds
-        - Memory usage: ~8 bytes per attribute per edge (e.g., 6 attributes × 10k edges = 480 KB)
+        - Method (not property) since v0.4: edge-DataFrame allocation is
+          O(n_edges) and visible at the call site. Repeated calls within
+          one environment state version are O(1) — the result is cached
+          internally via :class:`versioned_cached_property` and
+          invalidates whenever the environment is rebuilt.
+        - For large environments (>100,000 edges), the first call may
+          take a few seconds.
+        - Memory usage: ~8 bytes per attribute per edge (e.g., 6
+          attributes × 10k edges = 480 KB).
 
         See Also
         --------
-        bin_attributes : Extract bin attributes as a DataFrame
+        get_bin_attributes : Extract bin attributes as a DataFrame.
 
         Examples
         --------
@@ -289,13 +304,17 @@ class EnvironmentMetrics:
         >>> data = np.random.rand(50, 2) * 10
         >>> env = Environment.from_samples(data, bin_size=2.0)
         >>>
-        >>> df = env.edge_attributes
+        >>> df = env.get_edge_attributes()
         >>> print(df.columns.tolist())  # doctest: +SKIP
         ['source', 'target', 'distance', 'vector', 'edge_id', 'angle_2d']
         >>> print(df.shape)  # doctest: +SKIP
         (100, 6)
 
         """
+        return self._edge_attributes_cached  # type: ignore[attr-defined]
+
+    @versioned_cached_property
+    def _edge_attributes_cached(self: SelfEnv) -> pd.DataFrame:
         # Extract edge attributes from connectivity graph
         edge_attrs = []
         for source, target in self.connectivity.edges():
@@ -342,7 +361,7 @@ class EnvironmentMetrics:
         ------
         AttributeError
             If this environment is not 1D (does not support linearization).
-            Check `env.is_1d` before calling this method.
+            Check `env.is_linearized_track` before calling this method.
 
         Notes
         -----
@@ -354,7 +373,7 @@ class EnvironmentMetrics:
         --------
         linear_to_nd : Convert 1D linear coordinates back to N-D positions
         Environment.from_graph : Create 1D linearized environment
-        is_1d : Check if environment supports linearization
+        is_linearized_track : Check if environment supports linearization
 
         Examples
         --------
@@ -380,7 +399,7 @@ class EnvironmentMetrics:
         Linear position: 5.0
 
         """
-        if not self._is_1d_env:
+        if not self._is_linearized_track_env:
             msg = (
                 "to_linear() is only available for 1D environments (GraphLayout). "
                 f"This environment is {self.n_dims}D. "
@@ -428,7 +447,7 @@ class EnvironmentMetrics:
         ------
         AttributeError
             If this environment is not 1D (does not support linearization).
-            Check `env.is_1d` before calling this method.
+            Check `env.is_linearized_track` before calling this method.
 
         Notes
         -----
@@ -440,7 +459,7 @@ class EnvironmentMetrics:
         --------
         to_linear : Convert N-D positions to 1D linear coordinates
         Environment.from_graph : Create 1D linearized environment
-        is_1d : Check if environment supports linearization
+        is_linearized_track : Check if environment supports linearization
 
         Examples
         --------
@@ -464,7 +483,7 @@ class EnvironmentMetrics:
         2D position: [5. 0.]
 
         """
-        if not self._is_1d_env:
+        if not self._is_linearized_track_env:
             msg = (
                 "linear_to_nd() is only available for 1D environments (GraphLayout). "
                 f"This environment is {self.n_dims}D. "

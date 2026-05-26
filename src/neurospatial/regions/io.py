@@ -73,6 +73,8 @@ def regions_from_json(path: str | Path) -> Regions:
     if blob.get("format") != _SCHEMA_TAG:
         warnings.warn(
             f"Unrecognised format tag {blob.get('format')!r}; attempting best-effort load",
+            category=UserWarning,
+            stacklevel=2,
         )
     return Regions(Region.from_dict(d) for d in blob["regions"])
 
@@ -128,12 +130,18 @@ def load_labelme_json(
     if not shapes_data:
         warnings.warn(
             f"No shapes found in {json_path}",
+            category=UserWarning,
+            stacklevel=2,
         )  # Changed to warning, or could be error
         return Regions([])  # Return empty Regions if no shapes
 
     for i, obj in enumerate(shapes_data):
         if not isinstance(obj, dict):
-            warnings.warn(f"Shape at index {i} is not a dictionary, skipping.")
+            warnings.warn(
+                f"Shape at index {i} is not a dictionary, skipping.",
+                category=UserWarning,
+                stacklevel=2,
+            )
             continue
 
         name = obj.get(label_key)
@@ -142,11 +150,15 @@ def load_labelme_json(
         if name is None:
             warnings.warn(
                 f"Shape at index {i} is missing label (key: '{label_key}'), skipping.",
+                category=UserWarning,
+                stacklevel=2,
             )
             continue
         if points_data is None:
             warnings.warn(
                 f"Shape '{name}' (index {i}) is missing points (key: '{points_key}'), skipping.",
+                category=UserWarning,
+                stacklevel=2,
             )
             continue
 
@@ -155,11 +167,15 @@ def load_labelme_json(
             if pts_px.ndim != 2 or pts_px.shape[1] != 2:
                 warnings.warn(
                     f"Points for shape '{name}' (index {i}) are not in (M, 2) format, skipping.",
+                    category=UserWarning,
+                    stacklevel=2,
                 )
                 continue
         except ValueError as e:
             warnings.warn(
                 f"Could not parse points for shape '{name}' (index {i}): {e}, skipping.",
+                category=UserWarning,
+                stacklevel=2,
             )
             continue
 
@@ -168,6 +184,8 @@ def load_labelme_json(
         if len(pts_transformed) < 3:
             warnings.warn(
                 f"Shape '{name}' (index {i}) has fewer than 3 points after processing, skipping.",
+                category=UserWarning,
+                stacklevel=2,
             )
             continue
         try:
@@ -175,6 +193,8 @@ def load_labelme_json(
         except Exception as e:  # Catch potential shapely errors
             warnings.warn(
                 f"Could not create polygon for shape '{name}' (index {i}): {e}, skipping.",
+                category=UserWarning,
+                stacklevel=2,
             )
             continue
 
@@ -299,7 +319,9 @@ def _parse_cvat_points(
             if shape_label and shape_index is not None:
                 warning_msg += f" for shape '{shape_label}' (index {shape_index})"
             warning_msg += f" at pair index {i}."
-            warnings.warn(warning_msg + " Skipping this pair.")
+            warnings.warn(
+                warning_msg + " Skipping this pair.", category=UserWarning, stacklevel=2
+            )
             continue
         try:
             x_str, y_str = pt_pair_str.split(",")
@@ -392,6 +414,8 @@ def _process_cvat_polygon(
         warnings.warn(
             f"Image '{image_id_str}', Polygon (raw_label: {raw_label}, "
             f"xml_idx: {elem_idx}): missing 'points'. Skipping.",
+            category=UserWarning,
+            stacklevel=2,
         )
         return None
 
@@ -401,6 +425,8 @@ def _process_cvat_polygon(
             warnings.warn(
                 f"Image '{image_id_str}', Polygon (raw_label: {raw_label}, "
                 f"xml_idx: {elem_idx}): < 3 points. Skipping.",
+                category=UserWarning,
+                stacklevel=2,
             )
             return None
         pts_transformed = pixel_to_world(pts_px) if pixel_to_world else pts_px
@@ -410,6 +436,8 @@ def _process_cvat_polygon(
         warnings.warn(
             f"Image '{image_id_str}', Polygon (raw_label: {raw_label}, "
             f"xml_idx: {elem_idx}): error processing: {e}. Skipping.",
+            category=UserWarning,
+            stacklevel=2,
         )
         return None
 
@@ -433,6 +461,8 @@ def _process_cvat_polyline(
         warnings.warn(
             f"Image '{image_id_str}', Polyline (raw_label: {raw_label}, "
             f"xml_idx: {elem_idx}): missing 'points'. Skipping.",
+            category=UserWarning,
+            stacklevel=2,
         )
         return None
 
@@ -442,6 +472,8 @@ def _process_cvat_polyline(
             warnings.warn(
                 f"Image '{image_id_str}', Polyline (raw_label: {raw_label}, "
                 f"xml_idx: {elem_idx}): < 2 points. Skipping.",
+                category=UserWarning,
+                stacklevel=2,
             )
             return None
 
@@ -455,12 +487,16 @@ def _process_cvat_polyline(
         warnings.warn(
             f"Image '{image_id_str}', Polyline (raw_label: {raw_label}, "
             f"xml_idx: {elem_idx}): open or too few points for polygon. Skipping.",
+            category=UserWarning,
+            stacklevel=2,
         )
         return None
     except (ValueError, Exception) as e:
         warnings.warn(
             f"Image '{image_id_str}', Polyline (raw_label: {raw_label}, "
             f"xml_idx: {elem_idx}): error processing: {e}. Skipping.",
+            category=UserWarning,
+            stacklevel=2,
         )
         return None
 
@@ -487,6 +523,8 @@ def _process_cvat_points(
         warnings.warn(
             f"Image '{image_id_str}', Points group (raw_label: {raw_label_group}, "
             f"xml_idx: {elem_idx}): missing 'points'. Skipping.",
+            category=UserWarning,
+            stacklevel=2,
         )
         return []
 
@@ -496,6 +534,8 @@ def _process_cvat_points(
             warnings.warn(
                 f"Image '{image_id_str}', Points group (raw_label: {raw_label_group}, "
                 f"xml_idx: {elem_idx}): no valid points. Skipping.",
+                category=UserWarning,
+                stacklevel=2,
             )
             return []
 
@@ -509,6 +549,8 @@ def _process_cvat_points(
         warnings.warn(
             f"Image '{image_id_str}', Points group (raw_label: {raw_label_group}, "
             f"xml_idx: {elem_idx}): error processing: {e}. Skipping.",
+            category=UserWarning,
+            stacklevel=2,
         )
         return []
 
@@ -548,6 +590,8 @@ def _process_cvat_box(
         warnings.warn(
             f"Image '{image_id_str}', Box (raw_label: {raw_label}, "
             f"xml_idx: {elem_idx}): error processing: {e}. Skipping.",
+            category=UserWarning,
+            stacklevel=2,
         )
         return None
 
@@ -574,6 +618,8 @@ def _process_cvat_mask(
         warnings.warn(
             f"Image '{image_id_str}', Mask (raw_label: {raw_label}, "
             f"xml_idx: {elem_idx}): missing 'rle'. Skipping.",
+            category=UserWarning,
+            stacklevel=2,
         )
         return None
 
@@ -584,6 +630,8 @@ def _process_cvat_mask(
             warnings.warn(
                 f"Image '{image_id_str}', Mask (raw_label: {raw_label}, "
                 f"xml_idx: {elem_idx}): empty polygon from mask. Skipping.",
+                category=UserWarning,
+                stacklevel=2,
             )
             return None
 
@@ -606,6 +654,8 @@ def _process_cvat_mask(
         warnings.warn(
             f"Image '{image_id_str}', Mask (raw_label: {raw_label}, "
             f"xml_idx: {elem_idx}): error processing: {e}. Skipping.",
+            category=UserWarning,
+            stacklevel=2,
         )
         return None
 
@@ -731,20 +781,28 @@ def _collect_shapes_from_image(
                         warnings.warn(
                             f"Image '{image_id_str}', Mask (xml_idx: {elem_idx}): "
                             f"OpenCV (cv2) missing. Skipping remaining masks.",
+                            category=UserWarning,
+                            stacklevel=2,
                         )
                         break
             else:
                 warnings.warn(
                     f"Image '{image_id_str}': non-positive width/height. "
                     f"Cannot process RLE.",
+                    category=UserWarning,
+                    stacklevel=2,
                 )
         except ValueError:
             warnings.warn(
                 f"Image '{image_id_str}': invalid width/height. Cannot process RLE.",
+                category=UserWarning,
+                stacklevel=2,
             )
     else:
         warnings.warn(
             f"Image '{image_id_str}': missing width/height. Cannot process RLE.",
+            category=UserWarning,
+            stacklevel=2,
         )
 
     return collected_shapes_data

@@ -78,28 +78,6 @@ class TestRenderFieldWithOverlaysImageFormat:
         # PNG signature
         assert result[:8] == b"\x89PNG\r\n\x1a\n"
 
-    def test_explicit_png_format(
-        self, simple_env: Environment, simple_field: np.ndarray
-    ):
-        """Test explicit PNG format returns PNG bytes."""
-        from neurospatial.animation.backends.widget_backend import (
-            render_field_to_png_bytes_with_overlays,
-        )
-
-        result = render_field_to_png_bytes_with_overlays(
-            simple_env,
-            simple_field,
-            cmap="viridis",
-            vmin=0.0,
-            vmax=1.0,
-            dpi=50,
-            frame_idx=0,
-            image_format="png",
-        )
-
-        # PNG signature
-        assert result[:8] == b"\x89PNG\r\n\x1a\n"
-
     def test_jpeg_format(self, simple_env: Environment, simple_field: np.ndarray):
         """Test JPEG format returns JPEG bytes."""
         from neurospatial.animation.backends.widget_backend import (

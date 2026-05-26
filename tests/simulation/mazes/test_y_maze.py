@@ -2,47 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
-
 import numpy as np
-import pytest
-
-from neurospatial.simulation.mazes._base import MazeDims
-
-
-class TestYMazeDims:
-    """Tests for YMazeDims dataclass."""
-
-    def test_inherits_from_maze_dims(self):
-        """YMazeDims should inherit from MazeDims."""
-        from neurospatial.simulation.mazes.y_maze import YMazeDims
-
-        dims = YMazeDims()
-        assert isinstance(dims, MazeDims)
-
-    def test_default_values(self):
-        """YMazeDims should have correct default values."""
-        from neurospatial.simulation.mazes.y_maze import YMazeDims
-
-        dims = YMazeDims()
-        assert dims.arm_length == 50.0
-        assert dims.width == 10.0
-
-    def test_is_frozen(self):
-        """YMazeDims should be frozen (immutable)."""
-        from neurospatial.simulation.mazes.y_maze import YMazeDims
-
-        dims = YMazeDims()
-        with pytest.raises(FrozenInstanceError):
-            dims.arm_length = 100.0  # type: ignore[misc]
-
-    def test_custom_values(self):
-        """YMazeDims should accept custom values."""
-        from neurospatial.simulation.mazes.y_maze import YMazeDims
-
-        dims = YMazeDims(arm_length=75.0, width=15.0)
-        assert dims.arm_length == 75.0
-        assert dims.width == 15.0
 
 
 class TestMakeYMaze:
@@ -228,7 +188,7 @@ class TestMakeYMaze:
 
         maze = make_y_maze(include_track=True)
         assert maze.env_track is not None
-        assert maze.env_track.is_1d
+        assert maze.env_track.is_linearized_track
 
     def test_env_track_is_connected(self):
         """Track graph should be connected."""
@@ -305,7 +265,7 @@ class TestYMazeTrackGraph:
         import networkx as nx
 
         assert nx.is_connected(maze.env_track.connectivity)
-        assert maze.env_track.is_1d
+        assert maze.env_track.is_linearized_track
 
         # Find the center node in the connectivity graph
         # The center should have degree 3 (connected to 3 arms)

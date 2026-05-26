@@ -2,49 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
-
 import numpy as np
-import pytest
-
-from neurospatial.simulation.mazes._base import MazeDims
-
-
-class TestCheeseboardDims:
-    """Tests for CheeseboardDims dataclass."""
-
-    def test_inherits_from_maze_dims(self):
-        """CheeseboardDims should inherit from MazeDims."""
-        from neurospatial.simulation.mazes.cheeseboard import CheeseboardDims
-
-        dims = CheeseboardDims()
-        assert isinstance(dims, MazeDims)
-
-    def test_default_values(self):
-        """CheeseboardDims should have correct default values."""
-        from neurospatial.simulation.mazes.cheeseboard import CheeseboardDims
-
-        dims = CheeseboardDims()
-        assert dims.diameter == 110.0
-        assert dims.grid_spacing == 9.0
-        assert dims.reward_radius == 1.5
-
-    def test_is_frozen(self):
-        """CheeseboardDims should be frozen (immutable)."""
-        from neurospatial.simulation.mazes.cheeseboard import CheeseboardDims
-
-        dims = CheeseboardDims()
-        with pytest.raises(FrozenInstanceError):
-            dims.diameter = 120.0  # type: ignore[misc]
-
-    def test_custom_values(self):
-        """CheeseboardDims should accept custom values."""
-        from neurospatial.simulation.mazes.cheeseboard import CheeseboardDims
-
-        dims = CheeseboardDims(diameter=120.0, grid_spacing=10.0, reward_radius=2.0)
-        assert dims.diameter == 120.0
-        assert dims.grid_spacing == 10.0
-        assert dims.reward_radius == 2.0
 
 
 class TestMakeCheeseboardMaze:

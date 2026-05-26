@@ -76,7 +76,7 @@ env.regions.add('new_goal', point=point)
 del env.regions['old_goal']
 ```
 
-### 5. Check `is_1d` before linearization
+### 5. Check `is_linearized_track` before linearization
 
 ❌ **Wrong:**
 
@@ -88,7 +88,7 @@ linear_pos = env.to_linear(position)  # AttributeError
 ✅ **Right:**
 
 ```python
-if env.is_1d:
+if env.is_linearized_track:
     linear_pos = env.to_linear(position)
 else:
     bin_idx = env.bin_at(position)
@@ -312,7 +312,7 @@ env.regions['goal'] = new_region  # Works but emits UserWarning
 **Solution**:
 
 ```python
-if env.is_1d:
+if env.is_linearized_track:
     linear_pos = env.to_linear(position)
 else:
     bin_idx = env.bin_at(position)
@@ -454,7 +454,7 @@ write_place_field(nwbfile, env, field, name="cell_001_v2")
 
 - Original layout engine type (reconstructed as generic layout)
 - Grid-specific metadata (`grid_shape`, `grid_edges`, `active_mask`)
-- Layout engine's `is_1d` property (always `False` for reconstructed)
+- Layout engine's `is_linearized_track` property (always `False` for reconstructed)
 
 Spatial queries still work identically after round-trip.
 

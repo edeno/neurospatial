@@ -73,7 +73,9 @@ class SimulationSession:
     >>> env.units = "cm"  # doctest: +SKIP
 
     >>> # Generate trajectory
-    >>> positions, times = simulate_trajectory_ou(env, duration=60.0)  # doctest: +SKIP
+    >>> positions, times = simulate_trajectory_ou(
+    ...     env, duration=60.0, speed_units="cm"
+    ... )  # doctest: +SKIP
 
     >>> # Create place cells
     >>> models = [  # doctest: +SKIP
@@ -128,6 +130,7 @@ class SimulationSession:
 def simulate_session(
     env: Environment,
     duration: float,
+    *,
     n_cells: int = 50,
     cell_type: Literal["place", "boundary", "grid", "mixed"] = "place",
     trajectory_method: Literal["ou", "sinusoidal", "laps"] = "ou",
@@ -183,7 +186,7 @@ def simulate_session(
         - max_rate : float - Peak firing rate in Hz (default: 20.0)
         - width : float | NDArray - Field width in environment units (default: 3*bin_size)
         - baseline_rate : float - Baseline firing rate in Hz (default: 0.001)
-        - distance_metric : {'euclidean', 'geodesic'} - Distance computation method
+        - metric : {'euclidean', 'geodesic'} - Distance computation method
         - condition : Callable - Optional conditional firing function
 
         **Boundary cell parameters** (cell_type='boundary' or 'mixed'):
@@ -195,7 +198,7 @@ def simulate_session(
           Use 'boundary_width' for unambiguous parameter passing in mixed mode.
         - max_rate : float - Peak firing rate in Hz (default: 15.0)
         - baseline_rate : float - Baseline firing rate in Hz (default: 0.001)
-        - distance_metric : {'euclidean', 'geodesic'} - Distance computation method
+        - metric : {'euclidean', 'geodesic'} - Distance computation method
 
         **Grid cell parameters** (cell_type='grid' or 'mixed'):
 
@@ -317,19 +320,19 @@ def simulate_session(
         raise ValueError(f"n_cells must be positive, got {n_cells}")
 
     if duration <= 0:
-        raise ValueError(f"duration must be positive, got {duration}")
+        raise ValueError(f"duration must be positive (seconds), got {duration}")
 
     # Extract model-specific parameters from kwargs BEFORE trajectory generation
     # PlaceCellModel parameters
     place_cell_params = {}
-    for param in ["width", "max_rate", "baseline_rate", "distance_metric", "condition"]:
+    for param in ["width", "max_rate", "baseline_rate", "metric", "condition"]:
         if param in kwargs:
             place_cell_params[param] = kwargs.pop(param)
 
     # BoundaryCellModel parameters - remap convenience names to actual parameter names
     boundary_cell_params = {}
     # Direct parameters
-    for param in ["max_rate", "baseline_rate", "distance_metric"]:
+    for param in ["max_rate", "baseline_rate", "metric"]:
         if param in kwargs:
             boundary_cell_params[param] = kwargs.pop(param)
     # Remapped parameters: distance -> preferred_distance
@@ -357,8 +360,12 @@ def simulate_session(
 
     # Generate trajectory (use seed directly for reproducibility)
     if trajectory_method == "ou":
+        # speed_units is required by simulate_trajectory_ou (M4.5);
+        # fall back to env.units when the caller didn't pass it.
+        ou_kwargs = dict(kwargs)
+        ou_kwargs.setdefault("speed_units", env.units)
         positions, times = simulate_trajectory_ou(
-            env, duration=duration, seed=seed, **kwargs
+            env, duration=duration, seed=seed, **ou_kwargs
         )
     elif trajectory_method == "sinusoidal":
         positions, times = simulate_trajectory_sinusoidal(

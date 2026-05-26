@@ -65,8 +65,17 @@ from neurospatial import Environment
 from neurospatial.regions import Regions
 
 np.random.seed(42)
-plt.rcParams["figure.figsize"] = (12, 10)
-plt.rcParams["font.size"] = 11
+# Shared styling (Okabe-Ito palette, consistent figure / font sizes)
+import sys  # noqa: E402
+
+_here = (
+    str(Path(__file__).resolve().parent) if "__file__" in globals() else str(Path.cwd())
+)
+if _here not in sys.path:
+    sys.path.insert(0, _here)
+from _style import apply_style  # noqa: E402
+
+apply_style(figsize=(12, 10), font_size=11)
 
 # %% [markdown]
 # ## Creating an Example Environment
@@ -579,7 +588,7 @@ print("Updated region successfully using update_region()")
 #
 # ## Next Steps
 #
-# In the next notebook (**05_track_linearization.ipynb**), you'll learn:
+# In the next notebook ([05_track_linearization.ipynb](05_track_linearization.ipynb)), you'll learn:
 # - 1D linearized tracks with GraphLayout
 # - Converting between N-D and linear coordinates
 # - Plus maze analysis example

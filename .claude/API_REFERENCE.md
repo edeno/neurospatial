@@ -23,7 +23,7 @@ Use these standardized names consistently across all modules:
 | Object locations | `object_positions` | `objects`, `landmarks` | For encoding functions |
 | Smoothing kernel size | `bandwidth` | `sigma`, `smoothing` | In physical units (e.g., cm) |
 | Estimation algorithm | `smoothing_method` | `method`, `estimator` | For place field computation |
-| Distance algorithm | `distance_metric` | `metric`, `distance_type` | "euclidean" or "geodesic" |
+| Distance algorithm | `metric` | `distance_metric`, `distance_type`, `use_geodesic` | "euclidean" or "geodesic" |
 
 ### Canonical Argument Order by Function Type
 
@@ -64,7 +64,7 @@ func(
 **Examples:**
 
 - `compute_egocentric_bearing(positions, headings, targets)`
-- `allocentric_to_egocentric(points, positions, headings)`
+- `allocentric_to_egocentric(positions, headings, points)`
 
 #### Behavioral Segmentation (laps, trials, crossings)
 
@@ -279,7 +279,7 @@ from neurospatial.encoding import (
     # View Rate (Spatial View Cells)
     compute_view_rate,                      # Single-neuron view field
     compute_view_rates,                     # Population view fields
-    ViewRateResult,                         # Result with view_occupancy, is_view_cell()
+    ViewRateResult,                         # Result with occupancy, is_spatial_view_cell()
     ViewRatesResult,                        # Population result
 
     # Egocentric Rate (Object-Vector Cells)
@@ -333,8 +333,8 @@ Result objects from the new API provide convenient methods:
 - `.firing_rate` - Firing rate map (n_bins,) in Hz
 - `.occupancy` - Time in each bin (n_bins,) in seconds
 - `.env` - Environment used for computation
-- `.peak_locations()` - Coordinates of peak firing (n_dims,)
-- `.peak_firing_rates()` - Maximum firing rate (scalar)
+- `.peak_location()` - Coordinates of peak firing (n_dims,)
+- `.peak_firing_rate()` - Maximum firing rate (scalar)
 
 **DirectionalRateResult** (from `compute_directional_rate`):
 - `.firing_rate` - Tuning curve (n_bins,) in Hz
@@ -349,7 +349,7 @@ Result objects from the new API provide convenient methods:
 
 **ViewRateResult** (from `compute_view_rate`):
 - `.firing_rate` - View field (n_bins,) in Hz
-- `.view_occupancy` - Time *viewing* each bin (n_bins,) in seconds
+- `.occupancy` - Time *viewing* each bin (n_bins,) in seconds
 - `.env` - Environment used for computation
 - `.gaze_model` - Gaze model used ("fixed_distance", "ray_cast", "boundary")
 - `.view_distance` - Distance parameter for gaze model
@@ -357,7 +357,7 @@ Result objects from the new API provide convenient methods:
 **EgocentricRateResult** (from `compute_egocentric_rate`):
 - `.firing_rate` - Egocentric polar field (n_bins,) in Hz
 - `.occupancy` - Time in each egocentric bin (n_bins,) in seconds
-- `.ego_env` - Egocentric polar environment
+- `.env` - Egocentric polar environment
 - `.distance_range` - Distance range (min, max)
 - `.n_distance_bins` - Number of distance bins
 - `.n_direction_bins` - Number of direction bins
@@ -382,10 +382,10 @@ from neurospatial.encoding import (
 ```python
 from neurospatial.encoding.grid import (
     grid_score,                             # Grid cell grid score
-    spatial_autocorrelation,                # Autocorrelation of field
-    grid_orientation,                       # Grid orientation
+    spatial_autocorrelation,                # 2D FFT autocorrelogram (regular grids)
+    spatial_autocorrelation_radial,         # 1D distance profile (irregular topologies)
     grid_scale,                             # Grid spacing
-    grid_properties,                        # Comprehensive properties
+    grid_properties,                        # Comprehensive properties (incl. orientation)
     periodicity_score,                      # Periodicity measure
     GridProperties,                         # Properties dataclass
 )
@@ -426,7 +426,7 @@ from neurospatial.encoding import (
 ```
 
 Use result methods such as `preferred_distance()`, `preferred_direction()`, and
-`is_ovc()` for classification workflows.
+`is_object_vector_cell()` for classification workflows.
 
 ### Spatial View Cells
 
@@ -434,7 +434,7 @@ Use result methods such as `preferred_distance()`, `preferred_direction()`, and
 from neurospatial.encoding import (
     compute_view_rate,                      # View field (returns ViewRateResult)
     compute_view_rates,                     # Population view fields
-    ViewRateResult,                         # Result with view_occupancy, is_view_cell(), etc.
+    ViewRateResult,                         # Result with occupancy, is_spatial_view_cell(), etc.
     ViewRatesResult,                        # Population result
     compute_viewed_location,                # Compute viewed location from gaze
     compute_viewshed,                       # Compute visible bins
@@ -506,14 +506,17 @@ from neurospatial.decoding import (
     # Quality metrics
     confusion_matrix,
     decoding_correlation,
-
-    # Shuffle testing (re-exported from stats)
-    shuffle_time_bins,
-    shuffle_cell_identity,
-    compute_shuffle_pvalue,
-    ShuffleTestResult,
-    generate_poisson_surrogates,
 )
+
+# Shuffle controls and surrogates live under stats/ — import from their canonical
+# locations rather than from neurospatial.decoding (the re-exports were removed in v0.4).
+from neurospatial.stats.shuffle import (
+    ShuffleTestResult,
+    compute_shuffle_pvalue,
+    shuffle_cell_identity,
+    shuffle_time_bins,
+)
+from neurospatial.stats.surrogates import generate_poisson_surrogates
 ```
 
 ---
@@ -630,7 +633,7 @@ from neurospatial.ops.egocentric import (
 from neurospatial import Environment
 
 # Create polar grid in egocentric space (for object-vector cells)
-ego_env = Environment.from_polar_egocentric(
+env = Environment.from_polar_egocentric(
     distance_range=(0, 50),
     angle_range=(-np.pi, np.pi),
     distance_bin_size=5.0,
@@ -765,7 +768,6 @@ from neurospatial.behavior.navigation import (
     SubgoalEfficiencyResult,        # Multi-waypoint efficiency
     traveled_path_length,           # Total distance traveled
     shortest_path_length,           # Geodesic/Euclidean distance
-    path_efficiency,                # Ratio: shortest / traveled
     time_efficiency,                # Ratio: T_optimal / T_actual
     angular_efficiency,             # 1 - mean(|delta_theta|) / pi
     subgoal_efficiency,             # Per-segment efficiency

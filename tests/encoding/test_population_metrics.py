@@ -181,7 +181,7 @@ class TestPopulationCoverage:
             for j in simple_env.neighbors(i):
                 firing_rates[i, j] = 5.0
 
-        result = population_coverage(firing_rates, simple_env, min_size=1)
+        result = population_coverage(simple_env, firing_rates, min_size=1)
         assert result.coverage_fraction == pytest.approx(1.0)
         assert len(result.uncovered_bins) == 0
         assert result.n_neurons == n_bins
@@ -198,7 +198,7 @@ class TestPopulationCoverage:
                 if j < n_bins:
                     firing_rates[i, j] = 5.0
 
-        result = population_coverage(firing_rates, simple_env, min_size=1)
+        result = population_coverage(simple_env, firing_rates, min_size=1)
         assert 0.0 < result.coverage_fraction < 1.0
         assert len(result.uncovered_bins) > 0
         assert len(result.uncovered_positions) == len(result.uncovered_bins)
@@ -210,7 +210,7 @@ class TestPopulationCoverage:
         # This will cause detect_place_fields to classify them as interneurons
         firing_rates = np.ones((5, n_bins)) * 15.0  # Above default max_mean_rate=10
 
-        result = population_coverage(firing_rates, simple_env)
+        result = population_coverage(simple_env, firing_rates)
         assert result.coverage_fraction == 0.0
         assert len(result.uncovered_bins) == n_bins
         assert result.n_place_cells == 0
@@ -225,7 +225,7 @@ class TestPopulationCoverage:
         for j in simple_env.neighbors(0):
             firing_rates[0, j] = 5.0
 
-        result = population_coverage(firing_rates, simple_env, min_size=1)
+        result = population_coverage(simple_env, firing_rates, min_size=1)
         assert result.n_neurons == 1
         if result.n_place_cells > 0:
             assert result.n_place_cells == 1
@@ -240,7 +240,7 @@ class TestPopulationCoverage:
         firing_rates[1, 3:8] = np.array([10.0, 8.0, 6.0, 4.0, 2.0])
         firing_rates[2, 6:11] = np.array([10.0, 8.0, 6.0, 4.0, 2.0])
 
-        result = population_coverage(firing_rates, simple_env, min_size=1)
+        result = population_coverage(simple_env, firing_rates, min_size=1)
         expected_density = field_density_map(result.place_fields, n_bins)
         np.testing.assert_array_equal(result.field_count, expected_density)
 
@@ -252,7 +252,7 @@ class TestPopulationCoverage:
         # Low uniform firing (no fields detected)
         firing_rates = np.ones((5, n_bins)) * 0.1
 
-        result = population_coverage(firing_rates, simple_env)
+        result = population_coverage(simple_env, firing_rates)
         expected_positions = simple_env.bin_centers[result.uncovered_bins]
         np.testing.assert_array_equal(result.uncovered_positions, expected_positions)
 
@@ -264,7 +264,7 @@ class TestPopulationCoverage:
         for i in range(3):
             firing_rates[i, i * 10 : (i + 1) * 10] = np.linspace(10.0, 1.0, 10)
 
-        result = population_coverage(firing_rates, simple_env, min_size=1)
+        result = population_coverage(simple_env, firing_rates, min_size=1)
         neurons_with_fields = sum(
             1 for fields in result.place_fields if len(fields) > 0
         )
@@ -277,12 +277,14 @@ class TestPopulationCoverage:
         firing_rates[0, 0:5] = np.array([10.0, 8.0, 6.0, 4.0, 2.0])
         firing_rates[1, 10:15] = np.array([10.0, 8.0, 6.0, 4.0, 2.0])
 
-        result = population_coverage(firing_rates, simple_env, min_size=1)
+        from neurospatial.encoding.spatial import PlaceFieldsResult
+
+        result = population_coverage(simple_env, firing_rates, min_size=1)
         # Should have list of length n_neurons
         assert len(result.place_fields) == 2
-        # Each element is a list of arrays
+        # Each element is a PlaceFieldsResult that iterates as list[NDArray]
         for neuron_fields in result.place_fields:
-            assert isinstance(neuron_fields, list)
+            assert isinstance(neuron_fields, PlaceFieldsResult)
             for field in neuron_fields:
                 assert isinstance(field, np.ndarray)
                 assert field.dtype == np.int64
@@ -292,12 +294,14 @@ class TestPopulationCoverage:
         """Test error when environment is not fitted."""
         from unittest.mock import MagicMock
 
+        from neurospatial.environment.decorators import EnvironmentNotFittedError
+
         rng = np.random.default_rng(42)
         env = MagicMock(spec=Environment)
         env._is_fitted = False
         firing_rates = rng.random((5, 10))
-        with pytest.raises(RuntimeError, match="Environment must be fitted"):
-            population_coverage(firing_rates, env)
+        with pytest.raises(EnvironmentNotFittedError, match="population_coverage"):
+            population_coverage(env, firing_rates)
 
     def test_shape_mismatch_error(self, simple_env: Environment) -> None:
         """Test error when firing_rates shape doesn't match n_bins."""
@@ -305,18 +309,18 @@ class TestPopulationCoverage:
         wrong_n_bins = simple_env.n_bins + 10
         firing_rates = rng.random((5, wrong_n_bins))
         with pytest.raises(ValueError, match="firing_rates shape mismatch"):
-            population_coverage(firing_rates, simple_env)
+            population_coverage(simple_env, firing_rates)
 
     def test_non_2d_input_error(self, simple_env: Environment) -> None:
         """Test error for non-2D firing_rates."""
         rng = np.random.default_rng(42)
         firing_rates_1d = rng.random(simple_env.n_bins)
         with pytest.raises(ValueError, match="firing_rates must be 2D"):
-            population_coverage(firing_rates_1d, simple_env)  # type: ignore[arg-type]
+            population_coverage(simple_env, firing_rates_1d)  # type: ignore[arg-type]
 
         firing_rates_3d = rng.random((5, simple_env.n_bins, 3))
         with pytest.raises(ValueError, match="firing_rates must be 2D"):
-            population_coverage(firing_rates_3d, simple_env)  # type: ignore[arg-type]
+            population_coverage(simple_env, firing_rates_3d)  # type: ignore[arg-type]
 
     def test_threshold_out_of_range_error(self, simple_env: Environment) -> None:
         """Test error for threshold outside (0, 1)."""
@@ -325,16 +329,16 @@ class TestPopulationCoverage:
         firing_rates = rng.random((5, n_bins))
 
         with pytest.raises(ValueError, match="threshold must be in range"):
-            population_coverage(firing_rates, simple_env, threshold=0.0)
+            population_coverage(simple_env, firing_rates, threshold=0.0)
 
         with pytest.raises(ValueError, match="threshold must be in range"):
-            population_coverage(firing_rates, simple_env, threshold=1.0)
+            population_coverage(simple_env, firing_rates, threshold=1.0)
 
         with pytest.raises(ValueError, match="threshold must be in range"):
-            population_coverage(firing_rates, simple_env, threshold=-0.1)
+            population_coverage(simple_env, firing_rates, threshold=-0.1)
 
         with pytest.raises(ValueError, match="threshold must be in range"):
-            population_coverage(firing_rates, simple_env, threshold=1.5)
+            population_coverage(simple_env, firing_rates, threshold=1.5)
 
     def test_max_mean_rate_non_positive_error(self, simple_env: Environment) -> None:
         """Test error for non-positive max_mean_rate."""
@@ -343,10 +347,10 @@ class TestPopulationCoverage:
         firing_rates = rng.random((5, n_bins))
 
         with pytest.raises(ValueError, match="max_mean_rate must be positive"):
-            population_coverage(firing_rates, simple_env, max_mean_rate=0.0)
+            population_coverage(simple_env, firing_rates, max_mean_rate=0.0)
 
         with pytest.raises(ValueError, match="max_mean_rate must be positive"):
-            population_coverage(firing_rates, simple_env, max_mean_rate=-1.0)
+            population_coverage(simple_env, firing_rates, max_mean_rate=-1.0)
 
 
 class TestPlotPopulationCoverage:
@@ -365,7 +369,7 @@ class TestPlotPopulationCoverage:
         for i in range(3):
             firing_rates[i, i * 10 : (i + 1) * 10] = np.linspace(10.0, 1.0, 10)
 
-        result = population_coverage(firing_rates, env, min_size=1)
+        result = population_coverage(env, firing_rates, min_size=1)
         return env, result
 
     @pytest.fixture
@@ -393,7 +397,7 @@ class TestPlotPopulationCoverage:
         firing_rates[0, 0:3] = np.array([10.0, 8.0, 6.0])
         firing_rates[1, 5:8] = np.array([10.0, 8.0, 6.0])
 
-        result = population_coverage(firing_rates, env, min_size=1)
+        result = population_coverage(env, firing_rates, min_size=1)
         return env, result
 
     def test_binary_plot(
@@ -464,6 +468,8 @@ class TestPlotPopulationCoverage:
         """Test error when environment is not fitted."""
         from unittest.mock import MagicMock
 
+        from neurospatial.environment.decorators import EnvironmentNotFittedError
+
         env = MagicMock(spec=Environment)
         env._is_fitted = False
         # Create a minimal valid result
@@ -479,7 +485,7 @@ class TestPlotPopulationCoverage:
             n_fields=1,
             place_fields=[[np.array([0])]],
         )
-        with pytest.raises(RuntimeError, match="Environment must be fitted"):
+        with pytest.raises(EnvironmentNotFittedError, match="plot_population_coverage"):
             plot_population_coverage(env, result)
 
     def test_wrong_result_type_error(
@@ -756,7 +762,7 @@ class TestPopulationMetricsIntegration:
         firing_rates[4, :] = 0.1
 
         # Run population_coverage
-        result = population_coverage(firing_rates, env, min_size=1)
+        result = population_coverage(env, firing_rates, min_size=1)
 
         # Verify result structure
         assert isinstance(result, PopulationCoverageResult)

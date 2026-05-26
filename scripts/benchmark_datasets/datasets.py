@@ -305,7 +305,7 @@ def create_benchmark_overlays(
     # Position overlay
     if config.include_position:
         position_overlay = PositionOverlay(
-            data=trajectory.copy(),
+            positions=trajectory.copy(),
             color="red",
             size=10.0,
             trail_length=config.trail_length,
@@ -374,7 +374,7 @@ def create_benchmark_overlays(
         head_angles = np.arctan2(np.sin(head_angles), np.cos(head_angles))
 
         head_direction_overlay = HeadDirectionOverlay(
-            data=head_angles,
+            headings=head_angles,
             color="yellow",
             length=3.0,
         )

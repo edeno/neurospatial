@@ -95,7 +95,7 @@ def test_position_overlay(data: dict, n_steps: int = 100):
     print("\n=== TEST: Position Overlay ===")
 
     position_overlay = PositionOverlay(
-        data=trajectory,
+        positions=trajectory,
         times=frame_times,
         color="cyan",
         size=8.0,

@@ -1,13 +1,13 @@
 """
 Grid cell analysis.
 
-This module provides tools for analyzing grid cells, including spatial
-autocorrelation, grid score (hexagonal periodicity), grid scale (spacing),
-grid orientation, and periodicity score for irregular topologies.
+This module provides tools for analyzing grid cells: spatial autocorrelation
+(2D FFT for regular grids, 1D radial profile for irregular topologies), grid
+score (hexagonal periodicity), grid scale (spacing), grid orientation (folded
+into ``GridProperties`` since v0.4 / M2.B 2.13), and periodicity score for
+irregular topologies.
 
-Implements spatial autocorrelation and grid score (Sargolini et al., 2006) with
-support for both regular 2D grids (FFT-based) and irregular graph topologies
-(graph-based distance autocorrelation).
+Implements spatial autocorrelation and grid score (Sargolini et al., 2006).
 
 Imports
 -------
@@ -16,8 +16,8 @@ All functions can be imported directly from this module:
 >>> from neurospatial.encoding.grid import (
 ...     grid_score,
 ...     spatial_autocorrelation,
+...     spatial_autocorrelation_radial,
 ...     grid_scale,
-...     grid_orientation,
 ...     grid_properties,
 ...     periodicity_score,
 ...     GridProperties,
@@ -30,17 +30,21 @@ Or via the encoding package:
 Functions
 ---------
 spatial_autocorrelation
-    Compute spatial autocorrelation of a firing rate map (FFT or graph-based).
+    Compute the 2D FFT autocorrelogram of a firing rate map (requires a
+    regular 2D grid environment).
+spatial_autocorrelation_radial
+    Compute the 1D distance-binned autocorrelation profile via the
+    connectivity graph (works on any topology).
 grid_score
-    Compute grid score (hexagonal periodicity) from 2D autocorrelation.
+    Compute grid score (hexagonal periodicity) from a 2D autocorrelogram.
 grid_scale
-    Compute grid spacing from 2D autocorrelogram.
-grid_orientation
-    Compute grid orientation from 2D autocorrelogram.
+    Compute grid spacing from a 2D autocorrelogram.
 grid_properties
-    Compute all grid cell metrics from 2D autocorrelogram.
+    Compute all grid cell metrics (score, scale, orientation,
+    orientation_std, peak_coords) from a 2D autocorrelogram.
 periodicity_score
-    Compute periodicity score from distance-correlation profile (graph-based).
+    Compute periodicity score from a distance-correlation profile
+    (graph-based / radial).
 
 Classes
 -------
@@ -77,12 +81,12 @@ __all__ = [
     # Dataclass
     "GridProperties",
     # Functions
-    "grid_orientation",
     "grid_properties",
     "grid_scale",
     "grid_score",
     "periodicity_score",
     "spatial_autocorrelation",
+    "spatial_autocorrelation_radial",
 ]
 
 # Axis flip detection threshold for orientation consensus algorithm.
@@ -113,8 +117,18 @@ class GridProperties:
         Lower values indicate more consistent/reliable orientation.
     peak_coords : NDArray[np.float64]
         Coordinates of detected peaks relative to autocorrelogram center,
-        shape (n_peaks, 2) where columns are (row_offset, col_offset).
-        Typically 6 peaks for a well-formed grid.
+        shape (n_peaks, 2) where columns are ``(x_offset, y_offset)`` in
+        bin-coordinate space (Cartesian). Typically 6 peaks for a
+        well-formed grid.
+
+        .. note::
+
+           **Breaking change in v0.4**: this attribute previously held
+           ``(row_offset, col_offset)`` (image-array convention with the
+           y-axis flipped). It now matches the rest of the package's
+           Cartesian ``(x, y)`` convention. Downstream code that read
+           ``peak_coords[:, 0]`` as a row index must swap to
+           ``peak_coords[:, 1]`` (``y``).
     n_peaks : int
         Number of peaks detected. Grid cells typically have 6.
 
@@ -129,9 +143,7 @@ class GridProperties:
     ...     grid_properties,
     ...     spatial_autocorrelation,
     ... )  # doctest: +SKIP
-    >>> autocorr = spatial_autocorrelation(
-    ...     env, firing_rate, method="fft"
-    ... )  # doctest: +SKIP
+    >>> autocorr = spatial_autocorrelation(env, firing_rate)  # doctest: +SKIP
     >>> props = grid_properties(autocorr, bin_size=2.0)  # doctest: +SKIP
     >>> print(
     ...     f"Score: {props.score:.2f}, Scale: {props.scale:.1f} cm"
@@ -150,60 +162,42 @@ class GridProperties:
 def spatial_autocorrelation(
     env: Environment,
     firing_rate: NDArray[np.float64],
-    *,
-    method: Literal["auto", "fft", "graph"] = "auto",
-    max_distance: float | None = None,
-    n_distance_bins: int = 50,
-) -> NDArray[np.float64] | tuple[NDArray[np.float64], NDArray[np.float64]]:
+) -> NDArray[np.float64]:
     """
-    Compute spatial autocorrelation of a firing rate map.
+    Compute 2D FFT-based spatial autocorrelation of a firing rate map.
 
-    Spatial autocorrelation measures the similarity between a cell's firing pattern
-    and shifted versions of itself. For grid cells, this reveals the characteristic
-    hexagonal periodicity. This implementation supports both regular 2D grids
-    (FFT-based, opexebo-compatible) and irregular graph topologies (graph-based).
+    Spatial autocorrelation measures the similarity between a cell's firing
+    pattern and shifted versions of itself; for grid cells this reveals the
+    characteristic hexagonal periodicity. This entry point computes the
+    opexebo-compatible 2D autocorrelogram and is the input to
+    :func:`grid_score`. For irregular environments without a regular 2D grid
+    layout, use :func:`spatial_autocorrelation_radial` instead, which returns
+    a 1D distance-correlation profile from the connectivity graph.
 
     Parameters
     ----------
     env : EnvironmentProtocol
-        Spatial environment containing bin centers and connectivity.
+        Spatial environment with a regular 2D grid layout.
     firing_rate : NDArray[np.float64], shape (n_bins,)
         Spatial firing rate map (Hz or spikes/second).
-    method : {'auto', 'fft', 'graph'}, optional
-        Autocorrelation computation method:
-        - 'auto': Automatically select FFT for regular 2D grids, graph otherwise
-        - 'fft': FFT-based 2D autocorrelation (requires regular 2D grid)
-        - 'graph': Graph-based distance autocorrelation (works on any topology)
-        Default is 'auto'.
-    max_distance : float, optional
-        Maximum distance for graph-based method (in physical units). If None,
-        uses the environment's maximum extent. Ignored for FFT method.
-    n_distance_bins : int, optional
-        Number of distance bins for graph-based method. Default is 50.
-        Ignored for FFT method.
 
     Returns
     -------
-    autocorr : NDArray[np.float64], shape (height, width) OR tuple
-        **FFT method** ('fft' or 'auto' on regular grid):
-            Returns 2D autocorrelation map with same shape as environment grid.
-            Center corresponds to zero lag. Values in [-1, 1].
-
-        **Graph method** ('graph' or 'auto' on irregular topology):
-            Returns tuple (distances, correlations):
-            - distances : NDArray, shape (n_distance_bins,) - Distance bin centers
-            - correlations : NDArray, shape (n_distance_bins,) - Autocorrelation at each distance
+    autocorr : NDArray[np.float64], shape (height, width)
+        2D autocorrelation map with the same shape as the environment grid.
+        Center corresponds to zero lag. Values in [-1, 1].
 
     Raises
     ------
     ValueError
-        If firing_rate shape doesn't match env.n_bins.
-        If method='fft' but environment is not a regular 2D grid.
+        If ``firing_rate.shape != (env.n_bins,)``.
+        If ``env`` is not a regular 2D grid (use
+        :func:`spatial_autocorrelation_radial` instead).
         If all firing rates are NaN or constant.
 
     Notes
     -----
-    **FFT Method** (regular 2D grids):
+    Algorithm:
 
     1. Reshape firing rate to 2D grid shape
     2. Normalize: subtract mean, handle NaN
@@ -211,32 +205,19 @@ def spatial_autocorrelation(
     4. Normalize by unbiased variance estimate
     5. Output shape matches environment grid
 
-    **Graph Method** (irregular topologies):
+    Interpretation:
 
-    1. Compute pairwise geodesic distances between all bins
-    2. Bin distances into distance bins
-    3. For each distance bin, compute correlation between firing rates
-       of bin pairs at that distance
-    4. Returns 1D distance-correlation profile
+    - **Hexagonal grid cells**: 6-fold rotational symmetry around the
+      central peak.
+    - **Place cells**: Typically a single central peak, no periodicity.
+    - **Non-spatial cells**: Flat or noisy autocorrelation.
 
-    **Interpretation**:
+    Use :func:`spatial_autocorrelation_radial` when the environment
+    is irregular (tracks, masked grids, graphs) — it returns a 1D
+    distance-correlation profile via the connectivity graph and
+    feeds into :func:`periodicity_score`.
 
-    - **Hexagonal grid cells**: Show 6-fold rotational symmetry in FFT method,
-      periodic peaks at characteristic spacing in graph method
-    - **Place cells**: Typically show single central peak, no periodicity
-    - **Non-spatial cells**: Flat or noisy autocorrelation
-
-    **When to use each method**:
-
-    - Use **FFT method** for rectangular open-field recordings, compatibility
-      with opexebo, or when you need 2D autocorrelogram for grid_score
-    - Use **graph method** for irregular environments, tracks, or when you need
-      distance-based characterization
-
-    **Computational complexity**:
-
-    - FFT method: O(n log n) where n = n_bins (very fast)
-    - Graph method: O(n²) for distance computation (slower for large graphs)
+    Complexity: ``O(n log n)`` where ``n = n_bins``.
 
     Examples
     --------
@@ -253,63 +234,119 @@ def spatial_autocorrelation(
     >>> # ... populate with grid cell firing pattern ...
     >>>
     >>> # FFT method (for regular 2D grid)
-    >>> autocorr_2d = spatial_autocorrelation(
-    ...     env, firing_rate, method="fft"
-    ... )  # doctest: +SKIP
+    >>> autocorr_2d = spatial_autocorrelation(env, firing_rate)  # doctest: +SKIP
     >>> print(autocorr_2d.shape)  # doctest: +SKIP
     (20, 20)  # doctest: +SKIP
     >>>
-    >>> # Graph method (works on any topology)
-    >>> distances, correlations = spatial_autocorrelation(  # doctest: +SKIP
-    ...     env, firing_rate, method="graph", n_distance_bins=30
+    >>> # For irregular environments, use spatial_autocorrelation_radial
+    >>> distances, correlations = spatial_autocorrelation_radial(  # doctest: +SKIP
+    ...     env, firing_rate, n_distance_bins=30
     ... )
     >>> print(distances.shape, correlations.shape)  # doctest: +SKIP
     (30,) (30,)  # doctest: +SKIP
 
     See Also
     --------
-    grid_score : Compute grid score from 2D autocorrelation
-    periodicity_score : Graph-based periodicity metric
+    grid_score : Compute grid score from this 2D autocorrelogram.
+    spatial_autocorrelation_radial : 1D distance-correlation profile
+        for irregular environments.
+    periodicity_score : Graph-based periodicity metric.
 
     References
     ----------
     Sargolini et al. (2006). Conjunctive representation of position, direction,
         and velocity in entorhinal cortex. Science, 312(5774), 758-762.
     """
-    # Validate inputs
-    if firing_rate.shape != (env.n_bins,):
+    _validate_autocorr_input(env, firing_rate)
+
+    if _detect_grid_method(env) != "fft":
         raise ValueError(
-            f"firing_rate.shape must be ({env.n_bins},), got {firing_rate.shape}"
+            "spatial_autocorrelation requires a regular 2D grid environment "
+            "(grid_shape attribute on layout, with >=50% of bins active). "
+            "For irregular environments, use spatial_autocorrelation_radial "
+            "to obtain a 1D distance-correlation profile."
         )
 
-    if method not in ("auto", "fft", "graph"):
-        raise ValueError(f"method must be 'auto', 'fft', or 'graph', got '{method}'")
+    return _spatial_autocorrelation_fft(env, firing_rate)
+
+
+def spatial_autocorrelation_radial(
+    env: Environment,
+    firing_rate: NDArray[np.float64],
+    *,
+    max_distance: float | None = None,
+    n_distance_bins: int = 50,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Compute 1D distance-binned spatial autocorrelation.
+
+    For each distance bin, computes the Pearson correlation between firing
+    rates of bin pairs separated by that geodesic distance. Use this on
+    irregular topologies (graphs, masked grids) where the FFT-based
+    :func:`spatial_autocorrelation` is undefined.
+
+    Parameters
+    ----------
+    env : EnvironmentProtocol
+        Spatial environment containing bin centers and connectivity.
+    firing_rate : NDArray[np.float64], shape (n_bins,)
+        Spatial firing rate map (Hz or spikes/second).
+    max_distance : float, optional
+        Maximum geodesic distance to consider. If None, uses the environment's
+        maximum extent.
+    n_distance_bins : int, default=50
+        Number of distance bins.
+
+    Returns
+    -------
+    distances : NDArray[np.float64], shape (n_distance_bins,)
+        Distance bin centers.
+    correlations : NDArray[np.float64], shape (n_distance_bins,)
+        Autocorrelation at each distance.
+
+    Raises
+    ------
+    ValueError
+        If ``firing_rate.shape != (env.n_bins,)``.
+        If ``n_distance_bins <= 0``.
+        If all firing rates are NaN or constant.
+
+    See Also
+    --------
+    spatial_autocorrelation : 2D FFT-based autocorrelogram for regular grids.
+    """
+    _validate_autocorr_input(env, firing_rate)
 
     if n_distance_bins <= 0:
         raise ValueError(f"n_distance_bins must be positive, got {n_distance_bins}")
 
-    # Handle all-NaN
+    return _spatial_autocorrelation_graph(
+        env,
+        firing_rate,
+        max_distance=max_distance,
+        n_distance_bins=n_distance_bins,
+    )
+
+
+def _validate_autocorr_input(
+    env: Environment, firing_rate: NDArray[np.float64]
+) -> None:
+    """Shared input validation for the public autocorrelation entry points.
+
+    Pulled out so :func:`spatial_autocorrelation` and
+    :func:`spatial_autocorrelation_radial` apply the same shape /
+    legitimate-NaN checks before dispatching to the method-specific
+    implementation.
+    """
+    if firing_rate.shape != (env.n_bins,):
+        raise ValueError(
+            f"firing_rate.shape must be ({env.n_bins},), got {firing_rate.shape}"
+        )
     if np.all(np.isnan(firing_rate)):
         raise ValueError("All firing rates are NaN")
-
-    # Handle constant firing rate
     valid_rates = firing_rate[np.isfinite(firing_rate)]
     if len(valid_rates) > 0 and np.all(valid_rates == valid_rates[0]):
         raise ValueError(
             "All valid firing rates are constant. Autocorrelation undefined."
-        )
-
-    # Determine method
-    if method == "auto":
-        # Check if environment is a regular 2D grid
-        method = _detect_grid_method(env)
-
-    # Dispatch to appropriate method
-    if method == "fft":
-        return _spatial_autocorrelation_fft(env, firing_rate)
-    else:  # method == "graph"
-        return _spatial_autocorrelation_graph(
-            env, firing_rate, max_distance=max_distance, n_distance_bins=n_distance_bins
         )
 
 
@@ -378,7 +415,7 @@ def _spatial_autocorrelation_fft(
     if not hasattr(env.layout, "grid_shape"):
         raise ValueError(
             "FFT method requires environment with grid_shape attribute. "
-            "Use method='graph' for irregular topologies."
+            "Use spatial_autocorrelation_radial for irregular topologies."
         )
 
     grid_shape = env.layout.grid_shape
@@ -386,13 +423,13 @@ def _spatial_autocorrelation_fft(
     if grid_shape is None:
         raise ValueError(
             "FFT method requires environment with grid_shape. "
-            "Use method='graph' for irregular topologies."
+            "Use spatial_autocorrelation_radial for irregular topologies."
         )
 
     if len(grid_shape) != 2:
         raise ValueError(
             f"FFT method requires 2D grid, got {len(grid_shape)}D grid. "
-            "Use method='graph' for non-2D environments."
+            "Use spatial_autocorrelation_radial for non-2D environments."
         )
 
     # Reshape to 2D grid (grid_shape is now guaranteed to be tuple[int, int])
@@ -590,7 +627,7 @@ def grid_score(
     Parameters
     ----------
     autocorr_2d : NDArray[np.float64], shape (height, width)
-        2D spatial autocorrelation map (from spatial_autocorrelation with method='fft').
+        2D spatial autocorrelation map (from spatial_autocorrelation; FFT, regular 2D grid).
         Should be centered (zero lag at center).
     inner_radius_fraction : float, optional
         Inner radius of annular region as fraction of image semi-axis.
@@ -659,9 +696,7 @@ def grid_score(
     >>> # ... populate with hexagonal grid pattern ...
     >>>
     >>> # Compute autocorrelation
-    >>> autocorr_2d = spatial_autocorrelation(
-    ...     env, firing_rate, method="fft"
-    ... )  # doctest: +SKIP
+    >>> autocorr_2d = spatial_autocorrelation(env, firing_rate)  # doctest: +SKIP
     >>>
     >>> # Compute grid score
     >>> score = grid_score(autocorr_2d)  # doctest: +SKIP
@@ -786,7 +821,7 @@ def periodicity_score(
     Parameters
     ----------
     distances : NDArray[np.float64], shape (n_bins,)
-        Distance bin centers (from spatial_autocorrelation with method='graph').
+        Distance bin centers (from spatial_autocorrelation_radial; 1D distance profile).
     correlations : NDArray[np.float64], shape (n_bins,)
         Autocorrelation values at each distance.
     min_peaks : int, optional
@@ -856,7 +891,7 @@ def periodicity_score(
     >>>
     >>> # Compute graph-based autocorrelation
     >>> distances, correlations = spatial_autocorrelation(  # doctest: +SKIP
-    ...     env, firing_rate, method="graph", n_distance_bins=50
+    ...     env, firing_rate, n_distance_bins=50
     ... )
     >>>
     >>> # Compute periodicity score
@@ -983,8 +1018,11 @@ def _find_autocorr_peaks(
     Returns
     -------
     peak_coords : NDArray[np.float64], shape (n_peaks, 2)
-        Peak coordinates relative to center, as (row_offset, col_offset).
-        Sorted by distance from center (closest first).
+        Peak coordinates relative to center, as ``(x_offset, y_offset)``
+        in Cartesian convention (x = column offset; y = row offset, with
+        positive y pointing **down** to match the underlying image-array
+        coordinates the autocorrelogram was computed in). Sorted by
+        distance from center (closest first).
     """
     from skimage.feature import peak_local_max
 
@@ -1021,10 +1059,14 @@ def _find_autocorr_peaks(
     if len(peaks) == 0:
         return np.array([]).reshape(0, 2)
 
-    # Convert to center-relative coordinates
-    peak_coords_relative = peaks.astype(np.float64) - np.array([center_y, center_x])
+    # Convert to center-relative coordinates. ``peaks`` from
+    # ``peak_local_max`` is image-indexed (row, col); we reorder to the
+    # Cartesian ``(x, y) == (col_offset, row_offset)`` convention used
+    # everywhere else in the package.
+    peak_coords_image = peaks.astype(np.float64) - np.array([center_y, center_x])
+    peak_coords_relative = peak_coords_image[:, [1, 0]]
 
-    # Compute distances from center
+    # Compute distances from center (Euclidean — independent of axis order).
     distances = np.sqrt(
         peak_coords_relative[:, 0] ** 2 + peak_coords_relative[:, 1] ** 2
     )
@@ -1066,7 +1108,7 @@ def grid_scale(
     Parameters
     ----------
     autocorr_2d : NDArray[np.float64], shape (height, width)
-        2D spatial autocorrelation map (from spatial_autocorrelation with method='fft').
+        2D spatial autocorrelation map (from spatial_autocorrelation; FFT, regular 2D grid).
         Should be centered (zero lag at center).
     bin_size : float
         Size of each spatial bin in physical units (e.g., cm).
@@ -1114,16 +1156,13 @@ def grid_scale(
     ...     spatial_autocorrelation,
     ...     grid_scale,
     ... )  # doctest: +SKIP
-    >>> autocorr = spatial_autocorrelation(
-    ...     env, firing_rate, method="fft"
-    ... )  # doctest: +SKIP
+    >>> autocorr = spatial_autocorrelation(env, firing_rate)  # doctest: +SKIP
     >>> scale = grid_scale(autocorr, bin_size=2.0)  # doctest: +SKIP
     >>> print(f"Grid spacing: {scale:.1f} cm")  # doctest: +SKIP
     Grid spacing: 42.5 cm  # doctest: +SKIP
 
     See Also
     --------
-    grid_orientation : Extract grid orientation angle
     grid_properties : Combined function for all grid metrics
     grid_score : Measure hexagonal periodicity
 
@@ -1138,7 +1177,9 @@ def grid_scale(
         raise ValueError(f"autocorr_2d must be 2D array, got {autocorr_2d.ndim}D")
 
     if bin_size <= 0:
-        raise ValueError(f"bin_size must be positive, got {bin_size}")
+        raise ValueError(
+            f"bin_size must be positive (env units, e.g., cm), got {bin_size}"
+        )
 
     if n_peaks < 1:
         raise ValueError(f"n_peaks must be >= 1, got {n_peaks}")
@@ -1167,159 +1208,6 @@ def grid_scale(
     return scale
 
 
-def grid_orientation(
-    autocorr_2d: NDArray[np.float64],
-    *,
-    n_peaks: int = 6,
-    min_distance: int = 5,
-    threshold_rel: float = 0.1,
-) -> tuple[float, float]:
-    """
-    Compute grid orientation from 2D autocorrelogram.
-
-    Grid orientation is the angle of the grid pattern relative to horizontal,
-    normalized to the [0, 60) degree range due to the 60° rotational symmetry
-    of hexagonal grids.
-
-    Parameters
-    ----------
-    autocorr_2d : NDArray[np.float64], shape (height, width)
-        2D spatial autocorrelation map (from spatial_autocorrelation with method='fft').
-        Should be centered (zero lag at center).
-    n_peaks : int, optional
-        Number of peaks to use for computing orientation. Default is 6.
-    min_distance : int, optional
-        Minimum distance between peaks in pixels. Default is 5.
-    threshold_rel : float, optional
-        Minimum peak height as fraction of autocorrelogram range. Default is 0.1.
-
-    Returns
-    -------
-    orientation : float
-        Grid orientation in degrees, range [0, 60).
-        Returns NaN if fewer than 3 peaks are detected.
-    orientation_std : float
-        Standard deviation of orientation estimates across peaks.
-        Lower values indicate more reliable orientation.
-        Returns NaN if fewer than 3 peaks are detected.
-
-    Notes
-    -----
-    **Algorithm** (adapted from gridcell_metrics / opexebo):
-
-    1. Find local maxima in autocorrelogram (excluding central peak)
-    2. Compute angle from center to each peak using arctan2
-    3. Reduce all angles to [0, 60) range using modulo 60
-    4. Detect axis flips: if angles cluster around 30°, flip some angles
-       to achieve consensus (handles ambiguity in hexagonal symmetry)
-    5. Return mean and standard deviation of adjusted angles
-
-    **Interpretation**:
-
-    - Orientation indicates the rotation of the grid pattern
-    - Low std indicates a well-formed, regular hexagonal grid
-    - High std may indicate distorted grid or poor peak detection
-
-    **Axis flip handling**:
-
-    Hexagonal grids have 6-fold symmetry, meaning peaks at 0°, 60°, 120°, etc.
-    are equivalent. When peaks cluster around 30°, some may be at 30° and
-    others at 90° (30° + 60°). The algorithm detects this and adjusts angles
-    to achieve consensus.
-
-    Examples
-    --------
-    >>> from neurospatial.encoding.grid import (
-    ...     spatial_autocorrelation,
-    ...     grid_orientation,
-    ... )  # doctest: +SKIP
-    >>> autocorr = spatial_autocorrelation(
-    ...     env, firing_rate, method="fft"
-    ... )  # doctest: +SKIP
-    >>> orientation, orientation_std = grid_orientation(autocorr)  # doctest: +SKIP
-    >>> print(
-    ...     f"Orientation: {orientation:.1f}° ± {orientation_std:.1f}°"
-    ... )  # doctest: +SKIP
-    Orientation: 23.5° ± 2.1°  # doctest: +SKIP
-
-    See Also
-    --------
-    grid_scale : Extract grid spacing
-    grid_properties : Combined function for all grid metrics
-    grid_score : Measure hexagonal periodicity
-
-    References
-    ----------
-    Brandon, M. P., et al. (2011). Reduction of theta rhythm dissociates
-        grid cell spatial periodicity from directional tuning. Science.
-    """
-    # Validate inputs
-    if autocorr_2d.ndim != 2:
-        raise ValueError(f"autocorr_2d must be 2D array, got {autocorr_2d.ndim}D")
-
-    # Find peaks
-    peak_coords = _find_autocorr_peaks(
-        autocorr_2d,
-        min_distance=min_distance,
-        threshold_rel=threshold_rel,
-        max_peaks=n_peaks + 1,
-    )
-
-    if len(peak_coords) < 3:
-        # Not enough peaks to compute reliable orientation
-        return np.nan, np.nan
-
-    # Compute angles from center to each peak
-    # Note: peak_coords are (row_offset, col_offset), so (y, x)
-    # arctan2 takes (y, x) and returns angle in radians
-    angles_rad = np.arctan2(peak_coords[:, 0], peak_coords[:, 1])
-    angles_deg = np.degrees(angles_rad)
-
-    # Normalize to [0, 360)
-    angles_deg = angles_deg % 360
-
-    # Reduce to [0, 60) using 60° periodicity
-    orientations = angles_deg % 60
-
-    # Axis flip detection and correction (from gridcell_metrics)
-    # If angles cluster around 30°, some may be at 30° and others at 90° (mod 60 = 30)
-    # This creates a bimodal distribution around 0° and 60° in the reduced space
-
-    # Check distance to 60° for each angle
-    dist_to_60 = 60 - orientations
-    # If closer to 60° than to 0°, subtract 60° (will give negative values)
-    adjusted = np.where(dist_to_60 < orientations, orientations - 60, orientations)
-
-    # Now angles are in [-30, 30] range
-    # Check if there's a split around 0° (some positive, some negative near ±threshold)
-    # If there's high spread, we may have axis flip issue
-    # Detect by checking if angles are split between positive and negative
-    n_positive = np.sum(adjusted > _AXIS_FLIP_THRESHOLD_DEG)
-    n_negative = np.sum(adjusted < -_AXIS_FLIP_THRESHOLD_DEG)
-
-    if n_positive > 0 and n_negative > 0:
-        # Axis flip detected - force all to same sign based on majority
-        if n_positive > n_negative:
-            # Make all positive: wrap negative values
-            adjusted = np.where(adjusted < 0, adjusted + 60, adjusted)
-        else:
-            # Make all negative: wrap positive values
-            adjusted = np.where(adjusted > 0, adjusted - 60, adjusted)
-
-    # Compute mean and std
-    mean_orientation = float(np.nanmean(adjusted))
-    std_orientation = float(np.nanstd(adjusted))
-
-    # Normalize mean to [0, 60)
-    mean_orientation = mean_orientation % 60
-
-    # If result is very close to 60, set to 0 (both represent same orientation)
-    if np.abs(mean_orientation - 60) < 0.1:
-        mean_orientation = 0.0
-
-    return mean_orientation, std_orientation
-
-
 def grid_properties(
     autocorr_2d: NDArray[np.float64],
     bin_size: float,
@@ -1335,13 +1223,13 @@ def grid_properties(
 
     This function efficiently computes grid score, scale, orientation, and
     peak coordinates from a single pass of peak detection. Use this instead
-    of calling grid_score, grid_scale, and grid_orientation separately when
+    of calling grid_score and grid_scale separately when
     you need multiple metrics.
 
     Parameters
     ----------
     autocorr_2d : NDArray[np.float64], shape (height, width)
-        2D spatial autocorrelation map (from spatial_autocorrelation with method='fft').
+        2D spatial autocorrelation map (from spatial_autocorrelation; FFT, regular 2D grid).
         Should be centered (zero lag at center).
     bin_size : float
         Size of each spatial bin in physical units (e.g., cm).
@@ -1388,10 +1276,9 @@ def grid_properties(
     The results are equivalent to calling:
     - `grid_score(autocorr_2d, ...)` - matches exactly
     - `grid_scale(autocorr_2d, bin_size, ...)` - may differ slightly
-    - `grid_orientation(autocorr_2d, ...)` - may differ slightly
 
     Note: `grid_properties` performs peak detection once and reuses results,
-    while `grid_scale` and `grid_orientation` each perform independent peak
+    while `grid_scale` performs an independent peak
     detection. Due to the stochastic nature of peak detection near thresholds,
     scale and orientation values may differ slightly (typically <1%) between
     `grid_properties` and individual function calls. For exact consistency,
@@ -1407,7 +1294,7 @@ def grid_properties(
     >>> positions = np.random.randn(5000, 2) * 50
     >>> env = Environment.from_samples(positions, bin_size=2.0)
     >>> # firing_rate = ... (grid cell activity)
-    >>> # autocorr = spatial_autocorrelation(env, firing_rate, method="fft")
+    >>> # autocorr = spatial_autocorrelation(env, firing_rate)
 
     >>> # Get all grid properties at once
     >>> # props = grid_properties(autocorr, bin_size=2.0)
@@ -1420,7 +1307,6 @@ def grid_properties(
     --------
     grid_score : Grid score only
     grid_scale : Grid spacing only
-    grid_orientation : Grid orientation only
     GridProperties : Return type dataclass
 
     References
@@ -1435,7 +1321,9 @@ def grid_properties(
         raise ValueError(f"autocorr_2d must be 2D array, got {autocorr_2d.ndim}D")
 
     if bin_size <= 0:
-        raise ValueError(f"bin_size must be positive, got {bin_size}")
+        raise ValueError(
+            f"bin_size must be positive (env units, e.g., cm), got {bin_size}"
+        )
 
     # Compute grid score (uses rotation-correlation method)
     score = grid_score(
@@ -1470,8 +1358,9 @@ def grid_properties(
     distances_to_use = distances_pixels[: min(n_peaks, len(distances_pixels))]
     scale = float(np.median(distances_to_use)) * bin_size
 
-    # Compute orientation from peak angles
-    angles_rad = np.arctan2(peak_coords[:, 0], peak_coords[:, 1])
+    # Compute orientation from peak angles. peak_coords is now (x, y),
+    # so arctan2(y, x) reads peak_coords[:, 1] (y) and peak_coords[:, 0] (x).
+    angles_rad = np.arctan2(peak_coords[:, 1], peak_coords[:, 0])
     angles_deg = np.degrees(angles_rad) % 360
     orientations = angles_deg % 60
 

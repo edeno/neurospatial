@@ -103,10 +103,10 @@ Step lengths are the distances between consecutive positions. Supports both Eucl
 from neurospatial.behavior.trajectory import compute_step_lengths
 
 # Euclidean distance (default, ecology standard)
-step_lengths = compute_step_lengths(positions, distance_type="euclidean")
+step_lengths = compute_step_lengths(positions, metric="euclidean")
 
 # OR: Geodesic distance for constrained environments (requires env)
-# step_lengths_geo = compute_step_lengths(positions, distance_type="geodesic", env=env)
+# step_lengths_geo = compute_step_lengths(positions, metric="geodesic", env=env)
 
 # Analyze movement statistics
 mean_step = np.mean(step_lengths)
@@ -175,13 +175,14 @@ Mean square displacement (MSD) classifies diffusion processes based on scaling e
 from neurospatial.behavior.trajectory import mean_square_displacement
 
 # Compute MSD from continuous positions (Euclidean distance, ecology standard)
-tau_values, msd_values = mean_square_displacement(
-    positions, times, distance_type="euclidean", max_tau=10.0
+_msd = mean_square_displacement(
+    positions, times, metric="euclidean", max_tau=10.0
 )
+tau_values, msd_values = _msd.lags, _msd.msd
 
 # OR: Geodesic distance for constrained environments
 # tau_geo, msd_geo = mean_square_displacement(
-#     positions, times, distance_type="geodesic", env=env, max_tau=10.0
+#     positions, times, metric="geodesic", env=env, max_tau=10.0
 # )
 
 # Fit power law: MSD ~ τ^α
@@ -213,7 +214,8 @@ $$
 **Key Points**:
 - Uses "all pairs" estimator (standard for stationary processes)
 - Handles disconnected bins gracefully (skips invalid pairs)
-- Returns (tau_values, msd_values) for plotting
+- Returns an ``MSDResult`` dataclass with ``lags`` (tau values) and
+  ``msd`` (MSD values) fields, both shape (n_lags,)
 
 **Applications**:
 - **Movement classification**: Random vs directed search
@@ -280,7 +282,7 @@ runs = detect_runs_between_regions(
     target="goal",
     min_duration=1.0,
     max_duration=10.0,
-    velocity_threshold=5.0,  # Optional speed filter
+    min_speed=5.0,  # Optional speed filter
 )
 
 # Analyze successful vs failed runs
@@ -316,24 +318,29 @@ from neurospatial.segmentation import segment_by_velocity
 movement_epochs = segment_by_velocity(
     positions,
     times,
-    threshold=10.0,  # cm/s
+    min_speed=10.0,  # cm/s
     min_duration=0.5,  # seconds
     hysteresis=2.0,  # ratio for exit threshold
     smooth_window=0.2,  # seconds
 )
 
-# Analyze movement statistics
-total_movement_time = sum(end - start for start, end in movement_epochs)
+# Analyze movement statistics. segment_by_velocity returns list[Run]
+# (matching detect_runs_between_regions, detect_laps, ...). For
+# velocity epochs, ``bins`` is empty and ``success`` is True; only
+# start_time / end_time vary.
+total_movement_time = sum(
+    run.end_time - run.start_time for run in movement_epochs
+)
 print(f"Movement time: {total_movement_time:.1f}s ({total_movement_time/times[-1]:.1%})")
 ```
 
 **Hysteresis Thresholding**:
-- Enter movement: velocity > threshold
-- Exit movement: velocity < threshold / hysteresis
+- Enter movement: velocity > min_speed
+- Exit movement: velocity < min_speed / hysteresis
 - Prevents rapid flickering between states
 
 **Key Parameters**:
-- `threshold`: Velocity threshold (same units as positions/time)
+- `min_speed`: Velocity threshold (same units as positions/time)
 - `min_duration`: Filter brief epochs
 - `hysteresis`: Exit threshold ratio (default 2.0)
 - `smooth_window`: Velocity smoothing window (seconds)
@@ -817,7 +824,7 @@ for lap in laps:
     lap_positions = positions[mask]  # Use continuous positions
 
     turn_angles = compute_turn_angles(lap_positions)
-    step_lengths = compute_step_lengths(lap_positions, distance_type="euclidean")
+    step_lengths = compute_step_lengths(lap_positions, metric="euclidean")
 
     lap_metrics.append({
         "duration": lap.end_time - lap.start_time,
@@ -932,12 +939,13 @@ for i in range(0, len(positions) - window_size, hop_size):
     window_times = times[i:i+window_size]
 
     # Use continuous positions for accurate diffusion exponent
-    tau_vals, msd_vals = mean_square_displacement(
+    _msd = mean_square_displacement(
         window_positions,
         window_times,
-        distance_type="euclidean",
+        metric="euclidean",
         max_tau=5.0
     )
+    tau_vals, msd_vals = _msd.lags, _msd.msd
 
     if len(tau_vals) > 3:
         log_tau = np.log(tau_vals[1:])

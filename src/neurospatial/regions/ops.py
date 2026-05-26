@@ -153,6 +153,8 @@ def _get_points_in_single_region_mask(
             warnings.warn(
                 f"Region '{region.name}' is a point of dimension {region.data.shape[0]}, but 2D comparison "
                 "is being performed. This may lead to unexpected results if not 2D.",
+                category=UserWarning,
+                stacklevel=2,
             )
             # Fallback or specific handling for non-2D points might be needed,
             # for now, proceed if it's (2,) or raise error

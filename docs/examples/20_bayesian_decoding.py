@@ -42,7 +42,6 @@ import numpy as np
 
 from neurospatial import Environment
 from neurospatial.decoding import (
-    compute_shuffle_pvalue,
     confusion_matrix,
     decode_position,
     decoding_correlation,
@@ -50,7 +49,6 @@ from neurospatial.decoding import (
     fit_isotonic_trajectory,
     fit_linear_trajectory,
     median_decoding_error,
-    shuffle_time_bins,
 )
 from neurospatial.encoding import compute_spatial_rate
 from neurospatial.simulation import (
@@ -58,6 +56,7 @@ from neurospatial.simulation import (
     generate_poisson_spikes,
     simulate_trajectory_ou,
 )
+from neurospatial.stats.shuffle import compute_shuffle_pvalue, shuffle_time_bins
 
 # Set random seed for reproducibility
 np.random.seed(42)
@@ -115,6 +114,7 @@ positions, times = simulate_trajectory_ou(
     coherence_time=0.5,
     boundary_mode="reflect",
     seed=42,
+    speed_units="cm",
 )
 
 print(f"Trajectory duration: {times[-1]:.1f} seconds")
@@ -517,9 +517,10 @@ print(f"Number of time bins: {len(segment_times)}")
 # %%
 # Fit isotonic trajectory
 iso_result = fit_isotonic_trajectory(
+    None,  # env unused for isotonic fits
     segment_posterior,
     segment_times,
-    estimate_method="expected",  # Use posterior mean
+    method="expected",  # Use posterior mean
     increasing=None,  # Auto-detect direction
 )
 
@@ -579,7 +580,7 @@ lin_result = fit_linear_trajectory(
     env,
     segment_posterior,
     segment_times,
-    fitting_method="sample",  # Monte Carlo sampling
+    method="sample",  # Monte Carlo sampling
     n_samples=1000,
     rng=42,
 )
@@ -618,7 +619,7 @@ for shuffled_spikes in shuffle_time_bins(segment_spikes, n_shuffles=n_shuffles, 
     shuffled_result = decode_position(env, shuffled_spikes, encoding_models, dt)
     # Fit isotonic trajectory
     shuffled_fit = fit_isotonic_trajectory(
-        shuffled_result.posterior, segment_times, estimate_method="expected"
+        None, shuffled_result.posterior, segment_times, method="expected"
     )
     null_scores.append(shuffled_fit.r_squared)
 

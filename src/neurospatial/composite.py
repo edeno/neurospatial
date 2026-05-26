@@ -1,15 +1,31 @@
 """CompositeEnvironment: merges multiple Environment instances into a single unified Environment-like API.
 Bridge edges between sub-environments are inferred automatically via mutual-nearest-neighbor (MNN).
 
-This class exposes the same public interface as the base `Environment` class:
-  - Properties: n_dims, n_bins, bin_centers, connectivity, is_1d, dimension_ranges,
-                grid_edges, grid_shape, active_mask, regions
-  - Methods:    bin_at, contains, neighbors, distance_between, bin_center_of,
-                bins_in_region, mask_for_region, path_between, info,
-                save, load, bin_attributes, edge_attributes, plot
+This class exposes a deliberately Environment-shaped surface so that
+spatial-analysis code can accept either an :class:`Environment` or a
+:class:`CompositeEnvironment`. It is **not** a strict superset of
+``Environment`` — the two surfaces drift in places, and v0.4 widened
+some of those gaps. In particular:
 
-(Note: factory methods like from_layout are not included, since CompositeEnvironment
-wraps pre-fitted sub-environments. plot_1d is not applicable for composite environments.)
+- ``CompositeEnvironment`` still exposes ``save`` / ``load`` (pickle)
+  while ``Environment`` switched to ``to_file`` / ``from_file`` in M5.9.
+- ``CompositeEnvironment`` still exposes ``bin_attributes`` /
+  ``edge_attributes`` as cached properties while ``Environment``
+  surfaced them as ``get_bin_attributes()`` / ``get_edge_attributes()``
+  methods in M5.6 to keep the cost visible at the call site.
+
+What the composite provides:
+
+- Properties: n_dims, n_bins, bin_centers, connectivity,
+  is_linearized_track, dimension_ranges, grid_edges, grid_shape,
+  active_mask, regions, bin_attributes, edge_attributes.
+- Methods: bin_at, contains, neighbors, distance_between,
+  bin_center_of, bins_in_region, region_mask, path_between, info,
+  save, load, plot.
+
+Factory methods like ``from_layout`` are intentionally absent — a
+CompositeEnvironment wraps already-fitted sub-environments. ``plot_1d``
+is not applicable.
 """
 
 from collections.abc import Sequence
@@ -27,6 +43,7 @@ from sklearn.neighbors import KDTree
 from neurospatial._constants import KDTREE_COMPOSITE_LEAF_SIZE
 from neurospatial._logging import log_composite_build
 from neurospatial.environment import Environment
+from neurospatial.environment.decorators import EnvironmentNotFittedError
 from neurospatial.regions import Regions
 
 
@@ -70,7 +87,9 @@ def _validate_subenvs(subenvs: Any) -> list[Environment]:
                 f"got {type(env).__name__}."
             )
         if not env._is_fitted:
-            raise ValueError(f"Sub-environment {i} is not fitted.")
+            raise EnvironmentNotFittedError(
+                f"CompositeEnvironment(subenvs[{i}])", is_function=True
+            )
 
     # Dimension consistency check
     first_ndims = subenvs[0].n_dims
@@ -123,7 +142,7 @@ class CompositeEnvironment:
         Not applicable for composite environments (set to None).
     regions : Regions
         Manages symbolic spatial regions defined within this composite environment.
-    is_1d : bool
+    is_linearized_track : bool
         True if all sub-environments are 1D, False otherwise.
     _environment_bin_ranges : Dict[str, Tuple[int, int]]
         Mapping of sub-environment names to their bin index ranges in the composite.
@@ -134,7 +153,7 @@ class CompositeEnvironment:
 
     """
 
-    is_1d: bool
+    is_linearized_track: bool
     dimension_ranges: Sequence[tuple[float, float]] | None
     grid_edges: tuple[NDArray[np.float64], ...] | None
     grid_shape: tuple[int, ...] | None
@@ -241,7 +260,7 @@ class CompositeEnvironment:
             )
 
         # Properties to match Environment interface
-        self.is_1d = False
+        self.is_linearized_track = False
         if self.bin_centers.shape[0] > 0:
             min_coords = np.min(self.bin_centers, axis=0)
             max_coords = np.max(self.bin_centers, axis=0)
@@ -592,7 +611,7 @@ class CompositeEnvironment:
         for block in self._subenvs_info:
             env_i = block["env"]
             base = block["start_idx"]
-            df = env_i.bin_attributes.copy()
+            df = env_i.get_bin_attributes().copy()
             df["child_active_bin_id"] = df.index
             df["composite_bin_id"] = df.index + base
             dfs.append(df)
@@ -614,7 +633,7 @@ class CompositeEnvironment:
         for block in self._subenvs_info:
             env_i = block["env"]
             base = block["start_idx"]
-            df = env_i.edge_attributes.copy()
+            df = env_i.get_edge_attributes().copy()
             df["composite_source_bin"] = df["source_bin"] + base
             df["composite_target_bin"] = df["target_bin"] + base
             dfs.append(df)
@@ -716,44 +735,45 @@ class CompositeEnvironment:
             f"Supported kinds: 'point', 'polygon'."
         )
 
-    def mask_for_region(self, region_name: str) -> NDArray[np.bool_]:
-        """Get boolean mask for bins in a specified region.
+    def region_mask(self, regions: str | list[str]) -> NDArray[np.bool_]:
+        """Get boolean mask for bins in one or more named regions.
+
+        Mirrors :meth:`Environment.region_mask`'s name and signature so
+        downstream code that switches between ``Environment`` and
+        ``CompositeEnvironment`` doesn't need to special-case the call.
+        Currently only the name-based path is supported here (a list of
+        names also works); for free ``Region`` / ``Regions`` instances
+        use :class:`Environment` directly.
 
         Parameters
         ----------
-        region_name : str
-            Name of a defined region in `self.regions`.
+        regions : str or list[str]
+            Region name (or list of region names) defined in ``self.regions``.
 
         Returns
         -------
         NDArray[np.bool_], shape (n_bins,)
-            Boolean mask where True indicates the bin is within the region.
+            Boolean mask where True indicates the bin is within the
+            region (or any of the named regions).
 
         Raises
         ------
         KeyError
-            If `region_name` is not found in `self.regions`.
-        ValueError
-            If region type is unsupported or dimensions mismatch.
-
-        Notes
-        -----
-        This is a convenience method that returns a boolean mask instead of
-        bin indices. Equivalent to:
-            mask = np.zeros(env.n_bins, dtype=bool)
-            mask[env.bins_in_region(region_name)] = True
+            If a region name is not found in ``self.regions``.
 
         Examples
         --------
         >>> comp = CompositeEnvironment([env1, env2])  # doctest: +SKIP
         >>> comp.regions.add("arena", polygon=shapely_polygon)  # doctest: +SKIP
-        >>> arena_mask = comp.mask_for_region("arena")  # doctest: +SKIP
+        >>> arena_mask = comp.region_mask("arena")  # doctest: +SKIP
         >>> occupancy_in_arena = occupancy[arena_mask]  # doctest: +SKIP
 
         """
+        names = [regions] if isinstance(regions, str) else list(regions)
         mask = np.zeros(self.n_bins, dtype=bool)
-        bins = self.bins_in_region(region_name)
-        mask[bins] = True
+        for name in names:
+            bins = self.bins_in_region(name)
+            mask[bins] = True
         return mask
 
     def path_between(

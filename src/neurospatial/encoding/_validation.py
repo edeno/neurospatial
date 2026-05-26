@@ -27,9 +27,47 @@ import numpy as np
 from numpy.typing import NDArray
 
 __all__ = [
+    "validate_env_fitted",
+    "validate_spike_times",
     "validate_times",
     "validate_trajectory",
 ]
+
+
+def validate_env_fitted(env: object, *, context: str) -> None:
+    """Raise ``EnvironmentNotFittedError`` if ``env`` is not fitted.
+
+    Public ``compute_*_rate(s)`` and ``decode_position`` entry points use
+    this to fail at the API boundary rather than letting an unfitted env
+    surface as a confusing ``AttributeError`` from a deep helper. The
+    ``context`` label is the user-facing free-function name (e.g.
+    ``"compute_spatial_rate"``) and is forwarded to the free-function
+    form of :class:`EnvironmentNotFittedError` so the rendered message
+    reads ``compute_spatial_rate()`` rather than the misleading
+    ``Environment.compute_spatial_rate()``.
+
+    Parameters
+    ----------
+    env : object
+        Object expected to expose ``_is_fitted`` (typically an
+        ``Environment``). Untyped here because import-time importing the
+        ``Environment`` symbol would re-introduce the import cycle that
+        ``encoding._validation`` exists to avoid.
+    context : str
+        Name of the calling public free function, used as the
+        ``EnvironmentNotFittedError`` function-name argument.
+
+    Raises
+    ------
+    EnvironmentNotFittedError
+        If ``env`` does not have ``_is_fitted=True``.
+    """
+    # Local import to keep this module dependency-free at module load time;
+    # the encoding package imports decorators lazily for the same reason.
+    from neurospatial.environment.decorators import EnvironmentNotFittedError
+
+    if not getattr(env, "_is_fitted", False):
+        raise EnvironmentNotFittedError(context, is_function=True)
 
 
 def validate_times(times: NDArray[np.float64], context: str = "encoding") -> None:
@@ -69,6 +107,77 @@ def validate_times(times: NDArray[np.float64], context: str = "encoding") -> Non
             f"Found {len(decreasing_indices)} decreasing interval(s) at "
             f"indices: {decreasing_indices.tolist()[:5]}"
             + (" ..." if len(decreasing_indices) > 5 else "")
+        )
+
+
+def validate_spike_times(
+    spike_times: NDArray[np.float64],
+    *,
+    context: str = "encoding",
+    allow_empty: bool = True,
+) -> None:
+    """Check that ``spike_times`` is 1-D, finite, sorted, and non-negative.
+
+    Internal helpers downstream (``bin_spike_train`` and friends) use
+    ``np.searchsorted`` against the spike-time array, so an out-of-order
+    spike train silently produces wrong bin assignments. The four public
+    ``compute_*_rate(s)`` entry points should call this once on user input.
+
+    Parameters
+    ----------
+    spike_times : ndarray, shape (n_spikes,)
+        Spike timestamps in seconds. Empty arrays are allowed by default
+        (a neuron with zero spikes is a valid input).
+    context : str, default "encoding"
+        Description of the calling function for error messages.
+    allow_empty : bool, default True
+        If False, also reject zero-length spike trains. Use this when the
+        caller cannot meaningfully proceed without at least one spike.
+
+    Raises
+    ------
+    ValueError
+        If ``spike_times`` is not 1-D, contains NaN or +/-inf, contains a
+        negative value, has any pair of adjacent samples in decreasing
+        order, or (with ``allow_empty=False``) is empty.
+    """
+    if spike_times.ndim != 1:
+        raise ValueError(
+            f"spike_times must be 1-D for {context}, got shape {spike_times.shape}"
+        )
+
+    n_spikes = len(spike_times)
+    if n_spikes == 0:
+        if not allow_empty:
+            raise ValueError(f"spike_times is empty (no spikes) for {context}")
+        return
+
+    if not np.all(np.isfinite(spike_times)):
+        n_bad = int(np.sum(~np.isfinite(spike_times)))
+        raise ValueError(
+            f"spike_times must be finite (seconds) for {context}; "
+            f"got {n_bad} NaN/inf entries"
+        )
+
+    if np.any(spike_times < 0.0):
+        n_negative = int(np.sum(spike_times < 0.0))
+        raise ValueError(
+            f"spike_times must be non-negative (seconds) for {context}; "
+            f"got {n_negative} negative entr{'y' if n_negative == 1 else 'ies'} "
+            f"(min: {float(spike_times.min()):.6g} s)"
+        )
+
+    diffs = np.diff(spike_times)
+    if np.any(diffs < 0):
+        decreasing = np.where(diffs < 0)[0]
+        sample = decreasing.tolist()[:5]
+        more = " ..." if decreasing.size > 5 else ""
+        raise ValueError(
+            "spike_times must be monotonically non-decreasing (sorted in "
+            f"ascending order) for {context}. Found {decreasing.size} "
+            f"decreasing interval(s) at indices: {sample}{more}. "
+            "If your spikes were merged from multiple sources, sort the "
+            "array with `np.sort(spike_times)` before passing it in."
         )
 
 
@@ -114,18 +223,22 @@ def validate_trajectory(
 
     if positions is not None:
         if positions.ndim not in (1, 2):
-            raise ValueError(f"positions must be 1D or 2D, got shape {positions.shape}")
+            raise ValueError(
+                f"in {context}: positions must be 1D or 2D, got shape {positions.shape}"
+            )
         if len(positions) != n_samples:
             raise ValueError(
-                f"times length ({n_samples}) must match positions length "
-                f"({len(positions)})"
+                f"in {context}: times length ({n_samples}) must match "
+                f"positions length ({len(positions)})"
             )
 
     if headings is not None:
         if headings.ndim != 1:
-            raise ValueError(f"headings must be 1D, got shape {headings.shape}")
+            raise ValueError(
+                f"in {context}: headings must be 1D, got shape {headings.shape}"
+            )
         if len(headings) != n_samples:
             raise ValueError(
-                f"times length ({n_samples}) must match headings length "
-                f"({len(headings)})"
+                f"in {context}: times length ({n_samples}) must match "
+                f"headings length ({len(headings)})"
             )

@@ -43,6 +43,8 @@ def bin_spike_train(
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
+    *,
+    context: str = "bin_spike_train",
 ) -> NDArray[np.float64]:
     """Bin spike train into spatial bins.
 
@@ -105,7 +107,8 @@ def bin_spike_train(
 
     if len(times) != len(positions):
         raise ValueError(
-            f"times length ({len(times)}) must match positions length ({len(positions)})"
+            f"in {context}: times length ({len(times)}) must match "
+            f"positions length ({len(positions)})"
         )
 
     n_bins = env.n_bins
@@ -144,6 +147,8 @@ def compute_occupancy(
     env: Environment,
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
+    *,
+    context: str = "compute_occupancy",
 ) -> NDArray[np.float64]:
     """Compute occupancy (time spent in each bin).
 
@@ -203,7 +208,8 @@ def compute_occupancy(
     # Validate input shapes
     if len(times) != len(positions):
         raise ValueError(
-            f"times length ({len(times)}) must match positions length ({len(positions)})"
+            f"in {context}: times length ({len(times)}) must match "
+            f"positions length ({len(positions)})"
         )
 
     # Handle 1D positions
@@ -213,8 +219,8 @@ def compute_occupancy(
     # Check position dimensions match environment
     if positions.shape[1] != env.n_dims:
         raise ValueError(
-            f"positions have {positions.shape[1]} dimensions but "
-            f"environment has {env.n_dims} dimensions"
+            f"in {context}: positions have {positions.shape[1]} dimensions "
+            f"but environment has {env.n_dims} dimensions"
         )
 
     # Delegate to Environment.occupancy() which handles all the complexity

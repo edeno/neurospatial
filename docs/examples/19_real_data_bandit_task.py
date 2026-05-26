@@ -266,7 +266,7 @@ env_1d = Environment.from_graph(
 env_1d.units = "cm"
 
 print("1D Linearized Environment Created!")
-print(f"  Is 1D: {env_1d.is_1d}")
+print(f"  Is 1D: {env_1d.is_linearized_track}")
 print(f"  Number of bins: {env_1d.n_bins}")
 print(
     f"  Linear extent: [{env_1d.dimension_ranges[0][0]:.1f}, {env_1d.dimension_ranges[0][1]:.1f}] cm"
@@ -285,7 +285,7 @@ env_2d = Environment.from_samples(
 env_2d.units = "cm"
 
 print("\n2D Environment Created!")
-print(f"  Is 1D: {env_2d.is_1d}")
+print(f"  Is 1D: {env_2d.is_linearized_track}")
 print(f"  Number of bins: {env_2d.n_bins}")
 print(f"  Dimensions: {env_2d.n_dims}D")
 
@@ -511,7 +511,7 @@ if NAPARI_AVAILABLE:
 
     # Create position overlay with trail
     position_overlay = PositionOverlay(
-        data=positions_subsampled,
+        positions=positions_subsampled,
         color="cyan",
         size=15.0,
         trail_length=15,  # Show last 15 positions as a trail
@@ -522,7 +522,7 @@ if NAPARI_AVAILABLE:
     if "head_orientation" in position_info.columns:
         head_angles = position_info["head_orientation"].values[::subsample_rate]
         head_direction_overlay = HeadDirectionOverlay(
-            data=head_angles,
+            headings=head_angles,
             color="yellow",
             length=10.0,  # Arrow length in cm
             width=2.0,
@@ -580,9 +580,7 @@ for unit_idx in example_units:
     field = place_fields[unit_idx]
 
     # Detect place fields
-    detected = detect_place_fields(
-        field,
-        env_2d,
+    detected = detect_place_fields(env_2d, field,
         threshold=0.2,  # 20% of peak rate
         min_size=4,  # Minimum 4 bins
         detect_subfields=True,
@@ -630,7 +628,7 @@ for unit_idx in example_units:
         )
 
         # Mark centroid using graph-based method (respects maze geometry)
-        centroid = rate_map_centroid(field, field_bins, env_2d, method="graph")
+        centroid = rate_map_centroid(env_2d, field, field_bins, method="geodesic")
         ax.scatter(
             centroid[0],
             centroid[1],
@@ -729,7 +727,7 @@ for unit_idx in example_units:
     m = spatial_metrics[unit_idx]
 
     # Calculate total field area
-    total_area = sum(field_size(fb, env_2d) for fb in detected_fields)
+    total_area = sum(field_size(env_2d, fb) for fb in detected_fields)
 
     print(
         f"{unit_idx:<8} {len(detected_fields):<10} {total_area:<15.1f} "

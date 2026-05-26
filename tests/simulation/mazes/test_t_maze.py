@@ -2,49 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
-
 import numpy as np
-import pytest
-
-from neurospatial.simulation.mazes._base import MazeDims
-
-
-class TestTMazeDims:
-    """Tests for TMazeDims dataclass."""
-
-    def test_inherits_from_maze_dims(self):
-        """TMazeDims should inherit from MazeDims."""
-        from neurospatial.simulation.mazes.t_maze import TMazeDims
-
-        dims = TMazeDims()
-        assert isinstance(dims, MazeDims)
-
-    def test_default_values(self):
-        """TMazeDims should have correct default values."""
-        from neurospatial.simulation.mazes.t_maze import TMazeDims
-
-        dims = TMazeDims()
-        assert dims.stem_length == 100.0
-        assert dims.arm_length == 50.0
-        assert dims.width == 10.0
-
-    def test_is_frozen(self):
-        """TMazeDims should be frozen (immutable)."""
-        from neurospatial.simulation.mazes.t_maze import TMazeDims
-
-        dims = TMazeDims()
-        with pytest.raises(FrozenInstanceError):
-            dims.stem_length = 150.0  # type: ignore[misc]
-
-    def test_custom_values(self):
-        """TMazeDims should accept custom values."""
-        from neurospatial.simulation.mazes.t_maze import TMazeDims
-
-        dims = TMazeDims(stem_length=150.0, arm_length=75.0, width=15.0)
-        assert dims.stem_length == 150.0
-        assert dims.arm_length == 75.0
-        assert dims.width == 15.0
 
 
 class TestMakeTMaze:
@@ -181,7 +139,7 @@ class TestMakeTMaze:
 
         maze = make_t_maze(include_track=True)
         assert maze.env_track is not None
-        assert maze.env_track.is_1d
+        assert maze.env_track.is_linearized_track
 
     def test_env_track_is_connected(self):
         """Track graph should be connected."""
@@ -260,7 +218,7 @@ class TestTMazeTrackGraph:
         import networkx as nx
 
         assert nx.is_connected(maze.env_track.connectivity)
-        assert maze.env_track.is_1d
+        assert maze.env_track.is_linearized_track
 
     def test_track_nodes_have_positions(self):
         """All track graph nodes should have position attributes."""

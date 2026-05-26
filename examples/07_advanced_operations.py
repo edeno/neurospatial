@@ -56,8 +56,18 @@ from neurospatial.ops.alignment import get_2d_rotation_matrix, map_probabilities
 from neurospatial.ops.transforms import Affine2D, scale_2d, translate
 
 np.random.seed(42)
-plt.rcParams["figure.figsize"] = (14, 10)
-plt.rcParams["font.size"] = 11
+# Shared styling (Okabe-Ito palette, consistent figure / font sizes)
+import sys  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+_here = (
+    str(Path(__file__).resolve().parent) if "__file__" in globals() else str(Path.cwd())
+)
+if _here not in sys.path:
+    sys.path.insert(0, _here)
+from _style import apply_style  # noqa: E402
+
+apply_style(figsize=(14, 10), font_size=11)
 
 # %% [markdown]
 # ## Part 1: Shortest Paths and Geodesic Distances
@@ -762,7 +772,7 @@ print("✓ Use test points with known expected results")
 #
 # ## Next Steps
 #
-# In the final notebook (**08_complete_workflow.ipynb**), you'll see:
+# In the final notebook ([08_spike_field_basics.ipynb](08_spike_field_basics.ipynb)), you'll see:
 # - Complete end-to-end neuroscience analysis pipeline
 # - Raw tracking data → place fields → occupancy normalization
 # - Multi-region analysis and comparisons

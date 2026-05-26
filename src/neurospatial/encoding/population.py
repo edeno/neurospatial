@@ -21,8 +21,9 @@ import numpy as np
 from matplotlib.colors import ListedColormap
 from numpy.typing import NDArray
 
-from neurospatial.encoding.spatial import detect_place_fields
+from neurospatial.encoding.spatial import PlaceFieldsResult, detect_place_fields
 from neurospatial.environment import Environment
+from neurospatial.environment.decorators import EnvironmentNotFittedError
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,8 +50,11 @@ class PopulationCoverageResult:
         Number of neurons with at least one detected place field.
     n_fields : int
         Total number of place fields detected across all neurons.
-    place_fields : list[list[NDArray[np.int64]]]
+    place_fields : list[PlaceFieldsResult]
         Detected place fields for each neuron (output of detect_place_fields).
+        Each PlaceFieldsResult is iterable / indexable / sized like a
+        list[NDArray[np.int64]] but also carries `excluded_reason` and
+        `n_excluded` for cells filtered as putative interneurons.
     place_cell_fraction : float
         Computed property: n_place_cells / n_neurons (typical CA1: 0.3-0.5).
     fields_per_place_cell : float
@@ -68,7 +72,11 @@ class PopulationCoverageResult:
     n_neurons: int
     n_place_cells: int
     n_fields: int
-    place_fields: list[list[NDArray[np.int64]]]
+    # Per-neuron PlaceFieldsResult; iterates as list[NDArray[np.int64]]
+    # for backwards-compatible len/iter access, and exposes
+    # excluded_reason / n_excluded for population-level interneuron
+    # accounting.
+    place_fields: list[PlaceFieldsResult]
 
     @property
     def place_cell_fraction(self) -> float:
@@ -135,8 +143,8 @@ class PopulationCoverageResult:
 
 
 def population_coverage(
-    firing_rates: NDArray[np.floating],
     env: Environment,
+    firing_rates: NDArray[np.floating],
     *,
     threshold: float = 0.2,
     min_size: int | None = None,
@@ -150,10 +158,10 @@ def population_coverage(
 
     Parameters
     ----------
-    firing_rates : NDArray[np.floating], shape (n_neurons, n_bins)
-        Firing rate maps for each neuron.
     env : Environment
         Fitted environment defining the spatial bins.
+    firing_rates : NDArray[np.floating], shape (n_neurons, n_bins)
+        Firing rate maps for each neuron.
     threshold : float, default=0.2
         Place field boundary threshold as fraction of peak firing rate (0-1).
         Lower values (0.1-0.2) detect larger fields, higher values (0.3-0.5)
@@ -234,10 +242,7 @@ def population_coverage(
     """
     # Validate environment is fitted
     if not getattr(env, "_is_fitted", False):
-        raise RuntimeError(
-            "Environment must be fitted before computing coverage. "
-            "Use a factory method like Environment.from_samples()."
-        )
+        raise EnvironmentNotFittedError("population_coverage", is_function=True)
 
     if env.n_bins <= 0:
         raise ValueError(f"Environment has no bins (n_bins={env.n_bins})")
@@ -274,12 +279,15 @@ def population_coverage(
     n_bins = env.n_bins
     n_neurons = firing_rates.shape[0]
 
-    # Detect place fields for each neuron
-    all_fields: list[list[NDArray[np.int64]]] = []
+    # Detect place fields for each neuron. detect_place_fields returns
+    # a PlaceFieldsResult that is iterable and sized like a
+    # list[NDArray]; the existing len/iter/concatenate calls below work
+    # on it without explicit `.fields` reach-in.
+    all_fields: list[PlaceFieldsResult] = []
     for neuron_idx in range(n_neurons):
         fields = detect_place_fields(
-            firing_rates[neuron_idx],
             env,
+            firing_rates[neuron_idx],
             threshold=threshold,
             min_size=min_size,
             max_mean_rate=max_mean_rate,
@@ -297,9 +305,11 @@ def population_coverage(
             n_place_cells += 1
             n_fields += len(neuron_fields)
             # Concatenate all field bins for this neuron and use np.add.at for vectorized increment
-            all_bins = np.concatenate(neuron_fields)
+            all_bins = np.concatenate(list(neuron_fields))
             np.add.at(field_count, all_bins, 1)
 
+    # (Drop the now-unused local re-import; PlaceFieldsResult is imported
+    # at module scope.)
     # Compute coverage
     is_covered = field_count > 0
     coverage_fraction = float(is_covered.sum() / n_bins)
@@ -386,10 +396,7 @@ def plot_population_coverage(
     """
     # Validate environment is fitted
     if not getattr(env, "_is_fitted", False):
-        raise RuntimeError(
-            "Environment must be fitted before plotting coverage. "
-            "Use a factory method like Environment.from_samples()."
-        )
+        raise EnvironmentNotFittedError("plot_population_coverage", is_function=True)
 
     # Validate result type
     if not isinstance(result, PopulationCoverageResult):
@@ -403,7 +410,7 @@ def plot_population_coverage(
         _, ax = plt.subplots()
 
     # Handle 1D environments
-    if env.is_1d:
+    if env.is_linearized_track:
         if show_field_count:
             field_to_plot = result.field_count.astype(float)
             env.plot_field(field_to_plot, ax=ax)
@@ -459,7 +466,8 @@ def plot_population_coverage(
 
 
 def field_density_map(
-    all_place_fields: list[list[NDArray[np.int64]]], n_bins: int
+    all_place_fields: list[list[NDArray[np.int64]] | PlaceFieldsResult],
+    n_bins: int,
 ) -> NDArray[np.int64]:
     """
     Count number of overlapping place fields per bin.
@@ -469,8 +477,12 @@ def field_density_map(
 
     Parameters
     ----------
-    all_place_fields : list of list of array
-        Place fields for each cell. Format matches `detect_place_fields()` output.
+    all_place_fields : list of (list of array OR PlaceFieldsResult)
+        Place fields for each cell. Each element may be either a bare
+        ``list[NDArray[np.int64]]`` (legacy hand-built input) or a
+        ``PlaceFieldsResult`` (the canonical return of
+        :func:`detect_place_fields` since M1 1.4); both forms iterate as
+        ``Iterable[NDArray[np.int64]]``.
     n_bins : int
         Total number of bins in the environment.
 

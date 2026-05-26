@@ -24,6 +24,7 @@ To avoid circular imports, we import Environment only for type checking.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from operator import itemgetter
 from typing import TYPE_CHECKING, Literal, cast
 
@@ -32,11 +33,10 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.environment._protocols import SelfEnv
+from neurospatial.environment.decorators import check_fitted
 
 if TYPE_CHECKING:
     import scipy.sparse
-
-    from neurospatial import Environment
 
 
 # Numerical stability constants
@@ -46,12 +46,50 @@ if TYPE_CHECKING:
 EPSILON = 1e-12
 
 
+@dataclass(frozen=True)
+class BinSequenceWithRuns:
+    """Bin sequence with run-length boundaries returned by ``bin_sequence_with_runs``.
+
+    A "run" is a maximal contiguous subsequence of trajectory samples that
+    map to the same bin. ``bins[i]`` is the bin for run ``i``;
+    ``run_starts[i]`` and ``run_lengths[i]`` describe the run's extent in
+    the *original* (un-deduplicated) ``times``/``positions`` arrays so
+    callers can recover per-run durations as
+    ``times[run_starts[i] + run_lengths[i] - 1] - times[run_starts[i]]``.
+
+    Attributes
+    ----------
+    bins : NDArray[np.int32], shape (n_runs,)
+        Bin index for each run. ``-1`` denotes runs of out-of-environment
+        samples (matching ``Environment.bin_at`` semantics).
+    run_starts : NDArray[np.int64], shape (n_runs,)
+        Start index of each run in the original ``times`` array.
+    run_lengths : NDArray[np.int64], shape (n_runs,)
+        Number of trajectory samples contributed by each run, equivalent
+        to the inclusive run extent in the original ``times`` array
+        (the inclusive end index is ``run_starts[i] + run_lengths[i] -
+        1``). Always >= 1 for any emitted run.
+
+        With ``outside_value=None``, samples outside the environment
+        are dropped from ``bins`` *and* outside gaps split runs even
+        when consecutive in-env samples land in the same bin — so a
+        sequence ``[bin0, outside, bin0]`` becomes two runs of length
+        1, not one run of length 3. ``run_lengths.sum()`` then equals
+        the post-filter count of in-env samples.
+    """
+
+    bins: NDArray[np.int32]
+    run_starts: NDArray[np.int64]
+    run_lengths: NDArray[np.int64]
+
+
 class EnvironmentTrajectory:
     """Trajectory analysis methods mixin.
 
     Provides methods for analyzing trajectories through environments.
     """
 
+    @check_fitted
     def occupancy(
         self: SelfEnv,
         times: NDArray[np.float64],
@@ -60,7 +98,7 @@ class EnvironmentTrajectory:
         speed: NDArray[np.float64] | None = None,
         min_speed: float | None = None,
         max_gap: float | None = 0.5,
-        kernel_bandwidth: float | None = None,
+        bandwidth: float | None = None,
         time_allocation: Literal["start", "linear"] = "start",
         return_seconds: bool = True,
     ) -> NDArray[np.float64]:
@@ -85,7 +123,7 @@ class EnvironmentTrajectory:
             Maximum time gap in seconds. Intervals with Δt > max_gap are
             not counted toward occupancy. Default: 0.5 seconds. Set to None
             to count all intervals regardless of gap size.
-        kernel_bandwidth : float, optional
+        bandwidth : float, optional
             If provided, apply diffusion kernel smoothing with this bandwidth
             (in physical units). Uses mode='transition' to preserve total mass.
             Smoothing preserves total occupancy time.
@@ -155,7 +193,7 @@ class EnvironmentTrajectory:
         - speed[k] ≥ min_speed (if min_speed is not None)
         - positions[k] is inside environment
 
-        **Kernel smoothing**: When kernel_bandwidth is provided, smoothing
+        **Kernel smoothing**: When bandwidth is provided, smoothing
         is applied after accumulation using mode='transition' normalization
         (kernel columns sum to 1), which preserves the total occupancy mass.
 
@@ -178,12 +216,10 @@ class EnvironmentTrajectory:
         ...     positions,
         ...     speed=speeds,
         ...     min_speed=2.0,
-        ...     kernel_bandwidth=3.0,  # doctest: +SKIP
+        ...     bandwidth=3.0,  # doctest: +SKIP
         ... )  # doctest: +SKIP
 
         """
-        from neurospatial.ops.binning import map_points_to_bins
-
         # Input validation
         times = np.asarray(times, dtype=np.float64)
         positions = np.asarray(positions, dtype=np.float64)
@@ -268,12 +304,18 @@ class EnvironmentTrajectory:
         if len(times) == 1:
             return np.zeros(self.n_bins, dtype=np.float64)
 
-        # Map positions to bin indices
+        # Map positions to bin indices using the layout's geometric
+        # containment, which matches Environment.bin_sequence and returns
+        # -1 for samples outside the active mask. The earlier path
+        # used map_points_to_bins (KDTree nearest-neighbor with a
+        # heuristic 10x-typical-spacing threshold). That heuristic let
+        # samples a few centimeters outside the active mask silently
+        # bind to the nearest edge bin, so a tracking-error overshoot
+        # inflated occupancy at the boundary while bin_sequence
+        # correctly flagged the same sample as -1. See M1 task 1.2.
         bin_indices = cast(
             "NDArray[np.int64]",
-            map_points_to_bins(
-                positions, cast("Environment", self), tie_break="lowest_index"
-            ),
+            self.bin_at(positions).astype(np.int64),
         )
 
         # Compute time intervals
@@ -291,7 +333,7 @@ class EnvironmentTrajectory:
             valid_mask &= speed[:-1] >= min_speed
 
         # Filter out intervals starting outside environment bounds
-        # (map_points_to_bins returns -1 for points that don't map to any bin)
+        # (bin_at returns -1 for points outside any active bin).
         valid_mask &= bin_indices[:-1] >= 0
 
         # Initialize occupancy array
@@ -318,11 +360,11 @@ class EnvironmentTrajectory:
             )
 
         # Apply kernel smoothing if requested
-        if kernel_bandwidth is not None:
+        if bandwidth is not None:
             # Use mode='transition' for occupancy (counts), not 'density'
             # This ensures mass conservation: kernel columns sum to 1
             kernel = self.compute_kernel(
-                bandwidth=kernel_bandwidth, mode="transition", cache=True
+                bandwidth=bandwidth, mode="transition", cache=True
             )
             occupancy = kernel @ occupancy
 
@@ -334,17 +376,14 @@ class EnvironmentTrajectory:
         positions: NDArray[np.float64],
         *,
         dedup: bool = True,
-        return_runs: bool = False,
         outside_value: int | None = -1,
-    ) -> (
-        NDArray[np.int32]
-        | tuple[NDArray[np.int32], NDArray[np.int64], NDArray[np.int64]]
-    ):
+    ) -> NDArray[np.int32]:
         """Map trajectory to sequence of bin indices.
 
         Converts a continuous trajectory (times and positions) into a discrete
         sequence of bin indices, with optional deduplication of consecutive
-        repeats and run-length encoding.
+        repeats. To also obtain per-run start indices and lengths, call
+        :meth:`bin_sequence_with_runs` instead.
 
         Parameters
         ----------
@@ -355,9 +394,6 @@ class EnvironmentTrajectory:
         dedup : bool, default=True
             If True, collapse consecutive repeats: [A,A,A,B] → [A,B].
             If False, return bin index for every sample.
-        return_runs : bool, default=False
-            If True, also return run boundaries (indices into times array).
-            A "run" is a maximal contiguous subsequence in the same bin.
         outside_value : int or None, default=-1
             Bin index for samples outside environment bounds.
             - If -1 (default), outside samples are marked with -1.
@@ -369,12 +405,6 @@ class EnvironmentTrajectory:
             Bin index at each time point (or deduplicated sequence).
             Values are in range [0, n_bins-1] for valid bins, or -1 for
             outside samples (when outside_value=-1).
-        run_start_idx : NDArray[np.int64], shape (n_runs,), optional
-            Start index (into original times array) of each contiguous run.
-            Only returned if return_runs=True.
-        run_end_idx : NDArray[np.int64], shape (n_runs,), optional
-            End index (inclusive, into original times array) of each run.
-            Only returned if return_runs=True.
 
         Raises
         ------
@@ -385,34 +415,101 @@ class EnvironmentTrajectory:
 
         See Also
         --------
+        bin_sequence_with_runs : Same mapping plus run-length boundaries.
         occupancy : Compute time spent in each bin.
         transitions : Build empirical transition matrix from trajectory.
 
         Notes
         -----
-        A "run" is a maximal contiguous subsequence where all samples map to
-        the same bin. When outside_value=-1, runs are split at boundary
-        crossings (transitions to/from outside).
-
-        When outside_value=None and samples fall outside the environment,
-        they are completely removed from the sequence. This affects run
-        boundaries if return_runs=True.
-
         Timestamps must be monotonically increasing (non-decreasing).
         Sort your data by time before calling this method if needed.
 
         Examples
         --------
         >>> bins = env.bin_sequence(times, positions)  # doctest: +SKIP
-        >>> bins, starts, ends = env.bin_sequence(
-        ...     times, positions, return_runs=True
-        ... )  # doctest: +SKIP
-        >>> duration = times[ends[0]] - times[starts[0]]  # doctest: +SKIP
         >>> bins = env.bin_sequence(times, positions, dedup=False)  # doctest: +SKIP
         >>> bins = env.bin_sequence(
         ...     times, positions, outside_value=None
         ... )  # doctest: +SKIP
 
+        """
+        result = EnvironmentTrajectory._bin_sequence(
+            self,
+            times,
+            positions,
+            dedup=dedup,
+            outside_value=outside_value,
+            gap_splits_runs=False,
+        )
+        return result.bins
+
+    def bin_sequence_with_runs(
+        self: SelfEnv,
+        times: NDArray[np.float64],
+        positions: NDArray[np.float64],
+        *,
+        outside_value: int | None = -1,
+    ) -> BinSequenceWithRuns:
+        """Map trajectory to bin sequence plus per-run boundaries.
+
+        Returns the run-length encoding of the trajectory so callers
+        can recover per-run durations from the original ``times`` array.
+        ``bins``, ``run_starts``, and ``run_lengths`` all share shape
+        ``(n_runs,)``: the per-run view is intrinsically deduplicated.
+        For per-sample bins use :meth:`bin_sequence` with ``dedup=False``.
+
+        Parameters
+        ----------
+        times : NDArray[np.float64], shape (n_samples,)
+            Timestamps in seconds. Should be monotonically increasing.
+        positions : NDArray[np.float64], shape (n_samples, n_dims)
+            Position coordinates matching environment dimensions.
+        outside_value : int or None, default=-1
+            Bin index for samples outside environment bounds (see
+            :meth:`bin_sequence`). With ``outside_value=None``, outside
+            gaps split runs even when consecutive in-env samples land
+            in the same bin (so ``run_lengths.sum()`` equals the
+            post-filter count of in-env samples).
+
+        Returns
+        -------
+        BinSequenceWithRuns
+            Frozen dataclass with ``bins``, ``run_starts``, and
+            ``run_lengths`` fields, all shape ``(n_runs,)``. See
+            :class:`BinSequenceWithRuns` for the precise contract.
+
+        See Also
+        --------
+        bin_sequence : Returns just the bin sequence (supports ``dedup``).
+
+        Examples
+        --------
+        >>> result = env.bin_sequence_with_runs(times, positions)  # doctest: +SKIP
+        >>> # Duration of run i in seconds:
+        >>> # times[result.run_starts[i] + result.run_lengths[i] - 1]
+        >>> #   - times[result.run_starts[i]]
+        """
+        return EnvironmentTrajectory._bin_sequence(
+            self,
+            times,
+            positions,
+            dedup=True,
+            outside_value=outside_value,
+            gap_splits_runs=True,
+        )
+
+    def _bin_sequence(
+        self: SelfEnv,
+        times: NDArray[np.float64],
+        positions: NDArray[np.float64],
+        *,
+        dedup: bool,
+        outside_value: int | None,
+        gap_splits_runs: bool,
+    ) -> BinSequenceWithRuns:
+        """Shared implementation for ``bin_sequence`` and
+        ``bin_sequence_with_runs``: always computes both bins and runs;
+        the public methods choose which fields of the result to expose.
         """
         # Input validation
         times = np.asarray(times, dtype=np.float64)
@@ -450,13 +547,15 @@ class EnvironmentTrajectory:
                 + (" ..." if len(decreasing_indices) > 5 else "")
             )
 
+        empty_int64 = np.array([], dtype=np.int64)
+
         # Handle empty input
         if len(times) == 0:
-            empty_bins = np.array([], dtype=np.int32)
-            if return_runs:
-                empty_runs = np.array([], dtype=np.int64)
-                return empty_bins, empty_runs, empty_runs
-            return empty_bins
+            return BinSequenceWithRuns(
+                bins=np.array([], dtype=np.int32),
+                run_starts=empty_int64,
+                run_lengths=empty_int64,
+            )
 
         # Map positions to bin indices
         # Use bin_at which returns -1 for points outside environment
@@ -473,11 +572,11 @@ class EnvironmentTrajectory:
 
             if len(bin_indices) == 0:
                 # All samples were outside
-                empty_bins = np.array([], dtype=np.int32)
-                if return_runs:
-                    empty_runs = np.array([], dtype=np.int64)
-                    return empty_bins, empty_runs, empty_runs
-                return empty_bins
+                return BinSequenceWithRuns(
+                    bins=np.array([], dtype=np.int32),
+                    run_starts=empty_int64,
+                    run_lengths=empty_int64,
+                )
         else:
             # Keep original indices (no filtering)
             original_indices = np.arange(len(times))
@@ -486,74 +585,80 @@ class EnvironmentTrajectory:
         deduplicated_bins: NDArray[np.int32]
         deduplicated_indices: NDArray[np.int_]
 
-        if dedup:
-            if len(bin_indices) == 0:
-                # Already empty, nothing to deduplicate
-                deduplicated_bins = bin_indices
-                deduplicated_indices = original_indices
-            else:
-                # Find change points (where bin index changes)
-                # Prepend True to include first element
-                change_points = np.concatenate(
-                    [[True], bin_indices[1:] != bin_indices[:-1]]
+        # ``bin_change`` marks the start of every new same-bin block in
+        # the post-filter sequence. ``gap_change`` additionally marks
+        # boundaries where outside samples were dropped between two
+        # in-env neighbors (only meaningful with ``outside_value=None``).
+        #
+        # The two callers want different semantics:
+        #
+        # - plain ``bin_sequence`` (gap_splits_runs=False): dedup
+        #   collapses consecutive repeats in the post-filter sequence
+        #   per its documented contract — gaps don't split duplicates,
+        #   so ``[bin0, outside, bin0]`` with outside_value=None and
+        #   dedup=True dedups to ``[bin0]``.
+        #
+        # - ``bin_sequence_with_runs`` (gap_splits_runs=True): outside
+        #   gaps DO split runs so ``run_lengths`` only counts the
+        #   in-env samples that were actually contiguous in the
+        #   original array — same input emits two length-1 runs.
+        if len(bin_indices) == 0:
+            change_points = np.zeros(0, dtype=bool)
+        else:
+            bin_change = np.concatenate([[True], bin_indices[1:] != bin_indices[:-1]])
+            if gap_splits_runs and outside_value is None and len(original_indices) > 1:
+                gap_change = np.concatenate(
+                    [[False], (original_indices[1:] - original_indices[:-1]) > 1]
                 )
-                deduplicated_bins = bin_indices[change_points]
-                deduplicated_indices = original_indices[change_points]
+            else:
+                gap_change = np.zeros(len(bin_indices), dtype=bool)
+            change_points = bin_change | gap_change
+
+        if dedup:
+            deduplicated_bins = bin_indices[change_points]
+            deduplicated_indices = original_indices[change_points]
         else:
             deduplicated_bins = bin_indices
             deduplicated_indices = original_indices
 
-        # Return just bins if runs not requested
-        if not return_runs:
-            return deduplicated_bins
-
-        # Compute run boundaries
         if len(deduplicated_bins) == 0:
-            # No runs
-            empty_runs = np.array([], dtype=np.int64)
-            return deduplicated_bins, empty_runs, empty_runs
+            return BinSequenceWithRuns(
+                bins=deduplicated_bins,
+                run_starts=empty_int64,
+                run_lengths=empty_int64,
+            )
 
-        # For each run, find start and end indices in the *original* times array
+        # For each run, find start and end indices in the *original* times
+        # array. ``change_positions`` indexes into the filtered
+        # ``original_indices`` array; the run starting at change_positions[i]
+        # ends just before change_positions[i+1], or at original_indices[-1]
+        # for the final run. With outside_value=None the gap-change above
+        # already inserted a run boundary at every drop, so the per-run
+        # extent from start to end (inclusive) covers only original-array
+        # indices that are actually in this run — outside samples do not
+        # leak into run_lengths anymore.
+        change_positions = np.where(change_points)[0]
         if dedup:
-            # deduplicated_indices already contains the start of each run
             run_starts = deduplicated_indices
-
-            # End of each run is just before the start of the next run
-            # (or the last valid index for the final run)
-            if outside_value is None:
-                # Use the last valid index from original_indices
-                run_ends = np.concatenate(
-                    [deduplicated_indices[1:] - 1, [original_indices[-1]]]
-                )
-            else:
-                # Use len(times) - 1 for the last run end
-                run_ends = np.concatenate(
-                    [deduplicated_indices[1:] - 1, [len(times) - 1]]
-                )
+            run_ends_indexer = (
+                np.concatenate([change_positions[1:], [len(original_indices)]]) - 1
+            )
+            run_ends = original_indices[run_ends_indexer]
         else:
-            # No dedup: find runs in the un-deduplicated bin_indices
-            # Find change points to identify run boundaries
-            if len(bin_indices) == 1:
-                # Single sample = single run
-                run_starts = np.array([original_indices[0]], dtype=np.int64)
-                run_ends = np.array([original_indices[0]], dtype=np.int64)
-            else:
-                # Find where bin index changes
-                # A change occurs when bin_indices[i] != bin_indices[i-1]
-                is_change = np.concatenate(
-                    [[True], bin_indices[1:] != bin_indices[:-1]]
-                )
-                change_positions = np.where(is_change)[0]
+            run_starts = original_indices[change_positions]
+            run_ends_indexer = (
+                np.concatenate([change_positions[1:], [len(original_indices)]]) - 1
+            )
+            run_ends = original_indices[run_ends_indexer]
 
-                # Start of each run is at a change position
-                run_starts = original_indices[change_positions]
-
-                # End of each run is just before the next change (or last index)
-                run_ends = np.concatenate(
-                    [original_indices[change_positions[1:] - 1], [original_indices[-1]]]
-                )
-
-        return deduplicated_bins, run_starts, run_ends
+        # Convert (start, end) to (start, length) for the public API. ``end``
+        # is inclusive, so length = end - start + 1 is always >= 1.
+        run_lengths = (run_ends - run_starts + 1).astype(np.int64)
+        return BinSequenceWithRuns(
+            bins=deduplicated_bins,
+            run_starts=np.asarray(run_starts, dtype=np.int64),
+            run_lengths=run_lengths,
+        )
 
     def transitions(
         self: SelfEnv,

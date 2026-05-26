@@ -40,12 +40,13 @@ Examples
 ... )
 
 >>> # Use inherited mixin methods
->>> peak = result.peak_locations()  # (n_dims,) coordinates of peak
->>> peak_rate = result.peak_firing_rates()  # scalar max firing rate
+>>> peak = result.peak_location()  # (n_dims,) coordinates of peak
+>>> peak_rate = result.peak_firing_rate()  # scalar max firing rate
 """
 
 from __future__ import annotations
 
+import warnings
 from collections import deque
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
@@ -55,6 +56,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
+from neurospatial.encoding._metrics import BatchScoresResult
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -69,6 +71,7 @@ __all__ = [
     # Result classes
     "SpatialRateResult",
     "SpatialRatesResult",
+    "PlaceFieldsResult",
     # Compute functions
     "compute_spatial_rate",
     "compute_spatial_rates",
@@ -81,13 +84,67 @@ __all__ = [
 
 
 @dataclass(frozen=True)
+class PlaceFieldsResult:
+    """Result of ``detect_place_fields()``: detected fields plus exclusion metadata.
+
+    Returned by :func:`detect_place_fields`. Distinguishes "this neuron
+    has no detectable place fields" (``fields=[]``, ``excluded_reason=None``)
+    from "this neuron was excluded by the interneuron-rate filter"
+    (``fields=[]``, ``excluded_reason="mean_rate_above_threshold"``) so a
+    population pipeline can branch without listening for warnings.
+
+    Attributes
+    ----------
+    fields : list of NDArray[np.int64], length n_fields
+        Each element is a 1-D array of bin indices belonging to one
+        place field. Empty list if no fields were detected, or if the
+        neuron was excluded by the ``max_mean_rate`` filter.
+    excluded_reason : str | None
+        ``None`` when the neuron passed all filters and ``fields``
+        reflects the actual detection result. A non-None string when a
+        filter caused detection to short-circuit. The only value used
+        in M1 is ``"mean_rate_above_threshold"`` (putative interneuron);
+        future filters (e.g. ``"all_nan_rate_map"``) may add more.
+    n_excluded : int
+        ``1`` if ``excluded_reason`` is set, else ``0``. Provided so
+        downstream population aggregation can sum exclusions across
+        neurons without parsing the reason string.
+
+    Notes
+    -----
+    The result is iterable and indexable like a ``list[NDArray[np.int64]]``
+    so callers that previously wrote ``for f in detect_place_fields(...)``
+    or ``len(detect_place_fields(...))`` keep working.
+    """
+
+    fields: list[NDArray[np.int64]]
+    excluded_reason: str | None = None
+    n_excluded: int = 0
+
+    def __len__(self) -> int:
+        return len(self.fields)
+
+    def __getitem__(self, idx: int) -> NDArray[np.int64]:
+        return self.fields[idx]
+
+    def __iter__(self) -> Iterator[NDArray[np.int64]]:
+        return iter(self.fields)
+
+    def __bool__(self) -> bool:
+        # Truthy iff at least one field was detected. Matches the
+        # ergonomic of `if detect_place_fields(...): ...` against the
+        # old list[NDArray] return.
+        return len(self.fields) > 0
+
+
+@dataclass(frozen=True)
 class SpatialRateResult(SpatialResultMixin):
     """Result of spatial rate computation for a single neuron.
 
     This class wraps a spatial firing rate map with its associated metadata
     (occupancy, environment, smoothing parameters). It inherits from
-    `SpatialResultMixin` for common methods like `peak_locations()` and
-    `peak_firing_rates()`.
+    `SpatialResultMixin` for common methods like `peak_location()` and
+    `peak_firing_rate()`.
 
     Parameters
     ----------
@@ -125,8 +182,8 @@ class SpatialRateResult(SpatialResultMixin):
 
     Inherits from `SpatialResultMixin`, which provides:
 
-    - `peak_locations()`: Returns (n_dims,) coordinates of peak firing
-    - `peak_firing_rates()`: Returns scalar max firing rate
+    - `peak_location()`: Returns (n_dims,) coordinates of peak firing
+    - `peak_firing_rate()`: Returns scalar max firing rate
 
     Examples
     --------
@@ -156,14 +213,14 @@ class SpatialRateResult(SpatialResultMixin):
     'diffusion_kde'
 
     >>> # Use mixin methods
-    >>> peak_coords = result.peak_locations()  # (n_dims,)
-    >>> max_rate = result.peak_firing_rates()  # float
+    >>> peak_coords = result.peak_location()  # (n_dims,)
+    >>> max_rate = result.peak_firing_rate()  # float
 
     See Also
     --------
     SpatialRatesResult : Batch version for multiple neurons
     compute_spatial_rate : Function to compute this result
-    SpatialResultMixin : Provides peak_locations() and peak_firing_rates()
+    SpatialResultMixin : Provides peak_location() and peak_firing_rate()
     """
 
     firing_rate: ArrayLike
@@ -204,29 +261,6 @@ class SpatialRateResult(SpatialResultMixin):
         >>> result.plot(ax=ax, cmap="hot", vmax=20.0)
         """
         return self.env.plot_field(_to_numpy(self.firing_rate), ax=ax, **kwargs)
-
-    def peak_location(self) -> NDArray[np.float64]:
-        """Coordinates of peak firing rate.
-
-        Convenience alias for `peak_locations()` for single-neuron results.
-
-        Returns
-        -------
-        ndarray, shape (n_dims,)
-            Spatial coordinates of the bin with maximum firing rate.
-
-        See Also
-        --------
-        peak_locations : Inherited method that handles both single and batch
-        peak_firing_rates : Get the maximum firing rate value
-
-        Examples
-        --------
-        >>> result = SpatialRateResult(...)
-        >>> peak = result.peak_location()
-        >>> print(f"Peak at ({peak[0]:.1f}, {peak[1]:.1f}) cm")
-        """
-        return self.peak_locations()
 
     def spatial_information(self) -> float | Any:
         """Skaggs spatial information (bits per spike).
@@ -373,17 +407,13 @@ class SpatialRateResult(SpatialResultMixin):
         firing_rate = _to_numpy(self.firing_rate)
 
         try:
-            # Use "auto" method like batch_grid_scores for consistency
-            autocorr = spatial_autocorrelation(self.env, firing_rate, method="auto")
-
-            # spatial_autocorrelation returns 2D array for FFT, tuple for graph
-            if isinstance(autocorr, tuple):
-                # Graph-based method not compatible with grid_score
-                return np.nan
-
+            autocorr = spatial_autocorrelation(self.env, firing_rate)
             return gs_func(autocorr)
         except (ValueError, RuntimeError):
-            # Handle errors gracefully (e.g., non-2D grid, constant firing, all NaN)
+            # Irregular env, constant firing, or all-NaN: grid_score is
+            # undefined. Return NaN; callers using batch_grid_scores can
+            # see the same NaN with the failures mask separating
+            # legitimate-NaN from caught failures.
             return np.nan
 
     def grid_properties(self) -> GridProperties:
@@ -443,10 +473,7 @@ class SpatialRateResult(SpatialResultMixin):
         from neurospatial.encoding.grid import spatial_autocorrelation
 
         firing_rate = _to_numpy(self.firing_rate)
-        autocorr = spatial_autocorrelation(self.env, firing_rate, method="fft")
-        # FFT method always returns 2D array, not tuple
-        if isinstance(autocorr, tuple):
-            raise RuntimeError("FFT autocorrelation should return array, not tuple")
+        autocorr = spatial_autocorrelation(self.env, firing_rate)
         # Use minimum bin size for grid properties (typically same for isotropic grids)
         bin_size = float(np.min(self.env.bin_sizes))
         return gp_func(autocorr, bin_size=bin_size)
@@ -455,7 +482,7 @@ class SpatialRateResult(SpatialResultMixin):
         self,
         threshold: float = 0.3,
         min_area: float = 0.0,
-        distance_metric: Literal["geodesic", "euclidean"] = "geodesic",
+        metric: Literal["geodesic", "euclidean"] = "geodesic",
     ) -> float:
         """Border score (boundary proximity tuning).
 
@@ -472,7 +499,7 @@ class SpatialRateResult(SpatialResultMixin):
             Minimum field area in physical units (e.g., cm²). Fields smaller
             than this return NaN. Default 0.0 (no filtering). For rat
             hippocampal data, Solstad et al. (2008) used 200 cm².
-        distance_metric : {'geodesic', 'euclidean'}, default 'geodesic'
+        metric : {'geodesic', 'euclidean'}, default 'geodesic'
             Distance metric for computing distance from field to boundaries.
             - 'geodesic': Graph shortest path distance (respects obstacles)
             - 'euclidean': Straight-line distance in physical space
@@ -523,7 +550,7 @@ class SpatialRateResult(SpatialResultMixin):
             firing_rate,
             threshold=threshold,
             min_area=min_area,
-            distance_metric=distance_metric,
+            metric=metric,
         )
 
     def region_coverage(
@@ -645,8 +672,8 @@ class SpatialRatesResult(SpatialResultMixin):
 
     **Inherited Methods from SpatialResultMixin**:
 
-    - `peak_locations()`: Returns (n_neurons, n_dims) coordinates of peaks
-    - `peak_firing_rates()`: Returns (n_neurons,) max firing rates
+    - `peak_location()`: Returns (n_neurons, n_dims) coordinates of peaks
+    - `peak_firing_rate()`: Returns (n_neurons,) max firing rates
 
     Examples
     --------
@@ -683,17 +710,17 @@ class SpatialRatesResult(SpatialResultMixin):
 
     >>> # Iterate over neurons
     >>> for i, r in enumerate(result):
-    ...     print(f"Neuron {i}: peak rate = {r.peak_firing_rates():.2f} Hz")
+    ...     print(f"Neuron {i}: peak rate = {r.peak_firing_rate():.2f} Hz")
 
     >>> # Use mixin methods (batch)
-    >>> peak_coords = result.peak_locations()  # (n_neurons, n_dims)
-    >>> max_rates = result.peak_firing_rates()  # (n_neurons,)
+    >>> peak_coords = result.peak_location()  # (n_neurons, n_dims)
+    >>> max_rates = result.peak_firing_rate()  # (n_neurons,)
 
     See Also
     --------
     SpatialRateResult : Single-neuron version
     compute_spatial_rates : Function to compute this result
-    SpatialResultMixin : Provides peak_locations() and peak_firing_rates()
+    SpatialResultMixin : Provides peak_location() and peak_firing_rate()
     """
 
     firing_rates: ArrayLike
@@ -753,7 +780,7 @@ class SpatialRatesResult(SpatialResultMixin):
         Examples
         --------
         >>> for result in results:
-        ...     print(result.peak_firing_rates())
+        ...     print(result.peak_firing_rate())
         """
         for i in range(len(self)):
             yield self[i]
@@ -888,7 +915,7 @@ class SpatialRatesResult(SpatialResultMixin):
         # Pass arrays directly - _metrics.py handles JAX dispatch
         return batch_sparsity(self.firing_rates, self.occupancy)
 
-    def grid_scores(self) -> NDArray[np.float64]:
+    def grid_scores(self) -> BatchScoresResult:
         """Grid scores (hexagonal periodicity) for all neurons.
 
         Quantifies the hexagonal periodicity of each neuron's firing rate map,
@@ -897,12 +924,12 @@ class SpatialRatesResult(SpatialResultMixin):
 
         Returns
         -------
-        ndarray, shape (n_neurons,)
-            Grid scores in range [-2, 2] for each neuron.
-            - score > 0.4: Strong hexagonal grid (typical threshold)
-            - score ≈ 0: No hexagonal structure
-            - score < 0: Anti-hexagonal structure (rare)
-            Returns NaN for neurons where grid score cannot be computed.
+        BatchScoresResult
+            Container with ``scores`` (shape ``(n_neurons,)``, range [-2, 2])
+            and ``failures`` (boolean mask, ``True`` for neurons whose grid
+            score computation raised an exception that was caught and
+            converted to NaN). Use ``result.scores`` for the raw array if
+            your downstream code expects a plain ndarray.
 
         Notes
         -----
@@ -930,10 +957,12 @@ class SpatialRatesResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> result = SpatialRatesResult(...)
-        >>> scores = result.grid_scores()
-        >>> print(f"Mean grid score: {np.nanmean(scores):.3f}")
-        >>> n_grid_cells = np.sum(scores > 0.4)
+        >>> result = SpatialRatesResult(...)  # doctest: +SKIP
+        >>> scores = result.grid_scores()  # doctest: +SKIP
+        >>> # The result wraps an ndarray; reach in via .scores for math
+        >>> # operations that need a real array.
+        >>> print(f"Mean grid score: {np.nanmean(scores.scores):.3f}")  # doctest: +SKIP
+        >>> n_grid_cells = int(np.sum(scores.scores > 0.4))  # doctest: +SKIP
         """
         from neurospatial.encoding._metrics import batch_grid_scores
 
@@ -943,8 +972,8 @@ class SpatialRatesResult(SpatialResultMixin):
         self,
         threshold: float = 0.3,
         min_area: float = 0.0,
-        distance_metric: Literal["geodesic", "euclidean"] = "geodesic",
-    ) -> NDArray[np.float64]:
+        metric: Literal["geodesic", "euclidean"] = "geodesic",
+    ) -> BatchScoresResult:
         """Border scores (boundary proximity tuning) for all neurons.
 
         Quantifies how much each neuron's firing field is aligned with
@@ -959,7 +988,7 @@ class SpatialRatesResult(SpatialResultMixin):
         min_area : float, default 0.0
             Minimum field area in physical units (e.g., cm²). Fields smaller
             than this return NaN. Default 0.0 (no filtering).
-        distance_metric : {'geodesic', 'euclidean'}, default 'geodesic'
+        metric : {'geodesic', 'euclidean'}, default 'geodesic'
             Distance metric for computing distance from field to boundaries.
             - 'geodesic': Graph shortest path distance (respects obstacles)
             - 'euclidean': Straight-line distance in physical space
@@ -991,10 +1020,14 @@ class SpatialRatesResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> result = SpatialRatesResult(...)
-        >>> scores = result.border_scores()
-        >>> print(f"Mean border score: {np.nanmean(scores):.3f}")
-        >>> n_border_cells = np.sum(scores > 0.5)
+        >>> result = SpatialRatesResult(...)  # doctest: +SKIP
+        >>> scores = result.border_scores()  # doctest: +SKIP
+        >>> # The result wraps an ndarray; reach in via .scores for math
+        >>> # operations that need a real array.
+        >>> print(
+        ...     f"Mean border score: {np.nanmean(scores.scores):.3f}"
+        ... )  # doctest: +SKIP
+        >>> n_border_cells = int(np.sum(scores.scores > 0.5))  # doctest: +SKIP
         """
         from neurospatial.encoding._metrics import batch_border_scores
 
@@ -1003,7 +1036,7 @@ class SpatialRatesResult(SpatialResultMixin):
             _to_numpy(self.firing_rates),
             threshold=threshold,
             min_area=min_area,
-            distance_metric=distance_metric,
+            metric=metric,
         )
 
     def classify(
@@ -1078,13 +1111,17 @@ class SpatialRatesResult(SpatialResultMixin):
         n_neurons = len(self)
 
         spatial_info = self.spatial_information()
-        grid_scores = self.grid_scores()
-        border_scores = self.border_scores()
+        # grid_scores() / border_scores() return BatchScoresResult; pull
+        # the float array out via .scores for the boolean masks below.
+        grid_scores_arr = self.grid_scores().scores
+        border_scores_arr = self.border_scores().scores
 
         labels = np.full(n_neurons, "unclassified", dtype="<U14")
         is_place = spatial_info >= min_spatial_info
-        is_border = (~np.isnan(border_scores)) & (border_scores >= min_border_score)
-        is_grid = (~np.isnan(grid_scores)) & (grid_scores >= min_grid_score)
+        is_border = (~np.isnan(border_scores_arr)) & (
+            border_scores_arr >= min_border_score
+        )
+        is_grid = (~np.isnan(grid_scores_arr)) & (grid_scores_arr >= min_grid_score)
 
         # Priority: grid > border > place > unclassified (assign in reverse so
         # higher-priority labels overwrite lower ones).
@@ -1181,7 +1218,7 @@ class SpatialRatesResult(SpatialResultMixin):
                 )
 
         # Compute peak locations
-        peaks = self.peak_locations()
+        peaks = self.peak_location()
         n_dims = peaks.shape[1] if peaks.ndim > 1 else 1
 
         # Build data dictionary
@@ -1189,11 +1226,11 @@ class SpatialRatesResult(SpatialResultMixin):
             "neuron_id": neuron_ids_list,
             "peak_x": peaks[:, 0],
             "peak_y": peaks[:, 1] if n_dims > 1 else np.full(n_neurons, np.nan),
-            "peak_rate": self.peak_firing_rates(),
+            "peak_rate": self.peak_firing_rate(),
             "spatial_info": self.spatial_information(),
             "sparsity": self.sparsity(),
-            "grid_score": self.grid_scores(),
-            "border_score": self.border_scores(),
+            "grid_score": self.grid_scores().scores,
+            "border_score": self.border_scores().scores,
         }
 
         if include_classification:
@@ -1322,7 +1359,7 @@ def compute_spatial_rate(
     ... )
 
     >>> # Access results
-    >>> print(f"Peak rate: {result.peak_firing_rates():.2f} Hz")
+    >>> print(f"Peak rate: {result.peak_firing_rate():.2f} Hz")
     >>> print(f"Peak location: {result.peak_location()}")
     >>> print(f"Spatial information: {result.spatial_information():.2f} bits/spike")
 
@@ -1339,7 +1376,13 @@ def compute_spatial_rate(
         _validate_smoothing_parameters,
         smooth_rate_map,
     )
-    from neurospatial.encoding._validation import validate_trajectory
+    from neurospatial.encoding._validation import (
+        validate_env_fitted,
+        validate_spike_times,
+        validate_trajectory,
+    )
+
+    validate_env_fitted(env, context="compute_spatial_rate")
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -1359,13 +1402,16 @@ def compute_spatial_rate(
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
 
-    validate_trajectory(times, positions=positions)
+    validate_trajectory(times, positions=positions, context="compute_spatial_rate")
+    validate_spike_times(spike_times, context="compute_spatial_rate")
 
     # Bin spike train into spatial bins (always NumPy - CPU/joblib)
-    spike_counts = bin_spike_train(env, spike_times, times, positions)
+    spike_counts = bin_spike_train(
+        env, spike_times, times, positions, context="compute_spatial_rate"
+    )
 
     # Compute occupancy (always NumPy)
-    occupancy = compute_occupancy(env, times, positions)
+    occupancy = compute_occupancy(env, times, positions, context="compute_spatial_rate")
 
     # Apply smoothing to compute firing rate
     # When backend="jax", uses JAX for the core rate computation
@@ -1525,11 +1571,11 @@ def compute_spatial_rates(
     >>> # Access results
     >>> print(f"Number of neurons: {len(result)}")
     >>> print(f"Firing rates shape: {result.firing_rates.shape}")
-    >>> print(f"Peak rates: {result.peak_firing_rates()}")
+    >>> print(f"Peak rates: {result.peak_firing_rate()}")
 
     >>> # Iterate over neurons
     >>> for i, single in enumerate(result):
-    ...     print(f"Neuron {i}: peak = {single.peak_firing_rates():.2f} Hz")
+    ...     print(f"Neuron {i}: peak = {single.peak_firing_rate():.2f} Hz")
 
     >>> # Get metrics for all neurons
     >>> df = result.to_dataframe()
@@ -1555,7 +1601,13 @@ def compute_spatial_rates(
         smooth_rate_maps_batch,
     )
     from neurospatial.encoding._spikes import normalize_spike_times
-    from neurospatial.encoding._validation import validate_trajectory
+    from neurospatial.encoding._validation import (
+        validate_env_fitted,
+        validate_spike_times,
+        validate_trajectory,
+    )
+
+    validate_env_fitted(env, context="compute_spatial_rates")
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -1578,7 +1630,9 @@ def compute_spatial_rates(
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
 
-    validate_trajectory(times, positions=positions)
+    validate_trajectory(times, positions=positions, context="compute_spatial_rates")
+    for i, st in enumerate(spike_times_list):
+        validate_spike_times(st, context=f"compute_spatial_rates (neuron {i})")
 
     # Handle edge case: no neurons
     # Still compute occupancy from trajectory (occupancy is independent of neural data)
@@ -1586,7 +1640,9 @@ def compute_spatial_rates(
         from neurospatial.encoding._binning import compute_occupancy
 
         # Use compute_occupancy which handles 1D position reshaping
-        occupancy = compute_occupancy(env, times, positions)
+        occupancy = compute_occupancy(
+            env, times, positions, context="compute_spatial_rates"
+        )
 
         # Convert to JAX if needed
         firing_rates_result: ArrayLike = np.empty((0, env.n_bins), dtype=np.float64)
@@ -1658,10 +1714,17 @@ class DirectionalPlaceFields:
 
     Attributes
     ----------
-    fields : Mapping[str, NDArray[np.float64]]
+    firing_rates : Mapping[str, NDArray[np.float64]]
         Dictionary mapping direction labels (e.g., "A→B", "forward") to
         firing rate arrays. Each array has shape (n_bins,) matching the
         environment's bin structure.
+    occupancy : Mapping[str, NDArray[np.float64]]
+        Per-direction occupancy (time spent in each bin) in seconds.
+        Shape (n_bins,). Same keys as ``firing_rates``.
+    env : Environment
+        Spatial environment used to compute the per-direction fields.
+        Shared across all labels (the per-direction split is over time,
+        not over space).
     labels : tuple[str, ...]
         Tuple of direction labels in iteration order. Preserves the order
         in which directions were processed, enabling reproducible iteration.
@@ -1669,25 +1732,33 @@ class DirectionalPlaceFields:
     Examples
     --------
     >>> import numpy as np
-    >>> fields = {
+    >>> from neurospatial import Environment
+    >>> env = Environment.from_samples(
+    ...     np.linspace(0, 10, 11)[:, None], bin_size=1.0
+    ... )  # doctest: +SKIP
+    >>> firing_rates = {
     ...     "home→goal": np.array([1.0, 2.0, 3.0]),
     ...     "goal→home": np.array([3.0, 2.0, 1.0]),
     ... }
-    >>> result = DirectionalPlaceFields(
-    ...     fields=fields,
+    >>> occupancy = {
+    ...     "home→goal": np.array([1.0, 1.0, 1.0]),
+    ...     "goal→home": np.array([1.0, 1.0, 1.0]),
+    ... }
+    >>> result = DirectionalPlaceFields(  # doctest: +SKIP
+    ...     firing_rates=firing_rates,
+    ...     occupancy=occupancy,
+    ...     env=env,
     ...     labels=("home→goal", "goal→home"),
     ... )
-    >>> result.fields["home→goal"]
-    array([1., 2., 3.])
-    >>> result.labels
-    ('home→goal', 'goal→home')
 
     See Also
     --------
     compute_directional_place_fields : Compute directional place fields from spike data.
     """
 
-    fields: Mapping[str, NDArray[np.float64]]
+    firing_rates: Mapping[str, NDArray[np.float64]]
+    occupancy: Mapping[str, NDArray[np.float64]]
+    env: Environment
     labels: tuple[str, ...]
 
 
@@ -1839,7 +1910,9 @@ def compute_directional_place_fields(
     -------
     DirectionalPlaceFields
         Container with:
-        - ``fields``: Mapping from direction label to firing rate array (n_bins,)
+        - ``firing_rates``: Mapping from direction label to firing rate array (n_bins,)
+        - ``occupancy``: Mapping from direction label to per-bin occupancy (n_bins,)
+        - ``env``: Spatial environment shared across labels
         - ``labels``: Tuple of direction labels in iteration order
 
     Raises
@@ -1884,9 +1957,9 @@ def compute_directional_place_fields(
     >>> result = compute_directional_place_fields(
     ...     env, spike_times, times, positions, labels, bandwidth=10.0
     ... )
-    >>> "forward" in result.fields
+    >>> "forward" in result.firing_rates
     True
-    >>> "backward" in result.fields
+    >>> "backward" in result.firing_rates
     True
     """
     # Validate direction_labels length matches times
@@ -1906,7 +1979,8 @@ def compute_directional_place_fields(
     unique_labels = sorted(unique_labels, key=str)
 
     # Compute place field for each direction
-    fields_dict: dict[str, NDArray[np.float64]] = {}
+    firing_rates_dict: dict[str, NDArray[np.float64]] = {}
+    occupancy_dict: dict[str, NDArray[np.float64]] = {}
 
     for label in unique_labels:
         # Build mask for this direction
@@ -1918,22 +1992,24 @@ def compute_directional_place_fields(
         )
         positions_sub = positions[mask]
 
-        field = np.asarray(
-            compute_spatial_rate(
-                env,
-                spike_times_sub,
-                times_sub,
-                positions_sub,
-                smoothing_method=smoothing_method,
-                bandwidth=bandwidth,
-                min_occupancy=min_occupancy,
-            ).firing_rate,
-            dtype=np.float64,
+        single = compute_spatial_rate(
+            env,
+            spike_times_sub,
+            times_sub,
+            positions_sub,
+            smoothing_method=smoothing_method,
+            bandwidth=bandwidth,
+            min_occupancy=min_occupancy,
         )
+        firing_rates_dict[str(label)] = np.asarray(single.firing_rate, dtype=np.float64)
+        occupancy_dict[str(label)] = np.asarray(single.occupancy, dtype=np.float64)
 
-        fields_dict[label] = field
-
-    return DirectionalPlaceFields(fields=fields_dict, labels=tuple(unique_labels))
+    return DirectionalPlaceFields(
+        firing_rates=firing_rates_dict,
+        occupancy=occupancy_dict,
+        env=env,
+        labels=tuple(str(label) for label in unique_labels),
+    )
 
 
 # ==============================================================================
@@ -1942,14 +2018,14 @@ def compute_directional_place_fields(
 
 
 def detect_place_fields(
-    firing_rate: NDArray[np.float64],
     env: Environment,
+    firing_rate: NDArray[np.float64],
     *,
     threshold: float = 0.2,
     min_size: int | None = None,
     max_mean_rate: float = 10.0,
     detect_subfields: bool = True,
-) -> list[NDArray[np.int64]]:
+) -> PlaceFieldsResult:
     """Detect place fields using iterative peak-based approach (neurocode method).
 
     This implements the field-standard algorithm used by neurocode (AyA Lab)
@@ -1957,10 +2033,10 @@ def detect_place_fields(
 
     Parameters
     ----------
-    firing_rate : array, shape (n_bins,)
-        Firing rate map (Hz) from neuron.
     env : Environment
         Spatial environment for binning.
+    firing_rate : array, shape (n_bins,)
+        Firing rate map (Hz) from neuron.
     threshold : float, default=0.2
         Fraction of peak rate for field boundary detection (0-1).
         Standard value is 0.2 (20% of peak).
@@ -1975,9 +2051,14 @@ def detect_place_fields(
 
     Returns
     -------
-    fields : list of arrays
-        List of place fields, where each field is a 1D array of bin indices
-        (integers) belonging to that field. Empty list if no fields detected.
+    PlaceFieldsResult
+        Container with ``fields`` (list of bin-index arrays, one per
+        detected field) plus ``excluded_reason`` and ``n_excluded``
+        attributes that distinguish "no detectable fields" from
+        "neuron excluded by interneuron-rate filter". The result is
+        iterable and indexable like the underlying list, so existing
+        ``for f in result`` / ``len(result)`` / ``result[i]`` patterns
+        keep working.
 
     Notes
     -----
@@ -2013,7 +2094,7 @@ def detect_place_fields(
     >>> for i in range(env.n_bins):
     ...     dist = np.linalg.norm(env.bin_centers[i])
     ...     firing_rate[i] = 8.0 * np.exp(-(dist**2) / (2 * 3.0**2))
-    >>> fields = detect_place_fields(firing_rate, env)
+    >>> fields = detect_place_fields(env, firing_rate)
     >>> len(fields)  # doctest: +SKIP
     1
 
@@ -2041,10 +2122,28 @@ def detect_place_fields(
     if min_size is None:
         min_size = 9  # Standard minimum (3×3 bins for 2D)
 
-    # Interneuron exclusion
+    # Interneuron exclusion. Emit a UserWarning AND surface the reason
+    # in the returned PlaceFieldsResult so a caller running
+    # detect_place_fields over a population can tell "this neuron has
+    # no detectable place fields" (empty fields, excluded_reason=None)
+    # from "this neuron was excluded as a putative interneuron"
+    # (empty fields, excluded_reason="mean_rate_above_threshold").
+    # The structured signal removes the need to listen for warnings.
     mean_rate = np.nanmean(firing_rate)
     if mean_rate > max_mean_rate:
-        return []  # Putative interneuron
+        warnings.warn(
+            f"detect_place_fields: neuron excluded as putative interneuron "
+            f"(mean rate {float(mean_rate):.2f} Hz > max_mean_rate "
+            f"{max_mean_rate} Hz). Returning empty field list. Pass a larger "
+            "max_mean_rate to include fast-firing cells.",
+            UserWarning,
+            stacklevel=2,
+        )
+        return PlaceFieldsResult(
+            fields=[],
+            excluded_reason="mean_rate_above_threshold",
+            n_excluded=1,
+        )
 
     # Make a copy to modify during iteration
     rate_map = firing_rate.copy()
@@ -2102,7 +2201,7 @@ def detect_place_fields(
         if np.nanmax(rate_map) < threshold_rate:
             break
 
-    return fields
+    return PlaceFieldsResult(fields=fields, excluded_reason=None, n_excluded=0)
 
 
 def _extract_connected_component_scipy(

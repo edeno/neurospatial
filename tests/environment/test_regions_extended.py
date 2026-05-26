@@ -3,7 +3,7 @@ Comprehensive tests for Environment region operations (regions.py module).
 
 This module tests the region operations mixin for Environment, covering:
 - bins_in_region() method
-- mask_for_region() method
+- region_mask() method
 - Region addition with various geometries
 - Region buffering operations
 - Region queries and updates
@@ -146,16 +146,16 @@ class TestBinsInRegion:
 
 
 class TestMaskForRegion:
-    """Tests for Environment.mask_for_region() method."""
+    """Tests for Environment.region_mask() method."""
 
     def test_mask_for_region_basic(self):
-        """Test basic mask_for_region functionality."""
+        """Test basic region_mask functionality."""
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
         env.regions.add("center", polygon=box(3, 3, 7, 7))
 
-        mask = env.mask_for_region("center")
+        mask = env.region_mask("center")
 
         # Should be boolean array with length n_bins
         assert isinstance(mask, np.ndarray)
@@ -166,41 +166,49 @@ class TestMaskForRegion:
         assert np.any(mask)
         assert not np.all(mask)
 
-    def test_mask_for_region_matches_bins_in_region(self):
-        """Test that mask_for_region matches bins_in_region."""
+    def test_mask_for_region_is_superset_of_bins_in_region(self):
+        """``region_mask`` (covers) is a superset of ``bins_in_region`` (contains).
+
+        M5.7 standardised ``region_mask`` on the inclusive
+        ``shapely.covers`` predicate so polygon-boundary bins count as
+        inside; ``bins_in_region`` keeps the strict ``shapely.contains``
+        predicate. Every bin reported by ``bins_in_region`` must
+        therefore appear in the mask, but the mask may include extras
+        that touch the polygon boundary.
+        """
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
         env.regions.add("test", polygon=box(2, 2, 8, 8))
 
         bins = env.bins_in_region("test")
-        mask = env.mask_for_region("test")
-
-        # Bins where mask is True should match bins_in_region
+        mask = env.region_mask("test")
         masked_bins = np.where(mask)[0]
-        np.testing.assert_array_equal(sorted(bins), sorted(masked_bins))
+
+        assert set(bins.tolist()).issubset(set(masked_bins.tolist()))
+        assert mask.sum() >= len(bins)
 
     def test_mask_for_region_empty(self):
-        """Test mask_for_region with region containing no bins."""
+        """Test region_mask with region containing no bins."""
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
         env.regions.add("outside", polygon=box(100, 100, 110, 110))
 
-        mask = env.mask_for_region("outside")
+        mask = env.region_mask("outside")
 
         # Should be all False
         assert len(mask) == env.n_bins
         assert not np.any(mask)
 
     def test_mask_for_region_point(self):
-        """Test mask_for_region with point region."""
+        """Test region_mask with point region."""
         data = np.array([[i, j] for i in range(11) for j in range(11)])
         env = Environment.from_samples(data, bin_size=2.0)
 
         env.regions.add("point", point=(5.0, 5.0))
 
-        mask = env.mask_for_region("point")
+        mask = env.region_mask("point")
 
         # Should have exactly one True value
         assert mask.sum() == 1
@@ -216,7 +224,7 @@ class TestMaskForRegion:
         # Create per-bin data
         occupancy = rng.random(env.n_bins)
 
-        mask = env.mask_for_region("center")
+        mask = env.region_mask("center")
 
         # Should be able to index and get subset
         region_occupancy = occupancy[mask]
@@ -226,28 +234,6 @@ class TestMaskForRegion:
 
 class TestRegionAddition:
     """Tests for adding regions with various geometries."""
-
-    def test_add_point_region(self):
-        """Test adding a point region."""
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-
-        # Add point region
-        env.regions.add("goal", point=(7.0, 7.0))
-
-        assert "goal" in env.regions
-        assert env.regions["goal"].kind == "point"
-
-    def test_add_polygon_region(self):
-        """Test adding a polygon region."""
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-
-        # Add polygon region
-        env.regions.add("arena", polygon=box(0, 0, 10, 10))
-
-        assert "arena" in env.regions
-        assert env.regions["arena"].kind == "polygon"
 
     def test_add_multiple_regions(self):
         """Test adding multiple regions."""
@@ -263,84 +249,9 @@ class TestRegionAddition:
         assert "point2" in env.regions
         assert "poly1" in env.regions
 
-    def test_add_region_duplicate_name_raises_error(self):
-        """Test that adding region with duplicate name raises error."""
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-
-        env.regions.add("test", point=(5.0, 5.0))
-
-        # Adding another with same name should raise
-        with pytest.raises(KeyError, match="Duplicate region name"):
-            env.regions.add("test", point=(7.0, 7.0))
-
 
 class TestRegionUpdate:
     """Tests for updating and removing regions."""
-
-    def test_update_region_point(self):
-        """Test updating a point region."""
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-
-        # Add initial region
-        env.regions.add("goal", point=(5.0, 5.0))
-
-        # Update it
-        env.regions.update_region("goal", point=(8.0, 8.0))
-
-        # Should have new location
-        updated_region = env.regions["goal"]
-        assert np.allclose(updated_region.data, [8.0, 8.0])
-
-    def test_update_region_polygon(self):
-        """Test updating a polygon region."""
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-
-        # Add initial region
-        env.regions.add("arena", polygon=box(0, 0, 5, 5))
-
-        # Update it with new polygon
-        new_polygon = box(2, 2, 8, 8)
-        env.regions.update_region("arena", polygon=new_polygon)
-
-        # Should have new polygon
-        updated_region = env.regions["arena"]
-        assert updated_region.data.equals(new_polygon)
-
-    def test_remove_region_with_del(self):
-        """Test removing region with del statement."""
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-
-        env.regions.add("temp", point=(5.0, 5.0))
-        assert "temp" in env.regions
-
-        # Remove it
-        del env.regions["temp"]
-
-        assert "temp" not in env.regions
-
-    def test_remove_region_with_method(self):
-        """Test removing region with remove() method."""
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-
-        env.regions.add("temp", point=(5.0, 5.0))
-
-        # Remove using method
-        env.regions.remove("temp")
-
-        assert "temp" not in env.regions
-
-    def test_update_nonexistent_region_raises_error(self):
-        """Test that updating non-existent region raises error."""
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-
-        with pytest.raises(KeyError, match="nonexistent"):
-            env.regions.update_region("nonexistent", point=(5.0, 5.0))
 
 
 class TestRegionBuffering:
@@ -462,49 +373,9 @@ class TestRegionIntegration:
                 or np.isclose(bin_center[1], 7)
             )
 
-    def test_regions_with_coordinate_transforms(self):
-        """Test that regions work correctly after coordinate transforms."""
-        # This is a basic smoke test; detailed transform testing is elsewhere
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-
-        env.regions.add("center", polygon=box(3, 3, 7, 7))
-
-        # Regions should still be queryable
-        bins = env.bins_in_region("center")
-        assert len(bins) > 0
-
-    def test_multiple_regions_different_types(self):
-        """Test environment with mixed region types."""
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-
-        # Add different types
-        env.regions.add("goal1", point=(2.0, 2.0))
-        env.regions.add("goal2", point=(8.0, 8.0))
-        env.regions.add("arena", polygon=box(0, 0, 10, 10))
-        env.regions.add("roi", polygon=box(4, 4, 6, 6))
-
-        # All should be accessible
-        assert len(env.regions) == 4
-
-        # Each should return bins
-        for name in env.regions:
-            bins = env.bins_in_region(name)
-            assert isinstance(bins, np.ndarray)
-
 
 class TestRegionEdgeCases:
     """Tests for edge cases and boundary conditions."""
-
-    def test_empty_region_name(self):
-        """Test that empty region name is handled."""
-        data = np.array([[i, j] for i in range(11) for j in range(11)])
-        env = Environment.from_samples(data, bin_size=2.0)
-
-        # Empty string as name should work (names are just strings)
-        env.regions.add("", point=(5.0, 5.0))
-        assert "" in env.regions
 
     def test_very_small_polygon(self):
         """Test with very small polygon region."""

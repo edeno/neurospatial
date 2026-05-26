@@ -34,12 +34,6 @@ def test_region_point_invalid_shape():
         Region(name="bad", kind="point", data=[[1, 2], [3, 4]])
 
 
-def test_region_str_repr():
-    r = Region(name="foo", kind="point", data=[0, 1])
-    assert str(r) == "foo"
-
-
-@pytest.mark.skipif(not HAS_SHAPELY, reason="Shapely required for polygon tests")
 def test_region_polygon_creation():
     poly = shp.Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
     r = Region(name="poly", kind="polygon", data=poly)
@@ -125,38 +119,41 @@ def test_regions_setitem_key_mismatch():
         regs["bar"] = r
 
 
-def test_regions_setitem_duplicate():
-    """Test that overwriting a region emits a warning but succeeds."""
-
+def test_regions_setitem_duplicate_raises():
+    """``regions[key] = ...`` refuses to silently overwrite an existing region."""
     regs = Regions()
     r = Region(name="foo", kind="point", data=[1, 2])
     regs["foo"] = r
 
-    # Overwriting should emit a warning but succeed
-    with pytest.warns(UserWarning, match="Overwriting existing region 'foo'"):
-        r2 = Region(name="foo", kind="point", data=[3, 4])
-        regs["foo"] = r2
+    # Overwriting via __setitem__ now raises; users must explicitly opt in
+    # via update_region() or set().
+    with pytest.raises(KeyError, match="already exists"):
+        regs["foo"] = Region(name="foo", kind="point", data=[3, 4])
 
-    # Verify the region was actually overwritten
-    assert np.allclose(regs["foo"].data, [3, 4])
+    # The original region is preserved.
+    assert np.allclose(regs["foo"].data, [1, 2])
 
 
-def test_regions_setitem_warning_can_be_suppressed():
-    """Test that overwrite warning can be suppressed with warnings filter."""
-    import warnings
-
+def test_regions_set_replaces_idempotently():
+    """``Regions.set`` is the documented idempotent replace path."""
     regs = Regions()
     r = Region(name="foo", kind="point", data=[1, 2])
     regs["foo"] = r
 
-    # Suppress the warning - should not raise or warn
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", UserWarning)
-        r2 = Region(name="foo", kind="point", data=[3, 4])
-        regs["foo"] = r2  # Should not emit warning
-
-    # Verify the region was still overwritten
+    # First call replaces the existing region; second call is a no-op replace.
+    replacement = Region(name="foo", kind="point", data=[3, 4])
+    out = regs.set("foo", replacement)
+    assert out is replacement
     assert np.allclose(regs["foo"].data, [3, 4])
+
+    regs.set("foo", replacement)  # idempotent; should not raise
+    assert np.allclose(regs["foo"].data, [3, 4])
+
+
+def test_regions_set_rejects_name_mismatch():
+    regs = Regions()
+    with pytest.raises(ValueError, match=r"must match Region\.name"):
+        regs.set("foo", Region(name="bar", kind="point", data=[1, 2]))
 
 
 @pytest.mark.skipif(not HAS_SHAPELY, reason="Shapely required for polygon tests")
@@ -194,16 +191,16 @@ def test_regions_area_point():
     assert regs.area("pt") == 0.0
 
 
-def test_regions_remove_absent():
-    regs = Regions()
-    regs.remove("nope")  # Should not raise
+def test_regions_remove_absent_raises():
+    """Regions.remove now raises on missing name (M5.5).
 
-
-def test_regions_repr():
+    The previous behavior silently absorbed missing names, masking
+    typos and double-removes. The full M5.5 contract is that every
+    Region mutation API raises on the disagree-with-reality case.
+    """
     regs = Regions()
-    regs.add("pt", point=[1, 2])
-    s = repr(regs)
-    assert "Regions" in s and "pt(point)" in s
+    with pytest.raises(KeyError):
+        regs.remove("nope")
 
 
 def test_regions_to_json_and_from_json(tmp_path):

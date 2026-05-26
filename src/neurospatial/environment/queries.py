@@ -35,7 +35,7 @@ class EnvironmentQueries:
     finding neighbors, and computing distances.
 
     Methods in this class assume they are mixed into an Environment instance
-    that provides: layout, bin_centers, connectivity, is_1d attributes.
+    that provides: layout, bin_centers, connectivity, is_linearized_track attributes.
     """
 
     @check_fitted
@@ -97,6 +97,7 @@ class EnvironmentQueries:
         [12 -1]  # Second point outside environment
 
         """
+        self._check_cartesian("bin_at")
         return self.layout.point_to_bin_index(points_nd)
 
     @check_fitted
@@ -136,6 +137,14 @@ class EnvironmentQueries:
         [ True False]  # First point in environment, second outside
 
         """
+        # contains() is the boolean partner of bin_at(); both interpret
+        # `points_nd` as Cartesian (x, y[, z]) and run geometric
+        # containment via the layout. Refuse polar envs for the same
+        # reason bin_at does -- a polar env's bin_centers are
+        # (distance, angle in radians), not (x, y), so containment is
+        # nonsense and would silently return True/False on the wrong
+        # geometry.
+        self._check_cartesian("contains")
         # Optimized: compute indices once and check for -1 sentinel
         # This avoids redundant KDTree queries compared to calling bin_at() separately
         indices = self.layout.point_to_bin_index(points_nd)
@@ -312,6 +321,7 @@ class EnvironmentQueries:
         True
 
         """
+        self._check_cartesian("distance_between")
         source_bin = self.bin_at(np.atleast_2d(point1))[0]
         target_bin = self.bin_at(np.atleast_2d(point2))[0]
 
@@ -395,7 +405,8 @@ class EnvironmentQueries:
             warnings.warn(
                 f"No path found between active bin {source_active_bin_idx} "
                 f"and {target_active_bin_idx}.",
-                UserWarning,
+                category=UserWarning,
+                stacklevel=2,
             )
             return []
         except nx.NodeNotFound as e:
@@ -519,7 +530,7 @@ class EnvironmentQueries:
                 warnings.warn(
                     f"Region '{region_name}' contains no bins. "
                     f"All distances will be inf.",
-                    UserWarning,
+                    category=UserWarning,
                     stacklevel=2,
                 )
 
@@ -549,6 +560,12 @@ class EnvironmentQueries:
 
         # Compute distances based on metric
         if metric == "euclidean":
+            # Euclidean distance interprets bin_centers as Cartesian
+            # (x, y[, z]); on a polar env where bin_centers[:, 0]=distance
+            # and [:, 1]=angle, the straight-line norm is meaningless.
+            # The geodesic branch below (graph shortest path) remains
+            # well-defined on polar envs, so route polar callers there.
+            self._check_cartesian("distance_to(metric='euclidean')")
             # Euclidean distance: straight-line distance to nearest target
             # Vectorized implementation using broadcasting for performance
             target_positions = self.bin_centers[target_array]  # (n_targets, n_dims)
@@ -718,6 +735,7 @@ class EnvironmentQueries:
 
         return reachable
 
+    @check_fitted
     def components(
         self: SelfEnv,
         *,

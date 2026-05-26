@@ -165,12 +165,14 @@ class TestMapProbabilities:
 
     def test_source_not_fitted(self):
         """Test error when source environment is not fitted."""
+        from neurospatial.environment.decorators import EnvironmentNotFittedError
+
         src_bins = np.array([[0, 0]])
         tgt_bins = np.array([[0, 0]])
         src_probs = np.array([1.0])
         src_env = MockEnvironment(src_bins, 2, is_fitted=False)
         tgt_env = MockEnvironment(tgt_bins, 2)
-        with pytest.raises(ValueError):
+        with pytest.raises(EnvironmentNotFittedError, match="map_probabilities"):
             map_probabilities(src_env, tgt_env, src_probs)
 
     def test_shape_mismatch(self):

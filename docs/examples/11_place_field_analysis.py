@@ -69,7 +69,7 @@ np.random.seed(42)
 #
 # **Note**: This notebook now uses the `neurospatial.simulation` subpackage for generating synthetic data.
 # The simulation subpackage provides:
-# - Realistic trajectory generation (`simulate_trajectory_ou()`)
+# - Realistic trajectory generation (`simulate_trajectory_ou(speed_units="cm")`)
 # - Neural models (`PlaceCellModel`, `BoundaryCellModel`, `GridCellModel`)
 # - Spike generation (`generate_poisson_spikes()`)
 # - Pre-configured examples (`open_field_session()`, `tmaze_alternation_session()`)
@@ -112,6 +112,7 @@ positions, times = simulate_trajectory_ou(
     coherence_time=0.7,  # Natural exploration smoothness
     boundary_mode="reflect",  # Wrap at boundaries (avoids edge artifacts)
     seed=42,
+    speed_units="cm",
 )
 
 print(f"Environment: {arena_size:.0f}x{arena_size:.0f} cm open field")
@@ -142,7 +143,7 @@ place_cell = PlaceCellModel(
     width=sigma,
     max_rate=peak_rate,
     baseline_rate=0.001,  # Minimal baseline (0.001 Hz)
-    distance_metric="euclidean",  # Fast Euclidean distance
+    metric="euclidean",  # Fast Euclidean distance
     seed=42,
 )
 
@@ -229,9 +230,7 @@ plt.show()
 
 # %%
 # Detect place fields
-place_fields = detect_place_fields(
-    firing_rate,
-    env,
+place_fields = detect_place_fields(env, firing_rate,
     threshold=0.2,  # Segment at 20% of peak rate
     min_size=None,  # No minimum size (auto: 9 bins)
     max_mean_rate=10.0,  # Exclude interneurons (>10 Hz mean rate)
@@ -305,10 +304,10 @@ plt.show()
 # Compute field properties
 for i, field_bins in enumerate(place_fields):
     # Field size (area in physical units)
-    area = field_size(field_bins, env)
+    area = field_size(env, field_bins)
 
     # Field centroid (center of mass)
-    centroid = rate_map_centroid(firing_rate, field_bins, env)
+    centroid = rate_map_centroid(env, firing_rate, field_bins)
 
     # Distance from true center
     distance_from_true = np.linalg.norm(centroid - field_center)
@@ -467,9 +466,7 @@ def analyze_place_cell(env, spike_times, times, positions):
     firing_rate = result.firing_rate
 
     # Step 2: Detect place fields
-    place_fields = detect_place_fields(
-        firing_rate,
-        env,
+    place_fields = detect_place_fields(env, firing_rate,
         threshold=0.2,
         max_mean_rate=10.0,
         detect_subfields=True,
@@ -480,8 +477,8 @@ def analyze_place_cell(env, spike_times, times, positions):
     for field_bins in place_fields:
         field_properties.append(
             {
-                "area": field_size(field_bins, env),
-                "centroid": rate_map_centroid(firing_rate, field_bins, env),
+                "area": field_size(env, field_bins),
+                "centroid": rate_map_centroid(env, firing_rate, field_bins),
                 "peak_rate": np.max(firing_rate[field_bins]),
                 "mean_rate": np.mean(firing_rate[field_bins]),
             }
@@ -615,6 +612,7 @@ tmaze_positions, tmaze_times = simulate_trajectory_ou(
     coherence_time=0.8,  # Longer coherence for smoother paths
     boundary_mode="reflect",
     seed=42,
+    speed_units="cm",
 )
 
 print(f"\nT-Maze Environment: {tmaze_env.n_bins} bins")
@@ -635,7 +633,7 @@ pc_tmaze = PlaceCellModel(
     width=12.0,
     max_rate=15.0,
     baseline_rate=0.1,
-    distance_metric="euclidean",
+    metric="euclidean",
     seed=42,
 )
 
@@ -899,6 +897,7 @@ track_positions, track_times = simulate_trajectory_ou(
     coherence_time=0.5,  # More exploration
     boundary_mode="reflect",
     seed=100,
+    speed_units="cm",
 )
 
 print(f"Linear track environment: {track_env.n_bins} bins")
@@ -932,7 +931,7 @@ pc_session1 = PlaceCellModel(
     width=8.0,
     max_rate=15.0,
     baseline_rate=0.1,
-    distance_metric="euclidean",
+    metric="euclidean",
     seed=100,
 )
 
@@ -960,7 +959,7 @@ pc_session2 = PlaceCellModel(
     width=8.0,
     max_rate=15.0,
     baseline_rate=0.1,
-    distance_metric="euclidean",
+    metric="euclidean",
     seed=100,
 )
 
@@ -988,16 +987,12 @@ print(
 
 # %%
 # Detect fields in both sessions
-fields_session1 = detect_place_fields(
-    rate_session1,
-    track_env,
+fields_session1 = detect_place_fields(track_env, rate_session1,
     threshold=0.2,
     detect_subfields=False,
 )
 
-fields_session2 = detect_place_fields(
-    rate_session2,
-    track_env,
+fields_session2 = detect_place_fields(track_env, rate_session2,
     threshold=0.2,
     detect_subfields=False,
 )
@@ -1008,8 +1003,8 @@ print(f"  Session 2: {len(fields_session2)} field(s)")
 
 # Compute centroids
 if len(fields_session1) > 0 and len(fields_session2) > 0:
-    centroid_s1 = rate_map_centroid(rate_session1, fields_session1[0], track_env)
-    centroid_s2 = rate_map_centroid(rate_session2, fields_session2[0], track_env)
+    centroid_s1 = rate_map_centroid(track_env, rate_session1, fields_session1[0])
+    centroid_s2 = rate_map_centroid(track_env, rate_session2, fields_session2[0])
 
     print("\nDetected centroids:")
     print(f"  Session 1: ({centroid_s1[0]:.1f}, {centroid_s1[1]:.1f}) cm")
@@ -1025,7 +1020,7 @@ if len(fields_session1) > 0 and len(fields_session2) > 0:
         rate_session2,
         fields_session2[0],
         track_env,
-        use_geodesic=False,  # Euclidean distance
+        metric="euclidean",  # Euclidean distance
     )
 
     # Compare to ground truth
@@ -1153,7 +1148,7 @@ pc_stem = PlaceCellModel(
     width=10.0,
     max_rate=18.0,
     baseline_rate=0.1,
-    distance_metric="euclidean",
+    metric="euclidean",
     seed=200,
 )
 
@@ -1184,7 +1179,7 @@ pc_arm = PlaceCellModel(
     width=10.0,
     max_rate=18.0,
     baseline_rate=0.1,
-    distance_metric="euclidean",
+    metric="euclidean",
     seed=201,
 )
 
@@ -1209,16 +1204,12 @@ print(f"Session B (arm end): {len(spikes_arm)} spikes")
 
 # %%
 # Detect fields
-fields_stem = detect_place_fields(
-    rate_stem,
-    tmaze_env,
+fields_stem = detect_place_fields(tmaze_env, rate_stem,
     threshold=0.2,
     detect_subfields=False,
 )
 
-fields_arm = detect_place_fields(
-    rate_arm,
-    tmaze_env,
+fields_arm = detect_place_fields(tmaze_env, rate_arm,
     threshold=0.2,
     detect_subfields=False,
 )
@@ -1238,7 +1229,7 @@ if len(fields_stem) > 0 and len(fields_arm) > 0:
         rate_arm,
         fields_arm[0],
         tmaze_env,
-        use_geodesic=False,
+        metric="euclidean",
     )
 
     # Geodesic distance (following the maze path)
@@ -1249,7 +1240,7 @@ if len(fields_stem) > 0 and len(fields_arm) > 0:
         rate_arm,
         fields_arm[0],
         tmaze_env,
-        use_geodesic=True,
+        metric="geodesic",
     )
 
     # Compute ground truth distances
@@ -1356,12 +1347,12 @@ print("\nAlways use geodesic distance for complex environments!")
 # %% [markdown]
 # ### When to Use Euclidean vs Geodesic Distance
 #
-# **Use Euclidean distance** (`use_geodesic=False`) when:
+# **Use Euclidean distance** (`metric="euclidean"`) when:
 # - Open field environments with no barriers
 # - Computational speed is critical
 # - You want to compare to older literature (most papers use Euclidean)
 #
-# **Use Geodesic distance** (`use_geodesic=True`) when:
+# **Use Geodesic distance** (`metric="geodesic"`) when:
 # - Mazes (T-maze, plus-maze, radial arm maze)
 # - Multi-room environments
 # - Environments with barriers or walls

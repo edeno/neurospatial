@@ -7,7 +7,7 @@ Task 5.7: Implement compute_egocentric_rate(None) function
 - Accept single spike_times array
 - Accept object_positions array
 - Support distance_range and bin count parameters
-- Support distance_metric parameter
+- Support metric parameter
 - Optional env parameter (required for geodesic)
 - Apply smoothing via _smoothing.py
 - Return EgocentricRateResult
@@ -154,7 +154,7 @@ class TestComputeEgocentricRateReturnsResult:
             object_positions,
         )
         assert np.asarray(result.firing_rate).ndim == 1
-        assert np.asarray(result.firing_rate).shape == (result.ego_env.n_bins,)
+        assert np.asarray(result.firing_rate).shape == (result.env.n_bins,)
 
     def test_occupancy_shape(
         self,
@@ -174,15 +174,15 @@ class TestComputeEgocentricRateReturnsResult:
             headings,
             object_positions,
         )
-        assert np.asarray(result.occupancy).shape == (result.ego_env.n_bins,)
+        assert np.asarray(result.occupancy).shape == (result.env.n_bins,)
 
-    def test_ego_env_is_environment(
+    def test_env_is_environment(
         self,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
         object_positions: np.ndarray,
         spike_times: np.ndarray,
     ) -> None:
-        """ego_env should be an Environment."""
+        """env should be an Environment."""
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
         times, positions, headings = trajectory_data
@@ -194,7 +194,7 @@ class TestComputeEgocentricRateReturnsResult:
             headings,
             object_positions,
         )
-        assert isinstance(result.ego_env, Environment)
+        assert isinstance(result.env, Environment)
 
 
 # ==============================================================================
@@ -338,7 +338,7 @@ class TestComputeEgocentricRateBinCounts:
         object_positions: np.ndarray,
         spike_times: np.ndarray,
     ) -> None:
-        """ego_env.n_bins should equal n_distance_bins * n_direction_bins."""
+        """env.n_bins should equal n_distance_bins * n_direction_bins."""
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
         times, positions, headings = trajectory_data
@@ -354,7 +354,7 @@ class TestComputeEgocentricRateBinCounts:
             n_distance_bins=n_dist,
             n_direction_bins=n_dir,
         )
-        assert result.ego_env.n_bins == n_dist * n_dir
+        assert result.env.n_bins == n_dist * n_dir
 
 
 # ==============================================================================
@@ -363,15 +363,15 @@ class TestComputeEgocentricRateBinCounts:
 
 
 class TestComputeEgocentricRateDistanceMetric:
-    """Test distance_metric parameter."""
+    """Test metric parameter."""
 
-    def test_default_distance_metric_euclidean(
+    def test_default_metric_euclidean(
         self,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
         object_positions: np.ndarray,
         spike_times: np.ndarray,
     ) -> None:
-        """Default distance_metric should be 'euclidean' (no env needed)."""
+        """Default metric should be 'euclidean' (no env needed)."""
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
         times, positions, headings = trajectory_data
@@ -388,13 +388,13 @@ class TestComputeEgocentricRateDistanceMetric:
             result.firing_rate, "__array__"
         )
 
-    def test_euclidean_distance_metric_explicit(
+    def test_euclidean_metric_explicit(
         self,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
         object_positions: np.ndarray,
         spike_times: np.ndarray,
     ) -> None:
-        """Explicit euclidean distance_metric works without env."""
+        """Explicit euclidean metric works without env."""
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
         times, positions, headings = trajectory_data
@@ -405,7 +405,7 @@ class TestComputeEgocentricRateDistanceMetric:
             positions,
             headings,
             object_positions,
-            distance_metric="euclidean",
+            metric="euclidean",
         )
         assert np.asarray(result.firing_rate).shape[0] > 0
 
@@ -415,7 +415,7 @@ class TestComputeEgocentricRateDistanceMetric:
         object_positions: np.ndarray,
         spike_times: np.ndarray,
     ) -> None:
-        """geodesic distance_metric requires env parameter."""
+        """geodesic metric requires env parameter."""
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
         times, positions, headings = trajectory_data
@@ -427,7 +427,7 @@ class TestComputeEgocentricRateDistanceMetric:
                 positions,
                 headings,
                 object_positions,
-                distance_metric="geodesic",
+                metric="geodesic",
             )
 
     def test_geodesic_with_env(
@@ -437,7 +437,7 @@ class TestComputeEgocentricRateDistanceMetric:
         object_positions: np.ndarray,
         spike_times: np.ndarray,
     ) -> None:
-        """geodesic distance_metric works with env parameter."""
+        """geodesic metric works with env parameter."""
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
         times, positions, headings = trajectory_data
@@ -448,21 +448,21 @@ class TestComputeEgocentricRateDistanceMetric:
             positions,
             headings,
             object_positions,
-            distance_metric="geodesic",
+            metric="geodesic",
         )
         assert np.asarray(result.firing_rate).shape[0] > 0
 
-    def test_invalid_distance_metric_raises(
+    def test_invalid_metric_raises(
         self,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
         object_positions: np.ndarray,
         spike_times: np.ndarray,
     ) -> None:
-        """Invalid distance_metric raises ValueError."""
+        """Invalid metric raises ValueError."""
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
         times, positions, headings = trajectory_data
-        with pytest.raises(ValueError, match="Invalid distance_metric"):
+        with pytest.raises(ValueError, match="Invalid metric"):
             compute_egocentric_rate(
                 None,
                 spike_times,
@@ -470,7 +470,7 @@ class TestComputeEgocentricRateDistanceMetric:
                 positions,
                 headings,
                 object_positions,
-                distance_metric="manhattan",  # type: ignore[arg-type]
+                metric="manhattan",  # type: ignore[arg-type]
             )
 
 
@@ -666,7 +666,7 @@ class TestComputeEgocentricRatePrecomputation:
             positions,
             headings,
             object_positions,
-            distance_metric="geodesic",
+            metric="geodesic",
         )
 
         assert call_count == 1
@@ -851,7 +851,7 @@ class TestComputeEgocentricRateResultMethods:
         object_positions: np.ndarray,
         spike_times: np.ndarray,
     ) -> None:
-        """is_ovc() should return a bool."""
+        """is_object_vector_cell() should return a bool."""
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
         times, positions, headings = trajectory_data
@@ -863,8 +863,8 @@ class TestComputeEgocentricRateResultMethods:
             headings,
             object_positions,
         )
-        is_ovc = result.is_ovc()
-        assert isinstance(is_ovc, (bool, np.bool_))
+        is_object_vector_cell = result.is_object_vector_cell()
+        assert isinstance(is_object_vector_cell, (bool, np.bool_))
 
 
 # ==============================================================================
@@ -1033,7 +1033,7 @@ class TestComputeEgocentricRateSignature:
             "distance_range",
             "n_distance_bins",
             "n_direction_bins",
-            "distance_metric",
+            "metric",
             "smoothing_method",
             "bandwidth",
             "min_occupancy",

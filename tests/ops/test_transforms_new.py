@@ -233,5 +233,9 @@ class TestApplyTransformToEnvironment:
         env = Environment(name="unfitted", layout=layout)
         transform = translate(5, 5)
 
-        with pytest.raises(RuntimeError, match="must be fitted"):
+        from neurospatial.environment.decorators import EnvironmentNotFittedError
+
+        with pytest.raises(
+            EnvironmentNotFittedError, match="apply_transform_to_environment"
+        ):
             apply_transform_to_environment(env, transform)

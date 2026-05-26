@@ -89,7 +89,7 @@ class TestObjectVectorCellModelCreation:
         assert model.object_selectivity == "nearest"
 
         # Default distance metric
-        assert model.distance_metric == "euclidean"
+        assert model.metric == "euclidean"
 
     def test_directional_tuning_parameters(self, env, object_positions):
         """Directional tuning parameters are stored correctly."""
@@ -256,19 +256,19 @@ class TestParameterValidation:
                 object_selectivity="invalid",
             )
 
-    def test_invalid_distance_metric_raises(self, env, object_positions):
-        """Invalid distance_metric raises ValueError."""
+    def test_invalid_metric_raises(self, env, object_positions):
+        """Invalid metric raises ValueError."""
         from neurospatial.simulation.models.object_vector_cells import (
             ObjectVectorCellModel,
         )
 
-        with pytest.raises(ValueError, match=r"distance_metric.*euclidean.*geodesic"):
+        with pytest.raises(ValueError, match=r"metric.*euclidean.*geodesic"):
             ObjectVectorCellModel(
                 env=env,
                 object_positions=object_positions,
                 preferred_distance=10.0,
                 distance_width=5.0,
-                distance_metric="invalid",
+                metric="invalid",
             )
 
     def test_1d_object_positions_raises(self, env):
@@ -625,7 +625,7 @@ class TestGeodesicDistance:
         return Environment.from_samples(samples, bin_size=2.0)
 
     def test_euclidean_distance_used_by_default(self, env):
-        """Euclidean distance is used when distance_metric='euclidean'."""
+        """Euclidean distance is used when metric='euclidean'."""
         from neurospatial.simulation.models.object_vector_cells import (
             ObjectVectorCellModel,
         )
@@ -635,10 +635,10 @@ class TestGeodesicDistance:
             object_positions=np.array([[50.0, 50.0]]),
             preferred_distance=10.0,
             distance_width=5.0,
-            distance_metric="euclidean",
+            metric="euclidean",
         )
 
-        assert model.distance_metric == "euclidean"
+        assert model.metric == "euclidean"
 
         # Should run without errors
         positions = np.array([[60.0, 50.0], [70.0, 50.0]])
@@ -656,10 +656,10 @@ class TestGeodesicDistance:
             object_positions=np.array([[50.0, 50.0]]),
             preferred_distance=10.0,
             distance_width=5.0,
-            distance_metric="geodesic",
+            metric="geodesic",
         )
 
-        assert model.distance_metric == "geodesic"
+        assert model.metric == "geodesic"
 
         # Model should have precomputed distance fields
         assert hasattr(model, "_distance_fields")

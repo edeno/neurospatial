@@ -108,7 +108,7 @@ class LayoutEngine(Protocol):
         **Recommended Edge Attributes**:
             - 'angle_2d': Optional[float] - Angle of displacement for 2D layouts.
 
-    is_1d : bool
+    is_linearized_track : bool
         True if the layout represents a primarily 1-dimensional structure
         (e.g., a linearized track), False otherwise.
     dimension_ranges : Optional[Sequence[Tuple[float, float]]]
@@ -227,7 +227,7 @@ class LayoutEngine(Protocol):
         ...
 
     @property  # pragma: no cover
-    def is_1d(self) -> bool:
+    def is_linearized_track(self) -> bool:
         """Indicate if the layout structure is primarily 1-dimensional.
 
         Returns

@@ -17,7 +17,9 @@ class TestSpatialAutocorrelation:
 
     def test_fft_method_on_regular_grid(self):
         """Test FFT method returns 2D autocorrelation on regular grid."""
-        from neurospatial.encoding.grid import spatial_autocorrelation
+        from neurospatial.encoding.grid import (
+            spatial_autocorrelation,
+        )
 
         # Create regular 2D grid environment using deterministic grid
         x = np.linspace(-20, 20, 21)
@@ -31,7 +33,7 @@ class TestSpatialAutocorrelation:
         firing_rate[center_bin] = 10.0
 
         # Compute autocorrelation with FFT method
-        autocorr = spatial_autocorrelation(env, firing_rate, method="fft")
+        autocorr = spatial_autocorrelation(env, firing_rate)
 
         # Should return 2D array
         assert autocorr.ndim == 2
@@ -43,7 +45,9 @@ class TestSpatialAutocorrelation:
 
     def test_graph_method_returns_tuple(self):
         """Test graph method returns (distances, correlations) tuple."""
-        from neurospatial.encoding.grid import spatial_autocorrelation
+        from neurospatial.encoding.grid import (
+            spatial_autocorrelation_radial,
+        )
 
         # Create environment using deterministic grid
         x = np.linspace(-20, 20, 21)
@@ -56,9 +60,7 @@ class TestSpatialAutocorrelation:
         firing_rate = rng.random(env.n_bins) * 5.0
 
         # Compute autocorrelation with graph method
-        result = spatial_autocorrelation(
-            env, firing_rate, method="graph", n_distance_bins=30
-        )
+        result = spatial_autocorrelation_radial(env, firing_rate, n_distance_bins=30)
 
         # Should return tuple
         assert isinstance(result, tuple)
@@ -74,7 +76,9 @@ class TestSpatialAutocorrelation:
 
     def test_auto_method_works(self):
         """Test auto method can detect appropriate method."""
-        from neurospatial.encoding.grid import spatial_autocorrelation
+        from neurospatial.encoding.grid import (
+            spatial_autocorrelation,
+        )
 
         # Create environment using deterministic grid
         x = np.linspace(-20, 20, 21)
@@ -86,7 +90,7 @@ class TestSpatialAutocorrelation:
         firing_rate = rng.random(env.n_bins) * 5.0
 
         # Auto should work without error (returns either 2D array or tuple)
-        result = spatial_autocorrelation(env, firing_rate, method="auto")
+        result = spatial_autocorrelation(env, firing_rate)
 
         # Should return something valid (either 2D array or tuple)
         assert result is not None
@@ -95,7 +99,9 @@ class TestSpatialAutocorrelation:
 
     def test_raises_on_shape_mismatch(self):
         """Test raises ValueError if firing_rate shape doesn't match env.n_bins."""
-        from neurospatial.encoding.grid import spatial_autocorrelation
+        from neurospatial.encoding.grid import (
+            spatial_autocorrelation,
+        )
 
         # Deterministic grid
         x = np.linspace(-20, 20, 21)
@@ -110,7 +116,9 @@ class TestSpatialAutocorrelation:
 
     def test_raises_on_all_nan(self):
         """Test raises ValueError if all firing rates are NaN."""
-        from neurospatial.encoding.grid import spatial_autocorrelation
+        from neurospatial.encoding.grid import (
+            spatial_autocorrelation,
+        )
 
         # Deterministic grid
         x = np.linspace(-20, 20, 21)
@@ -125,7 +133,9 @@ class TestSpatialAutocorrelation:
 
     def test_raises_on_constant_rates(self):
         """Test raises ValueError if all valid firing rates are constant."""
-        from neurospatial.encoding.grid import spatial_autocorrelation
+        from neurospatial.encoding.grid import (
+            spatial_autocorrelation,
+        )
 
         # Deterministic grid
         x = np.linspace(-20, 20, 21)
@@ -138,25 +148,37 @@ class TestSpatialAutocorrelation:
         with pytest.raises(ValueError, match="All valid firing rates are constant"):
             spatial_autocorrelation(env, firing_rate)
 
-    def test_raises_on_invalid_method(self):
-        """Test raises ValueError on invalid method parameter."""
+    def test_raises_on_irregular_env(self):
+        """spatial_autocorrelation refuses irregular envs and steers callers to the radial variant."""
+        import networkx as nx
+
+        from neurospatial import Environment
         from neurospatial.encoding.grid import spatial_autocorrelation
 
-        # Deterministic grid
-        x = np.linspace(-20, 20, 21)
-        xx, yy = np.meshgrid(x, x)
-        positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=4.0)
+        # Build a 1-D track graph (no regular 2D grid_shape) to trigger the
+        # irregular-env path. The error message must mention the radial
+        # alternative so the caller knows which function to use instead.
+        graph = nx.path_graph(8)
+        for i, node in enumerate(graph.nodes):
+            graph.nodes[node]["pos"] = (float(i) * 5.0, 0.0)
+        for u, v in graph.edges:
+            graph.edges[u, v]["distance"] = 5.0
+        env = Environment.from_graph(
+            graph,
+            edge_order=list(graph.edges),
+            edge_spacing=0.0,
+            bin_size=2.0,
+        )
+        firing_rate = np.linspace(0.0, 1.0, env.n_bins)
 
-        rng = np.random.default_rng(42)
-        firing_rate = rng.random(env.n_bins) * 5.0
-
-        with pytest.raises(ValueError, match="method must be"):
-            spatial_autocorrelation(env, firing_rate, method="invalid")
+        with pytest.raises(ValueError, match="spatial_autocorrelation_radial"):
+            spatial_autocorrelation(env, firing_rate)
 
     def test_fft_autocorr_returns_finite_values(self):
         """Test FFT autocorrelation returns finite values."""
-        from neurospatial.encoding.grid import spatial_autocorrelation
+        from neurospatial.encoding.grid import (
+            spatial_autocorrelation,
+        )
 
         # Deterministic grid
         x = np.linspace(-20, 20, 21)
@@ -168,7 +190,7 @@ class TestSpatialAutocorrelation:
         rng = np.random.default_rng(42)
         firing_rate = rng.random(env.n_bins) * 5.0
 
-        autocorr = spatial_autocorrelation(env, firing_rate, method="fft")
+        autocorr = spatial_autocorrelation(env, firing_rate)
 
         # Autocorrelation should be finite everywhere
         assert np.all(np.isfinite(autocorr))
@@ -603,46 +625,39 @@ class TestGridScale:
         assert abs(scale2 / scale1 - 2.0) < 0.1
 
 
-class TestGridOrientation:
-    """Tests for grid_orientation function."""
+class TestGridOrientationViaGridProperties:
+    """Tests for grid orientation, accessed through ``GridProperties``.
 
-    def test_grid_orientation_anchor_horizontal_grid(self):
-        """Anchor test: Grid aligned with horizontal axis should have orientation ~0°.
+    The standalone ``grid_orientation`` function was folded into
+    :func:`grid_properties` in M2.B 2.13. These tests pin the same
+    contract on ``grid_properties(...).orientation`` /
+    ``.orientation_std`` so the behavior is preserved.
+    """
 
-        Mathematical reasoning:
-        - Peaks at 0°, 60°, 120°, 180°, 240°, 300° relative to horizontal
-        - First peak at 0° (horizontal)
-        - Orientation should be close to 0° (or equivalently ~60°)
-        """
-        from neurospatial.encoding.grid import grid_orientation
+    def test_orientation_anchor_horizontal_grid(self):
+        """Grid aligned with horizontal axis should have orientation in [0, 60)."""
+        from neurospatial.encoding.grid import grid_properties
 
         autocorr = _create_hexagonal_autocorr()
+        props = grid_properties(autocorr, bin_size=1.0)
 
-        orientation, orientation_std = grid_orientation(autocorr)
+        assert props.orientation >= 0.0
+        assert props.orientation < 60.0
+        assert props.orientation_std < 15.0
 
-        # Orientation should be near 0° or 60° (equivalent due to symmetry)
-        assert orientation >= 0.0
-        assert orientation < 60.0
-        # Std should be relatively low for clean pattern
-        assert orientation_std < 15.0
+    def test_orientation_anchor_rotated_grid(self):
+        """Grid rotated by 30° should have orientation ~30°."""
+        from neurospatial.encoding.grid import grid_properties
 
-    def test_grid_orientation_anchor_rotated_grid(self):
-        """Anchor test: Grid rotated by 30° should have orientation ~30°."""
-        from neurospatial.encoding.grid import grid_orientation
-
-        # Create hexagonal pattern rotated by 30°
         size = 100
         autocorr = np.zeros((size, size))
         center = size // 2
         radius = 20.0
-
         y_grid, x_grid = np.ogrid[:size, :size]
 
-        # Central peak
         dist_from_center = np.sqrt((y_grid - center) ** 2 + (x_grid - center) ** 2)
         autocorr = np.exp(-(dist_from_center**2) / (2 * 5**2))
 
-        # Add 6 peaks at 60° intervals, starting from 30° (not 0°)
         for angle_deg in [30, 90, 150, 210, 270, 330]:
             angle_rad = np.radians(angle_deg)
             peak_y = center + int(radius * np.sin(angle_rad))
@@ -651,45 +666,30 @@ class TestGridOrientation:
             autocorr += 0.8 * np.exp(-(peak_dist**2) / (2 * 5**2))
 
         autocorr = autocorr / autocorr.max()
+        props = grid_properties(autocorr, bin_size=1.0)
 
-        orientation, _orientation_std = grid_orientation(autocorr)
-
-        # Orientation should be near 30°
-        assert 20.0 < orientation < 40.0, (
-            f"Expected orientation ~30°, got {orientation}"
+        assert 20.0 < props.orientation < 40.0, (
+            f"Expected orientation ~30°, got {props.orientation}"
         )
 
-    def test_grid_orientation_returns_nan_on_flat_input(self):
-        """Test returns NaN when no clear peaks detected (flat data)."""
-        from neurospatial.encoding.grid import grid_orientation
+    def test_orientation_returns_nan_on_flat_input(self):
+        """No detectable peaks -> orientation NaN."""
+        from neurospatial.encoding.grid import grid_properties
 
-        # Truly flat data (no local maxima possible)
         autocorr = np.ones((50, 50)) * 0.5
+        props = grid_properties(autocorr, bin_size=1.0)
 
-        orientation, orientation_std = grid_orientation(autocorr)
+        assert np.isnan(props.orientation)
+        assert np.isnan(props.orientation_std)
 
-        # Should return NaN (no peaks in flat data)
-        assert np.isnan(orientation)
-        assert np.isnan(orientation_std)
-
-    def test_grid_orientation_in_valid_range(self):
-        """Test orientation is in range [0, 60)."""
-        from neurospatial.encoding.grid import grid_orientation
+    def test_orientation_in_valid_range(self):
+        """Orientation is in [0, 60)."""
+        from neurospatial.encoding.grid import grid_properties
 
         autocorr = _create_hexagonal_autocorr()
+        props = grid_properties(autocorr, bin_size=1.0)
 
-        orientation, _ = grid_orientation(autocorr)
-
-        assert 0.0 <= orientation < 60.0
-
-    def test_grid_orientation_raises_on_1d_input(self):
-        """Test raises ValueError on 1D input."""
-        from neurospatial.encoding.grid import grid_orientation
-
-        autocorr = np.zeros(100)
-
-        with pytest.raises(ValueError, match="autocorr_2d must be 2D"):
-            grid_orientation(autocorr)
+        assert 0.0 <= props.orientation < 60.0
 
 
 class TestGridProperties:
@@ -739,7 +739,6 @@ class TestGridProperties:
     def test_grid_properties_matches_individual_functions(self):
         """Test grid_properties matches individual function outputs."""
         from neurospatial.encoding.grid import (
-            grid_orientation,
             grid_properties,
             grid_scale,
             grid_score,
@@ -754,16 +753,12 @@ class TestGridProperties:
         # Get individual function outputs
         score_individual = grid_score(autocorr)
         scale_individual = grid_scale(autocorr, bin_size=bin_size)
-        orientation_individual, _std_individual = grid_orientation(autocorr)
 
         # Score should match exactly
         assert props.score == score_individual
 
         # Scale should match (within tolerance due to peak detection variance)
         assert abs(props.scale - scale_individual) < 5.0
-
-        # Orientation should be close (within tolerance)
-        assert abs(props.orientation - orientation_individual) < 5.0
 
     def test_grid_properties_raises_on_invalid_input(self):
         """Test raises ValueError on invalid input."""

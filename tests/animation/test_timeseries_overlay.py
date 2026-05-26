@@ -2798,7 +2798,7 @@ class TestTimeSeriesIntegration:
         positions = rng.random((20, 2)) * 10.0
 
         position_overlay = PositionOverlay(
-            data=positions,
+            positions=positions,
             color="red",
             size=10.0,
             trail_length=5,
@@ -2885,7 +2885,7 @@ class TestTimeSeriesIntegration:
         positions = rng.random((20, 2)) * 10.0
 
         position_overlay = PositionOverlay(
-            data=positions,
+            positions=positions,
             color="red",
             size=10.0,
             trail_length=5,

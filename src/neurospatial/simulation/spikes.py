@@ -1,5 +1,6 @@
 """Spike generation functions for converting firing rates to spike trains."""
 
+import logging
 from typing import Any
 
 import numpy as np
@@ -8,10 +9,13 @@ from tqdm.auto import tqdm
 
 from neurospatial.simulation.models.base import NeuralModel
 
+logger = logging.getLogger(__name__)
+
 
 def generate_poisson_spikes(
     firing_rate: NDArray[np.float64],
     times: NDArray[np.float64],
+    *,
     refractory_period: float = 0.002,
     seed: int | None = None,
 ) -> NDArray[np.float64]:
@@ -84,7 +88,9 @@ def generate_poisson_spikes(
     >>> pc = PlaceCellModel(env, center=center, width=20.0, max_rate=50.0, seed=42)
     >>>
     >>> # Generate trajectory and firing rates
-    >>> positions, times = simulate_trajectory_ou(env, duration=60.0, seed=42)
+    >>> positions, times = simulate_trajectory_ou(
+    ...     env, duration=60.0, seed=42, speed_units="cm"
+    ... )
     >>> rates = pc.firing_rate(positions)
     >>>
     >>> # Generate spikes
@@ -161,10 +167,10 @@ def generate_population_spikes(
     models: list[NeuralModel],
     positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    *,
     refractory_period: float = 0.002,
     seed: int | None = None,
     show_progress: bool = True,
-    *,
     headings: NDArray[np.float64] | None = None,
 ) -> list[NDArray[np.float64]]:
     """Generate spike trains for population of neurons.
@@ -233,7 +239,9 @@ def generate_population_spikes(
     True
     >>>
     >>> # Generate trajectory and spikes
-    >>> positions, times = simulate_trajectory_ou(env, duration=120.0, seed=42)
+    >>> positions, times = simulate_trajectory_ou(
+    ...     env, duration=120.0, seed=42, speed_units="cm"
+    ... )
     >>> spike_trains = generate_population_spikes(
     ...     place_cells, positions, times, seed=42, show_progress=False
     ... )
@@ -305,7 +313,9 @@ def generate_population_spikes(
 
         # Generate spikes with derived seed for reproducibility
         model_seed = None if base_seed is None else base_seed + i
-        spikes = generate_poisson_spikes(rates, times, refractory_period, model_seed)
+        spikes = generate_poisson_spikes(
+            rates, times, refractory_period=refractory_period, seed=model_seed
+        )
 
         spike_trains.append(spikes)
 
@@ -325,9 +335,13 @@ def generate_population_spikes(
         duration = times[-1] if len(times) > 0 else 1.0
         mean_rate = total_spikes / (len(models) * duration) if len(models) > 0 else 0.0
 
-        print(
-            f"Generated {len(models)} cells, {total_spikes:,} total spikes "
-            f"(avg {avg_spikes_per_cell:.0f} spikes/cell), mean rate {mean_rate:.1f} Hz"
+        logger.info(
+            "Generated %d cells, %d total spikes "
+            "(avg %.0f spikes/cell), mean rate %.1f Hz",
+            len(models),
+            total_spikes,
+            avg_spikes_per_cell,
+            mean_rate,
         )
 
     return spike_trains
@@ -463,7 +477,9 @@ def add_modulation(
     >>> pc = PlaceCellModel(env, center=center, width=20.0, max_rate=50.0, seed=42)
     >>>
     >>> # Generate trajectory and spikes
-    >>> positions, times = simulate_trajectory_ou(env, duration=60.0, seed=42)
+    >>> positions, times = simulate_trajectory_ou(
+    ...     env, duration=60.0, seed=42, speed_units="cm"
+    ... )
     >>> rates = pc.firing_rate(positions)
     >>> spike_times = generate_poisson_spikes(rates, times, seed=42)
     >>>
@@ -511,7 +527,9 @@ def add_modulation(
         )
 
     if modulation_freq <= 0.0:
-        raise ValueError(f"modulation_freq must be positive, got {modulation_freq}")
+        raise ValueError(
+            f"modulation_freq must be positive (Hz), got {modulation_freq}"
+        )
 
     # Special case: zero modulation depth means no modulation (keep all spikes)
     if modulation_depth == 0.0:

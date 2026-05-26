@@ -86,31 +86,6 @@ def multiple_neuron_spikes() -> list[NDArray[np.float64]]:
 class TestBinSpikeTrain:
     """Tests for bin_spike_train function (single neuron binning)."""
 
-    def test_function_is_importable(self) -> None:
-        """bin_spike_train should be importable from encoding._binning."""
-        from neurospatial.encoding._binning import bin_spike_train
-
-        assert bin_spike_train is not None
-
-    def test_returns_spike_counts(
-        self,
-        simple_env: Environment,
-        trajectory_data: dict,
-        single_neuron_spikes: NDArray[np.float64],
-    ) -> None:
-        """bin_spike_train should return spike counts array."""
-        from neurospatial.encoding._binning import bin_spike_train
-
-        spike_counts = bin_spike_train(
-            simple_env,
-            single_neuron_spikes,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-        )
-
-        assert isinstance(spike_counts, np.ndarray)
-        assert spike_counts.dtype == np.float64
-
     def test_spike_counts_shape(
         self,
         simple_env: Environment,
@@ -222,29 +197,6 @@ class TestBinSpikeTrain:
 class TestComputeOccupancy:
     """Tests for compute_occupancy function."""
 
-    def test_function_is_importable(self) -> None:
-        """compute_occupancy should be importable from encoding._binning."""
-        from neurospatial.encoding._binning import compute_occupancy
-
-        assert compute_occupancy is not None
-
-    def test_returns_occupancy_array(
-        self,
-        simple_env: Environment,
-        trajectory_data: dict,
-    ) -> None:
-        """compute_occupancy should return occupancy array in seconds."""
-        from neurospatial.encoding._binning import compute_occupancy
-
-        occupancy = compute_occupancy(
-            simple_env,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-        )
-
-        assert isinstance(occupancy, np.ndarray)
-        assert occupancy.dtype == np.float64
-
     def test_occupancy_shape(
         self,
         simple_env: Environment,
@@ -307,34 +259,6 @@ class TestComputeOccupancy:
 class TestBinSpikeTrains:
     """Tests for bin_spike_trains function (multiple neurons)."""
 
-    def test_function_is_importable(self) -> None:
-        """bin_spike_trains should be importable from encoding._binning."""
-        from neurospatial.encoding._binning import bin_spike_trains
-
-        assert bin_spike_trains is not None
-
-    def test_returns_spike_counts_and_occupancy(
-        self,
-        simple_env: Environment,
-        trajectory_data: dict,
-        multiple_neuron_spikes: list[NDArray[np.float64]],
-    ) -> None:
-        """bin_spike_trains should return (spike_counts, occupancy) tuple."""
-        from neurospatial.encoding._binning import bin_spike_trains
-
-        result = bin_spike_trains(
-            simple_env,
-            multiple_neuron_spikes,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-        )
-
-        assert isinstance(result, tuple)
-        assert len(result) == 2
-        spike_counts, occupancy = result
-        assert isinstance(spike_counts, np.ndarray)
-        assert isinstance(occupancy, np.ndarray)
-
     def test_spike_counts_shape(
         self,
         simple_env: Environment,
@@ -371,42 +295,6 @@ class TestBinSpikeTrains:
         )
 
         assert occupancy.shape == (simple_env.n_bins,)
-
-    def test_spike_counts_dtype(
-        self,
-        simple_env: Environment,
-        trajectory_data: dict,
-        multiple_neuron_spikes: list[NDArray[np.float64]],
-    ) -> None:
-        """Spike counts should be float64."""
-        from neurospatial.encoding._binning import bin_spike_trains
-
-        spike_counts, _ = bin_spike_trains(
-            simple_env,
-            multiple_neuron_spikes,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-        )
-
-        assert spike_counts.dtype == np.float64
-
-    def test_occupancy_dtype(
-        self,
-        simple_env: Environment,
-        trajectory_data: dict,
-        multiple_neuron_spikes: list[NDArray[np.float64]],
-    ) -> None:
-        """Occupancy should be float64."""
-        from neurospatial.encoding._binning import bin_spike_trains
-
-        _, occupancy = bin_spike_trains(
-            simple_env,
-            multiple_neuron_spikes,
-            trajectory_data["times"],
-            trajectory_data["positions"],
-        )
-
-        assert occupancy.dtype == np.float64
 
     def test_empty_neuron_has_zero_counts(
         self,

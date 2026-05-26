@@ -712,7 +712,7 @@ class TestFullWorkflowIntegration:
         assert env is not None
         assert env.name == "test_track"
         assert env.n_bins > 0
-        assert env.is_1d  # Track environments are 1D
+        assert env.is_linearized_track  # Track environments are 1D
 
     def test_environment_has_correct_bin_count(self, monkeypatch) -> None:
         """Environment from annotation should have expected bin count."""

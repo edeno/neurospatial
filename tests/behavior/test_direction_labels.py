@@ -342,7 +342,7 @@ class TestHeadingDirectionLabels:
         # All labels should be "stationary"
         assert all(label == "stationary" for label in labels)
 
-    def test_min_speed_threshold(self) -> None:
+    def test_min_min_speed(self) -> None:
         """Verify min_speed threshold is respected."""
         n_samples = 100
         times = np.linspace(0.0, 10.0, n_samples)
@@ -527,16 +527,6 @@ class TestHeadingDirectionLabels:
         labels = heading_direction_labels(positions=positions, times=times)
 
         assert len(labels) == n_samples
-        assert labels.dtype == object
-
-    def test_output_dtype_is_object(self) -> None:
-        """Output array has dtype=object for string labels."""
-        n_samples = 50
-        speed = np.full(n_samples, 10.0)
-        heading = np.zeros(n_samples)
-
-        labels = heading_direction_labels(speed=speed, heading=heading)
-
         assert labels.dtype == object
 
     def test_empty_arrays(self) -> None:

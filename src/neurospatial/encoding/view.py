@@ -6,7 +6,7 @@ regardless of where the animal is positioned. This is distinct from place cells,
 which fire when an animal is *at* a specific location.
 
 Unlike spatial encoding which uses standard occupancy (time spent at each
-location), view encoding uses view_occupancy (time spent *viewing* each
+location), view encoding uses occupancy (time spent *viewing* each
 location). The view occupancy depends on the gaze model used.
 
 Result Classes
@@ -44,10 +44,10 @@ Examples
 
 >>> # Create result (typically from compute_view_rate)
 >>> firing_rate = np.random.rand(env.n_bins) * 10
->>> view_occupancy = np.ones(env.n_bins)
+>>> occupancy = np.ones(env.n_bins)
 >>> result = ViewRateResult(
 ...     firing_rate=firing_rate,
-...     view_occupancy=view_occupancy,
+...     occupancy=occupancy,
 ...     env=env,
 ...     gaze_model="fixed_distance",
 ...     view_distance=10.0,
@@ -86,15 +86,7 @@ if TYPE_CHECKING:
 
     from neurospatial import Environment
 
-# Re-export visibility functions for convenience in view cell workflow
-from neurospatial.ops.visibility import (
-    FieldOfView,
-    compute_viewed_location,
-    compute_viewshed,
-    visibility_occupancy,
-)
 
-# ruff: noqa: RUF022 - intentionally grouped by category
 __all__ = [
     # Result classes
     "ViewRateResult",
@@ -104,11 +96,6 @@ __all__ = [
     "compute_view_rates",
     # Convenience functions
     "is_spatial_view_cell",
-    # Re-exports from ops.visibility
-    "FieldOfView",
-    "compute_viewed_location",
-    "compute_viewshed",
-    "visibility_occupancy",
 ]
 
 
@@ -127,7 +114,7 @@ class ViewRateResult(SpatialResultMixin):
         Firing rate by viewed location in Hz. Shape is (n_bins,) where n_bins
         is the number of active bins in the environment. Can contain NaN for
         bins with insufficient view occupancy.
-    view_occupancy : ArrayLike
+    occupancy : ArrayLike
         Time spent *viewing* each spatial bin in seconds. Shape is (n_bins,).
         This differs from standard occupancy (time at bin) - it represents
         the time the animal was looking at each location.
@@ -150,7 +137,7 @@ class ViewRateResult(SpatialResultMixin):
     ----------
     firing_rate : ArrayLike
         Firing rate by viewed location in Hz. Shape is (n_bins,).
-    view_occupancy : ArrayLike
+    occupancy : ArrayLike
         Time spent viewing each bin in seconds. Shape is (n_bins,).
     env : Environment
         The spatial environment.
@@ -185,10 +172,10 @@ class ViewRateResult(SpatialResultMixin):
 
     >>> # Create result
     >>> firing_rate = np.random.rand(env.n_bins) * 10
-    >>> view_occupancy = np.ones(env.n_bins)
+    >>> occupancy = np.ones(env.n_bins)
     >>> result = ViewRateResult(
     ...     firing_rate=firing_rate,
-    ...     view_occupancy=view_occupancy,
+    ...     occupancy=occupancy,
     ...     env=env,
     ...     gaze_model="fixed_distance",
     ...     view_distance=10.0,
@@ -209,7 +196,7 @@ class ViewRateResult(SpatialResultMixin):
     """
 
     firing_rate: ArrayLike
-    view_occupancy: ArrayLike
+    occupancy: ArrayLike
     env: Environment
     gaze_model: str
     view_distance: float
@@ -318,7 +305,7 @@ class ViewRateResult(SpatialResultMixin):
         (not time spent *at* bin i).
 
         **Key difference from spatial_information()**: This metric uses
-        ``view_occupancy`` (time viewing each location) rather than standard
+        ``occupancy`` (time viewing each location) rather than standard
         ``occupancy`` (time at each location). For true spatial view cells,
         this metric should be higher than standard spatial information.
 
@@ -349,10 +336,10 @@ class ViewRateResult(SpatialResultMixin):
         from neurospatial.encoding._metrics import spatial_information
 
         return spatial_information(
-            _to_numpy(self.firing_rate), _to_numpy(self.view_occupancy)
+            _to_numpy(self.firing_rate), _to_numpy(self.occupancy)
         )
 
-    def is_view_cell(self, min_info: float = 0.5) -> bool:
+    def is_spatial_view_cell(self, min_info: float = 0.5) -> bool:
         """Classify as spatial view cell based on view spatial information.
 
         A neuron is classified as a spatial view cell if its view spatial
@@ -410,9 +397,9 @@ class ViewRateResult(SpatialResultMixin):
         Examples
         --------
         >>> result = ViewRateResult(...)
-        >>> if result.is_view_cell():
+        >>> if result.is_spatial_view_cell():
         ...     print("This is a spatial view cell!")
-        >>> if result.is_view_cell(min_info=0.3):
+        >>> if result.is_spatial_view_cell(min_info=0.3):
         ...     print("This cell passes a more permissive threshold")
 
         See Also
@@ -437,7 +424,7 @@ class ViewRatesResult(SpatialResultMixin):
         Firing rates by viewed location for all neurons in Hz.
         Shape is (n_neurons, n_bins) where n_bins is the number of active
         bins in the environment.
-    view_occupancy : ArrayLike
+    occupancy : ArrayLike
         Time spent *viewing* each spatial bin in seconds. Shape is (n_bins,).
         This is shared across all neurons since gaze direction depends on
         behavior, not neural activity.
@@ -456,7 +443,7 @@ class ViewRatesResult(SpatialResultMixin):
     ----------
     firing_rates : ArrayLike
         Firing rates for all neurons. Shape is (n_neurons, n_bins).
-    view_occupancy : ArrayLike
+    occupancy : ArrayLike
         Time spent viewing each bin in seconds. Shape is (n_bins,). Shared.
     env : Environment
         The spatial environment.
@@ -489,10 +476,10 @@ class ViewRatesResult(SpatialResultMixin):
 
     >>> # Create batch result for 3 neurons
     >>> firing_rates = np.random.rand(3, env.n_bins) * 10
-    >>> view_occupancy = np.ones(env.n_bins)
+    >>> occupancy = np.ones(env.n_bins)
     >>> result = ViewRatesResult(
     ...     firing_rates=firing_rates,
-    ...     view_occupancy=view_occupancy,
+    ...     occupancy=occupancy,
     ...     env=env,
     ...     gaze_model="fixed_distance",
     ...     view_distance=10.0,
@@ -517,7 +504,7 @@ class ViewRatesResult(SpatialResultMixin):
     """
 
     firing_rates: ArrayLike
-    view_occupancy: ArrayLike
+    occupancy: ArrayLike
     env: Environment
     gaze_model: str
     view_distance: float
@@ -560,7 +547,7 @@ class ViewRatesResult(SpatialResultMixin):
         """
         return ViewRateResult(
             firing_rate=self.firing_rates[idx],  # type: ignore[index]
-            view_occupancy=self.view_occupancy,
+            occupancy=self.occupancy,
             env=self.env,
             gaze_model=self.gaze_model,
             view_distance=self.view_distance,
@@ -626,7 +613,7 @@ class ViewRatesResult(SpatialResultMixin):
 
         See Also
         --------
-        peak_view_locations : Get locations of peak view responses
+        peak_view_location : Get locations of peak view responses
         ViewRateResult.plot : Plot for single-neuron result
         """
         return self.env.plot_field(
@@ -635,7 +622,7 @@ class ViewRatesResult(SpatialResultMixin):
             **kwargs,
         )
 
-    def peak_view_locations(self) -> NDArray[np.float64]:
+    def peak_view_location(self) -> NDArray[np.float64]:
         """Locations of peak view responses for all neurons.
 
         Returns the spatial coordinates where each neuron shows maximum
@@ -659,7 +646,7 @@ class ViewRatesResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> peaks = result.peak_view_locations()
+        >>> peaks = result.peak_view_location()
         >>> print(f"Neuron 0 peak at ({peaks[0, 0]:.1f}, {peaks[0, 1]:.1f}) cm")
 
         See Also
@@ -721,7 +708,7 @@ class ViewRatesResult(SpatialResultMixin):
         from neurospatial.encoding._metrics import batch_spatial_information
 
         return batch_spatial_information(
-            _to_numpy(self.firing_rates), _to_numpy(self.view_occupancy)
+            _to_numpy(self.firing_rates), _to_numpy(self.occupancy)
         )
 
     def detect_view_cells(self, min_info: float = 0.5) -> NDArray[np.bool_]:
@@ -734,7 +721,7 @@ class ViewRatesResult(SpatialResultMixin):
         ----------
         min_info : float, default=0.5
             Minimum view spatial information threshold in bits/spike.
-            See ViewRateResult.is_view_cell() for threshold rationale.
+            See ViewRateResult.is_spatial_view_cell() for threshold rationale.
 
         Returns
         -------
@@ -749,15 +736,15 @@ class ViewRatesResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> is_view_cell = result.detect_view_cells()
-        >>> print(f"Found {is_view_cell.sum()} view cells")
+        >>> is_spatial_view_cell = result.detect_view_cells()
+        >>> print(f"Found {is_spatial_view_cell.sum()} view cells")
 
         >>> # Use stricter threshold
-        >>> is_view_cell = result.detect_view_cells(min_info=1.0)
+        >>> is_spatial_view_cell = result.detect_view_cells(min_info=1.0)
 
         See Also
         --------
-        ViewRateResult.is_view_cell : Single-neuron classification
+        ViewRateResult.is_spatial_view_cell : Single-neuron classification
         view_spatial_information : The metric used for classification
         """
         info = self.view_spatial_information()
@@ -788,7 +775,7 @@ class ViewRatesResult(SpatialResultMixin):
             - peak_view_y: y-coordinate of peak view location
             - peak_rate: maximum firing rate (Hz)
             - view_spatial_info: view spatial information (bits/spike)
-            - is_view_cell: whether classified as view cell (using default threshold)
+            - is_spatial_view_cell: whether classified as view cell (using default threshold)
 
         Raises
         ------
@@ -803,7 +790,7 @@ class ViewRatesResult(SpatialResultMixin):
 
         **Common pandas workflows**:
 
-        - Filter: ``df[df["is_view_cell"] == True]``
+        - Filter: ``df[df["is_spatial_view_cell"] == True]``
         - Sort: ``df.sort_values("view_spatial_info", ascending=False)``
         - Top-N: ``df.nlargest(10, "peak_rate")``
 
@@ -817,11 +804,11 @@ class ViewRatesResult(SpatialResultMixin):
         >>> df = result.to_dataframe(neuron_ids=["unit_1", "unit_2", ...])
 
         >>> # Filter to view cells only
-        >>> view_cells_df = df[df["is_view_cell"]]
+        >>> view_cells_df = df[df["is_spatial_view_cell"]]
 
         See Also
         --------
-        peak_view_locations : Get peak view locations for all neurons
+        peak_view_location : Get peak view locations for all neurons
         view_spatial_information : Get spatial information for all neurons
         detect_view_cells : Classify neurons as view cells
         """
@@ -841,11 +828,11 @@ class ViewRatesResult(SpatialResultMixin):
                 )
 
         # Compute all metrics
-        peak_locs = self.peak_view_locations()
+        peak_locs = self.peak_view_location()
         firing_rates = _to_numpy(self.firing_rates)
         peak_rates = np.nanmax(firing_rates, axis=1) if n_neurons > 0 else np.array([])
         view_info = self.view_spatial_information()
-        is_view_cell = self.detect_view_cells()
+        is_spatial_view_cell = self.detect_view_cells()
 
         # Determine dimensionality for peak location columns
         # View encoding is typically 2D, but handle 1D for robustness
@@ -860,7 +847,7 @@ class ViewRatesResult(SpatialResultMixin):
             else np.full(n_neurons, np.nan),
             "peak_rate": peak_rates,
             "view_spatial_info": view_info,
-            "is_view_cell": is_view_cell,
+            "is_spatial_view_cell": is_spatial_view_cell,
         }
 
         return pd.DataFrame(data)
@@ -906,7 +893,11 @@ def compute_view_rate(
     positions : ndarray, shape (n_samples, 2)
         Position coordinates at each time sample.
     headings : ndarray, shape (n_samples,)
-        Head direction at each time sample (radians, 0=East).
+        Head direction at each time sample (radians, **allocentric
+        world-frame convention**: 0 = East, π/2 = North, π = West,
+        -π/2 = South, wrapped to [-π, π]). Internally combined with
+        ``positions`` to project the gaze cone outwards into the
+        allocentric arena.
     gaze_model : {"fixed_distance", "ray_cast", "boundary"}, default="fixed_distance"
         Method for computing viewed location:
 
@@ -952,7 +943,7 @@ def compute_view_rate(
         Result object containing:
 
         - ``firing_rate``: Firing rate by viewed location in Hz, shape (n_bins,)
-        - ``view_occupancy``: Time viewing each bin in seconds, shape (n_bins,)
+        - ``occupancy``: Time viewing each bin in seconds, shape (n_bins,)
         - ``env``: The environment used
         - ``gaze_model``: Gaze model used
         - ``view_distance``: View distance parameter
@@ -1019,7 +1010,7 @@ def compute_view_rate(
     >>> # Access results
     >>> peak = result.peak_view_location()
     >>> info = result.view_spatial_information()
-    >>> is_view_cell = result.is_view_cell()
+    >>> is_spatial_view_cell = result.is_spatial_view_cell()
 
     >>> # Plot the view field
     >>> ax = result.plot()
@@ -1038,8 +1029,14 @@ def compute_view_rate(
         _validate_smoothing_parameters,
         smooth_rate_map,
     )
-    from neurospatial.encoding._validation import validate_trajectory
+    from neurospatial.encoding._validation import (
+        validate_env_fitted,
+        validate_spike_times,
+        validate_trajectory,
+    )
     from neurospatial.encoding._view_binning import bin_view_spike_trains
+
+    validate_env_fitted(env, context="compute_view_rate")
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -1068,7 +1065,10 @@ def compute_view_rate(
     positions = np.asarray(positions, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
 
-    validate_trajectory(times, positions=positions, headings=headings)
+    validate_trajectory(
+        times, positions=positions, headings=headings, context="compute_view_rate"
+    )
+    validate_spike_times(spike_times, context="compute_view_rate")
     n_samples = len(times)
 
     # Validate gaze_offsets if provided
@@ -1082,7 +1082,7 @@ def compute_view_rate(
 
     # Reuse the batch binning path for the single-neuron API so viewed
     # coordinates are computed once and shared by spike counts and occupancy.
-    spike_counts_batch, view_occupancy = bin_view_spike_trains(
+    spike_counts_batch, occupancy = bin_view_spike_trains(
         env,
         [spike_times],
         times,
@@ -1100,7 +1100,7 @@ def compute_view_rate(
     firing_rate = smooth_rate_map(
         env,
         spike_counts,
-        view_occupancy,
+        occupancy,
         method=smoothing_method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
@@ -1112,12 +1112,12 @@ def compute_view_rate(
     if resolved_backend == "jax" and is_jax_available():
         import jax.numpy as jnp
 
-        view_occupancy = jnp.asarray(view_occupancy, dtype=jnp.float64)  # type: ignore[assignment]
+        occupancy = jnp.asarray(occupancy, dtype=jnp.float64)  # type: ignore[assignment]
 
     # Return result
     return ViewRateResult(
         firing_rate=firing_rate,
-        view_occupancy=view_occupancy,
+        occupancy=occupancy,
         env=env,
         gaze_model=gaze_model,
         view_distance=view_distance,
@@ -1169,7 +1169,11 @@ def compute_view_rates(
     positions : ndarray, shape (n_samples, 2)
         Position coordinates at each time sample.
     headings : ndarray, shape (n_samples,)
-        Head direction at each time sample (radians, 0=East).
+        Head direction at each time sample (radians, **allocentric
+        world-frame convention**: 0 = East, π/2 = North, π = West,
+        -π/2 = South, wrapped to [-π, π]). Internally combined with
+        ``positions`` to project the gaze cone outwards into the
+        allocentric arena.
     gaze_model : {"fixed_distance", "ray_cast", "boundary"}, default="fixed_distance"
         Method for computing viewed location:
 
@@ -1210,7 +1214,7 @@ def compute_view_rates(
         Result object containing:
 
         - ``firing_rates``: Firing rate maps, shape ``(n_neurons, n_bins)``
-        - ``view_occupancy``: Time viewing each bin in seconds, shape ``(n_bins,)``
+        - ``occupancy``: Time viewing each bin in seconds, shape ``(n_bins,)``
         - ``env``: The environment used
         - ``gaze_model``: Gaze model used
         - ``view_distance``: View distance parameter
@@ -1320,8 +1324,14 @@ def compute_view_rates(
         smooth_rate_maps_batch,
     )
     from neurospatial.encoding._spikes import normalize_spike_times
-    from neurospatial.encoding._validation import validate_trajectory
+    from neurospatial.encoding._validation import (
+        validate_env_fitted,
+        validate_spike_times,
+        validate_trajectory,
+    )
     from neurospatial.encoding._view_binning import bin_view_spike_trains
+
+    validate_env_fitted(env, context="compute_view_rates")
 
     # Validate backend
     if backend not in SUPPORTED_BACKENDS:
@@ -1353,7 +1363,11 @@ def compute_view_rates(
     positions = np.asarray(positions, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
 
-    validate_trajectory(times, positions=positions, headings=headings)
+    validate_trajectory(
+        times, positions=positions, headings=headings, context="compute_view_rates"
+    )
+    for i, st in enumerate(spike_times_list):
+        validate_spike_times(st, context=f"compute_view_rates (neuron {i})")
     n_samples = len(times)
 
     # Validate gaze_offsets if provided
@@ -1367,10 +1381,10 @@ def compute_view_rates(
 
     # Handle edge case: no neurons
     if n_neurons == 0:
-        # Still need to compute view_occupancy for consistency
-        from neurospatial.encoding._view_binning import compute_view_occupancy
+        # Still need to compute occupancy for consistency
+        from neurospatial.encoding._view_binning import compute_occupancy
 
-        view_occupancy = compute_view_occupancy(
+        occupancy = compute_occupancy(
             env,
             times,
             positions,
@@ -1384,10 +1398,10 @@ def compute_view_rates(
             import jax.numpy as jnp
 
             firing_rates_result = jnp.asarray(firing_rates_result)
-            view_occupancy = jnp.asarray(view_occupancy, dtype=jnp.float64)  # type: ignore[assignment]
+            occupancy = jnp.asarray(occupancy, dtype=jnp.float64)  # type: ignore[assignment]
         return ViewRatesResult(
             firing_rates=firing_rates_result,
-            view_occupancy=view_occupancy,
+            occupancy=occupancy,
             env=env,
             gaze_model=gaze_model,
             view_distance=view_distance,
@@ -1396,8 +1410,8 @@ def compute_view_rates(
         )
 
     # Bin spike trains by viewed location and compute view occupancy
-    # bin_view_spike_trains returns (spike_counts, view_occupancy)
-    spike_counts, view_occupancy = bin_view_spike_trains(
+    # bin_view_spike_trains returns (spike_counts, occupancy)
+    spike_counts, occupancy = bin_view_spike_trains(
         env,
         spike_times_list,
         times,
@@ -1414,7 +1428,7 @@ def compute_view_rates(
     firing_rates = smooth_rate_maps_batch(
         env,
         spike_counts,
-        view_occupancy,
+        occupancy,
         method=smoothing_method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
@@ -1426,12 +1440,12 @@ def compute_view_rates(
     if resolved_backend == "jax" and is_jax_available():
         import jax.numpy as jnp
 
-        view_occupancy = jnp.asarray(view_occupancy, dtype=jnp.float64)  # type: ignore[assignment]
+        occupancy = jnp.asarray(occupancy, dtype=jnp.float64)  # type: ignore[assignment]
 
     # Return result
     return ViewRatesResult(
         firing_rates=firing_rates,
-        view_occupancy=view_occupancy,
+        occupancy=occupancy,
         env=env,
         gaze_model=gaze_model,
         view_distance=view_distance,
@@ -1467,7 +1481,7 @@ def is_spatial_view_cell(
     view spatial information.
 
     For detailed metrics, use ``compute_view_rate()`` and inspect the result's
-    methods (``is_view_cell()``, ``view_spatial_information()``, etc.).
+    methods (``is_spatial_view_cell()``, ``view_spatial_information()``, etc.).
 
     Parameters
     ----------
@@ -1480,7 +1494,9 @@ def is_spatial_view_cell(
     positions : NDArray[np.float64], shape (n_time, 2)
         Animal positions in allocentric coordinates.
     headings : NDArray[np.float64], shape (n_time,)
-        Animal heading at each time (radians).
+        Animal heading at each time (radians, **allocentric world-frame
+        convention**: 0 = East, π/2 = North, π = West, -π/2 = South,
+        wrapped to [-π, π]).
     view_distance : float, default=10.0
         Distance for fixed_distance gaze model.
     gaze_model : {"fixed_distance", "ray_cast", "boundary"}, default="fixed_distance"
@@ -1514,7 +1530,7 @@ def is_spatial_view_cell(
     See Also
     --------
     compute_view_rate : Full view rate computation
-    ViewRateResult.is_view_cell : View cell classification on result object
+    ViewRateResult.is_spatial_view_cell : View cell classification on result object
     """
     try:
         result = compute_view_rate(
@@ -1528,6 +1544,6 @@ def is_spatial_view_cell(
             smoothing_method=smoothing_method,
             bandwidth=bandwidth,
         )
-        return result.is_view_cell(min_info=min_info)
+        return result.is_spatial_view_cell(min_info=min_info)
     except (ValueError, RuntimeError):
         return False

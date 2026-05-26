@@ -14,6 +14,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.environment._protocols import SelfEnv
+from neurospatial.environment.decorators import check_fitted
 
 if TYPE_CHECKING:
     import shapely
@@ -27,6 +28,7 @@ from neurospatial.regions import Regions
 class EnvironmentTransforms:
     """Mixin providing environment transformation methods."""
 
+    @check_fitted
     def rebin(
         self: SelfEnv,
         factor: int | tuple[int, ...],
@@ -532,7 +534,76 @@ class EnvironmentTransforms:
                 f"No bins selected. Selection resulted in empty mask. (invert={invert})"
             )
 
-        # --- Extract Subgraph ---
+        # --- Grid-env fast path: build via Environment.from_grid_mask ----------
+        #
+        # Pre-M1 the subset path produced an inline `SubsetLayout` whose
+        # _layout_type_tag was the unregistered string "subset", which
+        # broke `to_file` / `from_file` (silent persistence loss --
+        # users could subset(), save, restart, and lose the env).
+        #
+        # For 2-D / N-D grid envs (RegularGrid, MaskedGrid, ImageMask,
+        # Hexagonal, ShapelyPolygon), we have a `grid_shape` +
+        # `grid_edges` + `active_mask` triple that fully describes the
+        # spatial discretization. Filter the existing active mask down
+        # to the selected bins and rebuild via `from_grid_mask` -- the
+        # resulting env uses the canonical "MaskedGrid" layout,
+        # round-trips through `to_file` / `from_file`, and shares the
+        # existing layout serializer.
+        #
+        # Graph envs (1-D linearized tracks) ALSO populate `grid_shape`
+        # / `grid_edges` / `active_mask`, but they are 1-D objects
+        # embedded in a 2-D world (bin_centers shape (n_bins, 2)). If we
+        # routed them through `from_grid_mask` we'd build a MaskedGrid whose
+        # bin_centers are flat 1-D linearized positions, dropping the
+        # 2-D embedding. Detect them via `self.is_linearized_track` and fall through
+        # to the inline `SubsetLayout` path below; that path is still
+        # not serializable, but is preserved so existing graph-env
+        # subset call sites don't silently corrupt the dimensionality.
+        # Graph subset will get its own registered layout type later
+        # (out of M1 scope).
+        is_grid_env = (
+            not self.is_linearized_track
+            and self.active_mask is not None
+            and self.grid_shape is not None
+            and self.grid_edges is not None
+            and len(self.grid_edges) > 0
+        )
+        if is_grid_env:
+            # Round-trip safe path. self.active_mask is the original
+            # grid-shape boolean mask; its True positions in row-major
+            # order correspond 1:1 to active bin indices [0, n_bins).
+            assert self.active_mask is not None  # for type checker
+            assert self.grid_edges is not None
+            flat_active_indices = np.flatnonzero(self.active_mask.ravel())
+            selected_flat = flat_active_indices[mask]
+            new_mask_flat = np.zeros(self.active_mask.size, dtype=bool)
+            new_mask_flat[selected_flat] = True
+            new_active_mask = new_mask_flat.reshape(self.active_mask.shape)
+
+            # Preserve the parent's diagonal-neighbor setting if it had
+            # one; default to True (matches Environment.from_grid_mask).
+            parent_params = self._layout_params_used or {}
+            connect_diagonal = bool(
+                parent_params.get("connect_diagonal_neighbors", True)
+            )
+
+            env_cls = cast("type[Environment]", self.__class__)
+            sub_env = env_cls.from_grid_mask(
+                active_mask=new_active_mask,
+                grid_edges=self.grid_edges,
+                name="",
+                connect_diagonal_neighbors=connect_diagonal,
+            )
+            # Preserve metadata (regions are still dropped per the
+            # documented contract).
+            if self.units is not None:
+                sub_env.units = self.units
+            if self.frame is not None:
+                sub_env.frame = self.frame
+            sub_env.coordinate_kind = self.coordinate_kind
+            return sub_env
+
+        # --- Graph-env fallback: extract induced subgraph ---------------
 
         # Get selected node indices
         selected_nodes = np.where(mask)[0].tolist()
@@ -583,38 +654,89 @@ class EnvironmentTransforms:
                 connectivity,
                 dimension_ranges: tuple[tuple[float, float], ...],
                 build_params: dict,
+                is_linearized_track: bool = False,
             ) -> None:
                 self.bin_centers = bin_centers
                 self.connectivity = connectivity
                 self.dimension_ranges = dimension_ranges
                 self._layout_type_tag = "subset"
                 self._build_params_used = build_params
-                self.is_1d = False
+                # Preserve the parent layout's is_linearized_track so a subset of a
+                # graph (linearized) env stays 1-D in 2-D space rather
+                # than masquerading as a fully N-D layout.
+                self.is_linearized_track = is_linearized_track
+                # Lazy KDTree + nearest-neighbor-distance cache (M5.2). The
+                # KDTree was previously rebuilt on every point_to_bin_index
+                # call, which is O(n log n) per query and dominated cost
+                # for trajectory binning. A cached subset env now spends
+                # ~one KDTree construction per layout lifetime.
+                self._kdtree: Any = None
+                self._oof_threshold: float | None = None
+
+            def _ensure_kdtree(self) -> None:
+                """Build the KDTree (and out-of-env distance threshold) once."""
+                if self._kdtree is not None:
+                    return
+                from scipy.spatial import cKDTree
+
+                tree = cKDTree(self.bin_centers)
+                self._kdtree = tree
+                # Pre-compute the out-of-env threshold from the median
+                # nearest-neighbor distance. For a 1-bin layout we leave
+                # it as None and short-circuit thresholding below.
+                if len(self.bin_centers) > 1:
+                    nearest_neighbor_dist = tree.query(
+                        self.bin_centers, k=2, workers=-1
+                    )[0][:, 1]
+                    typical_bin_spacing = float(np.median(nearest_neighbor_dist))
+                    self._oof_threshold = 10.0 * typical_bin_spacing
 
             def build(self) -> None:
                 """Build the layout (no-op for subset layouts)."""
                 pass  # Already built
 
-            def point_to_bin_index(self, point: NDArray[np.float64]) -> int:
+            def point_to_bin_index(
+                self, points: NDArray[np.float64]
+            ) -> NDArray[np.int_]:
+                """Find the nearest bin index for each query point.
+
+                Matches the standard layout contract: accepts a batch of
+                points shaped ``(n_points, n_dims)`` (a single 1-D point
+                is also tolerated for backwards compatibility) and
+                returns an array of bin indices shaped ``(n_points,)``.
+                Points farther than ``10 * typical_bin_spacing`` from
+                the nearest bin center are returned as ``-1`` so
+                trajectory callers (``Environment.bin_at`` ->
+                ``Environment.occupancy``, ``Environment.bin_sequence``)
+                consistently flag out-of-env samples. The 10× threshold
+                matches the heuristic in ``ops.binning.map_points_to_bins``;
+                tightening would spuriously reject points near sparse
+                regions of the subset graph.
+
+                Note: 2-D / N-D grid envs took the ``from_grid_mask`` fast
+                path above and never reach this layout. SubsetLayout is
+                retained specifically for graph (1-D linearized) envs,
+                where the 2-D embedding of a 1-D track means
+                ``from_grid_mask`` would silently drop the embedding. A
+                registered serializable graph-subset layout is tracked
+                separately (out of M1 scope).
                 """
-                Find the nearest bin index for a given point.
+                pts = np.atleast_2d(np.asarray(points, dtype=np.float64))
+                self._ensure_kdtree()
+                distances, indices = self._kdtree.query(pts, k=1, workers=-1)
 
-                Parameters
-                ----------
-                point : ndarray of shape (n_dims,)
-                    Spatial coordinate to query.
-
-                Returns
-                -------
-                int
-                    Index of the nearest bin.
-                """
-                # Use KDTree for nearest neighbor
-                from scipy.spatial import cKDTree
-
-                tree = cKDTree(self.bin_centers)
-                _, idx = tree.query(point)
-                return int(idx)
+                # Apply the same "10x typical spacing" outside heuristic
+                # used by ops.binning.map_points_to_bins so subset envs
+                # behave like Cartesian envs do for clearly out-of-env
+                # samples. The threshold itself is precomputed once in
+                # _ensure_kdtree (M5.2). We deliberately keep it loose
+                # (10x) here because SubsetLayout has no notion of an
+                # active mask -- only a graph -- and tightening would
+                # spuriously reject points near sparse regions.
+                indices = indices.astype(np.int64)
+                if self._oof_threshold is not None:
+                    indices[distances > self._oof_threshold] = -1
+                return cast("NDArray[np.int_]", indices)
 
             def bin_sizes(self) -> NDArray[np.float64]:
                 """
@@ -674,12 +796,14 @@ class EnvironmentTransforms:
             for i in range(n_dims)
         )
 
-        # Create layout
+        # Create layout. Preserve the parent's is_linearized_track flag so a graph
+        # subset (1-D linearized track in 2-D space) stays 1-D.
         layout = SubsetLayout(
             bin_centers=new_bin_centers,
             connectivity=new_graph,
             dimension_ranges=dimension_ranges,
             build_params={"source": "subset", "original_n_bins": self.n_bins},
+            is_linearized_track=self.is_linearized_track,
         )
 
         # Create new environment - directly instantiate
@@ -700,11 +824,17 @@ class EnvironmentTransforms:
 
         # --- Preserve Metadata ---
 
-        # Copy units and frame if present
+        # Copy units, frame, and coordinate_kind if present. The
+        # coordinate_kind preservation matches the grid-fast-path above
+        # (line 595) so a polar 1-D linearized track (hypothetical for
+        # now; see TASKS.md M1 1.3) doesn't silently flip to Cartesian
+        # on subset.
         if hasattr(self, "units") and self.units is not None:
             sub_env.units = self.units
         if hasattr(self, "frame") and self.frame is not None:
             sub_env.frame = self.frame
+        if hasattr(self, "coordinate_kind"):
+            sub_env.coordinate_kind = self.coordinate_kind
 
         # Note: Regions are intentionally dropped (as documented)
 

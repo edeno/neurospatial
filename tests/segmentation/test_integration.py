@@ -107,9 +107,8 @@ class TestFullTrajectoryAnalysisWorkflow:
         assert len(home_range) > 10, "Home range should include multiple bins"
 
         # Step 5: Compute MSD (should show ballistic movement within laps)
-        tau_values, msd_values = mean_square_displacement(
-            traj_positions, times, max_tau=5.0
-        )
+        _msd = mean_square_displacement(traj_positions, times, max_tau=5.0)
+        tau_values, msd_values = _msd.lags, _msd.msd
         assert len(tau_values) > 0
         assert len(msd_values) == len(tau_values)
         # MSD should increase with tau (movement, not stationary)

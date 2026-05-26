@@ -121,6 +121,7 @@ class _KDTreeMixin:
                 warnings.warn(
                     f"KDTree construction failed: {e}. point_to_bin_index may not work.",
                     RuntimeWarning,
+                    stacklevel=2,
                 )
                 self._kdtree = None
                 self._kdtree_nodes_to_bin_indices_map = np.array([], dtype=np.int32)
@@ -164,6 +165,7 @@ class _KDTreeMixin:
             warnings.warn(
                 f"KDTree query failed: {e}. Returning -1 for all points.",
                 RuntimeWarning,
+                stacklevel=2,
             )
             return np.full(n_query_points, -1, dtype=np.int32)
 
@@ -367,7 +369,7 @@ class _GridMixin:
         )
 
     @property
-    def is_1d(self) -> bool:
+    def is_linearized_track(self) -> bool:
         """Indicate if the grid layout is 1-dimensional.
 
         Standard grid layouts (RegularGrid, etc.) are generally N-D (N>=1).

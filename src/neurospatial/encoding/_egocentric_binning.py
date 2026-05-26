@@ -18,7 +18,7 @@ Output shapes:
 - Spike counts (single neuron): (n_bins,)
 - Spike counts (batch): (n_neurons, n_bins)
 - Occupancy: (n_bins,) - always shared across neurons
-- ego_env: Environment in polar coordinates
+- env: Environment in polar coordinates
 
 The binning layer is separated from smoothing to allow:
 - Reusing occupancy across multiple neurons
@@ -39,7 +39,7 @@ Coordinate Conventions
 Notes
 -----
 Unlike spatial binning, egocentric binning creates a *new* Environment
-(``ego_env``) in polar coordinates. This environment has bins arranged
+(``env``) in polar coordinates. This environment has bins arranged
 in a (distance, direction) grid that is flattened to 1D for consistency
 with other encoding modules.
 """
@@ -164,7 +164,7 @@ def _compute_egocentric_coords(
     headings: NDArray[np.float64],
     object_positions: NDArray[np.float64],
     *,
-    distance_metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: Literal["euclidean", "geodesic"] = "euclidean",
     env: Environment | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Compute egocentric coordinates to nearest object at each timepoint.
@@ -177,10 +177,10 @@ def _compute_egocentric_coords(
         Animal heading at each time (radians, 0=East in allocentric frame).
     object_positions : ndarray, shape (n_objects, 2)
         Object positions in allocentric coordinates.
-    distance_metric : {"euclidean", "geodesic"}, default="euclidean"
+    metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric for computing distance to objects.
     env : Environment, optional
-        Required when distance_metric="geodesic".
+        Required when metric="geodesic".
 
     Returns
     -------
@@ -200,7 +200,7 @@ def _compute_egocentric_coords(
     n_objects = len(object_positions)
 
     # Compute distances to all objects
-    if distance_metric == "euclidean":
+    if metric == "euclidean":
         # distances: (n_time, n_objects)
         distances_all = np.linalg.norm(
             positions[:, np.newaxis, :] - object_positions[np.newaxis, :, :],
@@ -212,7 +212,7 @@ def _compute_egocentric_coords(
         # env validated by caller, this is for type narrowing
         if env is None:
             raise ValueError(
-                "env is required when distance_metric='geodesic'. "
+                "env is required when metric='geodesic'. "
                 "This is a programming error if you see this message."
             )
         distances_all = np.full((n_time, n_objects), np.nan, dtype=np.float64)
@@ -375,7 +375,7 @@ def compute_egocentric_occupancy(
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
-    distance_metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: Literal["euclidean", "geodesic"] = "euclidean",
     env: Environment | None = None,
 ) -> tuple[NDArray[np.float64], Environment]:
     """Compute egocentric occupancy (time at each distance/direction bin).
@@ -400,12 +400,12 @@ def compute_egocentric_occupancy(
         Number of distance bins.
     n_direction_bins : int, default=12
         Number of direction bins (covers full circle -pi to pi).
-    distance_metric : {"euclidean", "geodesic"}, default="euclidean"
+    metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric:
         - "euclidean": Straight-line distance
         - "geodesic": Path distance respecting environment boundaries
     env : Environment, optional
-        Required when distance_metric="geodesic". The allocentric environment
+        Required when metric="geodesic". The allocentric environment
         used to compute geodesic distances.
 
     Returns
@@ -413,7 +413,7 @@ def compute_egocentric_occupancy(
     occupancy : ndarray, shape (n_bins,)
         Time in seconds spent at each egocentric bin.
         n_bins = n_distance_bins * n_direction_bins.
-    ego_env : Environment
+    env : Environment
         Egocentric polar coordinate environment.
 
     Raises
@@ -422,8 +422,8 @@ def compute_egocentric_occupancy(
         If input arrays have mismatched lengths.
         If fewer than 2 samples provided.
         If times are not monotonically non-decreasing.
-        If distance_metric="geodesic" but env is None.
-        If distance_metric is invalid.
+        If metric="geodesic" but env is None.
+        If metric is invalid.
 
     Examples
     --------
@@ -440,7 +440,7 @@ def compute_egocentric_occupancy(
     >>> object_positions = np.array([[50.0, 50.0]])
 
     >>> # Compute occupancy
-    >>> occupancy, ego_env = compute_egocentric_occupancy(
+    >>> occupancy, env = compute_egocentric_occupancy(
     ...     times, positions, headings, object_positions
     ... )
     >>> occupancy.shape == (10 * 12,)  # n_distance * n_direction
@@ -467,32 +467,31 @@ def compute_egocentric_occupancy(
     # Validate times
     _validate_times(times, context="egocentric occupancy computation")
 
-    # Validate distance_metric
-    if distance_metric not in ("euclidean", "geodesic"):
+    # Validate metric
+    if metric not in ("euclidean", "geodesic"):
         raise ValueError(
-            f"Invalid distance_metric: '{distance_metric}'. "
-            f"Must be 'euclidean' or 'geodesic'."
+            f"Invalid metric: '{metric}'. Must be 'euclidean' or 'geodesic'."
         )
 
     # Validate env requirement for geodesic
-    if distance_metric == "geodesic" and env is None:
+    if metric == "geodesic" and env is None:
         raise ValueError(
-            "distance_metric='geodesic' requires env parameter.\n"
+            "metric='geodesic' requires env parameter.\n"
             "Pass the allocentric environment to compute geodesic distances."
         )
 
     # Create egocentric environment
-    ego_env = _create_egocentric_environment(
+    polar_env = _create_egocentric_environment(
         distance_range, n_distance_bins, n_direction_bins
     )
-    n_bins = ego_env.n_bins
+    n_bins = polar_env.n_bins
 
     # Compute egocentric coordinates
     nearest_distances, nearest_bearings = _compute_egocentric_coords(
         positions,
         headings,
         object_positions,
-        distance_metric=distance_metric,
+        metric=metric,
         env=env,
     )
 
@@ -523,7 +522,7 @@ def compute_egocentric_occupancy(
     valid_dt = dt[valid_interval_mask]
     np.add.at(occupancy, valid_bins, valid_dt)
 
-    return occupancy, ego_env
+    return occupancy, polar_env
 
 
 def bin_egocentric_spike_train(
@@ -536,7 +535,7 @@ def bin_egocentric_spike_train(
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
-    distance_metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: Literal["euclidean", "geodesic"] = "euclidean",
     env: Environment | None = None,
 ) -> tuple[NDArray[np.float64], Environment]:
     """Bin spike train by egocentric coordinates.
@@ -562,22 +561,22 @@ def bin_egocentric_spike_train(
         Number of distance bins.
     n_direction_bins : int, default=12
         Number of direction bins.
-    distance_metric : {"euclidean", "geodesic"}, default="euclidean"
+    metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric.
     env : Environment, optional
-        Required when distance_metric="geodesic".
+        Required when metric="geodesic".
 
     Returns
     -------
     spike_counts : ndarray, shape (n_bins,)
         Number of spikes in each egocentric bin (float64 for smoothing).
-    ego_env : Environment
+    env : Environment
         Egocentric polar coordinate environment.
 
     Raises
     ------
     ValueError
-        If distance_metric="geodesic" but env is None.
+        If metric="geodesic" but env is None.
         If fewer than 2 trajectory samples provided.
         If times are not monotonically non-decreasing.
 
@@ -602,10 +601,10 @@ def bin_egocentric_spike_train(
     >>> spike_times = np.sort(rng.uniform(0, 100, 100))
 
     >>> # Bin spikes
-    >>> spike_counts, ego_env = bin_egocentric_spike_train(
+    >>> spike_counts, env = bin_egocentric_spike_train(
     ...     spike_times, times, positions, headings, object_positions
     ... )
-    >>> spike_counts.shape == (ego_env.n_bins,)
+    >>> spike_counts.shape == (env.n_bins,)
     True
     """
     # Convert inputs
@@ -620,30 +619,29 @@ def bin_egocentric_spike_train(
 
     n_samples = len(times)
 
-    # Validate distance_metric and env
-    if distance_metric not in ("euclidean", "geodesic"):
+    # Validate metric and env
+    if metric not in ("euclidean", "geodesic"):
         raise ValueError(
-            f"Invalid distance_metric: '{distance_metric}'. "
-            f"Must be 'euclidean' or 'geodesic'."
+            f"Invalid metric: '{metric}'. Must be 'euclidean' or 'geodesic'."
         )
 
-    if distance_metric == "geodesic" and env is None:
+    if metric == "geodesic" and env is None:
         raise ValueError(
-            "distance_metric='geodesic' requires env parameter.\n"
+            "metric='geodesic' requires env parameter.\n"
             "Pass the allocentric environment to compute geodesic distances."
         )
 
     # Create egocentric environment
-    ego_env = _create_egocentric_environment(
+    polar_env = _create_egocentric_environment(
         distance_range, n_distance_bins, n_direction_bins
     )
-    n_bins = ego_env.n_bins
+    n_bins = polar_env.n_bins
 
     spike_counts = np.zeros(n_bins, dtype=np.float64)
 
     # Handle empty spike train
     if len(spike_times) == 0:
-        return spike_counts, ego_env
+        return spike_counts, polar_env
 
     # Filter spikes to valid time range
     t_min, t_max = times[0], times[-1]
@@ -651,14 +649,14 @@ def bin_egocentric_spike_train(
     spike_times_valid = spike_times[valid_time_mask]
 
     if len(spike_times_valid) == 0:
-        return spike_counts, ego_env
+        return spike_counts, polar_env
 
     # Compute egocentric coordinates for all behavioral frames
     nearest_distances, nearest_bearings = _compute_egocentric_coords(
         positions,
         headings,
         object_positions,
-        distance_metric=distance_metric,
+        metric=metric,
         env=env,
     )
 
@@ -690,7 +688,7 @@ def bin_egocentric_spike_train(
     if len(valid_spike_bins) > 0:
         np.add.at(spike_counts, valid_spike_bins, 1.0)
 
-    return spike_counts, ego_env
+    return spike_counts, polar_env
 
 
 def bin_egocentric_spike_trains(
@@ -703,7 +701,7 @@ def bin_egocentric_spike_trains(
     distance_range: tuple[float, float] = (0.0, 50.0),
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
-    distance_metric: Literal["euclidean", "geodesic"] = "euclidean",
+    metric: Literal["euclidean", "geodesic"] = "euclidean",
     env: Environment | None = None,
     n_jobs: int = 1,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64], Environment]:
@@ -734,10 +732,10 @@ def bin_egocentric_spike_trains(
         Number of distance bins.
     n_direction_bins : int, default=12
         Number of direction bins.
-    distance_metric : {"euclidean", "geodesic"}, default="euclidean"
+    metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric.
     env : Environment, optional
-        Required when distance_metric="geodesic".
+        Required when metric="geodesic".
     n_jobs : int, default=1
         Number of parallel jobs for spike counting. Use -1 for all CPUs.
 
@@ -747,13 +745,13 @@ def bin_egocentric_spike_trains(
         Number of spikes in each egocentric bin for each neuron.
     occupancy : ndarray, shape (n_bins,)
         Time in seconds spent at each egocentric bin (shared across neurons).
-    ego_env : Environment
+    env : Environment
         Egocentric polar coordinate environment.
 
     Raises
     ------
     ValueError
-        If distance_metric="geodesic" but env is None.
+        If metric="geodesic" but env is None.
         If times are not monotonically non-decreasing.
 
     Examples
@@ -776,10 +774,10 @@ def bin_egocentric_spike_trains(
     ... ]
 
     >>> # Bin spikes
-    >>> spike_counts, occupancy, ego_env = bin_egocentric_spike_trains(
+    >>> spike_counts, occupancy, env = bin_egocentric_spike_trains(
     ...     spike_times, times, positions, headings, object_positions
     ... )
-    >>> spike_counts.shape == (3, ego_env.n_bins)
+    >>> spike_counts.shape == (3, env.n_bins)
     True
 
     See Also
@@ -800,16 +798,15 @@ def bin_egocentric_spike_trains(
 
     n_samples = len(times)
 
-    # Validate distance_metric and env
-    if distance_metric not in ("euclidean", "geodesic"):
+    # Validate metric and env
+    if metric not in ("euclidean", "geodesic"):
         raise ValueError(
-            f"Invalid distance_metric: '{distance_metric}'. "
-            f"Must be 'euclidean' or 'geodesic'."
+            f"Invalid metric: '{metric}'. Must be 'euclidean' or 'geodesic'."
         )
 
-    if distance_metric == "geodesic" and env is None:
+    if metric == "geodesic" and env is None:
         raise ValueError(
-            "distance_metric='geodesic' requires env parameter.\n"
+            "metric='geodesic' requires env parameter.\n"
             "Pass the allocentric environment to compute geodesic distances."
         )
 
@@ -817,17 +814,17 @@ def bin_egocentric_spike_trains(
     _validate_times(times, context="spike binning")
 
     # Create egocentric environment
-    ego_env = _create_egocentric_environment(
+    polar_env = _create_egocentric_environment(
         distance_range, n_distance_bins, n_direction_bins
     )
-    n_bins = ego_env.n_bins
+    n_bins = polar_env.n_bins
 
     # Compute egocentric coordinates ONCE (shared across all neurons)
     nearest_distances, nearest_bearings = _compute_egocentric_coords(
         positions,
         headings,
         object_positions,
-        distance_metric=distance_metric,
+        metric=metric,
         env=env,
     )
 
@@ -856,7 +853,7 @@ def bin_egocentric_spike_trains(
     # Handle empty neuron list
     if n_neurons == 0:
         spike_counts = np.zeros((0, n_bins), dtype=np.float64)
-        return spike_counts, occupancy, ego_env
+        return spike_counts, occupancy, polar_env
 
     # Helper to bin a single neuron using precomputed bin_indices
     def _bin_single_neuron(
@@ -906,4 +903,4 @@ def bin_egocentric_spike_trains(
         )
         spike_counts = np.array(results, dtype=np.float64)
 
-    return spike_counts, occupancy, ego_env
+    return spike_counts, occupancy, polar_env

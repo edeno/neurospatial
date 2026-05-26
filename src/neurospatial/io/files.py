@@ -183,12 +183,11 @@ def to_file(env: Environment, path: PathLike) -> None:
     See Also
     --------
     from_file : Load environment from saved files
-    Environment.save : Legacy pickle-based serialization (less safe)
 
     Notes
     -----
-    This format is safer than pickle (no arbitrary code execution) and
-    more portable across Python versions and platforms.
+    The JSON + npz format does not execute arbitrary code at load time and
+    is portable across Python versions and platforms.
 
     For security, paths are validated to prevent directory traversal attacks.
     Use absolute paths or relative paths without '..' components.
@@ -210,7 +209,7 @@ def to_file(env: Environment, path: PathLike) -> None:
         "name": env.name,
         "n_dims": int(env.n_dims),
         "n_bins": int(env.n_bins),
-        "is_1d": bool(env.is_1d),
+        "is_linearized_track": bool(env.is_linearized_track),
         "layout_type": env.layout_type,
         "layout_parameters": env.layout_parameters,
     }
@@ -229,6 +228,11 @@ def to_file(env: Environment, path: PathLike) -> None:
         metadata["units"] = env.units
     if hasattr(env, "frame") and env.frame is not None:
         metadata["frame"] = env.frame
+    # coordinate_kind defaults to "cartesian"; only persist non-default
+    # values so older v0.4 envs round-trip without surprise. Loaders
+    # treat a missing key as "cartesian".
+    if hasattr(env, "coordinate_kind") and env.coordinate_kind != "cartesian":
+        metadata["coordinate_kind"] = env.coordinate_kind
 
     # Serialize graph to node-link format
     graph_data = nx.node_link_data(env.connectivity, edges="links")
@@ -298,7 +302,6 @@ def from_file(path: PathLike) -> Environment:
     See Also
     --------
     to_file : Save environment to files
-    Environment.load : Legacy pickle-based deserialization
 
     Notes
     -----
@@ -330,6 +333,7 @@ def from_file(path: PathLike) -> Environment:
             f"Schema version mismatch: file has {schema_version!r}, "
             f"expected {_SCHEMA_VERSION!r}. Attempting to load anyway.",
             stacklevel=2,
+            category=UserWarning,
         )
 
     # Load arrays
@@ -393,6 +397,11 @@ def from_file(path: PathLike) -> Environment:
         env.units = metadata["units"]
     if "frame" in metadata:
         env.frame = metadata["frame"]
+    # Restore coordinate_kind; older serialized envs (and Cartesian
+    # ones from v0.4) won't carry the key and fall back to the
+    # field default of "cartesian".
+    if "coordinate_kind" in metadata:
+        env.coordinate_kind = metadata["coordinate_kind"]
 
     return env
 
@@ -441,7 +450,7 @@ def to_dict(env: Environment) -> dict[str, Any]:
         "name": env.name,
         "n_dims": int(env.n_dims),
         "n_bins": int(env.n_bins),
-        "is_1d": bool(env.is_1d),
+        "is_linearized_track": bool(env.is_linearized_track),
         "layout_type": env.layout_type,
         "layout_parameters": env.layout_parameters,
         "bin_centers": env.bin_centers.tolist(),
@@ -467,6 +476,11 @@ def to_dict(env: Environment) -> dict[str, Any]:
         metadata["units"] = env.units
     if hasattr(env, "frame") and env.frame is not None:
         metadata["frame"] = env.frame
+    # coordinate_kind defaults to "cartesian"; only persist non-default
+    # values so older v0.4 envs round-trip without surprise. Loaders
+    # treat a missing key as "cartesian".
+    if hasattr(env, "coordinate_kind") and env.coordinate_kind != "cartesian":
+        metadata["coordinate_kind"] = env.coordinate_kind
 
     # Serialize graph
     graph_data = nx.node_link_data(env.connectivity, edges="links")
@@ -518,6 +532,7 @@ def from_dict(data: dict[str, Any]) -> Environment:
             f"Schema version mismatch: data has {schema_version!r}, "
             f"expected {_SCHEMA_VERSION!r}. Attempting to load anyway.",
             stacklevel=2,
+            category=UserWarning,
         )
 
     # Reconstruct arrays
@@ -575,5 +590,12 @@ def from_dict(data: dict[str, Any]) -> Environment:
         env.units = data["units"]
     if "frame" in data:
         env.frame = data["frame"]
+    # Mirror to_dict (line 484): coordinate_kind defaults to
+    # "cartesian", and only non-default values are persisted, so a
+    # missing key falls back to the field default. Without this the
+    # in-memory dict round-trip silently flipped polar envs to
+    # Cartesian, even though to_file/from_file round-tripped correctly.
+    if "coordinate_kind" in data:
+        env.coordinate_kind = data["coordinate_kind"]
 
     return env

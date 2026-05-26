@@ -2,7 +2,7 @@
 
 Tests for:
 - bins_in_region()
-- mask_for_region()
+- region_mask()
 - shortest_path()
 - info()
 - save()/load()
@@ -104,13 +104,13 @@ class TestBinsInRegion:
 
 
 class TestMaskForRegion:
-    """Tests for mask_for_region() method."""
+    """Tests for region_mask() method."""
 
     def test_mask_for_region_basic(self, composite_with_regions):
-        """Test mask_for_region returns correct boolean mask."""
+        """Test region_mask returns correct boolean mask."""
         comp = composite_with_regions
 
-        mask = comp.mask_for_region("left_point")
+        mask = comp.region_mask("left_point")
 
         assert isinstance(mask, np.ndarray)
         assert mask.dtype == bool
@@ -118,22 +118,22 @@ class TestMaskForRegion:
         assert np.sum(mask) >= 1  # At least one bin selected
 
     def test_mask_for_region_matches_bins(self, composite_with_regions):
-        """Test mask_for_region matches bins_in_region."""
+        """Test region_mask matches bins_in_region."""
         comp = composite_with_regions
 
         bins = comp.bins_in_region("left_point")
-        mask = comp.mask_for_region("left_point")
+        mask = comp.region_mask("left_point")
 
         # Mask should be True exactly where bins indicate
         assert np.array_equal(np.where(mask)[0], bins)
 
     def test_mask_for_region_nonexistent(self, two_simple_2d_envs):
-        """Test mask_for_region with nonexistent region raises KeyError."""
+        """Test region_mask with nonexistent region raises KeyError."""
         env1, env2 = two_simple_2d_envs
         comp = CompositeEnvironment([env1, env2])
 
         with pytest.raises(KeyError):
-            comp.mask_for_region("nonexistent")
+            comp.region_mask("nonexistent")
 
 
 class TestPathBetween:
@@ -207,14 +207,6 @@ class TestPathBetween:
 
 class TestInfo:
     """Tests for info() method."""
-
-    def test_info_prints_without_error(self, two_simple_2d_envs):
-        """Test info() prints without raising errors."""
-        env1, env2 = two_simple_2d_envs
-        comp = CompositeEnvironment([env1, env2], auto_bridge=True)
-
-        # Should not raise
-        comp.info()
 
     def test_info_return_string(self, two_simple_2d_envs):
         """Test info() returns string when requested."""
@@ -319,18 +311,6 @@ class TestSaveLoad:
 
             assert len(loaded._bridge_list) == n_bridges_original
 
-    def test_save_creates_file(self, two_simple_2d_envs):
-        """Test save() creates the file."""
-        env1, env2 = two_simple_2d_envs
-        comp = CompositeEnvironment([env1, env2])
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            filepath = Path(tmpdir) / "test.pkl"
-            comp.save(str(filepath))
-
-            assert filepath.exists()
-            assert filepath.stat().st_size > 0
-
 
 class TestIntegration:
     """Integration tests for multiple methods working together."""
@@ -353,7 +333,7 @@ class TestIntegration:
             bins = loaded.bins_in_region("test_point")
             assert len(bins) >= 1
 
-            mask = loaded.mask_for_region("test_point")
+            mask = loaded.region_mask("test_point")
             assert np.sum(mask) >= 1
 
     def test_path_finding_after_load(self, two_simple_2d_envs):

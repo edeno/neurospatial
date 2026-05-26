@@ -9,7 +9,7 @@ Core Classes (Top-Level Exports)
 --------------------------------
 Environment : Main spatial discretization class
     Discretizes continuous space into bins with connectivity graph.
-    Factory methods: from_samples, from_polygon, from_graph, from_mask, from_image.
+    Factory methods: from_samples, from_polygon, from_graph, from_grid_mask, from_pixel_mask.
 EnvironmentNotFittedError : Exception for unfitted environments
     Raised when methods requiring fitted state are called on unfitted environment.
 Region : Immutable region of interest (ROI)
@@ -106,7 +106,7 @@ Explicit submodule imports for all else (recommended)::
 
     # Behavioral analysis
     from neurospatial.behavior.segmentation import detect_laps
-    from neurospatial.behavior.navigation import path_efficiency
+    from neurospatial.behavior.navigation import compute_path_efficiency
 
     # Events
     from neurospatial.events import peri_event_histogram
@@ -130,14 +130,16 @@ Create environment from position data::
     >>> positions = np.random.uniform(0, 100, (1000, 2))
     >>> env = Environment.from_samples(positions, bin_size=5.0)
     >>> env.units = 'cm'
-    >>> env.n_bins > 0  # Number of bins depends on data coverage
-    True
+    >>> assert env.n_bins > 0  # Number of bins depends on data coverage
 
 Map trajectory to bins::
 
     >>> times = np.linspace(0, 10, 100)  # doctest: +SKIP
     >>> trajectory = np.random.uniform(0, 100, (100, 2))  # doctest: +SKIP
-    >>> bin_sequence = env.bin_sequence(trajectory)  # doctest: +SKIP
+    >>> # bin_sequence and occupancy take (times, positions). Reversing the
+    >>> # arguments raises ValueError because the first argument must be a
+    >>> # 1-D `times` array, not the 2-D positions array.
+    >>> bin_sequence = env.bin_sequence(times, trajectory)  # doctest: +SKIP
     >>> occupancy = env.occupancy(times, trajectory)  # doctest: +SKIP
 
 Compute a spatial firing-rate map from spikes::
@@ -183,18 +185,22 @@ Examples
 Create 2D environment and compute shortest path::
 
     >>> env = Environment.from_samples(  # doctest: +SKIP
-    ...     positions, bin_size=5.0, units='cm',
-    ...     connect_diagonal_neighbors=True
+    ...     positions, bin_size=5.0,
+    ...     connect_diagonal_neighbors=True,
     ... )
+    >>> env.units = 'cm'  # doctest: +SKIP
     >>> path = env.path_between(start_bin=0, goal_bin=100)  # doctest: +SKIP
-    >>> distance = env.distance_between(0, 100)  # doctest: +SKIP
+    >>> # distance_between takes coordinates; for graph distance between bin
+    >>> # indices use distance_to([target_bin]) and index by the source bin.
+    >>> distance = float(env.distance_to([100])[0])  # doctest: +SKIP
 
 Create 3D environment::
 
     >>> positions_3d = np.random.uniform(0, 100, (1000, 3))  # doctest: +SKIP
     >>> env_3d = Environment.from_samples(  # doctest: +SKIP
-    ...     positions_3d, bin_size=5.0, units='cm'
+    ...     positions_3d, bin_size=5.0,
     ... )
+    >>> env_3d.units = 'cm'  # doctest: +SKIP
     >>> env_3d.n_dims  # doctest: +SKIP
     3
 
@@ -202,24 +208,36 @@ Create environment from polygon::
 
     >>> from shapely.geometry import box  # doctest: +SKIP
     >>> polygon = box(0, 0, 100, 100)  # doctest: +SKIP
-    >>> env = Environment.from_polygon(  # doctest: +SKIP
-    ...     polygon, bin_size=5.0, units='cm'
-    ... )
+    >>> env = Environment.from_polygon(polygon, bin_size=5.0)  # doctest: +SKIP
+    >>> env.units = 'cm'  # doctest: +SKIP
 """
 
 import logging
 
+from neurospatial._exceptions import (
+    BinIndexOutOfRangeError,
+    EnvironmentNotFittedError,
+    GraphValidationError,
+    IncompatibleEnvironmentError,
+    LayoutNotBuiltError,
+    RegionNotFoundError,
+)
 from neurospatial.composite import CompositeEnvironment
-from neurospatial.environment import Environment, EnvironmentNotFittedError
+from neurospatial.environment import Environment
 from neurospatial.regions import Region, Regions
 
 # Add NullHandler to prevent "No handler found" warnings if user doesn't configure logging
 logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 __all__ = [
+    "BinIndexOutOfRangeError",
     "CompositeEnvironment",
     "Environment",
     "EnvironmentNotFittedError",
+    "GraphValidationError",
+    "IncompatibleEnvironmentError",
+    "LayoutNotBuiltError",
     "Region",
+    "RegionNotFoundError",
     "Regions",
 ]

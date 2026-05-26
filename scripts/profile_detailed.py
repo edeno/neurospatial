@@ -209,13 +209,15 @@ def profile_full_animation_breakdown():
 
     # Create overlays
     start = time.perf_counter()
-    PositionOverlay(data=positions_sub, color="cyan", size=15.0, trail_length=15)
+    PositionOverlay(positions=positions_sub, color="cyan", size=15.0, trail_length=15)
     pos_overlay_time = time.perf_counter() - start
     print(f"\n7. Create PositionOverlay: {pos_overlay_time * 1000:.2f}ms")
 
     if head_angles is not None:
         start = time.perf_counter()
-        HeadDirectionOverlay(data=head_angles, color="yellow", length=10.0, width=2.0)
+        HeadDirectionOverlay(
+            headings=head_angles, color="yellow", length=10.0, width=2.0
+        )
         hd_overlay_time = time.perf_counter() - start
         print(f"\n8. Create HeadDirectionOverlay: {hd_overlay_time * 1000:.2f}ms")
 

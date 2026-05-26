@@ -26,6 +26,8 @@
 #
 # **Estimated time**: 20-25 minutes
 #
+# **Prerequisites**: [05_track_linearization.ipynb](05_track_linearization.ipynb), [11_place_field_analysis.ipynb](11_place_field_analysis.ipynb), [13_trajectory_analysis.ipynb](13_trajectory_analysis.ipynb)
+#
 # ## Learning Objectives
 #
 # By the end of this notebook, you will be able to:
@@ -74,7 +76,36 @@ except NameError:
     _start_path = Path.cwd().resolve()
 _base_path = _find_project_root(_start_path)
 
-_loader_path = _base_path / "data" / "load_bandit_data.py"
+# Required data files for this notebook. If any are missing, print a
+# download URL and bail with sys.exit(0) so the docs build / notebook
+# regen CI doesn't fail on a clean checkout. Raw datasets are gitignored.
+_session_id = "j1620210710_02_r1"
+_required_files = [
+    f"{_session_id}_position_info.pkl",
+    f"{_session_id}_HPC_spike_times.pkl",
+    f"{_session_id}_track_graph.pkl",
+    f"{_session_id}_linear_edge_order.pkl",
+    f"{_session_id}_linear_edge_spacing.pkl",
+]
+_data_dir = _base_path / "data"
+_missing = [name for name in _required_files if not (_data_dir / name).exists()]
+if _missing:
+    import sys
+
+    print("=" * 70)
+    print("J16 BANDIT DATASET NOT FOUND")
+    print("=" * 70)
+    print(f"\nMissing files in {_data_dir}:")
+    for name in _missing:
+        print(f"  - {name}")
+    print(
+        "\nDownload from Zenodo (see data/README.md for the published "
+        "DOI / download links), then re-run this notebook."
+    )
+    print("Exiting cleanly so the notebook regen CI doesn't fail.")
+    sys.exit(0)
+
+_loader_path = _data_dir / "load_bandit_data.py"
 _loader_spec = importlib.util.spec_from_file_location("load_bandit_data", _loader_path)
 if _loader_spec is None or _loader_spec.loader is None:
     raise ImportError(f"Could not load bandit data helper from {_loader_path}")
@@ -82,9 +113,17 @@ _loader_module = importlib.util.module_from_spec(_loader_spec)
 _loader_spec.loader.exec_module(_loader_module)
 load_neural_recording_from_files = _loader_module.load_neural_recording_from_files
 
-# Configure matplotlib
-plt.rcParams["figure.figsize"] = (14, 10)
-plt.rcParams["font.size"] = 12
+# Shared styling (Okabe-Ito palette, consistent figure / font sizes)
+import sys  # noqa: E402
+
+_here = (
+    str(Path(__file__).resolve().parent) if "__file__" in globals() else str(Path.cwd())
+)
+if _here not in sys.path:
+    sys.path.insert(0, _here)
+from _style import apply_style  # noqa: E402
+
+apply_style(figsize=(14, 10), font_size=12)
 
 # %% [markdown]
 # ## Part 1: Load the Neural Recording Data
@@ -266,7 +305,7 @@ env_1d = Environment.from_graph(
 env_1d.units = "cm"
 
 print("1D Linearized Environment Created!")
-print(f"  Is 1D: {env_1d.is_1d}")
+print(f"  Is 1D: {env_1d.is_linearized_track}")
 print(f"  Number of bins: {env_1d.n_bins}")
 print(
     f"  Linear extent: [{env_1d.dimension_ranges[0][0]:.1f}, {env_1d.dimension_ranges[0][1]:.1f}] cm"
@@ -285,7 +324,7 @@ env_2d = Environment.from_samples(
 env_2d.units = "cm"
 
 print("\n2D Environment Created!")
-print(f"  Is 1D: {env_2d.is_1d}")
+print(f"  Is 1D: {env_2d.is_linearized_track}")
 print(f"  Number of bins: {env_2d.n_bins}")
 print(f"  Dimensions: {env_2d.n_dims}D")
 
@@ -511,7 +550,7 @@ if NAPARI_AVAILABLE:
 
     # Create position overlay with trail
     position_overlay = PositionOverlay(
-        data=positions_subsampled,
+        positions=positions_subsampled,
         color="cyan",
         size=15.0,
         trail_length=15,  # Show last 15 positions as a trail
@@ -522,7 +561,7 @@ if NAPARI_AVAILABLE:
     if "head_orientation" in position_info.columns:
         head_angles = position_info["head_orientation"].values[::subsample_rate]
         head_direction_overlay = HeadDirectionOverlay(
-            data=head_angles,
+            headings=head_angles,
             color="yellow",
             length=10.0,  # Arrow length in cm
             width=2.0,
@@ -581,8 +620,8 @@ for unit_idx in example_units:
 
     # Detect place fields
     detected = detect_place_fields(
-        field,
         env_2d,
+        field,
         threshold=0.2,  # 20% of peak rate
         min_size=4,  # Minimum 4 bins
         detect_subfields=True,
@@ -629,8 +668,8 @@ for unit_idx in example_units:
             label=f"Field {i + 1}",
         )
 
-        # Mark centroid using graph-based method (respects maze geometry)
-        centroid = rate_map_centroid(field, field_bins, env_2d, method="graph")
+        # Mark centroid using geodesic method (respects maze geometry)
+        centroid = rate_map_centroid(env_2d, field, field_bins, method="geodesic")
         ax.scatter(
             centroid[0],
             centroid[1],
@@ -729,7 +768,7 @@ for unit_idx in example_units:
     m = spatial_metrics[unit_idx]
 
     # Calculate total field area
-    total_area = sum(field_size(fb, env_2d) for fb in detected_fields)
+    total_area = sum(field_size(env_2d, fb) for fb in detected_fields)
 
     print(
         f"{unit_idx:<8} {len(detected_fields):<10} {total_area:<15.1f} "

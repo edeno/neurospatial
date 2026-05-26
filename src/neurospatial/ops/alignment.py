@@ -58,6 +58,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._constants import IDW_MIN_DISTANCE, KDTREE_LEAF_SIZE
+from neurospatial.environment.decorators import EnvironmentNotFittedError
 
 if TYPE_CHECKING:
     from scipy.spatial import cKDTree
@@ -110,9 +111,13 @@ class ProbabilityMappingParams:
         """Validate all parameters."""
         # Check fitted state
         if not getattr(self.source_env, "_is_fitted", False):
-            raise ValueError("source_env must be fitted before mapping probabilities.")
+            raise EnvironmentNotFittedError(
+                "map_probabilities(source_env)", is_function=True
+            )
         if not getattr(self.target_env, "_is_fitted", False):
-            raise ValueError("target_env must be fitted before mapping probabilities.")
+            raise EnvironmentNotFittedError(
+                "map_probabilities(target_env)", is_function=True
+            )
 
         # Check dimension compatibility
         if self.source_env.n_dims != self.target_env.n_dims:
@@ -371,7 +376,8 @@ def _map_nearest_neighbor(
     except Exception as e:
         warnings.warn(
             f"KDTree.query (nearest) failed: {e}. Returning zeros.",
-            RuntimeWarning,
+            category=RuntimeWarning,
+            stacklevel=2,
         )
         return target_probs
 
@@ -420,7 +426,8 @@ def _map_inverse_distance_weighted(
     except Exception as e:
         warnings.warn(
             f"KDTree.query (inverse-distance-weighted) failed: {e}. Returning zeros.",
-            RuntimeWarning,
+            category=RuntimeWarning,
+            stacklevel=2,
         )
         return target_probs
 
@@ -554,7 +561,8 @@ def map_probabilities(
     if n_src == 0 or n_tgt == 0:
         warnings.warn(
             "One of the environments has zero bins; returning zeros.",
-            UserWarning,
+            category=UserWarning,
+            stacklevel=2,
         )
         return np.zeros(n_tgt, dtype=float)
 
@@ -573,6 +581,7 @@ def map_probabilities(
         warnings.warn(
             f"KDTree construction on target_env failed: {e}. Returning zeros.",
             RuntimeWarning,
+            stacklevel=2,
         )
         return np.zeros(n_tgt, dtype=float)
 

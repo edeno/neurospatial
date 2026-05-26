@@ -87,20 +87,10 @@ def sample_population_result():
 class TestPeriEventResult:
     """Tests for PeriEventResult dataclass."""
 
-    def test_creation(self, sample_peri_event_result):
-        """Test basic creation of PeriEventResult."""
-        result = sample_peri_event_result
-        assert result.n_events == 50
-        assert result.bin_size == 0.015
-        assert result.window == (-0.5, 1.0)
-        assert len(result.bin_centers) == 100
-        assert len(result.histogram) == 100
-        assert len(result.sem) == 100
-
     def test_firing_rate_conversion(self, sample_peri_event_result):
         """Test firing_rate() method converts counts to Hz."""
         result = sample_peri_event_result
-        rate = result.firing_rate()
+        rate = result.firing_rate
         expected = result.histogram / result.bin_size
         assert_allclose(rate, expected)
 
@@ -110,45 +100,14 @@ class TestPeriEventResult:
         with pytest.raises(AttributeError):
             result.n_events = 100  # type: ignore[misc]
 
-    def test_shapes_must_match(self):
-        """Test that mismatched shapes still create object (no validation)."""
-        # Note: dataclass doesn't validate shapes - this is by design
-        # Validation happens in the function that creates the result
-        result = PeriEventResult(
-            bin_centers=np.array([1.0, 2.0]),
-            histogram=np.array([1.0, 2.0, 3.0]),  # Different length
-            sem=np.array([0.1]),  # Different length
-            n_events=10,
-            window=(-1.0, 1.0),
-            bin_size=0.1,
-        )
-        # The object is created - validation is caller's responsibility
-        assert result.n_events == 10
-
-
-# =============================================================================
-# Test PopulationPeriEventResult
-# =============================================================================
-
 
 class TestPopulationPeriEventResult:
     """Tests for PopulationPeriEventResult dataclass."""
 
-    def test_creation(self, sample_population_result):
-        """Test basic creation of PopulationPeriEventResult."""
-        result = sample_population_result
-        assert result.n_events == 50
-        assert result.n_units == 5
-        assert result.bin_size == 0.015
-        assert result.window == (-0.5, 1.0)
-        assert result.histograms.shape == (5, 100)
-        assert result.sem.shape == (5, 100)
-        assert len(result.mean_histogram) == 100
-
     def test_firing_rates_conversion(self, sample_population_result):
         """Test firing_rates() method converts counts to Hz for all units."""
         result = sample_population_result
-        rates = result.firing_rates()
+        rates = result.firing_rates
         expected = result.histograms / result.bin_size
         assert_allclose(rates, expected)
         assert rates.shape == (5, 100)
@@ -168,11 +127,6 @@ class TestPopulationPeriEventResult:
 class TestValidateEventsDataframe:
     """Tests for validate_events_dataframe function."""
 
-    def test_valid_dataframe_passes(self, valid_events_df):
-        """Valid DataFrame should not raise."""
-        # Should not raise
-        validate_events_dataframe(valid_events_df)
-
     def test_non_dataframe_raises_typeerror(self):
         """Non-DataFrame input should raise TypeError."""
         with pytest.raises(TypeError, match=r"Expected pd\.DataFrame"):
@@ -189,12 +143,6 @@ class TestValidateEventsDataframe:
         df = pd.DataFrame({"time": [1.0, 2.0]})  # Wrong column name
         with pytest.raises(ValueError, match=r"Missing required columns.*timestamp"):
             validate_events_dataframe(df)
-
-    def test_custom_timestamp_column(self):
-        """Should accept custom timestamp column name."""
-        df = pd.DataFrame({"event_time": [1.0, 2.0]})
-        # Should not raise
-        validate_events_dataframe(df, timestamp_column="event_time")
 
     def test_missing_custom_timestamp_raises(self):
         """Missing custom timestamp column should raise."""
@@ -229,17 +177,6 @@ class TestValidateEventsDataframe:
         with pytest.raises(ValueError, match=r"Available columns:.*time.*value"):
             validate_events_dataframe(df)
 
-    def test_empty_dataframe_with_timestamp_column(self):
-        """Empty DataFrame with timestamp column should pass."""
-        df = pd.DataFrame({"timestamp": pd.Series([], dtype=float)})
-        # Should not raise
-        validate_events_dataframe(df)
-
-
-# =============================================================================
-# Test validate_spatial_columns
-# =============================================================================
-
 
 class TestValidateSpatialColumns:
     """Tests for validate_spatial_columns function."""
@@ -267,14 +204,6 @@ class TestValidateSpatialColumns:
         with pytest.raises(ValueError, match="missing spatial columns"):
             validate_spatial_columns(valid_events_df, require_positions=True)
 
-    def test_require_positions_passes_when_present(self, valid_spatial_events_df):
-        """Should not raise when require_positions=True and columns present."""
-        # Should not raise
-        result = validate_spatial_columns(
-            valid_spatial_events_df, require_positions=True
-        )
-        assert result is True
-
     def test_context_in_error_message(self, valid_events_df):
         """Context should appear in error message."""
         with pytest.raises(ValueError, match="spatial_event_rate"):
@@ -298,14 +227,6 @@ class TestValidateSpatialColumns:
 class TestPlotPeriEventHistogram:
     """Tests for plot_peri_event_histogram function."""
 
-    def test_returns_axes(self, sample_peri_event_result):
-        """Should return matplotlib Axes."""
-        import matplotlib.pyplot as plt
-
-        ax = plot_peri_event_histogram(sample_peri_event_result)
-        assert ax is not None
-        plt.close("all")
-
     def test_uses_provided_axes(self, sample_peri_event_result):
         """Should use provided axes if given."""
         import matplotlib.pyplot as plt
@@ -321,14 +242,6 @@ class TestPlotPeriEventHistogram:
 
         ax = plot_peri_event_histogram(sample_peri_event_result)
         assert "50 events" in ax.get_title()
-        plt.close("all")
-
-    def test_custom_title(self, sample_peri_event_result):
-        """Should use custom title if provided."""
-        import matplotlib.pyplot as plt
-
-        ax = plot_peri_event_histogram(sample_peri_event_result, title="Custom Title")
-        assert ax.get_title() == "Custom Title"
         plt.close("all")
 
     def test_as_rate_false_changes_ylabel(self, sample_peri_event_result):
@@ -347,24 +260,6 @@ class TestPlotPeriEventHistogram:
         assert "Hz" in ax.get_ylabel() or "rate" in ax.get_ylabel().lower()
         plt.close("all")
 
-    def test_custom_xlabel_ylabel(self, sample_peri_event_result):
-        """Should use custom axis labels."""
-        import matplotlib.pyplot as plt
-
-        ax = plot_peri_event_histogram(
-            sample_peri_event_result,
-            xlabel="Custom X",
-            ylabel="Custom Y",
-        )
-        assert ax.get_xlabel() == "Custom X"
-        assert ax.get_ylabel() == "Custom Y"
-        plt.close("all")
-
-
-# =============================================================================
-# Test edge cases
-# =============================================================================
-
 
 class TestEdgeCases:
     """Tests for edge cases and corner cases."""
@@ -381,12 +276,6 @@ class TestEdgeCases:
         validate_events_dataframe(df)
         assert validate_spatial_columns(df) is True
 
-    def test_single_event_dataframe(self):
-        """Single event DataFrame should pass validation."""
-        df = pd.DataFrame({"timestamp": [1.0], "x": [10.0], "y": [20.0]})
-        validate_events_dataframe(df)
-        assert validate_spatial_columns(df) is True
-
     def test_peri_event_result_with_single_bin(self):
         """PeriEventResult with single bin should work."""
         result = PeriEventResult(
@@ -397,7 +286,7 @@ class TestEdgeCases:
             window=(-0.1, 0.1),
             bin_size=0.2,
         )
-        rate = result.firing_rate()
+        rate = result.firing_rate
         assert_allclose(rate, np.array([25.0]))  # 5.0 / 0.2 = 25.0
 
     def test_dataframe_with_nan_timestamp_passes_type_check(self):

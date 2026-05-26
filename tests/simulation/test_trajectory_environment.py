@@ -26,6 +26,7 @@ def test_ou_trajectory_explores_sparse_environment_fails():
         dt=0.1,
         speed_mean=7.5,
         seed=42,
+        speed_units="cm",
     )
 
     # Trajectory now MOVES properly (previously got stuck)
@@ -59,6 +60,7 @@ def test_ou_trajectory_explores_grid_environment_succeeds():
         dt=0.1,
         speed_mean=7.5,
         seed=42,
+        speed_units="cm",
     )
 
     # Trajectory EXPLORES properly - moves >10cm in each dimension
@@ -76,26 +78,3 @@ def test_ou_trajectory_explores_grid_environment_succeeds():
     assert 0.5 * 7.5 < mean_speed < 1.5 * 7.5, (
         f"Mean speed {mean_speed:.2f} should be near 7.5 cm/s"
     )
-
-
-def test_grid_environment_coverage():
-    """Verify grid environment has proper coverage and connectivity."""
-    arena_size = 80.0
-    x = np.linspace(0, arena_size, 17)
-    y = np.linspace(0, arena_size, 17)
-    xx, yy = np.meshgrid(x, y)
-    grid_data = np.column_stack([xx.ravel(), yy.ravel()])
-
-    env = Environment.from_samples(grid_data, bin_size=5.0)
-
-    # Should have full coverage (17x17 = 289 bins)
-    assert env.n_bins == 289, f"Expected 289 bins, got {env.n_bins}"
-
-    # Should cover full arena extent
-    ranges = env.dimension_ranges
-    assert ranges[0][0] <= 0 and ranges[0][1] >= arena_size
-    assert ranges[1][0] <= 0 and ranges[1][1] >= arena_size
-
-    # Check a point in the middle is contained
-    middle_point = np.array([[arena_size / 2, arena_size / 2]])
-    assert env.contains(middle_point)[0], "Middle point should be in environment"

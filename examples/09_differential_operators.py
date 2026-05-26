@@ -20,6 +20,8 @@
 #
 # **Estimated time**: 15-20 minutes
 #
+# **Prerequisites**: [02_layout_engines.ipynb](02_layout_engines.ipynb)
+#
 # ## Learning Objectives
 #
 # By the end of this notebook, you will be able to:

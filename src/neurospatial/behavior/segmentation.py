@@ -327,7 +327,7 @@ def detect_region_crossings(
 
 
 def detect_runs_between_regions(
-    positions: NDArray[np.float64],
+    position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
     env: Environment,
     *,
@@ -335,7 +335,7 @@ def detect_runs_between_regions(
     target: str,
     min_duration: float = 0.5,
     max_duration: float = 10.0,
-    velocity_threshold: float | None = None,
+    min_speed: float | None = None,
 ) -> list[Run]:
     """Detect runs from source region to target region.
 
@@ -346,10 +346,12 @@ def detect_runs_between_regions(
 
     Parameters
     ----------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Continuous position samples (e.g., in cm).
+    position_bins : NDArray[np.int64], shape (n_samples,)
+        Discretized position indices (one per sample). Use
+        ``env.bin_at(positions)`` to obtain these from continuous
+        coordinates.
     times : NDArray[np.float64], shape (n_samples,)
-        Time stamps corresponding to positions (seconds).
+        Time stamps corresponding to ``position_bins`` (seconds).
     env : Environment
         Environment containing source and target region definitions.
     source : str
@@ -362,8 +364,12 @@ def detect_runs_between_regions(
     max_duration : float, optional
         Maximum run duration in seconds. Default: 10.0.
         Runs exceeding this are marked as failed (timeout).
-    velocity_threshold : float or None, optional
-        Minimum velocity (units/second) to count as movement.
+    min_speed : float or None, optional
+        Minimum velocity (bin-center units/second) to count as
+        movement. Velocity is computed from consecutive
+        ``env.bin_centers[position_bins[i]]`` rather than continuous
+        positions, so the value is bin-quantized; pre-filter on
+        continuous positions if you need true sub-bin precision.
         If None, no velocity filtering is applied. Default: None.
 
     Returns
@@ -380,7 +386,7 @@ def detect_runs_between_regions(
     ValueError
         If source or target regions not in env.regions.
     ValueError
-        If positions and times have different lengths.
+        If position_bins and times have different lengths.
 
     See Also
     --------
@@ -423,8 +429,9 @@ def detect_runs_between_regions(
     >>> traj_y = np.ones(100) * 50.0  # doctest: +SKIP
     >>> trajectory = np.column_stack([traj_x, traj_y])  # doctest: +SKIP
     >>> times = np.linspace(0, 5.0, 100)  # doctest: +SKIP
+    >>> position_bins = env.bin_at(trajectory)  # doctest: +SKIP
     >>> runs = detect_runs_between_regions(  # doctest: +SKIP
-    ...     trajectory,  # doctest: +SKIP
+    ...     position_bins,  # doctest: +SKIP
     ...     times,  # doctest: +SKIP
     ...     env,  # doctest: +SKIP
     ...     source="start",  # doctest: +SKIP
@@ -448,17 +455,16 @@ def detect_runs_between_regions(
             f"Target region '{target}' not found. Available regions: {available}"
         )
 
-    if len(positions) != len(times):
+    if len(position_bins) != len(times):
         raise ValueError(
-            f"positions and times must have same length. "
-            f"Got {len(positions)} and {len(times)}"
+            f"position_bins and times must have same length. "
+            f"Got {len(position_bins)} and {len(times)}"
         )
 
-    if len(positions) == 0:
+    if len(position_bins) == 0:
         return []
 
-    # Map positions to bins
-    position_bins = env.bin_at(positions)
+    position_bins = np.asarray(position_bins, dtype=np.int64)
 
     # Get region masks
     from neurospatial.ops.binning import regions_to_mask
@@ -511,20 +517,20 @@ def detect_runs_between_regions(
         if duration < min_duration:
             continue
 
-        # Optional velocity filter
-        if velocity_threshold is not None:
-            # Compute velocity during run
-            run_positions = positions[exit_idx : end_idx + 1]
+        # Optional velocity filter (bin-quantized)
+        if min_speed is not None:
+            run_bin_idx = position_bins[exit_idx : end_idx + 1]
             run_times = times[exit_idx : end_idx + 1]
 
             if len(run_times) > 1:
+                run_positions = env.bin_centers[run_bin_idx]
                 displacements = np.diff(run_positions, axis=0)
                 distances = np.linalg.norm(displacements, axis=1)
                 dt = np.diff(run_times)
                 velocities = distances / dt
                 mean_velocity = np.mean(velocities)
 
-                if mean_velocity < velocity_threshold:
+                if mean_velocity < min_speed:
                     continue
 
         # Create run
@@ -543,17 +549,17 @@ def detect_runs_between_regions(
 def segment_by_velocity(
     positions: NDArray[np.float64],
     times: NDArray[np.float64],
-    threshold: float,
+    min_speed: float,
     *,
     min_duration: float = 0.5,
     hysteresis: float = 2.0,
     smooth_window: float = 0.2,
-) -> list[tuple[float, float]]:
+) -> list[Run]:
     """Segment trajectory into movement and rest periods based on velocity.
 
     Uses hysteresis thresholding to classify trajectory epochs as movement
-    (velocity above threshold) or rest (velocity below threshold). Filters
-    out brief segments shorter than min_duration. Useful for identifying
+    (velocity above ``min_speed``) or rest (velocity below it). Filters out
+    brief segments shorter than ``min_duration``. Useful for identifying
     behavioral states, analyzing exploration patterns, and preprocessing
     for place field analysis.
 
@@ -563,33 +569,38 @@ def segment_by_velocity(
         Continuous position samples (e.g., in cm).
     times : NDArray[np.float64], shape (n_samples,)
         Time stamps corresponding to positions (seconds).
-    threshold : float
+    min_speed : float
         Velocity threshold for movement classification (units/second).
-        Samples with velocity > threshold are considered movement.
+        Samples with velocity > ``min_speed`` are considered movement.
     min_duration : float, optional
         Minimum segment duration in seconds. Default: 0.5.
         Segments shorter than this are excluded.
     hysteresis : float, optional
-        Hysteresis factor for threshold. Default: 2.0.
-        - Movement starts when velocity > threshold
-        - Movement ends when velocity < threshold / hysteresis
-        Hysteresis prevents rapid switching near threshold.
+        Hysteresis factor on ``min_speed``. Default: 2.0.
+        - Movement starts when velocity > ``min_speed``
+        - Movement ends when velocity < ``min_speed / hysteresis``
+        Hysteresis prevents rapid switching near the threshold.
     smooth_window : float, optional
         Temporal window for velocity smoothing in seconds. Default: 0.2.
         Velocities are smoothed with a moving average to reduce noise.
 
     Returns
     -------
-    list[tuple[float, float]]
-        List of movement segments as (start_time, end_time) tuples.
-        Times are in seconds. Segments are sorted chronologically.
+    list[Run]
+        List of movement epochs as :class:`Run` instances. Matches the
+        sibling segmentation functions (``detect_runs_between_regions``,
+        ``detect_laps``, etc.) so callers can treat all behavioral
+        epochs uniformly. Each entry has ``start_time`` and ``end_time``
+        populated; ``bins`` is empty (movement epochs are not
+        region-bounded) and ``success`` is always ``True`` (every
+        emitted epoch satisfied ``min_speed`` / ``min_duration``).
 
     Raises
     ------
     ValueError
         If positions and times have different lengths.
     ValueError
-        If threshold <= 0 or hysteresis <= 1.
+        If ``min_speed <= 0`` or ``hysteresis <= 1``.
 
     See Also
     --------
@@ -603,8 +614,8 @@ def segment_by_velocity(
     to reduce noise from measurement errors.
 
     Hysteresis thresholding prevents "flickering" near the threshold:
-    - Movement starts when velocity exceeds threshold
-    - Movement continues until velocity drops below threshold/hysteresis
+    - Movement starts when velocity exceeds ``min_speed``
+    - Movement continues until velocity drops below ``min_speed / hysteresis``
     - This creates a "buffer zone" for stable state transitions
 
     Common use cases:
@@ -624,13 +635,14 @@ def segment_by_velocity(
     >>> times = np.linspace(0, 20, len(trajectory))
     >>> # Segment by velocity
     >>> segments = segment_by_velocity(
-    ...     trajectory, times, threshold=2.0, min_duration=0.5
+    ...     trajectory, times, min_speed=2.0, min_duration=0.5
     ... )
     >>> len(segments) > 0  # Should detect movement period
     True
-    >>> # Each segment is (start_time, end_time)
-    >>> for start, end in segments:
-    ...     duration = end - start
+    >>> # Each segment is a Run instance with start_time/end_time fields.
+    >>> # See the Run docstring for the full schema.
+    >>> for run in segments:
+    ...     duration = run.end_time - run.start_time
     ...     assert duration >= 0.5  # min_duration enforced
     """
     # Validate inputs
@@ -640,8 +652,8 @@ def segment_by_velocity(
             f"Got {len(positions)} and {len(times)}"
         )
 
-    if threshold <= 0:
-        raise ValueError(f"threshold must be positive. Got {threshold}")
+    if min_speed <= 0:
+        raise ValueError(f"min_speed must be positive. Got {min_speed}")
 
     if hysteresis <= 1.0:
         raise ValueError(f"hysteresis must be > 1.0 for stability. Got {hysteresis}")
@@ -667,7 +679,7 @@ def segment_by_velocity(
             velocities = np.convolve(velocities, kernel, mode="same")
 
     # Hysteresis thresholding
-    lower_threshold = threshold / hysteresis
+    lower_threshold = min_speed / hysteresis
     is_moving = np.zeros(len(velocities), dtype=bool)
     currently_moving = False
 
@@ -679,45 +691,41 @@ def segment_by_velocity(
             else:
                 is_moving[i] = True
         else:
-            # Start moving when velocity exceeds threshold
-            if velocities[i] > threshold:
+            # Start moving when velocity exceeds min_speed
+            if velocities[i] > min_speed:
                 currently_moving = True
                 is_moving[i] = True
 
     # Detect segments (note: velocities correspond to transitions, so index times[1:])
-    segments = []
+    epochs: list[Run] = []
     in_segment = False
-    segment_start = None
+    segment_start: float | None = None
+    empty_bins = np.array([], dtype=np.int64)
+
+    def _emit(start: float, end: float) -> None:
+        if (end - start) >= min_duration:
+            epochs.append(
+                Run(start_time=start, end_time=end, bins=empty_bins, success=True)
+            )
 
     for i in range(len(is_moving)):
         time_idx = i + 1  # Velocity at i corresponds to transition from i to i+1
 
         if is_moving[i] and not in_segment:
-            # Start new segment
             in_segment = True
             segment_start = times[time_idx]
 
         elif not is_moving[i] and in_segment:
-            # End segment
-            segment_end = times[time_idx]
             assert segment_start is not None  # Type narrowing for mypy
-            duration = segment_end - segment_start
-
-            if duration >= min_duration:
-                segments.append((segment_start, segment_end))
-
+            _emit(segment_start, times[time_idx])
             in_segment = False
 
     # Handle case where trajectory ends while moving
     if in_segment:
-        segment_end = times[-1]
         assert segment_start is not None  # Type narrowing for mypy
-        duration = segment_end - segment_start
+        _emit(segment_start, times[-1])
 
-        if duration >= min_duration:
-            segments.append((segment_start, segment_end))
-
-    return segments
+    return epochs
 
 
 # =============================================================================

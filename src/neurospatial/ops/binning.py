@@ -137,7 +137,17 @@ def map_points_to_bins(
     Returns
     -------
     bin_indices : NDArray[np.int_], shape (n_points,)
-        Bin index for each point. Value of -1 indicates point is outside all bins.
+        Bin index for each point. The "outside" sentinel ``-1`` is
+        returned only when ``max_distance`` (or ``max_distance_factor``)
+        rejects the nearest-neighbor distance, or when the implicit
+        ``10 × typical_bin_spacing`` heuristic does so. A point a
+        couple of centimeters outside the active mask of a 2 cm-bin
+        env will silently bind to the nearest edge bin under the
+        default heuristic. For trajectory occupancy / bin-sequence
+        purposes use :meth:`Environment.bin_at` (geometric containment,
+        always returns ``-1`` for outside points). Use this function
+        for nearest-neighbor *interpolation* queries where assigning
+        points to the closest in-env bin is the goal.
     distances : NDArray[np.float64], shape (n_points,), optional
         Distance from each point to its assigned bin center.
         Only returned if `return_dist=True`.

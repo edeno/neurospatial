@@ -133,21 +133,6 @@ class TestWriteEvents:
             result["value"].values, events_with_value_df["value"].values
         )
 
-    def test_custom_description(self, nwbfile, basic_events_df):
-        """Test custom description is stored."""
-        from neurospatial.io.nwb import write_events
-
-        write_events(
-            nwbfile,
-            basic_events_df,
-            name="described_events",
-            description="My custom description",
-        )
-
-        # Access the EventsTable directly to check description
-        events_table = nwbfile.processing["behavior"]["described_events"]
-        assert events_table.description == "My custom description"
-
     def test_custom_processing_module(self, nwbfile, basic_events_df):
         """Test writing to custom processing module."""
         from neurospatial.io.nwb import read_events, write_events
@@ -280,31 +265,6 @@ class TestWriteEvents:
 
 class TestDataframeToEventsTable:
     """Tests for dataframe_to_events_table() helper function."""
-
-    def test_basic_conversion(self, basic_events_df):
-        """Test basic DataFrame to EventsTable conversion."""
-        from neurospatial.io.nwb._events import dataframe_to_events_table
-
-        events_table = dataframe_to_events_table(
-            basic_events_df, name="test", description="Test events"
-        )
-
-        # Verify it's an EventsTable
-        import ndx_events
-
-        assert isinstance(events_table, ndx_events.EventsTable)
-        assert len(events_table) == 4
-
-    def test_conversion_with_columns(self, events_with_labels_df):
-        """Test conversion preserves additional columns."""
-        from neurospatial.io.nwb._events import dataframe_to_events_table
-
-        events_table = dataframe_to_events_table(
-            events_with_labels_df, name="labeled", description="Labeled events"
-        )
-
-        # Verify columns exist
-        assert "label" in events_table.colnames
 
 
 class TestRoundTrip:

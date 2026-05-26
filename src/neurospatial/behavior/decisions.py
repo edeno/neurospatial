@@ -140,7 +140,7 @@ class PreDecisionMetrics:
     def suggests_deliberation(
         self,
         variance_threshold: float = 0.5,
-        speed_threshold: float = 10.0,
+        min_speed: float = 10.0,
     ) -> bool:
         """Check if metrics suggest deliberative behavior.
 
@@ -148,7 +148,7 @@ class PreDecisionMetrics:
         ----------
         variance_threshold : float, default=0.5
             Circular variance above this suggests head scanning.
-        speed_threshold : float, default=10.0
+        min_speed : float, default=10.0
             Mean speed below this (units/s) suggests slowing.
 
         Returns
@@ -158,7 +158,7 @@ class PreDecisionMetrics:
         """
         return (
             self.heading_circular_variance > variance_threshold
-            and self.mean_speed < speed_threshold
+            and self.mean_speed < min_speed
         )
 
 
@@ -262,6 +262,7 @@ def decision_region_entry_time(
     position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
     env: Environment,
+    *,
     region: str,
 ) -> float:
     """Find time of first entry to a decision region.
@@ -802,9 +803,9 @@ def compute_decision_analysis(
     env: Environment,
     positions: NDArray[np.float64],
     times: NDArray[np.float64],
+    *,
     decision_region: str,
     goal_regions: list[str],
-    *,
     pre_window: float = 1.0,
     min_speed: float = 5.0,
 ) -> DecisionAnalysisResult:
@@ -882,7 +883,9 @@ def compute_decision_analysis(
     position_bins = env.bin_at(positions)
 
     # Find entry time to decision region
-    entry_time = decision_region_entry_time(position_bins, times, env, decision_region)
+    entry_time = decision_region_entry_time(
+        position_bins, times, env, region=decision_region
+    )
 
     # Compute pre-decision metrics
     pre_decision = compute_pre_decision_metrics(

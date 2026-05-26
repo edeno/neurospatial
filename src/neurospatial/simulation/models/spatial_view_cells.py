@@ -206,6 +206,7 @@ class SpatialViewCellModel:
     def __init__(
         self,
         env: Environment,
+        *,
         preferred_view_location: NDArray[np.float64],
         view_field_width: float = 10.0,
         view_distance: float = 20.0,

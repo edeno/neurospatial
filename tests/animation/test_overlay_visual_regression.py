@@ -191,7 +191,7 @@ def render_field_with_overlays(
     # Render position overlay
     if position_overlay is not None:
         # For visual regression, render first point + trail
-        pos_data = position_overlay.data
+        pos_data = position_overlay.positions
         current_pos = pos_data[0]  # First position
 
         # Render trail (if enough points)
@@ -279,7 +279,7 @@ def render_field_with_overlays(
         center_y = (y_min + y_max) / 2
 
         # Get direction (first frame)
-        direction_data = head_direction_overlay.data
+        direction_data = head_direction_overlay.headings
 
         # Check if it's an angle or vector
         if direction_data.ndim == 1:
@@ -347,7 +347,7 @@ def test_position_overlay_with_trail(env_2d, simple_field_2d):
     )
 
     position_overlay = PositionOverlay(
-        data=trajectory,
+        positions=trajectory,
         color="red",
         size=15.0,
         trail_length=5,
@@ -417,7 +417,7 @@ def test_head_direction_overlay_angle(env_2d, simple_field_2d):
     angles = np.array([np.pi / 4, np.pi / 2])  # 2 frames
 
     head_direction_overlay = HeadDirectionOverlay(
-        data=angles,
+        headings=angles,
         color="yellow",
         length=15.0,
     )
@@ -448,7 +448,7 @@ def test_head_direction_overlay_vector(env_2d, simple_field_2d):
     )
 
     head_direction_overlay = HeadDirectionOverlay(
-        data=vectors,
+        headings=vectors,
         color="orange",
         length=15.0,
     )
@@ -496,7 +496,7 @@ def test_mixed_overlays_all_types(env_2d, simple_field_2d):
         ]
     )
     position_overlay = PositionOverlay(
-        data=trajectory,
+        positions=trajectory,
         color="red",
         size=12.0,
         trail_length=3,
@@ -523,7 +523,7 @@ def test_mixed_overlays_all_types(env_2d, simple_field_2d):
     # Head direction overlay
     angles = np.array([np.pi / 3])  # 60 degrees
     head_direction_overlay = HeadDirectionOverlay(
-        data=angles,
+        headings=angles,
         color="yellow",
         length=12.0,
     )
@@ -552,7 +552,7 @@ def test_position_overlay_no_trail(env_2d, simple_field_2d):
     position = np.array([[70, 70]])
 
     position_overlay = PositionOverlay(
-        data=position,
+        positions=position,
         color="green",
         size=20.0,
         trail_length=None,  # No trail

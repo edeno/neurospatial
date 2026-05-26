@@ -204,20 +204,6 @@ class TestDetectLaps:
         # Straight line should not produce laps
         assert len(laps) == 0
 
-    def test_detect_laps_parameter_order(self):
-        """Test that parameters are in the expected order."""
-        rng = np.random.default_rng(42)
-        positions = rng.standard_normal((50, 2)) * 20 + 50
-        env = Environment.from_samples(positions, bin_size=5.0)
-        position_bins = env.bin_at(positions)
-        times = np.linspace(0, 10, 50)
-
-        from neurospatial.behavior.segmentation import detect_laps
-
-        # Should accept positional args in this order
-        laps = detect_laps(position_bins, times, env)
-        assert isinstance(laps, list)
-
     def test_detect_laps_validation_method(self):
         """Test validation of method parameter."""
         rng = np.random.default_rng(42)

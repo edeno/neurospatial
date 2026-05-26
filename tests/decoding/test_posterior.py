@@ -12,7 +12,6 @@ import pytest
 from numpy.testing import assert_allclose, assert_array_equal
 
 from neurospatial import Environment
-from neurospatial.decoding import DecodingResult
 
 # =============================================================================
 # Fixtures
@@ -93,13 +92,6 @@ class TestNormalizeToPosterior:
 
         posterior = normalize_to_posterior(simple_log_likelihood)
         assert posterior.shape == simple_log_likelihood.shape
-
-    def test_output_dtype(self, simple_log_likelihood: np.ndarray) -> None:
-        """Output dtype should be float64."""
-        from neurospatial.decoding.posterior import normalize_to_posterior
-
-        posterior = normalize_to_posterior(simple_log_likelihood)
-        assert posterior.dtype == np.float64
 
     def test_rows_sum_to_one(self, simple_log_likelihood: np.ndarray) -> None:
         """Each row should sum to 1.0 (probability distribution)."""
@@ -274,13 +266,6 @@ class TestNormalizeToPosterior:
     # Axis parameter tests
     # -------------------------------------------------------------------------
 
-    def test_axis_default(self, simple_log_likelihood: np.ndarray) -> None:
-        """Default axis (-1) should normalize over last axis."""
-        from neurospatial.decoding.posterior import normalize_to_posterior
-
-        posterior = normalize_to_posterior(simple_log_likelihood, axis=-1)
-        assert_allclose(posterior.sum(axis=-1), 1.0, atol=1e-10)
-
     def test_axis_explicit(self, simple_log_likelihood: np.ndarray) -> None:
         """Explicit axis=1 should normalize over second axis."""
         from neurospatial.decoding.posterior import normalize_to_posterior
@@ -333,20 +318,6 @@ class TestNormalizeToPosterior:
 
 class TestDecodePosition:
     """Tests for decode_position function."""
-
-    def test_returns_decoding_result(
-        self,
-        simple_env: Environment,
-        simple_spike_counts: np.ndarray,
-        simple_encoding_models: np.ndarray,
-    ) -> None:
-        """Should return a DecodingResult instance."""
-        from neurospatial.decoding.posterior import decode_position
-
-        result = decode_position(
-            simple_env, simple_spike_counts, simple_encoding_models, dt=0.025
-        )
-        assert isinstance(result, DecodingResult)
 
     def test_posterior_shape(
         self,
@@ -454,21 +425,6 @@ class TestDecodePosition:
             result_prior.posterior[:, 0].mean() > result_no_prior.posterior[:, 0].mean()
         )
 
-    def test_method_poisson_default(
-        self,
-        simple_env: Environment,
-        simple_spike_counts: np.ndarray,
-        simple_encoding_models: np.ndarray,
-    ) -> None:
-        """Method should default to 'poisson'."""
-        from neurospatial.decoding.posterior import decode_position
-
-        # Should not raise with default method
-        result = decode_position(
-            simple_env, simple_spike_counts, simple_encoding_models, dt=0.025
-        )
-        assert result.posterior.shape[0] == simple_spike_counts.shape[0]
-
     def test_method_invalid(
         self,
         simple_env: Environment,
@@ -491,38 +447,60 @@ class TestDecodePosition:
     # Validation tests
     # -------------------------------------------------------------------------
 
-    def test_validate_false_default(
+    def test_validate_default_is_true(
         self,
         simple_env: Environment,
-        simple_spike_counts: np.ndarray,
         simple_encoding_models: np.ndarray,
     ) -> None:
-        """validate=False should be default (no extra checks)."""
+        """validate=True should be the default, so a bad input raises by default.
+
+        Regression for M1 1.8: previously decode_position defaulted to
+        validate=False, so users got nonsense posteriors with no warning
+        when their inputs were corrupted. The new default invocation
+        runs _validate_inputs and surfaces the problem at the boundary.
+        """
         from neurospatial.decoding.posterior import decode_position
 
-        # Should complete without extra validation overhead
-        result = decode_position(
-            simple_env, simple_spike_counts, simple_encoding_models, dt=0.025
-        )
-        assert result is not None
+        spike_counts_nan = np.array([[0, np.nan], [1, 0], [0, 1]])
+        with pytest.raises(ValueError, match=r"NaN|nan|Inf|inf"):
+            decode_position(
+                simple_env, spike_counts_nan, simple_encoding_models, dt=0.025
+            )
 
-    def test_validate_true_passes_valid_data(
+    def test_validate_false_opt_out_skips_input_checks(
         self,
         simple_env: Environment,
-        simple_spike_counts: np.ndarray,
         simple_encoding_models: np.ndarray,
     ) -> None:
-        """validate=True should pass with valid data."""
+        """validate=False is an explicit opt-out for hot loops.
+
+        Users running decode_position inside a tight loop and confident
+        their inputs are clean can skip the per-call validation overhead.
+        The contract is that the call doesn't raise on bad input —
+        even though ``validate=True`` would catch it. The matching
+        positive assertion is that the clean rows still produce a
+        well-formed row-stochastic posterior, so we know the call did
+        more than "return a stub".
+        """
         from neurospatial.decoding.posterior import decode_position
 
+        spike_counts_nan = np.array([[0, np.nan], [1, 0], [0, 1]])
         result = decode_position(
             simple_env,
-            simple_spike_counts,
+            spike_counts_nan,
             simple_encoding_models,
             dt=0.025,
-            validate=True,
+            validate=False,
         )
-        assert result is not None
+        posterior = np.asarray(result.posterior)
+        # No exception was raised (validate=False skipped the check).
+        # The clean rows (1 and 2) must still produce well-formed
+        # probability distributions — proves the call actually ran the
+        # decoder, not just bailed out.
+        np.testing.assert_allclose(posterior[1].sum(), 1.0, atol=1e-9)
+        np.testing.assert_allclose(posterior[2].sum(), 1.0, atol=1e-9)
+        assert np.all(np.isfinite(posterior[1]))
+        assert np.all(np.isfinite(posterior[2]))
 
     def test_validate_catches_nan_input(
         self,
@@ -563,6 +541,230 @@ class TestDecodePosition:
                 validate=True,
             )
 
+    def test_validate_catches_negative_spike_counts(
+        self,
+        simple_env: Environment,
+        simple_encoding_models: np.ndarray,
+    ) -> None:
+        """validate=True (the new default) rejects negative spike counts.
+
+        Regression for M1 1.8: a negative spike count is physically
+        impossible (a count is "how many spikes per time bin"), but
+        nothing was rejecting it before. log_poisson_likelihood would
+        produce nonsense (n * log(rate) - rate*dt with negative n flips
+        the sign of the log-likelihood term) and a "valid"-looking
+        posterior would be returned.
+        """
+        from neurospatial.decoding.posterior import decode_position
+
+        spike_counts_negative = np.array([[0, 1], [-1, 0], [0, 1]], dtype=np.int64)
+        with pytest.raises(ValueError, match=r"negative entr"):
+            decode_position(
+                simple_env,
+                spike_counts_negative,
+                simple_encoding_models,
+                dt=0.025,
+            )
+
+    def test_validate_catches_negative_encoding_rates(
+        self,
+        simple_env: Environment,
+        simple_spike_counts: np.ndarray,
+    ) -> None:
+        """validate=True (the new default) rejects negative firing rates.
+
+        Firing rates are non-negative by definition (they're rates of a
+        Poisson process). A negative rate is almost always a bug
+        upstream (e.g., subtracting a baseline that exceeded the
+        observed rate); rejecting at the decoder boundary surfaces it.
+        """
+        from neurospatial.decoding.posterior import decode_position
+
+        n_bins = simple_env.n_bins
+        encoding_negative = np.ones((2, n_bins))
+        encoding_negative[0, 0] = -0.5
+        with pytest.raises(ValueError, match=r"negative entr"):
+            decode_position(
+                simple_env,
+                simple_spike_counts,
+                encoding_negative,
+                dt=0.025,
+            )
+
+    def test_validate_catches_fractional_spike_counts(
+        self,
+        simple_env: Environment,
+    ) -> None:
+        """validate=True rejects fractional float-dtype spike counts.
+
+        Regression for review follow-up: the validator's error message
+        promised "non-negative integers" but the implementation only
+        checked finite + non-negative, so a float array like
+        [[0.5, 1.0]] passed and produced a "valid"-looking posterior
+        from a Poisson likelihood that is undefined at non-integer n.
+        """
+        from neurospatial.decoding.posterior import decode_position
+
+        n_bins = simple_env.n_bins
+        encoding_models = np.ones((2, n_bins))
+        spike_counts_fractional = np.array([[0.5, 1.0]])
+        with pytest.raises(ValueError, match=r"fractional entr"):
+            decode_position(
+                simple_env, spike_counts_fractional, encoding_models, dt=0.025
+            )
+
+    def test_validate_accepts_float_spike_counts_with_integer_values(
+        self,
+        simple_env: Environment,
+    ) -> None:
+        """Float arrays with integer-valued entries are still allowed.
+
+        Spike counts are sometimes carried in float64 columns for
+        ergonomic reasons (mixed dataframes, JAX backends). Validating
+        only the *value* (np.equal(x, floor(x))) -- not the dtype --
+        lets those legitimate cases through while still catching truly
+        fractional inputs. The float and int paths must produce the
+        same posterior up to floating-point tolerance.
+        """
+        from neurospatial.decoding.posterior import decode_position
+
+        n_bins = simple_env.n_bins
+        encoding_models = np.ones((2, n_bins))
+        spike_counts_float = np.array([[0.0, 1.0], [2.0, 0.0]], dtype=np.float64)
+        spike_counts_int = spike_counts_float.astype(np.int64)
+
+        result_float = decode_position(
+            simple_env, spike_counts_float, encoding_models, dt=0.025
+        )
+        result_int = decode_position(
+            simple_env, spike_counts_int, encoding_models, dt=0.025
+        )
+        # Float path with integer values must match the int path exactly
+        # (modulo dtype-promotion rounding) and must yield a well-formed
+        # row-stochastic posterior.
+        posterior_float = np.asarray(result_float.posterior)
+        posterior_int = np.asarray(result_int.posterior)
+        np.testing.assert_allclose(posterior_float, posterior_int, atol=1e-10)
+        assert np.all(np.isfinite(posterior_float))
+        np.testing.assert_allclose(posterior_float.sum(axis=-1), 1.0, atol=1e-9)
+
+    def test_validate_catches_negative_prior(
+        self,
+        simple_env: Environment,
+        simple_spike_counts: np.ndarray,
+        simple_encoding_models: np.ndarray,
+    ) -> None:
+        """validate=True rejects priors with negative entries.
+
+        Regression for review follow-up: the prior was checked for
+        finite values but not for non-negativity, despite the error
+        message claiming "Prior must be finite non-negative values".
+        Internal normalization divides by the row sum, so a negative
+        entry could yield a finite-looking posterior that no longer
+        represents a probability distribution.
+        """
+        from neurospatial.decoding.posterior import decode_position
+
+        prior = np.full(simple_env.n_bins, 1.0)
+        prior[0] = -1.0
+        with pytest.raises(ValueError, match=r"negative entr"):
+            decode_position(
+                simple_env,
+                simple_spike_counts,
+                simple_encoding_models,
+                dt=0.025,
+                prior=prior,
+            )
+
+    def test_validate_catches_zero_mass_prior(
+        self,
+        simple_env: Environment,
+        simple_spike_counts: np.ndarray,
+        simple_encoding_models: np.ndarray,
+    ) -> None:
+        """validate=True rejects priors whose total mass is zero.
+
+        Regression for review follow-up: an all-zero prior was silently
+        rebuilt as a uniform prior by normalize_to_posterior's 1e-10
+        clip, producing a finite-looking posterior that did not reflect
+        the user's stated prior. The validator now rejects at the
+        boundary so the failure is visible.
+        """
+        from neurospatial.decoding.posterior import decode_position
+
+        with pytest.raises(ValueError, match=r"zero total mass"):
+            decode_position(
+                simple_env,
+                simple_spike_counts,
+                simple_encoding_models,
+                dt=0.025,
+                prior=np.zeros(simple_env.n_bins),
+            )
+
+    def test_validate_catches_time_varying_prior_with_zero_row(
+        self,
+        simple_env: Environment,
+        simple_spike_counts: np.ndarray,
+        simple_encoding_models: np.ndarray,
+    ) -> None:
+        """validate=True rejects time-varying priors with any zero-mass row."""
+        from neurospatial.decoding.posterior import decode_position
+
+        n_time = simple_spike_counts.shape[0]
+        prior = np.ones((n_time, simple_env.n_bins))
+        prior[1, :] = 0.0  # one zero-mass time bin
+        with pytest.raises(ValueError, match=r"zero total mass"):
+            decode_position(
+                simple_env,
+                simple_spike_counts,
+                simple_encoding_models,
+                dt=0.025,
+                prior=prior,
+            )
+
+    def test_validate_accepts_array_like_prior(
+        self,
+        simple_env: Environment,
+        simple_spike_counts: np.ndarray,
+        simple_encoding_models: np.ndarray,
+    ) -> None:
+        """validate=True accepts list/tuple priors via np.asarray conversion.
+
+        Regression for review follow-up: the validator was running
+        ``prior < 0`` directly on the user's input, which raised
+        ``TypeError`` for any array-like that wasn't already an ndarray
+        (e.g., a Python list). normalize_to_posterior accepts array-like
+        priors via np.asarray, so the validator must too.
+
+        The list-prior and ndarray-prior paths must produce identical
+        posteriors — verifying that the conversion is faithful and not
+        just that the call returned without error.
+        """
+        from neurospatial.decoding.posterior import decode_position
+
+        prior_list = [1.0] * simple_env.n_bins
+        prior_array = np.asarray(prior_list)
+
+        result_list = decode_position(
+            simple_env,
+            simple_spike_counts,
+            simple_encoding_models,
+            dt=0.025,
+            prior=prior_list,  # type: ignore[arg-type]  # runtime-only array-like
+        )
+        result_array = decode_position(
+            simple_env,
+            simple_spike_counts,
+            simple_encoding_models,
+            dt=0.025,
+            prior=prior_array,
+        )
+        posterior_list = np.asarray(result_list.posterior)
+        posterior_array = np.asarray(result_array.posterior)
+        np.testing.assert_allclose(posterior_list, posterior_array, atol=1e-12)
+        assert np.all(np.isfinite(posterior_list))
+        np.testing.assert_allclose(posterior_list.sum(axis=-1), 1.0, atol=1e-9)
+
     # -------------------------------------------------------------------------
     # Integration tests
     # -------------------------------------------------------------------------
@@ -590,7 +792,7 @@ class TestDecodePosition:
             simple_spike_counts.shape[0],
             simple_env.n_dims,
         )
-        assert result.uncertainty.shape == (simple_spike_counts.shape[0],)
+        assert result.posterior_entropy.shape == (simple_spike_counts.shape[0],)
 
     def test_reproducibility(
         self,

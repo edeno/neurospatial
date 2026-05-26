@@ -64,59 +64,32 @@ Creating GLM regressors:
 ... )
 """
 
-from __future__ import annotations
-
-from importlib import import_module
-from typing import Any
-
-# Lazy imports - functions are imported when first accessed
-# This keeps the module lightweight at import time
-
-# Mapping of public API names to their module paths
-# Format: "name": "module_path:attribute_name"
-_LAZY_IMPORTS: dict[str, str] = {
-    # Result dataclasses
-    "PeriEventResult": "neurospatial.events._core:PeriEventResult",
-    "PopulationPeriEventResult": "neurospatial.events._core:PopulationPeriEventResult",
-    # Validation helpers
-    "validate_events_dataframe": "neurospatial.events._core:validate_events_dataframe",
-    "validate_spatial_columns": "neurospatial.events._core:validate_spatial_columns",
-    # Visualization
-    "plot_peri_event_histogram": "neurospatial.events._core:plot_peri_event_histogram",
-    # Spatial utilities
-    "add_positions": "neurospatial.events.detection:add_positions",
-    # Interval utilities
-    "intervals_to_events": "neurospatial.events.intervals:intervals_to_events",
-    "events_to_intervals": "neurospatial.events.intervals:events_to_intervals",
-    "filter_by_intervals": "neurospatial.events.intervals:filter_by_intervals",
-    # GLM regressors (temporal)
-    "time_to_nearest_event": "neurospatial.events.regressors:time_to_nearest_event",
-    "event_count_in_window": "neurospatial.events.regressors:event_count_in_window",
-    "event_indicator": "neurospatial.events.regressors:event_indicator",
-    # GLM regressors (spatial)
-    "distance_to_reward": "neurospatial.events.regressors:distance_to_reward",
-    "distance_to_boundary": "neurospatial.events.regressors:distance_to_boundary",
-    # Peri-event analysis
-    "align_spikes_to_events": "neurospatial.events.alignment:align_spikes_to_events",
-    "peri_event_histogram": "neurospatial.events.alignment:peri_event_histogram",
-    "population_peri_event_histogram": "neurospatial.events.alignment:population_peri_event_histogram",
-    "align_events": "neurospatial.events.alignment:align_events",
-}
-
-
-def __getattr__(name: str) -> Any:
-    """Lazy import public API functions."""
-    if name not in _LAZY_IMPORTS:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-    module_path, attr_name = _LAZY_IMPORTS[name].split(":")
-    module = import_module(module_path)
-    value = getattr(module, attr_name)
-
-    # Cache in module globals for subsequent access
-    globals()[name] = value
-    return value
-
+from neurospatial.events._core import (
+    PeriEventResult,
+    PopulationPeriEventResult,
+    plot_peri_event_histogram,
+    validate_events_dataframe,
+    validate_spatial_columns,
+)
+from neurospatial.events.alignment import (
+    align_events,
+    align_spikes_to_events,
+    peri_event_histogram,
+    population_peri_event_histogram,
+)
+from neurospatial.events.detection import add_positions
+from neurospatial.events.intervals import (
+    events_to_intervals,
+    filter_by_intervals,
+    intervals_to_events,
+)
+from neurospatial.events.regressors import (
+    distance_to_boundary,
+    distance_to_reward,
+    event_count_in_window,
+    event_indicator,
+    time_to_nearest_event,
+)
 
 # ruff: noqa: RUF022  - Intentionally organized into groups with comments
 __all__ = [
