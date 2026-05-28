@@ -200,5 +200,10 @@ nav:
       - Bayesian Decoding: examples/20_bayesian_decoding.ipynb
       - Directional Place Fields: examples/21_directional_place_fields.ipynb
       - Spatial View Cells: examples/22_spatial_view_cells.ipynb
+      - Path Progression: examples/23_path_progression.ipynb
+      - Object-Vector Cells: examples/24_object_vector_cells.ipynb
+      - Head-Direction Tuning: examples/25_head_direction_tuning.ipynb
+      - Peri-Event PSTH: examples/26_peri_event_psth.ipynb
+      - Loading from NWB: examples/27_loading_from_nwb.ipynb
   - Contributing: contributing.md
   - Changelog: changelog.md

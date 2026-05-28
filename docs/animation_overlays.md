@@ -16,10 +16,11 @@ fields = [
     compute_spatial_rate(env, spikes[i], times, positions).firing_rate
     for i in range(100)
 ]
+frame_times = np.arange(len(fields), dtype=float) / 30.0  # one timestamp per field
 
 # Position overlay with trail
 position_overlay = PositionOverlay(
-    data=trajectory,  # shape: (n_samples, 2)
+    positions=trajectory,  # shape: (n_samples, 2)
     times=timestamps,  # Optional: align to fields
     color="red",
     size=10.0,
@@ -29,6 +30,7 @@ position_overlay = PositionOverlay(
 # Animate with overlay
 env.animate_fields(
     fields,
+    frame_times=frame_times,
     overlays=[position_overlay],
     backend="napari",  # or "video", "html", "widget"
 )
@@ -67,7 +69,7 @@ from neurospatial.animation import PositionOverlay
 
 # Basic position overlay
 overlay = PositionOverlay(
-    data=trajectory,        # (n_samples, n_dims) - x, y coordinates
+    positions=trajectory,   # (n_samples, n_dims) - x, y coordinates
     times=None,             # Optional timestamps for alignment
     color="red",            # Marker color
     size=10.0,              # Marker size
@@ -76,7 +78,7 @@ overlay = PositionOverlay(
 
 # With temporal alignment
 overlay = PositionOverlay(
-    data=trajectory,        # shape: (1000, 2) at 250 Hz
+    positions=trajectory,   # shape: (1000, 2) at 250 Hz
     times=timestamps,       # shape: (1000,) in seconds
     color="blue",
     size=12.0,
@@ -86,7 +88,7 @@ overlay = PositionOverlay(
 
 **Parameters:**
 
-- `data`: NDArray of shape `(n_samples, n_dims)` with coordinates
+- `positions`: NDArray of shape `(n_samples, n_dims)` with coordinates
 - `times`: Optional timestamps for temporal alignment (default: assumes 1:1 with frames)
 - `color`: Matplotlib/Napari color name (default: `"red"`)
 - `size`: Marker size in points (default: `10.0`)
@@ -153,7 +155,7 @@ import numpy as np
 
 # From angles (radians)
 overlay = HeadDirectionOverlay(
-    data=angles,            # (n_samples,) in radians
+    headings=angles,        # (n_samples,) in radians
     times=timestamps,       # Optional alignment
     color="yellow",
     length=20.0             # Arrow length in env units (e.g., cm)
@@ -162,7 +164,7 @@ overlay = HeadDirectionOverlay(
 # From unit vectors
 directions = np.column_stack([np.cos(angles), np.sin(angles)])  # (n_samples, 2)
 overlay = HeadDirectionOverlay(
-    data=directions,
+    headings=directions,
     color="orange",
     length=15.0
 )
@@ -170,7 +172,7 @@ overlay = HeadDirectionOverlay(
 
 **Parameters:**
 
-- `data`: NDArray of shape `(n_samples,)` (angles in radians) or `(n_samples, n_dims)` (unit vectors)
+- `headings`: NDArray of shape `(n_samples,)` (angles in radians) or `(n_samples, n_dims)` (unit vectors)
 - `times`: Optional timestamps for temporal alignment
 - `color`: Arrow color (default: `"yellow"`)
 - `length`: Arrow length in environment units (default: `20.0`)
@@ -201,6 +203,7 @@ overlay = VideoOverlay(
 # Animate with video background
 env.animate_fields(
     fields,
+    frame_times=frame_times,
     overlays=[overlay],
     backend="napari"  # or "video", "widget"
 )
@@ -210,7 +213,7 @@ env.animate_fields(
 
 - `source`: Path to video file or pre-loaded array `(n_frames, height, width, 3)`
 - `calibration`: `VideoCalibration` object for spatial alignment (optional but recommended)
-- `times`: Video frame timestamps for temporal alignment (default: synthesized from fps)
+- `times`: Video frame timestamps for temporal alignment (optional)
 - `alpha`: Opacity of video layer, 0.0=transparent, 1.0=opaque (default: `0.5`)
 - `z_order`: Draw order relative to field - `"above"` (default) or `"below"`
 - `crop`: Crop region `(x, y, width, height)` in pixels (default: `None`)
@@ -238,14 +241,14 @@ Track multiple animals by passing **multiple overlays of the same type**:
 ```python
 # Two animals with different colors
 animal1_pos = PositionOverlay(
-    data=trajectory_1,
+    positions=trajectory_1,
     color="red",
     size=12.0,
     trail_length=10
 )
 
 animal2_pos = PositionOverlay(
-    data=trajectory_2,
+    positions=trajectory_2,
     color="blue",
     size=12.0,
     trail_length=10
@@ -253,6 +256,7 @@ animal2_pos = PositionOverlay(
 
 env.animate_fields(
     fields,
+    frame_times=frame_times,
     overlays=[animal1_pos, animal2_pos],  # Both positions rendered
     backend="napari"
 )
@@ -269,19 +273,19 @@ Overlays automatically sync to field frames using interpolation.
 ```python
 # Assume overlay has same number of samples as fields
 overlay = PositionOverlay(
-    data=trajectory,  # shape: (100, 2) - matches 100 fields
+    positions=trajectory,  # shape: (100, 2) - matches 100 fields
     times=None        # No interpolation
 )
 ```
 
-**Requirement:** `len(overlay.data)` must equal `len(fields)`.
+**Requirement:** `len(overlay.positions)` must equal `len(fields)`.
 
 ### With Timestamps (Interpolation)
 
 ```python
 # Overlay sampled at 250 Hz, fields at 30 fps
 overlay = PositionOverlay(
-    data=trajectory,     # shape: (1000, 2) at 250 Hz
+    positions=trajectory,  # shape: (1000, 2) at 250 Hz
     times=timestamps,    # shape: (1000,) in seconds
 )
 
@@ -302,15 +306,17 @@ env.animate_fields(
 - **Warnings** for partial temporal overlap (<50%)
 - **Errors** for zero temporal overlap
 
-### Synthesized Frame Times
+### Frame Times
 
-If `frame_times` not provided, synthesized from `fps`:
+`frame_times` is required: provide one timestamp per field frame.
 
 ```python
+frame_times = np.arange(len(fields), dtype=float) / 30.0
+
 env.animate_fields(
     fields,
+    frame_times=frame_times,
     overlays=[overlay],
-    fps=30,  # Creates frame_times: [0, 1/30, 2/30, ..., (n_frames-1)/30]
 )
 ```
 
@@ -328,6 +334,7 @@ env.regions.add("start", polygon=start_polygon)
 # Show all regions
 env.animate_fields(
     fields,
+    frame_times=frame_times,
     show_regions=True,
     region_alpha=0.3  # Transparency
 )
@@ -335,6 +342,7 @@ env.animate_fields(
 # Show specific regions only
 env.animate_fields(
     fields,
+    frame_times=frame_times,
     show_regions=["goal", "start"],  # List of names
     region_alpha=0.5
 )
@@ -368,6 +376,7 @@ Not all backends support all overlay types.
 # HTML backend warns for unsupported overlays
 env.animate_fields(
     fields,
+    frame_times=frame_times,
     overlays=[bodypart_overlay, position_overlay],  # Mixed overlays
     backend="html"
 )
@@ -540,7 +549,7 @@ fields = [
 
 # Create overlays
 position_overlay = PositionOverlay(
-    data=positions,
+    positions=positions,
     times=timestamps,
     color="red",
     size=15.0,
@@ -570,7 +579,7 @@ pose_overlay = BodypartOverlay(
 )
 
 direction_overlay = HeadDirectionOverlay(
-    data=head_angles,
+    headings=head_angles,
     times=timestamps,
     color="orange",
     length=10.0
@@ -588,7 +597,6 @@ env.animate_fields(
     region_alpha=0.4,
     backend="video",
     save_path="behavior_analysis.mp4",
-    fps=30,
     title="Place Field Dynamics with Behavior",
 )
 ```
@@ -765,7 +773,7 @@ UserWarning: 23.4% of overlay points (234 / 1000) are outside environment bounds
 ```python
 # Verify coordinate systems match
 print(f"Environment range: {env.dimension_ranges}")
-print(f"Overlay range: x=[{overlay.data[:, 0].min()}, {overlay.data[:, 0].max()}]")
+print(f"Overlay range: x=[{overlay.positions[:, 0].min()}, {overlay.positions[:, 0].max()}]")
 
 # If units mismatch (e.g., meters vs cm), convert:
 trajectory_cm = trajectory_meters * 100
@@ -793,6 +801,7 @@ env.clear_cache()
 
 env.animate_fields(
     fields,
+    frame_times=frame_times,
     overlays=[overlay],
     backend="video",
     n_workers=4,  # Now works
@@ -825,7 +834,7 @@ print(f"Overlay times: {overlay.times.min():.2f} - {overlay.times.max():.2f}")
 print(f"Frame times: {frame_times.min():.2f} - {frame_times.max():.2f}")
 
 # Check for NaN
-print(f"NaN count: {np.isnan(overlay.data).sum()}")
+print(f"NaN count: {np.isnan(overlay.positions).sum()}")
 ```
 
 ### Problem: Animation runs slowly
@@ -842,7 +851,7 @@ print(f"NaN count: {np.isnan(overlay.data).sum()}")
 
 3. **High-resolution rendering**
    - Reduce dpi for video backend (default: 100)
-   - Use lower fps (default: 30)
+   - Subsample fields or lower `speed` for fewer rendered frames per second
 
 **Optimize:**
 ```python
@@ -850,16 +859,17 @@ print(f"NaN count: {np.isnan(overlay.data).sum()}")
 env.clear_cache()  # Ensure pickle-ability
 env.animate_fields(
     fields,
+    frame_times=frame_times,
     overlays=[overlay],
     backend="video",
     n_workers=4,  # Use 4 cores
     dpi=80,  # Lower resolution
-    fps=24,  # Lower frame rate
+    speed=0.8,  # Slower playback
     save_path="output.mp4"
 )
 
 # Or use Napari for interactive exploration
-env.animate_fields(fields, overlays=[overlay], backend="napari")
+env.animate_fields(fields, frame_times=frame_times, overlays=[overlay], backend="napari")
 ```
 
 ### Problem: Skeleton doesn't connect properly
@@ -919,12 +929,13 @@ from neurospatial.animation import subsample_frames
 
 # Subsample from 250 Hz to 30 fps
 subsampled_fields = subsample_frames(fields, source_fps=250, target_fps=30)
+subsampled_times = subsample_frames(frame_times, source_fps=250, target_fps=30)
 
 env.animate_fields(
     subsampled_fields,
+    frame_times=subsampled_times,
     overlays=[overlay],  # Interpolation handles rate mismatch
     backend="video",
-    fps=30,
     save_path="output.mp4"
 )
 ```
@@ -963,6 +974,7 @@ env.clear_cache(
 # Now parallel rendering works
 env.animate_fields(
     fields,
+    frame_times=frame_times,
     overlays=[overlay],
     backend="video",
     n_workers=4,
@@ -1051,11 +1063,11 @@ def animate_fields(
     self,
     fields: NDArray[np.float64],
     *,
+    frame_times: NDArray[np.float64],
     backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",
     save_path: str | None = None,
-    fps: int = 30,
+    speed: float = 1.0,
     overlays: list[PositionOverlay | BodypartOverlay | HeadDirectionOverlay | VideoOverlay] | None = None,
-    frame_times: NDArray[np.float64] | None = None,
     show_regions: bool | list[str] = False,
     region_alpha: float = 0.3,
     # ... other parameters (cmap, vmin, vmax, title, etc.)
@@ -1066,7 +1078,7 @@ def animate_fields(
 **New parameters:**
 
 - `overlays`: List of overlay instances to render
-- `frame_times`: Explicit frame timestamps for temporal alignment (optional)
+- `frame_times`: Explicit frame timestamps for temporal alignment (required)
 - `show_regions`: Display named regions (bool for all, list for specific)
 - `region_alpha`: Transparency for region rendering (0-1)
 

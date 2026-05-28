@@ -229,7 +229,7 @@ try:
         overlays=[position_overlay],
         frame_times=frame_times,
         backend="napari",
-        fps=10,
+        speed=1.0,
         title="Position Overlay with Trail",
     )
 
@@ -280,7 +280,7 @@ try:
         overlays=[bodypart_overlay],
         frame_times=frame_times,
         backend="napari",
-        fps=10,
+        speed=1.0,
         title="Pose Tracking with Skeleton",
     )
 
@@ -327,7 +327,7 @@ try:
         overlays=[position_overlay, head_direction_overlay],
         frame_times=frame_times,
         backend="napari",
-        fps=10,
+        speed=1.0,
         title="Position + Head Direction",
     )
 
@@ -380,7 +380,7 @@ try:
         overlays=[animal1_overlay, animal2_overlay],  # Multiple overlays
         frame_times=frame_times,
         backend="napari",
-        fps=10,
+        speed=1.0,
         title="Multi-Animal Tracking",
     )
 
@@ -421,7 +421,7 @@ try:
         region_alpha=0.3,  # 30% transparent
         frame_times=frame_times,
         backend="napari",
-        fps=10,
+        speed=1.0,
         title="Position + Reward Region",
     )
 
@@ -513,7 +513,7 @@ try:
         overlays=[position_overlay_timed],
         frame_times=frame_times,  # Explicit field timestamps
         backend="napari",
-        fps=10,
+        speed=1.0,
         title="Mixed-Rate Alignment (120 Hz → 10 Hz)",
     )
 
@@ -556,7 +556,7 @@ try:
         show_regions=True,
         frame_times=frame_times,
         backend="napari",
-        fps=10,
+        speed=1.0,
         title="Napari: All Overlays",
     )
 
@@ -580,7 +580,7 @@ if check_ffmpeg_available():
         frame_times=frame_times,
         backend="video",
         save_path=output_dir / "17_all_overlays.mp4",
-        fps=10,
+        speed=1.0,
         n_workers=1,
     )
     print(f"✓ Video: Saved to {output_path}")
@@ -600,7 +600,7 @@ html_path = env.animate_fields(
     frame_times=frame_times,
     backend="html",
     save_path=output_dir / "17_position_only.html",
-    fps=10,
+    speed=1.0,
 )
 
 print(f"✓ HTML: Saved to {html_path}")
@@ -620,7 +620,7 @@ try:
             show_regions=True,
             frame_times=frame_times,
             backend="widget",
-            fps=10,
+            speed=1.0,
         )
         print("✓ Widget: Position + Pose + Head Direction + Regions")
     else:
@@ -674,7 +674,7 @@ except ImportError:
 # # Simple trajectory overlay
 # from neurospatial import PositionOverlay
 # overlay = PositionOverlay(positions=trajectory, color="red", trail_length=10)
-# env.animate_fields(fields, overlays=[overlay], backend="napari")
+# env.animate_fields(fields, frame_times=frame_times, overlays=[overlay], backend="napari")
 #
 # # Pose with skeleton
 # from neurospatial import BodypartOverlay
@@ -690,7 +690,7 @@ except ImportError:
 #     data={"nose": nose_traj, "body": body_traj, "tail": tail_traj},
 #     skeleton=skeleton,
 # )
-# env.animate_fields(fields, overlays=[overlay], backend="napari")
+# env.animate_fields(fields, frame_times=frame_times, overlays=[overlay], backend="napari")
 #
 # # Mixed-rate alignment
 # overlay = PositionOverlay(positions=trajectory_120hz, times=times_120hz)
@@ -704,6 +704,7 @@ except ImportError:
 # # Multi-animal
 # env.animate_fields(
 #     fields,
+#     frame_times=frame_times,
 #     overlays=[overlay_animal1, overlay_animal2],
 #     backend="napari"
 # )
@@ -711,6 +712,7 @@ except ImportError:
 # # Show regions
 # env.animate_fields(
 #     fields,
+#     frame_times=frame_times,
 #     overlays=[overlay],
 #     show_regions=True,
 #     region_alpha=0.3,

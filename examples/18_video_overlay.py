@@ -517,7 +517,7 @@ try:
         overlays=[video_overlay, position_overlay],
         frame_times=frame_times,
         backend="napari",
-        fps=video_fps,
+        speed=1.0,
         title="Video + Field Animation",
     )
 
@@ -539,7 +539,7 @@ except ImportError:
 #
 # **Key parameters**:
 # - `n_workers`: Number of parallel workers (speeds up rendering)
-# - `fps`: Output frame rate
+# - `frame_times`: Output timing, one timestamp per field frame
 # - `dpi`: Output resolution
 #
 # **Important**: Call `env.clear_cache()` before parallel rendering!
@@ -560,7 +560,7 @@ if check_ffmpeg_available():
         frame_times=frame_times,
         backend="video",
         save_path=output_path,
-        fps=video_fps,
+        speed=1.0,
         n_workers=4,  # Parallel rendering
         dpi=100,
     )
@@ -610,7 +610,7 @@ try:
             ],
             frame_times=field_times,  # Field timestamps for alignment
             backend="widget",
-            fps=10,
+            speed=1.0,
         )
         print("Widget created - use slider to navigate")
         display(widget)
@@ -682,7 +682,7 @@ print("Cached KDTree and kernel matrices cannot be pickled.")
 print("")
 print("Example:")
 print("  env.clear_cache()  # Make environment pickle-able")
-print("  env.animate_fields(fields, overlays=[video], n_workers=4, ...)")
+print("  env.animate_fields(fields, frame_times=frame_times, overlays=[video], n_workers=4, ...)")
 
 # %% [markdown]
 # ## Cleanup

@@ -856,7 +856,7 @@ class EnvironmentVisualization:
         >>> trajectory = np.random.uniform(0, 100, (100, 2))
         >>> overlay_times = np.linspace(0, 10, 100)  # 100 frames over 10 seconds
         >>> position_overlay = PositionOverlay(
-        ...     data=trajectory,
+        ...     positions=trajectory,
         ...     color="red",
         ...     size=12.0,
         ...     trail_length=10,  # Show last 10 frames as trail
@@ -905,7 +905,7 @@ class EnvironmentVisualization:
         >>> from neurospatial.animation import HeadDirectionOverlay
         >>> angles = np.linspace(0, 2 * np.pi, 100)
         >>> direction_overlay = HeadDirectionOverlay(
-        ...     data=angles,
+        ...     headings=angles,
         ...     color="yellow",
         ...     length=15.0,  # Arrow length in environment units
         ... )
@@ -919,13 +919,13 @@ class EnvironmentVisualization:
         Multi-animal tracking (multiple overlays):
 
         >>> animal1_pos = PositionOverlay(  # doctest: +SKIP
-        ...     data=trajectory1,
+        ...     positions=trajectory1,
         ...     color="red",
         ...     size=12.0,
         ...     trail_length=10,  # doctest: +SKIP
         ... )  # doctest: +SKIP
         >>> animal2_pos = PositionOverlay(  # doctest: +SKIP
-        ...     data=trajectory2,
+        ...     positions=trajectory2,
         ...     color="blue",
         ...     size=12.0,
         ...     trail_length=10,  # doctest: +SKIP
@@ -961,7 +961,7 @@ class EnvironmentVisualization:
         >>> trajectory_250hz = np.random.uniform(0, 100, (2500, 2))
         >>> timestamps = np.linspace(0, 10, 2500)  # 10 seconds at 250 Hz
         >>> position_overlay = PositionOverlay(
-        ...     data=trajectory_250hz,
+        ...     positions=trajectory_250hz,
         ...     times=timestamps,  # Temporal alignment
         ...     color="red",
         ...     trail_length=15,

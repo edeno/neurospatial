@@ -3,8 +3,9 @@
 This is the smoke test that backstops the v0.4 onboarding-hotfix milestone
 (M0). It is *not* a doctest replacement — it deliberately checks only the
 first-run snippets a new user will copy-paste from the README, the
-`.claude/QUICKSTART.md` AI guide, the documentation quickstart, and the
-top-level package docstring. Each snippet is enumerated explicitly in
+`.claude/QUICKSTART.md` AI guide, the documentation quickstart, selected
+high-risk user-guide pages, and the top-level package docstring. Each
+snippet is enumerated explicitly in
 ``docs/snippets.yml`` so adding a new fragment to the docs is a deliberate
 opt-in rather than a fragile auto-collection.
 

@@ -114,7 +114,7 @@ dist = env_3d.distance_between(bin1, bin2)
 
 ✅ **3D affine transforms**
 ```python
-from neurospatial.transforms import translate_3d, scale_3d, from_rotation_matrix
+from neurospatial.ops import from_rotation_matrix, scale_3d, translate_3d
 from scipy.spatial.transform import Rotation
 
 # 3D translation
@@ -128,13 +128,13 @@ R = Rotation.from_euler('z', 45, degrees=True).as_matrix()
 transform = from_rotation_matrix(R, translation=[10, 20, 30])
 
 # Apply to 3D environment
-from neurospatial import apply_transform_to_environment
+from neurospatial.ops import apply_transform_to_environment
 env_transformed = apply_transform_to_environment(env_3d, transform)
 ```
 
 ✅ **Transform estimation** - Estimate rigid, similarity, or affine transforms from point pairs
 ```python
-from neurospatial import estimate_transform
+from neurospatial.ops import estimate_transform
 
 # Works for 2D or 3D point correspondences
 transform = estimate_transform(src_points_3d, dst_points_3d, kind="rigid")

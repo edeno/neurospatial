@@ -7,17 +7,19 @@ neurospatial provides tools for transforming and aligning spatial representation
 For 2D environments, use the `Affine2D` class:
 
 ```python
-from neurospatial.transforms import Affine2D, translate, rotate, scale
+import numpy as np
+
+from neurospatial.ops import scale_2d, translate
 
 # Factory functions (composable)
-transform = translate(10, 20)
-R = rotate(np.pi/4)  # 45 degrees
-S = scale(1.5, 1.5)
+T = translate(10, 20)
+S = scale_2d(1.5, 1.5)
 
 # Compose transformations
-transform = T @ R @ S
+transform = T @ S
 
 # Apply to points
+points_2d = np.array([[0.0, 0.0], [1.0, 2.0]])
 transformed_points = transform(points_2d)
 ```
 
@@ -26,11 +28,13 @@ transformed_points = transform(points_2d)
 For 3D environments, use `AffineND` or the convenience alias `Affine3D`:
 
 ```python
-from neurospatial.transforms import translate_3d, scale_3d, from_rotation_matrix
+import numpy as np
+
+from neurospatial.ops import from_rotation_matrix, scale_3d, translate_3d
 from scipy.spatial.transform import Rotation
 
 # 3D translation
-transform = translate_3d(10, 20, 30)
+T = translate_3d(10, 20, 30)
 
 # 3D scaling (uniform or anisotropic)
 S_uniform = scale_3d(1.5)  # Scale all axes equally
@@ -47,6 +51,7 @@ transform = from_rotation_matrix(R, translation=[10, 20, 30])
 combined = T @ Rot @ S_uniform
 
 # Apply to 3D points
+points_3d = np.array([[0.0, 0.0, 0.0], [1.0, 2.0, 3.0]])
 transformed_points = combined(points_3d)
 ```
 
@@ -55,7 +60,9 @@ transformed_points = combined(points_3d)
 Estimate transformations from matching point pairs (works for 2D or 3D):
 
 ```python
-from neurospatial import estimate_transform
+import numpy as np
+
+from neurospatial.ops import estimate_transform
 
 # Given source and destination point correspondences
 src_points = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]])
@@ -71,6 +78,7 @@ T_sim = estimate_transform(src_points, dst_points, kind="similarity")
 T_affine = estimate_transform(src_points, dst_points, kind="affine")
 
 # Apply to new points
+new_points = np.array([[2, 2, 2], [3, 3, 3]])
 aligned_points = T_rigid(new_points)
 ```
 
@@ -79,15 +87,15 @@ aligned_points = T_rigid(new_points)
 Apply transformations to entire environments:
 
 ```python
-from neurospatial import Environment, apply_transform_to_environment
-from neurospatial.transforms import translate_3d
+from neurospatial import Environment
+from neurospatial.ops import apply_transform_to_environment, translate_3d
 
 # Create 3D environment
 env_3d = Environment.from_samples(positions_3d, bin_size=5.0)
 
 # Transform the environment
 transform = translate_3d(100, 200, 50)
-env_transformed = apply_transform_to_environment(env_3d, T, name="shifted")
+env_transformed = apply_transform_to_environment(env_3d, transform, name="shifted")
 
 # Transformations update:
 # - Bin centers
@@ -101,7 +109,7 @@ env_transformed = apply_transform_to_environment(env_3d, T, name="shifted")
 Map probability distributions between environments (works for 2D or 3D):
 
 ```python
-from neurospatial.alignment import map_probabilities, get_2d_rotation_matrix
+from neurospatial.ops import get_2d_rotation_matrix, map_probabilities
 from scipy.spatial.transform import Rotation
 
 # 2D alignment with rotation and scaling
@@ -132,7 +140,8 @@ Here's a complete example aligning two 3D environments:
 ```python
 import numpy as np
 from scipy.spatial.transform import Rotation
-from neurospatial import Environment, estimate_transform, apply_transform_to_environment
+from neurospatial import Environment
+from neurospatial.ops import apply_transform_to_environment, estimate_transform
 
 # Create two 3D environments
 positions_session1 = np.random.randn(1000, 3) * 20
@@ -149,7 +158,7 @@ landmarks_env2 = np.array([[10, 5, 2], [18.66, 10, 2], [1.34, 13.66, 2], [10, 5,
 transform = estimate_transform(landmarks_env1, landmarks_env2, kind="rigid")
 
 # Align env1 to env2's coordinate frame
-env1_aligned = apply_transform_to_environment(env1, T, name="session1_aligned")
+env1_aligned = apply_transform_to_environment(env1, transform, name="session1_aligned")
 
 # Now compare neural activity, place fields, etc. in aligned coordinate frame
 ```

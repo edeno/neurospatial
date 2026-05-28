@@ -85,6 +85,64 @@ snippets:
       import os
       os.environ["MPLBACKEND"] = "Agg"
 
+  - id: docs_animation_quick_start
+    source: docs/user-guide/animation.md
+    kind: markdown
+    index: 0
+    setup: |
+      import os
+      import numpy as np
+      os.environ["MPLBACKEND"] = "Agg"
+
+      from neurospatial import Environment
+
+      positions = np.column_stack([
+          np.linspace(0.0, 20.0, 60),
+          5.0 + np.sin(np.linspace(0.0, 2.0 * np.pi, 60)),
+      ])
+      times = np.linspace(0.0, 10.0, len(positions))
+      spikes = [np.array([1.0, 3.0, 6.0]) for _ in range(30)]
+
+      def _check_animate_fields(self, fields, *, frame_times, **kwargs):
+          assert len(frame_times) == len(fields)
+          return kwargs.get("save_path")
+
+      Environment.animate_fields = _check_animate_fields
+    timeout: 120
+
+  - id: docs_video_annotation_use_results
+    source: docs/user-guide/video-annotation.md
+    kind: markdown
+    index: 2
+    setup: |
+      import numpy as np
+      from types import SimpleNamespace
+
+      from neurospatial import Environment
+
+      positions = np.array(
+          [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+          dtype=float,
+      )
+      times = np.arange(len(positions), dtype=float)
+      env = Environment.from_samples(positions, bin_size=1.0)
+      result = SimpleNamespace(environment=env, regions={})
+
+  - id: docs_alignment_2d_transforms
+    source: docs/user-guide/alignment.md
+    kind: markdown
+    index: 0
+
+  - id: docs_alignment_3d_transforms
+    source: docs/user-guide/alignment.md
+    kind: markdown
+    index: 1
+
+  - id: docs_alignment_transform_estimation
+    source: docs/user-guide/alignment.md
+    kind: markdown
+    index: 2
+
   - id: package_docstring_common_usage
     source: src/neurospatial/__init__.py
     kind: package_docstring

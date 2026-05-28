@@ -2,7 +2,7 @@
 
 This module provides high-level functions for calibrating video coordinates
 to environment space. It wraps lower-level calibration functions from
-neurospatial.transforms with additional validation and bounds checking.
+neurospatial.ops.transforms with additional validation and bounds checking.
 """
 
 from __future__ import annotations
@@ -157,7 +157,12 @@ def calibrate_video(
     >>> video = VideoOverlay(
     ...     source="session.mp4", calibration=calibration
     ... )  # doctest: +SKIP
-    >>> env.animate_fields(fields, overlays=[video], backend="napari")  # doctest: +SKIP
+    >>> env.animate_fields(
+    ...     fields,
+    ...     frame_times=frame_times,
+    ...     overlays=[video],
+    ...     backend="napari",
+    ... )  # doctest: +SKIP
     """
     # Validate video path exists
     video_path = Path(video_path)

@@ -240,7 +240,10 @@ def animate_fields(
     >>> positions = np.random.randn(100, 2) * 50  # doctest: +SKIP
     >>> env = Environment.from_samples(positions, bin_size=5.0)  # doctest: +SKIP
     >>> fields = [np.random.rand(env.n_bins) for _ in range(20)]  # doctest: +SKIP
-    >>> env.animate_fields(fields, backend="napari")  # doctest: +SKIP
+    >>> frame_times = np.arange(len(fields), dtype=float) / 30.0  # doctest: +SKIP
+    >>> env.animate_fields(
+    ...     fields, frame_times=frame_times, backend="napari"
+    ... )  # doctest: +SKIP
 
     Mixed-rate temporal alignment (e.g., 120 Hz tracking → 10 Hz fields):
 
@@ -606,10 +609,11 @@ def _select_backend(
                 f"\n"
                 f"  2. Export subsampled video:\n"
                 f"     subsample = fields[::100]  # Every 100th frame\n"
-                f"     env.animate_fields(subsample, backend='video', save_path='out.mp4')\n"
+                f"     sub_times = frame_times[::100]\n"
+                f"     env.animate_fields(subsample, frame_times=sub_times, backend='video', save_path='out.mp4')\n"
                 f"\n"
                 f"  3. Use HTML (WARNING: {n_frames * 0.1:.0f} MB file):\n"
-                f"     env.animate_fields(fields[:500], backend='html')  # First 500 frames\n"
+                f"     env.animate_fields(fields[:500], frame_times=frame_times[:500], backend='html')  # First 500 frames\n"
             )
 
     # Jupyter notebook - use widget
@@ -709,8 +713,11 @@ def subsample_frames(
     >>> fields_video = subsample_frames(
     ...     fields_full, target_fps=30, source_fps=250
     ... )  # doctest: +SKIP
+    >>> frame_times_video = subsample_frames(
+    ...     frame_times, target_fps=30, source_fps=250
+    ... )  # doctest: +SKIP
     >>> env.animate_fields(
-    ...     fields_video, save_path="output.mp4", fps=30
+    ...     fields_video, frame_times=frame_times_video, save_path="output.mp4"
     ... )  # doctest: +SKIP
 
     >>> # 1000 Hz → 60 fps
@@ -866,13 +873,16 @@ def large_session_napari_config(
     Examples
     --------
     >>> config = large_session_napari_config(n_frames=500_000, sample_rate_hz=250)
-    >>> env.animate_fields(fields, backend="napari", **config)  # doctest: +SKIP
+    >>> env.animate_fields(
+    ...     fields, frame_times=frame_times, backend="napari", **config
+    ... )  # doctest: +SKIP
 
     >>> # Or combine with estimated colormap range
     >>> vmin, vmax = estimate_colormap_range_from_subset(fields)  # doctest: +SKIP
     >>> config = large_session_napari_config(n_frames=len(fields))  # doctest: +SKIP
     >>> env.animate_fields(  # doctest: +SKIP
-    ...     fields, vmin=vmin, vmax=vmax, backend="napari", **config
+    ...     fields, frame_times=frame_times, vmin=vmin, vmax=vmax,
+    ...     backend="napari", **config
     ... )  # doctest: +SKIP
 
     Notes
@@ -887,7 +897,7 @@ def large_session_napari_config(
     The returned config can be unpacked directly into `animate_fields()`:
 
     >>> config = large_session_napari_config(1_000_000)
-    >>> env.animate_fields(fields, **config)  # doctest: +SKIP
+    >>> env.animate_fields(fields, frame_times=frame_times, **config)  # doctest: +SKIP
     """
     # Determine fps based on sample rate or use sensible default
     # Target 30 fps for smooth playback, but cap at sample rate if provided
