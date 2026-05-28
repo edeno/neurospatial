@@ -1259,3 +1259,85 @@ class TestBinViewSpikeTrainsValidation:
                 positions,
                 headings,
             )
+
+
+class TestGazeModelGeometry:
+    """Geometric correctness of the gaze models used by the view-binning layer.
+
+    The view binning maps a viewed location (computed by
+    ``compute_viewed_location`` with the chosen ``gaze_model``) into a spatial
+    bin. These tests pin the geometry the audit found only smoke-tested:
+    ``boundary``/``ray_cast`` clip the gaze ray at the environment wall (valid
+    bins), while ``fixed_distance`` projects a fixed distance ahead and can land
+    outside the environment (bin index -1).
+    """
+
+    @pytest.fixture(scope="class")
+    def rectangular_env(self) -> Environment:
+        rng = np.random.default_rng(0)
+        return Environment.from_samples(rng.uniform(0, 100, (8000, 2)), bin_size=5.0)
+
+    def test_boundary_clips_at_wall_fixed_distance_overshoots(self, rectangular_env):
+        from neurospatial.ops.visibility import compute_viewed_location
+
+        # Poses hugging the left wall, all facing -x toward the x=0 boundary.
+        positions = np.column_stack([np.linspace(3.0, 8.0, 12), np.full(12, 50.0)])
+        headings = np.full(12, np.pi)  # facing -x (West)
+
+        viewed_boundary = compute_viewed_location(
+            positions,
+            headings,
+            method="boundary",
+            view_distance=10.0,
+            env=rectangular_env,
+            max_distance=150.0,
+        )
+        viewed_fixed = compute_viewed_location(
+            positions,
+            headings,
+            method="fixed_distance",
+            view_distance=10.0,
+        )
+
+        bins_boundary = rectangular_env.bin_at(viewed_boundary)
+        bins_fixed = rectangular_env.bin_at(viewed_fixed)
+
+        # boundary clips at the wall -> every viewed location is a valid bin.
+        assert np.all(bins_boundary >= 0)
+        # fixed_distance projects 10 cm past the wall -> mostly outside the env.
+        assert np.mean(bins_fixed < 0) >= 0.5
+
+    def test_ray_cast_matches_boundary_in_convex_env(self, rectangular_env):
+        from neurospatial.ops.visibility import compute_viewed_location
+
+        rng = np.random.default_rng(1)
+        positions = rng.uniform(20.0, 80.0, (200, 2))
+        headings = rng.uniform(-np.pi, np.pi, 200)
+
+        viewed_boundary = compute_viewed_location(
+            positions,
+            headings,
+            method="boundary",
+            view_distance=10.0,
+            env=rectangular_env,
+            max_distance=150.0,
+        )
+        viewed_ray = compute_viewed_location(
+            positions,
+            headings,
+            method="ray_cast",
+            view_distance=10.0,
+            env=rectangular_env,
+            max_distance=150.0,
+        )
+
+        # In a convex env with no obstacles both methods stop at the same wall.
+        valid = ~(
+            np.isnan(viewed_boundary).any(axis=1) | np.isnan(viewed_ray).any(axis=1)
+        )
+        assert valid.sum() > 0
+        np.testing.assert_allclose(
+            viewed_boundary[valid],
+            viewed_ray[valid],
+            atol=rectangular_env.bin_sizes.max(),
+        )

@@ -891,7 +891,10 @@ def compute_view_rate(
     times : ndarray, shape (n_samples,)
         Timestamps of trajectory samples in seconds.
     positions : ndarray, shape (n_samples, 2)
-        Position coordinates at each time sample.
+        Position coordinates at each time sample. NaN values (in positions or
+        headings) are treated as missing data and excluded from occupancy and
+        firing-rate computation; callers do not need to pre-filter tracking
+        dropouts.
     headings : ndarray, shape (n_samples,)
         Head direction at each time sample (radians, **allocentric
         world-frame convention**: 0 = East, π/2 = North, π = West,
@@ -1167,7 +1170,10 @@ def compute_view_rates(
     times : ndarray, shape (n_samples,)
         Timestamps of trajectory samples in seconds.
     positions : ndarray, shape (n_samples, 2)
-        Position coordinates at each time sample.
+        Position coordinates at each time sample. NaN values (in positions or
+        headings) are treated as missing data and excluded from occupancy and
+        firing-rate computation; callers do not need to pre-filter tracking
+        dropouts.
     headings : ndarray, shape (n_samples,)
         Head direction at each time sample (radians, **allocentric
         world-frame convention**: 0 = East, π/2 = North, π = West,

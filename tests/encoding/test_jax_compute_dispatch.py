@@ -823,3 +823,160 @@ class TestComputeEgocentricRatesJaxBackend:
             rtol=1e-10,
             atol=1e-14,
         )
+
+
+# =============================================================================
+# Test compute_directional_rate(s) with JAX backend
+# =============================================================================
+
+_DIRECTIONAL_BIN_SIZE = 2 * np.pi / 36  # 36 angular bins over the full circle
+
+
+@pytest.fixture
+def directional_headings(times: np.ndarray) -> np.ndarray:
+    """Uniformly-sampled head directions aligned with ``times``."""
+    rng = np.random.default_rng(7)
+    return rng.uniform(-np.pi, np.pi, size=len(times))
+
+
+@pytest.fixture
+def directional_headings_near_wrap(times: np.ndarray) -> np.ndarray:
+    """Head directions concentrated near the +/-pi seam.
+
+    ``wrap(pi + noise)`` clusters values on both sides of +/-pi, exercising the
+    circular bin-edge handling where NumPy and JAX are most likely to diverge.
+    """
+    rng = np.random.default_rng(11)
+    raw = np.pi + rng.normal(0.0, 0.2, size=len(times))
+    return (raw + np.pi) % (2 * np.pi) - np.pi
+
+
+class TestComputeDirectionalRateJaxBackend:
+    """compute_directional_rate parity between NumPy and JAX backends.
+
+    Closes the gap noted in the audit: spatial/view/egocentric had NumPy<->JAX
+    parity tests, but directional did not, leaving the circular binning and
+    +/-pi angle wrap unguarded against backend divergence.
+    """
+
+    def test_jax_backend_does_not_raise(
+        self,
+        spike_times: np.ndarray,
+        times: np.ndarray,
+        directional_headings: np.ndarray,
+    ) -> None:
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        result = compute_directional_rate(
+            spike_times,
+            times,
+            directional_headings,
+            bin_size=_DIRECTIONAL_BIN_SIZE,
+            backend="jax",
+        )
+
+        assert result is not None
+        assert _is_jax_array(result.firing_rate)
+        assert _is_jax_array(result.occupancy)
+
+    def test_jax_backend_matches_numpy(
+        self,
+        spike_times: np.ndarray,
+        times: np.ndarray,
+        directional_headings: np.ndarray,
+    ) -> None:
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        result_numpy = compute_directional_rate(
+            spike_times,
+            times,
+            directional_headings,
+            bin_size=_DIRECTIONAL_BIN_SIZE,
+            backend="numpy",
+        )
+        result_jax = compute_directional_rate(
+            spike_times,
+            times,
+            directional_headings,
+            bin_size=_DIRECTIONAL_BIN_SIZE,
+            backend="jax",
+        )
+
+        assert_allclose(
+            np.asarray(result_jax.firing_rate),
+            result_numpy.firing_rate,
+            rtol=1e-10,
+            atol=1e-14,
+        )
+        assert_allclose(
+            np.asarray(result_jax.occupancy),
+            result_numpy.occupancy,
+            rtol=1e-10,
+            atol=1e-14,
+        )
+
+    def test_jax_backend_matches_numpy_near_wrap(
+        self,
+        spike_times: np.ndarray,
+        times: np.ndarray,
+        directional_headings_near_wrap: np.ndarray,
+    ) -> None:
+        from neurospatial.encoding.directional import compute_directional_rate
+
+        result_numpy = compute_directional_rate(
+            spike_times,
+            times,
+            directional_headings_near_wrap,
+            bin_size=_DIRECTIONAL_BIN_SIZE,
+            backend="numpy",
+        )
+        result_jax = compute_directional_rate(
+            spike_times,
+            times,
+            directional_headings_near_wrap,
+            bin_size=_DIRECTIONAL_BIN_SIZE,
+            backend="jax",
+        )
+
+        # equal_nan: empty angular bins are NaN in both backends and must agree.
+        assert_allclose(
+            np.asarray(result_jax.firing_rate),
+            result_numpy.firing_rate,
+            rtol=1e-10,
+            atol=1e-14,
+            equal_nan=True,
+        )
+
+
+class TestComputeDirectionalRatesJaxBackend:
+    """compute_directional_rates (batch) parity between NumPy and JAX backends."""
+
+    def test_jax_backend_matches_numpy(
+        self,
+        spike_times_batch: list[np.ndarray],
+        times: np.ndarray,
+        directional_headings: np.ndarray,
+    ) -> None:
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        result_numpy = compute_directional_rates(
+            spike_times_batch,
+            times,
+            directional_headings,
+            bin_size=_DIRECTIONAL_BIN_SIZE,
+            backend="numpy",
+        )
+        result_jax = compute_directional_rates(
+            spike_times_batch,
+            times,
+            directional_headings,
+            bin_size=_DIRECTIONAL_BIN_SIZE,
+            backend="jax",
+        )
+
+        assert_allclose(
+            np.asarray(result_jax.firing_rates),
+            result_numpy.firing_rates,
+            rtol=1e-10,
+            atol=1e-14,
+        )

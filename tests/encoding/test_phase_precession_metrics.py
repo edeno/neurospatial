@@ -723,3 +723,64 @@ class TestPlotPhasePrecession:
 
         with pytest.raises(ValueError, match="same length"):
             plot_phase_precession(positions, phases)
+
+
+class TestPhasePrecessionSlopeMagnitude:
+    """Recover the precession slope magnitude (not just its sign) and pin the
+    position-range normalization contract.
+
+    Existing tests only assert ``slope < 0``; a scale error in the regressor
+    would pass those. These simulate a noisy linear phase-position relationship
+    with a known slope and assert the recovered slope matches in magnitude.
+    """
+
+    @staticmethod
+    def _wrap(angle):
+        return (angle + np.pi) % (2 * np.pi) - np.pi
+
+    def test_slope_magnitude_recovered(self):
+        from neurospatial.encoding.phase_precession import phase_precession
+
+        rng = np.random.default_rng(3)
+        positions = np.linspace(0, 100, 200)
+        true_slope = -0.1  # rad per position unit
+        phases = self._wrap(true_slope * positions + 1.0 + rng.normal(0, 0.2, 200))
+
+        result = phase_precession(positions, phases)
+        assert np.isclose(result.slope, true_slope, atol=0.02)
+
+    def test_slope_sign_and_magnitude_for_positive_slope(self):
+        from neurospatial.encoding.phase_precession import phase_precession
+
+        rng = np.random.default_rng(3)
+        positions = np.linspace(0, 100, 200)
+        true_slope = 0.05
+        phases = self._wrap(true_slope * positions + 1.0 + rng.normal(0, 0.2, 200))
+
+        result = phase_precession(positions, phases)
+        assert np.isclose(result.slope, true_slope, atol=0.02)
+
+    def test_position_range_normalization(self):
+        from neurospatial.encoding.phase_precession import phase_precession
+
+        # Contract (phase_precession docstring): with position_range=None the
+        # slope is rad/position_unit; with position_range=(min, max) positions
+        # are normalized to [0, 1] and the slope is rad/normalized_position, so
+        # it equals the raw slope times the position span.
+        #
+        # Bounds note: this test uses true_slope = -0.05 so the normalized
+        # slope is -0.05 * 100 = -5 rad/normalized_position, which is inside the
+        # default slope_bounds (-2*pi, 2*pi) ~= (-6.28, 6.28). A steeper slope
+        # such as -0.1 would normalize to -10, get clipped at -2*pi, and break
+        # the expected (raw * span) relation -- hence the smaller value here.
+        rng = np.random.default_rng(3)
+        positions = np.linspace(0, 100, 200)
+        true_slope = -0.05
+        phases = self._wrap(true_slope * positions + 1.0 + rng.normal(0, 0.2, 200))
+
+        raw = phase_precession(positions, phases)
+        normalized = phase_precession(positions, phases, position_range=(0.0, 100.0))
+
+        assert np.isclose(raw.slope, true_slope, atol=0.02)
+        # Normalized slope = raw slope * span (100), within bounds.
+        assert np.isclose(normalized.slope, true_slope * 100.0, atol=0.5)

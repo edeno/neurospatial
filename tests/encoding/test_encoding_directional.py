@@ -3842,3 +3842,57 @@ class TestDirectionalBatchNaNHandling:
         singles = np.array([result[i].mean_vector_length() for i in range(2)])
         np.testing.assert_allclose(batch, singles)
         assert np.all(np.isfinite(batch))
+
+
+class TestDirectionalRateRecovery:
+    """End-to-end recovery of a simulated HD tuning curve through compute_directional_rate.
+
+    Drives the public ``compute_directional_rate`` on Poisson spikes from a known
+    von Mises head-direction cell and asserts the recovered preferred direction
+    matches the simulated one within two angular bins, including across the ±π
+    wrap. Exercises the real circular binning + occupancy normalization, not a
+    hand-built result object.
+    """
+
+    BIN_SIZE = 2 * np.pi / 36  # 36 angular bins over the full circle
+
+    @pytest.fixture(scope="class")
+    def headings_and_times(self):
+        # Headings use their own RNG stream (seed 0); generate_poisson_spikes
+        # uses seed 42. Seeding both identically would make the heading values
+        # and the spike-acceptance uniforms the same underlying stream, biasing
+        # spike acceptance against the tuning peak and corrupting recovery.
+        times = np.arange(0.0, 600.0, 0.02)
+        headings = np.random.default_rng(0).uniform(-np.pi, np.pi, times.size)
+        return headings, times
+
+    @pytest.mark.parametrize(
+        "true_pref", [0.0, np.pi / 2, -np.pi / 2, np.pi, np.pi / 3]
+    )
+    def test_preferred_direction_recovered(self, headings_and_times, true_pref):
+        from neurospatial.encoding.directional import compute_directional_rate
+        from neurospatial.simulation import (
+            HeadDirectionCellModel,
+            generate_poisson_spikes,
+        )
+
+        headings, times = headings_and_times
+        model = HeadDirectionCellModel(
+            preferred_direction=true_pref,
+            concentration=4.0,
+            max_rate=15.0,
+            baseline_rate=1.0,
+        )
+        rates = model.firing_rate(headings)
+        spike_times = generate_poisson_spikes(rates, times, seed=42)
+
+        result = compute_directional_rate(
+            spike_times, times, headings, bin_size=self.BIN_SIZE
+        )
+
+        # Circular distance between recovered and true preferred direction,
+        # within two angular bins. Wraps correctly across ±π.
+        circ_dist = abs(
+            np.angle(np.exp(1j * (result.preferred_direction() - true_pref)))
+        )
+        assert circ_dist < 2 * self.BIN_SIZE

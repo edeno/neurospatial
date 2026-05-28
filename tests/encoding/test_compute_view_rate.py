@@ -1719,3 +1719,61 @@ class TestComputeViewRatesGazeOffsets:
         )
 
         assert len(result) == 3
+
+
+class TestComputeViewRateNaNHandling:
+    """NaN positions/headings are treated as missing data, not errors.
+
+    Per the compute_view_rate docstring contract, NaN samples (tracking
+    dropouts) are excluded rather than raising or corrupting the map.
+    """
+
+    @pytest.fixture(scope="class")
+    def session(self):
+        from neurospatial.ops.egocentric import heading_from_velocity
+        from neurospatial.simulation import (
+            generate_poisson_spikes,
+            simulate_trajectory_ou,
+        )
+
+        samples = np.random.default_rng(0).uniform(0, 40, (3000, 2))
+        env = Environment.from_samples(samples, bin_size=2.0)
+        env.units = "cm"
+        positions, times = simulate_trajectory_ou(
+            env, duration=400.0, speed_units="cm", seed=42
+        )
+        dt = float(times[1] - times[0])
+        headings = heading_from_velocity(positions, dt, min_speed=2.0)
+        rng = np.random.default_rng(3)
+        rates = 5.0 + 5.0 * rng.random(len(times))
+        spike_times = generate_poisson_spikes(rates, times, seed=7)
+        return env, spike_times, times, positions, headings
+
+    @pytest.mark.parametrize("nan_field", ["positions", "headings"])
+    def test_nan_inputs_excluded_not_raised(self, session, nan_field):
+        from neurospatial.encoding.view import compute_view_rate
+
+        env, spike_times, times, positions, headings = session
+        rng = np.random.default_rng(5)
+        drop_idx = rng.choice(len(times), size=len(times) // 10, replace=False)
+        positions_in = positions.copy()
+        headings_in = headings.copy()
+        if nan_field == "positions":
+            positions_in[drop_idx] = np.nan
+        else:
+            headings_in[drop_idx] = np.nan
+
+        result = compute_view_rate(
+            env,
+            spike_times,
+            times,
+            positions_in,
+            headings_in,
+            view_distance=10.0,
+            gaze_model="fixed_distance",
+            smoothing_method="binned",
+        )
+
+        # Did not raise; produced a usable (not all-NaN) map with a finite peak.
+        assert not np.isnan(result.firing_rate).all()
+        assert np.isfinite(np.nanmax(result.firing_rate))

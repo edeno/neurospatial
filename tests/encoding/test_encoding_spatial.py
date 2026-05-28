@@ -4278,3 +4278,153 @@ class TestComputeSpatialRatesResultMethods:
         assert isinstance(df, pd.DataFrame)
         assert len(df) == len(multiple_place_cell_spikes)
         assert "spatial_info" in df.columns
+
+
+class TestSpatialRateRecovery:
+    """End-to-end recovery of a simulated place field through compute_spatial_rate.
+
+    Drives the public ``compute_spatial_rate`` on Poisson spikes from a known
+    Gaussian place cell and asserts the rate map localizes the field. These
+    tests exercise the actual binning + smoothing pipeline, not hand-built
+    result objects.
+
+    Note on assertions: the peak of a *smoothed* rate map is heavily attenuated
+    relative to the simulator's ``max_rate`` (KDE spreads the mass), and the
+    attenuation is bandwidth- and method-dependent. So we do NOT assert the peak
+    equals ``max_rate``; we assert (a) the peak is at the true field center and
+    (b) the field is strongly detectable above background (peak >> median).
+    """
+
+    TRUE_CENTER = np.array([20.0, 20.0])
+    MAX_RATE = 30.0
+    BANDWIDTH = 3.0
+    BIN_SIZE = 2.0  # grid spacing passed to from_samples (env.bin_sizes is per-bin)
+
+    @pytest.fixture(scope="class")
+    def place_cell_session(self):
+        """Simulate one place-cell session shared across smoothing methods.
+
+        A 40x40 arena (field at center) is small enough that an 1800 s OU walk
+        visits the field thousands of times (~5400 spikes), giving every
+        smoothing method enough data to localize the field.
+        """
+        from neurospatial.simulation import (
+            PlaceCellModel,
+            generate_poisson_spikes,
+            simulate_trajectory_ou,
+        )
+
+        samples = np.random.default_rng(0).uniform(0, 40, (3000, 2))
+        env = Environment.from_samples(samples, bin_size=2.0)
+        env.units = "cm"
+        positions, times = simulate_trajectory_ou(
+            env, duration=1800.0, speed_units="cm", seed=42
+        )
+        model = PlaceCellModel(
+            env,
+            center=self.TRUE_CENTER,
+            width=5.0,
+            max_rate=self.MAX_RATE,
+            baseline_rate=0.1,
+        )
+        rates = model.firing_rate(positions)
+        spike_times = generate_poisson_spikes(rates, times, seed=42)
+        return env, spike_times, times, positions
+
+    @pytest.mark.slow
+    @pytest.mark.parametrize(
+        "smoothing_method", ["binned", "gaussian_kde", "diffusion_kde"]
+    )
+    def test_recovers_field_location(self, place_cell_session, smoothing_method):
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        env, spike_times, times, positions = place_cell_session
+        result = compute_spatial_rate(
+            env,
+            spike_times,
+            times,
+            positions,
+            smoothing_method=smoothing_method,
+            bandwidth=self.BANDWIDTH,
+        )
+
+        # (a) Peak of the rate map is at the true field center (within ~1 bin).
+        peak = result.peak_location()
+        assert np.linalg.norm(peak - self.TRUE_CENTER) < 1.5 * self.BIN_SIZE
+
+        # (b) Field is strongly detectable above background. The smoothed peak
+        # is attenuated vs max_rate, so we check the detectability ratio rather
+        # than the absolute rate.
+        firing_rate = result.firing_rate
+        peak_rate = float(np.nanmax(firing_rate))
+        median_rate = float(np.nanmedian(firing_rate))
+        assert peak_rate > 5.0 * median_rate
+        assert 0.0 < peak_rate <= self.MAX_RATE * 1.4
+
+
+class TestSpatialRateNaNPositionHandling:
+    """NaN positions are treated as missing data (contract from the docstring).
+
+    Injecting NaN into a fraction of positions must not raise, must not
+    collapse the map to all-NaN, and must not corrupt the recovered field:
+    the peak stays at the same location with a comparable rate. This is the
+    operational form of "NaN positions excluded as missing data" -- a stricter
+    element-wise comparison is brittle because spikes occurring during a NaN
+    window are interpolated differently between the NaN run and a pre-filtered
+    run.
+    """
+
+    TRUE_CENTER = np.array([20.0, 20.0])
+    BIN_SIZE = 2.0
+
+    @pytest.mark.slow
+    def test_nan_positions_do_not_corrupt_recovery(self):
+        from neurospatial.encoding.spatial import compute_spatial_rate
+        from neurospatial.simulation import (
+            PlaceCellModel,
+            generate_poisson_spikes,
+            simulate_trajectory_ou,
+        )
+
+        samples = np.random.default_rng(0).uniform(0, 40, (3000, 2))
+        env = Environment.from_samples(samples, bin_size=self.BIN_SIZE)
+        env.units = "cm"
+        positions, times = simulate_trajectory_ou(
+            env, duration=900.0, speed_units="cm", seed=42
+        )
+        model = PlaceCellModel(
+            env, center=self.TRUE_CENTER, width=5.0, max_rate=30.0, baseline_rate=0.1
+        )
+        spike_times = generate_poisson_spikes(
+            model.firing_rate(positions), times, seed=7
+        )
+
+        clean = compute_spatial_rate(
+            env, spike_times, times, positions, smoothing_method="binned", bandwidth=3.0
+        )
+
+        # Inject NaN into 10% of positions (a tracking dropout).
+        rng = np.random.default_rng(123)
+        n = len(times)
+        drop_idx = rng.choice(n, size=n // 10, replace=False)
+        positions_nan = positions.copy()
+        positions_nan[drop_idx] = np.nan
+
+        nan_run = compute_spatial_rate(
+            env,
+            spike_times,
+            times,
+            positions_nan,
+            smoothing_method="binned",
+            bandwidth=3.0,
+        )
+
+        # Did not raise, did not collapse to all-NaN.
+        assert not np.isnan(nan_run.firing_rate).all()
+
+        # Recovered field is not corrupted: peak location and rate are preserved.
+        peak_shift = np.linalg.norm(nan_run.peak_location() - clean.peak_location())
+        assert peak_shift < 1.5 * self.BIN_SIZE
+        clean_peak = float(np.nanmax(clean.firing_rate))
+        nan_peak = float(np.nanmax(nan_run.firing_rate))
+        assert np.isclose(nan_peak, clean_peak, rtol=0.25)

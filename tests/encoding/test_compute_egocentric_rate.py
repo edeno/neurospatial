@@ -1045,3 +1045,184 @@ class TestComputeEgocentricRateSignature:
                 assert param.kind == inspect.Parameter.KEYWORD_ONLY, (
                     f"{param_name} should be keyword-only"
                 )
+
+
+class TestEgocentricRateConvention:
+    """End-to-end recovery of the egocentric direction convention.
+
+    Drives the public ``compute_egocentric_rate`` on Poisson spikes from an
+    object-vector cell with a known egocentric ``preferred_direction`` and
+    asserts the recovered preferred direction matches it within one direction
+    bin. This pins the shared egocentric convention (0=ahead, +pi/2=left,
+    -pi/2=right) between the simulator and the analysis: a sign flip in
+    ``compute_egocentric_bearing`` or a swapped left/right convention would
+    fail at least one parametrization.
+
+    The animal moves on an OU trajectory (the analysis needs many sampled
+    egocentric configurations; a stationary animal collapses occupancy into a
+    single bin and the recovered map is dominated by smoothing artifacts).
+
+    Distance tuning is deliberately NOT asserted here, only sanity-checked to
+    lie within range. Empirically the recovered firing-rate distance marginal
+    is nearly flat and monotonically decreasing with distance, so the global
+    peak lands in the nearest distance bin regardless of the simulated
+    ``preferred_distance`` (10 cm). The recovered peak bin also has among the
+    *lowest* occupancy, so this is not simple under-sampling -- it points at a
+    possible distance-binning / occupancy-normalization weakness in
+    ``compute_egocentric_rate`` that needs separate root-causing (out of scope
+    for this test, which exists to pin the direction convention). Do not
+    "fix" this by tightening the distance assertion until that is understood.
+    The direction convention is the assertion of record.
+    """
+
+    N_DIRECTION_BINS = 12
+    DISTANCE_RANGE = (0.0, 50.0)
+
+    @pytest.fixture(scope="class")
+    def trajectory(self):
+        from neurospatial import Environment
+        from neurospatial.ops.egocentric import heading_from_velocity
+        from neurospatial.simulation import simulate_trajectory_ou
+
+        samples = np.random.default_rng(0).uniform(0, 40, (3000, 2))
+        env = Environment.from_samples(samples, bin_size=2.0)
+        env.units = "cm"
+        positions, times = simulate_trajectory_ou(
+            env, duration=1500.0, speed_units="cm", seed=7
+        )
+        dt = float(times[1] - times[0])
+        headings = heading_from_velocity(positions, dt, min_speed=2.0)
+        return env, positions, times, headings
+
+    @pytest.mark.slow
+    @pytest.mark.parametrize(
+        "preferred_direction",
+        [0.0, np.pi / 2, -np.pi / 2],
+        ids=["ahead", "left", "right"],
+    )
+    def test_preferred_direction_recovered(self, trajectory, preferred_direction):
+        from neurospatial.encoding.egocentric import compute_egocentric_rate
+        from neurospatial.simulation import generate_poisson_spikes
+        from neurospatial.simulation.models.object_vector_cells import (
+            ObjectVectorCellModel,
+        )
+
+        env, positions, times, headings = trajectory
+        object_positions = np.array([[20.0, 20.0]])  # object at arena center
+        model = ObjectVectorCellModel(
+            env=env,
+            object_positions=object_positions,
+            preferred_distance=10.0,
+            distance_width=4.0,
+            preferred_direction=preferred_direction,
+            direction_kappa=4.0,
+            max_rate=25.0,
+            baseline_rate=0.1,
+            metric="euclidean",
+        )
+        rates = model.firing_rate(positions, headings=headings)
+        # Independent seed from the trajectory RNG so spike-acceptance uniforms
+        # are not correlated with the simulated state.
+        spike_times = generate_poisson_spikes(rates, times, seed=99)
+
+        result = compute_egocentric_rate(
+            env,
+            spike_times,
+            times,
+            positions,
+            headings,
+            object_positions,
+            metric="euclidean",
+            distance_range=self.DISTANCE_RANGE,
+            n_distance_bins=10,
+            n_direction_bins=self.N_DIRECTION_BINS,
+        )
+
+        # Direction convention recovered within one direction bin.
+        direction_bin = 2 * np.pi / self.N_DIRECTION_BINS
+        circ_dist = abs(
+            np.angle(np.exp(1j * (result.preferred_direction() - preferred_direction)))
+        )
+        assert circ_dist < direction_bin
+
+        # Distance sanity check only: distance tuning is not reliably recovered
+        # here (flat distance marginal -> peak in nearest bin); see class
+        # docstring for the diagnostic and why we do not assert it.
+        pdist = result.preferred_distance()
+        assert self.DISTANCE_RANGE[0] <= pdist <= self.DISTANCE_RANGE[1]
+
+
+class TestEgocentricRateNaNHandling:
+    """NaN positions/headings are treated as missing data, not errors.
+
+    Per the compute_egocentric_rate docstring contract, NaN samples (tracking
+    dropouts) are excluded rather than raising or corrupting the map.
+    """
+
+    @pytest.fixture(scope="class")
+    def session(self):
+        from neurospatial import Environment
+        from neurospatial.ops.egocentric import heading_from_velocity
+        from neurospatial.simulation import (
+            generate_poisson_spikes,
+            simulate_trajectory_ou,
+        )
+        from neurospatial.simulation.models.object_vector_cells import (
+            ObjectVectorCellModel,
+        )
+
+        samples = np.random.default_rng(0).uniform(0, 40, (3000, 2))
+        env = Environment.from_samples(samples, bin_size=2.0)
+        env.units = "cm"
+        positions, times = simulate_trajectory_ou(
+            env, duration=400.0, speed_units="cm", seed=42
+        )
+        dt = float(times[1] - times[0])
+        headings = heading_from_velocity(positions, dt, min_speed=2.0)
+        object_positions = np.array([[20.0, 20.0]])
+        model = ObjectVectorCellModel(
+            env=env,
+            object_positions=object_positions,
+            preferred_distance=10.0,
+            distance_width=4.0,
+            preferred_direction=0.0,
+            direction_kappa=4.0,
+            max_rate=25.0,
+            baseline_rate=0.1,
+            metric="euclidean",
+        )
+        spike_times = generate_poisson_spikes(
+            model.firing_rate(positions, headings=headings), times, seed=7
+        )
+        return env, spike_times, times, positions, headings, object_positions
+
+    @pytest.mark.parametrize("nan_field", ["positions", "headings"])
+    def test_nan_inputs_excluded_not_raised(self, session, nan_field):
+        from neurospatial.encoding.egocentric import compute_egocentric_rate
+
+        env, spike_times, times, positions, headings, object_positions = session
+        rng = np.random.default_rng(5)
+        drop_idx = rng.choice(len(times), size=len(times) // 10, replace=False)
+        positions_in = positions.copy()
+        headings_in = headings.copy()
+        if nan_field == "positions":
+            positions_in[drop_idx] = np.nan
+        else:
+            headings_in[drop_idx] = np.nan
+
+        result = compute_egocentric_rate(
+            env,
+            spike_times,
+            times,
+            positions_in,
+            headings_in,
+            object_positions,
+            metric="euclidean",
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+        )
+
+        # Did not raise; produced a usable (not all-NaN) map with a finite peak.
+        assert not np.isnan(result.firing_rate).all()
+        assert np.isfinite(np.nanmax(result.firing_rate))

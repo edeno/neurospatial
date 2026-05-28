@@ -1273,7 +1273,9 @@ def compute_spatial_rate(
     times : ndarray, shape (n_samples,)
         Timestamps of trajectory samples in seconds.
     positions : ndarray, shape (n_samples, n_dims)
-        Position coordinates at each time sample.
+        Position coordinates at each time sample. NaN values are treated as
+        missing data and excluded from occupancy and firing-rate computation;
+        callers do not need to pre-filter tracking dropouts.
     smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Smoothing method to use:
 
@@ -1479,7 +1481,9 @@ def compute_spatial_rates(
     times : ndarray, shape (n_samples,)
         Timestamps of trajectory samples in seconds.
     positions : ndarray, shape (n_samples, n_dims)
-        Position coordinates at each time sample.
+        Position coordinates at each time sample. NaN values are treated as
+        missing data and excluded from occupancy and firing-rate computation;
+        callers do not need to pre-filter tracking dropouts.
     smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Smoothing method to use. See ``compute_spatial_rate()`` for details.
     bandwidth : float, default=5.0
