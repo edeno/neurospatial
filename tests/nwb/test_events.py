@@ -1251,3 +1251,195 @@ class TestWriteLapsRegionColumns:
         assert "start_region" not in events.columns
         assert "end_region" not in events.columns
         assert "stop_time" not in events.columns
+
+
+def _create_roundtrip_nwb():
+    """Create a minimal NWB file for on-disk round-trip tests."""
+    from datetime import datetime
+    from uuid import uuid4
+
+    from pynwb import NWBFile
+
+    return NWBFile(
+        session_description="Disk round-trip test session",
+        identifier=str(uuid4()),
+        session_start_time=datetime.now().astimezone(),
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(not HAS_NDX_EVENTS, reason="ndx_events not installed")
+class TestWriteLapsDiskRoundTrip:
+    """write_laps survives a real NWBHDF5IO write -> close -> reopen cycle.
+
+    The existing TestWriteLaps tests only exercise the live in-memory NWBFile
+    object. These tests serialize to an HDF5 file on disk and reload, catching
+    pynwb / ndx-events serialization regressions that the in-memory tests miss.
+    """
+
+    def test_laps_survive_disk_roundtrip(self, tmp_path):
+        """Lap timestamps and direction survive write -> close -> reopen."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.io.nwb import read_events, write_laps
+
+        lap_times = np.array([1.0, 5.5, 10.2, 15.8])
+        lap_types = np.array([0, 1, 0, 1])
+
+        nwbfile = _create_roundtrip_nwb()
+        write_laps(nwbfile, lap_times, lap_types=lap_types)
+
+        nwb_path = tmp_path / "laps.nwb"
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            reopened = io.read()
+            recovered = read_events(reopened, "laps")
+
+        # Element-wise comparison against the input, not just "doesn't raise".
+        expected = pd.DataFrame(
+            {
+                "timestamp": lap_times,
+                "direction": lap_types,
+            }
+        )
+        pd.testing.assert_frame_equal(
+            recovered.reset_index(drop=True)[["timestamp", "direction"]],
+            expected,
+            check_dtype=False,
+        )
+
+    def test_laps_metadata_survives_disk_roundtrip(self, tmp_path):
+        """Optional lap columns (direction, regions, stop_time) survive disk I/O."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.io.nwb import read_events, write_laps
+
+        lap_times = np.array([1.0, 5.5, 10.2])
+        lap_types = np.array([0, 1, 0])
+        stop_times = np.array([2.0, 6.5, 11.2])
+        start_regions = ["home", "goal", "home"]
+        end_regions = ["goal", "home", "goal"]
+
+        nwbfile = _create_roundtrip_nwb()
+        write_laps(
+            nwbfile,
+            lap_times,
+            lap_types=lap_types,
+            stop_times=stop_times,
+            start_regions=start_regions,
+            end_regions=end_regions,
+        )
+
+        nwb_path = tmp_path / "laps_meta.nwb"
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            reopened = io.read()
+            recovered = read_events(reopened, "laps")
+
+        expected = pd.DataFrame(
+            {
+                "timestamp": lap_times,
+                "direction": lap_types,
+                "start_region": start_regions,
+                "end_region": end_regions,
+                "stop_time": stop_times,
+            }
+        )
+        pd.testing.assert_frame_equal(
+            recovered.reset_index(drop=True)[list(expected.columns)],
+            expected,
+            check_dtype=False,
+        )
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(not HAS_NDX_EVENTS, reason="ndx_events not installed")
+class TestWriteRegionCrossingsDiskRoundTrip:
+    """write_region_crossings survives a real disk write -> reopen cycle."""
+
+    def test_region_crossings_survive_disk_roundtrip(self, tmp_path):
+        """Region-crossing events survive write -> close -> reopen."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.io.nwb import read_events, write_region_crossings
+
+        # 8 enter/exit events across 2 regions.
+        crossing_times = np.array([1.0, 2.5, 5.0, 8.2, 9.0, 11.0, 12.5, 14.0])
+        region_names = np.array(
+            ["start", "goal", "start", "goal", "start", "goal", "start", "goal"]
+        )
+        event_types = np.array(
+            ["enter", "enter", "exit", "exit", "enter", "enter", "exit", "exit"]
+        )
+
+        nwbfile = _create_roundtrip_nwb()
+        write_region_crossings(nwbfile, crossing_times, region_names, event_types)
+
+        nwb_path = tmp_path / "crossings.nwb"
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            reopened = io.read()
+            recovered = read_events(reopened, "region_crossings")
+
+        expected = pd.DataFrame(
+            {
+                "timestamp": crossing_times,
+                "region": region_names,
+                "event_type": event_types,
+            }
+        )
+        pd.testing.assert_frame_equal(
+            recovered.reset_index(drop=True)[["timestamp", "region", "event_type"]],
+            expected,
+            check_dtype=False,
+        )
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(not HAS_NDX_EVENTS, reason="ndx_events not installed")
+class TestWriteEventsDiskRoundTrip:
+    """write_events (generic DataFrame writer) survives a real disk round-trip.
+
+    write_events serializes via the ndx-events EventsTable extension, so these
+    tests are gated on ndx_events. There is no fallback path when ndx-events is
+    unavailable (write_events raises ImportError via _require_ndx_events), so
+    the spec's "without ndx-events fallback" test is not applicable and is
+    deliberately omitted.
+    """
+
+    def test_events_with_ndx_events_survive_disk_roundtrip(self, tmp_path):
+        """Generic events DataFrame survives write -> close -> reopen."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.io.nwb import read_events, write_events
+
+        events = pd.DataFrame(
+            {
+                "timestamp": [1.0, 2.5, 5.0, 8.2],
+                "label": ["reward", "lick", "reward", "lick"],
+                "value": [1.0, 2.0, 3.0, 4.0],
+            }
+        )
+
+        nwbfile = _create_roundtrip_nwb()
+        write_events(nwbfile, events, name="behavioral_events")
+
+        nwb_path = tmp_path / "events.nwb"
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            reopened = io.read()
+            recovered = read_events(reopened, "behavioral_events")
+
+        pd.testing.assert_frame_equal(
+            recovered.reset_index(drop=True)[["timestamp", "label", "value"]],
+            events,
+            check_dtype=False,
+        )

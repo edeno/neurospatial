@@ -567,3 +567,122 @@ class TestWriteTrialsDescription:
 
         # NWB creates trials table with its own default description
         assert nwbfile.trials.description is not None
+
+
+def _create_roundtrip_nwb():
+    """Create a minimal NWB file for on-disk round-trip tests."""
+    from datetime import datetime
+    from uuid import uuid4
+
+    from pynwb import NWBFile
+
+    return NWBFile(
+        session_description="Disk round-trip test session",
+        identifier=str(uuid4()),
+        session_start_time=datetime.now().astimezone(),
+    )
+
+
+@pytest.mark.slow
+class TestWriteTrialsDiskRoundTrip:
+    """write_trials survives a real NWBHDF5IO write -> close -> reopen cycle.
+
+    The existing write_trials tests check only the live in-memory NWBFile.
+    These tests serialize the built-in TimeIntervals trials table to an HDF5
+    file on disk and reload it via read_trials, catching pynwb serialization
+    regressions the in-memory tests would miss.
+    """
+
+    def test_trials_survive_disk_roundtrip(self, tmp_path):
+        """Trial intervals and all metadata columns survive disk round-trip."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.io.nwb import read_trials, write_trials
+
+        start_times = np.array([0.0, 10.0, 20.0, 30.0, 40.0])
+        stop_times = np.array([5.0, 15.0, 25.0, 35.0, 45.0])
+        start_regions = ["home", "home", "home", "home", "home"]
+        # "outcome"/"condition" labels are carried in end_region + success,
+        # which are the columns write_trials actually persists.
+        end_regions = ["goal_l", "goal_r", "goal_l", "goal_r", "goal_l"]
+        successes = [True, False, True, True, False]
+
+        nwbfile = _create_roundtrip_nwb()
+        write_trials(
+            nwbfile,
+            start_times=start_times,
+            stop_times=stop_times,
+            start_regions=start_regions,
+            end_regions=end_regions,
+            successes=successes,
+        )
+
+        nwb_path = tmp_path / "trials.nwb"
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            reopened = io.read()
+            recovered = read_trials(reopened)
+
+        expected = pd.DataFrame(
+            {
+                "start_time": start_times,
+                "stop_time": stop_times,
+                "start_region": start_regions,
+                "end_region": end_regions,
+                "success": successes,
+            }
+        )
+        pd.testing.assert_frame_equal(
+            recovered.reset_index(drop=True)[list(expected.columns)],
+            expected,
+            check_dtype=False,
+        )
+
+    def test_trials_with_optional_columns_survives(self, tmp_path):
+        """Trials written with only some optional columns reload as expected.
+
+        Only start_region is supplied; end_region and success are never added
+        as columns, so the recovered table must contain neither.
+        """
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.io.nwb import read_trials, write_trials
+
+        start_times = np.array([0.0, 10.0, 20.0])
+        stop_times = np.array([5.0, 15.0, 25.0])
+        start_regions = ["home", "home", "home"]
+
+        nwbfile = _create_roundtrip_nwb()
+        write_trials(
+            nwbfile,
+            start_times=start_times,
+            stop_times=stop_times,
+            start_regions=start_regions,
+        )
+
+        nwb_path = tmp_path / "trials_partial.nwb"
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            reopened = io.read()
+            recovered = read_trials(reopened)
+
+        # Populated columns survive.
+        expected = pd.DataFrame(
+            {
+                "start_time": start_times,
+                "stop_time": stop_times,
+                "start_region": start_regions,
+            }
+        )
+        pd.testing.assert_frame_equal(
+            recovered.reset_index(drop=True)[list(expected.columns)],
+            expected,
+            check_dtype=False,
+        )
+        # Unsupplied optional columns are absent, not silently fabricated.
+        assert "end_region" not in recovered.columns
+        assert "success" not in recovered.columns

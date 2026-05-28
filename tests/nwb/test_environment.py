@@ -840,6 +840,55 @@ class TestEnvironmentRoundTrip:
         original_coords = list(triangle.exterior.coords)
         np.testing.assert_array_almost_equal(loaded_coords, original_coords)
 
+    @pytest.mark.slow
+    def test_environment_with_polygon_regions_survives_disk_roundtrip(self, tmp_path):
+        """Polygon geometry survives disk round-trip (verified via shapely.equals).
+
+        Complements test_roundtrip_polygon_regions (which checks exterior coords
+        of a single polygon) by mixing a point region with a polygon region and
+        asserting geometric equality with shapely.equals -- Shapely-to-HDF5
+        serialization is non-trivial and is a likely silent-loss spot.
+        """
+        import shapely
+        from pynwb import NWBHDF5IO
+        from shapely.geometry import Polygon
+
+        from neurospatial import Environment
+        from neurospatial.io.nwb import read_environment, write_environment
+
+        rng = np.random.default_rng(7)
+        positions = rng.uniform(0, 100, (1000, 2))
+        env = Environment.from_samples(positions, bin_size=5.0)
+        env.units = "cm"
+
+        # One point region and one polygon region in the same environment.
+        env.regions.add("home", point=(5.0, 5.0))
+        arm = Polygon([(10, 10), (40, 10), (40, 40), (10, 40)])
+        env.regions.add("arm", polygon=arm)
+
+        nwb_path = tmp_path / "polygon_regions.nwb"
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, env)
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = read_environment(nwbfile)
+
+        # Both regions survive with their kinds.
+        assert set(loaded_env.regions.keys()) == {"home", "arm"}
+        assert loaded_env.regions["home"].kind == "point"
+        assert loaded_env.regions["arm"].kind == "polygon"
+
+        # Polygon geometry is preserved exactly (shapely.equals is topological).
+        assert shapely.equals(loaded_env.regions["arm"].data, arm)
+
+        # Point region survives too.
+        np.testing.assert_array_almost_equal(
+            np.asarray(loaded_env.regions["home"].data, dtype=float), [5.0, 5.0]
+        )
+
     def test_roundtrip_spatial_queries_work(self, tmp_path, sample_environment):
         """Test loaded Environment can perform spatial queries."""
         from pynwb import NWBHDF5IO
