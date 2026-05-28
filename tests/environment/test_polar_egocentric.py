@@ -572,3 +572,70 @@ class TestSubsetPreservesGraphLayout:
         mask[:5] = True
         sub = env.subset(bins=mask)
         assert sub._layout_type_used != "MaskedGrid"
+
+
+class TestPolarEgocentricAngularSeam:
+    """Distance-field topology across the angular ±pi seam.
+
+    The factory takes ``distance_bin_size`` / ``angle_bin_size`` (not
+    ``n_distance_bins`` / ``n_direction_bins``). To probe the angular topology
+    in isolation, these tests measure graph-hop distance (a unit-weighted
+    distance field): the weighted geodesic ``distance`` does not distinguish
+    the two cases because the seam edge carries the full chord length as its
+    weight, while the seam edge's mere existence (hop = 1) is the load-bearing
+    property of ``circular_angle=True``.
+    """
+
+    @staticmethod
+    def _build(circular_angle):
+        # distance_bin_size=5 over (0, 50) -> 10 distance bins;
+        # angle_bin_size=pi/6 over (-pi, pi) -> 12 angle bins.
+        return Environment.from_polar_egocentric(
+            distance_range=(0.0, 50.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=5.0,
+            angle_bin_size=np.pi / 6,
+            circular_angle=circular_angle,
+        )
+
+    @staticmethod
+    def _hop_distance_field(env, source_bin):
+        from neurospatial.ops.distance import distance_field
+
+        graph = env.connectivity.copy()
+        for u, v in graph.edges():
+            graph[u][v]["hop"] = 1.0
+        return distance_field(graph, sources=[int(source_bin)], weight="hop")
+
+    @staticmethod
+    def _ring_bins(env):
+        """Indices, angles, and key bins for the innermost distance ring."""
+        distances = env.bin_centers[:, 0]
+        angles = env.bin_centers[:, 1]
+        ring = np.isclose(distances, distances.min())
+        ring_idx = np.flatnonzero(ring)
+        ring_angles = angles[ring_idx]
+        source = int(ring_idx[np.argmax(ring_angles)])  # angle ~ +pi
+        neg_pi = int(ring_idx[np.argmin(ring_angles)])  # angle ~ -pi
+        zero = int(ring_idx[np.argmin(np.abs(ring_angles))])  # angle ~ 0
+        return source, neg_pi, zero
+
+    def test_distance_field_wraps_across_seam(self):
+        """With circular_angle=True the -pi bin is closer than the 0 bin."""
+        env = self._build(circular_angle=True)
+        source, neg_pi, zero = self._ring_bins(env)
+
+        field = self._hop_distance_field(env, source)
+
+        # Source sits near +pi; the seam connects directly to the -pi bin.
+        assert field[neg_pi] < field[zero]
+
+    def test_distance_field_non_circular_does_not_wrap(self):
+        """With circular_angle=False the -pi bin is farther than the 0 bin."""
+        env = self._build(circular_angle=False)
+        source, neg_pi, zero = self._ring_bins(env)
+
+        field = self._hop_distance_field(env, source)
+
+        # No seam edge: reaching -pi requires traversing the whole angular span.
+        assert field[neg_pi] > field[zero]

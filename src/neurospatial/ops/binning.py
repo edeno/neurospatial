@@ -121,7 +121,10 @@ def map_points_to_bins(
         - TieBreakStrategy.LOWEST_INDEX or "lowest_index": Choose the bin with
           smallest index (deterministic, recommended for reproducibility)
         - TieBreakStrategy.CLOSEST_CENTER or "closest_center": Return the actual
-          closest (may be non-deterministic for exact ties, but faster)
+          closest (may be non-deterministic for exact ties, but faster). On an
+          exact tie between equidistant centers, the bin returned is the one
+          reported by the underlying KDTree query; that ordering is
+          implementation-defined and may differ between platforms.
 
     return_dist : bool, default=False
         If True, also return the distance from each point to its assigned bin center.

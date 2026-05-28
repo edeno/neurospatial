@@ -628,3 +628,78 @@ class TestComputeEgocentricDistanceFunctions:
             0.0,  # At the target
         ]
         assert_allclose(distances[:, 0], expected, atol=1e-10)
+
+
+class TestHeadingFromVelocityWestward:
+    """Pin the westward-+pi convention and ±pi stability across brief stops."""
+
+    def test_heading_from_velocity_westward_returns_pi_not_negative_pi(self):
+        """Purely westward motion returns +pi (per arctan2), never -pi."""
+        from neurospatial.ops.egocentric import heading_from_velocity
+
+        # x decreasing from 100 to 0 in equal steps, constant y.
+        x = np.linspace(100.0, 0.0, 11)
+        y = np.full_like(x, 50.0)
+        positions = np.column_stack([x, y])
+
+        headings = heading_from_velocity(positions, dt=0.1, min_speed=5.0)
+
+        assert np.allclose(headings, np.pi, atol=1e-6)
+
+    def test_heading_at_pi_boundary_with_brief_stop(self):
+        """A brief stop during westward motion keeps the heading at +pi.
+
+        Low-speed samples are circularly interpolated from neighbors; with
+        westward motion on both sides the interpolated heading must stay near
+        +pi rather than flipping to -pi.
+        """
+        from neurospatial.ops.egocentric import heading_from_velocity
+
+        # Westward, a 5-sample stop (constant x), then westward again.
+        x = np.array([100, 90, 80, 70, 70, 70, 70, 70, 60, 50, 40, 30], dtype=float)
+        y = np.full_like(x, 50.0)
+        positions = np.column_stack([x, y])
+
+        headings = heading_from_velocity(positions, dt=0.1, min_speed=5.0)
+
+        assert np.allclose(headings, np.pi, atol=1e-6)
+        # Explicitly: no sample collapsed to -pi.
+        assert not np.any(np.isclose(headings, -np.pi, atol=1e-6))
+
+
+class TestAllocentricToEgocentricSignConvention:
+    """Pin the rotation-matrix sign convention end-to-end.
+
+    Animal at the origin. For heading ``h`` and allocentric target ``(tx, ty)``
+    the egocentric coordinate is the rotation by ``-h``::
+
+        ego_x = cos(h) * tx + sin(h) * ty
+        ego_y = -sin(h) * tx + cos(h) * ty
+    """
+
+    @pytest.mark.parametrize(
+        "heading",
+        [0.0, np.pi / 2, np.pi, -np.pi / 2],
+        ids=["heading_0", "heading_pi_2", "heading_pi", "heading_neg_pi_2"],
+    )
+    @pytest.mark.parametrize(
+        "target",
+        [[1.0, 0.0], [0.0, 1.0], [-1.0, 0.0], [0.0, -1.0]],
+        ids=["east", "north", "west", "south"],
+    )
+    def test_sign_convention(self, heading, target):
+        """Each cardinal heading x cardinal target matches the closed form."""
+        from neurospatial.ops.egocentric import allocentric_to_egocentric
+
+        positions = np.array([[0.0, 0.0]])
+        headings = np.array([heading])
+        targets = np.array([target])
+
+        ego = allocentric_to_egocentric(positions, headings, targets)
+
+        tx, ty = target
+        expected_x = np.cos(heading) * tx + np.sin(heading) * ty
+        expected_y = -np.sin(heading) * tx + np.cos(heading) * ty
+
+        assert ego.shape == (1, 1, 2)
+        assert_allclose(ego[0, 0], [expected_x, expected_y], atol=1e-10)
