@@ -1334,9 +1334,8 @@ class TestWriteEventsDiskRoundTrip:
 
     write_events serializes via the ndx-events EventsTable extension, so these
     tests are gated on ndx_events. There is no fallback path when ndx-events is
-    unavailable (write_events raises ImportError via _require_ndx_events), so
-    the spec's "without ndx-events fallback" test is not applicable and is
-    deliberately omitted.
+    unavailable (write_events raises ImportError via _require_ndx_events), so a
+    "without ndx-events" round-trip is not applicable.
     """
 
     def test_events_with_ndx_events_survive_disk_roundtrip(self, tmp_path):

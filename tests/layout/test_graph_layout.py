@@ -44,11 +44,11 @@ def test_point_to_bin_on_node(simple_y_maze_graph):
 def test_point_off_graph_returns_negative_one(simple_y_maze_graph):
     """A linearized position outside the track range maps to -1.
 
-    Deviation from the plan: ``point_to_bin_index`` is KDTree-based and snaps
-    every query to its nearest active bin, so it never returns -1 for an
-    off-graph point. The -1 sentinel for off-track positions is produced by
-    the linearized lookup ``linear_point_to_bin_ind``, which is asserted here.
-    Both behaviors are pinned.
+    Note: ``point_to_bin_index`` is KDTree-based and snaps every query to its
+    nearest active bin, so it never returns -1 for an off-graph point. The -1
+    sentinel for off-track positions is produced by the linearized lookup
+    ``linear_point_to_bin_ind``, which is asserted here. Both behaviors are
+    pinned.
     """
     layout = _build_graph_layout(simple_y_maze_graph)
 
