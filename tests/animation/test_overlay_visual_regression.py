@@ -1,7 +1,10 @@
 """Visual regression tests for overlay rendering.
 
-This module uses pytest-mpl to generate and compare golden baseline images
-for overlay rendering. Tests ensure visual consistency across code changes.
+These tests drive the production video renderer
+(``neurospatial.animation.backends.video_backend.render_video``), read a frame
+back with OpenCV, and compare it against a golden baseline via ``pytest-mpl``.
+Rendering through the real backend (rather than a parallel matplotlib
+reimplementation) means the baselines pin what users actually see.
 
 Run baseline generation:
     uv run pytest tests/animation/test_overlay_visual_regression.py \
@@ -20,26 +23,34 @@ Visual regression tests verify:
 
 from __future__ import annotations
 
+import shutil
+
 import matplotlib
-import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 from matplotlib.figure import Figure
-from matplotlib.patches import Circle, PathPatch
-from matplotlib.path import Path as MplPath
 from shapely.geometry import Polygon
 
 from neurospatial import Environment
+from neurospatial.animation.backends.video_backend import render_video
 from neurospatial.animation.overlays import (
-    BodypartOverlay,
-    HeadDirectionOverlay,
-    PositionOverlay,
+    BodypartData,
+    HeadDirectionData,
+    OverlayData,
+    PositionData,
 )
 from neurospatial.animation.skeleton import Skeleton
 from neurospatial.regions import Regions
 
 # Use non-interactive backend for testing
 matplotlib.use("Agg")
+
+cv2 = pytest.importorskip("cv2")
+
+HAS_FFMPEG = shutil.which("ffmpeg") is not None
+
+# render_video raises RuntimeError without ffmpeg; gate the whole module.
+pytestmark = pytest.mark.skipif(not HAS_FFMPEG, reason="ffmpeg not installed")
 
 
 # =============================================================================
@@ -95,229 +106,93 @@ def simple_field_2d(env_2d):
 
 
 # =============================================================================
-# Helper Functions for Rendering
+# Production-renderer helpers
 # =============================================================================
 
 
-def render_field_with_overlays(
+def _read_last_video_frame(path) -> np.ndarray:
+    """Read the final frame of a video as a uint8 RGB array via OpenCV.
+
+    Reads sequentially rather than seeking: frame seeking is unreliable across
+    codecs, and these test videos are only a handful of frames.
+    """
+    cap = cv2.VideoCapture(str(path))
+    try:
+        frame_rgb: np.ndarray | None = None
+        while True:
+            ok, frame_bgr = cap.read()
+            if not ok:
+                break
+            frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+    finally:
+        cap.release()
+    assert frame_rgb is not None, f"no frames decoded from {path}"
+    return frame_rgb
+
+
+def _frame_to_figure(frame_rgb: np.ndarray) -> Figure:
+    """Wrap a decoded RGB frame in a borderless figure for pytest-mpl."""
+    dpi = 100
+    height, width = frame_rgb.shape[:2]
+    fig = Figure(figsize=(width / dpi, height / dpi), dpi=dpi)
+    ax = fig.add_axes((0.0, 0.0, 1.0, 1.0))
+    ax.imshow(frame_rgb)
+    ax.axis("off")
+    return fig
+
+
+def render_overlay_frame(
     env: Environment,
     field: np.ndarray,
-    position_overlay: PositionOverlay | None = None,
-    bodypart_overlay: BodypartOverlay | None = None,
-    head_direction_overlay: HeadDirectionOverlay | None = None,
-    show_regions: bool = False,
+    save_path,
+    *,
+    n_frames: int,
+    overlay_data: OverlayData | None = None,
+    show_regions: bool | list[str] = False,
     region_alpha: float = 0.3,
-    figsize: tuple[float, float] = (6, 5),
 ) -> Figure:
-    """Render a spatial field with overlays for visual regression testing.
+    """Render a static field through the production video backend.
 
-    This is a simplified rendering function that creates matplotlib figures
-    for visual comparison. It mimics the video backend's rendering approach.
+    The same ``field`` is repeated for ``n_frames`` so any animated overlay
+    (e.g. a position trail) is fully built up by the final frame, which is the
+    frame returned for comparison.
 
     Parameters
     ----------
     env : Environment
         The spatial environment.
     field : np.ndarray
-        The spatial field to render (1D array of values per bin).
-    position_overlay : PositionOverlay | None
-        Optional position overlay to render.
-    bodypart_overlay : BodypartOverlay | None
-        Optional bodypart overlay to render.
-    head_direction_overlay : HeadDirectionOverlay | None
-        Optional head direction overlay to render.
-    show_regions : bool
-        Whether to show environment regions.
+        Spatial field to render (1D array of values per bin).
+    save_path : path-like
+        Where to write the temporary ``.mp4``.
+    n_frames : int
+        Number of frames to render. Overlay arrays must match this length.
+    overlay_data : OverlayData or None
+        Overlay data passed straight to ``render_video``.
+    show_regions : bool or list of str
+        Region rendering flag passed to ``render_video``.
     region_alpha : float
-        Alpha transparency for regions (0-1).
-    figsize : tuple[float, float]
-        Figure size in inches.
+        Region transparency passed to ``render_video``.
 
     Returns
     -------
     Figure
-        The matplotlib figure with rendered overlays.
+        Borderless figure wrapping the final rendered frame.
     """
-    fig, ax = plt.subplots(figsize=figsize)
-
-    # Get dimension ranges for plotting
-    assert env.dimension_ranges is not None  # type narrowing
-    x_min, x_max = env.dimension_ranges[0]
-    y_min, y_max = env.dimension_ranges[1]
-
-    # Plot the spatial field as scatter points
-    bin_centers = env.bin_centers
-    colors = field
-    scatter = ax.scatter(
-        bin_centers[:, 0],
-        bin_centers[:, 1],
-        c=colors,
-        cmap="viridis",
-        s=100,
-        vmin=0,
-        vmax=1,
-        alpha=0.6,
-        zorder=1,
+    fields = [np.asarray(field, dtype=np.float64) for _ in range(n_frames)]
+    render_video(
+        env,
+        fields,
+        str(save_path),
+        fps=10,
+        vmin=0.0,
+        vmax=1.0,
+        n_workers=1,
+        overlay_data=overlay_data,
+        show_regions=show_regions,
+        region_alpha=region_alpha,
     )
-
-    # Add colorbar
-    plt.colorbar(scatter, ax=ax, label="Field Value")
-
-    # Render regions if requested
-    if show_regions and env.regions is not None:
-        for region in env.regions.values():
-            if region.kind == "point":
-                circle = Circle(
-                    tuple(region.data),
-                    radius=3.0,
-                    color="red",
-                    alpha=region_alpha,
-                    zorder=2,
-                )
-                ax.add_patch(circle)
-            elif region.kind == "polygon":
-                coords = np.array(region.data.exterior.coords)  # type: ignore[union-attr]
-                path = MplPath(coords)
-                patch = PathPatch(
-                    path,
-                    facecolor="blue",
-                    edgecolor="blue",
-                    alpha=region_alpha,
-                    linewidth=2,
-                    zorder=2,
-                )
-                ax.add_patch(patch)
-
-    # Render position overlay
-    if position_overlay is not None:
-        # For visual regression, render first point + trail
-        pos_data = position_overlay.positions
-        current_pos = pos_data[0]  # First position
-
-        # Render trail (if enough points)
-        trail_length = position_overlay.trail_length or 5
-        trail_end = min(trail_length, len(pos_data))
-        if trail_end > 1:
-            trail = pos_data[:trail_end]
-            # Decaying alpha for trail
-            for i in range(len(trail) - 1):
-                alpha = 0.3 + 0.7 * (i / (len(trail) - 1))
-                ax.plot(
-                    trail[i : i + 2, 0],
-                    trail[i : i + 2, 1],
-                    color=position_overlay.color,
-                    alpha=alpha,
-                    linewidth=2,
-                    zorder=3,
-                )
-
-        # Render current position marker
-        ax.scatter(
-            current_pos[0],
-            current_pos[1],
-            color=position_overlay.color,
-            s=position_overlay.size * 10,  # Scale for visibility
-            marker="o",
-            edgecolors="white",
-            linewidths=1,
-            zorder=4,
-        )
-
-    # Render bodypart overlay
-    if bodypart_overlay is not None:
-        # Render first frame of bodyparts
-        for part_name, part_data in bodypart_overlay.data.items():
-            pos = part_data[0]  # First frame
-
-            # Get color for this part
-            if bodypart_overlay.colors and part_name in bodypart_overlay.colors:
-                color = bodypart_overlay.colors[part_name]
-            else:
-                color = "cyan"
-
-            # Plot bodypart point
-            ax.scatter(
-                pos[0],
-                pos[1],
-                color=color,
-                s=50,
-                marker="o",
-                edgecolors="white",
-                linewidths=1,
-                zorder=4,
-            )
-
-            # Add label
-            ax.text(
-                pos[0] + 2,
-                pos[1] + 2,
-                part_name,
-                color=color,
-                fontsize=8,
-                zorder=5,
-            )
-
-        # Render skeleton if provided
-        if bodypart_overlay.skeleton:
-            skeleton = bodypart_overlay.skeleton
-            for part_a, part_b in skeleton.edges:
-                if part_a in bodypart_overlay.data and part_b in bodypart_overlay.data:
-                    pos_a = bodypart_overlay.data[part_a][0]
-                    pos_b = bodypart_overlay.data[part_b][0]
-                    ax.plot(
-                        [pos_a[0], pos_b[0]],
-                        [pos_a[1], pos_b[1]],
-                        color=skeleton.edge_color,
-                        linewidth=skeleton.edge_width,
-                        zorder=3,
-                    )
-
-    # Render head direction overlay
-    if head_direction_overlay is not None:
-        # Assume head direction is at center of environment
-        center_x = (x_min + x_max) / 2
-        center_y = (y_min + y_max) / 2
-
-        # Get direction (first frame)
-        direction_data = head_direction_overlay.headings
-
-        # Check if it's an angle or vector
-        if direction_data.ndim == 1:
-            # Angle in radians
-            angle = direction_data[0]
-            dx = head_direction_overlay.length * np.cos(angle)
-            dy = head_direction_overlay.length * np.sin(angle)
-        else:
-            # Unit vector (needs scaling)
-            vector = direction_data[0]
-            dx = vector[0] * head_direction_overlay.length
-            dy = vector[1] * head_direction_overlay.length
-
-        # Render arrow
-        ax.arrow(
-            center_x,
-            center_y,
-            dx,
-            dy,
-            color=head_direction_overlay.color,
-            width=2.0,
-            head_width=5.0,
-            head_length=3.0,
-            zorder=4,
-        )
-
-    # Set limits and labels
-    ax.set_xlim(x_min - 5, x_max + 5)
-    ax.set_ylim(y_min - 5, y_max + 5)
-    ax.set_xlabel("X (cm)")
-    ax.set_ylabel("Y (cm)")
-    ax.set_title("Spatial Field with Overlays")
-    ax.set_aspect("equal")
-    ax.grid(True, alpha=0.3)
-
-    plt.tight_layout()
-
-    return fig
+    return _frame_to_figure(_read_last_video_frame(save_path))
 
 
 # =============================================================================
@@ -330,9 +205,8 @@ def render_field_with_overlays(
     filename="position_overlay_with_trail.png",
     tolerance=5,
 )
-def test_position_overlay_with_trail(env_2d, simple_field_2d):
+def test_position_overlay_with_trail(env_2d, simple_field_2d, tmp_path):
     """Test visual rendering of position overlay with trail."""
-    # Create position overlay with trail
     trajectory = np.array(
         [
             [50, 50],  # Start at center
@@ -343,23 +217,28 @@ def test_position_overlay_with_trail(env_2d, simple_field_2d):
             [75, 65],
             [80, 68],
             [85, 70],
+        ],
+        dtype=float,
+    )
+
+    overlay_data = OverlayData(
+        positions=[
+            PositionData(
+                data=trajectory,
+                color="red",
+                size=15.0,
+                trail_length=5,
+            )
         ]
     )
 
-    position_overlay = PositionOverlay(
-        positions=trajectory,
-        color="red",
-        size=15.0,
-        trail_length=5,
-    )
-
-    fig = render_field_with_overlays(
+    return render_overlay_frame(
         env_2d,
         simple_field_2d,
-        position_overlay=position_overlay,
+        tmp_path / "position_trail.mp4",
+        n_frames=len(trajectory),
+        overlay_data=overlay_data,
     )
-
-    return fig
 
 
 @pytest.mark.mpl_image_compare(
@@ -367,13 +246,13 @@ def test_position_overlay_with_trail(env_2d, simple_field_2d):
     filename="bodypart_overlay_with_skeleton.png",
     tolerance=5,
 )
-def test_bodypart_overlay_with_skeleton(env_2d, simple_field_2d):
+def test_bodypart_overlay_with_skeleton(env_2d, simple_field_2d, tmp_path):
     """Test visual rendering of bodypart overlay with skeleton."""
-    # Create a simple 3-bodypart pose (nose, left_ear, right_ear)
+    # A simple 3-bodypart pose (nose, left_ear, right_ear) across 2 frames.
     bodyparts = {
-        "nose": np.array([[50, 60], [52, 62]]),  # 2 frames
-        "left_ear": np.array([[45, 65], [47, 67]]),
-        "right_ear": np.array([[55, 65], [57, 67]]),
+        "nose": np.array([[50, 60], [52, 62]], dtype=float),
+        "left_ear": np.array([[45, 65], [47, 67]], dtype=float),
+        "right_ear": np.array([[55, 65], [57, 67]], dtype=float),
     }
 
     skeleton = Skeleton(
@@ -390,19 +269,19 @@ def test_bodypart_overlay_with_skeleton(env_2d, simple_field_2d):
         "right_ear": "green",
     }
 
-    bodypart_overlay = BodypartOverlay(
-        data=bodyparts,
-        skeleton=skeleton,
-        colors=colors,
+    overlay_data = OverlayData(
+        bodypart_sets=[
+            BodypartData(bodyparts=bodyparts, skeleton=skeleton, colors=colors)
+        ]
     )
 
-    fig = render_field_with_overlays(
+    return render_overlay_frame(
         env_2d,
         simple_field_2d,
-        bodypart_overlay=bodypart_overlay,
+        tmp_path / "bodypart_skeleton.mp4",
+        n_frames=2,
+        overlay_data=overlay_data,
     )
-
-    return fig
 
 
 @pytest.mark.mpl_image_compare(
@@ -410,25 +289,22 @@ def test_bodypart_overlay_with_skeleton(env_2d, simple_field_2d):
     filename="head_direction_overlay_angle.png",
     tolerance=5,
 )
-def test_head_direction_overlay_angle(env_2d, simple_field_2d):
+def test_head_direction_overlay_angle(env_2d, simple_field_2d, tmp_path):
     """Test visual rendering of head direction overlay (angle format)."""
-    # Create head direction as angles (radians)
-    # 45 degrees = π/4 radians
-    angles = np.array([np.pi / 4, np.pi / 2])  # 2 frames
+    # Head direction as angles (radians): 45 deg then 90 deg.
+    angles = np.array([np.pi / 4, np.pi / 2], dtype=float)
 
-    head_direction_overlay = HeadDirectionOverlay(
-        headings=angles,
-        color="yellow",
-        length=15.0,
+    overlay_data = OverlayData(
+        head_directions=[HeadDirectionData(data=angles, color="yellow", length=15.0)]
     )
 
-    fig = render_field_with_overlays(
+    return render_overlay_frame(
         env_2d,
         simple_field_2d,
-        head_direction_overlay=head_direction_overlay,
+        tmp_path / "head_direction_angle.mp4",
+        n_frames=len(angles),
+        overlay_data=overlay_data,
     )
-
-    return fig
 
 
 @pytest.mark.mpl_image_compare(
@@ -436,30 +312,28 @@ def test_head_direction_overlay_angle(env_2d, simple_field_2d):
     filename="head_direction_overlay_vector.png",
     tolerance=5,
 )
-def test_head_direction_overlay_vector(env_2d, simple_field_2d):
+def test_head_direction_overlay_vector(env_2d, simple_field_2d, tmp_path):
     """Test visual rendering of head direction overlay (vector format)."""
-    # Create head direction as unit vectors
-    # Pointing northeast
+    # Head direction as unit vectors: 45 deg then 90 deg.
     vectors = np.array(
         [
-            [0.707, 0.707],  # 45 degrees normalized
-            [0.0, 1.0],  # 90 degrees
-        ]
+            [0.707, 0.707],
+            [0.0, 1.0],
+        ],
+        dtype=float,
     )
 
-    head_direction_overlay = HeadDirectionOverlay(
-        headings=vectors,
-        color="orange",
-        length=15.0,
+    overlay_data = OverlayData(
+        head_directions=[HeadDirectionData(data=vectors, color="orange", length=15.0)]
     )
 
-    fig = render_field_with_overlays(
+    return render_overlay_frame(
         env_2d,
         simple_field_2d,
-        head_direction_overlay=head_direction_overlay,
+        tmp_path / "head_direction_vector.mp4",
+        n_frames=len(vectors),
+        overlay_data=overlay_data,
     )
-
-    return fig
 
 
 @pytest.mark.mpl_image_compare(
@@ -467,16 +341,16 @@ def test_head_direction_overlay_vector(env_2d, simple_field_2d):
     filename="regions_with_alpha.png",
     tolerance=5,
 )
-def test_regions_with_alpha(env_2d, simple_field_2d):
+def test_regions_with_alpha(env_2d, simple_field_2d, tmp_path):
     """Test visual rendering of regions with alpha transparency."""
-    fig = render_field_with_overlays(
+    return render_overlay_frame(
         env_2d,
         simple_field_2d,
+        tmp_path / "regions_alpha.mp4",
+        n_frames=1,
         show_regions=True,
         region_alpha=0.3,
     )
-
-    return fig
 
 
 @pytest.mark.mpl_image_compare(
@@ -484,28 +358,30 @@ def test_regions_with_alpha(env_2d, simple_field_2d):
     filename="mixed_overlays_all_types.png",
     tolerance=5,
 )
-def test_mixed_overlays_all_types(env_2d, simple_field_2d):
+def test_mixed_overlays_all_types(env_2d, simple_field_2d, tmp_path):
     """Test visual rendering with all overlay types combined."""
-    # Position overlay
+    n_frames = 4
+
     trajectory = np.array(
         [
             [30, 30],
             [35, 35],
             [40, 38],
             [45, 40],
-        ]
+        ],
+        dtype=float,
     )
-    position_overlay = PositionOverlay(
-        positions=trajectory,
+    position = PositionData(
+        data=trajectory,
         color="red",
         size=12.0,
         trail_length=3,
     )
 
-    # Bodypart overlay
+    # Bodyparts held static across the 4 frames.
     bodyparts = {
-        "head": np.array([[60, 60]]),
-        "tail": np.array([[55, 55]]),
+        "head": np.tile(np.array([60.0, 60.0]), (n_frames, 1)),
+        "tail": np.tile(np.array([55.0, 55.0]), (n_frames, 1)),
     }
     skeleton = Skeleton(
         name="test",
@@ -514,31 +390,31 @@ def test_mixed_overlays_all_types(env_2d, simple_field_2d):
         edge_color="white",
         edge_width=2.0,
     )
-    bodypart_overlay = BodypartOverlay(
-        data=bodyparts,
+    bodypart = BodypartData(
+        bodyparts=bodyparts,
         skeleton=skeleton,
         colors={"head": "cyan", "tail": "magenta"},
     )
 
-    # Head direction overlay
-    angles = np.array([np.pi / 3])  # 60 degrees
-    head_direction_overlay = HeadDirectionOverlay(
-        headings=angles,
-        color="yellow",
-        length=12.0,
+    # Head direction held static (60 deg) across the 4 frames.
+    angles = np.full(n_frames, np.pi / 3, dtype=float)
+    head_direction = HeadDirectionData(data=angles, color="yellow", length=12.0)
+
+    overlay_data = OverlayData(
+        positions=[position],
+        bodypart_sets=[bodypart],
+        head_directions=[head_direction],
     )
 
-    fig = render_field_with_overlays(
+    return render_overlay_frame(
         env_2d,
         simple_field_2d,
-        position_overlay=position_overlay,
-        bodypart_overlay=bodypart_overlay,
-        head_direction_overlay=head_direction_overlay,
+        tmp_path / "mixed_overlays.mp4",
+        n_frames=n_frames,
+        overlay_data=overlay_data,
         show_regions=True,
         region_alpha=0.2,
     )
-
-    return fig
 
 
 @pytest.mark.mpl_image_compare(
@@ -546,22 +422,25 @@ def test_mixed_overlays_all_types(env_2d, simple_field_2d):
     filename="position_overlay_no_trail.png",
     tolerance=5,
 )
-def test_position_overlay_no_trail(env_2d, simple_field_2d):
+def test_position_overlay_no_trail(env_2d, simple_field_2d, tmp_path):
     """Test visual rendering of position overlay without trail."""
-    # Single position, no trail
-    position = np.array([[70, 70]])
+    position = np.array([[70, 70]], dtype=float)
 
-    position_overlay = PositionOverlay(
-        positions=position,
-        color="green",
-        size=20.0,
-        trail_length=None,  # No trail
+    overlay_data = OverlayData(
+        positions=[
+            PositionData(
+                data=position,
+                color="green",
+                size=20.0,
+                trail_length=None,  # No trail
+            )
+        ]
     )
 
-    fig = render_field_with_overlays(
+    return render_overlay_frame(
         env_2d,
         simple_field_2d,
-        position_overlay=position_overlay,
+        tmp_path / "position_no_trail.mp4",
+        n_frames=1,
+        overlay_data=overlay_data,
     )
-
-    return fig
