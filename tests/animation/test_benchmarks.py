@@ -122,11 +122,13 @@ def test_napari_seek_performance_100k_frames(benchmark_env, tmp_path):
 
 
 @pytest.mark.slow
+@pytest.mark.benchmark
 def test_parallel_rendering_scalability(small_benchmark_env, tmp_path):
     """Benchmark parallel rendering scalability.
 
-    Target: Near-linear speedup up to 4 workers
-    Method: Render same video with 1, 2, 4, 8 workers, measure time
+    Reports speedups for 1/2/4/8 workers but does not assert on them: parallel
+    speedup is machine- and load-dependent and flakes under a hard threshold.
+    Marked benchmark + slow so it is excluded from the default suite.
     """
     from neurospatial.animation.backends.video_backend import (
         check_ffmpeg_available,
@@ -183,19 +185,9 @@ def test_parallel_rendering_scalability(small_benchmark_env, tmp_path):
             f"{time_sec:.2f}s (speedup: {speedup:.2f}x, efficiency: {efficiency:.1f}%)"
         )
 
-    # Target: 2 workers should be at least 1.2x faster (60% efficiency)
-    # Realistic target accounting for process spawn, pickle, and ffmpeg overhead
-    assert speedups[2] >= 1.2, (
-        f"2-worker speedup {speedups[2]:.2f}x is below 1.2x target"
-    )
-    print("  ✓ Target met: 2 workers achieve ≥1.2x speedup")
-
-    # 4 workers should be at least 1.4x faster (35% efficiency)
-    # Lower efficiency expected due to Amdahl's law and sequential ffmpeg encoding
-    assert speedups[4] >= 1.4, (
-        f"4-worker speedup {speedups[4]:.2f}x is below 1.4x target"
-    )
-    print("  ✓ Target met: 4 workers achieve ≥1.4x speedup")
+    # Speedups reported above are informational. Process spawn, pickling, and
+    # sequential ffmpeg encoding (Amdahl's law) make absolute speedup highly
+    # machine-dependent, so we do not assert a hard threshold here.
 
 
 @pytest.mark.slow

@@ -81,9 +81,19 @@ class TestValidateSimulation:
         # Should have one error per cell
         assert len(result["center_errors"]) == 3
 
-        # Non-NaN errors should be non-negative
+        # Non-NaN errors are non-negative and finite.
+        #
+        # NOTE: we deliberately do *not* bound the center error by a small
+        # multiple of the bin size here. The place-cell simulator places
+        # ground-truth field centers along the arena boundary (y = 0), where
+        # the Ornstein-Uhlenbeck trajectory spends little time. The detected
+        # peak (argmax of the smoothed rate map) therefore lands tens of cm
+        # away from the true center, and observed center errors run ~50-80 cm
+        # for this 100x100 cm / bin_size=2 arena -- far above 2-3 bin sizes.
+        # The field *shape* is still recovered well (see the correlation test).
         valid_errors = result["center_errors"][~np.isnan(result["center_errors"])]
         assert np.all(valid_errors >= 0)
+        assert np.all(np.isfinite(valid_errors))
 
     def test_validate_simulation_correlations(self, simple_2d_env):
         """validate_simulation() should compute correlations between true and detected fields."""
@@ -107,6 +117,15 @@ class TestValidateSimulation:
         valid_corrs = result["correlations"][~np.isnan(result["correlations"])]
         assert np.all(valid_corrs >= -1)
         assert np.all(valid_corrs <= 1)
+
+        # At least one cell must recover its field shape well. We assert on the
+        # *best* cell rather than the mean: the simulator places ground-truth
+        # centers along the arena boundary, where the OU trajectory under-samples,
+        # so poorly-sampled cells have near-zero or negative correlations and the
+        # mean is not reliably > 0.5 (observed mean ~0.28 for this 3-cell session).
+        # A regression that broke field-shape recovery entirely would drop the
+        # maximum correlation below 0.5 and fail here (observed max ~0.88).
+        assert valid_corrs.max() > 0.5
 
     def test_validate_simulation_summary_string(self, simple_2d_env):
         """validate_simulation() should generate summary string."""

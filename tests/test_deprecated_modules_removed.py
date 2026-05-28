@@ -1,12 +1,4 @@
-"""Tests to verify old backward-compatibility files are deleted.
-
-Milestone 10: Delete Old Files
-
-This test file verifies that:
-1. Backward-compatibility re-export wrappers have been deleted
-2. All imports now use the new canonical paths
-3. No production code imports from deleted locations
-"""
+"""Guard tests that assert deprecated module paths no longer resolve."""
 
 from __future__ import annotations
 

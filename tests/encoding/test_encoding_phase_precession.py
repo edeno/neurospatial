@@ -177,6 +177,8 @@ class TestPhasePrecessionFunctionality:
 
         result = phase_precession(positions, phases)
 
+        # Sign-only check; for magnitude recovery, see
+        # TestPhasePrecessionSlopeMagnitude in test_phase_precession_metrics.py.
         assert result.slope < 0
 
     def test_has_phase_precession_returns_bool(self) -> None:

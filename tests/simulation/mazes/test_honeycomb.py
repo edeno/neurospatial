@@ -208,15 +208,45 @@ class TestHoneycombTrackGraph:
             assert "pos" in maze.env_track.connectivity.nodes[node]
 
     def test_hexagonal_connectivity(self):
-        """Platforms should have up to 6 neighbors (hexagonal connectivity)."""
-        from neurospatial.simulation.mazes.honeycomb import make_honeycomb_maze
+        """Platforms form a hex lattice: center has 6 neighbors, max degree is 6."""
+        from neurospatial.simulation.mazes.honeycomb import (
+            HoneycombDims,
+            make_honeycomb_maze,
+        )
 
-        maze = make_honeycomb_maze(include_track=True)
-        assert maze.env_track is not None
+        dims = HoneycombDims(spacing=25.0, n_rings=3)
+        maze = make_honeycomb_maze(dims=dims, include_track=True)
 
-        # This test is difficult because Environment.from_graph adds intermediate nodes
-        # We'll just check that the graph is connected
-        assert nx.is_connected(maze.env_track.connectivity)
+        # Work on the pre-discretized platform lattice via the platform point
+        # regions (the discretized Environment graph inserts intermediate nodes,
+        # which is why the old test could not check degree directly).
+        platform_names = [
+            name for name in maze.env_2d.regions if name.startswith("platform_")
+        ]
+        positions = np.array(
+            [maze.env_2d.regions[name].data for name in platform_names]
+        )
+
+        # Two platforms are lattice-adjacent if their centers are one spacing
+        # apart (allow 15% tolerance for float/binning effects).
+        adjacency_radius = dims.spacing * 1.15
+        degrees = np.array(
+            [
+                int(
+                    np.sum(
+                        (np.linalg.norm(positions - p, axis=1) > 1e-6)
+                        & (np.linalg.norm(positions - p, axis=1) < adjacency_radius)
+                    )
+                )
+                for p in positions
+            ]
+        )
+
+        # The central platform (platform_0, at the origin) is fully surrounded,
+        # so it must have exactly 6 neighbors, and no platform exceeds 6.
+        center_idx = platform_names.index("platform_0")
+        assert degrees[center_idx] == 6
+        assert degrees.max() == 6
 
     def test_track_covers_all_platforms(self):
         """Track should cover all platform positions."""

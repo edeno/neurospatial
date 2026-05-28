@@ -1,12 +1,10 @@
 """Tests for video backend frame naming pattern consistency.
 
-Phase 5.1: Sanitize Frame Naming Pattern
 - Verifies zero-padded filenames are used
 - Verifies parallel_render_frames uses consistent pattern
 - Verifies ffmpeg pattern matches actual saved filenames
 """
 
-import contextlib
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -163,27 +161,32 @@ class TestFrameNamingIntegration:
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stderr="")
 
-            # May fail if ffmpeg not available, but we captured the call
-            with contextlib.suppress(Exception):
-                render_video(
-                    env=simple_env,
-                    fields=fields,
-                    save_path=str(output_path),
-                    n_workers=1,
-                    fps=30,
-                )
+            # render_video must succeed with the subprocess mocked in.
+            render_video(
+                env=simple_env,
+                fields=fields,
+                save_path=str(output_path),
+                n_workers=1,
+                fps=30,
+            )
 
-            # Check that ffmpeg was called with correct pattern
-            if mock_run.called:
-                call_args = mock_run.call_args[0][0]  # Get command list
-                # Find the input pattern argument (after -i)
-                for i, arg in enumerate(call_args):
-                    if arg == "-i" and i + 1 < len(call_args):
-                        pattern = call_args[i + 1]
-                        assert "frame_" in pattern
-                        assert "%0" in pattern
-                        assert ".png" in pattern
-                        break
+            # ffmpeg invocation is required, not optional.
+            assert mock_run.called, "render_video did not invoke ffmpeg subprocess"
+
+            # Extract the input pattern argument (the token after -i).
+            call_args = mock_run.call_args[0][0]
+            pattern = None
+            for i, arg in enumerate(call_args):
+                if arg == "-i" and i + 1 < len(call_args):
+                    pattern = call_args[i + 1]
+                    break
+
+            assert pattern is not None, (
+                f"No -i input pattern in ffmpeg cmd: {call_args}"
+            )
+            assert "frame_" in pattern
+            assert "%0" in pattern
+            assert ".png" in pattern
 
     def test_worker_saves_correct_filenames_non_zero_start(self, simple_env, tmp_path):
         """Verify worker saves correct filenames for non-zero start index."""

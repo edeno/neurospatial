@@ -184,6 +184,15 @@ class TestMakeBarnesMaze:
         maze = make_barnes_maze()
         assert maze.env_track is None
 
+    def test_env_2d_connectivity_is_connected(self):
+        """The open-field 2D environment must be a single connected component."""
+        import networkx as nx
+
+        from neurospatial.simulation.mazes.barnes import make_barnes_maze
+
+        maze = make_barnes_maze()
+        assert nx.is_connected(maze.env_2d.connectivity)
+
     def test_custom_bin_size(self):
         """Custom bin_size should affect discretization."""
         from neurospatial.simulation.mazes.barnes import BarnesDims, make_barnes_maze

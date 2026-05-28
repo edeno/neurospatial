@@ -40,8 +40,12 @@ class TestDetectLaps:
             direction="both",
         )
 
-        # Should detect ~4 laps (auto template from first 10%, then 3 more laps)
-        assert len(laps) >= 2, "Should detect at least 2 laps on circular track"
+        # Trajectory is exactly 4 laps. The auto template consumes the first
+        # ~10% of the trajectory, so one boundary lap can be dropped; observed
+        # count is 3. Pin to {3, 4} to catch both over- and under-detection.
+        assert len(laps) in {3, 4}, (
+            f"4-lap circular track should yield 3-4 detected laps, got {len(laps)}"
+        )
 
         # Verify lap structure
         for lap in laps:
@@ -67,17 +71,31 @@ class TestDetectLaps:
 
         from neurospatial.behavior.segmentation import detect_laps
 
-        # Since we're going counter-clockwise (theta increases → CCW)
-        # Request only clockwise should give fewer/no laps
+        # theta increases, so the trajectory is counter-clockwise. With the auto
+        # template consuming the first lap, one CCW lap is detected; requesting
+        # the opposite direction must find none.
         laps_cw = detect_laps(
-            position_bins, times, env, method="auto", direction="clockwise"
+            position_bins,
+            times,
+            env,
+            method="auto",
+            min_overlap=0.6,
+            direction="clockwise",
         )
         laps_ccw = detect_laps(
-            position_bins, times, env, method="auto", direction="counter-clockwise"
+            position_bins,
+            times,
+            env,
+            method="auto",
+            min_overlap=0.6,
+            direction="counter-clockwise",
         )
 
-        # Counter-clockwise should have more laps
-        assert len(laps_ccw) >= len(laps_cw)
+        # Direction filter must discriminate: CCW motion yields a CCW lap and no
+        # CW laps (a sign error in the direction test would flip these).
+        assert len(laps_cw) == 0
+        assert len(laps_ccw) == 1
+        assert all(lap.direction == "counter-clockwise" for lap in laps_ccw)
 
     def test_detect_laps_reference_method(self):
         """Test lap detection with user-provided reference lap."""
@@ -142,8 +160,9 @@ class TestDetectLaps:
             min_overlap=0.0,  # Not used for region method
         )
 
-        # Should detect laps as segments between region crossings
-        assert len(laps) >= 1
+        # The 2-lap (4pi) trajectory crosses the start region twice, which
+        # bounds exactly one lap segment between the crossings.
+        assert len(laps) == 1
         for lap in laps:
             assert lap.end_time > lap.start_time
 
@@ -289,3 +308,39 @@ class TestDetectLaps:
         for laps in [laps_auto, laps_ref, laps_region]:
             for i in range(len(laps) - 1):
                 assert laps[i].end_time <= laps[i + 1].start_time
+
+
+class TestLapRoundTrip:
+    """Pin the lap simulator and detector to each other."""
+
+    def test_simulate_then_detect_recovers_lap_count(self):
+        """simulate_trajectory_laps -> detect_laps recovers the simulated count."""
+        from neurospatial.behavior.segmentation import detect_laps
+        from neurospatial.simulation.trajectory import simulate_trajectory_laps
+
+        # Linear-corridor environment for back-and-forth laps.
+        x = np.linspace(0, 100, 200)
+        env = Environment.from_samples(
+            np.column_stack([x, np.full_like(x, 50.0)]), bin_size=4.0
+        )
+
+        n_laps = 5
+        positions, times = simulate_trajectory_laps(
+            env,
+            n_laps=n_laps,
+            seed=7,
+            sampling_frequency=30.0,
+            speed_mean=15.0,
+        )
+        position_bins = env.bin_at(positions)
+
+        laps = detect_laps(
+            position_bins, times, env, method="auto", min_overlap=0.7, direction="both"
+        )
+
+        # The auto template consumes the first lap, so the recovered count is
+        # n_laps or n_laps - 1 (one boundary lap dropped); both extremes catch a
+        # break in either half of the simulate->detect stack.
+        assert len(laps) in {n_laps - 1, n_laps}, (
+            f"Simulated {n_laps} laps but detected {len(laps)}"
+        )

@@ -25,6 +25,15 @@ class TestMakeWatermaze:
         assert maze.env_2d.n_bins > 0
         assert maze.env_2d._is_fitted
 
+    def test_env_2d_connectivity_is_connected(self):
+        """The open-field 2D environment must be a single connected component."""
+        import networkx as nx
+
+        from neurospatial.simulation.mazes.watermaze import make_watermaze
+
+        maze = make_watermaze()
+        assert nx.is_connected(maze.env_2d.connectivity)
+
     def test_env_2d_has_correct_units(self):
         """env_2d should have units set to 'cm'."""
         from neurospatial.simulation.mazes.watermaze import make_watermaze

@@ -81,6 +81,15 @@ class TestMakeCheeseboardMaze:
         maze = make_cheeseboard_maze()
         assert maze.env_track is None
 
+    def test_env_2d_connectivity_is_connected(self):
+        """The open-field 2D environment must be a single connected component."""
+        import networkx as nx
+
+        from neurospatial.simulation.mazes.cheeseboard import make_cheeseboard_maze
+
+        maze = make_cheeseboard_maze()
+        assert nx.is_connected(maze.env_2d.connectivity)
+
     def test_has_reward_regions(self):
         """env_2d should have reward regions distributed across surface."""
         from neurospatial.simulation.mazes.cheeseboard import make_cheeseboard_maze
