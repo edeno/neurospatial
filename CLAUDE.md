@@ -453,8 +453,8 @@ env = Environment.from_samples(positions, bin_size=2.0, dilate=True, fill_holes=
 ### Tier 4 - Domains
 
 - **`encoding/`** - Neural encoding (how neurons represent space)
-  - `place.py`, `grid.py`, `head_direction.py`, `border.py`
-  - `object_vector.py`, `spatial_view.py`, `phase_precession.py`, `population.py`
+  - `spatial.py`, `grid.py`, `directional.py`, `border.py`
+  - `egocentric.py`, `view.py`, `phase_precession.py`, `population.py`
 - **`decoding/`** - Neural decoding (read out from population)
 - **`behavior/`** - Behavioral analysis
   - `trajectory.py`, `segmentation.py`, `navigation.py`, `decisions.py`, `reward.py`

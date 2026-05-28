@@ -496,10 +496,12 @@ class TestFiringRateDirectionTuning:
         # Animal at fixed position (10 units West of object)
         position = np.array([[40.0, 50.0]])
 
-        # Test headings from various angles
-        # When heading=0 (East), object is ahead
-        # When heading=pi/2 (North), object is to the right
-        # When heading=pi (West), object is behind
+        # Animal is 10 units West of the object, so the object is due-East
+        # (allocentric bearing 0) of the animal. Egocentric bearing = 0 - heading
+        # (convention: 0=ahead, +pi/2=left, -pi/2=right):
+        #   heading=0    (facing East):  object straight ahead   (bearing 0)
+        #   heading=pi/2 (facing North): object to the right     (bearing -pi/2)
+        #   heading=pi   (facing West):  object behind           (bearing pi)
         headings = np.array([0.0, np.pi / 4, np.pi / 2, 3 * np.pi / 4, np.pi])
 
         rates = []
@@ -514,6 +516,37 @@ class TestFiringRateDirectionTuning:
 
         # Rate should decrease as heading turns away from object
         assert rates[0] > rates[1] > rates[2]
+
+    def test_left_right_symmetry_for_ahead_object(self, env):
+        """With object ahead, response is symmetric under heading-sign reflection.
+
+        A sign flip in the egocentric bearing (swapping left and right) would
+        break this symmetry; the monotonic-decrease test above would not catch it.
+        """
+        from neurospatial.simulation.models.object_vector_cells import (
+            ObjectVectorCellModel,
+        )
+
+        object_pos = np.array([[50.0, 50.0]])
+        model = ObjectVectorCellModel(
+            env=env,
+            object_positions=object_pos,
+            preferred_distance=10.0,
+            distance_width=100.0,  # wide to isolate the direction term
+            preferred_direction=0.0,  # fires when object is straight ahead
+            direction_kappa=4.0,
+            max_rate=20.0,
+            baseline_rate=0.0,
+        )
+
+        # Animal 10 units West of object -> object due-East (allocentric bearing 0).
+        # At heading=0 the object is straight ahead. Reflecting the heading about 0
+        # swaps the egocentric bearing sign (left <-> right), so a tuning curve
+        # centered on 0 must respond identically at +pi/4 and -pi/4.
+        position = np.array([[40.0, 50.0]])
+        rate_left = model.firing_rate(position, headings=np.array([np.pi / 4]))[0]
+        rate_right = model.firing_rate(position, headings=np.array([-np.pi / 4]))[0]
+        assert np.isclose(rate_left, rate_right, rtol=1e-6)
 
 
 class TestObjectSelectivity:
