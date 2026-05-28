@@ -236,7 +236,7 @@ class TestPlaceFieldDetectionAccuracy:
 
     @pytest.mark.slow
     def test_place_field_detection_accuracy(self):
-        """Test place field detection pipeline works end-to-end."""
+        """Detected place-field peaks recover the well-sampled true centers."""
         # Use pre-configured session for reliable test
         # Increased max_rate to 50 Hz allows shorter duration (3x faster)
         session = open_field_session(
@@ -248,6 +248,13 @@ class TestPlaceFieldDetectionAccuracy:
         positions = session.positions
         times = session.times
         spike_trains = session.spike_trains
+        ground_truth = session.ground_truth
+        bin_size = float(np.mean(env.bin_sizes))
+
+        true_centers = np.array(
+            [ground_truth[f"cell_{i}"]["center"] for i in range(len(spike_trains))],
+            dtype=float,
+        )
 
         # Try to detect place fields for all cells
         detected_fields = []
@@ -265,12 +272,30 @@ class TestPlaceFieldDetectionAccuracy:
                 detected_center = env.bin_centers[peak_bin]
                 detected_fields.append(detected_center)
 
-        # Assert that place field detection works for at least some cells
-        # With 40s, 50 Hz max_rate, and 5 cells, should detect at least 2 fields
-        assert len(detected_fields) >= 2, (
-            f"Only detected {len(detected_fields)} fields out of 5 cells. "
-            f"Spike counts: {[len(st) for st in spike_trains]}. "
-            "Place field detection may not be working."
+        detected_fields = np.array(detected_fields)
+
+        # Ground-truth recovery: for each true center, find the nearest detected
+        # peak and count how many land within 2 bin sizes.
+        #
+        # NOTE: the achievable match rate here is 2 of 5, not 5 of 5. The
+        # simulator places ground-truth centers along the arena diagonal
+        # ([0,0], [20,20], ..., [80,80]); the two corner fields ([0,0] and
+        # [80,80]) sit on the boundary where the 40 s Ornstein-Uhlenbeck
+        # trajectory barely samples, so their detected peaks are 20-30 cm off.
+        # Asserting >= 2 (observed: exactly 2 within 2*bin_size) pins genuine
+        # recovery of the interior, well-sampled cells -- a regression that
+        # broke detection would drop below 2 -- without flaking on the
+        # boundary-placement artifact.
+        match_tolerance = 2.0 * bin_size
+        matched = 0
+        for true_center in true_centers:
+            nearest = np.linalg.norm(detected_fields - true_center, axis=1).min()
+            if nearest < match_tolerance:
+                matched += 1
+
+        assert matched >= 2, (
+            f"Only {matched} of {len(true_centers)} true centers matched within "
+            f"{match_tolerance:.1f} cm. Spike counts: {[len(st) for st in spike_trains]}."
         )
 
         # Verify detected centers are within environment bounds

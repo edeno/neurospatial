@@ -548,6 +548,50 @@ class TestFiringRateDirectionTuning:
         rate_right = model.firing_rate(position, headings=np.array([-np.pi / 4]))[0]
         assert np.isclose(rate_left, rate_right, rtol=1e-6)
 
+    @pytest.mark.parametrize("preferred_direction", [0.0, np.pi / 2, np.pi, -np.pi / 2])
+    def test_left_right_symmetry_across_preferred_directions(
+        self, env, preferred_direction
+    ):
+        """Response is symmetric about preferred_direction for any tuning center.
+
+        The egocentric direction tuning is a von Mises centered on
+        ``preferred_direction``, so it must respond identically at egocentric
+        bearings ``preferred_direction +/- delta``. Generalizing the
+        object-ahead case to all four cardinal preferred directions guards
+        against a sign error that only manifests away from 0.
+        """
+        from neurospatial.simulation.models.object_vector_cells import (
+            ObjectVectorCellModel,
+        )
+
+        object_pos = np.array([[50.0, 50.0]])
+        model = ObjectVectorCellModel(
+            env=env,
+            object_positions=object_pos,
+            preferred_distance=10.0,
+            distance_width=100.0,  # wide to isolate the direction term
+            preferred_direction=preferred_direction,
+            direction_kappa=4.0,
+            max_rate=20.0,
+            baseline_rate=0.0,
+        )
+
+        # Animal 10 units West of object -> object due-East (allocentric bearing
+        # 0). At a fixed position the egocentric bearing is b = -heading, so to
+        # place the object at egocentric bearing (preferred_direction +/- delta)
+        # we set heading = -(preferred_direction +/- delta). The von Mises is
+        # symmetric about its center, so both rates must match.
+        position = np.array([[40.0, 50.0]])
+        delta = np.pi / 4
+        heading_plus = -(preferred_direction + delta)
+        heading_minus = -(preferred_direction - delta)
+        rate_plus = model.firing_rate(position, headings=np.array([heading_plus]))[0]
+        rate_minus = model.firing_rate(position, headings=np.array([heading_minus]))[0]
+
+        # Symmetric and non-trivial (the tuning is active, not a flat 0).
+        assert np.isclose(rate_plus, rate_minus, rtol=1e-6)
+        assert rate_plus > 0.0
+
 
 class TestObjectSelectivity:
     """Test different object selectivity modes."""

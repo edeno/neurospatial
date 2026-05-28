@@ -313,14 +313,6 @@ class TestSubgoalEfficiency:
         assert result.mean_efficiency > 0.8
 
 
-class TestPathEfficiencyResult:
-    """Test PathEfficiencyResult dataclass."""
-
-
-class TestComputePathEfficiency:
-    """Test compute_path_efficiency function (combines all metrics)."""
-
-
 class TestErrorHandling:
     """Test error handling and messages."""
 
