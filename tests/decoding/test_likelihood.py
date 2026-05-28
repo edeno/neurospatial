@@ -410,3 +410,34 @@ class TestReferenceComparison:
 
         assert_allclose(ll[0, 0], expected_bin0, rtol=1e-10)
         assert_allclose(ll[0, 1], expected_bin1, rtol=1e-10)
+
+
+class TestLongTrajectoryStability:
+    """log_poisson_likelihood must stay finite on long inputs and extreme rates."""
+
+    def test_long_trajectory_finite_log_likelihood(self) -> None:
+        from neurospatial.decoding.likelihood import log_poisson_likelihood
+
+        rng = np.random.default_rng(0)
+        n_time, n_neurons, n_bins = 100_000, 50, 80
+        encoding_models = rng.uniform(0.5, 30.0, (n_neurons, n_bins))
+        dt = 0.02
+        spike_counts = rng.poisson(
+            encoding_models.mean(axis=1)[None, :] * dt, (n_time, n_neurons)
+        ).astype(np.int64)
+
+        log_likelihood = log_poisson_likelihood(spike_counts, encoding_models, dt)
+
+        assert log_likelihood.shape == (n_time, n_bins)
+        assert np.isfinite(log_likelihood).all()
+
+    def test_extreme_firing_rates_no_overflow(self) -> None:
+        from neurospatial.decoding.likelihood import log_poisson_likelihood
+
+        # lambda*dt reaches 2000 * 0.1 = 200 in bin 0 -- the high-rate regime
+        # where a naive Poisson pmf overflows. The log-space form must not.
+        encoding_models = np.array([[2000.0, 100.0]])
+        spike_counts = np.array([[5]], dtype=np.int64)
+        log_likelihood = log_poisson_likelihood(spike_counts, encoding_models, 0.1)
+
+        assert np.isfinite(log_likelihood).all()

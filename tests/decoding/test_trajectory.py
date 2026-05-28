@@ -646,3 +646,57 @@ class TestDetectTrajectoryRadon:
 
         assert np.isfinite(result.angle_degrees)
         assert result.score >= 0
+
+
+class TestRadonAngleRecovery:
+    """Radon detection recovers the trajectory ANGLE, not merely score > 0.
+
+    The existing diagonal tests assert only ``score > 0``, which is true for any
+    non-negative posterior. These assert the recovered angle matches the known
+    geometry (convention from the docstring: +45 forward, -45 reverse, 0 for a
+    constant position) and that a uniform posterior yields a far lower score than
+    a concentrated trajectory.
+    """
+
+    N = 50
+
+    def _forward_diagonal(self) -> np.ndarray:
+        posterior = np.zeros((self.N, self.N))
+        for t in range(self.N):
+            posterior[t, t] = 1.0
+        return posterior
+
+    def test_forward_diagonal_recovers_plus_45(self) -> None:
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        result = detect_trajectory_radon(self._forward_diagonal(), theta_step=0.5)
+        assert abs(result.angle_degrees - 45.0) < 5.0
+
+    def test_reverse_diagonal_recovers_minus_45(self) -> None:
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        posterior = np.zeros((self.N, self.N))
+        for t in range(self.N):
+            posterior[t, self.N - 1 - t] = 1.0  # position decreases with time
+        result = detect_trajectory_radon(posterior, theta_step=0.5)
+        assert abs(result.angle_degrees - (-45.0)) < 5.0
+
+    def test_constant_position_recovers_zero(self) -> None:
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        posterior = np.zeros((self.N, self.N))
+        posterior[:, self.N // 2] = 1.0  # same bin for all time -> horizontal
+        result = detect_trajectory_radon(posterior, theta_step=1.0)
+        assert abs(result.angle_degrees) < 5.0
+
+    def test_uniform_posterior_scores_far_below_trajectory(self) -> None:
+        from neurospatial.decoding.trajectory import detect_trajectory_radon
+
+        # The Radon score is integrated probability mass along a line, so its
+        # scale depends on the image; an absolute threshold is meaningless. The
+        # meaningful claim is that a uniform posterior (no trajectory) integrates
+        # to far less mass than a concentrated diagonal.
+        uniform = np.full((self.N, self.N), 1.0 / self.N)
+        uniform_score = detect_trajectory_radon(uniform).score
+        diagonal_score = detect_trajectory_radon(self._forward_diagonal()).score
+        assert uniform_score < 0.2 * diagonal_score

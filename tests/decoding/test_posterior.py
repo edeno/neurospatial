@@ -937,3 +937,90 @@ class TestConsistency:
 
         expected_argmax = np.argmax(result.posterior, axis=1)
         assert_array_equal(result.map_estimate, expected_argmax)
+
+
+class TestPosteriorClosedForm:
+    """Pin Bayes' rule against a closed-form answer, not against the function itself.
+
+    The existing tests check that rows sum to 1; these check the actual posterior
+    values on toy problems where the answer can be hand-computed, so a bug in the
+    log-space arithmetic that still produced a normalized (but wrong) posterior
+    would be caught.
+    """
+
+    def test_two_bin_one_neuron_bayes_closed_form(self) -> None:
+        from scipy.stats import poisson
+
+        from neurospatial.decoding.likelihood import log_poisson_likelihood
+        from neurospatial.decoding.posterior import normalize_to_posterior
+
+        # 1 neuron, 2 bins, lambda=[5, 10] Hz, dt=0.1 s, n=2 spikes, uniform prior.
+        spike_counts = np.array([[2]], dtype=np.int64)  # (n_time=1, n_neurons=1)
+        encoding_models = np.array([[5.0, 10.0]])  # (n_neurons=1, n_bins=2)
+        dt = 0.1
+        log_likelihood = log_poisson_likelihood(spike_counts, encoding_models, dt)
+        posterior = normalize_to_posterior(log_likelihood, prior=np.array([0.5, 0.5]))
+
+        # Closed-form Bayes posterior from the Poisson pmf. The omitted -log(n!)
+        # term and the 1/n! factor cancel in normalization, so the analytic pmf
+        # ratio is the ground truth.
+        pmf = poisson.pmf(2, np.array([5.0, 10.0]) * dt)
+        expected = pmf / pmf.sum()
+        np.testing.assert_allclose(posterior[0], expected, atol=1e-12)
+
+    def test_uniform_likelihood_returns_prior(self) -> None:
+        from neurospatial.decoding.likelihood import log_poisson_likelihood
+        from neurospatial.decoding.posterior import normalize_to_posterior
+
+        # Identical firing rate in every bin -> likelihood is flat across bins,
+        # so the posterior must equal the (normalized) prior exactly.
+        encoding_models = np.array([[7.0, 7.0, 7.0]])
+        log_likelihood = log_poisson_likelihood(
+            np.array([[3]], dtype=np.int64), encoding_models, 0.1
+        )
+        prior = np.array([0.2, 0.3, 0.5])
+        posterior = normalize_to_posterior(log_likelihood, prior=prior)
+        np.testing.assert_allclose(posterior[0], prior, atol=1e-12)
+
+    def test_zero_prior_bin_is_negligible(self) -> None:
+        from neurospatial.decoding.likelihood import log_poisson_likelihood
+        from neurospatial.decoding.posterior import normalize_to_posterior
+
+        # A zero-prior bin should carry essentially no posterior mass. Note:
+        # normalize_to_posterior clips priors to 1e-10 before taking the log
+        # (see its docstring), so the bin is ~1e-10, not exactly 0.
+        encoding_models = np.array([[5.0, 10.0, 8.0]])
+        log_likelihood = log_poisson_likelihood(
+            np.array([[2]], dtype=np.int64), encoding_models, 0.1
+        )
+        posterior = normalize_to_posterior(
+            log_likelihood, prior=np.array([0.5, 0.5, 0.0])
+        )
+        assert posterior[0, 2] < 1e-8
+        assert np.isclose(posterior[0].sum(), 1.0, atol=1e-12)
+
+
+class TestLongTrajectoryStability:
+    """The log-sum-exp posterior must stay finite and normalized on long inputs.
+
+    Products of per-neuron Poisson likelihoods underflow in linear space over
+    many time bins / large populations; the log-space implementation must not.
+    """
+
+    def test_long_trajectory_finite_normalized_posterior(self) -> None:
+        from neurospatial.decoding.likelihood import log_poisson_likelihood
+        from neurospatial.decoding.posterior import normalize_to_posterior
+
+        rng = np.random.default_rng(0)
+        n_time, n_neurons, n_bins = 100_000, 50, 80
+        encoding_models = rng.uniform(0.5, 30.0, (n_neurons, n_bins))
+        dt = 0.02
+        spike_counts = rng.poisson(
+            encoding_models.mean(axis=1)[None, :] * dt, (n_time, n_neurons)
+        ).astype(np.int64)
+
+        log_likelihood = log_poisson_likelihood(spike_counts, encoding_models, dt)
+        posterior = normalize_to_posterior(log_likelihood)
+
+        assert np.isfinite(posterior).all()
+        np.testing.assert_allclose(posterior.sum(axis=1), 1.0, atol=1e-10)

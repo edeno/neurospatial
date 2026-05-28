@@ -289,3 +289,69 @@ class TestGenerateJitteredSpikes:
         ):
             assert np.all(surrogate >= window[0])
             assert np.all(surrogate <= window[1])
+
+
+class TestInhomogeneousPoissonRatePreservation:
+    """Inhomogeneous-Poisson surrogates must preserve the time-varying rate.
+
+    Existing tests check count/shape/dtype/reproducibility; this checks the
+    actual contract -- the average surrogate reproduces the (smoothed) input
+    rate. Without this, a surrogate that flattened or distorted the rate would
+    pass the existing tests.
+    """
+
+    def test_average_surrogate_matches_input_rate(self) -> None:
+        from scipy.ndimage import gaussian_filter1d
+
+        from neurospatial.stats.surrogates import (
+            generate_inhomogeneous_poisson_surrogates,
+        )
+
+        # Ramping rate lambda(t) = 1 + 9 t/T.
+        n_time = 500
+        t = np.arange(n_time)
+        rate = 1.0 + 9.0 * (t / n_time)
+        counts = np.random.default_rng(1).poisson(rate).astype(np.int64).reshape(-1, 1)
+
+        accumulator = np.zeros(n_time)
+        n_surrogates = 1000
+        for surrogate in generate_inhomogeneous_poisson_surrogates(
+            counts, smoothing_window=5, n_surrogates=n_surrogates, rng=7
+        ):
+            accumulator += surrogate[:, 0]
+        mean_surrogate = accumulator / n_surrogates
+
+        # Compare heavily-smoothed profiles (the surrogate preserves slow rate
+        # structure, not bin-by-bin counts).
+        smoothed_surrogate = gaussian_filter1d(mean_surrogate, sigma=5)
+        smoothed_input = gaussian_filter1d(counts[:, 0].astype(float), sigma=5)
+        np.testing.assert_allclose(
+            smoothed_surrogate, smoothed_input, rtol=0.15, atol=0.5
+        )
+
+    def test_constant_rate_surrogate_is_flat(self) -> None:
+        from scipy.ndimage import gaussian_filter1d
+
+        from neurospatial.stats.surrogates import (
+            generate_inhomogeneous_poisson_surrogates,
+        )
+
+        n_time = 500
+        counts = (
+            np.random.default_rng(2)
+            .poisson(5.0, n_time)
+            .astype(np.int64)
+            .reshape(-1, 1)
+        )
+
+        accumulator = np.zeros(n_time)
+        n_surrogates = 1000
+        for surrogate in generate_inhomogeneous_poisson_surrogates(
+            counts, smoothing_window=5, n_surrogates=n_surrogates, rng=11
+        ):
+            accumulator += surrogate[:, 0]
+        mean_surrogate = accumulator / n_surrogates
+
+        # A constant input rate -> the averaged surrogate is flat around 5.
+        smoothed = gaussian_filter1d(mean_surrogate, sigma=10)
+        assert np.allclose(smoothed, 5.0, atol=1.0)

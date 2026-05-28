@@ -279,3 +279,55 @@ class TestShufflePlaceFieldsCircular2D:
 
         with pytest.raises(ValueError, match="requires a 2D environment"):
             next(shuffle_place_fields_circular_2d(encoding_models, env, n_shuffles=1))
+
+
+class TestShufflePairingDestruction:
+    """A shuffle is only a valid null if it preserves the marginal AND destroys
+    the pairing it is meant to test. Existing tests check preservation; these
+    add the pairing-destruction half.
+    """
+
+    def test_cell_identity_preserves_marginal_and_destroys_pairing(self) -> None:
+        from neurospatial.stats.shuffle import shuffle_cell_identity
+
+        rng = np.random.default_rng(0)
+        n_neurons = 20
+        spike_counts = rng.poisson(3.0, (100, n_neurons)).astype(np.int64)
+        encoding_models = rng.uniform(0.0, 10.0, (n_neurons, 30))
+        original_column_sums = np.sort(spike_counts.sum(axis=0))
+
+        moved = 0
+        n_shuffles = 200
+        for shuffled, _ in shuffle_cell_identity(
+            spike_counts, encoding_models, n_shuffles=n_shuffles, rng=42
+        ):
+            # Marginal preserved: the multiset of per-neuron column totals is
+            # unchanged (columns are permuted, not altered).
+            assert np.array_equal(np.sort(shuffled.sum(axis=0)), original_column_sums)
+            # Pairing destroyed: the spike-train column now paired with place
+            # field 0 differs from the original neuron-0 column.
+            if not np.array_equal(shuffled[:, 0], spike_counts[:, 0]):
+                moved += 1
+
+        # For a random permutation of N columns, P(column 0 fixed) = 1/N, so the
+        # fraction moved should be ~1 - 1/20 = 0.95; require >= 0.9.
+        assert moved / n_shuffles >= 0.9
+
+    def test_isi_shuffle_destroys_isi_order(self) -> None:
+        from neurospatial.stats.shuffle import shuffle_spikes_isi
+
+        # A spike train with monotonically increasing ISIs. The shuffle permutes
+        # the ISIs (preserving their multiset), so the shuffled ISI *order* must
+        # be uncorrelated with the original. (Multiset preservation is covered by
+        # existing tests; this covers order destruction.)
+        n = 200
+        event_times = np.cumsum(np.arange(1, n + 1)).astype(np.float64)
+        original_isi = np.diff(event_times)
+
+        abs_corrs = []
+        for shuffled in shuffle_spikes_isi(event_times, n_shuffles=200, rng=3):
+            shuffled_isi = np.diff(shuffled)
+            abs_corrs.append(abs(np.corrcoef(original_isi, shuffled_isi)[0, 1]))
+
+        # E[|r|] ~ sqrt(2 / (pi * (m-1))) ~ 0.057 for m=199; well under 0.1.
+        assert np.mean(abs_corrs) < 0.1

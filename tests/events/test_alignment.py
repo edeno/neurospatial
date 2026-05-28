@@ -1064,6 +1064,23 @@ class TestAlignEvents:
         assert all(result["relative_time"] >= window[0])
         assert all(result["relative_time"] <= window[1])
 
+    def test_event_exactly_at_reference_time_kept(self):
+        """An event exactly at the reference time yields relative_time == 0.
+
+        Guards against a strict ``> 0`` filter dropping coincident events.
+        """
+        import pandas as pd
+
+        from neurospatial.events.alignment import align_events
+
+        events = pd.DataFrame({"timestamp": [10.0]})
+        reference = pd.DataFrame({"timestamp": [10.0]})
+
+        result = align_events(events, reference, window=(-0.5, 0.5))
+
+        assert len(result) == 1
+        assert result["relative_time"].iloc[0] == 0.0
+
 
 class TestPlotPeriEventHistogram:
     """Tests for plot_peri_event_histogram() function."""

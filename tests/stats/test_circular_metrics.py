@@ -2033,3 +2033,48 @@ class TestFuzzEdgeCases:
         # Circular-linear correlation is always non-negative
         assert 0 <= rho <= 1
         assert 0 <= pvalue <= 1
+
+
+class TestCircularStatsAnalyticReference:
+    """Pin circular statistics against analytic references, not qualitative
+    thresholds. Existing tests use `p < 0.001`-style checks; these tie the
+    statistics to hand-derived / independently-computed values.
+    """
+
+    def test_rayleigh_z_matches_independent_resultant(self) -> None:
+        from scipy.stats import vonmises
+
+        from neurospatial.stats.circular import rayleigh_test
+
+        # Deterministic von Mises sample (kappa=2). Theoretical mean resultant
+        # length is I1(2)/I0(2) ~= 0.698; this finite n=100 sample fluctuates
+        # around it.
+        angles = vonmises.rvs(kappa=2.0, loc=0.0, size=100, random_state=42)
+
+        z, pval = rayleigh_test(angles)
+
+        # Independent computation of the resultant length (not via the function
+        # under test): the function defines z = n * R^2, so they must match.
+        resultant_length = float(np.abs(np.mean(np.exp(1j * angles))))
+        assert np.isclose(z, 100 * resultant_length**2, rtol=1e-6)
+        # Sample is consistent with kappa=2 theory (wide tolerance for n=100).
+        assert abs(resultant_length - 0.698) < 0.1
+        # Strongly non-uniform -> vanishing p-value.
+        assert pval < 1e-15
+
+    def test_circular_linear_correlation_brackets_association(self) -> None:
+        from neurospatial.stats.circular import circular_linear_correlation
+
+        linear = np.linspace(0, 10, 300)
+        rng = np.random.default_rng(0)
+
+        # A clean linear phase-position relationship is strongly detected.
+        angles_linear = (0.6 * linear) % (2 * np.pi)
+        r_linear, _ = circular_linear_correlation(angles_linear, linear)
+        assert r_linear > 0.7
+
+        # Random angles carry no association: low r and a non-significant p.
+        angles_random = rng.uniform(0, 2 * np.pi, linear.size)
+        r_random, p_random = circular_linear_correlation(angles_random, linear)
+        assert r_random < 0.2
+        assert p_random > 0.05
