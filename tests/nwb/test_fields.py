@@ -13,6 +13,8 @@ import pytest
 # pynwb is required for all tests
 pynwb = pytest.importorskip("pynwb")
 
+from ._nwb_helpers import create_roundtrip_nwb  # noqa: E402
+
 
 class TestWritePlaceField:
     """Tests for write_place_field() function."""
@@ -798,20 +800,6 @@ class TestWriteOccupancy:
         )
 
 
-def _create_roundtrip_nwb():
-    """Create a minimal NWB file for on-disk round-trip tests."""
-    from datetime import datetime
-    from uuid import uuid4
-
-    from pynwb import NWBFile
-
-    return NWBFile(
-        session_description="Disk round-trip test session",
-        identifier=str(uuid4()),
-        session_start_time=datetime.now().astimezone(),
-    )
-
-
 def _spatial_rate_result():
     """Build a small SpatialRateResult on synthetic data.
 
@@ -855,7 +843,7 @@ class TestWriteFieldsDiskRoundTrip:
         firing_rate = np.asarray(result.firing_rate, dtype=np.float64)
         occupancy = np.asarray(result.occupancy, dtype=np.float64)
 
-        nwbfile = _create_roundtrip_nwb()
+        nwbfile = create_roundtrip_nwb()
         write_place_field(nwbfile, env, firing_rate, name="cell_000")
         write_occupancy(nwbfile, env, occupancy, name="occupancy")
 
@@ -893,7 +881,7 @@ class TestWriteFieldsDiskRoundTrip:
 
         fields = [rng.uniform(0, 10, env.n_bins) for _ in range(5)]
 
-        nwbfile = _create_roundtrip_nwb()
+        nwbfile = create_roundtrip_nwb()
         for i, field in enumerate(fields):
             write_place_field(nwbfile, env, field, name=f"cell_{i:03d}")
 

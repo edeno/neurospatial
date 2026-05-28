@@ -482,16 +482,11 @@ class TestFastPathFallbackEquivalence:
     """
 
     def test_set_array_matches_full_redraw(self, grid_env, grid_fields):
-        import io
-
-        pil = pytest.importorskip("PIL.Image")
-
         from neurospatial.animation.backends.widget_backend import (
             PersistentFigureRenderer,
         )
 
-        def decode(png_bytes):
-            return np.array(pil.open(io.BytesIO(png_bytes)).convert("RGB"))
+        from ._image_helpers import decode_png
 
         frame_idx = 2
 
@@ -517,5 +512,7 @@ class TestFastPathFallbackEquivalence:
             full_renderer.close()
 
         np.testing.assert_allclose(
-            decode(fast_bytes).astype(int), decode(full_bytes).astype(int), atol=2
+            decode_png(fast_bytes).astype(int),
+            decode_png(full_bytes).astype(int),
+            atol=2,
         )

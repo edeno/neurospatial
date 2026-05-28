@@ -14,6 +14,8 @@ import pytest
 # pynwb is required for all tests
 pynwb = pytest.importorskip("pynwb")
 
+from ._nwb_helpers import create_roundtrip_nwb  # noqa: E402
+
 
 class TestWriteTrialsFromTrialObjects:
     """Tests for write_trials() using list[Trial] input."""
@@ -569,20 +571,6 @@ class TestWriteTrialsDescription:
         assert nwbfile.trials.description is not None
 
 
-def _create_roundtrip_nwb():
-    """Create a minimal NWB file for on-disk round-trip tests."""
-    from datetime import datetime
-    from uuid import uuid4
-
-    from pynwb import NWBFile
-
-    return NWBFile(
-        session_description="Disk round-trip test session",
-        identifier=str(uuid4()),
-        session_start_time=datetime.now().astimezone(),
-    )
-
-
 @pytest.mark.slow
 class TestWriteTrialsDiskRoundTrip:
     """write_trials survives a real NWBHDF5IO write -> close -> reopen cycle.
@@ -607,7 +595,7 @@ class TestWriteTrialsDiskRoundTrip:
         end_regions = ["goal_l", "goal_r", "goal_l", "goal_r", "goal_l"]
         successes = [True, False, True, True, False]
 
-        nwbfile = _create_roundtrip_nwb()
+        nwbfile = create_roundtrip_nwb()
         write_trials(
             nwbfile,
             start_times=start_times,
@@ -654,7 +642,7 @@ class TestWriteTrialsDiskRoundTrip:
         stop_times = np.array([5.0, 15.0, 25.0])
         start_regions = ["home", "home", "home"]
 
-        nwbfile = _create_roundtrip_nwb()
+        nwbfile = create_roundtrip_nwb()
         write_trials(
             nwbfile,
             start_times=start_times,

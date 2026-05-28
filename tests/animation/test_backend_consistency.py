@@ -30,13 +30,14 @@ that is not available in a headless run.
 from __future__ import annotations
 
 import base64
-import io
 import re
 
 import numpy as np
 import pytest
 
 from neurospatial import Environment
+
+from ._image_helpers import decode_png
 
 pytestmark = pytest.mark.integration
 
@@ -64,17 +65,11 @@ def canonical_parity_data():
     }
 
 
-def _decode_png(png_bytes: bytes) -> np.ndarray:
-    """Decode PNG/JPEG bytes to an (H, W, 3) uint8 RGB array."""
-    pil = pytest.importorskip("PIL.Image")
-    return np.array(pil.open(io.BytesIO(png_bytes)).convert("RGB"))
-
-
 def _canonical_frame(data: dict, *, vmin=None, vmax=None, cmap=None) -> np.ndarray:
     """The shared matplotlib frame that every backend's color mapping derives from."""
     from neurospatial.animation.rendering import render_field_to_png_bytes
 
-    return _decode_png(
+    return decode_png(
         render_field_to_png_bytes(
             data["env"],
             data["fields"][_FRAME],
@@ -102,7 +97,7 @@ def _html_frame(data: dict, tmp_path, *, vmin=None, vmax=None, cmap=None) -> np.
     )
     # Frames are embedded as raw base64 PNGs in a `const frames = [...]` array.
     b64_frames = re.findall(r'"([A-Za-z0-9+/=]{100,})"', out.read_text())
-    return _decode_png(base64.b64decode(b64_frames[_FRAME]))
+    return decode_png(base64.b64decode(b64_frames[_FRAME]))
 
 
 def _video_frame(
@@ -140,7 +135,7 @@ def _widget_frame(data: dict, *, vmin=None, vmax=None, cmap=None) -> np.ndarray:
         render_field_to_png_bytes_with_overlays,
     )
 
-    return _decode_png(
+    return decode_png(
         render_field_to_png_bytes_with_overlays(
             data["env"],
             data["fields"][_FRAME],

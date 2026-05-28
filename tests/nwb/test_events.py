@@ -14,6 +14,7 @@ import pytest
 # pynwb is required for all tests
 pynwb = pytest.importorskip("pynwb")
 
+from ._nwb_helpers import create_roundtrip_nwb  # noqa: E402
 
 # Check if ndx_events is available for EventsTable tests
 try:
@@ -1179,20 +1180,6 @@ class TestWriteLapsRegionColumns:
         assert "stop_time" not in events.columns
 
 
-def _create_roundtrip_nwb():
-    """Create a minimal NWB file for on-disk round-trip tests."""
-    from datetime import datetime
-    from uuid import uuid4
-
-    from pynwb import NWBFile
-
-    return NWBFile(
-        session_description="Disk round-trip test session",
-        identifier=str(uuid4()),
-        session_start_time=datetime.now().astimezone(),
-    )
-
-
 @pytest.mark.slow
 @pytest.mark.skipif(not HAS_NDX_EVENTS, reason="ndx_events not installed")
 class TestWriteLapsDiskRoundTrip:
@@ -1212,7 +1199,7 @@ class TestWriteLapsDiskRoundTrip:
         lap_times = np.array([1.0, 5.5, 10.2, 15.8])
         lap_types = np.array([0, 1, 0, 1])
 
-        nwbfile = _create_roundtrip_nwb()
+        nwbfile = create_roundtrip_nwb()
         write_laps(nwbfile, lap_times, lap_types=lap_types)
 
         nwb_path = tmp_path / "laps.nwb"
@@ -1248,7 +1235,7 @@ class TestWriteLapsDiskRoundTrip:
         start_regions = ["home", "goal", "home"]
         end_regions = ["goal", "home", "goal"]
 
-        nwbfile = _create_roundtrip_nwb()
+        nwbfile = create_roundtrip_nwb()
         write_laps(
             nwbfile,
             lap_times,
@@ -1302,7 +1289,7 @@ class TestWriteRegionCrossingsDiskRoundTrip:
             ["enter", "enter", "exit", "exit", "enter", "enter", "exit", "exit"]
         )
 
-        nwbfile = _create_roundtrip_nwb()
+        nwbfile = create_roundtrip_nwb()
         write_region_crossings(nwbfile, crossing_times, region_names, event_types)
 
         nwb_path = tmp_path / "crossings.nwb"
@@ -1352,7 +1339,7 @@ class TestWriteEventsDiskRoundTrip:
             }
         )
 
-        nwbfile = _create_roundtrip_nwb()
+        nwbfile = create_roundtrip_nwb()
         write_events(nwbfile, events, name="behavioral_events")
 
         nwb_path = tmp_path / "events.nwb"
