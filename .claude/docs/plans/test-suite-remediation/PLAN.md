@@ -1,6 +1,6 @@
 # Test-Suite Remediation Plan
 
-**Status:** Not started.
+**Status:** Complete — all 8 phases merged to `main` (2026-05-28). Phase 1: `920eba2` + `d73cdc8`; Phase 2: `a8b216e`; Phase 3: `d4f8da4`; Phase 4: `b72dc61` (Task 1) + `8e5ed03` (Task 2, visual-regression rewire); Phase 5: `e23365d`; Phase 6: `628acb2`; Phase 7: `fad0dcb`; Phase 8: `ad3d105`. Post-merge "fix all" follow-up closed two real source bugs found during execution (`9872487` simulator boundary field centers; `ef5090a` egocentric binned-rate distance recovery) and a shared-helper dedup (`215c971`).
 
 A full-suite audit of `tests/` (301 files, ~160k LOC, 6 parallel reviewer agents) surfaced five real bugs / silent-contract violations in shipping code, recurring "plumbing-tested, behavior-untested" patterns in encoding/decoding/simulation, a load-bearing animation-backend parity claim that does not actually compare backends, severely under-tested core primitives (`map_points_to_bins`, 5 layout engines), missing NWB disk round-trips for everything except `Environment`, and assorted hygiene drift. This plan decomposes the remediation into 8 independently-shippable PRs ordered by user-visible-risk first, then coverage, then quality, then hygiene/mocks.
 
