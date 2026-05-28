@@ -468,3 +468,54 @@ class TestNoMeshFallback:
             ), f"Expected fallback log, got: {[r.message for r in caplog.records]}"
         finally:
             renderer.close()
+
+
+class TestFastPathFallbackEquivalence:
+    """The set_array fast path must produce the same pixels as a full redraw.
+
+    Existing tests only check that fallback is *logged*; none verify that the
+    optimized in-place ``QuadMesh.set_array`` update (used for grid layouts on
+    subsequent frames) yields the same image as a from-scratch render. A bug in
+    the fast path that displayed stale or wrong data would pass the logging
+    tests. This drives the real ``PersistentFigureRenderer`` (no mocks) and
+    compares decoded pixels.
+    """
+
+    def test_set_array_matches_full_redraw(self, grid_env, grid_fields):
+        import io
+
+        pil = pytest.importorskip("PIL.Image")
+
+        from neurospatial.animation.backends.widget_backend import (
+            PersistentFigureRenderer,
+        )
+
+        def decode(png_bytes):
+            return np.array(pil.open(io.BytesIO(png_bytes)).convert("RGB"))
+
+        frame_idx = 2
+
+        # Fast path: render frames 0..2 in sequence on one renderer, so frame 2
+        # is produced by the in-place set_array update on a grid layout.
+        fast_renderer = PersistentFigureRenderer(
+            env=grid_env, cmap="viridis", vmin=0.0, vmax=1.0
+        )
+        try:
+            for i in range(frame_idx + 1):
+                fast_bytes = fast_renderer.render(grid_fields[i], i)
+        finally:
+            fast_renderer.close()
+
+        # Full redraw: a fresh renderer produces frame 2 via the first-render
+        # (full draw) path.
+        full_renderer = PersistentFigureRenderer(
+            env=grid_env, cmap="viridis", vmin=0.0, vmax=1.0
+        )
+        try:
+            full_bytes = full_renderer.render(grid_fields[frame_idx], frame_idx)
+        finally:
+            full_renderer.close()
+
+        np.testing.assert_allclose(
+            decode(fast_bytes).astype(int), decode(full_bytes).astype(int), atol=2
+        )

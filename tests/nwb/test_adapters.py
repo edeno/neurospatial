@@ -14,28 +14,56 @@ import pytest
 pynwb = pytest.importorskip("pynwb")
 
 
-class MockTimeSeries:
-    """Mock time series object for testing timestamps_from_series."""
+def make_time_series(
+    data: np.ndarray,
+    *,
+    timestamps: np.ndarray | None = None,
+    rate: float | None = None,
+    starting_time: float | None = None,
+) -> pynwb.TimeSeries:
+    """Build a real ``pynwb.TimeSeries`` for adapter tests.
 
-    def __init__(
-        self,
-        data: np.ndarray,
-        timestamps: np.ndarray | None = None,
-        rate: float | None = None,
-        starting_time: float | None = None,
-    ):
+    Used instead of a mock so the tests exercise the real container's attribute
+    surface (``timestamps`` / ``rate`` / ``starting_time`` / ``data``) and cannot
+    drift from pynwb. Only states pynwb can actually represent are built here;
+    states pynwb forbids (neither timestamps nor rate, or both at once) use the
+    ``_DuckTimeSeries`` stub below.
+    """
+    kwargs: dict = {"name": "series", "data": data, "unit": "m"}
+    if timestamps is not None:
+        kwargs["timestamps"] = np.asarray(timestamps)
+    else:
+        kwargs["rate"] = rate
+        if starting_time is not None:
+            kwargs["starting_time"] = starting_time
+    return pynwb.TimeSeries(**kwargs)
+
+
+class _DuckTimeSeries:
+    """Minimal duck-typed series for states real pynwb.TimeSeries cannot hold.
+
+    pynwb forbids constructing a TimeSeries with neither timestamps nor rate, or
+    with both timestamps and rate. ``timestamps_from_series`` still has defensive
+    logic for those cases (it consumes any object exposing the four attributes),
+    so we exercise that logic with this stub rather than a real container.
+    """
+
+    def __init__(self, data, timestamps=None, rate=None, starting_time=None):
         self.data = data
-        self._timestamps = timestamps
+        self.timestamps = timestamps
         self.rate = rate
         self.starting_time = starting_time
 
-    @property
-    def timestamps(self):
-        return self._timestamps
-
 
 class MockEventsTable:
-    """Mock events table for testing events_table_to_dataframe."""
+    """Thin stand-in exposing ``to_dataframe()`` for events_table_to_dataframe.
+
+    Kept as a mock deliberately: ``events_table_to_dataframe`` only depends on
+    the ``.to_dataframe()`` duck-typed interface, and several tests feed it
+    dataframes a real ndx-events ``EventsTable`` cannot produce (e.g. one with no
+    ``timestamp`` column) to verify the adapter's own error handling. A real
+    EventsTable always has a timestamp column, so it could not cover those paths.
+    """
 
     def __init__(self, df: pd.DataFrame):
         self._df = df
@@ -52,7 +80,7 @@ class TestTimestampsFromSeries:
         from neurospatial.io.nwb._adapters import timestamps_from_series
 
         expected_timestamps = np.array([0.0, 0.1, 0.2, 0.3, 0.4])
-        mock_series = MockTimeSeries(
+        mock_series = make_time_series(
             data=np.zeros((5, 2)),
             timestamps=expected_timestamps,
         )
@@ -66,7 +94,7 @@ class TestTimestampsFromSeries:
         """Test timestamp computation from sampling rate."""
         from neurospatial.io.nwb._adapters import timestamps_from_series
 
-        mock_series = MockTimeSeries(
+        mock_series = make_time_series(
             data=np.zeros((5, 2)),
             timestamps=None,
             rate=10.0,  # 10 Hz
@@ -82,7 +110,7 @@ class TestTimestampsFromSeries:
         """Test timestamp computation with non-zero starting time."""
         from neurospatial.io.nwb._adapters import timestamps_from_series
 
-        mock_series = MockTimeSeries(
+        mock_series = make_time_series(
             data=np.zeros((5, 2)),
             timestamps=None,
             rate=10.0,  # 10 Hz
@@ -98,7 +126,7 @@ class TestTimestampsFromSeries:
         """Test that None starting_time defaults to 0.0."""
         from neurospatial.io.nwb._adapters import timestamps_from_series
 
-        mock_series = MockTimeSeries(
+        mock_series = make_time_series(
             data=np.zeros((3, 2)),
             timestamps=None,
             rate=100.0,
@@ -114,7 +142,9 @@ class TestTimestampsFromSeries:
         """Test ValueError when neither timestamps nor rate are available."""
         from neurospatial.io.nwb._adapters import timestamps_from_series
 
-        mock_series = MockTimeSeries(
+        # Real pynwb.TimeSeries cannot hold "neither timestamps nor rate";
+        # use the duck stub to exercise the adapter's defensive ValueError.
+        mock_series = _DuckTimeSeries(
             data=np.zeros((5, 2)),
             timestamps=None,
             rate=None,
@@ -128,10 +158,12 @@ class TestTimestampsFromSeries:
         from neurospatial.io.nwb._adapters import timestamps_from_series
 
         explicit_timestamps = np.array([0.0, 0.5, 1.5, 3.0])  # Non-uniform
-        mock_series = MockTimeSeries(
+        # Real pynwb.TimeSeries cannot hold BOTH timestamps and rate; use the
+        # duck stub to verify the adapter prefers timestamps when both are set.
+        mock_series = _DuckTimeSeries(
             data=np.zeros((4, 2)),
             timestamps=explicit_timestamps,
-            rate=10.0,  # Would produce different result
+            rate=10.0,  # Would produce different result if used
             starting_time=0.0,
         )
 
@@ -144,7 +176,7 @@ class TestTimestampsFromSeries:
         from neurospatial.io.nwb._adapters import timestamps_from_series
 
         # Even with float32 input
-        mock_series = MockTimeSeries(
+        mock_series = make_time_series(
             data=np.zeros((3, 2)),
             timestamps=np.array([0, 1, 2], dtype=np.float32),
         )

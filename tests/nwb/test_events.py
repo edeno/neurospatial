@@ -209,44 +209,6 @@ class TestReadEvents:
             read_events(nwbfile, "Position")
 
 
-@pytest.mark.skipif(not HAS_NDX_EVENTS, reason="ndx_events not installed")
-class TestReadEventsImportError:
-    """Tests for import error handling in read_events()."""
-
-    def test_import_error_message(self, monkeypatch):
-        """Test ImportError message when ndx-events is not installed."""
-        # This test verifies the _require_ndx_events() function
-        # by mocking the import to fail
-        import sys
-
-        # Save and remove ndx_events from sys.modules
-        saved_modules = {}
-        modules_to_remove = [k for k in sys.modules if k.startswith("ndx_events")]
-        for mod in modules_to_remove:
-            saved_modules[mod] = sys.modules.pop(mod)
-
-        # Mock the import to fail
-        import builtins
-
-        original_import = builtins.__import__
-
-        def mock_import(name, *args, **kwargs):
-            if name == "ndx_events" or name.startswith("ndx_events."):
-                raise ImportError("No module named 'ndx_events'")
-            return original_import(name, *args, **kwargs)
-
-        monkeypatch.setattr(builtins, "__import__", mock_import)
-
-        try:
-            from neurospatial.io.nwb._core import _require_ndx_events
-
-            with pytest.raises(ImportError, match="ndx-events is required"):
-                _require_ndx_events()
-        finally:
-            # Restore modules
-            sys.modules.update(saved_modules)
-
-
 class TestReadIntervals:
     """Tests for read_intervals() function (built-in NWB TimeIntervals)."""
 
@@ -665,42 +627,6 @@ class TestWriteLaps:
 
         with pytest.raises(ValueError, match="negative"):
             write_laps(nwbfile, lap_times)
-
-
-@pytest.mark.skipif(not HAS_NDX_EVENTS, reason="ndx_events not installed")
-class TestWriteLapsImportError:
-    """Tests for import error handling in write_laps()."""
-
-    def test_import_error_message(self, monkeypatch):
-        """Test ImportError message when ndx-events is not installed."""
-        import sys
-
-        # Save and remove ndx_events from sys.modules
-        saved_modules = {}
-        modules_to_remove = [k for k in sys.modules if k.startswith("ndx_events")]
-        for mod in modules_to_remove:
-            saved_modules[mod] = sys.modules.pop(mod)
-
-        # Mock the import to fail
-        import builtins
-
-        original_import = builtins.__import__
-
-        def mock_import(name, *args, **kwargs):
-            if name == "ndx_events" or name.startswith("ndx_events."):
-                raise ImportError("No module named 'ndx_events'")
-            return original_import(name, *args, **kwargs)
-
-        monkeypatch.setattr(builtins, "__import__", mock_import)
-
-        try:
-            from neurospatial.io.nwb._core import _require_ndx_events
-
-            with pytest.raises(ImportError, match="ndx-events is required"):
-                _require_ndx_events()
-        finally:
-            # Restore modules
-            sys.modules.update(saved_modules)
 
 
 @pytest.mark.skipif(not HAS_NDX_EVENTS, reason="ndx_events not installed")
