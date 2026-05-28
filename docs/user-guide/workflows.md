@@ -292,7 +292,7 @@ Comparing environments across recording sessions.
 
 ```python
 from neurospatial import Environment
-from neurospatial.alignment import map_probabilities
+from neurospatial.ops import map_probabilities
 import numpy as np
 
 # Session 1 (reference)

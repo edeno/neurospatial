@@ -59,7 +59,7 @@ class OverlayProtocol(Protocol):
     ----------
     times : NDArray[np.float64] | None
         Timestamps for overlay data samples, in seconds. If None, samples are
-        assumed uniformly spaced at the animation fps rate.
+        aligned to animation frames by sample index.
     interp : {"linear", "nearest"}
         Interpolation method for aligning overlay to animation frames.
 
@@ -184,8 +184,8 @@ class PositionOverlay:
         automatically, including axis swap and Y-axis inversion for proper display.
     times : ndarray of shape (n_samples,), dtype float64, optional
         Timestamps for each position sample, in seconds. If None, samples are
-        assumed uniformly spaced at the animation fps rate. Must be
-        monotonically increasing. Default is None.
+        aligned to animation frames by sample index. Must be monotonically
+        increasing. Default is None.
     color : str, optional
         Color for the position marker and trail (matplotlib color string).
         Default is "red".
@@ -341,7 +341,7 @@ class BodypartOverlay:
         handles coordinate transformation automatically.
     times : ndarray of shape (n_samples,), dtype float64, optional
         Timestamps for each sample, in seconds. If None, samples are assumed
-        uniformly spaced at the animation fps rate. Must be monotonically
+        aligned to animation frames by sample index. Must be monotonically
         increasing. Default is None.
     skeleton : Skeleton | None, optional
         Skeleton object defining node names and edge connections. If provided,
@@ -538,7 +538,7 @@ class HeadDirectionOverlay:
         transformation automatically.
     times : ndarray of shape (n_samples,), dtype float64, optional
         Timestamps for each sample, in seconds. If None, samples are assumed
-        uniformly spaced at the animation fps rate. Must be monotonically
+        aligned to animation frames by sample index. Must be monotonically
         increasing. Default is None.
     color : str, optional
         Colormap name for the direction line. Use colormaps like "hsv",
@@ -1896,7 +1896,7 @@ class ObjectVectorOverlay:
         position at a time point. Dimensionality must match the environment.
     times : ndarray of shape (n_samples,), dtype float64, optional
         Timestamps for each position sample, in seconds. If None, samples are
-        assumed uniformly spaced at the animation fps rate. Must be monotonically
+        aligned to animation frames by sample index. Must be monotonically
         increasing. Default is None.
     firing_rates : ndarray of shape (n_samples,), dtype float64, optional
         Firing rates at each time point for modulating line appearance (e.g.,
@@ -2133,8 +2133,8 @@ class VideoOverlay:
         Default is None.
     times : ndarray of shape (n_frames,), dtype float64, optional
         Timestamps for each video frame, in seconds. If None, video frames
-        are assumed uniformly spaced at the animation fps rate. Must be
-        monotonically increasing. Default is None.
+        are aligned to animation frames by sample index. Must be monotonically
+        increasing. Default is None.
     alpha : float, optional
         Opacity of the video layer (0.0 = transparent, 1.0 = opaque).
         At alpha=0.5, video and field are equally visible (balanced blend).
@@ -2202,9 +2202,9 @@ class VideoOverlay:
     See Also
     --------
     PositionOverlay : Trajectory visualization
-    neurospatial.transforms.calibrate_from_scale_bar : Create calibration from scale bar
-    neurospatial.transforms.calibrate_from_landmarks : Create calibration from landmarks
-    neurospatial.transforms.VideoCalibration : Calibration data container
+    neurospatial.ops.transforms.calibrate_from_scale_bar : Create calibration from scale bar
+    neurospatial.ops.transforms.calibrate_from_landmarks : Create calibration from landmarks
+    neurospatial.ops.transforms.VideoCalibration : Calibration data container
 
     Notes
     -----

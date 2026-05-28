@@ -152,6 +152,7 @@ The napari backend uses chunked caching for >10k frames:
 # Tune cache parameters if needed
 viewer = env.animate_fields(
     fields,
+    frame_times=frame_times,
     backend="napari",
     cache_size=1000,      # Per-frame cache size
     chunk_size=10,        # Frames per chunk
@@ -170,7 +171,8 @@ Instead of pre-computing all overlay data, compute on-demand:
 ```python
 # Use shorter trail lengths
 position_overlay = PositionOverlay(
-    data=positions,
+    positions=positions,
+    times=times,
     trail_length=5,  # Reduce from 15
 )
 
@@ -183,7 +185,8 @@ For very large datasets, use memory-mapped arrays:
 ```python
 import numpy as np
 fields_mmap = np.memmap('/tmp/fields.dat', dtype='float64', mode='r', shape=(n_frames, n_bins))
-env.animate_fields(fields_mmap, backend="napari")
+frame_times = np.arange(n_frames, dtype=float) / 250.0
+env.animate_fields(fields_mmap, frame_times=frame_times, backend="napari")
 ```
 
 ### F. Video Export Instead of Interactive
@@ -192,10 +195,10 @@ For very large datasets, export to video instead of interactive:
 env.clear_cache()  # Required for parallel rendering
 env.animate_fields(
     fields,
+    frame_times=frame_times,
     backend="video",
     save_path="output.mp4",
     n_workers=4,
-    fps=30,
 )
 ```
 

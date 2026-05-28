@@ -60,8 +60,18 @@ from shapely.geometry import Point
 from neurospatial import CompositeEnvironment, Environment
 
 np.random.seed(42)
-plt.rcParams["figure.figsize"] = (14, 10)
-plt.rcParams["font.size"] = 11
+# Shared styling (Okabe-Ito palette, consistent figure / font sizes)
+import sys  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+_here = (
+    str(Path(__file__).resolve().parent) if "__file__" in globals() else str(Path.cwd())
+)
+if _here not in sys.path:
+    sys.path.insert(0, _here)
+from _style import apply_style  # noqa: E402
+
+apply_style(figsize=(14, 10), font_size=11)
 
 # %% [markdown]
 # ## Example 1: Two-Room Experiment
@@ -747,7 +757,7 @@ print(f"Mask shape: {junction_mask.shape}, True count: {np.sum(junction_mask)}")
 
 # %%
 # Import pairwise for edge iteration (more efficient than zip)
-from itertools import pairwise
+from itertools import pairwise  # noqa: E402
 
 # Find path from start to right arm (crosses bridges through junction)
 source_bin = 0  # First bin in start box
@@ -797,7 +807,7 @@ if path:
 # ### Pathfinding Example: No Path Between Disconnected Components
 
 # %%
-import warnings
+import warnings  # noqa: E402
 
 # Create a composite without bridges to demonstrate warning
 disconnected_composite = CompositeEnvironment(
@@ -820,8 +830,7 @@ print(f"Path result: {path} (empty list indicates no path exists)")
 # ### Saving and Loading Composite Environments
 
 # %%
-import tempfile
-from pathlib import Path
+import tempfile  # noqa: E402
 
 # Save composite environment to file
 with tempfile.TemporaryDirectory() as tmpdir:
@@ -893,7 +902,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
 #
 # ## Next Steps
 #
-# In the next notebook (**07_advanced_operations.ipynb**), you'll learn:
+# In the next notebook ([07_advanced_operations.ipynb](07_advanced_operations.ipynb)), you'll learn:
 # - Advanced path finding and geodesic distances
 # - Alignment and coordinate transformations
 # - Mapping probability distributions between environments

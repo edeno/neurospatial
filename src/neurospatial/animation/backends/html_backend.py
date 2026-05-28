@@ -551,7 +551,10 @@ def render_html(
         positions = np.random.randn(100, 2) * 50
         env = Environment.from_samples(positions, bin_size=10.0)
         fields = [np.random.rand(env.n_bins) for _ in range(20)]
-        path = env.animate_fields(fields, backend="html", save_path="output.html")
+        frame_times = np.arange(len(fields), dtype=float) / 30.0
+        path = env.animate_fields(
+            fields, frame_times=frame_times, backend="html", save_path="output.html"
+        )
         print(f"HTML player saved to {path}")
 
     Notes
@@ -606,11 +609,13 @@ def render_html(
                 "\n"
                 "HOW to fix:\n"
                 "  1. Use video backend for full video overlay support:\n"
-                "     env.animate_fields(fields, backend='video', save_path='output.mp4',\n"
+                "     env.animate_fields(fields, frame_times=frame_times,\n"
+                "                        backend='video', save_path='output.mp4',\n"
                 "                        overlays=[video_overlay], ...)\n"
                 "\n"
                 "  2. Use napari backend for interactive viewing:\n"
-                "     env.animate_fields(fields, backend='napari', overlays=[video_overlay])\n"
+                "     env.animate_fields(fields, frame_times=frame_times,\n"
+                "                        backend='napari', overlays=[video_overlay])\n"
                 "\n"
                 "Video overlays will be skipped. Other overlays (positions, regions) will render.",
                 UserWarning,
@@ -630,11 +635,12 @@ def render_html(
                 "\n"
                 "HOW to fix:\n"
                 "  1. Use video backend for time series support:\n"
-                "     env.animate_fields(fields, backend='video', save_path='output.mp4',\n"
+                "     env.animate_fields(fields, frame_times=frame_times,\n"
+                "                        backend='video', save_path='output.mp4',\n"
                 "                        overlays=[timeseries_overlay], ...)\n"
                 "\n"
                 "  2. Use napari backend for interactive viewing:\n"
-                "     env.animate_fields(fields, backend='napari',\n"
+                "     env.animate_fields(fields, frame_times=frame_times, backend='napari',\n"
                 "                        overlays=[timeseries_overlay])\n"
                 "\n"
                 "Time series overlays will be skipped. Other overlays will render.",
@@ -665,16 +671,17 @@ def render_html(
             f"Options:\n"
             f"  1. Subsample frames:\n"
             f"     fields_subset = fields[::10]  # Every 10th frame\n"
-            f"     env.animate_fields(fields_subset, backend='html', ...)\n"
+            f"     subset_times = frame_times[::10]\n"
+            f"     env.animate_fields(fields_subset, frame_times=subset_times, backend='html', ...)\n"
             f"\n"
             f"  2. Use video backend:\n"
-            f"     env.animate_fields(fields, backend='video', save_path='output.mp4')\n"
+            f"     env.animate_fields(fields, frame_times=frame_times, backend='video', save_path='output.mp4')\n"
             f"\n"
             f"  3. Use Napari for interactive viewing:\n"
-            f"     env.animate_fields(fields, backend='napari')\n"
+            f"     env.animate_fields(fields, frame_times=frame_times, backend='napari')\n"
             f"\n"
             f"  4. Override limit (NOT RECOMMENDED):\n"
-            f"     env.animate_fields(fields, backend='html', max_html_frames={n_frames})\n"
+            f"     env.animate_fields(fields, frame_times=frame_times, backend='html', max_html_frames={n_frames})\n"
         )
 
     # Warn about large files (with JPEG recommendation)
@@ -710,11 +717,13 @@ def render_html(
             f"     overlay = PositionOverlay(positions=positions_subsampled, ...)\n"
             f"\n"
             f"  2. Use video backend for full-fidelity overlays:\n"
-            f"     env.animate_fields(fields, backend='video', save_path='output.mp4',\n"
+            f"     env.animate_fields(fields, frame_times=frame_times,\n"
+            f"                        backend='video', save_path='output.mp4',\n"
             f"                        overlays=[overlay], ...)\n"
             f"\n"
             f"  3. Use Napari for interactive viewing:\n"
-            f"     env.animate_fields(fields, backend='napari', overlays=[overlay], ...)\n",
+            f"     env.animate_fields(fields, frame_times=frame_times,\n"
+            f"                        backend='napari', overlays=[overlay], ...)\n",
             UserWarning,
             stacklevel=2,
         )

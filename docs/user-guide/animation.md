@@ -5,6 +5,8 @@ Animate spatial fields over time using four different backends optimized for dif
 ## Quick Start
 
 ```python
+import numpy as np
+
 from neurospatial import Environment
 from neurospatial.encoding import compute_spatial_rate
 
@@ -14,18 +16,19 @@ fields = [
     compute_spatial_rate(env, spikes[i], times, positions).firing_rate
     for i in range(30)
 ]
+frame_times = np.arange(len(fields), dtype=float) / 30.0  # one timestamp per field
 
 # Interactive viewer (best for exploration)
-env.animate_fields(fields, backend="napari")
+env.animate_fields(fields, frame_times=frame_times, backend="napari")
 
 # Video export (best for presentations)
-env.animate_fields(fields, save_path="animation.mp4", fps=30)
+env.animate_fields(fields, frame_times=frame_times, save_path="animation.mp4")
 
 # HTML player (best for sharing)
-env.animate_fields(fields, save_path="animation.html")
+env.animate_fields(fields, frame_times=frame_times, save_path="animation.html")
 
 # Jupyter widget (best for notebooks)
-env.animate_fields(fields, backend="widget")
+env.animate_fields(fields, frame_times=frame_times, backend="widget")
 ```
 
 ## Overview
@@ -76,13 +79,13 @@ When `backend="auto"` (default), the system automatically selects based on conte
 
 ```python
 # Auto-selects video backend
-env.animate_fields(fields, save_path="output.mp4")
+env.animate_fields(fields, frame_times=frame_times, save_path="output.mp4")
 
 # Auto-selects HTML backend
-env.animate_fields(fields, save_path="output.html")
+env.animate_fields(fields, frame_times=frame_times, save_path="output.html")
 
 # Auto-selects based on environment and dataset size
-env.animate_fields(fields)  # Napari in terminal, widget in Jupyter
+env.animate_fields(fields, frame_times=frame_times)  # Napari in terminal, widget in Jupyter
 ```
 
 ## Napari Backend (Interactive Viewer)
@@ -94,8 +97,8 @@ GPU-accelerated viewer with lazy loading for large-scale sessions.
 ```python
 env.animate_fields(
     fields,
+    frame_times=frame_times,
     backend="napari",
-    fps=30,
     cmap="viridis",
     frame_labels=["Trial 1", "Trial 2", ...],  # Optional
 )
@@ -111,13 +114,19 @@ trajectory_2d = np.array([[x1, y1], [x2, y2], ...])  # shape: (n_timepoints, 2)
 
 env.animate_fields(
     fields,
+    frame_times=frame_times,
     backend="napari",
     overlay_trajectory=trajectory_2d
 )
 
 # Higher-dimensional positions (displays as napari "points" layer)
 trajectory_nd = np.array([[x, y, z], ...])  # shape: (n_timepoints, n_dims)
-env.animate_fields(fields, backend="napari", overlay_trajectory=trajectory_nd)
+env.animate_fields(
+    fields,
+    frame_times=frame_times,
+    backend="napari",
+    overlay_trajectory=trajectory_nd,
+)
 ```
 
 ### Performance
@@ -143,9 +152,9 @@ Parallel rendering with ffmpeg for high-quality video export.
 ```python
 env.animate_fields(
     fields,
+    frame_times=frame_times,
     backend="video",
     save_path="animation.mp4",
-    fps=30,
     codec="h264",  # or "h265", "vp9", "mpeg4"
     bitrate=5000,  # kbps
     dpi=100,
@@ -162,6 +171,7 @@ env.clear_cache()  # Makes environment pickle-able
 
 env.animate_fields(
     fields,
+    frame_times=frame_times,
     backend="video",
     save_path="output.mp4",
     n_workers=4,  # Use 4 CPU cores
@@ -177,6 +187,7 @@ Estimate time and file size before rendering:
 ```python
 env.animate_fields(
     fields,
+    frame_times=frame_times,
     backend="video",
     save_path="output.mp4",
     dry_run=True,  # Just estimate, don't render
@@ -230,9 +241,9 @@ Self-contained HTML file with embedded frames and JavaScript controls.
 ```python
 env.animate_fields(
     fields,
+    frame_times=frame_times,
     backend="html",
     save_path="animation.html",
-    fps=30,
     title="Place Field Remapping",
     dpi=100,
 )
@@ -250,6 +261,7 @@ HTML backend embeds frames as base64-encoded PNG images:
 # Override default limit (use with caution)
 env.animate_fields(
     fields,
+    frame_times=frame_times,
     backend="html",
     save_path="large.html",
     max_html_frames=1000,  # Allow up to 1000 frames
@@ -281,8 +293,8 @@ Interactive widget with play/pause controls for Jupyter environments.
 ```python
 env.animate_fields(
     fields,
+    frame_times=frame_times,
     backend="widget",
-    fps=30,
     cmap="viridis",
 )
 ```
@@ -310,9 +322,11 @@ All backends accept these common parameters:
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `fields` | list/ndarray | Required | Sequence of spatial fields |
+| `frame_times` | ndarray | Required | Timestamp for each frame, in seconds |
 | `backend` | str | `"auto"` | Backend selection |
 | `save_path` | str/Path | None | Output file path |
-| `fps` | int | 30 | Frames per second |
+| `speed` | float | 1.0 | Playback speed relative to real time |
+| `max_playback_fps` | int | 60 | Upper bound for displayed playback frame rate |
 | `cmap` | str | `"viridis"` | Matplotlib colormap |
 | `vmin` | float | None | Minimum value for colormap (auto if None) |
 | `vmax` | float | None | Maximum value for colormap (auto if None) |
@@ -332,6 +346,7 @@ from neurospatial.animation import subsample_frames
 # Create memory-mapped array (doesn't load into RAM)
 n_frames = 900_000  # 1 hour at 250 Hz
 n_bins = env.n_bins
+frame_times = np.arange(n_frames, dtype=float) / 250.0
 
 fields = np.memmap(
     'fields.dat',
@@ -345,12 +360,19 @@ for i, frame in enumerate(frames):
     fields[i] = compute_spatial_rate(env, spikes, times, positions[i]).firing_rate
 
 # Option 1: Interactive exploration (Napari lazy loads from disk)
-env.animate_fields(fields, backend="napari")
+env.animate_fields(fields, frame_times=frame_times, backend="napari")
 
 # Option 2: Subsample for video (250 Hz → 30 fps)
 subsampled = subsample_frames(fields, source_fps=250, target_fps=30)
+subsampled_times = subsample_frames(frame_times, source_fps=250, target_fps=30)
 env.clear_cache()
-env.animate_fields(subsampled, backend="video", save_path="replay.mp4", n_workers=4)
+env.animate_fields(
+    subsampled,
+    frame_times=subsampled_times,
+    backend="video",
+    save_path="replay.mp4",
+    n_workers=4,
+)
 ```
 
 ### Subsampling Utility
@@ -387,14 +409,20 @@ subsampled = subsample_frames(
 
 ```python
 # 1. Explore with Napari (no data loading)
-env.animate_fields(large_fields, backend="napari")
+env.animate_fields(large_fields, frame_times=large_frame_times, backend="napari")
 
 # 2. Identify interesting time window
 interesting_subset = large_fields[1000:2000]
+subset_times = large_frame_times[1000:2000]
 
 # 3. Export subset as video
 env.clear_cache()
-env.animate_fields(interesting_subset, save_path="subset.mp4", n_workers=4)
+env.animate_fields(
+    interesting_subset,
+    frame_times=subset_times,
+    save_path="subset.mp4",
+    n_workers=4,
+)
 ```
 
 ### Large Session Helper Functions (v0.x.x+)
@@ -412,7 +440,13 @@ from neurospatial.animation import estimate_colormap_range_from_subset
 vmin, vmax = estimate_colormap_range_from_subset(fields, seed=42)
 
 # Use pre-computed range (avoids napari scanning all data)
-env.animate_fields(fields, vmin=vmin, vmax=vmax, backend="napari")
+env.animate_fields(
+    fields,
+    frame_times=frame_times,
+    vmin=vmin,
+    vmax=vmax,
+    backend="napari",
+)
 ```
 
 **Parameters:**
@@ -433,11 +467,11 @@ Get recommended napari settings based on session size:
 ```python
 from neurospatial.animation import large_session_napari_config
 
-# Returns optimized fps, chunk_size, max_chunks
+# Returns recommended playback/cache settings for napari
 config = large_session_napari_config(n_frames=500_000, sample_rate_hz=250)
 # {'fps': 30, 'chunk_size': 1000, 'max_chunks': 50}
 
-env.animate_fields(fields, backend="napari", **config)
+env.animate_fields(fields, frame_times=frame_times, backend="napari", **config)
 ```
 
 **Recommended Settings by Session Size:**
@@ -466,6 +500,7 @@ env = Environment.from_samples(positions, bin_size=2.5)
 
 # Create memory-mapped fields (100K+ frames)
 n_frames = 500_000  # ~33 minutes at 250 Hz
+frame_times = np.arange(n_frames, dtype=float) / 250.0
 fields = np.memmap(
     "large_session.dat",
     dtype="float32",
@@ -486,10 +521,11 @@ print(f"Config: {config}")
 # STEP 3: Launch napari with optimized settings
 env.animate_fields(
     fields,
+    frame_times=frame_times,
     backend="napari",
     vmin=vmin,       # Pre-computed (avoids full scan)
     vmax=vmax,       # Pre-computed (avoids full scan)
-    **config,        # Optimized fps, chunk_size, max_chunks
+    **config,        # Recommended playback/cache settings
 )
 ```
 
@@ -505,7 +541,7 @@ Generate HTML on server, download and view locally:
 
 ```python
 # On remote server (no display needed)
-env.animate_fields(fields, backend="html", save_path="animation.html")
+env.animate_fields(fields, frame_times=frame_times, backend="html", save_path="animation.html")
 
 # Download file via scp/rsync
 # $ scp user@server:animation.html .
@@ -522,6 +558,7 @@ Render video on server, download and view locally:
 env.clear_cache()
 env.animate_fields(
     fields,
+    frame_times=frame_times,
     backend="video",
     save_path="animation.mp4",
     n_workers=8,  # Use server's CPU cores
@@ -593,11 +630,11 @@ check_ffmpeg_available()
 ```python
 # Wrong - bare constructor doesn't fit environment
 env = Environment()
-env.animate_fields(fields)  # Error!
+env.animate_fields(fields, frame_times=frame_times)  # Error!
 
 # Correct - factory methods automatically fit
 env = Environment.from_samples(positions, bin_size=2.5)
-env.animate_fields(fields)  # Works!
+env.animate_fields(fields, frame_times=frame_times)  # Works!
 ```
 
 ### "Field shape mismatch"
@@ -613,8 +650,9 @@ print(f"Environment has {env.n_bins} bins")
 # Each field must be a 1D array of length n_bins
 field = np.random.rand(env.n_bins)  # Correct shape
 fields = [field for _ in range(30)]
+frame_times = np.arange(len(fields), dtype=float) / 30.0
 
-env.animate_fields(fields)
+env.animate_fields(fields, frame_times=frame_times)
 ```
 
 ### "Pickle error during parallel rendering"
@@ -625,7 +663,13 @@ env.animate_fields(fields)
 
 ```python
 env.clear_cache()  # Remove non-pickle-able cached properties
-env.animate_fields(fields, backend="video", n_workers=4, save_path="output.mp4")
+env.animate_fields(
+    fields,
+    frame_times=frame_times,
+    backend="video",
+    n_workers=4,
+    save_path="output.mp4",
+)
 ```
 
 **Why?** Parallel rendering uses `multiprocessing`, which requires pickle-able objects. Cached KDTrees and kernels are not pickle-able.
@@ -644,6 +688,7 @@ env.animate_fields(fields, backend="video", n_workers=4, save_path="output.mp4")
 ```python
 env.animate_fields(
     fields,
+    frame_times=frame_times,
     backend="html",
     save_path="large.html",
     max_html_frames=1000,  # Override 500-frame limit

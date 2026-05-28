@@ -9,7 +9,7 @@ Layout engines define how continuous space is discretized into bins. This page h
 1. **Standard open field experiment** → Use `Environment.from_samples()` (defaults to RegularGridLayout)
 2. **Circular arena** → Use `Environment.from_polygon()` (ShapelyPolygonLayout)
 3. **T-maze or track** → Use `Environment.from_graph()` (GraphLayout)
-4. **Need uniform neighbor distances** → Use `layout_type="hexagonal"` (HexagonalLayout)
+4. **Need uniform neighbor distances** → Use `layout="Hexagonal"` (HexagonalLayout)
 
 ## Available Engines
 
@@ -24,7 +24,7 @@ Layout engines define how continuous space is discretized into bins. This page h
 ```python
 env = Environment.from_samples(positions, bin_size=2.5)
 # or explicitly:
-env = Environment.from_samples(positions, bin_size=2.5, layout_type="regular")
+env = Environment.from_samples(positions, bin_size=2.5, layout="RegularGrid")
 ```
 
 ### HexagonalLayout
@@ -36,7 +36,7 @@ env = Environment.from_samples(positions, bin_size=2.5, layout_type="regular")
 **Setup complexity**: ⭐⭐⭐⭐ (easy)
 
 ```python
-env = Environment.from_samples(positions, bin_size=2.5, layout_type="hexagonal")
+env = Environment.from_samples(positions, bin_size=2.5, layout="Hexagonal")
 ```
 
 **Trade-off**: All 6 neighbors equidistant, but requires 15% more bins for same coverage.
@@ -57,7 +57,12 @@ G.add_node(0, pos=(0, 0))
 G.add_node(1, pos=(50, 0))
 G.add_edge(0, 1, edge_id=0, distance=50.0)
 
-env = Environment.from_graph(G, edge_order=[(0, 1)], bin_size=2.0)
+env = Environment.from_graph(
+    graph=G,
+    edge_order=[(0, 1)],
+    edge_spacing=0.0,
+    bin_size=2.0,
+)
 ```
 
 **Key feature**: Converts 2D positions to 1D linear coordinates with `env.to_linear()`
@@ -110,7 +115,18 @@ env = Environment.from_polygon(arena, bin_size=2.5)
 **Setup complexity**: ⭐⭐⭐⭐ (easy)
 
 ```python
-env = Environment.from_samples(positions, bin_size=2.5, layout_type="triangular")
+from shapely.geometry import Polygon
+
+arena = Polygon([(0, 0), (100, 0), (100, 100), (0, 100)])
+
+# Triangular meshes use from_layout(), not from_samples().
+env = Environment.from_layout(
+    kind="TriangularMesh",
+    layout_params={
+        "boundary_polygon": arena,
+        "point_spacing": 2.5,
+    },
+)
 ```
 
 ### ImageMaskLayout
@@ -122,10 +138,14 @@ env = Environment.from_samples(positions, bin_size=2.5, layout_type="triangular"
 **Setup complexity**: ⭐⭐ (requires image preprocessing)
 
 ```python
+import numpy as np
+
+image_mask = np.zeros((480, 640), dtype=bool)
+image_mask[100:400, 150:500] = True
+
 env = Environment.from_pixel_mask(
-    image_path="arena_mask.png",
+    image_mask=image_mask,
     pixel_size=2.5,
-    dimension_ranges=[(0, 100), (0, 100)]
 )
 ```
 
@@ -209,7 +229,7 @@ env = Environment.from_samples(positions, bin_size=2.5)
 env = Environment.from_samples(
     positions,
     bin_size=2.5,
-    layout_type="hexagonal"  # Override default
+    layout="Hexagonal"  # Override default
 )
 ```
 
@@ -219,7 +239,7 @@ env = Environment.from_samples(
 # Use factory method for specific geometry
 env = Environment.from_polygon(polygon, bin_size=2.5)
 # or
-env = Environment.from_pixel_mask(image_path, pixel_size=2.5, dimension_ranges=[(0,100), (0,100)])
+env = Environment.from_pixel_mask(image_mask, pixel_size=2.5)
 ```
 
 ## Summary

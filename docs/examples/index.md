@@ -237,9 +237,10 @@ Compute peri-event histograms, plot rasters, build GLM regressors.
 
 **Time**: 25-35 min · **Prerequisites**: 01, 11
 
-Read position, spikes, and environment metadata from an NWB file
-(public DANDI dataset). Build a `neurospatial` environment, recover
-place fields, write derived results back into the NWB.
+Read position, spikes, and environment metadata from a synthetic in-memory
+NWB file. Build a `neurospatial` environment, recover place fields, write
+derived results back into the NWB; the same API applies to downloaded DANDI
+files.
 
 ---
 
@@ -253,5 +254,5 @@ place fields, write derived results back into the NWB.
     2. Run `uv run python docs/sync_notebooks.py` before building docs
     3. The GitHub Actions workflow automatically syncs notebooks on deployment
 
-    **Do not** edit `.ipynb` files directly in `docs/examples/` - they
+    **Do not** edit generated files directly in `docs/examples/` - they
     will be overwritten.

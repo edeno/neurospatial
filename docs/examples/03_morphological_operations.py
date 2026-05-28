@@ -52,8 +52,18 @@ import numpy as np
 from neurospatial import Environment
 
 np.random.seed(42)
-plt.rcParams["figure.figsize"] = (12, 10)
-plt.rcParams["font.size"] = 11
+# Shared styling (Okabe-Ito palette, consistent figure / font sizes)
+import sys  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+_here = (
+    str(Path(__file__).resolve().parent) if "__file__" in globals() else str(Path.cwd())
+)
+if _here not in sys.path:
+    sys.path.insert(0, _here)
+from _style import apply_style  # noqa: E402
+
+apply_style(figsize=(12, 10), font_size=11)
 
 
 # %% [markdown]
@@ -185,7 +195,7 @@ print("- Spatial analysis will be limited to edges only")
 # Let's verify that the environment is indeed disconnected:
 
 # %%
-import networkx as nx
+import networkx as nx  # noqa: E402
 
 # Check if environment is connected
 is_connected = nx.is_connected(env_default.connectivity)
@@ -699,7 +709,7 @@ check_environment_quality(env_fixed)
 #
 # ## Next Steps
 #
-# In the next notebook (**04_regions_of_interest.ipynb**), you'll learn:
+# In the next notebook ([04_regions_of_interest.ipynb](04_regions_of_interest.ipynb)), you'll learn:
 # - How to define named regions (goal locations, reward zones)
 # - Point vs polygon regions
 # - Querying spatial relationships

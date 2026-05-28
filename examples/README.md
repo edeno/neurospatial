@@ -10,10 +10,10 @@ Install neurospatial:
 
 ```bash
 # From the project root
-uv sync
+uv sync --extra notebooks
 
 # Or with pip
-pip install -e .
+pip install -e ".[notebooks]"
 ```
 
 ### Running the Notebooks
@@ -185,7 +185,7 @@ Topics: full workflow on a real rat-hippocampus dataset (203 units, 24 minutes, 
 #### 20. Bayesian Position Decoding
 
 **File**: [20_bayesian_decoding.ipynb](20_bayesian_decoding.ipynb) · **Time**: 30-40 minutes · **Prerequisites**: 08, 11
-Topics: encoding models from place fields, decoding position from population spikes, `DecodingResult` (posterior, MAP, mean, uncertainty), credible regions, decoding error.
+Topics: encoding models from place fields, decoding position from population spikes, `DecodingResult` (posterior, MAP, mean, posterior entropy), credible regions, decoding error.
 
 ## Learning Path Recommendations
 

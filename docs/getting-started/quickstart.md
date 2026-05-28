@@ -195,7 +195,7 @@ default) and `Hexagonal` layouts:
 env_hex = Environment.from_samples(
     positions=position_data,
     bin_size=2.0,
-    layout="hexagonal",
+    layout="Hexagonal",
     name="HexEnvironment"
 )
 ```

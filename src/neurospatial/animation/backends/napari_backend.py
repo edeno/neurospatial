@@ -3408,9 +3408,9 @@ def _render_multi_field_napari(
             "  Available: 'horizontal', 'vertical', 'grid'\n\n"
             "WHY: Multiple field sequences must be arranged spatially.\n\n"
             "HOW: Specify layout when animating multiple fields:\n"
-            "  env.animate_fields(fields, layout='horizontal')  # Side-by-side\n"
-            "  env.animate_fields(fields, layout='vertical')    # Stacked\n"
-            "  env.animate_fields(fields, layout='grid')        # 2D grid"
+            "  env.animate_fields(fields, frame_times=frame_times, layout='horizontal')  # Side-by-side\n"
+            "  env.animate_fields(fields, frame_times=frame_times, layout='vertical')    # Stacked\n"
+            "  env.animate_fields(fields, frame_times=frame_times, layout='grid')        # 2D grid"
         )
 
     n_sequences = len(field_sequences)

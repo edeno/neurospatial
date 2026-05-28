@@ -72,7 +72,7 @@ for name, region in result.regions.items():
     print(f"Region '{name}': {region.kind}")
 
 # Use with tracking data
-bin_indices = env.bin_sequence(positions)
+bin_indices = env.bin_sequence(times, positions)
 ```
 
 ## Keyboard Shortcuts
@@ -84,7 +84,6 @@ bin_indices = env.bin_sequence(positions)
 | `4` | Edit vertices mode |
 | `Delete` | Remove selected shape |
 | `Escape` | Save and close viewer |
-| `Ctrl+Z` | Undo last action |
 
 ## Adding Calibration
 
@@ -93,7 +92,7 @@ Convert pixel coordinates to real-world units (e.g., centimeters):
 ### Using Scale Bar
 
 ```python
-from neurospatial.transforms import VideoCalibration, calibrate_from_scale_bar
+from neurospatial.ops import VideoCalibration, calibrate_from_scale_bar
 
 # Two points on a known length in the video
 point1_px = (100, 200)  # Start of scale bar (pixels)
@@ -117,8 +116,9 @@ result = annotate_video(
 ### Using Landmark Correspondences
 
 ```python
-from neurospatial.transforms import calibrate_from_landmarks, VideoCalibration
 import numpy as np
+
+from neurospatial.ops import VideoCalibration, calibrate_from_landmarks
 
 # Known correspondences: video pixels → environment cm
 landmarks_px = np.array([

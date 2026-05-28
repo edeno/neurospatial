@@ -273,8 +273,8 @@ def render_video(
             f"  - Slow rendering (4x pixels at dpi=200 vs dpi=100)\n"
             f"  - High memory usage during rendering\n\n"
             f"HOW: Reduce DPI to speed up export:\n"
-            f"  env.animate_fields(fields, backend='video', dpi=100)  # 800x600\n"
-            f"  env.animate_fields(fields, backend='video', dpi=150)  # 1200x900",
+            f"  env.animate_fields(fields, frame_times=frame_times, backend='video', dpi=100)  # 800x600\n"
+            f"  env.animate_fields(fields, frame_times=frame_times, backend='video', dpi=150)  # 1200x900",
             UserWarning,
             stacklevel=2,
         )

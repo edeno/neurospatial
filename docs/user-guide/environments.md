@@ -37,9 +37,9 @@ env = Environment.from_samples(
 
 - `positions`: Array of shape (n_samples, n_dims)
 - `bin_size`: Size of bins (required)
-- `infer_active_bins`: Automatically detect active regions (default: False)
+- `infer_active_bins`: Automatically detect active regions (default: True)
 - `bin_count_threshold`: Minimum samples per active bin
-- `layout_type`: "regular", "hexagonal", or "triangular"
+- `layout`: "RegularGrid" or "Hexagonal" (`from_samples()` supports these two)
 - `dilate`, `fill_holes`, `close`: Morphological operations
 
 See [API Reference](../api/index.md) for complete parameter documentation.
@@ -79,6 +79,7 @@ graph.add_edge(0, 1, edge_id=0, distance=50.0)
 env = Environment.from_graph(
     graph=graph,
     edge_order=[(0, 1)],
+    edge_spacing=0.0,
     bin_size=2.0,
     name="LinearTrack"
 )
@@ -89,27 +90,36 @@ env = Environment.from_graph(
 Create from a pre-defined N-D boolean mask:
 
 ```python
+import numpy as np
+
 # Create custom mask
-mask = np.zeros((50, 50), dtype=bool)
-mask[10:40, 10:40] = True  # Active region
+active_mask = np.zeros((50, 50), dtype=bool)
+active_mask[10:40, 10:40] = True  # Active region
+grid_edges = (
+    np.linspace(0, 100, 51),
+    np.linspace(0, 100, 51),
+)
 
 env = Environment.from_grid_mask(
-    mask=mask,
-    bin_size=2.0,
-    dimension_ranges=[(0, 100), (0, 100)],
+    active_mask=active_mask,
+    grid_edges=grid_edges,
     name="MaskedEnvironment"
 )
 ```
 
 ### from_pixel_mask()
 
-Create from a binary image file:
+Create from a 2-D binary image mask:
 
 ```python
+import numpy as np
+
+image_mask = np.zeros((480, 640), dtype=bool)
+image_mask[100:400, 150:500] = True
+
 env = Environment.from_pixel_mask(
-    image_path="arena_mask.png",
+    image_mask=image_mask,
     pixel_size=2.0,
-    dimension_ranges=[(0, 100), (0, 100)],
     name="ImageEnvironment"
 )
 ```
@@ -151,11 +161,21 @@ neighbors = env.neighbors(bin_index=42)
 
 ### distance_between()
 
-Calculate distance between bins:
+Calculate geodesic distance between point coordinates:
 
 ```python
-distance = env.distance_between(bin_a=10, bin_b=20)
+point_a = np.array([10.0, 20.0])
+point_b = np.array([30.0, 40.0])
+distance = env.distance_between(point_a, point_b)
 # Returns: float distance
+```
+
+For graph distance between bin indices, use `distance_to()`:
+
+```python
+source_bin = 10
+target_bin = 20
+distance = float(env.distance_to([target_bin])[source_bin])
 ```
 
 ### path_between()
@@ -163,7 +183,7 @@ distance = env.distance_between(bin_a=10, bin_b=20)
 Find shortest path between bins:
 
 ```python
-path = env.path_between(start_bin=0, end_bin=50)
+path = env.path_between(0, 50)
 # Returns: list of bin indices forming path
 ```
 

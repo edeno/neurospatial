@@ -75,7 +75,11 @@ Creating animation overlays from NWB:
 >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
 ...     nwbfile = io.read()
 ...     overlay = position_overlay_from_nwb(nwbfile, trail_length=10)
->>> env.animate_fields(fields, overlays=[overlay])  # doctest: +SKIP
+>>> env.animate_fields(
+...     fields,
+...     frame_times=frame_times,
+...     overlays=[overlay],
+... )  # doctest: +SKIP
 """
 
 from __future__ import annotations

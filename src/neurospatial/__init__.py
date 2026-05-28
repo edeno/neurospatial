@@ -189,7 +189,7 @@ Create 2D environment and compute shortest path::
     ...     connect_diagonal_neighbors=True,
     ... )
     >>> env.units = 'cm'  # doctest: +SKIP
-    >>> path = env.path_between(start_bin=0, goal_bin=100)  # doctest: +SKIP
+    >>> path = env.path_between(0, 100)  # doctest: +SKIP
     >>> # distance_between takes coordinates; for graph distance between bin
     >>> # indices use distance_to([target_bin]) and index by the source bin.
     >>> distance = float(env.distance_to([100])[0])  # doctest: +SKIP

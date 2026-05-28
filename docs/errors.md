@@ -296,26 +296,37 @@ The Environment uses the "fitted" pattern common in scientific Python libraries 
 #### Solution 1: Use factory methods (Recommended)
 
 ```python
+import numpy as np
+
 # ❌ Direct instantiation doesn't work
 env = Environment()
-env.bin_at([10.0, 20.0])  # RuntimeError: E1004
+env.bin_at(np.array([[10.0, 20.0]]))  # RuntimeError: E1004
 
 # ✓ Use factory method
-env = Environment.from_samples(positions, bin_size=5.0, units='cm')
-env.bin_at([10.0, 20.0])  # Works!
+env = Environment.from_samples(positions, bin_size=5.0)
+env.units = 'cm'
+env.bin_at(np.array([[10.0, 20.0]]))  # Works!
 ```
 
 #### Solution 2: Use the right factory for your data
 
 ```python
 # For sample data
-env = Environment.from_samples(positions, bin_size=5.0, units='cm')
+env = Environment.from_samples(positions, bin_size=5.0)
+env.units = 'cm'
 
 # For 1D track graphs
-env = Environment.from_graph(graph, bin_size=1.0, units='cm')
+env = Environment.from_graph(
+    graph=graph,
+    edge_order=edge_order,
+    edge_spacing=0.0,
+    bin_size=1.0,
+)
+env.units = 'cm'
 
 # For polygon boundaries
-env = Environment.from_polygon(polygon, bin_size=5.0, units='cm')
+env = Environment.from_polygon(polygon, bin_size=5.0)
+env.units = 'cm'
 
 # For pre-built N-D boolean masks (use grid_edges to describe geometry)
 env = Environment.from_grid_mask(active_mask, grid_edges=grid_edges)

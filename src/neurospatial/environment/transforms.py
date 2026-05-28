@@ -892,11 +892,11 @@ class EnvironmentTransforms:
         See Also
         --------
         estimate_transform : Estimate transformation from point correspondences
-        neurospatial.transforms.Affine2D : 2D affine transformation class
-        neurospatial.transforms.AffineND : N-D affine transformation class
-        neurospatial.transforms.translate : Create translation transform
-        neurospatial.transforms.scale_2d : Create scaling transform
-        neurospatial.transforms.from_rotation_matrix : Create rotation transform
+        neurospatial.ops.transforms.Affine2D : 2D affine transformation class
+        neurospatial.ops.transforms.AffineND : N-D affine transformation class
+        neurospatial.ops.transforms.translate : Create translation transform
+        neurospatial.ops.transforms.scale_2d : Create scaling transform
+        neurospatial.ops.transforms.from_rotation_matrix : Create rotation transform
 
         Notes
         -----

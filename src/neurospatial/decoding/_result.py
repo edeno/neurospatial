@@ -257,17 +257,26 @@ class DecodingResult:
         and spatial bin indices on the y-axis. This is useful for quick
         diagnostics and 1D linearized tracks.
 
-        For 2D environments, use ``env.animate_fields(result.posterior)``
-        instead to visualize the posterior in actual spatial coordinates::
+        For 2D environments, use ``env.animate_fields`` with one timestamp
+        per posterior row to visualize the posterior in actual spatial
+        coordinates::
 
             # 2D spatial visualization (recommended for 2D environments)
-            env.animate_fields(result.posterior, backend="napari")
+            env.animate_fields(
+                result.posterior,
+                frame_times=result.times,
+                backend="napari",
+            )
 
             # With position overlay
             from neurospatial.animation.overlays import PositionOverlay
 
             overlay = PositionOverlay(positions=positions, times=times)
-            env.animate_fields(result.posterior, overlays=[overlay])
+            env.animate_fields(
+                result.posterior,
+                frame_times=result.times,
+                overlays=[overlay],
+            )
 
         When ``times`` is provided, the x-axis shows time in seconds with
         proper extent. Otherwise, the x-axis shows time bin indices.
