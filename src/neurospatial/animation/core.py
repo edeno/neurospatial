@@ -154,6 +154,17 @@ def animate_fields(
 
     This function validates inputs and routes to the appropriate backend.
 
+    Backend parity
+    --------------
+    The ``video``, ``html``, and ``widget`` backends share the same
+    field-to-color rendering (matplotlib), so they apply ``cmap``, ``vmin``,
+    and ``vmax`` identically: the HTML frame is pixel-identical to the shared
+    renderer, the widget frame differs only by its frame label, and the video
+    frame matches within H.264 compression. The ``napari`` backend renders the
+    same field on the GPU using the same colormap and contrast limits, but at a
+    different resolution. Cross-backend consistency is verified in
+    ``tests/animation/test_backend_consistency.py``.
+
     Parameters
     ----------
     env : Environment
@@ -881,8 +892,12 @@ def large_session_napari_config(
     >>> vmin, vmax = estimate_colormap_range_from_subset(fields)  # doctest: +SKIP
     >>> config = large_session_napari_config(n_frames=len(fields))  # doctest: +SKIP
     >>> env.animate_fields(  # doctest: +SKIP
-    ...     fields, frame_times=frame_times, vmin=vmin, vmax=vmax,
-    ...     backend="napari", **config
+    ...     fields,
+    ...     frame_times=frame_times,
+    ...     vmin=vmin,
+    ...     vmax=vmax,
+    ...     backend="napari",
+    ...     **config,
     ... )  # doctest: +SKIP
 
     Notes

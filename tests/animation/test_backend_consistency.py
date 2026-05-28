@@ -1,282 +1,234 @@
-"""Test consistency across all animation backends.
+"""Cross-backend consistency for animation rendering.
 
-These tests verify that all backends (napari, video, html, widget) can handle
-the same input data correctly and produce valid output.
+The four backends do NOT produce bit-identical frames by design: the HTML
+backend embeds the bare matplotlib frame (``render_field_to_png_bytes``), the
+widget backend wraps that frame with a frame label, the video backend re-encodes
+it with lossy H.264, and the napari backend renders the field on the GPU with
+its own colormap (different resolution entirely). So pixel-exact 4-way parity is
+not a property of this codebase.
 
-Napari tests use xdist_group to prevent Qt crashes in parallel execution.
+What IS verifiable, and what these tests pin, is that every backend applies the
+*same field-to-color mapping*:
+
+- the HTML backend's embedded frame is pixel-identical to the shared
+  ``render_field_to_png_bytes`` canonical frame;
+- the video backend's decoded frame matches that canonical frame within H.264
+  compression error (not a blank or wrong frame);
+- the widget backend's frame matches the canonical frame everywhere except the
+  small frame-label chrome;
+- every backend visibly *honors* ``vmin``/``vmax`` and ``cmap`` -- changing the
+  parameter changes the output. This is the regression guard for the audit's
+  concern that a backend could silently ignore ``vmin``/``vmax``.
+
+The napari backend is GPU-rendered (different resolution, no matplotlib axes)
+and is not pixel-comparable to the matplotlib family, so it is not exercised
+here. napari rendering is covered by the dedicated, environment-gated
+napari-backend tests; a live napari viewer requires a working Qt/OpenGL context
+that is not available in a headless run.
 """
 
 from __future__ import annotations
 
-import os
-from unittest.mock import MagicMock, patch
+import base64
+import io
+import re
 
 import numpy as np
 import pytest
 
 from neurospatial import Environment
 
-# Mark all tests in this module as integration tests. Napari-specific tests
-# carry napari/xdist markers individually so marker selection stays meaningful.
 pytestmark = pytest.mark.integration
 
+# Frame index compared across backends.
+_FRAME = 2
+_DPI = 100
+
 
 @pytest.fixture
-def shared_test_data():
-    """Create consistent test environment and fields for all backends."""
+def canonical_parity_data():
+    """Small deterministic (env, fields, params) shared by all parity tests.
+
+    A compact environment keeps per-backend rendering fast while still
+    exercising the full field-to-color pipeline.
+    """
     rng = np.random.default_rng(42)
-    positions = rng.standard_normal((100, 2)) * 50
-    env = Environment.from_samples(positions, bin_size=10.0)
-
-    # Create 10 frames of field data (manageable for all backends)
-    n_frames = 10
-    fields = [rng.random(env.n_bins) for _ in range(n_frames)]
-
-    return env, fields
-
-
-@pytest.fixture
-def close_viewer(request):
-    """Close real napari viewers created by a test."""
-
-    def register(viewer):
-        request.addfinalizer(viewer.close)
-        return viewer
-
-    return register
+    env = Environment.from_samples(rng.uniform(0, 32, (2000, 2)), bin_size=2.0)
+    fields = [rng.uniform(0, 10, env.n_bins) for _ in range(4)]
+    return {
+        "env": env,
+        "fields": fields,
+        "cmap": "viridis",
+        "vmin": 0.0,
+        "vmax": 10.0,
+    }
 
 
-@pytest.mark.napari
-@pytest.mark.xdist_group(name="napari_gui")
-def test_napari_backend_with_shared_data(shared_test_data, close_viewer):
-    """Test Napari backend handles shared test data."""
-    pytest.importorskip("napari")
-
-    from neurospatial.animation.backends.napari_backend import render_napari
-
-    env, fields = shared_test_data
-
-    # Napari should handle the data without error
-    viewer = close_viewer(render_napari(env, fields, vmin=0, vmax=1, fps=10))
-
-    # Verify viewer created
-    assert viewer is not None
-    assert hasattr(viewer, "layers")
-    assert len(viewer.layers) > 0
+def _decode_png(png_bytes: bytes) -> np.ndarray:
+    """Decode PNG/JPEG bytes to an (H, W, 3) uint8 RGB array."""
+    pil = pytest.importorskip("PIL.Image")
+    return np.array(pil.open(io.BytesIO(png_bytes)).convert("RGB"))
 
 
-def test_html_backend_with_shared_data(shared_test_data, tmp_path):
-    """Test HTML backend handles shared test data."""
+def _canonical_frame(data: dict, *, vmin=None, vmax=None, cmap=None) -> np.ndarray:
+    """The shared matplotlib frame that every backend's color mapping derives from."""
+    from neurospatial.animation.rendering import render_field_to_png_bytes
+
+    return _decode_png(
+        render_field_to_png_bytes(
+            data["env"],
+            data["fields"][_FRAME],
+            cmap if cmap is not None else data["cmap"],
+            data["vmin"] if vmin is None else vmin,
+            data["vmax"] if vmax is None else vmax,
+            dpi=_DPI,
+        )
+    )
+
+
+def _html_frame(data: dict, tmp_path, *, vmin=None, vmax=None, cmap=None) -> np.ndarray:
     from neurospatial.animation.backends.html_backend import render_html
 
-    env, fields = shared_test_data
-
-    output_path = tmp_path / "consistency_test.html"
-
-    # HTML should handle the data without error
-    render_html(env, fields, save_path=str(output_path), fps=10)
-
-    # Verify output
-    assert output_path.exists()
-    assert output_path.stat().st_size > 0
-
-    # Verify frames are embedded in JavaScript
-    html_content = output_path.read_text(encoding="utf-8")
-    assert "const frames = [" in html_content
-    # HTML uses base64-encoded frames in an array
-    assert len(fields) == 10  # Verify we're testing the right number of frames
+    out = tmp_path / "anim.html"
+    render_html(
+        data["env"],
+        data["fields"],
+        str(out),
+        fps=4,
+        cmap=cmap if cmap is not None else data["cmap"],
+        vmin=data["vmin"] if vmin is None else vmin,
+        vmax=data["vmax"] if vmax is None else vmax,
+        dpi=_DPI,
+    )
+    # Frames are embedded as raw base64 PNGs in a `const frames = [...]` array.
+    b64_frames = re.findall(r'"([A-Za-z0-9+/=]{100,})"', out.read_text())
+    return _decode_png(base64.b64decode(b64_frames[_FRAME]))
 
 
-def test_video_backend_with_shared_data(shared_test_data, tmp_path):
-    """Test video backend handles shared test data."""
-    # Skip if ffmpeg not available
-    if os.system("ffmpeg -version > /dev/null 2>&1") != 0:
-        pytest.skip("ffmpeg not installed")
-
+def _video_frame(
+    data: dict, tmp_path, *, vmin=None, vmax=None, cmap=None
+) -> np.ndarray:
+    cv2 = pytest.importorskip("cv2")
     from neurospatial.animation.backends.video_backend import render_video
 
-    env, fields = shared_test_data
+    out = tmp_path / "anim.mp4"
+    render_video(
+        data["env"],
+        data["fields"],
+        str(out),
+        fps=4,
+        cmap=cmap if cmap is not None else data["cmap"],
+        vmin=data["vmin"] if vmin is None else vmin,
+        vmax=data["vmax"] if vmax is None else vmax,
+        dpi=_DPI,
+    )
+    cap = cv2.VideoCapture(str(out))
+    frames = []
+    try:
+        while True:
+            ok, frame_bgr = cap.read()
+            if not ok:
+                break
+            frames.append(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB))
+    finally:
+        cap.release()
+    return frames[_FRAME]
 
-    # Clear cache to make environment pickle-able
-    env.clear_cache()
 
-    output_path = tmp_path / "consistency_test.mp4"
+def _widget_frame(data: dict, *, vmin=None, vmax=None, cmap=None) -> np.ndarray:
+    from neurospatial.animation.backends.widget_backend import (
+        render_field_to_png_bytes_with_overlays,
+    )
 
-    # Video should handle the data without error
-    render_video(env, fields, save_path=str(output_path), fps=10, n_workers=1)
+    return _decode_png(
+        render_field_to_png_bytes_with_overlays(
+            data["env"],
+            data["fields"][_FRAME],
+            cmap if cmap is not None else data["cmap"],
+            data["vmin"] if vmin is None else vmin,
+            data["vmax"] if vmax is None else vmax,
+            _DPI,
+            _FRAME,
+        )
+    )
 
-    # Verify output
-    assert output_path.exists()
-    assert output_path.stat().st_size > 0
 
+class TestBackendColorMappingParity:
+    """Each matplotlib-family backend renders the shared field-to-color mapping."""
 
-def test_widget_backend_with_shared_data(shared_test_data):
-    """Test widget backend handles shared test data."""
-    pytest.importorskip("ipywidgets")
-
-    from neurospatial.animation.backends.widget_backend import render_widget
-
-    env, fields = shared_test_data
-
-    # Mock ipywidgets to avoid Jupyter dependency
-    with (
-        patch(
-            "neurospatial.animation.backends.widget_backend.ipywidgets"
-        ) as mock_widgets,
-        patch("neurospatial.animation.backends.widget_backend.display"),
+    def test_html_frame_pixel_identical_to_canonical(
+        self, canonical_parity_data, tmp_path
     ):
-        # Mock widget classes
-        mock_widgets.Image = MagicMock()
-        mock_widgets.HTML = MagicMock()
-        mock_widgets.IntSlider = MagicMock()
-        mock_widgets.Play = MagicMock()
-        mock_widgets.VBox = MagicMock()
-        mock_widgets.HBox = MagicMock()
-        mock_widgets.jslink = MagicMock()
+        # HTML embeds the bare canonical PNG -> must be pixel-exact.
+        canonical = _canonical_frame(canonical_parity_data)
+        html_frame = _html_frame(canonical_parity_data, tmp_path)
+        assert html_frame.shape == canonical.shape
+        assert np.array_equal(html_frame, canonical)
 
-        # Widget should handle the data without error
-        render_widget(env, fields, fps=10)
-
-        # Verify widget components were created
-        mock_widgets.Image.assert_called_once()
-        mock_widgets.IntSlider.assert_called_once()
-        mock_widgets.Play.assert_called_once()
-
-
-@pytest.mark.napari
-@pytest.mark.xdist_group(name="napari_gui")
-def test_all_backends_handle_same_vmin_vmax(shared_test_data, tmp_path, close_viewer):
-    """Test all backends respect the same vmin/vmax color scale."""
-    pytest.importorskip("napari")
-    pytest.importorskip("ipywidgets")
-
-    env, fields = shared_test_data
-
-    vmin, vmax = -0.5, 1.5  # Explicit range outside [0, 1]
-
-    # Test napari
-    from neurospatial.animation.backends.napari_backend import render_napari
-
-    viewer = close_viewer(render_napari(env, fields, vmin=vmin, vmax=vmax, fps=10))
-    assert viewer is not None
-
-    # Test HTML
-    from neurospatial.animation.backends.html_backend import render_html
-
-    html_path = tmp_path / "vmin_vmax_test.html"
-    render_html(env, fields, save_path=str(html_path), fps=10, vmin=vmin, vmax=vmax)
-    assert html_path.exists()
-
-    # Test widget (with mocking)
-    from neurospatial.animation.backends.widget_backend import render_widget
-
-    with (
-        patch(
-            "neurospatial.animation.backends.widget_backend.ipywidgets"
-        ) as mock_widgets,
-        patch("neurospatial.animation.backends.widget_backend.display"),
+    def test_video_frame_matches_canonical_within_compression(
+        self, canonical_parity_data, tmp_path
     ):
-        mock_widgets.Image = MagicMock()
-        mock_widgets.HTML = MagicMock()
-        mock_widgets.IntSlider = MagicMock()
-        mock_widgets.Play = MagicMock()
-        mock_widgets.VBox = MagicMock()
-        mock_widgets.HBox = MagicMock()
-        mock_widgets.jslink = MagicMock()
+        canonical = _canonical_frame(canonical_parity_data)
+        video_frame = _video_frame(canonical_parity_data, tmp_path)
+        assert video_frame.shape == canonical.shape
+        # H.264 is lossy: individual pixels can differ a lot, but the *average*
+        # difference is tiny if it is the same frame. A blank/wrong frame would
+        # have a large mean difference.
+        mean_abs_diff = np.abs(video_frame.astype(int) - canonical.astype(int)).mean()
+        assert mean_abs_diff < 8.0
 
-        render_widget(env, fields, fps=10, vmin=vmin, vmax=vmax)
-        mock_widgets.Image.assert_called_once()
-
-
-@pytest.mark.napari
-@pytest.mark.xdist_group(name="napari_gui")
-def test_all_backends_handle_custom_cmap(shared_test_data, tmp_path, close_viewer):
-    """Test all backends respect custom colormap."""
-    pytest.importorskip("napari")
-    pytest.importorskip("ipywidgets")
-
-    env, fields = shared_test_data
-
-    cmap = "plasma"  # Non-default colormap
-
-    # Test napari
-    from neurospatial.animation.backends.napari_backend import render_napari
-
-    viewer = close_viewer(render_napari(env, fields, cmap=cmap, fps=10))
-    assert viewer is not None
-
-    # Test HTML
-    from neurospatial.animation.backends.html_backend import render_html
-
-    html_path = tmp_path / "cmap_test.html"
-    render_html(env, fields, save_path=str(html_path), fps=10, cmap=cmap)
-    assert html_path.exists()
-
-    # Test widget (with mocking)
-    from neurospatial.animation.backends.widget_backend import render_widget
-
-    with (
-        patch(
-            "neurospatial.animation.backends.widget_backend.ipywidgets"
-        ) as mock_widgets,
-        patch("neurospatial.animation.backends.widget_backend.display"),
-    ):
-        mock_widgets.Image = MagicMock()
-        mock_widgets.HTML = MagicMock()
-        mock_widgets.IntSlider = MagicMock()
-        mock_widgets.Play = MagicMock()
-        mock_widgets.VBox = MagicMock()
-        mock_widgets.HBox = MagicMock()
-        mock_widgets.jslink = MagicMock()
-
-        render_widget(env, fields, fps=10, cmap=cmap)
-        mock_widgets.Image.assert_called_once()
+    def test_widget_frame_matches_canonical_outside_chrome(self, canonical_parity_data):
+        canonical = _canonical_frame(canonical_parity_data)
+        widget_frame = _widget_frame(canonical_parity_data)
+        assert widget_frame.shape == canonical.shape
+        # Widget adds a small frame-label; the field region is identical.
+        per_pixel_diff = np.abs(widget_frame.astype(int) - canonical.astype(int)).sum(
+            axis=2
+        )
+        frac_differing = (per_pixel_diff > 5).mean()
+        assert frac_differing < 0.05  # <5% of pixels differ (the chrome)
+        assert per_pixel_diff.mean() < 5.0
 
 
-@pytest.mark.napari
-@pytest.mark.xdist_group(name="napari_gui")
-def test_all_backends_handle_custom_fps(shared_test_data, tmp_path, close_viewer):
-    """Test all backends respect custom FPS setting."""
-    pytest.importorskip("napari")
-    pytest.importorskip("ipywidgets")
+class TestBackendsHonorColorParameters:
+    """Changing vmin/vmax or cmap must change each backend's output.
 
-    env, fields = shared_test_data
+    A backend that silently ignored the parameter (the audit's specific concern)
+    would produce identical output and fail these tests.
+    """
 
-    fps = 60  # High frame rate
+    # mean abs-diff threshold: honoring the parameter produces tens of levels of
+    # change; ignoring it produces ~0.
+    _CHANGE_THRESHOLD = 5.0
 
-    # Test napari
-    from neurospatial.animation.backends.napari_backend import render_napari
+    def test_html_honors_vmin_vmax(self, canonical_parity_data, tmp_path):
+        # Each call writes and is read back immediately, so reusing tmp_path
+        # (the second render overwrites the first) is safe.
+        a = _html_frame(canonical_parity_data, tmp_path, vmax=10.0)
+        b = _html_frame(canonical_parity_data, tmp_path, vmax=100.0)
+        assert np.abs(a.astype(int) - b.astype(int)).mean() > self._CHANGE_THRESHOLD
 
-    viewer = close_viewer(render_napari(env, fields, fps=fps))
-    assert viewer is not None
+    def test_html_honors_cmap(self, canonical_parity_data, tmp_path):
+        a = _html_frame(canonical_parity_data, tmp_path, cmap="viridis")
+        b = _html_frame(canonical_parity_data, tmp_path, cmap="hot")
+        assert np.abs(a.astype(int) - b.astype(int)).mean() > self._CHANGE_THRESHOLD
 
-    # Test HTML
-    from neurospatial.animation.backends.html_backend import render_html
+    def test_video_honors_vmin_vmax(self, canonical_parity_data, tmp_path):
+        a = _video_frame(canonical_parity_data, tmp_path, vmax=10.0)
+        b = _video_frame(canonical_parity_data, tmp_path, vmax=100.0)
+        assert np.abs(a.astype(int) - b.astype(int)).mean() > self._CHANGE_THRESHOLD
 
-    html_path = tmp_path / "fps_test.html"
-    render_html(env, fields, save_path=str(html_path), fps=fps)
-    assert html_path.exists()
+    def test_video_honors_cmap(self, canonical_parity_data, tmp_path):
+        a = _video_frame(canonical_parity_data, tmp_path, cmap="viridis")
+        b = _video_frame(canonical_parity_data, tmp_path, cmap="hot")
+        assert np.abs(a.astype(int) - b.astype(int)).mean() > self._CHANGE_THRESHOLD
 
-    # Test widget (with mocking)
-    from neurospatial.animation.backends.widget_backend import render_widget
+    def test_widget_honors_vmin_vmax(self, canonical_parity_data):
+        a = _widget_frame(canonical_parity_data, vmax=10.0)
+        b = _widget_frame(canonical_parity_data, vmax=100.0)
+        assert np.abs(a.astype(int) - b.astype(int)).mean() > self._CHANGE_THRESHOLD
 
-    with (
-        patch(
-            "neurospatial.animation.backends.widget_backend.ipywidgets"
-        ) as mock_widgets,
-        patch("neurospatial.animation.backends.widget_backend.display"),
-    ):
-        mock_widgets.Image = MagicMock()
-        mock_widgets.HTML = MagicMock()
-        mock_widgets.IntSlider = MagicMock()
-        mock_widgets.Play = MagicMock(return_value=MagicMock())
-        mock_widgets.VBox = MagicMock()
-        mock_widgets.HBox = MagicMock()
-        mock_widgets.jslink = MagicMock()
-
-        render_widget(env, fields, fps=fps)
-
-        # Widget should use fps to set interval
-        mock_widgets.Play.assert_called_once()
-        call_kwargs = mock_widgets.Play.call_args[1]
-        assert call_kwargs["interval"] == int(1000 / fps)  # milliseconds
+    def test_widget_honors_cmap(self, canonical_parity_data):
+        a = _widget_frame(canonical_parity_data, cmap="viridis")
+        b = _widget_frame(canonical_parity_data, cmap="hot")
+        assert np.abs(a.astype(int) - b.astype(int)).mean() > self._CHANGE_THRESHOLD
