@@ -394,18 +394,48 @@ def simulate_session(
 
     # Generate field centers based on coverage
     if coverage == "uniform":
-        # Evenly space centers across environment
-        step = max(1, len(env.bin_centers) // n_cells)
-        field_centers = env.bin_centers[::step][:n_cells]
-        # Warn if we can't provide enough centers
-        if len(field_centers) < n_cells:
+        # Place centers on an evenly-spaced grid inset from the environment
+        # boundary, then snap each to the nearest active bin. Insetting keeps
+        # centers in the well-sampled interior: boundary bins are visited far
+        # less by exploratory trajectories (e.g. the OU walk), so cells placed
+        # there recover poorly. (Striding through ``bin_centers`` from index 0,
+        # the previous approach, put the first/last centers on the arena edge.)
+        ranges = env.dimension_ranges
+        if ranges is None:
+            # Layouts without an axis-aligned bounding box (e.g. graph tracks):
+            # fall back to evenly striding through the bin centers.
+            step = max(1, len(env.bin_centers) // n_cells)
+            field_centers = env.bin_centers[::step][:n_cells]
+        else:
+            n_dims = len(ranges)
+            margin = 0.2  # inset 20% of each axis span from the boundary
+            per_axis = int(np.ceil(n_cells ** (1.0 / n_dims)))
+            axis_targets = [
+                np.linspace(lo + margin * (hi - lo), hi - margin * (hi - lo), per_axis)
+                for (lo, hi) in ranges
+            ]
+            grid = (
+                np.array(np.meshgrid(*axis_targets, indexing="ij"))
+                .reshape(n_dims, -1)
+                .T[:n_cells]
+            )
+            # Snap each target to the nearest active bin center.
+            bin_centers = env.bin_centers
+            distances = np.linalg.norm(
+                bin_centers[None, :, :] - grid[:, None, :], axis=2
+            )
+            field_centers = bin_centers[np.argmin(distances, axis=1)]
+
+        # Warn if we cannot supply n_cells distinct centers.
+        n_unique = len(np.unique(field_centers, axis=0))
+        if n_unique < n_cells:
             import warnings
 
             warnings.warn(
-                f"Requested n_cells={n_cells} but only {len(field_centers)} unique "
-                f"bin centers available for uniform coverage (env has {len(env.bin_centers)} bins). "
-                f"Using {len(field_centers)} cells. Consider using coverage='random' for "
-                f"more cells (with potential overlap).",
+                f"Requested n_cells={n_cells} but only {n_unique} distinct "
+                f"interior bin centers were available for uniform coverage "
+                f"(env has {len(env.bin_centers)} bins). Some cells share a "
+                f"center. Consider coverage='random' or a finer bin_size.",
                 UserWarning,
                 stacklevel=2,
             )

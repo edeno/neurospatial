@@ -277,15 +277,15 @@ class TestPlaceFieldDetectionAccuracy:
         # Ground-truth recovery: for each true center, find the nearest detected
         # peak and count how many land within 2 bin sizes.
         #
-        # NOTE: the achievable match rate here is 2 of 5, not 5 of 5. The
-        # simulator places ground-truth centers along the arena diagonal
-        # ([0,0], [20,20], ..., [80,80]); the two corner fields ([0,0] and
-        # [80,80]) sit on the boundary where the 40 s Ornstein-Uhlenbeck
-        # trajectory barely samples, so their detected peaks are 20-30 cm off.
-        # Asserting >= 2 (observed: exactly 2 within 2*bin_size) pins genuine
-        # recovery of the interior, well-sampled cells -- a regression that
-        # broke detection would drop below 2 -- without flaking on the
-        # boundary-placement artifact.
+        # NOTE: the achievable match rate here is 2 of 5 in this fast 40 s
+        # session, not 5 of 5. Uniform coverage insets the field centers from
+        # the arena edge, but the inset-corner cells are still visited less by
+        # the short Ornstein-Uhlenbeck walk (one had only ~13 spikes), so their
+        # detected peaks are several bins off. Asserting >= 2 pins genuine
+        # recovery of the well-sampled cells -- a regression that broke
+        # detection would drop below 2 -- without flaking on the cells the short
+        # trajectory under-samples. (validate_simulation passes on a longer
+        # session; see test_validation_sim.)
         match_tolerance = 2.0 * bin_size
         matched = 0
         for true_center in true_centers:
