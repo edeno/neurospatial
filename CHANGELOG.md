@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Bug fixes
+
+- `compute_egocentric_distance(metric="geodesic")` previously honored only
+  the first timestep's targets when called with a time-varying target array
+  of shape `(n_time, n_targets, 2)`. Now distances are computed
+  per-timestep, with an internal cache so repeated targets remain cheap.
+  Static-target callers (passing shape `(n_targets, 2)`) see no behavior
+  change.
+
+### Documentation
+
+- Dropped unimplemented `exponential_kernel` from the
+  `events.regressors` module docstring.
+
 ## [0.4.0] - 2026-05-21
 
 This release is the v0.4 UX cleanup: a wide-ranging consolidation of

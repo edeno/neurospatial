@@ -7,7 +7,6 @@ Temporal regressors:
 - time_to_nearest_event: Signed time to nearest event (peri-event time)
 - event_count_in_window: Count events in time window
 - event_indicator: Binary indicator of event presence
-- exponential_kernel: Convolve events with exponential kernel
 
 Spatial regressors:
 - distance_to_reward: Distance to reward location (event-triggered)

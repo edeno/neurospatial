@@ -343,6 +343,83 @@ class TestComputeEgocentricDistance:
             compute_egocentric_distance(position, None, targets, metric="geodesic")
 
 
+class TestGeodesicDistanceTimeVarying:
+    """Geodesic distance honors time-varying targets (shape (n_time, n_targets, 2))."""
+
+    def _build_quasi_1d_env(self):
+        """Build a 2D environment that behaves like a 1D linear track along x."""
+        from neurospatial import Environment
+
+        rng = np.random.default_rng(0)
+        # Dense sampling along a thin strip y in [-0.4, 0.4] so the env is
+        # effectively 1D after binning at bin_size=1.0 (one or two y-bins).
+        x = np.linspace(0.0, 100.0, 3000)
+        y = rng.uniform(-0.4, 0.4, size=x.size)
+        return Environment.from_samples(np.column_stack([x, y]), bin_size=1.0)
+
+    def test_moving_target_returns_per_timestep_distance(self):
+        """Each timestep's target is honored individually, not just t=0."""
+        from neurospatial.ops.egocentric import compute_egocentric_distance
+
+        env = self._build_quasi_1d_env()
+
+        # Animal stationary at (50, 0) for 3 timesteps.
+        positions = np.tile(np.array([[50.0, 0.0]]), (3, 1))
+        # Target moves: (10, 0) -> (50, 0) -> (90, 0).
+        # Shape (n_time=3, n_targets=1, 2) triggers the time-varying path.
+        targets = np.array(
+            [
+                [[10.0, 0.0]],
+                [[50.0, 0.0]],
+                [[90.0, 0.0]],
+            ],
+            dtype=np.float64,
+        )
+
+        distances = compute_egocentric_distance(
+            positions, None, targets, metric="geodesic", env=env
+        )
+
+        assert distances.shape == (3, 1)
+        # Graph distance is approximately the linear x-distance along the strip.
+        # Tolerance: 1.5 * bin_size (1.0) accounts for binning discretization.
+        bin_size = 1.0
+        assert distances[0, 0] == pytest.approx(40.0, abs=1.5 * bin_size)
+        assert distances[1, 0] == pytest.approx(0.0, abs=1.5 * bin_size)
+        assert distances[2, 0] == pytest.approx(40.0, abs=1.5 * bin_size)
+
+    def test_static_target_via_tile_matches_2d_broadcast(self):
+        """Passing a static target explicitly tiled to 3D matches the 2D-broadcast path."""
+        from neurospatial import Environment
+        from neurospatial.ops.egocentric import compute_egocentric_distance
+
+        rng = np.random.default_rng(1)
+        sample_positions = rng.uniform(0, 100, size=(2000, 2))
+        env = Environment.from_samples(sample_positions, bin_size=5.0)
+
+        # Animal moving along a diagonal trajectory.
+        positions = np.column_stack(
+            [np.linspace(10.0, 80.0, 6), np.linspace(20.0, 70.0, 6)]
+        )
+        static_targets_2d = np.array([[50.0, 50.0], [70.0, 30.0]])  # (n_targets=2, 2)
+
+        # Reference run: 2D targets, library broadcasts internally.
+        dist_2d = compute_egocentric_distance(
+            positions, None, static_targets_2d, metric="geodesic", env=env
+        )
+
+        # Time-varying form with identical targets at every timestep.
+        n_time = positions.shape[0]
+        static_targets_3d = np.broadcast_to(
+            static_targets_2d, (n_time, 2, 2)
+        ).copy()  # copy so the contiguous-array assumption is exercised
+        dist_3d = compute_egocentric_distance(
+            positions, None, static_targets_3d, metric="geodesic", env=env
+        )
+
+        assert_allclose(dist_3d, dist_2d, equal_nan=True)
+
+
 class TestHeadingFromVelocity:
     """Tests for heading_from_velocity function."""
 

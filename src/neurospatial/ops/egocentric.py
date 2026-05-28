@@ -566,20 +566,27 @@ def compute_egocentric_distance(
         # Vectorized: get bin indices for all positions at once
         pos_bins = env.bin_at(positions)
 
-        for i, target in enumerate(targets_3d[0]):  # Assume same targets over time
-            # Find the bin containing the target (bin_at expects 2D input)
-            target_bins = env.bin_at(target.reshape(1, -1))
-            target_bin = int(target_bins[0])
-            if target_bin < 0:
-                # Target outside environment - already NaN from initialization
+        # Cache distance fields by target bin: static targets recompute once;
+        # time-varying targets pay only for unique target bins.
+        distance_field_cache: dict[int, NDArray[np.float64]] = {}
+
+        for t in range(n_time):
+            pos_bin = int(pos_bins[t])
+            if pos_bin < 0:
+                # Position outside environment - row stays NaN
                 continue
-
-            # Get distance field from this target bin
-            dist_field = compute_distance_field(env.connectivity, sources=[target_bin])
-
-            # Vectorized lookup: get distances at all animal positions
-            valid_pos = (pos_bins >= 0) & (pos_bins < len(dist_field))
-            distances[valid_pos, i] = dist_field[pos_bins[valid_pos]]
+            for i in range(n_targets):
+                target = targets_3d[t, i]
+                target_bins = env.bin_at(target.reshape(1, -1))
+                target_bin = int(target_bins[0])
+                if target_bin < 0:
+                    # Target outside environment - cell stays NaN
+                    continue
+                if target_bin not in distance_field_cache:
+                    distance_field_cache[target_bin] = compute_distance_field(
+                        env.connectivity, sources=[target_bin]
+                    )
+                distances[t, i] = distance_field_cache[target_bin][pos_bin]
 
     return distances
 
