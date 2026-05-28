@@ -796,3 +796,122 @@ class TestWriteOccupancy:
         assert bin_centers_count == 1, (
             f"Expected exactly 1 bin_centers dataset, found {bin_centers_count}"
         )
+
+
+def _create_roundtrip_nwb():
+    """Create a minimal NWB file for on-disk round-trip tests."""
+    from datetime import datetime
+    from uuid import uuid4
+
+    from pynwb import NWBFile
+
+    return NWBFile(
+        session_description="Disk round-trip test session",
+        identifier=str(uuid4()),
+        session_start_time=datetime.now().astimezone(),
+    )
+
+
+def _spatial_rate_result():
+    """Build a small SpatialRateResult on synthetic data.
+
+    Uses the public compute_spatial_rate function (not a hand-built result
+    object) so the round-trip exercises a realistic firing-rate map and its
+    matching occupancy.
+    """
+    from neurospatial import Environment
+    from neurospatial.encoding import compute_spatial_rate
+
+    rng = np.random.default_rng(0)
+    positions = rng.uniform(0, 50, (2000, 2))
+    times = np.arange(2000) / 30.0
+    env = Environment.from_samples(positions, bin_size=5.0)
+    env.units = "cm"
+    spike_times = np.sort(rng.uniform(0, times[-1], 300))
+    # "binned" smoothing keeps the map cheap to compute for a fast disk test.
+    result = compute_spatial_rate(
+        env, spike_times, times, positions, smoothing_method="binned", bandwidth=5.0
+    )
+    return env, result
+
+
+@pytest.mark.slow
+class TestWriteFieldsDiskRoundTrip:
+    """Spatial fields survive a real NWBHDF5IO write -> close -> reopen cycle.
+
+    write_place_field / write_occupancy store TimeSeries in the analysis
+    processing module; there is no dedicated reader, so these tests reload the
+    TimeSeries directly from the reopened NWBFile. The existing in-memory tests
+    never serialize to disk.
+    """
+
+    def test_fields_survive_disk_roundtrip(self, tmp_path):
+        """Firing rate, occupancy, and bin_centers survive disk round-trip."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.io.nwb import write_occupancy, write_place_field
+
+        env, result = _spatial_rate_result()
+        firing_rate = np.asarray(result.firing_rate, dtype=np.float64)
+        occupancy = np.asarray(result.occupancy, dtype=np.float64)
+
+        nwbfile = _create_roundtrip_nwb()
+        write_place_field(nwbfile, env, firing_rate, name="cell_000")
+        write_occupancy(nwbfile, env, occupancy, name="occupancy")
+
+        nwb_path = tmp_path / "fields.nwb"
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            reopened = io.read()
+            analysis = reopened.processing["analysis"]
+            # Static 1D fields are stored as (1, n_bins); squeeze back to 1D.
+            recovered_rate = analysis["cell_000"].data[:].squeeze()
+            recovered_occupancy = analysis["occupancy"].data[:].squeeze()
+            recovered_bin_centers = analysis["bin_centers"].data[:].squeeze()
+
+        np.testing.assert_allclose(
+            recovered_rate, firing_rate, atol=1e-10, equal_nan=True
+        )
+        np.testing.assert_allclose(
+            recovered_occupancy, occupancy, atol=1e-10, equal_nan=True
+        )
+        # bin_centers metadata (the spatial coordinates) survives too.
+        np.testing.assert_allclose(recovered_bin_centers, env.bin_centers, atol=1e-10)
+
+    def test_multiple_fields_in_one_file(self, tmp_path):
+        """Fields for 5 cells survive disk round-trip and stay correct."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial import Environment
+        from neurospatial.io.nwb import write_place_field
+
+        rng = np.random.default_rng(0)
+        positions = rng.uniform(0, 50, (500, 2))
+        env = Environment.from_samples(positions, bin_size=10.0)
+
+        fields = [rng.uniform(0, 10, env.n_bins) for _ in range(5)]
+
+        nwbfile = _create_roundtrip_nwb()
+        for i, field in enumerate(fields):
+            write_place_field(nwbfile, env, field, name=f"cell_{i:03d}")
+
+        nwb_path = tmp_path / "multi_fields.nwb"
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            reopened = io.read()
+            analysis = reopened.processing["analysis"]
+
+            # All 5 cells present.
+            recovered_names = sorted(
+                name for name in analysis.data_interfaces if name.startswith("cell_")
+            )
+            assert recovered_names == [f"cell_{i:03d}" for i in range(5)]
+
+            # Each cell's data matches its input exactly.
+            for i, field in enumerate(fields):
+                recovered = analysis[f"cell_{i:03d}"].data[:].squeeze()
+                np.testing.assert_allclose(recovered, field, atol=1e-10)
