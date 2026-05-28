@@ -931,6 +931,63 @@ class EgocentricRatesResult(SpatialResultMixin):
         return pd.DataFrame(data)
 
 
+def _raw_polar_rate(
+    spike_counts: NDArray[np.float64],
+    occupancy: NDArray[np.float64],
+    min_occupancy: float,
+) -> NDArray[np.float64]:
+    """Raw firing rate (spikes / occupancy) for an egocentric polar grid.
+
+    Graph-diffusion smoothing on the polar environment bleeds rate across
+    *distance* rings (the env connects adjacent distance bins radially), which
+    erases the distance tuning object-vector cells encode. The ``binned``
+    method therefore computes the bin rate directly, with no graph smoothing.
+    Bins with zero occupancy, or occupancy below ``min_occupancy``, are NaN.
+    """
+    occ = np.asarray(occupancy, dtype=np.float64)
+    counts = np.asarray(spike_counts, dtype=np.float64)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        rate = counts / occ
+    invalid = occ <= 0.0
+    if min_occupancy > 0.0:
+        invalid = invalid | (occ < min_occupancy)
+    return np.where(invalid, np.nan, rate)
+
+
+def _egocentric_firing_rate(
+    polar_env: Environment,
+    spike_counts: NDArray[np.float64],
+    occupancy: NDArray[np.float64],
+    *,
+    smoothing_method: Literal["diffusion_kde", "gaussian_kde", "binned"],
+    bandwidth: float,
+    min_occupancy: float,
+    backend: Literal["numpy", "jax"],
+) -> ArrayLike:
+    """Egocentric polar firing rate: raw for ``binned``, smoothed otherwise."""
+    from neurospatial.encoding._backend import is_jax_available
+
+    if smoothing_method == "binned":
+        rate = _raw_polar_rate(spike_counts, occupancy, min_occupancy)
+        if backend == "jax" and is_jax_available():
+            import jax.numpy as jnp
+
+            return jnp.asarray(rate, dtype=jnp.float64)
+        return rate
+
+    from neurospatial.encoding._smoothing import smooth_rate_map
+
+    return smooth_rate_map(
+        polar_env,
+        spike_counts,
+        occupancy,
+        method=smoothing_method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+        backend=backend,
+    )
+
+
 def compute_egocentric_rate(
     env: Environment | None,
     spike_times: NDArray[np.float64],
@@ -1113,7 +1170,6 @@ def compute_egocentric_rate(
     )
     from neurospatial.encoding._smoothing import (
         _validate_smoothing_parameters,
-        smooth_rate_map,
     )
     from neurospatial.encoding._validation import (
         validate_env_fitted,
@@ -1190,13 +1246,11 @@ def compute_egocentric_rate(
     )
     spike_counts = spike_counts_batch[0]
 
-    # Apply smoothing to compute firing rate
-    # smooth_rate_map dispatches to JAX or NumPy based on backend
-    firing_rate = smooth_rate_map(
+    firing_rate = _egocentric_firing_rate(
         polar_env,
         spike_counts,
         occupancy,
-        method=smoothing_method,
+        smoothing_method=smoothing_method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
         backend=resolved_backend,
@@ -1550,17 +1604,32 @@ def compute_egocentric_rates(
         n_jobs=n_jobs,
     )
 
-    # Apply batch smoothing to compute firing rates
-    # smooth_rate_maps_batch dispatches to JAX or NumPy based on backend
-    firing_rates = smooth_rate_maps_batch(
-        polar_env,
-        spike_counts,
-        occupancy,
-        method=smoothing_method,
-        bandwidth=bandwidth,
-        min_occupancy=min_occupancy,
-        backend=resolved_backend,
-    )
+    # Compute firing rates. The "binned" method uses the raw bin rate (no graph
+    # smoothing): diffusion over the polar env bleeds rate across distance rings
+    # and erases distance tuning (see _raw_polar_rate). Other methods smooth.
+    firing_rates: ArrayLike
+    if smoothing_method == "binned":
+        firing_rates = np.stack(
+            [
+                _raw_polar_rate(counts, occupancy, min_occupancy)
+                for counts in spike_counts
+            ]
+        )
+        if resolved_backend == "jax" and is_jax_available():
+            import jax.numpy as jnp
+
+            firing_rates = jnp.asarray(firing_rates, dtype=jnp.float64)
+    else:
+        # smooth_rate_maps_batch dispatches to JAX or NumPy based on backend
+        firing_rates = smooth_rate_maps_batch(
+            polar_env,
+            spike_counts,
+            occupancy,
+            method=smoothing_method,
+            bandwidth=bandwidth,
+            min_occupancy=min_occupancy,
+            backend=resolved_backend,
+        )
 
     # Convert occupancy to JAX if JAX backend is selected
     # (firing_rates is already JAX from smooth_rate_maps_batch)

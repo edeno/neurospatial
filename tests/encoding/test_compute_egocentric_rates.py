@@ -495,8 +495,11 @@ class TestComputeEgocentricRatesEdgeCases:
         )
 
         assert len(result) == len(spike_times_with_empty)
-        # Empty neuron should have zero firing rate
-        assert np.all(result.firing_rates[-1] == 0.0)
+        # Empty neuron fires nowhere: visited bins are 0; unvisited bins (zero
+        # occupancy) are NaN under the raw "binned" rate (undefined, not 0).
+        empty_rate = np.asarray(result.firing_rates[-1])
+        assert np.all(empty_rate[~np.isnan(empty_rate)] == 0.0)
+        assert np.any(~np.isnan(empty_rate))  # some bins were visited
 
 
 # =============================================================================

@@ -1048,12 +1048,12 @@ class TestComputeEgocentricRateSignature:
 
 
 class TestEgocentricRateConvention:
-    """End-to-end recovery of the egocentric direction convention.
+    """End-to-end recovery of the egocentric direction and distance tuning.
 
     Drives the public ``compute_egocentric_rate`` on Poisson spikes from an
     object-vector cell with a known egocentric ``preferred_direction`` and
-    asserts the recovered preferred direction matches it within one direction
-    bin. This pins the shared egocentric convention (0=ahead, +pi/2=left,
+    ``preferred_distance`` and asserts the recovered peak matches both within
+    one bin. This pins the shared egocentric convention (0=ahead, +pi/2=left,
     -pi/2=right) between the simulator and the analysis: a sign flip in
     ``compute_egocentric_bearing`` or a swapped left/right convention would
     fail at least one parametrization.
@@ -1062,17 +1062,11 @@ class TestEgocentricRateConvention:
     egocentric configurations; a stationary animal collapses occupancy into a
     single bin and the recovered map is dominated by smoothing artifacts).
 
-    Distance tuning is deliberately NOT asserted here, only sanity-checked to
-    lie within range. Empirically the recovered firing-rate distance marginal
-    is nearly flat and monotonically decreasing with distance, so the global
-    peak lands in the nearest distance bin regardless of the simulated
-    ``preferred_distance`` (10 cm). The recovered peak bin also has among the
-    *lowest* occupancy, so this is not simple under-sampling -- it points at a
-    possible distance-binning / occupancy-normalization weakness in
-    ``compute_egocentric_rate`` that needs separate root-causing (out of scope
-    for this test, which exists to pin the direction convention). Do not
-    "fix" this by tightening the distance assertion until that is understood.
-    The direction convention is the assertion of record.
+    Distance recovery exercises the default ``"binned"`` method, which reports
+    the raw bin rate (spikes / occupancy). Graph-diffusion smoothing on the
+    polar environment bleeds rate radially across distance rings and flattens
+    the distance marginal, so it cannot recover ``preferred_distance``; the
+    binned rate can.
     """
 
     N_DIRECTION_BINS = 12
@@ -1145,11 +1139,10 @@ class TestEgocentricRateConvention:
         )
         assert circ_dist < direction_bin
 
-        # Distance sanity check only: distance tuning is not reliably recovered
-        # here (flat distance marginal -> peak in nearest bin); see class
-        # docstring for the diagnostic and why we do not assert it.
-        pdist = result.preferred_distance()
-        assert self.DISTANCE_RANGE[0] <= pdist <= self.DISTANCE_RANGE[1]
+        # Distance tuning recovered within one distance bin. DISTANCE_RANGE
+        # spans 0-50 cm over 10 bins -> 5 cm/bin; simulated peak is 10 cm.
+        distance_bin = (self.DISTANCE_RANGE[1] - self.DISTANCE_RANGE[0]) / 10
+        assert abs(result.preferred_distance() - 10.0) < distance_bin
 
 
 class TestEgocentricRateNaNHandling:
