@@ -4,8 +4,6 @@ This module tests the fallback logging and debug behavior when the
 set_array optimization cannot be used (e.g., when QuadMesh is None or
 _field_to_mesh_array returns None for non-grid layouts).
 
-Phase 4.1: Clarify Fallback in `PersistentFigureRenderer`
-
 The implementation uses QuadMesh.set_array() for efficient updates on grid
 layouts, and falls back to full re-render for non-grid layouts (hexagonal,
 graph, triangular mesh).

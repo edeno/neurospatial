@@ -1141,6 +1141,9 @@ class TestEgocentricRateConvention:
 
         # Distance tuning recovered within one distance bin. DISTANCE_RANGE
         # spans 0-50 cm over 10 bins -> 5 cm/bin; simulated peak is 10 cm.
+        # Observed recovery is ~12.5 cm (the 10-15 cm bin center), so the
+        # one-bin tolerance is intentional: it is tight enough that the old
+        # diffusion-smoothed behavior (peak collapsed to ~2.5 cm) fails it.
         distance_bin = (self.DISTANCE_RANGE[1] - self.DISTANCE_RANGE[0]) / 10
         assert abs(result.preferred_distance() - 10.0) < distance_bin
 

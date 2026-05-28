@@ -942,7 +942,21 @@ def _raw_polar_rate(
     *distance* rings (the env connects adjacent distance bins radially), which
     erases the distance tuning object-vector cells encode. The ``binned``
     method therefore computes the bin rate directly, with no graph smoothing.
-    Bins with zero occupancy, or occupancy below ``min_occupancy``, are NaN.
+
+    Parameters
+    ----------
+    spike_counts : ndarray of shape (n_bins,), dtype float64
+        Spike counts per polar bin.
+    occupancy : ndarray of shape (n_bins,), dtype float64
+        Time spent in each polar bin, in seconds.
+    min_occupancy : float
+        Bins with occupancy below this value are treated as unvisited.
+
+    Returns
+    -------
+    ndarray of shape (n_bins,), dtype float64
+        Firing rate per bin in Hz. Bins with zero occupancy, or occupancy
+        below ``min_occupancy``, are NaN (undefined, not zero).
     """
     occ = np.asarray(occupancy, dtype=np.float64)
     counts = np.asarray(spike_counts, dtype=np.float64)
@@ -964,7 +978,31 @@ def _egocentric_firing_rate(
     min_occupancy: float,
     backend: Literal["numpy", "jax"],
 ) -> ArrayLike:
-    """Egocentric polar firing rate: raw for ``binned``, smoothed otherwise."""
+    """Egocentric polar firing rate: raw for ``binned``, smoothed otherwise.
+
+    Parameters
+    ----------
+    polar_env : Environment
+        The egocentric polar grid the rate is computed over.
+    spike_counts : ndarray of shape (n_bins,), dtype float64
+        Spike counts per polar bin.
+    occupancy : ndarray of shape (n_bins,), dtype float64
+        Time spent in each polar bin, in seconds.
+    smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}
+        ``"binned"`` returns the raw bin rate (see ``_raw_polar_rate``); the
+        kernel methods smooth via ``smooth_rate_map``.
+    bandwidth : float
+        Smoothing bandwidth, in environment units. Unused for ``"binned"``.
+    min_occupancy : float
+        Bins with occupancy below this value are treated as unvisited.
+    backend : {"numpy", "jax"}
+        Array backend for the returned rate.
+
+    Returns
+    -------
+    ArrayLike of shape (n_bins,)
+        Firing rate per bin in Hz, as a NumPy or JAX array per ``backend``.
+    """
     from neurospatial.encoding._backend import is_jax_available
 
     if smoothing_method == "binned":

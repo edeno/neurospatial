@@ -395,11 +395,14 @@ def simulate_session(
     # Generate field centers based on coverage
     if coverage == "uniform":
         # Place centers on an evenly-spaced grid inset from the environment
-        # boundary, then snap each to the nearest active bin. Insetting keeps
-        # centers in the well-sampled interior: boundary bins are visited far
-        # less by exploratory trajectories (e.g. the OU walk), so cells placed
-        # there recover poorly. (Striding through ``bin_centers`` from index 0,
-        # the previous approach, put the first/last centers on the arena edge.)
+        # boundary, then snap each to the nearest active bin. Insetting biases
+        # centers toward the well-sampled interior: boundary bins are visited
+        # far less by exploratory trajectories (e.g. the OU walk), so cells
+        # placed there recover poorly. (Striding through ``bin_centers`` from
+        # index 0, the previous approach, put the first/last centers on the
+        # arena edge.) On thin or concave layouts the nearest active bin to an
+        # inset target can still be a boundary bin; the inset only reduces, not
+        # eliminates, boundary placement.
         ranges = env.dimension_ranges
         if ranges is None:
             # Layouts without an axis-aligned bounding box (e.g. graph tracks):

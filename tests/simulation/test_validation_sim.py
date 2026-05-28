@@ -123,7 +123,9 @@ class TestValidateSimulation:
         # (30 s) Poisson session is inherently noisy for a 3-cell population, so
         # the mean is not a stable target. A regression that broke field-shape
         # recovery entirely would leave only chance-level correlations (~0) and
-        # fail here. (For an end-to-end recovery threshold see
+        # fail here. With seed=42 the best cell recovers ~0.47, so the 0.3 bar
+        # clears chance by a wide margin while tolerating the short-session
+        # noise. (For an end-to-end recovery threshold see
         # test_place_field_detection_accuracy in test_integration.py, which uses
         # a longer session.)
         assert valid_corrs.max() > 0.3
