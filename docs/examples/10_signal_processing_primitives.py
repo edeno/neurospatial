@@ -21,6 +21,8 @@
 #
 # **Estimated time**: 15-20 minutes
 #
+# **Prerequisites**: [09_differential_operators.ipynb](09_differential_operators.ipynb)
+#
 # ## Learning Objectives
 #
 # By the end of this notebook, you will be able to:

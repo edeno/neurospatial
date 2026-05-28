@@ -20,6 +20,8 @@
 #
 # **Estimated time**: 30-40 minutes
 #
+# **Prerequisites**: [11_place_field_analysis.ipynb](11_place_field_analysis.ipynb)
+#
 # ## Learning Objectives
 #
 # By the end of this notebook, you will be able to:
@@ -416,7 +418,7 @@ print(f"  Grid spacing: {grid_session.metadata['grid_spacing']} cm")
 # Validate the open field session
 report = validate_simulation(
     session=open_field,
-    method="diffusion_kde",  # Use boundary-aware place field detection
+    smoothing_method="diffusion_kde",  # Use boundary-aware place field detection
     show_plots=False,  # Set to True to see diagnostic plots
 )
 
@@ -705,9 +707,7 @@ rates_euclidean = pc_euclidean.firing_rate(test_positions)
 time_euclidean = time.time() - start
 
 # Geodesic distance (slower)
-pc_geodesic = PlaceCellModel(
-    test_env, center=np.array([50.0, 50.0]), metric="geodesic"
-)
+pc_geodesic = PlaceCellModel(test_env, center=np.array([50.0, 50.0]), metric="geodesic")
 start = time.time()
 rates_geodesic = pc_geodesic.firing_rate(test_positions)
 time_geodesic = time.time() - start

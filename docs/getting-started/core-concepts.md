@@ -161,14 +161,19 @@ env_grid = Environment.from_samples(data, bin_size=2.0)
 
 # Hexagonal (explicit)
 env_hex = Environment.from_samples(
-    data, bin_size=2.0, layout_type="hexagonal"
+    data, bin_size=2.0, layout="Hexagonal"
 )
 
 # Polygon-bounded (automatic)
 env_poly = Environment.from_polygon(polygon, bin_size=2.0)
 
 # 1D linearized (automatic)
-env_1d = Environment.from_graph(graph, edge_order, bin_size=2.0)
+env_1d = Environment.from_graph(
+    graph=graph,
+    edge_order=edge_order,
+    edge_spacing=0.0,
+    bin_size=2.0,
+)
 ```
 
 ### Protocol-Based Design
@@ -237,6 +242,7 @@ graph.add_edge(1, 2, edge_id=1, distance=10.0)
 env_1d = Environment.from_graph(
     graph=graph,
     edge_order=[(0, 1), (1, 2)],
+    edge_spacing=0.0,
     bin_size=2.0
 )
 

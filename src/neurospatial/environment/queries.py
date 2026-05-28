@@ -47,7 +47,7 @@ class EnvironmentQueries:
         and respects the actual geometry of the bins (grid cells, hexagons, etc.).
 
         For nearest-neighbor mapping with caching and tie-breaking, see
-        `neurospatial.map_points_to_bins()`.
+        `neurospatial.ops.map_points_to_bins()`.
 
         Parameters
         ----------
@@ -68,7 +68,7 @@ class EnvironmentQueries:
 
         See Also
         --------
-        neurospatial.map_points_to_bins : Nearest-neighbor mapping with KDTree caching
+        neurospatial.ops.map_points_to_bins : Nearest-neighbor mapping with KDTree caching
 
         Notes
         -----

@@ -8,9 +8,9 @@ neurospatial uses multiple caching mechanisms to optimize repeated operations on
 
 ### Cache Types
 
-#### 1. Kernel Cache (`_kernel_cache`)
+#### 1. Kernel Cache
 
-**Location**: `Environment._kernel_cache`
+**Location**: Managed internally by `Environment`
 **Purpose**: Stores diffusion kernels used for field smoothing operations.
 **Key**: `(bandwidth, mode)` tuple where mode is `"transition"` or `"density"`.
 
@@ -45,7 +45,7 @@ smoothed3 = env.smooth(field, bandwidth=15.0)  # Slower (new cache entry)
 
 # Manual cache control
 kernel = env.compute_kernel(bandwidth=10.0, cache=False)  # Skip cache
-env._kernel_cache.clear()  # Clear all cached kernels
+env.clear_cache(kdtree=False, kernels=True, cached_properties=False)
 ```
 
 **When to clear**:
@@ -55,11 +55,11 @@ env._kernel_cache.clear()  # Clear all cached kernels
 
 ---
 
-#### 2. KDTree Cache (`_kdtree_cache`)
+#### 2. KDTree Cache
 
-**Location**: `Environment._kdtree_cache`
-**Purpose**: Accelerates nearest-neighbor queries for point-to-bin mapping.
-**Populated**: Automatically on first call to methods requiring spatial queries.
+**Location**: Managed internally by `Environment`
+**Purpose**: Accelerates nearest-neighbor queries.
+**Populated**: Automatically on first call to KDTree-backed helpers.
 
 **Memory usage**:
 
@@ -71,21 +71,26 @@ env._kernel_cache.clear()  # Clear all cached kernels
 | 100,000 bins    | ~5 MB       |
 
 **Operations using KDTree**:
-- `env.bin_at(points)` - Map points to bins
-- `env.contains(points)` - Check if points are in environment
-- `env.interpolate(field, points, method="nearest")` - Nearest-neighbor interpolation
+- `map_points_to_bins(points, env)` - nearest-neighbor bin assignment
+- `env.interpolate(field, points, method="nearest")` - nearest-neighbor interpolation
+
+`env.bin_at(points)` and `env.contains(points)` use layout-specific geometric
+containment instead of nearest-neighbor assignment. Prefer those methods for
+tracking data when points outside the environment should return `-1` / `False`.
 
 **Example**:
 
 ```python
-# First query: Builds KDTree
-bin_indices = env.bin_at(points)  # Slower (tree construction)
+from neurospatial.ops import map_points_to_bins
 
-# Subsequent queries: Uses cached tree
-more_indices = env.bin_at(more_points)  # Fast
+# First nearest-neighbor query: builds KDTree
+bin_indices = map_points_to_bins(points, env)  # Slower (tree construction)
 
-# Clear cache if environment geometry changes (advanced)
-env._kdtree_cache = None
+# Subsequent nearest-neighbor queries: use cached tree
+more_indices = map_points_to_bins(more_points, env)  # Fast
+
+# Clear KDTree cache when you want to free memory
+env.clear_cache(kdtree=True, kernels=False, cached_properties=False)
 ```
 
 **Performance impact**:
@@ -95,16 +100,15 @@ env._kdtree_cache = None
 
 ---
 
-#### 3. Module-Level KDTree Cache (Global)
+#### 3. Nearest-Neighbor Mapping Cache
 
-**Location**: `neurospatial.spatial` module
-**Purpose**: Global cache for `map_points_to_bins()` function calls.
-**Key**: `id(env)` - Python object ID of the environment.
+**Location**: `Environment`, accessed by `neurospatial.ops.map_points_to_bins()`
+**Purpose**: Reuse the same KDTree across repeated nearest-neighbor calls.
 
 **Example**:
 
 ```python
-from neurospatial import map_points_to_bins
+from neurospatial.ops import map_points_to_bins
 
 # Uses cached KDTree
 bin_indices = map_points_to_bins(points, env)
@@ -155,8 +159,7 @@ for env in environments:
         process_result(result)
 
     # Clear caches before next environment
-    env._kernel_cache.clear()
-    env._kdtree_cache = None
+    env.clear_cache()
 ```
 
 #### Strategy 2: Disable Kernel Caching for One-Off Operations
@@ -186,7 +189,7 @@ for field in fields:
 
 Benchmarked on MacBook Pro M1, Python 3.13, numpy 2.3
 
-**`bin_at()` - Map points to bins**:
+**`map_points_to_bins()` - Nearest-neighbor point-to-bin mapping**:
 
 | Environment | n_bins | n_points | Uncached | Cached  | Speedup |
 |-------------|--------|----------|----------|---------|---------|
@@ -359,7 +362,7 @@ with ThreadPoolExecutor() as executor:
 - **Share environments** between threads without copying
 - **Cache indefinitely** in long-running services (memory leak)
 - **Ignore cache growth** when processing many different parameters
-- **Manually modify** `_kernel_cache` keys (use provided methods)
+- **Manually modify** internal cache data structures (use provided methods)
 
 ### Example: Production-Ready Analysis Loop
 
@@ -382,8 +385,7 @@ def process_session(session_data, bin_size=2.0):
         results[field_name] = analyze_field(smoothed)
 
     # Clear caches before returning (prevent memory leak)
-    env._kernel_cache.clear()
-    env._kdtree_cache = None
+    env.clear_cache()
 
     return results
 
@@ -398,21 +400,21 @@ for session in sessions:
 
 ## Debugging Performance Issues
 
-### Profiling Cache Usage
+### Profiling Memory Usage
 
 ```python
-import sys
+import tracemalloc
 
-# Check kernel cache size
-print(f"Cached kernels: {len(env._kernel_cache)}")
-for key, kernel in env._kernel_cache.items():
-    size_mb = kernel.nbytes / 1024 / 1024
-    print(f"  {key}: {size_mb:.2f} MB")
+tracemalloc.start()
 
-# Check KDTree cache
-if env._kdtree_cache is not None:
-    tree_size = sys.getsizeof(env._kdtree_cache) / 1024
-    print(f"KDTree cache: {tree_size:.2f} KB")
+env.compute_kernel(bandwidth=10.0, cache=True)
+current, peak = tracemalloc.get_traced_memory()
+
+print(f"Current memory: {current / 1024 / 1024:.2f} MB")
+print(f"Peak memory: {peak / 1024 / 1024:.2f} MB")
+
+env.clear_cache()
+tracemalloc.stop()
 ```
 
 ### Measuring Operation Times
@@ -421,7 +423,7 @@ if env._kdtree_cache is not None:
 import time
 
 # Benchmark uncached vs cached
-env._kernel_cache.clear()
+env.clear_cache(kdtree=False, kernels=True, cached_properties=False)
 
 start = time.time()
 result1 = env.smooth(field, bandwidth=10.0)

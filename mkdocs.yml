@@ -10,6 +10,13 @@ not_in_nav: ignore
 exclude_docs: |
   research/
   plans/
+  reviews/
+  gen_ref_pages.py
+  sync_notebooks.py
+  PERFORMANCE_PROFILING.md
+  performance_baseline.md
+  includes/
+  examples/*.py
 
 theme:
   name: material

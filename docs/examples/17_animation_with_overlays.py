@@ -28,6 +28,8 @@
 #
 # **Estimated time**: 20-25 minutes
 #
+# **Prerequisites**: [16_field_animation.ipynb](16_field_animation.ipynb)
+#
 # ## Learning Objectives
 #
 # By the end of this notebook, you will be able to:

@@ -25,6 +25,8 @@
 #
 # **Estimated time**: 15-20 minutes
 #
+# **Prerequisites**: [08_spike_field_basics.ipynb](08_spike_field_basics.ipynb)
+#
 # ## Learning Objectives
 #
 # By the end of this notebook, you will be able to:

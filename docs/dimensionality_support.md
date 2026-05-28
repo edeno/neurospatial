@@ -16,13 +16,20 @@
 
 **How to create:**
 ```python
+import networkx as nx
 from neurospatial import Environment
 
-# From position data with track structure
+# From a track graph with an explicit linearization order
+graph = nx.Graph()
+graph.add_node(0, pos=(0.0, 0.0))
+graph.add_node(1, pos=(50.0, 0.0))
+graph.add_edge(0, 1, edge_id=0, distance=50.0)
+
 env = Environment.from_graph(
-    track_graph=graph,
-    position=position_data,
-    sampling_frequency=30.0
+    graph=graph,
+    edge_order=[(0, 1)],
+    edge_spacing=0.0,
+    bin_size=2.0,
 )
 ```
 
@@ -101,7 +108,8 @@ bins = env_3d.bin_at(points_3d)
 mask = env_3d.contains(points_3d)
 neighbors = env_3d.neighbors(bin_idx)
 path = env_3d.path_between(source_bin, target_bin)
-dist = env_3d.distance_between(bin1, bin2)
+dist = env_3d.distance_between(points_3d[0], points_3d[1])
+bin_dist = float(env_3d.distance_to([target_bin])[source_bin])
 ```
 
 ✅ **Connectivity graphs** - Full 3D graph support

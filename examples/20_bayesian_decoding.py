@@ -26,7 +26,7 @@
 #
 # - Build encoding models (place fields) for a population of neurons
 # - Decode spatial position from population spike counts using Bayesian methods
-# - Access and interpret `DecodingResult` properties (posterior, MAP, mean, uncertainty)
+# - Access and interpret `DecodingResult` properties (posterior, MAP, mean, posterior entropy)
 # - Evaluate decoding accuracy with error metrics
 # - Detect trajectory structure using isotonic/linear regression and Radon transform
 # - Test significance of decoded sequences using shuffle-based methods
@@ -713,7 +713,7 @@ df.head()
 # ### Bayesian Decoding
 # - Bin spikes into spike counts: shape `(n_time_bins, n_neurons)`
 # - Decode with `decode_position()` to get posterior distribution
-# - Access `DecodingResult` properties: `posterior`, `map_position`, `mean_position`, `uncertainty`
+# - Access `DecodingResult` properties: `posterior`, `map_position`, `mean_position`, `posterior_entropy`
 #
 # ### Error Metrics
 # - `decoding_error()` - Per-time-bin position error

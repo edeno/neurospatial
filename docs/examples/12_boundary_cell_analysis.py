@@ -20,6 +20,8 @@
 #
 # **Estimated time**: 15-20 minutes
 #
+# **Prerequisites**: [11_place_field_analysis.ipynb](11_place_field_analysis.ipynb)
+#
 # ## Learning Objectives
 #
 # By the end of this notebook, you will be able to:

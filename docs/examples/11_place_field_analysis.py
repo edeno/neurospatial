@@ -20,6 +20,8 @@
 #
 # **Estimated time**: 30-35 minutes
 #
+# **Prerequisites**: [08_spike_field_basics.ipynb](08_spike_field_basics.ipynb)
+#
 # ## Learning Objectives
 #
 # By the end of this notebook, you will be able to:
@@ -230,7 +232,9 @@ plt.show()
 
 # %%
 # Detect place fields
-place_fields = detect_place_fields(env, firing_rate,
+place_fields = detect_place_fields(
+    env,
+    firing_rate,
     threshold=0.2,  # Segment at 20% of peak rate
     min_size=None,  # No minimum size (auto: 9 bins)
     max_mean_rate=10.0,  # Exclude interneurons (>10 Hz mean rate)
@@ -466,7 +470,9 @@ def analyze_place_cell(env, spike_times, times, positions):
     firing_rate = result.firing_rate
 
     # Step 2: Detect place fields
-    place_fields = detect_place_fields(env, firing_rate,
+    place_fields = detect_place_fields(
+        env,
+        firing_rate,
         threshold=0.2,
         max_mean_rate=10.0,
         detect_subfields=True,
@@ -987,12 +993,16 @@ print(
 
 # %%
 # Detect fields in both sessions
-fields_session1 = detect_place_fields(track_env, rate_session1,
+fields_session1 = detect_place_fields(
+    track_env,
+    rate_session1,
     threshold=0.2,
     detect_subfields=False,
 )
 
-fields_session2 = detect_place_fields(track_env, rate_session2,
+fields_session2 = detect_place_fields(
+    track_env,
+    rate_session2,
     threshold=0.2,
     detect_subfields=False,
 )
@@ -1014,12 +1024,12 @@ if len(fields_session1) > 0 and len(fields_session2) > 0:
 # Measure place field shift using field_shift_distance()
 if len(fields_session1) > 0 and len(fields_session2) > 0:
     shift_distance = field_shift_distance(
+        track_env,
         rate_session1,
         fields_session1[0],
         track_env,
         rate_session2,
         fields_session2[0],
-        track_env,
         metric="euclidean",  # Euclidean distance
     )
 
@@ -1204,12 +1214,16 @@ print(f"Session B (arm end): {len(spikes_arm)} spikes")
 
 # %%
 # Detect fields
-fields_stem = detect_place_fields(tmaze_env, rate_stem,
+fields_stem = detect_place_fields(
+    tmaze_env,
+    rate_stem,
     threshold=0.2,
     detect_subfields=False,
 )
 
-fields_arm = detect_place_fields(tmaze_env, rate_arm,
+fields_arm = detect_place_fields(
+    tmaze_env,
+    rate_arm,
     threshold=0.2,
     detect_subfields=False,
 )
@@ -1223,23 +1237,23 @@ print(f"  Arm end: {len(fields_arm)} field(s)")
 if len(fields_stem) > 0 and len(fields_arm) > 0:
     # Euclidean distance (straight line)
     shift_euclidean = field_shift_distance(
+        tmaze_env,
         rate_stem,
         fields_stem[0],
         tmaze_env,
         rate_arm,
         fields_arm[0],
-        tmaze_env,
         metric="euclidean",
     )
 
     # Geodesic distance (following the maze path)
     shift_geodesic = field_shift_distance(
+        tmaze_env,
         rate_stem,
         fields_stem[0],
         tmaze_env,
         rate_arm,
         fields_arm[0],
-        tmaze_env,
         metric="geodesic",
     )
 

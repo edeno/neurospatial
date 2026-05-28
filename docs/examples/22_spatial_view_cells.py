@@ -39,6 +39,8 @@
 # - Work with field of view constraints
 #
 # **Estimated time**: 15-20 minutes
+#
+# **Prerequisites**: [11_place_field_analysis.ipynb](11_place_field_analysis.ipynb)
 
 # %% [markdown]
 # ## Setup
@@ -64,9 +66,18 @@ from neurospatial.simulation import (
 # Set random seed for reproducibility
 rng = np.random.default_rng(42)
 
-# Configure matplotlib
-plt.rcParams["figure.figsize"] = (12, 10)
-plt.rcParams["font.size"] = 11
+# Shared styling (Okabe-Ito palette, consistent figure / font sizes)
+import sys  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+_here = (
+    str(Path(__file__).resolve().parent) if "__file__" in globals() else str(Path.cwd())
+)
+if _here not in sys.path:
+    sys.path.insert(0, _here)
+from _style import apply_style  # noqa: E402
+
+apply_style(figsize=(12, 10), font_size=11)
 
 # %% [markdown]
 # ## Part 1: Create Environment and Trajectory
@@ -397,16 +408,8 @@ print(
 )
 
 # Compute view/place ratio
-svc_ratio = (
-    svc_view_info / svc_place_info
-    if svc_place_info > 0
-    else float("inf")
-)
-pc_ratio = (
-    pc_view_info / pc_place_info
-    if pc_place_info > 0
-    else float("inf")
-)
+svc_ratio = svc_view_info / svc_place_info if svc_place_info > 0 else float("inf")
+pc_ratio = pc_view_info / pc_place_info if pc_place_info > 0 else float("inf")
 print(f"  {'View/Place info ratio':<30} {svc_ratio:.3f}{'':<10} {pc_ratio:.3f}")
 
 # %% [markdown]

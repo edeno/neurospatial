@@ -8,10 +8,16 @@ from pathlib import Path
 examples_dir = Path(__file__).parent.parent / "examples"
 docs_examples_dir = Path(__file__).parent / "examples"
 
-# Sync all notebooks
-for notebook in examples_dir.glob("*.ipynb"):
-    dest = docs_examples_dir / notebook.name
-    print(f"Syncing {notebook.name}...")
-    shutil.copy2(notebook, dest)
+docs_examples_dir.mkdir(parents=True, exist_ok=True)
 
-print(f"✓ Synced {len(list(examples_dir.glob('*.ipynb')))} notebooks")
+patterns = ("*.ipynb", "*.py")
+synced = 0
+
+for pattern in patterns:
+    for source in sorted(examples_dir.glob(pattern)):
+        dest = docs_examples_dir / source.name
+        print(f"Syncing {source.name}...")
+        shutil.copy2(source, dest)
+        synced += 1
+
+print(f"✓ Synced {synced} example files")

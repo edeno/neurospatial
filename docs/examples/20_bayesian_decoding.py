@@ -16,13 +16,17 @@
 # %% [markdown]
 # # Bayesian Position Decoding
 #
+# **Estimated time**: 35-45 minutes
+#
+# **Prerequisites**: [11_place_field_analysis.ipynb](11_place_field_analysis.ipynb), [15_simulation_workflows.ipynb](15_simulation_workflows.ipynb)
+#
 # ## Learning Objectives
 #
 # By the end of this notebook, you will be able to:
 #
 # - Build encoding models (place fields) for a population of neurons
 # - Decode spatial position from population spike counts using Bayesian methods
-# - Access and interpret `DecodingResult` properties (posterior, MAP, mean, uncertainty)
+# - Access and interpret `DecodingResult` properties (posterior, MAP, mean, posterior entropy)
 # - Evaluate decoding accuracy with error metrics
 # - Detect trajectory structure using isotonic/linear regression and Radon transform
 # - Test significance of decoded sequences using shuffle-based methods
@@ -61,11 +65,18 @@ from neurospatial.stats.shuffle import compute_shuffle_pvalue, shuffle_time_bins
 # Set random seed for reproducibility
 np.random.seed(42)
 
-# Configure matplotlib for clear figures
-plt.rcParams["figure.figsize"] = (12, 5)
-plt.rcParams["font.size"] = 12
-plt.rcParams["axes.labelsize"] = 13
-plt.rcParams["axes.titlesize"] = 14
+# Shared styling (Okabe-Ito palette, consistent figure / font sizes)
+import sys  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+_here = (
+    str(Path(__file__).resolve().parent) if "__file__" in globals() else str(Path.cwd())
+)
+if _here not in sys.path:
+    sys.path.insert(0, _here)
+from _style import apply_style  # noqa: E402
+
+apply_style(figsize=(12, 5), font_size=12)
 
 # Colorblind-friendly palette
 COLORS = {
@@ -323,13 +334,13 @@ print(f"  posterior shape: {result.posterior.shape}")
 print(f"  map_estimate shape: {result.map_estimate.shape} (bin indices)")
 print(f"  map_position shape: {result.map_position.shape} (coordinates)")
 print(f"  mean_position shape: {result.mean_position.shape} (coordinates)")
-print(f"  uncertainty shape: {result.uncertainty.shape} (entropy in bits)")
+print(f"  uncertainty shape: {result.posterior_entropy.shape} (entropy in bits)")
 print(f"  times shape: {result.times.shape if result.times is not None else 'None'}")
 
 print(
     f"\nPosterior sum check (should be ~1.0): {result.posterior.sum(axis=1).mean():.6f}"
 )
-print(f"Mean uncertainty: {result.uncertainty.mean():.2f} bits")
+print(f"Mean uncertainty: {result.posterior_entropy.mean():.2f} bits")
 print(f"Max uncertainty (uniform): {np.log2(env.n_bins):.2f} bits")
 
 # %% [markdown]
@@ -455,7 +466,7 @@ ax.legend()
 
 # Error vs uncertainty
 ax = axes[1]
-ax.scatter(result.uncertainty, errors, alpha=0.3, s=5, c=COLORS["blue"])
+ax.scatter(result.posterior_entropy, errors, alpha=0.3, s=5, c=COLORS["blue"])
 ax.set_xlabel("Uncertainty (bits)")
 ax.set_ylabel("Decoding error (cm)")
 ax.set_title("Error vs Posterior Uncertainty", fontweight="bold")
@@ -702,7 +713,7 @@ df.head()
 # ### Bayesian Decoding
 # - Bin spikes into spike counts: shape `(n_time_bins, n_neurons)`
 # - Decode with `decode_position()` to get posterior distribution
-# - Access `DecodingResult` properties: `posterior`, `map_position`, `mean_position`, `uncertainty`
+# - Access `DecodingResult` properties: `posterior`, `map_position`, `mean_position`, `posterior_entropy`
 #
 # ### Error Metrics
 # - `decoding_error()` - Per-time-bin position error

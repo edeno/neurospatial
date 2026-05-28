@@ -42,7 +42,7 @@ To build the documentation locally:
 
 ```bash
 # Install with documentation dependencies
-uv sync --extra docs
+uv sync --extra docs --extra notebooks
 
 # Sync example notebooks
 uv run python docs/sync_notebooks.py
@@ -55,12 +55,20 @@ Then open [http://127.0.0.1:8000](http://127.0.0.1:8000) in your browser.
 
 ## Optional Dependencies
 
-### OpenCV Support
+### Video / OpenCV Support
 
-For advanced image-based masking features:
+For video annotation, frame extraction, and OpenCV-backed video workflows:
 
 ```bash
-pip install neurospatial[opencv]
+pip install "neurospatial[video]"
+```
+
+Other optional extras are available for common workflows:
+
+```bash
+pip install "neurospatial[animation]"  # napari / widget animation backends
+pip install "neurospatial[nwb]"        # Neurodata Without Borders I/O
+pip install "neurospatial[jax]"        # optional JAX acceleration
 ```
 
 ## Verifying Installation
@@ -68,8 +76,12 @@ pip install neurospatial[opencv]
 Verify your installation by importing neurospatial:
 
 ```python
+from importlib.metadata import version
+
 import neurospatial
-print(neurospatial.__version__)
+
+print(version("neurospatial"))
+print(neurospatial.Environment)
 ```
 
 Or run a quick test:
@@ -86,7 +98,7 @@ print(f"Created environment with {env.n_bins} bins")
 
 ## Tested Dependency Versions
 
-neurospatial v0.1.0 has been tested with:
+neurospatial v0.4.0 has been tested with:
 
 | Package | Tested Version |
 |---------|---------------|

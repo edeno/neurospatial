@@ -20,6 +20,8 @@
 #
 # **Estimated time**: 15-20 minutes
 #
+# **Prerequisites**: [04_regions_of_interest.ipynb](04_regions_of_interest.ipynb), [13_trajectory_analysis.ipynb](13_trajectory_analysis.ipynb)
+#
 # ## Learning Objectives
 #
 # By the end of this notebook, you will be able to:

@@ -28,6 +28,8 @@
 #
 # **Estimated time**: 15-20 minutes
 #
+# **Prerequisites**: [17_animation_with_overlays.ipynb](17_animation_with_overlays.ipynb)
+#
 # ## Learning Objectives
 #
 # By the end of this notebook, you will be able to:
@@ -215,7 +217,7 @@ print(f"Fields: {fields.shape}")
 # - `duration`: Video length in seconds
 
 # %%
-from neurospatial.animation._video_io import VideoReader
+from neurospatial.animation._video_io import VideoReader  # noqa: E402
 
 print("Example 1: Inspecting Video Metadata")
 print("=" * 50)
@@ -636,7 +638,7 @@ except ImportError:
 # 3. **Clear Cache**: Always call `env.clear_cache()` before parallel rendering
 
 # %%
-from neurospatial.animation import subsample_frames
+from neurospatial.animation import subsample_frames  # noqa: E402
 
 print("Example 7: Performance Optimization")
 print("=" * 50)
