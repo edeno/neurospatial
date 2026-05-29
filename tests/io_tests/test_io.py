@@ -237,3 +237,101 @@ class TestPathlibSupport:
         to_file(simple_env, relative_path)
         assert relative_path.with_suffix(".json").exists()
         assert from_file(relative_path).n_bins == simple_env.n_bins
+
+
+class TestAtomicWriteAndDtypes:
+    """Tests for atomic to_file writes and dtype guarantees on load."""
+
+    @pytest.fixture
+    def simple_env(self):
+        """Create a simple 2D environment for testing."""
+        rng = np.random.default_rng(0)
+        data = rng.standard_normal((300, 2)) * 8
+        env = Environment.from_samples(data, bin_size=3.0, name="atomic_env")
+        env.units = "cm"
+        env.frame = "world"
+        return env
+
+    def test_npz_write_failure_leaves_no_partial_json(
+        self, simple_env, tmp_path, monkeypatch
+    ):
+        """If the npz write fails, no dangling .json may be left behind.
+
+        Previously to_file wrote the .json first and the .npz second, so a
+        failure in between produced a .json with no matching .npz, which
+        from_file then reported as a confusing 'array file not found' error.
+        """
+        import neurospatial.io.files as files_mod
+
+        output_path = tmp_path / "atomic_env"
+
+        def _boom(*_args, **_kwargs):
+            raise OSError("simulated npz write failure")
+
+        monkeypatch.setattr(files_mod.np, "savez_compressed", _boom)
+
+        with pytest.raises(OSError, match="simulated npz write failure"):
+            to_file(simple_env, output_path)
+
+        # Neither the final .json nor the final .npz must exist.
+        assert not (tmp_path / "atomic_env.json").exists()
+        assert not (tmp_path / "atomic_env.npz").exists()
+        # No temp leftovers either.
+        leftovers = list(tmp_path.iterdir())
+        assert leftovers == [], f"Unexpected leftover files: {leftovers}"
+
+    def test_from_file_forces_bin_centers_float64(self, simple_env, tmp_path):
+        """from_file must coerce bin_centers to float64 even if stored float32.
+
+        The in-memory from_dict path enforces float64; from_file used to load
+        whatever dtype was in the .npz, bypassing that guarantee.
+        """
+        import json
+
+        import networkx as nx
+
+        output_path = tmp_path / "f32_env"
+        to_file(simple_env, output_path)
+
+        # Rewrite the .npz with bin_centers stored as float32.
+        npz_path = tmp_path / "f32_env.npz"
+        with np.load(npz_path) as arrays:
+            data = {k: arrays[k] for k in arrays.files}
+        data["bin_centers"] = data["bin_centers"].astype(np.float32)
+        np.savez_compressed(str(npz_path), **data)
+
+        # Sanity: the stored array really is float32 now.
+        with np.load(npz_path) as arrays:
+            assert arrays["bin_centers"].dtype == np.float32
+
+        # Keep json/graph valid (untouched) and load.
+        with (tmp_path / "f32_env.json").open() as f:
+            meta = json.load(f)
+        assert "graph" in meta
+        nx.node_link_graph(meta["graph"], edges="links")  # validates structure
+
+        loaded = from_file(output_path)
+        assert loaded.bin_centers.dtype == np.float64
+
+    def test_string_list_layout_param_survives_round_trip(self, simple_env, tmp_path):
+        """A list-of-strings layout parameter must not be coerced to an object array.
+
+        _convert_lists_to_arrays used to blindly np.array() every list, turning
+        a list of strings into a dtype=object numpy array on load.
+        """
+        from neurospatial.io.files import _convert_lists_to_arrays
+
+        params = {
+            "labels": ["north", "south", "east"],
+            "numeric": [1.0, 2.0, 3.0],
+            "nested": {"more_labels": ["a", "b"]},
+        }
+        restored = _convert_lists_to_arrays(params)
+
+        # String lists stay as plain Python lists of strings.
+        assert restored["labels"] == ["north", "south", "east"]
+        assert all(isinstance(x, str) for x in restored["labels"])
+        assert restored["nested"]["more_labels"] == ["a", "b"]
+        # Numeric lists are still converted to numeric arrays.
+        assert isinstance(restored["numeric"], np.ndarray)
+        assert np.issubdtype(restored["numeric"].dtype, np.floating)

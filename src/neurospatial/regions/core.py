@@ -7,11 +7,10 @@ Pure data layer for *continuous* regions of interest (ROIs).
 from __future__ import annotations
 
 import copy
-import json
-import warnings
 from collections.abc import Iterable, Iterator, Mapping, MutableMapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
 import numpy as np
@@ -26,6 +25,58 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------
 PointCoords: TypeAlias = NDArray[np.float64] | Iterable[float] | Point
 Kind = Literal["point", "polygon"]
+
+
+def _freeze_metadata(value: Any) -> Any:
+    """Recursively wrap mappings in read-only proxies to prevent mutation.
+
+    Mappings (at any nesting depth) become :class:`types.MappingProxyType`
+    instances; lists become tuples; other values are passed through.
+    The input should already be a deep copy so the proxies wrap data the
+    Region exclusively owns.
+
+    Parameters
+    ----------
+    value : Any
+        A (deep-copied) value to freeze in place.
+
+    Returns
+    -------
+    Any
+        The frozen, read-only equivalent of ``value``.
+
+    """
+    if isinstance(value, Mapping):
+        return MappingProxyType({k: _freeze_metadata(v) for k, v in value.items()})
+    if isinstance(value, list):
+        return tuple(_freeze_metadata(item) for item in value)
+    return value
+
+
+def _thaw_metadata(value: Any) -> Any:
+    """Recursively convert frozen metadata back into mutable, JSON-ready data.
+
+    Inverse of :func:`_freeze_metadata`: :class:`~collections.abc.Mapping`
+    instances become plain ``dict`` objects and tuples become lists, yielding
+    a structure safe to hand to :func:`json.dumps`.
+
+    Parameters
+    ----------
+    value : Any
+        A frozen metadata value (possibly nested).
+
+    Returns
+    -------
+    Any
+        A mutable, JSON-serializable copy of ``value``.
+
+    """
+    if isinstance(value, Mapping):
+        return {k: _thaw_metadata(v) for k, v in value.items()}
+    if isinstance(value, tuple):
+        return [_thaw_metadata(item) for item in value]
+    return value
+
 
 # ---------------------------------------------------------------------
 # Region — immutable value object
@@ -46,7 +97,11 @@ class Region:
         • point → ``np.ndarray`` with shape ``(n_dims,)``
         • polygon → :class:`shapely.geometry.Polygon` (always 2-D)
     metadata
-        Optional, JSON-serialisable attributes (colour, label, …).
+        Optional, JSON-serialisable attributes (colour, label, …). Stored as a
+        recursively read-only mapping (:class:`types.MappingProxyType` at every
+        level, with lists frozen to tuples) so neither the top level nor any
+        nested container can be mutated after construction. Serialization via
+        :meth:`to_dict` thaws this back into plain ``dict``/``list`` data.
 
     """
 
@@ -62,9 +117,14 @@ class Region:
     # Validation
     # -----------------------------------------------------------------
     def __post_init__(self) -> None:
-        # Deep copy metadata to prevent accidental mutation through aliasing
-        # Use copy.deepcopy() instead of dict() to handle nested dicts/lists
-        object.__setattr__(self, "metadata", copy.deepcopy(self.metadata))
+        # Thaw first (the input may already be a read-only proxy from another
+        # Region, and mappingproxy cannot be deep-copied), then deep copy so the
+        # Region owns the data, then recursively wrap it in read-only proxies.
+        # This isolates the Region from external mutation of the source dict
+        # *and* forbids mutating the stored metadata (at any nesting depth)
+        # after construction.
+        thawed = _thaw_metadata(self.metadata)
+        object.__setattr__(self, "metadata", _freeze_metadata(copy.deepcopy(thawed)))
 
         if self.kind == "point":
             if isinstance(self.data, Point):
@@ -94,6 +154,38 @@ class Region:
         return self.name
 
     # -----------------------------------------------------------------
+    # Copy / pickle support
+    # -----------------------------------------------------------------
+    # The stored ``metadata`` is a (recursively) read-only ``MappingProxyType``,
+    # which the stdlib copy/pickle machinery cannot handle directly. These hooks
+    # round-trip through the thawed, mutable form; the constructor re-freezes it,
+    # so the copy is an independent Region with the same immutability guarantees.
+    def __copy__(self) -> Region:
+        return Region(
+            name=self.name,
+            kind=self.kind,
+            data=self.data,
+            metadata=_thaw_metadata(self.metadata),
+        )
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> Region:
+        new = Region(
+            name=copy.deepcopy(self.name, memo),
+            kind=self.kind,
+            data=copy.deepcopy(self.data, memo),
+            metadata=_thaw_metadata(self.metadata),
+        )
+        memo[id(self)] = new
+        return new
+
+    def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
+        # Reconstruct via the public constructor with thawed metadata.
+        return (
+            self.__class__,
+            (self.name, self.kind, self.data, _thaw_metadata(self.metadata)),
+        )
+
+    # -----------------------------------------------------------------
     # Serialisation helpers (JSON-friendly)
     # -----------------------------------------------------------------
     def to_dict(self) -> dict[str, Any]:
@@ -118,7 +210,9 @@ class Region:
             "name": self.name,
             "kind": self.kind,
             "geom": geom,
-            "metadata": dict(self.metadata),
+            # Thaw the read-only proxy back into plain dict/list data so the
+            # result is JSON-serialisable and nested values survive the trip.
+            "metadata": _thaw_metadata(self.metadata),
         }
 
     @classmethod
@@ -566,6 +660,10 @@ class Regions(MutableMapping[str, Region]):
     def to_json(self, path: str | Path, *, indent: int = 2) -> None:
         """Write collection to disk in a simple, version-tagged schema.
 
+        Thin wrapper around :func:`neurospatial.regions.io.regions_to_json`;
+        both entry points share one implementation and produce byte-identical
+        output.
+
         Parameters
         ----------
         path : str or Path
@@ -574,17 +672,16 @@ class Regions(MutableMapping[str, Region]):
             Indentation level for pretty-printed JSON.
 
         """
-        payload = {
-            "format": self._FMT,
-            "regions": [r.to_dict() for r in self._store.values()],
-        }
-        output_path = Path(path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(json.dumps(payload, indent=indent))
+        from .io import regions_to_json
+
+        regions_to_json(self, path, indent=indent)
 
     @classmethod
     def from_json(cls, path: str | Path) -> Regions:
         """Load Regions from JSON file.
+
+        Thin wrapper around :func:`neurospatial.regions.io.regions_from_json`;
+        both entry points share one implementation.
 
         Parameters
         ----------
@@ -597,11 +694,6 @@ class Regions(MutableMapping[str, Region]):
             Loaded Regions collection.
 
         """
-        blob = json.loads(Path(path).read_text())
-        if blob.get("format") != cls._FMT:
-            warnings.warn(
-                f"Unexpected format tag {blob.get('format')!r}",
-                category=UserWarning,
-                stacklevel=2,
-            )
-        return cls(Region.from_dict(d) for d in blob["regions"])
+        from .io import regions_from_json
+
+        return regions_from_json(path)

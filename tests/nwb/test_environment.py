@@ -808,6 +808,73 @@ class TestEnvironmentRoundTrip:
         assert loaded_env.units == "cm"
         assert loaded_env.frame == "session_001"
 
+    def test_roundtrip_region_metadata_preserved(self, tmp_path):
+        """Region metadata survives the NWB write/read cycle.
+
+        The NWB region (de)serialization delegates to Region.to_dict /
+        Region.from_dict, so per-region metadata (which the old bespoke schema
+        dropped) is preserved through the round-trip.
+        """
+        from pynwb import NWBHDF5IO
+
+        from neurospatial import Environment
+        from neurospatial.io.nwb import read_environment, write_environment
+
+        rng = np.random.default_rng(3)
+        positions = rng.uniform(0, 100, (1000, 2))
+        env = Environment.from_samples(positions, bin_size=5.0)
+        env.regions.add(
+            "goal",
+            point=(50.0, 50.0),
+            metadata={"color": "red", "reward": 1.0, "tags": ["target"]},
+        )
+
+        nwb_path = tmp_path / "region_metadata.nwb"
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, env)
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = read_environment(nwbfile)
+
+        loaded = loaded_env.regions["goal"]
+        assert loaded.metadata["color"] == "red"
+        assert loaded.metadata["reward"] == 1.0
+        # Lists freeze to tuples in stored metadata; to_dict thaws them back.
+        assert loaded.to_dict()["metadata"]["tags"] == ["target"]
+
+    def test_roundtrip_frame_literal_unknown_preserved(self, tmp_path):
+        """A frame literally named 'unknown' survives the round-trip.
+
+        The frame fallback uses DEFAULT_FRAME ("") rather than DEFAULT_UNITS
+        ("unknown"), so a legitimate frame value of "unknown" is not dropped on
+        read.
+        """
+        from pynwb import NWBHDF5IO
+
+        from neurospatial import Environment
+        from neurospatial.io.nwb import read_environment, write_environment
+
+        rng = np.random.default_rng(4)
+        positions = rng.uniform(0, 100, (1000, 2))
+        env = Environment.from_samples(positions, bin_size=5.0)
+        env.units = "cm"
+        env.frame = "unknown"  # legitimate frame name that collides with old default
+
+        nwb_path = tmp_path / "frame_unknown.nwb"
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            nwbfile = _create_nwb_for_test()
+            write_environment(nwbfile, env)
+            io.write(nwbfile)
+
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            nwbfile = io.read()
+            loaded_env = read_environment(nwbfile)
+
+        assert loaded_env.frame == "unknown"
+
     def test_roundtrip_polygon_regions(self, tmp_path):
         """Test polygon regions are preserved through file round-trip."""
         from pynwb import NWBHDF5IO
@@ -1077,6 +1144,14 @@ class TestEnvironmentRoundTrip:
             "is_linearized_track should be restored for Graph layouts"
         )
         assert env.is_linearized_track is True, "Original env should be 1D"
+
+        # The reconstructed layout itself is the single source of truth: the
+        # env property is derived from layout.is_linearized_track, so the two
+        # must agree (no post-construction patching of _is_linearized_track_env).
+        assert loaded_env.layout.is_linearized_track is True, (
+            "Reconstructed layout must report is_linearized_track=True so "
+            "env.is_linearized_track and env.layout.is_linearized_track agree"
+        )
 
         # n_dims is based on bin_centers shape (2D for projected coordinates)
         assert loaded_env.n_dims == env.n_dims

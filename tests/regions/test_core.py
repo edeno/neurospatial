@@ -333,10 +333,11 @@ class TestRegionMetadataImmutability:
             name="test", kind="point", data=[10.0, 10.0], metadata=original_metadata
         )
 
-        # Verify initial state
+        # Verify initial state. Lists freeze to tuples in stored metadata so
+        # nested sequences cannot be mutated either.
         assert region.metadata["properties"]["size"] == 10
         assert region.metadata["properties"]["visible"] is True
-        assert region.metadata["tags"] == ["important", "goal"]
+        assert region.metadata["tags"] == ("important", "goal")
 
         # Modify nested structures in original metadata
         original_metadata["properties"]["size"] = 20
@@ -349,7 +350,9 @@ class TestRegionMetadataImmutability:
             "Need copy.deepcopy() not dict()."
         )
         assert region.metadata["properties"]["visible"] is True
-        assert region.metadata["tags"] == ["important", "goal"]
+        assert region.metadata["tags"] == ("important", "goal")
+        # Serialization thaws tuples back to lists for JSON compatibility.
+        assert region.to_dict()["metadata"]["tags"] == ["important", "goal"]
 
     def test_metadata_empty_dict_default(self):
         """Test that omitting metadata creates an empty dict (not shared reference)."""
@@ -366,6 +369,33 @@ class TestRegionMetadataImmutability:
             "Regions are sharing the same default metadata dict! "
             "Each Region should have its own metadata instance."
         )
+
+    def test_top_level_metadata_assignment_raises(self):
+        """Stored metadata must reject top-level mutation after construction."""
+        region = Region(
+            name="test", kind="point", data=[1.0, 2.0], metadata={"color": "red"}
+        )
+        with pytest.raises(TypeError):
+            region.metadata["color"] = "blue"  # type: ignore[index]
+
+    def test_nested_metadata_mutation_raises(self):
+        """Nested containers in stored metadata are read-only at every depth.
+
+        Recursive freezing means a nested mapping fetched from metadata is
+        itself a read-only proxy, so attempting to rebind a nested key raises
+        rather than silently corrupting the Region.
+        """
+        region = Region(
+            name="test",
+            kind="point",
+            data=[1.0, 2.0],
+            metadata={"properties": {"size": 10}},
+        )
+        nested = region.metadata["properties"]
+        with pytest.raises(TypeError):
+            nested["size"] = 999  # type: ignore[index]
+        # The canonical value is untouched.
+        assert region.metadata["properties"]["size"] == 10
 
 
 @pytest.mark.skipif(not HAS_SHAPELY, reason="Shapely required for polygon tests")

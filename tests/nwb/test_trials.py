@@ -325,8 +325,13 @@ class TestWriteTrialsOverwrite:
         with pytest.raises(ValueError, match=r"already exists|overwrite"):
             write_trials(nwbfile, trials)
 
-    def test_overwrite_true_replaces(self, empty_nwb):
-        """Test that overwrite=True replaces existing trials."""
+    def test_overwrite_true_raises_not_implemented(self, empty_nwb):
+        """Overwriting the predefined NWB trials table is not supported.
+
+        pynwb exposes no public API to remove or reset the built-in trials
+        table (and it cannot be deleted once written). write_trials refuses
+        explicitly rather than reaching into private pynwb internals.
+        """
         from neurospatial.behavior.segmentation import Trial
         from neurospatial.io.nwb import write_trials
 
@@ -348,23 +353,19 @@ class TestWriteTrialsOverwrite:
                 end_region="reward",
                 success=True,
             ),
-            Trial(
-                start_time=20.0,
-                end_time=25.0,
-                start_region="start",
-                end_region="reward",
-                success=True,
-            ),
         ]
 
         # Write original
         write_trials(nwbfile, original_trials)
         assert len(nwbfile.trials) == 1
 
-        # Overwrite with new
-        write_trials(nwbfile, new_trials, overwrite=True)
-        assert len(nwbfile.trials) == 2
-        assert nwbfile.trials["start_time"][0] == pytest.approx(10.0)
+        # Overwrite is refused with a clear, actionable error.
+        with pytest.raises(NotImplementedError, match="not supported"):
+            write_trials(nwbfile, new_trials, overwrite=True)
+
+        # Original table is left untouched.
+        assert len(nwbfile.trials) == 1
+        assert nwbfile.trials["start_time"][0] == pytest.approx(0.0)
 
 
 class TestReadTrials:
@@ -506,23 +507,24 @@ class TestReadTrials:
 class TestWriteTrialsDescription:
     """Tests for write_trials() description parameter.
 
-    Note: NWB doesn't allow changing the description after the trials table
-    is created. Custom descriptions only work with overwrite=True, where we
-    create a fresh TimeIntervals with the custom description.
+    Note: pynwb fixes the predefined trials table's description to its own
+    default ("experimental trials") on the first add_trial and provides no way
+    to change it afterward, and overwriting the predefined trials table is not
+    supported. The ``description`` argument therefore does not alter the
+    predefined trials table description -- it is accepted for API symmetry only.
     """
 
-    def test_custom_description_with_overwrite(self, empty_nwb):
-        """Test custom description with overwrite mode.
+    def test_custom_description_does_not_override_predefined_table(self, empty_nwb):
+        """The description arg cannot change the predefined trials table description.
 
-        Custom descriptions only work when using overwrite=True because
-        NWB creates the trials table with a fixed description on first add_trial.
+        pynwb owns the trials table description; this documents that the
+        argument is inert for the built-in table rather than silently raising.
         """
         from neurospatial.behavior.segmentation import Trial
         from neurospatial.io.nwb import write_trials
 
         nwbfile = empty_nwb
-        # First write some trials
-        initial_trials = [
+        trials = [
             Trial(
                 start_time=0.0,
                 end_time=5.0,
@@ -531,23 +533,11 @@ class TestWriteTrialsDescription:
                 success=True,
             )
         ]
-        write_trials(nwbfile, initial_trials)
+        write_trials(nwbfile, trials, description="T-maze behavioral trials")
 
-        # Now overwrite with custom description
-        new_trials = [
-            Trial(
-                start_time=10.0,
-                end_time=15.0,
-                start_region="home",
-                end_region="goal",
-                success=True,
-            )
-        ]
-        write_trials(
-            nwbfile, new_trials, description="T-maze behavioral trials", overwrite=True
-        )
-
-        assert nwbfile.trials.description == "T-maze behavioral trials"
+        # pynwb keeps its own default description for the predefined table.
+        assert nwbfile.trials.description != "T-maze behavioral trials"
+        assert len(nwbfile.trials) == 1
 
     def test_default_description(self, empty_nwb):
         """Test default description is used."""

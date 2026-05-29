@@ -117,6 +117,42 @@ class TestRegionsToJson:
         content = json_path.read_text()
         assert "    " in content  # 4-space indent
 
+    def test_method_and_function_paths_agree(self, tmp_path):
+        """Regions.to_json and regions_to_json must produce identical bytes.
+
+        Regions.to_json/from_json delegate to the io.py free functions; this
+        guards against the two paths drifting back apart (e.g. dropping the
+        metadata field or diverging on the format tag).
+        """
+        poly = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
+        regions = Regions(
+            [
+                Region(
+                    name="box",
+                    data=poly,
+                    kind="polygon",
+                    metadata={"color": "red", "nested": {"k": [1, 2]}},
+                ),
+                Region(name="pt", data=(5.0, 10.0), kind="point", metadata={"id": 7}),
+            ]
+        )
+
+        func_path = tmp_path / "func.json"
+        method_path = tmp_path / "method.json"
+        regions_to_json(regions, func_path)
+        regions.to_json(method_path)
+
+        assert func_path.read_text() == method_path.read_text()
+
+        # Both loaders reconstruct equivalent collections, metadata included.
+        # Stored metadata freezes lists to tuples; to_dict thaws them back.
+        loaded_func = regions_from_json(func_path)
+        loaded_method = Regions.from_json(method_path)
+        assert loaded_func.list_names() == loaded_method.list_names()
+        assert loaded_func["box"].to_dict()["metadata"]["nested"]["k"] == [1, 2]
+        assert loaded_method["box"].to_dict()["metadata"]["nested"]["k"] == [1, 2]
+        assert loaded_func["pt"].metadata["id"] == 7
+
     def test_unrecognized_format_warning(self, tmp_path):
         """Test warning when loading unrecognized format."""
         json_path = tmp_path / "custom.json"

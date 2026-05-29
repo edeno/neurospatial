@@ -597,10 +597,15 @@ def write_trials(
         Success status for each trial. If provided, must have same length
         as start_times.
     description : str, default "Behavioral trials"
-        Description for the trials table.
+        Accepted for API symmetry with the custom-table writers, but inert for
+        the predefined trials table: pynwb fixes that table's description to its
+        own default on the first ``add_trial`` and offers no way to change it.
     overwrite : bool, default False
-        If True, clear existing trials before adding new ones.
-        If False, raise ValueError if trials already exist.
+        If False, raise ``ValueError`` when trials already exist. If True,
+        raise ``NotImplementedError``: pynwb provides no public API to remove
+        or reset the predefined trials table (and it cannot be deleted once
+        written), so overwriting it is unsupported. Write to a fresh NWBFile,
+        or use ``write_intervals()`` to store the intervals under another name.
 
     Raises
     ------
@@ -610,6 +615,10 @@ def write_trials(
         If array lengths don't match.
         If stop_times < start_times for any trial.
         If timestamps contain non-finite or negative values.
+        If a trials table already exists and ``overwrite=False``.
+    NotImplementedError
+        If a trials table already exists and ``overwrite=True`` (overwriting
+        the predefined trials table is not supported).
 
     Notes
     -----
@@ -758,29 +767,28 @@ def write_trials(
             raise ValueError(
                 "Trials table already exists. Use overwrite=True to replace."
             )
-        # NWB doesn't support deleting/resetting trials table directly.
-        # For in-memory operations, we replace the internal reference.
-        logger.info("Overwriting existing trials table")
-        # Replace with a fresh TimeIntervals
-        from pynwb.epoch import TimeIntervals
-
-        new_trials = TimeIntervals(
-            name=DEFAULT_TRIALS_NAME,
-            description=description,
+        # pynwb provides no public API to delete or reset the predefined trials
+        # table, and it cannot be removed at all once the file is written. The
+        # previous implementation reached into the private ``nwbfile.fields``
+        # mapping, which silently fails in file-backed mode. Rather than corrupt
+        # the file or pretend the overwrite succeeded, refuse explicitly.
+        raise NotImplementedError(
+            "Overwriting an existing NWB trials table is not supported: pynwb "
+            "exposes no public API to remove or reset the predefined trials "
+            "table, and it cannot be deleted once the file is written. Write "
+            "trials to a fresh NWBFile, or store these intervals under a "
+            "different name via write_intervals()."
         )
-        # Replace the internal reference
-        nwbfile.fields[DEFAULT_TRIALS_NAME] = new_trials
 
     # If no trials to add, skip table creation (NWB requires at least one trial)
     if n_trials == 0:
         logger.debug("No trials to write")
         return
 
-    # Add custom columns (before adding any trials)
-    # Check if columns already exist (for overwrite case)
-    existing_columns = set()
-    if nwbfile.trials is not None:
-        existing_columns = set(nwbfile.trials.colnames)
+    # Add custom columns (before adding any trials). nwbfile.trials is
+    # guaranteed None here (the exists/overwrite cases above both raise), so no
+    # custom columns exist yet.
+    existing_columns: set[str] = set()
 
     # For Trial objects, always add all custom columns
     if has_trials and n_trials > 0:
@@ -838,12 +846,9 @@ def write_trials(
 
         nwbfile.add_trial(**kwargs)
 
-    # Set description for newly created trials table (only works when creating new)
-    # NWB sets default description, so only update if custom description provided
-    # Note: For overwrite case, description is set during TimeIntervals creation
-    # For new trials, NWB creates the table with default description on first add_trial
-    # We cannot change it after, so this only works for custom description when
-    # we control the table creation (overwrite case)
+    # Note: pynwb assigns the predefined trials table its own default
+    # description on the first add_trial and provides no public API to change
+    # it afterward, so the ``description`` argument cannot be applied here.
 
     logger.debug("Wrote %d trials to NWB file", n_trials)
 

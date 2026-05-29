@@ -60,7 +60,8 @@ def log_layout_build(layout_type: str, params: dict[str, Any]) -> None:
         Parameters used to build the layout.
     """
     logger.info(
-        f"Building layout: {layout_type}",
+        "Building layout: %s",
+        layout_type,
         extra={"layout_type": layout_type, "params": params},
     )
 
@@ -78,7 +79,10 @@ def log_graph_validation(n_nodes: int, n_edges: int, n_dims: int) -> None:
         Number of spatial dimensions.
     """
     logger.debug(
-        f"Validating connectivity graph: {n_nodes} nodes, {n_edges} edges, {n_dims}D",
+        "Validating connectivity graph: %d nodes, %d edges, %dD",
+        n_nodes,
+        n_edges,
+        n_dims,
         extra={"n_nodes": n_nodes, "n_edges": n_edges, "n_dims": n_dims},
     )
 
@@ -101,7 +105,10 @@ def log_environment_created(
     """
     name_str = f" '{env_name}'" if env_name else ""
     logger.info(
-        f"Environment created{name_str}: {n_bins} bins, {n_dims}D",
+        "Environment created%s: %d bins, %dD",
+        name_str,
+        n_bins,
+        n_dims,
         extra={
             "type": env_type,
             "n_bins": n_bins,
@@ -124,8 +131,10 @@ def log_composite_build(n_subenvs: int, total_bins: int, n_bridges: int) -> None
         Number of bridge edges created.
     """
     logger.info(
-        f"CompositeEnvironment created: {n_subenvs} sub-envs, "
-        f"{total_bins} total bins, {n_bridges} bridges",
+        "CompositeEnvironment created: %d sub-envs, %d total bins, %d bridges",
+        n_subenvs,
+        total_bins,
+        n_bridges,
         extra={
             "n_subenvs": n_subenvs,
             "total_bins": total_bins,
@@ -150,7 +159,10 @@ def log_region_added(
     """
     env_str = f" to '{env_name}'" if env_name else ""
     logger.debug(
-        f"Region '{region_name}' ({region_kind}) added{env_str}",
+        "Region '%s' (%s) added%s",
+        region_name,
+        region_kind,
+        env_str,
         extra={
             "region_name": region_name,
             "region_kind": region_kind,
@@ -172,7 +184,10 @@ def log_spatial_query(query_type: str, n_points: int, n_results: int) -> None:
         Number of results returned.
     """
     logger.debug(
-        f"Spatial query '{query_type}': {n_points} points -> {n_results} results",
+        "Spatial query '%s': %d points -> %d results",
+        query_type,
+        n_points,
+        n_results,
         extra={"query_type": query_type, "n_points": n_points, "n_results": n_results},
     )
 
@@ -192,8 +207,10 @@ def log_performance_warning(
         Expected threshold in milliseconds.
     """
     logger.warning(
-        f"Performance warning: {operation} took {duration_ms:.1f}ms "
-        f"(expected <{threshold_ms:.1f}ms)",
+        "Performance warning: %s took %.1fms (expected <%.1fms)",
+        operation,
+        duration_ms,
+        threshold_ms,
         extra={
             "operation": operation,
             "duration_ms": duration_ms,

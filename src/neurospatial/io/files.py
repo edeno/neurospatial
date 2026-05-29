@@ -20,6 +20,7 @@ Files are saved as a directory (or zip) containing:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import warnings
 from datetime import datetime, timezone
@@ -83,12 +84,19 @@ def _convert_lists_to_arrays(obj: Any) -> Any:
 
     """
     if isinstance(obj, list):
-        # Try to convert to array (will work for numeric lists)
+        # Only convert to a numpy array when the result is numeric (int/float/
+        # bool/complex). A list of strings (or other objects) would otherwise
+        # become a dtype=object array, silently corrupting non-numeric layout
+        # parameters (e.g. dimension labels). Such lists are recursed into and
+        # left as Python lists instead.
         try:
-            return np.array(obj)
+            arr = np.asarray(obj)
         except (ValueError, TypeError):
-            # Not a numeric list, recursively process elements
             return [_convert_lists_to_arrays(item) for item in obj]
+        if arr.dtype.kind in "biufc":  # bool, int, uint, float, complex
+            return arr
+        # Non-numeric (e.g. strings, ragged/object): recurse element-wise.
+        return [_convert_lists_to_arrays(item) for item in obj]
     elif isinstance(obj, dict):
         return {k: _convert_lists_to_arrays(v) for k, v in obj.items()}
     else:
@@ -97,11 +105,11 @@ def _convert_lists_to_arrays(obj: Any) -> Any:
 
 def _get_library_version() -> str:
     """Get the neurospatial library version."""
-    try:
-        from importlib.metadata import version
+    from importlib.metadata import PackageNotFoundError, version
 
+    try:
         return version("neurospatial")
-    except Exception:
+    except PackageNotFoundError:
         return "unknown"
 
 
@@ -247,10 +255,6 @@ def to_file(env: Environment, path: PathLike) -> None:
     # Convert entire metadata to JSON-safe format (must be done AFTER all modifications)
     metadata = _convert_arrays_to_lists(metadata)
 
-    # Write JSON metadata
-    with json_path.open("w") as f:
-        json.dump(metadata, f, indent=2)
-
     # Prepare arrays for npz
     arrays_to_save: dict[str, NDArray] = {
         "bin_centers": env.bin_centers,
@@ -265,9 +269,29 @@ def to_file(env: Environment, path: PathLike) -> None:
         for i, edges in enumerate(env.grid_edges):
             arrays_to_save[f"grid_edges_{i}"] = edges
 
-    # Write npz arrays
-    # numpy.savez_compressed has overly strict type stubs - cast to work around
-    np.savez_compressed(str(npz_path), **cast("Any", arrays_to_save))
+    # Write both files atomically: stage to temp files in the same directory,
+    # then Path.replace() both into place only after BOTH writes succeed. This
+    # prevents a partial save (e.g. a .json with no matching .npz) if the npz
+    # write fails. Both temp files are cleaned up on any failure.
+    json_tmp = json_path.with_name(json_path.name + ".tmp")
+    # numpy.savez_compressed appends ".npz" if the path lacks that suffix, so
+    # the staging name must already end in ".npz" to control it exactly.
+    npz_tmp = npz_path.with_name(npz_path.stem + ".tmp.npz")
+    try:
+        with json_tmp.open("w") as f:
+            json.dump(metadata, f, indent=2)
+        # numpy.savez_compressed has overly strict type stubs - cast to work around
+        np.savez_compressed(str(npz_tmp), **cast("Any", arrays_to_save))
+
+        # Both staged successfully; move into final positions.
+        json_tmp.replace(json_path)
+        npz_tmp.replace(npz_path)
+    except BaseException:
+        # Clean up any staged temp files so no partial state is left behind.
+        for tmp in (json_tmp, npz_tmp):
+            with contextlib.suppress(FileNotFoundError):
+                tmp.unlink()
+        raise
 
 
 def from_file(path: PathLike) -> Environment:
@@ -336,8 +360,29 @@ def from_file(path: PathLike) -> Environment:
             category=UserWarning,
         )
 
-    # Load arrays
-    arrays = np.load(npz_path)
+    # Load arrays. allow_pickle=False is safe because to_file only stores plain
+    # numeric arrays (bin_centers, active_mask, grid_edges_*); it also blocks
+    # arbitrary-code execution from a tampered .npz. Use a context manager so
+    # the underlying file handle is closed promptly.
+    with np.load(npz_path, allow_pickle=False) as arrays:
+        # bin_centers: enforce float64 to match the in-memory from_dict path,
+        # regardless of the dtype stored on disk.
+        bin_centers = np.asarray(arrays["bin_centers"], dtype=np.float64)
+
+        # Reconstruct grid_edges from separate arrays
+        grid_edges = None
+        if "grid_shape" in metadata:
+            n_dims = metadata["n_dims"]
+            grid_edges_list = []
+            for i in range(n_dims):
+                key = f"grid_edges_{i}"
+                if key in arrays:
+                    grid_edges_list.append(arrays[key])
+            if grid_edges_list:
+                grid_edges = tuple(grid_edges_list)
+
+        # Reconstruct active_mask (read out of the NpzFile before it closes)
+        active_mask = arrays.get("active_mask", None)
 
     # Reconstruct graph
     graph_data = metadata["graph"]
@@ -347,21 +392,6 @@ def from_file(path: PathLike) -> Environment:
     dimension_ranges = None
     if "dimension_ranges" in metadata:
         dimension_ranges = [tuple(r) for r in metadata["dimension_ranges"]]
-
-    # Reconstruct grid_edges from separate arrays
-    grid_edges = None
-    if "grid_shape" in metadata:
-        n_dims = metadata["n_dims"]
-        grid_edges_list = []
-        for i in range(n_dims):
-            key = f"grid_edges_{i}"
-            if key in arrays:
-                grid_edges_list.append(arrays[key])
-        if grid_edges_list:
-            grid_edges = tuple(grid_edges_list)
-
-    # Reconstruct active_mask
-    active_mask = arrays.get("active_mask")
 
     # Reconstruct grid_shape
     grid_shape = None
@@ -380,7 +410,7 @@ def from_file(path: PathLike) -> Environment:
     env = Environment.from_layout(layout_type, layout_params, name=metadata["name"])
 
     # Override attributes with saved values (handles cases where layout recreation differs)
-    env.bin_centers = arrays["bin_centers"]
+    env.bin_centers = bin_centers
     env.connectivity = connectivity
     env.dimension_ranges = dimension_ranges
     env.grid_edges = grid_edges

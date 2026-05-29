@@ -82,7 +82,7 @@ DEFAULT_ANALYSIS_MODULE: str = "analysis"
 
 # Default values for missing metadata
 DEFAULT_UNITS: str = "unknown"
-DEFAULT_FALLBACK_BIN_SIZE: float = 1.0
+DEFAULT_FRAME: str = ""
 DEFAULT_STATIC_TIMESTAMP: float = 0.0
 
 # KDTree parameters for reconstructed layouts
@@ -210,7 +210,7 @@ def write_environment(
 
     # Collect metadata for description
     units = env.units if env.units else DEFAULT_UNITS
-    frame = env.frame if env.frame else DEFAULT_UNITS
+    frame = env.frame if env.frame else DEFAULT_FRAME
     n_dims = env.bin_centers.shape[1]
     layout_type = env.layout._layout_type_tag if env.layout else "unknown"
 
@@ -412,7 +412,12 @@ def _extract_grid_data(env: Environment) -> dict[str, Any] | None:
 
 def _regions_to_json(regions) -> str:
     """
-    Serialize Regions to JSON string.
+    Serialize Regions to a JSON string using the canonical Region schema.
+
+    Delegates to ``Region.to_dict`` so the on-disk schema matches the rest of
+    the library (``regions.json``, ``Regions.to_json``) and so per-region
+    ``metadata`` survives the NWB round-trip. The output is a list of region
+    dicts wrapped in a version-tagged payload.
 
     Parameters
     ----------
@@ -422,33 +427,19 @@ def _regions_to_json(regions) -> str:
     Returns
     -------
     str
-        JSON string containing region definitions.
+        JSON string containing the version-tagged region payload. Empty or
+        absent collections serialize to ``"{}"`` for backward compatibility.
     """
     if regions is None or len(regions) == 0:
         return "{}"
 
-    regions_dict = {}
-    for region_name, region in regions.items():
-        region_data: dict[str, Any] = {"kind": region.kind}
+    from neurospatial.regions.io import _SCHEMA_TAG
 
-        if region.kind == "point":
-            # For points, region.data is an ndarray
-            if region.data is not None:
-                region_data["point"] = list(region.data)
-            else:
-                region_data["point"] = None
-        elif region.kind == "polygon":
-            # For polygons, region.data is a Shapely Polygon
-            if region.data is not None:
-                # Extract polygon coordinates
-                coords = list(region.data.exterior.coords)
-                region_data["polygon"] = coords
-            else:
-                region_data["polygon"] = None
-
-        regions_dict[region_name] = region_data
-
-    return json.dumps(regions_dict)
+    payload = {
+        "format": _SCHEMA_TAG,
+        "regions": [region.to_dict() for region in regions.values()],
+    }
+    return json.dumps(payload)
 
 
 def read_environment(
@@ -560,6 +551,11 @@ def read_environment(
                 )
                 grid_data["active_mask_flat"] = active_mask_flat
 
+    # Whether the original environment was a 1D linearized track. Threaded into
+    # reconstruction so the layout itself reports the correct value (single
+    # source of truth) rather than being patched onto env afterward.
+    is_linearized_track = bool(metadata.get("is_linearized_track", False))
+
     # Create environment with proper layout reconstruction
     env = _reconstruct_environment(
         bin_centers=bin_centers,
@@ -571,21 +567,19 @@ def read_environment(
         layout_type=layout_type,
         grid_data=grid_data,
         n_dims=n_dims,
+        is_linearized_track=is_linearized_track,
     )
 
-    # Set metadata
+    # Set metadata. The write path stores DEFAULT_FRAME (empty string) when no
+    # frame is set, so a non-empty stored value is always a real frame to
+    # restore -- including a legitimate frame literally named "unknown".
     if units and units != DEFAULT_UNITS:
         env.units = units
-    if frame and frame != DEFAULT_UNITS:
+    if frame and frame != DEFAULT_FRAME:
         env.frame = frame
 
     # Store layout type info
     env._layout_type_used = layout_type
-
-    # Restore is_linearized_track property for Graph layouts
-    is_linearized_track = metadata.get("is_linearized_track", False)
-    if is_linearized_track:
-        env._is_linearized_track_env = True
 
     logger.debug(
         "Read environment '%s' with %d bins and %d edges",
@@ -607,6 +601,7 @@ def _reconstruct_environment(
     layout_type: str,
     grid_data: GridData | None,
     n_dims: int,
+    is_linearized_track: bool = False,
 ) -> Environment:
     """
     Reconstruct Environment with appropriate layout type.
@@ -635,6 +630,11 @@ def _reconstruct_environment(
         Grid structure data (grid_edges, grid_shape, active_mask_flat).
     n_dims : int
         Number of dimensions.
+    is_linearized_track : bool, default False
+        Whether the original environment was a 1D linearized track. Threaded
+        into the reconstructed layout so ``env.is_linearized_track`` is derived
+        from the layout (single source of truth). Grid-based layouts are never
+        linearized tracks, so this only affects the KDTree fallback path.
 
     Returns
     -------
@@ -697,6 +697,7 @@ def _reconstruct_environment(
         connectivity=connectivity,
         dimension_ranges=dimension_ranges,
         layout_type=layout_type,
+        is_linearized_track=is_linearized_track,
     )
 
     # Create Environment directly with the reconstructed layout
@@ -723,10 +724,12 @@ class _ReconstructedLayout:
 
     Notes
     -----
-    The ``is_linearized_track`` property always returns ``False`` even for layouts originally created
-    from 1D Graph layouts. The original 1D property is preserved separately via
-    ``env._is_linearized_track_env`` attribute set during reconstruction. This means ``env.is_linearized_track``
-    will return the correct value, but ``env.layout.is_linearized_track`` may differ.
+    The ``is_linearized_track`` value is passed in at construction and exposed
+    via the property, so the layout is the single source of truth.
+    ``Environment.__init__`` reads ``layout.is_linearized_track`` to set
+    ``env._is_linearized_track_env``, meaning ``env.is_linearized_track`` and
+    ``env.layout.is_linearized_track`` agree without any post-construction
+    patching.
     """
 
     def __init__(
@@ -735,6 +738,7 @@ class _ReconstructedLayout:
         connectivity: nx.Graph,
         dimension_ranges: list[tuple[float, float]],
         layout_type: str,
+        is_linearized_track: bool = False,
     ) -> None:
         from scipy.spatial import KDTree
 
@@ -743,6 +747,7 @@ class _ReconstructedLayout:
         self.dimension_ranges = dimension_ranges
         self._layout_type_tag = f"Reconstructed_{layout_type}"
         self._build_params_used = {"original_layout_type": layout_type}
+        self._is_linearized_track = is_linearized_track
 
         # Build KDTree for point mapping
         self._kdtree = KDTree(bin_centers) if len(bin_centers) > 0 else None
@@ -754,8 +759,8 @@ class _ReconstructedLayout:
 
     @property
     def is_linearized_track(self) -> bool:
-        """Return False - reconstructed layouts are not 1D linearized."""
-        return False
+        """Whether the reconstructed layout represents a 1D linearized track."""
+        return self._is_linearized_track
 
     def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
         """Map points to bin indices using KDTree nearest neighbor search."""
@@ -892,7 +897,14 @@ def _reconstruct_graph(
 
 def _json_to_regions(regions_json: str) -> Regions:
     """
-    Deserialize regions from JSON string.
+    Deserialize regions from a JSON string.
+
+    Reads the canonical Region schema produced by :func:`_regions_to_json`
+    (``{"format": ..., "regions": [<Region.to_dict()>, ...]}``) via
+    ``Region.from_dict``, so per-region ``metadata`` is restored. For backward
+    compatibility, the legacy bespoke schema
+    (``{name: {"kind": ..., "point"/"polygon": ...}}``) written by older files
+    is also accepted; legacy entries carry no metadata.
 
     Parameters
     ----------
@@ -914,16 +926,41 @@ def _json_to_regions(regions_json: str) -> Regions:
     Warns
     -----
     UserWarning
-        If a region has None data and is skipped during reconstruction.
+        If a legacy-schema region has None data and is skipped during
+        reconstruction.
+    """
+    from neurospatial.regions import Region, Regions
+
+    blob = json.loads(regions_json)
+
+    if not blob:
+        return Regions()
+
+    # Canonical schema: version-tagged payload with a "regions" list.
+    if isinstance(blob, dict) and "regions" in blob:
+        return Regions(Region.from_dict(d) for d in blob["regions"])
+
+    # Legacy bespoke schema: {name: {"kind": ..., "point"/"polygon": ...}}.
+    return _legacy_json_to_regions(blob)
+
+
+def _legacy_json_to_regions(regions_dict: dict[str, Any]) -> Regions:
+    """Reconstruct regions from the pre-canonical NWB schema (no metadata).
+
+    Parameters
+    ----------
+    regions_dict : dict[str, Any]
+        Mapping of region name to ``{"kind": ..., "point"/"polygon": ...}``.
+
+    Returns
+    -------
+    Regions
+        Reconstructed Regions container. Regions with ``None`` geometry are
+        skipped with a warning.
     """
     from shapely.geometry import Polygon
 
     from neurospatial.regions import Region, Regions
-
-    regions_dict = json.loads(regions_json)
-
-    if not regions_dict:
-        return Regions()
 
     regions_list = []
     for region_name, region_data in regions_dict.items():
@@ -957,39 +994,6 @@ def _json_to_regions(regions_json: str) -> Regions:
                 )
 
     return Regions(regions_list)
-
-
-def _estimate_bin_size(bin_centers: NDArray[np.float64], n_dims: int) -> float:
-    """
-    Estimate bin size from bin centers.
-
-    Uses the median distance between neighboring bin centers.
-
-    Parameters
-    ----------
-    bin_centers : NDArray, shape (n_bins, n_dims)
-        Bin center coordinates.
-    n_dims : int
-        Number of dimensions.
-
-    Returns
-    -------
-    float
-        Estimated bin size.
-    """
-    if len(bin_centers) < 2:
-        return DEFAULT_FALLBACK_BIN_SIZE
-
-    # Use KDTree to find nearest neighbors
-    from scipy.spatial import KDTree
-
-    tree = KDTree(bin_centers)
-    # Query for k nearest neighbors (including self)
-    distances, _ = tree.query(bin_centers, k=KDTREE_NEIGHBORS)
-    # Take the second column (distance to nearest non-self neighbor)
-    nearest_distances = distances[:, 1]
-    # Use median as robust estimate
-    return float(np.median(nearest_distances))
 
 
 def environment_from_position(
