@@ -502,8 +502,11 @@ def rayleigh_test(
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of input angles.
     weights : ndarray of shape (n_samples,), optional
-        Weights for each angle (e.g., spike counts per bin).
-        If None, uniform weights are used.
+        Weights for each angle, interpreted as **counts/frequencies**
+        (e.g., spike counts per phase bin). If None, uniform unit weights
+        are used. Under this count convention, weighting an angle by an
+        integer ``k`` is equivalent to observing that angle ``k`` times;
+        the test statistic is ``z = sum(weights) * R**2`` (see Notes).
 
     Returns
     -------
@@ -525,8 +528,21 @@ def rayleigh_test(
 
     Notes
     -----
-    Uses finite-sample correction from Mardia & Jupp (2000, Section 5.3.2,
-    p. 94) for accurate p-values when n < 50.
+    The unweighted statistic is ``z = n * R**2`` where ``R`` is the mean
+    resultant length and ``n`` the number of angles. A finite-sample
+    correction from Mardia & Jupp (2000, Section 5.3.2, p. 94) is applied
+    for accurate p-values when the (effective) sample size is < 50.
+
+    **Weighted variant.** When ``weights`` are supplied this implements the
+    count-based (grouped-data) weighted Rayleigh test of Mardia & Jupp
+    (2000, Section 5.3.5): weights are treated as frequencies, the resultant
+    length is the weighted mean resultant length
+    ``R = |sum_i w_i exp(i theta_i)| / sum_i w_i``, and the statistic is
+    ``z = (sum_i w_i) * R**2`` with the finite-sample correction evaluated
+    at ``n = sum_i w_i``. With unit weights this reduces exactly to the
+    unweighted statistic, and integer weights match physically replicating
+    each angle by its weight. This is intentionally *not* the
+    effective-sample-size form ``n_eff = (sum w)**2 / sum(w**2)``.
 
     Examples
     --------
@@ -552,16 +568,29 @@ def rayleigh_test(
     # Compute mean resultant length
     r_mean = _mean_resultant_length(angles, weights=weights)
 
-    # Compute effective sample size for weighted data
+    # Effective count for the z-statistic and finite-sample correction.
+    #
+    # We implement the *count-based* (grouped-data) weighted Rayleigh test
+    # of Mardia & Jupp (2000, Section 5.3.5): weights are treated as
+    # frequencies/counts, so weighting angle theta_i by w_i is equivalent
+    # to observing theta_i exactly w_i times. The resultant length used is
+    # the weighted mean resultant length
+    #     R = |sum_i w_i exp(i theta_i)| / sum_i w_i
+    # (computed in _mean_resultant_length), and the matching test statistic
+    # is
+    #     z = (sum_i w_i) * R^2.
+    # For unit weights (w_i = 1) this reduces exactly to the unweighted
+    # z = n * R^2, and integer weights reproduce physically replicating the
+    # angles. (This is distinct from the effective-sample-size form
+    # n_eff = (sum w)^2 / sum(w^2), which estimates equivalent independent
+    # samples for *non-count* weights and is not used here.)
     if weights is not None:
         weights = np.asarray(weights, dtype=np.float64)
-        # Effective sample size: sum(w)^2 / sum(w^2)
-        # This accounts for unequal weighting
-        n_eff: float = float(np.sum(weights) ** 2 / np.sum(weights**2))
+        n_eff: float = float(np.sum(weights))
     else:
         n_eff = float(n)
 
-    # Rayleigh z-statistic: z = n * R^2
+    # Rayleigh z-statistic: z = n * R^2 (n = total count = sum of weights)
     z = n_eff * r_mean**2
 
     # P-value with finite-sample correction (Mardia & Jupp, p. 94)
@@ -645,7 +674,8 @@ def circular_linear_correlation(
     >>> r > 0.5 and p < 0.05  # Significant correlation
     True
     """
-    from scipy.stats import chi2, pearsonr
+    # chi2 is imported at module level; only pearsonr is needed locally.
+    from scipy.stats import pearsonr
 
     # Convert to arrays and radians if needed
     angles = np.asarray(angles, dtype=np.float64)

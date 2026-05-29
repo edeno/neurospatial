@@ -22,6 +22,48 @@ if TYPE_CHECKING:
     import pandas as pd
 
 
+def _make_bin_edges(
+    window: tuple[float, float], bin_size: float
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Build PSTH bin edges and centers that stay within the window.
+
+    When ``window_duration`` is not an integer multiple of ``bin_size``,
+    the trailing partial bin is dropped rather than appended. This keeps
+    every edge (and therefore every center) inside ``[window[0],
+    window[1]]``; otherwise the final bin would extend past ``window[1]``
+    and silently absorb spikes that fall outside the requested window.
+
+    A spike at exactly ``window[1]`` that would have fallen in the dropped
+    partial bin is intentionally excluded; align it inside a full bin by
+    choosing ``bin_size`` to divide the window evenly if that spike matters.
+
+    Parameters
+    ----------
+    window : tuple[float, float]
+        Time window ``(start, end)`` relative to each event, in seconds.
+    bin_size : float
+        Width of each time bin in seconds.
+
+    Returns
+    -------
+    bin_edges : NDArray[np.float64], shape (n_bins + 1,)
+        Bin edges from ``window[0]`` up to ``window[0] + n_bins * bin_size``,
+        which never exceeds ``window[1]``.
+    bin_centers : NDArray[np.float64], shape (n_bins,)
+        Centers of each full bin; all lie within ``[window[0], window[1]]``.
+    """
+    window_duration = window[1] - window[0]
+    # floor (not ceil): keep only whole bins so the last edge does not
+    # overshoot window[1]. A small epsilon guards against floating-point
+    # error swallowing a bin edge that is mathematically exact (e.g.
+    # 2.0 / 0.1 evaluating to 19.9999...).
+    n_bins = int(np.floor(window_duration / bin_size + 1e-9))
+    n_bins = max(n_bins, 0)
+    bin_edges = window[0] + np.arange(n_bins + 1, dtype=np.float64) * bin_size
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+    return bin_edges, bin_centers
+
+
 def align_spikes_to_events(
     spike_times: NDArray[np.float64],
     event_times: NDArray[np.float64],
@@ -260,11 +302,9 @@ def peri_event_histogram(
     # Get aligned spikes for each event
     aligned = align_spikes_to_events(spike_times, event_times, window)
 
-    # Create bin edges
-    window_duration = window[1] - window[0]
-    n_bins = int(np.ceil(window_duration / bin_size))
-    bin_edges = np.linspace(window[0], window[0] + n_bins * bin_size, n_bins + 1)
-    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+    # Create bin edges (see _make_bin_edges for the partial-bin policy).
+    bin_edges, bin_centers = _make_bin_edges(window, bin_size)
+    n_bins = len(bin_centers)
 
     # Compute histogram for each event
     histograms = np.zeros((n_events, n_bins), dtype=np.float64)
@@ -409,11 +449,9 @@ def population_peri_event_histogram(
             stacklevel=2,
         )
 
-    # Create bin edges
-    window_duration = window[1] - window[0]
-    n_bins = int(np.ceil(window_duration / bin_size))
-    bin_edges = np.linspace(window[0], window[0] + n_bins * bin_size, n_bins + 1)
-    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+    # Create bin edges (see _make_bin_edges for the partial-bin policy).
+    bin_edges, bin_centers = _make_bin_edges(window, bin_size)
+    n_bins = len(bin_centers)
 
     # Compute per-unit histograms
     # Shape: (n_units, n_events, n_bins)

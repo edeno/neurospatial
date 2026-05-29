@@ -213,15 +213,12 @@ def shuffle_time_bins_coherent(
     shuffle_time_bins : Primary temporal shuffle (same implementation)
     shuffle_cell_identity : Shuffle neuron-to-place-field mapping
     """
-    generator = _ensure_rng(rng)
-    n_time_bins = spike_counts.shape[0]
-
-    for _ in range(n_shuffles):
-        # Generate a random permutation of row indices
-        # The same permutation is applied to all columns (coherent)
-        perm = generator.permutation(n_time_bins)
-        # Apply permutation to rows
-        yield spike_counts[perm].copy()
+    # This is an exact alias of shuffle_time_bins: permuting whole rows
+    # already applies one coherent permutation across all neurons. We
+    # delegate rather than duplicate the body so the two cannot silently
+    # diverge; the separate public name documents the intent (testing
+    # temporal structure while preserving population co-activation).
+    yield from shuffle_time_bins(spike_counts, n_shuffles=n_shuffles, rng=rng)
 
 
 # =============================================================================
@@ -730,6 +727,15 @@ def shuffle_posterior_weighted_circular(
     # Compute MAP positions for each time bin (used to determine shift restrictions)
     map_positions = np.argmax(posterior, axis=1)
 
+    # NOTE: the per-time-bin loop below is intentionally not vectorized. Each
+    # iteration draws exactly one integer from ``generator`` in time order,
+    # and the *range* of that draw depends on the bin's MAP position (edge
+    # bins use a narrower, position-dependent range). Drawing all shifts at
+    # once would change the RNG consumption pattern and therefore the output
+    # for a fixed seed, breaking the reproducible-shuffle contract that
+    # callers rely on for null distributions. The cost is also bounded by
+    # n_time_bins (a single candidate event, typically tens of bins), so
+    # vectorizing buys little. Left as a loop deliberately.
     for _ in range(n_shuffles):
         shuffled = np.empty_like(posterior)
         for i in range(n_time_bins):

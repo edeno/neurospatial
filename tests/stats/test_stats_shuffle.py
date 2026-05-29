@@ -69,6 +69,26 @@ class TestStatsShuffleBasicFunctionality:
             shuffled_rows = {tuple(row) for row in shuffled}
             assert original_rows == shuffled_rows
 
+    def test_coherent_matches_time_bins_for_fixed_seed(self):
+        """shuffle_time_bins_coherent equals shuffle_time_bins for a fixed seed.
+
+        The coherent variant is documented as the same permutation applied
+        to every neuron, which is exactly what shuffle_time_bins does. They
+        must produce byte-identical output for the same seed; this guards
+        against the two implementations silently diverging.
+        """
+        rng = np.random.default_rng(7)
+        spike_counts = rng.integers(0, 5, size=(8, 4)).astype(np.int64)
+
+        plain = list(shuffle_time_bins(spike_counts, n_shuffles=20, rng=2024))
+        coherent = list(
+            shuffle_time_bins_coherent(spike_counts, n_shuffles=20, rng=2024)
+        )
+
+        assert len(plain) == len(coherent) == 20
+        for a, b in zip(plain, coherent, strict=True):
+            np.testing.assert_array_equal(a, b)
+
     def test_shuffle_cell_identity_preserves_counts(self):
         """Test shuffle_cell_identity preserves spike counts."""
         spike_counts = np.array([[0, 1, 2], [2, 0, 1]], dtype=np.int64)

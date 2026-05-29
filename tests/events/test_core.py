@@ -112,6 +112,13 @@ class TestPopulationPeriEventResult:
         assert_allclose(rates, expected)
         assert rates.shape == (5, 100)
 
+    def test_mean_firing_rate_conversion(self, sample_population_result):
+        """mean_firing_rate caches mean_histogram / bin_size (population Hz)."""
+        result = sample_population_result
+        expected = result.mean_histogram / result.bin_size
+        assert_allclose(result.mean_firing_rate, expected)
+        assert result.mean_firing_rate.shape == result.mean_histogram.shape
+
     def test_frozen_dataclass(self, sample_population_result):
         """Test that dataclass is immutable."""
         result = sample_population_result

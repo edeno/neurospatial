@@ -1054,6 +1054,52 @@ class TestDistanceToReward:
         mid_idx = n_samples // 2
         assert result[mid_idx] < 1.0  # Close to zero at reward time
 
+    def test_reward_time_outside_session_warns_on_clip(self, simple_grid_env):
+        """A reward time outside the session is clipped and warns the user."""
+        from neurospatial.events.regressors import distance_to_reward
+
+        env = simple_grid_env
+
+        n_samples = 50
+        times = np.linspace(0.0, 10.0, n_samples)
+        positions = np.column_stack(
+            [
+                np.linspace(0, 9, n_samples),
+                np.linspace(0, 9, n_samples),
+            ]
+        )
+
+        # Reward at t=20.0 is past the end of the session (times max = 10.0).
+        reward_times = np.array([20.0])
+
+        with pytest.warns(UserWarning, match=r"clip"):
+            result = distance_to_reward(
+                env, times, positions, reward_times, metric="euclidean"
+            )
+        assert result.shape == (n_samples,)
+
+    def test_reward_time_within_session_does_not_warn(self, simple_grid_env):
+        """Reward times inside the session must not trigger the clip warning."""
+        import warnings
+
+        from neurospatial.events.regressors import distance_to_reward
+
+        env = simple_grid_env
+
+        n_samples = 50
+        times = np.linspace(0.0, 10.0, n_samples)
+        positions = np.column_stack(
+            [
+                np.linspace(0, 9, n_samples),
+                np.linspace(0, 9, n_samples),
+            ]
+        )
+        reward_times = np.array([3.0, 7.0])
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # any warning becomes an error
+            distance_to_reward(env, times, positions, reward_times, metric="euclidean")
+
     def test_position_times_mismatch_raises(self, simple_grid_env):
         """Test mismatched positions and times raises ValueError."""
         from neurospatial.events.regressors import distance_to_reward
@@ -1247,3 +1293,76 @@ class TestDistanceToBoundary:
 
         # Position outside env → invalid bin → NaN
         assert np.isnan(result[0])
+
+    def test_edge_bins_1d_track_are_the_two_ends(self):
+        """On a 1D linear track the boundary is the two end bins.
+
+        A path-graph track has interior degree 2 and endpoint degree 1, so
+        the edge bins are exactly the two ends of the track. Distance to the
+        boundary must be largest in the middle of the track.
+        """
+        import networkx as nx
+
+        from neurospatial import Environment
+        from neurospatial.events.regressors import _find_edge_bins
+
+        graph = nx.path_graph(8)
+        for i, node in enumerate(graph.nodes):
+            graph.nodes[node]["pos"] = (float(i) * 5.0, 0.0)
+        for u, v in graph.edges:
+            graph.edges[u, v]["distance"] = 5.0
+        env = Environment.from_graph(
+            graph,
+            edge_order=list(graph.edges),
+            edge_spacing=0.0,
+            bin_size=5.0,
+        )
+
+        edge_bins = _find_edge_bins(env)
+
+        # Exactly the two ends of the linearized track.
+        assert len(edge_bins) == 2
+        assert set(edge_bins) == {0, env.n_bins - 1}
+
+        # The middle of the track is the farthest point from either end.
+        from neurospatial.events.regressors import distance_to_boundary
+
+        # bin_centers are along the linearized axis; pick the geometric
+        # midpoint and the two ends.
+        mid_pos = env.bin_centers[env.n_bins // 2]
+        end_pos = env.bin_centers[0]
+        positions = np.vstack([mid_pos, end_pos])
+        dist = distance_to_boundary(env, positions, boundary_type="edge")
+        assert dist[0] > dist[1]
+
+    def test_edge_bins_masked_2d_includes_inner_hole_boundary(self):
+        """On a masked 2D env edge bins include the boundary of an inner hole.
+
+        Bins flanking a masked-out hole have fewer neighbors than a fully
+        surrounded interior bin and so must be flagged as edge bins, not
+        only the outer rim.
+        """
+        from neurospatial import Environment
+        from neurospatial.events.regressors import _find_edge_bins
+
+        # 7x7 occupied grid with a single hole punched in the center.
+        x = np.arange(7, dtype=float)
+        y = np.arange(7, dtype=float)
+        xx, yy = np.meshgrid(x, y)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
+        # Drop the exact center (3, 3) so it becomes an unoccupied hole.
+        keep = ~((positions[:, 0] == 3.0) & (positions[:, 1] == 3.0))
+        positions = positions[keep]
+
+        env = Environment.from_samples(positions, bin_size=1.0)
+
+        edge_bins = set(_find_edge_bins(env))
+
+        # The four bins orthogonally adjacent to the hole at (3, 3) must be
+        # edge bins because they border unoccupied space.
+        for hole_neighbor in [(3.0, 2.0), (3.0, 4.0), (2.0, 3.0), (4.0, 3.0)]:
+            bin_idx = int(env.bin_at(np.asarray([hole_neighbor]))[0])
+            assert bin_idx in edge_bins, (
+                f"bin at {hole_neighbor} (index {bin_idx}) borders the hole "
+                "and should be an edge bin"
+            )

@@ -64,11 +64,17 @@ def normalize_to_posterior(
     axis : int, default=-1
         Axis along which to normalize.
     handle_degenerate : {"uniform", "nan", "raise"}, default="uniform"
-        How to handle degenerate rows (all -inf or NaN):
+        How to handle degenerate rows. A row is degenerate if it is all
+        ``-inf`` (a legitimate zero-rate row, e.g. no spikes with a flat
+        encoding model) or if it contains a ``NaN`` (upstream corruption,
+        e.g. a NaN firing rate leaking into the likelihood):
 
-        - "uniform": Return uniform distribution (1/n_bins per bin)
-        - "nan": Return NaN for degenerate rows
-        - "raise": Raise ValueError if any row is degenerate
+        - "uniform": Return uniform distribution (1/n_bins per bin) for
+          every degenerate row. This masks NaN corruption the same as a
+          zero-rate row; use "raise" if you need corruption to surface.
+        - "nan": Return NaN for degenerate rows.
+        - "raise": Raise ValueError if any row is degenerate. The message
+          distinguishes NaN-corrupted rows from all -inf zero-rate rows.
 
     Returns
     -------
@@ -192,8 +198,20 @@ def normalize_to_posterior(
     # Log-sum-exp normalization (numerically stable softmax)
     ll_max = ll.max(axis=axis, keepdims=True)
 
-    # Detect degenerate rows (all -inf results in -inf max)
-    degenerate_mask = ~np.isfinite(ll_max.squeeze(axis=axis))
+    # Detect degenerate rows. There are two distinct causes, and we keep
+    # them separate because they mean different things:
+    #
+    # - all -inf: a legitimate zero-rate row (e.g. no spikes with a flat
+    #   encoding model). ll.max() is -inf, which is not finite.
+    # - any NaN: upstream corruption (e.g. a NaN firing rate leaking into
+    #   the likelihood). ll.max() propagates NaN, which is also not finite.
+    #
+    # Both fail np.isfinite on the per-row max, so the union is the set of
+    # degenerate rows; the NaN subset is tracked so handle_degenerate="raise"
+    # can report corruption explicitly rather than blaming a flat row.
+    ll_max_squeezed = ll_max.squeeze(axis=axis)
+    degenerate_mask = ~np.isfinite(ll_max_squeezed)
+    nan_row_mask = np.isnan(ll).any(axis=axis)
 
     # Shift for stability
     ll_shifted = ll - ll_max
@@ -208,13 +226,32 @@ def normalize_to_posterior(
     # Handle degenerate rows
     if degenerate_mask.any():
         if handle_degenerate == "raise":
-            n_degenerate = degenerate_mask.sum()
+            n_degenerate = int(degenerate_mask.sum())
+            n_nan = int(nan_row_mask.sum())
+            # Distinguish corruption (NaN) from a legitimate zero-rate row
+            # (all -inf): the former points at an upstream data bug, the
+            # latter at a likelihood/encoding-model mismatch. Conflating
+            # them in the message would send the user looking in the wrong
+            # place.
+            if n_nan > 0:
+                n_neg_inf = n_degenerate - n_nan
+                raise ValueError(
+                    f"Found {n_degenerate} degenerate row(s): {n_nan} contain "
+                    f"NaN values (upstream corruption, e.g. a NaN firing rate "
+                    f"leaking into the likelihood) and {n_neg_inf} are all -inf "
+                    f"(zero-rate). Fix the NaN source; the -inf rows can be "
+                    f"handled with handle_degenerate='uniform' or 'nan'."
+                )
             raise ValueError(
-                f"Found {n_degenerate} degenerate row(s) with all -inf or NaN values. "
-                f"Consider using handle_degenerate='uniform' or 'nan'."
+                f"Found {n_degenerate} degenerate row(s) with all -inf values "
+                f"(zero-rate). Consider using handle_degenerate='uniform' or "
+                f"'nan'."
             )
         elif handle_degenerate == "uniform":
-            # Replace degenerate rows with uniform distribution
+            # Replace degenerate rows with uniform distribution. This fills
+            # both all -inf rows and NaN-corrupted rows uniformly; if you
+            # need NaN corruption to surface rather than be masked, use
+            # handle_degenerate="raise".
             n_bins = ll.shape[axis]
             uniform_prob = 1.0 / n_bins
             posterior[degenerate_mask] = uniform_prob
@@ -495,22 +532,37 @@ def _validate_inputs(
 def _validate_output(posterior: NDArray[np.float64]) -> None:
     """Validate output posterior.
 
+    Rows that are entirely NaN are treated as intentional degenerate rows
+    (produced by ``normalize_to_posterior(..., handle_degenerate="nan")``)
+    and are excluded from both the finite check and the row-sum check.
+    Otherwise the all-NaN row would trip the NaN/Inf guard, and even if it
+    passed, ``posterior.sum(axis=1)`` would be NaN for that row and raise a
+    misleading "rows do not sum to 1.0" error.
+
     Raises
     ------
     ValueError
-        If posterior rows don't sum to 1.0 or contain NaN/Inf.
+        If any non-degenerate row contains NaN/Inf, or if any
+        non-degenerate row does not sum to 1.0.
     """
-    # Check for NaN/Inf
-    if not np.isfinite(posterior).all():
+    # Rows that are entirely NaN are intentional degenerate rows; skip them.
+    all_nan_rows = np.isnan(posterior).all(axis=1)
+    finite_rows = posterior[~all_nan_rows]
+
+    # Check for NaN/Inf among the non-degenerate rows. A partial NaN/Inf in
+    # an otherwise-finite row still signals real numerical instability.
+    if not np.isfinite(finite_rows).all():
         raise ValueError(
-            "Output posterior contains NaN or Inf values. "
-            "This may indicate numerical instability."
+            "Output posterior contains NaN or Inf values in non-degenerate "
+            "rows. This may indicate numerical instability."
         )
 
-    # Check row sums
-    row_sums = posterior.sum(axis=1)
-    if not np.allclose(row_sums, 1.0, atol=1e-6):
-        max_deviation = np.abs(row_sums - 1.0).max()
-        raise ValueError(
-            f"Posterior rows do not sum to 1.0. Maximum deviation: {max_deviation:.2e}"
-        )
+    # Check row sums on the non-degenerate rows only.
+    if finite_rows.size > 0:
+        row_sums = finite_rows.sum(axis=1)
+        if not np.allclose(row_sums, 1.0, atol=1e-6):
+            max_deviation = np.abs(row_sums - 1.0).max()
+            raise ValueError(
+                f"Posterior rows do not sum to 1.0. "
+                f"Maximum deviation: {max_deviation:.2e}"
+            )

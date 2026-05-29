@@ -107,12 +107,13 @@ class PopulationPeriEventResult:
         Time window (start, end) relative to event in seconds.
     bin_size : float
         Width of time bins (seconds).
-
-    Attributes
-    ----------
     firing_rates : NDArray[np.float64], shape (n_units, n_bins)
         Per-unit firing rates (Hz). Cached on construction as
         ``histograms / bin_size``; treat as a read-only attribute.
+    mean_firing_rate : NDArray[np.float64], shape (n_bins,)
+        Population-average firing rate (Hz). Cached on construction as
+        ``mean_histogram / bin_size``; the population-level analog of
+        ``PeriEventResult.firing_rate``. Treat as a read-only attribute.
 
     See Also
     --------
@@ -126,8 +127,8 @@ class PopulationPeriEventResult:
     ... )
     >>> # Get firing rates for all units
     >>> rates = result.firing_rates  # shape: (n_units, n_bins)  # doctest: +SKIP
-    >>> # Get population average
-    >>> pop_rate = result.mean_histogram / result.bin_size  # doctest: +SKIP
+    >>> # Get population average firing rate (Hz)
+    >>> pop_rate = result.mean_firing_rate  # shape: (n_bins,)  # doctest: +SKIP
     """
 
     bin_centers: NDArray[np.float64]
@@ -139,10 +140,14 @@ class PopulationPeriEventResult:
     window: tuple[float, float]
     bin_size: float
     firing_rates: NDArray[np.float64] = field(init=False)
+    mean_firing_rate: NDArray[np.float64] = field(init=False)
 
     def __post_init__(self) -> None:
-        # Frozen dataclass: bypass setattr to populate the cached field.
+        # Frozen dataclass: bypass setattr to populate the cached fields.
         object.__setattr__(self, "firing_rates", self.histograms / self.bin_size)
+        object.__setattr__(
+            self, "mean_firing_rate", self.mean_histogram / self.bin_size
+        )
 
 
 # --- Validation Helpers ---

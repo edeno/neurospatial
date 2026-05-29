@@ -243,6 +243,47 @@ class TestRayleighTest:
         # Should be significant due to weighted concentration
         assert p < 0.05
 
+    def test_uniform_weights_match_unweighted(self) -> None:
+        """Uniform unit weights must reproduce the unweighted result exactly.
+
+        Weights are counts: a weight of 1.0 on every angle is the same data
+        as the unweighted call, so z and p must match. This pins the
+        count-based weighted Rayleigh convention (Mardia & Jupp 2000,
+        Section 5.3.5).
+        """
+        from neurospatial.stats.circular import rayleigh_test
+
+        rng = np.random.default_rng(123)
+        angles = rng.uniform(0, 2 * np.pi, 30)
+        weights = np.ones_like(angles)
+
+        z_unweighted, p_unweighted = rayleigh_test(angles)
+        z_weighted, p_weighted = rayleigh_test(angles, weights=weights)
+
+        assert_allclose(z_weighted, z_unweighted, rtol=1e-12)
+        assert_allclose(p_weighted, p_unweighted, rtol=1e-12)
+
+    def test_integer_weights_match_replicated_angles(self) -> None:
+        """Integer weights must match physically replicating the angles.
+
+        With the count convention z = sum(w) * R^2, weighting an angle by k
+        is identical to including that angle k times in an unweighted call.
+        """
+        from neurospatial.stats.circular import rayleigh_test
+
+        unique_angles = np.array([0.1, 0.2, 0.3, 2.0, 4.0])
+        counts = np.array([3, 1, 2, 1, 1])
+
+        replicated = np.repeat(unique_angles, counts)
+        z_replicated, p_replicated = rayleigh_test(replicated)
+
+        z_weighted, p_weighted = rayleigh_test(
+            unique_angles, weights=counts.astype(float)
+        )
+
+        assert_allclose(z_weighted, z_replicated, rtol=1e-10)
+        assert_allclose(p_weighted, p_replicated, rtol=1e-10)
+
     def test_z_statistic_range(self) -> None:
         """Z statistic should be in [0, n]."""
         from neurospatial.stats.circular import rayleigh_test

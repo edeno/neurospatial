@@ -144,8 +144,23 @@ def log_poisson_likelihood(
     # Matrix multiplication: (n_time_bins, n_neurons) @ (n_neurons, n_bins)
     # Result: (n_time_bins, n_bins)
     #
-    # Optimize for sparse spike counts (common in neural data: >80% zeros)
-    # Use scipy.sparse for significant speedup when sparsity > 80%
+    # Optimize for sparse spike counts (common in neural data: >80% zeros).
+    #
+    # The dense matmul spends its time on the zero entries of spike_counts,
+    # which contribute nothing to the sum n_i * log(lambda_i * dt). A sparse
+    # CSR matmul skips those, but sparse construction/dispatch has fixed
+    # overhead, so it only pays off when there are both enough zeros to skip
+    # and enough total work to amortize the overhead. The two thresholds:
+    #
+    # - sparsity > 0.8 (>80% zeros): below this the sparse and dense paths
+    #   touch a similar number of nonzeros and dense wins on constant factors.
+    #   80% is the typical floor for binned spike counts in fine time bins.
+    # - size > 1000 elements: below this the matrix is small enough that the
+    #   sparse-construction overhead dominates any saving regardless of
+    #   sparsity, so the dense path is faster.
+    #
+    # Both are heuristic crossover points, not exact; they only affect speed,
+    # not the result (the two branches are numerically identical).
     sparsity = 1.0 - np.count_nonzero(spike_counts) / spike_counts.size
     if sparsity > 0.8 and spike_counts.size > 1000:
         # Convert to sparse CSR format for efficient row-wise operations

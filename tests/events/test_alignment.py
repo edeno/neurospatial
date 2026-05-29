@@ -389,6 +389,40 @@ class TestPeriEventHistogram:
         expected_centers = np.array([-0.75, -0.25, 0.25, 0.75])
         assert_array_almost_equal(result.bin_centers, expected_centers)
 
+    def test_window_not_multiple_of_bin_size_stays_in_window(self):
+        """Bin edges and centers stay within window when not a clean multiple.
+
+        Regression test: with window_duration not an integer multiple of
+        bin_size, the old implementation appended a partial bin extending
+        past window[1], so bin_centers[-1] > window[1] and the last bin
+        absorbed out-of-window spikes. Edges and centers must stay within
+        the requested window.
+        """
+        from neurospatial.events.alignment import peri_event_histogram
+
+        # Window 1.0s, bin_size 0.3s. 1.0 / 0.3 = 3.33..., not a clean
+        # multiple. Old code produced 4 bins ending at -0.5 + 4*0.3 = 0.7
+        # (> window[1] = 0.5). Correct behavior: 3 full bins ending at 0.4.
+        event_times = np.array([10.0])
+        window = (-0.5, 0.5)
+        bin_size = 0.3
+
+        # A spike at relative time +0.45 falls in the dropped partial bin
+        # [0.4, 0.7). It must NOT be counted in any in-window bin.
+        spike_times = np.array([10.45])
+
+        result = peri_event_histogram(
+            spike_times, event_times, window, bin_size=bin_size
+        )
+
+        # All bin centers must lie strictly within the window.
+        assert result.bin_centers[-1] <= window[1]
+        assert result.bin_centers[0] >= window[0]
+        # 3 full bins fit: [-0.5, -0.2), [-0.2, 0.1), [0.1, 0.4).
+        assert len(result.bin_centers) == 3
+        # The out-of-window spike at +0.45 is dropped, not absorbed.
+        assert result.histogram.sum() == 0
+
     def test_firing_rate_conversion(self):
         """firing_rate() correctly converts counts to Hz."""
         from neurospatial.events.alignment import peri_event_histogram

@@ -15,6 +15,7 @@ Spatial regressors:
 
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
@@ -642,9 +643,27 @@ def distance_to_reward(
                 f"reward_times: {len(reward_times)}."
             )
     else:
-        # Interpolate positions at reward times
-        # Handle edge cases: clip to valid time range
-        clipped_reward_times = np.clip(reward_times, times.min(), times.max())
+        # Interpolate positions at reward times.
+        # Reward times outside the recorded session window cannot be
+        # interpolated, so they are clipped to the nearest session boundary
+        # (np.interp would otherwise just hold the endpoint anyway). Warn so
+        # the caller knows the reward position is the session edge, not a
+        # true interpolated location -- a silently clipped reward can bias a
+        # distance-to-reward regressor near session boundaries.
+        t_min = times.min()
+        t_max = times.max()
+        n_out_of_range = int(np.sum((reward_times < t_min) | (reward_times > t_max)))
+        if n_out_of_range > 0:
+            warnings.warn(
+                f"{n_out_of_range} reward time"
+                f"{'' if n_out_of_range == 1 else 's'} fall outside the "
+                f"session window [{t_min:g}, {t_max:g}] and were clipped to "
+                "the nearest boundary before interpolating reward position(s). "
+                "Pass explicit reward_positions to avoid clipping.",
+                UserWarning,
+                stacklevel=2,
+            )
+        clipped_reward_times = np.clip(reward_times, t_min, t_max)
         reward_positions = np.column_stack(
             [
                 np.interp(clipped_reward_times, times, positions[:, dim])
@@ -938,7 +957,18 @@ def _find_edge_bins(env: Environment) -> list[int]:
     """Find bins at the edge of the environment.
 
     A bin is an edge bin if it has fewer than the maximum number of
-    neighbors (indicating it's adjacent to unoccupied space).
+    neighbors, i.e. it is adjacent to unoccupied space (the outer rim, the
+    rim of an interior hole, etc.).
+
+    The notion of "edge" is layout-dependent and falls out naturally from
+    the connectivity graph:
+
+    - **1D linearized track** (a path graph): interior bins have degree 2
+      and the two end bins have degree 1, so the edge bins are exactly the
+      two ends of the track. This is the meaningful boundary of a 1D track.
+    - **Masked / holed 2D grids**: bins flanking a masked-out region have
+      fewer neighbors than a fully surrounded interior bin and are flagged,
+      so both the outer rim and any inner-hole rim are returned.
 
     Parameters
     ----------
@@ -948,49 +978,34 @@ def _find_edge_bins(env: Environment) -> list[int]:
     Returns
     -------
     list[int]
-        Bin indices at the environment boundary.
+        Bin (node) indices at the environment boundary. Empty if the graph
+        has no nodes.
+
+    Notes
+    -----
+    The degree scan is vectorized over nodes: degrees are pulled from the
+    NetworkX ``DegreeView`` into arrays and the comparison is done with
+    NumPy rather than a per-node Python loop.
     """
     graph = env.connectivity
-    all_bins = set(graph.nodes())
-    max_degree = _get_max_expected_degree(env)
+    n_nodes = graph.number_of_nodes()
+    if n_nodes == 0:
+        return []
 
-    edge_bins = []
-    for bin_idx in all_bins:
-        # A bin is an edge bin if it has fewer neighbors than expected
-        # for a fully-surrounded bin in this layout (i.e., it's adjacent
-        # to unoccupied space)
-        if graph.degree(bin_idx) < max_degree:
-            edge_bins.append(bin_idx)
+    # Pull (node, degree) pairs once and compare vectorized. Node ids are
+    # arbitrary hashables in general, but Environment connectivity uses
+    # integer bin indices, so an int64 array is safe here.
+    degree_view = graph.degree()
+    nodes = np.fromiter((n for n, _ in degree_view), dtype=np.int64, count=n_nodes)
+    degrees = np.fromiter((d for _, d in graph.degree()), dtype=np.int64, count=n_nodes)
 
+    max_degree = int(degrees.max())
+
+    # A bin is an edge bin if it has fewer neighbors than a fully-surrounded
+    # bin in this layout (i.e., it borders unoccupied space).
+    edge_nodes = nodes[degrees < max_degree]
+    edge_bins: list[int] = edge_nodes.tolist()
     return edge_bins
-
-
-def _get_max_expected_degree(env: Environment) -> int:
-    """Get the expected maximum degree for a fully-surrounded bin.
-
-    This varies by layout type:
-    - Regular grid: 4 (orthogonal) or 8 (with diagonals)
-    - Hexagonal: 6
-    - Graph-based: varies
-
-    Parameters
-    ----------
-    env : Environment
-        Fitted environment.
-
-    Returns
-    -------
-    int
-        Maximum expected degree for interior bins.
-    """
-    graph = env.connectivity
-    if graph.number_of_nodes() == 0:
-        return 0
-
-    # Use the maximum degree in the graph as the expected interior degree
-    # This assumes at least some bins are fully surrounded
-    degrees = [graph.degree(n) for n in graph.nodes()]
-    return max(degrees) if degrees else 0
 
 
 def _find_obstacle_boundary_bins(env: Environment) -> list[int]:

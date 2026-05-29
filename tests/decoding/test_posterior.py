@@ -262,6 +262,64 @@ class TestNormalizeToPosterior:
         with pytest.raises(ValueError):
             normalize_to_posterior(simple_log_likelihood, handle_degenerate="invalid")
 
+    def test_raise_distinguishes_nan_from_neg_inf(self) -> None:
+        """raise message must distinguish NaN (corruption) from -inf (zero-rate).
+
+        An all -inf row is a legitimate zero-rate degenerate row; a NaN row
+        signals upstream corruption. The raise path must call out the NaN
+        rows so the user knows the input is corrupted, not merely flat.
+        """
+        from neurospatial.decoding.posterior import normalize_to_posterior
+
+        # Only a -inf row: message must NOT claim NaN corruption.
+        ll_neg_inf = np.array(
+            [
+                [-1.0, -2.0, -3.0],
+                [-np.inf, -np.inf, -np.inf],
+            ],
+            dtype=np.float64,
+        )
+        with pytest.raises(ValueError) as exc_neg_inf:
+            normalize_to_posterior(ll_neg_inf, handle_degenerate="raise")
+        assert "NaN" not in str(exc_neg_inf.value)
+
+        # A NaN row: message MUST mention NaN/corruption.
+        ll_nan = np.array(
+            [
+                [-1.0, -2.0, -3.0],
+                [np.nan, -1.0, -0.5],
+            ],
+            dtype=np.float64,
+        )
+        with pytest.raises(ValueError, match="NaN"):
+            normalize_to_posterior(ll_nan, handle_degenerate="raise")
+
+    def test_nan_degenerate_posterior_validates_without_spurious_error(self) -> None:
+        """A nan-degenerate posterior must pass _validate_output cleanly.
+
+        With handle_degenerate='nan', degenerate rows are intentionally NaN.
+        _validate_output should tolerate those rows (not raise about
+        NaN/Inf or row sums) while still validating the finite rows.
+        """
+        from neurospatial.decoding.posterior import (
+            _validate_output,
+            normalize_to_posterior,
+        )
+
+        ll = np.array(
+            [
+                [-1.0, -2.0, -3.0],
+                [-np.inf, -np.inf, -np.inf],
+                [-2.0, -1.0, -0.5],
+            ],
+            dtype=np.float64,
+        )
+        posterior = normalize_to_posterior(ll, handle_degenerate="nan")
+        assert np.isnan(posterior[1]).all()
+
+        # Should not raise despite the NaN row.
+        _validate_output(posterior)
+
     # -------------------------------------------------------------------------
     # Axis parameter tests
     # -------------------------------------------------------------------------
