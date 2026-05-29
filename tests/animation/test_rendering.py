@@ -617,5 +617,36 @@ class TestValidateFrameLabels:
         for backend_name in ["html", "video", "widget"]:
             with pytest.raises(ValueError) as exc_info:
                 _validate_frame_labels(labels, n_frames=10, backend_name=backend_name)
-
             assert backend_name in str(exc_info.value)
+
+
+class TestRenderFieldToImageBytesFigureLeak:
+    """render_field_to_image_bytes must not leak figures on the error path."""
+
+    def test_no_figure_leak_when_plot_field_raises(self, monkeypatch):
+        """A raising plot_field must still close the figure (no leak)."""
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation.rendering import render_field_to_image_bytes
+
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+        field = rng.random(env.n_bins)
+
+        # Force the body to raise after the figure has been created.
+        def _boom(*args, **kwargs):
+            raise RuntimeError("plot_field exploded")
+
+        monkeypatch.setattr(type(env), "plot_field", _boom)
+
+        fignums_before = set(plt.get_fignums())
+
+        with pytest.raises(RuntimeError, match="plot_field exploded"):
+            render_field_to_image_bytes(env, field, "viridis", 0, 1)
+
+        # The figure created inside the function must have been closed.
+        assert set(plt.get_fignums()) == fignums_before

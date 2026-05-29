@@ -6,6 +6,55 @@ components to ensure consistent behavior and messaging.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from matplotlib.figure import Figure
+
+
+@contextmanager
+def managed_figure(fig: Figure) -> Iterator[Figure]:
+    """Yield a matplotlib figure, guaranteeing it is closed on exit.
+
+    Centralizes the ``try/finally: plt.close(fig)`` cleanup pattern used by
+    the rendering helpers so that an exception raised while drawing (for
+    example, inside ``env.plot_field()`` or an overlay renderer) cannot leak
+    the figure.
+
+    Parameters
+    ----------
+    fig : matplotlib.figure.Figure
+        The figure to manage. It is closed via ``plt.close(fig)`` when the
+        ``with`` block exits, whether normally or because of an exception.
+
+    Yields
+    ------
+    matplotlib.figure.Figure
+        The same figure that was passed in, for convenient binding.
+
+    Examples
+    --------
+    >>> import matplotlib
+
+    >>> matplotlib.use("Agg")
+    >>> import matplotlib.pyplot as plt
+    >>> from neurospatial.animation._utils import managed_figure
+    >>> before = len(plt.get_fignums())
+    >>> with managed_figure(plt.figure()) as fig:
+    ...     _ = fig.add_subplot(1, 1, 1)
+    >>> len(plt.get_fignums()) == before
+    True
+    """
+    import matplotlib.pyplot as plt
+
+    try:
+        yield fig
+    finally:
+        plt.close(fig)
+
 
 def _pickling_guidance(n_workers: int | None = None) -> str:
     """Generate consistent HOW guidance for pickle-related errors.
@@ -57,4 +106,4 @@ def _pickling_guidance(n_workers: int | None = None) -> str:
     )
 
 
-__all__ = ["_pickling_guidance"]
+__all__ = ["_pickling_guidance", "managed_figure"]

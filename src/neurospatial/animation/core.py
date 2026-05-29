@@ -476,6 +476,10 @@ def animate_fields(
             show_regions=show_regions,
             region_alpha=region_alpha,
             scale_bar=scale_bar,
+            # Forward frame_times explicitly: it is a named animate_fields
+            # parameter (not in **kwargs), so the PlaybackController gets the
+            # user's timestamps even when there are no overlays.
+            frame_times=frame_times,
             **napari_kwargs,
         )
 
@@ -870,20 +874,21 @@ def large_session_napari_config(
     n_frames : int
         Total number of frames in the dataset.
     sample_rate_hz : int, optional
-        Original sampling rate in Hz (e.g., 250 for 250 Hz recording).
-        If provided, helps determine appropriate playback fps.
+        Accepted for backward compatibility but no longer used. Playback frame
+        rate is computed automatically by ``animate_fields()`` from
+        ``frame_times`` and ``speed``; this helper no longer returns an ``fps``
+        key (see Notes).
 
     Returns
     -------
     config : dict
-        Dictionary containing recommended settings:
-        - ``fps``: Playback frame rate
+        Dictionary containing recommended memory/cache settings:
         - ``chunk_size``: Number of frames to pre-render per chunk
         - ``max_chunks``: Maximum chunks to keep in memory
 
     Examples
     --------
-    >>> config = large_session_napari_config(n_frames=500_000, sample_rate_hz=250)
+    >>> config = large_session_napari_config(n_frames=500_000)
     >>> env.animate_fields(
     ...     fields, frame_times=frame_times, backend="napari", **config
     ... )  # doctest: +SKIP
@@ -913,10 +918,16 @@ def large_session_napari_config(
 
     >>> config = large_session_napari_config(1_000_000)
     >>> env.animate_fields(fields, frame_times=frame_times, **config)  # doctest: +SKIP
+
+    No ``fps`` key is returned. ``animate_fields()`` sets the playback frame
+    rate from ``frame_times`` and ``speed`` (``kwargs["fps"] = playback_fps``).
+    Returning an ``fps`` here would collide with that value and make the result
+    order-dependent on how the config and explicit kwargs are merged.
     """
-    # Determine fps based on sample rate or use sensible default
-    # Target 30 fps for smooth playback, but cap at sample rate if provided
-    fps = min(30, sample_rate_hz) if sample_rate_hz is not None else 30
+    # sample_rate_hz is intentionally unused: playback fps is owned by
+    # animate_fields (computed from frame_times and speed). Returning an fps
+    # here would conflict with that auto-computed value.
+    del sample_rate_hz
 
     # Scale chunk_size based on dataset size
     # Larger datasets benefit from larger chunks for efficient I/O
@@ -938,7 +949,6 @@ def large_session_napari_config(
         max_chunks = 100
 
     return {
-        "fps": fps,
         "chunk_size": chunk_size,
         "max_chunks": max_chunks,
     }

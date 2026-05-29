@@ -472,6 +472,36 @@ class TestAnimateFieldsBackendRouting:
             # Check backend was called
             mock.assert_called_once()
 
+    def test_napari_receives_frame_times_without_overlays(self):
+        """frame_times must reach render_napari even when no overlays are given.
+
+        Regression: frame_times is a named animate_fields parameter (not in
+        **kwargs) and was filtered out of the napari path, so the
+        PlaybackController only got it via overlay_data.frame_times - which is
+        None without overlays.
+        """
+        from neurospatial.animation.core import animate_fields
+
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+        fields = [rng.random(env.n_bins) for _ in range(5)]
+        frame_times = np.linspace(0.0, 2.0, 5)
+
+        with patch(
+            "neurospatial.animation.backends.napari_backend.render_napari"
+        ) as mock:
+            mock.return_value = MagicMock()
+
+            # No overlays -> overlay_data is None inside animate_fields.
+            animate_fields(env, fields, backend="napari", frame_times=frame_times)
+
+            mock.assert_called_once()
+            _, kwargs = mock.call_args
+            assert kwargs.get("overlay_data") is None
+            assert "frame_times" in kwargs
+            np.testing.assert_array_equal(kwargs["frame_times"], frame_times)
+
     def test_route_to_video_backend_requires_ffmpeg(self):
         """Test video backend checks ffmpeg availability."""
         from neurospatial.animation.core import animate_fields
@@ -1630,18 +1660,24 @@ class TestLargeSessionNapariConfig:
 
         result = large_session_napari_config(n_frames=100_000)
 
-        assert "fps" in result
         assert "chunk_size" in result
         assert "max_chunks" in result
 
-    def test_fps_is_positive_int(self):
-        """Test that fps is a positive integer."""
+    def test_does_not_return_fps_key(self):
+        """Config must not return fps; animate_fields owns playback fps.
+
+        Returning fps here collides with the auto-computed playback_fps in
+        animate_fields, producing order-dependent behavior.
+        """
         from neurospatial.animation.core import large_session_napari_config
 
         result = large_session_napari_config(n_frames=100_000)
+        result_with_rate = large_session_napari_config(
+            n_frames=100_000, sample_rate_hz=250
+        )
 
-        assert isinstance(result["fps"], int)
-        assert result["fps"] > 0
+        assert "fps" not in result
+        assert "fps" not in result_with_rate
 
     def test_chunk_size_is_positive_int(self):
         """Test that chunk_size is a positive integer."""
@@ -1670,16 +1706,17 @@ class TestLargeSessionNapariConfig:
 
         assert large["chunk_size"] >= small["chunk_size"]
 
-    def test_sample_rate_affects_fps(self):
-        """Test that sample_rate_hz affects recommended fps."""
+    def test_sample_rate_accepted_for_backward_compat(self):
+        """sample_rate_hz is accepted but no longer changes the result."""
         from neurospatial.animation.core import large_session_napari_config
 
+        result_default = large_session_napari_config(n_frames=100_000)
         result_250hz = large_session_napari_config(n_frames=100_000, sample_rate_hz=250)
         result_500hz = large_session_napari_config(n_frames=100_000, sample_rate_hz=500)
 
-        # Both should return valid configurations
-        assert result_250hz["fps"] > 0
-        assert result_500hz["fps"] > 0
+        # sample_rate_hz no longer affects the returned cache/chunk settings.
+        assert result_250hz == result_default
+        assert result_500hz == result_default
 
     def test_can_unpack_into_animate_fields(self):
         """Test that result can be unpacked as kwargs to animate_fields."""
@@ -1689,6 +1726,5 @@ class TestLargeSessionNapariConfig:
 
         # These should be valid kwargs for animate_fields (napari backend)
         # Just verify they're the right types
-        assert isinstance(result.get("fps"), int)
         assert isinstance(result.get("chunk_size"), int)
         assert isinstance(result.get("max_chunks"), int)

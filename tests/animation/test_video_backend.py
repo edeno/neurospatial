@@ -701,6 +701,80 @@ class TestParallelRendering:
         for png_file in png_files:
             assert png_file.stat().st_size > 0
 
+    def test_grid_field_artist_is_quadmesh(self):
+        """Grid layouts render pcolormesh, so the reusable artist is a QuadMesh.
+
+        Regression test: the fast path previously grabbed ``ax.images[-1]``,
+        which is empty for grid layouts (pcolormesh lives in ``ax.collections``),
+        so artist reuse silently never fired for the dominant grid case.
+        """
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from matplotlib.collections import QuadMesh
+
+        from neurospatial.animation._parallel import _get_field_artist
+
+        rng = np.random.default_rng(42)
+        positions = rng.standard_normal((100, 2)) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+        field = rng.random(env.n_bins)
+
+        fig, ax = plt.subplots()
+        try:
+            env.plot_field(field, ax=ax, cmap="viridis", vmin=0, vmax=1, colorbar=False)
+
+            artist = _get_field_artist(ax)
+
+            # Grid env must yield a reusable, non-None QuadMesh artist.
+            assert artist is not None
+            assert isinstance(artist, QuadMesh)
+            # And it lives in ax.collections, not ax.images.
+            assert artist in ax.collections
+            assert len(ax.images) == 0
+        finally:
+            plt.close(fig)
+
+    def test_grid_field_artist_update_changes_data(self):
+        """Updating the QuadMesh artist must change its rendered array."""
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation._parallel import (
+            _get_field_artist,
+            _update_field_artist,
+        )
+
+        rng = np.random.default_rng(0)
+        positions = rng.standard_normal((100, 2)) * 50
+        env = Environment.from_samples(positions, bin_size=10.0)
+        field0 = np.zeros(env.n_bins)
+        field1 = np.ones(env.n_bins)
+
+        fig, ax = plt.subplots()
+        try:
+            env.plot_field(
+                field0, ax=ax, cmap="viridis", vmin=0, vmax=1, colorbar=False
+            )
+            artist = _get_field_artist(ax)
+            assert artist is not None
+
+            before = np.asarray(artist.get_array()).copy()
+            _update_field_artist(artist, env, field1)
+            after = np.asarray(artist.get_array())
+
+            # The active-bin values must have actually changed (0.0 -> 1.0).
+            assert not np.array_equal(np.nan_to_num(before), np.nan_to_num(after)), (
+                "QuadMesh array did not update on reuse"
+            )
+            # Active bins should now read 1.0.
+            assert np.nanmax(after) == pytest.approx(1.0)
+        finally:
+            plt.close(fig)
+
     def test_parallel_render_with_artist_reuse_disabled(self, tmp_path):
         """Test parallel rendering with artist reuse disabled (fallback path)."""
         from neurospatial.animation._parallel import parallel_render_frames

@@ -159,6 +159,9 @@ def render_field_to_png_bytes_with_overlays(
             and overlay_data.timeseries
         )
 
+        from neurospatial.animation._utils import managed_figure
+
+        ts_manager = None
         if has_timeseries and frame_times is not None and overlay_data is not None:
             # Use GridSpec layout for time series
             # Type narrowing: overlay_data is confirmed not None by condition above
@@ -173,29 +176,16 @@ def render_field_to_png_bytes_with_overlays(
                 dpi=dpi,
                 figsize=(12, 6),  # Wider for time series column
             )
-
-            # Render field using environment's plot method
-            env.plot_field(
-                field,
-                ax=ax,
-                cmap=cmap,
-                vmin=vmin,
-                vmax=vmax,
-                colorbar=False,
-            )
-
-            # Render overlays
-            _render_all_overlays(
-                ax, env, frame_idx, overlay_data, show_regions, region_alpha
-            )
-
-            # Update time series for this frame
-            ts_manager.update(frame_idx, overlay_data.timeseries)
         else:
             # Standard layout without time series
             fig, ax = plt.subplots(figsize=(8, 6), dpi=dpi)
             ax.set_axis_off()
 
+        buf = io.BytesIO()
+
+        # managed_figure guarantees plt.close(fig) even if plot_field, overlay
+        # rendering, or encoding raises, preventing figure leaks.
+        with managed_figure(fig):
             # Render field using environment's plot method
             env.plot_field(
                 field,
@@ -212,36 +202,36 @@ def render_field_to_png_bytes_with_overlays(
                     ax, env, frame_idx, overlay_data, show_regions, region_alpha
                 )
 
-        # Save to image bytes (removed bbox_inches="tight" for consistent dimensions)
-        buf = io.BytesIO()
+            # Update time series for this frame (time series layout only)
+            if ts_manager is not None and overlay_data is not None:
+                ts_manager.update(frame_idx, overlay_data.timeseries)
 
-        if image_format == "jpeg":
-            # For JPEG, render to RGB array then save with PIL
-            fig.canvas.draw()
-            rgba = np.asarray(fig.canvas.buffer_rgba())  # type: ignore[attr-defined]
-            rgb = rgba[:, :, :3]  # Drop alpha channel
+            # Save to image bytes (no bbox_inches="tight" for consistent dims)
+            if image_format == "jpeg":
+                # For JPEG, render to RGB array then save with PIL
+                fig.canvas.draw()
+                rgba = np.asarray(fig.canvas.buffer_rgba())  # type: ignore[attr-defined]
+                rgb = rgba[:, :, :3]  # Drop alpha channel
 
-            # Use PIL for JPEG compression
-            try:
-                from PIL import Image
+                # Use PIL for JPEG compression
+                try:
+                    from PIL import Image
+                except ImportError as e:
+                    raise ImportError(
+                        "JPEG support requires Pillow. Install with:\n"
+                        "  pip install pillow\n"
+                        "or\n"
+                        "  uv add pillow\n"
+                        "\n"
+                        "Alternatively, use image_format='png' (no dependencies)"
+                    ) from e
 
                 img = Image.fromarray(rgb)
                 img.save(buf, format="JPEG", quality=85, optimize=True)
-            except ImportError as e:
-                plt.close(fig)
-                raise ImportError(
-                    "JPEG support requires Pillow. Install with:\n"
-                    "  pip install pillow\n"
-                    "or\n"
-                    "  uv add pillow\n"
-                    "\n"
-                    "Alternatively, use image_format='png' (no dependencies)"
-                ) from e
-        else:
-            # PNG format (lossless)
-            fig.savefig(buf, format="png")
+            else:
+                # PNG format (lossless)
+                fig.savefig(buf, format="png")
 
-        plt.close(fig)  # Close figure to free memory
         buf.seek(0)
         image_bytes = buf.read()
 

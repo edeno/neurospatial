@@ -19,10 +19,11 @@ Overlay Rendering Layer Order (zorder):
 
 from __future__ import annotations
 
+import itertools
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
@@ -36,7 +37,99 @@ from numpy.typing import NDArray
 from tqdm import tqdm
 
 if TYPE_CHECKING:
+    from matplotlib.artist import Artist
+
     from neurospatial.environment.core import Environment
+
+
+def _get_field_artist(ax: Any) -> Artist | None:
+    """Return the primary field artist on ``ax`` for in-place data reuse.
+
+    ``env.plot_field`` renders different matplotlib artist types depending on
+    the layout:
+
+    - **Grid layouts** use ``pcolormesh``, producing a ``QuadMesh`` stored in
+      ``ax.collections`` (NOT ``ax.images``).
+    - **imshow-style layouts** produce an ``AxesImage`` stored in ``ax.images``.
+
+    Because ``plot_field`` is called last (after any below-field overlays), the
+    field artist is the most recently added artist of its kind. This helper
+    prefers the QuadMesh (the dominant grid case) and falls back to the most
+    recent image.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Axes that ``env.plot_field`` has already drawn onto.
+
+    Returns
+    -------
+    matplotlib.artist.Artist or None
+        The ``QuadMesh`` or ``AxesImage`` to update in place, or ``None`` if no
+        reusable field artist is present (e.g. scatter/patch layouts), in which
+        case the caller must fall back to the redraw path.
+    """
+    from matplotlib.collections import QuadMesh
+
+    # Grid layouts (pcolormesh) are the dominant case: the field is a QuadMesh
+    # in ax.collections, not an AxesImage in ax.images.
+    for collection in reversed(ax.collections):
+        if isinstance(collection, QuadMesh):
+            return collection
+
+    # imshow-style layouts store the field as the most recent AxesImage.
+    if ax.images:
+        return cast("Artist", ax.images[-1])
+
+    return None
+
+
+def _update_field_artist(artist: Any, env: Environment, field: Any) -> None:
+    """Update a reused field artist's data with a new frame's field values.
+
+    The update path differs by artist type so that the new data matches the
+    shape the artist was created with:
+
+    - ``QuadMesh`` (grid ``pcolormesh``): the field is mapped back onto the
+      full ``(dim0, dim1)`` grid and transposed to match the ``grid_data.T``
+      passed to ``pcolormesh``, then applied via ``set_array``.
+    - ``AxesImage`` (``imshow``): the field is applied via ``set_data`` with the
+      artist's existing 2-D data shape.
+
+    Parameters
+    ----------
+    artist : matplotlib.artist.Artist
+        The artist returned by :func:`_get_field_artist`.
+    env : Environment
+        Environment providing the grid geometry (``grid_shape``,
+        ``active_mask``) used to reconstruct grid data for QuadMesh artists.
+    field : array-like, shape (n_bins,)
+        Field values for the active bins, ordered by active-bin index.
+    """
+    from matplotlib.collections import QuadMesh
+
+    if isinstance(artist, QuadMesh):
+        from neurospatial.layout.helpers.utils import map_active_data_to_grid
+
+        grid_data = map_active_data_to_grid(
+            env.layout.grid_shape,  # type: ignore[arg-type]
+            env.layout.active_mask,  # type: ignore[arg-type]
+            np.asarray(field, dtype=np.float64),
+            fill_value=np.nan,
+        )
+        # pcolormesh was given grid_data.T; QuadMesh.set_array accepts a 2-D
+        # array of shape (ny, nx) for shading="flat".
+        artist.set_array(grid_data.T)
+    else:
+        # imshow-style AxesImage: ensure C-contiguous to avoid hidden copies,
+        # and preserve the 2-D shape the image was created with.
+        data = np.asarray(field)
+        if not data.flags["C_CONTIGUOUS"]:
+            data = np.ascontiguousarray(data)
+        current = artist.get_array()
+        if current is not None and getattr(current, "ndim", 1) == 2:
+            data = data.reshape(np.asarray(current).shape)
+        artist.set_data(data)
 
 
 def _render_event_overlay_matplotlib(ax: Any, event_data: Any, frame_idx: int) -> None:
@@ -118,6 +211,64 @@ def _render_event_overlay_matplotlib(ax: Any, event_data: Any, frame_idx: int) -
             )
 
 
+_TRAIL_MAX_ALPHA = 0.7
+
+
+def _build_trail_segments(
+    trail_positions: NDArray[np.float64], color: Any
+) -> tuple[list[NDArray[np.float64]], list[tuple[float, float, float, float]]]:
+    """Build decaying-alpha trail line segments from a position window.
+
+    Each segment connects consecutive *visible* (non-NaN) positions within the
+    trail window. The per-segment alpha encodes the segment's true age: it is
+    derived from the segment's newer endpoint index within the *original*
+    window (length ``len(trail_positions)``), NOT from the compacted index
+    among surviving positions. This keeps the alpha gradient stable when
+    occluded (NaN) frames drop out of the window, so the trail does not "jump"
+    in opacity.
+
+    Parameters
+    ----------
+    trail_positions : NDArray[np.float64], shape (window_len, n_dims)
+        Positions in the trail window, ordered oldest-first. May contain NaN
+        rows for occluded frames; the newest frame is the last row.
+    color : Any
+        Matplotlib color spec for the trail (converted to RGBA).
+
+    Returns
+    -------
+    segments : list[NDArray[np.float64]]
+        Line segments, each of shape ``(2, n_dims)``. Empty if fewer than two
+        visible, consecutive positions exist.
+    colors : list[tuple[float, float, float, float]]
+        Per-segment RGBA colors with the age-based alpha applied. Same length
+        as ``segments``.
+    """
+    window_len = len(trail_positions)
+    if window_len < 2:
+        return [], []
+
+    valid_mask = ~np.any(np.isnan(trail_positions), axis=1)
+    valid_indices = np.nonzero(valid_mask)[0]
+    if len(valid_indices) < 2:
+        return [], []
+
+    # Normalize alpha by the full window span so age reflects elapsed frames,
+    # not the count of surviving positions. window_len >= 2 here.
+    denom = window_len - 1
+    base_rgba = to_rgba(color)
+
+    segments: list[NDArray[np.float64]] = []
+    colors: list[tuple[float, float, float, float]] = []
+    for older, newer in itertools.pairwise(valid_indices):
+        segments.append(trail_positions[[older, newer]])
+        # Newer endpoint's original window index sets the segment's age.
+        alpha = float(newer) / denom * _TRAIL_MAX_ALPHA
+        colors.append((base_rgba[0], base_rgba[1], base_rgba[2], alpha))
+
+    return segments, colors
+
+
 def _render_position_overlay_matplotlib(ax: Any, pos_data: Any, frame_idx: int) -> None:
     """Render position overlay with trail and marker on matplotlib axes.
 
@@ -134,7 +285,9 @@ def _render_position_overlay_matplotlib(ax: Any, pos_data: Any, frame_idx: int) 
     -----
     Renders trail using LineCollection with per-segment decaying alpha
     (oldest segments have low alpha, newest have high alpha), and current
-    position as a scatter point.
+    position as a scatter point. Segment alpha encodes each segment's true age
+    within the trail window via :func:`_build_trail_segments`, so occluded
+    (NaN) frames do not corrupt the opacity gradient.
     """
     # Get current position
     current_pos = pos_data.data[frame_idx]
@@ -148,23 +301,8 @@ def _render_position_overlay_matplotlib(ax: Any, pos_data: Any, frame_idx: int) 
         trail_start = max(0, frame_idx - pos_data.trail_length + 1)
         trail_positions = pos_data.data[trail_start : frame_idx + 1]
 
-        # Filter out NaN positions
-        valid_mask = ~np.any(np.isnan(trail_positions), axis=1)
-        trail_positions = trail_positions[valid_mask]
-
-        if len(trail_positions) > 1:
-            # Create line segments with decaying alpha using LineCollection
-            segments = [
-                trail_positions[i : i + 2] for i in range(len(trail_positions) - 1)
-            ]
-            # Compute per-segment alpha (oldest=low, newest=high)
-            alphas = [
-                (i + 1) / len(trail_positions) * 0.7 for i in range(len(segments))
-            ]
-            # Convert color to RGBA with per-segment alpha
-            base_rgba = to_rgba(pos_data.color)
-            colors = [(*base_rgba[:3], alpha) for alpha in alphas]
-
+        segments, colors = _build_trail_segments(trail_positions, pos_data.color)
+        if segments:
             lc = LineCollection(segments, colors=colors, linewidths=1.5, zorder=100)
             ax.add_collection(lc)
 
@@ -985,22 +1123,8 @@ class OverlayArtistManager:
         trail_start = max(0, frame_idx - pos_data.trail_length + 1)
         trail_positions = pos_data.data[trail_start : frame_idx + 1]
 
-        # Filter out NaN positions
-        valid_mask = ~np.any(np.isnan(trail_positions), axis=1)
-        trail_positions = trail_positions[valid_mask]
-
-        if len(trail_positions) > 1:
-            # Create line segments
-            segments = [
-                trail_positions[i : i + 2] for i in range(len(trail_positions) - 1)
-            ]
-            # Compute per-segment alpha
-            alphas = [
-                (i + 1) / len(trail_positions) * 0.7 for i in range(len(segments))
-            ]
-            base_rgba = to_rgba(pos_data.color)
-            colors = [(*base_rgba[:3], alpha) for alpha in alphas]
-
+        segments, colors = _build_trail_segments(trail_positions, pos_data.color)
+        if segments:
             trail_lc.set_segments(segments)
             trail_lc.set_colors(colors)
             trail_lc.set_visible(True)
@@ -1459,21 +1583,20 @@ def _render_worker_frames(task: dict) -> None:
             len(png_files)
             # 3
     """
-    # Set Agg backend BEFORE any pyplot imports
-    try:
-        import matplotlib
+    # Set Agg backend BEFORE any pyplot imports.
+    # Narrow the except so genuine backend-setup failures surface as a real
+    # traceback rather than being swallowed into an opaque BrokenProcessPool.
+    # An already-set non-GUI backend (Agg / inline) is fine and is left alone.
+    import matplotlib
 
-        if matplotlib.get_backend().lower() not in (
-            "agg",
-            "module://matplotlib_inline.backend_inline",
-        ):
-            matplotlib.use("Agg", force=True)
-    except Exception:
-        pass
+    if matplotlib.get_backend().lower() not in (
+        "agg",
+        "module://matplotlib_inline.backend_inline",
+    ):
+        matplotlib.use("Agg", force=True)
 
     # Import pyplot only AFTER backend is set (avoids GUI backend binding in workers)
     import matplotlib.pyplot as plt
-    from matplotlib.image import AxesImage
 
     env = task["env"]
     fields = task["fields"]
@@ -1496,8 +1619,6 @@ def _render_worker_frames(task: dict) -> None:
     frame_times = task.get("frame_times")
 
     # Lean rcParams for bulk rasterization
-    import matplotlib
-
     matplotlib.rcParams.update(
         {
             "figure.dpi": dpi,
@@ -1547,12 +1668,16 @@ def _render_worker_frames(task: dict) -> None:
     if frame_labels and frame_labels[0]:
         ax.set_title(frame_labels[0], fontsize=14)
 
-    # Try to identify the primary image artist (field) to update.
-    # Use ax.images[-1] (last image) because env.plot_field() is called last,
-    # ensuring the field artist is the most recently added image.
-    # This supports future video overlay rendering before the field (z_order="below").
-    primary_im: AxesImage | None = ax.images[-1] if ax.images else None
-    reuse_artists = bool(reuse_flag and primary_im is not None)
+    # Identify the primary field artist to update in place.
+    #
+    # env.plot_field() chooses the artist type by layout: grid layouts render
+    # pcolormesh -> a QuadMesh in ax.collections, while imshow-style layouts
+    # produce an AxesImage in ax.images. _get_field_artist() handles both (and
+    # returns None for scatter/patch layouts, which fall back to redraw).
+    # plot_field() is called last (after any z_order="below" video overlays),
+    # so the field artist is the most recently added artist of its kind.
+    primary_artist: Any = _get_field_artist(ax)
+    reuse_artists = bool(reuse_flag and primary_artist is not None)
 
     # Create overlay artist manager for efficient artist reuse
     # (only when we have overlays and are using artist reuse path)
@@ -1586,20 +1711,16 @@ def _render_worker_frames(task: dict) -> None:
         fig.savefig(filepath)
 
         if reuse_artists:
-            # Fast path: update the image data only
-            # Type checker: reuse_artists=True guarantees primary_im is not None
-            assert primary_im is not None
+            # Fast path: update the field artist's data only.
+            # Type checker: reuse_artists=True guarantees primary_artist is not None
+            assert primary_artist is not None
             for local_idx in range(1, len(fields)):
                 field = fields[local_idx]
 
-                # Matplotlib wants array-like; ensure C-order to avoid copies later
-                # If `field` is masked or not C-contiguous, ascontiguousarray avoids hidden copies
-                if not isinstance(field, np.ndarray) or not field.flags["C_CONTIGUOUS"]:
-                    data = np.ascontiguousarray(np.array(field))
-                else:
-                    data = field
-
-                primary_im.set_data(data)  # reuse the same artist
+                # Update the field artist in place. _update_field_artist applies
+                # the correct call per artist type: QuadMesh.set_array(grid_data.T)
+                # for grids, AxesImage.set_data(field_2d) for imshow layouts.
+                _update_field_artist(primary_artist, env, field)
 
                 # Update title if labels provided
                 if frame_labels and frame_labels[local_idx]:

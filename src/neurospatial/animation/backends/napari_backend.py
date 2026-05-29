@@ -2522,8 +2522,11 @@ def _add_speed_control_widget(
         # Call the same toggle function as the button to keep them in sync
         toggle_playback()
 
-    # Add widget as dock to viewer
-    with contextlib.suppress(Exception):
+    # Add widget as dock to viewer.
+    # Narrow the suppression to the expected failure modes (missing window
+    # attribute in headless/mock viewers, or a Qt teardown RuntimeError) so
+    # genuine bugs in widget construction surface instead of being swallowed.
+    with contextlib.suppress(AttributeError, RuntimeError):
         viewer.window.add_dock_widget(
             playback_widget,
             name="Playback Controls",
@@ -2782,6 +2785,7 @@ def render_napari(
     speed: float = 1.0,
     sample_rate_hz: float | None = None,
     max_playback_fps: int = MAX_PLAYBACK_FPS,
+    frame_times: NDArray[np.float64] | None = None,
     **kwargs: Any,
 ) -> napari.Viewer:
     """Launch Napari viewer with lazy-loaded field animation.
@@ -2878,6 +2882,11 @@ def render_napari(
         Maximum playback fps for the speed control widget. Higher values may
         exceed display refresh rate. Passed from ``animate_fields()`` to ensure
         consistent speed capping across the API.
+    frame_times : ndarray of shape (n_frames,), optional
+        Animation frame timestamps, forwarded from ``animate_fields()``. Used to
+        seed the ``PlaybackController`` so time-accurate playback works even when
+        no overlays are present. If None, falls back to
+        ``overlay_data.frame_times`` when available.
     **kwargs : dict
         Additional parameters (gracefully ignored for compatibility
         with other backends)
@@ -3078,6 +3087,7 @@ def render_napari(
             speed=speed,
             sample_rate_hz=sample_rate_hz,
             max_playback_fps=max_playback_fps,
+            frame_times=frame_times,
         )
 
     # Single-field viewer (original behavior)
@@ -3214,8 +3224,11 @@ def render_napari(
         else len(fields)
     )
 
-    # Extract frame_times from overlay_data if available
-    frame_times = overlay_data.frame_times if overlay_data is not None else None
+    # Resolve frame_times: prefer the explicit argument (forwarded by
+    # animate_fields, present even without overlays), then fall back to
+    # overlay_data.frame_times for callers that only set it there.
+    if frame_times is None and overlay_data is not None:
+        frame_times = overlay_data.frame_times
 
     # Create controller and store as viewer attribute
     # Note: Using object.__setattr__ to bypass pydantic validation on napari.Viewer
@@ -3347,6 +3360,7 @@ def _render_multi_field_napari(
     speed: float = 1.0,
     sample_rate_hz: float | None = None,
     max_playback_fps: int = MAX_PLAYBACK_FPS,
+    frame_times: NDArray[np.float64] | None = None,
 ) -> napari.Viewer:
     """Render multiple field sequences in a single napari viewer.
 
@@ -3547,8 +3561,11 @@ def _render_multi_field_napari(
     # Compute n_frames from field sequences
     n_frames = len(field_sequences[0]) if field_sequences else 0
 
-    # Extract frame_times from overlay_data if available
-    frame_times = overlay_data.frame_times if overlay_data is not None else None
+    # Resolve frame_times: prefer the explicit argument (forwarded by
+    # animate_fields, present even without overlays), then fall back to
+    # overlay_data.frame_times for callers that only set it there.
+    if frame_times is None and overlay_data is not None:
+        frame_times = overlay_data.frame_times
 
     # Create controller and store as viewer attribute
     # Note: Using object.__setattr__ to bypass pydantic validation on napari.Viewer

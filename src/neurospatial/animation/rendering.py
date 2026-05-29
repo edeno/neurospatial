@@ -236,32 +236,36 @@ def render_field_to_rgb(
     >>> rgb.shape  # doctest: +SKIP
     (height, width, 3)
     """
+    from neurospatial.animation._utils import managed_figure
+
     with timing("render_field_to_rgb"):
         fig, ax = plt.subplots(figsize=(8, 6), dpi=dpi)
 
-        # Use environment's plot_field for layout-aware rendering
-        env.plot_field(
-            field,
-            ax=ax,
-            cmap=cmap,
-            vmin=vmin,
-            vmax=vmax,
-            colorbar=False,  # Skip colorbar for animation frames
-            scale_bar=scale_bar,
-        )
+        # managed_figure guarantees plt.close(fig) even if plot_field or the
+        # canvas draw raises, preventing figure leaks on the error path.
+        with managed_figure(fig):
+            # Use environment's plot_field for layout-aware rendering
+            env.plot_field(
+                field,
+                ax=ax,
+                cmap=cmap,
+                vmin=vmin,
+                vmax=vmax,
+                colorbar=False,  # Skip colorbar for animation frames
+                scale_bar=scale_bar,
+            )
 
-        # Convert figure to RGB array
-        fig.canvas.draw()
+            # Convert figure to RGB array
+            fig.canvas.draw()
 
-        # Get RGBA buffer - handles retina/HiDPI displays automatically
-        # Note: buffer_rgba() is available in FigureCanvas implementations
-        rgba_buffer = np.asarray(fig.canvas.buffer_rgba())  # type: ignore[attr-defined]
+            # Get RGBA buffer - handles retina/HiDPI displays automatically
+            # Note: buffer_rgba() is available in FigureCanvas implementations
+            rgba_buffer = np.asarray(fig.canvas.buffer_rgba())  # type: ignore[attr-defined]
 
-        # Buffer is already shaped correctly as (height, width, 4)
-        # Convert RGBA to RGB by dropping alpha channel
-        rgb: NDArray[np.uint8] = rgba_buffer[:, :, :3].copy()
+            # Buffer is already shaped correctly as (height, width, 4)
+            # Convert RGBA to RGB by dropping alpha channel
+            rgb: NDArray[np.uint8] = rgba_buffer[:, :, :3].copy()
 
-        plt.close(fig)
         return rgb
 
 
@@ -346,63 +350,65 @@ def render_field_to_image_bytes(
     if image_format not in ("png", "jpeg"):
         raise ValueError(f"image_format must be 'png' or 'jpeg', got '{image_format}'")
 
-    fig, ax = plt.subplots(figsize=(8, 6), dpi=dpi)
-
-    env.plot_field(
-        field,
-        ax=ax,
-        cmap=cmap,
-        vmin=vmin,
-        vmax=vmax,
-        colorbar=False,
-        scale_bar=scale_bar,
-    )
-
-    # Render overlays if provided (using matplotlib, not JavaScript)
-    if overlay_data is not None:
-        from neurospatial.animation._parallel import _render_all_overlays
-
-        _render_all_overlays(
-            ax=ax,
-            env=env,
-            frame_idx=frame_idx,
-            overlay_data=overlay_data,
-            show_regions=show_regions,
-            region_alpha=region_alpha,
-        )
+    from neurospatial.animation._utils import managed_figure
 
     buf = io.BytesIO()
 
-    # IMPORTANT: Do NOT use bbox_inches="tight" - it creates content-dependent
-    # crop that yields inconsistent frame sizes across animation sequences.
-    # All frames must have identical pixel dimensions for video encoding.
-    if image_format.lower() == "jpeg":
-        # For JPEG, render to RGB array then save with PIL
-        fig.canvas.draw()
-        rgba = np.asarray(fig.canvas.buffer_rgba())  # type: ignore[attr-defined]
-        rgb = rgba[:, :, :3]  # Drop alpha channel
+    fig, ax = plt.subplots(figsize=(8, 6), dpi=dpi)
 
-        # Use PIL for JPEG compression
-        try:
-            from PIL import Image
+    # managed_figure guarantees plt.close(fig) even if plot_field or overlay
+    # rendering raises, preventing figure leaks on the error path.
+    with managed_figure(fig):
+        env.plot_field(
+            field,
+            ax=ax,
+            cmap=cmap,
+            vmin=vmin,
+            vmax=vmax,
+            colorbar=False,
+            scale_bar=scale_bar,
+        )
+
+        # Render overlays if provided (using matplotlib, not JavaScript)
+        if overlay_data is not None:
+            from neurospatial.animation._parallel import _render_all_overlays
+
+            _render_all_overlays(
+                ax=ax,
+                env=env,
+                frame_idx=frame_idx,
+                overlay_data=overlay_data,
+                show_regions=show_regions,
+                region_alpha=region_alpha,
+            )
+
+        # IMPORTANT: Do NOT use bbox_inches="tight" - it creates content-dependent
+        # crop that yields inconsistent frame sizes across animation sequences.
+        # All frames must have identical pixel dimensions for video encoding.
+        if image_format.lower() == "jpeg":
+            # For JPEG, render to RGB array then save with PIL
+            fig.canvas.draw()
+            rgba = np.asarray(fig.canvas.buffer_rgba())  # type: ignore[attr-defined]
+            rgb = rgba[:, :, :3]  # Drop alpha channel
+
+            # Use PIL for JPEG compression
+            try:
+                from PIL import Image
+            except ImportError as e:
+                raise ImportError(
+                    "JPEG support requires Pillow. Install with:\n"
+                    "  pip install pillow\n"
+                    "or\n"
+                    "  uv add pillow\n"
+                    "\n"
+                    "Alternatively, use image_format='png' (no dependencies)"
+                ) from e
 
             img = Image.fromarray(rgb)
             img.save(buf, format="JPEG", quality=85, optimize=True)
-        except ImportError as e:
-            plt.close(fig)
-            raise ImportError(
-                "JPEG support requires Pillow. Install with:\n"
-                "  pip install pillow\n"
-                "or\n"
-                "  uv add pillow\n"
-                "\n"
-                "Alternatively, use image_format='png' (no dependencies)"
-            ) from e
-    else:
-        # PNG format (lossless)
-        fig.savefig(buf, format="png")
-
-    plt.close(fig)
+        else:
+            # PNG format (lossless)
+            fig.savefig(buf, format="png")
 
     buf.seek(0)
     return buf.read()
