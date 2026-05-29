@@ -28,15 +28,17 @@ The rate computation itself uses JAX operations.
 
 **Performance Warning**:
 
-``gaussian_kde`` computes a full pairwise distance matrix between all bins,
-resulting in O(n_bins²) memory and O(n_bins²) time complexity per neuron.
-For batch operations with ``smooth_rate_maps_batch``, the weight matrix is
-recomputed for each neuron (no precomputation), making batch gaussian_kde
-O(n_neurons × n_bins²).
+``gaussian_kde`` builds a dense ``(n_bins, n_bins)`` Gaussian weight matrix,
+costing O(n_bins²) memory and O(n_bins²) time to materialize. This matrix is
+cached per ``(environment, bandwidth)`` (see ``_get_gaussian_kernel``), so a
+batch call computes it once and reuses it across all neurons; the per-neuron
+cost is then a single O(n_bins²) matmul, i.e. O(n_neurons × n_bins²) for the
+matmuls but only one weight-matrix build.
 
-For environments with more than a few thousand bins, ``gaussian_kde`` may be
-prohibitively slow. Prefer ``diffusion_kde`` which uses sparse graph operations
-and precomputes the kernel once per environment.
+For environments with more than a few thousand bins, ``gaussian_kde`` may
+still be memory-prohibitive because the weight matrix is dense. Prefer
+``diffusion_kde`` which uses sparse graph operations and precomputes the
+kernel once per environment.
 
 References
 ----------
@@ -146,8 +148,14 @@ def smooth_rate_map(
         bandwidth σ. For gaussian_kde, this is the Gaussian σ. For binned,
         this is passed to env.smooth().
     min_occupancy : float, default=0.0
-        Minimum occupancy (seconds) for a bin to be included. Bins with
-        occupancy below this threshold are set to NaN.
+        Minimum occupancy (seconds) for a bin to be included; bins below the
+        threshold are set to NaN. The threshold is applied to the *same
+        occupancy quantity used as the firing-rate denominator*. For the KDE
+        methods (``diffusion_kde``, ``gaussian_kde``) the denominator is the
+        smoothed occupancy density, so a bin with zero raw occupancy but a
+        smoothed denominator above the threshold reports a finite rate. For
+        ``binned`` the denominator is the raw per-bin occupancy, so the raw
+        occupancy is thresholded.
     kernel : ndarray, shape (n_bins, n_bins), optional
         Precomputed diffusion kernel for efficiency when processing multiple
         neurons. Only used with method="diffusion_kde". If None, the kernel
@@ -433,6 +441,17 @@ def _diffusion_kde(
     1. Spread spike counts using diffusion kernel
     2. Spread occupancy using diffusion kernel
     3. Normalize: spike_density / occupancy_density
+
+    Notes
+    -----
+    The firing-rate denominator is the *smoothed* occupancy density
+    (``kernel @ occupancy``), not the raw occupancy. The ``min_occupancy``
+    threshold is therefore applied to that same smoothed occupancy density:
+    a bin is NaN when its smoothed denominator is below ``min_occupancy``.
+    Thresholding the raw occupancy instead would spuriously NaN-out bins
+    that were never directly traversed yet have a well-defined denominator
+    from neighboring occupancy (a discontinuity between the masking quantity
+    and the division quantity).
     """
     spike_counts = np.asarray(spike_counts, dtype=np.float64)
     occupancy = np.asarray(occupancy, dtype=np.float64)
@@ -449,17 +468,15 @@ def _diffusion_kde(
     # Spread occupancy using kernel
     occupancy_density = kernel @ occupancy
 
-    # Compute firing rate with safe division
+    # Compute firing rate with safe division, thresholding the smoothed
+    # occupancy density (the denominator) at min_occupancy.
+    occupancy_threshold = max(min_occupancy, 0.0)
     with np.errstate(divide="ignore", invalid="ignore"):
         firing_rate = np.where(
-            occupancy_density > 0,
+            occupancy_density > occupancy_threshold,
             spike_density / occupancy_density,
             np.nan,
         )
-
-    # Apply min_occupancy threshold
-    if min_occupancy > 0:
-        firing_rate = np.where(occupancy >= min_occupancy, firing_rate, np.nan)
 
     return firing_rate.astype(np.float64)
 
@@ -480,6 +497,12 @@ def _gaussian_kde(
 
     Note: This ignores graph connectivity and uses Euclidean distance.
     Mass can "bleed through" walls.
+
+    Notes
+    -----
+    As in :func:`_diffusion_kde`, the ``min_occupancy`` threshold is applied
+    to the *smoothed* occupancy density (the firing-rate denominator), not
+    the raw occupancy. See that function's notes for the rationale.
     """
     spike_counts = np.asarray(spike_counts, dtype=np.float64)
     occupancy = np.asarray(occupancy, dtype=np.float64)
@@ -488,17 +511,14 @@ def _gaussian_kde(
     spike_density = weights @ spike_counts
     occupancy_density = weights @ occupancy
 
-    # Normalize
+    # Normalize, thresholding the smoothed occupancy density at min_occupancy.
+    occupancy_threshold = max(min_occupancy, 0.0)
     with np.errstate(divide="ignore", invalid="ignore"):
         firing_rate = np.where(
-            occupancy_density > 0,
+            occupancy_density > occupancy_threshold,
             spike_density / occupancy_density,
             np.nan,
         )
-
-    # Apply min_occupancy threshold
-    if min_occupancy > 0:
-        firing_rate = np.where(occupancy >= min_occupancy, firing_rate, np.nan)
 
     return firing_rate.astype(np.float64)
 
@@ -582,15 +602,15 @@ def _diffusion_kde_batch(
     spike_density = (kernel @ spike_counts.T).T
     occupancy_density = kernel @ occupancy
 
+    # Threshold the smoothed occupancy density (the denominator), shared
+    # across neurons. See _diffusion_kde notes for the rationale.
+    occupancy_threshold = max(min_occupancy, 0.0)
     with np.errstate(divide="ignore", invalid="ignore"):
         firing_rates = np.where(
-            occupancy_density > 0,
+            occupancy_density > occupancy_threshold,
             spike_density / occupancy_density,
             np.nan,
         )
-
-    if min_occupancy > 0:
-        firing_rates = np.where(occupancy >= min_occupancy, firing_rates, np.nan)
 
     return firing_rates.astype(np.float64)
 
@@ -610,15 +630,15 @@ def _gaussian_kde_batch(
     spike_density = spike_counts @ weights.T
     occupancy_density = weights @ occupancy
 
+    # Threshold the smoothed occupancy density (the denominator), shared
+    # across neurons. See _diffusion_kde notes for the rationale.
+    occupancy_threshold = max(min_occupancy, 0.0)
     with np.errstate(divide="ignore", invalid="ignore"):
         firing_rates = np.where(
-            occupancy_density > 0,
+            occupancy_density > occupancy_threshold,
             spike_density / occupancy_density,
             np.nan,
         )
-
-    if min_occupancy > 0:
-        firing_rates = np.where(occupancy >= min_occupancy, firing_rates, np.nan)
 
     return firing_rates.astype(np.float64)
 
@@ -754,16 +774,14 @@ def _smooth_rate_map_jax(
         spike_density = kernel_j @ spike_counts_j
         occupancy_density = kernel_j @ occupancy_j
 
-    # Compute firing rate using JAX
+    # Compute firing rate using JAX, thresholding the smoothed occupancy
+    # density (the denominator) at min_occupancy. See _diffusion_kde notes.
+    occupancy_threshold = max(min_occupancy, 0.0)
     firing_rate = jnp.where(
-        occupancy_density > 0,
+        occupancy_density > occupancy_threshold,
         spike_density / occupancy_density,
         jnp.nan,
     )
-
-    # Apply min_occupancy threshold
-    if min_occupancy > 0:
-        firing_rate = jnp.where(occupancy_j >= min_occupancy, firing_rate, jnp.nan)
 
     return firing_rate
 
@@ -851,15 +869,14 @@ def _smooth_rate_maps_batch_jax(
         spike_density = spike_counts_j @ kernel_j.T
         occupancy_density = kernel_j @ occupancy_j
 
-    # Compute firing rates using JAX (broadcasting over neurons)
+    # Compute firing rates using JAX (broadcasting over neurons), thresholding
+    # the smoothed occupancy density (the denominator) at min_occupancy.
+    # See _diffusion_kde notes.
+    occupancy_threshold = max(min_occupancy, 0.0)
     firing_rates = jnp.where(
-        occupancy_density > 0,
+        occupancy_density > occupancy_threshold,
         spike_density / occupancy_density,
         jnp.nan,
     )
-
-    # Apply min_occupancy threshold
-    if min_occupancy > 0:
-        firing_rates = jnp.where(occupancy_j >= min_occupancy, firing_rates, jnp.nan)
 
     return firing_rates

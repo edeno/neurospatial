@@ -704,13 +704,12 @@ class EgocentricRatesResult(SpatialResultMixin):
         preferred_directions : Get direction preferences for all neurons
         """
         firing_rates = _to_numpy(self.firing_rates)
-        n_neurons = firing_rates.shape[0]
         bin_centers: NDArray[np.float64] = self.env.bin_centers
 
-        distances = np.empty(n_neurons, dtype=np.float64)
-        for i in range(n_neurons):
-            peak_idx = int(np.nanargmax(firing_rates[i]))
-            distances[i] = bin_centers[peak_idx, 0]
+        # Peak (max-firing) bin per neuron, ignoring NaNs; then read off the
+        # distance component (column 0 of bin_centers).
+        peak_idx = np.nanargmax(firing_rates, axis=1)
+        distances: NDArray[np.float64] = bin_centers[peak_idx, 0]
         return distances
 
     def preferred_directions(self) -> NDArray[np.float64]:
@@ -748,13 +747,12 @@ class EgocentricRatesResult(SpatialResultMixin):
         preferred_distances : Get distance preferences for all neurons
         """
         firing_rates = _to_numpy(self.firing_rates)
-        n_neurons = firing_rates.shape[0]
         bin_centers: NDArray[np.float64] = self.env.bin_centers
 
-        directions = np.empty(n_neurons, dtype=np.float64)
-        for i in range(n_neurons):
-            peak_idx = int(np.nanargmax(firing_rates[i]))
-            directions[i] = bin_centers[peak_idx, 1]
+        # Peak (max-firing) bin per neuron, ignoring NaNs; then read off the
+        # direction component (column 1 of bin_centers).
+        peak_idx = np.nanargmax(firing_rates, axis=1)
+        directions: NDArray[np.float64] = bin_centers[peak_idx, 1]
         return directions
 
     def egocentric_spatial_information(self) -> NDArray[np.float64]:
@@ -955,17 +953,26 @@ def _raw_polar_rate(
     Returns
     -------
     ndarray of shape (n_bins,), dtype float64
-        Firing rate per bin in Hz. Bins with zero occupancy, or occupancy
-        below ``min_occupancy``, are NaN (undefined, not zero).
+        Firing rate per bin in Hz. Bins whose occupancy does not exceed the
+        threshold are NaN (undefined, not zero).
+
+    Notes
+    -----
+    Masking convention (shared across the encoding smoothing paths): a bin is
+    valid iff the occupancy quantity used as the firing-rate denominator is
+    *strictly greater than* ``max(min_occupancy, 0.0)``. Here the denominator
+    is the raw per-bin occupancy (this is the unsmoothed ``binned`` polar
+    path), so the raw occupancy is thresholded. When ``min_occupancy`` is 0
+    (the default) this reduces to "valid iff ``occupancy > 0``", matching the
+    smoothed-density threshold used by the KDE paths in ``_smoothing.py``.
     """
     occ = np.asarray(occupancy, dtype=np.float64)
     counts = np.asarray(spike_counts, dtype=np.float64)
     with np.errstate(invalid="ignore", divide="ignore"):
         rate = counts / occ
-    invalid = occ <= 0.0
-    if min_occupancy > 0.0:
-        invalid = invalid | (occ < min_occupancy)
-    return np.where(invalid, np.nan, rate)
+    occupancy_threshold = max(min_occupancy, 0.0)
+    valid = occ > occupancy_threshold
+    return np.where(valid, rate, np.nan)
 
 
 def _egocentric_firing_rate(

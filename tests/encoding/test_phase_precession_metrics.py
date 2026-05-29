@@ -103,6 +103,38 @@ class TestPhasePrecession:
         # Should detect negative slope
         assert result.slope < 0
 
+    def test_recovers_slope_with_narrow_objective_lobe(self) -> None:
+        """Recover a known slope when the MRL objective lobe is narrow.
+
+        With a wide position span the main lobe of the circular objective
+        (mean resultant length of residuals) becomes narrower than a coarse
+        slope grid. A noiseless precessing cell has a unique global optimum
+        at the true slope (MRL == 1). The optimizer must locate that lobe
+        rather than settling into a neighboring side-lobe minimum.
+        """
+        from neurospatial.encoding.phase_precession import phase_precession
+
+        n = 400
+        positions = np.linspace(0, 200, n)  # wide span -> narrow MRL lobe
+        true_slope = -0.54211  # offset from coarse-grid sample points
+        offset = 1.0
+        phases = (offset + true_slope * positions) % (2 * np.pi)
+
+        result = phase_precession(
+            positions, phases, slope_bounds=(-2 * np.pi, 2 * np.pi)
+        )
+
+        # Noiseless data: the true slope gives a perfect fit (MRL == 1).
+        # The optimizer must recover it within a tight tolerance and report
+        # near-maximal mean resultant length.
+        assert result.slope == pytest.approx(true_slope, abs=1e-3), (
+            f"expected slope ~{true_slope}, got {result.slope}"
+        )
+        assert result.mean_resultant_length > 0.99, (
+            "optimizer landed in a side-lobe minimum instead of the global "
+            f"optimum (MRL={result.mean_resultant_length})"
+        )
+
     def test_correlation_in_valid_range(self) -> None:
         """Correlation should be in [0, 1]."""
         from neurospatial.encoding.phase_precession import phase_precession

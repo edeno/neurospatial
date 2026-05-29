@@ -1069,6 +1069,67 @@ class TestEgocentricCoordinates:
         np.testing.assert_almost_equal(distances[0, 0], 5.0)
 
 
+class TestCoordsToFlatBinIdxWrap:
+    """Tests for the angular wrap-around at the +/-pi seam.
+
+    A bearing of exactly +pi must land in the same direction bin as -pi:
+    both describe "directly behind" the animal and the bins tile the full
+    circle [-pi, pi). Without wrapping, +pi shifts to 2*pi, floors to
+    n_direction_bins, and (pre-fix) clipped to the last bin while -pi maps
+    to bin 0 -- a spurious discontinuity at the seam.
+    """
+
+    def test_plus_pi_and_minus_pi_same_direction_bin(self):
+        """Bearing +pi and -pi map to the same direction bin (same flat bin)."""
+        from neurospatial.encoding._egocentric_binning import (
+            _coords_to_flat_bin_idx,
+        )
+
+        distance_range = (0.0, 50.0)
+        n_distance_bins = 10
+        n_direction_bins = 12
+
+        # Same distance so the distance component is identical; only the
+        # bearing differs (+pi vs -pi). Both name "directly behind".
+        distances = np.array([25.0, 25.0])
+        bearings = np.array([np.pi, -np.pi])
+
+        flat = _coords_to_flat_bin_idx(
+            distances,
+            bearings,
+            distance_range,
+            n_distance_bins,
+            n_direction_bins,
+        )
+
+        assert flat[0] == flat[1], (
+            f"+pi mapped to bin {flat[0]} but -pi mapped to bin {flat[1]}; "
+            "the +/-pi seam must be a single direction bin."
+        )
+
+    def test_plus_pi_not_in_overflow_bin(self):
+        """Bearing +pi must not produce a direction bin >= n_direction_bins."""
+        from neurospatial.encoding._egocentric_binning import (
+            _coords_to_flat_bin_idx,
+        )
+
+        n_distance_bins = 10
+        n_direction_bins = 12
+        flat = _coords_to_flat_bin_idx(
+            np.array([25.0]),
+            np.array([np.pi]),
+            (0.0, 50.0),
+            n_distance_bins,
+            n_direction_bins,
+        )
+        # -pi maps to direction bin 0 (distance bin 5 -> flat 5*12 = 60).
+        # +pi must map to the same bin.
+        angle_bin = flat[0] % n_direction_bins
+        assert angle_bin == 0, (
+            f"+pi mapped to direction bin {angle_bin}, expected 0 (same as -pi)."
+        )
+
+
 # =============================================================================
 # Test NaN handling in egocentric coordinate computation
 # =============================================================================

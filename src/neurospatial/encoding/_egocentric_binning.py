@@ -355,8 +355,13 @@ def _coords_to_flat_bin_idx(
     )
     dist_bin_idx = np.clip(dist_bin_idx, 0, n_distance_bins - 1)
 
-    # Direction bin index: shift from [-pi, pi] to [0, 2*pi], then divide
-    angle_shifted = valid_bearings + np.pi  # Now [0, 2*pi]
+    # Direction bin index: shift from [-pi, pi] to [0, 2*pi), then divide.
+    # Wrap modulo 2*pi *before* flooring so that a bearing of exactly +pi
+    # (which shifts to 2*pi) wraps to 0 and lands in the same direction bin
+    # as -pi -- both name "directly behind". Without the wrap, +pi would
+    # floor to n_direction_bins and clip to the last bin, creating a spurious
+    # discontinuity at the +/-pi seam.
+    angle_shifted = (valid_bearings + np.pi) % (2 * np.pi)  # Now [0, 2*pi)
     angle_bin_idx = np.floor(angle_shifted / angle_bin_size).astype(np.intp)
     angle_bin_idx = np.clip(angle_bin_idx, 0, n_direction_bins - 1)
 

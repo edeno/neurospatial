@@ -898,6 +898,48 @@ class TestComputeEgocentricRatesResultMethods:
         pref_dirs = result.preferred_directions()
         assert len(pref_dirs) == len(spike_times_list)
 
+    def test_preferred_distances_directions_match_loop(
+        self, trajectory_data, spike_times_list
+    ):
+        """Vectorized peak lookup matches an explicit per-neuron loop.
+
+        Equivalence guard for the vectorized ``np.nanargmax(..., axis=1)``
+        implementation of ``preferred_distances`` / ``preferred_directions``:
+        results must be identical (bit-for-bit) to indexing ``bin_centers``
+        with a per-neuron ``int(np.nanargmax(firing_rates[i]))``.
+        """
+        from neurospatial.encoding._base import _to_numpy
+        from neurospatial.encoding.egocentric import compute_egocentric_rates
+
+        result = compute_egocentric_rates(
+            None,
+            spike_times_list,
+            trajectory_data["times"],
+            trajectory_data["positions"],
+            trajectory_data["headings"],
+            trajectory_data["object_positions"],
+        )
+
+        firing_rates = _to_numpy(result.firing_rates)
+        bin_centers = result.env.bin_centers
+        n_neurons = firing_rates.shape[0]
+
+        expected_dist = np.array(
+            [
+                bin_centers[int(np.nanargmax(firing_rates[i])), 0]
+                for i in range(n_neurons)
+            ]
+        )
+        expected_dir = np.array(
+            [
+                bin_centers[int(np.nanargmax(firing_rates[i])), 1]
+                for i in range(n_neurons)
+            ]
+        )
+
+        np.testing.assert_array_equal(result.preferred_distances(), expected_dist)
+        np.testing.assert_array_equal(result.preferred_directions(), expected_dir)
+
     def test_detect_ovcs_method_works(self, trajectory_data, spike_times_list):
         """Test that detect_ovcs method works."""
         from neurospatial.encoding.egocentric import compute_egocentric_rates

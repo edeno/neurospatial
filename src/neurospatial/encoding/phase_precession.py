@@ -102,8 +102,7 @@ class PhasePrecessionResult:
     mean_resultant_length: float
 
     def is_significant(self, alpha: float = 0.05) -> bool:
-        """
-        Check if phase precession is statistically significant.
+        """Check if phase precession is statistically significant.
 
         Parameters
         ----------
@@ -118,8 +117,7 @@ class PhasePrecessionResult:
         return self.pval < alpha
 
     def interpretation(self) -> str:
-        """
-        Generate human-readable interpretation of results.
+        """Generate human-readable interpretation of results.
 
         Returns
         -------
@@ -243,7 +241,7 @@ def phase_precession(
     >>> result = phase_precession(positions, phases)
     >>> print(result)  # doctest: +SKIP
     """
-    from scipy.optimize import fminbound
+    from scipy.optimize import minimize_scalar
     from scipy.stats import circmean
 
     # Convert to arrays and radians if needed
@@ -282,29 +280,54 @@ def phase_precession(
         residuals = (phases - slope * positions) % (2 * np.pi)
         return -_mean_resultant_length(residuals)
 
-    # The objective function has multiple local minima due to circular nature
-    # Use grid search to find a good starting region, then refine
-    n_grid = 100
+    # The circular objective is multimodal: as a function of slope it has a
+    # main lobe at the true slope surrounded by side-lobes, and the main lobe
+    # gets *narrower* as the position span grows (its half-width in slope is
+    # ~pi / position_span). A fixed coarse grid can therefore step right over
+    # the main lobe and bracket a side-lobe minimum instead.
+    #
+    # Make the grid data-adaptive: sample finely enough that at least a few
+    # points fall inside the main lobe regardless of position span, then
+    # refine within the single grid cell bracketing the best grid point.
+    span = float(slope_bounds[1] - slope_bounds[0])
+    position_span = float(np.ptp(positions))
+    # Target several samples per main lobe (half-width ~ pi / position_span).
+    samples_per_lobe = 4
+    if position_span > 0:
+        lobe_half_width = np.pi / position_span
+        target_spacing = lobe_half_width / samples_per_lobe
+        n_grid = int(np.ceil(span / target_spacing)) + 1
+    else:
+        n_grid = 100
+    # Clamp to a sensible range: never coarser than the original 100-point
+    # grid, never so dense the O(n_grid) sweep dominates runtime.
+    n_grid = int(np.clip(n_grid, 100, 20000))
+
     grid_slopes = np.linspace(slope_bounds[0], slope_bounds[1], n_grid)
     grid_values = np.array([_neg_mean_resultant_length(s) for s in grid_slopes])
 
     # Find the best region from grid search
-    best_idx = np.argmin(grid_values)
+    best_idx = int(np.argmin(grid_values))
 
-    # Define a narrow search window around the best grid point
-    window_width = (slope_bounds[1] - slope_bounds[0]) / n_grid * 2
-    local_bounds = (
-        max(slope_bounds[0], grid_slopes[best_idx] - window_width),
-        min(slope_bounds[1], grid_slopes[best_idx] + window_width),
-    )
+    # Bracket the best grid point by its immediate neighbors (one grid cell on
+    # each side) so the refinement isolates a single lobe, then polish with a
+    # bounded scalar minimizer (Brent within bounds).
+    lo = grid_slopes[max(best_idx - 1, 0)]
+    hi = grid_slopes[min(best_idx + 1, n_grid - 1)]
 
-    # Refine using bounded minimization in the best region
-    optimal_slope, neg_mrl, _ierr, _numfunc = fminbound(
+    result_opt = minimize_scalar(
         _neg_mean_resultant_length,
-        local_bounds[0],
-        local_bounds[1],
-        full_output=True,
+        bounds=(lo, hi),
+        method="bounded",
     )
+    optimal_slope = float(result_opt.x)
+    neg_mrl = float(result_opt.fun)
+
+    # Guard against the rare case where the refinement lands above the best
+    # grid sample (e.g. a degenerate bracket): keep the grid optimum instead.
+    if grid_values[best_idx] < neg_mrl:
+        optimal_slope = float(grid_slopes[best_idx])
+        neg_mrl = float(grid_values[best_idx])
 
     # Compute mean resultant length at optimal slope
     mean_resultant_length = -neg_mrl
@@ -338,8 +361,7 @@ def has_phase_precession(
     min_correlation: float = 0.2,
     angle_unit: Literal["rad", "deg"] = "rad",
 ) -> bool:
-    """
-    Quick check for significant phase precession.
+    """Quick check for significant phase precession.
 
     Parameters
     ----------

@@ -223,8 +223,12 @@ class TestSmoothRateMapDiffusionKDE:
         """Bins with zero raw occupancy get rate from smoothed neighbors.
 
         Note: With diffusion_kde, occupancy is smoothed, so even bins with
-        zero raw occupancy can have non-zero smoothed occupancy. Use
-        min_occupancy parameter to enforce NaN for truly unvisited bins.
+        zero raw occupancy can have non-zero smoothed occupancy. The
+        ``min_occupancy`` threshold is applied to the smoothed occupancy
+        density (the firing-rate denominator), so a bin with zero raw
+        occupancy but a smoothed denominator above the threshold reports a
+        finite rate; only bins whose smoothed denominator is below the
+        threshold are NaN-ed.
         """
         n_bins = simple_env.n_bins
         occupancy = np.ones(n_bins, dtype=np.float64)
@@ -242,16 +246,31 @@ class TestSmoothRateMapDiffusionKDE:
         # (smoothed occupancy can be non-zero from neighbors)
         assert np.isfinite(result[0]) or np.isnan(result[0])
 
-        # Use min_occupancy to enforce NaN for zero-occupancy bins
+        # The corner bin has zero raw occupancy but a non-zero smoothed
+        # occupancy density from its neighbors. A small positive threshold
+        # below that smoothed density leaves it finite -- the threshold is
+        # applied to the smoothed denominator, not the raw occupancy.
         result_with_threshold = smooth_rate_map(
             simple_env,
             spike_counts_center,
             occupancy,
             method="diffusion_kde",
             bandwidth=2.0,
-            min_occupancy=0.5,  # Threshold above 0
+            min_occupancy=0.05,  # below the corner bin's smoothed density
         )
-        assert np.isnan(result_with_threshold[0])
+        assert np.isfinite(result_with_threshold[0])
+
+        # A threshold above every bin's smoothed occupancy density NaN-s all
+        # bins (the denominator never clears it).
+        result_all_nan = smooth_rate_map(
+            simple_env,
+            spike_counts_center,
+            occupancy,
+            method="diffusion_kde",
+            bandwidth=2.0,
+            min_occupancy=100.0,  # Above any smoothed density here
+        )
+        assert np.all(np.isnan(result_all_nan))
 
 
 class TestSmoothRateMapGaussianKDE:
@@ -631,6 +650,40 @@ class TestMinOccupancy:
 
         # All bins should be finite
         assert np.all(np.isfinite(result))
+
+    def test_kde_min_occupancy_thresholds_smoothed_denominator(
+        self, simple_env, spike_counts_center
+    ):
+        """For KDE methods, min_occupancy thresholds the smoothed denominator.
+
+        A bin that was never directly traversed (raw occupancy == 0) but that
+        receives substantial smoothed occupancy from neighbors has a valid,
+        well-defined firing-rate denominator. It must NOT be spuriously
+        NaN-ed: the threshold is applied to the same quantity used as the
+        denominator (the smoothed occupancy density), not the raw occupancy.
+        """
+        n_bins = simple_env.n_bins
+        # Single un-traversed bin in the interior; all others traversed for 1 s.
+        occupancy = np.ones(n_bins, dtype=np.float64)
+        gap_idx = n_bins // 2 + 1  # interior bin next to the spiking center
+        occupancy[gap_idx] = 0.0
+
+        for method in ("diffusion_kde", "gaussian_kde"):
+            result = smooth_rate_map(
+                simple_env,
+                spike_counts_center,
+                occupancy,
+                method=method,
+                bandwidth=2.0,
+                min_occupancy=0.1,  # above 0 but below the gap bin's density
+            )
+            # Sanity: the smoothed occupancy density at the gap bin clears
+            # the threshold (surrounded by 1 s/bin neighbors), so the bin
+            # must report a finite rate rather than NaN.
+            assert np.isfinite(result[gap_idx]), (
+                f"{method}: interior gap bin with valid smoothed denominator "
+                "was spuriously NaN-ed by raw-occupancy thresholding."
+            )
 
 
 # =============================================================================

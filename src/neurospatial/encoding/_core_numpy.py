@@ -317,9 +317,10 @@ def smooth_rate_maps_batch(
         # No smoothing - return input unchanged
         return firing_rates.astype(np.float64)
 
-    # For diffusion_kde and gaussian_kde, apply kernel smoothing
-    # Batch matrix multiplication: (n_neurons, n_bins) @ (n_bins, n_bins).T
-    # Result: (n_neurons, n_bins)
+    # For diffusion_kde and gaussian_kde, apply kernel smoothing.
+    # Batch matrix multiplication: adjacency @ firing_rates.T is
+    # (n_bins, n_bins) @ (n_bins, n_neurons) -> (n_bins, n_neurons); the
+    # trailing .T returns it to (n_neurons, n_bins).
     smoothed: NDArray[np.float64] = (adjacency @ firing_rates.T).T
 
     return smoothed.astype(np.float64)
