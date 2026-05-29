@@ -317,12 +317,11 @@ class EnvironmentTransforms:
         env_cls = cast("type[Environment]", self.__class__)
         coarse_env = env_cls(
             layout=cast("LayoutEngine", new_layout),
+            layout_type_used="RegularGrid",
+            layout_params_used=new_layout._build_params_used,
             name=f"{self.name}_rebinned" if self.name else "",
             regions=Regions(),  # Start with empty regions
         )
-        coarse_env._layout_type_used = "RegularGrid"
-        coarse_env._layout_params_used = new_layout._build_params_used
-        coarse_env._setup_from_layout()
 
         # Preserve metadata
         if hasattr(self, "units") and self.units is not None:
@@ -332,6 +331,7 @@ class EnvironmentTransforms:
 
         return coarse_env
 
+    @check_fitted
     def subset(
         self: SelfEnv,
         *,
@@ -740,15 +740,29 @@ class EnvironmentTransforms:
 
             def bin_sizes(self) -> NDArray[np.float64]:
                 """
-                Estimate bin sizes from connectivity graph.
+                Approximate per-bin sizes from connectivity edge lengths.
+
+                Each bin's size is estimated as the mean ``distance`` of its
+                incident edges. ``SubsetLayout`` is only used for subsets of
+                graph (1-D linearized) environments -- 2-D / N-D grid subsets
+                take the ``from_grid_mask`` fast path and never reach here --
+                so this mean-edge-length estimate has the right *dimension*
+                (length, not area or volume) for the only space it serves.
+
+                The value remains an approximation: it is the mean spacing to
+                neighboring bins, not the exact extent of the bin, and it falls
+                back to ``1.0`` for isolated bins (no incident edges). Callers
+                needing exact bin extents should not rely on this estimate.
 
                 Returns
                 -------
-                ndarray of shape (n_bins,)
-                    Estimated size of each bin based on edge distances.
+                NDArray[np.float64], shape (n_bins,)
+                    Approximate length of each bin, estimated from the mean
+                    length of its incident connectivity edges.
                 """
-                # Estimate from connectivity graph
-                # Use edge distances to estimate bin sizes
+                # Estimate from connectivity graph: mean incident edge length.
+                # See the docstring for why a length (not area/volume) estimate
+                # is the correct dimension here -- this layout is graph-only.
                 sizes = np.ones(len(self.bin_centers))
                 for node in self.connectivity.nodes():
                     neighbors = tuple(self.connectivity.neighbors(node))
@@ -840,6 +854,7 @@ class EnvironmentTransforms:
 
         return sub_env
 
+    @check_fitted
     def apply_transform(
         self: SelfEnv,
         transform: AffineND | Affine2D,

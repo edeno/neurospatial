@@ -11,7 +11,7 @@ The module is organized using a mixin pattern for better maintainability:
 - serialization: Save/load methods (to_file, from_file, to_dict, from_dict)
 - regions: Region-related operations (bins_in_region, region_mask)
 - visualization: Plotting methods (plot, plot_1d)
-- analysis: Analysis methods (boundary_bins, bin_attributes, etc.)
+- metrics: Metrics and derived quantities (boundary_bins, bin_attributes, etc.)
 - decorators: Utility decorators (check_fitted)
 
 Import Examples

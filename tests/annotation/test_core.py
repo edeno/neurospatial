@@ -805,6 +805,78 @@ class TestLoadVideoFrame:
         with pytest.raises(ValueError, match="Could not open video file"):
             _load_video_frame(video_file, frame_index=0)
 
+    def test_reader_closed_on_success(self, tmp_path, monkeypatch):
+        """The VideoReader is closed after a successful frame load."""
+        from pathlib import Path
+
+        import neurospatial.animation._video_io as video_io
+        from neurospatial.annotation.core import _load_video_frame
+
+        video_file = Path(tmp_path / "test.mp4")
+        video_file.touch()
+
+        closed = {"count": 0}
+
+        class FakeVideoReader:
+            n_frames = 10
+
+            def __init__(self, path):
+                self._path = path
+
+            def __getitem__(self, idx):
+                return np.zeros((4, 4, 3), dtype=np.uint8)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                self.close()
+
+            def close(self):
+                closed["count"] += 1
+
+        monkeypatch.setattr(video_io, "VideoReader", FakeVideoReader)
+
+        frame = _load_video_frame(video_file, frame_index=0)
+        assert frame.shape == (4, 4, 3)
+        assert closed["count"] == 1, "Reader should be closed exactly once"
+
+    def test_reader_closed_on_invalid_frame_index(self, tmp_path, monkeypatch):
+        """The VideoReader is closed even when frame_index is out of range."""
+        from pathlib import Path
+
+        import neurospatial.animation._video_io as video_io
+        from neurospatial.annotation.core import _load_video_frame
+
+        video_file = Path(tmp_path / "test.mp4")
+        video_file.touch()
+
+        closed = {"count": 0}
+
+        class FakeVideoReader:
+            n_frames = 3
+
+            def __init__(self, path):
+                self._path = path
+
+            def __getitem__(self, idx):
+                raise IndexError("out of range")
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                self.close()
+
+            def close(self):
+                closed["count"] += 1
+
+        monkeypatch.setattr(video_io, "VideoReader", FakeVideoReader)
+
+        with pytest.raises(IndexError, match="out of range"):
+            _load_video_frame(video_file, frame_index=99)
+        assert closed["count"] == 1, "Reader should be closed despite the error"
+
 
 class TestProcessInitialBoundary:
     """Tests for _process_initial_boundary helper."""

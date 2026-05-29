@@ -700,37 +700,32 @@ def distance_to_decision_boundary(
             env.connectivity, [goal_bin_int], metric="geodesic"
         )
 
-    # For each trajectory bin, compute distance to boundary
-    # Boundary distance = |d1 - d2| where d1, d2 are distances to two nearest goals
-    boundary_distances = np.zeros(len(position_bins))
+    # For each trajectory bin, the boundary distance is the gap between the two
+    # nearest goals: d2 - d1 after sorting the per-bin goal distances. This is
+    # computed in one vectorized pass over the trajectory.
+    position_bins = np.asarray(position_bins).ravel()
+    boundary_distances = np.full(len(position_bins), np.nan)
 
-    for i, bin_idx in enumerate(position_bins):
-        if bin_idx < 0 or bin_idx >= env.n_bins:
-            boundary_distances[i] = np.nan
-            continue
+    # Out-of-bounds (including negative) trajectory bins map to NaN; only valid
+    # bins are indexed into the goal-distance table to avoid fancy-index wrap.
+    valid = (position_bins >= 0) & (position_bins < env.n_bins)
+    if not np.any(valid):
+        return boundary_distances
 
-        # Get distances to all goals from this bin
-        dists = all_distances[:, bin_idx]
+    valid_bins = position_bins[valid]
 
-        # Sort to find two nearest
-        sorted_dists = np.sort(dists)
+    # all_distances[:, valid_bins] -> (n_goals, n_valid); sort goals per sample.
+    sorted_dists = np.sort(all_distances[:, valid_bins], axis=0)
+    nearest = sorted_dists[0]
+    second = sorted_dists[1]
 
-        # Boundary distance is difference between two nearest goals
-        if np.isinf(sorted_dists[0]):
-            boundary_distances[i] = np.inf
-        else:
-            # Extract scalars properly to avoid numpy deprecation warning
-            d1 = float(
-                sorted_dists[0].item()
-                if hasattr(sorted_dists[0], "item")
-                else sorted_dists[0]
-            )
-            d2 = float(
-                sorted_dists[1].item()
-                if hasattr(sorted_dists[1], "item")
-                else sorted_dists[1]
-            )
-            boundary_distances[i] = d2 - d1
+    # When the nearest goal is unreachable (inf), the boundary distance is inf;
+    # otherwise it is the gap to the second-nearest goal. Compute the gap only
+    # where the nearest goal is finite to avoid inf - inf = nan.
+    finite_nearest = np.isfinite(nearest)
+    valid_boundary = np.full(valid_bins.shape, np.inf)
+    valid_boundary[finite_nearest] = second[finite_nearest] - nearest[finite_nearest]
+    boundary_distances[valid] = valid_boundary
 
     return boundary_distances
 

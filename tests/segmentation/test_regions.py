@@ -256,6 +256,56 @@ class TestDetectRunsBetweenRegions:
         # Short run should be filtered out
         assert len(runs) == 0
 
+    def test_timeout_run_bins_consistent_with_velocity_filter(self):
+        """Timeout run's stored bins span exactly the velocity-filtered slice.
+
+        The stored ``run.bins`` and the slice used for the optional velocity
+        filter must describe the same samples, including at the timeout
+        boundary. This pins the unified slice so the path and filter cannot
+        diverge by an off-by-one.
+        """
+        x = np.linspace(0, 100, 50)
+        y = np.linspace(0, 100, 50)
+        xx, yy = np.meshgrid(x, y)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
+        env = Environment.from_samples(positions, bin_size=5.0)
+
+        env.regions.add("source", polygon=Point(10.0, 50.0).buffer(5.0))
+        env.regions.add("target", polygon=Point(90.0, 50.0).buffer(5.0))
+
+        # Leave source, move steadily toward (but never reaching) target,
+        # so the run times out partway with a non-trivial moving path.
+        x_traj = np.concatenate([np.full(5, 10.0), np.linspace(10.0, 60.0, 45)])
+        y_traj = np.full(50, 50.0)
+        trajectory = np.column_stack([x_traj, y_traj])
+        times = np.linspace(0, 10.0, 50)
+
+        from neurospatial.behavior.segmentation import detect_runs_between_regions
+
+        position_bins = env.bin_at(trajectory)
+        runs = detect_runs_between_regions(
+            position_bins,
+            times,
+            env,
+            source="source",
+            target="target",
+            min_duration=0.5,
+            max_duration=2.0,  # Times out before reaching target
+            min_speed=1.0,  # Activate the velocity filter
+        )
+
+        assert len(runs) >= 1
+        run = runs[0]
+        assert run.success is False, "Run should time out without reaching target"
+
+        # The stored bins must correspond to a contiguous trajectory slice
+        # whose endpoints match start_time / end_time. Recover that slice from
+        # the timestamps and confirm the stored bins equal it exactly.
+        start_i = int(np.searchsorted(times, run.start_time))
+        end_i = int(np.searchsorted(times, run.end_time))
+        expected = position_bins[start_i : end_i + 1]
+        np.testing.assert_array_equal(run.bins, expected)
+
 
 class TestSegmentByVelocity:
     """Test segment_by_velocity function."""
@@ -338,6 +388,55 @@ class TestSegmentByVelocity:
         # All segments should have duration >= min_duration
         for run in segments:
             assert run.end_time - run.start_time >= 1.0 - 1e-6
+
+    def test_movement_epoch_extends_to_recording_boundary(self):
+        """A constant-speed run touching the recording edges is not broken.
+
+        Zero-padded ``mode="same"`` smoothing artificially suppresses velocity
+        at the trajectory boundaries, which can drop edge samples below the
+        movement threshold and truncate (or drop) an epoch that runs to the
+        recording edge. With edge-aware smoothing, a trajectory that moves at a
+        constant speed from the first sample to the last must be detected as a
+        single movement epoch spanning essentially the whole recording.
+        """
+        # Constant speed of 10 units/s for the entire recording.
+        n = 60
+        times = np.linspace(0, 6.0, n)  # dt = ~0.1017 s
+        speed = 10.0
+        x = speed * times
+        trajectory = x[:, None]
+
+        from neurospatial.behavior.segmentation import segment_by_velocity
+
+        # min_speed just below the true speed; with zero-padding the suppressed
+        # edges would dip under this threshold and break the epoch.
+        segments = segment_by_velocity(
+            trajectory,
+            times,
+            min_speed=8.0,
+            min_duration=0.5,
+            hysteresis=2.0,
+            smooth_window=0.5,  # multi-sample window -> noticeable edge effect
+        )
+
+        assert len(segments) == 1, (
+            f"Constant-speed run should be one epoch, got {len(segments)}"
+        )
+        run = segments[0]
+        # With correct edge handling the smoothed velocity stays at the true
+        # constant speed across the whole recording, so the epoch begins at the
+        # very first velocity sample (times[1]) and runs to the last sample.
+        # Zero-padded "same" smoothing would instead delay the start by several
+        # samples. Allow only a single sample of slack at each end.
+        dt_med = float(np.median(np.diff(times)))
+        assert run.start_time <= times[1] + 1.5 * dt_med, (
+            "Movement epoch start was delayed by boundary smoothing; "
+            f"start_time={run.start_time:.3f}, expected near {times[1]:.3f}."
+        )
+        assert run.end_time >= times[-1] - 1.5 * dt_med, (
+            "Movement epoch end was truncated by boundary smoothing; "
+            f"end_time={run.end_time:.3f}, expected near {times[-1]:.3f}."
+        )
 
     def test_returns_list_of_runs(self):
         """Test that function returns list[Run] (matching siblings)."""

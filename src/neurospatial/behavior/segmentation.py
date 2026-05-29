@@ -69,6 +69,7 @@ Run
 
 from __future__ import annotations
 
+import itertools
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
@@ -487,28 +488,33 @@ def detect_runs_between_regions(
 
     for exit_idx in source_exits:
         start_time = times[exit_idx]
-        run_bins = [position_bins[exit_idx]]
 
-        # Track trajectory
+        # Track trajectory: advance end_idx through samples until the target is
+        # reached or the run times out. end_idx always points at the last
+        # sample belonging to the run, so the run path is the single contiguous
+        # slice position_bins[exit_idx : end_idx + 1]. Both the stored path and
+        # the optional velocity filter are derived from this one slice so they
+        # can never diverge (e.g. by an off-by-one at the timeout boundary).
         reached_target = False
         end_idx = exit_idx
 
         for j in range(exit_idx + 1, len(position_bins)):
             elapsed = times[j] - start_time
 
-            # Check timeout
+            # Check timeout (do not include the timing-out sample in the run)
             if elapsed > max_duration:
                 break
 
-            run_bins.append(position_bins[j])
+            end_idx = j
 
             # Check if reached target
             if in_target[j]:
                 reached_target = True
-                end_idx = j
                 break
 
-            end_idx = j
+        run_slice = slice(exit_idx, end_idx + 1)
+        run_bin_idx = position_bins[run_slice]
+        run_times = times[run_slice]
 
         end_time = times[end_idx]
         duration = end_time - start_time
@@ -517,28 +523,25 @@ def detect_runs_between_regions(
         if duration < min_duration:
             continue
 
-        # Optional velocity filter (bin-quantized)
-        if min_speed is not None:
-            run_bin_idx = position_bins[exit_idx : end_idx + 1]
-            run_times = times[exit_idx : end_idx + 1]
+        # Optional velocity filter (bin-quantized), using the same slice as the
+        # stored path.
+        if min_speed is not None and len(run_times) > 1:
+            run_positions = env.bin_centers[run_bin_idx]
+            displacements = np.diff(run_positions, axis=0)
+            distances = np.linalg.norm(displacements, axis=1)
+            dt = np.diff(run_times)
+            velocities = distances / dt
+            mean_velocity = np.mean(velocities)
 
-            if len(run_times) > 1:
-                run_positions = env.bin_centers[run_bin_idx]
-                displacements = np.diff(run_positions, axis=0)
-                distances = np.linalg.norm(displacements, axis=1)
-                dt = np.diff(run_times)
-                velocities = distances / dt
-                mean_velocity = np.mean(velocities)
-
-                if mean_velocity < min_speed:
-                    continue
+            if mean_velocity < min_speed:
+                continue
 
         # Create run
         runs.append(
             Run(
                 start_time=start_time,
                 end_time=end_time,
-                bins=np.array(run_bins, dtype=np.int64),
+                bins=np.array(run_bin_idx, dtype=np.int64),
                 success=reached_target,
             )
         )
@@ -611,7 +614,10 @@ def segment_by_velocity(
     -----
     Velocity is computed as Euclidean distance between consecutive samples
     divided by time difference. Velocities are smoothed using a moving average
-    to reduce noise from measurement errors.
+    to reduce noise from measurement errors. The moving average uses
+    edge-value (boundary-reflecting) padding so that velocity is not
+    artificially suppressed at the start and end of the recording; this
+    preserves movement epochs that extend to the recording boundary.
 
     Hysteresis thresholding prevents "flickering" near the threshold:
     - Movement starts when velocity exceeds ``min_speed``
@@ -673,10 +679,19 @@ def segment_by_velocity(
         median_dt = np.median(dt)
         window_samples = max(1, int(smooth_window / median_dt))
 
-        # Apply moving average
+        # Apply moving average. Pad with edge values (reflecting the boundary
+        # velocity) rather than relying on np.convolve(mode="same"), which
+        # implicitly zero-pads and artificially suppresses velocity at the
+        # trajectory edges. Zero-padding would drop edge samples of an
+        # edge-touching movement epoch below threshold and truncate (or drop)
+        # the epoch. The pad widths sum to window_samples - 1 and match the
+        # centering of mode="same".
         if window_samples > 1:
             kernel = np.ones(window_samples) / window_samples
-            velocities = np.convolve(velocities, kernel, mode="same")
+            pad_left = (window_samples - 1) // 2
+            pad_right = window_samples - 1 - pad_left
+            padded = np.pad(velocities, (pad_left, pad_right), mode="edge")
+            velocities = np.convolve(padded, kernel, mode="valid")
 
     # Hysteresis thresholding
     lower_threshold = min_speed / hysteresis
@@ -1174,8 +1189,12 @@ def segment_trials(
     - Stuck or disengaged periods (max_duration timeout)
 
     If an animal re-enters the start region before reaching an end region,
-    this is treated as a new trial (previous trial is discarded or timed out
-    depending on duration).
+    the previous (aborted) trial is emitted as a failed trial
+    (``success=False``, ``end_region=None``) provided it lasted at least
+    ``min_duration``, and a new trial begins. A trial still in progress when
+    the recording ends is likewise emitted as failed if it meets
+    ``min_duration``. This matches the timeout semantics so that aborted and
+    in-progress trials are not silently dropped.
 
     Examples
     --------
@@ -1302,11 +1321,14 @@ def segment_trials(
     for i in range(len(position_bins)):
         # Check if entering start region (trial initiation)
         if in_start[i] and (i == 0 or not in_start[i - 1]):
-            # If we had a previous trial in progress, it timed out
+            # If we had a previous trial in progress, it was aborted by the
+            # animal re-entering the start region before reaching an end
+            # region. Emit it as a failed trial (subject to min_duration) so
+            # that aborted/in-progress trials are not silently dropped, matching
+            # the timeout semantics below.
             if trial_start_idx is not None and trial_start_time is not None:
                 duration = times[i - 1] - trial_start_time
-                if duration >= max_duration and duration >= min_duration:
-                    # Previous trial timed out
+                if duration >= min_duration:
                     trials.append(
                         Trial(
                             start_time=trial_start_time,
@@ -1365,11 +1387,13 @@ def segment_trials(
                     trial_start_idx = None
                     trial_start_time = None
 
-    # Handle final trial if still in progress
+    # Handle final trial if still in progress when the recording ends. Such a
+    # trial never reached an end region, so emit it as a failed trial (subject
+    # to min_duration) instead of dropping it when it ran less than
+    # max_duration.
     if trial_start_idx is not None and trial_start_time is not None:
         duration = times[-1] - trial_start_time
-        if duration >= max_duration and duration >= min_duration:
-            # Final trial timed out
+        if duration >= min_duration:
             trials.append(
                 Trial(
                     start_time=trial_start_time,
@@ -1752,19 +1776,16 @@ def detect_goal_directed_runs(
         # No bins in goal region
         return []
 
-    # Compute distance from each bin to nearest goal bin using graph distance
-    distances_to_goal = np.full(env.n_bins, np.inf)
-    for bin_idx in range(env.n_bins):
-        min_dist = np.inf
-        for goal_bin in goal_bin_indices:
-            try:
-                dist = nx.shortest_path_length(
-                    env.connectivity, bin_idx, int(goal_bin), weight="distance"
-                )
-                min_dist = min(min_dist, dist)
-            except nx.NetworkXNoPath:
-                continue
-        distances_to_goal[bin_idx] = min_dist
+    # Compute distance from each bin to nearest goal bin using graph distance.
+    # A single multi-source Dijkstra (via distance_field) computes, for every
+    # bin, the shortest-path distance to the nearest goal bin. This is
+    # equivalent to (but far cheaper than) looping over every (bin, goal_bin)
+    # pair with nx.shortest_path_length; unreachable bins remain np.inf.
+    from neurospatial.ops.distance import distance_field
+
+    distances_to_goal = distance_field(
+        env.connectivity, list(goal_bin_indices), weight="distance"
+    )
 
     # Get start and end positions
     start_bin = position_bins[0]
@@ -1779,17 +1800,24 @@ def detect_goal_directed_runs(
         # Cannot reach goal from start or end position
         return []
 
-    # Compute path length (sum of graph distances between consecutive bins)
+    # Compute path length (sum of graph distances between consecutive bins).
+    # Adjacent bins (the common case) are resolved with a direct edge-weight
+    # lookup; non-adjacent consecutive samples fall back to the geodesic
+    # shortest-path length, preserving the original semantics. Disconnected
+    # consecutive pairs contribute nothing (skipped).
     path_length = 0.0
-    for i in range(len(position_bins) - 1):
+    for src, dst in itertools.pairwise(position_bins):
+        src_i, dst_i = int(src), int(dst)
+        if src_i == dst_i:
+            continue
+        edge_data = env.connectivity.get_edge_data(src_i, dst_i)
+        if edge_data is not None:
+            path_length += edge_data["distance"]
+            continue
         try:
-            segment_dist = nx.shortest_path_length(
-                env.connectivity,
-                int(position_bins[i]),
-                int(position_bins[i + 1]),
-                weight="distance",
+            path_length += nx.shortest_path_length(
+                env.connectivity, src_i, dst_i, weight="distance"
             )
-            path_length += segment_dist
         except nx.NetworkXNoPath:
             # Disconnected bins - skip this segment
             continue

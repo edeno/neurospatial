@@ -359,6 +359,29 @@ class TestDistanceBetween:
         # Should return inf
         assert dist == np.inf
 
+    def test_distance_between_both_outside_warns(self, small_2d_env):
+        """Both points outside should warn rather than silently return inf."""
+        point_a = np.array([1000.0, 1000.0])
+        point_b = np.array([2000.0, 2000.0])
+
+        with pytest.warns(UserWarning, match=r"neither point mapped"):
+            dist = small_2d_env.distance_between(point_a, point_b)
+
+        assert dist == np.inf
+
+    def test_distance_between_one_outside_does_not_warn(self, small_2d_env):
+        """A single out-of-env point must not trigger the both-outside warning."""
+        import warnings
+
+        point_inside = small_2d_env.bin_centers[0]
+        point_outside = np.array([1000.0, 1000.0])
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            dist = small_2d_env.distance_between(point_inside, point_outside)
+
+        assert dist == np.inf
+
     def test_distance_between_custom_edge_weight(self, small_2d_env):
         """Test distance_between with custom edge weight."""
         # Use two neighboring bins to ensure path exists

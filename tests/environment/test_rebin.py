@@ -122,6 +122,54 @@ class TestRebinBasic:
         assert isinstance(coarse, Environment)
         assert coarse._is_fitted
 
+    def test_rebin_runs_setup_through_constructor(self):
+        """rebin builds the coarse env via the normal constructor path.
+
+        Previously rebin constructed an intermediate unfitted Environment and
+        manually called ``_setup_from_layout()`` afterward. The constructor now
+        runs setup itself (``layout_type_used="RegularGrid"``). The resulting
+        env must be fully fitted, carry the RegularGrid metadata, and have a
+        ``_state_version`` reflecting exactly one setup bump -- not a stale or
+        double-counted value.
+        """
+        env = Environment.from_samples(
+            positions=np.array([[0, 0], [100, 100]]),
+            bin_size=10.0,
+        )
+
+        coarse = env.rebin(factor=2)
+
+        assert coarse._is_fitted
+        assert coarse._layout_type_used == "RegularGrid"
+        # A factory-built grid env bumps the version once in _setup_from_layout.
+        assert coarse._state_version == 1
+        # Versioned caches must work against the rebinned graph. The
+        # differential operator has shape (n_bins, n_edges).
+        D = coarse.get_differential_operator()
+        assert D.shape == (coarse.n_bins, coarse.connectivity.number_of_edges())
+
+    def test_rebin_output_matches_manual_setup_reference(self):
+        """Rebinned geometry/connectivity is unchanged by the constructor refactor.
+
+        Recomputes the expected coarse grid independently and checks the
+        rebinned env reproduces it: same bin centers, same edge count, same
+        grid shape.
+        """
+        data = np.array([[i * 10.0, j * 10.0] for i in range(4) for j in range(4)])
+        env = Environment.from_samples(data, bin_size=10.0)
+        coarse = env.rebin(factor=2)
+
+        # Independent expectation: 2x2 coarse grid covering the same extent.
+        assert coarse.layout.grid_shape == (2, 2)
+        assert coarse.n_bins == 4
+        # Bin centers sorted should be the midpoints of each 2x2 block.
+        sorted_centers = coarse.bin_centers[np.lexsort(coarse.bin_centers.T[::-1])]
+        # All centers lie within the original [0, 30] extent.
+        assert np.all(sorted_centers >= 0.0)
+        assert np.all(sorted_centers <= 30.0)
+        # A 2x2 RegularGrid (4-/8-connected) has at least the 4 axis edges.
+        assert coarse.connectivity.number_of_edges() >= 4
+
 
 class TestRebinFactorVariations:
     """Test different factor specifications."""

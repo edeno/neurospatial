@@ -15,9 +15,10 @@ allowing users to proceed with awareness of potential issues.
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from shapely import Polygon
+from shapely.geometry.base import BaseGeometry
 from shapely.validation import explain_validity
 
 if TYPE_CHECKING:
@@ -152,14 +153,24 @@ def validate_region_within_boundary(
     are acceptable due to drawing imprecision. Larger extensions trigger warnings.
 
     """
+    from shapely import make_valid
+
     issues: list[str] = []
 
     if region.kind != "polygon" or boundary.kind != "polygon":
         return issues  # Only check polygon regions
 
-    # Type narrowing: we know these are Polygons after the kind check
-    region_poly: Polygon = region.data
-    boundary_poly: Polygon = boundary.data
+    # The Region constructor guarantees polygon-kind data is a Shapely Polygon,
+    # but it may be topologically invalid (e.g. self-intersecting), which makes
+    # contains()/intersection() raise a GEOSException. Repair invalid geometries
+    # with make_valid first; the result may be a MultiPolygon, which the
+    # downstream predicates (contains/intersection/area) handle transparently.
+    region_poly: BaseGeometry = cast("BaseGeometry", region.data)
+    boundary_poly: BaseGeometry = cast("BaseGeometry", boundary.data)
+    if not region_poly.is_valid:
+        region_poly = make_valid(region_poly)
+    if not boundary_poly.is_valid:
+        boundary_poly = make_valid(boundary_poly)
 
     # Check if region is completely within boundary
     if not boundary_poly.contains(region_poly):

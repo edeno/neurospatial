@@ -538,17 +538,19 @@ def _load_video_frame(video_path: Path, frame_index: int) -> NDArray[np.uint8]:
 
     from neurospatial.animation._video_io import VideoReader
 
-    reader = VideoReader(str(video_path))
-    try:
-        return reader[frame_index]
-    except (IndexError, KeyError) as e:
-        raise IndexError(
-            f"frame_index={frame_index} is out of range. "
-            f"Video '{video_path.name}' contains {reader.n_frames} frames "
-            f"(valid indices: 0 to {reader.n_frames - 1}).\n\n"
-            f"frame_index specifies which video frame to use for annotation "
-            "(0 = first frame).",
-        ) from e
+    # Use the reader as a context manager so its resources (e.g. the prefetch
+    # thread pool) are always released, even when frame_index is out of range.
+    with VideoReader(str(video_path)) as reader:
+        try:
+            return reader[frame_index]
+        except (IndexError, KeyError) as e:
+            raise IndexError(
+                f"frame_index={frame_index} is out of range. "
+                f"Video '{video_path.name}' contains {reader.n_frames} frames "
+                f"(valid indices: 0 to {reader.n_frames - 1}).\n\n"
+                f"frame_index specifies which video frame to use for annotation "
+                "(0 = first frame).",
+            ) from e
 
 
 def _process_initial_boundary(

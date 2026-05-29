@@ -4,6 +4,7 @@ Following TDD: Tests written FIRST, then implementation.
 """
 
 import numpy as np
+import pytest
 from numpy.testing import assert_allclose
 
 from neurospatial import Environment
@@ -248,6 +249,51 @@ class TestComputeHomeRange:
         # This should work without error
         home_range = compute_home_range(position_bins, percentile=95.0)
         assert isinstance(home_range, np.ndarray)
+
+    def test_time_weighted_occupancy_changes_ranking(self):
+        """Time-weighted occupancy ranks long-dwell bins above high-count bins.
+
+        Bin 0 is visited many times but each visit is brief, while bin 1 is
+        visited fewer times but with long dwells. Count-based occupancy ranks
+        bin 0 first; time-weighted occupancy must rank bin 1 first.
+        """
+        # 6 brief samples in bin 0, then 2 long-dwell samples in bin 1.
+        position_bins = np.array([0, 0, 0, 0, 0, 0, 1, 1])
+        # dt: five 0.1s gaps in bin 0, then a 0.1s gap into bin 1, then a 10s
+        # dwell within bin 1. Bin 1 accumulates far more time despite fewer
+        # samples.
+        times = np.array([0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 10.6])
+
+        # Count-based: bin 0 has 6 counts, bin 1 has 2 -> bin 0 first.
+        count_based = compute_home_range(position_bins, percentile=100.0)
+        assert count_based[0] == 0
+
+        # Time-weighted: bin 1 dwell time dominates -> bin 1 first.
+        time_weighted = compute_home_range(position_bins, times=times, percentile=100.0)
+        assert time_weighted[0] == 1, (
+            f"Time-weighted home range should rank long-dwell bin 1 first, "
+            f"got order {time_weighted}"
+        )
+
+    def test_time_weighted_default_matches_counts_uniform_sampling(self):
+        """With uniform sampling, time-weighted ranking matches count-based."""
+        position_bins = np.concatenate(
+            [np.repeat(0, 50), np.repeat(1, 30), np.repeat(2, 15), np.repeat(3, 5)]
+        )
+        times = np.arange(len(position_bins), dtype=np.float64) * 0.05  # uniform dt
+
+        count_based = compute_home_range(position_bins, percentile=95.0)
+        time_weighted = compute_home_range(position_bins, times=times, percentile=95.0)
+
+        assert set(count_based) == set(time_weighted)
+
+    def test_time_weighted_length_mismatch_raises(self):
+        """Mismatched times length raises ValueError."""
+        position_bins = np.array([0, 1, 2])
+        times = np.array([0.0, 0.1])  # wrong length
+
+        with pytest.raises(ValueError, match="same length"):
+            compute_home_range(position_bins, times=times)
 
 
 class TestMeanSquareDisplacement:

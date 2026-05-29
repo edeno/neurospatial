@@ -182,8 +182,17 @@ def test_trials_to_region_arrays_failed_trial(simple_environment_with_regions):
     assert np.all(goal_bins == -1)
 
 
+def _expected_centroid_bin(env, region_name):
+    """Region bin nearest the centroid of the region's bin centers."""
+    region_bins = env.bins_in_region(region_name)
+    centers = env.bin_centers[region_bins]
+    centroid = centers.mean(axis=0)
+    nearest = int(np.argmin(np.linalg.norm(centers - centroid, axis=1)))
+    return int(region_bins[nearest])
+
+
 def test_trials_to_region_arrays_polygon_regions(environment_with_polygon_regions):
-    """Test helper with polygon regions (multi-bin)."""
+    """Test helper with polygon regions (multi-bin) uses the centroid bin."""
     env = environment_with_polygon_regions
 
     # Create trial with polygon regions
@@ -205,13 +214,64 @@ def test_trials_to_region_arrays_polygon_regions(environment_with_polygon_region
     start_zone_bins = env.bins_in_region("start_zone")
     goal_zone_bins = env.bins_in_region("goal_zone")
 
-    # Function should use first bin from each region
     assert len(start_zone_bins) > 0
     assert len(goal_zone_bins) > 0
 
-    # All timepoints should have first bin from each region
-    assert np.all(start_bins == start_zone_bins[0])
-    assert np.all(goal_bins == goal_zone_bins[0])
+    # Multi-bin regions must be represented by their centroid bin, not an
+    # arbitrary first bin.
+    expected_start = _expected_centroid_bin(env, "start_zone")
+    expected_goal = _expected_centroid_bin(env, "goal_zone")
+
+    assert np.all(start_bins == expected_start)
+    assert np.all(goal_bins == expected_goal)
+
+    # The chosen representative must lie inside the region (a real region bin).
+    assert expected_start in set(start_zone_bins.tolist())
+    assert expected_goal in set(goal_zone_bins.tolist())
+
+
+def test_trials_to_region_arrays_centroid_differs_from_first_bin():
+    """Centroid representative differs from the first bin for an L-shaped region.
+
+    Build a multi-bin region whose centroid bin is not the first bin in the
+    region's bin ordering, so the centroid choice is observably different from
+    (and better than) the legacy first-bin behavior.
+    """
+    from shapely.geometry import Polygon
+
+    # 12x12 cm grid, bin_size 2 -> 7x7 = 49 bins on a regular grid.
+    x = np.linspace(0, 12, 7)
+    y = np.linspace(0, 12, 7)
+    xx, yy = np.meshgrid(x, y)
+    positions = np.column_stack([xx.ravel(), yy.ravel()])
+    env = Environment.from_samples(positions, bin_size=2.0)
+
+    # A wide, off-origin rectangular region spanning several bins so its
+    # centroid sits well away from the lowest-index bin.
+    region_polygon = Polygon([(4, 4), (12, 4), (12, 8), (4, 8)])
+    env.regions.add("zone", polygon=region_polygon)
+
+    region_bins = env.bins_in_region("zone")
+    assert len(region_bins) > 1, "Need a genuinely multi-bin region"
+
+    centers = env.bin_centers[region_bins]
+    centroid = centers.mean(axis=0)
+    expected = int(
+        region_bins[int(np.argmin(np.linalg.norm(centers - centroid, axis=1)))]
+    )
+    first_bin = int(region_bins[0])
+    assert expected != first_bin, (
+        "Test setup invalid: centroid bin equals first bin; choose a region "
+        "where they differ."
+    )
+
+    trial = Trial(0.0, 5.0, "zone", "zone", True)
+    times = np.linspace(0.0, 5.0, 6)
+    start_bins, goal_bins = trials_to_region_arrays([trial], times, env)
+
+    assert np.all(start_bins == expected)
+    assert np.all(goal_bins == expected)
+    assert not np.any(start_bins == first_bin)
 
 
 # =============================================================================

@@ -313,6 +313,36 @@ class TestHeadingDirectionLabels:
         # The label should contain "0" since heading is 0° (positive x)
         assert "0" in direction_labels[0]
 
+    def test_first_sample_undefined_heading_not_labeled_east(self) -> None:
+        """First sample has undefined heading and must not be labeled East.
+
+        The first sample's velocity (hence heading) is undefined. With
+        ``min_speed=0`` the stationary speed threshold cannot mask it, so the
+        old code that padded ``heading=0`` spuriously labeled it as East
+        (the 0 deg sector). The first sample must instead be 'stationary'.
+        """
+        n_samples = 50
+        times = np.linspace(0.0, 5.0, n_samples)
+        # Steady movement in the +y direction (true heading ~90 deg), so the
+        # genuine direction label for moving samples is the 90 deg sector, NOT
+        # the 0 deg (East) sector.
+        positions = np.column_stack(
+            [np.zeros(n_samples), np.linspace(0.0, 100.0, n_samples)]
+        )
+
+        labels = heading_direction_labels(
+            positions=positions, times=times, min_speed=0.0
+        )
+
+        # The undefined first sample must not be assigned a spurious East label.
+        assert labels[0] == "stationary", (
+            f"First sample should be 'stationary' (undefined heading), "
+            f"got {labels[0]!r}"
+        )
+        # Genuine moving samples should reflect the +y (90 deg) heading.
+        moving = [lbl for lbl in labels[1:] if lbl != "stationary"]
+        assert all("90" in lbl for lbl in moving), moving
+
     def test_straight_path_positive_y(self) -> None:
         """Movement in +y direction gives 90° heading label."""
         n_samples = 100

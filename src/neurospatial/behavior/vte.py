@@ -675,7 +675,15 @@ def compute_vte_session(
                 trial_bins, trial_times, env, region=decision_region
             )
         except ValueError:
-            # Trial never enters decision region - skip
+            # Trial never enters the decision region - skip it, but emit a
+            # warning so silently dropped trials are observable to the caller.
+            warnings.warn(
+                f"Skipping trial spanning [{trial.start_time:.3f}, "
+                f"{trial.end_time:.3f}] s: trajectory never enters decision "
+                f"region '{decision_region}'.",
+                UserWarning,
+                stacklevel=2,
+            )
             continue
 
         # Extract pre-decision window

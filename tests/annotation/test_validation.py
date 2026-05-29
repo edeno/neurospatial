@@ -209,6 +209,38 @@ class TestValidateRegionWithinBoundary:
         issues = validate_region_within_boundary(point_region, boundary_region)
         assert len(issues) == 0
 
+    def test_self_intersecting_region_does_not_raise(self, boundary_region):
+        """An invalid (self-intersecting) region polygon must not raise.
+
+        Self-intersecting polygons make Shapely's contains/intersection raise a
+        GEOSException. The validator must repair such geometries (make_valid)
+        before the spatial predicates so it returns issues instead of crashing.
+        """
+        # Bowtie polygon: a valid Polygon *type* but topologically invalid.
+        bowtie = Polygon([(0, 0), (10, 10), (10, 0), (0, 10)])
+        assert not bowtie.is_valid
+        region = Region(name="bowtie", kind="polygon", data=bowtie)
+
+        # Must not raise (previously raised shapely GEOSException).
+        issues = validate_region_within_boundary(
+            region, boundary_region, warn_outside=False
+        )
+        assert isinstance(issues, list)
+
+    def test_self_intersecting_boundary_does_not_raise(self, region_inside_boundary):
+        """An invalid (self-intersecting) boundary polygon must not raise."""
+        bowtie_boundary = Region(
+            name="bad_boundary",
+            kind="polygon",
+            data=Polygon([(0, 0), (200, 200), (200, 0), (0, 200)]),
+        )
+        assert not bowtie_boundary.data.is_valid
+
+        issues = validate_region_within_boundary(
+            region_inside_boundary, bowtie_boundary, warn_outside=False
+        )
+        assert isinstance(issues, list)
+
 
 # =============================================================================
 # Tests for validate_region_overlap

@@ -155,6 +155,7 @@ class EnvironmentRegions:
         # pragma: no cover
         raise ValueError(f"Unsupported region kind: {region.kind}")
 
+    @check_fitted
     def region_membership(
         self: SelfEnv,
         regions: Regions | None = None,

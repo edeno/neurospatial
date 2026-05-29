@@ -380,6 +380,216 @@ class TestSegmentTrials:
                 max_duration=5.0,
             )
 
+    def test_segment_trials_aborted_on_reentry_emitted(self):
+        """Aborted trial (re-entry before max_duration) is emitted as failed.
+
+        A trial that ran well under max_duration but was abandoned when the
+        animal re-entered the start region must still be emitted with
+        success=False and end_region=None (subject to min_duration), not
+        silently dropped.
+        """
+        x = np.linspace(0, 100, 100)
+        y = np.linspace(0, 100, 100)
+        xx, yy = np.meshgrid(x, y)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
+        env = Environment.from_samples(positions, bin_size=3.0)
+
+        env.regions.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
+        env.regions.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
+
+        # Trial 1: enter start, leave toward middle (never reach goal),
+        #          then re-enter start -> aborts trial 1.
+        # Trial 2: from start, reach goal.
+        x_traj = np.concatenate(
+            [
+                np.linspace(20, 20, 5),  # in start (trial 1 begins)
+                np.linspace(20, 50, 8),  # leave start toward middle
+                np.linspace(50, 20, 8),  # return to start (re-entry -> abort)
+                np.linspace(20, 80, 20),  # trial 2: go to goal
+            ]
+        )
+        y_traj = np.concatenate(
+            [
+                np.linspace(20, 20, 5),
+                np.linspace(20, 50, 8),
+                np.linspace(50, 20, 8),
+                np.linspace(20, 80, 20),
+            ]
+        )
+        trajectory = np.column_stack([x_traj, y_traj])
+        position_bins = env.bin_at(trajectory)
+        times = np.arange(len(trajectory), dtype=float)
+
+        from neurospatial.behavior.segmentation import segment_trials
+
+        # max_duration large so trial 1 never times out; it ran ~20s < 50s.
+        trials = segment_trials(
+            position_bins,
+            times,
+            env,
+            start_region="start",
+            end_regions=["goal"],
+            min_duration=2.0,
+            max_duration=50.0,
+        )
+
+        # Aborted trial 1 must be present as a failed trial, plus successful trial 2.
+        assert len(trials) == 2, f"Expected aborted + successful trial, got {trials}"
+        aborted = trials[0]
+        assert aborted.success is False
+        assert aborted.end_region is None
+        assert aborted.start_region == "start"
+        # Aborted trial ended at the sample before re-entry, well under max_duration.
+        assert (aborted.end_time - aborted.start_time) < 50.0
+        # Trial 2 is the successful one.
+        assert trials[1].success is True
+        assert trials[1].end_region == "goal"
+
+    def test_segment_trials_aborted_on_reentry_respects_min_duration(self):
+        """An aborted trial shorter than min_duration is still dropped."""
+        x = np.linspace(0, 100, 100)
+        y = np.linspace(0, 100, 100)
+        xx, yy = np.meshgrid(x, y)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
+        env = Environment.from_samples(positions, bin_size=3.0)
+
+        env.regions.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
+        env.regions.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
+
+        # Very brief excursion (< min_duration) then re-entry, then a real trial.
+        x_traj = np.concatenate(
+            [
+                np.linspace(20, 20, 2),  # in start (trial 1)
+                np.linspace(20, 30, 2),  # brief leave
+                np.linspace(30, 20, 2),  # re-enter (abort, but too short)
+                np.linspace(20, 80, 20),  # trial 2 -> goal
+            ]
+        )
+        y_traj = np.concatenate(
+            [
+                np.linspace(20, 20, 2),
+                np.linspace(20, 30, 2),
+                np.linspace(30, 20, 2),
+                np.linspace(20, 80, 20),
+            ]
+        )
+        trajectory = np.column_stack([x_traj, y_traj])
+        position_bins = env.bin_at(trajectory)
+        times = np.arange(len(trajectory), dtype=float)
+
+        from neurospatial.behavior.segmentation import segment_trials
+
+        trials = segment_trials(
+            position_bins,
+            times,
+            env,
+            start_region="start",
+            end_regions=["goal"],
+            min_duration=10.0,
+            max_duration=50.0,
+        )
+
+        # Aborted trial too short to pass min_duration -> dropped.
+        # Only the successful trial 2 survives (it spans >= 10s).
+        assert len(trials) == 1
+        assert trials[0].success is True
+        assert trials[0].end_region == "goal"
+
+    def test_segment_trials_in_progress_at_end_of_data_emitted(self):
+        """In-progress trial at end of data is emitted as failed (not dropped).
+
+        If recording ends while a trial is still in progress and it ran less
+        than max_duration, the trial must still be emitted with success=False
+        and end_region=None (subject to min_duration).
+        """
+        x = np.linspace(0, 100, 100)
+        y = np.linspace(0, 100, 100)
+        xx, yy = np.meshgrid(x, y)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
+        env = Environment.from_samples(positions, bin_size=3.0)
+
+        env.regions.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
+        env.regions.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
+
+        # Enter start, head toward goal but recording ends before reaching it.
+        x_traj = np.concatenate(
+            [
+                np.linspace(20, 20, 5),  # in start
+                np.linspace(20, 50, 15),  # heading out, never reach goal
+            ]
+        )
+        y_traj = np.concatenate(
+            [
+                np.linspace(20, 20, 5),
+                np.linspace(20, 50, 15),
+            ]
+        )
+        trajectory = np.column_stack([x_traj, y_traj])
+        position_bins = env.bin_at(trajectory)
+        times = np.arange(len(trajectory), dtype=float)
+
+        from neurospatial.behavior.segmentation import segment_trials
+
+        # Trial ran ~19s < max_duration 50s; must still be emitted as failed.
+        trials = segment_trials(
+            position_bins,
+            times,
+            env,
+            start_region="start",
+            end_regions=["goal"],
+            min_duration=2.0,
+            max_duration=50.0,
+        )
+
+        assert len(trials) == 1
+        assert trials[0].success is False
+        assert trials[0].end_region is None
+        assert trials[0].start_region == "start"
+        assert (trials[0].end_time - trials[0].start_time) < 50.0
+
+    def test_segment_trials_in_progress_at_end_respects_min_duration(self):
+        """In-progress trial shorter than min_duration at end is dropped."""
+        x = np.linspace(0, 100, 100)
+        y = np.linspace(0, 100, 100)
+        xx, yy = np.meshgrid(x, y)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
+        env = Environment.from_samples(positions, bin_size=3.0)
+
+        env.regions.add("start", polygon=Point(20.0, 20.0).buffer(8.0))
+        env.regions.add("goal", polygon=Point(80.0, 80.0).buffer(8.0))
+
+        # Enter start near the very end of recording; trial only ~3s long.
+        x_traj = np.concatenate(
+            [
+                np.linspace(50, 50, 10),  # outside start
+                np.linspace(50, 20, 4),  # enter start at end
+            ]
+        )
+        y_traj = np.concatenate(
+            [
+                np.linspace(50, 50, 10),
+                np.linspace(50, 20, 4),
+            ]
+        )
+        trajectory = np.column_stack([x_traj, y_traj])
+        position_bins = env.bin_at(trajectory)
+        times = np.arange(len(trajectory), dtype=float)
+
+        from neurospatial.behavior.segmentation import segment_trials
+
+        trials = segment_trials(
+            position_bins,
+            times,
+            env,
+            start_region="start",
+            end_regions=["goal"],
+            min_duration=10.0,
+            max_duration=50.0,
+        )
+
+        # Trial in progress at end is too short -> dropped.
+        assert len(trials) == 0
+
     def test_segment_trials_multiple_starts(self):
         """Test handling of multiple trial starts without completion."""
         x = np.linspace(0, 100, 100)

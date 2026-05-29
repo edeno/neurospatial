@@ -65,6 +65,39 @@ class TestCheckFittedRaises:
             with pytest.raises(EnvironmentNotFittedError):
                 call()
 
+    def test_public_methods_name_themselves_in_fitted_error(self):
+        """Methods guarded only indirectly used to name the wrong method.
+
+        ``distance_between``, ``distance_to``, ``reachable_from``, ``subset``,
+        ``apply_transform``, and ``region_membership`` previously lacked their
+        own ``@check_fitted`` and relied on an internal ``n_bins`` / ``bin_at``
+        call to fail. The resulting ``EnvironmentNotFittedError`` then named
+        the internal helper (e.g. ``bin_at``) instead of the public method the
+        user actually called. Each should now name itself.
+        """
+        from neurospatial.ops.transforms import translate
+
+        env = Environment.__new__(Environment)
+
+        cases = {
+            "distance_between": lambda: env.distance_between(
+                np.array([0.0, 0.0]), np.array([1.0, 1.0])
+            ),
+            "distance_to": lambda: env.distance_to([0], metric="geodesic"),
+            "reachable_from": lambda: env.reachable_from(0, radius=None),
+            "subset": lambda: env.subset(bins=np.array([True])),
+            "apply_transform": lambda: env.apply_transform(translate(1.0, 1.0)),
+            "region_membership": lambda: env.region_membership(),
+        }
+
+        for method_name, call in cases.items():
+            with pytest.raises(EnvironmentNotFittedError) as exc_info:
+                call()
+            assert exc_info.value.method_name == method_name, (
+                f"{method_name}() raised an error naming "
+                f"{exc_info.value.method_name!r} instead of itself"
+            )
+
     def test_properly_initialized_environment_does_not_raise(self):
         """Happy path: a factory-built env runs the same methods without raising."""
         data = np.array([[0, 0], [10, 10], [5, 5]])

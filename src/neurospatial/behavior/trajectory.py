@@ -329,6 +329,7 @@ def compute_step_lengths(
 def compute_home_range(
     position_bins: NDArray[np.int_],
     *,
+    times: NDArray[np.float64] | None = None,
     percentile: float = 95.0,
 ) -> NDArray[np.int_]:
     """
@@ -343,6 +344,14 @@ def compute_home_range(
     ----------
     position_bins : NDArray[np.int_], shape (n_samples,)
         Sequence of bin indices representing the trajectory.
+    times : NDArray[np.float64], shape (n_samples,), optional
+        Timestamps (seconds) for each sample. When provided, occupancy is
+        time-weighted: each sample contributes its dwell time (the gap to the
+        next sample) rather than a unit count. This is more accurate for
+        non-uniformly sampled trajectories. The final sample is assigned the
+        median inter-sample interval (it has no successor). When ``None``
+        (default), occupancy is the visit count per bin, which is correct only
+        when sampling is uniform.
     percentile : float, default=95.0
         Percentile of time to include in home range (0 to 100). Common values:
         - 50%: core area (most frequently used)
@@ -357,7 +366,8 @@ def compute_home_range(
     Notes
     -----
     The home range is computed by:
-    1. Computing occupancy (visit counts) for each bin
+    1. Computing occupancy per bin (visit counts, or time-weighted dwell time
+       when ``times`` is provided)
     2. Sorting bins by occupancy (descending)
     3. Selecting bins until cumulative occupancy reaches the percentile threshold
 
@@ -394,13 +404,36 @@ def compute_home_range(
            and variance of home range size estimates." Journal of Animal
            Ecology, 75(6), 1393-1405.
     """
-    # Compute occupancy (visit counts)
-    unique_bins, counts = np.unique(position_bins, return_counts=True)
+    position_bins = np.asarray(position_bins)
+
+    if times is None:
+        # Count-based occupancy (assumes uniform sampling).
+        unique_bins, occupancy = np.unique(position_bins, return_counts=True)
+        occupancy = occupancy.astype(np.float64)
+    else:
+        # Time-weighted occupancy: each sample contributes its dwell time.
+        times = np.asarray(times, dtype=np.float64)
+        if len(times) != len(position_bins):
+            raise ValueError(
+                f"times and position_bins must have same length. "
+                f"Got {len(times)} and {len(position_bins)}."
+            )
+        if len(position_bins) == 0:
+            return np.array([], dtype=np.intp)
+        intervals = np.diff(times)
+        # The last sample has no successor; assign it the median interval so it
+        # is not dropped. Falls back to 1.0 for a single sample.
+        last_dwell = float(np.median(intervals)) if len(intervals) > 0 else 1.0
+        sample_weights = np.append(intervals, last_dwell)
+        # Sum dwell time per bin.
+        unique_bins, inverse = np.unique(position_bins, return_inverse=True)
+        occupancy = np.zeros(len(unique_bins), dtype=np.float64)
+        np.add.at(occupancy, inverse, sample_weights)
 
     # Sort bins by occupancy (descending)
-    sort_idx = np.argsort(counts)[::-1]
+    sort_idx = np.argsort(occupancy)[::-1]
     sorted_bins = unique_bins[sort_idx]
-    sorted_counts = counts[sort_idx]
+    sorted_counts = occupancy[sort_idx]
 
     # Compute cumulative percentage
     total_counts = np.sum(sorted_counts)

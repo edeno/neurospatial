@@ -358,6 +358,41 @@ class GoalDirectedMetrics:
 # =============================================================================
 
 
+def _region_representative_bin(env: Environment, region_name: str) -> int:
+    """Return a single representative bin index for a (possibly multi-bin) region.
+
+    The representative is the region bin whose center is closest to the
+    centroid of all the region's bin centers. This is a stable, geometrically
+    meaningful summary of a multi-bin polygon region, unlike picking the first
+    bin (which depends on arbitrary bin ordering). Because the representative
+    is chosen from the region's own bins (nearest to the centroid), it always
+    lies inside the region, which is robust even for non-convex regions whose
+    geometric centroid falls outside the region.
+
+    Parameters
+    ----------
+    env : Environment
+        Spatial environment (for bin centers and region lookup).
+    region_name : str
+        Name of a region defined in ``env.regions``.
+
+    Returns
+    -------
+    int
+        Index of the representative bin, or -1 if the region contains no bins.
+    """
+    region_bins = env.bins_in_region(region_name)
+    if len(region_bins) == 0:
+        return -1
+    if len(region_bins) == 1:
+        return int(region_bins[0])
+
+    region_centers = env.bin_centers[region_bins]  # (n_region_bins, n_dims)
+    centroid = region_centers.mean(axis=0)  # (n_dims,)
+    nearest = int(np.argmin(np.linalg.norm(region_centers - centroid, axis=1)))
+    return int(region_bins[nearest])
+
+
 def trials_to_region_arrays(
     trials: list[Trial],
     times: NDArray[np.float64],
@@ -394,7 +429,11 @@ def trials_to_region_arrays(
 
     - If a region has no bins (e.g., polygon doesn't overlap environment), that
       trial's bins remain -1
-    - If a region has multiple bins (polygon region), uses the first bin (index 0)
+    - If a region has multiple bins (polygon region), the region is represented
+      by its centroid bin: the region bin whose center is closest to the
+      centroid of the region's bin centers. This representative always lies
+      inside the region (robust for non-convex regions) and does not depend on
+      arbitrary bin ordering.
     - Failed trials (`trial.end_region is None`) have goal_bins = -1
     - Timepoints outside all trials have both arrays = -1
 
@@ -425,18 +464,17 @@ def trials_to_region_arrays(
         # Create mask for timepoints within this trial
         mask = (times >= trial.start_time) & (times <= trial.end_time)
 
-        # Get bins for start region
-        start_region_bins = env.bins_in_region(trial.start_region)
-        if len(start_region_bins) > 0:
-            # Use first bin if multiple bins in region
-            start_bins[mask] = start_region_bins[0]
+        # Represent each region by its centroid bin (the region bin nearest the
+        # centroid of the region's bins), not an arbitrary first bin.
+        start_bin = _region_representative_bin(env, trial.start_region)
+        if start_bin >= 0:
+            start_bins[mask] = start_bin
 
         # Get bins for end region (handle None for failed trials)
         if trial.end_region is not None:
-            end_region_bins = env.bins_in_region(trial.end_region)
-            if len(end_region_bins) > 0:
-                # Use first bin if multiple bins in region
-                goal_bins[mask] = end_region_bins[0]
+            goal_bin = _region_representative_bin(env, trial.end_region)
+            if goal_bin >= 0:
+                goal_bins[mask] = goal_bin
         # For failed trials (end_region=None), goal_bins remains -1
 
     return start_bins, goal_bins
@@ -671,7 +709,7 @@ def distance_to_region(
         if target_int == -1:
             return np.full(n_samples, np.nan, dtype=np.float64)
 
-        dist_field = env.distance_to([target_int], metric=metric)  # type: ignore[misc]
+        dist_field = env.distance_to([target_int], metric=metric)
         distances = dist_field[position_bins].astype(np.float64)
 
         invalid_mask = position_bins == -1
@@ -704,7 +742,7 @@ def distance_to_region(
             for target in unique_targets:
                 mask = target_bins == target
                 if np.any(mask):
-                    dist_field = env.distance_to([int(target)], metric=metric)  # type: ignore[misc]
+                    dist_field = env.distance_to([int(target)], metric=metric)
                     distances[mask] = dist_field[position_bins[mask]]
 
         invalid_mask = (position_bins == -1) | (target_bins == -1)
@@ -1125,7 +1163,10 @@ def heading_direction_labels(
         heading_computed = np.arctan2(velocity[:, 1], velocity[:, 0])
 
         speed_arr = np.concatenate([[0.0], speed_computed])
-        heading_arr = np.concatenate([[0.0], heading_computed])
+        # The first sample has no predecessor, so its heading is undefined.
+        # Mark it NaN (not 0.0=East) so it is labeled "stationary" even when
+        # min_speed == 0, rather than spuriously labeled as facing East.
+        heading_arr = np.concatenate([[np.nan], heading_computed])
 
     else:
         raise ValueError(
@@ -1151,8 +1192,9 @@ def heading_direction_labels(
     bin_indices = np.digitize(heading_normalized, bin_edges_rad[1:], right=False)
     bin_indices = np.clip(bin_indices, 0, n_directions - 1)
 
-    # Assign labels: stationary where speed < min_speed, else use bin label
-    stationary_mask = speed_arr < min_speed
+    # Assign labels: stationary where speed < min_speed OR heading is undefined
+    # (NaN, e.g. the padded first sample), else use the direction bin label.
+    stationary_mask = (speed_arr < min_speed) | np.isnan(heading_arr)
     labels = np.where(stationary_mask, "stationary", bin_labels_arr[bin_indices])
 
     return labels

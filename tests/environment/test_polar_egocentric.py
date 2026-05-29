@@ -241,6 +241,189 @@ class TestCircularConnectivity:
             assert not env.connectivity.has_edge(node, node)
 
 
+class TestCircularWrapEdgeArcLength:
+    """The angular wrap edge must carry arc length, not chord length.
+
+    Regression: the wrap edge connects the first and last angle bins on a
+    single distance ring. Both bins sit at the same radius, so the Euclidean
+    norm between their centers is the chord across the *full* angular span --
+    not the one-``angle_bin_size`` step the seam actually represents. The
+    geodesic ``distance`` weight must instead be ``ring_radius *
+    angle_bin_size`` (true arc length).
+    """
+
+    @staticmethod
+    def _wrap_edge(env):
+        """Return (ring_radius, first_pos, last_pos, edge_data) for innermost ring."""
+        distances = env.bin_centers[:, 0]
+        angles = env.bin_centers[:, 1]
+        ring_radius = distances.min()
+        ring = np.isclose(distances, ring_radius)
+        ring_idx = np.flatnonzero(ring)
+        first_idx = int(ring_idx[np.argmin(angles[ring_idx])])
+        last_idx = int(ring_idx[np.argmax(angles[ring_idx])])
+        first_pos = np.array(env.connectivity.nodes[first_idx]["pos"])
+        last_pos = np.array(env.connectivity.nodes[last_idx]["pos"])
+        return ring_radius, first_pos, last_pos, env.connectivity[first_idx][last_idx]
+
+    def test_wrap_edge_distance_is_arc_length_not_chord(self):
+        angle_bin_size = np.pi / 2
+        env = Environment.from_polar_egocentric(
+            distance_range=(0.0, 20.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=10.0,
+            angle_bin_size=angle_bin_size,
+            circular_angle=True,
+        )
+
+        ring_radius, first_pos, last_pos, edge_data = self._wrap_edge(env)
+        expected_arc = ring_radius * angle_bin_size
+
+        assert edge_data["distance"] == pytest.approx(expected_arc)
+
+        # Guard against a regression to the old behavior: the previous code set
+        # ``distance = norm(pos_last - pos_first)`` over the (distance, angle)
+        # node positions. Because both bins lie on the same distance ring, that
+        # norm collapses to the angular span across the *full* circle minus one
+        # step, an entirely different quantity from the one-step arc.
+        old_buggy_value = float(np.linalg.norm(last_pos - first_pos))
+        assert edge_data["distance"] != pytest.approx(old_buggy_value)
+
+    def test_wrap_edge_arc_length_scales_with_ring_radius(self):
+        """Outer rings have longer wrap arcs (arc = radius * angle_bin_size)."""
+        angle_bin_size = np.pi / 3
+        env = Environment.from_polar_egocentric(
+            distance_range=(0.0, 30.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=10.0,  # 3 distance rings
+            angle_bin_size=angle_bin_size,
+            circular_angle=True,
+        )
+
+        distances = env.bin_centers[:, 0]
+        angles = env.bin_centers[:, 1]
+        observed = {}
+        for ring_radius in np.unique(distances):
+            ring_idx = np.flatnonzero(np.isclose(distances, ring_radius))
+            first_idx = int(ring_idx[np.argmin(angles[ring_idx])])
+            last_idx = int(ring_idx[np.argmax(angles[ring_idx])])
+            observed[ring_radius] = env.connectivity[first_idx][last_idx]["distance"]
+
+        for ring_radius, dist in observed.items():
+            assert dist == pytest.approx(ring_radius * angle_bin_size)
+
+
+class TestPolarStateVersionFreshness:
+    """Post-construction mutations must invalidate versioned caches.
+
+    ``from_polar_egocentric`` flips ``coordinate_kind`` and (optionally) adds
+    circular wrap edges *after* ``_setup_from_layout`` finalized
+    ``_state_version``. Without a final version bump, any
+    ``versioned_cached_property`` cached at the construction version would go
+    stale relative to the mutated connectivity graph.
+    """
+
+    def test_construction_bumps_version_past_layout_setup(self):
+        """The polar factory bumps the version beyond a plain grid build.
+
+        A bare ``from_grid_mask`` env of the same geometry performs no
+        post-construction mutation, so its ``_state_version`` reflects only
+        ``_setup_from_layout``. The polar factory mutates after setup and must
+        bump again -- so its version must be strictly greater.
+        """
+        grid_mask = np.ones((1, 4), dtype=bool)
+        grid_edges = (np.linspace(0.0, 10.0, 2), np.linspace(-np.pi, np.pi, 5))
+        grid_env = Environment.from_grid_mask(
+            active_mask=grid_mask,
+            grid_edges=grid_edges,
+            connect_diagonal_neighbors=True,
+        )
+
+        polar_env = Environment.from_polar_egocentric(
+            distance_range=(0.0, 10.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=10.0,
+            angle_bin_size=np.pi / 2,
+            circular_angle=True,
+        )
+
+        assert polar_env._state_version > grid_env._state_version
+
+    def test_differential_operator_reflects_circular_edges(self):
+        """A versioned cached property sees the wrap edges, not a stale graph.
+
+        ``get_differential_operator`` is a ``versioned_cached_property`` of
+        shape ``(n_bins, n_edges)``. Its edge (column) dimension must match the
+        connectivity graph's edge count including the circular wrap edges.
+        """
+        env = Environment.from_polar_egocentric(
+            distance_range=(0.0, 10.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=10.0,
+            angle_bin_size=np.pi / 2,
+            circular_angle=True,
+        )
+
+        n_edges = env.connectivity.number_of_edges()
+        # The wrap edge is present in the graph...
+        angles = env.bin_centers[:, 1]
+        first_idx = int(np.argmin(angles))
+        last_idx = int(np.argmax(angles))
+        assert env.connectivity.has_edge(first_idx, last_idx)
+
+        # ...and the versioned cached differential operator reflects it. The
+        # operator has shape (n_bins, n_edges).
+        D = env.get_differential_operator()
+        assert D.shape == (env.n_bins, n_edges)
+        # The edge-attribute cache (also versioned) agrees, too.
+        assert len(env.get_edge_attributes()) == n_edges
+
+
+class TestConnectDiagonalNeighborsParameter:
+    """from_polar_egocentric exposes connect_diagonal_neighbors (default True)."""
+
+    def test_default_connects_diagonals(self):
+        env = Environment.from_polar_egocentric(
+            distance_range=(0.0, 20.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=10.0,
+            angle_bin_size=np.pi / 2,
+        )
+        env_explicit = Environment.from_polar_egocentric(
+            distance_range=(0.0, 20.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=10.0,
+            angle_bin_size=np.pi / 2,
+            connect_diagonal_neighbors=True,
+        )
+        assert (
+            env.connectivity.number_of_edges()
+            == env_explicit.connectivity.number_of_edges()
+        )
+
+    def test_disabling_diagonals_reduces_edge_count(self):
+        """An 8-connected grid has more edges than a 4-connected one."""
+        diag = Environment.from_polar_egocentric(
+            distance_range=(0.0, 20.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=10.0,
+            angle_bin_size=np.pi / 2,
+            circular_angle=False,
+            connect_diagonal_neighbors=True,
+        )
+        no_diag = Environment.from_polar_egocentric(
+            distance_range=(0.0, 20.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=10.0,
+            angle_bin_size=np.pi / 2,
+            circular_angle=False,
+            connect_diagonal_neighbors=False,
+        )
+        assert (
+            no_diag.connectivity.number_of_edges() < diag.connectivity.number_of_edges()
+        )
+
+
 class TestParameterValidation:
     """Test parameter validation for from_polar_egocentric()."""
 

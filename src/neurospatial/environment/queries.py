@@ -278,6 +278,7 @@ class EnvironmentQueries:
         """
         return self.layout.bin_sizes()
 
+    @check_fitted
     def distance_between(
         self: SelfEnv,
         point1: NDArray[np.float64],
@@ -326,7 +327,18 @@ class EnvironmentQueries:
         target_bin = self.bin_at(np.atleast_2d(point2))[0]
 
         if source_bin == -1 or target_bin == -1:
-            # One or both points didn't map to a valid active bin
+            # One or both points didn't map to a valid active bin. Returning
+            # np.inf silently can mask a coordinate-frame or units mistake, so
+            # warn when neither point lands in the environment.
+            if source_bin == -1 and target_bin == -1:
+                warnings.warn(
+                    "distance_between() returning np.inf: neither point mapped "
+                    "to an active bin (both bin_at() lookups returned -1). "
+                    "Check that the points are inside the environment and in "
+                    "the same coordinate frame/units as bin_centers.",
+                    category=UserWarning,
+                    stacklevel=2,
+                )
             return np.inf
 
         try:
@@ -416,6 +428,7 @@ class EnvironmentQueries:
                 "Ensure source/target indices are valid active bin indices.",
             ) from e
 
+    @check_fitted
     def distance_to(
         self: SelfEnv,
         targets: Sequence[int] | str,
@@ -590,6 +603,7 @@ class EnvironmentQueries:
 
         return distances_result
 
+    @check_fitted
     def reachable_from(
         self: SelfEnv,
         source_bin: int,
@@ -700,12 +714,17 @@ class EnvironmentQueries:
 
         # Case 1: No radius limit - find entire connected component
         if radius is None:
-            # Use NetworkX to find all nodes in same component
-            for component_nodes in nx.connected_components(self.connectivity):
-                if source_bin in component_nodes:
-                    for node in component_nodes:
-                        reachable[node] = True
-                    break
+            # Directly fetch the component containing source_bin instead of
+            # scanning every component in Python.
+            try:
+                component_nodes = nx.node_connected_component(
+                    self.connectivity, source_bin
+                )
+            except KeyError:
+                # source_bin is isolated / not in the graph: only itself.
+                reachable[source_bin] = True
+                return reachable
+            reachable[list(component_nodes)] = True
             return reachable
 
         # Case 2: Radius-limited search

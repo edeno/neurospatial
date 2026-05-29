@@ -35,6 +35,7 @@ from neurospatial.layout.factories import (
     create_layout,
     list_available_layouts,
 )
+from neurospatial.layout.factories import _normalize_name as _normalize_layout_name
 from neurospatial.regions import Regions
 
 if TYPE_CHECKING:
@@ -56,27 +57,6 @@ except ModuleNotFoundError:
 
 
 PolygonType = type[_shp.Polygon]
-
-
-def _normalize_layout_name(name: str) -> str:
-    """Normalize a layout name by removing non-alphanumeric characters and converting
-    to lowercase.
-
-    This uses the same normalization logic as neurospatial.layout.factories to ensure
-    consistent layout name matching.
-
-    Parameters
-    ----------
-    name : str
-        The layout name to normalize.
-
-    Returns
-    -------
-    str
-        The normalized name (lowercase, alphanumeric only).
-
-    """
-    return "".join(filter(str.isalnum, name)).lower()
 
 
 class EnvironmentFactories:
@@ -869,6 +849,7 @@ class EnvironmentFactories:
         angle_bin_size: float,
         *,
         circular_angle: bool = True,
+        connect_diagonal_neighbors: bool = True,
         name: str = "",
     ) -> Environment:
         """Create an egocentric polar coordinate environment.
@@ -898,6 +879,10 @@ class EnvironmentFactories:
             If True, the angle dimension wraps circularly, connecting the first
             and last angle bins. This is appropriate when angle_range spans a
             full circle (e.g., -π to π). Set to False for partial angular ranges.
+        connect_diagonal_neighbors : bool, default=True
+            Whether to connect diagonally adjacent (distance, angle) bins in the
+            underlying grid. Forwarded to ``from_grid_mask``. The default
+            preserves the historical behavior of an 8-connected polar grid.
         name : str, default=""
             Optional name for the environment.
 
@@ -997,7 +982,7 @@ class EnvironmentFactories:
             active_mask=active_mask,
             grid_edges=grid_edges,
             name=name,
-            connect_diagonal_neighbors=True,
+            connect_diagonal_neighbors=connect_diagonal_neighbors,
         )
 
         # Mark the env as polar so downstream callers can refuse to run
@@ -1006,15 +991,33 @@ class EnvironmentFactories:
         # ``Environment._check_cartesian`` and ``Environment.is_polar``.
         env.coordinate_kind = "polar"
 
-        # If circular_angle is True, add edges between first and last angle bins
+        # If circular_angle is True, add edges between first and last angle bins.
+        # Use the distance-bin center radius so each wrap edge carries the true
+        # arc length spanning ``angle_bin_size`` radians, not the chord across
+        # the full angular span.
         if circular_angle and n_angle > 1:
-            _add_circular_connectivity(env.connectivity, n_distance, n_angle)
+            distance_centers = 0.5 * (distance_edges[:-1] + distance_edges[1:])
+            _add_circular_connectivity(
+                env.connectivity, n_distance, n_angle, distance_centers, angle_bin_size
+            )
+
+        # The two mutations above (``coordinate_kind = "polar"`` and the
+        # circular-edge insertion) happen AFTER ``_setup_from_layout`` finalized
+        # ``_state_version``. Bump the version once more so any
+        # ``versioned_cached_property`` value that was (or could be) cached at
+        # the construction version is invalidated and recomputed against the
+        # post-mutation connectivity graph.
+        env._state_version += 1
 
         return env
 
 
 def _add_circular_connectivity(
-    connectivity: nx.Graph, n_distance: int, n_angle: int
+    connectivity: nx.Graph,
+    n_distance: int,
+    n_angle: int,
+    distance_centers: NDArray[np.float64],
+    angle_bin_size: float,
 ) -> None:
     """Add circular connectivity edges between first and last angle bins.
 
@@ -1031,6 +1034,16 @@ def _add_circular_connectivity(
         Number of distance bins.
     n_angle : int
         Number of angle bins.
+    distance_centers : NDArray[np.float64], shape (n_distance,)
+        Center radius of each distance ring, in physical units. Used to set
+        the wrap edge ``distance`` attribute to the arc length
+        ``distance_center * angle_bin_size`` (the true angular step) rather
+        than the Euclidean chord between the first/last angle-bin centers,
+        which both sit on the same ring and so would span the whole angular
+        range.
+    angle_bin_size : float
+        The angular step between adjacent angle bins, in radians. The wrap
+        edge spans exactly one such step.
 
     """
     # Get the highest existing edge_id to continue numbering
@@ -1050,9 +1063,14 @@ def _add_circular_connectivity(
             pos_first = connectivity.nodes[first_angle_node]["pos"]
             pos_last = connectivity.nodes[last_angle_node]["pos"]
 
-            # Compute edge attributes
+            # Compute edge attributes. The wrap edge connects two bins on the
+            # same distance ring across the angular seam, so its geodesic
+            # weight is the arc length of a single ``angle_bin_size`` step at
+            # that ring's radius -- NOT the Euclidean chord between the
+            # first/last angle-bin centers (which spans the full angular range
+            # and would massively overstate the seam distance).
             vector = np.array(pos_last) - np.array(pos_first)
-            distance = np.linalg.norm(vector)
+            distance = float(distance_centers[d_idx]) * float(angle_bin_size)
             angle_2d = np.arctan2(vector[1], vector[0]) if len(vector) >= 2 else 0.0
 
             max_edge_id += 1

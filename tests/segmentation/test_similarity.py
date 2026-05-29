@@ -5,6 +5,8 @@ Following TDD: Write tests FIRST, watch them fail, then implement.
 
 from __future__ import annotations
 
+import itertools
+
 import numpy as np
 import pytest
 
@@ -357,6 +359,113 @@ class TestDetectGoalDirectedRuns:
         )
 
         assert runs == []
+
+
+class TestGoalDirectedRunsEquivalence:
+    """Equivalence tests guarding the vectorized distance computation.
+
+    These pin the vectorized ``distance_field``-based implementation against
+    the original O(n_bins x n_goal_bins) NetworkX double-loop reference so the
+    perf refactor produces identical numbers.
+    """
+
+    @staticmethod
+    def _reference_distances_to_goal(env, goal_bin_indices):
+        """Original double-loop graph distance from each bin to nearest goal."""
+        import networkx as nx
+
+        distances_to_goal = np.full(env.n_bins, np.inf)
+        for bin_idx in range(env.n_bins):
+            min_dist = np.inf
+            for goal_bin in goal_bin_indices:
+                try:
+                    dist = nx.shortest_path_length(
+                        env.connectivity, bin_idx, int(goal_bin), weight="distance"
+                    )
+                    min_dist = min(min_dist, dist)
+                except nx.NetworkXNoPath:
+                    continue
+            distances_to_goal[bin_idx] = min_dist
+        return distances_to_goal
+
+    @staticmethod
+    def _reference_path_length(env, position_bins):
+        """Original per-step shortest-path sum along the trajectory."""
+        import networkx as nx
+
+        path_length = 0.0
+        for i in range(len(position_bins) - 1):
+            try:
+                segment_dist = nx.shortest_path_length(
+                    env.connectivity,
+                    int(position_bins[i]),
+                    int(position_bins[i + 1]),
+                    weight="distance",
+                )
+                path_length += segment_dist
+            except nx.NetworkXNoPath:
+                continue
+        return path_length
+
+    def test_distances_to_goal_matches_reference(self):
+        """Vectorized distance_field output equals the double-loop reference."""
+        from shapely.geometry import Point
+
+        from neurospatial.ops.binning import regions_to_mask
+        from neurospatial.ops.distance import distance_field
+
+        x = np.linspace(0, 50, 12)
+        y = np.linspace(0, 50, 12)
+        xx, yy = np.meshgrid(x, y)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
+        env = Environment.from_samples(positions, bin_size=6.0)
+
+        goal_polygon = Point(env.bin_centers[-1]).buffer(8.0)
+        env.regions.add("goal", polygon=goal_polygon)
+        goal_bin_indices = np.where(regions_to_mask(env, ["goal"]))[0]
+
+        reference = self._reference_distances_to_goal(env, goal_bin_indices)
+        vectorized = distance_field(
+            env.connectivity, list(goal_bin_indices), weight="distance"
+        )
+
+        np.testing.assert_allclose(vectorized, reference, rtol=1e-9, atol=1e-9)
+
+    def test_path_length_matches_reference(self):
+        """Vectorized step-distance sum equals the per-step reference."""
+        from shapely.geometry import Point
+
+        x = np.linspace(0, 50, 12)
+        y = np.linspace(0, 50, 12)
+        xx, yy = np.meshgrid(x, y)
+        positions = np.column_stack([xx.ravel(), yy.ravel()])
+        env = Environment.from_samples(positions, bin_size=6.0)
+
+        goal_polygon = Point(env.bin_centers[-1]).buffer(8.0)
+        env.regions.add("goal", polygon=goal_polygon)
+
+        # Walk a connected path through neighbors so each step is a graph edge.
+        path = [0]
+        current = 0
+        for _ in range(10):
+            neighbors = list(env.connectivity.neighbors(current))
+            if not neighbors:
+                break
+            current = max(neighbors)
+            path.append(current)
+        position_bins = np.array(path, dtype=np.int64)
+
+        reference = self._reference_path_length(env, position_bins)
+
+        # Vectorized: sum of edge weights between consecutive (connected) bins.
+        edge_weights = []
+        for a, b in itertools.pairwise(position_bins):
+            data = env.connectivity.get_edge_data(int(a), int(b))
+            if data is not None:
+                edge_weights.append(data["distance"])
+        vectorized = float(np.sum(edge_weights))
+
+        np.testing.assert_allclose(vectorized, reference, rtol=1e-9, atol=1e-9)
 
 
 class TestSimilarityIntegration:

@@ -757,20 +757,58 @@ class TestComputeVTESession:
             ),
         ]
 
-        result = compute_vte_session(
-            positions=positions,
-            times=times,
-            trials=trials,
-            decision_region="center",
-            env=env,
-            window_duration=0.5,
-            min_speed=1.0,
-        )
+        # A trial that never enters the decision region must be skipped *and*
+        # warned about (with its timing), not silently dropped.
+        with pytest.warns(UserWarning, match=r"never enters decision region"):
+            result = compute_vte_session(
+                positions=positions,
+                times=times,
+                trials=trials,
+                decision_region="center",
+                env=env,
+                window_duration=0.5,
+                min_speed=1.0,
+            )
 
         # No valid trials
         assert len(result.trial_results) == 0
         assert result.n_vte_trials == 0
         assert result.vte_fraction == 0.0
+
+    def test_skipped_trial_warning_includes_timing(self, t_maze_environment):
+        """The skip warning names the trial's start/end times."""
+        from neurospatial.behavior.segmentation import Trial
+        from neurospatial.behavior.vte import compute_vte_session
+
+        env = t_maze_environment
+
+        times = np.linspace(0, 2, 60)
+        positions = np.column_stack(
+            [np.ones(60) * 50, np.linspace(0, 20, 60)]  # never reaches center
+        )
+        trials = [
+            Trial(
+                start_time=0.0,
+                end_time=2.0,
+                start_region="start",
+                end_region=None,
+                success=False,
+            ),
+        ]
+
+        with pytest.warns(UserWarning) as record:
+            compute_vte_session(
+                positions=positions,
+                times=times,
+                trials=trials,
+                decision_region="center",
+                env=env,
+                window_duration=0.5,
+                min_speed=1.0,
+            )
+
+        messages = [str(w.message) for w in record]
+        assert any("0.000" in m and "2.000" in m for m in messages), messages
 
     def test_vte_classification_consistency(self, t_maze_environment):
         """Test that VTE classification is consistent with metrics."""
