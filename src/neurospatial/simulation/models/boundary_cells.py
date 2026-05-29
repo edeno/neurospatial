@@ -30,8 +30,12 @@ class BoundaryCellModel:
         If specified, responds to boundaries in that direction (BVC).
         Convention: 0 = East, π/2 = North, π = West, -π/2 = South
     direction_tolerance : float, optional
-        Direction tuning width (concentration parameter for von Mises) in
-        radians (default: π/4). Smaller values = sharper tuning.
+        Direction tuning width in radians, interpreted as the half-width at
+        half-maximum (HWHM) of the von Mises directional response (default:
+        π/4). The von Mises concentration is derived as
+        ``kappa = log(2) / (1 - cos(direction_tolerance))`` so the normalized
+        directional response is exactly 0.5 at this angular offset. Smaller
+        values = sharper tuning.
     max_rate : float, optional
         Peak firing rate in Hz (default: 15.0).
     baseline_rate : float, optional
@@ -54,7 +58,8 @@ class BoundaryCellModel:
     preferred_direction : float | None
         Preferred direction (radians) or None for omnidirectional.
     direction_tolerance : float
-        Direction tuning width (radians).
+        Direction tuning width (radians), the half-width at half-maximum of the
+        von Mises directional response.
     max_rate : float
         Peak firing rate in Hz.
     baseline_rate : float
@@ -129,8 +134,9 @@ class BoundaryCellModel:
         r_{dir}(\\theta) = \\exp(\\kappa \\cos(\\theta - \\theta_{pref}))
 
     where :math:`\\theta` is direction to boundary, :math:`\\theta_{pref}` is
-    preferred_direction, and :math:`\\kappa` is direction concentration
-    (inversely related to direction_tolerance).
+    preferred_direction, and :math:`\\kappa` is the direction concentration,
+    derived from ``direction_tolerance`` (the half-width at half-maximum) as
+    :math:`\\kappa = \\log(2) / (1 - \\cos(\\text{direction\\_tolerance}))`.
 
     **Final Rate**: Combines distance and directional tuning:
 
@@ -317,11 +323,16 @@ class BoundaryCellModel:
             if positions.shape[1] == 2:
                 angles = np.arctan2(direction_vectors[:, 1], direction_vectors[:, 0])
 
-                # Apply von Mises directional tuning
-                # von Mises PDF: exp(kappa * cos(theta - theta_pref))
-                # Convert direction_tolerance to kappa (concentration parameter)
-                # Smaller tolerance -> larger kappa -> sharper tuning
-                kappa = 1.0 / self.direction_tolerance
+                # Apply von Mises directional tuning.
+                # The normalized response is exp(kappa * (cos(angle_diff) - 1)),
+                # which equals 0.5 when angle_diff is the half-width at
+                # half-maximum (HWHM). Treating ``direction_tolerance`` as that
+                # HWHM and solving exp(kappa * (cos(tol) - 1)) = 1/2 gives
+                #     kappa = log(2) / (1 - cos(direction_tolerance)).
+                # The previous mapping kappa = 1 / direction_tolerance treated
+                # the tolerance like a linear standard deviation and produced an
+                # HWHM that was ~40% too narrow/wide depending on the angle.
+                kappa = np.log(2.0) / (1.0 - np.cos(self.direction_tolerance))
 
                 # Compute angle difference (wrapped to [-π, π])
                 angle_diff = np.angle(np.exp(1j * (angles - self.preferred_direction)))

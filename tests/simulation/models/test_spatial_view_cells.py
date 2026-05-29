@@ -615,6 +615,156 @@ class TestGroundTruth:
         assert model.view_field_width != 999.0
 
 
+class TestVectorizationEquivalence:
+    """Equivalence guards for the vectorized firing_rate FOV/visibility paths."""
+
+    @pytest.fixture
+    def env(self):
+        """Create a simple 2D environment."""
+        samples = np.random.default_rng(42).uniform(0, 100, (500, 2))
+        return Environment.from_samples(samples, bin_size=2.0)
+
+    @staticmethod
+    def _reference_firing_rate(model, positions, headings):
+        """Reference firing rate using the original per-timestep Python loops."""
+        from neurospatial.ops.egocentric import compute_egocentric_bearing
+        from neurospatial.ops.visibility import (
+            _line_of_sight_clear,
+            compute_viewed_location,
+        )
+
+        positions = np.asarray(positions, dtype=np.float64)
+        headings = np.asarray(headings, dtype=np.float64)
+        n_time = len(positions)
+
+        viewed_locations = compute_viewed_location(
+            positions,
+            headings,
+            method=model.gaze_model,
+            view_distance=model.view_distance,
+            env=model.env if model.gaze_model != "fixed_distance" else None,
+        )
+
+        distances = np.linalg.norm(
+            viewed_locations - model.preferred_view_location, axis=1
+        )
+        response = np.exp(-0.5 * (distances / model.view_field_width) ** 2)
+        nan_mask = np.isnan(distances)
+        response[nan_mask] = 0.0
+
+        if model.require_visibility:
+            for i in range(n_time):
+                if nan_mask[i]:
+                    continue
+                if model.fov is not None:
+                    bearing = compute_egocentric_bearing(
+                        positions[i : i + 1],
+                        headings[i : i + 1],
+                        model.preferred_view_location[None, :],
+                    )[0, 0]
+                    if not model.fov.contains_angle(bearing):
+                        response[i] = 0.0
+                        continue
+                if not _line_of_sight_clear(
+                    model.env, positions[i], model.preferred_view_location
+                ):
+                    response[i] = 0.0
+
+        if model.fov is not None and not model.require_visibility:
+            for i in range(n_time):
+                if nan_mask[i]:
+                    continue
+                bearing = compute_egocentric_bearing(
+                    positions[i : i + 1],
+                    headings[i : i + 1],
+                    viewed_locations[i : i + 1],
+                )[0, 0]
+                if not model.fov.contains_angle(bearing):
+                    response[i] = 0.0
+
+        return model.baseline_rate + (model.max_rate - model.baseline_rate) * response
+
+    def test_fov_only_path_matches_reference_loop(self, env):
+        """FOV-only path (require_visibility=False) matches the loop reference."""
+        from neurospatial.ops.visibility import FieldOfView
+        from neurospatial.simulation.models.spatial_view_cells import (
+            SpatialViewCellModel,
+        )
+
+        model = SpatialViewCellModel(
+            env=env,
+            preferred_view_location=np.array([50.0, 50.0]),
+            view_field_width=12.0,
+            view_distance=20.0,
+            gaze_model="fixed_distance",
+            fov=FieldOfView.symmetric(half_angle=np.pi / 4),
+            require_visibility=False,
+            max_rate=20.0,
+            baseline_rate=0.3,
+        )
+
+        rng = np.random.default_rng(7)
+        positions = rng.uniform(0, 100, (300, 2))
+        headings = rng.uniform(-np.pi, np.pi, 300)
+
+        actual = model.firing_rate(positions, headings=headings)
+        expected = self._reference_firing_rate(model, positions, headings)
+        assert_allclose(actual, expected, rtol=1e-12, atol=1e-12)
+
+    def test_visibility_path_matches_reference_loop(self, env):
+        """require_visibility=True path (FOV + line of sight) matches reference."""
+        from neurospatial.ops.visibility import FieldOfView
+        from neurospatial.simulation.models.spatial_view_cells import (
+            SpatialViewCellModel,
+        )
+
+        model = SpatialViewCellModel(
+            env=env,
+            preferred_view_location=np.array([50.0, 50.0]),
+            view_field_width=12.0,
+            view_distance=15.0,
+            gaze_model="fixed_distance",
+            fov=FieldOfView.symmetric(half_angle=np.pi / 3),
+            require_visibility=True,
+            max_rate=20.0,
+            baseline_rate=0.3,
+        )
+
+        rng = np.random.default_rng(11)
+        positions = rng.uniform(0, 100, (300, 2))
+        headings = rng.uniform(-np.pi, np.pi, 300)
+
+        actual = model.firing_rate(positions, headings=headings)
+        expected = self._reference_firing_rate(model, positions, headings)
+        assert_allclose(actual, expected, rtol=1e-12, atol=1e-12)
+
+    def test_visibility_path_no_fov_matches_reference_loop(self, env):
+        """require_visibility=True with fov=None matches reference (LOS only)."""
+        from neurospatial.simulation.models.spatial_view_cells import (
+            SpatialViewCellModel,
+        )
+
+        model = SpatialViewCellModel(
+            env=env,
+            preferred_view_location=np.array([50.0, 50.0]),
+            view_field_width=12.0,
+            view_distance=15.0,
+            gaze_model="fixed_distance",
+            fov=None,
+            require_visibility=True,
+            max_rate=20.0,
+            baseline_rate=0.3,
+        )
+
+        rng = np.random.default_rng(13)
+        positions = rng.uniform(0, 100, (300, 2))
+        headings = rng.uniform(-np.pi, np.pi, 300)
+
+        actual = model.firing_rate(positions, headings=headings)
+        expected = self._reference_firing_rate(model, positions, headings)
+        assert_allclose(actual, expected, rtol=1e-12, atol=1e-12)
+
+
 class TestProtocolCompliance:
     """Test compliance with NeuralModel protocol."""
 

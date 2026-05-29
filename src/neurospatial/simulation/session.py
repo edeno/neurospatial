@@ -171,7 +171,12 @@ def simulate_session(
     show_progress : bool, optional
         Show progress bars during generation (default: True).
     seed : int | None, optional
-        Random seed for reproducibility.
+        Random seed for reproducibility. Independent sub-streams for the
+        trajectory, field-center selection, and spike generation are spawned
+        from a single ``np.random.SeedSequence(seed)`` so the three sources of
+        randomness are statistically independent (the trajectory and spike
+        streams are not correlated). ``None`` leaves each stream
+        nondeterministic but still mutually independent.
     **kwargs : Any
         Additional parameters passed to trajectory and model functions.
 
@@ -322,19 +327,43 @@ def simulate_session(
     if duration <= 0:
         raise ValueError(f"duration must be positive (seconds), got {duration}")
 
-    # Extract model-specific parameters from kwargs BEFORE trajectory generation
-    # PlaceCellModel parameters
-    place_cell_params = {}
-    for param in ["width", "max_rate", "baseline_rate", "metric", "condition"]:
+    # Extract model-specific parameters from kwargs BEFORE trajectory generation.
+    #
+    # Shared rate parameters (``max_rate``, ``baseline_rate``, ``metric``) are
+    # accepted by more than one cell type, so they must be *read* (not consumed)
+    # by every applicable model type before being removed from ``kwargs``. The
+    # earlier implementation popped them into ``place_cell_params`` first, which
+    # silently starved the boundary/grid loops of any caller-supplied rate in
+    # mixed mode. We peek the shared params, distribute them per cell type
+    # (respecting which constructor accepts which), then pop them once at the
+    # end so they don't leak into the trajectory kwargs or session metadata.
+    #
+    # Note: ``metric`` is accepted by PlaceCellModel and BoundaryCellModel but
+    # NOT GridCellModel, so it is routed only to the former two.
+    place_cell_params: dict[str, Any] = {}
+    boundary_cell_params: dict[str, Any] = {}
+    grid_cell_params: dict[str, Any] = {}
+
+    # Shared rate parameters (read without consuming; popped below).
+    for param in ["max_rate", "baseline_rate"]:
+        if param in kwargs:
+            place_cell_params[param] = kwargs[param]
+            boundary_cell_params[param] = kwargs[param]
+            grid_cell_params[param] = kwargs[param]
+    if "metric" in kwargs:
+        place_cell_params["metric"] = kwargs["metric"]
+        boundary_cell_params["metric"] = kwargs["metric"]
+
+    # Remove shared params now that all applicable cell types have read them.
+    for param in ["max_rate", "baseline_rate", "metric"]:
+        kwargs.pop(param, None)
+
+    # PlaceCellModel-only parameters.
+    for param in ["width", "condition"]:
         if param in kwargs:
             place_cell_params[param] = kwargs.pop(param)
 
-    # BoundaryCellModel parameters - remap convenience names to actual parameter names
-    boundary_cell_params = {}
-    # Direct parameters
-    for param in ["max_rate", "baseline_rate", "metric"]:
-        if param in kwargs:
-            boundary_cell_params[param] = kwargs.pop(param)
+    # BoundaryCellModel-only parameters - remap convenience names to actual names.
     # Remapped parameters: distance -> preferred_distance
     if "distance" in kwargs:
         boundary_cell_params["preferred_distance"] = kwargs.pop("distance")
@@ -346,30 +375,39 @@ def simulate_session(
         # Only remap 'width' to distance_tolerance for pure boundary cell mode to avoid conflicts with PlaceCellModel
         boundary_cell_params["distance_tolerance"] = kwargs.pop("width")
 
-    # GridCellModel parameters - remap convenience names to actual parameter names
-    grid_cell_params = {}
-    # Direct parameters
-    for param in ["max_rate", "baseline_rate"]:
-        if param in kwargs:
-            grid_cell_params[param] = kwargs.pop(param)
+    # GridCellModel-only parameters - remap convenience names to actual names.
     # Remapped parameters: spacing -> grid_spacing, orientation -> grid_orientation
     if "spacing" in kwargs:
         grid_cell_params["grid_spacing"] = kwargs.pop("spacing")
     if "orientation" in kwargs:
         grid_cell_params["grid_orientation"] = kwargs.pop("orientation")
 
-    # Generate trajectory (use seed directly for reproducibility)
+    # Derive INDEPENDENT seeds for the trajectory, field-center, and spike RNG
+    # streams from a single SeedSequence. Spawning guarantees the three streams
+    # are statistically independent and non-overlapping, so the trajectory and
+    # spike draws no longer share (and correlate) an RNG stream. Passing
+    # ``seed=None`` keeps each stream nondeterministic but still mutually
+    # independent.
+    if seed is None:
+        trajectory_seed = field_center_seed = spike_seed = None
+    else:
+        traj_ss, field_ss, spike_ss = np.random.SeedSequence(seed).spawn(3)
+        trajectory_seed = int(traj_ss.generate_state(1)[0])
+        field_center_seed = int(field_ss.generate_state(1)[0])
+        spike_seed = int(spike_ss.generate_state(1)[0])
+
+    # Generate trajectory using its own independent seed.
     if trajectory_method == "ou":
         # speed_units is required by simulate_trajectory_ou (M4.5);
         # fall back to env.units when the caller didn't pass it.
         ou_kwargs = dict(kwargs)
         ou_kwargs.setdefault("speed_units", env.units)
         positions, times = simulate_trajectory_ou(
-            env, duration=duration, seed=seed, **ou_kwargs
+            env, duration=duration, seed=trajectory_seed, **ou_kwargs
         )
     elif trajectory_method == "sinusoidal":
         positions, times = simulate_trajectory_sinusoidal(
-            env, duration=duration, seed=seed, **kwargs
+            env, duration=duration, seed=trajectory_seed, **kwargs
         )
     elif trajectory_method == "laps":
         # Ensure return_metadata is False for consistent return signature
@@ -379,7 +417,7 @@ def simulate_session(
         result = simulate_trajectory_laps(
             env,
             n_laps=n_laps,
-            seed=seed,
+            seed=trajectory_seed,
             return_metadata=False,
             **laps_kwargs,
         )
@@ -388,9 +426,8 @@ def simulate_session(
     else:
         raise ValueError(f"Unknown trajectory method: {trajectory_method}")
 
-    # Initialize RNG for field center selection (use seed+1 to avoid collision with trajectory seed)
-    # Use modulo to prevent overflow for large seeds
-    rng = np.random.default_rng((seed + 1) % (2**32) if seed is not None else None)
+    # Initialize RNG for field center selection using its own independent seed.
+    rng = np.random.default_rng(field_center_seed)
 
     # Generate field centers based on coverage
     if coverage == "uniform":
@@ -481,12 +518,12 @@ def simulate_session(
     else:
         raise ValueError(f"Unknown cell_type: {cell_type}")
 
-    # Generate spikes for all cells
+    # Generate spikes for all cells using the independent spike seed.
     spike_trains = generate_population_spikes(
         models,
         positions,
         times,
-        seed=seed,
+        seed=spike_seed,
         show_progress=show_progress,
     )
 

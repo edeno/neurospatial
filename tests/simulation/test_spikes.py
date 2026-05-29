@@ -127,6 +127,36 @@ class TestGeneratePoissonSpikes:
 
         assert len(spike_times) == 0
 
+    def test_per_bin_probability_uses_exponential_not_linear(self):
+        """Per-bin spike probability must be 1 - exp(-rate*dt), not rate*dt.
+
+        With ``rate * dt`` near 1, the linear approximation ``rate * dt``
+        saturates at the clip ceiling 1.0 (every bin spikes), whereas the
+        correct inhomogeneous-Poisson per-bin probability is
+        ``1 - exp(-rate * dt)`` (~0.63 at rate*dt = 1). This test drives
+        independent Bernoulli trials by disabling the refractory period and
+        checks the empirical spike fraction matches the exponential value.
+        """
+        # dt = 0.1 s and rate = 10 Hz give rate*dt = 1.0 exactly.
+        n_bins = 200_000
+        dt = 0.1
+        rate = 10.0
+        times = np.arange(n_bins) * dt
+        firing_rate = np.full(n_bins, rate)
+
+        spike_times = generate_poisson_spikes(
+            firing_rate, times, refractory_period=0.0, seed=0
+        )
+
+        empirical_p = len(spike_times) / n_bins
+        expected_p = 1.0 - np.exp(-rate * dt)  # ~0.6321
+
+        # The linear+clip implementation would give empirical_p ~= 1.0.
+        assert abs(empirical_p - expected_p) < 0.01, (
+            f"empirical per-bin probability {empirical_p:.4f} should match "
+            f"1 - exp(-rate*dt) = {expected_p:.4f}, not the saturated linear value 1.0"
+        )
+
 
 class TestGeneratePopulationSpikes:
     """Tests for population spike generation."""

@@ -391,6 +391,72 @@ class TestBoundaryCellModel:
         assert gt["max_rate"] == max_rate
         assert gt["baseline_rate"] == baseline_rate
 
+    def test_directional_tuning_hwhm_matches_direction_tolerance(self, simple_2d_env):
+        """The directional von Mises HWHM must equal ``direction_tolerance``.
+
+        ``direction_tolerance`` is documented as the directional tuning width
+        (half-width at half-maximum). With baseline 0 and the animal exactly at
+        the preferred distance, the firing rate equals
+        ``max_rate * exp(kappa * (cos(angle_diff) - 1))``. At
+        ``angle_diff == direction_tolerance`` this should be ``max_rate / 2``.
+
+        The old ``kappa = 1 / direction_tolerance`` mapping treats the tolerance
+        as a linear std and yields an HWHM roughly 40% too wide, so the rate at
+        the offset would be well above half-max.
+        """
+        from neurospatial.simulation.models import BoundaryCellModel
+
+        # Animal near the south wall (low y), away from corners.
+        position = np.array([[50.0, 2.0]])
+
+        # Compute the actual allocentric direction to (and distance from) the
+        # nearest boundary bin, exactly as BoundaryCellModel does internally
+        # (euclidean metric). Using the empirical direction makes the test
+        # robust to boundary discretization.
+        boundary_centers = simple_2d_env.bin_centers[simple_2d_env.boundary_bins]
+        dists = np.linalg.norm(boundary_centers - position[0], axis=1)
+        nearest = int(np.argmin(dists))
+        actual_distance = float(dists[nearest])
+        direction_vector = boundary_centers[nearest] - position[0]
+        boundary_direction = float(np.arctan2(direction_vector[1], direction_vector[0]))
+
+        tol = np.pi / 6  # 30 degrees
+        max_rate = 20.0
+
+        # Peak: preferred_direction aligned with boundary direction.
+        bc_peak = BoundaryCellModel(
+            simple_2d_env,
+            preferred_distance=actual_distance,
+            distance_tolerance=1000.0,  # effectively flat distance tuning
+            preferred_direction=boundary_direction,
+            direction_tolerance=tol,
+            max_rate=max_rate,
+            baseline_rate=0.0,
+            metric="euclidean",
+        )
+        peak_rate = float(bc_peak.firing_rate(position)[0])
+
+        # Offset by exactly the tolerance (the claimed HWHM).
+        bc_hwhm = BoundaryCellModel(
+            simple_2d_env,
+            preferred_distance=actual_distance,
+            distance_tolerance=1000.0,
+            preferred_direction=boundary_direction + tol,
+            direction_tolerance=tol,
+            max_rate=max_rate,
+            baseline_rate=0.0,
+            metric="euclidean",
+        )
+        hwhm_rate = float(bc_hwhm.firing_rate(position)[0])
+
+        # At the HWHM offset, response should be half the peak response.
+        assert peak_rate > 0
+        ratio = hwhm_rate / peak_rate
+        assert abs(ratio - 0.5) < 0.05, (
+            f"response at angle_diff=direction_tolerance was {ratio:.3f} of peak, "
+            f"expected ~0.5 (half-maximum)"
+        )
+
     def test_implements_neural_model_protocol(self, simple_2d_env):
         """Test that BoundaryCellModel implements NeuralModel protocol."""
         from neurospatial.simulation.models import BoundaryCellModel
@@ -732,3 +798,40 @@ class TestGridCellModel:
 
         with pytest.raises(ValueError, match="phase_offset must be shape"):
             GridCellModel(simple_2d_env, phase_offset=np.array([1.0, 2.0, 3.0]))
+
+    def test_firing_rate_matches_reference_loop_implementation(self, simple_2d_env):
+        """Vectorized grid pattern must match the explicit per-wave-vector loop.
+
+        Equivalence guard for the loop->matmul refactor of ``firing_rate``:
+        the matrix form ``cos(rel_pos @ wave_vectors.T).mean(axis=1)`` must be
+        numerically identical to summing three cosine gratings in a Python loop.
+        """
+        from neurospatial.simulation.models import GridCellModel
+
+        gc = GridCellModel(
+            simple_2d_env,
+            grid_spacing=37.0,
+            grid_orientation=0.4,
+            phase_offset=np.array([3.0, -2.0]),
+            max_rate=22.0,
+            baseline_rate=0.3,
+        )
+
+        rng = np.random.default_rng(123)
+        positions = rng.uniform(0, 100, size=(500, 2))
+
+        # Reference: original explicit-loop algorithm.
+        rel_pos = positions - gc.phase_offset
+        k_magnitude = (4.0 * np.pi) / (np.sqrt(3.0) * gc.grid_spacing)
+        angles = np.array([0.0, np.pi / 3.0, 2.0 * np.pi / 3.0]) + gc.grid_orientation
+        wave_vectors = k_magnitude * np.column_stack([np.cos(angles), np.sin(angles)])
+        grid_pattern = np.zeros(len(rel_pos))
+        for k_vec in wave_vectors:
+            grid_pattern += np.cos(np.dot(rel_pos, k_vec))
+        grid_pattern /= 3.0
+        grid_pattern = np.maximum(0.0, grid_pattern)
+        expected = gc.baseline_rate + (gc.max_rate - gc.baseline_rate) * grid_pattern
+
+        actual = gc.firing_rate(positions)
+
+        np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=1e-12)

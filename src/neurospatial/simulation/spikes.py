@@ -48,7 +48,9 @@ def generate_poisson_spikes(
 
     1. Generate candidate spikes from inhomogeneous Poisson process:
 
-       - For each time step: spike if rand() < rate[i] * dt
+       - For each time step: spike if rand() < 1 - exp(-rate[i] * dt)
+         (the exact per-bin probability of >=1 event; the linear form
+         rate[i] * dt is only valid when rate[i] * dt << 1)
 
     2. Sort candidate spike times (should already be sorted, but ensures correctness)
     3. Apply refractory period filter (single pass, O(n)):
@@ -81,7 +83,7 @@ def generate_poisson_spikes(
     >>> import numpy as np
     >>>
     >>> # Create environment and place cell at center for reliable firing
-    >>> samples = np.random.uniform(0, 100, (1000, 2))
+    >>> samples = np.random.default_rng(42).uniform(0, 100, (1000, 2))
     >>> env = Environment.from_samples(samples, bin_size=2.0)
     >>> env.units = "cm"
     >>> center = env.bin_centers[len(env.bin_centers) // 2]
@@ -129,11 +131,16 @@ def generate_poisson_spikes(
 
     dt = times[1] - times[0]
 
-    # Generate candidate spikes from inhomogeneous Poisson process
-    # Probability of spike in interval dt: P(spike) = rate * dt
-    spike_probabilities = firing_rate * dt
-    # Ensure probabilities are valid (between 0 and 1)
-    spike_probabilities = np.clip(spike_probabilities, 0.0, 1.0)
+    # Generate candidate spikes from inhomogeneous Poisson process.
+    # Probability of at least one spike in interval dt for a Poisson process
+    # of rate r is P(spike) = 1 - exp(-r * dt). This is the exact per-bin
+    # probability; the linear approximation r * dt only holds when r * dt << 1
+    # and saturates incorrectly at high rates (e.g. clamps to 1.0 instead of
+    # ~0.63 when r * dt = 1). The clip guards against floating-point excursions
+    # outside [0, 1]; negative rates are floored at 0 before exponentiation.
+    spike_probabilities = np.clip(
+        1.0 - np.exp(-np.maximum(firing_rate, 0.0) * dt), 0.0, 1.0
+    )
 
     # Generate random values and compare to probabilities
     random_values = rng.random(len(times))
@@ -219,7 +226,7 @@ def generate_population_spikes(
     >>> import numpy as np
     >>>
     >>> # Create environment
-    >>> samples = np.random.uniform(0, 100, (1000, 2))
+    >>> samples = np.random.default_rng(42).uniform(0, 100, (1000, 2))
     >>> env = Environment.from_samples(samples, bin_size=2.0)
     >>> env.units = "cm"
     >>>
@@ -470,7 +477,7 @@ def add_modulation(
     >>> import numpy as np
     >>>
     >>> # Create environment and place cell
-    >>> samples = np.random.uniform(0, 100, (1000, 2))
+    >>> samples = np.random.default_rng(42).uniform(0, 100, (1000, 2))
     >>> env = Environment.from_samples(samples, bin_size=2.0)
     >>> env.units = "cm"
     >>> center = env.bin_centers[len(env.bin_centers) // 2]

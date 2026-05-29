@@ -1,11 +1,14 @@
 """Trajectory simulation functions for generating movement patterns."""
 
+import logging
 from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial import Environment
+
+logger = logging.getLogger(__name__)
 
 
 def _get_conversion_factor(from_unit: str, to_unit: str) -> float:
@@ -363,8 +366,14 @@ def simulate_trajectory_ou(
                 # Find nearest valid bin to current position (not proposed)
                 try:
                     nearest_bin = int(env.bin_at(position[None, :])[0])
-                except Exception:
-                    # If bin_at fails, use nearest bin center
+                except (ValueError, IndexError):
+                    # bin_at can raise ValueError (e.g. non-Cartesian layout) or
+                    # IndexError; fall back to the nearest bin center.
+                    logger.debug(
+                        "bin_at failed during boundary reflection; "
+                        "falling back to nearest bin center.",
+                        exc_info=True,
+                    )
                     distances = np.linalg.norm(env.bin_centers - position, axis=1)
                     nearest_bin = int(np.argmin(distances))
 
@@ -404,7 +413,12 @@ def simulate_trajectory_ou(
                 # Clamp to nearest valid bin
                 try:
                     nearest_bin = int(env.bin_at(position[None, :])[0])
-                except Exception:
+                except (ValueError, IndexError):
+                    logger.debug(
+                        "bin_at failed while clamping post-update position; "
+                        "falling back to nearest bin center.",
+                        exc_info=True,
+                    )
                     distances = np.linalg.norm(env.bin_centers - position, axis=1)
                     nearest_bin = int(np.argmin(distances))
                 position = env.bin_centers[nearest_bin].copy()
@@ -422,7 +436,12 @@ def simulate_trajectory_ou(
             # Clamp to environment bounds - find nearest valid bin
             try:
                 nearest_bin = int(env.bin_at(position[None, :])[0])
-            except Exception:
+            except (ValueError, IndexError):
+                logger.debug(
+                    "bin_at failed during 'stop' boundary clamp; "
+                    "falling back to nearest bin center.",
+                    exc_info=True,
+                )
                 distances = np.linalg.norm(env.bin_centers - position, axis=1)
                 nearest_bin = int(np.argmin(distances))
 
@@ -471,7 +490,11 @@ def simulate_trajectory_sinusoidal(
     pause_at_peaks : bool, optional
         Whether to pause at track extrema (default: True).
     seed : int | None, optional
-        Random seed for reproducibility (currently unused, reserved for future use).
+        Accepted for a uniform trajectory API but has no effect: this trajectory
+        is fully deterministic (a closed-form sinusoid with deterministic
+        pauses), so the output is identical regardless of ``seed``. Provided so
+        callers (e.g. ``simulate_session``) can pass ``seed`` uniformly across
+        trajectory methods.
 
     Returns
     -------

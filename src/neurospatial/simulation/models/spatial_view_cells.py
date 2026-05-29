@@ -350,50 +350,50 @@ class SpatialViewCellModel:
         nan_mask = np.isnan(distances)
         response[nan_mask] = 0.0
 
-        # Optional visibility check
         if self.require_visibility:
-            for i in range(n_time):
-                if nan_mask[i]:
-                    continue
+            # Visibility path: a timestep fires only if the *preferred* location
+            # is within the FOV (when an FOV is set) and there is a clear line of
+            # sight to it. Compute the FOV mask for all timesteps at once, then
+            # run the inherently scalar line-of-sight check only on the surviving
+            # candidates.
+            from neurospatial.ops.egocentric import compute_egocentric_bearing
 
-                # Check if preferred location is in FOV
-                if self.fov is not None:
-                    from neurospatial.ops.egocentric import compute_egocentric_bearing
+            if self.fov is not None:
+                # Bearing to the fixed preferred location at every timestep.
+                bearings = compute_egocentric_bearing(
+                    positions,
+                    headings,
+                    self.preferred_view_location[None, :],
+                )[:, 0]
+                in_fov = np.asarray(self.fov.contains_angle(bearings))
+                response[~in_fov] = 0.0
+            else:
+                in_fov = np.ones(n_time, dtype=bool)
 
-                    bearing = compute_egocentric_bearing(
-                        positions[i : i + 1],
-                        headings[i : i + 1],
-                        self.preferred_view_location[None, :],
-                    )[0, 0]
-
-                    if not self.fov.contains_angle(bearing):
-                        response[i] = 0.0
-                        continue
-
-                # Check line of sight to preferred location
+            # Line-of-sight check (scalar per call) for the remaining candidates:
+            # not NaN, in FOV, and still responding above zero.
+            candidates = np.flatnonzero(~nan_mask & in_fov & (response > 0.0))
+            for i in candidates:
                 if not _line_of_sight_clear(
                     self.env, positions[i], self.preferred_view_location
                 ):
                     response[i] = 0.0
 
-        # Apply FOV restriction (even without visibility requirement)
-        if self.fov is not None and not self.require_visibility:
+        elif self.fov is not None:
+            # FOV-only path (no visibility requirement): a timestep fires only if
+            # the *viewed* location is within the FOV. The viewed location varies
+            # per timestep, so pass per-time targets shaped (n_time, 1, 2).
             from neurospatial.ops.egocentric import compute_egocentric_bearing
 
-            # Check if viewed location is in FOV
-            for i in range(n_time):
-                if nan_mask[i]:
-                    continue
-
-                # Compute bearing to viewed location
-                bearing = compute_egocentric_bearing(
-                    positions[i : i + 1],
-                    headings[i : i + 1],
-                    viewed_locations[i : i + 1],
-                )[0, 0]
-
-                if not self.fov.contains_angle(bearing):
-                    response[i] = 0.0
+            bearings = compute_egocentric_bearing(
+                positions,
+                headings,
+                viewed_locations[:, None, :],
+            )[:, 0]
+            in_fov = np.asarray(self.fov.contains_angle(bearings))
+            # NaN viewed locations already have response 0; restrict only the
+            # valid ones that fall outside the FOV.
+            response[~nan_mask & ~in_fov] = 0.0
 
         # Scale by max_rate and add baseline
         rates: NDArray[np.float64] = (

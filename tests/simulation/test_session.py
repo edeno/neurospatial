@@ -349,6 +349,106 @@ class TestSimulateSession:
         for st1, st2 in zip(session1.spike_trains, session2.spike_trains, strict=True):
             np.testing.assert_array_equal(st1, st2)
 
+    def test_simulate_session_mixed_shared_max_rate_reaches_all_cell_types(
+        self, simple_2d_env
+    ):
+        """A non-default ``max_rate`` in mixed mode must reach every cell type.
+
+        Previously the place-cell parameter pop consumed shared rate kwargs
+        (``max_rate``/``baseline_rate``/``metric``) before the boundary and grid
+        loops read them, so boundary/grid cells silently fell back to their
+        defaults. The shared kwargs must now reach all three model types.
+        """
+        simple_2d_env.units = "cm"
+        custom_max_rate = 37.0  # not equal to any model's default
+
+        session = simulate_session(
+            simple_2d_env,
+            duration=1.0,
+            n_cells=10,  # 6 place, 2 boundary, 2 grid
+            cell_type="mixed",
+            max_rate=custom_max_rate,
+            seed=42,
+            show_progress=False,
+        )
+
+        from neurospatial.simulation.models import (
+            BoundaryCellModel,
+            GridCellModel,
+            PlaceCellModel,
+        )
+
+        saw_boundary = saw_grid = saw_place = False
+        for model in session.models:
+            assert model.max_rate == custom_max_rate, (
+                f"{type(model).__name__} did not receive shared max_rate; "
+                f"got {model.max_rate}"
+            )
+            saw_boundary |= isinstance(model, BoundaryCellModel)
+            saw_grid |= isinstance(model, GridCellModel)
+            saw_place |= isinstance(model, PlaceCellModel)
+
+        assert saw_place and saw_boundary and saw_grid, (
+            "mixed session should contain place, boundary, and grid cells"
+        )
+
+    def test_simulate_session_spike_stream_independent_of_trajectory(
+        self, simple_2d_env
+    ):
+        """Spike RNG stream must be decoupled from the trajectory RNG stream.
+
+        Previously ``simulate_session`` passed the same ``seed`` to both
+        ``simulate_trajectory_ou`` and ``generate_population_spikes``, so the
+        trajectory and the spikes shared a correlated RNG stream (and neuron 0
+        drew from the exact same seed the trajectory consumed). After the fix,
+        trajectory / field-center / spike seeds are spawned independently from a
+        single ``SeedSequence(seed)``.
+
+        We verify decoupling behaviorally: regenerating spikes for the session's
+        own models and positions while reusing the *trajectory* seed must NOT
+        reproduce the session spike trains, because the session no longer uses
+        the trajectory seed for spikes.
+        """
+        from neurospatial.simulation.spikes import generate_population_spikes
+
+        simple_2d_env.units = "cm"
+        seed = 7
+
+        session = simulate_session(
+            simple_2d_env,
+            duration=3.0,
+            n_cells=4,
+            cell_type="place",
+            max_rate=40.0,
+            width=15.0,
+            seed=seed,
+            show_progress=False,
+        )
+
+        # Reproduce spikes using the trajectory seed (the old collision path).
+        collision_spikes = generate_population_spikes(
+            session.models,
+            session.positions,
+            session.times,
+            seed=seed,
+            show_progress=False,
+        )
+
+        # At least one neuron must have produced spikes (otherwise the test is
+        # vacuous), and the session's spike trains must differ from the
+        # trajectory-seed reproduction for at least one neuron.
+        total = sum(len(st) for st in session.spike_trains)
+        assert total > 0, "no spikes generated; cannot test stream independence"
+
+        differs = any(
+            not np.array_equal(a, b)
+            for a, b in zip(session.spike_trains, collision_spikes, strict=True)
+        )
+        assert differs, (
+            "session spike trains reproduced exactly using the trajectory seed, "
+            "indicating the spike RNG stream is still coupled to the trajectory seed"
+        )
+
     def test_simulate_session_ground_truth_structure(self, simple_2d_env):
         """simulate_session() ground_truth should have proper structure."""
         simple_2d_env.units = "cm"

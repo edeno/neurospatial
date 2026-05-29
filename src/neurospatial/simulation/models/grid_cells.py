@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -39,7 +39,7 @@ class GridCellModel:
 
     Attributes
     ----------
-    ground_truth : dict
+    ground_truth : dict[str, Any]
         Contains 'grid_spacing', 'grid_orientation', 'phase_offset',
         'max_rate', 'baseline_rate'.
 
@@ -265,15 +265,11 @@ class GridCellModel:
         # Compute wave vectors: k_i = k_magnitude * [cos(angle_i), sin(angle_i)]
         wave_vectors = k_magnitude * np.column_stack([np.cos(angles), np.sin(angles)])
 
-        # Compute grid pattern as sum of three cosine gratings
-        # g(x) = (1/3) * Σ cos(k_i · x)
-        grid_pattern = np.zeros(len(rel_pos))
-        for k_vec in wave_vectors:
-            # Dot product: k · x
-            phase = np.dot(rel_pos, k_vec)
-            grid_pattern += np.cos(phase)
-
-        grid_pattern /= 3.0  # Average of three gratings
+        # Compute grid pattern as the mean of three cosine gratings.
+        # g(x) = (1/3) * Σ cos(k_i · x). Vectorized over wave vectors:
+        # rel_pos @ wave_vectors.T has shape (n_time, 3) giving each phase
+        # k_i · x, and the mean over axis 1 averages the three gratings.
+        grid_pattern = np.cos(rel_pos @ wave_vectors.T).mean(axis=1)
 
         # Rectify: only positive parts contribute to firing
         grid_pattern = np.maximum(0.0, grid_pattern)
@@ -281,15 +277,15 @@ class GridCellModel:
         # Scale to firing rate range
         rates = self.baseline_rate + (self.max_rate - self.baseline_rate) * grid_pattern
 
-        return rates
+        return np.asarray(rates, dtype=np.float64)
 
     @property
-    def ground_truth(self) -> dict:
+    def ground_truth(self) -> dict[str, Any]:
         """Return ground truth parameters for validation.
 
         Returns
         -------
-        parameters : dict
+        parameters : dict[str, Any]
             Contains:
             - 'grid_spacing': float - distance between peaks
             - 'grid_orientation': float - grid rotation in radians

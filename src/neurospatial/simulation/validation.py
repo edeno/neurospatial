@@ -294,7 +294,22 @@ def validate_simulation(
             # Compute true firing rate at bin centers
             true_field = temp_model.firing_rate(env.bin_centers)
         else:
-            # For non-place cells, skip correlation (not implemented yet)
+            # Field-correlation validation is only implemented for place cells
+            # (it reconstructs the ground-truth field from a Gaussian place
+            # model). Cells whose ground truth lacks the 'width'/'max_rate'
+            # place-cell parameters are skipped with a NaN correlation; warn so
+            # the skip is visible rather than silent.
+            import warnings
+
+            warnings.warn(
+                f"{cell_key}: skipping field-correlation validation because its "
+                f"ground truth lacks place-cell parameters ('width' and "
+                f"'max_rate'); correlation set to NaN. Field correlation is only "
+                f"implemented for place cells. Available ground-truth fields: "
+                f"{sorted(gt.keys())}.",
+                UserWarning,
+                stacklevel=2,
+            )
             correlations[i] = np.nan
             continue
 
