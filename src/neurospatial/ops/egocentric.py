@@ -327,13 +327,17 @@ def egocentric_to_allocentric(
         Animal heading at each time (radians).
     ego_points : NDArray, shape (n_time, n_points, 2)
         Points in egocentric coordinates.
-    headings : NDArray, shape (n_time,)
-        Animal heading at each time (radians).
 
     Returns
     -------
     NDArray, shape (n_time, n_points, 2)
         Points in allocentric coordinates.
+
+    Raises
+    ------
+    ValueError
+        If ``ego_points`` has the wrong shape, ``positions`` is not
+        ``(n_time, 2)``, or ``headings`` length does not match ``positions``.
 
     Examples
     --------
@@ -356,6 +360,39 @@ def egocentric_to_allocentric(
     ego_points = np.asarray(ego_points, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
+
+    # Validate shapes (mirrors allocentric_to_egocentric).
+    if ego_points.ndim != 3 or ego_points.shape[2] != 2:
+        raise ValueError(
+            f"Cannot transform ego_points: invalid shape {ego_points.shape}.\n\n"
+            f"WHAT: ego_points must be 3D with shape (n_time, n_points, 2)\n"
+            f"WHY: Each point needs (x, y) egocentric coordinates per timepoint\n\n"
+            f"HOW to fix:\n"
+            f"1. Reshape your array to (n_time, n_points, 2)\n"
+            f"2. This is the shape returned by allocentric_to_egocentric\n"
+            f"Got shape: {ego_points.shape}"
+        )
+
+    if positions.ndim != 2 or positions.shape[1] != 2:
+        raise ValueError(
+            f"Cannot transform: invalid positions shape {positions.shape}.\n\n"
+            f"WHAT: positions must have shape (n_time, 2)\n"
+            f"WHY: Need (x, y) position at each timepoint for the transform origin\n\n"
+            f"HOW to fix:\n"
+            f"1. Reshape: positions.reshape(-1, 2)\n"
+            f"2. For single position: positions.reshape(1, 2)"
+        )
+
+    if headings.ndim != 1 or len(headings) != len(positions):
+        raise ValueError(
+            f"Headings/positions length mismatch.\n\n"
+            f"WHAT: headings shape {headings.shape} != positions length {len(positions)}\n"
+            f"WHY: Need one heading per timepoint for coordinate rotation\n\n"
+            f"HOW to fix:\n"
+            f"1. Ensure headings and positions are aligned to same timepoints\n"
+            f"2. Check for off-by-one errors in slicing\n"
+            f"3. Interpolate headings to match positions if sampled differently"
+        )
 
     n_time = len(positions)
 
@@ -566,6 +603,12 @@ def compute_egocentric_distance(
         # Vectorized: get bin indices for all positions at once
         pos_bins = env.bin_at(positions)
 
+        # Hoist target-bin computation out of the per-target inner loop: map
+        # every target to its bin in a single batched ``bin_at`` call. For
+        # static targets (broadcast from 2D) this collapses ``n_time * n_targets``
+        # redundant lookups into one. Shape: (n_time, n_targets).
+        target_bins = env.bin_at(targets_3d.reshape(-1, 2)).reshape(n_time, n_targets)
+
         # Cache distance fields by target bin: static targets recompute once;
         # time-varying targets pay only for unique target bins.
         distance_field_cache: dict[int, NDArray[np.float64]] = {}
@@ -576,9 +619,7 @@ def compute_egocentric_distance(
                 # Position outside environment - row stays NaN
                 continue
             for i in range(n_targets):
-                target = targets_3d[t, i]
-                target_bins = env.bin_at(target.reshape(1, -1))
-                target_bin = int(target_bins[0])
+                target_bin = int(target_bins[t, i])
                 if target_bin < 0:
                     # Target outside environment - cell stays NaN
                     continue
@@ -633,6 +674,16 @@ def heading_from_velocity(
     -----
     UserWarning
         If all speeds are below min_speed threshold.
+
+    Notes
+    -----
+    Heading is computed from the forward finite difference of position, which
+    yields ``n_time - 1`` velocity samples for ``n_time`` positions. To return
+    an array aligned to ``positions`` (length ``n_time``), the last sample's
+    heading is forward-padded: ``heading[-1]`` is a copy of ``heading[-2]``
+    rather than an independently measured value. For long trajectories this
+    edge effect is negligible; for very short trajectories treat the final
+    sample's heading as approximate.
 
     Examples
     --------

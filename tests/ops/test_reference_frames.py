@@ -188,6 +188,40 @@ class TestEgocentricToAllocentric:
         for t in range(10):
             assert_allclose(recovered[t], points, atol=1e-10)
 
+    def test_invalid_ego_points_shape_raises(self):
+        """A 2D ego_points array (missing time axis) raises a clear ValueError."""
+        from neurospatial.ops.egocentric import egocentric_to_allocentric
+
+        # ego_points must be 3D (n_time, n_points, 2). Pass a 2D array.
+        ego_points = np.array([[10.0, 0.0], [0.0, 10.0]])  # (2, 2): ambiguous
+        positions = np.array([[0.0, 0.0]])  # 1 timepoint
+        headings = np.array([0.0])
+
+        with pytest.raises(ValueError, match="ego_points"):
+            egocentric_to_allocentric(positions, headings, ego_points)
+
+    def test_invalid_positions_shape_raises(self):
+        """Positions not shaped (n_time, 2) raise a clear ValueError."""
+        from neurospatial.ops.egocentric import egocentric_to_allocentric
+
+        ego_points = np.zeros((1, 2, 2))
+        positions = np.array([0.0, 0.0])  # 1D, wrong
+        headings = np.array([0.0])
+
+        with pytest.raises(ValueError, match="positions"):
+            egocentric_to_allocentric(positions, headings, ego_points)
+
+    def test_positions_headings_length_mismatch_raises(self):
+        """Headings and positions of mismatched length raise a clear ValueError."""
+        from neurospatial.ops.egocentric import egocentric_to_allocentric
+
+        ego_points = np.zeros((2, 1, 2))
+        positions = np.array([[0.0, 0.0], [1.0, 1.0]])  # 2 timepoints
+        headings = np.array([0.0])  # 1 timepoint
+
+        with pytest.raises(ValueError, match=r"Headings/positions length mismatch"):
+            egocentric_to_allocentric(positions, headings, ego_points)
+
 
 class TestComputeEgocentricBearing:
     """Tests for compute_egocentric_bearing function."""
@@ -418,6 +452,78 @@ class TestGeodesicDistanceTimeVarying:
         )
 
         assert_allclose(dist_3d, dist_2d, equal_nan=True)
+
+    @staticmethod
+    def _reference_geodesic(positions, targets, env):
+        """Reference geodesic distance: original per-cell bin_at loop.
+
+        Mirrors the pre-optimization implementation so the hoisted version can
+        be verified for exact equivalence (including NaN handling for
+        out-of-environment positions and targets).
+        """
+        from neurospatial.ops.distance import distance_field as compute_distance_field
+
+        n_time = len(positions)
+        targets = np.asarray(targets, dtype=np.float64)
+        positions = np.asarray(positions, dtype=np.float64)
+        if targets.ndim == 2:
+            targets_3d = np.broadcast_to(targets, (n_time, targets.shape[0], 2))
+        else:
+            targets_3d = targets
+        n_targets = targets_3d.shape[1]
+
+        distances = np.full((n_time, n_targets), np.nan, dtype=np.float64)
+        cache: dict[int, np.ndarray] = {}
+        for t in range(n_time):
+            pos_bin = int(env.bin_at(positions[t].reshape(1, -1))[0])
+            if pos_bin < 0:
+                continue
+            for i in range(n_targets):
+                target_bin = int(env.bin_at(targets_3d[t, i].reshape(1, -1))[0])
+                if target_bin < 0:
+                    continue
+                if target_bin not in cache:
+                    cache[target_bin] = compute_distance_field(
+                        env.connectivity, sources=[target_bin]
+                    )
+                distances[t, i] = cache[target_bin][pos_bin]
+        return distances
+
+    def test_geodesic_matches_reference_loop_with_out_of_env(self):
+        """Optimized geodesic distance equals the reference loop, incl. NaN cells."""
+        from neurospatial import Environment
+        from neurospatial.ops.egocentric import compute_egocentric_distance
+
+        rng = np.random.default_rng(7)
+        sample_positions = rng.uniform(0, 100, size=(2000, 2))
+        env = Environment.from_samples(sample_positions, bin_size=5.0)
+
+        # Some positions inside, one far outside the environment (-> NaN row).
+        positions = np.array(
+            [
+                [20.0, 30.0],
+                [60.0, 70.0],
+                [10000.0, 10000.0],  # outside env -> NaN row
+                [40.0, 40.0],
+            ]
+        )
+        # Time-varying targets, one outside the env at t=1 (-> NaN cell).
+        targets = np.array(
+            [
+                [[50.0, 50.0], [70.0, 30.0]],
+                [[50.0, 50.0], [99999.0, 99999.0]],  # second target outside
+                [[50.0, 50.0], [70.0, 30.0]],
+                [[30.0, 30.0], [80.0, 80.0]],
+            ],
+            dtype=np.float64,
+        )
+
+        expected = self._reference_geodesic(positions, targets, env)
+        actual = compute_egocentric_distance(
+            positions, None, targets, metric="geodesic", env=env
+        )
+
+        assert_allclose(actual, expected, equal_nan=True)
 
 
 class TestHeadingFromVelocity:

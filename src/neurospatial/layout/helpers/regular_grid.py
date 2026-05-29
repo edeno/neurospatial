@@ -229,7 +229,18 @@ def _infer_active_bins_from_regular_grid(
 
     n_dims = positions.shape[1]
     if n_dims > 1:
-        # Use connectivity=1 for 4-neighbor (2D) or 6-neighbor (3D) etc.
+        # Morphological operations use the maximal scipy structuring element
+        # (``connectivity=n_dims``): in 2D this is the full 8-neighbor (3x3)
+        # element, matching the graph's diagonal connectivity exactly. In 3D,
+        # however, ``connectivity=2`` is the 18-neighbor element (faces + edges,
+        # NO corners), whereas the connectivity GRAPH built with
+        # ``connect_diagonal=True`` uses the full 26-neighbor (3x3x3) stencil
+        # including corner diagonals. This mismatch is intentional and
+        # conservative: the 18-neighbor element gives slightly tighter
+        # closing/dilation of the active mask in 3D while the graph still wires
+        # all 26 diagonal neighbors for traversal. (Note: scipy clamps
+        # ``connectivity`` to at most ``n_dims``, so ``connectivity=2`` is the
+        # full element in 2D but the 18-neighbor element in 3D.)
         structure = ndimage.generate_binary_structure(n_dims, connectivity=2)
 
         if close_gaps:

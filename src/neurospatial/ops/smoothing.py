@@ -132,10 +132,15 @@ def compute_diffusion_kernels(
         )
 
     # 3) Re-compute edge "weight" = exp( - dist^2/(2σ^2) )
-    _assign_gaussian_weights_from_distance(graph, bandwidth_sigma)
+    #    Operate on a copy so the caller's graph (and any "weight" attributes it
+    #    relies on) is never mutated as a side effect.
+    working_graph = graph.copy()
+    _assign_gaussian_weights_from_distance(working_graph, bandwidth_sigma)
 
     # 4) Build unnormalized Laplacian L = D - W
-    laplacian = nx.laplacian_matrix(graph, nodelist=range(n_bins), weight="weight")
+    laplacian = nx.laplacian_matrix(
+        working_graph, nodelist=range(n_bins), weight="weight"
+    )
 
     # 5) If bin_sizes is given, form M⁻¹ = diag(1/bin_sizes),
     #    then replace L ← M⁻¹ @ L (so we solve du/dt = - M⁻¹ L u).

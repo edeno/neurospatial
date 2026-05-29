@@ -240,9 +240,11 @@ class TestResampleFieldEdgeCases:
 
         result = resample_field(field, src_env, dst_env, method="nearest")
 
-        # Should still work - each dst bin maps to nearest src bin
+        # Every destination bin lies outside the source environment, so each
+        # maps to the "outside" sentinel and resamples to NaN (a field cannot
+        # be meaningfully pulled onto a region the source does not cover).
         assert result.shape == (dst_env.n_bins,)
-        assert np.all(np.isfinite(result))
+        assert np.all(np.isnan(result))
 
 
 class TestResampleFieldInputValidation:

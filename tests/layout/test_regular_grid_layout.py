@@ -307,3 +307,40 @@ class TestNoActiveBinsError:
         # Should specifically mention NaN issue
         assert "NaN" in error_msg or "nan" in error_msg.lower()
         assert "no valid data" in error_msg.lower() or "all nan" in error_msg.lower()
+
+
+class TestInferredRangeBuffer:
+    """The inference buffer must be half the bin size per axis (scalar or sequence)."""
+
+    def test_scalar_bin_size_buffer_is_half(self):
+        """Scalar bin_size yields a half-bin buffer on each side of the data."""
+        data = np.array([[0.0, 0.0], [10.0, 20.0]])
+        layout = RegularGridLayout()
+        layout.build(
+            bin_size=2.0,
+            positions=data,
+            infer_active_bins=False,
+        )
+        (x_min, x_max), (y_min, y_max) = layout.dimension_ranges
+        # Half of bin_size=2.0 -> buffer 1.0 on each axis.
+        assert np.isclose(x_min, 0.0 - 1.0)
+        assert np.isclose(x_max, 10.0 + 1.0)
+        assert np.isclose(y_min, 0.0 - 1.0)
+        assert np.isclose(y_max, 20.0 + 1.0)
+
+    def test_sequence_bin_size_buffer_is_half_per_axis(self):
+        """Sequence bin_size yields a per-axis half-bin buffer, not the raw bin size."""
+        data = np.array([[0.0, 0.0], [10.0, 20.0]])
+        layout = RegularGridLayout()
+        layout.build(
+            bin_size=[2.0, 4.0],
+            positions=data,
+            infer_active_bins=False,
+        )
+        (x_min, x_max), (y_min, y_max) = layout.dimension_ranges
+        # Buffer must be half the per-axis bin size: x -> 1.0, y -> 2.0.
+        # The pre-fix behaviour used the raw bin size (2.0 and 4.0), doubling it.
+        assert np.isclose(x_min, 0.0 - 1.0)
+        assert np.isclose(x_max, 10.0 + 1.0)
+        assert np.isclose(y_min, 0.0 - 2.0)
+        assert np.isclose(y_max, 20.0 + 2.0)

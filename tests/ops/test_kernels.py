@@ -262,6 +262,61 @@ class TestComputeDiffusionKernels:
             "Large bandwidth should spread more to edges"
         )
 
+    @staticmethod
+    def _build_grid_graph_with_distances():
+        """Build a 3x3 grid graph with 'distance' edge attributes."""
+        graph = nx.grid_2d_graph(3, 3)
+        mapping = {node: i for i, node in enumerate(graph.nodes())}
+        graph = nx.relabel_nodes(graph, mapping)
+        for i, node in enumerate(sorted(mapping.values())):
+            row, col = divmod(i, 3)
+            graph.nodes[node]["pos"] = (float(col), float(row))
+        for u, v in graph.edges():
+            pos_u = np.array(graph.nodes[u]["pos"])
+            pos_v = np.array(graph.nodes[v]["pos"])
+            graph.edges[u, v]["distance"] = float(np.linalg.norm(pos_v - pos_u))
+        return graph
+
+    def test_does_not_mutate_input_graph_weights(self):
+        """compute_diffusion_kernels must not write 'weight' onto the caller's graph.
+
+        Previously the function called an in-place helper that overwrote each
+        edge's 'weight' attribute, corrupting graphs reused by the caller.
+        """
+        graph = self._build_grid_graph_with_distances()
+
+        # Seed a known 'weight' attribute the caller might depend on.
+        sentinel_weights = {}
+        for u, v in graph.edges():
+            graph.edges[u, v]["weight"] = 42.0
+            sentinel_weights[(u, v)] = 42.0
+
+        compute_diffusion_kernels(graph, bandwidth_sigma=1.0, mode="transition")
+
+        for (u, v), expected in sentinel_weights.items():
+            assert graph.edges[u, v]["weight"] == expected, (
+                "Input graph edge 'weight' must be unchanged after the call"
+            )
+
+    def test_kernel_values_unchanged_by_no_mutate_fix(self):
+        """Kernel values must be identical whether or not the caller graph has weights."""
+        graph_a = self._build_grid_graph_with_distances()
+        graph_b = self._build_grid_graph_with_distances()
+        # graph_b carries a stale 'weight' that the old code would have used as
+        # the starting point; the function must recompute weights internally so
+        # both graphs yield identical kernels.
+        for u, v in graph_b.edges():
+            graph_b.edges[u, v]["weight"] = 0.123
+
+        kernel_a = compute_diffusion_kernels(
+            graph_a, bandwidth_sigma=1.0, mode="transition"
+        )
+        kernel_b = compute_diffusion_kernels(
+            graph_b, bandwidth_sigma=1.0, mode="transition"
+        )
+
+        assert np.allclose(kernel_a, kernel_b, atol=1e-12)
+
 
 class TestEnvironmentComputeKernel:
     """Tests for Environment.compute_kernel() wrapper method."""

@@ -97,8 +97,10 @@ def neighbor_reduce(
     3. Apply reduction operation (sum, mean, max, min, std)
     4. Handle isolated nodes (no neighbors) → return NaN
 
-    **Performance**: Optimized for sparse graphs using NetworkX neighbor iteration.
-    Time complexity O(n_bins × avg_degree).
+    **Performance**: ``sum`` and ``mean`` are vectorized as a sparse
+    matrix-vector product against the CSR adjacency matrix (O(n_edges)).
+    ``max``/``min``/``std`` are not linear and use a per-bin loop over
+    neighbors (O(n_bins × avg_degree)).
 
     Examples
     --------
@@ -165,7 +167,15 @@ def neighbor_reduce(
     # Initialize result array
     result = np.full(env.n_bins, np.nan, dtype=np.float64)
 
-    # Iterate over all bins
+    # ``sum`` and ``mean`` are linear over the neighborhood and can be expressed
+    # as a sparse matrix-vector product against the (binary) adjacency matrix.
+    # ``max``/``min``/``std`` are not linear, so they keep the loop fallback.
+    if op == "sum" or op == "mean":
+        return _neighbor_reduce_linear(
+            env, field, op=op, weights=weights, include_self=include_self
+        )
+
+    # Loop fallback for non-linear reductions (max, min, std).
     for bin_id in range(env.n_bins):
         # Get neighbors from connectivity graph
         neighbors = list(env.connectivity.neighbors(bin_id))
@@ -181,36 +191,97 @@ def neighbor_reduce(
         # Get neighbor values
         neighbor_values = field[neighbors]
 
-        # Apply reduction operation
-        if weights is None:
-            # Unweighted operations
-            match op:
-                case "sum":
-                    result[bin_id] = np.sum(neighbor_values)
-                case "mean":
-                    result[bin_id] = np.mean(neighbor_values)
-                case "max":
-                    result[bin_id] = np.max(neighbor_values)
-                case "min":
-                    result[bin_id] = np.min(neighbor_values)
-                case "std":
-                    result[bin_id] = np.std(neighbor_values)
-        else:
-            # Weighted operations (only sum and mean)
-            neighbor_weights = weights[neighbors]
-            match op:
-                case "sum":
-                    result[bin_id] = np.sum(neighbor_values * neighbor_weights)
-                case "mean":
-                    # Weighted mean: sum(w * v) / sum(w)
-                    weight_sum = np.sum(neighbor_weights)
-                    if weight_sum > 0:
-                        result[bin_id] = (
-                            np.sum(neighbor_values * neighbor_weights) / weight_sum
-                        )
-                    else:
-                        result[bin_id] = np.nan
+        # Apply reduction operation (non-linear, unweighted only)
+        match op:
+            case "max":
+                result[bin_id] = np.max(neighbor_values)
+            case "min":
+                result[bin_id] = np.min(neighbor_values)
+            case "std":
+                result[bin_id] = np.std(neighbor_values)
 
+    return result
+
+
+def _neighbor_reduce_linear(
+    env: Environment,
+    field: NDArray[np.float64],
+    *,
+    op: Literal["sum", "mean"],
+    weights: NDArray[np.float64] | None,
+    include_self: bool,
+) -> NDArray[np.float64]:
+    """Vectorized ``sum``/``mean`` neighbor reduction via a CSR adjacency matrix.
+
+    Parameters
+    ----------
+    env : Environment
+        Spatial environment providing graph connectivity.
+    field : NDArray[np.float64], shape (n_bins,)
+        Scalar field values at each bin.
+    op : {'sum', 'mean'}
+        Linear reduction operation.
+    weights : NDArray[np.float64], shape (n_bins,) or None
+        Optional per-bin weights for weighted sum/mean.
+    include_self : bool
+        If True, include each bin itself in its neighborhood.
+
+    Returns
+    -------
+    NDArray[np.float64], shape (n_bins,)
+        Reduced field. Bins with empty neighborhoods (degree 0, or degree 0
+        plus self when ``include_self`` is False) are NaN. Weighted means whose
+        neighbor-weight sum is non-positive are NaN.
+
+    Notes
+    -----
+    Equivalent to the per-bin loop ``sum``/``mean`` over neighbors, expressed as
+    a sparse matrix-vector product ``A @ x`` where ``A`` is the binary adjacency
+    matrix (with the diagonal added when ``include_self`` is True).
+    """
+    import networkx as nx
+    import scipy.sparse as sp
+
+    n_bins = env.n_bins
+
+    # Binary adjacency matrix ordered by node id 0..n_bins-1.
+    adjacency = nx.to_scipy_sparse_array(
+        env.connectivity,
+        nodelist=range(n_bins),
+        weight=None,
+        format="csr",
+        dtype=np.float64,
+    )
+    if include_self:
+        adjacency = adjacency + sp.eye(n_bins, format="csr", dtype=np.float64)
+
+    # Number of contributing neighbors per bin (row sums of the adjacency).
+    neighbor_counts = np.asarray(adjacency.sum(axis=1)).ravel()
+    empty = neighbor_counts == 0
+
+    if weights is None:
+        numerator = adjacency @ field
+        if op == "sum":
+            result = numerator
+            result[empty] = np.nan
+            return np.asarray(result, dtype=np.float64)
+        # mean: divide neighbor sum by neighbor count
+        result = np.full(n_bins, np.nan, dtype=np.float64)
+        valid = ~empty
+        result[valid] = numerator[valid] / neighbor_counts[valid]
+        return result
+
+    # Weighted operations.
+    weighted_numerator = adjacency @ (field * weights)
+    if op == "sum":
+        result = np.asarray(weighted_numerator, dtype=np.float64)
+        result[empty] = np.nan
+        return result
+    # Weighted mean: sum(w * v) / sum(w) over neighbors.
+    weight_sum = adjacency @ weights
+    result = np.full(n_bins, np.nan, dtype=np.float64)
+    valid = weight_sum > 0
+    result[valid] = weighted_numerator[valid] / weight_sum[valid]
     return result
 
 

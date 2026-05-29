@@ -313,3 +313,73 @@ class TestMapPointsToBinsBehavior:
             ]
         )
         assert np.allclose(regular_grid_env.bin_centers[bins[0]], expected_center)
+
+
+class TestResampleFieldOutOfBounds:
+    """Destination bins outside the source environment must become NaN."""
+
+    def test_out_of_source_bins_become_nan(self):
+        """Destination bins with no source coverage map to NaN, not field[-1].
+
+        ``map_points_to_bins`` returns -1 for destination bin centers that fall
+        outside the source environment. Negative indexing would silently
+        resolve -1 to ``field[-1]`` (the last source bin's value); those
+        positions must instead be NaN.
+        """
+        from neurospatial import Environment
+        from neurospatial.ops.binning import resample_field
+
+        # Source: a small region covering only x,y in roughly [0, 20].
+        src_data = np.array(
+            [[i, j] for i in range(0, 21, 2) for j in range(0, 21, 2)],
+            dtype=np.float64,
+        )
+        src_env = Environment.from_samples(src_data, bin_size=2.0)
+
+        # Destination: a much larger region extending well beyond the source.
+        dst_data = np.array(
+            [[i, j] for i in range(0, 61, 2) for j in range(0, 61, 2)],
+            dtype=np.float64,
+        )
+        dst_env = Environment.from_samples(dst_data, bin_size=2.0)
+
+        # Distinctive field with a large value in the LAST source bin so that
+        # any accidental ``field[-1]`` fallback would be obvious.
+        field = np.arange(src_env.n_bins, dtype=np.float64)
+        field[-1] = 999.0
+
+        resampled = resample_field(field, src_env, dst_env, method="nearest")
+
+        assert resampled.shape == (dst_env.n_bins,)
+
+        # Identify which destination bins fall outside the source coverage.
+        from neurospatial.ops.binning import TieBreakStrategy, map_points_to_bins
+
+        dst_to_src = map_points_to_bins(
+            dst_env.bin_centers, src_env, tie_break=TieBreakStrategy.LOWEST_INDEX
+        )
+        outside = dst_to_src < 0
+
+        # There must be some out-of-source destination bins for a valid test.
+        assert np.any(outside)
+
+        # Out-of-source bins must be NaN (not field[-1] == 999.0).
+        assert np.all(np.isnan(resampled[outside]))
+        # In-source bins must be finite and exactly equal to the gathered value.
+        assert np.all(np.isfinite(resampled[~outside]))
+        assert np.array_equal(resampled[~outside], field[dst_to_src[~outside]])
+
+    def test_identity_resample_unchanged(self):
+        """Resampling onto the same environment preserves all values (no NaN)."""
+        from neurospatial import Environment
+        from neurospatial.ops.binning import resample_field
+
+        data = np.array(
+            [[i, j] for i in range(0, 21, 2) for j in range(0, 21, 2)],
+            dtype=np.float64,
+        )
+        env = Environment.from_samples(data, bin_size=2.0)
+        field = np.arange(env.n_bins, dtype=np.float64)
+
+        resampled = resample_field(field, env, env, method="nearest")
+        assert np.allclose(resampled, field)

@@ -261,7 +261,14 @@ def map_points_to_bins(
         bin_indices: NDArray[np.int64] = indices.astype(np.int64)
 
     elif tie_break == TieBreakStrategy.LOWEST_INDEX:
-        # Deterministic path: find all ties and pick lowest index
+        # Deterministic path: find all ties and pick lowest index.
+        # We first query only the k=10 nearest candidates as a fast approximation:
+        # the lowest-index winner almost always lies among the nearest few. If a
+        # tie is *detected* among those candidates (see ``tied_rows`` below), we
+        # fall back to an exact all-center distance computation for just those
+        # rows, so >10 equidistant bins are still resolved correctly. The k=10
+        # cap only bounds the cheap first pass; it is not an upper bound on the
+        # number of ties that can be resolved exactly.
         max_neighbors = min(10, len(env.bin_centers))
         distances_kn, indices_kn = kdtree.query(points, k=max_neighbors, workers=-1)
 
@@ -624,7 +631,9 @@ def resample_field(
     Returns
     -------
     resampled : NDArray[np.float64], shape (dst_env.n_bins,)
-        Field resampled onto destination environment bins
+        Field resampled onto destination environment bins. Destination bins
+        whose centers fall outside the source environment (no source bin within
+        range) are set to ``np.nan``.
 
     Raises
     ------
@@ -758,14 +767,25 @@ def resample_field(
 
     # Step 1: Map each destination bin center to nearest source bin
     # Use map_points_to_bins for KD-tree cached nearest-neighbor lookup
-    dst_to_src_indices = map_points_to_bins(
-        dst_env.bin_centers,
-        src_env,
-        tie_break=TieBreakStrategy.LOWEST_INDEX,
+    # (return_dist defaults to False, so the result is the index array).
+    dst_to_src_indices = cast(
+        "NDArray[np.int64]",
+        map_points_to_bins(
+            dst_env.bin_centers,
+            src_env,
+            tie_break=TieBreakStrategy.LOWEST_INDEX,
+        ),
     )
 
-    # Step 2: Pullback field values via nearest neighbor
-    resampled = field[dst_to_src_indices]
+    # Step 2: Pullback field values via nearest neighbor.
+    # map_points_to_bins returns -1 for destination bin centers that fall
+    # outside the source environment. Naive ``field[dst_to_src_indices]`` would
+    # silently resolve -1 to ``field[-1]`` (Python negative indexing). Gather
+    # safely with the negative indices clamped, then mask those positions NaN.
+    outside_source = dst_to_src_indices < 0
+    safe_indices = np.where(outside_source, 0, dst_to_src_indices)
+    resampled: NDArray[np.float64] = field[safe_indices].astype(np.float64, copy=True)
+    resampled[outside_source] = np.nan
 
     # Step 3: Optionally apply smoothing for diffuse method
     if method == "diffuse":

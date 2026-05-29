@@ -1,3 +1,26 @@
+"""Distance primitives for spatial environments.
+
+Low-level helpers for computing Euclidean and graph-geodesic distances between
+bins (nodes), distance fields from one or more source bins, and local
+neighborhood lookups. These operate on arrays of bin centers (shape
+``(n_bins, n_dims)``) or on the connectivity graph of an environment.
+
+Functions
+---------
+euclidean_distance_matrix
+    Pairwise Euclidean distance matrix between bin centers.
+geodesic_distance_matrix
+    Pairwise shortest-path (graph) distance matrix between bins.
+geodesic_distance_between_points
+    Geodesic distance between two specific bins.
+distance_field
+    Shortest-path distance from one or more source bins to every bin.
+pairwise_distances
+    Pairwise distances (Euclidean or geodesic) between selected bins.
+neighbors_within
+    Bins within a given distance of a source bin.
+"""
+
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray

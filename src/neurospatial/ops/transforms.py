@@ -1558,6 +1558,25 @@ def apply_transform_to_environment(
             return np.asarray(indices, dtype=np.int64)
 
         def bin_sizes(self) -> NDArray[np.float64]:
+            """Approximate per-bin area/volume of the transformed layout.
+
+            Returns
+            -------
+            NDArray[np.float64], shape (n_bins,)
+                Per-bin size estimated as the squared nearest-neighbor distance
+                between transformed bin centers.
+
+            Notes
+            -----
+            This is only an approximation. It assumes a locally uniform,
+            isotropic bin spacing and squares the nearest-neighbor distance as
+            a stand-in for area (or, in higher dimensions, still uses the square
+            rather than the dimension-appropriate power). For non-uniform or
+            anisotropic transformed layouts (e.g. after a strongly nonlinear
+            transform), this can substantially misestimate the true bin
+            area/volume. Use it for relative weighting only, not as an exact
+            measure of physical area.
+            """
             # Approximate from nearest neighbors
             from scipy.spatial import cKDTree
 

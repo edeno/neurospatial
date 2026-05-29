@@ -116,10 +116,14 @@ class RegularGridLayout(_GridMixin):
                     "dimension_ranges must be provided if positions is None.",
                 )
 
-            buffer_for_inference = (
+            # Use a half-bin buffer per axis so the inferred range extends
+            # half a bin beyond the data on each side. For a per-axis sequence
+            # bin_size this must also be halved (a raw sequence would double
+            # the intended buffer on each axis).
+            buffer_for_inference: float | list[float] = (
                 bin_size / 2.0
                 if isinstance(bin_size, (float, int, np.number))
-                else bin_size
+                else [float(b) / 2.0 for b in bin_size]
             )
             # Infer ranges from positions
             self.dimension_ranges = _infer_dimension_ranges_from_samples(

@@ -140,6 +140,106 @@ class TestOpsGraph:
             assert not np.all(np.isnan(result)), f"op={op}: All values are NaN"
 
 
+def _reference_neighbor_reduce(env, field, *, op, weights=None, include_self=False):
+    """Reference (pure-loop) implementation of neighbor_reduce for equivalence checks.
+
+    Mirrors the original NetworkX neighbor-iteration algorithm so the vectorized
+    sum/mean paths can be verified against it.
+    """
+    result = np.full(env.n_bins, np.nan, dtype=np.float64)
+    for bin_id in range(env.n_bins):
+        neighbors = list(env.connectivity.neighbors(bin_id))
+        if include_self:
+            neighbors = [bin_id, *neighbors]
+        if len(neighbors) == 0:
+            continue
+        values = field[neighbors]
+        if weights is None:
+            if op == "sum":
+                result[bin_id] = np.sum(values)
+            elif op == "mean":
+                result[bin_id] = np.mean(values)
+            elif op == "max":
+                result[bin_id] = np.max(values)
+            elif op == "min":
+                result[bin_id] = np.min(values)
+            elif op == "std":
+                result[bin_id] = np.std(values)
+        else:
+            w = weights[neighbors]
+            if op == "sum":
+                result[bin_id] = np.sum(values * w)
+            elif op == "mean":
+                wsum = np.sum(w)
+                result[bin_id] = np.sum(values * w) / wsum if wsum > 0 else np.nan
+    return result
+
+
+class TestNeighborReduceEquivalence:
+    """Vectorized neighbor_reduce must match the reference loop for all modes."""
+
+    @pytest.mark.parametrize("op", ["sum", "mean", "max", "min", "std"])
+    @pytest.mark.parametrize("include_self", [False, True])
+    def test_unweighted_matches_reference_loop(
+        self, grid_5x5_env: Environment, op: str, include_self: bool
+    ) -> None:
+        """Unweighted reductions match the pure-loop reference (incl. self toggle)."""
+        env = grid_5x5_env
+        rng = np.random.default_rng(0)
+        field = rng.standard_normal(env.n_bins).astype(np.float64)
+
+        expected = _reference_neighbor_reduce(
+            env, field, op=op, include_self=include_self
+        )
+        actual = neighbor_reduce(env, field, op=op, include_self=include_self)
+
+        np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=1e-12)
+
+    @pytest.mark.parametrize("op", ["sum", "mean"])
+    @pytest.mark.parametrize("include_self", [False, True])
+    def test_weighted_matches_reference_loop(
+        self, grid_5x5_env: Environment, op: str, include_self: bool
+    ) -> None:
+        """Weighted sum/mean match the pure-loop reference."""
+        env = grid_5x5_env
+        rng = np.random.default_rng(1)
+        field = rng.standard_normal(env.n_bins).astype(np.float64)
+        weights = rng.uniform(0.1, 2.0, env.n_bins).astype(np.float64)
+
+        expected = _reference_neighbor_reduce(
+            env, field, op=op, weights=weights, include_self=include_self
+        )
+        actual = neighbor_reduce(
+            env, field, op=op, weights=weights, include_self=include_self
+        )
+
+        np.testing.assert_allclose(
+            actual, expected, rtol=1e-12, atol=1e-12, equal_nan=True
+        )
+
+    def test_isolated_node_returns_nan(self) -> None:
+        """A bin with no neighbors yields NaN for sum/mean (vectorized path)."""
+        import networkx as nx
+
+        # Build a tiny env-like object with one isolated node via a real env,
+        # then drop edges from one node to make it isolated.
+        positions = np.array([[0, 0], [1, 0], [2, 0]], dtype=np.float64)
+        env = Environment.from_samples(positions, bin_size=1.0)
+        # Isolate node 0 by removing its edges on a copy of connectivity.
+        g = env.connectivity
+        isolated = next((n for n in g.nodes if g.degree(n) == 0), None)
+        if isolated is None:
+            # Force isolation of node 0.
+            edges = list(g.edges(0))
+            g.remove_edges_from(edges)
+            isolated = 0
+        field = np.array([1.0, 2.0, 3.0], dtype=np.float64)
+        result = neighbor_reduce(env, field, op="sum")
+        assert np.isnan(result[isolated])
+        # Restore graph (it is module-scoped only if fixture; here it's local).
+        assert isinstance(g, nx.Graph)
+
+
 class TestEnvironmentIntegration:
     """Test that Environment still works with graph operations."""
 

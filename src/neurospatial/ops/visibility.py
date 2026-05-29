@@ -801,10 +801,12 @@ def compute_viewshed(
     position = np.asarray(position, dtype=np.float64)
 
     # Determine angular range
+    full_circle = False
     if fov is None:
         min_angle = -np.pi
         max_angle = np.pi
         fov_obj = None
+        full_circle = True
     elif isinstance(fov, (int, float)):
         half_angle = float(fov) / 2
         min_angle = -half_angle
@@ -815,8 +817,11 @@ def compute_viewshed(
         max_angle = fov.left_angle
         fov_obj = fov
 
-    # Generate ray angles (in egocentric coordinates)
-    ray_angles_ego = np.linspace(min_angle, max_angle, n_rays)
+    # Generate ray angles (in egocentric coordinates).
+    # For the full circle, -pi and +pi are the same direction (behind), so
+    # exclude the closing endpoint to avoid double-counting that ray. For a
+    # bounded FOV both endpoints are distinct and should be kept.
+    ray_angles_ego = np.linspace(min_angle, max_angle, n_rays, endpoint=not full_circle)
 
     # Convert to allocentric
     ray_angles_allo = ray_angles_ego + heading

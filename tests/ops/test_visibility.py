@@ -6,6 +6,8 @@ viewshed analysis, and cue visibility checking.
 TDD: These tests are written BEFORE implementation to define expected behavior.
 """
 
+from unittest.mock import patch
+
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
@@ -530,6 +532,49 @@ class TestComputeViewshed:
         # Values should be in [0, 1]
         assert np.all(result.occlusion_map >= 0)
         assert np.all(result.occlusion_map <= 1)
+
+    def test_full_circle_rays_have_no_duplicate_direction(self):
+        """Full-circle viewshed must not cast two rays in the same (behind) direction.
+
+        Using ``np.linspace(-pi, pi, n)`` with both endpoints makes the first
+        ray (-pi) and last ray (+pi) point the same way (behind), double-counting
+        that direction. The full-circle case must sample with endpoint=False so
+        all ``n_rays`` directions are distinct.
+        """
+        from neurospatial import Environment
+        from neurospatial.ops.visibility import compute_viewshed
+
+        rng = np.random.default_rng(42)
+        positions_samples = rng.uniform(0, 100, (1000, 2))
+        env = Environment.from_samples(positions_samples, bin_size=5.0)
+
+        position = np.array([50.0, 50.0])
+        heading = 0.3  # arbitrary, non-axis-aligned
+
+        captured = {}
+        real_linspace = np.linspace
+
+        def spy_linspace(start, stop, num, *args, **kwargs):
+            # The ray-angle generation spans the full [-pi, pi] circle.
+            if np.isclose(start, -np.pi) and np.isclose(stop, np.pi) and num == 360:
+                captured["angles"] = real_linspace(start, stop, num, *args, **kwargs)
+            return real_linspace(start, stop, num, *args, **kwargs)
+
+        with patch("neurospatial.ops.visibility.np.linspace", side_effect=spy_linspace):
+            compute_viewshed(env, position, heading, fov=None, n_rays=360)
+
+        assert "angles" in captured, "Ray-angle linspace call was not captured"
+        angles = captured["angles"]
+        # Wrap to unit vectors and check no two rays share a direction.
+        dirs = np.column_stack([np.cos(angles), np.sin(angles)])
+        # First and last ray must NOT be identical directions.
+        assert not np.allclose(dirs[0], dirs[-1]), (
+            "First and last full-circle rays point the same direction "
+            "(double-counted behind direction)."
+        )
+        # All directions should be unique (no two equal within tolerance).
+        n_unique = len(np.unique(np.round(angles % (2 * np.pi), 9)))
+        assert n_unique == len(angles)
 
 
 class TestComputeViewField:
