@@ -52,6 +52,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial._results import ResultMixin
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._metrics import BatchScoresResult
 
@@ -81,7 +82,7 @@ __all__ = [
 
 
 @dataclass(frozen=True)
-class PlaceFieldsResult:
+class PlaceFieldsResult(ResultMixin):
     """Result of ``detect_place_fields()``: detected fields plus exclusion metadata.
 
     Returned by :func:`detect_place_fields`. Distinguishes "this neuron
@@ -132,6 +133,75 @@ class PlaceFieldsResult:
         # ergonomic of `if detect_place_fields(...): ...` against the
         # old list[NDArray] return.
         return len(self.fields) > 0
+
+    def summary(self) -> dict[str, Any]:
+        """Scalar headline metrics for the detected place fields.
+
+        Returns
+        -------
+        dict
+            Mapping with keys ``n_fields`` (int, number of detected fields),
+            ``total_bins`` (int, bins across all fields), ``n_excluded``
+            (int), and ``excluded_reason`` (str or ``None``).
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.encoding.spatial import PlaceFieldsResult
+        >>> result = PlaceFieldsResult(fields=[np.array([0, 1, 2])])
+        >>> result.summary()["n_fields"]
+        1
+        >>> result.summary()["total_bins"]
+        3
+        """
+        total_bins = int(sum(len(f) for f in self.fields))
+        return {
+            "n_fields": len(self.fields),
+            "total_bins": total_bins,
+            "n_excluded": int(self.n_excluded),
+            "excluded_reason": self.excluded_reason,
+        }
+
+    def to_dataframe(self) -> pd.DataFrame:
+        """Tidy/long-form table of field membership: one row per (field, bin).
+
+        Each detected place field contributes one row per member bin, with a
+        ``field`` index column. Neurons excluded by a filter (``fields=[]``)
+        yield an empty table; ``excluded_reason`` is exposed via
+        :meth:`summary`.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Long-form table with columns ``field`` (int, field index) and
+            ``bin`` (int, member bin index). Empty (with those columns) when
+            no fields were detected.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.encoding.spatial import PlaceFieldsResult
+        >>> result = PlaceFieldsResult(fields=[np.array([0, 1]), np.array([5])])
+        >>> df = result.to_dataframe()
+        >>> df["field"].tolist()
+        [0, 0, 1]
+        >>> df["bin"].tolist()
+        [0, 1, 5]
+        """
+        import pandas as pd
+
+        field_col: list[int] = []
+        bin_col: list[int] = []
+        for field_idx, field_bins in enumerate(self.fields):
+            for b in np.asarray(field_bins).ravel():
+                field_col.append(field_idx)
+                bin_col.append(int(b))
+        return pd.DataFrame(
+            {
+                "field": np.asarray(field_col, dtype=np.int64),
+                "bin": np.asarray(bin_col, dtype=np.int64),
+            }
+        )
 
 
 @dataclass(frozen=True)
@@ -1858,7 +1928,7 @@ def compute_spatial_rates(
 
 
 @dataclass(frozen=True)
-class DirectionalPlaceFields:
+class DirectionalPlaceFields(ResultMixin):
     """Container for direction-conditioned place field results.
 
     Stores firing rate maps computed separately for different movement
@@ -1913,6 +1983,298 @@ class DirectionalPlaceFields:
     occupancy: Mapping[str, NDArray[np.float64]]
     env: Environment
     labels: tuple[str, ...]
+
+    def correlation(self, label_a: str, label_b: str) -> float:
+        """Pearson correlation between two directions' rate maps.
+
+        Quantifies how similar the place-field map is between two movement
+        directions (or trial types). A correlation near ``1.0`` means the cell
+        fires in the same locations regardless of direction; values near
+        ``0`` (or negative) indicate direction-specific tuning.
+
+        Bins where either map is NaN are excluded pairwise before the
+        correlation is computed.
+
+        Parameters
+        ----------
+        label_a, label_b : str
+            Direction labels to compare. Must be present in ``labels``.
+
+        Returns
+        -------
+        float
+            Pearson correlation coefficient in ``[-1, 1]``. Returns ``nan``
+            if fewer than two finite overlapping bins exist or if either map
+            has zero variance over the overlap.
+
+        Raises
+        ------
+        KeyError
+            If ``label_a`` or ``label_b`` is not a known direction label.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import DirectionalPlaceFields
+        >>> env = Environment.from_samples(
+        ...     np.linspace(0, 9, 100)[:, None], bin_size=1.0
+        ... )
+        >>> n = env.n_bins
+        >>> rate = np.linspace(1.0, 5.0, n)
+        >>> result = DirectionalPlaceFields(
+        ...     firing_rates={"fwd": rate, "rev": rate.copy()},
+        ...     occupancy={"fwd": np.ones(n), "rev": np.ones(n)},
+        ...     env=env,
+        ...     labels=("fwd", "rev"),
+        ... )
+        >>> bool(np.isclose(result.correlation("fwd", "rev"), 1.0))
+        True
+        """
+        for label in (label_a, label_b):
+            if label not in self.firing_rates:
+                raise KeyError(
+                    f"Unknown direction label {label!r}. "
+                    f"Known labels: {tuple(self.firing_rates)}."
+                )
+        a = _to_numpy(self.firing_rates[label_a]).ravel()
+        b = _to_numpy(self.firing_rates[label_b]).ravel()
+        finite = np.isfinite(a) & np.isfinite(b)
+        if int(finite.sum()) < 2:
+            return float("nan")
+        a, b = a[finite], b[finite]
+        if a.std() == 0.0 or b.std() == 0.0:
+            return float("nan")
+        return float(np.corrcoef(a, b)[0, 1])
+
+    def directionality_index(self, label_a: str, label_b: str) -> float:
+        """Per-bin directionality index between two directions.
+
+        Returns the mean absolute normalized rate difference between the two
+        directions across bins:
+
+        .. math::
+
+            \\mathrm{DI} = \\mathrm{mean}_i
+                \\frac{|r^a_i - r^b_i|}{r^a_i + r^b_i}
+
+        Values near ``0`` indicate direction-independent firing; values near
+        ``1`` indicate strongly direction-selective firing. Bins where either
+        map is NaN, or where both rates are zero, are excluded.
+
+        Parameters
+        ----------
+        label_a, label_b : str
+            Direction labels to compare. Must be present in ``labels``.
+
+        Returns
+        -------
+        float
+            Mean directionality index in ``[0, 1]``. Returns ``nan`` if no
+            bin has a positive summed rate.
+
+        Raises
+        ------
+        KeyError
+            If ``label_a`` or ``label_b`` is not a known direction label.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import DirectionalPlaceFields
+        >>> env = Environment.from_samples(
+        ...     np.linspace(0, 9, 100)[:, None], bin_size=1.0
+        ... )
+        >>> n = env.n_bins
+        >>> rate = np.linspace(1.0, 5.0, n)
+        >>> result = DirectionalPlaceFields(
+        ...     firing_rates={"fwd": rate, "rev": rate.copy()},
+        ...     occupancy={"fwd": np.ones(n), "rev": np.ones(n)},
+        ...     env=env,
+        ...     labels=("fwd", "rev"),
+        ... )
+        >>> bool(np.isclose(result.directionality_index("fwd", "rev"), 0.0))
+        True
+        """
+        for label in (label_a, label_b):
+            if label not in self.firing_rates:
+                raise KeyError(
+                    f"Unknown direction label {label!r}. "
+                    f"Known labels: {tuple(self.firing_rates)}."
+                )
+        a = _to_numpy(self.firing_rates[label_a]).ravel()
+        b = _to_numpy(self.firing_rates[label_b]).ravel()
+        total = a + b
+        valid = np.isfinite(a) & np.isfinite(b) & (total > 0.0)
+        if not valid.any():
+            return float("nan")
+        di = np.abs(a[valid] - b[valid]) / total[valid]
+        return float(np.mean(di))
+
+    def summary(self) -> dict[str, Any]:
+        """Scalar headline metrics across directions.
+
+        Returns
+        -------
+        dict
+            Mapping with ``n_directions`` (int), ``n_bins`` (int), and one
+            ``peak_<label>`` entry per direction giving that direction's peak
+            firing rate (Hz). When exactly two directions are present, a
+            ``correlation`` entry (Pearson r between the two maps) is also
+            included.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import DirectionalPlaceFields
+        >>> env = Environment.from_samples(
+        ...     np.linspace(0, 9, 100)[:, None], bin_size=1.0
+        ... )
+        >>> n = env.n_bins
+        >>> result = DirectionalPlaceFields(
+        ...     firing_rates={
+        ...         "fwd": np.linspace(1.0, 5.0, n),
+        ...         "rev": np.linspace(5.0, 1.0, n),
+        ...     },
+        ...     occupancy={"fwd": np.ones(n), "rev": np.ones(n)},
+        ...     env=env,
+        ...     labels=("fwd", "rev"),
+        ... )
+        >>> result.summary()["n_directions"]
+        2
+        """
+        out: dict[str, Any] = {
+            "n_directions": len(self.labels),
+            "n_bins": int(self.env.n_bins),
+        }
+        for label in self.labels:
+            rate = _to_numpy(self.firing_rates[label])
+            out[f"peak_{label}"] = float(np.nanmax(rate))
+        if len(self.labels) == 2:
+            out["correlation"] = self.correlation(self.labels[0], self.labels[1])
+        return out
+
+    def to_dataframe(self) -> pd.DataFrame:
+        """Tidy/long-form table: one row per (direction, bin).
+
+        Stacks the per-direction rate maps into long form with a ``direction``
+        identifier column, so directional results ``pandas.concat`` cleanly
+        with other tidy result tables. Bin-center coordinates are emitted as
+        ``coord_0``, ``coord_1``, ... columns.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Long-form table with columns ``direction`` (str), ``bin`` (int),
+            ``coord_0`` ... (float), ``firing_rate`` (float, Hz), and
+            ``occupancy`` (float, seconds).
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import DirectionalPlaceFields
+        >>> env = Environment.from_samples(
+        ...     np.linspace(0, 9, 100)[:, None], bin_size=1.0
+        ... )
+        >>> n = env.n_bins
+        >>> result = DirectionalPlaceFields(
+        ...     firing_rates={
+        ...         "fwd": np.linspace(1.0, 5.0, n),
+        ...         "rev": np.linspace(5.0, 1.0, n),
+        ...     },
+        ...     occupancy={"fwd": np.ones(n), "rev": np.ones(n)},
+        ...     env=env,
+        ...     labels=("fwd", "rev"),
+        ... )
+        >>> df = result.to_dataframe()
+        >>> sorted(df["direction"].unique())
+        ['fwd', 'rev']
+        >>> len(df) == 2 * n
+        True
+        """
+        import pandas as pd
+
+        bin_centers = np.asarray(self.env.bin_centers)
+        if bin_centers.ndim == 1:
+            bin_centers = bin_centers[:, None]
+        n_bins, n_dims = bin_centers.shape
+
+        frames: list[pd.DataFrame] = []
+        for label in self.labels:
+            rate = _to_numpy(self.firing_rates[label]).ravel()
+            occ = _to_numpy(self.occupancy[label]).ravel()
+            data: dict[str, Any] = {
+                "direction": np.repeat(label, n_bins),
+                "bin": np.arange(n_bins, dtype=np.int64),
+            }
+            for d in range(n_dims):
+                data[f"coord_{d}"] = bin_centers[:, d]
+            data["firing_rate"] = rate
+            data["occupancy"] = occ
+            frames.append(pd.DataFrame(data))
+        return pd.concat(frames, ignore_index=True)
+
+    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
+        """Overlay the per-direction firing rate maps on a single axis.
+
+        Plots each direction's firing rate against bin index as one line,
+        producing one artist per direction. This is most informative for
+        1-D / linearized environments where bin index maps to track position.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes, optional
+            Axes to draw on. If None, a new figure and axes are created.
+        **kwargs
+            Additional keyword arguments forwarded to ``ax.plot`` for each
+            direction's line.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+            The axes containing the overlay (one line per direction).
+
+        Examples
+        --------
+        >>> import matplotlib
+        >>> matplotlib.use("Agg")  # non-interactive backend for doctest
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import DirectionalPlaceFields
+        >>> env = Environment.from_samples(
+        ...     np.linspace(0, 9, 100)[:, None], bin_size=1.0
+        ... )
+        >>> n = env.n_bins
+        >>> result = DirectionalPlaceFields(
+        ...     firing_rates={
+        ...         "fwd": np.linspace(1.0, 5.0, n),
+        ...         "rev": np.linspace(5.0, 1.0, n),
+        ...     },
+        ...     occupancy={"fwd": np.ones(n), "rev": np.ones(n)},
+        ...     env=env,
+        ...     labels=("fwd", "rev"),
+        ... )
+        >>> ax = result.plot()
+        >>> len(ax.get_lines())
+        2
+        """
+        import matplotlib.pyplot as plt
+
+        if ax is None:
+            _, ax = plt.subplots()
+
+        for label in self.labels:
+            rate = _to_numpy(self.firing_rates[label]).ravel()
+            ax.plot(np.arange(rate.shape[0]), rate, label=str(label), **kwargs)
+
+        ax.set_xlabel("Bin index")
+        ax.set_ylabel("Firing rate (Hz)")
+        ax.set_title("Directional place fields")
+        ax.legend()
+        return ax
 
 
 def _subset_spikes_by_time_mask(

@@ -14,6 +14,8 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
+from neurospatial._results import ResultMixin
+
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
@@ -21,7 +23,7 @@ if TYPE_CHECKING:
 
 
 @dataclass
-class DecodingResult:
+class DecodingResult(ResultMixin):
     """Container for Bayesian decoding results.
 
     Stores the posterior distribution over positions for each time bin,
@@ -353,6 +355,37 @@ class DecodingResult:
         ax.set_title("Posterior probability")
 
         return ax
+
+    def summary(self) -> dict[str, Any]:
+        """Scalar headline metrics for the decoded posterior.
+
+        Returns
+        -------
+        dict
+            Mapping with keys ``n_time_bins`` (int), ``n_bins`` (int, spatial
+            bins), ``mean_entropy`` (float, bits), and ``max_entropy`` (float,
+            bits) -- the latter being ``log2(n_bins)``, the entropy of a
+            uniform posterior.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.decoding import DecodingResult
+        >>> positions = np.random.default_rng(0).uniform(0, 50, (200, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> posterior = np.ones((10, env.n_bins)) / env.n_bins
+        >>> result = DecodingResult(posterior=posterior, env=env)
+        >>> sorted(result.summary())
+        ['max_entropy', 'mean_entropy', 'n_bins', 'n_time_bins']
+        """
+        n_bins = int(self.posterior.shape[1])
+        return {
+            "n_time_bins": self.n_time_bins,
+            "n_bins": n_bins,
+            "mean_entropy": float(np.mean(self.posterior_entropy)),
+            "max_entropy": float(np.log2(n_bins)) if n_bins > 0 else 0.0,
+        }
 
     def to_dataframe(self) -> pd.DataFrame:
         """Convert to pandas DataFrame with times and position estimates.

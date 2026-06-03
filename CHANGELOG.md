@@ -15,6 +15,23 @@
   `AttributeError` so typos fail loudly. The eager top-level exports
   (`Environment`, `Region`, `Regions`, `CompositeEnvironment`,
   `bin_spikes_in_time`) are unchanged.
+- Introduced a unified result-object surface so the verbs that end an analysis
+  -- "summarize it", "plot it", "put it in a table" -- always have a home. A
+  new `neurospatial._results.ResultMixin` base guarantees `to_dataframe()`
+  (tidy/long form, so heterogeneous results `pandas.concat` cleanly),
+  `summary()` (a flat dict of scalar headline metrics), and an optional
+  `plot(ax=None, ...)` that returns the axis for multi-panel composition.
+  `pandas` and `matplotlib` are imported lazily so neither becomes an
+  import-time dependency. The existing `encoding._base.SpatialResultMixin` now
+  extends `ResultMixin` (additive: all existing accessors such as
+  `firing_rate`, `occupancy`, `peak_location()`, and `spatial_information()`
+  are preserved) and gains default `summary()` / tidy `to_dataframe()`
+  implementations. The previously bare `PlaceFieldsResult` and
+  `DirectionalPlaceFields` dataclasses now carry the surface;
+  `DirectionalPlaceFields` additionally gains `correlation(label_a, label_b)`,
+  a per-bin `directionality_index(label_a, label_b)`, and a per-direction
+  overlay `plot()`. `DecodingResult` gains `summary()` and now also extends
+  `ResultMixin`.
 - Added `bin_spikes_in_time`, a public primitive that bins a sequence of
   per-neuron spike-time arrays onto a regular time grid (owning the bin
   edges and `dt / 2` bin centers) and returns an integer count matrix. Its
