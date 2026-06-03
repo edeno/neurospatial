@@ -32,6 +32,12 @@
 - `add_positions` now raises a `ValueError` on degenerate trajectories (a
   single sample, all-identical trajectory times, or non-finite trajectory
   times) instead of returning all-NaN/Inf position columns.
+- `Environment.bin_at`, `contains`, and `distance_between` now raise a
+  `ValueError` when queried with points whose dimensionality differs from
+  the environment (e.g. 3-D points against a 2-D environment), instead of
+  warning and silently returning `-1`/`inf`. The legitimate
+  outside-the-environment sentinel (in-dimension points that fall outside
+  the active bins) is unchanged.
 
 - `compute_egocentric_distance(metric="geodesic")` previously honored only
   the first timestep's targets when called with a time-varying target array

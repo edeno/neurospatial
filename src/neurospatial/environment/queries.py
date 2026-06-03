@@ -65,6 +65,9 @@ class EnvironmentQueries:
         ------
         RuntimeError
             If called before the environment is fitted.
+        ValueError
+            If ``points_nd`` has a different dimensionality than the
+            environment (e.g. 3-D points for a 2-D environment).
 
         See Also
         --------
@@ -119,6 +122,9 @@ class EnvironmentQueries:
         ------
         RuntimeError
             If called before the environment is fitted.
+        ValueError
+            If ``points_nd`` has a different dimensionality than the
+            environment (e.g. 3-D points for a 2-D environment).
 
         Notes
         -----
