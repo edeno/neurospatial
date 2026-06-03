@@ -345,6 +345,22 @@
   per-timestep, with an internal cache so repeated targets remain cheap.
   Static-target callers (passing shape `(n_targets, 2)`) see no behavior
   change.
+- `detect_runs_between_regions(min_speed=...)` no longer treats an
+  off-environment (`-1`) or out-of-range bin in a run as a real position. The
+  velocity filter indexed `env.bin_centers[run_bin_idx]` with raw run bins, so
+  a `-1` sample silently wrapped to `bin_centers[-1]` (inflating the mean speed
+  and keeping runs that should be filtered out), and an index `>= n_bins` would
+  raise `IndexError`. Speed is now computed only over consecutive sample pairs
+  whose endpoints both map to a valid bin; runs with no usable pair are not
+  filtered on a spurious velocity. Fully on-environment runs are unaffected.
+- Weighted circular statistics (`rayleigh_test`, `circular_mean`,
+  `mean_resultant_length`, `circular_variance`) now reject non-finite
+  `weights` (NaN/Inf) with a `ValueError` via `_validate_weights`. Previously
+  only negative weights were rejected, so a NaN/Inf weight flowed into
+  `sum(weights)` and silently turned the statistic into `nan` instead of
+  raising on invalid count/frequency input. The non-negativity / equal-length
+  checks and the NaN-*angle* co-filter (which drops NaN angles, not weights)
+  are unchanged.
 
 ## [v0.4.0] - 2026-05-26
 

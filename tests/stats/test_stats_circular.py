@@ -129,6 +129,33 @@ def test_rayleigh_test_negative_weights_raises(concentrated_angles):
         rayleigh_test(concentrated_angles, weights=weights)
 
 
+@pytest.mark.parametrize("bad", [np.nan, np.inf, -np.inf])
+def test_rayleigh_test_nonfinite_weights_raises(concentrated_angles, bad):
+    """A NaN/Inf weight is rejected (would otherwise make z/p nan)."""
+    weights = np.ones(len(concentrated_angles))
+    weights[2] = bad
+    with pytest.raises(ValueError, match="non-finite"):
+        rayleigh_test(concentrated_angles, weights=weights)
+
+
+@pytest.mark.parametrize("bad", [np.nan, np.inf, -np.inf])
+def test_circular_mean_nonfinite_weights_raises(concentrated_angles, bad):
+    """``circular_mean`` rejects NaN/Inf weights instead of returning nan."""
+    weights = np.ones(len(concentrated_angles))
+    weights[5] = bad
+    with pytest.raises(ValueError, match="non-finite"):
+        circular_mean(concentrated_angles, weights=weights)
+
+
+@pytest.mark.parametrize("bad", [np.nan, np.inf, -np.inf])
+def test_mean_resultant_length_nonfinite_weights_raises(concentrated_angles, bad):
+    """``mean_resultant_length`` rejects NaN/Inf weights instead of nan."""
+    weights = np.ones(len(concentrated_angles))
+    weights[0] = bad
+    with pytest.raises(ValueError, match="non-finite"):
+        mean_resultant_length(concentrated_angles, weights=weights)
+
+
 def test_rayleigh_test_all_zero_weights_raises(concentrated_angles):
     """All-zero weights raise a ValueError, not a ZeroDivisionError."""
     weights = np.zeros(len(concentrated_angles))

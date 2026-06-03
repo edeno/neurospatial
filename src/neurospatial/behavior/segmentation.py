@@ -662,17 +662,30 @@ def detect_runs_between_regions(
             continue
 
         # Optional velocity filter (bin-quantized), using the same slice as the
-        # stored path.
+        # stored path. Off-environment samples (``-1``) or out-of-range bins must
+        # not be treated as real positions: plain ``bin_centers[run_bin_idx]``
+        # would wrap ``-1`` to the last bin (inflating speed) or raise on indices
+        # ``>= n_bins``. Compute speed only over consecutive sample pairs where
+        # both endpoints map to a valid bin.
         if min_speed is not None and len(run_times) > 1:
-            run_positions = env.bin_centers[run_bin_idx]
-            displacements = np.diff(run_positions, axis=0)
-            distances = np.linalg.norm(displacements, axis=1)
-            dt = _positive_dt(run_times, name="times")
-            velocities = distances / dt
-            mean_velocity = np.mean(velocities)
+            valid = (run_bin_idx >= 0) & (run_bin_idx < env.n_bins)
+            # A displacement is usable only when both consecutive samples are
+            # valid (and the underlying dt is positive).
+            pair_valid = valid[:-1] & valid[1:]
+            if pair_valid.any():
+                safe_idx = np.where(valid, run_bin_idx, 0)
+                run_positions = env.bin_centers[safe_idx]
+                displacements = np.diff(run_positions, axis=0)
+                distances = np.linalg.norm(displacements, axis=1)
+                dt = _positive_dt(run_times, name="times")
+                velocities = (distances / dt)[pair_valid]
+                mean_velocity = float(np.mean(velocities))
 
-            if mean_velocity < min_speed:
-                continue
+                if mean_velocity < min_speed:
+                    continue
+            # If no consecutive pair has both endpoints on the environment,
+            # there is no usable speed estimate; do not filter the run out on a
+            # spurious (e.g. -1-inflated) velocity.
 
         # Create run
         runs.append(

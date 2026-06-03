@@ -379,8 +379,10 @@ print("- Place cell: egocentric field is diffuse")
 # - Distance selectivity = peak / mean (normalized)
 # - Direction selectivity = mean resultant length over direction bins
 #
-# A score above ~0.3 with peak rate above ~5 Hz typically passes the
-# default OVC classifier.
+# A higher score indicates stronger object-vector tuning. Note the
+# one-shot ``is_object_vector_cell`` classifier does *not* threshold this
+# score directly: it classifies on egocentric spatial information against
+# its default ``min_info=0.3`` bits/spike (see Part 9).
 
 # %%
 _shape = (ovc_result.n_distance_bins, ovc_result.n_direction_bins)
@@ -421,10 +423,12 @@ print(f"{'Allocentric info':<30} {ovc_alloc_info:<12.3f} {pc_alloc_info:<12.3f}"
 # 1. **``is_object_vector_cell``** — the library's one-shot screener.
 #    It internally calls ``compute_egocentric_rate`` with the default
 #    smoothing (``method="binned"``, no bandwidth, no occupancy
-#    threshold) and compares ``object_vector_score`` to its default
-#    ``score_threshold=0.3``. This is fast but the raw-binned tuning
-#    is noisy in egocentric polar coordinates, so the score is
-#    typically lower than what you would get on a smoothed tuning.
+#    threshold) and classifies on the egocentric-spatial-information
+#    criterion, comparing the tuning's information against its default
+#    ``min_info=0.3`` (bits/spike). This is fast but the raw-binned
+#    tuning is noisy in egocentric polar coordinates, so the
+#    information is typically lower than what you would get on a
+#    smoothed tuning.
 # 2. **Manual two-criterion check** on the *smoothed* tuning we
 #    already computed: ``object_vector_score`` plus
 #    ``egocentric_spatial_information``. Smoothing buys a much cleaner
@@ -467,7 +471,7 @@ print(f"  Place cell -> {pc_is_ovc}")
 # 2. Manual screening on the smoothed tuning we computed in Part 5.
 # Thresholds chosen for this simulation - 0.1 is permissive given the
 # small absolute scores typical of smoothed egocentric polar maps;
-# 1.0 bits/spike is well above the library's 0.3-default but
+# 1.0 bits/spike is well above the library's ``min_info=0.3`` default but
 # comfortably below the strong-OVC range (0.5-1.5+) the
 # ``EgocentricRateResult.is_object_vector_cell`` docstring discusses.
 # Tune both to your recording.
@@ -518,13 +522,13 @@ print(f"  Place cell -> {pc_passes}")
 # - ``object_vector_score`` collapses a tuning curve into a single
 #   selectivity score in [0, 1]
 # - ``is_object_vector_cell`` is a one-shot screening function that
-#   bundles score + peak-rate thresholds
+#   classifies on egocentric spatial information (``min_info`` threshold)
 # - ``plot_object_vector_tuning`` renders the egocentric rate map on a
 #   polar axis
 #
 # ### Classification
 # - The library default ``is_object_vector_cell`` uses
-#   ``score_threshold=0.3`` and ``min_peak_rate=5`` Hz on the
+#   ``min_info=0.3`` bits/spike (egocentric spatial information) on the
 #   *raw-binned* tuning - fast screen, conservative
 # - Computing the score on a smoothed tuning (as in Part 5) gives
 #   higher absolute scores but requires picking smoothing parameters

@@ -112,6 +112,57 @@ class TestSafeGatherRegions:
         # The out-of-env sample must not count as reaching the target.
         assert all(not run.success for run in runs)
 
+    def test_detect_runs_speed_filter_ignores_out_of_env_bin(self):
+        """min_speed filter must not treat a -1 sample as bin_centers[-1].
+
+        A run whose valid samples sit on a single bin has zero true speed and
+        should be dropped by ``min_speed > 0``. With the old code the off-env
+        (-1) sample wrapped to ``bin_centers[-1]`` (a far corner), injecting a
+        large displacement that inflated the mean speed above the threshold and
+        wrongly kept the run.
+        """
+        x = np.linspace(0, 100, 50)
+        y = np.linspace(0, 100, 50)
+        xx, yy = np.meshgrid(x, y)
+        env = Environment.from_samples(
+            np.column_stack([xx.ravel(), yy.ravel()]), bin_size=5.0
+        )
+        last_bin = env.n_bins - 1
+        env.regions.add("source", polygon=Point(*env.bin_centers[0]).buffer(6.0))
+        env.regions.add("target", polygon=Point(*env.bin_centers[last_bin]).buffer(6.0))
+
+        # Source bin, then a single neutral bin held constant (zero true speed),
+        # with one off-env (-1) sample. The wrapped -1 -> last_bin sits near the
+        # opposite corner, so the buggy speed estimate is large.
+        neutral_bin = 100
+        from neurospatial.ops.binning import regions_to_mask
+
+        assert not regions_to_mask(env, ["target"])[neutral_bin]
+        assert not regions_to_mask(env, ["source"])[neutral_bin]
+
+        position_bins = np.array(
+            [0, neutral_bin, neutral_bin, -1, neutral_bin],
+            dtype=np.int64,
+        )
+        # Small dt so a wrapped -1 displacement would read as a high speed.
+        times = np.linspace(0.0, 0.4, len(position_bins))
+
+        # True speed over valid samples is 0 (all neutral_bin). With min_speed
+        # above 0, the run must be filtered out -- and the off-env sample must
+        # not raise or inflate the speed.
+        runs = detect_runs_between_regions(
+            position_bins,
+            times,
+            env,
+            source="source",
+            target="target",
+            min_duration=0.0,
+            max_duration=100.0,
+            min_speed=10.0,
+        )
+
+        assert runs == []
+
     def test_segment_trials_out_of_env_not_counted_in_end_region(self):
         x = np.linspace(0, 100, 50)
         y = np.linspace(0, 100, 50)

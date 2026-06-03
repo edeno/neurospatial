@@ -188,9 +188,10 @@ def _validate_weights(
     Validate per-angle weights for weighted circular statistics.
 
     Weights must be the same length as ``angles`` (a length-1 array is a
-    mismatch, never broadcast) and must be non-negative. This guards the
-    weighted resultant-length / Rayleigh paths against silently producing
-    out-of-range statistics.
+    mismatch, never broadcast), finite (no NaN/Inf), and non-negative. This
+    guards the weighted resultant-length / Rayleigh paths against silently
+    producing out-of-range or ``nan`` statistics (e.g. a NaN/Inf weight
+    flowing into ``np.sum(weights)``).
 
     Parameters
     ----------
@@ -209,12 +210,16 @@ def _validate_weights(
     Raises
     ------
     ValueError
-        If lengths differ or any weight is negative.
+        If lengths differ, any weight is non-finite (NaN/Inf), or any weight
+        is negative.
     """
-    from neurospatial._validation import validate_lengths
+    from neurospatial._validation import validate_finite, validate_lengths
 
     weights = np.asarray(weights, dtype=np.float64).ravel()
     validate_lengths({"angles": angles, name: weights})
+    # Reject non-finite weights (NaN/Inf) before they flow into sum(weights)
+    # and silently turn weighted statistics into nan.
+    weights = validate_finite(weights, name=name)
     if np.any(weights < 0):
         n_neg = int(np.sum(weights < 0))
         first = int(np.argmax(weights < 0))
