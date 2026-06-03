@@ -30,6 +30,16 @@
   `grid_shape`, `bin_centers`, and `active_mask` follow (x, y); code relying
   on the previous (y, x) ordering must update.
 
+### Added
+
+- `neurospatial.io.nwb.read_units` reads per-neuron spike-time arrays from an
+  NWB `units` table, returning a `(spike_trains, unit_ids)` tuple that mirrors
+  the existing `read_position` contract. `unit_ids` selects a subset by the
+  table's `id` values (not row indices); an unknown id raises a clear
+  `ValueError` rather than silently returning the wrong unit. This closes the
+  last gap in the NWB reader family, so multi-cell workflows no longer have to
+  start in bare `pynwb`.
+
 ### Bug fixes
 
 - Weighted circular statistics (`rayleigh_test`, `circular_mean`,
