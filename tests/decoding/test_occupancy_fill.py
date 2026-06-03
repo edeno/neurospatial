@@ -416,6 +416,35 @@ def test_decode_one_finite_bin_with_inf_elsewhere_validate_false_decodes() -> No
     assert post.shape == (1, n_bins)
 
 
+def test_decode_partial_inf_model_concentrates_on_finite_bin() -> None:
+    """A partial-Inf model puts mass on the finite bin, not a uniform posterior.
+
+    Regression: with ``validate=False`` a partial-Inf encoding model such as
+    ``rates=[inf, inf, 5]`` (>=1 finite bin) previously warned then returned a
+    uniform posterior ``[1/3, 1/3, 1/3]``. The per-bin "unobserved" exclusion
+    must treat Inf bins like NaN bins (masked/excluded, -inf log-likelihood ->
+    zero posterior), so all mass concentrates on the single finite bin.
+    """
+    positions = np.linspace(0.0, 4.0, 200).reshape(-1, 1)
+    env = Environment.from_samples(positions, bin_size=2.0)
+    n_bins = env.n_bins
+    assert n_bins == 3
+
+    rates = np.array([[np.inf, np.inf, 5.0]])
+    spike_counts = np.array([[3]], dtype=np.int64)
+
+    with pytest.warns(UserWarning):
+        post = decode_position(
+            env, spike_counts, rates, dt=0.1, validate=False
+        ).posterior
+
+    assert np.isfinite(post).all()
+    np.testing.assert_allclose(post.sum(axis=1), 1.0, atol=1e-6)
+    # Mass concentrates on bin 2 (the only finite bin), NOT a uniform 1/3 each.
+    assert int(post[0].argmax()) == 2
+    np.testing.assert_allclose(post[0], [0.0, 0.0, 1.0], atol=1e-9)
+
+
 def test_decode_no_spike_valid_model_yields_uniform_posterior() -> None:
     """A no-spike time bin against a VALID (finite) model decodes to ~uniform.
 

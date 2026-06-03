@@ -662,6 +662,12 @@ class DirectionalRateResult(SpatialResultMixin):
         ``firing_rate * occupancy``, which is still a count and keeps the
         statistic scale-correct.
 
+        Only **occupied** heading bins (positive occupancy and finite firing
+        rate) contribute to the test. Spikes assigned to a bin the animal
+        never visited (zero occupancy, NaN rate) are excluded, so an unvisited
+        bin can never drive significance. If fewer than 3 spikes fall in
+        occupied bins, the result is undefined and ``nan`` is returned.
+
         **Interpretation**:
 
         - p < 0.001: Very strong evidence for directional tuning
@@ -739,8 +745,22 @@ class DirectionalRateResult(SpatialResultMixin):
         # Drop bins with no valid weight (unvisited -> NaN rate / NaN count,
         # or zero count). A bin with zero spikes contributes nothing to the
         # resultant and must not be passed as a zero weight that still counts
-        # toward n.
-        valid = np.isfinite(centers) & np.isfinite(counts) & (counts > 0)
+        # toward n. Crucially, also exclude bins the animal never occupied:
+        # an unvisited heading bin has zero occupancy (and therefore a NaN
+        # firing rate), yet raw spike counts assigned to such a bin would
+        # otherwise drive spurious significance. Requiring positive occupancy
+        # AND a finite rate guarantees an unvisited bin can never contribute,
+        # while a genuinely-visited cell concentrated in 1-2 occupied bins
+        # (occupancy > 0, finite rate) still counts.
+        occupancy = np.asarray(self.occupancy, dtype=np.float64)
+        firing_rate = np.asarray(self.firing_rate, dtype=np.float64)
+        valid = (
+            np.isfinite(centers)
+            & np.isfinite(counts)
+            & (counts > 0)
+            & np.isfinite(firing_rate)
+            & (occupancy > 0)
+        )
         # Gate on the total spike count, not the number of occupied bins. A
         # strongly-tuned cell can concentrate all its spikes in 1-2 angular
         # bins; the effective sample size for the weighted Rayleigh test is

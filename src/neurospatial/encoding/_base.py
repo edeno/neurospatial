@@ -302,10 +302,19 @@ class SpatialResultMixin(ResultMixin):
         """
         rates = _to_numpy(self._get_rates())
         occupancy = _to_numpy(self.occupancy)  # type: ignore[attr-defined]
-        peak = self.peak_firing_rate()
+
+        # An empty result (0 neurons in a batch, or 0 bins) has no firing-rate
+        # values to reduce over. np.nanmax over a zero-size axis raises
+        # "zero-size array to reduction operation fmax which has no identity",
+        # so report a NaN peak instead of crashing.
+        if rates.size == 0:
+            peak_value = float("nan")
+        else:
+            peak_value = float(np.nanmax(np.asarray(self.peak_firing_rate())))
+
         out: dict[str, Any] = {
             "n_bins": int(rates.shape[-1]),
-            "peak_firing_rate": float(np.nanmax(np.asarray(peak))),
+            "peak_firing_rate": peak_value,
             "total_occupancy": float(np.nansum(occupancy)),
         }
         if rates.ndim > 1:

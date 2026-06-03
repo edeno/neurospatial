@@ -113,6 +113,34 @@ class TestErrorAgainst:
         np.testing.assert_allclose(errors, expected)
         assert errors.shape == (n_time,)
 
+    def test_error_against_all_nan_row_is_nan(self, small_2d_env):
+        """An all-NaN posterior row yields NaN error, not a finite bin-0 error.
+
+        Regression test: argmax over an all-NaN row returns bin 0, which would
+        otherwise produce a finite (wrong) error. Undecodable rows must be NaN.
+        Finite rows are unaffected.
+        """
+        n_bins = small_2d_env.n_bins
+        posterior = np.empty((2, n_bins), dtype=np.float64)
+        posterior[0] = np.nan  # undecodable row
+        posterior[1] = 0.0
+        posterior[1, 0] = 1.0  # finite row, MAP on bin 0
+        decode_times = np.array([0.0, 1.0])
+        result = DecodingResult(
+            posterior=posterior, env=small_2d_env, times=decode_times
+        )
+
+        # Ground truth fixed at bin 0's center: the finite row has error 0.
+        bin0 = small_2d_env.bin_centers[0]
+        true_times = np.array([0.0, 1.0])
+        true_positions = np.vstack([bin0, bin0])
+
+        errors = result.error_against(true_times, true_positions)
+
+        assert np.isnan(errors[0])  # undecodable -> NaN (not finite bin-0 error)
+        assert np.isfinite(errors[1])
+        np.testing.assert_allclose(errors[1], 0.0)
+
     def test_error_against_times_none_raises(self, small_2d_env):
         """error_against requires decode times; times=None -> ValueError."""
         posterior = np.ones((3, small_2d_env.n_bins)) / small_2d_env.n_bins

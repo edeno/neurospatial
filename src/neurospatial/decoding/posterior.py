@@ -299,13 +299,20 @@ def decode_position(
         the recommended path is still to pass ``fill_value=0.0`` to the
         encoder so no NaN reaches the decoder.
 
+        Inf entries are handled the same way, but only with ``validate=False``:
+        each Inf ``(neuron, bin)`` is excluded as a zero-rate observation, so a
+        partial-Inf model such as ``rates=[inf, inf, 5]`` concentrates posterior
+        mass on the one finite bin rather than collapsing to a uniform
+        posterior. Under ``validate=True`` (the default) Inf entries are instead
+        rejected by validation.
+
         A model with **no finite bins at all** -- every spatial bin is
         non-finite (NaN or Inf) across all neurons -- is a special case: it
         carries zero information and cannot decode, so a :class:`ValueError`
         is raised rather than returning a meaningless (uniform-looking)
         posterior. This guard is unconditional (it fires even with
-        ``validate=False``) and catches Inf as well as NaN. Partial-NaN
-        models with at least one finite bin still decode normally.
+        ``validate=False``) and catches Inf as well as NaN. Partial models
+        with at least one finite bin still decode normally.
     dt : float
         Time bin width in seconds. Typical values: 0.001-0.1s.
         Note: For typical firing rates, lambda*dt should be in [0, 5].
@@ -432,33 +439,46 @@ def decode_position(
                 "zero-rate there."
             )
 
-    # Defense-in-depth for NaN encoding-model bins (e.g. an encoder's
-    # min_occupancy mask with fill_value=None). Detect them HERE, before the
-    # validate=True NaN guard runs, so the two do not both fire on the same
-    # bins: we treat each NaN (neuron, bin) as a zero-rate observation and
-    # exclude it from that neuron's Poisson contribution at that bin (handled
-    # inside _log_poisson_likelihood_nan_safe), emitting one warning per call.
-    # The validate=True guard then runs on the *other* inputs (spike_counts,
-    # prior) and on Inf-in-encoding-models, but no longer sees NaN encoding
-    # bins to reject.
+    # Defense-in-depth for non-finite encoding-model bins. Two distinct
+    # sources:
+    #   * NaN bins -- e.g. an encoder's min_occupancy mask with
+    #     fill_value=None. These are the low-occupancy "unobserved" bins.
+    #   * Inf bins -- a degenerate rate at one bin (only reachable with
+    #     validate=False; validate=True rejects Inf via _validate_inputs).
+    # Both are treated identically as zero-rate observations and excluded from
+    # that neuron's Poisson contribution at that bin (handled inside
+    # _log_poisson_likelihood_nan_safe), so a partial-Inf model such as
+    # rates=[inf, inf, 5] concentrates mass on the one finite bin instead of
+    # collapsing to a uniform posterior. We detect them HERE, before the
+    # validate=True guard runs, emitting one warning per call.
+    #
+    # The validation substitution below stays NaN-ONLY on purpose: the
+    # validate=True NaN guard should not reject NaN bins the zero-rate path has
+    # already claimed, but Inf bins must still reach _validate_inputs and be
+    # rejected. So validate=True keeps its non-finite rejection unchanged, and
+    # the Inf-as-zero-rate handling only ever fires when validate=False.
     encoding_model_nan_mask: NDArray[np.bool_] | None = None
-    if encoding_models.dtype.kind == "f" and np.isnan(encoding_models).any():
-        encoding_model_nan_mask = np.isnan(encoding_models)
-        n_nan = int(encoding_model_nan_mask.sum())
+    encoding_model_nonfinite_mask: NDArray[np.bool_] | None = None
+    if encoding_models.dtype.kind == "f" and not np.isfinite(encoding_models).all():
+        encoding_model_nonfinite_mask = ~np.isfinite(encoding_models)
+        nan_only = np.isnan(encoding_models)
+        encoding_model_nan_mask = nan_only if nan_only.any() else None
+        n_bad = int(encoding_model_nonfinite_mask.sum())
         warnings.warn(
-            f"encoding_models contains {n_nan} NaN bin(s) (e.g. low-occupancy "
-            "bins masked by the encoder's min_occupancy with fill_value=None). "
-            "Treating each as a zero-rate observation (excluded from that "
-            "neuron's Poisson contribution at that bin). Pass fill_value=0.0 "
-            "to the encoder to silence this and make the model explicitly "
-            "zero-rate there.",
+            f"encoding_models contains {n_bad} non-finite bin(s) (NaN or Inf; "
+            "e.g. low-occupancy bins masked by the encoder's min_occupancy "
+            "with fill_value=None). Treating each as a zero-rate observation "
+            "(excluded from that neuron's Poisson contribution at that bin). "
+            "Pass fill_value=0.0 to the encoder to silence this and make the "
+            "model explicitly zero-rate there.",
             UserWarning,
             stacklevel=2,
         )
 
     # Validate inputs if requested. Pass a NaN-free view of encoding_models so
     # the validate=True NaN guard does not reject the bins the zero-rate path
-    # has already claimed; Inf and negative-rate checks still apply.
+    # has already claimed; Inf and negative-rate checks still apply (the
+    # substitution is NaN-only, so Inf bins are still seen and rejected).
     if validate:
         encoding_models_for_validation = encoding_models
         if encoding_model_nan_mask is not None:
@@ -484,11 +504,12 @@ def decode_position(
         )
 
     # Compute log-likelihood using Poisson model. When some encoding-model
-    # bins are NaN, route through the NaN-safe path that excludes each NaN
-    # (neuron, bin) from the per-bin Poisson sum.
-    if encoding_model_nan_mask is not None:
+    # bins are non-finite (NaN or Inf), route through the NaN-safe path that
+    # excludes each such (neuron, bin) from the per-bin Poisson sum. Inf bins
+    # only reach here with validate=False (validate=True rejects them above).
+    if encoding_model_nonfinite_mask is not None:
         log_ll = _log_poisson_likelihood_nan_safe(
-            spike_counts, encoding_models, encoding_model_nan_mask, dt=dt
+            spike_counts, encoding_models, encoding_model_nonfinite_mask, dt=dt
         )
     else:
         log_ll = log_poisson_likelihood(spike_counts, encoding_models, dt=dt)
@@ -523,22 +544,22 @@ def _log_poisson_likelihood_nan_safe(
     *,
     min_rate: float = 1e-10,
 ) -> NDArray[np.float64]:
-    """Poisson log-likelihood that excludes NaN encoding-model bins.
+    """Poisson log-likelihood that excludes non-finite encoding-model bins.
 
     Identical to :func:`~neurospatial.decoding.likelihood.log_poisson_likelihood`
     except that each ``(neuron, bin)`` flagged in ``nan_mask`` contributes
     zero to the per-bin log-likelihood: both that neuron's spike term
     ``n_i * log(lambda_i * dt)`` and its rate-penalty term ``-lambda_i * dt``
     are dropped at that bin, as if the neuron had not been observed there.
-    This is the "treat NaN encoding-model bins as zero-rate (excluded from the
-    Poisson sum)" defense-in-depth behavior.
+    This is the "treat non-finite encoding-model bins (NaN or Inf) as zero-rate
+    (excluded from the Poisson sum)" defense-in-depth behavior.
 
-    A bin that is NaN for *every* neuron is a special case: it has no observing
-    neuron, so excluding all terms would leave a neutral log-likelihood of 0
-    and let an uninformative bin spuriously win the MAP. Such all-NaN bins are
-    therefore set to ``-inf`` (zero posterior mass). Partial-NaN bins -- NaN for
-    some neurons but observed by at least one other -- still decode normally
-    from the observing neurons.
+    A bin that is non-finite for *every* neuron is a special case: it has no
+    observing neuron, so excluding all terms would leave a neutral
+    log-likelihood of 0 and let an uninformative bin spuriously win the MAP.
+    Such all-masked bins are therefore set to ``-inf`` (zero posterior mass).
+    Partial bins -- masked for some neurons but observed by at least one other
+    -- still decode normally from the observing neurons.
 
     Parameters
     ----------
@@ -547,7 +568,8 @@ def _log_poisson_likelihood_nan_safe(
     encoding_models : NDArray[np.float64], shape (n_neurons, n_bins)
         Firing rate maps in Hz; may contain NaN at masked bins.
     nan_mask : NDArray[np.bool_], shape (n_neurons, n_bins)
-        ``True`` where ``encoding_models`` is NaN. Those entries are excluded.
+        ``True`` where ``encoding_models`` is non-finite (NaN or Inf). Those
+        entries are excluded.
     dt : float
         Time bin width in seconds.
     min_rate : float, default=1e-10

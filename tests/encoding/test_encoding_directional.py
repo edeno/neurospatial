@@ -1177,6 +1177,57 @@ class TestDirectionalRateResultRayleighPvalue:
         # Uniform firing should have high p-value (non-significant)
         assert pval > 0.5
 
+    def test_rayleigh_pvalue_ignores_unvisited_bins(self) -> None:
+        """Spikes in unvisited (zero-occupancy) bins must not drive p-value.
+
+        Regression test: an unvisited heading bin has zero occupancy and a
+        NaN firing rate, yet raw spike counts assigned to it would otherwise
+        weight the Rayleigh test and produce spurious significance. Only
+        occupied bins (occupancy > 0, finite rate) may contribute.
+        """
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        # Animal only ever occupied bin 0 (occupancy=[2,0,0,0]); 100 spikes are
+        # (erroneously) assigned to the unvisited bins 1 and 2.
+        centers = np.array([0.0, np.pi / 2, np.pi, 3 * np.pi / 2])
+        occupancy = np.array([2.0, 0.0, 0.0, 0.0])
+        firing_rate = np.array([0.0, np.nan, np.nan, np.nan])
+        counts = np.array([0.0, 50.0, 50.0, 0.0])
+
+        result = DirectionalRateResult(
+            firing_rate=firing_rate,
+            occupancy=occupancy,
+            bin_centers=centers,
+            bin_size=np.pi / 2,
+            bandwidth=None,
+            spike_counts=counts,
+        )
+
+        # No occupied bin carries >=3 spikes -> insufficient valid bins -> NaN,
+        # NOT a tiny (significant) p-value from the unvisited-bin spikes.
+        assert np.isnan(result.rayleigh_pvalue())
+
+    def test_rayleigh_pvalue_concentrated_visited_cell_significant(self) -> None:
+        """A genuinely-visited cell concentrated in 1-2 occupied bins stays significant."""
+        from neurospatial.encoding.directional import DirectionalRateResult
+
+        # Cell fires almost exclusively in two adjacent OCCUPIED bins.
+        centers = np.array([0.0, np.pi / 2, np.pi, 3 * np.pi / 2])
+        occupancy = np.array([1.0, 1.0, 1.0, 1.0])
+        firing_rate = np.array([20.0, 18.0, 0.0, 0.0])
+        counts = np.array([20.0, 18.0, 0.0, 0.0])
+
+        result = DirectionalRateResult(
+            firing_rate=firing_rate,
+            occupancy=occupancy,
+            bin_centers=centers,
+            bin_size=np.pi / 2,
+            bandwidth=None,
+            spike_counts=counts,
+        )
+
+        assert result.rayleigh_pvalue() < 0.05
+
 
 # ==============================================================================
 # DirectionalRateResult Classification Methods Tests - Task 3.4

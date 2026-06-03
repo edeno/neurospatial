@@ -239,6 +239,30 @@
 
 ### Bug fixes
 
+- `DirectionalRateResult.rayleigh_pvalue` now restricts the weighted Rayleigh
+  test to **occupied** heading bins (positive occupancy and finite firing
+  rate). Previously a bin the animal never occupied (zero occupancy → `NaN`
+  rate) could still contribute its raw spike counts to the test and drive
+  spurious significance (e.g. 100 spikes assigned to unvisited bins yielded
+  `p ≈ 3.7e-44`); such cases now return `NaN` (insufficient valid bins). A
+  genuinely-visited cell concentrated in 1–2 occupied bins remains significant.
+- `DecodingResult.error_against` now reports `NaN` error for **undecodable**
+  time bins whose posterior row is entirely non-finite (all-`NaN`/`Inf`).
+  Previously `np.argmax` picked bin 0 for such rows, producing a finite (wrong)
+  error; finite posterior rows are unaffected.
+- `decode_position` now treats **`Inf`** encoding-model bins like `NaN` bins in
+  its per-bin exclusion path (`validate=False`): a partial-`Inf` model such as
+  `rates=[inf, inf, 5]` now concentrates posterior mass on the single finite
+  bin instead of warning and returning a uniform posterior. The detection was
+  broadened from `np.isnan` to `~np.isfinite`. The `validate=True` Inf
+  rejection, the `fill_value=0.0` golden path, and the existing all-`NaN`/
+  partial-`NaN` semantics are unchanged.
+- `SpatialResultMixin.summary` (shared encoding result summary) no longer
+  raises on an **empty** result (0 neurons or 0 bins). Previously the peak
+  reduction over a zero-size array raised `ValueError: zero-size array to
+  reduction operation fmax which has no identity` (e.g.
+  `compute_directional_rates([], ...).summary()`); it now returns a dict with
+  `n_neurons=0` and a `NaN` `peak_firing_rate`.
 - `decode_position` now raises a clear `ValueError` when `encoding_models` has
   **no finite bins** — every spatial bin is non-finite (`NaN` **or** `Inf`)
   across all neurons (e.g. `np.full((n_neurons, n_bins), np.nan)` or

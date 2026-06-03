@@ -120,6 +120,12 @@ class DecodingResult(ResultMixin):
         Uses ``np.argmax(axis=1)`` which returns the first maximum
         in case of ties.
 
+        A row whose posterior is entirely non-finite (all-NaN / all-Inf)
+        is undecodable; ``np.argmax`` returns bin 0 for such a row, so the
+        MAP index there is not meaningful. Callers that care about decode
+        failures (e.g. :meth:`error_against`) detect all-non-finite rows
+        separately and treat them as undefined (NaN).
+
         See Also
         --------
         map_position : MAP position in environment coordinates
@@ -566,7 +572,9 @@ class DecodingResult(ResultMixin):
         errors : NDArray[np.float64], shape (n_time_bins,)
             Distance between the decoded (MAP) position and the time-aligned
             ground-truth position at each decode time bin. Units match the
-            environment (e.g. cm).
+            environment (e.g. cm). Decode times whose posterior row is entirely
+            non-finite (all-NaN / all-Inf) are undecodable and reported as
+            ``nan`` rather than a spurious finite error from bin 0.
 
         Raises
         ------
@@ -663,9 +671,19 @@ class DecodingResult(ResultMixin):
         for d in range(n_dims):
             aligned[:, d] = np.interp(decode_times, true_times, true_positions[:, d])
 
-        return decoding_error(
+        errors = decoding_error(
             self.map_position,
             aligned,
             env=self.env,
             metric=metric,
         )
+
+        # Undecodable rows: a posterior row that is entirely non-finite
+        # (all-NaN / all-Inf) carries no position information. np.argmax would
+        # otherwise pick bin 0 and produce a finite, wrong error. Mark these
+        # rows NaN so they are clearly flagged as decode failures.
+        undecodable = ~np.any(np.isfinite(self.posterior), axis=1)
+        if np.any(undecodable):
+            errors = np.asarray(errors, dtype=np.float64).copy()
+            errors[undecodable] = np.nan
+        return errors
