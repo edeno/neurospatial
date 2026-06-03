@@ -502,6 +502,47 @@ class TestCvatPolygonProcessor:
         assert result is None
 
 
+class TestCvatBoxProcessor:
+    """Tests for the narrowed exception handling in _process_cvat_box."""
+
+    def test_cvat_box_processor_reraises_unexpected(self):
+        """An unexpected (non-geometry) error propagates instead of being swallowed."""
+        import xml.etree.ElementTree as ET
+        from unittest import mock
+
+        from neurospatial.regions.io import _process_cvat_box
+
+        elem = ET.fromstring(
+            '<box label="arena" xtl="10.0" ytl="10.0" xbr="20.0" ybr="20.0" />'
+        )
+
+        # shapely.Polygon raising KeyError simulates a real programming bug,
+        # which must surface rather than become a warning + dropped shape.
+        with (
+            mock.patch(
+                "neurospatial.regions.io.shp.Polygon", side_effect=KeyError("boom")
+            ),
+            pytest.raises(KeyError),
+        ):
+            _process_cvat_box(elem, 0, "img0", None, {})
+
+    def test_cvat_box_processor_skips_bad_geometry(self):
+        """A malformed-coordinate error still warns and returns None (intended skip)."""
+        import xml.etree.ElementTree as ET
+
+        from neurospatial.regions.io import _process_cvat_box
+
+        # Non-numeric coordinate -> float() raises ValueError (a real skip).
+        elem = ET.fromstring(
+            '<box label="arena" xtl="bad" ytl="10.0" xbr="20.0" ybr="20.0" />'
+        )
+
+        with pytest.warns(UserWarning, match="error processing"):
+            result = _process_cvat_box(elem, 0, "img0", None, {})
+
+        assert result is None
+
+
 class TestLoadCvatXml:
     """Tests for load_cvat_xml function."""
 

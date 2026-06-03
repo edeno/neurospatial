@@ -599,7 +599,7 @@ def _process_cvat_box(
         pts_transformed = pixel_to_world(pts_px) if pixel_to_world else pts_px
         geom = shp.Polygon(pts_transformed)
         return (processed_label, geom, color)
-    except (TypeError, ValueError, Exception) as e:
+    except (TypeError, ValueError, ShapelyError) as e:
         warnings.warn(
             f"Image '{image_id_str}', Box (raw_label: {raw_label}, "
             f"xml_idx: {elem_idx}): error processing: {e}. Skipping.",
