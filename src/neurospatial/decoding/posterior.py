@@ -299,10 +299,12 @@ def decode_position(
         the recommended path is still to pass ``fill_value=0.0`` to the
         encoder so no NaN reaches the decoder.
 
-        A model with **no finite bins at all** -- every spatial bin is NaN
-        across all neurons -- is a special case: it carries zero information
-        and cannot decode, so a :class:`ValueError` is raised rather than
-        returning a meaningless (uniform-looking) posterior. Partial-NaN
+        A model with **no finite bins at all** -- every spatial bin is
+        non-finite (NaN or Inf) across all neurons -- is a special case: it
+        carries zero information and cannot decode, so a :class:`ValueError`
+        is raised rather than returning a meaningless (uniform-looking)
+        posterior. This guard is unconditional (it fires even with
+        ``validate=False``) and catches Inf as well as NaN. Partial-NaN
         models with at least one finite bin still decode normally.
     dt : float
         Time bin width in seconds. Typical values: 0.001-0.1s.
@@ -347,9 +349,9 @@ def decode_position(
         If method is not "poisson".
         If validate=True and validation checks fail.
         If ``encoding_models`` has no finite bins (every spatial bin is
-        all-NaN across neurons); such a model carries no information and
-        cannot decode. This is checked unconditionally, even with
-        ``validate=False``.
+        non-finite -- NaN or Inf -- across all neurons); such a model carries
+        no information and cannot decode. This is checked unconditionally,
+        even with ``validate=False``.
         If ``encoding_models`` bin count (axis 1) does not match
         ``env.n_bins``. This is checked unconditionally, even with
         ``validate=False``, because a wrong bin count yields a
@@ -407,6 +409,29 @@ def decode_position(
     spike_counts = np.asarray(spike_counts)
     encoding_models = np.asarray(encoding_models)
 
+    # A model with NO finite bins -- every spatial bin is non-finite (NaN OR
+    # Inf) across all neurons -- is unusable, not merely low-occupancy.
+    # Excluding/clipping all terms would leave every bin's log-likelihood
+    # degenerate, and the "uniform" degeneracy handler would then hand back a
+    # confident-looking uniform posterior over positions that carry zero
+    # information. Refuse loudly here instead of returning a meaningless
+    # posterior. This is an unconditional guard (fires even with
+    # validate=False) and recognizes Inf as well as NaN -- the all-NaN case is
+    # a subset of "no finite bins". A bin is usable if it is finite for any
+    # neuron; partial models (>=1 finite bin) fall through and decode normally.
+    # (Partial-Inf models are out of scope here: validate=True rejects Inf via
+    # _validate_inputs, and this guard will not fire when a finite bin exists.)
+    if encoding_models.ndim == 2 and encoding_models.size:
+        finite_bin = np.isfinite(encoding_models).any(axis=0)
+        if not finite_bin.any():
+            raise ValueError(
+                "encoding_models has no finite bins; every spatial bin is "
+                "non-finite (NaN or Inf) across all neurons -- cannot decode. "
+                "Recompute place fields or pass fill_value (e.g. "
+                "fill_value=0.0 to the encoder) so the model is explicitly "
+                "zero-rate there."
+            )
+
     # Defense-in-depth for NaN encoding-model bins (e.g. an encoder's
     # min_occupancy mask with fill_value=None). Detect them HERE, before the
     # validate=True NaN guard runs, so the two do not both fire on the same
@@ -419,20 +444,6 @@ def decode_position(
     encoding_model_nan_mask: NDArray[np.bool_] | None = None
     if encoding_models.dtype.kind == "f" and np.isnan(encoding_models).any():
         encoding_model_nan_mask = np.isnan(encoding_models)
-        # A model with NO finite bins -- every spatial bin is all-NaN across
-        # neurons -- is unusable, not merely low-occupancy. Excluding all
-        # terms would leave every bin's log-likelihood at -inf, and the
-        # "uniform" degeneracy handler would then hand back a confident-looking
-        # uniform posterior over positions that carry zero information. Refuse
-        # loudly here instead of returning a meaningless posterior. Partial-NaN
-        # models (>=1 finite bin) fall through and decode from the finite bins.
-        if encoding_models.ndim == 2 and np.all(encoding_model_nan_mask, axis=0).all():
-            raise ValueError(
-                "encoding_models has no finite bins; every spatial bin is "
-                "unobserved (all-NaN) -- cannot decode. Recompute place "
-                "fields or pass fill_value (e.g. fill_value=0.0 to the "
-                "encoder) so the model is explicitly zero-rate there."
-            )
         n_nan = int(encoding_model_nan_mask.sum())
         warnings.warn(
             f"encoding_models contains {n_nan} NaN bin(s) (e.g. low-occupancy "

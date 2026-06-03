@@ -240,16 +240,20 @@
 ### Bug fixes
 
 - `decode_position` now raises a clear `ValueError` when `encoding_models` has
-  **no finite bins** — every spatial bin is `NaN` across all neurons (e.g.
-  `encoding_models = np.full((n_neurons, n_bins), np.nan)`). Such a model
-  carries zero information; previously the all-NaN-bin→`-inf` handling left the
-  entire likelihood `-inf`, and `normalize_to_posterior(handle_degenerate=
-  "uniform")` then returned a confident-looking **uniform posterior over invalid
-  positions**. The check is column-wise (a bin is unobserved only if `NaN` for
-  every neuron) and runs unconditionally, even with `validate=False`.
-  Partial-NaN models with at least one finite bin still decode normally, and a
-  legitimate no-spike time bin against a valid finite model still yields the
-  correct flat (uniform) posterior.
+  **no finite bins** — every spatial bin is non-finite (`NaN` **or** `Inf`)
+  across all neurons (e.g. `np.full((n_neurons, n_bins), np.nan)` or
+  `np.full((n_neurons, n_bins), np.inf)`). Such a model carries zero
+  information; previously the all-NaN-bin→`-inf` handling left the entire
+  likelihood `-inf`, and `normalize_to_posterior(handle_degenerate="uniform")`
+  then returned a confident-looking **uniform posterior over invalid
+  positions**. The guard is now `np.isfinite`-based, so it catches all-`Inf`
+  (and mixed `NaN`/`Inf`) models that slipped through the earlier `np.isnan`-only
+  check when `validate=False` bypassed the `Inf` rejection. The check is
+  column-wise (a bin is usable if finite for any neuron) and runs
+  unconditionally, even with `validate=False`. Partial-NaN models with at least
+  one finite bin still decode normally, and a legitimate no-spike time bin
+  against a valid finite model still yields the correct flat (uniform)
+  posterior.
 - `DecodingResult.error_against` now requires `true_times` to be **strictly
   increasing** and rejects duplicates (`np.diff(true_times) <= 0`). Previously
   only descending values were rejected; duplicate timestamps (e.g.

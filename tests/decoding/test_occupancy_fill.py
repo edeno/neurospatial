@@ -351,6 +351,71 @@ def test_decode_partial_model_one_finite_bin_still_decodes() -> None:
     assert int(post[0].argmax()) == n_bins - 1
 
 
+def test_decode_all_inf_model_validate_false_raises() -> None:
+    """An all-Inf model carries no finite bins and must raise, even Inf-only.
+
+    Regression for the "no finite bins guard was NaN-only" finding: an all-Inf
+    model is invalid input (not a low-occupancy mask), but with validate=False
+    the validate=True Inf rejection is bypassed. The unconditional no-finite-
+    bins guard must still recognize Inf -- ``np.isnan`` is False for Inf -- and
+    refuse rather than decode to a meaningless uniform posterior.
+
+    Repro: ``encoding_models = np.full((1, n_bins), inf)``, ``spike_counts =
+    [[0]]``, ``validate=False`` -- previously returned a uniform posterior.
+    """
+    positions = np.linspace(0.0, 10.0, 200).reshape(-1, 1)
+    env = Environment.from_samples(positions, bin_size=2.0)
+    n_bins = env.n_bins
+
+    encoding_models = np.full((1, n_bins), np.inf)
+    spike_counts = np.array([[0]], dtype=np.int64)
+
+    with pytest.raises(ValueError, match="no finite bins"):
+        decode_position(env, spike_counts, encoding_models, dt=1.0, validate=False)
+
+
+def test_decode_no_finite_bins_mixed_nan_inf_raises() -> None:
+    """A mixed model where every bin is non-finite (NaN or Inf) must raise.
+
+    No single bin is finite for any neuron: some columns are all-NaN, the rest
+    all-Inf. The model carries zero information and must raise regardless of
+    whether the non-finiteness is NaN or Inf, and even with validate=False.
+    """
+    positions = np.linspace(0.0, 10.0, 200).reshape(-1, 1)
+    env = Environment.from_samples(positions, bin_size=2.0)
+    n_bins = env.n_bins
+    assert n_bins >= 2
+
+    encoding_models = np.full((1, n_bins), np.nan)
+    encoding_models[0, n_bins // 2 :] = np.inf  # other half all-Inf
+    spike_counts = np.array([[0]], dtype=np.int64)
+
+    with pytest.raises(ValueError, match="no finite bins"):
+        decode_position(env, spike_counts, encoding_models, dt=1.0, validate=False)
+
+
+def test_decode_one_finite_bin_with_inf_elsewhere_validate_false_decodes() -> None:
+    """A model with >=1 finite bin must not trip the no-finite-bins guard.
+
+    Even with Inf in other bins and validate=False (so the Inf rejection is
+    bypassed), a single finite bin means the model is usable: the guard must
+    not fire (no false positive). Partial-Inf handling beyond this is out of
+    scope -- this only asserts the guard does not over-reject.
+    """
+    positions = np.linspace(0.0, 10.0, 200).reshape(-1, 1)
+    env = Environment.from_samples(positions, bin_size=2.0)
+    n_bins = env.n_bins
+    assert n_bins >= 2
+
+    rates = np.full((1, n_bins), np.inf)
+    rates[0, -1] = 5.0  # one finite bin
+    spike_counts = np.array([[2]], dtype=np.int64)
+
+    # Must not raise the no-finite-bins ValueError (guard sees a finite bin).
+    post = decode_position(env, spike_counts, rates, dt=0.1, validate=False).posterior
+    assert post.shape == (1, n_bins)
+
+
 def test_decode_no_spike_valid_model_yields_uniform_posterior() -> None:
     """A no-spike time bin against a VALID (finite) model decodes to ~uniform.
 
