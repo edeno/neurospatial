@@ -21,6 +21,17 @@
 - `shuffle_cell_identity` now validates that the number of neurons in
   `spike_counts` (columns) matches the number of rows in `encoding_models`,
   raising a `ValueError` instead of silently yielding wrong decodes.
+- `events_to_intervals(match_by=...)` now raises a `ValueError` on duplicate
+  match keys instead of silently forming a Cartesian product
+  (`DataFrame.merge(how="inner")` cross-joins repeated keys, producing more
+  intervals than real start/stop pairs).
+- `distance_to_reward` now raises a `ValueError` on non-finite
+  `times`/`positions`/`reward_times`, and on unsorted `times` when inferring
+  reward positions (no explicit `reward_positions`), instead of returning
+  silently-wrong distances from corrupted interpolation.
+- `add_positions` now raises a `ValueError` on degenerate trajectories (a
+  single sample, all-identical trajectory times, or non-finite trajectory
+  times) instead of returning all-NaN/Inf position columns.
 
 - `compute_egocentric_distance(metric="geodesic")` previously honored only
   the first timestep's targets when called with a time-varying target array

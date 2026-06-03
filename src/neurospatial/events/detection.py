@@ -60,6 +60,9 @@ def add_positions(
     ValueError
         If timestamp_column is not in events.
         If times and positions have different lengths.
+        If the trajectory has fewer than 2 samples.
+        If all trajectory ``times`` are identical.
+        If trajectory ``times`` contain non-finite values.
 
     Notes
     -----
@@ -117,6 +120,33 @@ def add_positions(
             f"times and positions must have same length, got {len(times)} and {len(positions)}.\n"
             "  WHY: Each position sample must have a corresponding timestamp.\n"
             "  HOW: Ensure positions.shape[0] == times.shape[0]."
+        )
+
+    from neurospatial._validation import validate_finite
+
+    # Trajectory timestamps must be finite to define the interpolant; a NaN/Inf
+    # time silently maps every event to NaN/Inf. (Event timestamps may still be
+    # NaN -> NaN position, handled separately below.)
+    times = validate_finite(times, name="times")
+
+    # A linear interpolant needs at least two samples spanning a non-zero time
+    # range. A single sample, or all-identical times, leaves interp1d undefined
+    # and would return all-NaN/Inf positions silently.
+    if len(times) < 2:
+        raise ValueError(
+            f"add_positions needs at least 2 trajectory samples to "
+            f"interpolate, got {len(times)}.\n"
+            "  WHY: linear interpolation is undefined for a single sample and "
+            "would return NaN for every event position.\n"
+            "  HOW: pass a trajectory with >= 2 samples spanning the event times."
+        )
+    if np.ptp(times) == 0:
+        raise ValueError(
+            "add_positions trajectory times are all identical "
+            f"(every sample at t={times[0]:g}).\n"
+            "  WHY: interpolation needs a non-zero time span; duplicate sample "
+            "times leave the interpolant undefined (NaN/Inf positions).\n"
+            "  HOW: pass a trajectory whose timestamps vary."
         )
 
     # Ensure positions is 2D

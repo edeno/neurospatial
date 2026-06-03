@@ -1165,6 +1165,105 @@ class TestDistanceToReward:
         assert result_geodesic[0] >= result_euclidean[0]
 
 
+class TestDistanceToRewardValidation:
+    """Tests for non-finite and unsorted-time guards in distance_to_reward."""
+
+    def test_distance_to_reward_nan_reward_time_raises(self, simple_grid_env):
+        """A NaN in reward_times must raise, naming the argument."""
+        from neurospatial.events.regressors import distance_to_reward
+
+        env = simple_grid_env
+        n_samples = 10
+        times = np.linspace(0, 9, n_samples)
+        positions = np.column_stack(
+            [np.linspace(0, 9, n_samples), np.linspace(0, 9, n_samples)]
+        )
+        reward_times = np.array([2.0, np.nan])
+
+        with pytest.raises(ValueError, match="reward_times"):
+            distance_to_reward(env, times, positions, reward_times)
+
+    def test_distance_to_reward_nan_position_raises(self, simple_grid_env):
+        """A NaN in positions must raise, naming the argument."""
+        from neurospatial.events.regressors import distance_to_reward
+
+        env = simple_grid_env
+        n_samples = 10
+        times = np.linspace(0, 9, n_samples)
+        positions = np.column_stack(
+            [np.linspace(0, 9, n_samples), np.linspace(0, 9, n_samples)]
+        )
+        positions[3, 0] = np.nan
+        reward_times = np.array([2.0])
+
+        with pytest.raises(ValueError, match="positions"):
+            distance_to_reward(env, times, positions, reward_times)
+
+    def test_distance_to_reward_unsorted_times_raises(self, simple_grid_env):
+        """Descending times with inferred reward positions must raise."""
+        from neurospatial.events.regressors import distance_to_reward
+
+        env = simple_grid_env
+        # Descending step at index 2 -> 3.
+        times = np.array([0.0, 1.0, 5.0, 2.0, 6.0])
+        positions = np.column_stack([np.linspace(0, 9, 5), np.linspace(0, 9, 5)])
+        reward_times = np.array([3.0])
+
+        with pytest.raises(ValueError, match=r"ascending|sorted"):
+            distance_to_reward(env, times, positions, reward_times)
+
+    def test_distance_to_reward_unsorted_times_ok_with_explicit_positions(
+        self, simple_grid_env
+    ):
+        """Unsorted times with explicit reward_positions must not raise."""
+        from neurospatial.events.regressors import distance_to_reward
+
+        env = simple_grid_env
+        times = np.array([0.0, 1.0, 5.0, 2.0, 6.0])
+        positions = np.full((5, 2), 5.0)
+        reward_times = np.array([3.0])
+        reward_positions = np.array([[5.0, 5.0]])
+
+        result = distance_to_reward(
+            env,
+            times,
+            positions,
+            reward_times,
+            reward_positions=reward_positions,
+            metric="euclidean",
+        )
+
+        assert result.shape == (5,)
+        assert np.all(np.isfinite(result))
+
+    def test_distance_to_reward_finite_inputs_unchanged(self, simple_grid_env):
+        """A finite, sorted example returns correct, unchanged distances."""
+        from neurospatial.events.regressors import distance_to_reward
+
+        env = simple_grid_env
+        n_samples = 10
+        times = np.linspace(0, 9, n_samples)
+        # Animal stays on the y=5 line, moving x from 0 to 9.
+        positions = np.column_stack(
+            [np.linspace(0, 9, n_samples), np.full(n_samples, 5.0)]
+        )
+        # Reward inferred at t=4.5 -> x=4.5, y=5.
+        reward_times = np.array([4.5])
+
+        result = distance_to_reward(
+            env, times, positions, reward_times, metric="euclidean"
+        )
+
+        assert result.shape == (n_samples,)
+        assert np.all(np.isfinite(result))
+        # Distance decreases monotonically toward the reward, then increases.
+        reward_idx = int(np.argmin(result))
+        assert np.all(np.diff(result[: reward_idx + 1]) <= 1e-9)
+        assert np.all(np.diff(result[reward_idx:]) >= -1e-9)
+        # First sample is at x=0; reward at x=4.5 -> distance 4.5.
+        assert result[0] == pytest.approx(4.5, abs=0.6)
+
+
 # =============================================================================
 # Test distance_to_boundary
 # =============================================================================

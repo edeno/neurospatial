@@ -549,6 +549,10 @@ def distance_to_reward(
         If positions and times have different lengths.
         If reward_positions provided but doesn't match reward_times length.
         If positions dimensionality doesn't match environment.
+        If ``times``, ``positions``, or ``reward_times`` contain non-finite
+        values.
+        If ``times`` is not ascending when reward positions are inferred
+        (no ``reward_positions`` given).
 
     Notes
     -----
@@ -611,12 +615,19 @@ def distance_to_reward(
     time_to_nearest_event : Temporal distance to events
     distance_to_boundary : Distance to environment boundaries
     """
+    from neurospatial._validation import validate_finite
     from neurospatial.ops.distance import distance_field
 
-    # Input validation
-    positions = np.asarray(positions, dtype=np.float64)
-    times = np.asarray(times, dtype=np.float64)
-    reward_times = np.asarray(reward_times, dtype=np.float64)
+    # Input validation: reject NaN/Inf in the spatial + temporal inputs.
+    # A non-finite time or position silently corrupts interpolation,
+    # searchsorted ordering, and the resulting distance-to-reward regressor.
+    times = validate_finite(times, name="times")
+    reward_times = validate_finite(reward_times, name="reward_times")
+    positions = validate_finite(
+        np.asarray(positions, dtype=np.float64), name="positions"
+    )
+    if positions.ndim == 1:
+        positions = positions.reshape(-1, 1)
 
     n_samples = len(times)
 
@@ -650,6 +661,19 @@ def distance_to_reward(
         # the caller knows the reward position is the session edge, not a
         # true interpolated location -- a silently clipped reward can bias a
         # distance-to-reward regressor near session boundaries.
+        #
+        # np.interp requires its sample points (times) to be ascending;
+        # unsorted times produce silently-wrong interpolated reward positions.
+        if np.any(np.diff(times) < 0):
+            raise ValueError(
+                "times must be sorted in ascending order to interpolate "
+                "reward positions.\n"
+                "  WHY: linear interpolation of reward locations assumes "
+                "monotonically increasing timestamps; unsorted times yield "
+                "wrong reward positions and a corrupted distance regressor.\n"
+                "  HOW: sort (times, positions) by time before calling, or "
+                "pass explicit reward_positions to skip interpolation."
+            )
         t_min = times.min()
         t_max = times.max()
         n_out_of_range = int(np.sum((reward_times < t_min) | (reward_times > t_max)))

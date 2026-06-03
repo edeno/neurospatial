@@ -311,3 +311,77 @@ class TestAddPositions:
         assert np.all(result["x"] <= 80)
         assert np.all(result["y"] >= 20)
         assert np.all(result["y"] <= 80)
+
+
+class TestAddPositionsDegenerateTrajectory:
+    """Tests that add_positions rejects trajectories interp1d cannot use."""
+
+    def test_add_positions_single_sample_raises(self):
+        """A single trajectory sample cannot define a linear interpolant."""
+        from neurospatial.events.detection import add_positions
+
+        events = pd.DataFrame({"timestamp": [1.0]})
+        times = np.array([1.0])
+        positions = np.array([[0.0, 0.0]])
+
+        with pytest.raises(ValueError, match=r"2 .*sample|at least 2"):
+            add_positions(events, positions, times)
+
+    def test_add_positions_identical_times_raises(self):
+        """All-identical trajectory times leave the interpolant undefined."""
+        from neurospatial.events.detection import add_positions
+
+        events = pd.DataFrame({"timestamp": [2.0]})
+        times = np.array([2.0, 2.0, 2.0])
+        positions = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
+
+        with pytest.raises(ValueError, match=r"identical|non-zero"):
+            add_positions(events, positions, times)
+
+    def test_add_positions_nan_trajectory_time_raises(self):
+        """A NaN trajectory timestamp must raise, naming the argument."""
+        from neurospatial.events.detection import add_positions
+
+        events = pd.DataFrame({"timestamp": [1.5]})
+        times = np.array([0.0, np.nan, 2.0])
+        positions = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
+
+        with pytest.raises(ValueError, match="times"):
+            add_positions(events, positions, times)
+
+    def test_add_positions_nan_event_timestamp_still_nan(self):
+        """An event with a NaN timestamp still yields NaN x/y positions.
+
+        The trajectory itself is valid (>= 2 samples, varying times); only
+        the *event* timestamp is NaN, which is a supported, documented path.
+        """
+        from neurospatial.events.detection import add_positions
+
+        events = pd.DataFrame({"timestamp": [1.0, np.nan, 3.0]})
+        times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+        positions = np.array(
+            [[0.0, 0.0], [2.0, 2.0], [4.0, 4.0], [6.0, 6.0], [8.0, 8.0]]
+        )
+
+        result = add_positions(events, positions, times)
+
+        # Finite events interpolate correctly.
+        assert result["x"].iloc[0] == pytest.approx(2.0)
+        assert result["y"].iloc[0] == pytest.approx(2.0)
+        assert result["x"].iloc[2] == pytest.approx(6.0)
+        assert result["y"].iloc[2] == pytest.approx(6.0)
+        # NaN event timestamp -> NaN position.
+        assert np.isnan(result["x"].iloc[1])
+        assert np.isnan(result["y"].iloc[1])
+
+    def test_add_positions_valid_unchanged(self):
+        """The module doctest example still returns [[3, 3], [7, 7]]."""
+        from neurospatial.events.detection import add_positions
+
+        rewards = pd.DataFrame({"timestamp": [1.5, 3.5], "size": [1, 2]})
+        times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+        positions = np.array([[0, 0], [2, 2], [4, 4], [6, 6], [8, 8]], dtype=np.float64)
+
+        result = add_positions(rewards, positions, times)
+
+        assert_allclose(result[["x", "y"]].values, [[3.0, 3.0], [7.0, 7.0]])
