@@ -666,3 +666,25 @@ class TestOccupancyAgreesWithBinSequenceOnOutsideSamples:
         occ = env.occupancy(times, positions, max_gap=None)
         expected_total = float(np.diff(times).sum())
         assert occ.sum() == pytest.approx(expected_total, rel=1e-6)
+
+
+class TestOccupancyNonFiniteTimes:
+    """Regression: non-finite timestamps raise a clear, non-contradictory error."""
+
+    @pytest.mark.parametrize("bad_value", [np.nan, np.inf])
+    def test_occupancy_nonfinite_times_raises_clear_error(
+        self, holed_grid_env, bad_value
+    ):
+        env = holed_grid_env
+        center = env.bin_centers[0]
+        positions = np.array([center, center, center], dtype=np.float64)
+        times = np.array([0.0, 1.0, 2.0], dtype=np.float64)
+        times[1] = bad_value
+
+        with pytest.raises(ValueError) as excinfo:
+            env.occupancy(times, positions)
+
+        message = str(excinfo.value)
+        assert "times" in message
+        assert "non-finite" in message
+        assert "decreasing interval" not in message

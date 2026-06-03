@@ -524,6 +524,13 @@ class EnvironmentFields:
         NotImplementedError
             If layout is not RegularGridLayout.
 
+        Notes
+        -----
+        On a holed/masked grid (where ``n_bins < prod(grid_shape)``), inactive
+        cells are filled with NaN before interpolation. Query points over an
+        inactive cell therefore return NaN, consistent with the out-of-bounds
+        ``fill_value=np.nan`` behavior for points outside the grid entirely.
+
         """
         # Check layout type - must be RegularGridLayout, not masked/polygon layouts
         # Use _layout_type_tag to avoid mypy Protocol isinstance issues
@@ -552,9 +559,21 @@ class EnvironmentFields:
         grid_edges: tuple[NDArray[np.float64], ...] = layout_any.grid_edges
         n_dims = len(grid_shape)
 
-        # Reshape field to grid
-        # Note: RegularGridLayout stores bin_centers in row-major order
-        field_grid = field.reshape(grid_shape)
+        # Scatter active-bin values into a full-grid array before reshaping.
+        # `field` is indexed by active-bin id (length n_bins); `grid_shape`
+        # is the FULL grid. On a holed/masked grid n_bins < prod(grid_shape),
+        # so a direct reshape would raise. Inactive cells are filled with NaN,
+        # which the RegularGridInterpolator (fill_value=np.nan) already treats
+        # as "no data" — query points over a hole interpolate to NaN.
+        n_full = int(np.prod(grid_shape))
+        active_mask = getattr(self.layout, "active_mask", None)
+        if active_mask is None or field.shape[0] == n_full:
+            # Fully-active grid: field already covers every cell.
+            field_grid = field.reshape(grid_shape)
+        else:
+            full_field = np.full(n_full, np.nan, dtype=np.float64)
+            full_field[np.flatnonzero(active_mask.ravel())] = field
+            field_grid = full_field.reshape(grid_shape)
 
         # Create grid points for each dimension (bin centers)
         grid_points: list[NDArray[np.float64]] = []

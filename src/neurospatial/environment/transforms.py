@@ -255,24 +255,19 @@ class EnvironmentTransforms:
 
         # --- Build new connectivity graph ---
 
-        # Check if original had diagonal connections
-        # Sample: check degree of a center node (not on boundary)
-        center_node = grid_shape[0] // 2
-        if n_dims == 2:
-            center_flat_idx = center_node * grid_shape[1] + grid_shape[1] // 2
+        # Infer whether the original grid used diagonal connections by looking
+        # at the MAXIMUM node degree in the active connectivity graph. The
+        # graph is keyed by ACTIVE-bin ids (0..n_bins-1), so we must not index
+        # it with a full-grid flat index. Interior nodes have the full
+        # neighbour count; boundary/hole-adjacent nodes have fewer, so the max
+        # over all active nodes is the robust signal:
+        #   2D: 4-conn -> max degree 4, 8-conn -> max degree 8
+        #   3D: 6-conn -> max degree 6, 26-conn -> max degree 26
+        if self.connectivity.number_of_nodes() > 0:
+            max_degree = max((deg for _, deg in self.connectivity.degree()), default=0)
+            connect_diagonal = max_degree > 2 * n_dims
         else:
-            # For higher dims, just check if any node has more than 2*n_dims neighbors
-            center_flat_idx = 0
-
-        # Get degree
-        if center_flat_idx in self.connectivity:
-            degree = self.connectivity.degree(center_flat_idx)
-            # 2D: 4-conn has degree 4, 8-conn has degree 8
-            # 3D: 6-conn has degree 6, 26-conn has degree 26
-            # Heuristic: if degree > 2*n_dims, assume diagonal connections
-            connect_diagonal = degree > 2 * n_dims
-        else:
-            # Default to True (common case)
+            # Empty graph (degenerate): default to the common case.
             connect_diagonal = True
 
         # Create new layout
