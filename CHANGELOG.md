@@ -246,6 +246,12 @@
 
 ### Bug fixes
 
+- `DirectionalPlaceFields.to_dataframe()` no longer crashes on an empty result.
+  When `compute_directional_place_fields` excludes every sample as `"other"`
+  (so `labels == ()`), the method previously built an empty `frames` list and
+  called `pd.concat([])`, raising `ValueError: No objects to concatenate`. It
+  now returns an empty `DataFrame` carrying the documented column schema
+  (`direction`, `bin`, `coord_0…`, `firing_rate`, `occupancy`).
 - `DirectionalRateResult.rayleigh_pvalue` now restricts the weighted Rayleigh
   test to **occupied** heading bins (positive occupancy and finite firing
   rate). Previously a bin the animal never occupied (zero occupancy → `NaN`

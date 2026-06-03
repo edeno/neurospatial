@@ -514,3 +514,10 @@ class TestComputeDirectionalPlaceFields:
 
         assert len(result.firing_rates) == 0
         assert len(result.labels) == 0
+
+        # to_dataframe() on this empty result must not crash on pd.concat([]);
+        # it returns an empty frame carrying the documented column schema.
+        df = result.to_dataframe()
+        assert len(df) == 0
+        for col in ("direction", "bin", "coord_0", "firing_rate", "occupancy"):
+            assert col in df.columns

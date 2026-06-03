@@ -2347,6 +2347,20 @@ class DirectionalPlaceFields(ResultMixin):
             data["firing_rate"] = rate
             data["occupancy"] = occ
             frames.append(pd.DataFrame(data))
+        if not frames:
+            # No labelled directions (e.g. compute_directional_place_fields
+            # excluded every "other" sample, leaving labels == ()). Return an
+            # empty frame with the documented column schema instead of letting
+            # pd.concat([]) raise "No objects to concatenate".
+            empty: dict[str, NDArray[Any]] = {
+                "direction": np.array([], dtype=object),
+                "bin": np.array([], dtype=np.int64),
+            }
+            for d in range(n_dims):
+                empty[f"coord_{d}"] = np.array([], dtype=np.float64)
+            empty["firing_rate"] = np.array([], dtype=np.float64)
+            empty["occupancy"] = np.array([], dtype=np.float64)
+            return pd.DataFrame(empty)
         return pd.concat(frames, ignore_index=True)
 
     def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
