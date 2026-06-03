@@ -1985,7 +1985,11 @@ def is_head_direction_cell(
     """
     from neurospatial.encoding._validation import validate_classifier_trajectory
 
-    # Validate inputs OUTSIDE the try so genuine input errors propagate.
+    # Validate inputs OUTSIDE the try so genuine input errors propagate
+    # (a typo such as angle_unit="degrees" must surface as a ValueError,
+    # not be swallowed by the except below into a False classification).
+    if angle_unit not in ("rad", "deg"):
+        raise ValueError(f"angle_unit must be 'rad' or 'deg', got '{angle_unit}'")
     validate_classifier_trajectory(
         spike_times, times, headings, context="is_head_direction_cell"
     )

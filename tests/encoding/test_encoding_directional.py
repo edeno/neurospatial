@@ -4120,6 +4120,24 @@ class TestIsHeadDirectionCellValidation:
         with pytest.raises(ValueError):
             is_head_direction_cell(spikes, times, headings[:-5])
 
+    def test_is_head_direction_cell_raises_on_invalid_angle_unit(
+        self, uniform_heading_trajectory
+    ) -> None:
+        # A typo such as angle_unit="degrees" must surface as a ValueError
+        # rather than being swallowed by the except into a False
+        # classification.
+        from neurospatial.encoding.directional import is_head_direction_cell
+
+        times, headings = uniform_heading_trajectory
+        spikes = np.sort(np.random.default_rng(0).uniform(0, 60, 50))
+        with pytest.raises(ValueError, match="angle_unit"):
+            is_head_direction_cell(
+                spikes,
+                times,
+                headings,
+                angle_unit="degrees",  # type: ignore[arg-type]
+            )
+
     def test_is_head_direction_cell_false_on_uniform(
         self, uniform_heading_trajectory
     ) -> None:
