@@ -143,6 +143,174 @@ snippets:
     kind: markdown
     index: 2
 
+  - id: quickstart_vte_session
+    source: .claude/QUICKSTART.md
+    kind: markdown
+    # Block 10: VTE (Vicarious Trial and Error) detection. compute_vte_session
+    # is env-first; this verifies the documented call against that API.
+    index: 10
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"
+      import numpy as np
+      from shapely.geometry import box
+
+      from neurospatial import Environment
+      from neurospatial.behavior.segmentation import Trial
+
+      # Animal runs back and forth along x through a central decision zone.
+      seg = np.linspace(0.0, 100.0, 200)
+      xs = np.concatenate([seg, seg[::-1]])
+      ys = 50.0 + 2.0 * np.sin(np.linspace(0.0, 8 * np.pi, len(xs)))
+      positions = np.column_stack([xs, ys])
+      times = np.linspace(0.0, 40.0, len(positions))
+
+      env = Environment.from_samples(positions, bin_size=4.0)
+      env.regions.add("center", polygon=box(40.0, 30.0, 60.0, 70.0))
+
+      trials = [
+          Trial(start_time=0.0, end_time=20.0, start_region="start",
+                end_region="goal", success=True),
+          Trial(start_time=20.0, end_time=40.0, start_region="goal",
+                end_region="start", success=True),
+      ]
+    timeout: 120
+
+  - id: quickstart_ovc_classify_single
+    source: .claude/QUICKSTART.md
+    kind: markdown
+    # Block 16: classify OVCs from a single-neuron EgocentricRateResult. The
+    # singular methods (is_object_vector_cell/preferred_distance/.plot) live on
+    # the single-neuron result, not the batch EgocentricRatesResult.
+    index: 16
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"
+      import numpy as np
+
+      from neurospatial import Environment
+      from neurospatial.ops.egocentric import heading_from_velocity
+
+      t = np.linspace(0.0, 20.0, 400)
+      positions = np.column_stack([
+          50.0 + 30.0 * np.cos(2 * np.pi * t / 20.0),
+          50.0 + 30.0 * np.sin(2 * np.pi * t / 20.0),
+      ])
+      times = t
+      env = Environment.from_samples(positions, bin_size=4.0)
+      dt = float(times[1] - times[0])
+      headings = heading_from_velocity(positions, dt, min_speed=1.0)
+      object_positions = np.array([[50.0, 30.0], [80.0, 60.0]])
+      spike_times = times[::7]
+    timeout: 120
+
+  - id: quickstart_view_classify
+    source: .claude/QUICKSTART.md
+    kind: markdown
+    # Block 21: classify spatial-view cells from single + batch results. Both
+    # ViewRateResult and ViewRatesResult expose peak_view_location() (singular).
+    index: 21
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"
+      import numpy as np
+
+      from neurospatial import Environment
+      from neurospatial.encoding import compute_view_rate, compute_view_rates
+      from neurospatial.ops.egocentric import heading_from_velocity
+
+      t = np.linspace(0.0, 20.0, 400)
+      positions = np.column_stack([
+          50.0 + 30.0 * np.cos(2 * np.pi * t / 20.0),
+          50.0 + 30.0 * np.sin(2 * np.pi * t / 20.0),
+      ])
+      times = t
+      env = Environment.from_samples(positions, bin_size=4.0)
+      dt = float(times[1] - times[0])
+      headings = heading_from_velocity(positions, dt, min_speed=1.0)
+      single = compute_view_rate(
+          env, times[::7], times, positions, headings, view_distance=10.0
+      )
+      batch = compute_view_rates(
+          env, [times[::7], times[::9], times[::11]], times, positions,
+          headings, view_distance=10.0,
+      )
+    timeout: 120
+
+  - id: quickstart_circular_basis_metrics
+    source: .claude/QUICKSTART.md
+    kind: markdown
+    # Block 29: circular-basis GLM tuning. circular_basis_metrics takes a single
+    # cov_matrix argument (the 2x2 [sin, cos] covariance submatrix), not
+    # separate var_sin/var_cos/cov_sin_cos kwargs.
+    index: 29
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"
+      import numpy as np
+
+      rng = np.random.default_rng(0)
+      n = 2000
+      head_direction_angles = rng.uniform(-np.pi, np.pi, n)
+      rate = 2.0 + 1.5 * np.cos(head_direction_angles - 0.7)
+      spike_counts = rng.poisson(rate)
+    timeout: 120
+
+  - id: quickstart_overlay_block
+    source: .claude/QUICKSTART.md
+    kind: markdown
+    # Block 25: trajectory/pose overlays. PositionOverlay uses `positions=`
+    # (not `data=`) and BodypartOverlay takes a Skeleton (not a raw edge list).
+    # animate_fields is stubbed headlessly; overlays are still converted against
+    # the env so construction is exercised on the real public API.
+    index: 25
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"
+      import numpy as np
+
+      from neurospatial import Environment
+
+      n = 30
+      trajectory = np.column_stack([
+          np.linspace(0.0, 20.0, n),
+          5.0 + np.sin(np.linspace(0.0, 2.0 * np.pi, n)),
+      ])
+      traj1 = trajectory
+      traj2 = trajectory + np.array([1.0, 1.0])
+      nose_traj = trajectory + np.array([0.5, 0.0])
+      body_traj = trajectory
+      tail_traj = trajectory - np.array([0.5, 0.0])
+
+      positions = trajectory
+      env = Environment.from_samples(positions, bin_size=2.0)
+      fields = [np.zeros(env.n_bins) for _ in range(n)]
+      frame_times = np.arange(n) / 30.0
+
+      def _noop_animate_fields(self, fields, *, frame_times, overlays=None, **kwargs):
+          assert len(frame_times) == len(fields)
+          if overlays:
+              for ov in overlays:
+                  ov.convert_to_data(
+                      np.asarray(frame_times, dtype=float), len(fields), self
+                  )
+          return kwargs.get("save_path")
+
+      Environment.animate_fields = _noop_animate_fields
+    timeout: 120
+
+  - id: quickstart_events_glm_regressors
+    source: .claude/QUICKSTART.md
+    kind: markdown
+    # Block 32: event-based GLM regressors. event_indicator/event_count_in_window
+    # both take a keyword-only (start, end) window tuple.
+    index: 32
+    setup: |
+      import numpy as np
+
+      sample_times = np.linspace(0.0, 60.0, 600)
+      reward_times = np.array([5.0, 12.0, 23.0, 41.0, 55.0])
+
   - id: package_docstring_common_usage
     source: src/neurospatial/__init__.py
     kind: package_docstring

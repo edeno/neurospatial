@@ -99,7 +99,7 @@ def annotate_video(
         If None, user draws boundary manually.
     boundary_config : BoundaryConfig, optional
         Configuration for boundary inference when initial_boundary is an array.
-        If None, uses BoundaryConfig defaults (convex_hull, 2% buffer, 1% simplify).
+        If None, uses BoundaryConfig defaults (alpha_shape, 2% buffer, 1% simplify).
     frame_index : int, optional
         Which frame to display for annotation. Overrides config.frame_index.
         Default is 0 (first frame).

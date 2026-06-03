@@ -134,7 +134,7 @@ def neighbor_reduce(
     See Also
     --------
     Environment.smooth : Gaussian smoothing using distance-based kernels
-    convolve : General convolution with custom kernels
+    graph_convolve : General convolution with custom kernels
 
     References
     ----------

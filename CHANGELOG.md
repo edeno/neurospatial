@@ -184,6 +184,24 @@
 
 ### Documentation
 
+- Documentation examples are now exercised in CI. Every paste-and-run example
+  that had drifted from the current API was corrected against the live
+  signatures — overlay construction (`PositionOverlay(positions=...)`,
+  `BodypartOverlay(skeleton=Skeleton.from_edge_list(...))`), `path_progress` /
+  `cost_to_goal` argument order, `circular_basis_metrics(..., cov_matrix=...)`,
+  the singular `peak_view_location()` / `mean_vector_length()` result methods,
+  the single-neuron object-vector-cell classification path, `graph_convolve`,
+  `bin_sequence(times, positions)`, and `Environment.plot_field()`. Several
+  stale module paths (`neurospatial.metrics.phase_precession`,
+  `neurospatial.differential`, `neurospatial.reference_frames`,
+  `neurospatial.segmentation`) and a nonexistent `write_intervals()` reference
+  were repointed to their real homes, and rename-corrupted "uncertainty" /
+  "entropy" prose in the decoding docstrings was restored.
+- A new CI doctest gate runs `pytest --doctest-modules src/neurospatial/`, and
+  the curated `docs/snippets.yml` harness gained executable entries for the
+  overlay, object-vector classify, spatial-view classify, VTE, circular-basis,
+  and event-regressor quickstart blocks so these examples can no longer drift
+  out of sync without failing CI.
 - The `decoding` trajectory (replay) module now documents that
   sharp-wave-ripple intervals come from the external `ripple_detection`
   package and that its returned `(start, end)` intervals feed

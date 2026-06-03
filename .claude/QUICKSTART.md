@@ -477,13 +477,24 @@ df = result.to_dataframe()
 **Classify object-vector cells from result metrics:**
 
 ```python
-# Check classification on the canonical result object
-print(result.is_object_vector_cell(min_info=0.5))
-print(f"Preferred distance: {result.preferred_distance():.1f} cm")
-print(f"Preferred direction: {result.preferred_direction():.2f} rad")
+from neurospatial.encoding import compute_egocentric_rate
+
+# Singular methods live on the single-neuron EgocentricRateResult
+single = compute_egocentric_rate(
+    None,  # env (required only for metric="geodesic")
+    spike_times, times, positions, headings, object_positions,
+    distance_range=(0.0, 50.0),
+    n_distance_bins=10,
+    n_direction_bins=12,
+)
+
+# Check classification on the single-neuron result object
+print(single.is_object_vector_cell(min_info=0.5))
+print(f"Preferred distance: {single.preferred_distance():.1f} cm")
+print(f"Preferred direction: {single.preferred_direction():.2f} rad")
 
 # Plot egocentric polar tuning
-fig, ax = result.plot()
+ax = single.plot()
 ```
 
 **Simulate object-vector cells:**
@@ -579,7 +590,7 @@ result = compute_view_rates(
 )
 
 # Batch metrics
-peaks = result.peak_view_locations()       # (n_neurons, n_dims)
+peaks = result.peak_view_location()        # (n_neurons, n_dims)
 info = result.view_spatial_information()   # (n_neurons,)
 view_cells = result.detect_view_cells(min_info=0.5)  # (n_neurons,) bool
 
@@ -598,7 +609,7 @@ print(f"Peak viewed location: {single.peak_view_location()}")
 # Batch result from compute_view_rates(...)
 print(batch.detect_view_cells(min_info=0.5))           # (n_neurons,) bool
 print(batch.view_spatial_information())                # (n_neurons,)
-print(batch.peak_view_locations())                     # (n_neurons, n_dims)
+print(batch.peak_view_location())                      # (n_neurons, n_dims)
 ```
 
 **Simulate spatial view cells:**
@@ -686,11 +697,16 @@ env.animate_fields(fields, frame_times=frame_times, speed=0.1)  # 10% speed
 **Add trajectory overlays:**
 
 ```python
-from neurospatial.animation import PositionOverlay, BodypartOverlay, HeadDirectionOverlay
+from neurospatial.animation import (
+    BodypartOverlay,
+    HeadDirectionOverlay,
+    PositionOverlay,
+    Skeleton,
+)
 
 # Position overlay with trail
 position_overlay = PositionOverlay(
-    data=trajectory,  # Shape: (n_frames, n_dims) in environment (x, y) coordinates
+    positions=trajectory,  # Shape: (n_frames, n_dims) in environment (x, y) coordinates
     color="red",
     size=12.0,
     trail_length=10  # Show last 10 frames as decaying trail
@@ -698,16 +714,22 @@ position_overlay = PositionOverlay(
 env.animate_fields(fields, frame_times=frame_times, overlays=[position_overlay])
 
 # Pose tracking with skeleton
+skeleton = Skeleton.from_edge_list(
+    [("tail", "body"), ("body", "nose")],
+    name="rodent",
+    edge_color="white",
+    edge_width=2.0,
+)
 bodypart_overlay = BodypartOverlay(
     data={"nose": nose_traj, "body": body_traj, "tail": tail_traj},
-    skeleton=[("tail", "body"), ("body", "nose")],
+    skeleton=skeleton,
     colors={"nose": "yellow", "body": "red", "tail": "blue"},
 )
 env.animate_fields(fields, frame_times=frame_times, overlays=[bodypart_overlay])
 
 # Multi-animal tracking
-animal1 = PositionOverlay(data=traj1, color="red", trail_length=10)
-animal2 = PositionOverlay(data=traj2, color="blue", trail_length=10)
+animal1 = PositionOverlay(positions=traj1, color="red", trail_length=10)
+animal2 = PositionOverlay(positions=traj2, color="blue", trail_length=10)
 env.animate_fields(fields, frame_times=frame_times, overlays=[animal1, animal2])
 ```
 
@@ -812,11 +834,9 @@ fit = model.fit()
 
 # Extract tuning parameters
 beta_sin, beta_cos = fit.params[1], fit.params[2]
+cov = fit.cov_params()
 amplitude, preferred_direction, p_value = circular_basis_metrics(
-    beta_sin, beta_cos,
-    var_sin=fit.cov_params()[1, 1],
-    var_cos=fit.cov_params()[2, 2],
-    cov_sin_cos=fit.cov_params()[1, 2],
+    beta_sin, beta_cos, cov_matrix=cov[1:3, 1:3]
 )
 
 # Visualize tuning curve

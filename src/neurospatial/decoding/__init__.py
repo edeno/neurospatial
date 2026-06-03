@@ -60,7 +60,7 @@ fit_isotonic_trajectory : Monotonic trajectory fitting
     Isotonic regression on posterior sequence.
 
 fit_linear_trajectory : Linear trajectory fitting
-    Linear regression with optional Monte Carlo posterior_entropy.
+    Linear regression with optional Monte Carlo uncertainty.
 
 detect_trajectory_radon : Radon transform trajectory detection
     Detect linear trajectories in posterior images.

@@ -314,7 +314,7 @@ All overlay data uses **environment coordinates** (x, y):
 positions = np.array([[10.0, 20.0], [15.0, 25.0]])
 
 # Pass directly - transformation happens internally
-overlay = PositionOverlay(data=positions)
+overlay = PositionOverlay(positions=positions)
 env.animate_fields(fields, frame_times=frame_times, overlays=[overlay])
 ```
 
@@ -323,7 +323,7 @@ env.animate_fields(fields, frame_times=frame_times, overlays=[overlay])
 ```python
 # Don't manually swap x,y or invert
 positions_wrong = np.column_stack([y_coords, x_coords])  # Manual swap
-overlay = PositionOverlay(data=positions_wrong)  # Display will be wrong!
+overlay = PositionOverlay(positions=positions_wrong)  # Display will be wrong!
 ```
 
 ---

@@ -29,7 +29,7 @@ Which Function Should I Use?
     Use ``wrap_angle()`` to wrap angles to (-π, π].
 
 **Phase precession analysis?**
-    See ``neurospatial.metrics.phase_precession`` module for
+    See ``neurospatial.encoding.phase_precession`` module for
     ``phase_precession()``, ``has_phase_precession()``, and
     ``plot_phase_precession()``.
 

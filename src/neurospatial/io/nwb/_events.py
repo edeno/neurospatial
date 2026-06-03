@@ -605,7 +605,8 @@ def write_trials(
         raise ``NotImplementedError``: pynwb provides no public API to remove
         or reset the predefined trials table (and it cannot be deleted once
         written), so overwriting it is unsupported. Write to a fresh NWBFile,
-        or use ``write_intervals()`` to store the intervals under another name.
+        or use ``write_region_crossings()`` to store the intervals under
+        another name.
 
     Raises
     ------
@@ -777,7 +778,7 @@ def write_trials(
             "exposes no public API to remove or reset the predefined trials "
             "table, and it cannot be deleted once the file is written. Write "
             "trials to a fresh NWBFile, or store these intervals under a "
-            "different name via write_intervals()."
+            "different name via write_region_crossings()."
         )
 
     # If no trials to add, skip table creation (NWB requires at least one trial)

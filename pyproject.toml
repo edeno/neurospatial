@@ -66,6 +66,7 @@ dev = [
     # Test fixtures
     "imageio>=2.35.0",  # For video test fixtures
     "pyarrow>=22.0.0",  # For parquet test fixtures
+    "statsmodels>=0.14.0",  # GLM fitting in circular-basis doc snippet
 ]
 docs = [
     "mkdocs>=1.6.0",

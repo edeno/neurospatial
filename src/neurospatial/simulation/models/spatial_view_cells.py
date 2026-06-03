@@ -20,7 +20,7 @@ Coordinate Conventions
 - ±π radians = facing West
 - -π/2 radians = facing South
 
-This matches the convention in ``neurospatial.reference_frames``.
+This matches the convention in ``neurospatial.ops.egocentric``.
 
 Examples
 --------
@@ -70,7 +70,7 @@ References
 See Also
 --------
 neurospatial.visibility : Visibility and gaze computation
-neurospatial.reference_frames : Coordinate transformations
+neurospatial.ops.egocentric : Coordinate transformations
 PlaceCellModel : Position-based place fields
 ObjectVectorCellModel : Object-distance tuned cells
 """

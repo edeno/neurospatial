@@ -20,7 +20,7 @@ Coordinate Conventions
 - -π/2 radians = object is to the right
 - ±π radians = object is behind
 
-This matches the coordinate convention in ``neurospatial.reference_frames``.
+This matches the coordinate convention in ``neurospatial.ops.egocentric``.
 
 Examples
 --------
@@ -68,7 +68,7 @@ References
 
 See Also
 --------
-neurospatial.reference_frames : Coordinate transformations
+neurospatial.ops.egocentric : Coordinate transformations
 PlaceCellModel : Gaussian place fields
 BoundaryCellModel : Boundary-distance tuned cells
 """

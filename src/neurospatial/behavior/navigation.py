@@ -544,8 +544,8 @@ def path_progress(
     --------
     >>> # Single trial - constant start/goal
     >>> progress = path_progress(  # doctest: +SKIP
-    ...     env,
     ...     position_bins,
+    ...     env,
     ...     start_bins=np.full(len(position_bins), 10),
     ...     goal_bins=np.full(len(position_bins), 50),
     ... )
@@ -556,7 +556,7 @@ def path_progress(
     ...     trials, times, env
     ... )  # doctest: +SKIP
     >>> progress = path_progress(
-    ...     env, position_bins, start_bins, goal_bins
+    ...     position_bins, env, start_bins=start_bins, goal_bins=goal_bins
     ... )  # doctest: +SKIP
 
     See Also
@@ -775,10 +775,10 @@ def cost_to_goal(
 
     Parameters
     ----------
-    env : Environment
-        Spatial environment.
     position_bins : NDArray[np.int_], shape (n_samples,)
         Bin indices over time.
+    env : Environment
+        Spatial environment.
     goal_bins : NDArray[np.int_] or int
         Target bin(s). Can be scalar (constant goal) or array (dynamic goal).
     cost_map : NDArray[np.float64], shape (n_bins,), optional
@@ -800,7 +800,7 @@ def cost_to_goal(
     >>> cost_map = np.ones(env.n_bins)  # doctest: +SKIP
     >>> cost_map[punishment_bins] = 10.0  # doctest: +SKIP
     >>> cost = cost_to_goal(
-    ...     env, position_bins, goal_bin, cost_map=cost_map
+    ...     position_bins, env, goal_bins=goal_bin, cost_map=cost_map
     ... )  # doctest: +SKIP
 
     See Also

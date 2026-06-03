@@ -34,7 +34,7 @@ Example usage (conceptual):
     from neurospatial.regions.ops import points_in_any_region, regions_containing_points
 
     transform = SpatialTransform(...)  # pixel→world transform
-    rois = load_labelme_json(Path("annotations.json"), transform=transform)
+    rois = load_labelme_json(Path("annotations.json"), pixel_to_world=transform)
     pts_pixel = np.random.rand(1000, 2) * 512
     mask = points_in_any_region(pts_pixel, rois, transform=transform)
     matches = regions_containing_points(

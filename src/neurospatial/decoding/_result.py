@@ -71,7 +71,7 @@ class DecodingResult(ResultMixin):
     >>> print(f"MAP estimate shape: {result.map_estimate.shape}")
     MAP estimate shape: (100,)
     >>> print(
-    ...     f"Mean posterior_entropy: {result.posterior_entropy.mean():.2f} bits"
+    ...     f"Mean entropy: {result.posterior_entropy.mean():.2f} bits"
     ... )  # doctest: +SKIP
 
     Notes
@@ -174,7 +174,7 @@ class DecodingResult(ResultMixin):
     def posterior_entropy(self) -> NDArray[np.float64]:
         """Posterior entropy in bits.
 
-        Measures the posterior_entropy in the position estimate. Higher values
+        Measures the entropy in the position estimate. Higher values
         indicate more spread-out (uncertain) posteriors.
 
         Returns
@@ -199,7 +199,7 @@ class DecodingResult(ResultMixin):
 
         See Also
         --------
-        map_estimate : Point estimate with zero posterior_entropy consideration
+        map_estimate : Point estimate with zero entropy consideration
         """
         p = np.clip(self.posterior, 0.0, 1.0)
         # Vectorized mask-based entropy: avoid log(0) by using np.where
@@ -391,7 +391,7 @@ class DecodingResult(ResultMixin):
         """Convert to pandas DataFrame with times and position estimates.
 
         Creates a DataFrame with one row per time bin, containing the
-        decoded position estimates and posterior_entropy measures.
+        decoded position estimates and entropy measures.
 
         Returns
         -------

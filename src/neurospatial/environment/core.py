@@ -1075,7 +1075,7 @@ class _BaseEnvironment(
 
         See Also
         --------
-        neurospatial.differential.compute_differential_operator : Underlying computation
+        neurospatial.ops.calculus.compute_differential_operator : Underlying computation
 
         References
         ----------

@@ -52,7 +52,7 @@ Quick Start
 >>> basis = geodesic_rbf_basis(env, n_centers=50, sigma=5.0)  # doctest: +SKIP
 >>>
 >>> # Create GLM design matrix
->>> bin_indices = env.bin_sequence(trajectory, times)  # doctest: +SKIP
+>>> bin_indices = env.bin_sequence(times, trajectory)  # doctest: +SKIP
 >>> X = basis[:, bin_indices].T  # Shape: (n_times, n_basis)  # doctest: +SKIP
 
 Full GLM Workflow
@@ -66,7 +66,7 @@ Full GLM Workflow
 >>> basis = geodesic_rbf_basis(env, n_centers=50, sigma=[5.0, 10.0])  # doctest: +SKIP
 >>>
 >>> # 2. Create design matrix from trajectory
->>> bin_indices = env.bin_sequence(trajectory, times)  # doctest: +SKIP
+>>> bin_indices = env.bin_sequence(times, trajectory)  # doctest: +SKIP
 >>> X_spatial = basis[:, bin_indices].T  # (n_times, n_basis)  # doctest: +SKIP
 >>>
 >>> # 3. Combine with other features (optional)
@@ -84,7 +84,7 @@ Full GLM Workflow
 ...     1 : len(basis) + 1
 ... ]  # Spatial coefficients  # doctest: +SKIP
 >>> place_field = beta_spatial @ basis  # Project back to space  # doctest: +SKIP
->>> env.plot(place_field, title="Fitted Place Field")  # doctest: +SKIP
+>>> env.plot_field(place_field, title="Fitted Place Field")  # doctest: +SKIP
 
 References
 ----------
@@ -418,7 +418,7 @@ def geodesic_rbf_basis(
             Row 5: center 2, sigma=10
 
         To create GLM design matrix from trajectory:
-        >>> bin_indices = env.bin_sequence(trajectory, times)  # doctest: +SKIP
+        >>> bin_indices = env.bin_sequence(times, trajectory)  # doctest: +SKIP
         >>> X = basis[:, bin_indices].T  # (n_timepoints, n_basis)  # doctest: +SKIP
 
     Raises
@@ -1053,7 +1053,7 @@ def spatial_basis(
     >>> basis = spatial_basis(env)  # Automatic defaults  # doctest: +SKIP
     >>>
     >>> # Use in GLM immediately
-    >>> bin_indices = env.bin_sequence(trajectory, times)  # doctest: +SKIP
+    >>> bin_indices = env.bin_sequence(times, trajectory)  # doctest: +SKIP
     >>> X = basis[:, bin_indices].T  # doctest: +SKIP
 
     Notes

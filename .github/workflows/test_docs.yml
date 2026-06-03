@@ -33,7 +33,19 @@ jobs:
           version: latest
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        # nwb + jax extras let the NWB/JAX docstring examples execute headlessly.
+        # napari-backed modules need a display and are exercised by the
+        # dedicated napari job in test.yml, so they are ignored below.
+        run: uv sync --extra dev --extra nwb --extra jax
+
+      - name: Run module doctests
+        env:
+          MPLBACKEND: Agg
+        run: >-
+          uv run pytest --doctest-modules src/neurospatial/
+          --ignore=src/neurospatial/annotation/_napari_widget.py
+          --ignore=src/neurospatial/annotation/_track_widget.py
+          --ignore=src/neurospatial/animation/config.py
 
       - name: Run curated doc-snippet smoke test
         env:

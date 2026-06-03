@@ -201,7 +201,7 @@ from neurospatial.animation import PositionOverlay
 
 # Position overlay with trail
 position_overlay = PositionOverlay(
-    data=trajectory,  # Shape: (n_frames, n_dims) in environment (x, y) coordinates
+    positions=trajectory,  # Shape: (n_frames, n_dims) in environment (x, y) coordinates
     color="red",
     size=12.0,
     trail_length=10  # Show last 10 frames as decaying trail

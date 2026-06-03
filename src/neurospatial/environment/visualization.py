@@ -870,27 +870,31 @@ class EnvironmentVisualization:
 
         Pose tracking with skeleton:
 
-        >>> from neurospatial.animation import BodypartOverlay
+        >>> from neurospatial.animation import BodypartOverlay, Skeleton
         >>> pose_data = {
         ...     "nose": np.random.uniform(0, 100, (100, 2)),
         ...     "ear_left": np.random.uniform(0, 100, (100, 2)),
         ...     "ear_right": np.random.uniform(0, 100, (100, 2)),
         ...     "tail_base": np.random.uniform(0, 100, (100, 2)),
         ... }
-        >>> bodypart_overlay = BodypartOverlay(  # doctest: +SKIP
-        ...     data=pose_data,  # doctest: +SKIP
-        ...     skeleton=[  # doctest: +SKIP
+        >>> skeleton = Skeleton.from_edge_list(  # doctest: +SKIP
+        ...     [  # doctest: +SKIP
         ...         ("nose", "ear_left"),  # doctest: +SKIP
         ...         ("nose", "ear_right"),  # doctest: +SKIP
         ...         ("nose", "tail_base"),  # doctest: +SKIP
         ...     ],  # doctest: +SKIP
+        ...     name="rodent",  # doctest: +SKIP
+        ...     edge_color="white",  # doctest: +SKIP
+        ... )  # doctest: +SKIP
+        >>> bodypart_overlay = BodypartOverlay(  # doctest: +SKIP
+        ...     data=pose_data,  # doctest: +SKIP
+        ...     skeleton=skeleton,  # doctest: +SKIP
         ...     colors={  # doctest: +SKIP
         ...         "nose": "red",  # doctest: +SKIP
         ...         "ear_left": "blue",  # doctest: +SKIP
         ...         "ear_right": "blue",  # doctest: +SKIP
         ...         "tail_base": "green",  # doctest: +SKIP
         ...     },  # doctest: +SKIP
-        ...     skeleton_color="white",  # doctest: +SKIP
         ... )  # doctest: +SKIP
         >>> env.animate_fields(  # doctest: +SKIP
         ...     fields,  # doctest: +SKIP

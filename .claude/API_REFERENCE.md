@@ -343,7 +343,7 @@ Result objects from the new API provide convenient methods:
 - `.preferred_direction()` - Circular mean weighted by rate (radians)
 - `.preferred_direction_deg()` - Same in degrees
 - `.peak_firing_rate()` - Maximum firing rate
-- `.mrl()` - Mean resultant length (tuning strength)
+- `.mean_vector_length()` - Mean resultant length (tuning strength)
 - `.tuning_width()` - Half-width at half-maximum (radians)
 - `.plot(ax=None, polar=True)` - Plot tuning curve
 

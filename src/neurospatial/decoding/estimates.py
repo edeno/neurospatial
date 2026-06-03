@@ -10,7 +10,7 @@ Functions
 posterior_mode : Maximum a posteriori bin index
 map_position : MAP position in environment coordinates
 mean_position : Posterior mean position (expected value)
-posterior_entropy : Posterior entropy in bits (posterior_entropy measure)
+posterior_entropy : Posterior entropy in bits (entropy measure)
 credible_region : Highest posterior density region
 
 Notes
@@ -24,7 +24,7 @@ Examples
 >>> from neurospatial.decoding.estimates import posterior_mode, posterior_entropy
 >>> import numpy as np
 >>>
->>> # Uniform posterior (maximum posterior_entropy)
+>>> # Uniform posterior (maximum entropy)
 >>> posterior = np.ones((10, 100)) / 100
 >>> bins = posterior_mode(posterior)
 >>> ent = posterior_entropy(posterior)
@@ -200,9 +200,9 @@ def mean_position(
 def posterior_entropy(
     posterior: NDArray[np.float64],
 ) -> NDArray[np.float64]:
-    """Posterior entropy in bits (posterior_entropy measure).
+    """Posterior entropy in bits (entropy measure).
 
-    Measures the posterior_entropy in the position estimate. Higher values
+    Measures the entropy in the position estimate. Higher values
     indicate more spread-out (uncertain) posteriors.
 
     Parameters
@@ -316,7 +316,7 @@ def credible_region(
 
     See Also
     --------
-    posterior_entropy : Scalar posterior_entropy measure
+    posterior_entropy : Scalar entropy measure
     posterior_mode : Point estimate (mode)
 
     Examples
