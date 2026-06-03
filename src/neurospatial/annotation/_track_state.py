@@ -247,6 +247,20 @@ class TrackBuilderState:
             elif self.start_node > idx:
                 self.start_node -= 1
 
+        # A manual edge-order/spacing override is keyed to the old topology.
+        self._invalidate_edge_layout_overrides()
+
+    def _invalidate_edge_layout_overrides(self) -> None:
+        """Clear manual edge-order/spacing overrides after a topology edit.
+
+        A manual ``edge_order_override`` / ``edge_spacing_override`` is indexed
+        against a specific node/edge topology. Deleting a node or edge changes
+        that topology, so a retained override would silently mis-order the
+        linearization. We clear the overrides and fall back to inferred layout.
+        """
+        self.edge_order_override = None
+        self.edge_spacing_override = None
+
     def set_start_node(self, idx: int) -> None:
         """Designate a node as the start node for linearization.
 
@@ -360,6 +374,9 @@ class TrackBuilderState:
 
         self._save_for_undo()
         self.edges.pop(edge_idx)
+
+        # A manual edge-order/spacing override is keyed to the old topology.
+        self._invalidate_edge_layout_overrides()
 
     def to_track_graph(self) -> nx.Graph:
         """Build NetworkX graph from current state.

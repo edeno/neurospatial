@@ -17,6 +17,31 @@ from neurospatial.regions import Region
 class TestShapesToRegions:
     """Tests for shapes_to_regions function."""
 
+    def test_shapes_to_regions_warns_on_degenerate_polygon(self):
+        """A <3-vertex shape warns (naming it) and is excluded from output.
+
+        A polygon needs at least 3 vertices to define an area; a 2-vertex shape
+        is degenerate. It must be dropped *with a warning* rather than silently
+        discarded, while valid shapes are still converted.
+        """
+        # Napari (row, col) order: a degenerate 2-vertex shape plus a valid
+        # 4-vertex square.
+        degenerate = np.array([[0, 0], [0, 100]], dtype=float)
+        valid = np.array([[0, 0], [0, 100], [100, 100], [100, 0]], dtype=float)
+        shapes_data = [degenerate, valid]
+        names = ["bad_shape", "good_shape"]
+        roles = ["region", "region"]
+
+        with pytest.warns(UserWarning, match="bad_shape"):
+            regions, _env_boundary, _holes = shapes_to_regions(
+                shapes_data, names, roles
+            )
+
+        # Valid shape survives; degenerate one is excluded.
+        assert "good_shape" in regions
+        assert "bad_shape" not in regions
+        assert len(regions) == 1
+
     def test_basic_conversion(self):
         """Convert napari shapes to regions without calibration."""
         # Napari format: (row, col) order

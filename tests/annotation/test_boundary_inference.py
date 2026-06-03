@@ -356,6 +356,48 @@ class TestAlphaShape:
         # Should return largest polygon
         assert isinstance(boundary, Polygon)
 
+    def test_alpha_shape_collinear_points_raises(self):
+        """Near-collinear points that collapse alphashape raise ValueError.
+
+        With near-collinear input, ``alphashape`` returns an empty
+        ``GeometryCollection`` rather than a usable polygon. The helper must
+        reject this degenerate result instead of handing back a degenerate
+        boundary.
+        """
+        pytest.importorskip("alphashape")
+
+        from neurospatial.annotation._boundary_inference import (
+            _alpha_shape_boundary,
+        )
+
+        rng = np.random.default_rng(0)
+        # Near-collinear: a thin horizontal line with sub-micron jitter.
+        x = np.linspace(0.0, 100.0, 30)
+        y = 5.0 + rng.uniform(-1e-4, 1e-4, 30)
+        positions = np.column_stack([x, y]).astype(np.float64)
+
+        with pytest.raises(ValueError, match="degenerate") as excinfo:
+            _alpha_shape_boundary(positions, alpha=0.05)
+
+        # Message should guide the user toward the convex_hull fallback.
+        assert "convex_hull" in str(excinfo.value)
+
+    def test_alpha_shape_valid_points_returns_polygon(self):
+        """A well-separated 2D cloud still returns a non-empty Polygon."""
+        pytest.importorskip("alphashape")
+
+        from neurospatial.annotation._boundary_inference import (
+            _alpha_shape_boundary,
+        )
+
+        rng = np.random.default_rng(0)
+        positions = rng.uniform(20.0, 80.0, (500, 2)).astype(np.float64)
+
+        boundary = _alpha_shape_boundary(positions, alpha=0.05)
+
+        assert isinstance(boundary, Polygon)
+        assert not boundary.is_empty
+
 
 @pytest.mark.gui
 class TestAddInitialBoundaryToShapes:

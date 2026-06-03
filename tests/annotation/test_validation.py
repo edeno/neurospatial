@@ -300,6 +300,54 @@ class TestValidateRegionOverlap:
         issues = validate_region_overlap(regions)
         assert len(issues) == 0
 
+    def test_validate_region_overlap_invalid_polygon_warns_not_raises(self):
+        """An invalid (self-intersecting) polygon warns rather than raising.
+
+        The module contract is "warn, never raise". A bowtie polygon makes
+        shapely's overlap computation throw a ``GEOSException``; the function
+        must catch it, record an issue, and emit a ``UserWarning`` instead of
+        propagating the exception.
+        """
+        bowtie = Polygon([(0, 0), (1, 1), (1, 0), (0, 1)])
+        assert not bowtie.is_valid
+
+        r1 = Region(name="bowtie", kind="polygon", data=bowtie)
+        r2 = Region(
+            name="ok",
+            kind="polygon",
+            data=Polygon([(0, 0), (2, 0), (2, 2), (0, 2)]),
+        )
+        regions = Regions([r1, r2])
+
+        with pytest.warns(UserWarning, match="invalid geometry"):
+            issues = validate_region_overlap(regions)
+
+        assert len(issues) > 0
+        assert any("invalid geometry" in issue for issue in issues)
+
+    def test_validate_region_overlap_valid_polygons_unchanged(self):
+        """Valid overlapping polygons still produce the overlap warning/issue.
+
+        Guards against the try/except swallowing the normal overlap path.
+        """
+        large = Region(
+            name="large",
+            kind="polygon",
+            data=Polygon([(0, 0), (100, 0), (100, 100), (0, 100)]),
+        )
+        small = Region(
+            name="small",
+            kind="polygon",
+            data=Polygon([(40, 40), (60, 40), (60, 60), (40, 60)]),
+        )
+        regions = Regions([large, small])
+
+        with pytest.warns(UserWarning, match="overlap"):
+            issues = validate_region_overlap(regions, overlap_threshold=0.5)
+
+        assert len(issues) > 0
+        assert any("overlap" in issue.lower() for issue in issues)
+
 
 # =============================================================================
 # Tests for validate_annotations (comprehensive validation)

@@ -109,8 +109,15 @@ def shapes_to_regions(
             pts_world = pts_px
             coord_system = "pixels"
 
-        # Skip invalid polygons
+        # Skip degenerate polygons (need ≥3 vertices to form an area), but warn
+        # so the user knows a drawn shape was dropped rather than annotated.
         if len(pts_world) < 3:
+            warnings.warn(
+                f"Skipping shape '{name}': a polygon needs at least 3 vertices "
+                f"to define an area, but this shape has {len(pts_world)}.",
+                UserWarning,
+                stacklevel=2,
+            )
             continue
 
         poly = shp.Polygon(pts_world)

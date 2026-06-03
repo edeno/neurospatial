@@ -258,6 +258,10 @@ def _alpha_shape_boundary(
     ------
     ImportError
         If alphashape package not installed.
+    ValueError
+        If the alpha shape collapses to a degenerate (non-``Polygon`` or
+        empty) geometry, e.g. when the positions are nearly collinear,
+        too sparse, or alpha is too small.
 
     """
     import warnings
@@ -270,7 +274,7 @@ def _alpha_shape_boundary(
             "Install with: pip install alphashape",
         ) from None
 
-    from shapely.geometry import MultiPolygon
+    from shapely.geometry import MultiPolygon, Polygon
 
     # Progress feedback for large datasets
     n_points = len(positions)
@@ -306,5 +310,24 @@ def _alpha_shape_boundary(
             stacklevel=3,
         )
         return largest
+
+    # Validate the single-geometry result before returning. alphashape can
+    # return a Point / LineString / empty Polygon / GeometryCollection when the
+    # input points are collinear, near-duplicate, or too sparse for the chosen
+    # alpha; downstream code assumes a non-empty Polygon.
+    if not isinstance(result, Polygon) or result.is_empty:
+        raise ValueError(
+            f"Alpha shape produced a degenerate boundary "
+            f"({type(result).__name__}"
+            f"{', empty' if getattr(result, 'is_empty', False) else ''}) "
+            f"from {n_points} position(s) at alpha={alpha:.3f}. "
+            f"This usually means the positions are nearly collinear, "
+            f"contain too few distinct points, or alpha is too small.\n\n"
+            f"To fix:\n"
+            f"  1. Increase alpha from {alpha:.3f} to ~{alpha * 2:.3f} for a "
+            f"looser boundary\n"
+            f"  2. Use method='convex_hull' for a guaranteed single polygon\n"
+            f"  3. Add more position samples or remove duplicate points",
+        )
 
     return result
