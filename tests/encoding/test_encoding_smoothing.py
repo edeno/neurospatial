@@ -826,40 +826,42 @@ class TestPolarGaussianKernelSeam:
     """
 
     @staticmethod
-    def _polar_env() -> Environment:
+    def _polar_env(circular_angle: bool = True) -> Environment:
         return Environment.from_polar_egocentric(
             distance_range=(0.0, 50.0),
             angle_range=(-np.pi, np.pi),
             distance_bin_size=10.0,
             angle_bin_size=np.pi / 6,  # 12 angular bins
+            circular_angle=circular_angle,
         )
 
-    def test_seam_weight_comparable_to_normal_neighbor(self) -> None:
-        env = self._polar_env()
-        kernel = _get_gaussian_kernel(env, bandwidth=5.0)
+    @staticmethod
+    def _ring_indices(env: Environment):
+        """Return (seam_a, seam_b, normal_a, normal_b, far_a, far_b) on a ring.
 
+        Works within a single radial ring (skipping the innermost r~0 ring) so
+        only the angular term varies in the kernel.
+        """
         centers = np.asarray(env.bin_centers)
         r = centers[:, 0]
         theta = centers[:, 1]
-
-        # Work within a single radial ring so only the angular term varies.
-        ring_r = np.unique(r)[1]  # skip the innermost ring (r ~ 0)
+        ring_r = np.unique(r)[1]
         ring = np.flatnonzero(np.isclose(r, ring_r))
+        ring = ring[np.argsort(theta[ring])]
         ring_theta = theta[ring]
-        order = np.argsort(ring_theta)
-        ring = ring[order]
-        ring_theta = ring_theta[order]
-
-        # Seam pair: the most-negative and most-positive angles (adjacent
-        # across +-pi). Normal pair: two adjacent angles in the middle.
+        # Sanity: seam pair really straddles the seam (angles ~2*pi apart raw).
+        assert abs(ring_theta[-1] - ring_theta[0]) > np.pi
         seam_a, seam_b = int(ring[0]), int(ring[-1])
         mid = len(ring) // 2
         normal_a, normal_b = int(ring[mid]), int(ring[mid + 1])
-        # Truly-far pair: roughly opposite angles (~pi apart).
         far_a, far_b = int(ring[0]), int(ring[mid])
+        return seam_a, seam_b, normal_a, normal_b, far_a, far_b
 
-        # Sanity: seam pair really straddles the seam (angles ~2*pi apart raw).
-        assert abs(ring_theta[-1] - ring_theta[0]) > np.pi
+    def test_seam_weight_comparable_to_normal_neighbor(self) -> None:
+        env = self._polar_env(circular_angle=True)
+        kernel = _get_gaussian_kernel(env, bandwidth=5.0)
+
+        seam_a, seam_b, normal_a, normal_b, far_a, far_b = self._ring_indices(env)
 
         seam_w = kernel[seam_a, seam_b]
         normal_w = kernel[normal_a, normal_b]
@@ -871,3 +873,30 @@ class TestPolarGaussianKernelSeam:
         assert seam_w > 1e-3
         # And clearly larger than between two truly-far angular bins.
         assert seam_w > 10.0 * far_w
+
+    def test_open_axis_seam_not_wrapped(self) -> None:
+        """With circular_angle=False the -pi/+pi seam must NOT be wrapped.
+
+        An open angular axis (no seam edges in the graph) means bins at -pi
+        and +pi are genuinely far apart. Wrapping Delta theta would leak
+        smoothing across a boundary the caller left open.
+
+        Fail-before: circular_angle=False still wrapped, giving seam_w ~ 0.7346
+        (== a true angular neighbor) -- a leak. After the fix the seam weight
+        is SMALL, like a truly-far pair, and far below a real neighbor.
+        """
+        env = self._polar_env(circular_angle=False)
+        kernel = _get_gaussian_kernel(env, bandwidth=5.0)
+
+        seam_a, seam_b, normal_a, normal_b, far_a, far_b = self._ring_indices(env)
+
+        seam_w = kernel[seam_a, seam_b]
+        normal_w = kernel[normal_a, normal_b]
+        far_w = kernel[far_a, far_b]
+
+        # The open-axis seam pair is ~2*pi apart in angle: weight must be tiny,
+        # nothing like a real angular neighbor (which was the leaked ~0.7346).
+        assert seam_w < 1e-3
+        assert seam_w < 1e-3 * normal_w
+        # It behaves like a truly-far pair (also ~no weight at this bandwidth).
+        assert seam_w == pytest.approx(far_w, abs=1e-6)

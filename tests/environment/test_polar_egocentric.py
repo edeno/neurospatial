@@ -312,6 +312,99 @@ class TestCircularWrapEdgeArcLength:
         for ring_radius, dist in observed.items():
             assert dist == pytest.approx(ring_radius * angle_bin_size)
 
+    def test_seam_edge_uses_actual_step_not_requested(self):
+        """Seam edge arc length must use the realized angular step.
+
+        When ``angle_bin_size`` does not evenly divide the angular range,
+        ``ceil`` binning yields a realized step slightly different from the
+        requested one. The regular angular edges use the realized step (via
+        ``_fix_polar_edge_geometry``, which reads actual node angles), so the
+        seam edge must too; otherwise the seam edge is inconsistent with its
+        regular neighbors and biases seam geodesics.
+
+        Fail-before: with ``angle_bin_size=1.0`` over [-pi, pi] the realized
+        step is ~0.8976, so a regular angular edge at radius r has distance
+        ~r*0.8976, but the seam edge used the requested 1.0 -> ~r*1.0 (e.g.
+        4.488 vs 5.0 at r=5).
+        """
+        angle_bin_size = 1.0  # does NOT evenly divide 2*pi over [-pi, pi]
+        env = Environment.from_polar_egocentric(
+            distance_range=(0.0, 50.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=10.0,
+            angle_bin_size=angle_bin_size,
+            circular_angle=True,
+        )
+
+        # Realized step differs from the requested angle_bin_size.
+        angle_edges = env.grid_edges[1]
+        actual_step = float(np.diff(angle_edges).mean())
+        assert actual_step != pytest.approx(angle_bin_size)
+
+        distances = env.bin_centers[:, 0]
+        angles = env.bin_centers[:, 1]
+
+        # Pick a single (non-degenerate) distance ring.
+        ring_radius = np.unique(distances)[1]
+        ring_idx = np.flatnonzero(np.isclose(distances, ring_radius))
+        ring_idx = ring_idx[np.argsort(angles[ring_idx])]
+
+        # Seam edge: first and last angle bin on the ring.
+        first_idx, last_idx = int(ring_idx[0]), int(ring_idx[-1])
+        seam_dist = env.connectivity[first_idx][last_idx]["distance"]
+
+        # Regular angular edge: two adjacent angle bins in the middle of the
+        # same ring (same radius, so radial component is ~0).
+        mid = len(ring_idx) // 2
+        reg_a, reg_b = int(ring_idx[mid - 1]), int(ring_idx[mid])
+        reg_dist = env.connectivity[reg_a][reg_b]["distance"]
+
+        # Seam edge and regular angular edge at the same radius must match
+        # (both use the realized step).
+        assert seam_dist == pytest.approx(reg_dist)
+
+        # And both equal radius * actual_step, NOT radius * requested step.
+        assert seam_dist == pytest.approx(ring_radius * actual_step)
+        assert seam_dist != pytest.approx(ring_radius * angle_bin_size)
+
+
+class TestAngularCircularDerivedFromGraph:
+    """``_angular_is_circular`` is derived from the connectivity graph.
+
+    It must reflect the ``circular_angle`` build flag and survive every
+    serialization path that persists the connectivity graph
+    (``to_file``/``from_file``, ``copy``), so a reloaded env does not silently
+    revert to the wrong wrapping behavior in polar gaussian_kde smoothing.
+    """
+
+    @staticmethod
+    def _env(circular):
+        return Environment.from_polar_egocentric(
+            distance_range=(0.0, 50.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=10.0,
+            angle_bin_size=np.pi / 6,  # 12 angular bins
+            circular_angle=circular,
+        )
+
+    def test_circular_true_detected(self):
+        assert self._env(True)._angular_is_circular is True
+
+    def test_circular_false_detected(self):
+        assert self._env(False)._angular_is_circular is False
+
+    def test_round_trips_through_file(self, tmp_path):
+        for circular in (True, False):
+            env = self._env(circular)
+            path = str(tmp_path / f"polar_{circular}")
+            env.to_file(path)
+            loaded = Environment.from_file(path)
+            assert loaded._angular_is_circular is circular
+
+    def test_survives_copy(self):
+        for circular in (True, False):
+            assert self._env(circular).copy()._angular_is_circular is circular
+
 
 class TestPolarStateVersionFreshness:
     """Post-construction mutations must invalidate versioned caches.

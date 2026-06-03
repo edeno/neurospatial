@@ -233,16 +233,30 @@
 
 ### Bug fixes
 
-- Egocentric-polar `gaussian_kde` smoothing now wraps the angular `-pi/+pi`
-  seam. The dense polar Gaussian kernel previously used the raw angular
-  difference `theta_i - theta_j`, so two bins straddling the seam were treated
-  as ~`2*pi` apart and received a vanishing weight (~`1e-65` vs ~`0.29` for a
-  normal angular neighbor) — a hard artifact at the back of the egocentric
-  field. The angular difference is now wrapped into `[-pi, pi]` before forming
-  the polar arc distance `(r_mean * dtheta)`, so seam-adjacent bins are
-  weighted like any other angularly-adjacent pair. The radial term, the
-  Cartesian (non-polar) branch, and the graph-based `diffusion_kde` path
-  (whose connectivity already includes the wrap edges) are unchanged.
+- Egocentric-polar `gaussian_kde` smoothing now respects `circular_angle`.
+  A previous fix unconditionally wrapped the angular difference into
+  `[-pi, pi]`, but `Environment.from_polar_egocentric(..., circular_angle=False)`
+  builds an **open** angular axis (no seam edges in the connectivity graph),
+  where bins at `-pi` and `+pi` are genuinely far apart. Wrapping there leaked
+  smoothing across a boundary the caller deliberately left open (the `-pi/+pi`
+  seam pair got weight ~`0.7346`, the same as a true angular neighbor). The
+  dense polar Gaussian kernel now wraps `Delta theta` **only** when the angular
+  axis is circular and uses the raw angular difference otherwise. Circularity
+  is derived from the connectivity graph (presence of seam edges), so it stays
+  consistent with the graph and survives `to_file`/`from_file`, NWB round-trip,
+  and `copy()`. For `circular_angle=True` the seam still receives a full
+  angular-neighbor weight (unchanged); for `circular_angle=False` the seam now
+  receives a tiny weight like any other far pair.
+- Egocentric-polar circular **seam edges** now use the actual realized angular
+  bin step instead of the requested `angle_bin_size`. When `angle_bin_size`
+  does not evenly divide the angular range, `ceil` binning yields a slightly
+  different realized step, and the regular angular edges already used that
+  realized step; the seam (wrap) edge alone used the requested value, biasing
+  seam geodesics. For example, `angle_bin_size=1.0` over `[-pi, pi]` realizes a
+  step of ~`0.8976`, so a regular angular edge at radius `r` had distance
+  ~`r*0.8976` while the seam edge had `r*1.0` (e.g. `4.488` vs `5.0` at `r=5`).
+  The seam edge arc length is now `r * Delta_theta_actual`, matching the
+  regular angular edges at the same radius.
 - The weighted (count) Rayleigh test no longer rejects strongly-tuned cells
   whose spikes concentrate in only 1–2 angular bins. `rayleigh_test` validated
   the minimum sample size against the number of distinct angles, and

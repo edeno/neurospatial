@@ -106,13 +106,23 @@ def _get_gaussian_kernel(
         theta = bin_centers[:, 1]
         d_r = r[:, None] - r[None, :]
         r_mean = 0.5 * (r[:, None] + r[None, :])
-        # Wrap the angular difference into [-pi, pi] so bins straddling the
-        # -pi/+pi seam are treated as adjacent (Delta theta ~ 0) rather than
-        # ~2*pi apart. Without this wrap the seam gets a vanishing Gaussian
-        # weight, a hard artifact for egocentric-polar gaussian_kde. The
-        # diffusion_kde path is unaffected: it smooths over the environment
-        # graph, whose connectivity already includes the angular wrap edges.
-        d_theta = (theta[:, None] - theta[None, :] + np.pi) % (2.0 * np.pi) - np.pi
+        d_theta_raw = theta[:, None] - theta[None, :]
+        # Wrap the angular difference into [-pi, pi] ONLY when the angular axis
+        # is circular, so bins straddling the -pi/+pi seam are treated as
+        # adjacent (Delta theta ~ 0) rather than ~2*pi apart. Without this wrap
+        # the seam gets a vanishing Gaussian weight, a hard artifact for a
+        # full-circle egocentric-polar gaussian_kde. When the angular axis is
+        # OPEN (circular_angle=False -- no seam edges in the graph), bins at -pi
+        # and +pi are genuinely far apart, so wrapping would leak smoothing
+        # across a boundary the caller deliberately left open; use the raw
+        # angular difference instead. Circularity is derived from the
+        # connectivity graph (presence of seam edges), so it stays consistent
+        # with the graph and survives serialization. The diffusion_kde path is
+        # unaffected: it smooths over the environment graph directly.
+        if getattr(env, "_angular_is_circular", False):
+            d_theta = (d_theta_raw + np.pi) % (2.0 * np.pi) - np.pi
+        else:
+            d_theta = d_theta_raw
         arc = r_mean * d_theta
         dist_sq = d_r**2 + arc**2
     else:

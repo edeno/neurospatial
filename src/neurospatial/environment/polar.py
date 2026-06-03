@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     import shapely
 
 from neurospatial.environment.core import _BaseEnvironment
+from neurospatial.environment.decorators import versioned_cached_property
 
 
 class EgocentricPolarEnvironment(_BaseEnvironment):
@@ -210,10 +211,22 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
         distance_centers = 0.5 * (distance_edges[:-1] + distance_edges[1:])
         _fix_polar_edge_geometry(env.connectivity)
 
-        # Add circular wrap edges between first and last angle bins.
+        # Add circular wrap edges between first and last angle bins. Use the
+        # ACTUAL angular bin step (from the realized linspace edges) rather
+        # than the requested ``angle_bin_size``: when ``angle_bin_size`` does
+        # not evenly divide the angular range, ``ceil`` binning yields a
+        # slightly different realized step, and the regular angular edges use
+        # that realized step (via ``_fix_polar_edge_geometry``). Matching the
+        # seam edge to the realized step keeps seam and regular angular edges
+        # consistent and avoids biasing seam geodesics.
         if circular_angle and n_angle > 1:
+            angle_step_actual = float(np.diff(angle_edges).mean())
             _add_circular_connectivity(
-                env.connectivity, n_distance, n_angle, distance_centers, angle_bin_size
+                env.connectivity,
+                n_distance,
+                n_angle,
+                distance_centers,
+                angle_step_actual,
             )
 
         # The mutations above happened after _setup_from_layout finalized
@@ -428,13 +441,71 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
             return np.asarray(sector_flat[active_mask.ravel()], dtype=np.float64)
         return np.asarray(sector_flat, dtype=np.float64)
 
+    @versioned_cached_property
+    def _angular_is_circular(self) -> bool:
+        """Whether the angular axis wraps circularly across the ±π seam.
+
+        Derived from the connectivity graph rather than stored as a flag so
+        it is always consistent with the actual edges and survives every
+        serialization path (``to_file``/``from_file``, NWB round-trip,
+        :meth:`copy`) that persists the connectivity graph. When
+        :meth:`create` is called with ``circular_angle=True`` (and there is
+        more than one angle bin) it adds seam edges connecting the first and
+        last angle bins of each distance ring; with ``circular_angle=False``
+        no such edges are added, leaving an *open* angular axis whose bins at
+        ``-π`` and ``+π`` are genuinely far apart.
+
+        A seam edge is detected as an edge between two bins on the same
+        distance ring whose absolute angular separation is markedly larger
+        than the smallest angular step in the graph (a regular angular edge
+        spans one step; a seam edge spans ``(n_angle - 1)`` steps "the wrong
+        way around"). Down-stream smoothing (``gaussian_kde``) reads this to
+        decide whether to wrap ``Δθ`` into ``[-π, π]`` (circular) or treat the
+        raw angular difference as-is (open), so an open boundary is respected
+        and smoothing does not leak across it.
+
+        Returns
+        -------
+        bool
+            True if the angular axis is circular (seam edges present), False
+            for an open angular axis.
+        """
+        connectivity = self.connectivity
+        if connectivity.number_of_edges() == 0:
+            return False
+
+        # Collect per-edge (Δr, |Δθ|) using node "pos" attributes
+        # (pos[0]=distance, pos[1]=angle). Same-ring edges have Δr ~ 0.
+        same_ring_dtheta: list[float] = []
+        min_step = np.inf
+        for u, v in connectivity.edges():
+            pos_u = connectivity.nodes[u]["pos"]
+            pos_v = connectivity.nodes[v]["pos"]
+            d_r = abs(float(pos_v[0]) - float(pos_u[0]))
+            d_theta = abs(float(pos_v[1]) - float(pos_u[1]))
+            if d_theta > 0:
+                min_step = min(min_step, d_theta)
+            # Same-ring edge: distance unchanged (radial component ~ 0).
+            if d_r <= 1e-9 and d_theta > 0:
+                same_ring_dtheta.append(d_theta)
+
+        if not np.isfinite(min_step) or not same_ring_dtheta:
+            return False
+
+        # A seam edge spans many regular steps; a regular angular edge spans
+        # one. Use a threshold of 1.5x the smallest step: seam edges (which
+        # span (n_angle - 1) steps for n_angle >= 3) clear it comfortably,
+        # while regular angular edges do not.
+        threshold = 1.5 * min_step
+        return any(dt > threshold for dt in same_ring_dtheta)
+
 
 def _add_circular_connectivity(
     connectivity: nx.Graph,
     n_distance: int,
     n_angle: int,
     distance_centers: NDArray[np.float64],
-    angle_bin_size: float,
+    angle_step: float,
 ) -> None:
     """Add circular wrap edges between first and last angle bins.
 
@@ -443,9 +514,13 @@ def _add_circular_connectivity(
     in row-major order: ``node_id = distance_idx * n_angle + angle_idx``.
 
     The wrap edge's ``distance`` attribute is the arc length of a single
-    ``angle_bin_size`` step at that ring's radius
-    (``distance_center * angle_bin_size``), not the Euclidean chord between
-    the first/last angle-bin centers (which span the full angular range).
+    angular step at that ring's radius (``distance_center * angle_step``), not
+    the Euclidean chord between the first/last angle-bin centers (which span
+    the full angular range). ``angle_step`` must be the *actual* realized
+    angular bin step (``np.diff`` of the realized angle edges), not the
+    requested ``angle_bin_size``, so the seam edge matches the regular angular
+    edges (which also use the realized step) when ``angle_bin_size`` does not
+    evenly divide the angular range.
 
     Parameters
     ----------
@@ -457,8 +532,9 @@ def _add_circular_connectivity(
         Number of angle bins.
     distance_centers : ndarray of shape (n_distance,)
         Center radius of each distance ring, in physical units.
-    angle_bin_size : float
-        Angular step between adjacent angle bins, in radians.
+    angle_step : float
+        Actual (realized) angular step between adjacent angle bins, in
+        radians.
     """
     max_edge_id = max(
         (data.get("edge_id", -1) for _, _, data in connectivity.edges(data=True)),
@@ -474,7 +550,7 @@ def _add_circular_connectivity(
             pos_last = connectivity.nodes[last_angle_node]["pos"]
 
             vector = np.array(pos_last) - np.array(pos_first)
-            distance = float(distance_centers[d_idx]) * float(angle_bin_size)
+            distance = float(distance_centers[d_idx]) * float(angle_step)
             angle_2d = np.arctan2(vector[1], vector[0]) if len(vector) >= 2 else 0.0
 
             max_edge_id += 1
