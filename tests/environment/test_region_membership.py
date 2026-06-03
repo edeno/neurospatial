@@ -353,27 +353,42 @@ class TestRegionMembershipValidation:
 class TestRegionMembershipPerformance:
     """Test performance characteristics."""
 
-    def test_vectorized_operation(self):
-        """Test that operation is vectorized (fast on many bins)."""
+    def test_scales_to_many_bins_and_regions(self):
+        """Membership is computed correctly over many bins and regions.
+
+        Exercises the vectorized path on a large (~2500-bin) grid with
+        several overlapping regions. Asserts correctness rather than
+        wall-clock time, which is unreliable under parallel test execution.
+        """
         # Create larger grid
         data = np.array([[i, j] for i in range(50) for j in range(50)])
         env = Environment.from_samples(data, bin_size=1.0)
 
-        # Add multiple regions
+        # Add multiple regions (r3 overlaps both r1 and r2)
         env.regions.add("r1", polygon=box(0, 0, 20, 20))
         env.regions.add("r2", polygon=box(20, 20, 40, 40))
         env.regions.add("r3", polygon=box(10, 10, 30, 30))
 
-        # Should complete quickly (vectorized)
-        import time
-
-        start = time.time()
         membership = env.region_membership()
-        elapsed = time.time() - start
 
-        # Should be very fast (< 100ms for ~2500 bins x 3 regions)
-        assert elapsed < 0.1, f"Operation took {elapsed:.3f}s, expected < 0.1s"
+        # Shape/dtype contract holds at scale.
         assert membership.shape == (env.n_bins, 3)
+        assert membership.dtype == bool
+
+        # Each region covers part (but not all) of the grid, so every column
+        # has some members and some non-members — i.e. real per-bin results,
+        # not an all-True/all-False degenerate output.
+        r1, r2, r3 = membership[:, 0], membership[:, 1], membership[:, 2]
+        for col in (r1, r2, r3):
+            n_members = int(col.sum())
+            assert 0 < n_members < env.n_bins
+
+        # Geometric consistency across regions (the vectorized result is
+        # correct per bin, not just well-shaped):
+        # r3 = box(10,10,30,30) overlaps both r1 = box(0,0,20,20) and
+        # r2 = box(20,20,40,40), so those intersections are non-empty.
+        assert (r1 & r3).any()
+        assert (r2 & r3).any()
 
 
 class TestRegionMembershipDifferentLayouts:
