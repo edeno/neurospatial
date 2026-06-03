@@ -35,6 +35,21 @@ def test_all_has_core_classes_and_exceptions():
         "BinIndexOutOfRangeError",
         "IncompatibleEnvironmentError",
         "LayoutNotBuiltError",
+        # Eagerly-exported primitives
+        "bin_spikes_in_time",
+        # Lazily-accessible analysis submodules (PEP 562 __getattr__)
+        "encoding",
+        "decoding",
+        "behavior",
+        "events",
+        "ops",
+        "layout",
+        "regions",
+        "stats",
+        "simulation",
+        "annotation",
+        "animation",
+        "io",
     }
     actual = set(neurospatial.__all__)
     assert actual == expected, (
