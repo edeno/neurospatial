@@ -5,6 +5,10 @@ neural activity using Bayesian methods.
 
 Core Functions
 --------------
+bin_spikes_in_time : Bin spike times into a count matrix on a regular time grid
+    Turns per-neuron spike-time arrays into a ``(time, neuron)`` (or
+    ``(neuron, time)``) count matrix, owning the time-grid construction.
+
 decode_position : Main entry point for Bayesian decoding
     Decode position from spike counts using encoding models (place fields).
 
@@ -129,6 +133,7 @@ The implementation is based on standard Bayesian methods for neural decoding,
 with numerical stability considerations for log-domain computation.
 """
 
+from neurospatial.decoding._binning import bin_spikes_in_time
 from neurospatial.decoding._result import DecodingResult
 from neurospatial.decoding.assemblies import (
     AssemblyDetectionResult,
@@ -184,6 +189,8 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "IsotonicFitResult",
     "LinearFitResult",
     "RadonDetectionResult",
+    # Spike-time binning
+    "bin_spikes_in_time",
     # Cell assembly detection
     "assembly_activation",
     # Metrics

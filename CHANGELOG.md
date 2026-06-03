@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### New features
+
+- Added `bin_spikes_in_time`, a public primitive that bins a sequence of
+  per-neuron spike-time arrays onto a regular time grid (owning the bin
+  edges and `dt / 2` bin centers) and returns an integer count matrix. Its
+  `orient` argument makes the axis order explicit — `"time_x_neuron"` (the
+  default, matching `decode_position`'s `(n_time_bins, n_neurons)` input) or
+  `"neuron_x_time"` (matching the cell-assembly functions) — defusing the
+  silent-transpose footgun between those two consumers. Exported from both
+  `neurospatial.decoding` and the top-level `neurospatial` package.
+
 ### Breaking changes
 
 - `time_efficiency` lost its positional `goal` parameter and now takes a

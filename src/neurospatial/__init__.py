@@ -18,6 +18,10 @@ Regions : Container for multiple named regions
     Dict-like interface for managing collections of ROIs.
 CompositeEnvironment : Multi-environment composition
     Merges multiple environments with automatic bridge inference.
+bin_spikes_in_time : Spike-time -> count-matrix binner
+    Bins per-neuron spike-time arrays onto a regular time grid, producing the
+    count matrix ``decode_position`` (or the assembly functions) consume.
+    Re-exported from :mod:`neurospatial.decoding` as a primary entry point.
 
 Submodule Organization
 ----------------------
@@ -223,6 +227,7 @@ from neurospatial._exceptions import (
     RegionNotFoundError,
 )
 from neurospatial.composite import CompositeEnvironment
+from neurospatial.decoding import bin_spikes_in_time
 from neurospatial.environment import Environment
 from neurospatial.regions import Region, Regions
 
@@ -240,4 +245,5 @@ __all__ = [
     "Region",
     "RegionNotFoundError",
     "Regions",
+    "bin_spikes_in_time",
 ]
