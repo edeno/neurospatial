@@ -4,6 +4,17 @@
 
 ### Added
 
+- The top-level `neurospatial` package now exposes its analysis submodules
+  (`encoding`, `decoding`, `behavior`, `events`, `ops`, `layout`, `regions`,
+  `stats`, `simulation`, `annotation`, `animation`, `io`) via lazy (PEP 562)
+  attribute access. Writing `import neurospatial as ns; ns.encoding` now
+  resolves the submodule on first use and `dir(ns)` lists every domain
+  alongside the eager exports, so autocomplete reveals the full API. The
+  submodules are imported only when first accessed — importing the package no
+  longer pulls them in eagerly — and unknown attributes still raise
+  `AttributeError` so typos fail loudly. The eager top-level exports
+  (`Environment`, `Region`, `Regions`, `CompositeEnvironment`,
+  `bin_spikes_in_time`) are unchanged.
 - Added `bin_spikes_in_time`, a public primitive that bins a sequence of
   per-neuron spike-time arrays onto a regular time grid (owning the bin
   edges and `dt / 2` bin centers) and returns an integer count matrix. Its
