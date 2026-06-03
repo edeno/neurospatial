@@ -79,8 +79,93 @@ from numpy.typing import NDArray
 from scipy.spatial.distance import directed_hausdorff, euclidean
 from scipy.stats import pearsonr
 
+from neurospatial._validation import validate_finite
+
 if TYPE_CHECKING:
     from neurospatial import Environment
+
+
+def _safe_gather(
+    values: NDArray,
+    position_bins: NDArray[np.int64],
+    *,
+    fill: object,
+) -> NDArray:
+    """Gather ``values[position_bins]`` with out-of-bounds bins mapped to ``fill``.
+
+    ``position_bins`` may contain ``-1`` (sample off the environment / unmapped)
+    or indices ``>= len(values)``. Plain fancy indexing would wrap ``-1`` to the
+    last element and silently mis-attribute an out-of-environment sample to a
+    real bin. This helper instead returns ``fill`` for every out-of-bounds
+    position, so callers can treat those samples as "outside" rather than
+    accidentally "inside the last region".
+
+    Parameters
+    ----------
+    values : NDArray, shape (n_bins,) or (n_bins, ...)
+        Per-bin array to gather from (e.g. a boolean region mask or an integer
+        Voronoi-label array).
+    position_bins : NDArray[np.int64], shape (n_samples,)
+        Bin index per trajectory sample. May contain ``-1`` or out-of-range
+        indices.
+    fill : object
+        Value substituted wherever ``position_bins`` is out of bounds. Use
+        ``False`` for boolean region masks and ``-1`` for integer label arrays
+        (matching the ``-1`` "unreachable" sentinel those arrays already use).
+
+    Returns
+    -------
+    NDArray
+        Array of length ``len(position_bins)`` (leading axis) with out-of-bounds
+        rows set to ``fill``.
+    """
+    position_bins = np.asarray(position_bins, dtype=np.int64)
+    n_bins = values.shape[0]
+    in_bounds = (position_bins >= 0) & (position_bins < n_bins)
+    safe_idx = np.where(in_bounds, position_bins, 0)
+    gathered: NDArray = values[safe_idx]
+    gathered[~in_bounds] = fill
+    return gathered
+
+
+def _positive_dt(
+    times: NDArray[np.float64], *, name: str = "times"
+) -> NDArray[np.float64]:
+    """Return strictly-positive consecutive time deltas, or raise.
+
+    Computes ``np.diff(times)`` and rejects any delta that is not strictly
+    positive (duplicate or out-of-order timestamps) with an actionable message.
+    Use this before dividing distances/displacements by a per-sample ``dt``.
+
+    Parameters
+    ----------
+    times : NDArray[np.float64], shape (n_samples,)
+        Monotonically increasing timestamps in seconds.
+    name : str, optional
+        Argument name, used in the error message. Default ``"times"``.
+
+    Returns
+    -------
+    NDArray[np.float64], shape (n_samples - 1,)
+        Consecutive time deltas, all ``> 0``.
+
+    Raises
+    ------
+    ValueError
+        If any ``np.diff(times) <= 0`` (duplicate or non-increasing timestamps).
+    """
+    dt = np.diff(np.asarray(times, dtype=np.float64))
+    bad = dt <= 0
+    if bad.any():
+        n = int(bad.sum())
+        first = int(np.argmax(bad))
+        raise ValueError(
+            f"{name} must be strictly increasing for a per-sample time step, "
+            f"but {n} consecutive delta(s) are <= 0 "
+            f"(first between index {first} and {first + 1}: "
+            f"dt={dt[first]!r}). Sort and de-duplicate timestamps before calling."
+        )
+    return dt
 
 
 # =============================================================================
@@ -292,7 +377,8 @@ def detect_region_crossings(
     region_mask = regions_to_mask(env, [region_name])
 
     # Check which trajectory samples are in region
-    in_region = region_mask[position_bins]
+    position_bins = np.asarray(position_bins, dtype=np.int64)
+    in_region = _safe_gather(region_mask, position_bins, fill=False)
 
     # Detect transitions using vectorized diff operation
     # Convert bool to int: in_region[i] - in_region[i-1]
@@ -388,6 +474,10 @@ def detect_runs_between_regions(
         If source or target regions not in env.regions.
     ValueError
         If position_bins and times have different lengths.
+    ValueError
+        If times contains non-finite values, or if a run's frame times are
+        not strictly increasing when ``min_speed`` filtering is applied
+        (duplicate frame times would yield ``inf`` velocity).
 
     See Also
     --------
@@ -465,6 +555,8 @@ def detect_runs_between_regions(
     if len(position_bins) == 0:
         return []
 
+    validate_finite(times, name="times")
+
     position_bins = np.asarray(position_bins, dtype=np.int64)
 
     # Get region masks
@@ -474,8 +566,8 @@ def detect_runs_between_regions(
     target_mask = regions_to_mask(env, [target])
 
     # Check which samples are in each region
-    in_source = source_mask[position_bins]
-    in_target = target_mask[position_bins]
+    in_source = _safe_gather(source_mask, position_bins, fill=False)
+    in_target = _safe_gather(target_mask, position_bins, fill=False)
 
     # Detect source exits
     source_exits = []
@@ -529,7 +621,7 @@ def detect_runs_between_regions(
             run_positions = env.bin_centers[run_bin_idx]
             displacements = np.diff(run_positions, axis=0)
             distances = np.linalg.norm(displacements, axis=1)
-            dt = np.diff(run_times)
+            dt = _positive_dt(run_times, name="times")
             velocities = distances / dt
             mean_velocity = np.mean(velocities)
 
@@ -604,6 +696,9 @@ def segment_by_velocity(
         If positions and times have different lengths.
     ValueError
         If ``min_speed <= 0`` or ``hysteresis <= 1``.
+    ValueError
+        If times contains non-finite values, or is not strictly increasing
+        (duplicate or out-of-order timestamps would yield ``inf`` velocities).
 
     See Also
     --------
@@ -664,13 +759,15 @@ def segment_by_velocity(
     if hysteresis <= 1.0:
         raise ValueError(f"hysteresis must be > 1.0 for stability. Got {hysteresis}")
 
+    validate_finite(times, name="times")
+
     if len(positions) < 2:
         return []
 
     # Compute velocities
     displacements = np.diff(positions, axis=0)
     distances = np.linalg.norm(displacements, axis=1)
-    dt = np.diff(times)
+    dt = _positive_dt(times, name="times")
     velocities = distances / dt
 
     # Smooth velocities
@@ -1310,8 +1407,12 @@ def segment_trials(
     end_masks = {region: regions_to_mask(env, [region]) for region in end_regions}
 
     # Check which trajectory samples are in which regions
-    in_start = start_mask[position_bins]
-    in_end_regions = {region: mask[position_bins] for region, mask in end_masks.items()}
+    position_bins = np.asarray(position_bins, dtype=np.int64)
+    in_start = _safe_gather(start_mask, position_bins, fill=False)
+    in_end_regions = {
+        region: _safe_gather(mask, position_bins, fill=False)
+        for region, mask in end_masks.items()
+    }
 
     # Segment into trials
     trials: list[Trial] = []

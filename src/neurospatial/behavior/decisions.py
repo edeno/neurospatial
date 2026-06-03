@@ -72,6 +72,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.behavior.segmentation import _safe_gather
+
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
 
@@ -760,11 +762,11 @@ def detect_boundary_crossings(
     ... )  # doctest: +SKIP
     >>> print(f"Animal crossed boundary {len(crossing_times)} times")  # doctest: +SKIP
     """
-    position_bins = np.asarray(position_bins)
+    position_bins = np.asarray(position_bins, dtype=np.int64)
     times = np.asarray(times)
 
     # Get label for each trajectory point
-    trajectory_labels = voronoi_labels[position_bins]
+    trajectory_labels = _safe_gather(voronoi_labels, position_bins, fill=-1)
 
     # Vectorized crossing detection
     # Find where labels change between consecutive frames
@@ -901,7 +903,8 @@ def compute_decision_analysis(
             )
     voronoi_labels = geodesic_voronoi_labels(env, goal_bins)
 
-    trajectory_labels = voronoi_labels[position_bins]
+    position_bins = np.asarray(position_bins, dtype=np.int64)
+    trajectory_labels = _safe_gather(voronoi_labels, position_bins, fill=-1)
     boundary_distances = distance_to_decision_boundary(env, position_bins, goal_bins)
     crossing_times, crossing_directions = detect_boundary_crossings(
         position_bins, voronoi_labels, times
