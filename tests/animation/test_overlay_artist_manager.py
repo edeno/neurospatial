@@ -20,6 +20,7 @@ from neurospatial import Environment
 from neurospatial.animation._parallel import OverlayArtistManager
 from neurospatial.animation.overlays import (
     BodypartData,
+    EventData,
     HeadDirectionData,
     OverlayData,
     PositionData,
@@ -1011,3 +1012,210 @@ class TestOverlayArtistManagerIntegration:
             assert id(second_manager) != first_manager_id
         finally:
             renderer.close()
+
+
+# ============================================================================
+# Event overlay rendering in the reuse-artists (manager) path
+# ============================================================================
+
+
+def _make_event_overlay_data(
+    *, decay_frames: int | None, frame_idx: int = 2
+) -> OverlayData:
+    """Build OverlayData with a single event at frame ``frame_idx``."""
+    return OverlayData(
+        events=[
+            EventData(
+                event_positions={"reward": np.array([[5.0, 5.0]])},
+                event_frame_indices={"reward": np.array([frame_idx], dtype=np.int_)},
+                colors={"reward": "blue"},
+                markers={"reward": "o"},
+                size=12.0,
+                decay_frames=decay_frames,
+                border_color="black",
+                border_width=1.0,
+                opacity=1.0,
+            )
+        ]
+    )
+
+
+class TestRenderEventOverlayReturnsArtists:
+    """_render_event_overlay_matplotlib must return its created artists."""
+
+    def test_render_event_overlay_returns_artists(self) -> None:
+        """Returns a non-empty list when events are visible, [] otherwise."""
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        from neurospatial.animation._parallel import (
+            _render_event_overlay_matplotlib,
+        )
+
+        event_data = _make_event_overlay_data(decay_frames=0, frame_idx=2).events[0]
+        fig, ax = plt.subplots()
+        try:
+            # Frame with a visible event (instant mode, exact frame).
+            visible = _render_event_overlay_matplotlib(ax, event_data, frame_idx=2)
+            assert isinstance(visible, list)
+            assert len(visible) > 0
+
+            # Frame with no visible event.
+            none_visible = _render_event_overlay_matplotlib(ax, event_data, frame_idx=0)
+            assert none_visible == []
+        finally:
+            plt.close(fig)
+
+
+class TestEventOverlayInManager:
+    """OverlayArtistManager renders/clears events in the reuse path."""
+
+    def test_event_overlay_renders_in_reuse_path(self, simple_env: Environment) -> None:
+        """initialize + update_frame leaves a tracked event artist on the axes."""
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        overlay_data = _make_event_overlay_data(decay_frames=None, frame_idx=2)
+        fig, ax = plt.subplots()
+        try:
+            manager = OverlayArtistManager(
+                ax=ax,
+                env=simple_env,
+                overlay_data=overlay_data,
+                show_regions=False,
+                region_alpha=0.3,
+            )
+            manager.initialize(0)
+            manager.update_frame(2)  # cumulative: event at frame 2 now visible
+
+            assert len(manager._event_artists) > 0
+            # The scatter artist is present on the axes.
+            assert all(artist in ax.collections for artist in manager._event_artists)
+        finally:
+            plt.close(fig)
+
+    def test_event_overlay_cleared_between_frames(
+        self, simple_env: Environment
+    ) -> None:
+        """Instant-mode event artists are torn down when no event is visible."""
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        overlay_data = _make_event_overlay_data(decay_frames=0, frame_idx=2)
+        fig, ax = plt.subplots()
+        try:
+            manager = OverlayArtistManager(
+                ax=ax,
+                env=simple_env,
+                overlay_data=overlay_data,
+                show_regions=False,
+                region_alpha=0.3,
+            )
+            manager.initialize(0)
+
+            manager.update_frame(2)  # event visible
+            prior_artists = list(manager._event_artists)
+            assert len(prior_artists) > 0
+
+            manager.update_frame(3)  # instant mode: event no longer visible
+            assert len(manager._event_artists) == 0
+            # The prior frame's artists were removed from the axes.
+            for artist in prior_artists:
+                assert artist not in ax.collections
+        finally:
+            plt.close(fig)
+
+    def test_overlay_manager_clear_removes_events(
+        self, simple_env: Environment
+    ) -> None:
+        """clear() empties _event_artists and removes them from the axes."""
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        overlay_data = _make_event_overlay_data(decay_frames=None, frame_idx=0)
+        fig, ax = plt.subplots()
+        try:
+            manager = OverlayArtistManager(
+                ax=ax,
+                env=simple_env,
+                overlay_data=overlay_data,
+                show_regions=False,
+                region_alpha=0.3,
+            )
+            manager.initialize(0)  # event at frame 0 visible immediately
+            event_artists = list(manager._event_artists)
+            assert len(event_artists) > 0
+
+            manager.clear()
+            assert len(manager._event_artists) == 0
+            for artist in event_artists:
+                assert artist not in ax.collections
+        finally:
+            plt.close(fig)
+
+
+@pytest.mark.integration
+class TestParallelRenderEventsWithReuse:
+    """The reuse-artists render path must emit event markers to frames."""
+
+    def test_parallel_render_events_with_reuse(
+        self, simple_env: Environment, tmp_path
+    ) -> None:
+        """Frames rendered via the reuse path contain the event marker.
+
+        Compares the reuse-path render (reuse_artists=True) against a no-event
+        baseline; the event frame must differ where the marker is drawn.
+        """
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.image as mpimg
+
+        from neurospatial.animation._parallel import _render_worker_frames
+
+        n_frames = 3
+        fields = [np.zeros(simple_env.n_bins) for _ in range(n_frames)]
+
+        event_overlay = _make_event_overlay_data(decay_frames=None, frame_idx=0)
+
+        def _render(output_dir, overlay_data) -> np.ndarray:
+            task = {
+                "env": simple_env,
+                "fields": fields,
+                "start_frame_idx": 0,
+                "output_dir": str(output_dir),
+                "cmap": "viridis",
+                "vmin": 0.0,
+                "vmax": 1.0,
+                "frame_labels": None,
+                "dpi": 50,
+                "digits": 5,
+                "reuse_artists": True,
+                "overlay_data": overlay_data,
+            }
+            _render_worker_frames(task)
+            from pathlib import Path
+
+            png_files = sorted(Path(output_dir).glob("frame_*.png"))
+            assert len(png_files) == n_frames
+            return mpimg.imread(str(png_files[0]))
+
+        with_events_dir = tmp_path / "with_events"
+        without_events_dir = tmp_path / "without_events"
+        with_events_dir.mkdir()
+        without_events_dir.mkdir()
+
+        frame_with = _render(with_events_dir, event_overlay)
+        frame_without = _render(without_events_dir, None)
+
+        # The reuse path must draw the event marker, so the frames differ.
+        assert frame_with.shape == frame_without.shape
+        assert not np.allclose(frame_with, frame_without)

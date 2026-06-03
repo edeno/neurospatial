@@ -470,3 +470,59 @@ class TestBuildEnvToNapariMatrix:
         matrix_result = (matrix @ homogeneous.T).T[:, :2]
 
         assert_allclose(matrix_result, expected, rtol=1e-10)
+
+
+class TestTransformIntegerDtypeFraction:
+    """Integer-dtyped inputs must not truncate fractional pixel results."""
+
+    def test_transform_coords_integer_dtype_keeps_fraction(
+        self, simple_env: Environment
+    ) -> None:
+        """Integer coords return float64, not int-truncated, pixel positions."""
+        from neurospatial.animation.transforms import transform_coords_for_napari
+
+        # In simple_env the x/y scale is ~0.909, so coord 3 maps to a
+        # fractional pixel (~2.727 col). With integer-dtyped input the old code
+        # inherited the int dtype and truncated to 2.
+        coords_int = np.array([[3, 3]], dtype=np.int64)
+        result = transform_coords_for_napari(coords_int, simple_env)
+
+        assert result.dtype == np.float64
+
+        # Compare against the float-input result (ground truth).
+        coords_float = np.array([[3.0, 3.0]], dtype=np.float64)
+        expected = transform_coords_for_napari(coords_float, simple_env)
+        assert_allclose(result, expected)
+
+        # The fractional pixel position must be preserved (not truncated).
+        assert not np.allclose(result, np.trunc(expected))
+
+    def test_transform_direction_integer_dtype_float_result(
+        self, simple_env: Environment
+    ) -> None:
+        """Integer direction returns float64 with the scaled (dr, dc)."""
+        from neurospatial.animation.transforms import transform_direction_for_napari
+
+        direction_int = np.array([[1, 1]], dtype=np.int64)
+        result = transform_direction_for_napari(direction_int, simple_env)
+
+        assert result.dtype == np.float64
+
+        direction_float = np.array([[1.0, 1.0]], dtype=np.float64)
+        expected = transform_direction_for_napari(direction_float, simple_env)
+        assert_allclose(result, expected)
+
+        # Scales are non-integer here, so the scaled components are fractional.
+        assert not np.allclose(result, np.trunc(expected))
+
+    def test_transform_direction_fallback_integer_dtype(self) -> None:
+        """Fallback branch (no scale) returns float64 [-1.0, 1.0]."""
+        from neurospatial.animation.transforms import transform_direction_for_napari
+
+        direction_int = np.array([[1, 1]], dtype=np.int64)
+        result = transform_direction_for_napari(
+            direction_int, None, suppress_warning=True
+        )
+
+        assert result.dtype == np.float64
+        assert_allclose(result, np.array([[-1.0, 1.0]]))

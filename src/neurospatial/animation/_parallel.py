@@ -132,7 +132,9 @@ def _update_field_artist(artist: Any, env: Environment, field: Any) -> None:
         artist.set_data(data)
 
 
-def _render_event_overlay_matplotlib(ax: Any, event_data: Any, frame_idx: int) -> None:
+def _render_event_overlay_matplotlib(
+    ax: Any, event_data: Any, frame_idx: int
+) -> list[Any]:
     """Render event markers for current frame on matplotlib axes.
 
     Parameters
@@ -143,6 +145,14 @@ def _render_event_overlay_matplotlib(ax: Any, event_data: Any, frame_idx: int) -
         Event overlay data containing positions, frame indices, colors, markers.
     frame_idx : int
         Current frame index.
+
+    Returns
+    -------
+    list
+        The scatter artists created for this frame (one per visible, non-NaN
+        event marker). Empty if no events are visible at ``frame_idx``. Callers
+        that reuse artists across frames use this list to remove the markers
+        before redrawing the next frame.
 
     Notes
     -----
@@ -156,6 +166,7 @@ def _render_event_overlay_matplotlib(ax: Any, event_data: Any, frame_idx: int) -
 
     Events render at zorder=104, above head direction overlays (103).
     """
+    artists: list[Any] = []
     for event_name, positions in event_data.event_positions.items():
         frame_indices = event_data.event_frame_indices[event_name]
         color = event_data.colors[event_name]
@@ -199,7 +210,7 @@ def _render_event_overlay_matplotlib(ax: Any, event_data: Any, frame_idx: int) -
         for pos, alpha in zip(active_positions, alphas, strict=True):
             if np.any(np.isnan(pos)):
                 continue
-            ax.scatter(
+            scatter = ax.scatter(
                 pos[0],
                 pos[1],
                 c=[(*base_rgba[:3], alpha)],
@@ -209,6 +220,9 @@ def _render_event_overlay_matplotlib(ax: Any, event_data: Any, frame_idx: int) -
                 edgecolors=event_data.border_color,
                 linewidths=event_data.border_width,
             )
+            artists.append(scatter)
+
+    return artists
 
 
 _TRAIL_MAX_ALPHA = 0.7
@@ -791,6 +805,9 @@ class OverlayArtistManager:
         Line collections for bodypart skeletons.
     _head_direction_quivers : list[Quiver | None]
         Quiver artists for head direction arrows.
+    _event_artists : list
+        Scatter artists for event markers. Recreated each frame (event
+        visibility changes per frame), like the head-direction quivers.
     _region_patches : list
         Patches for region rendering (only created once, not updated).
 
@@ -819,6 +836,7 @@ class OverlayArtistManager:
     _bodypart_points: list[PathCollection] = field(default_factory=list)
     _bodypart_skeletons: list[LineCollection | None] = field(default_factory=list)
     _head_direction_quivers: list[Quiver | None] = field(default_factory=list)
+    _event_artists: list[Any] = field(default_factory=list)
     _region_patches: list[Any] = field(default_factory=list)
     _initialized: bool = False
 
@@ -860,6 +878,14 @@ class OverlayArtistManager:
         for head_dir_data in self.overlay_data.head_directions:
             self._initialize_head_direction_overlay(
                 head_dir_data, frame_idx, paired_position
+            )
+
+        # Initialize event overlays. Events change visibility per frame
+        # (cumulative / instant / decay), so they are recreated each frame like
+        # head-direction quivers rather than updated in place.
+        for event_data in self.overlay_data.events:
+            self._event_artists.extend(
+                _render_event_overlay_matplotlib(self.ax, event_data, frame_idx)
             )
 
         self._initialized = True
@@ -1103,6 +1129,16 @@ class OverlayArtistManager:
         for i, head_dir_data in enumerate(self.overlay_data.head_directions):
             self._update_head_direction(i, head_dir_data, frame_idx, paired_position)
 
+        # Re-render event overlays. Remove last frame's event artists, then
+        # redraw the events visible at this frame.
+        for artist in self._event_artists:
+            artist.remove()
+        self._event_artists.clear()
+        for event_data in self.overlay_data.events:
+            self._event_artists.extend(
+                _render_event_overlay_matplotlib(self.ax, event_data, frame_idx)
+            )
+
     def _update_position_marker(self, idx: int, pos_data: Any, frame_idx: int) -> None:
         """Update position marker scatter point."""
         marker = self._position_markers[idx]
@@ -1242,6 +1278,11 @@ class OverlayArtistManager:
             if quiver is not None:
                 quiver.remove()
         self._head_direction_quivers.clear()
+
+        # Remove event artists
+        for artist in self._event_artists:
+            artist.remove()
+        self._event_artists.clear()
 
         # Remove region patches
         for patch in self._region_patches:

@@ -316,8 +316,11 @@ def transform_coords_for_napari(
         # Y -> row (with flip: high Y -> low row)
         row = (scale.n_y - 1) - (y_coords - scale.y_min) * scale.y_scale
 
-        # Return in napari (row, col) order
-        result = np.empty_like(coords)
+        # Return in napari (row, col) order. Allocate float64 explicitly:
+        # np.empty_like would inherit an integer dtype from integer-typed input
+        # (e.g. pixel-mask or DLC coords) and silently truncate the fractional
+        # pixel position.
+        result = np.empty(coords.shape, dtype=np.float64)
         result[..., 0] = row
         result[..., 1] = col
         return result
@@ -374,7 +377,7 @@ def transform_direction_for_napari(
         if scale is None:
             # Fallback: just swap axes and invert Y (may cause alignment issues)
             _warn_fallback(suppress=suppress_warning)
-            result = np.empty_like(direction)
+            result = np.empty(direction.shape, dtype=np.float64)
             result[..., 0] = -dy  # Y inverted (environment Y up, napari row down)
             result[..., 1] = dx
             return result
@@ -385,7 +388,7 @@ def transform_direction_for_napari(
         # Y -> row (scale and invert: positive dy -> negative dr)
         dr = -dy * scale.y_scale
 
-        result = np.empty_like(direction)
+        result = np.empty(direction.shape, dtype=np.float64)
         result[..., 0] = dr
         result[..., 1] = dc
         return result
