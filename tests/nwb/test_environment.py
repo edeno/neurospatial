@@ -982,9 +982,13 @@ class TestEnvironmentRoundTrip:
         neighbors = loaded_env.neighbors(0)
         assert len(neighbors) > 0
 
-        # Test distance_between works
+        # Test distance_between works. distance_between expects coordinates,
+        # not bin indices, so pass the bin centers of bin 0 and a neighbor.
         if len(neighbors) > 0:
-            dist = loaded_env.distance_between(0, neighbors[0])
+            dist = loaded_env.distance_between(
+                loaded_env.bin_centers[0], loaded_env.bin_centers[neighbors[0]]
+            )
+            assert np.isfinite(dist)
             assert dist > 0
 
     def test_roundtrip_3d_environment(self, tmp_path):

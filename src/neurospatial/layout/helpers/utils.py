@@ -117,11 +117,18 @@ def get_n_bins(
     if np.any(bin_size_arr <= 0.0):
         raise ValueError(f"bin_size must be positive (got {bin_size}).")
 
-    # Calculate number of bins, ensuring at least 1 bin even if extent is 0
-    n_bins = np.ceil(extent / bin_size_arr).astype(np.int32)
-    n_bins[n_bins == 0] = 1  # Handle zero extent case
-
-    # Convert to int64 to match expected return type
+    # Calculate number of bins, ensuring at least 1 bin even if extent is 0.
+    # Compute in float then cast straight to int64 (never int32) so a large
+    # extent / small bin_size cannot silently overflow.
+    n_bins_float = np.ceil(np.asarray(extent, dtype=np.float64) / bin_size_arr)
+    if np.any(n_bins_float > np.iinfo(np.int64).max):
+        raise ValueError(
+            f"Requested binning overflows: extent / bin_size implies "
+            f"{n_bins_float.max():.3g} bins, exceeding the int64 limit. "
+            f"Increase bin_size or reduce the dimension range."
+        )
+    n_bins = n_bins_float.astype(np.int64)
+    n_bins[n_bins == 0] = 1  # Handle zero-extent case
     return np.asarray(n_bins, dtype=np.int64)
 
 

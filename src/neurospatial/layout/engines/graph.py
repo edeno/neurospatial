@@ -382,17 +382,27 @@ class GraphLayout(_KDTreeMixin):
             not indices into the full `linear_bin_centers_all` array.
 
         """
-        if self.grid_edges is None:
-            raise RuntimeError("grid_edges not available")
-        result = _find_bin_for_linear_position(
+        if self.grid_edges is None or self.active_mask is None:
+            raise RuntimeError("Layout not built; grid_edges or active_mask missing.")
+
+        full_grid_ind = _find_bin_for_linear_position(
             data_points,
             bin_edges=self.grid_edges[0],
             active_mask=self.active_mask,
         )
-        # Ensure we return NDArray, not int
-        if isinstance(result, int):
-            return np.array([result], dtype=int)
-        return result
+        full_grid_ind = np.atleast_1d(np.asarray(full_grid_ind, dtype=int))
+
+        # _find_bin_for_linear_position returns indices into the FULL (gap-
+        # inclusive) bin list. Remap to active-bin indices: active bins are
+        # numbered 0..n_active-1 in mask order; inactive/gap bins -> -1.
+        n_total_bins = self.active_mask.size
+        full_to_active = np.full(n_total_bins, -1, dtype=int)
+        full_to_active[self.active_mask] = np.arange(int(self.active_mask.sum()))
+
+        active_ind = np.full(full_grid_ind.shape, -1, dtype=int)
+        in_range = full_grid_ind >= 0
+        active_ind[in_range] = full_to_active[full_grid_ind[in_range]]
+        return active_ind
 
     def bin_sizes(self) -> NDArray[np.float64]:
         """Return the length of each active 1D bin along the linearized track.

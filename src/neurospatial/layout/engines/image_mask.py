@@ -1,3 +1,4 @@
+import warnings
 from collections.abc import Sequence
 from typing import Any
 
@@ -19,7 +20,12 @@ class ImageMaskLayout(_GridMixin):
 
     Each `True` pixel in the input `image_mask` corresponds to an active bin
     in the environment. The spatial scale of these pixel-bins is determined
-    by `bin_size`. Inherits grid functionalities from `_GridMixin`.
+    by `pixel_size`. Inherits grid functionalities from `_GridMixin`.
+
+    The layout uses the (x, y) coordinate convention: dimension 0 is x
+    (image columns) and dimension 1 is y (image rows). `grid_shape`,
+    `grid_edges`, `bin_centers`, and `active_mask` are all expressed in
+    (x, y) order, matching `dimension_ranges` and every other grid engine.
     """
 
     bin_centers: NDArray[np.float64]
@@ -58,32 +64,68 @@ class ImageMaskLayout(_GridMixin):
     def build(
         self,
         *,
-        image_mask: NDArray[np.bool_],  # Defines candidate pixels
-        bin_size: float | tuple[float, float] = 1.0,  # one pixel
+        image_mask: NDArray[
+            np.bool_
+        ],  # Defines candidate pixels, shape (n_rows, n_cols)
+        pixel_size: float | tuple[float, float] | None = None,
         connect_diagonal_neighbors: bool = True,
+        bin_size: float | tuple[float, float] | None = None,  # deprecated alias
     ) -> None:
         """Build the layout from a 2D image mask.
+
+        The layout follows the (x, y) coordinate convention: dimension 0 is x
+        (image columns), dimension 1 is y (image rows). `grid_shape`,
+        `grid_edges`, `bin_centers`, and `active_mask` are all expressed in
+        (x, y) order so that `point_to_bin_index` digitizes ``points[:, 0]``
+        against the x edges and ``points[:, 1]`` against the y edges.
 
         Parameters
         ----------
         image_mask : NDArray[np.bool_], shape (n_rows, n_cols)
-            A 2D boolean array where `True` pixels define active bins.
-        bin_size : Union[float, Tuple[float, float]], default=1.0
-            The spatial size of each pixel.
+            A 2D boolean array where `True` pixels define active bins. Indexed
+            as ``[row, col]`` == ``[y, x]``.
+        pixel_size : float or tuple of (float, float) or None, optional
+            The spatial size of each pixel, in units per pixel.
             If float: pixels are square (size x size).
-            If tuple (width, height): specifies pixel_width and pixel_height.
+            If tuple (width, height): specifies pixel width (x) and pixel
+            height (y). If None and `bin_size` is also None, defaults to 1.0
+            (one unit per pixel).
         connect_diagonal_neighbors : bool, default=True
             If True, connect diagonally adjacent active pixel-bins.
+        bin_size : float or tuple of (float, float) or None, optional
+            Deprecated alias for `pixel_size`, kept for backward compatibility.
+            Emits a `DeprecationWarning` when used. Cannot be combined with
+            `pixel_size`.
 
         Raises
         ------
         TypeError
             If `image_mask` is not a NumPy array.
         ValueError
-            If `image_mask` is not 2D, not boolean, or `bin_size` is invalid,
-            or if `image_mask` contains no True values or non-finite values.
+            If `image_mask` is not 2D, not boolean, contains no True values,
+            if `pixel_size` is invalid (wrong type/shape or non-positive), or
+            if both `pixel_size` and the deprecated `bin_size` alias are given.
 
         """
+        # Resolve the pixel-size argument. ``pixel_size`` is the public name;
+        # ``bin_size`` is accepted as a deprecated alias for backward
+        # compatibility with callers that forwarded the legacy key.
+        if pixel_size is not None and bin_size is not None:
+            raise ValueError(
+                "Pass either 'pixel_size' or the deprecated 'bin_size' alias, not both."
+            )
+        if pixel_size is None:
+            if bin_size is None:
+                pixel_size = 1.0  # one unit per pixel
+            else:
+                warnings.warn(
+                    "'bin_size' is deprecated for ImageMaskLayout; use "
+                    "'pixel_size' instead.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                pixel_size = bin_size
+
         if not isinstance(image_mask, np.ndarray):
             raise TypeError("image_mask must be a numpy array.")
         if image_mask.ndim != 2:
@@ -91,69 +133,66 @@ class ImageMaskLayout(_GridMixin):
         if not np.issubdtype(image_mask.dtype, np.bool_):
             raise ValueError("image_mask must be a boolean array.")
 
-        # Validate bin_size
-        if isinstance(bin_size, tuple):
-            if any(s <= 0 for s in bin_size):
-                raise ValueError("bin_size must be positive.")
+        # Validate pixel_size
+        if isinstance(pixel_size, tuple):
+            if any(s <= 0 for s in pixel_size):
+                raise ValueError("pixel_size must be positive.")
         else:
-            if bin_size <= 0:
-                raise ValueError("bin_size must be positive.")
+            if pixel_size <= 0:
+                raise ValueError("pixel_size must be positive.")
         if not np.any(image_mask):
             raise ValueError("image_mask must contain at least one True value.")
         if not np.all(np.isfinite(image_mask)):
             raise ValueError("image_mask must not contain NaN or Inf values.")
 
-        # Determine bin_sizes for x and y (units per pixel)
-        bin_size_x: float
-        bin_size_y: float
-        if isinstance(bin_size, (float, int, np.number)):
-            bin_size_x = float(bin_size)
-            bin_size_y = float(bin_size)
-        elif isinstance(bin_size, (list, tuple, np.ndarray)) and len(bin_size) == 2:
-            bin_size_x = float(bin_size[0])  # width of pixel
-            bin_size_y = float(bin_size[1])  # height of pixel
+        # Determine pixel sizes for x and y (units per pixel)
+        pixel_size_x: float
+        pixel_size_y: float
+        if isinstance(pixel_size, (float, int, np.number)):
+            pixel_size_x = float(pixel_size)
+            pixel_size_y = float(pixel_size)
+        elif isinstance(pixel_size, (list, tuple, np.ndarray)) and len(pixel_size) == 2:
+            pixel_size_x = float(pixel_size[0])  # width of a pixel (x)
+            pixel_size_y = float(pixel_size[1])  # height of a pixel (y)
         else:
             raise ValueError(
-                "bin_size for ImageMaskLayout must be a float or a 2-element sequence (width, height).",
+                "pixel_size for ImageMaskLayout must be a float or a "
+                "2-element sequence (width, height).",
             )
+        if pixel_size_x <= 0 or pixel_size_y <= 0:
+            raise ValueError("pixel_size components must be positive.")
 
-        if bin_size_x <= 0 or bin_size_y <= 0:
-            raise ValueError("bin_size components must be positive.")
+        n_rows, n_cols = image_mask.shape  # rows = y, cols = x
 
-        n_rows, n_cols = image_mask.shape
-        self.grid_shape = (n_rows, n_cols)  # Note: (rows, cols) often (y_dim, x_dim)
+        # Coordinate convention: dimension 0 is x (cols), dimension 1 is y (rows).
+        # grid_shape, grid_edges, bin_centers, and active_mask are all in (x, y)
+        # order so that point_to_bin_index digitizes points[:, 0] against x_edges
+        # and points[:, 1] against y_edges (matching dimension_ranges and every
+        # other grid engine).
+        self.grid_shape = (n_cols, n_rows)
 
         # Safety check: warn or error if grid is very large
         n_dims = 2  # ImageMask is always 2D
         check_grid_size_safety(self.grid_shape, n_dims)
 
-        y_edges = np.arange(n_rows + 1) * bin_size_y
-        x_edges = np.arange(n_cols + 1) * bin_size_x
-        self.grid_edges = (y_edges, x_edges)
+        x_edges = np.arange(n_cols + 1) * pixel_size_x
+        y_edges = np.arange(n_rows + 1) * pixel_size_y
+        self.grid_edges = (x_edges, y_edges)
         self.dimension_ranges = (
             (x_edges[0], x_edges[-1]),
             (y_edges[0], y_edges[-1]),
         )
 
-        y_centers = (np.arange(n_rows) + 0.5) * bin_size_y
-        x_centers = (np.arange(n_cols) + 0.5) * bin_size_x
-        xv, yv = np.meshgrid(
-            x_centers,
-            y_centers,
-            indexing="xy",
-        )  # x is cols, y is rows
-        # COORDINATE CONVENTION: Stack as (y, x) to match grid_edges ordering (y_edges, x_edges)
-        # but dimension_ranges is (x_range, y_range). This maintains consistency with
-        # the grid structure where grid_edges defines the actual grid layout.
-        full_grid_bin_centers = np.stack(
-            (
-                yv.ravel(),
-                xv.ravel(),
-            ),
-            axis=1,
-        )
+        x_centers = (np.arange(n_cols) + 0.5) * pixel_size_x
+        y_centers = (np.arange(n_rows) + 0.5) * pixel_size_y
+        # indexing="ij" over (x_centers, y_centers): outer loop x, inner loop y,
+        # giving the same x-major ravel order as grid_shape == (n_cols, n_rows).
+        xv, yv = np.meshgrid(x_centers, y_centers, indexing="ij")
+        full_grid_bin_centers = np.stack((xv.ravel(), yv.ravel()), axis=1)
 
-        self.active_mask = image_mask
+        # image_mask is (rows, cols) == (y, x); transpose to (x, y) so its ravel
+        # aligns row-for-row with full_grid_bin_centers above.
+        self.active_mask = np.ascontiguousarray(image_mask.T)
         self.bin_centers = full_grid_bin_centers[self.active_mask.ravel()]
         self.connectivity = _create_regular_grid_connectivity_graph(
             full_grid_bin_centers=full_grid_bin_centers,

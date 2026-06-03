@@ -223,17 +223,15 @@ class TestMaskForRegionErrorPaths:
 class TestContainsErrorPaths:
     """Test error handling in Environment.contains()."""
 
-    def test_contains_wrong_dimensionality_warns(self):
-        """Test contains with points of wrong dimensionality issues warning."""
+    def test_contains_wrong_dimensionality_raises(self):
+        """Test contains with points of wrong dimensionality raises ValueError."""
         env = Environment.from_samples(SAMPLE_DATA_2D, bin_size=2.0)
 
-        # Try 1D point for 2D environment - this warns but doesn't raise
+        # Try 1D point for 2D environment - this now raises loudly
         point_1d = np.array([[5.0]])
 
-        with pytest.warns(RuntimeWarning, match="Dimensionality mismatch"):
-            result = env.contains(point_1d)
-            # Should still return a result
-            assert isinstance(result, (bool, np.ndarray))
+        with pytest.raises(ValueError, match="Dimensionality mismatch"):
+            env.contains(point_1d)
 
     def test_contains_wrong_shape(self):
         """Test contains with malformed point array."""
@@ -299,17 +297,15 @@ class TestDistanceBetweenErrorPaths:
 class TestBinAtErrorPaths:
     """Test error handling in Environment.bin_at()."""
 
-    def test_bin_at_wrong_dimensionality_warns(self):
-        """Test bin_at with points of wrong dimensionality warns but doesn't raise."""
+    def test_bin_at_wrong_dimensionality_raises(self):
+        """Test bin_at with points of wrong dimensionality raises ValueError."""
         env = Environment.from_samples(SAMPLE_DATA_2D, bin_size=2.0)
 
-        # Try 1D points for 2D environment - warns but doesn't raise
+        # Try 1D points for 2D environment - now raises loudly
         points_1d = np.array([[5.0], [10.0]])
 
-        with pytest.warns(RuntimeWarning, match="Dimensionality mismatch"):
-            result = env.bin_at(points_1d)
-            # Should still return a result (likely all -1)
-            assert isinstance(result, np.ndarray)
+        with pytest.raises(ValueError, match="Dimensionality mismatch"):
+            env.bin_at(points_1d)
 
     def test_bin_at_empty_array(self):
         """Test bin_at with empty point array."""

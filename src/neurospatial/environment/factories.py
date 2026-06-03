@@ -76,7 +76,7 @@ class EnvironmentFactories:
         Create 2D grid environment masked by Shapely polygon.
     from_grid_mask(active_mask, grid_edges, ...)
         Create environment from pre-defined boolean mask and grid edges.
-    from_pixel_mask(image_mask, bin_size, ...)
+    from_pixel_mask(image_mask, pixel_size, ...)
         Create 2D environment from binary image mask.
     from_layout(kind, layout_params, ...)
         Create environment with specified layout type and parameters.
@@ -683,10 +683,7 @@ class EnvironmentFactories:
         """
         layout_params = {
             "image_mask": image_mask,
-            # ImageMaskLayout still uses the legacy "bin_size" key
-            # internally; we accept ``pixel_size`` at the public surface
-            # and forward it.
-            "bin_size": pixel_size,
+            "pixel_size": pixel_size,
             "connect_diagonal_neighbors": connect_diagonal_neighbors,
         }
 

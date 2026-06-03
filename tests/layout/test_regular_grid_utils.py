@@ -1,5 +1,6 @@
 import networkx as nx
 import numpy as np
+import pytest
 
 from neurospatial.layout.helpers.regular_grid import (
     _create_regular_grid,
@@ -146,13 +147,14 @@ def test_points_to_regular_grid_bin_ind_with_active_mask():
     assert inds[1] == 0
 
 
-def test_points_to_regular_grid_bin_ind_dimensionality_mismatch():
-    # Should return all -1 if dimensions don't match
-    edges = (np.array([0, 1, 2]),)
-    shape = (2,)
-    points = np.array([[0.5, 0.5]])
-    inds = _points_to_regular_grid_bin_ind(points, edges, shape)
-    assert np.all(inds == -1)
+def test_points_to_bin_dimensionality_mismatch_raises():
+    # 3-D points against a 2-D grid must raise rather than silently
+    # returning all -1 (which would look like "no bins found").
+    edges = (np.array([0, 1, 2]), np.array([0, 1, 2]))
+    shape = (2, 2)
+    points = np.array([[0.5, 0.5, 0.5]])
+    with pytest.raises(ValueError, match="Dimensionality mismatch"):
+        _points_to_regular_grid_bin_ind(points, edges, shape)
 
 
 def test_create_and_connectivity_for_3d_grid():

@@ -157,7 +157,7 @@ def test_create_layout_image_mask():
     layout = create_layout(
         "ImageMask",
         image_mask=mask,
-        bin_size=1.0,
+        pixel_size=1.0,
     )
     assert hasattr(layout, "bin_centers")
     assert layout.bin_centers.ndim == 2
@@ -171,7 +171,7 @@ def test_image_mask_point_to_bin_index():
     layout = create_layout(
         "ImageMask",
         image_mask=mask,
-        bin_size=1.0,
+        pixel_size=1.0,
     )
     points = np.array([[2.5, 2.5], [0.5, 0.5]])
     inds = layout.point_to_bin_index(points)
@@ -288,7 +288,7 @@ MINIMAL_BUILD_PARAMS: dict[str, dict[str, Any]] = {
     },
     "ImageMask": {
         "image_mask": np.array([[True, False], [False, True]], dtype=bool),
-        "bin_size": 1.0,
+        "pixel_size": 1.0,
     },
 }
 

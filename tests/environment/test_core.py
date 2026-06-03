@@ -343,8 +343,12 @@ def test_from_image():
     assert env._is_fitted
     assert env.n_dims == 2
     assert env.bin_centers.shape[0] == np.sum(image_mask_np)
-    assert np.array_equal(env.active_mask, image_mask_np)
-    assert env.grid_shape == image_mask_np.shape
+    # ImageMaskLayout.build uses (x, y) axis order, so a row-major (y, x) image
+    # mask is transposed into the environment's (x, y) grid.
+    assert np.array_equal(env.active_mask, image_mask_np.T)
+    assert env.grid_shape == image_mask_np.shape[::-1]
+    # Same number of active bins regardless of orientation.
+    assert np.sum(env.active_mask) == np.sum(image_mask_np)
 
 
 def test_from_polygon():
