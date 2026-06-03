@@ -8,7 +8,7 @@ This module tests the JAX core array operations stubs:
 
 TDD approach: Tests written first, implementation follows.
 
-Design requirements (from PLAN.md):
+Design requirements:
 - Core Rate/Metrics Layer operates on dense arrays with shapes like (n_neurons, n_bins)
 - Single-neuron functions operate on (n_bins,) arrays
 - Batch functions operate on (n_neurons, n_bins) arrays

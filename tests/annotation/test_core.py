@@ -523,7 +523,7 @@ class TestAnnotationWidgetIntegration:
 
 
 # =============================================================================
-# Tests for initial_boundary, boundary_config, show_positions (M3)
+# Tests for initial_boundary, boundary_config, show_positions
 # =============================================================================
 
 

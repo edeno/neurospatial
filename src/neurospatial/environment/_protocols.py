@@ -171,7 +171,7 @@ class EnvironmentProtocol(Protocol):
         Method (not property) since v0.4: the underlying computation
         scales with the connectivity-graph size, so the call surface
         keeps that cost visible at the call site. The result is cached
-        and invalidated by ``_state_version`` bumps (M5.1).
+        and invalidated by ``_state_version`` bumps.
 
         See Also
         --------

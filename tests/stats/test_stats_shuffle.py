@@ -1,7 +1,7 @@
 """Tests for stats.shuffle module - verifies new import paths work.
 
 This file tests the reorganization of shuffle functions into
-the neurospatial.stats.shuffle module per PLAN.md Milestone 4.
+the neurospatial.stats.shuffle module.
 
 Functions moved from decoding/shuffle.py:
 - shuffle_time_bins, shuffle_time_bins_coherent
@@ -10,7 +10,7 @@ Functions moved from decoding/shuffle.py:
 - shuffle_posterior_circular, shuffle_posterior_weighted_circular
 - ShuffleTestResult, compute_shuffle_pvalue, compute_shuffle_zscore
 
-New functions per PLAN.md:
+New functions:
 - shuffle_trials(): Shuffle trial labels
 - shuffle_spikes_isi(): Shuffle inter-spike intervals
 """
@@ -195,7 +195,7 @@ class TestStatsShuffleBasicFunctionality:
 
 
 class TestNewShuffleFunctions:
-    """Tests for new shuffle functions per PLAN.md."""
+    """Tests for new shuffle functions."""
 
     def test_shuffle_trials_basic(self):
         """Test shuffle_trials shuffles trial labels."""

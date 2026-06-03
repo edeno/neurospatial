@@ -217,10 +217,10 @@ def test_region_center_point_unchanged():
 
 
 def test_regions_remove_absent_raises():
-    """Regions.remove now raises on missing name (M5.5).
+    """Regions.remove now raises on missing name.
 
     The previous behavior silently absorbed missing names, masking
-    typos and double-removes. The full M5.5 contract is that every
+    typos and double-removes. The full contract is that every
     Region mutation API raises on the disagree-with-reality case.
     """
     regs = Regions()

@@ -4,7 +4,7 @@ Grid cell analysis.
 This module provides tools for analyzing grid cells: spatial autocorrelation
 (2D FFT for regular grids, 1D radial profile for irregular topologies), grid
 score (hexagonal periodicity), grid scale (spacing), grid orientation (folded
-into ``GridProperties`` since v0.4 / M2.B 2.13), and periodicity score for
+into ``GridProperties`` since v0.4), and periodicity score for
 irregular topologies.
 
 Implements spatial autocorrelation and grid score (Sargolini et al., 2006).

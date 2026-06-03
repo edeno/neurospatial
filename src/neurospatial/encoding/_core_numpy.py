@@ -17,8 +17,8 @@ smooth_rate_maps_batch
 
 Notes
 -----
-This module contains stubs for Phase 0 of the encoding refactor. Actual
-implementations will be added in Phase 1 (Milestone 1).
+This module provides the NumPy backend for the encoding core's array
+operations (firing rates, smoothing, spatial information, sparsity).
 
 The JAX equivalent of this module is ``_core_jax.py``, which provides
 the same interface but uses JAX operations for GPU acceleration.

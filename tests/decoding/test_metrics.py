@@ -298,7 +298,7 @@ class TestMedianDecodingErrorNaNHandling:
 
 
 class TestSuccessCriteria:
-    """Test success criteria from TASKS.md."""
+    """Test success criteria."""
 
 
 class TestEdgeCases:
@@ -657,7 +657,7 @@ class TestConfusionMatrix:
 
 
 class TestConfusionMatrixSuccessCriteria:
-    """Test success criteria from TASKS.md for confusion_matrix."""
+    """Test success criteria for confusion_matrix."""
 
 
 class TestDecodingCorrelation:
@@ -949,7 +949,7 @@ class TestDecodingCorrelationEdgeCases:
 
 
 class TestDecodingCorrelationSuccessCriteria:
-    """Test success criteria from TASKS.md for Milestone 2.3."""
+    """Test success criteria for decoding correlation."""
 
 
 class TestConfusionMatrixNaNRows:

@@ -71,7 +71,7 @@ def test_all_public_methods_present():
         "bin_center_of",
         "path_between",
         "bin_sizes",
-        # Serialization (M5.9 removed pickle ``save``/``load`` — only
+        # Serialization (pickle ``save``/``load`` removed — only
         # JSON+npz remains)
         "to_file",
         "from_file",
@@ -83,8 +83,8 @@ def test_all_public_methods_present():
         # Visualization
         "plot",
         "plot_1d",
-        # Metrics / fields (M5.6 converted ``bin_attributes`` and
-        # ``edge_attributes`` from @cached_property to method form)
+        # Metrics / fields (``bin_attributes`` and
+        # ``edge_attributes`` converted from @cached_property to method form)
         "boundary_bins",
         "get_bin_attributes",
         "get_edge_attributes",

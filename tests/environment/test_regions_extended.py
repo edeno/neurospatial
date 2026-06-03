@@ -169,7 +169,7 @@ class TestMaskForRegion:
     def test_mask_for_region_is_superset_of_bins_in_region(self):
         """``region_mask`` (covers) is a superset of ``bins_in_region`` (contains).
 
-        M5.7 standardised ``region_mask`` on the inclusive
+        ``region_mask`` was standardised on the inclusive
         ``shapely.covers`` predicate so polygon-boundary bins count as
         inside; ``bins_in_region`` keeps the strict ``shapely.contains``
         predicate. Every bin reported by ``bins_in_region`` must

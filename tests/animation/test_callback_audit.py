@@ -1,4 +1,4 @@
-"""Tests for Phase 5.1: Callback Audit and Migration.
+"""Tests for the callback audit and migration.
 
 This test module verifies that callbacks connected to
 ``viewer.dims.events.current_step`` are properly optimized:
@@ -8,7 +8,7 @@ This test module verifies that callbacks connected to
 3. Timeseries: Callback respects ``update_mode="on_pause"`` via PlaybackController
 4. Playback widget: Callback for frame info display (lightweight)
 
-These tests document the audit findings from Phase 5.1 and ensure
+These tests document the audit findings and ensure
 the optimization patterns remain in place.
 
 Requires qtpy for PlaybackController tests (QTimer-based debouncing).
@@ -104,7 +104,7 @@ def mock_video_reader() -> MagicMock:
 
 
 class TestVideoCallbackAudit:
-    """Tests verifying video callback behavior per Phase 5.1 audit.
+    """Tests verifying video callback behavior per the callback audit.
 
     Expected behavior:
     - In-memory video: No callback registered (uses napari's native time dimension)
@@ -228,7 +228,7 @@ class TestVideoFrameCallbackRegistration:
 
 
 class TestTimeseriesUpdateModeAudit:
-    """Tests verifying timeseries callback respects update_mode per Phase 5.1.
+    """Tests verifying timeseries callback respects update_mode per the callback audit.
 
     Expected behavior:
     - update_mode="live": Updates on every frame change (throttled)
@@ -291,7 +291,7 @@ class TestTimeseriesUpdateModeAudit:
 
 
 class TestEventOverlayCallbackAudit:
-    """Tests verifying event overlay callback efficiency per Phase 5.1.
+    """Tests verifying event overlay callback efficiency per the callback audit.
 
     Expected behavior:
     - None/0 decay_frames (instant mode): Uses 3D Points layer (no per-frame callback)
@@ -367,5 +367,5 @@ class TestPlaybackControllerCallbackIntegration:
 class TestCallbackAuditDocumentation:
     """Tests documenting the callback audit findings.
 
-    These tests serve as living documentation for the Phase 5.1 audit results.
+    These tests serve as living documentation for the callback audit results.
     """

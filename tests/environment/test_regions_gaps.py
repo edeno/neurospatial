@@ -856,10 +856,10 @@ class TestRegionErrorHandling:
             env.regions.update_region("does_not_exist", point=(5.0, 5.0))
 
     def test_region_remove_nonexistent_raises(self):
-        """``regions.remove(...)`` on a missing name raises (M5.5).
+        """``regions.remove(...)`` on a missing name raises.
 
         The previous behavior — silent absorb — masked typos and
-        double-removes. The full M5.5 contract is that every Region
+        double-removes. The full contract is that every Region
         mutation (``add`` / ``update_region`` / ``__setitem__`` /
         ``__delitem__`` / ``remove``) raises rather than silently
         agreeing with the caller's wrong mental model.

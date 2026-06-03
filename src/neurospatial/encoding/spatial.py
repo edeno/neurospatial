@@ -103,7 +103,7 @@ class PlaceFieldsResult:
         ``None`` when the neuron passed all filters and ``fields``
         reflects the actual detection result. A non-None string when a
         filter caused detection to short-circuit. The only value used
-        in M1 is ``"mean_rate_above_threshold"`` (putative interneuron);
+        currently is ``"mean_rate_above_threshold"`` (putative interneuron);
         future filters (e.g. ``"all_nan_rate_map"``) may add more.
     n_excluded : int
         ``1`` if ``excluded_reason`` is set, else ``0``. Provided so

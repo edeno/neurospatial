@@ -10,7 +10,7 @@ pass invalid types to parameters that expect numeric sequences. The tests verify
 5. Original exceptions are preserved with `from e`
 6. Error messages are actionable and specific
 
-Based on UX Implementation Plan Milestone 3: Enhanced Error Handling.
+Tests for enhanced error handling.
 """
 
 from __future__ import annotations

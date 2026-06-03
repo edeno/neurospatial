@@ -125,7 +125,7 @@ def simulate_trajectory_ou(
         Units for ``speed_mean`` and ``speed_std``. Required keyword
         argument: must match ``env.units`` exactly. Auto-conversion
         between unit families (e.g. m/s -> cm/s) was removed in v0.4
-        (M4.5) because silent rescaling of speeds was easy to miss in
+        because silent rescaling of speeds was easy to miss in
         practice. Pre-convert ``speed_mean`` / ``speed_std`` into
         ``env.units`` before calling, or call
         :func:`_get_conversion_factor` yourself.
@@ -264,7 +264,7 @@ def simulate_trajectory_ou(
         raise ValueError(msg)
 
     # speed_units must match env.units exactly. Auto-conversion was
-    # removed in v0.4 (M4.5) because it silently rescaled speeds in a
+    # removed in v0.4 because it silently rescaled speeds in a
     # way that was easy to miss; users must now pre-convert (or call
     # _get_conversion_factor themselves) before calling.
     if speed_units != env.units:

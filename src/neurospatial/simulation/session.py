@@ -398,7 +398,7 @@ def simulate_session(
 
     # Generate trajectory using its own independent seed.
     if trajectory_method == "ou":
-        # speed_units is required by simulate_trajectory_ou (M4.5);
+        # speed_units is required by simulate_trajectory_ou;
         # fall back to env.units when the caller didn't pass it.
         ou_kwargs = dict(kwargs)
         ou_kwargs.setdefault("speed_units", env.units)

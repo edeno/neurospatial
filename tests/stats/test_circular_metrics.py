@@ -1,7 +1,7 @@
 """
 Tests for circular statistics module.
 
-Tests follow the plan in CIRC_STATS_TASKS.md, covering:
+Tests cover:
 - Core circular statistics (Rayleigh test, correlations)
 - Phase precession analysis
 - Input validation and edge cases
@@ -688,7 +688,7 @@ class TestCircularCircularCorrelation:
 
 
 # ============================================================================
-# Property-Based Tests (Milestone 4.7)
+# Property-Based Tests
 # ============================================================================
 
 
@@ -922,12 +922,12 @@ class TestPropertyBasedCircularLinearCorrelation:
 
 
 # ============================================================================
-# Circular Basis Functions (Milestone M1-M4)
+# Circular Basis Functions
 # ============================================================================
 
 
 class TestCircularBasisResult:
-    """Tests for CircularBasisResult dataclass (Milestone M1.4)."""
+    """Tests for CircularBasisResult dataclass."""
 
     def test_dataclass_can_be_imported(self) -> None:
         """Test that CircularBasisResult can be imported."""
@@ -972,7 +972,7 @@ class TestCircularBasisResult:
 
 
 class TestCircularBasis:
-    """Tests for circular_basis() function (Milestone M1.3)."""
+    """Tests for circular_basis() function."""
 
     def test_function_exists(self) -> None:
         """Test that circular_basis can be imported."""
@@ -1045,7 +1045,7 @@ class TestCircularBasis:
 
 
 class TestCircularBasisMetrics:
-    """Tests for circular_basis_metrics() function (Milestone M1.6)."""
+    """Tests for circular_basis_metrics() function."""
 
     def test_function_exists(self) -> None:
         """Test that circular_basis_metrics can be imported."""
@@ -1160,7 +1160,7 @@ class TestCircularBasisMetrics:
 
 
 class TestIsModulated:
-    """Tests for is_modulated() convenience function (Milestone M2)."""
+    """Tests for is_modulated() convenience function."""
 
     def test_function_exists(self) -> None:
         """Test that is_modulated can be imported."""
@@ -1291,12 +1291,12 @@ class TestIsModulated:
 
 
 # ============================================================================
-# Visualization: plot_circular_basis_tuning (Milestone M3)
+# Visualization: plot_circular_basis_tuning
 # ============================================================================
 
 
 class TestPlotCircularBasisTuning:
-    """Tests for plot_circular_basis_tuning() visualization function (Milestone M3)."""
+    """Tests for plot_circular_basis_tuning() visualization function."""
 
     def test_function_exists(self) -> None:
         """Test that plot_circular_basis_tuning can be imported."""

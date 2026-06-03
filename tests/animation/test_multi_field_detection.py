@@ -1,4 +1,4 @@
-"""Tests for hardened multi-field detection (Phase 3.4).
+"""Tests for hardened multi-field detection.
 
 This module tests the robustness of multi-field vs single-field detection
 in the animation pipeline.

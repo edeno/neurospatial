@@ -352,7 +352,7 @@ class TestCredibleRegion:
 
 
 class TestSuccessCriteria:
-    """Test success criteria from TASKS.md."""
+    """Test success criteria."""
 
 
 class TestEdgeCases:

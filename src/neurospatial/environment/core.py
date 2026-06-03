@@ -352,7 +352,7 @@ class Environment(
             self.regions = Regions()
 
     # ------------------------------------------------------------------
-    # Units validation (M4.4)
+    # Units validation
     # ------------------------------------------------------------------
     #: Documented unit strings. Setting ``env.units`` to a value outside
     #: this registry warns but does not raise — the field is advisory and
@@ -452,7 +452,7 @@ class Environment(
 
         """
         # Use ``repr(self.name)`` so the empty-string case ``name=""``
-        # is visibly distinct from the unset case ``name=None`` (M5.8).
+        # is visibly distinct from the unset case ``name=None``.
         # The previous ``f"'{name}'" if name else 'None'`` collapsed the
         # two into the same string and hid the difference from users
         # debugging an Environment they thought they had named.
@@ -460,7 +460,7 @@ class Environment(
             return f"Environment(name={self.name!r}, not fitted)"
 
         # Fitted environments: show name, dims, bins, layout. Truncate
-        # very long names but keep ``None`` distinct from ``""`` (M5.8).
+        # very long names but keep ``None`` distinct from ``""``.
         name = self.name
         if isinstance(name, str) and len(name) > 40:
             name = name[:37] + "..."
@@ -479,7 +479,7 @@ class Environment(
         return f"Environment(name={name!r}, {dims_str}, {n_bins} bins, {layout_type})"
 
     def __str__(self) -> str:
-        """Human-readable summary, equivalent to :meth:`info` (M5.8).
+        """Human-readable summary, equivalent to :meth:`info`.
 
         ``str(env)`` returns the same multi-line summary that
         ``env.info()`` produces. ``repr(env)`` keeps its single-line

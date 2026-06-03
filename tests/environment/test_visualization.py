@@ -289,7 +289,7 @@ class TestPlotField:
         rng = np.random.default_rng(42)
         positions = rng.uniform(20, 80, (1000, 2))
         times = np.linspace(0, 100, 1000)
-        # spike_times must be sorted ascending (required since M1 1.7).
+        # spike_times must be sorted ascending.
         spike_times = np.sort(rng.uniform(0, 100, 50))
 
         # Create environment

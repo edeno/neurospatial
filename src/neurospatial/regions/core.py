@@ -520,7 +520,7 @@ class Regions(MutableMapping[str, Region]):
         ------
         KeyError
             If ``name`` is not in the collection. Mirrors ``del regions[name]``
-            and the rest of the M5.5 contract: every Region API
+            and the rest of the contract: every Region API
             (``add``, ``update_region``, ``__setitem__``, ``__delitem__``,
             ``remove``) raises rather than silently absorbing the case where
             the caller's mental model of the collection disagrees with reality.

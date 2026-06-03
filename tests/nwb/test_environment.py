@@ -1785,7 +1785,7 @@ class TestAllLayoutsRoundTrip:
 
 
 # =============================================================================
-# Tests for Environment class methods (M3.3)
+# Tests for Environment class methods
 # =============================================================================
 
 

@@ -512,7 +512,7 @@ class TestDecodePosition:
     ) -> None:
         """validate=True should be the default, so a bad input raises by default.
 
-        Regression for M1 1.8: previously decode_position defaulted to
+        Regression: previously decode_position defaulted to
         validate=False, so users got nonsense posteriors with no warning
         when their inputs were corrupted. The new default invocation
         runs _validate_inputs and surfaces the problem at the boundary.
@@ -606,7 +606,7 @@ class TestDecodePosition:
     ) -> None:
         """validate=True (the new default) rejects negative spike counts.
 
-        Regression for M1 1.8: a negative spike count is physically
+        Regression: a negative spike count is physically
         impossible (a count is "how many spikes per time bin"), but
         nothing was rejecting it before. log_poisson_likelihood would
         produce nonsense (n * log(rate) - rate*dt with negative n flips

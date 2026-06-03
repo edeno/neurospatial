@@ -6,7 +6,7 @@ must-start-with-class-name, length caps, exact HTML tags) is not a contract
 and has been deliberately left untested.
 
 The empty-string-vs-None distinction is tested explicitly because the v0.3
-``__repr__`` collapsed both to ``name=None`` and the fix is the M5.8 anchor.
+``__repr__`` collapsed both to ``name=None`` and this is the regression anchor.
 """
 
 import numpy as np
@@ -35,7 +35,7 @@ class TestEnvironmentRepr:
         assert grid_env_from_samples.layout_type in repr(grid_env_from_samples)
 
     def test_repr_handles_empty_name(self):
-        """__repr__ should distinguish empty-string from None (M5.8)."""
+        """__repr__ should distinguish empty-string from None."""
         rng = np.random.default_rng(42)
         data = rng.random((100, 2)) * 10
         env = Environment.from_samples(data, bin_size=2.0, name="")
@@ -65,7 +65,7 @@ class TestEnvironmentRepr:
         assert f"{graph_env.n_dims}D" in result
 
     def test_str_returns_info_summary(self, grid_env_from_samples):
-        """``str(env)`` returns the same multi-line summary as ``env.info()`` (M5.8)."""
+        """``str(env)`` returns the same multi-line summary as ``env.info()``."""
         assert str(grid_env_from_samples) == grid_env_from_samples.info()
 
     def test_str_falls_back_to_repr_for_unfitted(self):

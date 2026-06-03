@@ -67,7 +67,7 @@ from neurospatial.simulation.models import (
     SpatialViewCellModel,
 )
 
-# Milestone 3 imports (grid cells + session API)
+# Grid cell and session API imports
 # from neurospatial.simulation.models import GridCellModel  # Already imported above
 from neurospatial.simulation.session import SimulationSession, simulate_session
 

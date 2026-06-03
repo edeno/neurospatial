@@ -145,7 +145,7 @@ class TestSelectBasisCenters:
 
 
 # =============================================================================
-# TestGeodesicRBFBasis - Tests to be added after M2 implementation
+# TestGeodesicRBFBasis - Tests to be added after the GeodesicRBFBasis implementation
 # =============================================================================
 
 
@@ -247,7 +247,7 @@ class TestGeodesicRBFBasis:
 
 
 # =============================================================================
-# TestHeatKernelWaveletBasis - Tests to be added after M3 implementation
+# TestHeatKernelWaveletBasis - Tests to be added after the HeatKernelWaveletBasis implementation
 # =============================================================================
 
 
@@ -319,7 +319,7 @@ class TestHeatKernelWaveletBasis:
 
 
 # =============================================================================
-# TestChebyshevFilterBasis - Tests to be added after M4 implementation
+# TestChebyshevFilterBasis - Tests to be added after the ChebyshevFilterBasis implementation
 # =============================================================================
 
 
@@ -372,7 +372,7 @@ class TestChebyshevFilterBasis:
 
 
 # =============================================================================
-# TestSpatialBasis - Tests to be added after M5 implementation
+# TestSpatialBasis - Tests to be added after the SpatialBasis implementation
 # =============================================================================
 
 
@@ -411,7 +411,7 @@ class TestSpatialBasis:
 
 
 # =============================================================================
-# TestPlotBasisFunctions - Tests to be added after M5 implementation
+# TestPlotBasisFunctions - Tests to be added after the plot_basis_functions implementation
 # =============================================================================
 
 

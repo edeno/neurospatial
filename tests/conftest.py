@@ -577,7 +577,7 @@ def minimal_20x20_grid_env() -> Environment:
     smearing out-of-mask samples to the nearest in-env corner. (The
     earlier fixture built the env from just the two sample points
     [(0,0), (20,20)], so every intermediate coordinate fell outside the
-    active mask -- the M1 1.2 ``bin_at`` switch in
+    active mask -- the ``bin_at`` switch in
     ``Environment.occupancy`` exposed this implicit dependency on the
     silent-wrong behavior.)
 

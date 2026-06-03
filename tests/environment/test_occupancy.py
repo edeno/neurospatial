@@ -18,7 +18,7 @@ class TestOccupancyBasic:
     def test_occupancy_simple_stationary(self):
         """Test occupancy with stationary samples in single bin."""
         # Dense grid env so position (5, 5) lands in an active bin
-        # rather than being flagged out-of-mask by bin_at (M1 1.2).
+        # rather than being flagged out-of-mask by bin_at.
         x = np.linspace(0.0, 10.0, 11)
         xx, yy = np.meshgrid(x, x)
         data = np.column_stack([xx.ravel(), yy.ravel()])
@@ -266,7 +266,7 @@ class TestOccupancyOutsideBehavior:
 
         Builds a local dense 10x10 grid env so the (5, 5) "inside"
         samples actually land in an active bin. minimal_2d_grid_env
-        only has two active bins (its corners), which under the M1 1.2
+        only has two active bins (its corners), which under the
         ``bin_at`` semantics correctly flags (5, 5) as outside the
         active mask.
         """
@@ -370,7 +370,7 @@ class TestOccupancyPerformance:
         """
         # Dense 21x21 sample grid so the active mask covers every bin in
         # the (0..100, 0..100) region. The earlier two-corner construction
-        # left the interior outside the active mask and `bin_at` (M1 1.2)
+        # left the interior outside the active mask and `bin_at`
         # correctly excluded every random sample from occupancy.
         x = np.linspace(0.0, 100.0, 21)
         xx, yy = np.meshgrid(x, x)
@@ -587,7 +587,7 @@ class TestOccupancyReturnSeconds:
 
 
 class TestOccupancyAgreesWithBinSequenceOnOutsideSamples:
-    """Regression for M1 1.2: trajectory functions must agree on out-of-env samples.
+    """Regression: trajectory functions must agree on out-of-env samples.
 
     Previously ``Environment.occupancy`` used ``map_points_to_bins`` which
     returns the nearest in-env bin index regardless of how far the input

@@ -8,11 +8,11 @@ spatial-analysis code can accept either an :class:`Environment` or a
 some of those gaps. In particular:
 
 - ``CompositeEnvironment`` still exposes ``save`` / ``load`` (pickle)
-  while ``Environment`` switched to ``to_file`` / ``from_file`` in M5.9.
+  while ``Environment`` switched to ``to_file`` / ``from_file``.
 - ``CompositeEnvironment`` still exposes ``bin_attributes`` /
   ``edge_attributes`` as cached properties while ``Environment``
   surfaced them as ``get_bin_attributes()`` / ``get_edge_attributes()``
-  methods in M5.6 to keep the cost visible at the call site.
+  methods to keep the cost visible at the call site.
 
 What the composite provides:
 

@@ -509,7 +509,7 @@ class TestDocstringNote:
 
 
 class TestPolarCoordinateKindFlag:
-    """Regression for M1 1.3: polar envs are flagged distinct from Cartesian.
+    """Regression: polar envs are flagged distinct from Cartesian.
 
     Without an explicit flag, downstream code that computes Euclidean
     distance on `bin_centers` silently treats `(distance, angle)` pairs
@@ -630,10 +630,10 @@ class TestPolarSerializationRoundTrip:
 
 
 class TestPolarBoundaryGuardsExtended:
-    """Regression coverage for review-found polar holes (M1 1.3 follow-up).
+    """Regression coverage for review-found polar holes.
 
-    Adds boundary guards for code paths the original M1 1.3 commit
-    missed: ``Environment.contains`` (was bypassing the polar check),
+    Adds boundary guards for code paths the original polar-coordinate-kind
+    commit missed: ``Environment.contains`` (was bypassing the polar check),
     ``Environment.plot_field`` (was silently mislabeling axes as
     X/Y), ``apply_transform`` (was silently flipping the env back to
     Cartesian), and the dict-round-trip (``from_dict`` was discarding
@@ -705,11 +705,11 @@ class TestPolarBoundaryGuardsExtended:
 
 
 class TestSubsetPreservesGraphLayout:
-    """Regression for the M1 1.1 review-found graph corruption.
+    """Regression for the review-found graph corruption.
 
     A 1-D linearized track (Graph layout) embedded in 2-D space
     populates ``active_mask``, ``grid_shape``, and ``grid_edges`` for
-    the linearized 1-D representation -- so the original M1 1.1
+    the linearized 1-D representation -- so the original
     grid-fast-path check (looking only at those three attributes)
     routed graph parents through ``Environment.from_grid_mask``, which
     rebuilt them as MaskedGrid envs with 1-D bin_centers, dropping the

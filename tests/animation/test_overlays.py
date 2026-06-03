@@ -801,7 +801,7 @@ class TestMultiAnimalSupport:
 
 
 # =============================================================================
-# Validation Functions Tests (Milestone 1.4)
+# Validation Functions Tests
 # =============================================================================
 
 
@@ -1317,7 +1317,7 @@ class TestValidatePickleAbility:
 
 
 # =============================================================================
-# Conversion Funnel Tests (Milestone 1.5)
+# Conversion Funnel Tests
 # =============================================================================
 
 

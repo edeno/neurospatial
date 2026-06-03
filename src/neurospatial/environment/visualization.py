@@ -447,7 +447,7 @@ class EnvironmentVisualization:
             )
 
         # Polar envs render via the same dispatch but with polar-aware
-        # axis labels and aspect ratio (M1 1.3): bin_centers[:, 0] is
+        # axis labels and aspect ratio: bin_centers[:, 0] is
         # distance (env units), bin_centers[:, 1] is angle in radians.
         # The label switch happens at the bottom of this method, after
         # dispatch.

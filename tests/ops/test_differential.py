@@ -107,7 +107,7 @@ class TestEnvironmentCachedProperty:
     """Test differential_operator cached property on Environment."""
 
     def test_differential_operator_property_exists(self):
-        """Environment exposes get_differential_operator() (M5.6 method form)."""
+        """Environment exposes get_differential_operator() (method form)."""
         data = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
         env = Environment.from_samples(data, bin_size=1.0)
 

@@ -793,7 +793,7 @@ def test_render_video_with_empty_overlay_data(simple_env: Environment, tmp_path:
 
 
 # =============================================================================
-# Test: Pickle-ability Validation (Milestone 4.2)
+# Test: Pickle-ability Validation
 # =============================================================================
 
 

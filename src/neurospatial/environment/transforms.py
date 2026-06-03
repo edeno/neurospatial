@@ -531,7 +531,7 @@ class EnvironmentTransforms:
 
         # --- Grid-env fast path: build via Environment.from_grid_mask ----------
         #
-        # Pre-M1 the subset path produced an inline `SubsetLayout` whose
+        # Previously the subset path produced an inline `SubsetLayout` whose
         # _layout_type_tag was the unregistered string "subset", which
         # broke `to_file` / `from_file` (silent persistence loss --
         # users could subset(), save, restart, and lose the env).
@@ -554,8 +554,7 @@ class EnvironmentTransforms:
         # to the inline `SubsetLayout` path below; that path is still
         # not serializable, but is preserved so existing graph-env
         # subset call sites don't silently corrupt the dimensionality.
-        # Graph subset will get its own registered layout type later
-        # (out of M1 scope).
+        # Graph subset will get its own registered layout type later.
         is_grid_env = (
             not self.is_linearized_track
             and self.active_mask is not None
@@ -660,7 +659,7 @@ class EnvironmentTransforms:
                 # graph (linearized) env stays 1-D in 2-D space rather
                 # than masquerading as a fully N-D layout.
                 self.is_linearized_track = is_linearized_track
-                # Lazy KDTree + nearest-neighbor-distance cache (M5.2). The
+                # Lazy KDTree + nearest-neighbor-distance cache. The
                 # KDTree was previously rebuilt on every point_to_bin_index
                 # call, which is O(n log n) per query and dominated cost
                 # for trajectory binning. A cached subset env now spends
@@ -714,7 +713,7 @@ class EnvironmentTransforms:
                 where the 2-D embedding of a 1-D track means
                 ``from_grid_mask`` would silently drop the embedding. A
                 registered serializable graph-subset layout is tracked
-                separately (out of M1 scope).
+                separately.
                 """
                 pts = np.atleast_2d(np.asarray(points, dtype=np.float64))
                 self._ensure_kdtree()
@@ -724,7 +723,7 @@ class EnvironmentTransforms:
                 # used by ops.binning.map_points_to_bins so subset envs
                 # behave like Cartesian envs do for clearly out-of-env
                 # samples. The threshold itself is precomputed once in
-                # _ensure_kdtree (M5.2). We deliberately keep it loose
+                # _ensure_kdtree. We deliberately keep it loose
                 # (10x) here because SubsetLayout has no notion of an
                 # active mask -- only a graph -- and tightening would
                 # spuriously reject points near sparse regions.
@@ -836,7 +835,7 @@ class EnvironmentTransforms:
         # Copy units, frame, and coordinate_kind if present. The
         # coordinate_kind preservation matches the grid-fast-path above
         # (line 595) so a polar 1-D linearized track (hypothetical for
-        # now; see TASKS.md M1 1.3) doesn't silently flip to Cartesian
+        # now) doesn't silently flip to Cartesian
         # on subset.
         if hasattr(self, "units") and self.units is not None:
             sub_env.units = self.units

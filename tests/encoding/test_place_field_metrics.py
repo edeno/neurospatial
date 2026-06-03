@@ -175,8 +175,8 @@ class TestDetectPlaceFields:
         The function emits a UserWarning before returning [], so a
         caller running detect_place_fields over a population can tell
         the difference between "no detectable fields" and "excluded as
-        putative interneuron". The empty-list return is preserved (M2
-        task 2.10 will fold this into a richer PlaceFieldsResult).
+        putative interneuron". The empty-list return is preserved (later
+        folded into a richer PlaceFieldsResult).
         """
         rng = np.random.default_rng(42)
         positions = rng.standard_normal((5000, 2)) * 10
@@ -196,7 +196,7 @@ class TestDetectPlaceFields:
     def test_detect_place_fields_no_warning_for_typical_pyramidal_cell(self):
         """Pyramidal-rate cells should NOT emit the interneuron warning.
 
-        Regression for M1 1.4: the warning must fire ONLY when the
+        Regression: the warning must fire ONLY when the
         max_mean_rate threshold is crossed. Don't bother quiet
         well-formed pyramidal cells with a noisy log.
         """
@@ -254,7 +254,7 @@ class TestDetectPlaceFields:
         )
 
         # This should work (firing_rate first). Returns PlaceFieldsResult
-        # since M1 1.4 (was a bare list[NDArray] before).
+        # (was a bare list[NDArray] before).
         fields = detect_place_fields(env, firing_rate)
         assert isinstance(fields, PlaceFieldsResult)
 
@@ -2307,7 +2307,7 @@ class TestComputeFieldEMDEdgeCases:
 
 
 class TestPlaceFieldsResult:
-    """Regression for M1 1.4 plan-drift: detect_place_fields returns PlaceFieldsResult.
+    """Regression: detect_place_fields returns PlaceFieldsResult.
 
     Pre-fix detect_place_fields returned a bare ``list[NDArray[np.int64]]``,
     so callers could not tell "this neuron was excluded by the

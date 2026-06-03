@@ -5,7 +5,7 @@ Coverage:
   with ``Environment.__new__`` and never fitted.
 - The exception carries ``class_name`` / ``method_name`` / ``error_code``
   attributes and formats them into a stable message shape.
-- The free-function construction form (``is_function=True``, M3.1) emits a
+- The free-function construction form (``is_function=True``) emits a
   message without a class qualifier and preserves qualified names.
 """
 
@@ -127,7 +127,7 @@ class TestExceptionMessageFormat:
 
 
 class TestEnvironmentNotFittedErrorFunctionForm:
-    """M3.1 free-function construction form."""
+    """Free-function construction form."""
 
     def test_function_form_message_omits_class_qualifier(self):
         exc = EnvironmentNotFittedError("path_progress", is_function=True)

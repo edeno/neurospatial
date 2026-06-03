@@ -237,7 +237,7 @@ class TestPlotWithScaleBar:
 
 
 class TestAnimateFieldsWithScaleBar:
-    """Test scale bar in animate_fields (Milestone 3).
+    """Test scale bar in animate_fields.
 
     Uses fixtures from tests/conftest.py:
     - small_2d_env: 10x10 cm grid (25 bins)

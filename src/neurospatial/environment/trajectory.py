@@ -328,7 +328,7 @@ class EnvironmentTrajectory:
         # samples a few centimeters outside the active mask silently
         # bind to the nearest edge bin, so a tracking-error overshoot
         # inflated occupancy at the boundary while bin_sequence
-        # correctly flagged the same sample as -1. See M1 task 1.2.
+        # correctly flagged the same sample as -1.
         bin_indices = cast(
             "NDArray[np.int64]",
             self.bin_at(positions).astype(np.int64),

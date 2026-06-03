@@ -163,7 +163,7 @@ class TestSimulateTrajectoryOU:
             simulate_trajectory_ou(simple_2d_env, duration=1.0, speed_units="cm")
 
     def test_speed_units_must_match_env_units(self, simple_2d_env):
-        """speed_units must match env.units exactly (M4.5).
+        """speed_units must match env.units exactly.
 
         Auto-conversion between unit families was removed in v0.4
         because silent rescaling was easy to miss. Callers must

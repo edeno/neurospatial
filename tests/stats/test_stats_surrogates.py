@@ -185,7 +185,7 @@ class TestGenerateInhomogeneousPoissonSurrogatesNew:
 
 
 class TestGenerateJitteredSpikes:
-    """Tests for generate_jittered_spikes (NEW function per PLAN.md)."""
+    """Tests for generate_jittered_spikes."""
 
     @pytest.fixture
     def spike_times(self) -> np.ndarray:
