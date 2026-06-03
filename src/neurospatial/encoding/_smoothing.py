@@ -231,19 +231,20 @@ def smooth_rate_map(
     >>> from neurospatial.encoding._smoothing import smooth_rate_map
 
     >>> # Create environment
-    >>> positions = np.random.rand(1000, 2) * 100
+    >>> rng = np.random.default_rng(0)
+    >>> positions = rng.random((1000, 2)) * 100
     >>> env = Environment.from_samples(positions, bin_size=5.0)
 
     >>> # Simulate spike counts and occupancy
-    >>> spike_counts = np.random.poisson(5, env.n_bins).astype(float)
+    >>> spike_counts = rng.poisson(5, env.n_bins).astype(float)
     >>> occupancy = np.ones(env.n_bins) * 1.0  # 1 second per bin
 
     >>> # Compute smoothed rate map
     >>> rate_map = smooth_rate_map(
     ...     env, spike_counts, occupancy, method="diffusion_kde", bandwidth=10.0
     ... )
-    >>> rate_map.shape
-    (400,)
+    >>> rate_map.shape == (env.n_bins,)
+    True
 
     See Also
     --------

@@ -300,11 +300,14 @@ class Regions(MutableMapping[str, Region]):
         >>> r1 = Region(name="goal", kind="point", data=[10.0, 20.0])
         >>> regions["goal"] = r1  # OK — first assignment
         >>> r2 = Region(name="goal", kind="point", data=[15.0, 25.0])
-        >>> regions["goal"] = r2  # raises KeyError
+        >>> regions["goal"] = r2  # doctest: +IGNORE_EXCEPTION_DETAIL
+        Traceback (most recent call last):
+            ...
+        KeyError: "Region 'goal' already exists. ..."
 
         To replace an existing region, pick the explicit path:
 
-        >>> regions.set("goal", r2)  # idempotent replace
+        >>> _ = regions.set("goal", r2)  # idempotent replace
         >>> _ = regions.update_region("goal", point=[15.0, 25.0])  # in-place edit
 
         See Also
