@@ -157,6 +157,93 @@ class TestGeneratePoissonSpikes:
             f"1 - exp(-rate*dt) = {expected_p:.4f}, not the saturated linear value 1.0"
         )
 
+    def test_nonincreasing_times_raises(self):
+        """Non-increasing times raise ValueError mentioning 'strictly increasing'."""
+        firing_rate = np.full(4, 10.0)
+        # Decreasing step between index 1 and 2.
+        times = np.array([0.0, 0.1, 0.05, 0.2])
+
+        with pytest.raises(ValueError, match="strictly increasing"):
+            generate_poisson_spikes(firing_rate, times, seed=42)
+
+        # Duplicate (zero-width) step also rejected.
+        times_dup = np.array([0.0, 0.1, 0.1, 0.2])
+        with pytest.raises(ValueError, match="strictly increasing"):
+            generate_poisson_spikes(firing_rate, times_dup, seed=42)
+
+    def test_nonuniform_times_uses_per_bin_dt(self):
+        """Spike probability tracks each bin's width, not the first interval.
+
+        Build strictly increasing but non-uniform times where the first
+        many bins are narrow and the rest are 10x wider, with a constant
+        rate. With per-bin dt the wide bins fire ~10x more often than the
+        narrow bins. The old code used the first (narrow) interval as a
+        uniform dt for every bin, underestimating the wide bins by ~10x.
+        """
+        rate = 1.0  # Hz; small rate*dt so probability ~ rate*dt is ~linear
+        n_each = 50_000
+        narrow_dt = 0.001
+        wide_dt = 0.01  # 10x wider
+
+        # First half narrow, second half wide.
+        deltas = np.concatenate([np.full(n_each, narrow_dt), np.full(n_each, wide_dt)])
+        times = np.concatenate([[0.0], np.cumsum(deltas)])
+        firing_rate = np.full(len(times), rate)
+
+        spikes = generate_poisson_spikes(
+            firing_rate, times, refractory_period=0.0, seed=0
+        )
+
+        # Split spike counts by region using the time boundary.
+        boundary = times[n_each]
+        n_narrow = int(np.sum(spikes < boundary))
+        n_wide = int(np.sum(spikes >= boundary))
+
+        # Per-bin dt: narrow bins ~ n_each * (1 - exp(-rate*narrow_dt)),
+        # wide bins ~ n_each * (1 - exp(-rate*wide_dt)). The wide region
+        # should fire about wide_dt/narrow_dt = 10x more.
+        ratio = n_wide / n_narrow
+        assert 8.0 < ratio < 12.0, (
+            f"wide/narrow spike ratio {ratio:.2f} should be ~10 with per-bin dt; "
+            "a uniform first-interval dt would give ~1.0"
+        )
+
+    def test_length_mismatch_raises(self):
+        """firing_rate and times length mismatch raises ValueError naming both lengths."""
+        firing_rate = np.full(5, 10.0)
+        times = np.linspace(0, 1, 6)
+
+        with pytest.raises(ValueError, match="firing_rate=5, times=6"):
+            generate_poisson_spikes(firing_rate, times, seed=42)
+
+    def test_nan_firing_rate_raises(self):
+        """A NaN in firing_rate raises ValueError naming 'firing_rate'."""
+        firing_rate = np.full(100, 10.0)
+        firing_rate[50] = np.nan
+        times = np.linspace(0, 1, 100)
+
+        with pytest.raises(ValueError, match="firing_rate"):
+            generate_poisson_spikes(firing_rate, times, seed=42)
+
+    def test_inf_firing_rate_raises(self):
+        """A +inf in firing_rate raises ValueError."""
+        firing_rate = np.full(100, 10.0)
+        firing_rate[10] = np.inf
+        times = np.linspace(0, 1, 100)
+
+        with pytest.raises(ValueError, match="firing_rate"):
+            generate_poisson_spikes(firing_rate, times, seed=42)
+
+    def test_finite_rate_negative_still_floored(self):
+        """A finite negative rate does not raise and produces zero spikes there."""
+        # All-negative finite rates: valid input, floored at 0 -> no spikes.
+        firing_rate = np.full(1000, -5.0)
+        times = np.linspace(0, 1, 1000)
+
+        spikes = generate_poisson_spikes(firing_rate, times, seed=42)
+
+        assert len(spikes) == 0
+
 
 class TestGeneratePopulationSpikes:
     """Tests for population spike generation."""
