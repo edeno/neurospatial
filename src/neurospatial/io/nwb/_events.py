@@ -605,8 +605,11 @@ def write_trials(
         raise ``NotImplementedError``: pynwb provides no public API to remove
         or reset the predefined trials table (and it cannot be deleted once
         written), so overwriting it is unsupported. Write to a fresh NWBFile,
-        or use ``write_region_crossings()`` to store the intervals under
-        another name.
+        or store these intervals under a different name by adding a separate
+        ``pynwb.epoch.TimeIntervals`` table (via ``nwbfile.add_time_intervals``)
+        with its own ``start_time``/``stop_time`` columns; such a table is
+        readable back via ``read_intervals``. (Do not use
+        ``write_region_crossings``: it stores point events, not intervals.)
 
     Raises
     ------
@@ -778,7 +781,10 @@ def write_trials(
             "exposes no public API to remove or reset the predefined trials "
             "table, and it cannot be deleted once the file is written. Write "
             "trials to a fresh NWBFile, or store these intervals under a "
-            "different name via write_region_crossings()."
+            "different name by adding a separate TimeIntervals table via "
+            "nwbfile.add_time_intervals(...) with start_time/stop_time columns "
+            "(readable back via read_intervals). Do not use "
+            "write_region_crossings(): it stores point events, not intervals."
         )
 
     # If no trials to add, skip table creation (NWB requires at least one trial)

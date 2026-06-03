@@ -133,13 +133,13 @@ class ImageMaskLayout(_GridMixin):
         if not np.issubdtype(image_mask.dtype, np.bool_):
             raise ValueError("image_mask must be a boolean array.")
 
-        # Validate pixel_size
-        if isinstance(pixel_size, tuple):
-            if any(s <= 0 for s in pixel_size):
-                raise ValueError("pixel_size must be positive.")
-        else:
-            if pixel_size <= 0:
-                raise ValueError("pixel_size must be positive.")
+        # Validate pixel_size. Use an array-safe comparison so that both scalar
+        # and per-axis pixel sizes -- including those deserialized from JSON as
+        # an ndarray (e.g. an anisotropic (3.0, 1.0) round-tripped through
+        # to_dict/from_dict) -- are checked without raising the "truth value of
+        # an array is ambiguous" error.
+        if np.any(np.asarray(pixel_size, dtype=float) <= 0):
+            raise ValueError("pixel_size must be positive.")
         if not np.any(image_mask):
             raise ValueError("image_mask must contain at least one True value.")
         if not np.all(np.isfinite(image_mask)):

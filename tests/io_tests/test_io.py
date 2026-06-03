@@ -458,3 +458,48 @@ class TestAllLayoutRoundTrip:
         graph_def = loaded.layout_parameters["graph_definition"]
         assert isinstance(graph_def, nx.Graph)
         assert not isinstance(graph_def, dict)
+
+
+class TestAnisotropicPixelMaskRoundTrip:
+    """Anisotropic from_pixel_mask envs must survive serialization.
+
+    Regression: ``to_dict`` serialized ``pixel_size`` as a list, ``from_dict``
+    rebuilt it as an ndarray, and the scalar ``pixel_size <= 0`` validation in
+    ImageMaskLayout.build then raised "The truth value of an array with more
+    than one element is ambiguous". The validation is now array-safe.
+    """
+
+    @staticmethod
+    def _make_anisotropic_env() -> Environment:
+        image = np.zeros((5, 4), dtype=bool)
+        image[1:4, 1:3] = True
+        return Environment.from_pixel_mask(image, pixel_size=(3.0, 1.0))
+
+    def test_to_dict_from_dict_roundtrip(self):
+        env = self._make_anisotropic_env()
+
+        env_dict = to_dict(env)
+        json.dumps(env_dict)  # must not raise
+
+        # Fail-before/pass-after: from_dict previously raised the
+        # ambiguous-truth-value ValueError here.
+        restored = from_dict(env_dict)
+
+        assert restored.grid_shape == env.grid_shape
+        np.testing.assert_allclose(
+            np.sort(restored.bin_centers, axis=0),
+            np.sort(env.bin_centers, axis=0),
+        )
+
+    def test_to_file_from_file_roundtrip(self, tmp_path):
+        env = self._make_anisotropic_env()
+
+        output_path = tmp_path / "anisotropic_image_mask"
+        to_file(env, output_path)
+        loaded = from_file(output_path)
+
+        assert loaded.grid_shape == env.grid_shape
+        np.testing.assert_allclose(
+            np.sort(loaded.bin_centers, axis=0),
+            np.sort(env.bin_centers, axis=0),
+        )

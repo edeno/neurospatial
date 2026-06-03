@@ -236,6 +236,13 @@
   mislabel for a "head direction cell".
 - Dropped unimplemented `exponential_kernel` from the
   `events.regressors` module docstring.
+- `io.nwb.write_trials` no longer misdirects users to `write_region_crossings()`
+  for storing trial *intervals*: that writer stores point events
+  (`crossing_times`, `region_names`, `event_types`), not intervals. The
+  `overwrite` docstring and the `NotImplementedError` message now point to
+  adding a separate `pynwb.epoch.TimeIntervals` table (via
+  `nwbfile.add_time_intervals`) with its own `start_time`/`stop_time` columns,
+  readable back via `read_intervals`.
 
 ### Bug fixes
 
@@ -263,6 +270,15 @@
   reduction operation fmax which has no identity` (e.g.
   `compute_directional_rates([], ...).summary()`); it now returns a dict with
   `n_neurons=0` and a `NaN` `peak_firing_rate`.
+- Anisotropic pixel-mask environments now round-trip through
+  `Environment.to_dict()`/`from_dict()` (and `to_file`/`from_file`) again. An
+  env built with `from_pixel_mask(mask, pixel_size=(3.0, 1.0))` serialized
+  `pixel_size` as a list; deserialization rebuilt it as an ndarray, and the
+  scalar `pixel_size <= 0` validation in `ImageMaskLayout.build` then raised
+  `ValueError: The truth value of an array with more than one element is
+  ambiguous`. The validation is now array-safe
+  (`np.any(np.asarray(pixel_size, dtype=float) <= 0)`) and covers both scalar
+  and per-axis pixel sizes.
 - `decode_position` now raises a clear `ValueError` when `encoding_models` has
   **no finite bins** — every spatial bin is non-finite (`NaN` **or** `Inf`)
   across all neurons (e.g. `np.full((n_neurons, n_bins), np.nan)` or
