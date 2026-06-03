@@ -97,6 +97,21 @@
   directional-place-field gap previously reachable only from a `Trial` via
   `goal_pair_direction_labels`. Exported from `neurospatial.behavior`.
 
+### API changes
+
+- Renamed the `random_state` argument to `rng` in `detect_assemblies`
+  (`neurospatial.decoding`) and in `select_basis_centers`,
+  `geodesic_rbf_basis`, `heat_kernel_wavelet_basis`, `chebyshev_filter_basis`,
+  and `spatial_basis` (`neurospatial.ops.basis`), for consistency with the
+  rest of the library. Both `int` seeds and `np.random.Generator` instances
+  are still accepted. Pre-1.0: no alias is kept — update call sites to `rng=`.
+- `fit_isotonic_trajectory` no longer takes a mandatory leading `env`; `env`
+  is now an optional keyword-only argument (it was unused). Drop the `None`
+  you previously passed as the first positional argument.
+- `decoding_error`'s `env` is now keyword-only (was an optional 3rd positional).
+- `confusion_matrix`'s `summary_method` argument was renamed to `method`,
+  matching `fit_isotonic_trajectory`.
+
 ### Breaking changes
 
 - **Egocentric polar space is now a distinct type.**

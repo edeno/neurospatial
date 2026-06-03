@@ -371,7 +371,7 @@ def detect_assemblies(
     algorithm: Literal["ica", "pca", "nmf"] = "ica",
     n_components: int | Literal["auto"] = "auto",
     z_threshold: float = 2.0,
-    random_state: int | None = None,
+    rng: int | np.random.Generator | None = None,
 ) -> AssemblyDetectionResult:
     """
     Detect cell assemblies from population spike counts.
@@ -408,8 +408,10 @@ def detect_assemblies(
         - 2.5: Conservative threshold
         - 1.5: Liberal threshold
 
-    random_state : int, optional
-        Random seed for reproducibility. Affects ICA and NMF initialization.
+    rng : int or np.random.Generator, optional
+        Random seed or generator for reproducibility. Affects ICA and NMF
+        initialization. Both ``int`` seeds and ``np.random.Generator``
+        instances are accepted.
 
     Returns
     -------
@@ -540,18 +542,26 @@ def detect_assemblies(
                 f"n_components ({n_comp}) cannot exceed n_neurons ({n_neurons})"
             )
 
+    # Derive an integer seed for sklearn from the public ``rng`` argument.
+    # sklearn estimators accept an int seed (or RandomState), not a numpy
+    # Generator, so normalize a Generator to a reproducible integer seed.
+    if rng is None:
+        seed: int | None = None
+    elif isinstance(rng, np.random.Generator):
+        seed = int(rng.integers(0, 2**32 - 1))
+    else:
+        seed = int(rng)
+
     # Perform dimensionality reduction
     if algorithm == "pca":
         patterns, activations, explained_var = _detect_pca(spike_counts_z, n_comp)
     elif algorithm == "ica":
-        patterns, activations, explained_var = _detect_ica(
-            spike_counts_z, n_comp, random_state
-        )
+        patterns, activations, explained_var = _detect_ica(spike_counts_z, n_comp, seed)
     elif algorithm == "nmf":
         patterns, activations, explained_var = _detect_nmf(
             spike_counts,
             n_comp,
-            random_state,  # NMF uses original counts
+            seed,  # NMF uses original counts
         )
     else:
         raise ValueError(f"Unknown algorithm: {algorithm}. Use 'ica', 'pca', or 'nmf'.")

@@ -655,6 +655,6 @@ class DecodingResult(ResultMixin):
         return decoding_error(
             self.map_position,
             aligned,
-            self.env,
+            env=self.env,
             metric=metric,
         )

@@ -70,6 +70,7 @@ def _assign_gaussian_weights_from_distance(
 def compute_diffusion_kernels(
     graph: nx.Graph,
     bandwidth_sigma: float,
+    *,
     bin_sizes: NDArray | None = None,
     mode: Literal["transition", "density"] = "transition",
 ) -> NDArray[np.float64]:

@@ -30,8 +30,8 @@ if TYPE_CHECKING:
 def decoding_error(
     decoded_positions: NDArray[np.float64],
     actual_positions: NDArray[np.float64],
-    env: Environment | None = None,
     *,
+    env: Environment | None = None,
     metric: Literal["euclidean", "geodesic"] = "euclidean",
 ) -> NDArray[np.float64]:
     """Compute position error for each time bin.
@@ -231,7 +231,7 @@ def confusion_matrix(
     posterior: NDArray[np.float64],
     actual_bins: NDArray[np.int64],
     *,
-    summary_method: Literal["map", "expected"] = "map",
+    method: Literal["map", "expected"] = "map",
 ) -> NDArray[np.float64]:
     """Confusion matrix between decoded and actual bin indices.
 
@@ -247,7 +247,7 @@ def confusion_matrix(
         Each row should sum to 1.0.
     actual_bins : NDArray[np.int64], shape (n_time_bins,)
         Ground truth bin indices. Values must be in [0, n_bins).
-    summary_method : {"map", "expected"}, default="map"
+    method : {"map", "expected"}, default="map"
         How to summarize the posterior for each time bin:
 
         - "map": Use argmax (most likely bin). Returns integer counts.
@@ -261,14 +261,14 @@ def confusion_matrix(
     -------
     cm : NDArray[np.float64], shape (n_bins, n_bins)
         Confusion matrix. Rows are actual bins, columns are decoded bins.
-        For ``summary_method="map"``, the matrix sums to n_time_bins.
-        For ``summary_method="expected"``, each row sums to the count of that bin's
+        For ``method="map"``, the matrix sums to n_time_bins.
+        For ``method="expected"``, each row sums to the count of that bin's
         occurrences in actual_bins.
 
     Raises
     ------
     ValueError
-        If ``summary_method`` is not "map" or "expected".
+        If ``method`` is not "map" or "expected".
         If ``actual_bins`` contains values outside [0, n_bins).
         If shapes are inconsistent.
 
@@ -295,7 +295,7 @@ def confusion_matrix(
 
     >>> posterior = np.eye(n_bins)  # Delta functions
     >>> actual_bins = np.arange(n_bins)
-    >>> cm = confusion_matrix(env, posterior, actual_bins, summary_method="map")
+    >>> cm = confusion_matrix(env, posterior, actual_bins, method="map")
     >>> bool(np.allclose(cm, np.eye(n_bins)))
     True
 
@@ -310,11 +310,9 @@ def confusion_matrix(
     n_bins = env.n_bins
     n_time_bins = posterior.shape[0]
 
-    # Validate summary_method
-    if summary_method not in ("map", "expected"):
-        raise ValueError(
-            f"Invalid summary_method '{summary_method}'. Must be 'map' or 'expected'."
-        )
+    # Validate method
+    if method not in ("map", "expected"):
+        raise ValueError(f"Invalid method '{method}'. Must be 'map' or 'expected'.")
 
     # Validate shapes
     if posterior.ndim != 2:
@@ -359,13 +357,13 @@ def confusion_matrix(
             stacklevel=2,
         )
 
-    if summary_method == "map":
+    if method == "map":
         # Use argmax to get decoded bin for each (finite) time step.
         decoded_bins = np.argmax(posterior[finite_rows], axis=1)
         # Vectorized counting using np.add.at.
         np.add.at(cm, (actual_bins[finite_rows], decoded_bins), 1.0)
 
-    else:  # summary_method == "expected"
+    else:  # method == "expected"
         # Accumulate posterior mass only from finite rows.
         np.add.at(cm, actual_bins[finite_rows], posterior[finite_rows])
 

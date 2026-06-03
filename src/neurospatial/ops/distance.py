@@ -55,6 +55,7 @@ def euclidean_distance_matrix(centers: NDArray[np.float64]) -> NDArray[np.float6
 def geodesic_distance_matrix(
     G: nx.Graph,
     n_states: int,
+    *,
     weight: str = "distance",
 ) -> NDArray[np.float64]:
     """Compute geodesic (shortest-path) distance matrix on a graph.
@@ -410,6 +411,7 @@ def distance_field(
 def pairwise_distances(
     G: nx.Graph,
     nodes: list[int] | NDArray[np.int_],
+    *,
     weight: str = "distance",
 ) -> NDArray[np.float64]:
     """Compute pairwise geodesic distances between specified nodes.

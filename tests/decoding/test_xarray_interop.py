@@ -107,7 +107,7 @@ class TestErrorAgainst:
         for d in range(n_dims):
             aligned[:, d] = np.interp(decode_times, true_times, true_positions[:, d])
         expected = decoding_error(
-            result.map_position, aligned, small_2d_env, metric="euclidean"
+            result.map_position, aligned, env=small_2d_env, metric="euclidean"
         )
 
         np.testing.assert_allclose(errors, expected)

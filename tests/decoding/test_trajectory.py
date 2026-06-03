@@ -82,7 +82,7 @@ class TestFitIsotonicTrajectory:
         posterior = rng.random((n_time_bins, n_bins))
         posterior /= posterior.sum(axis=1, keepdims=True)
 
-        result = fit_isotonic_trajectory(None, posterior, times)
+        result = fit_isotonic_trajectory(posterior, times)
 
         assert result.fitted_positions.shape == (n_time_bins,)
 
@@ -98,7 +98,7 @@ class TestFitIsotonicTrajectory:
         posterior = rng.random((n_time_bins, n_bins))
         posterior /= posterior.sum(axis=1, keepdims=True)
 
-        result = fit_isotonic_trajectory(None, posterior, times)
+        result = fit_isotonic_trajectory(posterior, times)
 
         assert result.residuals.shape == (n_time_bins,)
 
@@ -116,7 +116,7 @@ class TestFitIsotonicTrajectory:
         for t, pos in enumerate(map_positions):
             posterior[t, pos] = 1.0
 
-        result = fit_isotonic_trajectory(None, posterior, times)
+        result = fit_isotonic_trajectory(posterior, times)
 
         assert result.direction == "increasing"
         assert result.r_squared > 0.99  # Should be near-perfect fit
@@ -135,7 +135,7 @@ class TestFitIsotonicTrajectory:
         for t, pos in enumerate(map_positions):
             posterior[t, pos] = 1.0
 
-        result = fit_isotonic_trajectory(None, posterior, times)
+        result = fit_isotonic_trajectory(posterior, times)
 
         assert result.direction == "decreasing"
         assert result.r_squared > 0.99  # Should be near-perfect fit
@@ -154,7 +154,7 @@ class TestFitIsotonicTrajectory:
         for t, pos in enumerate(map_positions):
             posterior[t, pos] = 1.0
 
-        result = fit_isotonic_trajectory(None, posterior, times, increasing=True)
+        result = fit_isotonic_trajectory(posterior, times, increasing=True)
 
         assert result.direction == "increasing"
 
@@ -172,7 +172,7 @@ class TestFitIsotonicTrajectory:
         for t, pos in enumerate(map_positions):
             posterior[t, pos] = 1.0
 
-        result = fit_isotonic_trajectory(None, posterior, times, increasing=False)
+        result = fit_isotonic_trajectory(posterior, times, increasing=False)
 
         assert result.direction == "decreasing"
 
@@ -193,7 +193,7 @@ class TestFitIsotonicTrajectory:
         for t, pos in enumerate(noisy_positions):
             posterior[t, pos] = 1.0
 
-        result = fit_isotonic_trajectory(None, posterior, times)
+        result = fit_isotonic_trajectory(posterior, times)
 
         # Check monotonicity
         diffs = np.diff(result.fitted_positions)
@@ -215,7 +215,7 @@ class TestFitIsotonicTrajectory:
         posterior /= posterior.sum(axis=1, keepdims=True)
 
         with pytest.raises(ValueError, match=r"method.*map.*expected"):
-            fit_isotonic_trajectory(None, posterior, times, method="invalid")
+            fit_isotonic_trajectory(posterior, times, method="invalid")
 
 
 @pytest.fixture

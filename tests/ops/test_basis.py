@@ -92,14 +92,14 @@ class TestSelectBasisCenters:
 
     def test_random_state_reproducibility(self, simple_2d_env):
         """Same random_state should give same results."""
-        c1 = select_basis_centers(simple_2d_env, n_centers=10, random_state=42)
-        c2 = select_basis_centers(simple_2d_env, n_centers=10, random_state=42)
+        c1 = select_basis_centers(simple_2d_env, n_centers=10, rng=42)
+        c2 = select_basis_centers(simple_2d_env, n_centers=10, rng=42)
         assert_allclose(c1, c2)
 
     def test_different_random_states_differ(self, simple_2d_env):
         """Different random_states should give different results."""
-        c1 = select_basis_centers(simple_2d_env, n_centers=10, random_state=42)
-        c2 = select_basis_centers(simple_2d_env, n_centers=10, random_state=123)
+        c1 = select_basis_centers(simple_2d_env, n_centers=10, rng=42)
+        c2 = select_basis_centers(simple_2d_env, n_centers=10, rng=123)
         # Not guaranteed to be different but highly likely for kmeans
         # Just check they are both valid
         assert len(c1) == len(c2) == 10
@@ -134,7 +134,7 @@ class TestSelectBasisCenters:
     def test_farthest_point_maximizes_spread(self, linear_env):
         """Farthest point should maximize spatial spread."""
         centers = select_basis_centers(
-            linear_env, n_centers=3, method="farthest_point", random_state=42
+            linear_env, n_centers=3, method="farthest_point", rng=42
         )
         # In a linear environment, 3 farthest points should be spread out
         # (near start, middle, end)
@@ -405,8 +405,8 @@ class TestSpatialBasis:
 
     def test_random_state_reproducibility(self, simple_2d_env):
         """Same random_state should give same results."""
-        b1 = spatial_basis(simple_2d_env, random_state=42)
-        b2 = spatial_basis(simple_2d_env, random_state=42)
+        b1 = spatial_basis(simple_2d_env, rng=42)
+        b2 = spatial_basis(simple_2d_env, rng=42)
         assert_allclose(b1, b2)
 
 
