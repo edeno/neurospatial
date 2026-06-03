@@ -349,7 +349,7 @@ class DirectionalRateResult(SpatialResultMixin):
         ...     bandwidth=None,
         ... )
         >>> pref = result.preferred_direction()
-        >>> np.abs(pref - np.pi / 2) < 0.1  # Close to 90 degrees
+        >>> bool(np.abs(pref - np.pi / 2) < 0.1)  # Close to 90 degrees
         True
 
         See Also
@@ -400,7 +400,7 @@ class DirectionalRateResult(SpatialResultMixin):
         ...     bandwidth=None,
         ... )
         >>> pref_deg = result.preferred_direction_deg()
-        >>> np.abs(pref_deg - 90) < 6  # Close to 90 degrees
+        >>> bool(np.abs(pref_deg - 90) < 6)  # Close to 90 degrees
         True
         """
         return float(np.degrees(self.preferred_direction()))
@@ -983,10 +983,11 @@ class DirectionalRatesResult(SpatialResultMixin):
     >>> from neurospatial.encoding.directional import DirectionalRatesResult
 
     >>> # Create batch result (5 neurons)
+    >>> rng = np.random.default_rng(0)
     >>> n_neurons = 5
     >>> n_bins = 60
     >>> bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
-    >>> firing_rates = np.random.rand(n_neurons, n_bins) * 10
+    >>> firing_rates = rng.random((n_neurons, n_bins)) * 10
     >>> occupancy = np.ones(n_bins) * 0.5
 
     >>> result = DirectionalRatesResult(
@@ -1009,9 +1010,9 @@ class DirectionalRatesResult(SpatialResultMixin):
     'DirectionalRateResult'
 
     >>> # Iterate over neurons
-    >>> for i, r in enumerate(result):
-    ...     peak_rate = np.max(r.firing_rate)
-    ...     print(f"Neuron {i}: peak = {peak_rate:.2f} Hz")
+    >>> peaks = [float(np.max(r.firing_rate)) for r in result]
+    >>> len(peaks)
+    5
 
     See Also
     --------
@@ -1059,9 +1060,21 @@ class DirectionalRatesResult(SpatialResultMixin):
 
         Examples
         --------
+        >>> import numpy as np
+        >>> from neurospatial.encoding.directional import DirectionalRatesResult
+        >>> n_bins = 60
+        >>> bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        >>> rng = np.random.default_rng(0)
+        >>> result = DirectionalRatesResult(
+        ...     firing_rates=rng.random((3, n_bins)) * 10,
+        ...     occupancy=np.ones(n_bins) * 0.5,
+        ...     bin_centers=bin_centers,
+        ...     bin_size=np.pi / 30,
+        ...     bandwidth=None,
+        ... )
         >>> single = result[0]
         >>> single.firing_rate.shape
-        (n_bins,)
+        (60,)
         """
         rates: NDArray[np.float64] = np.asarray(self.firing_rates)
         counts = self.spike_counts
@@ -1084,9 +1097,21 @@ class DirectionalRatesResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> for result in results:
-        ...     peak = np.max(result.firing_rate)
-        ...     print(f"Peak rate: {peak:.2f} Hz")
+        >>> import numpy as np
+        >>> from neurospatial.encoding.directional import DirectionalRatesResult
+        >>> n_bins = 60
+        >>> bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        >>> rng = np.random.default_rng(0)
+        >>> results = DirectionalRatesResult(
+        ...     firing_rates=rng.random((3, n_bins)) * 10,
+        ...     occupancy=np.ones(n_bins) * 0.5,
+        ...     bin_centers=bin_centers,
+        ...     bin_size=np.pi / 30,
+        ...     bandwidth=None,
+        ... )
+        >>> peaks = [float(np.max(result.firing_rate)) for result in results]
+        >>> len(peaks)
+        3
         """
         for i in range(len(self)):
             yield self[i]
@@ -1146,9 +1171,21 @@ class DirectionalRatesResult(SpatialResultMixin):
 
         Examples
         --------
+        >>> import numpy as np
+        >>> from neurospatial.encoding.directional import DirectionalRatesResult
+        >>> n_bins = 60
+        >>> bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        >>> rng = np.random.default_rng(0)
+        >>> result = DirectionalRatesResult(
+        ...     firing_rates=rng.random((3, n_bins)) * 10,
+        ...     occupancy=np.ones(n_bins) * 0.5,
+        ...     bin_centers=bin_centers,
+        ...     bin_size=np.pi / 30,
+        ...     bandwidth=None,
+        ... )
         >>> pref_dirs = result.preferred_directions()
         >>> pref_dirs.shape
-        (n_neurons,)
+        (3,)
 
         See Also
         --------
@@ -1191,9 +1228,21 @@ class DirectionalRatesResult(SpatialResultMixin):
 
         Examples
         --------
+        >>> import numpy as np
+        >>> from neurospatial.encoding.directional import DirectionalRatesResult
+        >>> n_bins = 60
+        >>> bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        >>> rng = np.random.default_rng(0)
+        >>> result = DirectionalRatesResult(
+        ...     firing_rates=rng.random((3, n_bins)) * 10,
+        ...     occupancy=np.ones(n_bins) * 0.5,
+        ...     bin_centers=bin_centers,
+        ...     bin_size=np.pi / 30,
+        ...     bandwidth=None,
+        ... )
         >>> mvls = result.mean_vector_lengths()
         >>> mvls.shape
-        (n_neurons,)
+        (3,)
 
         See Also
         --------
@@ -1232,9 +1281,21 @@ class DirectionalRatesResult(SpatialResultMixin):
 
         Examples
         --------
+        >>> import numpy as np
+        >>> from neurospatial.encoding.directional import DirectionalRatesResult
+        >>> n_bins = 60
+        >>> bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        >>> rng = np.random.default_rng(0)
+        >>> result = DirectionalRatesResult(
+        ...     firing_rates=rng.random((3, n_bins)) * 10,
+        ...     occupancy=np.ones(n_bins) * 0.5,
+        ...     bin_centers=bin_centers,
+        ...     bin_size=np.pi / 30,
+        ...     bandwidth=None,
+        ... )
         >>> widths = result.tuning_widths()
         >>> widths.shape
-        (n_neurons,)
+        (3,)
 
         See Also
         --------
@@ -1274,10 +1335,22 @@ class DirectionalRatesResult(SpatialResultMixin):
 
         Examples
         --------
+        >>> import numpy as np
+        >>> from neurospatial.encoding.directional import DirectionalRatesResult
+        >>> n_bins = 60
+        >>> bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        >>> rng = np.random.default_rng(0)
+        >>> result = DirectionalRatesResult(
+        ...     firing_rates=rng.random((3, n_bins)) * 10,
+        ...     occupancy=np.ones(n_bins) * 0.5,
+        ...     bin_centers=bin_centers,
+        ...     bin_size=np.pi / 30,
+        ...     bandwidth=None,
+        ... )
         >>> is_hd = result.detect_hd_cells()
         >>> is_hd.shape
-        (n_neurons,)
-        >>> n_hd_cells = np.sum(is_hd)
+        (3,)
+        >>> n_hd_cells = int(np.sum(is_hd))
 
         See Also
         --------
@@ -1339,20 +1412,34 @@ class DirectionalRatesResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> result = DirectionalRatesResult(...)
+        >>> import numpy as np
+        >>> from neurospatial.encoding.directional import DirectionalRatesResult
+        >>> n_bins = 60
+        >>> bin_centers = np.linspace(0, 2 * np.pi, n_bins, endpoint=False)
+        >>> rng = np.random.default_rng(0)
+        >>> result = DirectionalRatesResult(
+        ...     firing_rates=rng.random((3, n_bins)) * 10,
+        ...     occupancy=np.ones(n_bins) * 0.5,
+        ...     bin_centers=bin_centers,
+        ...     bin_size=np.pi / 30,
+        ...     bandwidth=None,
+        ... )
         >>> df = result.to_dataframe()
-        >>> print(df.head())
-           neuron_id  preferred_direction  preferred_direction_deg  ...
+        >>> len(df)
+        3
+        >>> "is_head_direction_cell" in df.columns
+        True
 
         >>> # Filter for HD cells
         >>> hd_cells = df[df["is_head_direction_cell"]]
-        >>> print(f"Found {len(hd_cells)} HD cells")
 
         >>> # Sort by mean vector length
-        >>> top_cells = df.sort_values("mean_vector_length", ascending=False).head(10)
+        >>> top_cells = df.sort_values("mean_vector_length", ascending=False)
 
         >>> # Custom neuron identifiers
         >>> df = result.to_dataframe(neuron_ids=["unit_0", "unit_1", "unit_2"])
+        >>> list(df["neuron_id"])
+        ['unit_0', 'unit_1', 'unit_2']
 
         See Also
         --------
@@ -1502,14 +1589,15 @@ def compute_directional_rate(
     >>> from neurospatial.encoding.directional import compute_directional_rate
 
     >>> # Create trajectory and spike times
+    >>> rng = np.random.default_rng(0)
     >>> times = np.linspace(0, 60, 1800)  # 60 seconds at 30 Hz
-    >>> headings = np.random.uniform(0, 2 * np.pi, 1800)
-    >>> spike_times = np.random.uniform(0, 60, 100)  # 100 spikes
+    >>> headings = rng.uniform(0, 2 * np.pi, 1800)
+    >>> spike_times = np.sort(rng.uniform(0, 60, 100))  # 100 spikes, sorted
 
     >>> # Compute directional rate (radians)
     >>> result = compute_directional_rate(spike_times, times, headings)
-    >>> result.preferred_direction()  # doctest: +SKIP
-    1.57...
+    >>> result.firing_rate.shape
+    (60,)
 
     >>> # With smoothing
     >>> result = compute_directional_rate(
@@ -1730,24 +1818,25 @@ def compute_directional_rates(
     >>> from neurospatial.encoding.directional import compute_directional_rates
 
     >>> # Create trajectory and spike times
+    >>> rng = np.random.default_rng(0)
     >>> times = np.linspace(0, 60, 1800)  # 60 seconds at 30 Hz
-    >>> headings = np.random.uniform(0, 2 * np.pi, 1800)
+    >>> headings = rng.uniform(0, 2 * np.pi, 1800)
     >>> spike_times = [
-    ...     np.random.uniform(0, 60, 100),  # Neuron 0
-    ...     np.random.uniform(0, 60, 150),  # Neuron 1
-    ...     np.random.uniform(0, 60, 80),  # Neuron 2
+    ...     np.sort(rng.uniform(0, 60, 100)),  # Neuron 0
+    ...     np.sort(rng.uniform(0, 60, 150)),  # Neuron 1
+    ...     np.sort(rng.uniform(0, 60, 80)),  # Neuron 2
     ... ]
 
     >>> # Compute batch
     >>> result = compute_directional_rates(spike_times, times, headings)
-    >>> result.firing_rates.shape  # doctest: +SKIP
+    >>> result.firing_rates.shape
     (3, 60)
 
     >>> # With parallelization
     >>> result = compute_directional_rates(spike_times, times, headings, n_jobs=-1)
 
     >>> # Using degrees
-    >>> headings_deg = np.random.uniform(0, 360, 1800)
+    >>> headings_deg = np.degrees(headings)
     >>> result = compute_directional_rates(
     ...     spike_times, times, headings_deg, bin_size=6.0, angle_unit="deg"
     ... )
@@ -2072,9 +2161,10 @@ def plot_head_direction_tuning(
     ...     compute_directional_rate,
     ...     plot_head_direction_tuning,
     ... )
+    >>> rng = np.random.default_rng(0)
     >>> times = np.linspace(0, 60, 1800)
-    >>> headings = np.random.uniform(0, 2 * np.pi, 1800)
-    >>> spike_times = np.random.uniform(0, 60, 100)
+    >>> headings = rng.uniform(0, 2 * np.pi, 1800)
+    >>> spike_times = np.sort(rng.uniform(0, 60, 100))
     >>> result = compute_directional_rate(spike_times, times, headings)
     >>> ax = plot_head_direction_tuning(result)  # doctest: +SKIP
 
