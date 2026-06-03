@@ -54,6 +54,7 @@ neurospatial.stats.surrogates : Surrogate data generation
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Generator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
@@ -266,6 +267,14 @@ def shuffle_cell_identity(
     encoding_models : NDArray[np.float64], shape (n_neurons, n_bins)
         Original encoding models (unchanged, same object).
 
+    Raises
+    ------
+    ValueError
+        If the number of neurons in ``spike_counts`` (columns) does not
+        match the number of rows in ``encoding_models``. Row i of
+        ``encoding_models`` is the place field for neuron i (column i of
+        ``spike_counts``); a mismatch would silently yield wrong decodes.
+
     Notes
     -----
     - Randomly permutes columns of spike_counts (neuron axis)
@@ -305,6 +314,16 @@ def shuffle_cell_identity(
     """
     generator = _ensure_rng(rng)
     n_neurons = spike_counts.shape[1]
+
+    if encoding_models.shape[0] != n_neurons:
+        raise ValueError(
+            f"spike_counts has {n_neurons} neuron(s) (columns) but "
+            f"encoding_models has {encoding_models.shape[0]} (rows). These must "
+            f"match: row i of encoding_models is the place field for neuron i "
+            f"(column i of spike_counts).\n"
+            f"Fix: pass spike_counts shaped (n_time_bins, n_neurons) and "
+            f"encoding_models shaped (n_neurons, n_bins)."
+        )
 
     for _ in range(n_shuffles):
         # Generate a random permutation of column indices
@@ -970,6 +989,11 @@ def compute_shuffle_pvalue(
     For replay analysis, "greater" is typically used because we expect
     significant sequences to have higher scores than shuffled controls.
 
+    Non-finite null scores (NaN or Inf) are dropped with a ``UserWarning``
+    and excluded from ``n`` before the p-value is computed; otherwise they
+    would silently bias the p-value toward significance. If no finite null
+    scores remain, a ``ValueError`` is raised.
+
     References
     ----------
     .. [1] Phipson, B., & Smyth, G. K. (2010). Permutation P-values should
@@ -997,7 +1021,27 @@ def compute_shuffle_pvalue(
     compute_shuffle_zscore : Compute z-score from null distribution.
     ShuffleTestResult : Container for shuffle test results.
     """
+    null_scores = np.asarray(null_scores, dtype=np.float64).ravel()
+    finite = np.isfinite(null_scores)
+    n_total = null_scores.size
+    if not finite.all():
+        n_dropped = int(n_total - finite.sum())
+        warnings.warn(
+            f"Dropped {n_dropped} non-finite null score(s) out of {n_total} "
+            f"before computing the p-value. Using {int(finite.sum())} finite "
+            f"null scores; non-finite nulls would otherwise bias the p-value "
+            f"toward significance.",
+            category=UserWarning,
+            stacklevel=2,
+        )
+        null_scores = null_scores[finite]
+
     n = len(null_scores)
+    if n == 0:
+        raise ValueError(
+            "null_scores contains no finite values; cannot compute a "
+            "shuffle p-value. Check that the shuffle produced valid scores."
+        )
 
     if tail == "greater":
         # Count how many null values are >= observed

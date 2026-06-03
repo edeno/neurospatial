@@ -112,7 +112,7 @@ class TestValidateCircularInput:
 
         angles = np.array([0.0, np.nan, np.pi, np.nan, 2 * np.pi])
         with pytest.warns(UserWarning, match="Removed.*NaN"):
-            result = _validate_circular_input(angles, "angles")
+            result, _ = _validate_circular_input(angles, "angles")
         assert len(result) == 3
         assert not np.any(np.isnan(result))
 
@@ -138,7 +138,7 @@ class TestValidateCircularInput:
 
         angles = np.array([-np.pi, 3 * np.pi, 5 * np.pi])
         with pytest.warns(UserWarning, match="outside \\[0, 2pi\\]"):
-            result = _validate_circular_input(angles, "angles")
+            result, _ = _validate_circular_input(angles, "angles")
         # All should be wrapped to [0, 2pi)
         assert np.all(result >= 0)
         assert np.all(result < 2 * np.pi)

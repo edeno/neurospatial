@@ -351,3 +351,59 @@ class TestShufflePairingDestruction:
 
         # E[|r|] ~ sqrt(2 / (pi * (m-1))) ~ 0.057 for m=199; well under 0.1.
         assert np.mean(abs_corrs) < 0.1
+
+
+# ---------------------------------------------------------------------------
+# compute_shuffle_pvalue: non-finite null handling.
+# ---------------------------------------------------------------------------
+
+
+def test_compute_shuffle_pvalue_drops_nan_nulls():
+    """Non-finite null scores are dropped (with a warning) and excluded from n."""
+    null = np.array([1.0, 2.0, np.nan, 4.0])
+    with pytest.warns(UserWarning, match="non-finite"):
+        p = compute_shuffle_pvalue(10.0, null, tail="greater")
+    # n reduced to 3 finite values, none >= 10 -> (0 + 1) / (3 + 1) = 0.25.
+    assert_allclose(p, 0.25)
+
+
+def test_compute_shuffle_pvalue_all_nan_raises():
+    """An all-non-finite null distribution raises a ValueError."""
+    with (
+        pytest.warns(UserWarning, match="non-finite"),
+        pytest.raises(ValueError, match="no finite values"),
+    ):
+        compute_shuffle_pvalue(5.0, np.full(4, np.nan))
+
+
+def test_compute_shuffle_pvalue_finite_unchanged():
+    """All-finite null reproduces the documented value (finite path untouched)."""
+    null = np.array([1.0, 2.0, 3.0, 4.0])
+    p = compute_shuffle_pvalue(10.0, null, tail="greater")
+    assert_allclose(p, 0.2)
+
+
+# ---------------------------------------------------------------------------
+# shuffle_cell_identity: neuron-count agreement.
+# ---------------------------------------------------------------------------
+
+
+def test_shuffle_cell_identity_neuron_count_mismatch_raises():
+    """Mismatched neuron counts raise before yielding any shuffle."""
+    spike_counts = np.zeros((5, 3), dtype=np.int64)
+    encoding_models = np.zeros((4, 7), dtype=np.float64)
+    with pytest.raises(ValueError, match=r"3 neuron.*4"):
+        next(shuffle_cell_identity(spike_counts, encoding_models, n_shuffles=2))
+
+
+def test_shuffle_cell_identity_matched_ok():
+    """Matched shapes still yield the right number/shape of arrays."""
+    spike_counts = np.array([[0, 1, 2], [2, 0, 1]], dtype=np.int64)
+    encoding_models = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+    results = list(
+        shuffle_cell_identity(spike_counts, encoding_models, n_shuffles=3, rng=42)
+    )
+    assert len(results) == 3
+    for shuffled, models in results:
+        assert shuffled.shape == spike_counts.shape
+        assert models is encoding_models

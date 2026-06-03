@@ -28,8 +28,12 @@ from numpy.testing import assert_allclose
 from neurospatial.stats.circular import (
     circular_basis,
     circular_basis_metrics,
+    circular_mean,
+    circular_variance,
     is_modulated,
+    mean_resultant_length,
     plot_circular_basis_tuning,
+    rayleigh_test,
     wrap_angle,
 )
 
@@ -103,3 +107,85 @@ def test_plot_circular_basis_tuning_with_data():
     )
     assert ax is not None
     plt.close("all")
+
+
+# ---------------------------------------------------------------------------
+# Weighted circular statistics: weight validation and NaN co-filtering.
+# ---------------------------------------------------------------------------
+
+
+def test_rayleigh_test_length1_weights_raises(concentrated_angles):
+    """A length-1 weight array is a mismatch, never broadcast."""
+    assert len(concentrated_angles) == 20
+    with pytest.raises(ValueError, match="Length mismatch"):
+        rayleigh_test(concentrated_angles, weights=np.array([2.0]))
+
+
+def test_rayleigh_test_negative_weights_raises(concentrated_angles):
+    """A negative weight is rejected (would otherwise allow z < 0)."""
+    weights = np.ones(len(concentrated_angles))
+    weights[3] = -1.0
+    with pytest.raises(ValueError, match="non-negative"):
+        rayleigh_test(concentrated_angles, weights=weights)
+
+
+def test_rayleigh_test_all_zero_weights_raises(concentrated_angles):
+    """All-zero weights raise a ValueError, not a ZeroDivisionError."""
+    weights = np.zeros(len(concentrated_angles))
+    with pytest.raises(ValueError, match="zero"):
+        rayleigh_test(concentrated_angles, weights=weights)
+
+
+def test_rayleigh_test_nan_cofilters_weights(concentrated_angles):
+    """A NaN angle and its weight are dropped together, keeping alignment."""
+    angles = concentrated_angles.copy()
+    weights = np.linspace(1.0, 2.0, len(angles))
+
+    # Insert a NaN at a known index; the matched weight must drop with it.
+    nan_idx = 7
+    angles_with_nan = angles.copy()
+    angles_with_nan[nan_idx] = np.nan
+
+    keep = np.arange(len(angles)) != nan_idx
+    angles_manual = angles[keep]
+    weights_manual = weights[keep]
+
+    with pytest.warns(UserWarning, match="Removed 1 NaN"):
+        z_cofiltered, p_cofiltered = rayleigh_test(angles_with_nan, weights=weights)
+    z_manual, p_manual = rayleigh_test(angles_manual, weights=weights_manual)
+
+    assert_allclose(z_cofiltered, z_manual)
+    assert_allclose(p_cofiltered, p_manual)
+
+
+def test_rayleigh_test_integer_weights_match_replication():
+    """Integer weights reproduce physical replication of each angle."""
+    angles = np.array([0.1, 0.5, 1.0, 2.0, 3.0])
+    counts = np.array([1, 2, 1, 3, 1])
+
+    z_weighted, p_weighted = rayleigh_test(angles, weights=counts.astype(float))
+    z_repeat, p_repeat = rayleigh_test(np.repeat(angles, counts))
+
+    assert_allclose(z_weighted, z_repeat, rtol=1e-9)
+    assert_allclose(p_weighted, p_repeat, rtol=1e-9)
+
+
+def test_mean_resultant_length_length1_weights_raises(concentrated_angles):
+    """``mean_resultant_length`` rejects a length-1 weight array."""
+    with pytest.raises(ValueError, match="Length mismatch"):
+        mean_resultant_length(concentrated_angles, weights=np.array([1.0]))
+
+
+def test_circular_mean_negative_weights_raises(concentrated_angles):
+    """``circular_mean`` rejects negative weights."""
+    weights = np.ones(len(concentrated_angles))
+    weights[0] = -2.0
+    with pytest.raises(ValueError, match="non-negative"):
+        circular_mean(concentrated_angles, weights=weights)
+
+
+def test_circular_variance_weights_validates(concentrated_angles):
+    """``circular_variance`` rejects a mismatched-length weight array."""
+    weights = np.ones(len(concentrated_angles) - 1)
+    with pytest.raises(ValueError, match="Length mismatch"):
+        circular_variance(concentrated_angles, weights=weights)

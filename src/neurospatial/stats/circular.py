@@ -178,6 +178,55 @@ def _to_radians(
     return angles
 
 
+def _validate_weights(
+    angles: NDArray[np.float64],
+    weights: NDArray[np.float64],
+    *,
+    name: str = "weights",
+) -> NDArray[np.float64]:
+    """
+    Validate per-angle weights for weighted circular statistics.
+
+    Weights must be the same length as ``angles`` (a length-1 array is a
+    mismatch, never broadcast) and must be non-negative. This guards the
+    weighted resultant-length / Rayleigh paths against silently producing
+    out-of-range statistics.
+
+    Parameters
+    ----------
+    angles : ndarray of shape (n,)
+        Angles the weights apply to (already raveled to 1-D).
+    weights : ndarray of shape (n,)
+        Per-angle weights, interpreted as counts/frequencies.
+    name : str, default='weights'
+        Argument name for error messages.
+
+    Returns
+    -------
+    ndarray of shape (n,)
+        Validated weights as a float64 array.
+
+    Raises
+    ------
+    ValueError
+        If lengths differ or any weight is negative.
+    """
+    from neurospatial._validation import validate_lengths
+
+    weights = np.asarray(weights, dtype=np.float64).ravel()
+    validate_lengths({"angles": angles, name: weights})
+    if np.any(weights < 0):
+        n_neg = int(np.sum(weights < 0))
+        first = int(np.argmax(weights < 0))
+        raise ValueError(
+            f"{name} must be non-negative (interpreted as counts/frequencies). "
+            f"Found {n_neg} negative value(s) (first at index {first}: "
+            f"{weights[first]!r}). "
+            f"Fix: pass spike counts or occupancy times, not signed quantities."
+        )
+    return weights
+
+
 def _mean_resultant_length(
     angles: NDArray[np.float64],
     weights: NDArray[np.float64] | None = None,
@@ -216,8 +265,8 @@ def _mean_resultant_length(
     sin_angles = np.sin(angles)
 
     if weights is not None:
-        # Normalize weights
-        weights = np.asarray(weights, dtype=np.float64)
+        # Validate (equal length, non-negative); reject length-1 broadcast.
+        weights = _validate_weights(np.ravel(angles), weights)
         weight_sum = np.sum(weights)
         if weight_sum == 0:
             return np.nan
@@ -243,7 +292,8 @@ def _validate_circular_input(
     *,
     min_samples: int = 3,
     check_range: bool = True,
-) -> NDArray[np.float64]:
+    weights: NDArray[np.float64] | None = None,
+) -> tuple[NDArray[np.float64], NDArray[np.float64] | None]:
     """
     Validate circular input array.
 
@@ -257,11 +307,18 @@ def _validate_circular_input(
         Minimum required samples.
     check_range : bool, default=True
         If True, warn if angles outside [0, 2pi].
+    weights : ndarray of shape (n,), optional
+        Optional per-angle weights to keep aligned with ``angles``. If
+        supplied they are validated (equal length, non-negative) up front
+        and co-filtered by the same NaN mask used to drop invalid angles.
 
     Returns
     -------
-    ndarray of shape (m,)
+    angles : ndarray of shape (m,)
         Validated angles with NaN values removed, where m <= n.
+    weights : ndarray of shape (m,) or None
+        Weights co-filtered by the same NaN mask, or ``None`` if no
+        weights were passed.
 
     Raises
     ------
@@ -269,6 +326,8 @@ def _validate_circular_input(
         If validation fails with actionable error message.
     """
     angles = np.asarray(angles, dtype=np.float64).ravel()
+    if weights is not None:
+        weights = _validate_weights(angles, weights, name=f"{name}_weights")
 
     # Check for NaN
     nan_mask = np.isnan(angles)
@@ -295,6 +354,8 @@ def _validate_circular_input(
             )
         # Remove NaN and warn
         angles = angles[~nan_mask]
+        if weights is not None:
+            weights = weights[~nan_mask]
         warnings.warn(
             f"Removed {n_nan} NaN values from {name}. "
             f"Proceeding with {len(angles)} valid samples.",
@@ -330,7 +391,7 @@ def _validate_circular_input(
         )
         angles = angles % (2 * np.pi)
 
-    return angles
+    return angles, weights
 
 
 def _validate_paired_input(
@@ -520,7 +581,10 @@ def rayleigh_test(
     Raises
     ------
     ValueError
-        If angles array is empty, all NaN, or too short.
+        If angles array is empty, all NaN, or too short; if ``weights`` is
+        not the same length as ``angles`` (a length-1 array is rejected,
+        not broadcast) or contains negative values; or if the total weight
+        (sum of weights) is zero.
 
     See Also
     --------
@@ -558,39 +622,37 @@ def rayleigh_test(
     angles = np.asarray(angles, dtype=np.float64)
     angles = _to_radians(angles, angle_unit)
 
-    # Validate input (handles NaN, Inf, minimum samples)
-    angles = _validate_circular_input(
-        angles, "angles", min_samples=3, check_range=False
+    # Validate input (handles NaN drop + Inf + min samples) and co-filter
+    # weights so angle/weight alignment survives NaN removal. Weight
+    # non-negativity and equal-length are enforced inside the validator.
+    angles, weights = _validate_circular_input(
+        angles, "angles", min_samples=3, check_range=False, weights=weights
     )
 
     n = len(angles)
 
-    # Compute mean resultant length
+    # Weighted mean resultant length (weights already validated above).
     r_mean = _mean_resultant_length(angles, weights=weights)
 
     # Effective count for the z-statistic and finite-sample correction.
-    #
-    # We implement the *count-based* (grouped-data) weighted Rayleigh test
-    # of Mardia & Jupp (2000, Section 5.3.5): weights are treated as
-    # frequencies/counts, so weighting angle theta_i by w_i is equivalent
-    # to observing theta_i exactly w_i times. The resultant length used is
-    # the weighted mean resultant length
-    #     R = |sum_i w_i exp(i theta_i)| / sum_i w_i
-    # (computed in _mean_resultant_length), and the matching test statistic
-    # is
-    #     z = (sum_i w_i) * R^2.
-    # For unit weights (w_i = 1) this reduces exactly to the unweighted
-    # z = n * R^2, and integer weights reproduce physically replicating the
-    # angles. (This is distinct from the effective-sample-size form
-    # n_eff = (sum w)^2 / sum(w^2), which estimates equivalent independent
-    # samples for *non-count* weights and is not used here.)
+    # Count-based (grouped-data) weighted Rayleigh (Mardia & Jupp 2000,
+    # Section 5.3.5): n_eff = sum(weights); for unit weights, n_eff = n.
     if weights is not None:
-        weights = np.asarray(weights, dtype=np.float64)
         n_eff: float = float(np.sum(weights))
     else:
         n_eff = float(n)
 
-    # Rayleigh z-statistic: z = n * R^2 (n = total count = sum of weights)
+    # Guard: all-zero (or empty) weights give n_eff == 0. The weighted R
+    # is already NaN in that case; surface an actionable error instead of a
+    # bare ZeroDivisionError in the finite-sample correction below.
+    if n_eff <= 0:
+        raise ValueError(
+            "Total weight (sum of weights) is zero; cannot run the weighted "
+            "Rayleigh test. At least one angle must carry positive weight.\n"
+            "Fix: check that your per-angle counts/occupancy are not all zero."
+        )
+
+    # Rayleigh z-statistic: z = n_eff * R^2.
     z = n_eff * r_mean**2
 
     # P-value with finite-sample correction (Mardia & Jupp, p. 94)
@@ -946,6 +1008,7 @@ def circular_mean(
         Unit of input angles.
     weights : ndarray of shape (n_samples,), optional
         Weights for each angle. If None, uniform weights are used.
+        Must be the same length as ``angles`` and non-negative.
 
     Returns
     -------
@@ -971,7 +1034,7 @@ def circular_mean(
     sin_angles = np.sin(angles)
 
     if weights is not None:
-        weights = np.asarray(weights, dtype=np.float64)
+        weights = _validate_weights(angles, weights)
         weight_sum = np.sum(weights)
         if weight_sum == 0:
             return np.nan
@@ -1005,6 +1068,7 @@ def circular_variance(
         Unit of input angles.
     weights : ndarray of shape (n_samples,), optional
         Weights for each angle. If None, uniform weights are used.
+        Must be the same length as ``angles`` and non-negative.
 
     Returns
     -------
@@ -1050,6 +1114,7 @@ def mean_resultant_length(
         Unit of input angles.
     weights : ndarray of shape (n_samples,), optional
         Weights for each angle. If None, uniform weights are used.
+        Must be the same length as ``angles`` and non-negative.
 
     Returns
     -------

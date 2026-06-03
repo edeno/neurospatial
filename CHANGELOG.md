@@ -4,6 +4,24 @@
 
 ### Bug fixes
 
+- Weighted circular statistics (`rayleigh_test`, `circular_mean`,
+  `circular_variance`, `mean_resultant_length`) now validate that `weights`
+  is the same length as `angles` (a length-1 array is rejected, not
+  broadcast) and is non-negative; previously a mismatched or signed weight
+  array could silently produce an out-of-range result. `rayleigh_test`
+  additionally co-filters `weights` with the same mask used to drop NaN
+  angles (keeping the two arrays aligned), and now raises a `ValueError`
+  when the total weight (sum of weights) is zero instead of raising a bare
+  `ZeroDivisionError` or returning a meaningless statistic.
+- `compute_shuffle_pvalue` now drops non-finite null scores (NaN/Inf) with a
+  warning and excludes them from `n` before computing the p-value;
+  previously they were silently excluded from the count of extreme values
+  while still inflating `n`, biasing the p-value toward significance. An
+  all-non-finite null distribution now raises a `ValueError`.
+- `shuffle_cell_identity` now validates that the number of neurons in
+  `spike_counts` (columns) matches the number of rows in `encoding_models`,
+  raising a `ValueError` instead of silently yielding wrong decodes.
+
 - `compute_egocentric_distance(metric="geodesic")` previously honored only
   the first timestep's targets when called with a time-varying target array
   of shape `(n_time, n_targets, 2)`. Now distances are computed
