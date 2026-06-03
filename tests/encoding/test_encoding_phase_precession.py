@@ -88,6 +88,7 @@ class TestPhasePrecessionModuleStructure:
             "phase_precession",
             "has_phase_precession",
             "plot_phase_precession",
+            "theta_phase",
         }
         assert set(pp_module.__all__) == expected
 
