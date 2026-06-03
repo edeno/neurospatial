@@ -79,7 +79,7 @@ _here = (
 )
 if _here not in sys.path:
     sys.path.insert(0, _here)
-from _style import apply_style  # noqa: E402
+from _style import apply_style
 
 apply_style(figsize=(12, 10))
 
@@ -195,8 +195,11 @@ print(
 # %% [markdown]
 # ## Part 4: Simulate a Place Cell for Comparison
 #
-# A place cell fires when the animal is AT a fixed location. We use
-# this as a negative control - it should NOT pass the OVC classifier.
+# A place cell fires when the animal is AT a fixed location. We use it
+# as a negative control. As Part 9 shows, a structured place cell can
+# still clear the one-shot ``is_object_vector_cell`` info-only screen
+# (its egocentric tuning carries information), but it fails the stricter
+# manual score-plus-info check that captures true object-vector tuning.
 
 # %%
 place_model = PlaceCellModel(
@@ -467,6 +470,11 @@ pc_is_ovc = is_object_vector_cell(
 print("is_object_vector_cell (library, default thresholds):")
 print(f"  OVC -> {ovc_is_ovc}")
 print(f"  Place cell -> {pc_is_ovc}")
+if pc_is_ovc:
+    print(
+        "  (Note: the place cell clears the info-only screen; the stricter "
+        "manual score+info check below rejects it.)"
+    )
 
 # 2. Manual screening on the smoothed tuning we computed in Part 5.
 # Thresholds chosen for this simulation - 0.1 is permissive given the

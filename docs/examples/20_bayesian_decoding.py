@@ -66,15 +66,15 @@ from neurospatial.stats.shuffle import compute_shuffle_pvalue, shuffle_time_bins
 np.random.seed(42)
 
 # Shared styling (Okabe-Ito palette, consistent figure / font sizes)
-import sys
-from pathlib import Path
+import sys  # noqa: E402
+from pathlib import Path  # noqa: E402
 
 _here = (
     str(Path(__file__).resolve().parent) if "__file__" in globals() else str(Path.cwd())
 )
 if _here not in sys.path:
     sys.path.insert(0, _here)
-from _style import apply_style
+from _style import apply_style  # noqa: E402
 
 apply_style(figsize=(12, 5), font_size=12)
 
@@ -532,7 +532,6 @@ print(f"Number of time bins: {len(segment_times)}")
 # %%
 # Fit isotonic trajectory
 iso_result = fit_isotonic_trajectory(
-    None,  # env unused for isotonic fits
     segment_posterior,
     segment_times,
     method="expected",  # Use posterior mean
@@ -634,7 +633,7 @@ for shuffled_spikes in shuffle_time_bins(segment_spikes, n_shuffles=n_shuffles, 
     shuffled_result = decode_position(env, shuffled_spikes, encoding_models, dt)
     # Fit isotonic trajectory
     shuffled_fit = fit_isotonic_trajectory(
-        None, shuffled_result.posterior, segment_times, method="expected"
+        shuffled_result.posterior, segment_times, method="expected"
     )
     null_scores.append(shuffled_fit.r_squared)
 
