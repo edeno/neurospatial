@@ -1021,6 +1021,13 @@ def compute_shuffle_pvalue(
     compute_shuffle_zscore : Compute z-score from null distribution.
     ShuffleTestResult : Container for shuffle test results.
     """
+    if not np.isfinite(observed):
+        raise ValueError(
+            f"observed must be a finite value, got {observed!r}. A non-finite "
+            "observed score makes all comparisons against the null False, which "
+            "would silently return the floor p-value 1/(n+1)."
+        )
+
     null_scores = np.asarray(null_scores, dtype=np.float64).ravel()
     finite = np.isfinite(null_scores)
     n_total = null_scores.size

@@ -1157,6 +1157,16 @@ def explained_variance_reactivation(
             UserWarning,
             stacklevel=2,
         )
+        # With fewer than 3 valid pairs the correlation is undefined: np.corrcoef
+        # returns NaN, and coercing that to 0.0 would masquerade as a confident
+        # "no reactivation". Return NaN statistics so an undefined result reads
+        # as undefined.
+        return ExplainedVarianceResult(
+            explained_variance=np.nan,
+            reversed_ev=np.nan,
+            partial_correlation=np.nan,
+            n_pairs=len(template_valid),
+        )
 
     # Pairwise correlation between template and match correlation vectors.
     r_tm = np.nan_to_num(np.corrcoef(template_valid, match_valid)[0, 1], nan=0.0)

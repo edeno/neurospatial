@@ -255,11 +255,26 @@
   angles (keeping the two arrays aligned), and now raises a `ValueError`
   when the total weight (sum of weights) is zero instead of raising a bare
   `ZeroDivisionError` or returning a meaningless statistic.
+- `explained_variance_reactivation` now returns `np.nan` for
+  `explained_variance`, `reversed_ev`, and `partial_correlation` (with
+  `n_pairs` set to the actual valid-pair count) when fewer than 3 valid
+  neuron pairs survive NaN removal. Previously `np.corrcoef` returned NaN for
+  0/1 pairs and `np.nan_to_num(..., nan=0.0)` coerced it to `0.0`, which read
+  as a confident "no reactivation" rather than an undefined statistic. The
+  existing `UserWarning` is unchanged.
 - `compute_shuffle_pvalue` now drops non-finite null scores (NaN/Inf) with a
   warning and excludes them from `n` before computing the p-value;
   previously they were silently excluded from the count of extreme values
   while still inflating `n`, biasing the p-value toward significance. An
-  all-non-finite null distribution now raises a `ValueError`.
+  all-non-finite null distribution now raises a `ValueError`. A non-finite
+  `observed` score now raises a `ValueError` early instead of silently
+  returning the floor p-value `1/(n+1)` (all comparisons against the null are
+  `False` for a NaN observed).
+- `load_labelme_json` now lets unexpected errors from polygon construction
+  propagate instead of swallowing them: the `except` around `shapely.Polygon`
+  is narrowed to `(TypeError, ValueError, ShapelyError)`, matching the sibling
+  CVAT loaders. Malformed coordinate data is still warned-and-skipped; genuine
+  bugs (e.g. a `KeyError` from a faulty `pixel_to_world` transform) now surface.
 - `shuffle_cell_identity` now validates that the number of neurons in
   `spike_counts` (columns) matches the number of rows in `encoding_models`,
   raising a `ValueError` instead of silently yielding wrong decodes.

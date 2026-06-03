@@ -2336,7 +2336,15 @@ class TestIsObjectVectorCellFreeFunction:
             metric="euclidean",
         )
 
-        for min_info in (0.1, 0.3, 0.6):
+        # Choose thresholds that straddle the fixture cell's actual info value
+        # so that the classifier returns BOTH True (info > min_info) and False
+        # (info <= min_info). A classifier collapsed to a constant would only
+        # ever produce one outcome and must not pass.
+        info = result.egocentric_spatial_information()
+        thresholds = (info - 0.1, info + 0.1)
+
+        outcomes: set[bool] = set()
+        for min_info in thresholds:
             free = is_object_vector_cell(
                 env,
                 spike_times,
@@ -2352,6 +2360,10 @@ class TestIsObjectVectorCellFreeFunction:
             )
             method = result.is_object_vector_cell(min_info=min_info)
             assert free == method
+            outcomes.add(free)
+
+        # Both classification outcomes must occur across the swept thresholds.
+        assert outcomes == {True, False}
 
     def test_removed_kwargs_raise_type_error(
         self,

@@ -313,6 +313,33 @@ class TestLoadLabelmeJson:
 
         assert len(regions) == 0
 
+    def test_unexpected_polygon_error_propagates(self, tmp_path, monkeypatch):
+        """An unexpected error from polygon construction must propagate, not be
+        swallowed.
+
+        The ``except`` around ``shp.Polygon(...)`` is narrowed to
+        ``(TypeError, ValueError, ShapelyError)``; an unrelated error type
+        (e.g. ``KeyError``) should now surface rather than being silently
+        warned-and-skipped.
+        """
+        import neurospatial.regions.io as io_mod
+
+        def _boom(*_args, **_kwargs):
+            raise KeyError("unexpected")
+
+        monkeypatch.setattr(io_mod.shp, "Polygon", _boom)
+
+        json_data = {
+            "shapes": [
+                {"label": "region1", "points": [[0, 0], [10, 0], [10, 10], [0, 10]]}
+            ]
+        }
+        json_path = tmp_path / "boom.json"
+        json_path.write_text(json.dumps(json_data))
+
+        with pytest.raises(KeyError, match="unexpected"):
+            load_labelme_json(json_path)
+
     def test_shapes_key_format(self, tmp_path):
         """Test loading JSON with explicit shapes key."""
         # Implementation expects either {"shapes": [...]} or fallback to empty list if invalid

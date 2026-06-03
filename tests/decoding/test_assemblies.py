@@ -529,6 +529,27 @@ class TestExplainedVarianceReactivation:
         # Should exclude NaN pairs (indices 1 and 2)
         assert result.n_pairs == 4
 
+    def test_too_few_valid_pairs_returns_nan(self) -> None:
+        """Fewer than 3 valid pairs after NaN removal should yield NaN, not 0.0.
+
+        With 0 or 1 valid pair the correlation is undefined; previously
+        np.corrcoef returned NaN which was coerced to 0.0, masquerading as a
+        confident "no reactivation". The statistics must read as undefined.
+        """
+        # 5 raw pairs (passes the n_pairs >= 3 guard) but only 1 finite pair
+        # survives the joint NaN mask.
+        corr1 = np.array([0.1, np.nan, np.nan, np.nan, np.nan])
+        corr2 = np.array([0.1, np.nan, np.nan, np.nan, np.nan])
+
+        with pytest.warns(UserWarning, match="valid pairs after removing NaN"):
+            result = explained_variance_reactivation(corr1, corr2)
+
+        assert np.isnan(result.explained_variance)
+        assert np.isnan(result.reversed_ev)
+        assert np.isnan(result.partial_correlation)
+        # n_pairs reflects the actual count of valid pairs.
+        assert result.n_pairs == 1
+
 
 # =============================================================================
 # Integration Tests

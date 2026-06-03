@@ -191,7 +191,7 @@ def load_labelme_json(
             continue
         try:
             poly = shp.Polygon(pts_transformed)
-        except Exception as e:  # Catch potential shapely errors
+        except (TypeError, ValueError, ShapelyError) as e:  # Polygon construction
             warnings.warn(
                 f"Could not create polygon for shape '{name}' (index {i}): {e}, skipping.",
                 category=UserWarning,

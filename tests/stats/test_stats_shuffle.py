@@ -376,6 +376,15 @@ def test_compute_shuffle_pvalue_all_nan_raises():
         compute_shuffle_pvalue(5.0, np.full(4, np.nan))
 
 
+def test_compute_shuffle_pvalue_nan_observed_raises():
+    """A non-finite ``observed`` raises rather than silently returning 1/(n+1)."""
+    null = np.array([1.0, 2.0, 3.0, 4.0])
+    with pytest.raises(ValueError, match="observed must be a finite value"):
+        compute_shuffle_pvalue(np.nan, null, tail="greater")
+    with pytest.raises(ValueError, match="observed must be a finite value"):
+        compute_shuffle_pvalue(np.inf, null, tail="greater")
+
+
 def test_compute_shuffle_pvalue_finite_unchanged():
     """All-finite null reproduces the documented value (finite path untouched)."""
     null = np.array([1.0, 2.0, 3.0, 4.0])
