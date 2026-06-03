@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+All notable changes to this project are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+While the project is pre-1.0, minor releases may still include breaking changes;
+these are called out under a dedicated **Breaking changes** heading.
+
+## [Unreleased]
 
 ### Added
 
@@ -112,7 +119,7 @@
   directional-place-field gap previously reachable only from a `Trial` via
   `goal_pair_direction_labels`. Exported from `neurospatial.behavior`.
 
-### API changes
+### Changed
 
 - Renamed the `random_state` argument to `rng` in `detect_assemblies`
   (`neurospatial.decoding`) and in `select_basis_centers`,
@@ -244,7 +251,7 @@
   `nwbfile.add_time_intervals`) with its own `start_time`/`stop_time` columns,
   readable back via `read_intervals`.
 
-### Bug fixes
+### Fixed
 
 - `DirectionalPlaceFields.to_dataframe()` no longer crashes on an empty result.
   When `compute_directional_place_fields` excludes every sample as `"other"`
@@ -426,7 +433,6 @@
   warning and silently returning `-1`/`inf`. The legitimate
   outside-the-environment sentinel (in-dimension points that fall outside
   the active bins) is unchanged.
-
 - `compute_egocentric_distance(metric="geodesic")` previously honored only
   the first timestep's targets when called with a time-varying target array
   of shape `(n_time, n_targets, 2)`. Now distances are computed
@@ -462,6 +468,84 @@
   be validated must not pass a speed gate it never satisfied; e.g. a run slice
   like `[bin, -1, bin]` with `min_speed > 0` is now dropped. Runs with `min_speed
   is None` and fully on-environment runs are unaffected.
+- Masked-grid occupancy is now routed correctly. `_allocate_time_linear`
+  translates full-grid ray-intersection indices to active-bin ids through a
+  prebuilt inverse map, so on masked (holed) grids occupancy time lands in the
+  right bins instead of being silently misrouted or dropped.
+  `Environment.interpolate` scatters active values into a `NaN`-filled full
+  grid before reshaping, so it works on holed grids (was a reshape crash) and
+  returns `NaN` over holes; `rebin` infers diagonal-vs-orthogonal connectivity
+  from the active graph's max degree rather than probing a possibly-inactive
+  full-grid center node; and `occupancy` validates finite timestamps before the
+  monotonicity check (clearer error, no self-contradictory message).
+- `MaskedGridLayout` rejects a non-array / non-boolean `active_mask`, and
+  `get_n_bins` is computed in `float64` with an overflow guard before casting to
+  `int64`, so large spatial extents no longer overflow `int32`. `GraphLayout`
+  linear-point lookups remap gap-inclusive full-grid indices to active-bin
+  indices, preserving the `-1` off-track sentinel.
+- Environment file/dict I/O round-trips non-trivial `layout_parameters`:
+  `networkx` graphs are encoded node-link and `shapely` geometries as WKT (and
+  decoded on load), fixing a `to_file` crash for graph/polygon layouts and
+  restoring graph `edge_order` on read. NWB `read_environment` round-trips
+  `coordinate_kind` (defaulting to `cartesian` for legacy files), the NWB rate
+  adapter rejects non-finite/non-positive rates, `read_position`/`read_pose`
+  validate data/timestamp length agreement, and `read_head_direction` converts
+  degrees to radians (and `(n, 2)` vectors via `arctan2`) under the documented
+  `0 = East` convention.
+- Decoding correctness fixes: `explained_variance_reactivation` now computes the
+  true Kudrimoti role-swapped reversed EV and a control-aware
+  (partial-correlation) EV instead of the inert `rev = ev`;
+  `reactivation_strength` is magnitude-sensitive (shared template-baseline
+  normalization rather than a per-period double z-score that pinned it near 1);
+  `credible_region` excludes non-finite bins from the HPD set (including the
+  low-mass fallback); `confusion_matrix` drops non-finite posterior rows with a
+  warning; and `log_poisson_likelihood` requires a 2-D
+  `(n_time_bins, n_neurons)` `spike_counts` with a matching neuron axis,
+  rejecting the silent time-axis collapse. `decode_position` also validates the
+  `encoding_models` bin count against `env.n_bins` and the `spike_counts` time
+  length even when `validate=False`.
+- `ops` robustness: `resample_field` (diffuse) zero-fills out-of-source bins
+  before the kernel and re-masks after, so a single `NaN` no longer poisons
+  every reachable bin; `heading_from_velocity` rejects non-positive/non-finite
+  `dt` and non-finite positions; `_wrap_angle` is now half-open `(-pi, pi]`
+  (keeping `+pi` at the antipode); `estimate_transform` applies the Kabsch
+  determinant sign-correction so the fit is a proper rotation with no
+  reflection; and several broad `except Exception` guards (KDTree mappers,
+  spectral-radius estimation) were narrowed so real errors surface.
+- `simulation`: `PlaceCellModel` rejects a non-positive/non-finite `width` at
+  construction and no longer double-normalizes anisotropic distances (the
+  isotropic firing-rate path is byte-for-byte unchanged);
+  `generate_poisson_spikes` validates `firing_rate`/`times` length agreement and
+  finiteness, requires strictly-increasing `times`, and uses a per-bin `dt` so
+  non-uniform sampling is supported.
+- `annotation`: boundary inference raises a `ValueError` (suggesting
+  `convex_hull`) when the alpha shape is not a non-empty polygon instead of
+  returning a degenerate geometry; `TrackBuilderState` node/edge deletion
+  invalidates stale edge-layout overrides so they can no longer corrupt
+  linearization; and `validate_region_overlap` warns and records an issue on a
+  shapely `GEOSException` instead of aborting the whole validation.
+- `regions`: RLE mask decoding validates each run's start/length against the
+  mask size (rejecting negatives) instead of writing out of bounds;
+  `region_center` returns `None` for an empty polygon instead of raising; and
+  the remaining broad `_process_cvat_box` catch-all was narrowed to
+  `(TypeError, ValueError, ShapelyError)` so real bugs (e.g. a `KeyError`)
+  propagate while malformed coordinates still warn-and-skip.
+- `behavior`: off-environment / `-1` "no bin" indices now resolve to an explicit
+  fill (`False` or `-1`) across segmentation (crossings, runs, trials) and
+  decision analysis instead of wrapping to the last bin/region, and finite-time
+  plus positive-`dt` guards were added before the velocity/rate divisions in
+  `detect_runs_between_regions`, `segment_by_velocity`, `approach_rate`, and
+  `mean_square_displacement`.
+- `animation`: overlay coordinate transforms allocate `float64` outputs so
+  integer-dtyped inputs no longer truncate sub-pixel positions;
+  `HeadDirectionOverlay` interpolates headings via `(cos, sin)` → `arctan2` (the
+  short way across the `+/-pi` wrap); bounds diagnostics use NaN-safe
+  `nanmin`/`nanmax`; and event-overlay artists are rendered/updated/cleared in
+  the artist-reuse path so events appear in reused-figure animations.
+- `encoding.is_head_direction_cell` validates `angle_unit in ("rad", "deg")`
+  up front, so a typo like `angle_unit="degrees"` raises a `ValueError` instead
+  of being swallowed by the classifier's `except` into a silent "not an HD
+  cell".
 
 ## [v0.4.0] - 2026-05-26
 
