@@ -156,6 +156,51 @@ class TestErrorAgainst:
         with pytest.raises(ValueError, match="must be sorted ascending"):
             result.error_against(true_times, true_positions)
 
+    def test_error_against_rejects_nan_self_times(self, small_2d_env):
+        """A NaN in self.times raises ValueError (not a silent NaN error)."""
+        posterior = np.ones((3, small_2d_env.n_bins)) / small_2d_env.n_bins
+        result = DecodingResult(
+            posterior=posterior,
+            env=small_2d_env,
+            times=np.array([0.0, np.nan, 1.0]),
+        )
+
+        true_times = np.array([0.0, 1.0])
+        true_positions = np.array([[0.0, 0.0], [10.0, 10.0]])
+
+        with pytest.raises(ValueError, match="times"):
+            result.error_against(true_times, true_positions)
+
+    def test_error_against_rejects_nan_true_times(self, small_2d_env):
+        """A NaN in true_times raises ValueError (not a silent NaN error)."""
+        posterior = np.ones((3, small_2d_env.n_bins)) / small_2d_env.n_bins
+        result = DecodingResult(
+            posterior=posterior,
+            env=small_2d_env,
+            times=np.array([0.0, 0.5, 1.0]),
+        )
+
+        true_times = np.array([0.0, np.nan])
+        true_positions = np.array([[0.0, 0.0], [10.0, 10.0]])
+
+        with pytest.raises(ValueError, match="true_times"):
+            result.error_against(true_times, true_positions)
+
+    def test_error_against_rejects_inf_true_positions(self, small_2d_env):
+        """A non-finite true_positions value raises ValueError."""
+        posterior = np.ones((3, small_2d_env.n_bins)) / small_2d_env.n_bins
+        result = DecodingResult(
+            posterior=posterior,
+            env=small_2d_env,
+            times=np.array([0.0, 0.5, 1.0]),
+        )
+
+        true_times = np.array([0.0, 1.0])
+        true_positions = np.array([[0.0, 0.0], [np.inf, 10.0]])
+
+        with pytest.raises(ValueError, match="true_positions"):
+            result.error_against(true_times, true_positions)
+
     def test_error_against_geodesic_smoke(self, linear_track_1d_env):
         """Geodesic metric returns a finite per-time error of the right shape."""
         env = linear_track_1d_env

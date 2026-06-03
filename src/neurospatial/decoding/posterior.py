@@ -498,6 +498,13 @@ def _log_poisson_likelihood_nan_safe(
     This is the "treat NaN encoding-model bins as zero-rate (excluded from the
     Poisson sum)" defense-in-depth behavior.
 
+    A bin that is NaN for *every* neuron is a special case: it has no observing
+    neuron, so excluding all terms would leave a neutral log-likelihood of 0
+    and let an uninformative bin spuriously win the MAP. Such all-NaN bins are
+    therefore set to ``-inf`` (zero posterior mass). Partial-NaN bins -- NaN for
+    some neurons but observed by at least one other -- still decode normally
+    from the observing neurons.
+
     Parameters
     ----------
     spike_counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
@@ -515,7 +522,8 @@ def _log_poisson_likelihood_nan_safe(
     -------
     log_likelihood : NDArray[np.float64], shape (n_time_bins, n_bins)
         Log-likelihood up to an additive constant per time bin, with NaN
-        encoding-model bins excluded from each neuron's contribution.
+        encoding-model bins excluded from each neuron's contribution and
+        all-NaN bins set to ``-inf``.
     """
     if dt <= 0:
         raise ValueError(
@@ -566,6 +574,18 @@ def _log_poisson_likelihood_nan_safe(
     rate_penalty = -np.sum(expected_counts, axis=0)
 
     log_likelihood = spike_term + rate_penalty
+
+    # A bin that is NaN for EVERY neuron carries no information: there is no
+    # observing neuron to decode it from, so its excluded-term log-likelihood
+    # collapses to a neutral 0 and would let an uninformative bin win the MAP.
+    # Force such all-NaN bins to -inf so they receive zero posterior mass and
+    # can never be the argmax. Partial-NaN bins (NaN for some neurons but
+    # observed by >=1 other) are untouched and still decode from the observing
+    # neurons.
+    all_nan = np.all(nan_mask, axis=0)  # (n_bins,)
+    if all_nan.any():
+        log_likelihood[:, all_nan] = -np.inf
+
     return cast("NDArray[np.float64]", log_likelihood)
 
 

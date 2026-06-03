@@ -16,12 +16,18 @@
   `fill_value=None` rate map carrying `min_occupancy` masks): each NaN
   `(neuron, bin)` is treated as a zero-rate observation and excluded from that
   neuron's contribution to the Poisson log-likelihood at that bin, and a single
-  `UserWarning` is emitted per call instead of raising. This is reconciled with
-  the `validate=True` NaN guard: the zero-rate exclusion runs first, so
-  `validate=True` no longer rejects NaN *encoding-model* bins (it still rejects
-  NaN/Inf in `spike_counts` and `prior`, and Inf/negative entries in
-  `encoding_models`). The recommended path remains passing `fill_value=0.0` to
-  the encoder so no NaN reaches the decoder.
+  `UserWarning` is emitted per call instead of raising. A **partial-NaN bin**
+  (NaN for some neurons but observed by at least one other) still decodes
+  normally from its observing neurons — excluded, not penalized. A bin that is
+  NaN for **every** neuron, however, carries no information: excluding all of
+  its terms would leave a neutral log-likelihood and could let an
+  uninformative bin spuriously win the MAP. Such all-NaN bins now get `-inf`
+  log-likelihood (zero posterior mass) and can never be the argmax. This is
+  reconciled with the `validate=True` NaN guard: the zero-rate exclusion runs
+  first, so `validate=True` no longer rejects NaN *encoding-model* bins (it
+  still rejects NaN/Inf in `spike_counts` and `prior`, and Inf/negative entries
+  in `encoding_models`). The recommended path remains passing `fill_value=0.0`
+  to the encoder so no NaN reaches the decoder.
 - Array-shaped result objects now export to `xarray`. `DecodingResult.to_xarray()`
   returns a labeled `DataArray` with dims `("time", "bin")` (the `time` coord is
   `result.times`, or a positional integer index `np.arange(n_time)` when `times`
@@ -243,6 +249,12 @@
   connectivity and carry the correct physical polar diagonal length
   `sqrt(Δr² + (r̄·Δθ)²)`. `circular_angle=False` still adds no seam edges
   (diagonal or same-ring), leaving the angular axis open.
+- `DecodingResult.error_against` now validates that `times`, `true_times`, and
+  `true_positions` are all finite up front, raising a clear `ValueError` on any
+  NaN or Inf. Previously a non-finite decode time or ground-truth value passed
+  silently through the `numpy.interp` alignment and produced a NaN error that
+  looked like (but was not) a decode failure. The existing sorted-`true_times`
+  check is unchanged.
 - Egocentric-polar `gaussian_kde` smoothing now respects `circular_angle`.
   A previous fix unconditionally wrapped the angular difference into
   `[-pi, pi]`, but `Environment.from_polar_egocentric(..., circular_angle=False)`

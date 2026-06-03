@@ -573,8 +573,11 @@ class DecodingResult(ResultMixin):
         ValueError
             If :attr:`times` is ``None`` (decode times are required to align),
             if ``true_times`` is not 1D, if ``true_times`` is not sorted
-            ascending (non-decreasing), or if ``true_positions`` does not have
-            shape ``(len(true_times), n_dims)``.
+            ascending (non-decreasing), if ``true_positions`` does not have
+            shape ``(len(true_times), n_dims)``, or if :attr:`times`,
+            ``true_times``, or ``true_positions`` contain any NaN or Inf value
+            (which would otherwise yield silent NaN errors through
+            :func:`numpy.interp`).
 
         Notes
         -----
@@ -613,6 +616,7 @@ class DecodingResult(ResultMixin):
         neurospatial.decoding.metrics.decoding_error : Underlying error core.
         map_position : Decoded MAP position compared against ground truth.
         """
+        from neurospatial._validation import validate_finite
         from neurospatial.decoding.metrics import decoding_error
 
         if self.times is None:
@@ -623,8 +627,12 @@ class DecodingResult(ResultMixin):
                 "to the ground-truth track."
             )
 
-        true_times = np.asarray(true_times, dtype=np.float64)
-        true_positions = np.asarray(true_positions, dtype=np.float64)
+        # Reject non-finite values up front. A NaN/Inf in any of these arrays
+        # would otherwise propagate silently through np.interp and yield NaN
+        # errors that look like (but are not) decode failures.
+        validate_finite(self.times, name="times")
+        true_times = validate_finite(true_times, name="true_times")
+        true_positions = validate_finite(true_positions, name="true_positions")
 
         if true_times.ndim != 1:
             raise ValueError(f"true_times must be 1D, got shape {true_times.shape}")

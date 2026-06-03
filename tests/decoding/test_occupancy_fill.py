@@ -202,40 +202,82 @@ def test_decode_warns_on_nan_model(
     np.testing.assert_allclose(result.posterior.sum(axis=1), 1.0, atol=1e-6)
 
 
-def test_decode_nan_bin_excluded_not_penalized() -> None:
-    """A NaN encoding bin contributes nothing, even when that neuron spiked.
+def test_decode_partial_nan_bin_excluded_not_penalized() -> None:
+    """A partial-NaN bin decodes from its observing neuron(s), not penalized.
 
-    Treating the NaN ``(neuron, bin)`` as *excluded* (not as a true zero rate)
-    means a spike from that neuron must not drive the posterior away from the
-    NaN bin: the bin's likelihood is unchanged by that neuron. This pins down
-    the "excluded from the Poisson sum" semantics, which differ from a literal
-    zero firing rate clipped to the likelihood floor.
+    Refined contract (partial- vs all-NaN):
+
+    - **Partial-NaN bin** (NaN for *some* neurons but observed by >=1 other):
+      the NaN neurons' ``(neuron, bin)`` terms are *excluded* from the Poisson
+      sum at that bin, and the bin still decodes from the observing neurons.
+      "Excluded, not penalized" means: relative to a literal zero-fill, a spike
+      from the masked neuron must not crush the bin's posterior the way a true
+      zero rate clipped to the likelihood floor would.
+    - **All-NaN bin** (NaN for *every* neuron) -> zero posterior; tested
+      separately in :func:`test_decode_all_nan_bin_gets_zero_posterior`.
+
+    This test exercises the partial-NaN case: two neurons, with the target bin
+    NaN for one neuron but observed by the other.
     """
     positions = np.linspace(0.0, 10.0, 200).reshape(-1, 1)
     env = Environment.from_samples(positions, bin_size=2.0)
     n_bins = env.n_bins
 
-    # One neuron, flat 5 Hz everywhere except bin 0 which is NaN (masked).
-    rates_nan = np.full((1, n_bins), 5.0)
+    # Two neurons, flat 5 Hz everywhere. Neuron 0 is masked (NaN) at bin 0,
+    # but neuron 1 still observes bin 0 -> bin 0 is a *partial*-NaN bin.
+    rates_nan = np.full((2, n_bins), 5.0)
     rates_nan[0, 0] = np.nan
-    # The neuron fires in this time bin.
-    spike_counts = np.array([[3]], dtype=np.int64)
+    # Both neurons fire in this time bin.
+    spike_counts = np.array([[3, 3]], dtype=np.int64)
     dt = 0.1
 
     with pytest.warns(UserWarning):
         post_nan = decode_position(env, spike_counts, rates_nan, dt=dt).posterior
 
-    # With the NaN bin excluded, bin 0 sees neither the spike term nor the
-    # rate penalty from this neuron, so its log-likelihood is exactly 0. The
-    # other bins all share the same finite rate, so they are equal to each
-    # other but differ from bin 0; crucially bin 0 is NOT driven to ~0
-    # probability the way a true zero-rate bin with 3 spikes would be.
+    # Well-formed posterior; bin 0 still decodes from neuron 1, so it is not
+    # spuriously killed: it retains real, non-negligible mass.
     assert np.isfinite(post_nan).all()
     np.testing.assert_allclose(post_nan.sum(axis=1), 1.0, atol=1e-6)
+    assert post_nan[0, 0] > 0.0
 
-    # Contrast: a literal zero rate at bin 0 (clipped to the floor) makes 3
-    # spikes there astronomically unlikely, crushing its posterior mass.
+    # Contrast: a literal zero rate at bin 0 for neuron 0 (clipped to the
+    # likelihood floor) makes neuron 0's 3 spikes there astronomically
+    # unlikely, crushing bin 0's posterior. Excluding the NaN term must leave
+    # bin 0 with vastly more mass than the zero-fill penalty would.
     rates_zero = rates_nan.copy()
     rates_zero[0, 0] = 0.0
     post_zero = decode_position(env, spike_counts, rates_zero, dt=dt).posterior
     assert post_nan[0, 0] > post_zero[0, 0] * 1e3
+
+
+def test_decode_all_nan_bin_gets_zero_posterior() -> None:
+    """An all-NaN bin carries no information and gets zero posterior mass.
+
+    Regression for the all-NaN-bin contract: a bin that is NaN for *every*
+    neuron in ``encoding_models`` has no observing neuron, so its excluded-term
+    log-likelihood would collapse to a neutral 0 and let an uninformative bin
+    win the MAP. Such bins must instead receive ~0 posterior and never be the
+    argmax.
+
+    Repro (pre-fix posterior was ``[0.9867, 0.0066, 0.0066]`` with bin 0 the
+    spurious MAP): ``encoding_models=[[nan, 5, 5]]``, ``spike_counts=[[0]]``,
+    ``dt=1.0``.
+    """
+    positions = np.linspace(0.0, 10.0, 200).reshape(-1, 1)
+    env = Environment.from_samples(positions, bin_size=2.0)
+    n_bins = env.n_bins
+
+    # Single neuron -> bin 0 (NaN for that neuron) is an all-NaN bin.
+    rates = np.full((1, n_bins), 5.0)
+    rates[0, 0] = np.nan
+    spike_counts = np.array([[0]], dtype=np.int64)
+    dt = 1.0
+
+    with pytest.warns(UserWarning):
+        post = decode_position(env, spike_counts, rates, dt=dt).posterior
+
+    assert np.isfinite(post).all()
+    np.testing.assert_allclose(post.sum(axis=1), 1.0, atol=1e-6)
+    # All-NaN bin gets ~0 mass and is NOT the argmax.
+    assert post[0, 0] == pytest.approx(0.0, abs=1e-12)
+    assert int(post[0].argmax()) != 0
