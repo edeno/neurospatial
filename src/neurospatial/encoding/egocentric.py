@@ -158,28 +158,22 @@ class EgocentricRateResult(SpatialResultMixin):
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial import Environment
-    >>> from neurospatial.encoding.egocentric import EgocentricRateResult
+    >>> from neurospatial.encoding.egocentric import compute_egocentric_rate
 
-    >>> # Create a simple egocentric environment
-    >>> positions = np.random.rand(100, 2) * 50
-    >>> env = Environment.from_samples(positions, bin_size=5.0)
-
-    >>> # Create result
-    >>> firing_rate = np.random.rand(env.n_bins) * 10
-    >>> occupancy = np.ones(env.n_bins)
-    >>> result = EgocentricRateResult(
-    ...     firing_rate=firing_rate,
-    ...     occupancy=occupancy,
-    ...     env=env,
-    ...     distance_range=(0.0, 50.0),
-    ...     n_distance_bins=10,
-    ...     n_direction_bins=12,
+    >>> # Build a result from a small, seeded trajectory + spike train
+    >>> rng = np.random.default_rng(0)
+    >>> times = np.linspace(0, 100, 1000)
+    >>> positions = rng.uniform(10, 90, (1000, 2))
+    >>> headings = rng.uniform(-np.pi, np.pi, 1000)
+    >>> object_positions = np.array([[50.0, 50.0]])
+    >>> spike_times = np.sort(rng.uniform(0, 100, 100))
+    >>> result = compute_egocentric_rate(
+    ...     None, spike_times, times, positions, headings, object_positions
     ... )
 
     >>> # Access fields
     >>> result.firing_rate.shape
-    (n_bins,)
+    (120,)
     >>> result.distance_range
     (0.0, 50.0)
 
@@ -233,12 +227,11 @@ class EgocentricRateResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> result = EgocentricRateResult(...)
-        >>> ax = result.plot()
-        >>> plt.show()
+        >>> ax = result.plot()  # doctest: +SKIP
+        >>> plt.show()  # doctest: +SKIP
 
-        >>> fig, ax = plt.subplots()
-        >>> result.plot(ax=ax, cmap="hot", vmax=20.0)
+        >>> fig, ax = plt.subplots()  # doctest: +SKIP
+        >>> result.plot(ax=ax, cmap="hot", vmax=20.0)  # doctest: +SKIP
 
         See Also
         --------
@@ -271,9 +264,20 @@ class EgocentricRateResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> result = EgocentricRateResult(...)
+        >>> import numpy as np
+        >>> from neurospatial.encoding.egocentric import compute_egocentric_rate
+        >>> rng = np.random.default_rng(0)
+        >>> times = np.linspace(0, 100, 1000)
+        >>> positions = rng.uniform(10, 90, (1000, 2))
+        >>> headings = rng.uniform(-np.pi, np.pi, 1000)
+        >>> object_positions = np.array([[50.0, 50.0]])
+        >>> spike_times = np.sort(rng.uniform(0, 100, 100))
+        >>> result = compute_egocentric_rate(
+        ...     None, spike_times, times, positions, headings, object_positions
+        ... )
         >>> dist = result.preferred_distance()
         >>> print(f"Preferred distance: {dist:.1f} cm")
+        Preferred distance: 2.5 cm
 
         See Also
         --------
@@ -319,9 +323,20 @@ class EgocentricRateResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> result = EgocentricRateResult(...)
+        >>> import numpy as np
+        >>> from neurospatial.encoding.egocentric import compute_egocentric_rate
+        >>> rng = np.random.default_rng(0)
+        >>> times = np.linspace(0, 100, 1000)
+        >>> positions = rng.uniform(10, 90, (1000, 2))
+        >>> headings = rng.uniform(-np.pi, np.pi, 1000)
+        >>> object_positions = np.array([[50.0, 50.0]])
+        >>> spike_times = np.sort(rng.uniform(0, 100, 100))
+        >>> result = compute_egocentric_rate(
+        ...     None, spike_times, times, positions, headings, object_positions
+        ... )
         >>> direction = result.preferred_direction()
-        >>> print(f"Preferred direction: {np.degrees(direction):.1f}°")
+        >>> print(f"Preferred direction: {np.degrees(direction):.1f}")
+        Preferred direction: -45.0
 
         See Also
         --------
@@ -371,9 +386,20 @@ class EgocentricRateResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> result = EgocentricRateResult(...)
+        >>> import numpy as np
+        >>> from neurospatial.encoding.egocentric import compute_egocentric_rate
+        >>> rng = np.random.default_rng(0)
+        >>> times = np.linspace(0, 100, 1000)
+        >>> positions = rng.uniform(10, 90, (1000, 2))
+        >>> headings = rng.uniform(-np.pi, np.pi, 1000)
+        >>> object_positions = np.array([[50.0, 50.0]])
+        >>> spike_times = np.sort(rng.uniform(0, 100, 100))
+        >>> result = compute_egocentric_rate(
+        ...     None, spike_times, times, positions, headings, object_positions
+        ... )
         >>> info = result.egocentric_spatial_information()
         >>> print(f"Egocentric spatial info: {info:.2f} bits/spike")
+        Egocentric spatial info: 0.83 bits/spike
 
         See Also
         --------
@@ -448,11 +474,21 @@ class EgocentricRateResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> result = EgocentricRateResult(...)
-        >>> if result.is_object_vector_cell():
-        ...     print("This is an object-vector cell!")
-        >>> if result.is_object_vector_cell(min_info=0.5):
-        ...     print("This is a strong object-vector cell!")
+        >>> import numpy as np
+        >>> from neurospatial.encoding.egocentric import compute_egocentric_rate
+        >>> rng = np.random.default_rng(0)
+        >>> times = np.linspace(0, 100, 1000)
+        >>> positions = rng.uniform(10, 90, (1000, 2))
+        >>> headings = rng.uniform(-np.pi, np.pi, 1000)
+        >>> object_positions = np.array([[50.0, 50.0]])
+        >>> spike_times = np.sort(rng.uniform(0, 100, 100))
+        >>> result = compute_egocentric_rate(
+        ...     None, spike_times, times, positions, headings, object_positions
+        ... )
+        >>> result.is_object_vector_cell()
+        True
+        >>> result.is_object_vector_cell(min_info=0.5)
+        True
 
         See Also
         --------
@@ -515,34 +551,36 @@ class EgocentricRatesResult(SpatialResultMixin):
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial import Environment
-    >>> from neurospatial.encoding.egocentric import EgocentricRatesResult
+    >>> from neurospatial.encoding.egocentric import (
+    ...     EgocentricRateResult,
+    ...     compute_egocentric_rates,
+    ... )
 
-    >>> # Create a simple egocentric environment
-    >>> positions = np.random.rand(100, 2) * 50
-    >>> env = Environment.from_samples(positions, bin_size=5.0)
-
-    >>> # Create batch result for 3 neurons
-    >>> firing_rates = np.random.rand(3, env.n_bins) * 10
-    >>> occupancy = np.ones(env.n_bins)
-    >>> result = EgocentricRatesResult(
-    ...     firing_rates=firing_rates,
-    ...     occupancy=occupancy,
-    ...     env=env,
-    ...     distance_range=(0.0, 50.0),
-    ...     n_distance_bins=10,
-    ...     n_direction_bins=12,
+    >>> # Build a batch result from a small, seeded trajectory
+    >>> rng = np.random.default_rng(0)
+    >>> times = np.linspace(0, 100, 1000)
+    >>> positions = rng.uniform(10, 90, (1000, 2))
+    >>> headings = rng.uniform(-np.pi, np.pi, 1000)
+    >>> object_positions = np.array([[50.0, 50.0]])
+    >>> spike_times = [
+    ...     np.sort(rng.uniform(0, 100, 100)),
+    ...     np.sort(rng.uniform(0, 100, 150)),
+    ...     np.sort(rng.uniform(0, 100, 50)),
+    ... ]
+    >>> result = compute_egocentric_rates(
+    ...     None, spike_times, times, positions, headings, object_positions
     ... )
 
     >>> # Access fields
     >>> len(result)
     3
-    >>> result[0]  # Get first neuron as EgocentricRateResult
-    EgocentricRateResult(...)
+    >>> isinstance(result[0], EgocentricRateResult)  # First neuron
+    True
 
     >>> # Iterate over neurons
-    >>> for single in result:
-    ...     print(single.firing_rate.max())
+    >>> rates = [float(single.firing_rate.max()) for single in result]
+    >>> len(rates)
+    3
 
     See Also
     --------
@@ -574,8 +612,23 @@ class EgocentricRatesResult(SpatialResultMixin):
 
         Examples
         --------
+        >>> import numpy as np
+        >>> from neurospatial.encoding.egocentric import compute_egocentric_rates
+        >>> rng = np.random.default_rng(0)
+        >>> times = np.linspace(0, 100, 1000)
+        >>> positions = rng.uniform(10, 90, (1000, 2))
+        >>> headings = rng.uniform(-np.pi, np.pi, 1000)
+        >>> object_positions = np.array([[50.0, 50.0]])
+        >>> spike_times = [
+        ...     np.sort(rng.uniform(0, 100, 100)),
+        ...     np.sort(rng.uniform(0, 100, 150)),
+        ...     np.sort(rng.uniform(0, 100, 50)),
+        ... ]
+        >>> result = compute_egocentric_rates(
+        ...     None, spike_times, times, positions, headings, object_positions
+        ... )
         >>> len(result)
-        5
+        3
         """
         return len(self.firing_rates)  # type: ignore[arg-type]
 
@@ -594,6 +647,20 @@ class EgocentricRatesResult(SpatialResultMixin):
 
         Examples
         --------
+        >>> import numpy as np
+        >>> from neurospatial.encoding.egocentric import compute_egocentric_rates
+        >>> rng = np.random.default_rng(0)
+        >>> times = np.linspace(0, 100, 1000)
+        >>> positions = rng.uniform(10, 90, (1000, 2))
+        >>> headings = rng.uniform(-np.pi, np.pi, 1000)
+        >>> object_positions = np.array([[50.0, 50.0]])
+        >>> spike_times = [
+        ...     np.sort(rng.uniform(0, 100, 100)),
+        ...     np.sort(rng.uniform(0, 100, 150)),
+        ... ]
+        >>> result = compute_egocentric_rates(
+        ...     None, spike_times, times, positions, headings, object_positions
+        ... )
         >>> single = result[0]
         >>> isinstance(single, EgocentricRateResult)
         True
@@ -617,8 +684,23 @@ class EgocentricRatesResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> for single in result:
-        ...     print(single.firing_rate.max())
+        >>> import numpy as np
+        >>> from neurospatial.encoding.egocentric import compute_egocentric_rates
+        >>> rng = np.random.default_rng(0)
+        >>> times = np.linspace(0, 100, 1000)
+        >>> positions = rng.uniform(10, 90, (1000, 2))
+        >>> headings = rng.uniform(-np.pi, np.pi, 1000)
+        >>> object_positions = np.array([[50.0, 50.0]])
+        >>> spike_times = [
+        ...     np.sort(rng.uniform(0, 100, 100)),
+        ...     np.sort(rng.uniform(0, 100, 150)),
+        ... ]
+        >>> result = compute_egocentric_rates(
+        ...     None, spike_times, times, positions, headings, object_positions
+        ... )
+        >>> peaks = [float(single.firing_rate.max()) for single in result]
+        >>> len(peaks)
+        2
         """
         for i in range(len(self)):
             yield self[i]
@@ -656,12 +738,12 @@ class EgocentricRatesResult(SpatialResultMixin):
         Examples
         --------
         >>> # Plot the first neuron's egocentric rate map
-        >>> ax = result.plot(idx=0)
-        >>> plt.show()
+        >>> ax = result.plot(idx=0)  # doctest: +SKIP
+        >>> plt.show()  # doctest: +SKIP
 
         >>> # Plot neuron 3 with custom colormap
-        >>> fig, ax = plt.subplots()
-        >>> result.plot(idx=3, ax=ax, cmap="hot", vmax=20.0)
+        >>> fig, ax = plt.subplots()  # doctest: +SKIP
+        >>> result.plot(idx=3, ax=ax, cmap="hot", vmax=20.0)  # doctest: +SKIP
 
         See Also
         --------
@@ -694,9 +776,26 @@ class EgocentricRatesResult(SpatialResultMixin):
 
         Examples
         --------
+        >>> import numpy as np
+        >>> from neurospatial.encoding.egocentric import compute_egocentric_rates
+        >>> rng = np.random.default_rng(0)
+        >>> times = np.linspace(0, 100, 1000)
+        >>> positions = rng.uniform(10, 90, (1000, 2))
+        >>> headings = rng.uniform(-np.pi, np.pi, 1000)
+        >>> object_positions = np.array([[50.0, 50.0]])
+        >>> spike_times = [
+        ...     np.sort(rng.uniform(0, 100, 100)),
+        ...     np.sort(rng.uniform(0, 100, 150)),
+        ...     np.sort(rng.uniform(0, 100, 50)),
+        ... ]
+        >>> result = compute_egocentric_rates(
+        ...     None, spike_times, times, positions, headings, object_positions
+        ... )
         >>> distances = result.preferred_distances()
+        >>> distances.shape
+        (3,)
         >>> print(f"Neuron 0 prefers distance: {distances[0]:.1f} cm")
-        >>> print(f"Mean preferred distance: {distances.mean():.1f} cm")
+        Neuron 0 prefers distance: 2.5 cm
 
         See Also
         --------
@@ -738,8 +837,26 @@ class EgocentricRatesResult(SpatialResultMixin):
 
         Examples
         --------
+        >>> import numpy as np
+        >>> from neurospatial.encoding.egocentric import compute_egocentric_rates
+        >>> rng = np.random.default_rng(0)
+        >>> times = np.linspace(0, 100, 1000)
+        >>> positions = rng.uniform(10, 90, (1000, 2))
+        >>> headings = rng.uniform(-np.pi, np.pi, 1000)
+        >>> object_positions = np.array([[50.0, 50.0]])
+        >>> spike_times = [
+        ...     np.sort(rng.uniform(0, 100, 100)),
+        ...     np.sort(rng.uniform(0, 100, 150)),
+        ...     np.sort(rng.uniform(0, 100, 50)),
+        ... ]
+        >>> result = compute_egocentric_rates(
+        ...     None, spike_times, times, positions, headings, object_positions
+        ... )
         >>> directions = result.preferred_directions()
-        >>> print(f"Neuron 0 prefers direction: {np.degrees(directions[0]):.1f}°")
+        >>> directions.shape
+        (3,)
+        >>> print(f"Neuron 0 prefers direction: {np.degrees(directions[0]):.1f}")
+        Neuron 0 prefers direction: -45.0
 
         See Also
         --------
@@ -775,8 +892,26 @@ class EgocentricRatesResult(SpatialResultMixin):
 
         Examples
         --------
+        >>> import numpy as np
+        >>> from neurospatial.encoding.egocentric import compute_egocentric_rates
+        >>> rng = np.random.default_rng(0)
+        >>> times = np.linspace(0, 100, 1000)
+        >>> positions = rng.uniform(10, 90, (1000, 2))
+        >>> headings = rng.uniform(-np.pi, np.pi, 1000)
+        >>> object_positions = np.array([[50.0, 50.0]])
+        >>> spike_times = [
+        ...     np.sort(rng.uniform(0, 100, 100)),
+        ...     np.sort(rng.uniform(0, 100, 150)),
+        ...     np.sort(rng.uniform(0, 100, 50)),
+        ... ]
+        >>> result = compute_egocentric_rates(
+        ...     None, spike_times, times, positions, headings, object_positions
+        ... )
         >>> info = result.egocentric_spatial_information()
+        >>> info.shape
+        (3,)
         >>> print(f"Neuron with highest info: {np.argmax(info)}")
+        Neuron with highest info: 2
 
         See Also
         --------
@@ -814,8 +949,24 @@ class EgocentricRatesResult(SpatialResultMixin):
 
         Examples
         --------
+        >>> import numpy as np
+        >>> from neurospatial.encoding.egocentric import compute_egocentric_rates
+        >>> rng = np.random.default_rng(0)
+        >>> times = np.linspace(0, 100, 1000)
+        >>> positions = rng.uniform(10, 90, (1000, 2))
+        >>> headings = rng.uniform(-np.pi, np.pi, 1000)
+        >>> object_positions = np.array([[50.0, 50.0]])
+        >>> spike_times = [
+        ...     np.sort(rng.uniform(0, 100, 100)),
+        ...     np.sort(rng.uniform(0, 100, 150)),
+        ...     np.sort(rng.uniform(0, 100, 50)),
+        ... ]
+        >>> result = compute_egocentric_rates(
+        ...     None, spike_times, times, positions, headings, object_positions
+        ... )
         >>> is_object_vector_cell = result.detect_ovcs()
         >>> print(f"Found {is_object_vector_cell.sum()} OVCs")
+        Found 3 OVCs
 
         >>> # Use stricter threshold
         >>> is_object_vector_cell = result.detect_ovcs(min_info=0.5)
@@ -874,20 +1025,37 @@ class EgocentricRatesResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> result = EgocentricRatesResult(...)
+        >>> import numpy as np
+        >>> from neurospatial.encoding.egocentric import compute_egocentric_rates
+        >>> rng = np.random.default_rng(0)
+        >>> times = np.linspace(0, 100, 1000)
+        >>> positions = rng.uniform(10, 90, (1000, 2))
+        >>> headings = rng.uniform(-np.pi, np.pi, 1000)
+        >>> object_positions = np.array([[50.0, 50.0]])
+        >>> spike_times = [
+        ...     np.sort(rng.uniform(0, 100, 100)),
+        ...     np.sort(rng.uniform(0, 100, 150)),
+        ...     np.sort(rng.uniform(0, 100, 50)),
+        ... ]
+        >>> result = compute_egocentric_rates(
+        ...     None, spike_times, times, positions, headings, object_positions
+        ... )
         >>> df = result.to_dataframe()
-        >>> print(df.head())
-           neuron_id  preferred_distance  preferred_direction  ...
+        >>> list(df.columns)
+        ['neuron_id', 'preferred_distance', 'preferred_direction', 'preferred_direction_deg', 'peak_rate', 'is_object_vector_cell']
+        >>> len(df)
+        3
 
         >>> # Filter for OVCs only
         >>> ovcs = df[df["is_object_vector_cell"]]
-        >>> print(f"Found {len(ovcs)} OVCs")
 
         >>> # Sort by preferred distance
         >>> sorted_df = df.sort_values("preferred_distance")
 
         >>> # Custom neuron identifiers
         >>> df = result.to_dataframe(neuron_ids=["unit_0", "unit_1", "unit_2"])
+        >>> list(df["neuron_id"])
+        ['unit_0', 'unit_1', 'unit_2']
 
         See Also
         --------
@@ -1191,13 +1359,15 @@ def compute_egocentric_rate(
     ... )
 
     >>> # Access results
+    >>> result.firing_rate.shape
+    (120,)
     >>> pref_dist = result.preferred_distance()
     >>> pref_dir = result.preferred_direction()
     >>> info = result.egocentric_spatial_information()
     >>> is_object_vector_cell = result.is_object_vector_cell()
 
     >>> # Plot the egocentric rate map
-    >>> ax = result.plot()
+    >>> ax = result.plot()  # doctest: +SKIP
 
     References
     ----------
@@ -1494,17 +1664,23 @@ def compute_egocentric_rates(
 
     >>> # Access results
     >>> print(f"Number of neurons: {len(result)}")
+    Number of neurons: 3
     >>> print(f"Firing rates shape: {result.firing_rates.shape}")
+    Firing rates shape: (3, 120)
 
     >>> # Iterate over neurons
     >>> for i, single in enumerate(result):
     ...     pref_dist = single.preferred_distance()
     ...     pref_dir = single.preferred_direction()
     ...     print(f"Neuron {i}: {pref_dist:.1f} cm at {np.degrees(pref_dir):.0f} deg")
+    Neuron 0: 2.5 cm at 15 deg
+    Neuron 1: 7.5 cm at 45 deg
+    Neuron 2: 42.5 cm at -75 deg
 
     >>> # Get metrics for all neurons
     >>> df = result.to_dataframe()
-    >>> print(df)
+    >>> len(df)
+    3
 
     >>> # Use 2D array with NaN padding
     >>> spike_times_2d = np.array(
@@ -1516,6 +1692,8 @@ def compute_egocentric_rates(
     >>> result2 = compute_egocentric_rates(
     ...     None, spike_times_2d, times, positions, headings, object_positions
     ... )
+    >>> len(result2)
+    2
 
     References
     ----------
