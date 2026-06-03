@@ -170,24 +170,29 @@ def compute_directional_occupancy(
     bin_edges = np.linspace(0, 2 * np.pi, n_bins + 1)
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
 
-    # Wrap headings to [0, 2*pi)
+    # Wrap headings to [0, 2*pi). Non-finite headings stay non-finite
+    # (NaN % x == NaN, Inf % x == NaN), so we can detect and exclude them below.
     headings_wrapped = headings_rad % (2 * np.pi)
 
     # Compute occupancy using actual time deltas
     # Each frame i contributes the time until frame i+1
     # The last frame is excluded (we don't know how long the animal stayed there)
     time_deltas = np.diff(times)
+    frame_headings = headings_wrapped[:-1]
 
-    # Assign each frame (except last) to a bin
-    # headings_wrapped[:-1] has n-1 elements, matching time_deltas
-    frame_bins = np.digitize(headings_wrapped[:-1], bin_edges) - 1
-    # Handle edge case: value exactly at 2*pi goes to bin n_bins, wrap to 0
+    # Exclude frames whose heading is non-finite (NaN/Inf). Folding these into
+    # bin 0 via digitize would inflate bin-0 occupancy.
+    finite = np.isfinite(frame_headings)
+
+    # Assign each finite frame (except last) to a bin.
+    frame_bins = np.digitize(frame_headings[finite], bin_edges) - 1
+    # Exact-2*pi edge wraps to bin 0 (legitimate); non-finite never reach here.
     frame_bins[frame_bins >= n_bins] = 0
 
     # Compute occupancy per bin using vectorized bincount
-    occupancy = np.bincount(frame_bins, weights=time_deltas, minlength=n_bins).astype(
-        np.float64
-    )
+    occupancy = np.bincount(
+        frame_bins, weights=time_deltas[finite], minlength=n_bins
+    ).astype(np.float64)
 
     return occupancy, bin_centers
 
@@ -263,6 +268,14 @@ def _bin_spikes_with_precomputed_directional_bins(
     spike_indices = np.searchsorted(times, valid_spike_times, side="right") - 1
     spike_indices = np.clip(spike_indices, 0, len(headings_wrapped) - 1)
     spike_hd = headings_wrapped[spike_indices]
+
+    # Exclude spikes landing on a frame with a non-finite heading. These would
+    # be folded into bin 0 by the >= n_bins clamp below, mirroring the
+    # occupancy mask so the same frames are dropped from both arrays.
+    finite = np.isfinite(spike_hd)
+    spike_hd = spike_hd[finite]
+    if spike_hd.size == 0:
+        return spike_counts
 
     # Nearest-neighbor (digitize) bin assignment — chosen over interpolation
     # because head direction crosses 0/2π discontinuities, which would alias

@@ -86,9 +86,13 @@ class PhasePrecessionResult:
     offset : float
         Phase offset at position 0 (radians).
     correlation : float
-        Circular-linear correlation coefficient in [0, 1].
+        Circular-linear correlation coefficient in [0, 1]. A descriptive,
+        slope-independent effect size (Mardia & Jupp); it does not determine
+        ``pval``.
     pval : float
-        P-value for the correlation.
+        Shuffle p-value at the fitted slope. Computed by permuting the
+        phase-position pairing, re-fitting the slope on each shuffle, and
+        comparing the mean resultant length of residuals to the observed fit.
     mean_resultant_length : float
         Mean resultant length of phase residuals in [0, 1].
         Higher values indicate better linear fit.
@@ -175,6 +179,127 @@ class PhasePrecessionResult:
         return self.interpretation()
 
 
+def _best_residual_mrl(
+    phases: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    slope_bounds: tuple[float, float],
+) -> float:
+    """Coarse-grid maximum of the residual mean resultant length over the slope.
+
+    Evaluates a fixed coarse slope grid and returns the largest mean resultant
+    length (MRL) of the phase residuals. This is the statistic used for both
+    the observed value and each shuffle in the permutation null, so the
+    comparison is unbiased. A fixed coarse grid (rather than the full adaptive
+    grid + Brent refinement of :func:`_fit_slope`) bounds the per-shuffle cost:
+    the null only needs a comparable statistic, not a precision slope.
+
+    Parameters
+    ----------
+    phases : ndarray of shape (n_spikes,)
+        Spike phases in radians, wrapped to ``[0, 2*pi)``.
+    positions : ndarray of shape (n_spikes,)
+        Position at each spike (already normalized if requested).
+    slope_bounds : tuple of float
+        ``(lo, hi)`` bounds for the slope search (radians per position unit).
+
+    Returns
+    -------
+    float
+        Maximum residual MRL over the coarse slope grid, in [0, 1].
+    """
+
+    def _neg_mean_resultant_length(slope: float) -> float:
+        residuals = (phases - slope * positions) % (2 * np.pi)
+        return -_mean_resultant_length(residuals)
+
+    grid_slopes = np.linspace(slope_bounds[0], slope_bounds[1], 100)
+    grid_values = np.array([_neg_mean_resultant_length(s) for s in grid_slopes])
+    return float(-grid_values.min())
+
+
+def _fit_slope(
+    phases: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    slope_bounds: tuple[float, float],
+) -> tuple[float, float]:
+    """Fit the precession slope and return ``(optimal_slope, mrl)``.
+
+    Maximizes the mean resultant length of the phase residuals over the slope
+    using a data-adaptive grid search followed by a bounded Brent refinement,
+    and returns the fitted slope (needed for the offset and the reported
+    ``slope``) alongside the maximized MRL.
+
+    Parameters
+    ----------
+    phases : ndarray of shape (n_spikes,)
+        Spike phases in radians, wrapped to ``[0, 2*pi)``.
+    positions : ndarray of shape (n_spikes,)
+        Position at each spike (already normalized if requested).
+    slope_bounds : tuple of float
+        ``(lo, hi)`` bounds for the slope search (radians per position unit).
+
+    Returns
+    -------
+    optimal_slope : float
+        Fitted slope (radians per position unit).
+    mrl : float
+        Maximized residual mean resultant length, in [0, 1].
+    """
+    from scipy.optimize import minimize_scalar
+
+    def _neg_mean_resultant_length(slope: float) -> float:
+        residuals = (phases - slope * positions) % (2 * np.pi)
+        return -_mean_resultant_length(residuals)
+
+    # The circular objective is multimodal: as a function of slope it has a
+    # main lobe at the true slope surrounded by side-lobes, and the main lobe
+    # gets *narrower* as the position span grows (its half-width in slope is
+    # ~pi / position_span). A fixed coarse grid can therefore step right over
+    # the main lobe and bracket a side-lobe minimum instead.
+    #
+    # Make the grid data-adaptive: sample finely enough that at least a few
+    # points fall inside the main lobe regardless of position span, then
+    # refine within the single grid cell bracketing the best grid point.
+    span = float(slope_bounds[1] - slope_bounds[0])
+    position_span = float(np.ptp(positions))
+    samples_per_lobe = 4
+    if position_span > 0:
+        lobe_half_width = np.pi / position_span
+        target_spacing = lobe_half_width / samples_per_lobe
+        n_grid = int(np.ceil(span / target_spacing)) + 1
+    else:
+        n_grid = 100
+    # Clamp to a sensible range: never coarser than the original 100-point
+    # grid, never so dense the O(n_grid) sweep dominates runtime.
+    n_grid = int(np.clip(n_grid, 100, 20000))
+
+    grid_slopes = np.linspace(slope_bounds[0], slope_bounds[1], n_grid)
+    grid_values = np.array([_neg_mean_resultant_length(s) for s in grid_slopes])
+
+    # Bracket the best grid point by its immediate neighbors (one grid cell on
+    # each side) so the refinement isolates a single lobe, then polish with a
+    # bounded scalar minimizer (Brent within bounds).
+    best_idx = int(np.argmin(grid_values))
+    lo = grid_slopes[max(best_idx - 1, 0)]
+    hi = grid_slopes[min(best_idx + 1, n_grid - 1)]
+
+    result_opt = minimize_scalar(
+        _neg_mean_resultant_length,
+        bounds=(lo, hi),
+        method="bounded",
+    )
+    optimal_slope = float(result_opt.x)
+    neg_mrl = float(result_opt.fun)
+
+    # Guard against the rare case where the refinement lands above the best
+    # grid sample (e.g. a degenerate bracket): keep the grid optimum instead.
+    if grid_values[best_idx] < neg_mrl:
+        optimal_slope = float(grid_slopes[best_idx])
+        neg_mrl = float(grid_values[best_idx])
+
+    return optimal_slope, float(-neg_mrl)
+
+
 def phase_precession(
     positions: NDArray[np.float64],
     phases: NDArray[np.float64],
@@ -183,6 +308,8 @@ def phase_precession(
     position_range: tuple[float, float] | None = None,
     angle_unit: Literal["rad", "deg"] = "rad",
     min_spikes: int = 10,
+    n_shuffles: int = 1000,
+    random_state: int | np.random.Generator | None = None,
 ) -> PhasePrecessionResult:
     """
     Analyze phase precession in place cell data.
@@ -209,11 +336,22 @@ def phase_precession(
         Unit of input phases.
     min_spikes : int, default=10
         Minimum number of spikes required for analysis.
+    n_shuffles : int, default=1000
+        Number of permutation shuffles used to build the null distribution
+        for the p-value. Each shuffle re-fits the slope on the shuffled
+        phase-position pairing (see Notes). Larger values give finer
+        p-value resolution at higher cost.
+    random_state : int, numpy.random.Generator, or None, optional
+        Seed or generator for the permutation shuffles. Pass a fixed value
+        for a deterministic ``pval``.
 
     Returns
     -------
     PhasePrecessionResult
         Dataclass with slope, offset, correlation, p-value, and fit quality.
+        ``pval`` is a **shuffle p-value at the fitted slope** (see Notes);
+        ``correlation`` is a slope-independent descriptive circular-linear
+        effect size.
 
     Raises
     ------
@@ -232,16 +370,34 @@ def phase_precession(
     through a place field. This manifests as a negative slope in the
     phase-position relationship.
 
+    **P-value.** ``pval`` is a permutation p-value whose statistic is the
+    mean resultant length (MRL) of phase residuals at the fitted slope — the
+    same quantity the fit maximizes. The null is built by permuting the
+    phase-position pairing and **re-fitting the slope on each shuffle**, so
+    the test asks whether the fitted precession is stronger than chance,
+    rather than testing a slope-free circular-linear association. A +1
+    smoothing is applied (Phipson & Smyth, 2010) so ``pval`` is never exactly
+    zero.
+
+    **Performance.** The null re-fits the slope per shuffle. To bound latency,
+    the per-shuffle re-fit uses a fixed coarse slope grid (no Brent
+    refinement); the observed fit keeps the full data-adaptive grid + Brent
+    search. The cost scales with ``n_shuffles``; reduce it for faster
+    screening.
+
+    ``correlation`` is the circular-linear correlation (Mardia & Jupp),
+    reported as a descriptive, slope-independent effect size — it does not
+    determine ``pval``.
+
     Examples
     --------
     >>> import numpy as np
     >>> from neurospatial.encoding.phase_precession import phase_precession
     >>> positions = np.linspace(0, 50, 100)  # 0-50 cm
     >>> phases = 2 * np.pi - positions * 0.1  # Negative slope
-    >>> result = phase_precession(positions, phases)
+    >>> result = phase_precession(positions, phases, random_state=0)
     >>> print(result)  # doctest: +SKIP
     """
-    from scipy.optimize import minimize_scalar
     from scipy.stats import circmean
 
     # Convert to arrays and radians if needed
@@ -274,63 +430,9 @@ def phase_precession(
         positions = (positions - pos_min) / (pos_max - pos_min)
         slope_units = "rad/normalized_position (0-1)"
 
-    # Define objective function: negative mean resultant length of residuals
-    # We minimize this to find the slope that maximizes mean resultant length
-    def _neg_mean_resultant_length(slope: float) -> float:
-        residuals = (phases - slope * positions) % (2 * np.pi)
-        return -_mean_resultant_length(residuals)
-
-    # The circular objective is multimodal: as a function of slope it has a
-    # main lobe at the true slope surrounded by side-lobes, and the main lobe
-    # gets *narrower* as the position span grows (its half-width in slope is
-    # ~pi / position_span). A fixed coarse grid can therefore step right over
-    # the main lobe and bracket a side-lobe minimum instead.
-    #
-    # Make the grid data-adaptive: sample finely enough that at least a few
-    # points fall inside the main lobe regardless of position span, then
-    # refine within the single grid cell bracketing the best grid point.
-    span = float(slope_bounds[1] - slope_bounds[0])
-    position_span = float(np.ptp(positions))
-    # Target several samples per main lobe (half-width ~ pi / position_span).
-    samples_per_lobe = 4
-    if position_span > 0:
-        lobe_half_width = np.pi / position_span
-        target_spacing = lobe_half_width / samples_per_lobe
-        n_grid = int(np.ceil(span / target_spacing)) + 1
-    else:
-        n_grid = 100
-    # Clamp to a sensible range: never coarser than the original 100-point
-    # grid, never so dense the O(n_grid) sweep dominates runtime.
-    n_grid = int(np.clip(n_grid, 100, 20000))
-
-    grid_slopes = np.linspace(slope_bounds[0], slope_bounds[1], n_grid)
-    grid_values = np.array([_neg_mean_resultant_length(s) for s in grid_slopes])
-
-    # Find the best region from grid search
-    best_idx = int(np.argmin(grid_values))
-
-    # Bracket the best grid point by its immediate neighbors (one grid cell on
-    # each side) so the refinement isolates a single lobe, then polish with a
-    # bounded scalar minimizer (Brent within bounds).
-    lo = grid_slopes[max(best_idx - 1, 0)]
-    hi = grid_slopes[min(best_idx + 1, n_grid - 1)]
-
-    result_opt = minimize_scalar(
-        _neg_mean_resultant_length,
-        bounds=(lo, hi),
-        method="bounded",
-    )
-    optimal_slope = float(result_opt.x)
-    neg_mrl = float(result_opt.fun)
-
-    # Guard against the rare case where the refinement lands above the best
-    # grid sample (e.g. a degenerate bracket): keep the grid optimum instead.
-    if grid_values[best_idx] < neg_mrl:
-        optimal_slope = float(grid_slopes[best_idx])
-        neg_mrl = float(grid_values[best_idx])
-
-    # Compute mean resultant length at optimal slope
-    mean_resultant_length = -neg_mrl
+    # Fit the slope that maximizes the mean resultant length (MRL) of the
+    # phase residuals (full data-adaptive grid + Brent refinement).
+    optimal_slope, mean_resultant_length = _fit_slope(phases, positions, slope_bounds)
 
     # Compute residuals at optimal slope
     residuals = (phases - optimal_slope * positions) % (2 * np.pi)
@@ -338,10 +440,32 @@ def phase_precession(
     # Compute offset as circular mean of residuals
     offset = float(circmean(residuals, high=2 * np.pi, low=0))
 
-    # Compute correlation using circular-linear correlation
-    correlation, pval = circular_linear_correlation(
-        angles=phases, linear_values=positions
-    )
+    # Shuffle null: break the phase<->position pairing, re-fit the slope on
+    # each shuffle, and compare the resulting MRL. This makes the p-value test
+    # the SAME hypothesis the slope fit optimizes (a real position-dependent
+    # phase relationship), instead of the slope-free circular-linear
+    # correlation that ignores the fitted slope entirely. A fixed coarse grid
+    # is used per shuffle (refine=False) to bound the per-shuffle cost.
+    #
+    # The observed statistic is computed with the SAME coarse procedure as the
+    # null (not the refined fit) so the comparison is unbiased: the refined
+    # `mean_resultant_length` would sit slightly above its coarse-grid null and
+    # spuriously deflate the p-value. The refined MRL is still reported as the
+    # fit-quality field.
+    observed_mrl = _best_residual_mrl(phases, positions, slope_bounds)
+
+    rng = np.random.default_rng(random_state)
+    n_shuffles_eff = int(n_shuffles)
+    null_mrls = np.empty(n_shuffles_eff, dtype=np.float64)
+    for i in range(n_shuffles_eff):
+        shuffled_pos = rng.permutation(positions)
+        null_mrls[i] = _best_residual_mrl(phases, shuffled_pos, slope_bounds)
+    # +1 smoothing avoids p == 0 (Phipson & Smyth 2010).
+    pval = float((np.sum(null_mrls >= observed_mrl) + 1) / (n_shuffles_eff + 1))
+
+    # Report the circular-linear correlation alongside as a descriptive
+    # effect size (slope-independent), NOT as the significance.
+    correlation, _ = circular_linear_correlation(angles=phases, linear_values=positions)
 
     return PhasePrecessionResult(
         slope=float(optimal_slope),
@@ -360,6 +484,8 @@ def has_phase_precession(
     alpha: float = 0.05,
     min_correlation: float = 0.2,
     angle_unit: Literal["rad", "deg"] = "rad",
+    n_shuffles: int = 200,
+    random_state: int | np.random.Generator | None = None,
 ) -> bool:
     """Quick check for significant phase precession.
 
@@ -370,11 +496,18 @@ def has_phase_precession(
     phases : ndarray of shape (n_spikes,)
         Spike phase relative to LFP theta in radians or degrees.
     alpha : float, default=0.05
-        Significance level for correlation test.
+        Significance level for the shuffle test.
     min_correlation : float, default=0.2
         Minimum correlation coefficient required.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of input phases.
+    n_shuffles : int, default=200
+        Number of permutation shuffles for the p-value. A smaller default
+        than :func:`phase_precession` (1000) keeps screening fast since this
+        function is intended for filtering many neurons.
+    random_state : int, numpy.random.Generator, or None, optional
+        Seed or generator for the shuffles. Pass a fixed value for a
+        deterministic result.
 
     Returns
     -------
@@ -386,6 +519,12 @@ def has_phase_precession(
     --------
     phase_precession : Full analysis with metrics.
 
+    Notes
+    -----
+    Genuine input errors (length mismatch, invalid ``angle_unit``) raise
+    rather than returning ``False``. Only an insufficient-data ``ValueError``
+    from the fit (too few valid spikes) maps to ``False``.
+
     Examples
     --------
     >>> import numpy as np
@@ -396,15 +535,31 @@ def has_phase_precession(
     >>> has_phase_precession(positions, phases)  # doctest: +SKIP
     False
     """
+    from neurospatial._validation import validate_lengths
+
+    # Validate inputs OUTSIDE the try so genuine input errors propagate.
+    if angle_unit not in ("rad", "deg"):
+        raise ValueError(f"angle_unit must be 'rad' or 'deg', got '{angle_unit}'")
+    positions = np.asarray(positions, dtype=np.float64)
+    phases = np.asarray(phases, dtype=np.float64)
+    validate_lengths({"positions": positions, "phases": phases})
+
     try:
-        result = phase_precession(positions, phases, angle_unit=angle_unit)
-        return (
-            result.pval < alpha
-            and result.correlation >= min_correlation
-            and result.slope < 0
+        result = phase_precession(
+            positions,
+            phases,
+            angle_unit=angle_unit,
+            n_shuffles=n_shuffles,
+            random_state=random_state,
         )
     except ValueError:
+        # Too few spikes after NaN-dropping -> cannot assess precession.
         return False
+    return (
+        result.pval < alpha
+        and result.correlation >= min_correlation
+        and result.slope < 0
+    )
 
 
 def plot_phase_precession(

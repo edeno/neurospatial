@@ -74,6 +74,61 @@ __all__ = [
 ]
 
 
+def _half_max_halfwidth(
+    rates: NDArray[np.float64],
+    peak_idx: int,
+    half_max: float,
+    bin_size: float,
+    *,
+    step: int,
+) -> float:
+    """Distance (radians) from peak to the half-max crossing in one direction.
+
+    Walks circularly from ``peak_idx`` in ``step`` (+1 or -1), skipping NaN
+    bins, and linearly interpolates the crossing between the last finite bin
+    above half-max and the first finite bin below it. ``offset`` counts bins
+    from the peak so the geometric distance is preserved even when NaN bins are
+    skipped. Returns NaN if no finite below-half-max bin is found.
+
+    Parameters
+    ----------
+    rates : ndarray of shape (n_bins,)
+        Directional firing rate per angular bin (may contain NaN for
+        unvisited bins).
+    peak_idx : int
+        Index of the peak bin.
+    half_max : float
+        Half of the peak firing rate.
+    bin_size : float
+        Angular bin width in radians.
+    step : int
+        Search direction: +1 (increasing index) or -1 (decreasing index).
+
+    Returns
+    -------
+    float
+        Half-width at half-maximum in radians for this direction, or NaN if
+        no finite below-half-max bin is found.
+    """
+    n_bins = len(rates)
+    prev_offset = 0
+    prev_rate = rates[peak_idx]
+    for offset in range(1, n_bins // 2 + 1):
+        idx = (peak_idx + step * offset) % n_bins
+        r = rates[idx]
+        if not np.isfinite(r):
+            continue  # skip unvisited bin; keep accumulating offset distance
+        if r < half_max:
+            denom = r - prev_rate
+            frac = 0.0 if denom == 0 else (half_max - prev_rate) / denom
+            # Interpolate between the last finite-above bin (prev_offset) and
+            # this finite-below bin (offset), in units of bins-from-peak.
+            return (prev_offset + frac * (offset - prev_offset)) * bin_size
+        prev_offset = offset
+        prev_rate = r
+    return float(np.nan)
+
+
 @dataclass(frozen=True)
 class DirectionalRateResult(SpatialResultMixin):
     """Result of directional rate computation for a single neuron.
@@ -96,6 +151,11 @@ class DirectionalRateResult(SpatialResultMixin):
         Width of each angular bin in radians.
     bandwidth : float or None
         Gaussian smoothing bandwidth in radians, or None if unsmoothed.
+    spike_counts : ArrayLike or None, optional
+        Raw (unsmoothed) spike count per angular bin, shape (n_bins,). Used as
+        count weights for the Rayleigh test. None for results constructed
+        without counts (e.g. from external tuning curves), in which case
+        rayleigh_pvalue() falls back to occupancy-implied counts.
 
     Attributes
     ----------
@@ -109,6 +169,9 @@ class DirectionalRateResult(SpatialResultMixin):
         Angular bin width in radians.
     bandwidth : float or None
         Smoothing bandwidth in radians, or None.
+    spike_counts : ArrayLike or None
+        Raw (unsmoothed) spike count per angular bin, shape (n_bins,), or
+        None if the result was built without counts.
 
     Notes
     -----
@@ -157,6 +220,7 @@ class DirectionalRateResult(SpatialResultMixin):
     bin_centers: ArrayLike
     bin_size: float
     bandwidth: float | None
+    spike_counts: ArrayLike | None = None
 
     @property
     def _bin_centers(self) -> NDArray[np.float64]:
@@ -503,7 +567,7 @@ class DirectionalRateResult(SpatialResultMixin):
         rates = np.asarray(self.firing_rate, dtype=np.float64)
 
         # Find peak
-        peak_idx = np.nanargmax(rates)
+        peak_idx = int(np.nanargmax(rates))
         peak_rate = rates[peak_idx]
         half_max = peak_rate / 2.0
 
@@ -512,41 +576,24 @@ class DirectionalRateResult(SpatialResultMixin):
             # All rates are above half-max, can't compute HWHM
             return float(np.nan)
 
-        n_bins = len(rates)
+        # Search for half-max crossings on both sides using circular indexing.
+        # The helper skips NaN (unvisited) bins so an unvisited bin between the
+        # peak and the crossing no longer aborts the search.
+        right_width = _half_max_halfwidth(
+            rates, peak_idx, half_max, self.bin_size, step=+1
+        )
+        left_width = _half_max_halfwidth(
+            rates, peak_idx, half_max, self.bin_size, step=-1
+        )
 
-        # Search for half-max crossings on both sides
-        # Use circular indexing
-
-        # Search right (increasing index)
-        right_width = 0.0
-        for offset in range(1, n_bins // 2 + 1):
-            idx = (peak_idx + offset) % n_bins
-            if rates[idx] < half_max:
-                # Interpolate to find exact crossing
-                prev_idx = (peak_idx + offset - 1) % n_bins
-                frac = (half_max - rates[prev_idx]) / (rates[idx] - rates[prev_idx])
-                right_width = (offset - 1 + frac) * self.bin_size
-                break
-        else:
-            # Never crossed half-max (shouldn't happen if we passed the check above)
+        # Average the finite half-widths. If only one side crosses (the other
+        # is masked-out NaN all the way round), report the single finite side
+        # rather than NaN.
+        halves = np.array([left_width, right_width])
+        finite = halves[np.isfinite(halves)]
+        if finite.size == 0:
             return float(np.nan)
-
-        # Search left (decreasing index)
-        left_width = 0.0
-        for offset in range(1, n_bins // 2 + 1):
-            idx = (peak_idx - offset) % n_bins
-            if rates[idx] < half_max:
-                # Interpolate to find exact crossing
-                prev_idx = (peak_idx - offset + 1) % n_bins
-                frac = (half_max - rates[prev_idx]) / (rates[idx] - rates[prev_idx])
-                left_width = (offset - 1 + frac) * self.bin_size
-                break
-        else:
-            # Never crossed half-max
-            return float(np.nan)
-
-        # Return average of left and right half-widths
-        return float((left_width + right_width) / 2.0)
+        return float(finite.mean())
 
     def tuning_width_deg(self) -> float:
         """Compute the tuning width (half-width at half-maximum) in degrees.
@@ -600,11 +647,18 @@ class DirectionalRateResult(SpatialResultMixin):
         Notes
         -----
         The Rayleigh test uses the mean vector length (R) to compute a
-        test statistic. For a sample weighted by firing rates:
+        test statistic. The bin centers are the angles and the **spike
+        counts** are the frequency weights:
 
-            z = n_eff * R²
+            z = sum(spike_counts) * R²
 
-        where n_eff is the effective sample size (related to total spikes).
+        Spike counts (not firing rates in Hz) are the correct weights: the
+        Rayleigh statistic treats the weights as event frequencies, so using
+        rates would make the p-value depend on bin dwell-time and the absolute
+        rate scale. When ``spike_counts`` is None (e.g. results built from an
+        external tuning curve), counts are reconstructed as
+        ``firing_rate * occupancy``, which is still a count and keeps the
+        statistic scale-correct.
 
         **Interpretation**:
 
@@ -640,6 +694,23 @@ class DirectionalRateResult(SpatialResultMixin):
         >>> pval < 0.05  # Significant non-uniformity
         True
 
+        Building a result *with* explicit spike counts uses those counts as
+        the Rayleigh weights; without them, counts are reconstructed from
+        ``firing_rate * occupancy``:
+
+        >>> occupancy = np.ones(n_bins) * 0.5
+        >>> counts = np.round(firing_rate * occupancy)
+        >>> with_counts = DirectionalRateResult(
+        ...     firing_rate=firing_rate,
+        ...     occupancy=occupancy,
+        ...     bin_centers=bin_centers,
+        ...     bin_size=np.pi / 30,
+        ...     bandwidth=None,
+        ...     spike_counts=counts,
+        ... )
+        >>> with_counts.rayleigh_pvalue() < 0.05
+        True
+
         See Also
         --------
         mean_vector_length : Tuning strength measure
@@ -648,17 +719,30 @@ class DirectionalRateResult(SpatialResultMixin):
         """
         from neurospatial.stats.circular import rayleigh_test
 
-        rates = np.asarray(self.firing_rate, dtype=np.float64)
         centers = np.asarray(self.bin_centers, dtype=np.float64)
+        rates = np.asarray(self.firing_rate, dtype=np.float64)
 
-        # Mask out NaN values (from unvisited bins) before Rayleigh test
-        valid_mask = ~np.isnan(rates)
-        if not np.any(valid_mask):
+        # Count weights for the Rayleigh test. The test treats weights as
+        # FREQUENCIES (z = sum(weights) * R**2); firing rate in Hz is the wrong
+        # quantity because it is occupancy- and rate-scale-dependent.
+        if self.spike_counts is not None:
+            counts = np.asarray(self.spike_counts, dtype=np.float64)
+        else:
+            # Fallback for results built without raw counts: reconstruct an
+            # integer-like count from rate * occupancy. Still a count, so the
+            # statistic remains scale-correct.
+            occ = np.asarray(self.occupancy, dtype=np.float64)
+            counts = rates * occ
+
+        # Drop bins with no valid weight (unvisited -> NaN rate / NaN count,
+        # or zero count). A bin with zero spikes contributes nothing to the
+        # resultant and must not be passed as a zero weight that still counts
+        # toward n.
+        valid = np.isfinite(centers) & np.isfinite(counts) & (counts > 0)
+        if valid.sum() < 3:
             return float(np.nan)
 
-        # The rayleigh_test uses the bin centers as angles and firing rates as weights
-        _, pval = rayleigh_test(centers[valid_mask], weights=rates[valid_mask])
-
+        _, pval = rayleigh_test(centers[valid], weights=counts[valid])
         return pval
 
     def is_head_direction_cell(self, min_mvl: float = 0.4, alpha: float = 0.05) -> bool:
@@ -857,6 +941,10 @@ class DirectionalRatesResult(SpatialResultMixin):
         Width of each angular bin in radians.
     bandwidth : float or None
         Gaussian smoothing bandwidth in radians, or None if unsmoothed.
+    spike_counts : ArrayLike or None, optional
+        Raw (unsmoothed) spike counts per angular bin, shape
+        (n_neurons, n_bins). Forwarded to each per-neuron result for the
+        Rayleigh test. None if the batch was built without counts.
 
     Attributes
     ----------
@@ -870,6 +958,9 @@ class DirectionalRatesResult(SpatialResultMixin):
         Angular bin width in radians.
     bandwidth : float or None
         Smoothing bandwidth in radians, or None.
+    spike_counts : ArrayLike or None
+        Raw (unsmoothed) spike counts per angular bin, shape
+        (n_neurons, n_bins), or None.
 
     Notes
     -----
@@ -931,6 +1022,7 @@ class DirectionalRatesResult(SpatialResultMixin):
     bin_centers: ArrayLike
     bin_size: float
     bandwidth: float | None
+    spike_counts: ArrayLike | None = None  # shape (n_neurons, n_bins)
 
     @property
     def _bin_centers(self) -> NDArray[np.float64]:
@@ -970,12 +1062,14 @@ class DirectionalRatesResult(SpatialResultMixin):
         (n_bins,)
         """
         rates: NDArray[np.float64] = np.asarray(self.firing_rates)
+        counts = self.spike_counts
         return DirectionalRateResult(
             firing_rate=rates[idx],
             occupancy=self.occupancy,
             bin_centers=self.bin_centers,
             bin_size=self.bin_size,
             bandwidth=self.bandwidth,
+            spike_counts=(None if counts is None else np.asarray(counts)[idx]),
         )
 
     def __iter__(self) -> Iterator[DirectionalRateResult]:
@@ -1522,6 +1616,7 @@ def compute_directional_rate(
         bin_centers=bin_centers,
         bin_size=actual_bin_size_rad,
         bandwidth=bandwidth_rad,
+        spike_counts=spike_counts,
     )
 
 
@@ -1728,6 +1823,7 @@ def compute_directional_rates(
     # Handle empty neuron list
     if n_neurons == 0:
         empty_rates: ArrayLike = np.empty((0, n_bins), dtype=np.float64)
+        empty_counts: ArrayLike = np.empty((0, n_bins), dtype=np.float64)
         if resolved_backend == "jax" and is_jax_available():
             import jax.numpy as jnp
 
@@ -1740,11 +1836,14 @@ def compute_directional_rates(
             bin_centers=bin_centers,
             bin_size=actual_bin_size_rad,
             bandwidth=bandwidth_rad,
+            spike_counts=empty_counts,
         )
 
     # Helper function to process a single neuron's spike train
-    def _process_neuron(neuron_spikes: NDArray[np.float64]) -> NDArray[np.float64]:
-        """Bin spike train and compute firing rate for one neuron."""
+    def _process_neuron(
+        neuron_spikes: NDArray[np.float64],
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """Bin spike train and compute (firing_rate, spike_counts) for one neuron."""
         spike_counts = bin_directional_spike_train(
             neuron_spikes, times, headings, bin_size, angle_unit=angle_unit
         )
@@ -1765,23 +1864,25 @@ def compute_directional_rates(
             # Set unvisited bins to NaN
             firing_rate[occupancy_smooth == 0] = np.nan
 
-        return firing_rate
+        # Return the unsmoothed counts for the Rayleigh test weights.
+        return firing_rate, spike_counts
 
     # Process neurons (sequential or parallel)
     if n_jobs == 1 or n_neurons <= 1:
         # Sequential processing
-        firing_rates = np.array(
-            [_process_neuron(spikes) for spikes in spike_times_list],
-            dtype=np.float64,
-        )
+        processed = [_process_neuron(spikes) for spikes in spike_times_list]
     else:
         # Parallel processing with joblib
         from joblib import Parallel, delayed
 
-        firing_rates_list = Parallel(n_jobs=n_jobs)(
+        processed = Parallel(n_jobs=n_jobs)(
             delayed(_process_neuron)(spikes) for spikes in spike_times_list
         )
-        firing_rates = np.array(firing_rates_list, dtype=np.float64)
+
+    firing_rates = np.array([rate for rate, _ in processed], dtype=np.float64)
+    spike_counts_all: ArrayLike = np.array(
+        [counts for _, counts in processed], dtype=np.float64
+    )
 
     # Convert to JAX arrays if JAX backend is selected
     if resolved_backend == "jax" and is_jax_available():
@@ -1797,6 +1898,7 @@ def compute_directional_rates(
         bin_centers=bin_centers,
         bin_size=actual_bin_size_rad,
         bandwidth=bandwidth_rad,
+        spike_counts=spike_counts_all,
     )
 
 
@@ -1871,7 +1973,7 @@ def is_head_direction_cell(
     >>> # Screen many neurons
     >>> times = np.linspace(0, 60, 1800)
     >>> headings = np.random.uniform(0, 2 * np.pi, 1800)
-    >>> spike_times = np.random.uniform(0, 60, 100)
+    >>> spike_times = np.sort(np.random.uniform(0, 60, 100))
     >>> result = is_head_direction_cell(spike_times, times, headings)
     >>> type(result)
     <class 'bool'>
@@ -1881,6 +1983,13 @@ def is_head_direction_cell(
     compute_directional_rate : Full directional rate computation
     DirectionalRateResult.is_head_direction_cell : HD cell classification on result object
     """
+    from neurospatial.encoding._validation import validate_classifier_trajectory
+
+    # Validate inputs OUTSIDE the try so genuine input errors propagate.
+    validate_classifier_trajectory(
+        spike_times, times, headings, context="is_head_direction_cell"
+    )
+
     try:
         result = compute_directional_rate(
             spike_times,
@@ -1890,9 +1999,11 @@ def is_head_direction_cell(
             bandwidth=bandwidth,
             angle_unit=angle_unit,
         )
-        return result.is_head_direction_cell(min_mvl=min_mvl, alpha=alpha)
     except (ValueError, RuntimeError):
+        # Computation passed validation but produced no usable tuning
+        # (e.g. no spikes in any visited bin) -> not an HD cell.
         return False
+    return result.is_head_direction_cell(min_mvl=min_mvl, alpha=alpha)
 
 
 def plot_head_direction_tuning(
