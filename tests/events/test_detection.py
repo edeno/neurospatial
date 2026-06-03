@@ -374,6 +374,26 @@ class TestAddPositionsDegenerateTrajectory:
         assert np.isnan(result["x"].iloc[1])
         assert np.isnan(result["y"].iloc[1])
 
+    def test_add_positions_empty_events_skips_trajectory_validation(self):
+        """Empty events short-circuit before the >= 2-sample trajectory guard.
+
+        With no events to position there is nothing to interpolate, so a
+        single-sample (or empty) trajectory must not raise.
+        """
+        from neurospatial.events.detection import add_positions
+
+        events = pd.DataFrame({"timestamp": []})
+
+        # A 1-sample trajectory would fail the >= 2-sample guard if it ran.
+        times = np.array([0.0])
+        positions = np.array([[0.0, 0.0]])
+
+        result = add_positions(events, positions, times)
+
+        assert len(result) == 0
+        assert "x" in result.columns
+        assert "y" in result.columns
+
     def test_add_positions_valid_unchanged(self):
         """The module doctest example still returns [[3, 3], [7, 7]]."""
         from neurospatial.events.detection import add_positions

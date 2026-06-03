@@ -122,6 +122,26 @@ def add_positions(
             "  HOW: Ensure positions.shape[0] == times.shape[0]."
         )
 
+    # Ensure positions is 2D
+    if positions.ndim == 1:
+        positions = positions.reshape(-1, 1)
+
+    n_dims = positions.shape[1]
+
+    # Handle empty events FIRST: with no events to position there is nothing to
+    # interpolate, so we return early without validating the trajectory. This
+    # lets callers pass a 1-sample (or empty) trajectory alongside an empty
+    # event table without tripping the >= 2 sample / finite / non-zero-span
+    # guards below, which only matter when interpolation actually happens.
+    if len(events) == 0:
+        result = events.copy()
+        result["x"] = np.array([], dtype=np.float64)
+        if n_dims >= 2:
+            result["y"] = np.array([], dtype=np.float64)
+        if n_dims >= 3:
+            result["z"] = np.array([], dtype=np.float64)
+        return result
+
     from neurospatial._validation import validate_finite
 
     # Trajectory timestamps must be finite to define the interpolant; a NaN/Inf
@@ -149,24 +169,8 @@ def add_positions(
             "  HOW: pass a trajectory whose timestamps vary."
         )
 
-    # Ensure positions is 2D
-    if positions.ndim == 1:
-        positions = positions.reshape(-1, 1)
-
-    n_dims = positions.shape[1]
-
     # Get event timestamps
     event_times = events[timestamp_column].values.astype(np.float64)
-
-    # Handle empty events
-    if len(events) == 0:
-        result = events.copy()
-        result["x"] = np.array([], dtype=np.float64)
-        if n_dims >= 2:
-            result["y"] = np.array([], dtype=np.float64)
-        if n_dims >= 3:
-            result["z"] = np.array([], dtype=np.float64)
-        return result
 
     # Sort trajectory by time if needed
     sort_idx = np.argsort(times)

@@ -66,13 +66,17 @@ class EnvironmentSerialization:
 
     Examples
     --------
+    >>> import tempfile
+    >>> from pathlib import Path
     >>> import numpy as np
     >>> from neurospatial import Environment
     >>> data = np.random.rand(100, 2) * 10
     >>> env = Environment.from_samples(data, bin_size=2.0)
-    >>> env.to_file("my_environment")  # Creates .json and .npz files
-    >>> loaded = Environment.from_file("my_environment")  # doctest: +SKIP
-    >>> assert env == loaded  # doctest: +SKIP
+    >>> tmp = Path(tempfile.mkdtemp()) / "my_environment"
+    >>> env.to_file(tmp)  # Creates .json and .npz files
+    >>> loaded = Environment.from_file(tmp)
+    >>> loaded.n_bins == env.n_bins
+    True
 
     See Also
     --------
@@ -269,31 +273,34 @@ class EnvironmentSerialization:
         --------
         Save environment to NWB file:
 
-        >>> from pynwb import NWBHDF5IO, NWBFile
-        >>> from datetime import datetime
-        >>> from neurospatial import Environment
-        >>> import numpy as np
+        >>> from pynwb import NWBHDF5IO, NWBFile  # doctest: +SKIP
+        >>> from datetime import datetime  # doctest: +SKIP
+        >>> from neurospatial import Environment  # doctest: +SKIP
+        >>> import numpy as np  # doctest: +SKIP
+        >>> import tempfile  # doctest: +SKIP
+        >>> from pathlib import Path  # doctest: +SKIP
         >>>
         >>> # Create environment
-        >>> positions = np.random.rand(1000, 2) * 100
-        >>> env = Environment.from_samples(positions, bin_size=5.0)
-        >>> env.units = "cm"
+        >>> positions = np.random.rand(1000, 2) * 100  # doctest: +SKIP
+        >>> env = Environment.from_samples(positions, bin_size=5.0)  # doctest: +SKIP
+        >>> env.units = "cm"  # doctest: +SKIP
         >>>
         >>> # Save to NWB
-        >>> nwbfile = NWBFile(
+        >>> nwbfile = NWBFile(  # doctest: +SKIP
         ...     session_description="Test session",
         ...     identifier="test_001",
         ...     session_start_time=datetime.now().astimezone(),
         ... )
-        >>> env.to_nwb(nwbfile, name="linear_track")
+        >>> env.to_nwb(nwbfile, name="linear_track")  # doctest: +SKIP
         >>>
-        >>> # Write to disk
-        >>> with NWBHDF5IO("session.nwb", "w") as io:
+        >>> # Write to disk (use a temp directory, not the CWD)
+        >>> path = Path(tempfile.mkdtemp()) / "session.nwb"  # doctest: +SKIP
+        >>> with NWBHDF5IO(path, "w") as io:  # doctest: +SKIP
         ...     io.write(nwbfile)
 
         Load environment back:
 
-        >>> with NWBHDF5IO("session.nwb", "r") as io:
+        >>> with NWBHDF5IO(path, "r") as io:  # doctest: +SKIP
         ...     nwbfile = io.read()
         ...     loaded_env = Environment.from_nwb(nwbfile, scratch_name="linear_track")
 

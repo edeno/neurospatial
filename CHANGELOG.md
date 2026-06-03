@@ -148,6 +148,13 @@
   `boundary_from_positions`, and `shapes_to_regions`.
 - `Regions.region_center`'s parameter was renamed from `region_name` to `name`,
   matching `Regions.area`. Update keyword callers.
+- The optional arguments of `simulate_trajectory_sinusoidal` and
+  `simulate_trajectory_laps` (`neurospatial.simulation`) are now keyword-only.
+  Only the leading required positionals remain positional — `(env, duration)`
+  for `simulate_trajectory_sinusoidal` and `(env, n_laps)` for
+  `simulate_trajectory_laps`. Positional callers such as
+  `simulate_trajectory_sinusoidal(env, 10.0, 100.0)` must update to
+  `simulate_trajectory_sinusoidal(env, 10.0, sampling_frequency=100.0)`.
 
 ### Breaking changes
 
