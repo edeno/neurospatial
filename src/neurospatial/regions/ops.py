@@ -58,7 +58,7 @@ from numpy.typing import NDArray
 from shapely import points
 from shapely.geometry import Polygon
 
-from .._constants import POINT_TOLERANCE
+from .._constants import POINT_REGION_TOLERANCE
 from ..ops.transforms import SpatialTransform
 from .core import Region, Regions
 
@@ -194,7 +194,7 @@ def points_in_any_region(
     regions: Regions,
     *,
     transform: SpatialTransform | None = None,
-    point_tolerance: float = POINT_TOLERANCE,
+    point_tolerance: float = POINT_REGION_TOLERANCE,
     include_boundary: bool = True,
 ) -> NDArray[np.bool_]:
     """Determine whether each point lies inside any of the provided Regions.
@@ -210,8 +210,11 @@ def points_in_any_region(
     transform : Optional[SpatialTransform], default=None
         If provided, a callable that maps input coordinates to
         the Regions' coordinate space.
-    point_tolerance : float, default=POINT_TOLERANCE
-        Tolerance for comparing query points to point Regions.
+    point_tolerance : float, default=POINT_REGION_TOLERANCE
+        Spatial half-width (in the regions' coordinate units) of the square
+        neighborhood around a point region that counts as a hit. Point regions
+        have no area, so membership is a proximity test, not exact equality.
+        Ignored for polygon regions. Pass a smaller value for stricter matching.
     include_boundary : bool, default=True
         If True, points on the boundary of polygon regions are considered inside.
         If False, only points strictly inside polygons are considered inside.
@@ -253,7 +256,7 @@ def regions_containing_points(
     transform: SpatialTransform | None = None,
     region_names: Sequence[str] | None = None,
     return_dataframe: bool = True,
-    point_tolerance: float = POINT_TOLERANCE,
+    point_tolerance: float = POINT_REGION_TOLERANCE,
     include_boundary: bool = True,
 ) -> list[list[str]] | pd.DataFrame:
     """For each point, identify all Regions that contain it.
@@ -277,8 +280,11 @@ def regions_containing_points(
         where each column is the region name and each value is True/False.
         If False, return a list of lists: each sublist contains region names (str)
         that contain the corresponding point.
-    point_tolerance : float, default=POINT_TOLERANCE
-        Tolerance for comparing query points to point Regions.
+    point_tolerance : float, default=POINT_REGION_TOLERANCE
+        Spatial half-width (in the regions' coordinate units) of the square
+        neighborhood around a point region that counts as a hit. Point regions
+        have no area, so membership is a proximity test, not exact equality.
+        Ignored for polygon regions. Pass a smaller value for stricter matching.
     include_boundary : bool, default=True
         If True, points on the boundary of polygon regions are considered inside.
         If False, only points strictly inside polygons are considered inside.

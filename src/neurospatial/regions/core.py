@@ -586,9 +586,13 @@ class Regions(MutableMapping[str, Region]):
 
         if region.kind == "point":
             return np.asarray(region.data, dtype=float)
-        else:  # region.kind == "polygon"
-            assert isinstance(region.data, Polygon)
-            return np.array(region.data.centroid.coords[0], dtype=float)
+        # region.kind == "polygon"
+        assert isinstance(region.data, Polygon)
+        if region.data.is_empty:
+            # Empty polygon has no centroid coordinates; the documented
+            # contract is to return None rather than raise.
+            return None
+        return np.array(region.data.centroid.coords[0], dtype=float)
 
     def buffer(
         self,

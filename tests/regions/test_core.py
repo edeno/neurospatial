@@ -191,6 +191,31 @@ def test_regions_area_point():
     assert regs.area("pt") == 0.0
 
 
+@pytest.mark.skipif(not HAS_SHAPELY, reason="Shapely required for polygon tests")
+def test_region_center_empty_polygon_returns_none():
+    """An empty polygon has no centroid; region_center returns None, not IndexError."""
+    regs = Regions([Region("e", kind="polygon", data=shp.Polygon())])
+    assert regs.region_center("e") is None
+
+
+@pytest.mark.skipif(not HAS_SHAPELY, reason="Shapely required for polygon tests")
+def test_region_center_nonempty_polygon_centroid():
+    """A unit-square polygon's center is its centroid (no regression)."""
+    poly = shp.Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
+    regs = Regions([Region("box", kind="polygon", data=poly)])
+    center = regs.region_center("box")
+    assert center is not None
+    np.testing.assert_allclose(center, [0.5, 0.5])
+
+
+def test_region_center_point_unchanged():
+    """A point region returns its coordinates (no regression)."""
+    regs = Regions([Region("pt", kind="point", data=np.array([3.0, 7.0]))])
+    center = regs.region_center("pt")
+    assert center is not None
+    np.testing.assert_allclose(center, [3.0, 7.0])
+
+
 def test_regions_remove_absent_raises():
     """Regions.remove now raises on missing name (M5.5).
 
