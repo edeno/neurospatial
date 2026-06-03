@@ -223,10 +223,10 @@ def generate_population_spikes(
     positions: NDArray[np.float64],
     times: NDArray[np.float64],
     *,
+    headings: NDArray[np.float64] | None = None,
     refractory_period: float = 0.002,
     seed: int | None = None,
     show_progress: bool = True,
-    headings: NDArray[np.float64] | None = None,
 ) -> list[NDArray[np.float64]]:
     """Generate spike trains for population of neurons.
 
@@ -242,6 +242,10 @@ def generate_population_spikes(
         Position trajectory in continuous coordinates.
     times : NDArray[np.float64], shape (n_time,)
         Time points in seconds (must be uniformly spaced).
+    headings : NDArray[np.float64], shape (n_time,), optional
+        Head direction in radians. Required for spatial-view models and
+        directional object-vector models. For head-direction models, headings
+        are used when provided; otherwise they are derived from position velocity.
     refractory_period : float, optional
         Refractory period for each neuron in seconds (default: 2ms).
     seed : int | None, optional
@@ -250,10 +254,6 @@ def generate_population_spikes(
     show_progress : bool, optional
         Show progress bar during spike generation (default: True).
         Set to False for quiet operation in scripts or tests.
-    headings : NDArray[np.float64], shape (n_time,), optional
-        Head direction in radians. Required for spatial-view models and
-        directional object-vector models. For head-direction models, headings
-        are used when provided; otherwise they are derived from position velocity.
 
     Returns
     -------

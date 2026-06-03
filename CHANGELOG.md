@@ -130,6 +130,15 @@
 - Renamed `SpatialRatesResult.classify` to `SpatialRatesResult.detect_cell_types`
   for naming parity with `EgocentricRatesResult.detect_ovcs` and
   `ViewRatesResult.detect_view_cells`.
+- `compute_vte_session` is now env-first — `(env, positions, times, *, ...)` —
+  matching `compute_decision_analysis`. Update positional callers.
+- `detect_goal_directed_runs` now raises `ValueError` (was `KeyError`) when the
+  requested region is absent, matching sibling behavior validators.
+- `calibration` (and `method`/`simplify_tolerance` where present) are now
+  keyword-only in `regions_from_labelme`, `regions_from_cvat`,
+  `boundary_from_positions`, and `shapes_to_regions`.
+- `Regions.region_center`'s parameter was renamed from `region_name` to `name`,
+  matching `Regions.area`. Update keyword callers.
 
 ### Breaking changes
 

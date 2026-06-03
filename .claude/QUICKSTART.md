@@ -271,9 +271,9 @@ from neurospatial.behavior.vte import compute_vte_session, compute_vte_trial
 
 # Analyze VTE behavior at decision points across a session
 result = compute_vte_session(
-    positions, times, trials,
+    env, positions, times,
     decision_region="center",  # Region name in env.regions
-    env=env,
+    trials=trials,
     window_duration=1.0,       # Pre-decision window (seconds)
     vte_threshold=0.5,         # Classification threshold
 )

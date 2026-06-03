@@ -2188,10 +2188,9 @@ def detect_goal_directed_runs(
 
     Raises
     ------
-    KeyError
-        If goal_region not in env.regions.
     ValueError
-        If directedness_threshold not in [0, 1].
+        If goal_region not in env.regions, or if directedness_threshold
+        not in [0, 1].
     ValueError
         If min_progress is negative.
 
@@ -2255,7 +2254,7 @@ def detect_goal_directed_runs(
     # Input validation
     if goal_region not in env.regions:
         available = list(env.regions.keys())
-        raise KeyError(
+        raise ValueError(
             f"Region '{goal_region}' not found in env.regions. "
             f"Available regions: {available}"
         )

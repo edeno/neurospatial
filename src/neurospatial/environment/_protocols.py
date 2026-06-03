@@ -359,7 +359,7 @@ class EnvironmentProtocol(Protocol):
         *,
         speed: NDArray[np.float64] | None = None,
         min_speed: float | None = None,
-        max_gap: float | None = None,
+        max_gap: float | None = 0.5,
         bandwidth: float | None = None,
         time_allocation: Literal["start", "linear"] = "start",
         return_seconds: bool = True,
@@ -377,7 +377,7 @@ class EnvironmentProtocol(Protocol):
             Speed at each time point for filtering.
         min_speed : float, optional
             Minimum speed threshold for inclusion.
-        max_gap : float, optional
+        max_gap : float, optional, default=0.5
             Maximum time gap before splitting trajectory.
         bandwidth : float, optional
             Bandwidth for smoothing occupancy.
@@ -696,9 +696,10 @@ class EnvironmentProtocol(Protocol):
         self,
         fields: Any,  # Sequence[NDArray[np.float64]] | NDArray[np.float64]
         *,
+        frame_times: NDArray[np.float64],
         backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",
         save_path: str | None = None,
-        fps: int = 30,
+        speed: float = 1.0,
         cmap: str = "viridis",
         vmin: float | None = None,
         vmax: float | None = None,
@@ -716,7 +717,6 @@ class EnvironmentProtocol(Protocol):
         show_colorbar: bool = False,
         colorbar_label: str = "",
         overlays: list[OverlayProtocol] | None = None,
-        frame_times: NDArray[np.float64] | None = None,
         show_regions: bool | list[str] = False,
         region_alpha: float = 0.3,
         scale_bar: bool | Any = False,  # bool | ScaleBarConfig
@@ -729,12 +729,14 @@ class EnvironmentProtocol(Protocol):
         ----------
         fields : ndarray of shape (n_frames, n_bins) or sequence
             Spatial field values for each frame.
+        frame_times : ndarray of shape (n_frames,)
+            Timestamps for each frame. Required.
         backend : {'auto', 'napari', 'video', 'html', 'widget'}, default='auto'
             Animation backend to use.
         save_path : str, optional
             Path to save video file.
-        fps : int, default=30
-            Frames per second for video output.
+        speed : float, default=1.0
+            Playback speed multiplier relative to real time.
         cmap : str, default='viridis'
             Colormap name.
         vmin : float, optional
@@ -769,8 +771,6 @@ class EnvironmentProtocol(Protocol):
             Label for colorbar.
         overlays : list of OverlayProtocol, optional
             Additional overlay objects.
-        frame_times : ndarray of shape (n_frames,), optional
-            Timestamps for each frame.
         show_regions : bool or list of str, default=False
             Whether to show region boundaries.
         region_alpha : float, default=0.3

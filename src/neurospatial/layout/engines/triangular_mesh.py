@@ -15,6 +15,7 @@ from numpy.typing import NDArray
 from scipy.spatial import Delaunay
 from shapely.geometry import Polygon
 
+from neurospatial.layout.base import capture_build_params
 from neurospatial.layout.helpers.triangular_mesh import (
     _build_mesh_connectivity_graph,
     _compute_mesh_dimension_ranges,
@@ -74,7 +75,8 @@ class TriangularMeshLayout:
         """Return False - triangular mesh layouts cannot be rendered as 2D images."""
         return False
 
-    def build(self, boundary_polygon: Polygon, point_spacing: float) -> None:
+    @capture_build_params
+    def build(self, boundary_polygon: Polygon, *, point_spacing: float) -> None:
         """Build the triangular mesh layout.
 
         Parameters

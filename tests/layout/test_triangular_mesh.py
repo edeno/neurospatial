@@ -317,6 +317,19 @@ class TestTriangularMeshLayoutBuild:
         assert "boundary_exterior_coords" in layout._build_params_used
         assert "boundary_interior_coords_list" in layout._build_params_used
 
+    def test_triangular_mesh_build_capture_params(self):
+        """build() captures point_spacing; positional point_spacing is rejected."""
+        layout = TriangularMeshLayout()
+        poly = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
+
+        layout.build(poly, point_spacing=2.0)
+        assert layout._build_params_used["point_spacing"] == 2.0
+
+        # point_spacing is keyword-only: passing it positionally raises TypeError.
+        layout2 = TriangularMeshLayout()
+        with pytest.raises(TypeError):
+            layout2.build(poly, 2.0)
+
     def test_grid_shape_and_active_mask(self):
         """Test that grid_shape and active_mask are set correctly."""
         layout = TriangularMeshLayout()

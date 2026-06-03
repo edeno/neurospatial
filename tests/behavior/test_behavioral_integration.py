@@ -105,9 +105,9 @@ class TestVTEDecisionAnalysisIntegration:
 
         # Run VTE session - should use same entry detection
         result = compute_vte_session(
+            env,
             trajectory,
             times,
-            env,
             decision_region="decision",
             trials=trials,
             window_duration=0.5,
@@ -188,9 +188,9 @@ class TestVTERoundTrip:
 
         # Run VTE session
         result = compute_vte_session(
+            env,
             positions_array,
             times_array,
-            env,
             decision_region="decision",
             trials=trials,
             window_duration=0.8,

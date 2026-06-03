@@ -460,6 +460,7 @@ def simulate_trajectory_ou(
 def simulate_trajectory_sinusoidal(
     env: Environment,
     duration: float,
+    *,
     sampling_frequency: float = 500.0,
     speed: float = 10.0,
     period: float | None = None,
@@ -598,6 +599,7 @@ def simulate_trajectory_sinusoidal(
 def simulate_trajectory_laps(
     env: Environment,
     n_laps: int,
+    *,
     speed_mean: float = 0.1,
     speed_std: float = 0.02,
     outbound_path: list[int] | None = None,

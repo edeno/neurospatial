@@ -216,6 +216,18 @@ def test_region_center_point_unchanged():
     np.testing.assert_allclose(center, [3.0, 7.0])
 
 
+def test_region_center_name_kwarg():
+    """region_center accepts name= keyword; the old region_name= raises TypeError."""
+    regs = Regions([Region("goal", kind="point", data=np.array([1.0, 2.0]))])
+
+    center = regs.region_center(name="goal")
+    assert center is not None
+    np.testing.assert_allclose(center, [1.0, 2.0])
+
+    with pytest.raises(TypeError):
+        regs.region_center(region_name="goal")
+
+
 def test_regions_remove_absent_raises():
     """Regions.remove now raises on missing name.
 

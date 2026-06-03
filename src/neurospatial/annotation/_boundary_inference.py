@@ -73,8 +73,8 @@ class BoundaryConfig:
 
 def boundary_from_positions(
     positions: NDArray[np.float64],
-    method: Literal["alpha_shape", "convex_hull"] | None = None,
     *,
+    method: Literal["alpha_shape", "convex_hull"] | None = None,
     config: BoundaryConfig | None = None,
     buffer_fraction: float | None = None,
     simplify_fraction: float | None = None,

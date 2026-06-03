@@ -752,8 +752,8 @@ def _process_annotation_results(
         shapes_data,
         names,
         roles,
-        calibration,
-        simplify_tolerance,
+        calibration=calibration,
+        simplify_tolerance=simplify_tolerance,
         multiple_boundaries=multiple_boundaries,
     )
 

@@ -12,8 +12,8 @@ if TYPE_CHECKING:
 
 def regions_from_labelme(
     json_path: str | Path,
-    calibration: VideoCalibration | None = None,
     *,
+    calibration: VideoCalibration | None = None,
     label_key: str = "label",
     points_key: str = "points",
 ) -> Regions:
@@ -71,6 +71,7 @@ def regions_from_labelme(
 
 def regions_from_cvat(
     xml_path: str | Path,
+    *,
     calibration: VideoCalibration | None = None,
 ) -> Regions:
     """Load regions from CVAT XML with optional calibration.

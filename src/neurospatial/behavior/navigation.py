@@ -1109,7 +1109,9 @@ def heading_direction_labels(
     n_directions : int, default=8
         Number of direction bins. Default 8 creates 45 deg bins.
     min_speed : float, default=5.0
-        Minimum speed threshold.
+        Minimum speed threshold below which a sample is labeled "stationary".
+        In the same spatial-units-per-second as ``positions``/``times`` (e.g.
+        cm/s if positions are in cm). The 5.0 default assumes cm/s.
 
     Returns
     -------

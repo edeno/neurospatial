@@ -43,11 +43,11 @@ VTE analysis:
 
 >>> from neurospatial.behavior import compute_vte_session
 >>> result = compute_vte_session(
+...     env,
 ...     positions,
 ...     times,
-...     trials,
 ...     decision_region="center",
-...     env=env,
+...     trials=trials,
 ...     window_duration=1.0,
 ... )  # doctest: +SKIP
 >>> print(
@@ -591,9 +591,9 @@ def compute_vte_trial(
 
 
 def compute_vte_session(
+    env: Environment,
     positions: NDArray[np.float64],
     times: NDArray[np.float64],
-    env: Environment,
     *,
     decision_region: str,
     trials: list[Trial],
@@ -606,16 +606,16 @@ def compute_vte_session(
 
     Parameters
     ----------
+    env : Environment
+        Environment with region definitions.
     positions : NDArray[np.float64], shape (n_samples, n_dims)
         Position coordinates for entire session.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps for entire session.
-    trials : list[Trial]
-        Trial segmentation from segment_trials().
     decision_region : str
         Name of decision region in env.regions.
-    env : Environment
-        Environment with region definitions.
+    trials : list[Trial]
+        Trial segmentation from segment_trials().
     window_duration : float, default=1.0
         Duration of pre-decision window in seconds.
         Typical values: 0.5-2.0s depending on maze size and task.
@@ -637,11 +637,11 @@ def compute_vte_session(
     --------
     >>> from neurospatial.behavior import compute_vte_session
     >>> result = compute_vte_session(
+    ...     env,
     ...     positions,
     ...     times,
-    ...     trials,
     ...     decision_region="center",
-    ...     env=env,
+    ...     trials=trials,
     ...     window_duration=1.0,
     ... )  # doctest: +SKIP
     >>> print(

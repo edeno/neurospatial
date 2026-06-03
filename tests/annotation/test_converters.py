@@ -99,7 +99,9 @@ class TestShapesToRegions:
         names = ["scaled_region"]
         roles = ["region"]
 
-        regions, _, _ = shapes_to_regions(shapes_data, names, roles, calibration)
+        regions, _, _ = shapes_to_regions(
+            shapes_data, names, roles, calibration=calibration
+        )
 
         assert len(regions) == 1
         poly = regions["scaled_region"].data
@@ -416,7 +418,9 @@ class TestCalibrationRoundTrip:
         roles = ["region"]
 
         # Convert with calibration
-        regions, _, _ = shapes_to_regions(shapes_data, names, roles, calibration)
+        regions, _, _ = shapes_to_regions(
+            shapes_data, names, roles, calibration=calibration
+        )
 
         # After coordinate swap (row,col -> x,y) and 2x scale:
         # Original (row,col): (0,0), (0,1), (1,1), (1,0)

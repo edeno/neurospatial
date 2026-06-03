@@ -562,12 +562,12 @@ class Regions(MutableMapping[str, Region]):
             return float(region.data.area)
         return 0.0
 
-    def region_center(self, region_name: str) -> NDArray[np.float64] | None:
+    def region_center(self, name: str) -> NDArray[np.float64] | None:
         """Calculate the center of a specified named region.
 
         Parameters
         ----------
-        region_name : str
+        name : str
             Name of region to query.
 
         Returns
@@ -579,13 +579,13 @@ class Regions(MutableMapping[str, Region]):
         Raises
         ------
         KeyError
-            If `region_name` is not present in this collection.
+            If `name` is not present in this collection.
 
         """
-        if region_name not in self._store:
-            raise KeyError(f"Region '{region_name}' not found in this collection.")
+        if name not in self._store:
+            raise KeyError(f"Region '{name}' not found in this collection.")
 
-        region = self._store[region_name]
+        region = self._store[name]
 
         if region.kind == "point":
             return np.asarray(region.data, dtype=float)
