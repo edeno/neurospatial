@@ -239,6 +239,22 @@
 
 ### Bug fixes
 
+- `decode_position` now raises a clear `ValueError` when `encoding_models` has
+  **no finite bins** — every spatial bin is `NaN` across all neurons (e.g.
+  `encoding_models = np.full((n_neurons, n_bins), np.nan)`). Such a model
+  carries zero information; previously the all-NaN-bin→`-inf` handling left the
+  entire likelihood `-inf`, and `normalize_to_posterior(handle_degenerate=
+  "uniform")` then returned a confident-looking **uniform posterior over invalid
+  positions**. The check is column-wise (a bin is unobserved only if `NaN` for
+  every neuron) and runs unconditionally, even with `validate=False`.
+  Partial-NaN models with at least one finite bin still decode normally, and a
+  legitimate no-spike time bin against a valid finite model still yields the
+  correct flat (uniform) posterior.
+- `DecodingResult.error_against` now requires `true_times` to be **strictly
+  increasing** and rejects duplicates (`np.diff(true_times) <= 0`). Previously
+  only descending values were rejected; duplicate timestamps (e.g.
+  `[0.0, 0.0, 1.0]`) were allowed and `np.interp` resolved the tied x-values
+  arbitrarily, silently mis-aligning the ground truth.
 - Egocentric-polar connectivity now adds **diagonal** edges across the ±π seam
   when `connect_diagonal_neighbors=True` and `circular_angle=True`. Previously
   interior diagonals and same-ring seam (wrap) edges were added, but the

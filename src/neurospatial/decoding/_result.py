@@ -572,9 +572,10 @@ class DecodingResult(ResultMixin):
         ------
         ValueError
             If :attr:`times` is ``None`` (decode times are required to align),
-            if ``true_times`` is not 1D, if ``true_times`` is not sorted
-            ascending (non-decreasing), if ``true_positions`` does not have
-            shape ``(len(true_times), n_dims)``, or if :attr:`times`,
+            if ``true_times`` is not 1D, if ``true_times`` is not strictly
+            increasing (duplicates are rejected because :func:`numpy.interp`
+            resolves duplicate x-values arbitrarily), if ``true_positions``
+            does not have shape ``(len(true_times), n_dims)``, or if :attr:`times`,
             ``true_times``, or ``true_positions`` contain any NaN or Inf value
             (which would otherwise yield silent NaN errors through
             :func:`numpy.interp`).
@@ -636,13 +637,15 @@ class DecodingResult(ResultMixin):
 
         if true_times.ndim != 1:
             raise ValueError(f"true_times must be 1D, got shape {true_times.shape}")
-        if np.any(np.diff(true_times) < 0):
+        if np.any(np.diff(true_times) <= 0):
             raise ValueError(
-                "true_times must be sorted ascending (non-decreasing); "
+                "true_times must be strictly increasing (no duplicates); "
                 "error_against() aligns ground truth onto decode times with "
                 "linear interpolation, which silently produces wrong results "
-                "for unsorted true_times. Sort true_times (and reorder "
-                "true_positions to match) before calling."
+                "for unsorted or duplicated true_times (np.interp resolves "
+                "duplicate x-values arbitrarily). Deduplicate and sort "
+                "true_times (and reorder true_positions to match) before "
+                "calling."
             )
         n_dims = self.env.n_dims
         if true_positions.shape != (true_times.shape[0], n_dims):

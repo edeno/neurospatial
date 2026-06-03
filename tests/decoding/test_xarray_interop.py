@@ -153,8 +153,41 @@ class TestErrorAgainst:
         true_times = np.array([1.0, 0.0])
         true_positions = np.array([[10.0, 10.0], [0.0, 0.0]])
 
-        with pytest.raises(ValueError, match="must be sorted ascending"):
+        with pytest.raises(ValueError, match="must be strictly increasing"):
             result.error_against(true_times, true_positions)
+
+    def test_error_against_rejects_duplicate_true_times(self, small_2d_env):
+        """Duplicate true_times raise ValueError (interp resolves ties arbitrarily)."""
+        posterior = np.ones((3, small_2d_env.n_bins)) / small_2d_env.n_bins
+        result = DecodingResult(
+            posterior=posterior,
+            env=small_2d_env,
+            times=np.array([0.0, 0.5, 1.0]),
+        )
+
+        # Duplicated x-value at t=0.0: np.interp would resolve the tie
+        # arbitrarily and silently mis-align the ground truth.
+        true_times = np.array([0.0, 0.0, 1.0])
+        true_positions = np.array([[0.0, 0.0], [5.0, 5.0], [10.0, 10.0]])
+
+        with pytest.raises(ValueError, match="must be strictly increasing"):
+            result.error_against(true_times, true_positions)
+
+    def test_error_against_strictly_increasing_true_times_ok(self, small_2d_env):
+        """Strictly increasing true_times still decode without error."""
+        posterior = np.ones((3, small_2d_env.n_bins)) / small_2d_env.n_bins
+        result = DecodingResult(
+            posterior=posterior,
+            env=small_2d_env,
+            times=np.array([0.0, 0.5, 1.0]),
+        )
+
+        true_times = np.array([0.0, 0.5, 1.0])
+        true_positions = np.array([[0.0, 0.0], [5.0, 5.0], [10.0, 10.0]])
+
+        errors = result.error_against(true_times, true_positions)
+        assert errors.shape == (3,)
+        assert np.isfinite(errors).all()
 
     def test_error_against_rejects_nan_self_times(self, small_2d_env):
         """A NaN in self.times raises ValueError (not a silent NaN error)."""

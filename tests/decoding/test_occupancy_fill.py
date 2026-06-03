@@ -281,3 +281,95 @@ def test_decode_all_nan_bin_gets_zero_posterior() -> None:
     # All-NaN bin gets ~0 mass and is NOT the argmax.
     assert post[0, 0] == pytest.approx(0.0, abs=1e-12)
     assert int(post[0].argmax()) != 0
+
+
+def test_decode_model_with_no_finite_bins_raises() -> None:
+    """A model where EVERY spatial bin is all-NaN is unusable and raises.
+
+    Regression for the "fully-NaN model decodes to a confident uniform over
+    invalid bins" finding. When every spatial bin is NaN across all neurons,
+    the entire likelihood is -inf and the "uniform" degeneracy handler would
+    otherwise hand back a confident-looking uniform posterior over positions
+    that carry zero information. ``decode_position`` must instead refuse loudly
+    with a ``ValueError`` before producing a meaningless posterior.
+
+    Repro: ``encoding_models = np.full((1, n_bins), nan)``, ``spike_counts =
+    [[0]]`` -- previously returned a uniform posterior.
+    """
+    positions = np.linspace(0.0, 10.0, 200).reshape(-1, 1)
+    env = Environment.from_samples(positions, bin_size=2.0)
+    n_bins = env.n_bins
+
+    encoding_models = np.full((1, n_bins), np.nan)
+    spike_counts = np.array([[0]], dtype=np.int64)
+
+    with pytest.raises(ValueError, match="no finite bins"):
+        decode_position(env, spike_counts, encoding_models, dt=1.0)
+
+
+def test_decode_no_finite_bins_raises_multineuron_all_columns_nan() -> None:
+    """No finite bins with several neurons: every column all-NaN still raises.
+
+    The "no finite bins" condition is column-wise: a spatial bin is killed only
+    if NaN for ALL neurons. With multiple neurons, if every bin (column) is
+    all-NaN, the model still carries zero information and must raise.
+    """
+    positions = np.linspace(0.0, 10.0, 200).reshape(-1, 1)
+    env = Environment.from_samples(positions, bin_size=2.0)
+    n_bins = env.n_bins
+
+    encoding_models = np.full((3, n_bins), np.nan)
+    spike_counts = np.array([[0, 1, 2]], dtype=np.int64)
+
+    with pytest.raises(ValueError, match="no finite bins"):
+        decode_position(env, spike_counts, encoding_models, dt=1.0)
+
+
+def test_decode_partial_model_one_finite_bin_still_decodes() -> None:
+    """A model with >=1 finite bin must decode normally (no raise).
+
+    Guards the contract boundary: the "no finite bins" raise must NOT fire on a
+    model that still has at least one observable bin, even if most bins are
+    all-NaN. The model decodes from the finite bin(s); all-NaN bins get ~0 mass.
+    """
+    positions = np.linspace(0.0, 10.0, 200).reshape(-1, 1)
+    env = Environment.from_samples(positions, bin_size=2.0)
+    n_bins = env.n_bins
+    assert n_bins >= 2
+
+    # All bins NaN for the single neuron EXCEPT the last one (finite, 5 Hz).
+    rates = np.full((1, n_bins), np.nan)
+    rates[0, -1] = 5.0
+    spike_counts = np.array([[2]], dtype=np.int64)
+
+    with pytest.warns(UserWarning):
+        post = decode_position(env, spike_counts, rates, dt=0.1).posterior
+
+    assert np.isfinite(post).all()
+    np.testing.assert_allclose(post.sum(axis=1), 1.0, atol=1e-6)
+    # The only finite (observed) bin carries all the mass and is the MAP.
+    assert int(post[0].argmax()) == n_bins - 1
+
+
+def test_decode_no_spike_valid_model_yields_uniform_posterior() -> None:
+    """A no-spike time bin against a VALID (finite) model decodes to ~uniform.
+
+    This is the case that MUST keep working: a legitimate no-spike time bin
+    against a fully finite encoding model produces a flat finite likelihood
+    that correctly normalizes to uniform. It must NOT be confused with the
+    unusable all-NaN model (which raises) nor flipped to NaN.
+    """
+    positions = np.linspace(0.0, 10.0, 200).reshape(-1, 1)
+    env = Environment.from_samples(positions, bin_size=2.0)
+    n_bins = env.n_bins
+
+    # Fully finite, flat firing rate; no spikes this time bin.
+    rates = np.full((2, n_bins), 5.0)
+    spike_counts = np.array([[0, 0]], dtype=np.int64)
+
+    post = decode_position(env, spike_counts, rates, dt=0.1).posterior
+
+    assert np.isfinite(post).all()
+    np.testing.assert_allclose(post.sum(axis=1), 1.0, atol=1e-6)
+    # Flat likelihood -> uniform posterior.
+    np.testing.assert_allclose(post[0], 1.0 / n_bins, atol=1e-9)
