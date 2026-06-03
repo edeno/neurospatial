@@ -9,11 +9,15 @@ length units such as cm) and ``bin_centers[:, 1]`` is **angle in radians**
 
 ``EgocentricPolarEnvironment`` is a *sibling* of ``Environment`` — both
 subclass the shared ``_BaseEnvironment`` — but it is **not** a subclass of
-``Environment``. This is deliberate: the Cartesian-only methods
+``Environment``. This is deliberate: any inherited method that consumes
+Cartesian ``(x, y[, z])`` coordinates or operates on a Cartesian grid would
+silently misinterpret ``(distance, angle)`` pairs and return geometric
+nonsense, so each is overridden here to raise ``NotImplementedError`` rather
+than inherited. These fall into two groups — Cartesian-coordinate methods
 (``bin_at``, ``contains``, ``distance_between``, Euclidean ``distance_to``,
-``apply_transform``) would silently misinterpret ``(distance, angle)`` pairs
-as ``(x, y)`` and return geometric nonsense, so they are overridden here to
-raise rather than inherited.
+``apply_transform``, ``interpolate``, ``occupancy``, ``bin_sequence``,
+``bin_sequence_with_runs``) and Cartesian-grid methods (``to_linear``,
+``linear_to_nd``, ``rebin``, ``subset``).
 
 Geodesic operations remain well-defined because they read only the
 connectivity graph, whose edge ``distance`` weights are physical polar
@@ -26,11 +30,15 @@ delegates to :meth:`EgocentricPolarEnvironment.create`.
 
 from __future__ import annotations
 
-from typing import ClassVar, NoReturn, cast
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, ClassVar, Literal, NoReturn, cast
 
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
+
+if TYPE_CHECKING:
+    import shapely
 
 from neurospatial.environment.core import _BaseEnvironment
 
@@ -43,17 +51,32 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
     :meth:`Environment.from_polar_egocentric` (the public factory) or
     :meth:`create` (the underlying constructor).
 
-    This type is **not** a subclass of :class:`Environment`. The Cartesian
-    geometric methods are unavailable (they raise ``NotImplementedError``)
-    because they assume ``(x, y[, z])`` bin centers:
+    This type is **not** a subclass of :class:`Environment`. Every inherited
+    method that assumes ``(x, y[, z])`` bin centers or a Cartesian grid is
+    overridden to raise ``NotImplementedError`` rather than silently
+    misinterpret ``(distance, angle)`` pairs:
+
+    *Cartesian-coordinate methods* (would read ``(distance, angle)`` as
+    ``(x, y)``):
 
     - :meth:`bin_at`, :meth:`contains` — geometric containment in ``(x, y)``.
     - :meth:`distance_between`, ``distance_to(metric="euclidean")`` —
       straight-line distance on ``(x, y)``.
     - :meth:`apply_transform` — affine transforms on ``(x, y)``.
+    - :meth:`interpolate` — bypasses the overridden :meth:`bin_at` and would
+      otherwise return geometric nonsense without raising.
+    - :meth:`occupancy`, :meth:`bin_sequence`, :meth:`bin_sequence_with_runs`
+      — map continuous ``(x, y)`` trajectories onto bins.
+
+    *Cartesian-grid methods* (operate on a rectangular grid that has no polar
+    meaning):
+
+    - :meth:`to_linear`, :meth:`linear_to_nd` — 1D track linearization.
+    - :meth:`rebin`, :meth:`subset` — grid coarsening / sub-selection
+      (and would return a Cartesian :class:`Environment`).
 
     Use connectivity-graph operations instead — :meth:`neighbors`,
-    :meth:`path_between`, :meth:`reachable_from`, and
+    :meth:`path_between`, :meth:`reachable_from`, :meth:`smooth`, and
     ``distance_to(metric="geodesic")`` — which respect the physical polar
     edge geometry.
 
@@ -203,22 +226,38 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
     # ------------------------------------------------------------------
     # Cartesian-only methods: unavailable on polar environments.
     # ------------------------------------------------------------------
-    def _raise_cartesian_only(self, method_name: str) -> NoReturn:
+    def _raise_cartesian_only(
+        self, method_name: str, *, reason: str | None = None
+    ) -> NoReturn:
         """Raise ``NotImplementedError`` for a Cartesian-only method.
 
         The error names the offending method and points the user at the
         connectivity-graph alternatives that *are* well-defined on polar
         environments.
+
+        Parameters
+        ----------
+        method_name : str
+            Name of the unsupported method (used verbatim in the message).
+        reason : str, optional
+            Short qualifier describing *why* the method is unsupported,
+            inserted in parentheses after the method name (e.g.
+            ``"Cartesian-coordinate operation"`` or
+            ``"Cartesian-grid operation"``). Defaults to
+            ``"Cartesian-coordinate operation"``.
         """
+        if reason is None:
+            reason = "Cartesian-coordinate operation"
         raise NotImplementedError(
-            f"EgocentricPolarEnvironment.{method_name}() is not available: it "
-            "assumes Cartesian (x, y[, z]) bin centers, but this is a polar "
-            "environment whose bin_centers[:, 0] is distance and "
-            "bin_centers[:, 1] is angle in radians. Use connectivity-graph "
-            "operations instead (neighbors, path_between, reachable_from, or "
-            "distance_to(metric='geodesic')), or build an allocentric "
-            "Cartesian env via Environment.from_samples / from_polygon / "
-            "from_grid_mask."
+            f"EgocentricPolarEnvironment.{method_name}() is not available "
+            f"({reason}): this is a polar environment whose bin_centers[:, 0] "
+            "is distance and bin_centers[:, 1] is angle in radians, so "
+            "operations that assume Cartesian (x, y[, z]) coordinates or a "
+            "Cartesian grid would silently return geometric nonsense. Use "
+            "connectivity-graph operations instead (neighbors, path_between, "
+            "reachable_from, smooth, or distance_to(metric='geodesic')), or "
+            "build an allocentric Cartesian env via Environment.from_samples / "
+            "from_polygon / from_grid_mask."
         )
 
     def bin_at(self, points_nd: NDArray[np.float64]) -> NoReturn:
@@ -277,6 +316,84 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
     ) -> NoReturn:
         """Unavailable on polar environments (see :meth:`_raise_cartesian_only`)."""
         self._raise_cartesian_only("apply_transform")
+
+    # ------------------------------------------------------------------
+    # Inherited methods that consume Cartesian coordinates or assume a
+    # Cartesian grid: also unavailable on polar environments. These would
+    # otherwise misread (distance, angle) pairs as (x, y) (interpolate,
+    # occupancy, bin_sequence) or operate on a Cartesian grid that has no
+    # polar meaning (to_linear, linear_to_nd, rebin, subset). interpolate is
+    # especially dangerous because it bypasses the overridden bin_at and would
+    # silently return geometric nonsense rather than raising.
+    # ------------------------------------------------------------------
+    def interpolate(
+        self,
+        field: NDArray[np.float64],
+        points: NDArray[np.float64],
+        *,
+        mode: Literal["nearest", "linear"] = "nearest",
+    ) -> NoReturn:
+        """Unavailable on polar environments (see :meth:`_raise_cartesian_only`)."""
+        self._raise_cartesian_only("interpolate")
+
+    def occupancy(
+        self,
+        times: NDArray[np.float64],
+        positions: NDArray[np.float64],
+        *,
+        speed: NDArray[np.float64] | None = None,
+        min_speed: float | None = None,
+        max_gap: float | None = 0.5,
+        bandwidth: float | None = None,
+        time_allocation: Literal["start", "linear"] = "start",
+        return_seconds: bool = True,
+    ) -> NoReturn:
+        """Unavailable on polar environments (see :meth:`_raise_cartesian_only`)."""
+        self._raise_cartesian_only("occupancy")
+
+    def bin_sequence(
+        self,
+        times: NDArray[np.float64],
+        positions: NDArray[np.float64],
+        *,
+        dedup: bool = True,
+        outside_value: int | None = -1,
+    ) -> NoReturn:
+        """Unavailable on polar environments (see :meth:`_raise_cartesian_only`)."""
+        self._raise_cartesian_only("bin_sequence")
+
+    def bin_sequence_with_runs(
+        self,
+        times: NDArray[np.float64],
+        positions: NDArray[np.float64],
+        *,
+        outside_value: int | None = -1,
+    ) -> NoReturn:
+        """Unavailable on polar environments (see :meth:`_raise_cartesian_only`)."""
+        self._raise_cartesian_only("bin_sequence_with_runs")
+
+    def to_linear(self, nd_position: NDArray[np.float64]) -> NoReturn:
+        """Unavailable on polar environments (Cartesian-grid operation)."""
+        self._raise_cartesian_only("to_linear", reason="Cartesian-grid operation")
+
+    def linear_to_nd(self, linear_position: NDArray[np.float64]) -> NoReturn:
+        """Unavailable on polar environments (Cartesian-grid operation)."""
+        self._raise_cartesian_only("linear_to_nd", reason="Cartesian-grid operation")
+
+    def rebin(self, factor: int | tuple[int, ...]) -> NoReturn:
+        """Unavailable on polar environments (Cartesian-grid operation)."""
+        self._raise_cartesian_only("rebin", reason="Cartesian-grid operation")
+
+    def subset(
+        self,
+        *,
+        bins: NDArray[np.bool_] | None = None,
+        region_names: Sequence[str] | None = None,
+        polygon: shapely.Polygon | None = None,
+        invert: bool = False,
+    ) -> NoReturn:
+        """Unavailable on polar environments (Cartesian-grid operation)."""
+        self._raise_cartesian_only("subset", reason="Cartesian-grid operation")
 
     @property
     def bin_sizes(self) -> NDArray[np.float64]:

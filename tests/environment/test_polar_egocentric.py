@@ -606,6 +606,89 @@ class TestPolarRaisesOnCartesianAssumingMethods:
         nbrs = polar_env.neighbors(0)
         assert isinstance(nbrs, list)
 
+    # --- Inherited Cartesian-coordinate / Cartesian-grid ops must also raise.
+
+    def test_interpolate_raises_on_polar_env(self, polar_env):
+        """interpolate bypasses bin_at and previously returned a silent array.
+
+        Fail-before: prior to the fix this returned geometric nonsense
+        (an ndarray) instead of raising on (distance, angle) coordinates.
+        """
+        field = np.arange(polar_env.n_bins, dtype=float)
+        points = np.array([[5.0, 0.0], [25.0, 1.0]])
+        with pytest.raises(
+            NotImplementedError, match=r"polar.*interpolate|interpolate.*polar"
+        ):
+            polar_env.interpolate(field, points, mode="nearest")
+
+    def test_occupancy_raises_on_polar_env(self, polar_env):
+        times = np.array([0.0, 1.0, 2.0])
+        positions = np.array([[5.0, 0.0], [10.0, 0.5], [15.0, 1.0]])
+        with pytest.raises(
+            NotImplementedError, match=r"polar.*occupancy|occupancy.*polar"
+        ):
+            polar_env.occupancy(times, positions)
+
+    def test_bin_sequence_raises_on_polar_env(self, polar_env):
+        times = np.array([0.0, 1.0, 2.0])
+        positions = np.array([[5.0, 0.0], [10.0, 0.5], [15.0, 1.0]])
+        with pytest.raises(
+            NotImplementedError, match=r"polar.*bin_sequence|bin_sequence.*polar"
+        ):
+            polar_env.bin_sequence(times, positions)
+
+    def test_bin_sequence_with_runs_raises_on_polar_env(self, polar_env):
+        times = np.array([0.0, 1.0, 2.0])
+        positions = np.array([[5.0, 0.0], [10.0, 0.5], [15.0, 1.0]])
+        with pytest.raises(
+            NotImplementedError,
+            match=r"polar.*bin_sequence_with_runs|bin_sequence_with_runs.*polar",
+        ):
+            polar_env.bin_sequence_with_runs(times, positions)
+
+    def test_to_linear_raises_on_polar_env(self, polar_env):
+        with pytest.raises(
+            NotImplementedError, match=r"polar.*to_linear|to_linear.*polar"
+        ):
+            polar_env.to_linear(np.array([[5.0, 0.0]]))
+
+    def test_linear_to_nd_raises_on_polar_env(self, polar_env):
+        with pytest.raises(
+            NotImplementedError, match=r"polar.*linear_to_nd|linear_to_nd.*polar"
+        ):
+            polar_env.linear_to_nd(np.array([5.0]))
+
+    def test_rebin_raises_on_polar_env(self, polar_env):
+        with pytest.raises(NotImplementedError, match=r"polar.*rebin|rebin.*polar"):
+            polar_env.rebin(2)
+
+    def test_subset_raises_on_polar_env(self, polar_env):
+        mask = np.ones(polar_env.n_bins, dtype=bool)
+        with pytest.raises(NotImplementedError, match=r"polar.*subset|subset.*polar"):
+            polar_env.subset(bins=mask)
+
+    # --- Graph operations remain valid on polar and must not regress.
+
+    def test_path_between_works_on_polar_env(self, polar_env):
+        path = polar_env.path_between(0, polar_env.n_bins - 1)
+        assert isinstance(path, list)
+        assert path[0] == 0 and path[-1] == polar_env.n_bins - 1
+
+    def test_reachable_from_works_on_polar_env(self, polar_env):
+        reachable = polar_env.reachable_from(0)
+        assert reachable.shape == (polar_env.n_bins,)
+        assert bool(reachable[0]) is True
+
+    def test_smooth_works_on_polar_env(self, polar_env):
+        field = np.zeros(polar_env.n_bins, dtype=float)
+        field[0] = 1.0
+        smoothed = polar_env.smooth(field, bandwidth=5.0)
+        assert smoothed.shape == (polar_env.n_bins,)
+
+    def test_repr_shows_polar_class_name(self, polar_env):
+        """repr must identify the concrete polar type, not 'Environment'."""
+        assert "EgocentricPolarEnvironment" in repr(polar_env)
+
 
 class TestPolarSerializationRoundTrip:
     """The polar type must survive copy and to_file/from_file round-trips."""

@@ -226,6 +226,20 @@
 
 ### Bug fixes
 
+- `EgocentricPolarEnvironment` now rejects **every** inherited method that
+  assumes Cartesian `(x, y[, z])` coordinates or a Cartesian grid, raising
+  `NotImplementedError` with a polar-specific message instead of silently
+  returning geometric nonsense. Previously only five methods (`bin_at`,
+  `contains`, `distance_between`, Euclidean `distance_to`, `apply_transform`)
+  were overridden; notably `interpolate` bypassed the overridden `bin_at` and
+  silently returned an array when given `(distance, angle)` points. The
+  override set now also covers `interpolate`, `occupancy`, `bin_sequence`,
+  `bin_sequence_with_runs`, `to_linear`, `linear_to_nd`, `rebin`, and
+  `subset`. Graph operations (`neighbors`, `path_between`, `reachable_from`,
+  `smooth`, `distance_to(metric="geodesic")`) remain valid and unchanged.
+  Relatedly, `repr()` of any environment now reflects the concrete type
+  (e.g. `EgocentricPolarEnvironment(...)`) instead of always printing
+  `Environment(...)`.
 - `detect_assemblies` now clamps `n_components` to the achievable factorization
   rank `min(n_neurons, n_time_bins)` (emitting a `UserWarning`) instead of
   crashing on short recordings. Previously, requesting more components than

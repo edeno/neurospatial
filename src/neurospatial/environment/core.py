@@ -81,11 +81,15 @@ class _BaseEnvironment(
       :meth:`Environment.from_polar_egocentric`.
 
     ``EgocentricPolarEnvironment`` is a *sibling* of ``Environment`` (both
-    subclass this base), not a subclass of ``Environment`` — so it does not
-    inherit the Cartesian-only methods (``bin_at``, ``contains``,
-    ``distance_between``, Euclidean ``distance_to``, ``apply_transform``) that
-    would silently misinterpret ``(distance, angle)`` pairs as ``(x, y)``.
-    Those methods are overridden on the polar type to raise.
+    subclass this base), not a subclass of ``Environment``. Every inherited
+    method that consumes Cartesian ``(x, y[, z])`` coordinates or operates on
+    a Cartesian grid is overridden on the polar type to raise
+    ``NotImplementedError`` (rather than silently misinterpret
+    ``(distance, angle)`` pairs): the Cartesian-coordinate methods (``bin_at``,
+    ``contains``, ``distance_between``, Euclidean ``distance_to``,
+    ``apply_transform``, ``interpolate``, ``occupancy``, ``bin_sequence``,
+    ``bin_sequence_with_runs``) and the Cartesian-grid methods (``to_linear``,
+    ``linear_to_nd``, ``rebin``, ``subset``).
 
     Note: This class satisfies the EnvironmentProtocol interface through
     its mixin inheritance and dataclass fields.
@@ -471,8 +475,9 @@ class _BaseEnvironment(
         # The previous ``f"'{name}'" if name else 'None'`` collapsed the
         # two into the same string and hid the difference from users
         # debugging an Environment they thought they had named.
+        cls_name = type(self).__name__
         if not self._is_fitted:
-            return f"Environment(name={self.name!r}, not fitted)"
+            return f"{cls_name}(name={self.name!r}, not fitted)"
 
         # Fitted environments: show name, dims, bins, layout. Truncate
         # very long names but keep ``None`` distinct from ``""``.
@@ -491,7 +496,7 @@ class _BaseEnvironment(
         if layout_type.endswith("Layout"):
             layout_type = layout_type[:-6]  # Remove 'Layout' suffix
 
-        return f"Environment(name={name!r}, {dims_str}, {n_bins} bins, {layout_type})"
+        return f"{cls_name}(name={name!r}, {dims_str}, {n_bins} bins, {layout_type})"
 
     def __str__(self) -> str:
         """Human-readable summary, equivalent to :meth:`info`.
