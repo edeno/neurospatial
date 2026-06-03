@@ -984,18 +984,22 @@ def _estimate_spectral_radius(laplacian: Any) -> float:
         # Small matrix: compute directly
         return float(np.max(np.linalg.eigvalsh(laplacian.toarray())))
 
+    from scipy.sparse.linalg import ArpackError, ArpackNoConvergence
+
     # Use eigsh with which='LM' (largest magnitude)
     try:
         eigenvalues = eigsh(laplacian, k=1, which="LM", return_eigenvectors=False)
         return float(eigenvalues[0])
-    except Exception as e:
-        # Fallback: use max-degree bound (2 * max node degree)
-        # For graph Laplacian, lambda_max <= 2 * max_degree
-        # Diagonal of L contains node degrees
+    except (ArpackNoConvergence, ArpackError) as e:
+        # ARPACK failed to converge on the largest eigenvalue. Fall back to the
+        # exact upper bound lambda_max <= 2 * max_degree (diagonal of the graph
+        # Laplacian holds node degrees). Any *other* exception (malformed matrix,
+        # wrong dtype) is a real bug and propagates.
         max_degree_bound = 2.0 * float(np.max(laplacian.diagonal()))
         warnings.warn(
-            f"eigsh failed ({e}), using max-degree bound {max_degree_bound:.2f}. "
-            f"This may be slightly inaccurate for highly irregular graphs.",
+            f"eigsh did not converge ({e}); using max-degree bound "
+            f"{max_degree_bound:.2f}. This is an exact upper bound but may be "
+            f"loose for highly irregular graphs.",
             stacklevel=3,
             category=UserWarning,
         )

@@ -475,7 +475,7 @@ def compute_egocentric_bearing(
 
 
 def _wrap_angle(angle: NDArray[np.float64]) -> NDArray[np.float64]:
-    """Wrap angles to (-pi, pi] range.
+    """Wrap angles to (-pi, pi].
 
     Parameters
     ----------
@@ -485,9 +485,13 @@ def _wrap_angle(angle: NDArray[np.float64]) -> NDArray[np.float64]:
     Returns
     -------
     NDArray
-        Angles wrapped to (-pi, pi].
+        Angles wrapped to the half-open interval (-pi, pi] (a target directly
+        behind the animal returns +pi, never -pi).
     """
-    return (angle + np.pi) % (2 * np.pi) - np.pi
+    # ((angle - pi) % (2*pi)) - (-pi)  shifts so the open end is at -pi and the
+    # closed end at +pi, giving the documented (-pi, pi] half-open interval.
+    wrapped = (angle - np.pi) % (-2 * np.pi) + np.pi
+    return wrapped
 
 
 def compute_egocentric_distance(
@@ -577,8 +581,24 @@ def compute_egocentric_distance(
     # Expand targets to 3D if needed
     if targets.ndim == 2:
         targets_3d = np.broadcast_to(targets, (n_time, targets.shape[0], 2))
-    else:
+    elif targets.ndim == 3:
+        if targets.shape[0] != n_time:
+            raise ValueError(
+                f"targets time axis {targets.shape[0]} does not match positions "
+                f"length {n_time}.\n\n"
+                f"WHAT: a 3D targets array must have shape (n_time, n_targets, 2)\n"
+                f"WHY: each timepoint's distance is computed against that "
+                f"timepoint's targets\n\n"
+                f"HOW to fix:\n"
+                f"1. Pass static targets as a 2D (n_targets, 2) array, or\n"
+                f"2. Make targets.shape[0] equal len(positions)"
+            )
         targets_3d = targets
+    else:
+        raise ValueError(
+            f"targets must be 2D (n_targets, 2) or 3D (n_time, n_targets, 2), "
+            f"got shape {targets.shape}"
+        )
 
     n_targets = targets_3d.shape[1]
 
@@ -668,7 +688,8 @@ def heading_from_velocity(
     Raises
     ------
     ValueError
-        If positions has fewer than 2 samples.
+        If positions has fewer than 2 samples, contains non-finite values,
+        or if dt is not a positive finite number.
 
     Warns
     -----
@@ -705,7 +726,23 @@ def heading_from_velocity(
     >>> np.allclose(headings[10:-10], np.pi / 2, atol=0.1)
     True
     """
+    from neurospatial._validation import validate_finite
+
     positions = np.asarray(positions, dtype=np.float64)
+
+    if not np.isfinite(dt) or dt <= 0:
+        raise ValueError(
+            f"Cannot compute heading: dt must be a positive, finite time step "
+            f"(got {dt!r}).\n\n"
+            f"WHAT: dt is the seconds between consecutive position samples\n"
+            f"WHY: velocity = diff(positions) / dt; dt <= 0 negates or NaNs the "
+            f"velocity, rotating every heading by pi (180 deg)\n\n"
+            f"HOW to fix:\n"
+            f"1. Pass dt = times[1] - times[0] from ASCENDING timestamps\n"
+            f"2. Sort your timestamps before differencing"
+        )
+
+    validate_finite(positions, name="positions")
 
     if len(positions) < 2:
         raise ValueError(

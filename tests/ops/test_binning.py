@@ -383,3 +383,109 @@ class TestResampleFieldOutOfBounds:
 
         resampled = resample_field(field, env, env, method="nearest")
         assert np.allclose(resampled, field)
+
+
+def _src_and_extending_dst_envs():
+    """Build a coarse source env and a finer dst env that extends beyond it.
+
+    Some destination bins fall outside the source extent, so the pullback
+    marks them NaN -- the scenario that previously let a single NaN poison
+    the whole diffuse-smoothed field.
+    """
+    from neurospatial import Environment
+
+    src_data = np.array(
+        [[i, j] for i in range(0, 21, 2) for j in range(0, 21, 2)],
+        dtype=np.float64,
+    )
+    src_env = Environment.from_samples(src_data, bin_size=2.0)
+
+    dst_data = np.array(
+        [[i, j] for i in range(0, 41, 2) for j in range(0, 41, 2)],
+        dtype=np.float64,
+    )
+    dst_env = Environment.from_samples(dst_data, bin_size=2.0)
+    return src_env, dst_env
+
+
+class TestResampleFieldDiffuseNaN:
+    """Diffuse smoothing must not let one out-of-source NaN annihilate field."""
+
+    def test_resample_diffuse_single_out_of_source_nan_preserves_field(self):
+        """Inside-source bins stay finite when some dst bins are out-of-source.
+
+        Before the fix, the pullback NaNs propagated through ``apply_kernel``
+        (a forward diffusion matmul) and wiped out every reachable bin, leaving
+        an all-NaN field.
+        """
+        from neurospatial.ops.binning import (
+            TieBreakStrategy,
+            map_points_to_bins,
+            resample_field,
+        )
+
+        src_env, dst_env = _src_and_extending_dst_envs()
+        field = np.arange(src_env.n_bins, dtype=np.float64) + 1.0
+
+        dst_to_src = map_points_to_bins(
+            dst_env.bin_centers, src_env, tie_break=TieBreakStrategy.LOWEST_INDEX
+        )
+        outside = dst_to_src < 0
+        assert np.any(outside)  # the test scenario must have out-of-source bins
+        assert np.any(~outside)  # ... and some covered bins
+
+        diffuse = resample_field(
+            field, src_env, dst_env, method="diffuse", bandwidth=2.0
+        )
+
+        # Inside-source bins must be finite (not annihilated by a propagated NaN)
+        # and carry real (non-collapsed) signal. A propagated NaN would make
+        # these NaN; a collapse-to-zero would make them all zero.
+        inside = diffuse[~outside]
+        assert np.all(np.isfinite(inside))
+        # The diffusion of a strictly-positive field stays strictly positive and
+        # within the source value range (it is a convex combination of bin values).
+        assert np.all(inside > 0.0)
+        assert inside.max() <= field.max() + 1e-6
+
+    def test_resample_diffuse_outside_bins_remain_nan(self):
+        """Out-of-source bins are re-imposed as NaN after smoothing."""
+        from neurospatial.ops.binning import (
+            TieBreakStrategy,
+            map_points_to_bins,
+            resample_field,
+        )
+
+        src_env, dst_env = _src_and_extending_dst_envs()
+        field = np.arange(src_env.n_bins, dtype=np.float64) + 1.0
+
+        dst_to_src = map_points_to_bins(
+            dst_env.bin_centers, src_env, tie_break=TieBreakStrategy.LOWEST_INDEX
+        )
+        outside = dst_to_src < 0
+        assert np.any(outside)
+
+        diffuse = resample_field(
+            field, src_env, dst_env, method="diffuse", bandwidth=2.0
+        )
+
+        # The zero-fill for smoothing must not leak a smoothed-zero into the
+        # un-covered region: those bins stay NaN.
+        assert np.all(np.isnan(diffuse[outside]))
+
+    def test_resample_diffuse_matches_nearest_when_fully_covered(self):
+        """When every dst bin is inside the source, diffuse has no NaNs."""
+        from neurospatial import Environment
+        from neurospatial.ops.binning import resample_field
+
+        data = np.array(
+            [[i, j] for i in range(0, 21, 2) for j in range(0, 21, 2)],
+            dtype=np.float64,
+        )
+        env = Environment.from_samples(data, bin_size=2.0)
+        field = np.arange(env.n_bins, dtype=np.float64) + 1.0
+
+        diffuse = resample_field(field, env, env, method="diffuse", bandwidth=2.0)
+
+        assert not np.any(np.isnan(diffuse))
+        assert np.isfinite(diffuse.sum())

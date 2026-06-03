@@ -809,3 +809,106 @@ class TestAllocentricToEgocentricSignConvention:
 
         assert ego.shape == (1, 1, 2)
         assert_allclose(ego[0, 0], [expected_x, expected_y], atol=1e-10)
+
+
+class TestHeadingFromVelocityGuards:
+    """heading_from_velocity must reject non-positive dt and non-finite positions."""
+
+    def test_heading_from_velocity_rejects_nonpositive_dt(self):
+        """dt == 0 and dt < 0 each raise ValueError instead of NaN/flipped headings."""
+        from neurospatial.ops.egocentric import heading_from_velocity
+
+        positions = np.array([[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]])
+
+        with pytest.raises(ValueError, match="dt"):
+            heading_from_velocity(positions, dt=0.0)
+
+        with pytest.raises(ValueError, match="dt"):
+            heading_from_velocity(positions, dt=-0.1)
+
+    def test_heading_from_velocity_rejects_nonfinite_positions(self):
+        """positions containing NaN or Inf raise ValueError via validate_finite."""
+        from neurospatial.ops.egocentric import heading_from_velocity
+
+        with_nan = np.array([[0.0, 0.0], [np.nan, 0.0], [2.0, 0.0]])
+        with pytest.raises(ValueError):
+            heading_from_velocity(with_nan, dt=0.1)
+
+        with_inf = np.array([[0.0, 0.0], [np.inf, 0.0], [2.0, 0.0]])
+        with pytest.raises(ValueError):
+            heading_from_velocity(with_inf, dt=0.1)
+
+    def test_heading_from_velocity_negative_dt_would_flip(self):
+        """The dt guard blocks the dt<0 call that would rotate headings by pi.
+
+        For an eastward trajectory a correct positive dt gives heading ~= 0;
+        a negative dt would silently negate the velocity and return ~= pi.
+        """
+        from neurospatial.ops.egocentric import heading_from_velocity
+
+        positions = np.column_stack([np.arange(20, dtype=float), np.zeros(20)])
+
+        headings = heading_from_velocity(positions, dt=0.1, min_speed=1.0)
+        assert np.allclose(headings[:-1], 0.0, atol=1e-8)
+
+        # The dt<0 call (which would return ~= pi) must instead raise.
+        with pytest.raises(ValueError, match="dt"):
+            heading_from_velocity(positions, dt=-0.1, min_speed=1.0)
+
+
+class TestEgocentricDistance3DTargets:
+    """compute_egocentric_distance must validate a 3D targets' time axis."""
+
+    def test_egocentric_distance_3d_targets_time_mismatch_raises(self):
+        """A 3D targets array with the wrong time axis raises a clear ValueError."""
+        from neurospatial.ops.egocentric import compute_egocentric_distance
+
+        n_time = 5
+        positions = np.column_stack([np.arange(n_time, dtype=float), np.zeros(n_time)])
+        # Wrong leading axis: n_time + 1.
+        targets = np.zeros((n_time + 1, 2, 2), dtype=float)
+
+        with pytest.raises(ValueError, match="time axis"):
+            compute_egocentric_distance(positions, None, targets)
+
+    def test_egocentric_distance_3d_targets_valid_roundtrip(self):
+        """A correctly-shaped (n_time, k, 2) targets array returns (n_time, k)."""
+        from neurospatial.ops.egocentric import compute_egocentric_distance
+
+        n_time, k = 4, 3
+        positions = np.column_stack([np.arange(n_time, dtype=float), np.zeros(n_time)])
+        rng = np.random.default_rng(0)
+        targets = rng.normal(size=(n_time, k, 2))
+
+        distances = compute_egocentric_distance(positions, None, targets)
+
+        assert distances.shape == (n_time, k)
+        expected = np.sqrt(
+            np.sum((targets - positions[:, np.newaxis, :]) ** 2, axis=-1)
+        )
+        assert_allclose(distances, expected)
+
+
+class TestWrapAngleAntipode:
+    """_wrap_angle keeps the antipode at +pi per the documented (-pi, pi]."""
+
+    def test_wrap_angle_antipode_is_plus_pi(self):
+        """+/- pi and odd multiples wrap to +pi; interior values are unchanged."""
+        from neurospatial.ops.egocentric import _wrap_angle
+
+        antipodes = _wrap_angle(np.array([np.pi, -np.pi, 3 * np.pi, -3 * np.pi]))
+        assert_allclose(antipodes, np.pi)
+
+        interior = np.array([0.3, -1.2, 0.0, 2.0])
+        assert_allclose(_wrap_angle(interior), interior)
+
+    def test_egocentric_bearing_directly_behind_is_plus_pi(self):
+        """A target directly behind the animal returns bearing +pi, not -pi."""
+        from neurospatial.ops.egocentric import compute_egocentric_bearing
+
+        position = np.array([[0.0, 0.0]])
+        heading = np.array([0.0])  # facing East
+        target = np.array([[-10.0, 0.0]])  # directly behind (West)
+
+        bearing = compute_egocentric_bearing(position, heading, target)
+        assert_allclose(bearing, [[np.pi]])

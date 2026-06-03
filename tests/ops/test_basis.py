@@ -445,3 +445,57 @@ class TestPlotBasisFunctions:
 
         # Should have plotted 3 basis functions
         plt.close(fig)
+
+
+class TestEstimateSpectralRadius:
+    """_estimate_spectral_radius must only fall back on ARPACK failures."""
+
+    @staticmethod
+    def _laplacian(env):
+        import networkx as nx
+
+        n_bins = env.n_bins
+        laplacian = nx.laplacian_matrix(
+            env.connectivity, nodelist=range(n_bins), weight="distance"
+        )
+        return laplacian.tocsr()
+
+    def test_estimate_spectral_radius_propagates_non_arpack_error(
+        self, monkeypatch, simple_2d_env
+    ):
+        """A non-ARPACK error from eigsh propagates (no silent fallback)."""
+        import scipy.sparse.linalg
+
+        from neurospatial.ops.basis import _estimate_spectral_radius
+
+        laplacian = self._laplacian(simple_2d_env)
+
+        def _raise_value_error(*args, **kwargs):
+            raise ValueError("malformed input")
+
+        monkeypatch.setattr(scipy.sparse.linalg, "eigsh", _raise_value_error)
+
+        with pytest.raises(ValueError, match="malformed input"):
+            _estimate_spectral_radius(laplacian)
+
+    def test_estimate_spectral_radius_arpack_failure_warns_and_bounds(
+        self, monkeypatch, simple_2d_env
+    ):
+        """An ARPACK convergence failure warns and returns the max-degree bound."""
+        import scipy.sparse.linalg
+        from scipy.sparse.linalg import ArpackNoConvergence
+
+        from neurospatial.ops.basis import _estimate_spectral_radius
+
+        laplacian = self._laplacian(simple_2d_env)
+
+        def _raise_arpack(*args, **kwargs):
+            raise ArpackNoConvergence("did not converge", np.array([]), np.array([]))
+
+        monkeypatch.setattr(scipy.sparse.linalg, "eigsh", _raise_arpack)
+
+        with pytest.warns(UserWarning, match="did not converge"):
+            radius = _estimate_spectral_radius(laplacian)
+
+        expected_bound = 2.0 * float(np.max(laplacian.diagonal()))
+        assert radius == pytest.approx(expected_bound)

@@ -1221,6 +1221,10 @@ def estimate_transform(
     least-squares for affine transforms. The Procrustes method works for
     any dimensionality.
 
+    Rigid and similarity fits use the Kabsch/SVD solution with a determinant
+    sign-correction, so the returned rotation is always proper (det = +1) even
+    when the landmark points are coplanar or reflected.
+
     For cross-session alignment, collect 3-4 landmark points (e.g., corners
     of arena) in both sessions and use this function to compute the alignment.
 
@@ -1232,8 +1236,6 @@ def estimate_transform(
     apply_transform_to_environment : Apply transform to Environment
 
     """
-    from scipy.linalg import orthogonal_procrustes
-
     src = np.asanyarray(src, dtype=float)
     dst = np.asanyarray(dst, dtype=float)
 
@@ -1262,18 +1264,23 @@ def estimate_transform(
         src_centered = src - src_mean
         dst_centered = dst - dst_mean
 
-        # Estimate rotation using Procrustes
-        # Note: orthogonal_procrustes finds R such that ||src @ R - dst|| is minimized
-        # But we want transformation T(x) = x @ R_transform^T
-        # So R_transform = R^T
-        R_proc, _ = orthogonal_procrustes(src_centered, dst_centered)
-        R = R_proc.T
-
-        # Ensure R is a proper rotation (det(R) = +1, not -1)
-        # If det(R) < 0, we have a reflection; flip last axis to get rotation
-        if np.linalg.det(R) < 0:
-            # Flip the last column to convert reflection to rotation
-            R[:, -1] = -R[:, -1]
+        # Estimate rotation via SVD with the Kabsch determinant correction.
+        # orthogonal_procrustes minimizes ||src_centered @ R - dst_centered||,
+        # but its R may be a reflection (det = -1) for coplanar/reflected point
+        # sets. The standard fix folds d = sign(det(V @ U.T)) into the SVD
+        # factors BEFORE reassembling R, yielding the closest PROPER rotation
+        # (det = +1). Flipping a column of the finished matrix instead would
+        # give a non-optimal (and possibly still improper) result.
+        #
+        # H = src_centered.T @ dst_centered ;  H = U @ S @ Vt
+        # R_fit = V @ diag(1, ..., 1, d) @ U.T   with d = sign(det(V @ U.T))
+        H = src_centered.T @ dst_centered
+        U, _S, Vt = np.linalg.svd(H)
+        V = Vt.T
+        d = np.sign(np.linalg.det(V @ U.T))
+        D = np.eye(n_dims)
+        D[-1, -1] = d
+        R = V @ D @ U.T
 
         if kind == "rigid":
             # Rigid: rotation + translation

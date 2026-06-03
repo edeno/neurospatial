@@ -800,7 +800,16 @@ def resample_field(
             bandwidth=bandwidth, mode="transition"
         )
 
-        # Apply forward smoothing
-        resampled = apply_kernel(resampled, kernel, mode="forward")
+        # The pullback marked out-of-source destination bins as NaN (Step 2).
+        # apply_kernel is a forward diffusion (a row-stochastic matmul), so a
+        # single NaN would propagate to every reachable bin and wipe out the
+        # whole field. An un-covered source bin should contribute *no mass* to
+        # the smoothing, which is exactly a zero — so zero-fill the NaNs before
+        # smoothing, then re-impose NaN on the genuinely-outside bins afterward
+        # so the un-covered region stays marked as missing (not a smoothed zero).
+        to_smooth = np.where(outside_source, 0.0, resampled)
+        smoothed = apply_kernel(to_smooth, kernel, mode="forward")
+        smoothed[outside_source] = np.nan
+        resampled = smoothed
 
     return resampled

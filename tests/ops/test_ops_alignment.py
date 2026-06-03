@@ -205,6 +205,35 @@ class TestMapProbabilities:
         tgt_probs = map_probabilities(src_env, tgt_env, src_probs, source_scale=2.0)
         np.testing.assert_allclose(tgt_probs, [0.6, 0.4])
 
+    def test_map_probabilities_nan_centers_raises(self):
+        """A target env with NaN bin centers raises instead of returning zeros.
+
+        Previously a cKDTree construction failure on malformed centers was
+        swallowed into an all-zero probability map; a genuine error must now
+        propagate.
+        """
+        src_bins = np.array([[0.0, 0.0], [1.0, 0.0]])
+        tgt_bins = np.array([[0.0, 0.0], [np.nan, 0.0]])
+        src_probs = np.array([0.6, 0.4])
+        src_env = MockEnvironment(src_bins, 2)
+        tgt_env = MockEnvironment(tgt_bins, 2)
+
+        with pytest.raises(ValueError):
+            map_probabilities(src_env, tgt_env, src_probs)
+
+    def test_map_probabilities_empty_env_still_returns_zeros(self):
+        """The legitimate empty-target path still returns zeros with a warning."""
+        src_bins = np.array([[0.0, 0.0]])
+        tgt_bins = np.empty((0, 2))
+        src_probs = np.array([1.0])
+        src_env = MockEnvironment(src_bins, 2)
+        tgt_env = MockEnvironment(tgt_bins, 2)
+
+        with pytest.warns(UserWarning, match="zero bins"):
+            tgt_probs = map_probabilities(src_env, tgt_env, src_probs)
+
+        assert tgt_probs.size == 0
+
 
 class TestProbabilityMappingParams:
     """Tests for ProbabilityMappingParams dataclass."""
