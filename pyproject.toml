@@ -206,7 +206,24 @@ ignore = [
     "N806",    # Allow uppercase variables (G, R, A, T, etc.) for mathematical notation
 ]
 
-# Example notebooks: Allow imports in cells (converted from .ipynb)
+# Example notebooks (jupytext-paired .py source + auto-generated docs copy):
+# allow imports inside narrative cells. Both locations get identical treatment
+# so ruff stays stable regardless of which cell an import lands in after a
+# jupytext round-trip (avoids the inline-noqa <-> RUF100 flip-flop).
+"examples/*.py" = [
+    "E402",  # Module level import not at top of file (common in notebook cells)
+    "N803",  # Allow uppercase argument names (mathematical notation in examples)
+    "N806",  # Allow uppercase variables (T, G, etc. - standard math notation)
+    "B905",  # Allow zip() without strict parameter (backward compatibility)
+]
+# Ruff also lints the paired .ipynb; give them the same allowances so a synced
+# notebook never trips E402 on a cell-level import.
+"examples/*.ipynb" = [
+    "E402",  # Module level import not at top of cell
+    "N803",
+    "N806",
+    "B905",
+]
 "docs/examples/*.py" = [
     "E402",  # Module level import not at top of file (common in notebook cells)
     "N803",  # Allow uppercase argument names (mathematical notation in examples)

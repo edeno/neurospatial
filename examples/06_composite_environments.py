@@ -61,15 +61,15 @@ from neurospatial import CompositeEnvironment, Environment
 
 np.random.seed(42)
 # Shared styling (Okabe-Ito palette, consistent figure / font sizes)
-import sys  # noqa: E402
-from pathlib import Path  # noqa: E402
+import sys
+from pathlib import Path
 
 _here = (
     str(Path(__file__).resolve().parent) if "__file__" in globals() else str(Path.cwd())
 )
 if _here not in sys.path:
     sys.path.insert(0, _here)
-from _style import apply_style  # noqa: E402
+from _style import apply_style
 
 apply_style(figsize=(14, 10), font_size=11)
 
@@ -757,7 +757,7 @@ print(f"Mask shape: {junction_mask.shape}, True count: {np.sum(junction_mask)}")
 
 # %%
 # Import pairwise for edge iteration (more efficient than zip)
-from itertools import pairwise  # noqa: E402
+from itertools import pairwise
 
 # Find path from start to right arm (crosses bridges through junction)
 source_bin = 0  # First bin in start box
@@ -807,7 +807,7 @@ if path:
 # ### Pathfinding Example: No Path Between Disconnected Components
 
 # %%
-import warnings  # noqa: E402
+import warnings
 
 # Create a composite without bridges to demonstrate warning
 disconnected_composite = CompositeEnvironment(
@@ -830,7 +830,7 @@ print(f"Path result: {path} (empty list indicates no path exists)")
 # ### Saving and Loading Composite Environments
 
 # %%
-import tempfile  # noqa: E402
+import tempfile
 
 # Save composite environment to file
 with tempfile.TemporaryDirectory() as tmpdir:
