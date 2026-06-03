@@ -70,6 +70,14 @@ class PlaceCellModel:
     condition : Callable | None
         Condition function for gated firing.
 
+    Raises
+    ------
+    ValueError
+        If ``width`` contains a non-finite value (NaN or +/-inf), or if any
+        ``width`` value is not strictly positive. ``width`` is the Gaussian
+        standard deviation of the place field, so a zero or negative width
+        gives an undefined (0/0) firing rate at the field center.
+
     Examples
     --------
     Simple place cell in 2D arena:

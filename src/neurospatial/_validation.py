@@ -10,10 +10,12 @@ into downstream computations.
 from __future__ import annotations
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
 
-def validate_finite(a: NDArray, *, name: str, allow_nan: bool = False) -> NDArray:
+def validate_finite(
+    a: ArrayLike, *, name: str, allow_nan: bool = False
+) -> NDArray[np.float64]:
     """Return ``a`` as float64, raising ValueError on non-finite values.
 
     Parameters

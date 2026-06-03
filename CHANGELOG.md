@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Breaking changes
+
+- `time_efficiency` lost its positional `goal` parameter and now takes a
+  keyword-only `optimal_distance` (with `reference_speed` also keyword-only);
+  external callers must update their call sites. This also fixes a latent
+  bug: the function always used the Euclidean start-to-goal distance even for
+  geodesic callers, so `optimal_distance` must now be supplied explicitly.
+- `points_in_any_region` / `regions_containing_points` changed their default
+  `point_tolerance` from ~1e-8 to 1.0 coordinate unit. Zero-area point
+  regions need a real spatial tolerance to match nearby query points; pass
+  `point_tolerance=1e-8` to restore the previous strict matching behavior.
+- `ImageMaskLayout` / `Environment.from_pixel_mask`: the build key `bin_size`
+  is renamed to `pixel_size` (the legacy `bin_size` is still accepted as a
+  deprecated alias). The layout is now stored in consistent (x, y) order, so
+  `grid_shape`, `bin_centers`, and `active_mask` follow (x, y); code relying
+  on the previous (y, x) ordering must update.
+
 ### Bug fixes
 
 - Weighted circular statistics (`rayleigh_test`, `circular_mean`,

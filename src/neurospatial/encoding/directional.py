@@ -642,7 +642,9 @@ class DirectionalRateResult(SpatialResultMixin):
         -------
         float
             P-value from the Rayleigh test in [0, 1]. Small values (< 0.05)
-            indicate significant directional tuning.
+            indicate significant directional tuning. Returns ``nan`` when
+            fewer than 3 angular bins have a positive spike count, since the
+            test cannot be evaluated reliably with so few populated bins.
 
         Notes
         -----
