@@ -311,11 +311,12 @@ def to_file(env: Environment, path: PathLike) -> None:
         metadata["units"] = env.units
     if hasattr(env, "frame") and env.frame is not None:
         metadata["frame"] = env.frame
-    # coordinate_kind defaults to "cartesian"; only persist non-default
-    # values so older v0.4 envs round-trip without surprise. Loaders
-    # treat a missing key as "cartesian".
-    if hasattr(env, "coordinate_kind") and env.coordinate_kind != "cartesian":
-        metadata["coordinate_kind"] = env.coordinate_kind
+    # Persist a "coordinate_kind" marker for egocentric polar environments so
+    # the loader can restore the EgocentricPolarEnvironment type. Cartesian
+    # envs omit the key (loaders treat a missing key as "cartesian"), keeping
+    # the on-disk format stable for non-polar envs.
+    if getattr(env, "_POLAR", False):
+        metadata["coordinate_kind"] = "polar"
 
     # Serialize graph to node-link format
     graph_data = nx.node_link_data(env.connectivity, edges="links")
@@ -485,8 +486,18 @@ def from_file(path: PathLike) -> Environment:
     # round-tripped layout_parameters is equivalent to the original.
     layout_params = _decode_layout_parameters(layout_params)
 
-    # Create environment from layout
-    env = Environment.from_layout(layout_type, layout_params, name=metadata["name"])
+    # Create environment from layout. Polar environments (coordinate_kind
+    # "polar") restore as the distinct EgocentricPolarEnvironment type; the
+    # saved connectivity (overridden below) already carries the corrected
+    # physical polar edge distances, so no geometry recomputation is needed.
+    if metadata.get("coordinate_kind") == "polar":
+        from neurospatial.environment.polar import EgocentricPolarEnvironment
+
+        env = EgocentricPolarEnvironment.from_layout(
+            layout_type, layout_params, name=metadata["name"]
+        )
+    else:
+        env = Environment.from_layout(layout_type, layout_params, name=metadata["name"])
 
     # Override attributes with saved values (handles cases where layout recreation differs)
     env.bin_centers = bin_centers
@@ -506,12 +517,6 @@ def from_file(path: PathLike) -> Environment:
         env.units = metadata["units"]
     if "frame" in metadata:
         env.frame = metadata["frame"]
-    # Restore coordinate_kind; older serialized envs (and Cartesian
-    # ones from v0.4) won't carry the key and fall back to the
-    # field default of "cartesian".
-    if "coordinate_kind" in metadata:
-        env.coordinate_kind = metadata["coordinate_kind"]
-
     return env
 
 
@@ -585,11 +590,12 @@ def to_dict(env: Environment) -> dict[str, Any]:
         metadata["units"] = env.units
     if hasattr(env, "frame") and env.frame is not None:
         metadata["frame"] = env.frame
-    # coordinate_kind defaults to "cartesian"; only persist non-default
-    # values so older v0.4 envs round-trip without surprise. Loaders
-    # treat a missing key as "cartesian".
-    if hasattr(env, "coordinate_kind") and env.coordinate_kind != "cartesian":
-        metadata["coordinate_kind"] = env.coordinate_kind
+    # Persist a "coordinate_kind" marker for egocentric polar environments so
+    # the loader can restore the EgocentricPolarEnvironment type. Cartesian
+    # envs omit the key (loaders treat a missing key as "cartesian"), keeping
+    # the on-disk format stable for non-polar envs.
+    if getattr(env, "_POLAR", False):
+        metadata["coordinate_kind"] = "polar"
 
     # Serialize graph
     graph_data = nx.node_link_data(env.connectivity, edges="links")
@@ -682,8 +688,17 @@ def from_dict(data: dict[str, Any]) -> Environment:
     # round-tripped layout_parameters is equivalent to the original.
     layout_params = _decode_layout_parameters(layout_params)
 
-    # Create environment
-    env = Environment.from_layout(layout_type, layout_params, name=data["name"])
+    # Create environment. Polar environments restore as the distinct
+    # EgocentricPolarEnvironment type; the saved connectivity (overridden
+    # below) already carries the corrected physical polar edge distances.
+    if data.get("coordinate_kind") == "polar":
+        from neurospatial.environment.polar import EgocentricPolarEnvironment
+
+        env = EgocentricPolarEnvironment.from_layout(
+            layout_type, layout_params, name=data["name"]
+        )
+    else:
+        env = Environment.from_layout(layout_type, layout_params, name=data["name"])
 
     # Override attributes
     env.bin_centers = bin_centers
@@ -703,12 +718,5 @@ def from_dict(data: dict[str, Any]) -> Environment:
         env.units = data["units"]
     if "frame" in data:
         env.frame = data["frame"]
-    # Mirror to_dict (line 484): coordinate_kind defaults to
-    # "cartesian", and only non-default values are persisted, so a
-    # missing key falls back to the field default. Without this the
-    # in-memory dict round-trip silently flipped polar envs to
-    # Cartesian, even though to_file/from_file round-tripped correctly.
-    if "coordinate_kind" in data:
-        env.coordinate_kind = data["coordinate_kind"]
 
     return env

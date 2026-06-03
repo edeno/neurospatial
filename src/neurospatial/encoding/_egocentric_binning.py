@@ -57,6 +57,7 @@ from neurospatial.ops.egocentric import compute_egocentric_bearing
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
+    from neurospatial.environment.polar import EgocentricPolarEnvironment
 
 __all__ = [
     "bin_egocentric_spike_train",
@@ -273,7 +274,7 @@ def _create_egocentric_environment(
     distance_range: tuple[float, float],
     n_distance_bins: int,
     n_direction_bins: int,
-) -> Environment:
+) -> EgocentricPolarEnvironment:
     """Create egocentric polar coordinate environment.
 
     Parameters
@@ -382,7 +383,7 @@ def compute_egocentric_occupancy(
     n_direction_bins: int = 12,
     metric: Literal["euclidean", "geodesic"] = "euclidean",
     env: Environment | None = None,
-) -> tuple[NDArray[np.float64], Environment]:
+) -> tuple[NDArray[np.float64], EgocentricPolarEnvironment]:
     """Compute egocentric occupancy (time at each distance/direction bin).
 
     Computes the total time spent at each egocentric bin by computing
@@ -542,7 +543,7 @@ def bin_egocentric_spike_train(
     n_direction_bins: int = 12,
     metric: Literal["euclidean", "geodesic"] = "euclidean",
     env: Environment | None = None,
-) -> tuple[NDArray[np.float64], Environment]:
+) -> tuple[NDArray[np.float64], EgocentricPolarEnvironment]:
     """Bin spike train by egocentric coordinates.
 
     Converts continuous spike times to spike counts per egocentric bin based on
@@ -709,7 +710,7 @@ def bin_egocentric_spike_trains(
     metric: Literal["euclidean", "geodesic"] = "euclidean",
     env: Environment | None = None,
     n_jobs: int = 1,
-) -> tuple[NDArray[np.float64], NDArray[np.float64], Environment]:
+) -> tuple[NDArray[np.float64], NDArray[np.float64], EgocentricPolarEnvironment]:
     """Bin multiple spike trains by egocentric coordinates.
 
     Batch version of bin_egocentric_spike_train that efficiently processes

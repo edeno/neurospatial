@@ -594,7 +594,6 @@ class EnvironmentTransforms:
                 sub_env.units = self.units
             if self.frame is not None:
                 sub_env.frame = self.frame
-            sub_env.coordinate_kind = self.coordinate_kind
             return sub_env
 
         # --- Graph-env fallback: extract induced subgraph ---------------
@@ -832,17 +831,13 @@ class EnvironmentTransforms:
 
         # --- Preserve Metadata ---
 
-        # Copy units, frame, and coordinate_kind if present. The
-        # coordinate_kind preservation matches the grid-fast-path above
-        # (line 595) so a polar 1-D linearized track (hypothetical for
-        # now) doesn't silently flip to Cartesian
-        # on subset.
+        # Copy units and frame if present. The subset preserves the concrete
+        # environment type (Environment or EgocentricPolarEnvironment) because
+        # ``env_cls`` above is ``self.__class__``.
         if hasattr(self, "units") and self.units is not None:
             sub_env.units = self.units
         if hasattr(self, "frame") and self.frame is not None:
             sub_env.frame = self.frame
-        if hasattr(self, "coordinate_kind"):
-            sub_env.coordinate_kind = self.coordinate_kind
 
         # Note: Regions are intentionally dropped (as documented)
 

@@ -240,7 +240,9 @@ def write_environment(
             "n_edges": len(edges),  # Needed for proper deserialization
             "is_linearized_track": env.is_linearized_track,  # Preserve 1D property for Graph layouts
             "has_grid_data": grid_data is not None,
-            "coordinate_kind": getattr(env, "coordinate_kind", "cartesian"),
+            "coordinate_kind": "polar"
+            if getattr(env, "_POLAR", False)
+            else "cartesian",
         }
     )
 
@@ -560,6 +562,11 @@ def read_environment(
     # source of truth) rather than being patched onto env afterward.
     is_linearized_track = bool(metadata.get("is_linearized_track", False))
 
+    # Egocentric polar environments restore as the distinct
+    # EgocentricPolarEnvironment type (not a flag on Environment). Older NWB
+    # files written before this marker existed fall back to "cartesian".
+    is_polar = metadata.get("coordinate_kind", "cartesian") == "polar"
+
     # Create environment with proper layout reconstruction
     env = _reconstruct_environment(
         bin_centers=bin_centers,
@@ -572,6 +579,7 @@ def read_environment(
         grid_data=grid_data,
         n_dims=n_dims,
         is_linearized_track=is_linearized_track,
+        is_polar=is_polar,
     )
 
     # Set metadata. The write path stores DEFAULT_FRAME (empty string) when no
@@ -581,13 +589,6 @@ def read_environment(
         env.units = units
     if frame and frame != DEFAULT_FRAME:
         env.frame = frame
-
-    # Restore coordinate_kind. Older NWB files (written before this field was
-    # persisted) lack the key and fall back to the env field default
-    # "cartesian", matching the on-disk behavior of those files.
-    coordinate_kind = metadata.get("coordinate_kind", "cartesian")
-    if coordinate_kind == "polar":
-        env.coordinate_kind = "polar"
 
     # Store layout type info
     env._layout_type_used = layout_type
@@ -613,6 +614,7 @@ def _reconstruct_environment(
     grid_data: GridData | None,
     n_dims: int,
     is_linearized_track: bool = False,
+    is_polar: bool = False,
 ) -> Environment:
     """
     Reconstruct Environment with appropriate layout type.
@@ -646,14 +648,27 @@ def _reconstruct_environment(
         into the reconstructed layout so ``env.is_linearized_track`` is derived
         from the layout (single source of truth). Grid-based layouts are never
         linearized tracks, so this only affects the KDTree fallback path.
+    is_polar : bool, default False
+        Whether the original environment was an egocentric polar environment.
+        When True, the grid-based reconstruction builds an
+        ``EgocentricPolarEnvironment`` (the distinct polar type) instead of an
+        ``Environment``. The stored connectivity carries the corrected
+        physical polar edge distances.
 
     Returns
     -------
     Environment
-        Reconstructed environment with proper layout.
+        Reconstructed environment with proper layout. Returns an
+        ``EgocentricPolarEnvironment`` when ``is_polar`` is True.
     """
     from neurospatial import Environment
+    from neurospatial.environment.core import _BaseEnvironment
+    from neurospatial.environment.polar import EgocentricPolarEnvironment
     from neurospatial.layout.engines.masked_grid import MaskedGridLayout
+
+    env_cls: type[_BaseEnvironment] = (
+        EgocentricPolarEnvironment if is_polar else Environment
+    )
 
     # Reconstruct connectivity graph
     connectivity = _reconstruct_graph(bin_centers, edges, edge_weights)
@@ -683,8 +698,8 @@ def _reconstruct_environment(
                 connect_diagonal_neighbors=True,  # Conservative default
             )
 
-            # Create environment from layout
-            env = Environment.from_layout(
+            # Create environment from layout (polar type when is_polar)
+            env = env_cls.from_layout(
                 kind="MaskedGrid",
                 layout_params={
                     "active_mask": active_mask,

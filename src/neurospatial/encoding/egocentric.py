@@ -86,6 +86,7 @@ if TYPE_CHECKING:
     from matplotlib.projections.polar import PolarAxes
 
     from neurospatial import Environment
+    from neurospatial.environment.polar import EgocentricPolarEnvironment
 
 
 __all__ = [
@@ -185,7 +186,7 @@ class EgocentricRateResult(SpatialResultMixin):
 
     firing_rate: ArrayLike
     occupancy: ArrayLike
-    env: Environment
+    env: EgocentricPolarEnvironment
     distance_range: tuple[float, float]
     n_distance_bins: int
     n_direction_bins: int
@@ -590,7 +591,7 @@ class EgocentricRatesResult(SpatialResultMixin):
 
     firing_rates: ArrayLike
     occupancy: ArrayLike
-    env: Environment
+    env: EgocentricPolarEnvironment
     distance_range: tuple[float, float]
     n_distance_bins: int
     n_direction_bins: int
@@ -1144,7 +1145,7 @@ def _raw_polar_rate(
 
 
 def _egocentric_firing_rate(
-    polar_env: Environment,
+    polar_env: EgocentricPolarEnvironment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     *,

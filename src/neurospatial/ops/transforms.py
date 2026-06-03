@@ -1449,18 +1449,17 @@ def apply_transform_to_environment(
             "apply_transform_to_environment", is_function=True
         )
 
-    # Refuse polar envs. An affine transform on bin_centers that
-    # actually carry (distance, angle in radians) pairs produces
-    # geometric nonsense -- and the resulting env would silently
-    # reset to coordinate_kind="cartesian" because that's the field
-    # default on the freshly built env. Fail at the boundary instead.
-    if getattr(env, "coordinate_kind", "cartesian") != "cartesian":
+    # Refuse polar envs. An affine transform on bin_centers that actually
+    # carry (distance, angle in radians) pairs produces geometric nonsense.
+    # EgocentricPolarEnvironment overrides apply_transform to raise before
+    # reaching here, but guard the free-function path too in case a polar
+    # env is passed directly.
+    if getattr(env, "_POLAR", False):
         raise ValueError(
-            "apply_transform requires a Cartesian environment but got "
-            f"coordinate_kind={env.coordinate_kind!r} "
-            "(an affine transform on (distance, angle) pairs is not "
-            "geometrically meaningful). For polar envs, work in the "
-            "egocentric coordinate space directly."
+            "apply_transform requires a Cartesian environment but got an "
+            "egocentric polar environment (an affine transform on "
+            "(distance, angle) pairs is not geometrically meaningful). For "
+            "polar envs, work in the egocentric coordinate space directly."
         )
 
     # Validate dimensionality match

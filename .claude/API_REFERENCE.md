@@ -632,7 +632,12 @@ from neurospatial.ops.egocentric import (
 ```python
 from neurospatial import Environment
 
-# Create polar grid in egocentric space (for object-vector cells)
+# Create polar grid in egocentric space (for object-vector cells).
+# Returns EgocentricPolarEnvironment — a DISTINCT type, NOT a subclass of
+# Environment. Cartesian-only methods (bin_at, contains, distance_between,
+# distance_to(metric="euclidean"), apply_transform) raise NotImplementedError;
+# graph ops (neighbors, path_between, reachable_from,
+# distance_to(metric="geodesic"), smooth) work and use physical polar geometry.
 env = Environment.from_polar_egocentric(
     distance_range=(0, 50),
     angle_range=(-np.pi, np.pi),
@@ -640,6 +645,11 @@ env = Environment.from_polar_egocentric(
     angle_bin_size=np.pi / 8,
     circular_angle=True,
 )
+
+# The concrete class lives at:
+from neurospatial.environment.polar import EgocentricPolarEnvironment
+assert isinstance(env, EgocentricPolarEnvironment)
+assert not isinstance(env, Environment)
 ```
 
 ---

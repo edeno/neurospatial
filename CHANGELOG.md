@@ -85,6 +85,31 @@
 
 ### Breaking changes
 
+- **Egocentric polar space is now a distinct type.**
+  `Environment.from_polar_egocentric(...)` now returns a new
+  `EgocentricPolarEnvironment` (in `neurospatial.environment.polar`) instead
+  of an `Environment` carrying a hidden `coordinate_kind="polar"` flag.
+  `EgocentricPolarEnvironment` is a *sibling* of `Environment` (both share a
+  common `_BaseEnvironment` base), **not** a subclass — so
+  `isinstance(polar_env, Environment)` is now `False`. The Cartesian-only
+  methods that previously raised `ValueError` at runtime on a polar env now
+  raise `NotImplementedError` (and are simply absent from the type's
+  contract): `bin_at`, `contains`, `distance_between`,
+  `distance_to(metric="euclidean")`, and `apply_transform`. Graph operations
+  (`neighbors`, `path_between`, `reachable_from`,
+  `distance_to(metric="geodesic")`, `smooth`) remain available. Consequences:
+  the `Environment.coordinate_kind` attribute, the `Environment.is_polar`
+  property, and the `Environment._check_cartesian` guard are removed. Along
+  with the type change, polar geometry is now physically correct — connectivity
+  edge `distance` weights use arc length `r·Δθ` for angular steps, `Δr` for
+  radial steps, and `sqrt(Δr² + (r·Δθ)²)` for diagonals (previously the
+  Euclidean norm of `(Δr, Δθ)` collapsed cm and radians), `bin_sizes` returns
+  the true annular-sector area `0.5·(r₁²−r₀²)·Δθ`, and the egocentric
+  `gaussian_kde` smoothing kernel uses the physical polar distance with a
+  single length-unit bandwidth rather than mixing cm and radians. NWB and
+  file (`to_file`/`from_file`, `to_dict`/`from_dict`) round-trips restore the
+  `EgocentricPolarEnvironment` type (the on-disk `coordinate_kind` marker is
+  retained for backward compatibility).
 - `time_efficiency` lost its positional `goal` parameter and now takes a
   keyword-only `optimal_distance` (with `reference_speed` also keyword-only);
   external callers must update their call sites. This also fixes a latent

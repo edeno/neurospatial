@@ -387,7 +387,9 @@ distances = compute_egocentric_distance(
 **Create egocentric polar environment (for object-vector cells):**
 
 ```python
-# Create polar grid in egocentric space
+# Create polar grid in egocentric space.
+# This returns an EgocentricPolarEnvironment, a DISTINCT type from
+# Environment (it is NOT a subclass: isinstance(env, Environment) is False).
 env = Environment.from_polar_egocentric(
     distance_range=(0, 50),     # 0-50 cm from animal
     angle_range=(-np.pi, np.pi), # Full 360° around animal
@@ -395,8 +397,18 @@ env = Environment.from_polar_egocentric(
     angle_bin_size=np.pi / 8,    # 22.5° angular bins
     circular_angle=True,         # Wrap angles at ±π
 )
-# env.bin_centers[:, 0] = distances
-# env.bin_centers[:, 1] = angles
+# env.bin_centers[:, 0] = distances (length units, e.g. cm)
+# env.bin_centers[:, 1] = angles (radians)
+
+# Polar envs carry physically correct edge geometry (arc r·Δθ, radial Δr,
+# diagonal sqrt(Δr² + (r·Δθ)²)), so graph operations are well-defined:
+#   env.neighbors(...), env.path_between(...), env.reachable_from(...),
+#   env.distance_to(targets, metric="geodesic"), env.smooth(...)
+#
+# The Cartesian-only methods are UNAVAILABLE (they raise NotImplementedError)
+# because (distance, angle) pairs are not (x, y):
+#   env.bin_at(...), env.contains(...), env.distance_between(...),
+#   env.distance_to(..., metric="euclidean"), env.apply_transform(...)
 ```
 
 ### Object-Vector Cells

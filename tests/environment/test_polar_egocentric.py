@@ -316,8 +316,8 @@ class TestCircularWrapEdgeArcLength:
 class TestPolarStateVersionFreshness:
     """Post-construction mutations must invalidate versioned caches.
 
-    ``from_polar_egocentric`` flips ``coordinate_kind`` and (optionally) adds
-    circular wrap edges *after* ``_setup_from_layout`` finalized
+    ``EgocentricPolarEnvironment.create`` fixes polar edge geometry and
+    (optionally) adds circular wrap edges *after* ``_setup_from_layout`` finalized
     ``_state_version``. Without a final version bump, any
     ``versioned_cached_property`` cached at the construction version would go
     stale relative to the mutated connectivity graph.
@@ -509,13 +509,14 @@ class TestDocstringNote:
 
 
 class TestPolarCoordinateKindFlag:
-    """Regression: polar envs are flagged distinct from Cartesian.
+    """Regression: polar envs are a distinct type from Cartesian.
 
-    Without an explicit flag, downstream code that computes Euclidean
-    distance on `bin_centers` silently treats `(distance, angle)` pairs
-    as `(x, y)` and produces meaningless numbers. The new
-    `coordinate_kind` attribute and `is_polar` property make the
-    distinction visible to callers and let safety checks fire.
+    Downstream code that computes Euclidean distance on `bin_centers`
+    would silently treat `(distance, angle)` pairs as `(x, y)` and produce
+    meaningless numbers. Polar environments are now a separate type
+    (``EgocentricPolarEnvironment``, a sibling of ``Environment``, not a
+    subclass) so the geometry is carried by the type itself and the
+    Cartesian-only methods are simply unavailable.
     """
 
     @pytest.fixture
@@ -534,15 +535,21 @@ class TestPolarCoordinateKindFlag:
         positions = np.column_stack([np.linspace(0, 30, 16), np.linspace(0, 30, 16)])
         return Environment.from_samples(positions, bin_size=2.0)
 
-    def test_from_polar_egocentric_marks_env_polar(self, polar_env):
-        """from_polar_egocentric should set coordinate_kind='polar'."""
-        assert polar_env.coordinate_kind == "polar"
-        assert polar_env.is_polar is True
+    def test_from_polar_egocentric_returns_polar_type(self, polar_env):
+        """from_polar_egocentric returns the distinct EgocentricPolarEnvironment."""
+        from neurospatial.environment.polar import EgocentricPolarEnvironment
+
+        assert isinstance(polar_env, EgocentricPolarEnvironment)
+        assert not isinstance(polar_env, Environment)
+        assert polar_env._POLAR is True
 
     def test_cartesian_factories_default_to_cartesian(self, cartesian_env):
         """from_samples / from_polygon / from_grid_mask / etc. produce Cartesian envs."""
-        assert cartesian_env.coordinate_kind == "cartesian"
-        assert cartesian_env.is_polar is False
+        from neurospatial.environment.polar import EgocentricPolarEnvironment
+
+        assert isinstance(cartesian_env, Environment)
+        assert not isinstance(cartesian_env, EgocentricPolarEnvironment)
+        assert cartesian_env._POLAR is False
 
 
 class TestPolarRaisesOnCartesianAssumingMethods:
@@ -569,18 +576,19 @@ class TestPolarRaisesOnCartesianAssumingMethods:
 
     def test_bin_at_raises_on_polar_env(self, polar_env):
         from_xy = np.array([[5.0, 5.0]])
-        with pytest.raises(ValueError, match=r"polar.*bin_at|bin_at.*polar"):
+        with pytest.raises(NotImplementedError, match=r"polar.*bin_at|bin_at.*polar"):
             polar_env.bin_at(from_xy)
 
     def test_distance_between_raises_on_polar_env(self, polar_env):
         with pytest.raises(
-            ValueError, match=r"polar.*distance_between|distance_between.*polar"
+            NotImplementedError,
+            match=r"polar.*distance_between|distance_between.*polar",
         ):
             polar_env.distance_between(np.array([0.0, 0.0]), np.array([10.0, 10.0]))
 
     def test_distance_to_euclidean_raises_on_polar_env(self, polar_env):
         with pytest.raises(
-            ValueError,
+            NotImplementedError,
             match=r"polar.*distance_to.*euclidean|distance_to.*euclidean.*polar",
         ):
             polar_env.distance_to([0], metric="euclidean")
@@ -600,9 +608,11 @@ class TestPolarRaisesOnCartesianAssumingMethods:
 
 
 class TestPolarSerializationRoundTrip:
-    """coordinate_kind must survive copy and to_file/from_file round-trips."""
+    """The polar type must survive copy and to_file/from_file round-trips."""
 
     def test_copy_preserves_coordinate_kind(self):
+        from neurospatial.environment.polar import EgocentricPolarEnvironment
+
         env = Environment.from_polar_egocentric(
             distance_range=(0.0, 50.0),
             angle_range=(-np.pi, np.pi),
@@ -610,10 +620,11 @@ class TestPolarSerializationRoundTrip:
             angle_bin_size=np.pi / 2,
         )
         env_copy = env.copy()
-        assert env_copy.coordinate_kind == "polar"
-        assert env_copy.is_polar is True
+        assert isinstance(env_copy, EgocentricPolarEnvironment)
+        assert env_copy._POLAR is True
 
     def test_to_file_from_file_preserves_coordinate_kind(self, tmp_path):
+        from neurospatial.environment.polar import EgocentricPolarEnvironment
         from neurospatial.io.files import from_file, to_file
 
         env = Environment.from_polar_egocentric(
@@ -625,8 +636,8 @@ class TestPolarSerializationRoundTrip:
         path = tmp_path / "polar_env"
         to_file(env, path)
         loaded = from_file(path)
-        assert loaded.coordinate_kind == "polar"
-        assert loaded.is_polar is True
+        assert isinstance(loaded, EgocentricPolarEnvironment)
+        assert loaded._POLAR is True
 
 
 class TestPolarBoundaryGuardsExtended:
@@ -650,8 +661,10 @@ class TestPolarBoundaryGuardsExtended:
         )
 
     def test_contains_raises_on_polar_env(self, polar_env):
-        """Environment.contains is the boolean partner of bin_at and must refuse polar."""
-        with pytest.raises(ValueError, match=r"polar.*contains|contains.*polar"):
+        """contains is the boolean partner of bin_at and is unavailable on polar."""
+        with pytest.raises(
+            NotImplementedError, match=r"polar.*contains|contains.*polar"
+        ):
             polar_env.contains(np.array([[5.0, 5.0]]))
 
     def test_plot_field_relabels_polar_axes(self, polar_env):
@@ -676,9 +689,9 @@ class TestPolarBoundaryGuardsExtended:
         """apply_transform_to_environment must reject polar envs.
 
         An affine transform on (distance, angle) bin centers is not
-        geometrically meaningful, and the rebuilt env would silently
-        reset coordinate_kind to "cartesian" without raising. Refuse
-        at the boundary.
+        geometrically meaningful. The free-function path guards against a
+        polar env being passed directly (the method override on
+        EgocentricPolarEnvironment raises before reaching it).
         """
         from neurospatial.ops.transforms import (
             apply_transform_to_environment,
@@ -686,8 +699,18 @@ class TestPolarBoundaryGuardsExtended:
         )
 
         T = translate(1.0, 1.0)
-        with pytest.raises(ValueError, match=r"polar|coordinate_kind"):
+        with pytest.raises(ValueError, match=r"polar"):
             apply_transform_to_environment(polar_env, T)
+
+    def test_apply_transform_method_refuses_polar_env(self, polar_env):
+        """The apply_transform method on a polar env raises NotImplementedError."""
+        from neurospatial.ops.transforms import translate
+
+        T = translate(1.0, 1.0)
+        with pytest.raises(
+            NotImplementedError, match=r"polar.*apply_transform|apply_transform.*polar"
+        ):
+            polar_env.apply_transform(T)
 
     def test_from_dict_round_trip_preserves_coordinate_kind(self, polar_env):
         """to_dict / from_dict must round-trip coordinate_kind for polar envs.
@@ -696,12 +719,13 @@ class TestPolarBoundaryGuardsExtended:
         so an in-memory dict round-trip silently flipped polar envs to
         Cartesian even though to_file/from_file round-tripped correctly.
         """
+        from neurospatial.environment.polar import EgocentricPolarEnvironment
         from neurospatial.io.files import from_dict, to_dict
 
         data = to_dict(polar_env)
         loaded = from_dict(data)
-        assert loaded.coordinate_kind == "polar"
-        assert loaded.is_polar is True
+        assert isinstance(loaded, EgocentricPolarEnvironment)
+        assert loaded._POLAR is True
 
 
 class TestSubsetPreservesGraphLayout:
@@ -822,3 +846,72 @@ class TestPolarEgocentricAngularSeam:
 
         # No seam edge: reaching -pi requires traversing the whole angular span.
         assert field[neg_pi] > field[zero]
+
+
+class TestPolarTypeAndGeometry:
+    """Validation slice for the distinct polar type and physical geometry."""
+
+    @pytest.fixture
+    def polar_env(self):
+        # 5 distance rings (centers 5,15,25,35,45), 8 angle bins, no wrap so the
+        # angular-step edges are unambiguous grid edges.
+        return Environment.from_polar_egocentric(
+            distance_range=(0.0, 50.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=10.0,
+            angle_bin_size=np.pi / 4,
+            circular_angle=False,
+        )
+
+    def test_polar_env_is_distinct_type(self, polar_env):
+        """from_polar_egocentric returns EgocentricPolarEnvironment, not Environment."""
+        from neurospatial.environment.polar import EgocentricPolarEnvironment
+
+        assert type(polar_env) is EgocentricPolarEnvironment
+        assert not isinstance(polar_env, Environment)
+
+        # Cartesian-only methods are absent/clearly errored, not silently disabled.
+        with pytest.raises(NotImplementedError):
+            polar_env.bin_at(np.array([[1.0, 1.0]]))
+        with pytest.raises(NotImplementedError):
+            polar_env.contains(np.array([[1.0, 1.0]]))
+        with pytest.raises(NotImplementedError):
+            polar_env.distance_between(np.array([0.0, 0.0]), np.array([1.0, 1.0]))
+        with pytest.raises(NotImplementedError):
+            polar_env.distance_to([0], metric="euclidean")
+
+    def test_polar_edge_distances_physical(self, polar_env):
+        """Two equal angular moves at different radii have arc length scaling with r.
+
+        Before the geometry fix the edge "distance" was the Euclidean norm of
+        (Delta_r, Delta_theta) = (0, pi/4), i.e. a constant ~0.785 at every
+        radius -- so arcs at r=5 and r=45 were equal (a ~9x error). With the
+        fix the arc length is r * Delta_theta, which scales with radius.
+        """
+        G = polar_env.connectivity
+        # node id = distance_idx * n_angle + angle_idx ; n_angle = 8
+        arc_inner = G.edges[0, 1]["distance"]  # ring r_center=5, angular step
+        arc_outer = G.edges[32, 33]["distance"]  # ring r_center=45, angular step
+
+        assert arc_inner == pytest.approx(5.0 * np.pi / 4, rel=1e-9)
+        assert arc_outer == pytest.approx(45.0 * np.pi / 4, rel=1e-9)
+        # Equal physical angular step -> arc scales with radius (45/5 = 9).
+        assert arc_outer / arc_inner == pytest.approx(9.0, rel=1e-9)
+
+        # Radial step (same angle, adjacent ring) is the radial distance Delta_r.
+        radial = G.edges[0, 8]["distance"]
+        assert radial == pytest.approx(10.0, rel=1e-9)
+
+    def test_polar_geodesic_correct(self, polar_env):
+        """A known polar geodesic matches the analytic value within tolerance.
+
+        From the innermost ring center (r=5) to the outermost ring center
+        (r=45) along the SAME angle, the shortest path traverses four radial
+        edges of length Delta_r = 10 each, so the geodesic distance is 40.
+        """
+        # Same angle (idx 0), distance idx 0 -> distance idx 4: nodes 0 and 32.
+        dist = polar_env.distance_to([0], metric="geodesic")
+        # Node 32 is r=45 at the same angle as node 0 (r=5).
+        assert dist[32] == pytest.approx(40.0, rel=1e-9)
+        # A pure angular hop from node 0 to node 1 equals the inner arc length.
+        assert dist[1] == pytest.approx(5.0 * np.pi / 4, rel=1e-9)

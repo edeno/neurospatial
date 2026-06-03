@@ -56,8 +56,8 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 if TYPE_CHECKING:
-    from neurospatial.environment import Environment
     from neurospatial.environment._protocols import EnvironmentProtocol
+    from neurospatial.environment.core import _BaseEnvironment
 
 __all__ = [
     "smooth_rate_map",
@@ -73,7 +73,9 @@ _GAUSSIAN_KERNEL_CACHE: dict[tuple[int, float], tuple[NDArray[np.float64], int]]
 _GAUSSIAN_KERNEL_CACHE_MAX = 32
 
 
-def _get_gaussian_kernel(env: Environment, bandwidth: float) -> NDArray[np.float64]:
+def _get_gaussian_kernel(
+    env: _BaseEnvironment, bandwidth: float
+) -> NDArray[np.float64]:
     """Return the dense Gaussian-KDE weight matrix for ``env`` at ``bandwidth``.
 
     The matrix is ``(n_bins, n_bins)`` and was previously rebuilt at every
@@ -90,8 +92,26 @@ def _get_gaussian_kernel(env: Environment, bandwidth: float) -> NDArray[np.float
         return cached[0]
 
     two_sigma_sq = 2.0 * bandwidth**2
-    bin_sq_norm = np.sum(bin_centers**2, axis=1, keepdims=True)
-    dist_sq = bin_sq_norm + bin_sq_norm.T - 2 * (bin_centers @ bin_centers.T)
+
+    if getattr(env, "_POLAR", False):
+        # Egocentric polar env: bin_centers[:, 0] is distance (length units),
+        # bin_centers[:, 1] is angle (radians). A naive Euclidean norm on
+        # these columns collapses cm and radians into one scalar. Instead use
+        # the physical polar distance between bin centers:
+        #     d² = Δr² + (r̄ · Δθ)²
+        # with r̄ the mean radius of the two bins. ``bandwidth`` is then a
+        # single physical length (e.g. cm), consistent with the corrected
+        # connectivity edge geometry.
+        r = bin_centers[:, 0]
+        theta = bin_centers[:, 1]
+        d_r = r[:, None] - r[None, :]
+        r_mean = 0.5 * (r[:, None] + r[None, :])
+        d_theta = theta[:, None] - theta[None, :]
+        arc = r_mean * d_theta
+        dist_sq = d_r**2 + arc**2
+    else:
+        bin_sq_norm = np.sum(bin_centers**2, axis=1, keepdims=True)
+        dist_sq = bin_sq_norm + bin_sq_norm.T - 2 * (bin_centers @ bin_centers.T)
     dist_sq = np.maximum(dist_sq, 0)
     kernel: NDArray[np.float64] = np.exp(-dist_sq / two_sigma_sq).astype(
         np.float64, copy=False
@@ -106,7 +126,7 @@ def _get_gaussian_kernel(env: Environment, bandwidth: float) -> NDArray[np.float
 
 
 def smooth_rate_map(
-    env: Environment,
+    env: _BaseEnvironment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     *,
@@ -277,7 +297,7 @@ def smooth_rate_map(
 
 
 def smooth_rate_maps_batch(
-    env: Environment,
+    env: _BaseEnvironment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     *,
@@ -378,7 +398,7 @@ def smooth_rate_maps_batch(
 
 
 def _validate_smoothing_inputs(
-    env: Environment,
+    env: _BaseEnvironment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     method: str,
@@ -429,7 +449,7 @@ def _validate_smoothing_parameters(method: str, bandwidth: float) -> None:
 
 
 def _diffusion_kde(
-    env: Environment,
+    env: _BaseEnvironment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     bandwidth: float,
@@ -483,7 +503,7 @@ def _diffusion_kde(
 
 
 def _gaussian_kde(
-    env: Environment,
+    env: _BaseEnvironment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     bandwidth: float,
@@ -525,7 +545,7 @@ def _gaussian_kde(
 
 
 def _binned(
-    env: Environment,
+    env: _BaseEnvironment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     bandwidth: float,
@@ -617,7 +637,7 @@ def _diffusion_kde_batch(
 
 
 def _gaussian_kde_batch(
-    env: Environment,
+    env: _BaseEnvironment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     bandwidth: float,
@@ -645,7 +665,7 @@ def _gaussian_kde_batch(
 
 
 def _binned_batch(
-    env: Environment,
+    env: _BaseEnvironment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     bandwidth: float,
@@ -701,7 +721,7 @@ def _binned_batch(
 
 
 def _smooth_rate_map_jax(
-    env: Environment,
+    env: _BaseEnvironment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     method: Literal["diffusion_kde", "gaussian_kde", "binned"],
@@ -788,7 +808,7 @@ def _smooth_rate_map_jax(
 
 
 def _smooth_rate_maps_batch_jax(
-    env: Environment,
+    env: _BaseEnvironment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     method: Literal["diffusion_kde", "gaussian_kde", "binned"],

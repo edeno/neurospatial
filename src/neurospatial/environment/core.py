@@ -25,7 +25,7 @@ import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
-from typing import Any, ClassVar, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 import networkx as nx
 import numpy as np
@@ -51,11 +51,14 @@ from neurospatial.layout.validation import (
 from neurospatial.ops.calculus import compute_differential_operator
 from neurospatial.regions import Regions
 
+if TYPE_CHECKING:
+    from neurospatial.environment.polar import EgocentricPolarEnvironment
+
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class Environment(
+class _BaseEnvironment(
     EnvironmentFactories,
     EnvironmentQueries,
     EnvironmentSerialization,
@@ -66,10 +69,28 @@ class Environment(
     EnvironmentTrajectory,
     EnvironmentTransforms,
 ):
-    """Represents a discretized N-dimensional space with connectivity.
+    """Shared implementation behind Environment and EgocentricPolarEnvironment.
+
+    This base class composes the mixins and holds the dataclass fields and
+    core methods (``__init__``, ``copy``, ``_setup_from_layout``, repr, etc.)
+    common to every environment type. Concrete environment types subclass it:
+
+    - :class:`Environment` — Cartesian ``(x, y[, z])`` environments.
+    - :class:`~neurospatial.environment.polar.EgocentricPolarEnvironment` —
+      egocentric polar ``(distance, angle)`` environments built via
+      :meth:`Environment.from_polar_egocentric`.
+
+    ``EgocentricPolarEnvironment`` is a *sibling* of ``Environment`` (both
+    subclass this base), not a subclass of ``Environment`` — so it does not
+    inherit the Cartesian-only methods (``bin_at``, ``contains``,
+    ``distance_between``, Euclidean ``distance_to``, ``apply_transform``) that
+    would silently misinterpret ``(distance, angle)`` pairs as ``(x, y)``.
+    Those methods are overridden on the polar type to raise.
 
     Note: This class satisfies the EnvironmentProtocol interface through
     its mixin inheritance and dataclass fields.
+
+    The original ``Environment`` docstring (kept on the concrete subclass):
 
     This class serves as a comprehensive model of a spatial environment,
     discretized into bins or nodes. It stores the geometric properties of these
@@ -242,21 +263,15 @@ class Environment(
     units: str | None = field(init=False, default=None)
     frame: str | None = field(init=False, default=None)
 
-    # Coordinate-system flag. Cartesian envs (``from_samples``,
-    # ``from_polygon``, ``from_grid_mask``, ``from_pixel_mask``, ``from_graph``,
-    # ``from_layout`` for any non-polar layout) hold (x, y[, z]) bin
-    # centers and tolerate Euclidean distance on those centers. The
-    # ``polar`` value comes from ``from_polar_egocentric`` and means
-    # ``bin_centers[:, 0]`` is *distance* and ``bin_centers[:, 1]`` is
-    # *angle in radians*. A handful of methods (``bin_at``,
-    # ``distance_between``, ``distance_to(metric="euclidean")``)
-    # silently treat (distance, angle) pairs as (x, y) and produce
-    # nonsense; those methods raise on a polar env via
-    # ``_check_cartesian``. Geodesic operations remain valid because
-    # they read only the connectivity graph.
-    coordinate_kind: Literal["cartesian", "polar"] = field(
-        init=False, default="cartesian"
-    )
+    # Coordinate-system marker. ``False`` for Cartesian environments
+    # (``Environment``), ``True`` for egocentric polar environments
+    # (``EgocentricPolarEnvironment``) whose ``bin_centers[:, 0]`` is
+    # *distance* and ``bin_centers[:, 1]`` is *angle in radians*. This is a
+    # per-class constant (not a runtime-mutable field) so the type itself —
+    # not a flag — carries the geometry. Mixin methods that adapt their
+    # presentation to polar geometry (e.g. ``plot_field`` axis labels) read
+    # this via ``getattr(self, "_POLAR", False)``.
+    _POLAR: ClassVar[bool] = False
 
     # Internal state
     _is_linearized_track_env: bool = field(init=False)
@@ -931,42 +946,6 @@ class Environment(
         return self._is_linearized_track_env
 
     @property
-    def is_polar(self) -> bool:
-        """True iff the environment lives in egocentric polar coordinates.
-
-        Convenience wrapper over ``coordinate_kind == "polar"``. A polar
-        env's ``bin_centers[:, 0]`` is distance and ``bin_centers[:, 1]``
-        is angle in radians, not (x, y); methods that compute Euclidean
-        operations on bin_centers (``bin_at``, ``distance_between``,
-        ``distance_to(metric="euclidean")``) raise rather than return
-        silently-wrong numbers.
-        """
-        return self.coordinate_kind == "polar"
-
-    def _check_cartesian(self, method_name: str) -> None:
-        """Raise if this env is polar and the calling method assumes Cartesian.
-
-        Centralises the "this method only makes sense on (x, y[, z])
-        bin centers" check so each guarded method has a one-line call
-        and a uniform error message. The error names the offending
-        method and points the user at the geodesic alternative when
-        one exists.
-        """
-        if self.coordinate_kind != "cartesian":
-            raise ValueError(
-                f"Environment.{method_name}() assumes Cartesian "
-                f"coordinates but this environment is "
-                f"coordinate_kind={self.coordinate_kind!r} "
-                "(bin_centers[:, 0]=distance, bin_centers[:, 1]=angle "
-                "for polar envs from from_polar_egocentric). For "
-                "polar envs, use connectivity-graph operations "
-                "(neighbors, path_between, reachable_from, or "
-                "distance_to(metric='geodesic')) instead, or build "
-                "an allocentric Cartesian env via from_samples / "
-                "from_polygon / from_grid_mask."
-            )
-
-    @property
     @check_fitted
     def n_dims(self) -> int:
         """Return the number of spatial dimensions of the active bin centers.
@@ -1109,10 +1088,14 @@ class Environment(
 
     @versioned_cached_property
     def _differential_operator_cached(self) -> sparse.csc_matrix:
-        return compute_differential_operator(self)
+        # compute_differential_operator only reads self.connectivity; the cast
+        # bridges the _BaseEnvironment self type to its Environment-typed param.
+        from typing import cast
+
+        return compute_differential_operator(cast("Environment", self))
 
     @check_fitted
-    def copy(self, *, deep: bool = True) -> Environment:
+    def copy(self, *, deep: bool = True) -> _BaseEnvironment:
         """Create a copy of the environment.
 
         Parameters
@@ -1183,9 +1166,13 @@ class Environment(
         """
         import copy as copy_module
 
+        # Preserve the concrete type (Environment or
+        # EgocentricPolarEnvironment) so a polar env copies as a polar env.
+        cls = type(self)
+
         if deep:
             # Deep copy: arrays, graph, regions, layout
-            env_copy = Environment(
+            env_copy = cls(
                 name=self.name,
                 layout=copy_module.deepcopy(self.layout),
                 layout_type_used=self._layout_type_used,
@@ -1196,10 +1183,9 @@ class Environment(
             # Copy metadata
             env_copy.units = self.units
             env_copy.frame = self.frame
-            env_copy.coordinate_kind = self.coordinate_kind
         else:
             # Shallow copy: share references
-            env_copy = Environment(
+            env_copy = cls(
                 name=self.name,
                 layout=self.layout,  # Shared reference
                 layout_type_used=self._layout_type_used,
@@ -1210,7 +1196,6 @@ class Environment(
             # Copy metadata
             env_copy.units = self.units
             env_copy.frame = self.frame
-            env_copy.coordinate_kind = self.coordinate_kind
 
         # Always clear caches (regardless of deep/shallow)
         # This ensures caches are rebuilt for the new environment object
@@ -1344,3 +1329,91 @@ class Environment(
                         value_key = f"_versioned_cache__{name}"
                         self.__dict__.pop(value_key, None)
                         self.__dict__.pop(f"{value_key}__version", None)
+
+
+class Environment(_BaseEnvironment):
+    """A discretized Cartesian environment with connectivity.
+
+    ``Environment`` is the central user-facing spatial type. Its
+    ``bin_centers`` hold Cartesian ``(x, y[, z])`` coordinates, so all
+    geometric methods (``bin_at``, ``contains``, ``distance_between``,
+    Euclidean ``distance_to``, ``apply_transform``) interpret inputs as
+    Cartesian points.
+
+    Instances are created via the factory classmethods inherited from
+    :class:`~neurospatial.environment.factories.EnvironmentFactories`
+    (``from_samples``, ``from_polygon``, ``from_grid_mask``,
+    ``from_pixel_mask``, ``from_graph``, ``from_layout``).
+
+    Egocentric *polar* environments are a distinct type,
+    :class:`~neurospatial.environment.polar.EgocentricPolarEnvironment`,
+    created via :meth:`from_polar_egocentric`. A polar environment is a
+    sibling of ``Environment`` (both subclass ``_BaseEnvironment``), not a
+    subclass, so ``isinstance(polar_env, Environment)`` is ``False``.
+
+    See :class:`_BaseEnvironment` for the full attribute and terminology
+    reference shared by both environment types.
+    """
+
+    _POLAR: ClassVar[bool] = False
+
+    @classmethod
+    def from_polar_egocentric(
+        cls,
+        distance_range: tuple[float, float],
+        angle_range: tuple[float, float],
+        distance_bin_size: float,
+        angle_bin_size: float,
+        *,
+        circular_angle: bool = True,
+        connect_diagonal_neighbors: bool = True,
+        name: str = "",
+    ) -> EgocentricPolarEnvironment:
+        """Create an egocentric polar coordinate environment.
+
+        This is the public entry point for building an
+        :class:`~neurospatial.environment.polar.EgocentricPolarEnvironment`.
+        See that class's
+        :meth:`~neurospatial.environment.polar.EgocentricPolarEnvironment.create`
+        for the full parameter documentation.
+
+        Returns
+        -------
+        EgocentricPolarEnvironment
+            A fitted egocentric polar environment. ``bin_centers[:, 0]`` is
+            distance and ``bin_centers[:, 1]`` is angle in radians. This is a
+            *distinct type* from ``Environment`` (not a subclass).
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> env = Environment.from_polar_egocentric(
+        ...     distance_range=(0.0, 100.0),  # 0-100 cm
+        ...     angle_range=(-np.pi, np.pi),  # Full circle
+        ...     distance_bin_size=10.0,  # 10 cm distance bins
+        ...     angle_bin_size=np.pi / 4,  # 45 degree angle bins
+        ... )
+        >>> env.n_bins  # 10 distance * 8 angle = 80 bins
+        80
+        >>> type(env).__name__
+        'EgocentricPolarEnvironment'
+        >>> isinstance(env, Environment)
+        False
+
+        See Also
+        --------
+        neurospatial.environment.polar.EgocentricPolarEnvironment :
+            The polar environment type returned by this factory.
+        """
+        from neurospatial.environment.polar import EgocentricPolarEnvironment
+
+        return EgocentricPolarEnvironment.create(
+            distance_range=distance_range,
+            angle_range=angle_range,
+            distance_bin_size=distance_bin_size,
+            angle_bin_size=angle_bin_size,
+            circular_angle=circular_angle,
+            connect_diagonal_neighbors=connect_diagonal_neighbors,
+            name=name,
+        )

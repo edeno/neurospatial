@@ -541,7 +541,7 @@ class EnvironmentVisualization:
         # extent is independent and physical).
         if not self.layout.is_linearized_track:
             unit_label = f" ({self.units})" if self.units else ""
-            if self.is_polar:
+            if getattr(self, "_POLAR", False):
                 ax.set_xlabel(f"Distance{unit_label}", fontsize=12)
                 ax.set_ylabel("Angle (rad)", fontsize=12)
             else:

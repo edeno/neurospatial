@@ -286,6 +286,18 @@ result = compute_egocentric_rate(
 # result.preferred_distance(), result.preferred_direction(): peak location
 ```
 
+**Egocentric polar environments are a DISTINCT type.**
+`Environment.from_polar_egocentric(...)` returns an
+`EgocentricPolarEnvironment` (in `neurospatial.environment.polar`), **not** an
+`Environment` — it is a sibling type, not a subclass, so
+`isinstance(polar_env, Environment)` is `False`. Its `bin_centers[:, 0]` is
+distance and `bin_centers[:, 1]` is angle in radians, and its connectivity
+edges carry physically correct polar lengths (arc `r·Δθ`, radial `Δr`,
+diagonal `sqrt(Δr² + (r·Δθ)²)`). Cartesian-only methods (`bin_at`, `contains`,
+`distance_between`, `distance_to(metric="euclidean")`, `apply_transform`) raise
+`NotImplementedError`; use graph operations (`neighbors`, `path_between`,
+`reachable_from`, `distance_to(metric="geodesic")`, `smooth`) instead.
+
 **Need metrics?** See [QUICKSTART.md - Object-Vector Cells](.claude/QUICKSTART.md#object-vector-cells)
 
 ### 9. Compute Spatial View Field
