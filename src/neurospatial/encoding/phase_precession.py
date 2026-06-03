@@ -150,7 +150,7 @@ def theta_phase(
     True
     >>> # Phases are drop-in for phase_precession (no reshaping):
     >>> positions = np.linspace(0, 50, phase.size)
-    >>> result = phase_precession(positions, phase, random_state=0)
+    >>> result = phase_precession(positions, phase, rng=0)
     >>> isinstance(result.slope, float)
     True
     """
@@ -448,7 +448,7 @@ def phase_precession(
     angle_unit: Literal["rad", "deg"] = "rad",
     min_spikes: int = 10,
     n_shuffles: int = 1000,
-    random_state: int | np.random.Generator | None = None,
+    rng: int | np.random.Generator | None = None,
 ) -> PhasePrecessionResult:
     """
     Analyze phase precession in place cell data.
@@ -480,7 +480,7 @@ def phase_precession(
         for the p-value. Each shuffle re-fits the slope on the shuffled
         phase-position pairing (see Notes). Larger values give finer
         p-value resolution at higher cost.
-    random_state : int, numpy.random.Generator, or None, optional
+    rng : int, numpy.random.Generator, or None, optional
         Seed or generator for the permutation shuffles. Pass a fixed value
         for a deterministic ``pval``.
 
@@ -534,7 +534,7 @@ def phase_precession(
     >>> from neurospatial.encoding.phase_precession import phase_precession
     >>> positions = np.linspace(0, 50, 100)  # 0-50 cm
     >>> phases = 2 * np.pi - positions * 0.1  # Negative slope
-    >>> result = phase_precession(positions, phases, random_state=0)
+    >>> result = phase_precession(positions, phases, rng=0)
     >>> print(result)  # doctest: +SKIP
     """
     from scipy.stats import circmean
@@ -593,7 +593,7 @@ def phase_precession(
     # fit-quality field.
     observed_mrl = _best_residual_mrl(phases, positions, slope_bounds)
 
-    rng = np.random.default_rng(random_state)
+    rng = np.random.default_rng(rng)
     n_shuffles_eff = int(n_shuffles)
     null_mrls = np.empty(n_shuffles_eff, dtype=np.float64)
     for i in range(n_shuffles_eff):
@@ -624,7 +624,7 @@ def has_phase_precession(
     min_correlation: float = 0.2,
     angle_unit: Literal["rad", "deg"] = "rad",
     n_shuffles: int = 200,
-    random_state: int | np.random.Generator | None = None,
+    rng: int | np.random.Generator | None = None,
 ) -> bool:
     """Quick check for significant phase precession.
 
@@ -644,7 +644,7 @@ def has_phase_precession(
         Number of permutation shuffles for the p-value. A smaller default
         than :func:`phase_precession` (1000) keeps screening fast since this
         function is intended for filtering many neurons.
-    random_state : int, numpy.random.Generator, or None, optional
+    rng : int, numpy.random.Generator, or None, optional
         Seed or generator for the shuffles. Pass a fixed value for a
         deterministic result.
 
@@ -689,7 +689,7 @@ def has_phase_precession(
             phases,
             angle_unit=angle_unit,
             n_shuffles=n_shuffles,
-            random_state=random_state,
+            rng=rng,
         )
     except ValueError:
         # Too few spikes after NaN-dropping -> cannot assess precession.

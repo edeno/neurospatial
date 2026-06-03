@@ -278,7 +278,7 @@ class TestPhasePrecessionShufflePvalue:
         d = precessing_spikes
         n_shuffles = 200
         true_fit = phase_precession(
-            d["positions"], d["phases"], n_shuffles=n_shuffles, random_state=0
+            d["positions"], d["phases"], n_shuffles=n_shuffles, rng=0
         )
         assert true_fit.pval < 0.05
         assert true_fit.slope < 0
@@ -293,7 +293,7 @@ class TestPhasePrecessionShufflePvalue:
 
         # Shuffled phases against the same positions destroy the relationship.
         shuffled = phase_precession(
-            d["positions"], d["phase_shuffled"], n_shuffles=n_shuffles, random_state=0
+            d["positions"], d["phase_shuffled"], n_shuffles=n_shuffles, rng=0
         )
         assert shuffled.pval > 0.5
 
@@ -301,12 +301,8 @@ class TestPhasePrecessionShufflePvalue:
         from neurospatial.encoding.phase_precession import phase_precession
 
         d = precessing_spikes
-        a = phase_precession(
-            d["positions"], d["phases"], n_shuffles=200, random_state=7
-        )
-        b = phase_precession(
-            d["positions"], d["phases"], n_shuffles=200, random_state=7
-        )
+        a = phase_precession(d["positions"], d["phases"], n_shuffles=200, rng=7)
+        b = phase_precession(d["positions"], d["phases"], n_shuffles=200, rng=7)
         assert a.pval == b.pval
 
     def test_phase_precession_correlation_is_descriptive(
@@ -316,9 +312,7 @@ class TestPhasePrecessionShufflePvalue:
         from neurospatial.stats.circular import circular_linear_correlation
 
         d = precessing_spikes
-        result = phase_precession(
-            d["positions"], d["phases"], n_shuffles=200, random_state=0
-        )
+        result = phase_precession(d["positions"], d["phases"], n_shuffles=200, rng=0)
         assert 0.0 <= result.correlation <= 1.0
         wrapped = d["phases"] % (2 * np.pi)
         expected, _ = circular_linear_correlation(
@@ -350,6 +344,6 @@ class TestHasPhasePrecessionValidation:
 
         d = precessing_spikes
         start = time.perf_counter()
-        has_phase_precession(d["positions"], d["phases"], random_state=0)
+        has_phase_precession(d["positions"], d["phases"], rng=0)
         elapsed = time.perf_counter() - start
         assert elapsed < 2.0

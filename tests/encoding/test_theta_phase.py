@@ -82,7 +82,7 @@ class TestThetaPhase:
         phase = theta_phase(lfp, sampling_rate)
 
         positions = np.linspace(0.0, 50.0, phase.size)
-        result = phase_precession(positions, phase, random_state=0)
+        result = phase_precession(positions, phase, rng=0)
 
         # Consumed without error and returns the standard result type.
         assert isinstance(result.slope, float)

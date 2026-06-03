@@ -71,6 +71,15 @@
   `encoding.phase_precession` consumes, so the output is drop-in for
   phase-precession analysis once sampled at spike times. Uses `scipy.signal`
   only — no new dependency. Exported from `neurospatial.encoding`.
+- `encoding.phase_precession` and `encoding.has_phase_precession` gained a
+  shuffle-based significance test via two new keyword-only parameters,
+  `n_shuffles` (default `1000` / `200` respectively) and `rng`
+  (`int | numpy.random.Generator | None`, for a deterministic result). The
+  null is built by permuting the phase–position pairing and re-fitting the
+  slope on each shuffle, so `PhasePrecessionResult.pval` is now this
+  fitted-slope shuffle p-value (with `+1` smoothing, never exactly zero)
+  rather than the slope-free circular-linear value; `correlation` is retained
+  as a slope-independent descriptive effect size.
 - Added `bin_spikes_in_time`, a public primitive that bins a sequence of
   per-neuron spike-time arrays onto a regular time grid (owning the bin
   edges and `dt / 2` bin centers) and returns an integer count matrix. Its
@@ -212,6 +221,8 @@
   `is_head_direction_cell` now note in their docstrings that they expect
   *head direction* and that a velocity-derived *movement heading* is a common
   mislabel for a "head direction cell".
+- Dropped unimplemented `exponential_kernel` from the
+  `events.regressors` module docstring.
 
 ### Bug fixes
 
@@ -262,11 +273,6 @@
   per-timestep, with an internal cache so repeated targets remain cheap.
   Static-target callers (passing shape `(n_targets, 2)`) see no behavior
   change.
-
-### Documentation
-
-- Dropped unimplemented `exponential_kernel` from the
-  `events.regressors` module docstring.
 
 ## [v0.4.0] - 2026-05-26
 

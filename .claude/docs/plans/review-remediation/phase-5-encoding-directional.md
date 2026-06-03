@@ -351,7 +351,7 @@ Replace lines 341–344 (the `circular_linear_correlation` call) with a permutat
     # the SAME hypothesis the slope fit optimizes (a real position-dependent
     # phase relationship), instead of the slope-free circular-linear
     # correlation that ignores the fitted slope entirely.
-    rng = np.random.default_rng(random_state)
+    rng = np.random.default_rng(rng)
     n_shuffles_eff = int(n_shuffles)
     null_mrls = np.empty(n_shuffles_eff, dtype=np.float64)
     for i in range(n_shuffles_eff):
@@ -390,11 +390,11 @@ Add the two new keyword-only parameters to the `phase_precession` signature (aft
 
 ```python
     n_shuffles: int = 1000,
-    random_state: int | np.random.Generator | None = None,
+    rng: int | np.random.Generator | None = None,
 ```
 
 Update the `phase_precession` docstring:
-- `Parameters`: document `n_shuffles` and `random_state`.
+- `Parameters`: document `n_shuffles` and `rng`.
 - `Returns`/`Notes`: state explicitly that `pval` is now a **shuffle p-value at the fitted slope**, and that `correlation` is a slope-independent descriptive circular-linear effect size (resolving the decoupling the review flagged). Update `PhasePrecessionResult.correlation` / `.pval` attribute docs (phase_precession.py:88–91) to match.
 
 `has_phase_precession` (Task 4c) keeps using `result.pval`, which now correctly tracks the fitted slope, plus its existing `slope < 0` directionality gate.
@@ -402,7 +402,7 @@ Update the `phase_precession` docstring:
 ### Task 6 — Docstring / doctest sweep for touched public surface
 
 - `DirectionalRateResult` / `DirectionalRatesResult` doctests (directional.py:35, 135, 899, …) construct results without `spike_counts`; the new optional field keeps them valid — confirm by running doctests. Add one doctest showing `rayleigh_pvalue()` on a result built *with* counts vs. the occupancy-fallback path.
-- `phase_precession` examples (phase_precession.py:235–242) — add `random_state=0` to any example asserting a specific `pval` so the shuffle p-value is deterministic.
+- `phase_precession` examples (phase_precession.py:235–242) — add `rng=0` to any example asserting a specific `pval` so the shuffle p-value is deterministic.
 - No QUICKSTART/API_REFERENCE example references `tuning_width`, raw `rayleigh_pvalue` weighting, or the shuffle params today (grep-confirm during implementation); if one is added by another phase, defer to phase 23's doc sweep.
 
 ---
@@ -435,8 +435,8 @@ Update the `phase_precession` docstring:
 | `test_is_head_direction_cell_recovers_hd_cell` *(end-to-end)* | Simulate a von Mises HD cell over a trajectory uniformly covering all directions (use `simulation` if available, else inline Poisson draws with a fixed seed); `is_head_direction_cell(...)` returns `True` and the recovered `preferred_direction()` is within ~10° of the planted direction. |
 | `test_has_phase_precession_raises_on_length_mismatch` | `has_phase_precession(positions, phases)` with unequal lengths **raises `ValueError`**. Fail-before: returns `False`. |
 | `test_has_phase_precession_false_on_insufficient_spikes` | Fewer than `min_spikes` valid pairs still returns `False` (insufficient-data path preserved). |
-| `test_phase_precession_pval_tracks_fitted_slope` | For a synthetic dataset with a strong **negative** planted slope, `pval < 0.05`; for a phase-shuffled copy of the *same* phases against the *same* positions, `pval` is large (≳ 0.5). Both with fixed `random_state`. **Fail-before**: pval comes from slope-free `circular_linear_correlation` and does not distinguish the shuffled control from a true fit at the planted slope where the correlation magnitude is unchanged. |
-| `test_phase_precession_pval_deterministic` | Same inputs + same `random_state` → identical `pval` across two calls. |
+| `test_phase_precession_pval_tracks_fitted_slope` | For a synthetic dataset with a strong **negative** planted slope, `pval < 0.05`; for a phase-shuffled copy of the *same* phases against the *same* positions, `pval` is large (≳ 0.5). Both with fixed `rng`. **Fail-before**: pval comes from slope-free `circular_linear_correlation` and does not distinguish the shuffled control from a true fit at the planted slope where the correlation magnitude is unchanged. |
+| `test_phase_precession_pval_deterministic` | Same inputs + same `rng` → identical `pval` across two calls. |
 | `test_phase_precession_correlation_is_descriptive` | `result.correlation` still in `[0, 1]`; documented as slope-independent (smoke: equals `circular_linear_correlation(phases, positions)[0]`). |
 | `test_has_phase_precession_within_time_budget` | A single `has_phase_precession(...)` call (on the seeded `precessing_spikes` fixture, using whatever shuffle mitigation Task 5 chose — coarse fixed grid and/or the smaller classifier-path `n_shuffles` default) completes within a reasonable wall-clock budget (e.g. well under ~1 s on the fixture); guards against the per-shuffle full-adaptive-fit latency cliff. Mark `@pytest.mark.slow` if timing proves noisy in CI. |
 
@@ -460,7 +460,7 @@ Before opening the PR, dispatch `code-reviewer` (or `scientific-code-change-audi
 - Every task (1–6) is implemented as specified; the Rayleigh fix weights by **spike counts**, never Hz, and `rayleigh_test` itself is **not** modified (phase 4 owns it).
 - The "Deliberately not in this phase" list is honored: **no edits** to `egocentric.py`, `view.py`, `stats/`, polar/factory code, or the result-mixin surface. `validate_classifier_trajectory` is added but only *wired* into the directional classifier.
 - NaN/Inf headings are masked out of occupancy **and** spike counts at the same frames (Task 2) — verify a single shared `finite` mask logic, not two divergent ones.
-- The phase-precession shuffle null **re-fits** the slope per shuffle (does not reuse the observed slope), is deterministic under `random_state`, and the docstring states `pval` is now a fitted-slope shuffle p-value while `correlation` is descriptive/slope-independent.
+- The phase-precession shuffle null **re-fits** the slope per shuffle (does not reuse the observed slope), is deterministic under `rng`, and the docstring states `pval` is now a fitted-slope shuffle p-value while `correlation` is descriptive/slope-independent.
 - Validation slice passes, including the fail-before assertions (reviewer spot-checks at least the scale-invariance, NaN-bin-0, tuning-width-NaN, classifier-raises, and pval-tracks-slope tests by reverting the fix locally).
 - Tests aren't trivial — the scale-invariance and shuffle-control tests exercise the asserted behavior, not tautologies; shared setup is in `conftest.py` fixtures, not copy-pasted (`testing-anti-patterns`).
 - `uv run pytest tests/encoding/ -q`, `uv run pytest --doctest-modules src/neurospatial/encoding/directional.py src/neurospatial/encoding/phase_precession.py`, `uv run ruff check . && uv run ruff format --check .`, and `uv run mypy src/neurospatial/encoding/` all pass.
