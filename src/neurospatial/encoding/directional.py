@@ -1526,6 +1526,15 @@ def compute_directional_rate(
         convention**: 0 = East, π/2 = North, π = West, -π/2 = South,
         wrapped to [-π, π] (or to [0, 360°) when ``angle_unit="deg"``).
         Units determined by ``angle_unit``.
+
+        **Movement heading vs. head direction.** This function expects the
+        animal's *head direction* (where the head points, typically from a
+        head-mounted LED pair or pose tracking). A velocity-derived heading
+        (e.g. from :func:`neurospatial.ops.egocentric.heading_from_velocity`)
+        is the direction of *movement*, which equals head direction only when
+        the animal moves the way it faces. Feeding movement heading here and
+        reporting the result as a "head direction cell" is a common
+        methodological mislabel — keep the two distinct.
     bin_size : float, default=π/30 (6 degrees)
         Width of angular bins. Units match ``angle_unit``.
         Default produces 60 bins (6° resolution).
@@ -1757,6 +1766,15 @@ def compute_directional_rates(
         convention**: 0 = East, π/2 = North, π = West, -π/2 = South,
         wrapped to [-π, π] (or to [0, 360°) when ``angle_unit="deg"``).
         Units determined by ``angle_unit``.
+
+        **Movement heading vs. head direction.** This function expects the
+        animal's *head direction* (where the head points, typically from a
+        head-mounted LED pair or pose tracking). A velocity-derived heading
+        (e.g. from :func:`neurospatial.ops.egocentric.heading_from_velocity`)
+        is the direction of *movement*, which equals head direction only when
+        the animal moves the way it faces. Feeding movement heading here and
+        reporting the result as a "head direction cell" is a common
+        methodological mislabel — keep the two distinct.
     bin_size : float, default=π/30 (6 degrees)
         Width of angular bins. Units match ``angle_unit``.
         Default produces 60 bins (6° resolution).
@@ -2041,6 +2059,15 @@ def is_head_direction_cell(
         convention**: 0 = East, π/2 = North, π = West, -π/2 = South,
         wrapped to ``[-π, π]`` (or ``[0, 360°]`` when
         ``angle_unit="deg"``). Units determined by ``angle_unit``.
+
+        **Movement heading vs. head direction.** This classifier expects the
+        animal's *head direction* (where the head points). A velocity-derived
+        heading (e.g. from
+        :func:`neurospatial.ops.egocentric.heading_from_velocity`) is the
+        direction of *movement*, which equals head direction only when the
+        animal moves the way it faces. Calling a cell a "head direction cell"
+        from movement heading is a common methodological mislabel — keep the
+        two distinct.
     bin_size : float, default=π/30 (6 degrees)
         Width of angular bins. Units match ``angle_unit``.
     bandwidth : float or None, default=None

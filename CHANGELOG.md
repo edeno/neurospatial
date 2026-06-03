@@ -32,6 +32,13 @@
   a per-bin `directionality_index(label_a, label_b)`, and a per-direction
   overlay `plot()`. `DecodingResult` gains `summary()` and now also extends
   `ResultMixin`.
+- `encoding.theta_phase(lfp, sampling_rate, *, band=(6, 10))` extracts the
+  instantaneous theta phase from a single LFP channel using a zero-phase
+  Butterworth band-pass plus the Hilbert analytic-signal phase. The phase is
+  returned in radians wrapped to `[0, 2*pi)`, the convention
+  `encoding.phase_precession` consumes, so the output is drop-in for
+  phase-precession analysis once sampled at spike times. Uses `scipy.signal`
+  only — no new dependency. Exported from `neurospatial.encoding`.
 - Added `bin_spikes_in_time`, a public primitive that bins a sequence of
   per-neuron spike-time arrays onto a regular time grid (owning the bin
   edges and `dt / 2` bin centers) and returns an integer count matrix. Its
@@ -74,6 +81,19 @@
   deprecated alias). The layout is now stored in consistent (x, y) order, so
   `grid_shape`, `bin_centers`, and `active_mask` follow (x, y); code relying
   on the previous (y, x) ordering must update.
+
+### Documentation
+
+- The `decoding` trajectory (replay) module now documents that
+  sharp-wave-ripple intervals come from the external `ripple_detection`
+  package and that its returned `(start, end)` intervals feed
+  `events.peri_event_histogram` directly. neurospatial intentionally does not
+  implement ripple detection; `ripple_detection` is referenced as a
+  recommended external tool, not a hard dependency.
+- `encoding.compute_directional_rate`, `compute_directional_rates`, and
+  `is_head_direction_cell` now note in their docstrings that they expect
+  *head direction* and that a velocity-derived *movement heading* is a common
+  mislabel for a "head direction cell".
 
 ### Bug fixes
 

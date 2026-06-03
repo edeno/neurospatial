@@ -4,6 +4,27 @@ This module provides functions for fitting and detecting trajectories in
 posterior probability sequences from Bayesian decoding. These are useful for
 analyzing replay events and sequential activation patterns.
 
+Getting replay (ripple) intervals
+----------------------------------
+The trajectory fits here characterize a posterior *within* a candidate replay
+event; they do not themselves detect the sharp-wave-ripple (SWR) events that
+delimit replay. neurospatial does not implement ripple detection. Instead,
+detect ripple intervals with the external ``ripple_detection`` package
+(``pip install ripple_detection``), then decode the spikes within each
+returned interval and fit the posterior with the functions in this module.
+
+The intervals ``ripple_detection`` returns (an array of ``(start_time,
+end_time)`` pairs in seconds) also feed directly into
+:func:`neurospatial.events.peri_event_histogram` — pass the interval start
+times as the event times to build a peri-ripple histogram. For example::
+
+    from ripple_detection import Kay_ripple_detector
+    from neurospatial.events import peri_event_histogram
+
+    ripple_times = Kay_ripple_detector(time, lfps, speed, sampling_frequency)
+    ripple_starts = ripple_times[:, 0]  # (start, end) pairs -> start times
+    psth = peri_event_histogram(spike_times, ripple_starts, window=(-0.5, 0.5))
+
 Functions
 ---------
 fit_isotonic_trajectory

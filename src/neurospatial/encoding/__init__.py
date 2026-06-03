@@ -79,6 +79,7 @@ from neurospatial.encoding.phase_precession import (
     has_phase_precession,
     phase_precession,
     plot_phase_precession,
+    theta_phase,
 )
 
 # Population-level metrics
@@ -142,6 +143,7 @@ __all__ = [  # noqa: RUF022 - organized by category
     "has_phase_precession",
     "phase_precession",
     "plot_phase_precession",
+    "theta_phase",
     # Object-vector cell analysis
     "is_object_vector_cell",
     "object_vector_score",

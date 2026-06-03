@@ -69,7 +69,146 @@ __all__ = [
     "has_phase_precession",
     "phase_precession",
     "plot_phase_precession",
+    "theta_phase",
 ]
+
+
+def theta_phase(
+    lfp: NDArray[np.float64],
+    sampling_rate: float,
+    *,
+    band: tuple[float, float] = (6.0, 10.0),
+) -> NDArray[np.float64]:
+    """Extract instantaneous theta phase from a local field potential (LFP).
+
+    Band-pass filters ``lfp`` to the theta band, then takes the phase of the
+    Hilbert analytic signal. The returned phase is wrapped to ``[0, 2*pi)``
+    radians, the convention that :func:`phase_precession` (and the rest of this
+    module) consumes — so the output is drop-in for phase-precession analysis
+    once you select the phases at spike times.
+
+    A zero-phase (forward-backward) Butterworth filter is used so the phase is
+    not time-shifted relative to the input.
+
+    Parameters
+    ----------
+    lfp : ndarray of shape (n_samples,)
+        Local field potential trace (a voltage time series), one channel.
+        Assumed uniformly sampled at ``sampling_rate``.
+    sampling_rate : float
+        Sampling rate of ``lfp`` in Hz.
+    band : tuple of (float, float), default=(6.0, 10.0)
+        ``(low, high)`` theta-band edges in Hz for the band-pass filter.
+
+    Returns
+    -------
+    ndarray of shape (n_samples,)
+        Instantaneous theta phase in radians, wrapped to ``[0, 2*pi)``, one
+        value per input sample. Phase increases through the theta cycle.
+
+    Raises
+    ------
+    ValueError
+        If ``lfp`` is not 1-D, ``lfp`` contains any non-finite value
+        (NaN or Inf — a single one makes the zero-phase filter return an
+        all-NaN trace), ``lfp`` is too short for the zero-phase filter
+        (``len(lfp)`` must exceed the filter ``padlen``; see Notes),
+        ``sampling_rate`` is not positive, ``band`` is not ``(low, high)``
+        with ``0 < low < high``, or the high edge is not below the Nyquist
+        frequency (``sampling_rate / 2``).
+
+    See Also
+    --------
+    phase_precession : Consumes spike phases (in radians) from this function.
+    has_phase_precession : Quick boolean precession screen.
+
+    Notes
+    -----
+    Only :mod:`scipy` is used (``scipy.signal``); no new dependency is
+    introduced. This function takes an LFP array the caller already has — it
+    does not load or spike-sort data.
+
+    To obtain the spike phases that :func:`phase_precession` expects, sample
+    this per-sample phase at the spike times (e.g. by interpolating the
+    *unwrapped* phase onto the spike times, then re-wrapping to ``[0, 2*pi)``).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.encoding.phase_precession import (
+    ...     theta_phase,
+    ...     phase_precession,
+    ... )
+    >>> # Synthesize a pure 8 Hz theta sinusoid sampled at 1 kHz.
+    >>> sampling_rate = 1000.0
+    >>> t = np.arange(0, 5, 1 / sampling_rate)
+    >>> lfp = np.sin(2 * np.pi * 8.0 * t)
+    >>> phase = theta_phase(lfp, sampling_rate, band=(6, 10))
+    >>> phase.shape == lfp.shape
+    True
+    >>> bool(phase.min() >= 0 and phase.max() < 2 * np.pi)
+    True
+    >>> # Phases are drop-in for phase_precession (no reshaping):
+    >>> positions = np.linspace(0, 50, phase.size)
+    >>> result = phase_precession(positions, phase, random_state=0)
+    >>> isinstance(result.slope, float)
+    True
+    """
+    from scipy.signal import butter, filtfilt, hilbert
+
+    from neurospatial._validation import validate_finite
+
+    lfp = np.asarray(lfp, dtype=np.float64)
+    if lfp.ndim != 1:
+        raise ValueError(
+            f"lfp must be a 1-D array of shape (n_samples,), got shape {lfp.shape}.\n"
+            f"Fix: pass a single LFP channel, e.g. lfp[:, channel]."
+        )
+    # Reject non-finite samples up front: a single NaN/Inf makes filtfilt
+    # return an all-NaN trace, silently producing all-NaN phases. validate_finite
+    # also coerces to float64.
+    lfp = validate_finite(lfp, name="lfp")
+    if not np.isfinite(sampling_rate) or sampling_rate <= 0:
+        raise ValueError(
+            f"sampling_rate must be a positive number (Hz), got {sampling_rate}."
+        )
+    low, high = float(band[0]), float(band[1])
+    if not (0 < low < high):
+        raise ValueError(f"band must be (low, high) with 0 < low < high, got {band}.")
+    nyquist = sampling_rate / 2.0
+    if high >= nyquist:
+        raise ValueError(
+            f"band high edge ({high} Hz) must be below the Nyquist frequency "
+            f"({nyquist} Hz = sampling_rate / 2). "
+            f"Fix: lower the band or raise sampling_rate."
+        )
+
+    # Zero-phase band-pass so the extracted phase is not time-shifted.
+    # butter(..., btype="bandpass") with no output="sos" returns
+    # transfer-function (b, a) coefficients, NOT second-order sections.
+    b, a = butter(N=4, Wn=(low / nyquist, high / nyquist), btype="bandpass")
+
+    # filtfilt's default padding is padlen = 3 * max(len(a), len(b)); it
+    # raises an opaque "padlen" error when len(lfp) <= padlen. Precheck so the
+    # caller gets a domain message stating the minimum length instead.
+    padlen = 3 * max(len(a), len(b))
+    if len(lfp) <= padlen:
+        raise ValueError(
+            f"lfp is too short for the zero-phase theta filter: got "
+            f"{len(lfp)} sample(s), but the 4th-order Butterworth band-pass "
+            f"requires more than {padlen} samples (filtfilt padlen = "
+            f"{padlen}).\n"
+            f"Fix: pass a longer LFP segment (at least {padlen + 1} samples)."
+        )
+
+    filtered = filtfilt(b, a, lfp)
+
+    analytic = hilbert(filtered)
+    # np.angle returns (-pi, pi]; wrap to [0, 2*pi) for the consumer convention.
+    phase: NDArray[np.float64] = np.asarray(
+        np.angle(analytic) % (2 * np.pi), dtype=np.float64
+    )
+    return phase
 
 
 @dataclass
