@@ -118,9 +118,15 @@ result = compute_spatial_rate(
     smoothing_method="diffusion_kde",  # Default: graph-based boundary-aware KDE
     bandwidth=5.0,  # Smoothing bandwidth (cm)
     min_occupancy=0.5,  # Minimum seconds in bin (default: 0.0)
+    fill_value=0.0,  # Replace low-occupancy NaN bins with 0 Hz (decoding golden path)
 )
 # Access the firing rate
 firing_rate = result.firing_rate  # Shape: (n_bins,)
+
+# fill_value default is None (NaN preserved, no behavior change for existing
+# callers). Pass fill_value=0.0 when the rate map feeds decode_position() so
+# masked bins become explicit zero rate -- no manual np.nan_to_num needed.
+# Recover which bins were masked via: result.occupancy < 0.5
 
 # Convenience methods on result object
 peak_coords = result.peak_location()       # (n_dims,) coordinates of peak

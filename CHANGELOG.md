@@ -4,6 +4,24 @@
 
 ### Added
 
+- `compute_spatial_rate` and `compute_spatial_rates` gain a
+  `fill_value: float | None = None` keyword. The default `None` preserves the
+  existing behavior: bins masked by `min_occupancy` remain NaN, so existing
+  callers see no change. Passing `fill_value=0.0` (the recommended decoding
+  golden path) replaces those NaN bins with an explicit zero firing rate so the
+  encoding model composes directly with `decode_position()` without manual
+  `np.nan_to_num` scrubbing. `occupancy` is left untouched, so the masked-bin
+  set is still recoverable via `result.occupancy < min_occupancy`.
+- `decode_position` now tolerates NaN bins in `encoding_models` (e.g. a
+  `fill_value=None` rate map carrying `min_occupancy` masks): each NaN
+  `(neuron, bin)` is treated as a zero-rate observation and excluded from that
+  neuron's contribution to the Poisson log-likelihood at that bin, and a single
+  `UserWarning` is emitted per call instead of raising. This is reconciled with
+  the `validate=True` NaN guard: the zero-rate exclusion runs first, so
+  `validate=True` no longer rejects NaN *encoding-model* bins (it still rejects
+  NaN/Inf in `spike_counts` and `prior`, and Inf/negative entries in
+  `encoding_models`). The recommended path remains passing `fill_value=0.0` to
+  the encoder so no NaN reaches the decoder.
 - The top-level `neurospatial` package now exposes its analysis submodules
   (`encoding`, `decoding`, `behavior`, `events`, `ops`, `layout`, `regions`,
   `stats`, `simulation`, `annotation`, `animation`, `io`) via lazy (PEP 562)

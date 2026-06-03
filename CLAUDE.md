@@ -158,12 +158,19 @@ result = compute_spatial_rate(
     env, spike_times, times, positions,
     smoothing_method="diffusion_kde",  # Default: graph-based boundary-aware KDE
     bandwidth=5.0,  # Smoothing bandwidth (cm)
-    min_occupancy=0.5,  # Exclude bins with <0.5s occupancy
+    min_occupancy=0.5,  # Exclude bins with <0.5s occupancy (sets them NaN)
+    fill_value=0.0,  # Replace those NaN bins with 0 Hz for the decoding golden path
 )
 firing_rate = result.firing_rate  # Access firing rate from result object
 
 # Methods: "diffusion_kde" (default), "gaussian_kde", "binned" (legacy)
 # Result also has: result.occupancy, result.env, result.spatial_information(), etc.
+#
+# fill_value default is None: low-occupancy bins stay NaN (no behavior change
+# for existing callers). Pass fill_value=0.0 when feeding decode_position() so
+# the model is explicitly zero-rate there -- the documented encode->decode
+# golden path then composes with no manual np.nan_to_num. decode_position()
+# also tolerates residual NaN bins (treats them as zero-rate, warns once).
 ```
 
 **Need decoding?** See [QUICKSTART.md - Bayesian Decoding](.claude/QUICKSTART.md#neural-analysis)

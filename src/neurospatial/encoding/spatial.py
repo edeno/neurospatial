@@ -1459,6 +1459,36 @@ class SpatialRatesResult(SpatialResultMixin):
 # ==============================================================================
 
 
+def _fill_nan(rates: ArrayLike, fill_value: float) -> ArrayLike:
+    """Replace NaN entries of a rate map with ``fill_value``.
+
+    Works for both NumPy and JAX arrays. The masked/low-occupancy bins set
+    to NaN by ``min_occupancy`` are the only NaN entries in a rate map, so
+    this targets exactly those bins.
+
+    Parameters
+    ----------
+    rates : ArrayLike
+        Firing rate map (NumPy or JAX array), any shape.
+    fill_value : float
+        Value substituted wherever ``rates`` is NaN.
+
+    Returns
+    -------
+    ArrayLike
+        A new array of the same type/shape with NaN replaced by ``fill_value``.
+    """
+    # JAX arrays expose .at/.dtype but are not numpy ndarrays; dispatch on
+    # whether the object is a numpy array. Both backends support np.isnan via
+    # the array's own namespace, but jnp.where keeps the result on-device.
+    if isinstance(rates, np.ndarray):
+        return np.where(np.isnan(rates), fill_value, rates)
+    import jax.numpy as jnp
+
+    rates_jax = cast("Any", rates)
+    return cast("ArrayLike", jnp.where(jnp.isnan(rates_jax), fill_value, rates_jax))
+
+
 def compute_spatial_rate(
     env: Environment,
     spike_times: NDArray[np.float64],
@@ -1470,6 +1500,7 @@ def compute_spatial_rate(
     ] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
+    fill_value: float | None = None,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
 ) -> SpatialRateResult:
     """Compute spatial firing rate map for one neuron.
@@ -1509,6 +1540,15 @@ def compute_spatial_rate(
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included. Bins with
         occupancy below this threshold are set to NaN.
+    fill_value : float | None, default=None
+        Value used to replace NaN bins (masked/low-occupancy bins produced
+        by ``min_occupancy``). When ``None`` (the default), NaN is preserved
+        so existing callers see no behavior change. Pass ``fill_value=0.0``
+        for the recommended decoding golden path: a zero-rate map composes
+        directly with :func:`~neurospatial.decoding.posterior.decode_position`
+        without manual NaN scrubbing. ``occupancy`` is unaffected, so callers
+        can still recover which bins were masked via
+        ``result.occupancy < min_occupancy``.
     backend : {"numpy", "jax", "auto"}, default="numpy"
         Computation backend for rate map smoothing:
 
@@ -1642,6 +1682,11 @@ def compute_spatial_rate(
         backend=resolved_backend,
     )
 
+    # Replace masked/low-occupancy NaN bins with fill_value when requested.
+    # Default (None) preserves NaN so existing callers see no behavior change.
+    if fill_value is not None:
+        firing_rate = _fill_nan(firing_rate, fill_value)
+
     # Convert occupancy to JAX if JAX backend is selected
     # (firing_rate is already JAX from smooth_rate_map)
     if resolved_backend == "jax" and is_jax_available():
@@ -1670,6 +1715,7 @@ def compute_spatial_rates(
     ] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
+    fill_value: float | None = None,
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
 ) -> SpatialRatesResult:
@@ -1705,6 +1751,15 @@ def compute_spatial_rates(
         Smoothing bandwidth in the same units as bin_size.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included.
+    fill_value : float | None, default=None
+        Value used to replace NaN bins (masked/low-occupancy bins produced
+        by ``min_occupancy``). When ``None`` (the default), NaN is preserved
+        so existing callers see no behavior change. Pass ``fill_value=0.0``
+        for the recommended decoding golden path: zero-rate maps compose
+        directly with :func:`~neurospatial.decoding.posterior.decode_position`
+        without manual NaN scrubbing. ``occupancy`` is unaffected, so callers
+        can still recover which bins were masked via
+        ``result.occupancy < min_occupancy``.
     n_jobs : int, default=1
         Number of parallel jobs for spike counting. Use -1 for all CPUs.
         1 means sequential processing (no parallelization overhead).
@@ -1904,6 +1959,11 @@ def compute_spatial_rates(
         min_occupancy=min_occupancy,
         backend=resolved_backend,
     )
+
+    # Replace masked/low-occupancy NaN bins with fill_value when requested.
+    # Default (None) preserves NaN so existing callers see no behavior change.
+    if fill_value is not None:
+        firing_rates = _fill_nan(firing_rates, fill_value)
 
     # Convert occupancy to JAX if JAX backend is selected
     # (firing_rates is already JAX from smooth_rate_maps_batch)

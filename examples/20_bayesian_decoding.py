@@ -222,7 +222,12 @@ plt.show()
 # Encoding models are place fields that describe how each neuron's firing rate varies with spatial position. These are the "tuning curves" we use for decoding.
 
 # %%
-# Compute place fields for all neurons (encoding models)
+# Compute place fields for all neurons (encoding models).
+#
+# Passing ``fill_value=0.0`` replaces low-occupancy bins (NaN under the
+# default ``fill_value=None``) with an explicit zero firing rate, so the
+# encoding models compose directly with ``decode_position`` -- no manual
+# ``np.nan_to_num`` scrubbing required.
 encoding_models = np.array(
     [
         compute_spatial_rate(
@@ -232,6 +237,8 @@ encoding_models = np.array(
             positions,
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
+            min_occupancy=0.5,
+            fill_value=0.0,
         ).firing_rate
         for i in range(n_neurons)
     ]
@@ -241,9 +248,6 @@ print(f"Encoding models shape: {encoding_models.shape}")
 print(f"  (n_neurons, n_bins) = ({n_neurons}, {env.n_bins})")
 print(f"Max firing rate: {np.nanmax(encoding_models):.2f} Hz")
 print(f"NaN values: {np.isnan(encoding_models).sum()}")
-
-# Replace NaN with small baseline (bins without enough occupancy)
-encoding_models = np.nan_to_num(encoding_models, nan=0.1)
 
 # %%
 # Visualize all encoding models as a heatmap

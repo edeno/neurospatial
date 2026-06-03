@@ -22,6 +22,7 @@ exponentiating log-likelihoods.
 
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING, Literal, cast
 
 import numpy as np
@@ -288,6 +289,15 @@ def decode_position(
         Firing rate maps (place fields) for each neuron.
         Expected units: Hz (spikes/second). Typical values: 0-50 Hz.
         Very high rates (>100 Hz) may cause numerical issues.
+
+        NaN entries (e.g. low-occupancy bins masked by an encoder's
+        ``min_occupancy`` when ``fill_value=None``) are tolerated: each such
+        ``(neuron, bin)`` is treated as a zero-rate observation and excluded
+        from that neuron's contribution to the Poisson log-likelihood at that
+        bin, and a single :class:`UserWarning` is emitted per call. This is
+        defense-in-depth so a ``fill_value=None`` encoding model still decodes;
+        the recommended path is still to pass ``fill_value=0.0`` to the
+        encoder so no NaN reaches the decoder.
     dt : float
         Time bin width in seconds. Typical values: 0.001-0.1s.
         Note: For typical firing rates, lambda*dt should be in [0, 5].
@@ -304,7 +314,11 @@ def decode_position(
         If True (the default), run extra validation checks before and
         after the core computation:
 
-        - Reject NaN/Inf entries in spike_counts, encoding_models, prior.
+        - Reject NaN/Inf entries in spike_counts and prior. NaN entries in
+          ``encoding_models`` are NOT rejected: they are absorbed by the
+          zero-rate exclusion described above (which runs first), so a
+          ``fill_value=None`` model decodes under ``validate=True`` instead
+          of raising. Inf entries in ``encoding_models`` are still rejected.
         - Reject negative spike_counts (must be non-negative integers).
         - Reject fractional spike_counts when given a float dtype
           (cast to integer first or fix the upstream binning bug).
@@ -383,9 +397,40 @@ def decode_position(
     spike_counts = np.asarray(spike_counts)
     encoding_models = np.asarray(encoding_models)
 
-    # Validate inputs if requested
+    # Defense-in-depth for NaN encoding-model bins (e.g. an encoder's
+    # min_occupancy mask with fill_value=None). Detect them HERE, before the
+    # validate=True NaN guard runs, so the two do not both fire on the same
+    # bins: we treat each NaN (neuron, bin) as a zero-rate observation and
+    # exclude it from that neuron's Poisson contribution at that bin (handled
+    # inside _log_poisson_likelihood_nan_safe), emitting one warning per call.
+    # The validate=True guard then runs on the *other* inputs (spike_counts,
+    # prior) and on Inf-in-encoding-models, but no longer sees NaN encoding
+    # bins to reject.
+    encoding_model_nan_mask: NDArray[np.bool_] | None = None
+    if encoding_models.dtype.kind == "f" and np.isnan(encoding_models).any():
+        encoding_model_nan_mask = np.isnan(encoding_models)
+        n_nan = int(encoding_model_nan_mask.sum())
+        warnings.warn(
+            f"encoding_models contains {n_nan} NaN bin(s) (e.g. low-occupancy "
+            "bins masked by the encoder's min_occupancy with fill_value=None). "
+            "Treating each as a zero-rate observation (excluded from that "
+            "neuron's Poisson contribution at that bin). Pass fill_value=0.0 "
+            "to the encoder to silence this and make the model explicitly "
+            "zero-rate there.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    # Validate inputs if requested. Pass a NaN-free view of encoding_models so
+    # the validate=True NaN guard does not reject the bins the zero-rate path
+    # has already claimed; Inf and negative-rate checks still apply.
     if validate:
-        _validate_inputs(spike_counts, encoding_models, prior, env)
+        encoding_models_for_validation = encoding_models
+        if encoding_model_nan_mask is not None:
+            encoding_models_for_validation = np.where(
+                encoding_model_nan_mask, 0.0, encoding_models
+            )
+        _validate_inputs(spike_counts, encoding_models_for_validation, prior, env)
 
     # Bin-count agreement is a *correctness* check, not an opt-in one:
     # an encoding model with the wrong number of bins produces a
@@ -403,8 +448,15 @@ def decode_position(
             f"be defined on the same environment used for decoding."
         )
 
-    # Compute log-likelihood using Poisson model
-    log_ll = log_poisson_likelihood(spike_counts, encoding_models, dt=dt)
+    # Compute log-likelihood using Poisson model. When some encoding-model
+    # bins are NaN, route through the NaN-safe path that excludes each NaN
+    # (neuron, bin) from the per-bin Poisson sum.
+    if encoding_model_nan_mask is not None:
+        log_ll = _log_poisson_likelihood_nan_safe(
+            spike_counts, encoding_models, encoding_model_nan_mask, dt=dt
+        )
+    else:
+        log_ll = log_poisson_likelihood(spike_counts, encoding_models, dt=dt)
 
     # Normalize to posterior
     posterior = normalize_to_posterior(log_ll, prior=prior)
@@ -426,6 +478,95 @@ def decode_position(
 
     # Return DecodingResult
     return DecodingResult(posterior=posterior, env=env, times=times)
+
+
+def _log_poisson_likelihood_nan_safe(
+    spike_counts: NDArray[np.int64],
+    encoding_models: NDArray[np.float64],
+    nan_mask: NDArray[np.bool_],
+    dt: float,
+    *,
+    min_rate: float = 1e-10,
+) -> NDArray[np.float64]:
+    """Poisson log-likelihood that excludes NaN encoding-model bins.
+
+    Identical to :func:`~neurospatial.decoding.likelihood.log_poisson_likelihood`
+    except that each ``(neuron, bin)`` flagged in ``nan_mask`` contributes
+    zero to the per-bin log-likelihood: both that neuron's spike term
+    ``n_i * log(lambda_i * dt)`` and its rate-penalty term ``-lambda_i * dt``
+    are dropped at that bin, as if the neuron had not been observed there.
+    This is the "treat NaN encoding-model bins as zero-rate (excluded from the
+    Poisson sum)" defense-in-depth behavior.
+
+    Parameters
+    ----------
+    spike_counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
+        Spike counts per neuron per time bin.
+    encoding_models : NDArray[np.float64], shape (n_neurons, n_bins)
+        Firing rate maps in Hz; may contain NaN at masked bins.
+    nan_mask : NDArray[np.bool_], shape (n_neurons, n_bins)
+        ``True`` where ``encoding_models`` is NaN. Those entries are excluded.
+    dt : float
+        Time bin width in seconds.
+    min_rate : float, default=1e-10
+        Minimum firing rate floor to avoid log(0).
+
+    Returns
+    -------
+    log_likelihood : NDArray[np.float64], shape (n_time_bins, n_bins)
+        Log-likelihood up to an additive constant per time bin, with NaN
+        encoding-model bins excluded from each neuron's contribution.
+    """
+    if dt <= 0:
+        raise ValueError(
+            f"dt must be positive, got {dt}. "
+            f"Time bin width should be in seconds (typical values: 0.001-0.1s)."
+        )
+    if min_rate <= 0:
+        raise ValueError(
+            f"min_rate must be positive, got {min_rate}. "
+            f"This floor prevents log(0) in likelihood computation."
+        )
+
+    spike_counts = np.asarray(spike_counts)
+    encoding_models = np.asarray(encoding_models, dtype=np.float64)
+
+    if spike_counts.ndim != 2:
+        raise ValueError(
+            f"spike_counts must be 2-D with shape (n_time_bins, n_neurons), "
+            f"got ndim={spike_counts.ndim} with shape {spike_counts.shape}."
+        )
+    if encoding_models.ndim != 2:
+        raise ValueError(
+            f"encoding_models must be 2-D with shape (n_neurons, n_bins), "
+            f"got ndim={encoding_models.ndim} with shape {encoding_models.shape}."
+        )
+    if spike_counts.shape[1] != encoding_models.shape[0]:
+        raise ValueError(
+            f"Neuron-count mismatch: spike_counts has {spike_counts.shape[1]} "
+            f"neurons (axis 1) but encoding_models has {encoding_models.shape[0]} "
+            f"neurons (axis 0). These must agree for the Poisson likelihood."
+        )
+
+    # Replace NaN rates with the floor so log/exp stay finite, then zero out
+    # both terms at the masked entries so they contribute nothing to the sum.
+    rates = np.where(nan_mask, min_rate, encoding_models)
+    clipped_rates = np.maximum(rates, min_rate)
+    expected_counts = clipped_rates * dt  # (n_neurons, n_bins)
+    log_expected = np.log(expected_counts)  # (n_neurons, n_bins)
+
+    # Exclude masked (neuron, bin) entries: set their per-neuron contributions
+    # to zero so they drop out of both the spike term and the rate penalty.
+    log_expected = np.where(nan_mask, 0.0, log_expected)
+    expected_counts = np.where(nan_mask, 0.0, expected_counts)
+
+    # Spike term: (n_time_bins, n_neurons) @ (n_neurons, n_bins)
+    spike_term = spike_counts.astype(np.float64) @ log_expected
+    # Rate penalty: -sum_i lambda_i * dt over neurons -> (n_bins,)
+    rate_penalty = -np.sum(expected_counts, axis=0)
+
+    log_likelihood = spike_term + rate_penalty
+    return cast("NDArray[np.float64]", log_likelihood)
 
 
 def _validate_inputs(
