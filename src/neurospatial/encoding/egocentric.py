@@ -2009,42 +2009,6 @@ def object_vector_score(
     return float(np.clip(score, 0.0, 1.0))
 
 
-def _is_object_vector_cell_from_tuning(
-    tuning_curve: NDArray[np.float64],
-    peak_rate: float,
-    *,
-    score_threshold: float = 0.3,
-    min_peak_rate: float = 5.0,
-) -> bool:
-    """Internal: classify OVC from an already-computed tuning curve.
-
-    Parameters
-    ----------
-    tuning_curve : NDArray[np.float64], shape (n_dist, n_dir)
-        2D firing rate tuning curve in egocentric polar coordinates.
-    peak_rate : float
-        Peak firing rate in Hz.
-    score_threshold : float, default=0.3
-        Minimum object-vector score to classify as OVC.
-    min_peak_rate : float, default=5.0
-        Minimum peak firing rate in Hz.
-
-    Returns
-    -------
-    bool
-        True if classified as object-vector cell.
-    """
-    if peak_rate < min_peak_rate:
-        return False
-
-    score = object_vector_score(tuning_curve)
-
-    if np.isnan(score):
-        return False
-
-    return bool(score >= score_threshold)
-
-
 def is_object_vector_cell(
     env: Environment,
     spike_times: NDArray[np.float64],
@@ -2057,17 +2021,18 @@ def is_object_vector_cell(
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
     metric: Literal["euclidean", "geodesic"] = "euclidean",
-    score_threshold: float = 0.3,
-    min_peak_rate: float = 5.0,
+    min_info: float = 0.3,
 ) -> bool:
     """Quick check: Is this an object-vector cell?
 
     Convenience function for fast screening of neurons. Computes the egocentric
     rate map for the supplied trajectory + spikes and classifies the cell as an
-    object-vector cell (OVC) if both criteria are met:
+    object-vector cell (OVC) using the egocentric-spatial-information criterion.
 
-    1. Object-vector score above ``score_threshold``
-    2. Peak firing rate above ``min_peak_rate``
+    This function delegates classification to
+    :meth:`EgocentricRateResult.is_object_vector_cell`, so the quick-check and
+    the result-object classification always agree: a neuron is an OVC when its
+    egocentric spatial information exceeds ``min_info`` (bits/spike).
 
     For detailed metrics, use :func:`compute_egocentric_rate` and inspect
     the result's methods (``is_object_vector_cell()``, ``preferred_distance()``,
@@ -2098,15 +2063,16 @@ def is_object_vector_cell(
         Number of direction bins (covers full circle).
     metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric for computing distance to objects.
-    score_threshold : float, default=0.3
-        Minimum object-vector score to classify as OVC.
-    min_peak_rate : float, default=5.0
-        Minimum peak firing rate in Hz.
+    min_info : float, default=0.3
+        Minimum egocentric spatial information threshold in bits/spike.
+        Matches the default of
+        :meth:`EgocentricRateResult.is_object_vector_cell`.
 
     Returns
     -------
     bool
-        True if neuron passes OVC criteria.
+        True if the neuron's egocentric spatial information exceeds
+        ``min_info``.
 
     Examples
     --------
@@ -2147,15 +2113,7 @@ def is_object_vector_cell(
     except (ValueError, RuntimeError):
         return False
 
-    firing_rate = np.asarray(result.firing_rate, dtype=np.float64)
-    tuning_curve = firing_rate.reshape(n_distance_bins, n_direction_bins)
-    peak_rate = float(np.nanmax(firing_rate)) if firing_rate.size else 0.0
-    return _is_object_vector_cell_from_tuning(
-        tuning_curve,
-        peak_rate,
-        score_threshold=score_threshold,
-        min_peak_rate=min_peak_rate,
-    )
+    return result.is_object_vector_cell(min_info=min_info)
 
 
 def plot_object_vector_tuning(

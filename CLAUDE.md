@@ -308,8 +308,8 @@ from neurospatial.encoding import compute_view_rate
 # Compute firing field indexed by VIEWED location (returns ViewRateResult)
 result = compute_view_rate(
     env, spike_times, times, positions, headings,
-    view_distance=20.0,  # cm ahead
     gaze_model="fixed_distance",  # or "ray_cast", "boundary"
+    view_distance=20.0,  # cm ahead
     smoothing_method="diffusion_kde",
     bandwidth=5.0,
 )

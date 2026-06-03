@@ -1621,8 +1621,8 @@ def is_spatial_view_cell(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
-    view_distance: float = 10.0,
     gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
+    view_distance: float = 10.0,
     smoothing_method: Literal[
         "diffusion_kde", "gaussian_kde", "binned"
     ] = "diffusion_kde",
@@ -1652,10 +1652,10 @@ def is_spatial_view_cell(
         Animal heading at each time (radians, **allocentric world-frame
         convention**: 0 = East, π/2 = North, π = West, -π/2 = South,
         wrapped to [-π, π]).
-    view_distance : float, default=10.0
-        Distance for fixed_distance gaze model.
     gaze_model : {"fixed_distance", "ray_cast", "boundary"}, default="fixed_distance"
         Method for computing viewed location.
+    view_distance : float, default=10.0
+        Distance for fixed_distance gaze model.
     smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Rate map smoothing method.
     bandwidth : float, default=5.0

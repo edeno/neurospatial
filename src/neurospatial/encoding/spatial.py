@@ -1300,7 +1300,7 @@ class SpatialRatesResult(SpatialResultMixin):
             metric=metric,
         )
 
-    def classify(
+    def detect_cell_types(
         self,
         min_spatial_info: float = 0.5,
         min_grid_score: float = 0.4,
@@ -1359,6 +1359,8 @@ class SpatialRatesResult(SpatialResultMixin):
         spatial_information : Compute spatial information
         grid_scores : Compute grid scores
         border_scores : Compute border scores
+        EgocentricRatesResult.detect_ovcs : Sibling batch classifier
+        ViewRatesResult.detect_view_cells : Sibling batch classifier
 
         Examples
         --------
@@ -1373,7 +1375,7 @@ class SpatialRatesResult(SpatialResultMixin):
         >>> result = compute_spatial_rates(
         ...     env, spike_times, times, positions, bandwidth=10.0
         ... )
-        >>> labels = result.classify()
+        >>> labels = result.detect_cell_types()
         >>> labels.shape
         (3,)
         >>> valid = {"grid", "border", "place", "unclassified"}
@@ -1421,7 +1423,7 @@ class SpatialRatesResult(SpatialResultMixin):
             (0, 1, 2, ..., n_neurons-1).
         include_classification : bool, default True
             Whether to include the cell_type column with classification
-            labels from ``classify()``.
+            labels from ``detect_cell_types()``.
 
         Returns
         -------
@@ -1482,7 +1484,7 @@ class SpatialRatesResult(SpatialResultMixin):
 
         See Also
         --------
-        classify : Cell type classification
+        detect_cell_types : Cell type classification
         spatial_information : Batch spatial information computation
         grid_scores : Batch grid score computation
         border_scores : Batch border score computation
@@ -1519,7 +1521,7 @@ class SpatialRatesResult(SpatialResultMixin):
         }
 
         if include_classification:
-            data["cell_type"] = self.classify()
+            data["cell_type"] = self.detect_cell_types()
 
         return pd.DataFrame(data)
 

@@ -2294,3 +2294,105 @@ class TestEgocentricRatesResultToDataframe:
         df = result.to_dataframe()
         assert len(df) == 1
         assert df["neuron_id"].iloc[0] == 0
+
+
+# =============================================================================
+# Free is_object_vector_cell function (delegation to result method)
+# =============================================================================
+
+
+class TestIsObjectVectorCellFreeFunction:
+    """The free is_object_vector_cell now delegates to the result method."""
+
+    def test_ovc_free_function_agrees_with_result_method(
+        self,
+        ovc_session: tuple[
+            Environment,
+            np.ndarray,
+            np.ndarray,
+            np.ndarray,
+            np.ndarray,
+            np.ndarray,
+        ],
+    ) -> None:
+        """Free function == EgocentricRateResult.is_object_vector_cell."""
+        from neurospatial.encoding.egocentric import (
+            compute_egocentric_rate,
+            is_object_vector_cell,
+        )
+
+        env, spike_times, times, positions, headings, object_positions = ovc_session
+
+        result = compute_egocentric_rate(
+            env,
+            spike_times,
+            times,
+            positions,
+            headings,
+            object_positions,
+            distance_range=(0.0, 50.0),
+            n_distance_bins=10,
+            n_direction_bins=12,
+            metric="euclidean",
+        )
+
+        for min_info in (0.1, 0.3, 0.6):
+            free = is_object_vector_cell(
+                env,
+                spike_times,
+                times,
+                positions,
+                headings,
+                object_positions,
+                distance_range=(0.0, 50.0),
+                n_distance_bins=10,
+                n_direction_bins=12,
+                metric="euclidean",
+                min_info=min_info,
+            )
+            method = result.is_object_vector_cell(min_info=min_info)
+            assert free == method
+
+    def test_removed_kwargs_raise_type_error(
+        self,
+        ovc_session: tuple[
+            Environment,
+            np.ndarray,
+            np.ndarray,
+            np.ndarray,
+            np.ndarray,
+            np.ndarray,
+        ],
+    ) -> None:
+        """The old score_threshold/min_peak_rate kwargs no longer exist."""
+        import inspect
+
+        from neurospatial.encoding.egocentric import is_object_vector_cell
+
+        env, spike_times, times, positions, headings, object_positions = ovc_session
+
+        sig = inspect.signature(is_object_vector_cell)
+        assert "min_info" in sig.parameters
+        assert "score_threshold" not in sig.parameters
+        assert "min_peak_rate" not in sig.parameters
+
+        with pytest.raises(TypeError):
+            is_object_vector_cell(
+                env,
+                spike_times,
+                times,
+                positions,
+                headings,
+                object_positions,
+                score_threshold=0.3,
+            )
+        with pytest.raises(TypeError):
+            is_object_vector_cell(
+                env,
+                spike_times,
+                times,
+                positions,
+                headings,
+                object_positions,
+                min_peak_rate=5.0,
+            )

@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Generator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
+
+if TYPE_CHECKING:
+    from neurospatial import Environment
 
 
 @pytest.fixture(autouse=True)
@@ -203,3 +206,68 @@ def precessing_spikes() -> dict[str, np.ndarray | float]:
         "phase_shuffled": phase_shuffled,
         "true_slope": true_slope,
     }
+
+
+# ---------------------------------------------------------------------------
+# Object-vector cell session fixture
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def ovc_session() -> tuple[
+    Environment,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+]:
+    """Synthetic session for object-vector-cell classification.
+
+    The animal orbits a single object at a roughly fixed distance while its
+    heading tracks the tangent of the orbit, so the object sits at a
+    consistent egocentric bearing. Spikes are concentrated whenever the
+    object is at that preferred egocentric (distance, direction), producing a
+    non-degenerate egocentric rate map -- so both the free
+    :func:`is_object_vector_cell` and
+    :meth:`EgocentricRateResult.is_object_vector_cell` return a meaningful,
+    equal boolean across thresholds.
+
+    Returns
+    -------
+    tuple
+        ``(env, spike_times, times, positions, headings, object_positions)``.
+    """
+    from neurospatial import Environment
+
+    rng = np.random.default_rng(0)
+
+    n_samples = 4000
+    times = np.linspace(0.0, 200.0, n_samples)
+    object_positions = np.array([[50.0, 50.0]])
+
+    # Orbit the object at radius ~20 cm, several laps.
+    orbit_radius = 20.0
+    theta = np.linspace(0.0, 2 * np.pi * 8, n_samples)
+    positions = np.column_stack(
+        [
+            50.0 + orbit_radius * np.cos(theta),
+            50.0 + orbit_radius * np.sin(theta),
+        ]
+    )
+    # Heading tracks the orbit tangent so the object stays at a fixed
+    # egocentric bearing (roughly 90 deg to one side throughout).
+    headings = (theta + np.pi / 2) % (2 * np.pi)
+    headings = np.arctan2(np.sin(headings), np.cos(headings))
+
+    env = Environment.from_samples(positions, bin_size=2.0)
+
+    # Concentrate spikes over short bursts at regular phase intervals so the
+    # egocentric polar rate map has a clear, informative peak.
+    spike_mask = np.sin(theta * 3) > 0.7
+    candidate_times = times[spike_mask]
+    spike_times = np.sort(
+        rng.choice(candidate_times, size=min(300, candidate_times.size), replace=True)
+    )
+
+    return env, spike_times, times, positions, headings, object_positions

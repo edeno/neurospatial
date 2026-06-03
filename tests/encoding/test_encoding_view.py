@@ -1837,3 +1837,53 @@ class TestViewRatesResultToDataframe:
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 1
         assert df["neuron_id"].iloc[0] == 0
+
+
+# ==============================================================================
+# Free is_spatial_view_cell parameter-order parity with compute_view_rate
+# ==============================================================================
+
+
+class TestIsSpatialViewCellParamOrder:
+    """The free is_spatial_view_cell mirrors compute_view_rate's kw order."""
+
+    def test_is_spatial_view_cell_param_order(
+        self,
+        simple_env: Environment,
+    ) -> None:
+        """gaze_model precedes view_distance, matching compute_view_rate."""
+        import inspect
+
+        from neurospatial.encoding.view import (
+            compute_view_rate,
+            is_spatial_view_cell,
+        )
+
+        rng = np.random.default_rng(0)
+        n_samples = 500
+        times = np.linspace(0.0, 50.0, n_samples)
+        positions = rng.uniform(0.0, 40.0, (n_samples, 2))
+        headings = rng.uniform(-np.pi, np.pi, n_samples)
+        spike_times = np.sort(rng.uniform(0.0, 50.0, 60))
+
+        # Runs with both keywords supplied (any order, since keyword-only).
+        result = is_spatial_view_cell(
+            simple_env,
+            spike_times,
+            times,
+            positions,
+            headings,
+            gaze_model="ray_cast",
+            view_distance=15.0,
+        )
+        assert isinstance(result, bool)
+
+        # Signature inspection: gaze_model precedes view_distance, matching
+        # the primary compute_view_rate function.
+        sig = inspect.signature(is_spatial_view_cell)
+        names = list(sig.parameters)
+        assert names.index("gaze_model") < names.index("view_distance")
+
+        view_sig = inspect.signature(compute_view_rate)
+        view_names = list(view_sig.parameters)
+        assert view_names.index("gaze_model") < view_names.index("view_distance")

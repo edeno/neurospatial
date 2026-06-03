@@ -111,6 +111,25 @@
 - `decoding_error`'s `env` is now keyword-only (was an optional 3rd positional).
 - `confusion_matrix`'s `summary_method` argument was renamed to `method`,
   matching `fit_isotonic_trajectory`.
+- Unified the time-window argument across the events GLM regressors:
+  `event_indicator` and `event_count_in_window` now both take a keyword-only
+  `window=(start, end)` tuple (relative seconds). `event_indicator` previously
+  took a scalar symmetric half-width; rewrite `window=w` as `window=(-w, w)`.
+  `event_count_in_window`'s `window` is now keyword-only. `time_to_nearest_event`
+  keeps its distinct scalar `max_time` (it is a continuous regressor, not a
+  windowing function).
+- `is_object_vector_cell` (free function in `neurospatial.encoding.egocentric`)
+  now delegates to `EgocentricRateResult.is_object_vector_cell`, using the
+  egocentric-spatial-information criterion. It replaces the old
+  `score_threshold`/`min_peak_rate` parameters with a single `min_info`
+  (default 0.3, matching the result method), so the quick-check and the
+  result-object classification can no longer disagree.
+- Reordered the keyword-only `gaze_model`/`view_distance` parameters in
+  `is_spatial_view_cell` to match `compute_view_rate` (`gaze_model` first).
+  Keyword callers are unaffected.
+- Renamed `SpatialRatesResult.classify` to `SpatialRatesResult.detect_cell_types`
+  for naming parity with `EgocentricRatesResult.detect_ovcs` and
+  `ViewRatesResult.detect_view_cells`.
 
 ### Breaking changes
 

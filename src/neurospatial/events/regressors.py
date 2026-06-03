@@ -84,6 +84,18 @@ def time_to_nearest_event(
     At exact midpoints between two events, the earlier event is used
     (tie-breaking is consistent but arbitrary).
 
+    **Why ``max_time`` rather than a ``(start, end)`` window?**
+
+    ``time_to_nearest_event`` returns a *continuous signed time-to-event
+    regressor*, not a windowed count or indicator. Its ``max_time`` is a
+    symmetric clip on the returned magnitude, which is semantically distinct
+    from a ``(start, end)`` masking window: it bounds the value, it does not
+    select which samples are "in" a window. Forcing a tuple here would be a
+    false unification. The ``(start, end)`` ``window`` contract therefore
+    applies only to the two *windowing* regressors,
+    :func:`event_count_in_window` and :func:`event_indicator`; this asymmetry
+    is intentional.
+
     Examples
     --------
     >>> import numpy as np
@@ -211,6 +223,7 @@ def time_to_nearest_event(
 def event_count_in_window(
     sample_times: NDArray[np.float64],
     event_times: NDArray[np.float64],
+    *,
     window: tuple[float, float],
 ) -> NDArray[np.int64]:
     """
@@ -348,7 +361,7 @@ def event_indicator(
     sample_times: NDArray[np.float64],
     event_times: NDArray[np.float64],
     *,
-    window: float = 0.0,
+    window: tuple[float, float] = (0.0, 0.0),
 ) -> NDArray[np.bool_]:
     """
     Binary indicator of whether an event occurs near each sample time.
@@ -363,11 +376,13 @@ def event_indicator(
         Sample timestamps.
     event_times : NDArray[np.float64], shape (n_events,)
         Event timestamps.
-    window : float, default=0.0
-        Symmetric half-width of temporal window (seconds).
-        Creates a window [sample_time - window, sample_time + window].
-        If 0, only exact matches count (sample_time == event_time).
-        If > 0, events within the symmetric window are considered a match.
+    window : tuple[float, float], default=(0.0, 0.0)
+        Time window (start, end) relative to sample_time (seconds).
+        Creates a window [sample_time + start, sample_time + end].
+        If (0.0, 0.0), only exact matches count (sample_time == event_time).
+        E.g., (-0.5, 0.5) matches events within +/- 0.5 seconds.
+        E.g., (-1.0, 0.0) matches events in the previous 1 second.
+        Window boundaries are inclusive.
 
     Returns
     -------
@@ -378,21 +393,24 @@ def event_indicator(
     ------
     ValueError
         If sample_times or event_times contain NaN or Inf values.
-        If window is negative.
+        If window start > window end.
 
     Notes
     -----
     Common use cases:
 
-    - Binary event regressor: ``window=0.0`` for impulse at event time
-    - Smoothed indicator: ``window=bin_size/2`` for time-binned data
-    - Event presence detection: ``window=0.1`` for events within 100ms
+    - Binary event regressor: ``window=(0.0, 0.0)`` for impulse at event time
+    - Smoothed indicator: ``window=(-bin_size/2, bin_size/2)`` for time-binned data
+    - Event presence detection: ``window=(-0.1, 0.1)`` for events within 100ms
 
-    Window boundaries are inclusive, so events exactly at ``sample_time ± window``
-    are included (returns True).
+    Window boundaries are inclusive, so events exactly at
+    ``sample_time + start`` or ``sample_time + end`` are included
+    (returns True).
 
     This function is semantically clearer than ``event_count_in_window() > 0``
-    for creating binary indicators and returns bool dtype directly.
+    for creating binary indicators and returns bool dtype directly. It shares
+    the same keyword-only ``window=(start, end)`` contract as
+    ``event_count_in_window``.
 
     Examples
     --------
@@ -408,12 +426,12 @@ def event_indicator(
 
     Check for events within window:
 
-    >>> event_indicator(sample_times, event_times, window=0.5)
+    >>> event_indicator(sample_times, event_times, window=(-0.5, 0.5))
     array([False,  True, False,  True])
 
     Create GLM design matrix column:
 
-    >>> indicator = event_indicator(sample_times, event_times, window=0.1)
+    >>> indicator = event_indicator(sample_times, event_times, window=(-0.1, 0.1))
     >>> X = indicator.astype(float)  # Convert to float for design matrix
     """
     # Convert to numpy arrays and validate
@@ -450,11 +468,13 @@ def event_indicator(
                 "  HOW: Remove infinite values from event times."
             )
 
-    if window < 0:
+    # Validate window
+    window_start, window_end = window
+    if window_start > window_end:
         raise ValueError(
-            f"window must be non-negative, got {window}.\n"
-            "  WHY: window defines a symmetric half-width around each sample.\n"
-            "  HOW: Use window >= 0."
+            f"window start ({window_start}) must be <= window end ({window_end}).\n"
+            "  WHY: Window defines a time range [start, end] relative to sample.\n"
+            "  HOW: Use window=(start, end) where start <= end."
         )
 
     # Handle empty sample_times
@@ -468,10 +488,11 @@ def event_indicator(
     # Sort events for efficient searchsorted
     sorted_events = np.sort(event_times)
 
-    # For each sample, check if any event falls within [sample - window, sample + window]
-    # Use searchsorted to find events at window boundaries
-    window_starts = sample_times - window
-    window_ends = sample_times + window
+    # For each sample, check if any event falls within
+    # [sample + start, sample + end]. Use searchsorted to find events at
+    # window boundaries.
+    window_starts = sample_times + window_start
+    window_ends = sample_times + window_end
 
     # left_indices: first event >= window_start
     # right_indices: first event > window_end
