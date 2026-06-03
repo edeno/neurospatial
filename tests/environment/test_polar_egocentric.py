@@ -517,6 +517,125 @@ class TestConnectDiagonalNeighborsParameter:
         )
 
 
+class TestSeamDiagonalConnectivity:
+    """Diagonal connectivity must cross the ±π seam (isotropic topology).
+
+    Regression: when ``connect_diagonal_neighbors=True`` and the angular axis
+    is circular, interior diagonal edges and same-ring seam edges were added,
+    but the *diagonal* edges across the ±π seam were missing. That made the
+    seam anisotropic -- it had fewer diagonal connections than every interior
+    angular boundary. These tests pin the seam diagonals and the isotropy.
+
+    Node indexing is row-major: ``node_id = distance_idx * n_angle +
+    angle_idx``. With 2 distance rings x 4 angle bins, ring 0 is nodes 0-3 and
+    ring 1 is nodes 4-7, both ordered by increasing angle, so the seam (between
+    last angle index 3 and first angle index 0) diagonals are 3-4 and 0-7.
+    """
+
+    @staticmethod
+    def _make(circular_angle, connect_diagonal_neighbors=True):
+        # 2 distance rings (radii 5, 15) x 4 angle bins.
+        return Environment.from_polar_egocentric(
+            distance_range=(0.0, 20.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=10.0,
+            angle_bin_size=np.pi / 2,
+            circular_angle=circular_angle,
+            connect_diagonal_neighbors=connect_diagonal_neighbors,
+        )
+
+    @staticmethod
+    def _ring_nodes_sorted_by_angle(env):
+        """Return list of per-ring node indices, each sorted by angle."""
+        distances = env.bin_centers[:, 0]
+        angles = env.bin_centers[:, 1]
+        rings = []
+        for d in np.unique(distances):
+            idx = np.where(np.isclose(distances, d))[0]
+            rings.append(idx[np.argsort(angles[idx])])
+        return rings
+
+    def test_seam_diagonal_edges_exist(self):
+        """Seam diagonals (reviewer pairs 3-4 and 0-7) must be present."""
+        env = self._make(circular_angle=True)
+        c = env.connectivity
+
+        # Verify the concrete node numbering first (2x4, row-major by angle).
+        rings = self._ring_nodes_sorted_by_angle(env)
+        assert [list(r) for r in rings] == [[0, 1, 2, 3], [4, 5, 6, 7]]
+
+        inner_first, inner_last = int(rings[0][0]), int(rings[0][-1])
+        outer_first, outer_last = int(rings[1][0]), int(rings[1][-1])
+
+        # (r_inner, last_angle) <-> (r_outer, first_angle): nodes 3-4
+        assert c.has_edge(inner_last, outer_first)
+        assert (inner_last, outer_first) == (3, 4)
+        # (r_inner, first_angle) <-> (r_outer, last_angle): nodes 0-7
+        assert c.has_edge(inner_first, outer_last)
+        assert (inner_first, outer_last) == (0, 7)
+
+    def test_seam_diagonal_degree_matches_interior(self):
+        """The seam has the same diagonal connectivity as an interior step."""
+        env = self._make(circular_angle=True)
+        c = env.connectivity
+        rings = self._ring_nodes_sorted_by_angle(env)
+        inner, outer = rings[0], rings[1]
+        n_angle = len(inner)
+
+        def n_cross_diagonals(a0, a1):
+            # Diagonal edges crossing the angular boundary between angle
+            # indices a0 and a1: (inner[a0]-outer[a1]) and (inner[a1]-outer[a0]).
+            count = 0
+            if c.has_edge(int(inner[a0]), int(outer[a1])):
+                count += 1
+            if c.has_edge(int(inner[a1]), int(outer[a0])):
+                count += 1
+            return count
+
+        # Interior angular boundary (between angle index 0 and 1).
+        interior = n_cross_diagonals(0, 1)
+        # Seam angular boundary (between last angle and first angle).
+        seam = n_cross_diagonals(n_angle - 1, 0)
+
+        assert interior == 2  # both diagonal directions present interior
+        assert seam == interior  # seam is now isotropic
+
+    def test_circular_false_adds_no_seam_edges(self):
+        """circular_angle=False adds NO seam edges (diagonal or same-ring)."""
+        env = self._make(circular_angle=False)
+        c = env.connectivity
+        rings = self._ring_nodes_sorted_by_angle(env)
+        inner, outer = rings[0], rings[1]
+
+        # No same-ring seam edge (first<->last angle on a ring).
+        assert not c.has_edge(int(inner[0]), int(inner[-1]))
+        assert not c.has_edge(int(outer[0]), int(outer[-1]))
+        # No diagonal seam edges across the ±π boundary.
+        assert not c.has_edge(int(inner[-1]), int(outer[0]))
+        assert not c.has_edge(int(inner[0]), int(outer[-1]))
+
+    def test_seam_diagonal_distance_is_polar_diagonal_length(self):
+        """Seam diagonal weight is sqrt(Δr² + (r̄·Δθ)²), matching interior."""
+        env = self._make(circular_angle=True)
+        c = env.connectivity
+        rings = self._ring_nodes_sorted_by_angle(env)
+        inner, outer = rings[0], rings[1]
+
+        r_inner = float(env.bin_centers[int(inner[0]), 0])
+        r_outer = float(env.bin_centers[int(outer[0]), 0])
+        d_r = r_outer - r_inner
+        r_mean = 0.5 * (r_inner + r_outer)
+        actual_step = float(np.pi / 2)  # evenly divides 2π into 4 bins
+        expected = float(np.hypot(d_r, r_mean * actual_step))
+
+        seam_diag = c[int(inner[-1])][int(outer[0])]["distance"]
+        assert seam_diag == pytest.approx(expected)
+
+        # Should match an interior diagonal weight crossing one angular step.
+        interior_diag = c[int(inner[0])][int(outer[1])]["distance"]
+        assert seam_diag == pytest.approx(interior_diag)
+
+
 class TestParameterValidation:
     """Test parameter validation for from_polar_egocentric()."""
 

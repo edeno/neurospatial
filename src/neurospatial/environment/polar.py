@@ -227,6 +227,7 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
                 n_angle,
                 distance_centers,
                 angle_step_actual,
+                connect_diagonal_neighbors=connect_diagonal_neighbors,
             )
 
         # The mutations above happened after _setup_from_layout finalized
@@ -506,6 +507,7 @@ def _add_circular_connectivity(
     n_angle: int,
     distance_centers: NDArray[np.float64],
     angle_step: float,
+    connect_diagonal_neighbors: bool = False,
 ) -> None:
     """Add circular wrap edges between first and last angle bins.
 
@@ -522,6 +524,18 @@ def _add_circular_connectivity(
     edges (which also use the realized step) when ``angle_bin_size`` does not
     evenly divide the angular range.
 
+    When ``connect_diagonal_neighbors`` is True, also add the *diagonal* wrap
+    edges that cross the ±π seam between adjacent distance rings: connecting
+    ``(r_i, last_angle)`` to ``(r_{i+1}, first_angle)`` and ``(r_i,
+    first_angle)`` to ``(r_{i+1}, last_angle)``. Without these the seam would
+    have fewer diagonal connections than every interior angular boundary,
+    making the ±π topology anisotropic. Interior diagonals (added by the
+    masked-grid layout) and these seam diagonals together give every angular
+    step the same diagonal connectivity. Each seam diagonal's ``distance`` is
+    the physical polar diagonal length ``sqrt(Δr² + (r̄ · Δθ_actual)²)`` with
+    ``r̄`` the mean radius of the two rings, matching
+    :func:`_fix_polar_edge_geometry`.
+
     Parameters
     ----------
     connectivity : nx.Graph
@@ -535,33 +549,62 @@ def _add_circular_connectivity(
     angle_step : float
         Actual (realized) angular step between adjacent angle bins, in
         radians.
+    connect_diagonal_neighbors : bool, default=False
+        If True, also add diagonal wrap edges across the seam between adjacent
+        distance rings, mirroring the interior diagonal connectivity so the
+        seam is isotropic.
     """
     max_edge_id = max(
         (data.get("edge_id", -1) for _, _, data in connectivity.edges(data=True)),
         default=-1,
     )
 
+    def _add_seam_edge(node_a: int, node_b: int, distance: float) -> None:
+        nonlocal max_edge_id
+        if connectivity.has_edge(node_a, node_b):
+            return
+        pos_a = connectivity.nodes[node_a]["pos"]
+        pos_b = connectivity.nodes[node_b]["pos"]
+        vector = np.array(pos_b) - np.array(pos_a)
+        angle_2d = np.arctan2(vector[1], vector[0]) if len(vector) >= 2 else 0.0
+        max_edge_id += 1
+        connectivity.add_edge(
+            node_a,
+            node_b,
+            distance=float(distance),
+            vector=vector.tolist(),
+            angle_2d=float(angle_2d),
+            edge_id=int(max_edge_id),
+        )
+
+    # Same-ring seam edges (pure angular step across ±π).
     for d_idx in range(n_distance):
         first_angle_node = d_idx * n_angle + 0
         last_angle_node = d_idx * n_angle + (n_angle - 1)
+        distance = float(distance_centers[d_idx]) * float(angle_step)
+        _add_seam_edge(first_angle_node, last_angle_node, distance)
 
-        if not connectivity.has_edge(first_angle_node, last_angle_node):
-            pos_first = connectivity.nodes[first_angle_node]["pos"]
-            pos_last = connectivity.nodes[last_angle_node]["pos"]
+    # Diagonal seam edges (radial + angular step across ±π) between adjacent
+    # rings, mirroring the interior diagonal connectivity so the seam matches
+    # every other angular boundary.
+    if connect_diagonal_neighbors:
+        for d_idx in range(n_distance - 1):
+            r_inner = float(distance_centers[d_idx])
+            r_outer = float(distance_centers[d_idx + 1])
+            d_r = r_outer - r_inner
+            r_mean = 0.5 * (r_inner + r_outer)
+            arc = r_mean * float(angle_step)
+            diag = float(np.hypot(d_r, arc))
 
-            vector = np.array(pos_last) - np.array(pos_first)
-            distance = float(distance_centers[d_idx]) * float(angle_step)
-            angle_2d = np.arctan2(vector[1], vector[0]) if len(vector) >= 2 else 0.0
+            inner_first = d_idx * n_angle + 0
+            inner_last = d_idx * n_angle + (n_angle - 1)
+            outer_first = (d_idx + 1) * n_angle + 0
+            outer_last = (d_idx + 1) * n_angle + (n_angle - 1)
 
-            max_edge_id += 1
-            connectivity.add_edge(
-                first_angle_node,
-                last_angle_node,
-                distance=float(distance),
-                vector=vector.tolist(),
-                angle_2d=float(angle_2d),
-                edge_id=int(max_edge_id),
-            )
+            # (r_i, last_angle) <-> (r_{i+1}, first_angle)
+            _add_seam_edge(inner_last, outer_first, diag)
+            # (r_i, first_angle) <-> (r_{i+1}, last_angle)
+            _add_seam_edge(inner_first, outer_last, diag)
 
 
 def _fix_polar_edge_geometry(connectivity: nx.Graph) -> None:

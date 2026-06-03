@@ -233,6 +233,16 @@
 
 ### Bug fixes
 
+- Egocentric-polar connectivity now adds **diagonal** edges across the ±π seam
+  when `connect_diagonal_neighbors=True` and `circular_angle=True`. Previously
+  interior diagonals and same-ring seam (wrap) edges were added, but the
+  diagonal edges crossing the seam between adjacent distance rings
+  (`(r_i, last_angle)`↔`(r_{i+1}, first_angle)` and vice-versa) were missing, so
+  the ±π boundary had fewer connections than every other angular step (an
+  anisotropic seam). These seam diagonals now mirror the interior diagonal
+  connectivity and carry the correct physical polar diagonal length
+  `sqrt(Δr² + (r̄·Δθ)²)`. `circular_angle=False` still adds no seam edges
+  (diagonal or same-ring), leaving the angular axis open.
 - Egocentric-polar `gaussian_kde` smoothing now respects `circular_angle`.
   A previous fix unconditionally wrapped the angular difference into
   `[-pi, pi]`, but `Environment.from_polar_egocentric(..., circular_angle=False)`
