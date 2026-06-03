@@ -163,6 +163,111 @@ class TestSafeGatherRegions:
 
         assert runs == []
 
+    def test_detect_runs_speed_filter_drops_run_with_no_usable_speed(self):
+        """min_speed set + no usable consecutive valid pair => run is DROPPED.
+
+        Repro of the reported bug: a run slice like ``[source, -1, neutral]``
+        has no consecutive on-environment pair from which to estimate speed.
+        The run must not silently pass a speed gate it never satisfied -- it is
+        dropped, not kept.
+        """
+        x = np.linspace(0, 100, 50)
+        y = np.linspace(0, 100, 50)
+        xx, yy = np.meshgrid(x, y)
+        env = Environment.from_samples(
+            np.column_stack([xx.ravel(), yy.ravel()]), bin_size=5.0
+        )
+        last_bin = env.n_bins - 1
+        env.regions.add("source", polygon=Point(*env.bin_centers[0]).buffer(6.0))
+        env.regions.add("target", polygon=Point(*env.bin_centers[last_bin]).buffer(6.0))
+
+        neutral_bin = 100
+        from neurospatial.ops.binning import regions_to_mask
+
+        assert not regions_to_mask(env, ["target"])[neutral_bin]
+        assert not regions_to_mask(env, ["source"])[neutral_bin]
+
+        # Exit source, then an off-env (-1) sample between the only two
+        # on-env samples => no consecutive valid pair, no usable speed.
+        position_bins = np.array(
+            [0, neutral_bin, -1, neutral_bin],
+            dtype=np.int64,
+        )
+        times = np.linspace(0.0, 0.4, len(position_bins))
+
+        runs = detect_runs_between_regions(
+            position_bins,
+            times,
+            env,
+            source="source",
+            target="target",
+            min_duration=0.0,
+            max_duration=100.0,
+            min_speed=10.0,
+        )
+
+        assert runs == []
+
+    def test_detect_runs_speed_filter_fully_valid_runs(self):
+        """A fully-valid fast run passes; a fully-valid slow run is filtered."""
+        x = np.linspace(0, 100, 50)
+        y = np.linspace(0, 100, 50)
+        xx, yy = np.meshgrid(x, y)
+        env = Environment.from_samples(
+            np.column_stack([xx.ravel(), yy.ravel()]), bin_size=5.0
+        )
+        last_bin = env.n_bins - 1
+        env.regions.add("source", polygon=Point(*env.bin_centers[0]).buffer(6.0))
+        env.regions.add("target", polygon=Point(*env.bin_centers[last_bin]).buffer(6.0))
+
+        # Exit source at the first step, then traverse distinct neutral bins
+        # (a steady move each frame) so the run has a well-defined mean speed.
+        from neurospatial.ops.binning import regions_to_mask
+
+        neutral_bins = [200, 201, 202]
+        for b in neutral_bins:
+            assert not regions_to_mask(env, ["source"])[b]
+            assert not regions_to_mask(env, ["target"])[b]
+
+        position_bins = np.array([0, *neutral_bins], dtype=np.int64)
+        # The run begins at the source-exit sample, so its path is the neutral
+        # bins only (index 0 is the last in-source sample, excluded). Mean speed
+        # is taken over the consecutive neutral->neutral pairs.
+        run_path_bins = np.array(neutral_bins, dtype=np.int64)
+        step_dists = np.linalg.norm(
+            np.diff(env.bin_centers[run_path_bins], axis=0), axis=1
+        )
+
+        # dt of 0.1 s per step; mean speed = mean(step_dists / 0.1).
+        times = np.array([0.0, 0.1, 0.2, 0.3])
+        mean_speed = float(np.mean(step_dists / 0.1))
+        slow_threshold = mean_speed * 0.5
+        high_threshold = mean_speed * 2.0
+
+        fast_runs = detect_runs_between_regions(
+            position_bins,
+            times,
+            env,
+            source="source",
+            target="target",
+            min_duration=0.0,
+            max_duration=100.0,
+            min_speed=slow_threshold,
+        )
+        assert len(fast_runs) == 1  # mean speed above threshold => kept
+
+        slow_runs = detect_runs_between_regions(
+            position_bins,
+            times,
+            env,
+            source="source",
+            target="target",
+            min_duration=0.0,
+            max_duration=100.0,
+            min_speed=high_threshold,
+        )
+        assert slow_runs == []  # mean speed below threshold => filtered
+
     def test_segment_trials_out_of_env_not_counted_in_end_region(self):
         x = np.linspace(0, 100, 50)
         y = np.linspace(0, 100, 50)

@@ -371,6 +371,19 @@
   raising on invalid count/frequency input. The non-negativity / equal-length
   checks and the NaN-*angle* co-filter (which drops NaN angles, not weights)
   are unchanged.
+- Weighted `circular_mean`, `mean_resultant_length`, and `circular_variance`
+  now apply the same NaN-*angle* co-filter that `rayleigh_test` already used:
+  a NaN angle is dropped together with its paired weight, and the statistic is
+  computed on the remainder. Previously a single NaN angle propagated through
+  `cos`/`sin` and turned the weighted result into `nan` even when the other
+  samples were valid. Non-finite *weights* still raise (unchanged); only NaN
+  *angles* are dropped.
+- `detect_runs_between_regions(min_speed=...)` now drops a run when there is no
+  usable speed estimate (no consecutive on-environment bin pair from which to
+  compute a velocity), instead of silently keeping it. A run whose speed cannot
+  be validated must not pass a speed gate it never satisfied; e.g. a run slice
+  like `[bin, -1, bin]` with `min_speed > 0` is now dropped. Runs with `min_speed
+  is None` and fully on-environment runs are unaffected.
 
 ## [v0.4.0] - 2026-05-26
 

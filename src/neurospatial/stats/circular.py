@@ -1061,11 +1061,17 @@ def circular_mean(
     if len(angles) == 0:
         return np.nan
 
-    cos_angles = np.cos(angles)
-    sin_angles = np.sin(angles)
-
     if weights is not None:
-        weights = _validate_weights(angles, weights)
+        # Co-filter NaN angles together with their paired weights (same rule
+        # as the weighted Rayleigh path), then compute on the remainder.
+        # Non-finite WEIGHTS still raise inside the validator -- only NaN
+        # ANGLES are legitimately dropped here.
+        angles, weights = _validate_circular_input(
+            angles, "angles", min_samples=1, check_range=False, weights=weights
+        )
+        assert weights is not None  # validator returns weights when given them
+        cos_angles = np.cos(angles)
+        sin_angles = np.sin(angles)
         weight_sum = np.sum(weights)
         if weight_sum == 0:
             return np.nan
@@ -1073,6 +1079,8 @@ def circular_mean(
         mean_cos = np.sum(weights_norm * cos_angles)
         mean_sin = np.sum(weights_norm * sin_angles)
     else:
+        cos_angles = np.cos(angles)
+        sin_angles = np.sin(angles)
         mean_cos = np.mean(cos_angles)
         mean_sin = np.mean(sin_angles)
 
@@ -1119,6 +1127,13 @@ def circular_variance(
     """
     angles = np.asarray(angles, dtype=np.float64)
     angles = _to_radians(angles, angle_unit)
+
+    if weights is not None:
+        # Co-filter NaN angles with their paired weights (same rule as the
+        # weighted Rayleigh path). Non-finite WEIGHTS still raise.
+        angles, weights = _validate_circular_input(
+            angles, "angles", min_samples=1, check_range=False, weights=weights
+        )
 
     r = _mean_resultant_length(angles, weights=weights)
     return float(1.0 - r)
@@ -1169,6 +1184,13 @@ def mean_resultant_length(
     """
     angles = np.asarray(angles, dtype=np.float64)
     angles = _to_radians(angles, angle_unit)
+
+    if weights is not None:
+        # Co-filter NaN angles with their paired weights (same rule as the
+        # weighted Rayleigh path). Non-finite WEIGHTS still raise.
+        angles, weights = _validate_circular_input(
+            angles, "angles", min_samples=1, check_range=False, weights=weights
+        )
 
     return _mean_resultant_length(angles, weights=weights)
 

@@ -185,6 +185,43 @@ def test_rayleigh_test_nan_cofilters_weights(concentrated_angles):
     assert_allclose(p_cofiltered, p_manual)
 
 
+@pytest.mark.parametrize(
+    "func", [circular_mean, mean_resultant_length, circular_variance]
+)
+def test_weighted_metrics_nan_angle_cofilters_weight(func):
+    """A NaN angle is dropped with its weight, matching the filtered input.
+
+    Mirrors the weighted Rayleigh co-filter: for
+    ``angles=[0, nan, pi/2], weights=[1, 10, 1]`` the NaN sample (and its
+    weight) is dropped, so the result equals computing on the explicitly
+    filtered ``angles=[0, pi/2], weights=[1, 1]`` -- not ``nan``.
+    """
+    angles_with_nan = np.array([0.0, np.nan, np.pi / 2])
+    weights = np.array([1.0, 10.0, 1.0])
+
+    angles_filtered = np.array([0.0, np.pi / 2])
+    weights_filtered = np.array([1.0, 1.0])
+
+    with pytest.warns(UserWarning, match="Removed 1 NaN"):
+        result = func(angles_with_nan, weights=weights)
+    expected = func(angles_filtered, weights=weights_filtered)
+
+    assert np.isfinite(result)
+    assert_allclose(result, expected)
+
+
+@pytest.mark.parametrize(
+    "func", [circular_mean, mean_resultant_length, circular_variance]
+)
+@pytest.mark.parametrize("bad", [np.nan, np.inf, -np.inf])
+def test_weighted_metrics_nonfinite_weight_still_raises(func, bad):
+    """A NaN/Inf WEIGHT remains invalid input and raises (not co-filtered)."""
+    angles = np.array([0.0, np.pi / 4, np.pi / 2])
+    weights = np.array([1.0, bad, 1.0])
+    with pytest.raises(ValueError, match="non-finite"):
+        func(angles, weights=weights)
+
+
 def test_rayleigh_test_integer_weights_match_replication():
     """Integer weights reproduce physical replication of each angle."""
     angles = np.array([0.1, 0.5, 1.0, 2.0, 3.0])

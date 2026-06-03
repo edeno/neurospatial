@@ -667,25 +667,34 @@ def detect_runs_between_regions(
         # would wrap ``-1`` to the last bin (inflating speed) or raise on indices
         # ``>= n_bins``. Compute speed only over consecutive sample pairs where
         # both endpoints map to a valid bin.
-        if min_speed is not None and len(run_times) > 1:
-            valid = (run_bin_idx >= 0) & (run_bin_idx < env.n_bins)
+        if min_speed is not None:
             # A displacement is usable only when both consecutive samples are
-            # valid (and the underlying dt is positive).
-            pair_valid = valid[:-1] & valid[1:]
-            if pair_valid.any():
-                safe_idx = np.where(valid, run_bin_idx, 0)
-                run_positions = env.bin_centers[safe_idx]
-                displacements = np.diff(run_positions, axis=0)
-                distances = np.linalg.norm(displacements, axis=1)
-                dt = _positive_dt(run_times, name="times")
-                velocities = (distances / dt)[pair_valid]
-                mean_velocity = float(np.mean(velocities))
+            # valid (and the underlying dt is positive). Off-environment samples
+            # (``-1``) or out-of-range bins are not real positions.
+            if len(run_times) > 1:
+                valid = (run_bin_idx >= 0) & (run_bin_idx < env.n_bins)
+                pair_valid = valid[:-1] & valid[1:]
+            else:
+                pair_valid = np.zeros(0, dtype=bool)
 
-                if mean_velocity < min_speed:
-                    continue
-            # If no consecutive pair has both endpoints on the environment,
-            # there is no usable speed estimate; do not filter the run out on a
-            # spurious (e.g. -1-inflated) velocity.
+            if not pair_valid.any():
+                # No consecutive pair has both endpoints on the environment, so
+                # the run's speed cannot be validated. A run must not silently
+                # pass a speed gate it never satisfied: drop it (treat as
+                # failing the filter) rather than keeping a spurious
+                # (e.g. -1-inflated) velocity.
+                continue
+
+            safe_idx = np.where(valid, run_bin_idx, 0)
+            run_positions = env.bin_centers[safe_idx]
+            displacements = np.diff(run_positions, axis=0)
+            distances = np.linalg.norm(displacements, axis=1)
+            dt = _positive_dt(run_times, name="times")
+            velocities = (distances / dt)[pair_valid]
+            mean_velocity = float(np.mean(velocities))
+
+            if mean_velocity < min_speed:
+                continue
 
         # Create run
         runs.append(
