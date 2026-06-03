@@ -48,6 +48,7 @@ class EnvironmentMetadata(TypedDict):
     n_edges: int
     is_linearized_track: bool
     has_grid_data: bool
+    coordinate_kind: str
 
 
 class GridData(TypedDict, total=False):
@@ -239,6 +240,7 @@ def write_environment(
             "n_edges": len(edges),  # Needed for proper deserialization
             "is_linearized_track": env.is_linearized_track,  # Preserve 1D property for Graph layouts
             "has_grid_data": grid_data is not None,
+            "coordinate_kind": getattr(env, "coordinate_kind", "cartesian"),
         }
     )
 
@@ -474,12 +476,14 @@ def read_environment(
 
     Notes
     -----
-    For grid-based layouts (RegularGrid, MaskedGrid, ImageMask, ShapelyPolygon,
-    Hexagonal), the layout is fully reconstructed from stored grid_edges and
-    active_mask, enabling proper point_to_bin_index functionality.
+    For grid-based layouts (RegularGrid, MaskedGrid, ImageMask, ShapelyPolygon),
+    the layout is fully reconstructed from stored grid_edges and active_mask,
+    enabling proper point_to_bin_index functionality.
 
-    For non-grid layouts (Graph, TriangularMesh), a KDTree-based layout is used
-    which provides nearest-neighbor point mapping.
+    For layouts without a rectangular grid (Graph, Hexagonal, TriangularMesh),
+    a KDTree-based layout is used. This provides nearest-neighbor point mapping
+    over the stored bin centers and connectivity, but does not reconstruct the
+    original layout engine's bin geometry exactly.
 
     Examples
     --------
@@ -577,6 +581,13 @@ def read_environment(
         env.units = units
     if frame and frame != DEFAULT_FRAME:
         env.frame = frame
+
+    # Restore coordinate_kind. Older NWB files (written before this field was
+    # persisted) lack the key and fall back to the env field default
+    # "cartesian", matching the on-disk behavior of those files.
+    coordinate_kind = metadata.get("coordinate_kind", "cartesian")
+    if coordinate_kind == "polar":
+        env.coordinate_kind = "polar"
 
     # Store layout type info
     env._layout_type_used = layout_type

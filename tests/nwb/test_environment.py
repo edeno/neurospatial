@@ -1967,3 +1967,55 @@ class TestEnvironmentToNwb:
         assert loaded.name == "test_arena"
         assert loaded.units == "cm"
         assert loaded.frame == "session_001"
+
+
+class TestCoordinateKindRoundTrip:
+    """coordinate_kind must survive the NWB write/read cycle."""
+
+    def test_nwb_roundtrip_preserves_coordinate_kind(
+        self, empty_nwb, sample_polar_environment
+    ):
+        """A polar environment reads back as polar, not Cartesian."""
+        from neurospatial.io.nwb import read_environment, write_environment
+
+        assert sample_polar_environment.coordinate_kind == "polar"
+
+        write_environment(empty_nwb, sample_polar_environment, name="polar_env")
+        loaded = read_environment(empty_nwb, name="polar_env")
+
+        assert loaded.coordinate_kind == "polar"
+        assert (
+            loaded.is_linearized_track == sample_polar_environment.is_linearized_track
+        )
+
+    def test_nwb_roundtrip_cartesian_unaffected(self, empty_nwb, sample_environment):
+        """A Cartesian environment round-trips with coordinate_kind cartesian."""
+        from neurospatial.io.nwb import read_environment, write_environment
+
+        assert sample_environment.coordinate_kind == "cartesian"
+
+        write_environment(empty_nwb, sample_environment, name="cart_env")
+        loaded = read_environment(empty_nwb, name="cart_env")
+
+        assert loaded.coordinate_kind == "cartesian"
+
+    def test_read_environment_old_file_without_coordinate_kind(
+        self, empty_nwb, sample_polar_environment
+    ):
+        """A stored metadata JSON missing coordinate_kind defaults to cartesian."""
+        import json
+
+        from neurospatial.io.nwb import read_environment, write_environment
+        from neurospatial.io.nwb._environment import COL_METADATA
+
+        write_environment(empty_nwb, sample_polar_environment, name="polar_env")
+
+        # Simulate an older file written before coordinate_kind was persisted:
+        # strip the key from the stored metadata JSON.
+        scratch_data = empty_nwb.scratch["polar_env"]
+        metadata = json.loads(scratch_data[COL_METADATA][0])
+        metadata.pop("coordinate_kind", None)
+        scratch_data[COL_METADATA].data[0] = json.dumps(metadata)
+
+        loaded = read_environment(empty_nwb, name="polar_env")
+        assert loaded.coordinate_kind == "cartesian"

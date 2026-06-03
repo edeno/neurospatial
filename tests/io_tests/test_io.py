@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+import networkx as nx
 import numpy as np
 import pytest
 
@@ -335,3 +336,125 @@ class TestAtomicWriteAndDtypes:
         # Numeric lists are still converted to numeric arrays.
         assert isinstance(restored["numeric"], np.ndarray)
         assert np.issubdtype(restored["numeric"].dtype, np.floating)
+
+
+def _make_graph_env() -> Environment:
+    """Build a 1D linearized-track (Graph layout) environment."""
+    graph = nx.Graph()
+    graph.add_nodes_from(
+        [
+            (0, {"pos": (0.0,)}),
+            (1, {"pos": (10.0,)}),
+            (2, {"pos": (20.0,)}),
+            (3, {"pos": (30.0,)}),
+        ]
+    )
+    graph.add_edge(0, 1, distance=10.0)
+    graph.add_edge(1, 2, distance=10.0)
+    graph.add_edge(2, 3, distance=10.0)
+    return Environment.from_graph(
+        graph, [(0, 1), (1, 2), (2, 3)], edge_spacing=0.0, bin_size=2.0
+    )
+
+
+def _make_polygon_env() -> Environment:
+    """Build a ShapelyPolygon-layout environment."""
+    shapely_geom = pytest.importorskip("shapely.geometry")
+    return Environment.from_polygon(shapely_geom.box(0, 0, 20, 20), bin_size=4.0)
+
+
+def _make_hexagonal_env() -> Environment:
+    rng = np.random.default_rng(0)
+    positions = rng.uniform(0, 50, (300, 2))
+    return Environment.from_samples(positions, bin_size=5.0, layout="hexagonal")
+
+
+def _make_masked_env() -> Environment:
+    active_mask = np.ones((5, 5), dtype=bool)
+    active_mask[0, 0] = False
+    grid_edges = (np.arange(6.0), np.arange(6.0))
+    return Environment.from_grid_mask(active_mask, grid_edges)
+
+
+def _make_image_mask_env() -> Environment:
+    image = np.zeros((8, 8), dtype=bool)
+    image[2:6, 2:6] = True
+    return Environment.from_pixel_mask(image, pixel_size=1.0)
+
+
+def _make_3d_env() -> Environment:
+    rng = np.random.default_rng(0)
+    positions = rng.uniform(0, 50, (400, 3))
+    return Environment.from_samples(positions, bin_size=10.0)
+
+
+_LAYOUT_FACTORIES = {
+    "Graph": _make_graph_env,
+    "Polygon": _make_polygon_env,
+    "Hexagonal": _make_hexagonal_env,
+    "Masked": _make_masked_env,
+    "ImageMask": _make_image_mask_env,
+    "3D": _make_3d_env,
+}
+
+
+class TestAllLayoutRoundTrip:
+    """Every layout factory must survive a to_file/from_file round-trip.
+
+    Previously only RegularGrid was exercised; Graph and Polygon crashed at
+    write time because layout_parameters held a non-JSON-serializable
+    networkx.Graph / shapely geometry.
+    """
+
+    @pytest.mark.parametrize("layout_name", list(_LAYOUT_FACTORIES))
+    def test_to_file_roundtrip_all_layouts(self, layout_name, tmp_path):
+        env = _LAYOUT_FACTORIES[layout_name]()
+
+        output_path = tmp_path / f"env_{layout_name}"
+        to_file(env, output_path)
+        loaded = from_file(output_path)
+
+        assert loaded.n_bins == env.n_bins
+        assert loaded.n_dims == env.n_dims
+        assert loaded.is_linearized_track == env.is_linearized_track
+        np.testing.assert_allclose(
+            np.sort(loaded.bin_centers, axis=0),
+            np.sort(env.bin_centers, axis=0),
+        )
+        # Edge set is preserved (compare as undirected frozenset pairs).
+        orig_edges = {frozenset(e) for e in env.connectivity.edges()}
+        loaded_edges = {frozenset(e) for e in loaded.connectivity.edges()}
+        assert loaded_edges == orig_edges
+        if env.active_mask is not None:
+            assert loaded.active_mask is not None
+            np.testing.assert_array_equal(
+                np.sort(loaded.active_mask.ravel()),
+                np.sort(env.active_mask.ravel()),
+            )
+
+    def test_to_dict_roundtrip_graph_layout(self):
+        """to_dict(graph_env) is json.dumps-able and from_dict reconstructs it."""
+        env = _make_graph_env()
+
+        env_dict = to_dict(env)
+        json.dumps(env_dict)  # must not raise
+
+        restored = from_dict(env_dict)
+        assert restored.n_bins == env.n_bins
+        assert restored.is_linearized_track == env.is_linearized_track
+        np.testing.assert_allclose(
+            np.sort(restored.bin_centers, axis=0),
+            np.sort(env.bin_centers, axis=0),
+        )
+
+    def test_to_file_graph_layout_parameters_roundtrip(self, tmp_path):
+        """layout_parameters['graph_definition'] decodes back to an nx.Graph."""
+        env = _make_graph_env()
+
+        output_path = tmp_path / "graph_env"
+        to_file(env, output_path)
+        loaded = from_file(output_path)
+
+        graph_def = loaded.layout_parameters["graph_definition"]
+        assert isinstance(graph_def, nx.Graph)
+        assert not isinstance(graph_def, dict)

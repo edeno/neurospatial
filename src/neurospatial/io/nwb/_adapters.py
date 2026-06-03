@@ -48,7 +48,9 @@ def timestamps_from_series(series: Any) -> NDArray[np.float64]:
     Raises
     ------
     ValueError
-        If neither explicit timestamps nor a sampling rate are available.
+        If neither explicit timestamps nor a sampling rate are available, or
+        if ``rate`` is present but not a finite positive value (a non-positive
+        or non-finite rate would yield Inf/NaN timestamps).
     """
     timestamps_attr = getattr(series, "timestamps", None)
     if timestamps_attr is not None:
@@ -61,11 +63,17 @@ def timestamps_from_series(series: Any) -> NDArray[np.float64]:
             "time axis."
         )
 
+    rate = float(rate)
+    if not np.isfinite(rate) or rate <= 0:
+        raise ValueError(
+            f"Series 'rate' must be a finite positive value to derive a time "
+            f"axis, got {rate!r}. Provide an explicit 'timestamps' array instead."
+        )
+
     n_samples = len(series.data)
     starting_time = float(
         getattr(series, "starting_time", DEFAULT_STARTING_TIME) or DEFAULT_STARTING_TIME
     )
-    rate = float(rate)
     timestamps = np.arange(n_samples, dtype=np.float64) / rate + starting_time
     return np.asarray(timestamps, dtype=np.float64)
 

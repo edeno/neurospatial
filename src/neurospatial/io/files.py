@@ -103,6 +103,81 @@ def _convert_lists_to_arrays(obj: Any) -> Any:
         return obj
 
 
+def _jsonsafe_layout_parameters(params: dict[str, Any] | None) -> dict[str, Any]:
+    """Return a JSON-serializable copy of layout-engine parameters.
+
+    ``env.layout_parameters`` may contain objects that ``json`` cannot encode:
+    a ``networkx.Graph`` (Graph layout) or a Shapely geometry (Polygon layout).
+    These are converted to portable, self-describing forms so the metadata JSON
+    round-trips. The geometry itself is restored on read from the stored
+    ``bin_centers``/``active_mask``/``grid_edges`` arrays and the node-link
+    ``graph`` (see ``from_file``); these serialized parameters are introspection
+    metadata, not the source of truth for reconstruction.
+
+    Parameters
+    ----------
+    params : dict or None
+        The ``env.layout_parameters`` dict (or None).
+
+    Returns
+    -------
+    dict
+        A new dict with every value JSON-serializable.
+    """
+    if not params:
+        return {}
+
+    def _encode(value: Any) -> Any:
+        # networkx graph -> node-link dict (same form used for connectivity)
+        if isinstance(value, nx.Graph):
+            return {"__nx_graph__": nx.node_link_data(value, edges="links")}
+        # shapely geometry -> WKT string (round-trippable, human-readable)
+        wkt = getattr(value, "wkt", None)
+        geom_type = getattr(value, "geom_type", None)
+        if wkt is not None and geom_type is not None:
+            return {"__shapely_wkt__": wkt}
+        if isinstance(value, np.ndarray):
+            return value.tolist()
+        if isinstance(value, (np.integer, np.floating)):
+            return value.item()
+        if isinstance(value, dict):
+            return {k: _encode(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [_encode(v) for v in value]
+        return value
+
+    return {k: _encode(v) for k, v in params.items()}
+
+
+def _decode_layout_parameters(params: Any) -> Any:
+    """Inverse of ``_jsonsafe_layout_parameters`` for the sentinel dicts."""
+    if isinstance(params, dict):
+        if set(params) == {"__nx_graph__"}:
+            return nx.node_link_graph(params["__nx_graph__"], edges="links")
+        if set(params) == {"__shapely_wkt__"}:
+            try:
+                from shapely import wkt as _wkt
+
+                return _wkt.loads(params["__shapely_wkt__"])
+            except ImportError:
+                # shapely absent at load time: leave the WKT string in place
+                # rather than fail; geometry is reconstructed from arrays anyway.
+                return params["__shapely_wkt__"]
+        decoded = {k: _decode_layout_parameters(v) for k, v in params.items()}
+        # The Graph layout's ``edge_order`` is a list of node-id tuples in the
+        # original parameters; the generic numeric-list converter turns it into
+        # a 2-D ndarray on read, which the Graph engine's ``build`` cannot index
+        # (it expects an iterable of edge tuples). Restore the list-of-tuples
+        # form so the round-tripped parameters reconstruct an equivalent env.
+        edge_order = decoded.get("edge_order")
+        if isinstance(edge_order, np.ndarray):
+            decoded["edge_order"] = [tuple(e) for e in edge_order.tolist()]
+        return decoded
+    if isinstance(params, list):
+        return [_decode_layout_parameters(v) for v in params]
+    return params
+
+
 def _get_library_version() -> str:
     """Get the neurospatial library version."""
     from importlib.metadata import PackageNotFoundError, version
@@ -219,7 +294,7 @@ def to_file(env: Environment, path: PathLike) -> None:
         "n_bins": int(env.n_bins),
         "is_linearized_track": bool(env.is_linearized_track),
         "layout_type": env.layout_type,
-        "layout_parameters": env.layout_parameters,
+        "layout_parameters": _jsonsafe_layout_parameters(env.layout_parameters),
     }
 
     # Add optional attributes
@@ -406,6 +481,10 @@ def from_file(path: PathLike) -> Environment:
     # Convert lists back to numpy arrays in layout parameters
     layout_params = _convert_lists_to_arrays(layout_params)
 
+    # Decode any JSON-safe sentinels written by _jsonsafe_layout_parameters so
+    # round-tripped layout_parameters is equivalent to the original.
+    layout_params = _decode_layout_parameters(layout_params)
+
     # Create environment from layout
     env = Environment.from_layout(layout_type, layout_params, name=metadata["name"])
 
@@ -482,7 +561,7 @@ def to_dict(env: Environment) -> dict[str, Any]:
         "n_bins": int(env.n_bins),
         "is_linearized_track": bool(env.is_linearized_track),
         "layout_type": env.layout_type,
-        "layout_parameters": env.layout_parameters,
+        "layout_parameters": _jsonsafe_layout_parameters(env.layout_parameters),
         "bin_centers": env.bin_centers.tolist(),
     }
 
@@ -598,6 +677,10 @@ def from_dict(data: dict[str, Any]) -> Environment:
 
     # Convert lists back to numpy arrays in layout parameters
     layout_params = _convert_lists_to_arrays(layout_params)
+
+    # Decode any JSON-safe sentinels written by _jsonsafe_layout_parameters so
+    # round-tripped layout_parameters is equivalent to the original.
+    layout_params = _decode_layout_parameters(layout_params)
 
     # Create environment
     env = Environment.from_layout(layout_type, layout_params, name=data["name"])
