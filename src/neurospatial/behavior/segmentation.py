@@ -70,6 +70,7 @@ Run
 from __future__ import annotations
 
 import itertools
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
@@ -166,6 +167,47 @@ def _positive_dt(
             f"dt={dt[first]!r}). Sort and de-duplicate timestamps before calling."
         )
     return dt
+
+
+def _interval_labels(
+    times: NDArray[np.float64],
+    intervals: Iterable[tuple[float, float, object]],
+    *,
+    default: object = "other",
+) -> NDArray[np.object_]:
+    """Build a per-timepoint object label array from labeled time intervals.
+
+    Allocates an object array of length ``len(times)`` filled with ``default``
+    and, for each ``(start_time, end_time, label)`` interval, assigns ``label``
+    to every sample with ``start_time <= times <= end_time``. This is the shared
+    primitive behind the trial/lap/run direction-label helpers (so the
+    inclusive-endpoint, last-writer-wins semantics live in one place). Later
+    intervals overwrite earlier ones on any overlap.
+
+    Parameters
+    ----------
+    times : NDArray[np.float64], shape (n_samples,)
+        Timestamps for the whole session (seconds).
+    intervals : iterable of (float, float, object)
+        ``(start_time, end_time, label)`` tuples. Endpoints are inclusive on
+        both sides.
+    default : object, optional
+        Value for samples outside every interval. Default is ``"other"`` (the
+        sentinel ``compute_directional_place_fields`` excludes from results).
+
+    Returns
+    -------
+    NDArray[np.object_], shape (n_samples,)
+        Per-timepoint labels, dtype ``object``.
+    """
+    times = np.asarray(times, dtype=np.float64)
+    labels: NDArray[np.object_] = np.full(len(times), default, dtype=object)
+
+    for start_time, end_time, label in intervals:
+        mask = (times >= start_time) & (times <= end_time)
+        labels[mask] = label
+
+    return labels
 
 
 # =============================================================================
@@ -483,6 +525,10 @@ def detect_runs_between_regions(
     --------
     detect_region_crossings : Detect individual region crossings
     segment_by_velocity : Segment by velocity threshold
+    runs_to_direction_labels : Convert these runs into per-timepoint direction
+        labels for ``compute_directional_place_fields``.
+    running_direction_labels : First-class inbound/outbound labeler for linear
+        tracks built on this detector.
 
     Notes
     -----
@@ -984,6 +1030,8 @@ def detect_laps(
     --------
     detect_region_crossings : Detect region entry/exit events
     detect_runs_between_regions : Detect runs between regions
+    laps_to_direction_labels : Convert these laps into per-timepoint direction
+        labels for ``compute_directional_place_fields``.
 
     Notes
     -----
@@ -1053,6 +1101,39 @@ def detect_laps(
     ...     direction="counter-clockwise",  # doctest: +SKIP
     ... )  # doctest: +SKIP
     >>> len(laps_cw) + len(laps_ccw) >= 0  # doctest: +SKIP
+    True
+
+    Feed detected laps into directional place fields via
+    :func:`laps_to_direction_labels`:
+
+    >>> import numpy as np
+    >>> from shapely.geometry import Point
+    >>> from neurospatial import Environment
+    >>> from neurospatial.behavior.segmentation import (
+    ...     detect_laps,
+    ...     laps_to_direction_labels,
+    ... )
+    >>> from neurospatial.encoding.spatial import (
+    ...     compute_directional_place_fields,
+    ... )
+    >>> theta = np.linspace(0, 6 * np.pi, 300)
+    >>> x = 50 + 30 * np.cos(theta)
+    >>> y = 50 + 30 * np.sin(theta)
+    >>> positions = np.column_stack([x, y])
+    >>> env = Environment.from_samples(positions, bin_size=3.0)
+    >>> _ = env.regions.add("start", polygon=Point(80.0, 50.0).buffer(5.0))
+    >>> position_bins = env.bin_at(positions)
+    >>> times = np.linspace(0, 60, 300)
+    >>> laps = detect_laps(
+    ...     position_bins, times, env, method="region", start_region="start"
+    ... )
+    >>> direction_labels = laps_to_direction_labels(laps, times)
+    >>> rng = np.random.default_rng(0)
+    >>> spike_times = np.sort(rng.uniform(0, 60, 40))
+    >>> fields = compute_directional_place_fields(
+    ...     env, spike_times, times, positions, direction_labels, bandwidth=6.0
+    ... )
+    >>> "counter-clockwise" in fields.firing_rates
     True
 
     References
@@ -1183,6 +1264,330 @@ def detect_laps(
             i += 1
 
     return laps
+
+
+# =============================================================================
+# Direction-label bridges (lap/run -> per-timepoint labels)
+# =============================================================================
+
+
+def laps_to_direction_labels(
+    laps: list[Lap],
+    times: NDArray[np.float64],
+    *,
+    unknown_label: object = "other",
+) -> NDArray[np.object_]:
+    """Convert detected laps into per-timepoint direction labels.
+
+    Bridges :func:`detect_laps` to :func:`compute_directional_place_fields`:
+    every sample falling inside a lap is labeled with that lap's
+    ``direction`` (``"clockwise"`` or ``"counter-clockwise"``), and every other
+    sample is labeled ``"other"`` (the sentinel
+    :func:`compute_directional_place_fields` excludes). The returned array is
+    drop-in for that function's ``direction_labels`` argument.
+
+    Parameters
+    ----------
+    laps : list[Lap]
+        Laps from :func:`detect_laps`. Each contributes its ``[start_time,
+        end_time]`` interval (inclusive endpoints) and ``direction``.
+    times : NDArray[np.float64], shape (n_samples,)
+        Timestamps for the whole session (seconds). The output has this length.
+    unknown_label : object, optional
+        Label applied to laps whose ``direction`` is ``"unknown"`` (direction
+        could not be resolved, e.g. non-2D environments). Default ``"other"`` so
+        such laps are excluded from directional fields; pass e.g. an explicit
+        string to keep them as their own group.
+
+    Returns
+    -------
+    NDArray[np.object_], shape (n_samples,)
+        Per-timepoint direction label, dtype ``object``. Samples outside every
+        lap are ``"other"``.
+
+    See Also
+    --------
+    detect_laps : Detect laps in a circular-track trajectory.
+    runs_to_direction_labels : Direction labels from detected runs.
+    goal_pair_direction_labels : Direction labels from trialized tasks.
+
+    Notes
+    -----
+    Laps later in the list overwrite earlier ones wherever their time intervals
+    overlap (last-writer-wins). ``detect_laps`` emits non-overlapping laps, so
+    this matters only for hand-constructed or merged lap lists.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.behavior.segmentation import (
+    ...     Lap,
+    ...     laps_to_direction_labels,
+    ... )
+    >>> times = np.linspace(0.0, 10.0, 11)
+    >>> laps = [
+    ...     Lap(0.0, 4.0, "clockwise", 1.0),
+    ...     Lap(6.0, 10.0, "counter-clockwise", 1.0),
+    ... ]
+    >>> labels = laps_to_direction_labels(laps, times)
+    >>> labels[0], labels[5], labels[-1]
+    ('clockwise', 'other', 'counter-clockwise')
+    """
+    intervals = [
+        (
+            lap.start_time,
+            lap.end_time,
+            unknown_label if lap.direction == "unknown" else lap.direction,
+        )
+        for lap in laps
+    ]
+    return _interval_labels(times, intervals)
+
+
+def runs_to_direction_labels(
+    runs: list[Run],
+    times: NDArray[np.float64],
+    *,
+    labels: object | Sequence[object] = "run",
+    success_only: bool = False,
+) -> NDArray[np.object_]:
+    """Convert detected runs into per-timepoint direction labels.
+
+    Bridges run detectors (:func:`detect_runs_between_regions`,
+    :func:`detect_goal_directed_runs`, :func:`segment_by_velocity`) to
+    :func:`compute_directional_place_fields`. :class:`Run` carries no intrinsic
+    direction, so the caller supplies the label(s): either a single label for
+    every run, or one label per run. Samples inside no run are ``"other"``. The
+    returned array is drop-in for ``direction_labels``.
+
+    Parameters
+    ----------
+    runs : list[Run]
+        Runs from a run detector. Each contributes its ``[start_time,
+        end_time]`` interval (inclusive endpoints).
+    times : NDArray[np.float64], shape (n_samples,)
+        Timestamps for the whole session (seconds). The output has this length.
+    labels : object or sequence of object, optional
+        Label to assign. A scalar (e.g. ``"run"``, the default) labels every
+        run identically. A sequence must have one entry per run (matched by
+        position) and is applied before any ``success_only`` filtering, so its
+        length must equal ``len(runs)``.
+    success_only : bool, optional
+        If True, only runs with ``success=True`` contribute labels (failed /
+        timed-out runs are left as ``"other"``). Default False.
+
+    Returns
+    -------
+    NDArray[np.object_], shape (n_samples,)
+        Per-timepoint label, dtype ``object``. Samples outside every (selected)
+        run are ``"other"``.
+
+    Raises
+    ------
+    ValueError
+        If ``labels`` is a sequence whose length differs from ``len(runs)``.
+
+    See Also
+    --------
+    detect_runs_between_regions : Detect runs from a source to a target region.
+    running_direction_labels : First-class inbound/outbound labeler.
+    laps_to_direction_labels : Direction labels from detected laps.
+
+    Notes
+    -----
+    Runs later in the list overwrite earlier ones wherever their time intervals
+    overlap (last-writer-wins).
+
+    A plain ``str`` is treated as a single scalar label, not as a per-run
+    sequence of characters.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.behavior.segmentation import (
+    ...     Run,
+    ...     runs_to_direction_labels,
+    ... )
+    >>> times = np.linspace(0.0, 10.0, 11)
+    >>> empty = np.array([], dtype=np.int64)
+    >>> runs = [
+    ...     Run(0.0, 4.0, empty, True),
+    ...     Run(6.0, 10.0, empty, True),
+    ... ]
+    >>> labels = runs_to_direction_labels(runs, times, labels=["outbound", "inbound"])
+    >>> labels[0], labels[5], labels[-1]
+    ('outbound', 'other', 'inbound')
+    """
+    if isinstance(labels, (Sequence, np.ndarray)) and not isinstance(
+        labels, (str, bytes)
+    ):
+        per_run_labels: list[object] = list(labels)
+        if len(per_run_labels) != len(runs):
+            raise ValueError(
+                f"labels sequence must have one entry per run. "
+                f"Got {len(per_run_labels)} labels for {len(runs)} runs."
+            )
+    else:
+        per_run_labels = [labels] * len(runs)
+
+    intervals = [
+        (run.start_time, run.end_time, label)
+        for run, label in zip(runs, per_run_labels, strict=True)
+        if not (success_only and not run.success)
+    ]
+    return _interval_labels(times, intervals)
+
+
+def running_direction_labels(
+    position_bins: NDArray[np.int64],
+    times: NDArray[np.float64],
+    env: Environment,
+    *,
+    start_region: str,
+    end_regions: str | Sequence[str],
+    min_duration: float = 0.5,
+    max_duration: float = 10.0,
+    min_speed: float | None = None,
+    successful_only: bool = True,
+) -> NDArray[np.object_]:
+    """Label per-timepoint inbound/outbound running direction on a linear track.
+
+    First-class inbound/outbound labeler for linear / W-track tasks, so users no
+    longer have to invent end-region names and stitch
+    :func:`detect_runs_between_regions` together by hand. Outbound runs go from
+    ``start_region`` to an end region; inbound runs come back from an end region
+    to ``start_region``. Every sample inside an outbound run is labeled
+    ``"outbound"``, every sample inside an inbound run ``"inbound"``, and all
+    other samples ``"other"``. The returned array is drop-in for
+    :func:`compute_directional_place_fields`'s ``direction_labels`` argument.
+
+    Follows the segmentation argument-order convention
+    (``position_bins, times, env, *, ...``).
+
+    Parameters
+    ----------
+    position_bins : NDArray[np.int64], shape (n_samples,)
+        Discretized position indices (one per sample). Use
+        ``env.bin_at(positions)`` to obtain these from continuous coordinates.
+    times : NDArray[np.float64], shape (n_samples,)
+        Timestamps corresponding to ``position_bins`` (seconds). The output has
+        this length.
+    env : Environment
+        Environment containing ``start_region`` and every end region.
+    start_region : str
+        Name of the home / start region. Outbound runs leave it; inbound runs
+        return to it.
+    end_regions : str or sequence of str
+        End region name(s) (e.g. ``"reward"`` or ``["reward_left",
+        "reward_right"]`` for a W-track). A single string is treated as one
+        region.
+    min_duration : float, optional
+        Minimum run duration in seconds, forwarded to
+        :func:`detect_runs_between_regions`. Default 0.5.
+    max_duration : float, optional
+        Maximum run duration in seconds, forwarded to
+        :func:`detect_runs_between_regions`. Default 10.0.
+    min_speed : float or None, optional
+        Optional minimum (bin-quantized) speed, forwarded to
+        :func:`detect_runs_between_regions`. Default None.
+    successful_only : bool, optional
+        If True (default), only runs that reached their target contribute
+        labels; timed-out runs stay ``"other"``. If False, timed-out runs are
+        labeled by their attempted direction.
+
+    Returns
+    -------
+    NDArray[np.object_], shape (n_samples,)
+        Per-timepoint label drawn from ``{"inbound", "outbound", "other"}``,
+        dtype ``object``.
+
+    Raises
+    ------
+    ValueError
+        If ``start_region`` or any end region is not in ``env.regions``
+        (raised by :func:`detect_runs_between_regions`), or if
+        ``position_bins`` and ``times`` have different lengths.
+
+    See Also
+    --------
+    detect_runs_between_regions : Underlying source-to-target run detector.
+    runs_to_direction_labels : Generic run-to-label bridge.
+    goal_pair_direction_labels : Arrow-notation labels for trialized tasks.
+
+    Notes
+    -----
+    Outbound and inbound runs are detected independently per end region (start
+    -> end and end -> start). Where intervals overlap, inbound labels are
+    applied after outbound (last-writer-wins); on a well-behaved out-and-back
+    trajectory the two never overlap, yielding contiguous ``"outbound"`` then
+    ``"inbound"`` stretches separated by ``"other"`` at the turnaround.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from shapely.geometry import Point
+    >>> from neurospatial import Environment
+    >>> from neurospatial.behavior.segmentation import running_direction_labels
+    >>> # Thin 2D corridor along x (a linear track).
+    >>> x = np.linspace(0.0, 100.0, 200)
+    >>> samples = np.column_stack([x, np.zeros_like(x)])
+    >>> env = Environment.from_samples(samples, bin_size=5.0)
+    >>> _ = env.regions.add("home", polygon=Point(0.0, 0.0).buffer(8.0))
+    >>> _ = env.regions.add("reward", polygon=Point(100.0, 0.0).buffer(8.0))
+    >>> # Out-and-back trajectory: home -> reward -> home.
+    >>> xt = np.concatenate([np.linspace(0.0, 100.0, 50), np.linspace(100.0, 0.0, 50)])
+    >>> trajectory = np.column_stack([xt, np.zeros_like(xt)])
+    >>> position_bins = env.bin_at(trajectory)
+    >>> ts = np.linspace(0.0, 10.0, len(trajectory))
+    >>> labels = running_direction_labels(
+    ...     position_bins, ts, env, start_region="home", end_regions="reward"
+    ... )
+    >>> "outbound" in labels and "inbound" in labels
+    True
+    """
+    if len(position_bins) != len(times):
+        raise ValueError(
+            f"position_bins and times must have same length. "
+            f"Got {len(position_bins)} and {len(times)}"
+        )
+
+    if isinstance(end_regions, str):
+        end_region_names: list[str] = [end_regions]
+    else:
+        end_region_names = list(end_regions)
+
+    intervals: list[tuple[float, float, object]] = []
+    for end_region in end_region_names:
+        outbound_runs = detect_runs_between_regions(
+            position_bins,
+            times,
+            env,
+            source=start_region,
+            target=end_region,
+            min_duration=min_duration,
+            max_duration=max_duration,
+            min_speed=min_speed,
+        )
+        inbound_runs = detect_runs_between_regions(
+            position_bins,
+            times,
+            env,
+            source=end_region,
+            target=start_region,
+            min_duration=min_duration,
+            max_duration=max_duration,
+            min_speed=min_speed,
+        )
+        for run in outbound_runs:
+            if successful_only and not run.success:
+                continue
+            intervals.append((run.start_time, run.end_time, "outbound"))
+        for run in inbound_runs:
+            if successful_only and not run.success:
+                continue
+            intervals.append((run.start_time, run.end_time, "inbound"))
+
+    return _interval_labels(times, intervals)
 
 
 # =============================================================================
@@ -1958,6 +2363,9 @@ __all__ = [
     "detect_laps",
     "detect_region_crossings",
     "detect_runs_between_regions",
+    "laps_to_direction_labels",
+    "running_direction_labels",
+    "runs_to_direction_labels",
     "segment_by_velocity",
     "segment_trials",
     "trajectory_similarity",

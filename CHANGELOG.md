@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-### New features
+### Added
 
 - Added `bin_spikes_in_time`, a public primitive that bins a sequence of
   per-neuron spike-time arrays onto a regular time grid (owning the bin
@@ -12,6 +12,23 @@
   `"neuron_x_time"` (matching the cell-assembly functions) — defusing the
   silent-transpose footgun between those two consumers. Exported from both
   `neurospatial.decoding` and the top-level `neurospatial` package.
+- `neurospatial.io.nwb.read_units` reads per-neuron spike-time arrays from an
+  NWB `units` table, returning a `(spike_trains, unit_ids)` tuple that mirrors
+  the existing `read_position` contract. `unit_ids` selects a subset by the
+  table's `id` values (not row indices); an unknown id raises a clear
+  `ValueError` rather than silently returning the wrong unit. This closes the
+  last gap in the NWB reader family, so multi-cell workflows no longer have to
+  start in bare `pynwb`.
+- `behavior.segmentation` gains three direction-label bridges so detected
+  laps/runs can feed `compute_directional_place_fields` directly:
+  `laps_to_direction_labels` (lap `direction` -> per-timepoint labels),
+  `runs_to_direction_labels` (caller-supplied scalar or per-run labels), and
+  `running_direction_labels` (first-class `{"inbound", "outbound", "other"}`
+  labeler for linear / W-tracks). All three return the
+  `NDArray[np.object_]` of shape `(n_times,)` with the `"other"` sentinel that
+  `compute_directional_place_fields` consumes, closing the lap/run ->
+  directional-place-field gap previously reachable only from a `Trial` via
+  `goal_pair_direction_labels`. Exported from `neurospatial.behavior`.
 
 ### Breaking changes
 
@@ -29,16 +46,6 @@
   deprecated alias). The layout is now stored in consistent (x, y) order, so
   `grid_shape`, `bin_centers`, and `active_mask` follow (x, y); code relying
   on the previous (y, x) ordering must update.
-
-### Added
-
-- `neurospatial.io.nwb.read_units` reads per-neuron spike-time arrays from an
-  NWB `units` table, returning a `(spike_trains, unit_ids)` tuple that mirrors
-  the existing `read_position` contract. `unit_ids` selects a subset by the
-  table's `id` values (not row indices); an unknown id raises a clear
-  `ValueError` rather than silently returning the wrong unit. This closes the
-  last gap in the NWB reader family, so multi-cell workflows no longer have to
-  start in bare `pynwb`.
 
 ### Bug fixes
 

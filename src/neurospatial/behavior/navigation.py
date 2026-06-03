@@ -1065,18 +1065,21 @@ def goal_pair_direction_labels(
     --------
     segment_trials : Segment trajectory into behavioral trials
     heading_direction_labels : Direction labels based on heading angle
+    laps_to_direction_labels : Direction labels from detected laps
+    runs_to_direction_labels : Direction labels from detected runs
     """
-    labels = np.full(len(times), "other", dtype=object)
+    from neurospatial.behavior.segmentation import _interval_labels
 
-    for trial in trials:
-        if trial.end_region is None:
-            continue
-
-        label = f"{trial.start_region}\u2192{trial.end_region}"
-        mask = (times >= trial.start_time) & (times <= trial.end_time)
-        labels[mask] = label
-
-    return labels
+    intervals = [
+        (
+            trial.start_time,
+            trial.end_time,
+            f"{trial.start_region}\u2192{trial.end_region}",
+        )
+        for trial in trials
+        if trial.end_region is not None
+    ]
+    return _interval_labels(times, intervals)
 
 
 def heading_direction_labels(

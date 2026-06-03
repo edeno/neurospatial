@@ -43,6 +43,54 @@ def grid_env_with_last_bin_region():
     return env, "last_region", last_bin
 
 
+@pytest.fixture
+def out_and_back_track():
+    """Out-and-back trajectory on a thin 2D linear-track environment.
+
+    Builds a horizontal corridor (a linear track) with ``home`` and ``reward``
+    regions at the two ends, then synthesizes a single out-and-back run: the
+    animal travels ``home -> reward`` (outbound), then ``reward -> home``
+    (inbound). The midpoint sample sits in neither end region (the turnaround),
+    so a correct labeler produces a contiguous ``"outbound"`` stretch, then
+    ``"other"`` at the turn, then a contiguous ``"inbound"`` stretch.
+
+    Returns
+    -------
+    dict
+        Keys:
+
+        - ``env`` : the linear-track Environment with ``home`` / ``reward``.
+        - ``position_bins`` : bin index per trajectory sample.
+        - ``positions`` : (n_samples, 2) continuous trajectory.
+        - ``times`` : (n_samples,) timestamps, strictly increasing.
+        - ``start_region`` : ``"home"``.
+        - ``end_region`` : ``"reward"``.
+    """
+    # Thin corridor sampled densely along x so binning is well-defined.
+    x_samples = np.linspace(0.0, 100.0, 200)
+    samples = np.column_stack([x_samples, np.zeros_like(x_samples)])
+    env = Environment.from_samples(samples, bin_size=5.0)
+    env.regions.add("home", polygon=Point(0.0, 0.0).buffer(8.0))
+    env.regions.add("reward", polygon=Point(100.0, 0.0).buffer(8.0))
+
+    # Out-and-back: home -> reward (outbound), reward -> home (inbound).
+    x_out = np.linspace(0.0, 100.0, 50)
+    x_back = np.linspace(100.0, 0.0, 50)
+    x_traj = np.concatenate([x_out, x_back])
+    positions = np.column_stack([x_traj, np.zeros_like(x_traj)])
+    position_bins = env.bin_at(positions)
+    times = np.linspace(0.0, 10.0, len(positions))
+
+    return {
+        "env": env,
+        "position_bins": position_bins,
+        "positions": positions,
+        "times": times,
+        "start_region": "home",
+        "end_region": "reward",
+    }
+
+
 def duplicate_timestamps(n: int = 11, total: float = 5.0) -> np.ndarray:
     """Return strictly-increasing timestamps with one duplicated element.
 
