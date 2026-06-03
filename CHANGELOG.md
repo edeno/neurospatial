@@ -22,6 +22,20 @@
   NaN/Inf in `spike_counts` and `prior`, and Inf/negative entries in
   `encoding_models`). The recommended path remains passing `fill_value=0.0` to
   the encoder so no NaN reaches the decoder.
+- Array-shaped result objects now export to `xarray`. `DecodingResult.to_xarray()`
+  returns a labeled `DataArray` with dims `("time", "bin")` (the `time` coord is
+  `result.times`, or a positional integer index `np.arange(n_time)` when `times`
+  is `None`), and `SpatialRatesResult.to_xarray()` returns a `DataArray` with
+  dims `("neuron", "bin")`. `xarray` is imported lazily inside these methods and
+  remains an **optional** dependency — install it with
+  `pip install neurospatial[xarray]` (a new `xarray` extra) or `pip install
+  xarray`. Calling `to_xarray()` without it raises an actionable `ImportError`.
+- `DecodingResult.error_against(true_times, true_positions, *, metric="euclidean")`
+  computes per-time-bin decode error against an independently sampled
+  ground-truth position track, interpolating the ground truth onto the decode
+  times so callers no longer hand-roll `searchsorted` alignment. It reuses the
+  existing `decoding_error` core and supports `"euclidean"` and `"geodesic"`
+  metrics.
 - The top-level `neurospatial` package now exposes its analysis submodules
   (`encoding`, `decoding`, `behavior`, `events`, `ops`, `layout`, `regions`,
   `stats`, `simulation`, `annotation`, `animation`, `io`) via lazy (PEP 562)

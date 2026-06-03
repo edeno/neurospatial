@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 import pandas as pd
@@ -452,3 +452,209 @@ class DecodingResult(ResultMixin):
         data["posterior_entropy"] = self.posterior_entropy
 
         return pd.DataFrame(data)
+
+    def to_xarray(self) -> Any:
+        """Convert the posterior to an :class:`xarray.DataArray`.
+
+        Wraps the ``(n_time_bins, n_bins)`` posterior in a labeled
+        :class:`xarray.DataArray` with dims ``("time", "bin")``. The ``time``
+        coordinate is taken from :attr:`times` when available; the ``bin``
+        coordinate is the integer bin index ``np.arange(n_bins)``.
+
+        Returns
+        -------
+        xarray.DataArray
+            Posterior with dims ``("time", "bin")``. The array ``.values``
+            equal :attr:`posterior`. ``coords["time"]`` is :attr:`times`
+            (or the integer index fallback, see Notes) and ``coords["bin"]``
+            is the integer bin index.
+
+        Raises
+        ------
+        ImportError
+            If ``xarray`` is not installed. xarray is an optional dependency;
+            install it with ``pip install neurospatial[xarray]`` or
+            ``pip install xarray``.
+
+        Notes
+        -----
+        ``xarray`` is imported lazily inside this method, so it never becomes
+        an import-time dependency of ``neurospatial``.
+
+        **Fallback when ``times`` is ``None``.** :attr:`times` defaults to
+        ``None`` (the decode produces no timestamps unless the caller supplies
+        them). In that case the ``time`` coordinate is the positional integer
+        index ``np.arange(n_time_bins)`` rather than ``None`` (passing ``None``
+        as a coordinate would raise). The ``time`` coordinate is therefore a
+        bin index, not seconds, whenever :attr:`times` is unset.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.decoding import DecodingResult
+        >>> positions = np.random.default_rng(0).uniform(0, 50, (200, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> posterior = np.ones((10, env.n_bins)) / env.n_bins
+        >>> times = np.linspace(0.0, 1.0, 10)
+        >>> result = DecodingResult(posterior=posterior, env=env, times=times)
+        >>> da = result.to_xarray()  # doctest: +SKIP
+        >>> da.dims  # doctest: +SKIP
+        ('time', 'bin')
+
+        See Also
+        --------
+        to_dataframe : Export point estimates and entropy to a DataFrame.
+        """
+        try:
+            import xarray as xr
+        except ImportError as exc:
+            raise ImportError(
+                "to_xarray() requires the optional 'xarray' dependency, which "
+                "is not installed. Install it with "
+                "'pip install neurospatial[xarray]' or 'pip install xarray'."
+            ) from exc
+
+        n_time = self.posterior.shape[0]
+        n_bins = self.posterior.shape[1]
+
+        # times defaults to None; fall back to a positional integer index
+        # rather than passing None into the coord (which would raise).
+        if self.times is not None:
+            time_coord: NDArray[Any] = np.asarray(self.times)
+        else:
+            time_coord = np.arange(n_time)
+
+        bin_coord = np.arange(n_bins)
+
+        return xr.DataArray(
+            self.posterior,
+            dims=("time", "bin"),
+            coords={"time": time_coord, "bin": bin_coord},
+            name="posterior",
+        )
+
+    def error_against(
+        self,
+        true_times: NDArray[np.float64],
+        true_positions: NDArray[np.float64],
+        *,
+        metric: Literal["euclidean", "geodesic"] = "euclidean",
+    ) -> NDArray[np.float64]:
+        """Per-time-bin decode error against externally sampled ground truth.
+
+        Aligns this decode's time grid to a separately sampled ground-truth
+        position track and returns the position error at each decode time bin.
+        This removes the hand-rolled ``searchsorted`` alignment that callers
+        otherwise write between decode times and behavioral position samples.
+
+        Parameters
+        ----------
+        true_times : NDArray[np.float64], shape (n_true,)
+            Timestamps (seconds) of the ground-truth positions. Must be sorted
+            ascending.
+        true_positions : NDArray[np.float64], shape (n_true, n_dims)
+            Ground-truth positions sampled at ``true_times``. ``n_dims`` must
+            match the environment dimensionality.
+        metric : {"euclidean", "geodesic"}, default="euclidean"
+            Distance metric passed through to
+            :func:`neurospatial.decoding.metrics.decoding_error`. ``"geodesic"``
+            uses this result's :attr:`env` for graph distances.
+
+        Returns
+        -------
+        errors : NDArray[np.float64], shape (n_time_bins,)
+            Distance between the decoded (MAP) position and the time-aligned
+            ground-truth position at each decode time bin. Units match the
+            environment (e.g. cm).
+
+        Raises
+        ------
+        ValueError
+            If :attr:`times` is ``None`` (decode times are required to align),
+            if ``true_times`` is not 1D, if ``true_times`` is not sorted
+            ascending (non-decreasing), or if ``true_positions`` does not have
+            shape ``(len(true_times), n_dims)``.
+
+        Notes
+        -----
+        Alignment uses linear interpolation of each ground-truth coordinate
+        onto the decode times via :func:`numpy.interp`. Decode times outside
+        the span of ``true_times`` are clamped to the nearest endpoint (the
+        ``numpy.interp`` default), so do not extrapolate beyond the tracked
+        interval. The decoded position is the MAP estimate
+        (:attr:`map_position`); the aligned ground truth is compared against it
+        with :func:`neurospatial.decoding.metrics.decoding_error`.
+
+        Linear interpolation of position assumes the ground-truth samples are
+        dense enough that no linearization-segment boundary / track junction
+        (or circular wrap) is crossed between consecutive ``true_times``;
+        otherwise an interpolated midpoint may not correspond to a real
+        position.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.decoding import DecodingResult
+        >>> positions = np.random.default_rng(0).uniform(0, 50, (200, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> posterior = np.ones((5, env.n_bins)) / env.n_bins
+        >>> decode_times = np.array([0.0, 0.25, 0.5, 0.75, 1.0])
+        >>> result = DecodingResult(posterior=posterior, env=env, times=decode_times)
+        >>> true_times = np.array([0.0, 1.0])
+        >>> true_positions = np.array([[0.0, 0.0], [10.0, 10.0]])
+        >>> errors = result.error_against(true_times, true_positions)
+        >>> errors.shape
+        (5,)
+
+        See Also
+        --------
+        neurospatial.decoding.metrics.decoding_error : Underlying error core.
+        map_position : Decoded MAP position compared against ground truth.
+        """
+        from neurospatial.decoding.metrics import decoding_error
+
+        if self.times is None:
+            raise ValueError(
+                "error_against() requires decode times, but this "
+                "DecodingResult has times=None. Provide `times` when "
+                "constructing the result so the decode grid can be aligned "
+                "to the ground-truth track."
+            )
+
+        true_times = np.asarray(true_times, dtype=np.float64)
+        true_positions = np.asarray(true_positions, dtype=np.float64)
+
+        if true_times.ndim != 1:
+            raise ValueError(f"true_times must be 1D, got shape {true_times.shape}")
+        if np.any(np.diff(true_times) < 0):
+            raise ValueError(
+                "true_times must be sorted ascending (non-decreasing); "
+                "error_against() aligns ground truth onto decode times with "
+                "linear interpolation, which silently produces wrong results "
+                "for unsorted true_times. Sort true_times (and reorder "
+                "true_positions to match) before calling."
+            )
+        n_dims = self.env.n_dims
+        if true_positions.shape != (true_times.shape[0], n_dims):
+            raise ValueError(
+                f"true_positions must have shape ({true_times.shape[0]}, "
+                f"{n_dims}) to match true_times and the environment "
+                f"dimensionality, got {true_positions.shape}"
+            )
+
+        # Align ground truth onto decode times by interpolating each
+        # coordinate independently. np.interp clamps out-of-range times to
+        # the nearest endpoint.
+        decode_times = np.asarray(self.times, dtype=np.float64)
+        aligned = np.empty((decode_times.shape[0], n_dims), dtype=np.float64)
+        for d in range(n_dims):
+            aligned[:, d] = np.interp(decode_times, true_times, true_positions[:, d])
+
+        return decoding_error(
+            self.map_position,
+            aligned,
+            self.env,
+            metric=metric,
+        )

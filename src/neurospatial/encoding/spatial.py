@@ -990,6 +990,76 @@ class SpatialRatesResult(SpatialResultMixin):
         rates: NDArray[np.float64] = np.asarray(self.firing_rates)
         return self.env.plot_field(_to_numpy(rates[idx]), ax=ax, **kwargs)
 
+    def to_xarray(self) -> Any:
+        """Convert the firing-rate maps to an :class:`xarray.DataArray`.
+
+        Wraps the ``(n_neurons, n_bins)`` firing-rate matrix in a labeled
+        :class:`xarray.DataArray` with dims ``("neuron", "bin")``. The
+        ``neuron`` coordinate is the integer neuron index and the ``bin``
+        coordinate is the integer bin index.
+
+        Returns
+        -------
+        xarray.DataArray
+            Firing rates (Hz) with dims ``("neuron", "bin")``. The array
+            ``.values`` equal :attr:`firing_rates`. ``coords["neuron"]`` is
+            ``np.arange(n_neurons)`` and ``coords["bin"]`` is
+            ``np.arange(n_bins)``.
+
+        Raises
+        ------
+        ImportError
+            If ``xarray`` is not installed. xarray is an optional dependency;
+            install it with ``pip install neurospatial[xarray]`` or
+            ``pip install xarray``.
+
+        Notes
+        -----
+        ``xarray`` is imported lazily inside this method, so it never becomes
+        an import-time dependency of ``neurospatial``.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rates
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 50, (500, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> times = np.linspace(0, 50, 500)
+        >>> spike_times = [np.sort(rng.uniform(0, 50, n)) for n in (30, 40, 20)]
+        >>> result = compute_spatial_rates(
+        ...     env, spike_times, times, positions, bandwidth=10.0
+        ... )
+        >>> da = result.to_xarray()  # doctest: +SKIP
+        >>> da.dims  # doctest: +SKIP
+        ('neuron', 'bin')
+
+        See Also
+        --------
+        spatial_information : Per-neuron Skaggs spatial information.
+        """
+        try:
+            import xarray as xr
+        except ImportError as exc:
+            raise ImportError(
+                "to_xarray() requires the optional 'xarray' dependency, which "
+                "is not installed. Install it with "
+                "'pip install neurospatial[xarray]' or 'pip install xarray'."
+            ) from exc
+
+        rates: NDArray[np.float64] = np.asarray(self.firing_rates)
+        n_neurons, n_bins = rates.shape
+        return xr.DataArray(
+            rates,
+            dims=("neuron", "bin"),
+            coords={
+                "neuron": np.arange(n_neurons),
+                "bin": np.arange(n_bins),
+            },
+            name="firing_rate",
+        )
+
     def spatial_information(self) -> NDArray[np.float64] | Any:
         """Skaggs spatial information (bits per spike) for all neurons.
 

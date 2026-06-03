@@ -113,6 +113,10 @@ jax = [
     "jax>=0.4.30", # JAX core
     "jaxlib>=0.4.30", # JAX library (CPU)
 ]
+# xarray output adapters (optional)
+# Enables `.to_xarray()` on array-shaped result objects (DecodingResult,
+# SpatialRatesResult). xarray is imported lazily, never at import time.
+xarray = ["xarray"]
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
