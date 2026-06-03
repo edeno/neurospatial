@@ -215,6 +215,12 @@
 
 ### Bug fixes
 
+- `detect_assemblies` now clamps `n_components` to the achievable factorization
+  rank `min(n_neurons, n_time_bins)` (emitting a `UserWarning`) instead of
+  crashing on short recordings. Previously, requesting more components than
+  `n_time_bins` (with `n_time_bins < n_components <= n_neurons`) raised an
+  opaque `IndexError` for `pca`/`ica` or a `ValueError` for `nmf` from deep
+  inside the membership loop.
 - Weighted circular statistics (`rayleigh_test`, `circular_mean`,
   `circular_variance`, `mean_resultant_length`) now validate that `weights`
   is the same length as `angles` (a length-1 array is rejected, not

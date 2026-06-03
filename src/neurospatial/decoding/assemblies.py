@@ -542,6 +542,19 @@ def detect_assemblies(
                 f"n_components ({n_comp}) cannot exceed n_neurons ({n_neurons})"
             )
 
+    # The factorization can yield at most min(n_neurons, n_time_bins)
+    # components. Requesting more (short recordings) would index past the
+    # SVD output and raise IndexError downstream; clamp with a warning.
+    max_rank = min(n_neurons, n_time_bins)
+    if n_comp > max_rank:
+        warnings.warn(
+            f"n_components ({n_comp}) exceeds the achievable rank "
+            f"min(n_neurons, n_time_bins) = {max_rank}; using {max_rank}.",
+            UserWarning,
+            stacklevel=2,
+        )
+        n_comp = max_rank
+
     # Derive an integer seed for sklearn from the public ``rng`` argument.
     # sklearn estimators accept an int seed (or RandomState), not a numpy
     # Generator, so normalize a Generator to a reproducible integer seed.

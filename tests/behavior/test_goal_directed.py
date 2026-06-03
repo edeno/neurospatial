@@ -308,6 +308,33 @@ class TestApproachRate:
         valid_rates = result[~np.isnan(result)]
         assert_allclose(np.mean(np.abs(valid_rates)), 10.0, rtol=0.2)
 
+    def test_approach_rate_geodesic_branch(self):
+        """metric='geodesic' returns negative rates when approaching, NaN first."""
+        from neurospatial.behavior.navigation import approach_rate
+
+        rng = np.random.default_rng(0)
+        env = Environment.from_samples(rng.uniform(0, 100, (2000, 2)), bin_size=5.0)
+
+        # Straight walk from (10,50) toward goal at (90,50).
+        xs = np.linspace(10.0, 80.0, 20)
+        positions = np.column_stack([xs, np.full_like(xs, 50.0)])
+        times = np.linspace(0.0, 4.0, 20)
+        goal = np.array([90.0, 50.0])
+
+        rates = approach_rate(positions, times, goal, metric="geodesic", env=env)
+
+        assert np.isnan(rates[0])  # first value is NaN by contract
+        assert np.nanmean(rates) < 0  # approaching => distance decreasing
+
+    def test_approach_rate_geodesic_requires_env(self):
+        """metric='geodesic' without env raises a clear ValueError."""
+        from neurospatial.behavior.navigation import approach_rate
+
+        positions = np.column_stack([np.linspace(0, 50, 11), np.zeros(11)])
+        times = np.linspace(0, 5, 11)
+        with pytest.raises(ValueError, match="env parameter is required"):
+            approach_rate(positions, times, np.array([100.0, 0.0]), metric="geodesic")
+
 
 class TestGoalDirectedMetrics:
     """Test GoalDirectedMetrics dataclass."""

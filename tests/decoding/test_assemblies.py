@@ -729,3 +729,23 @@ class TestReactivationStrengthMagnitude:
         )
 
         assert strength < 1.0
+
+
+class TestDetectAssembliesShortRecording:
+    @pytest.mark.parametrize("algorithm", ["pca", "ica", "nmf"])
+    def test_n_time_bins_below_n_components_does_not_crash(
+        self, rng: np.random.Generator, algorithm: str
+    ) -> None:
+        """n_time_bins < n_components <= n_neurons must clamp, not IndexError."""
+        # 8 neurons, 3 time bins, request 5 components.
+        spike_counts = rng.poisson(5, (8, 3)).astype(np.float64)
+        with pytest.warns(UserWarning, match="achievable rank"):
+            result = detect_assemblies(
+                spike_counts,
+                algorithm=algorithm,
+                n_components=5,
+                rng=0,
+            )
+        # Clamped to min(n_neurons, n_time_bins) == 3 patterns; no crash.
+        assert len(result.patterns) <= 3
+        assert result.activations.shape[1] == 3  # n_time_bins preserved

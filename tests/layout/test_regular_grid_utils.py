@@ -86,6 +86,48 @@ def test_infer_active_bins_boundary_exists():
     assert mask[1]
 
 
+def test_infer_active_bins_boundary_exists_2d():
+    """boundary_exists trims the outer shell of a 2D grid on every axis."""
+    # Fully populate a 4x4 grid so all interior bins would otherwise be active.
+    edges = (np.array([0, 1, 2, 3, 4]), np.array([0, 1, 2, 3, 4]))
+    centers = np.array([[i + 0.5, j + 0.5] for i in range(4) for j in range(4)])
+    mask = _infer_active_bins_from_regular_grid(
+        centers, edges, bin_count_threshold=0, boundary_exists=True
+    )
+    assert mask.shape == (4, 4)
+    # Outer rows/cols inactive on both axes.
+    assert not mask[0, :].any()
+    assert not mask[-1, :].any()
+    assert not mask[:, 0].any()
+    assert not mask[:, -1].any()
+    # Interior preserved.
+    assert mask[1:-1, 1:-1].all()
+
+
+def test_infer_active_bins_boundary_exists_3d():
+    """boundary_exists trims the outer shell of a 3D grid on every axis."""
+    e = np.array([0, 1, 2, 3])
+    edges = (e, e, e)  # 3x3x3 grid
+    centers = np.array(
+        [
+            [i + 0.5, j + 0.5, k + 0.5]
+            for i in range(3)
+            for j in range(3)
+            for k in range(3)
+        ]
+    )
+    mask = _infer_active_bins_from_regular_grid(
+        centers, edges, bin_count_threshold=0, boundary_exists=True
+    )
+    assert mask.shape == (3, 3, 3)
+    # Every outer slab on all three axes is inactive.
+    assert not mask[0, :, :].any() and not mask[-1, :, :].any()
+    assert not mask[:, 0, :].any() and not mask[:, -1, :].any()
+    assert not mask[:, :, 0].any() and not mask[:, :, -1].any()
+    # The single interior bin (center) is the only one that can survive.
+    assert mask[1, 1, 1]
+
+
 def test_create_regular_grid_connectivity_2d_orthogonal():
     # 2x2 grid, all bins active, orthogonal connections
     centers_list = [0.5, 1.5]
