@@ -625,8 +625,21 @@ def rayleigh_test(
     # Validate input (handles NaN drop + Inf + min samples) and co-filter
     # weights so angle/weight alignment survives NaN removal. Weight
     # non-negativity and equal-length are enforced inside the validator.
+    #
+    # The validator's ``min_samples`` gate counts the number of *angles*
+    # (distinct samples). That is correct for UNWEIGHTED input but wrong for
+    # WEIGHTED (count) input: a genuinely well-tuned cell can put 100 spikes
+    # into just 1-2 angular bins, so the effective sample size is the total
+    # weight (sum of counts), not the number of occupied bins. For the
+    # weighted path we therefore only require >= 1 angle here and enforce the
+    # real minimum-sample-size check on ``sum(weights)`` below (via n_eff).
+    validator_min_samples = 1 if weights is not None else 3
     angles, weights = _validate_circular_input(
-        angles, "angles", min_samples=3, check_range=False, weights=weights
+        angles,
+        "angles",
+        min_samples=validator_min_samples,
+        check_range=False,
+        weights=weights,
     )
 
     n = len(angles)
@@ -650,6 +663,19 @@ def rayleigh_test(
             "Total weight (sum of weights) is zero; cannot run the weighted "
             "Rayleigh test. At least one angle must carry positive weight.\n"
             "Fix: check that your per-angle counts/occupancy are not all zero."
+        )
+
+    # Minimum effective sample size. For weighted (count) data the effective
+    # sample size is the total weight, so we enforce the same minimum (3) on
+    # ``n_eff`` that the validator enforces on the angle count for unweighted
+    # data. This rejects genuinely-insufficient data (e.g. 2 total spikes)
+    # while accepting a strongly-tuned cell whose many spikes land in only
+    # 1-2 angular bins.
+    if weights is not None and n_eff < 3:
+        raise ValueError(
+            f"Need at least 3 total weight (sum of counts) for the weighted "
+            f"Rayleigh test. Got sum(weights) = {n_eff:g}.\n"
+            f"Fix: provide more spikes/counts or use a different analysis method."
         )
 
     # Rayleigh z-statistic: z = n_eff * R^2.

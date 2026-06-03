@@ -741,7 +741,11 @@ class DirectionalRateResult(SpatialResultMixin):
         # resultant and must not be passed as a zero weight that still counts
         # toward n.
         valid = np.isfinite(centers) & np.isfinite(counts) & (counts > 0)
-        if valid.sum() < 3:
+        # Gate on the total spike count, not the number of occupied bins. A
+        # strongly-tuned cell can concentrate all its spikes in 1-2 angular
+        # bins; the effective sample size for the weighted Rayleigh test is
+        # sum(counts), so reject only when too few spikes are present overall.
+        if counts[valid].sum() < 3:
             return float(np.nan)
 
         _, pval = rayleigh_test(centers[valid], weights=counts[valid])

@@ -106,7 +106,13 @@ def _get_gaussian_kernel(
         theta = bin_centers[:, 1]
         d_r = r[:, None] - r[None, :]
         r_mean = 0.5 * (r[:, None] + r[None, :])
-        d_theta = theta[:, None] - theta[None, :]
+        # Wrap the angular difference into [-pi, pi] so bins straddling the
+        # -pi/+pi seam are treated as adjacent (Delta theta ~ 0) rather than
+        # ~2*pi apart. Without this wrap the seam gets a vanishing Gaussian
+        # weight, a hard artifact for egocentric-polar gaussian_kde. The
+        # diffusion_kde path is unaffected: it smooths over the environment
+        # graph, whose connectivity already includes the angular wrap edges.
+        d_theta = (theta[:, None] - theta[None, :] + np.pi) % (2.0 * np.pi) - np.pi
         arc = r_mean * d_theta
         dist_sq = d_r**2 + arc**2
     else:

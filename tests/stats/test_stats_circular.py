@@ -170,6 +170,37 @@ def test_rayleigh_test_integer_weights_match_replication():
     assert_allclose(p_weighted, p_repeat, rtol=1e-9)
 
 
+def test_rayleigh_test_concentrated_counts_significant():
+    """100 spikes in 2 adjacent bins is strongly tuned, not rejected as NaN.
+
+    The effective sample size for weighted (count) data is sum(weights), not
+    the number of occupied angular bins. Two bins carrying 100 spikes must
+    therefore yield a small p-value matching physical replication, rather
+    than tripping the min-samples gate.
+    """
+    centers = np.array([0.0, 0.1])
+    counts = np.array([60.0, 40.0])  # 100 spikes total in 2 adjacent bins
+
+    z_weighted, p_weighted = rayleigh_test(centers, weights=counts)
+
+    # Significant, not NaN.
+    assert np.isfinite(p_weighted)
+    assert p_weighted < 1e-10
+
+    # Matches the physical oracle: repeat each angle by its count.
+    z_repeat, p_repeat = rayleigh_test(np.repeat(centers, counts.astype(int)))
+    assert_allclose(z_weighted, z_repeat, rtol=1e-9)
+    assert_allclose(p_weighted, p_repeat, rtol=1e-9)
+
+
+def test_rayleigh_test_insufficient_total_weight_raises():
+    """Too few total counts (sum < 3) is genuinely insufficient and rejected."""
+    centers = np.array([0.0, 0.1])
+    counts = np.array([1.0, 1.0])  # only 2 spikes total
+    with pytest.raises(ValueError, match="3 total weight"):
+        rayleigh_test(centers, weights=counts)
+
+
 def test_mean_resultant_length_length1_weights_raises(concentrated_angles):
     """``mean_resultant_length`` rejects a length-1 weight array."""
     with pytest.raises(ValueError, match="Length mismatch"):

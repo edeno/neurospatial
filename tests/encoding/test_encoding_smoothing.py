@@ -16,6 +16,7 @@ from neurospatial import Environment
 
 # Import will fail until we implement the module
 from neurospatial.encoding._smoothing import (
+    _get_gaussian_kernel,
     smooth_rate_map,
     smooth_rate_maps_batch,
 )
@@ -808,3 +809,65 @@ class TestBackwardCompatibility:
 
         # Result should still be valid
         assert np.any(np.isfinite(result))
+
+
+# =============================================================================
+# Polar Gaussian Kernel: Angular Seam Wrap
+# =============================================================================
+
+
+class TestPolarGaussianKernelSeam:
+    """The polar gaussian kernel must wrap the -pi/+pi angular seam.
+
+    Without wrapping, bins straddling the seam are treated as ~2*pi apart and
+    receive a vanishing Gaussian weight, a hard artifact for egocentric-polar
+    ``gaussian_kde`` smoothing. After the fix, seam-adjacent bins are weighted
+    like any other angularly-adjacent pair.
+    """
+
+    @staticmethod
+    def _polar_env() -> Environment:
+        return Environment.from_polar_egocentric(
+            distance_range=(0.0, 50.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=10.0,
+            angle_bin_size=np.pi / 6,  # 12 angular bins
+        )
+
+    def test_seam_weight_comparable_to_normal_neighbor(self) -> None:
+        env = self._polar_env()
+        kernel = _get_gaussian_kernel(env, bandwidth=5.0)
+
+        centers = np.asarray(env.bin_centers)
+        r = centers[:, 0]
+        theta = centers[:, 1]
+
+        # Work within a single radial ring so only the angular term varies.
+        ring_r = np.unique(r)[1]  # skip the innermost ring (r ~ 0)
+        ring = np.flatnonzero(np.isclose(r, ring_r))
+        ring_theta = theta[ring]
+        order = np.argsort(ring_theta)
+        ring = ring[order]
+        ring_theta = ring_theta[order]
+
+        # Seam pair: the most-negative and most-positive angles (adjacent
+        # across +-pi). Normal pair: two adjacent angles in the middle.
+        seam_a, seam_b = int(ring[0]), int(ring[-1])
+        mid = len(ring) // 2
+        normal_a, normal_b = int(ring[mid]), int(ring[mid + 1])
+        # Truly-far pair: roughly opposite angles (~pi apart).
+        far_a, far_b = int(ring[0]), int(ring[mid])
+
+        # Sanity: seam pair really straddles the seam (angles ~2*pi apart raw).
+        assert abs(ring_theta[-1] - ring_theta[0]) > np.pi
+
+        seam_w = kernel[seam_a, seam_b]
+        normal_w = kernel[normal_a, normal_b]
+        far_w = kernel[far_a, far_b]
+
+        # Fail-before: seam_w was ~2.7e-7 (vanishing). After wrapping it is
+        # comparable to a normal angular neighbor and clearly >> the old value.
+        assert seam_w == pytest.approx(normal_w, rel=1e-9)
+        assert seam_w > 1e-3
+        # And clearly larger than between two truly-far angular bins.
+        assert seam_w > 10.0 * far_w

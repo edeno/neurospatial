@@ -226,6 +226,28 @@
 
 ### Bug fixes
 
+- Egocentric-polar `gaussian_kde` smoothing now wraps the angular `-pi/+pi`
+  seam. The dense polar Gaussian kernel previously used the raw angular
+  difference `theta_i - theta_j`, so two bins straddling the seam were treated
+  as ~`2*pi` apart and received a vanishing weight (~`1e-65` vs ~`0.29` for a
+  normal angular neighbor) — a hard artifact at the back of the egocentric
+  field. The angular difference is now wrapped into `[-pi, pi]` before forming
+  the polar arc distance `(r_mean * dtheta)`, so seam-adjacent bins are
+  weighted like any other angularly-adjacent pair. The radial term, the
+  Cartesian (non-polar) branch, and the graph-based `diffusion_kde` path
+  (whose connectivity already includes the wrap edges) are unchanged.
+- The weighted (count) Rayleigh test no longer rejects strongly-tuned cells
+  whose spikes concentrate in only 1–2 angular bins. `rayleigh_test` validated
+  the minimum sample size against the number of distinct angles, and
+  `DirectionalRateResult.rayleigh_pvalue()` gated on the number of nonzero-count
+  bins (`< 3 -> NaN`); a head-direction/object-vector cell with all spikes in
+  two adjacent bins was therefore reported as NaN despite being genuinely,
+  strongly tuned. For weighted input the effective sample size is now the total
+  weight (`sum(counts)`), so 100 spikes in 2 bins returns a significant
+  p-value (≈`8e-44`, matching `np.repeat` physical replication) instead of NaN.
+  Genuinely-insufficient data is still rejected (`sum(weights) < 3`), and the
+  count-weighting (not Hz), scale-invariance, and NaN co-filter behavior are
+  unchanged.
 - `EgocentricPolarEnvironment` now rejects **every** inherited method that
   assumes Cartesian `(x, y[, z])` coordinates or a Cartesian grid, raising
   `NotImplementedError` with a polar-specific message instead of silently

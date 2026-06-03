@@ -3985,6 +3985,34 @@ class TestRayleighPvalueCountWeighting:
         # And the count-weighted statistic is distinct from the rate-weighted.
         assert abs(z_count - z_rate) > 1e-6
 
+    def test_rayleigh_pvalue_concentrated_two_bins_not_nan(self) -> None:
+        """A cell with all spikes in 1-2 bins is strongly tuned, not NaN.
+
+        The effective sample size is the total spike count, not the number of
+        occupied angular bins, so a sharply tuned cell concentrating 100
+        spikes into 2 adjacent bins must yield a small p-value (significant)
+        rather than tripping the old distinct-bin gate and returning NaN.
+        """
+        from neurospatial.stats.circular import rayleigh_test
+
+        n = 36
+        centers = np.linspace(0, 2 * np.pi, n, endpoint=False)
+        counts = np.zeros(n)
+        counts[10] = 60.0  # 100 spikes in 2 adjacent angular bins
+        counts[11] = 40.0
+        occ = np.ones(n) * 0.5
+        rate = counts / occ
+        result = self._make_result(rate, occ, counts)
+
+        pval = result.rayleigh_pvalue()
+        assert np.isfinite(pval)
+        assert pval < 1e-10
+
+        # Matches the underlying count-weighted Rayleigh on the occupied bins.
+        valid = counts > 0
+        _, expected = rayleigh_test(centers[valid], weights=counts[valid])
+        assert pval == pytest.approx(expected, rel=1e-12)
+
 
 class TestComputeDirectionalRateSpikeCounts:
     """compute_directional_rate / _rates plumb spike counts through."""
