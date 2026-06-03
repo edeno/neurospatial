@@ -17,6 +17,7 @@ decoding_correlation
 
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING, Literal, cast
 
 import numpy as np
@@ -271,6 +272,13 @@ def confusion_matrix(
         If ``actual_bins`` contains values outside [0, n_bins).
         If shapes are inconsistent.
 
+    Notes
+    -----
+    Time bins whose posterior row contains any NaN/Inf entry are dropped
+    from the matrix (a ``UserWarning`` reports how many), so they neither
+    inflate the bin-0 column under ``"map"`` nor poison an actual-bin row
+    under ``"expected"``.
+
     Examples
     --------
     >>> import numpy as np
@@ -335,17 +343,31 @@ def confusion_matrix(
     # Initialize confusion matrix
     cm = np.zeros((n_bins, n_bins), dtype=np.float64)
 
-    if summary_method == "map":
-        # Use argmax to get decoded bin for each time step
-        decoded_bins = np.argmax(posterior, axis=1)
+    # Rows with any non-finite posterior entry are undecodable (e.g. a
+    # time bin with no spikes against a masked environment). argmax over
+    # a NaN row returns bin 0, and accumulating a NaN row into the
+    # "expected" matrix poisons that actual-bin's entire row. Drop such
+    # rows from both summaries and surface how many were excluded.
+    finite_rows = np.isfinite(posterior).all(axis=1)
+    n_dropped = int(np.sum(~finite_rows))
+    if n_dropped > 0:
+        warnings.warn(
+            f"confusion_matrix: skipped {n_dropped} of {n_time_bins} time "
+            f"bins whose posterior contained NaN/Inf. The returned matrix is "
+            f"built from the remaining {n_time_bins - n_dropped} bins.",
+            UserWarning,
+            stacklevel=2,
+        )
 
-        # Vectorized counting using np.add.at (much faster for large datasets)
-        np.add.at(cm, (actual_bins, decoded_bins), 1.0)
+    if summary_method == "map":
+        # Use argmax to get decoded bin for each (finite) time step.
+        decoded_bins = np.argmax(posterior[finite_rows], axis=1)
+        # Vectorized counting using np.add.at.
+        np.add.at(cm, (actual_bins[finite_rows], decoded_bins), 1.0)
 
     else:  # summary_method == "expected"
-        # Accumulate posterior mass: cm[actual, :] += posterior[t, :]
-        # Vectorized using np.add.at with row indices
-        np.add.at(cm, actual_bins, posterior)
+        # Accumulate posterior mass only from finite rows.
+        np.add.at(cm, actual_bins[finite_rows], posterior[finite_rows])
 
     return cm
 

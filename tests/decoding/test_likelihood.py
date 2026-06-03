@@ -441,3 +441,48 @@ class TestLongTrajectoryStability:
         log_likelihood = log_poisson_likelihood(spike_counts, encoding_models, 0.1)
 
         assert np.isfinite(log_likelihood).all()
+
+
+# =============================================================================
+# spike_counts dimensionality / neuron-count regressions
+# =============================================================================
+
+
+class TestLogPoissonLikelihoodShapeGuards:
+    """log_poisson_likelihood must require a 2-D spike_counts time axis."""
+
+    def test_log_poisson_likelihood_rejects_1d_spike_counts(
+        self,
+        simple_encoding_models: np.ndarray,
+    ) -> None:
+        """A 1-D (n_neurons,) spike_counts collapses the time axis; reject it."""
+        n_neurons = simple_encoding_models.shape[0]
+        spike_counts_1d = np.array([1] * n_neurons, dtype=np.int64)
+
+        with pytest.raises(ValueError, match=r"2-D|n_time_bins, n_neurons"):
+            log_poisson_likelihood(spike_counts_1d, simple_encoding_models, dt=0.025)
+
+    def test_log_poisson_likelihood_neuron_mismatch(
+        self,
+        simple_encoding_models: np.ndarray,
+    ) -> None:
+        """spike_counts neuron axis must match encoding_models neuron axis."""
+        n_neurons = simple_encoding_models.shape[0]
+        # One extra neuron column than the encoding models provide.
+        spike_counts = np.ones((2, n_neurons + 1), dtype=np.int64)
+
+        with pytest.raises(ValueError, match=r"[Nn]euron"):
+            log_poisson_likelihood(spike_counts, simple_encoding_models, dt=0.025)
+
+    def test_log_poisson_likelihood_2d_single_timebin_ok(
+        self,
+        simple_encoding_models: np.ndarray,
+    ) -> None:
+        """Shape (1, n_neurons) is the supported single-time-bin remedy."""
+        n_neurons, n_bins = simple_encoding_models.shape
+        spike_counts = np.ones((1, n_neurons), dtype=np.int64)
+
+        ll = log_poisson_likelihood(spike_counts, simple_encoding_models, dt=0.025)
+
+        assert ll.shape == (1, n_bins)
+        assert np.isfinite(ll).all()

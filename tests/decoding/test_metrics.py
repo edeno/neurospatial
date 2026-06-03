@@ -950,3 +950,54 @@ class TestDecodingCorrelationEdgeCases:
 
 class TestDecodingCorrelationSuccessCriteria:
     """Test success criteria from TASKS.md for Milestone 2.3."""
+
+
+class TestConfusionMatrixNaNRows:
+    """confusion_matrix must drop time bins with non-finite posterior rows."""
+
+    def test_confusion_matrix_skips_nan_rows_map(self, small_2d_env):
+        """A NaN row contributes nothing under 'map' and warns."""
+        from neurospatial.decoding.metrics import confusion_matrix
+
+        n_bins = small_2d_env.n_bins
+        assert n_bins >= 3
+
+        # Two finite rows decoding to bin 2, one all-NaN row.
+        posterior = np.zeros((3, n_bins))
+        posterior[0, 2] = 1.0
+        posterior[1, 2] = 1.0
+        posterior[2, :] = np.nan
+        actual_bins = np.array([2, 2, 1], dtype=np.int64)
+
+        with pytest.warns(UserWarning, match="NaN"):
+            cm = confusion_matrix(
+                small_2d_env, posterior, actual_bins, summary_method="map"
+            )
+
+        # Only the two finite rows count; bin-0 column is not inflated.
+        assert cm.sum() == 2.0
+        assert cm[2, 2] == 2.0
+        assert cm[:, 0].sum() == 0.0
+
+    def test_confusion_matrix_skips_nan_rows_expected(self, small_2d_env):
+        """A NaN row does not poison its actual-bin row under 'expected'."""
+        from neurospatial.decoding.metrics import confusion_matrix
+
+        n_bins = small_2d_env.n_bins
+        assert n_bins >= 3
+
+        posterior = np.zeros((3, n_bins))
+        posterior[0, 2] = 1.0
+        posterior[1, 2] = 1.0
+        posterior[2, :] = np.nan
+        actual_bins = np.array([2, 2, 1], dtype=np.int64)
+
+        with pytest.warns(UserWarning, match="NaN"):
+            cm = confusion_matrix(
+                small_2d_env, posterior, actual_bins, summary_method="expected"
+            )
+
+        assert np.isfinite(cm).all()
+        # The NaN row's actual_bin (1) is unpoisoned: empty row.
+        assert cm[1, :].sum() == 0.0
+        assert cm[2, 2] == 2.0

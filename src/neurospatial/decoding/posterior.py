@@ -326,6 +326,12 @@ def decode_position(
     ValueError
         If method is not "poisson".
         If validate=True and validation checks fail.
+        If ``encoding_models`` bin count (axis 1) does not match
+        ``env.n_bins``. This is checked unconditionally, even with
+        ``validate=False``, because a wrong bin count yields a
+        well-formed posterior over the wrong positions.
+        If ``times`` is provided and its length does not match the number
+        of posterior time bins.
 
     Notes
     -----
@@ -379,7 +385,23 @@ def decode_position(
 
     # Validate inputs if requested
     if validate:
-        _validate_inputs(spike_counts, encoding_models, prior)
+        _validate_inputs(spike_counts, encoding_models, prior, env)
+
+    # Bin-count agreement is a *correctness* check, not an opt-in one:
+    # an encoding model with the wrong number of bins produces a
+    # well-formed posterior over the WRONG positions with no error.
+    # Enforce it even when validate=False.
+    if encoding_models.ndim != 2:
+        raise ValueError(
+            f"encoding_models must be 2-D (n_neurons, n_bins), got shape "
+            f"{encoding_models.shape}."
+        )
+    if encoding_models.shape[1] != env.n_bins:
+        raise ValueError(
+            f"encoding_models has {encoding_models.shape[1]} bins (axis 1) "
+            f"but env has {env.n_bins} active bins. The encoding models must "
+            f"be defined on the same environment used for decoding."
+        )
 
     # Compute log-likelihood using Poisson model
     log_ll = log_poisson_likelihood(spike_counts, encoding_models, dt=dt)
@@ -394,6 +416,13 @@ def decode_position(
     # Handle times
     if times is not None:
         times = np.asarray(times, dtype=np.float64)
+        n_time_bins = posterior.shape[0]
+        if times.ndim != 1 or len(times) != n_time_bins:
+            raise ValueError(
+                f"Length mismatch: times has {times.shape} but posterior has "
+                f"{n_time_bins} time bins. `times` must be a 1-D array of bin "
+                f"centers, one per row of spike_counts."
+            )
 
     # Return DecodingResult
     return DecodingResult(posterior=posterior, env=env, times=times)
@@ -403,6 +432,7 @@ def _validate_inputs(
     spike_counts: NDArray[np.int64],
     encoding_models: NDArray[np.float64],
     prior: NDArray[np.float64] | None,
+    env: Environment,
 ) -> None:
     """Validate inputs for ``decode_position``.
 
@@ -410,7 +440,8 @@ def _validate_inputs(
     ------
     ValueError
         If inputs contain NaN or Inf values, if any spike count is
-        negative, or if any encoding-model rate is negative.
+        negative, if any encoding-model rate is negative, or if the
+        encoding-model bin count does not match ``env.n_bins``.
     """
     # Check spike counts: finite first (NaN/Inf can't pass the < 0 check
     # cleanly), then non-negative. The error message tells the user how
@@ -471,6 +502,14 @@ def _validate_inputs(
             f"encoding_models contains {n_negative} negative entr"
             f"{'y' if n_negative == 1 else 'ies'} (min: {worst_rate:.6g} Hz). "
             "Firing rates must be non-negative."
+        )
+
+    # Encoding models must be defined on the decoding environment.
+    if encoding_models.ndim == 2 and encoding_models.shape[1] != env.n_bins:
+        raise ValueError(
+            f"encoding_models has {encoding_models.shape[1]} bins (axis 1) "
+            f"but env has {env.n_bins} active bins. Recompute the place "
+            f"fields on this environment before decoding."
         )
 
     # Check prior if provided. Convert to ndarray first because the

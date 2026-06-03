@@ -1082,3 +1082,58 @@ class TestLongTrajectoryStability:
 
         assert np.isfinite(posterior).all()
         np.testing.assert_allclose(posterior.sum(axis=1), 1.0, atol=1e-10)
+
+
+# =============================================================================
+# decode_position input-validation regressions
+# =============================================================================
+
+
+class TestDecodePositionValidation:
+    """decode_position must reject mismatched bin counts and times lengths."""
+
+    def test_decode_position_rejects_bin_count_mismatch(
+        self,
+        simple_env: Environment,
+        simple_spike_counts: np.ndarray,
+    ) -> None:
+        """encoding_models with wrong n_bins raises, with and without validate."""
+        from neurospatial.decoding.posterior import decode_position
+
+        n_neurons = simple_spike_counts.shape[1]
+        wrong_n_bins = simple_env.n_bins + 3
+        rng = np.random.default_rng(0)
+        bad_models = (
+            np.abs(rng.standard_normal((n_neurons, wrong_n_bins))) * 10 + 0.1
+        ).astype(np.float64)
+
+        with pytest.raises(ValueError, match="bins"):
+            decode_position(
+                simple_env, simple_spike_counts, bad_models, dt=0.025, validate=True
+            )
+
+        with pytest.raises(ValueError, match="bins"):
+            decode_position(
+                simple_env, simple_spike_counts, bad_models, dt=0.025, validate=False
+            )
+
+    def test_decode_position_rejects_times_length_mismatch(
+        self,
+        simple_env: Environment,
+        simple_spike_counts: np.ndarray,
+        simple_encoding_models: np.ndarray,
+    ) -> None:
+        """times of the wrong length raises a 'Length mismatch' ValueError."""
+        from neurospatial.decoding.posterior import decode_position
+
+        n_time_bins = simple_spike_counts.shape[0]
+        bad_times = np.arange(n_time_bins + 2, dtype=np.float64)
+
+        with pytest.raises(ValueError, match="Length mismatch"):
+            decode_position(
+                simple_env,
+                simple_spike_counts,
+                simple_encoding_models,
+                dt=0.025,
+                times=bad_times,
+            )

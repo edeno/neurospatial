@@ -10,6 +10,7 @@ import pytest
 from numpy.testing import assert_allclose
 
 from neurospatial.decoding.assemblies import (
+    AssemblyPattern,
     ExplainedVarianceResult,
     assembly_activation,
     detect_assemblies,
@@ -635,3 +636,100 @@ class TestEdgeCases:
 
         assert_allclose(result.explained_variance, 1.0)
         assert_allclose(result.reversed_ev, 1.0)
+
+
+# =============================================================================
+# Reactivation correctness regressions
+# =============================================================================
+
+
+class TestExplainedVarianceControlAndREV:
+    """EV/REV must use the control and the role-swapped partial correlation."""
+
+    def test_explained_variance_rev_differs_from_ev_with_control(
+        self,
+        corr_triplet: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """With a control, REV is the role-swapped partial corr, not == EV.
+
+        On a reactivation-positive triplet (template->match correlation
+        stronger than control->match after partialling) EV should exceed
+        REV, and the two must not be equal.
+        """
+        template, match, control = corr_triplet
+
+        result = explained_variance_reactivation(
+            template, match, control_correlations=control
+        )
+
+        assert result.reversed_ev != result.explained_variance
+        assert result.explained_variance > result.reversed_ev
+
+    def test_explained_variance_uses_control(
+        self,
+        corr_triplet: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """A control correlated with match must lower EV below r_tm**2."""
+        template, match, control = corr_triplet
+
+        with_control = explained_variance_reactivation(
+            template, match, control_correlations=control
+        )
+        no_control = explained_variance_reactivation(template, match)
+
+        # No-control EV is the plain r_tm**2; partialling out a control
+        # that is itself correlated with match strictly reduces EV.
+        assert with_control.explained_variance < no_control.explained_variance
+
+    def test_explained_variance_no_control_ev_equals_rev(self) -> None:
+        """Without a control, EV == REV == r_tm**2 (symmetric fallback)."""
+        rng = np.random.default_rng(11)
+        template = rng.standard_normal(80)
+        match = 0.7 * template + 0.7 * rng.standard_normal(80)
+
+        result = explained_variance_reactivation(template, match)
+
+        r_tm = np.corrcoef(template, match)[0, 1]
+        assert_allclose(result.explained_variance, r_tm**2)
+        assert_allclose(result.reversed_ev, r_tm**2)
+        assert_allclose(result.explained_variance, result.reversed_ev)
+
+
+class TestReactivationStrengthMagnitude:
+    """reactivation_strength must be sensitive to activation magnitude."""
+
+    def test_reactivation_strength_detects_magnitude(
+        self,
+        template_counts: np.ndarray,
+        assembly_pattern: AssemblyPattern,
+    ) -> None:
+        """A 3x stronger match period yields strength well above 1."""
+        match_counts = 3.0 * template_counts
+
+        strength = reactivation_strength(
+            template_counts, match_counts, assembly_pattern
+        )
+
+        assert strength > 1.5
+
+    def test_reactivation_strength_weak_match_below_one(
+        self,
+        template_counts: np.ndarray,
+        assembly_pattern: AssemblyPattern,
+    ) -> None:
+        """A match period with no assembly co-activation yields strength < 1.
+
+        The member neurons hold near their template baseline (no shared
+        drive), so the pattern projection stays small and the metric
+        reports much weaker match-period activation.
+        """
+        rng = np.random.default_rng(3)
+        baseline = template_counts.mean(axis=1, keepdims=True)
+        match_counts = np.broadcast_to(baseline, template_counts.shape).copy()
+        match_counts += 0.05 * rng.standard_normal(template_counts.shape)
+
+        strength = reactivation_strength(
+            template_counts, match_counts, assembly_pattern
+        )
+
+        assert strength < 1.0
