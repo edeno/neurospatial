@@ -438,10 +438,16 @@ print(f"{'Allocentric info':<30} {ovc_alloc_info:<12.3f} {pc_alloc_info:<12.3f}"
 #    score but requires picking smoothing parameters explicitly, so
 #    thresholds need to be tuned to your recording.
 #
-# We show both. They generally agree about whether a cell is an OVC,
-# but the score values themselves differ — pick one workflow and stick
-# with it. See the ``is_object_vector_cell`` docstring for guidance
-# on choosing thresholds.
+# We show both. Because they apply *different criteria* — the library
+# screen looks at egocentric spatial information alone, while the manual
+# screen requires both an object-vector score and an information
+# threshold — they can disagree. The place cell below is exactly such a
+# case: the info-only library screen returns ``True`` (the place field
+# carries enough egocentric information to clear ``min_info=0.3``), while
+# the stricter manual score+info screen returns ``False`` (its
+# object-vector score is far too low). Pick one workflow and stick with
+# it. See the ``is_object_vector_cell`` docstring for guidance on
+# choosing thresholds.
 
 # %%
 # 1. Library one-shot screener (raw-binned tuning, default thresholds)
