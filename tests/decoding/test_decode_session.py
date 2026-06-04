@@ -113,6 +113,43 @@ class TestDecodeSessionGoldenPath:
         result = decode_session(env, spike_times, times, positions, dt=0.1)
         assert isinstance(result, DecodingResult)
 
+    def test_times_as_python_list(self) -> None:
+        """`times` may be a plain Python list (coerced via np.asarray)."""
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=10, duration=10.0
+        )
+        result = decode_session(env, spike_times, list(times), positions, dt=0.1)
+        assert isinstance(result, DecodingResult)
+
+    def test_single_neuron_1d_spike_times(self) -> None:
+        """A bare 1-D spike-time array (single neuron) flows through correctly."""
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=1, duration=10.0
+        )
+        # Pass the single neuron's spikes as a bare 1-D array, not a list.
+        result = decode_session(env, spike_times[0], times, positions, dt=0.1)
+        assert isinstance(result, DecodingResult)
+        # One neuron -> one column of firing rates.
+        assert result.map_position.shape[0] == len(result.times)
+
+    def test_too_few_times_raises_clear_error(self) -> None:
+        """An empty `times` raises a clear ValueError naming the param.
+
+        The guard runs before the encode step, so the same clear error fires
+        whether or not ``encoding_models`` is precomputed.
+        """
+        import pytest
+
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, _, _ = _make_linear_track_sim(n_neurons=3, duration=10.0)
+        with pytest.raises(ValueError, match="times must have at least 2 samples"):
+            decode_session(env, spike_times, np.array([]), np.zeros((0, 2)), dt=0.1)
+
     def test_map_tracks_trajectory(self) -> None:
         """MAP position should track the true trajectory (median error < 25 cm on 100-cm track)."""
         from neurospatial.decoding import decode_session, decoding_error

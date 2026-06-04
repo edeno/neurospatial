@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
 if TYPE_CHECKING:
     from neurospatial.decoding._result import DecodingResult
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 def decode_session(
     env: Environment,
     spike_times: Any,
-    times: NDArray[np.float64],
+    times: ArrayLike,
     positions: NDArray[np.float64],
     *,
     dt: float = 0.025,
@@ -180,11 +180,10 @@ def decode_session(
     ...     encoding_models=models,
     ... )
     """
-    # Lazy imports: decoding -> encoding is an acceptable dependency direction,
-    # but we import inside the function to guarantee zero risk of circular
-    # imports at module-load time (encoding/__init__.py never imports from
-    # decoding, so this is safe; the lazy pattern mirrors how encoding/spatial.py
-    # handles its own heavy imports).
+    # Defer the `encoding` imports until call time: this keeps the decoding
+    # package importable even if `encoding` were ever to import from `decoding`
+    # (it does not today), so there is no circular-import risk at module load.
+    # Mirrors how encoding/spatial.py defers its own heavy imports.
     from neurospatial.decoding._binning import bin_spikes_in_time
     from neurospatial.decoding.posterior import decode_position
     from neurospatial.encoding import normalize_spike_times
@@ -193,6 +192,11 @@ def decode_session(
     # --- Normalize inputs ---
     trains = normalize_spike_times(spike_times)
     times_arr = np.asarray(times, dtype=np.float64)
+    if times_arr.size < 2:
+        raise ValueError(
+            f"times must have at least 2 samples to define a trajectory "
+            f"window, got {times_arr.size}."
+        )
 
     # --- Build encoding models if not provided ---
     if encoding_models is None:
