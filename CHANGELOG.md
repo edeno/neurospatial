@@ -72,6 +72,23 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ### Added
 
+- Experiment-shaped factory presets on `Environment` that speak experiment
+  vocabulary and delegate to the existing `from_*` factories:
+  - `Environment.open_field(positions, bin_size, ...)` — the only
+    positions-based preset; delegates to `from_samples` with `fill_holes=True`
+    flipped on (a sensible open-arena default that fills interior gaps).
+  - `Environment.linear_track(*, endpoints=..., node_positions=..., bin_size)`
+    — builds a 1D track graph (`is_linearized_track == True`) from an explicit
+    topology (two endpoints for a straight track, or waypoints for a
+    piecewise-linear track) and delegates to `from_graph`.
+  - `Environment.maze(kind, *, track_graph=..., node_positions=..., bin_size)`
+    — assembles the standard W / plus / T track-graph topology (or accepts a
+    ready `networkx` graph) and delegates to `from_graph`.
+
+  Track/maze presets require an explicit topology spec; raw positions cannot
+  infer a linear/W/plus/T graph, and calling them without a topology raises a
+  clear `ValueError`.
+
 - `to_xarray()` on `DirectionalRatesResult`, `ViewRatesResult`, and
   `EgocentricRatesResult` (the directional/view/egocentric population results
   previously had no xarray export). Each returns the labeled `xr.Dataset`
