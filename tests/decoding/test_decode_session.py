@@ -431,6 +431,135 @@ class TestDecodeSessionDecodeKwargs:
         assert len(result.times) == result.posterior.shape[0]
 
 
+class TestDecodeSessionOutOfWindowWarning:
+    """decode_session warns loudly when spikes fall outside the decode window.
+
+    Guards the units footgun (spike_times in ms while times is in seconds):
+    spikes ~1000x the trajectory window all fall outside [t_start, t_stop],
+    histogram silently drops them, and the posterior is plausible-but-wrong.
+    decode_session must surface this with exactly one UserWarning that covers
+    BOTH the encoding_models-provided branch and the None branch.
+    """
+
+    # Phrase shared across both encoding paths' warning text.
+    _MATCH = r"fell outside the decode time window"
+
+    def test_warns_in_encoding_models_branch(self) -> None:
+        """encoding_models= branch (skips compute_spatial_rates) still warns."""
+        import pytest
+
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=10, duration=10.0, seed=5
+        )
+        times_arr = np.asarray(times, dtype=np.float64)
+
+        # Build models on the in-window (seconds) data first.
+        models = compute_spatial_rates(
+            env,
+            spike_times,
+            times_arr,
+            positions,
+            bandwidth=5.0,
+            smoothing_method="diffusion_kde",
+            min_occupancy=0.0,
+            fill_value=0.0,
+        ).firing_rates
+
+        # Units footgun: spike times in ms (~1000x), so (nearly) all fall
+        # outside the seconds-scale decode window.
+        ms_spikes = [s * 1000.0 for s in spike_times]
+
+        with pytest.warns(UserWarning, match=self._MATCH):
+            decode_session(
+                env,
+                ms_spikes,
+                times,
+                positions,
+                dt=0.1,
+                encoding_models=models,
+            )
+
+    def test_single_warning_in_non_passthrough_branch(self) -> None:
+        """encoding_models=None branch emits exactly ONE matching warning.
+
+        The encoder's own duplicate warning must be suppressed; decode_session
+        owns the single unit-mismatch warning for the whole golden path.
+        """
+        import warnings
+
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=10, duration=10.0, seed=8
+        )
+        ms_spikes = [s * 1000.0 for s in spike_times]
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            decode_session(env, ms_spikes, times, positions, dt=0.1)
+
+        matching = [
+            w
+            for w in caught
+            if issubclass(w.category, UserWarning)
+            and "fell outside the decode time window" in str(w.message)
+        ]
+        assert len(matching) == 1, (
+            f"Expected exactly one decode-window warning, got {len(matching)}: "
+            f"{[str(w.message) for w in matching]}"
+        )
+
+    def test_in_window_is_silent(self) -> None:
+        """A normal in-window call raises NO drop warning."""
+        import warnings
+
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=10, duration=10.0, seed=21
+        )
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            decode_session(env, spike_times, times, positions, dt=0.1)
+
+        matching = [
+            w for w in caught if "fell outside the decode time window" in str(w.message)
+        ]
+        assert not matching, (
+            f"In-window decode should not warn, got: "
+            f"{[str(w.message) for w in matching]}"
+        )
+
+    def test_warn_on_drop_false_silences(self) -> None:
+        """warn_on_drop=False silences BOTH decode_session and the encoder."""
+        import warnings
+
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=10, duration=10.0, seed=34
+        )
+        ms_spikes = [s * 1000.0 for s in spike_times]
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            decode_session(env, ms_spikes, times, positions, dt=0.1, warn_on_drop=False)
+
+        matching = [
+            w
+            for w in caught
+            if "fell outside" in str(w.message)
+            or "fell outside the decode time window" in str(w.message)
+        ]
+        assert not matching, (
+            f"warn_on_drop=False should silence all drop warnings, got: "
+            f"{[str(w.message) for w in matching]}"
+        )
+
+
 class TestAsSpikeTrainsPublic:
     """as_spike_trains is publicly importable from neurospatial.encoding."""
 

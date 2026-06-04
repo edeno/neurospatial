@@ -9,14 +9,78 @@ position from spikes in ≤10 lines.
 
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+# Warn when more than this fraction of spikes fall outside the decode window.
+# Always < 1.0, so the 100%-dropped case (frac == 1.0) always warns.
+_DROP_WARN_THRESHOLD = 0.5
+
 if TYPE_CHECKING:
     from neurospatial.decoding._result import DecodingResult
     from neurospatial.environment import Environment
+
+
+def _warn_if_spikes_out_of_window(
+    trains: list[NDArray[np.float64]],
+    t_start: float,
+    t_stop: float,
+) -> None:
+    """Emit one UserWarning if most spikes fall outside the decode window.
+
+    Aggregates across all spike trains. Warns (does not raise) when the
+    dropped fraction exceeds ``_DROP_WARN_THRESHOLD`` (which also covers the
+    all-dropped case, since ``1.0 > 0.5``). A genuinely empty session is
+    legitimate, so an empty input never warns.
+
+    The message mirrors the wording of the encoding-path warning
+    (``_emit_time_window_warning`` in ``neurospatial.encoding._binning``):
+    it names the dropped count and total, the percentage, the decode time
+    window, the spike range, the units hypothesis, and the escape hatch.
+
+    Parameters
+    ----------
+    trains : list of ndarray
+        Per-neuron spike-time arrays (already normalized).
+    t_start, t_stop : float
+        Decode time window bounds ``[t_start, t_stop]`` (seconds).
+    """
+    total = sum(int(t.size) for t in trains)
+    if total == 0:
+        return
+
+    n_out = sum(int(np.count_nonzero((t < t_start) | (t > t_stop))) for t in trains)
+    if n_out == 0:
+        return
+
+    frac = n_out / total
+    if frac <= _DROP_WARN_THRESHOLD:
+        return
+
+    nonempty = [t for t in trains if t.size > 0]
+    if nonempty:
+        all_spikes = np.concatenate(nonempty)
+        range_part = (
+            f"spike_times.min()={all_spikes.min():.6g} "
+            f"spike_times.max()={all_spikes.max():.6g}. "
+        )
+    else:
+        range_part = ""
+
+    warnings.warn(
+        f"{n_out}/{total} spike_times "
+        f"({100 * frac:.0f}%) fell outside the decode time window "
+        f"[{t_start:.6g}, {t_stop:.6g}]; "
+        f"{range_part}"
+        f"Check that spike_times and times share units (both seconds). "
+        f"Dropped spikes do not contribute to the posterior. "
+        f"Set warn_on_drop=False to suppress this warning.",
+        UserWarning,
+        stacklevel=2,
+    )
 
 
 def decode_session(
@@ -30,6 +94,7 @@ def decode_session(
     smoothing_method: str = "diffusion_kde",
     min_occupancy: float = 0.0,
     encoding_models: NDArray[np.float64] | None = None,
+    warn_on_drop: bool = True,
     **decode_kwargs: Any,
 ) -> DecodingResult:
     """Encode, bin, and decode in one call.
@@ -80,6 +145,18 @@ def decode_session(
         models across multiple decoding passes or for injecting custom
         encoding models.  ``bandwidth``, ``smoothing_method``, and
         ``min_occupancy`` are ignored when this is set.
+    warn_on_drop : bool, optional
+        If ``True`` (the default), emit a single ``UserWarning`` when a large
+        fraction (>50%, which includes the all-dropped case) of spikes fall
+        outside the decode time window ``[times.min(), times.max()]`` and are
+        therefore silently excluded from the count matrix.  This guards the
+        common units footgun — ``spike_times`` in milliseconds while ``times``
+        is in seconds — which would otherwise produce an all-zero count matrix
+        and a plausible-but-wrong posterior.  The warning fires exactly once
+        per call and covers both the ``encoding_models``-provided branch (which
+        skips the encoder) and the ``encoding_models=None`` branch (where the
+        encoder's own redundant warning is suppressed).  Set to ``False`` to
+        suppress this warning (e.g. for a genuinely sparse session).
     **decode_kwargs
         Additional keyword arguments forwarded verbatim to
         :func:`~neurospatial.decoding.decode_position`.  Supported kwargs
@@ -122,8 +199,11 @@ def decode_session(
 
     **Time grid**:
     The decoding grid spans ``[times.min(), times.max()]`` in steps of
-    ``dt``.  Spikes outside this window are silently excluded by
-    :func:`~neurospatial.decoding.bin_spikes_in_time`.
+    ``dt``.  Spikes outside this window are excluded by
+    :func:`~neurospatial.decoding.bin_spikes_in_time`; when a large fraction
+    fall outside (the usual sign of a milliseconds-vs-seconds unit mismatch)
+    a single ``UserWarning`` is emitted naming the window, the dropped
+    fraction, and the spike range (unless ``warn_on_drop=False``).
 
     Examples
     --------
@@ -199,11 +279,27 @@ def decode_session(
             f"window, got {times_arr.size}."
         )
 
+    # Decode window — computed ONCE and reused for both the out-of-window drop
+    # check and the bin_spikes_in_time call so they agree exactly.
+    t_start = float(times_arr.min())
+    t_stop = float(times_arr.max())
+
+    # --- Out-of-window drop check (owns the single units-footgun warning) ---
+    # bin_spikes_in_time counts via np.histogram(..., bins=edges), which
+    # silently drops spikes outside [t_start, t_stop].  If spike_times are in
+    # milliseconds while times are in seconds, (nearly) all spikes fall outside
+    # the window → all-zero counts → a plausible-but-wrong posterior.  Surface
+    # this once here so it fires whether or not encoding_models is provided.
+    if warn_on_drop:
+        _warn_if_spikes_out_of_window(trains, t_start, t_stop)
+
     # --- Build encoding models if not provided ---
     if encoding_models is None:
         _method = cast(
             "Literal['diffusion_kde', 'gaussian_kde', 'binned']", smoothing_method
         )
+        # warn_on_drop=False: decode_session already warned once above for the
+        # whole golden path; the encoder must not emit a duplicate.
         rates_result = compute_spatial_rates(
             env,
             trains,
@@ -213,6 +309,7 @@ def decode_session(
             smoothing_method=_method,
             min_occupancy=min_occupancy,
             fill_value=0.0,
+            warn_on_drop=False,
         )
         firing_rates = np.asarray(rates_result.firing_rates, dtype=np.float64)
     else:
@@ -222,8 +319,8 @@ def decode_session(
     counts, centers = bin_spikes_in_time(
         trains,
         dt,
-        t_start=times_arr.min(),
-        t_stop=times_arr.max(),
+        t_start=t_start,
+        t_stop=t_stop,
     )
     # counts shape: (n_time_bins, n_neurons)  ← what decode_position expects
 

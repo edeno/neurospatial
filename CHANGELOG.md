@@ -40,6 +40,20 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ### Fixed
 
+- `decode_session` now warns loudly when most spikes fall outside the decode
+  time window `[times.min(), times.max()]` instead of silently dropping them.
+  Previously, when `encoding_models=` was passed (which skips
+  `compute_spatial_rates`), spikes outside the window were silently discarded
+  by `bin_spikes_in_time`'s `np.histogram`, so a milliseconds-vs-seconds unit
+  mismatch produced an all-zero count matrix and a plausible-but-wrong
+  posterior with no warning.  `decode_session` now owns a single
+  `UserWarning` (naming the dropped count/total, percentage, decode window,
+  spike range, and units hypothesis) that covers **both** the
+  `encoding_models`-provided and `encoding_models=None` branches; the
+  encoder's now-redundant duplicate is suppressed.  A new keyword-only
+  `warn_on_drop: bool = True` parameter silences it for genuinely sparse
+  sessions.
+
 - The bare-`Environment()` error now uses a unique code `[E1006]` (was
   `[E1001]`, which collided with "No active bins found") and points at the
   correct docs host (`https://edeno.github.io/neurospatial/`).  Documented in
