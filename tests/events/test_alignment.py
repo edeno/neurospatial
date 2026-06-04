@@ -233,6 +233,28 @@ class TestAlignSpikesToEvents:
         with pytest.raises(ValueError, match="Inf"):
             align_spikes_to_events(spike_times, event_times, window)
 
+    def test_invalid_event_times_inf(self):
+        """Inf in event_times raises ValueError (mirrors spike_times Inf check)."""
+        from neurospatial.events.alignment import align_spikes_to_events
+
+        spike_times = np.array([10.0])
+        event_times = np.array([10.0, np.inf])
+        window = (-1.0, 1.0)
+
+        with pytest.raises(ValueError, match="Inf"):
+            align_spikes_to_events(spike_times, event_times, window)
+
+    def test_valid_finite_event_times_not_rejected(self):
+        """Finite event_times array is not rejected (no false positive)."""
+        from neurospatial.events.alignment import align_spikes_to_events
+
+        spike_times = np.array([10.0, 10.5])
+        event_times = np.array([10.0, 20.0])
+        window = (-1.0, 1.0)
+
+        result = align_spikes_to_events(spike_times, event_times, window)
+        assert len(result) == 2
+
     # --- Output properties ---
 
     def test_output_sorted(self):

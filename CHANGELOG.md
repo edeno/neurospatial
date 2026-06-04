@@ -11,6 +11,11 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ### Fixed
 
+- `align_spikes_to_events` in `events/alignment.py` now rejects `event_times`
+  containing `Inf` values with a descriptive `ValueError`, matching the
+  existing `spike_times` Inf check and fulfilling the docstring promise.
+  Previously an `Inf` event time silently produced an empty-or-wrong result.
+
 - `behavior.trajectory` public functions (`compute_turn_angles`,
   `compute_step_lengths`, `mean_square_displacement`) and
   `behavior.navigation.traveled_path_length` now coerce `positions` (and
