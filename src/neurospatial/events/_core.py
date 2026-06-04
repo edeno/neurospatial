@@ -10,7 +10,7 @@ This module provides:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -72,6 +72,7 @@ class PeriEventResult:
     n_events: int
     window: tuple[float, float]
     bin_size: float
+    unit_id: int | str | None = None
     firing_rate: NDArray[np.float64] = field(init=False)
 
     def __post_init__(self) -> None:
@@ -139,14 +140,24 @@ class PopulationPeriEventResult:
     n_units: int
     window: tuple[float, float]
     bin_size: float
+    unit_ids: NDArray[Any] = field(default=None, compare=False)  # type: ignore[arg-type]
+    unit_table: pd.DataFrame | None = field(default=None, compare=False)
     firing_rates: NDArray[np.float64] = field(init=False)
     mean_firing_rate: NDArray[np.float64] = field(init=False)
 
     def __post_init__(self) -> None:
+        from neurospatial._results import resolve_unit_ids
+
         # Frozen dataclass: bypass setattr to populate the cached fields.
         object.__setattr__(self, "firing_rates", self.histograms / self.bin_size)
         object.__setattr__(
             self, "mean_firing_rate", self.mean_histogram / self.bin_size
+        )
+        n_units = int(np.asarray(self.histograms).shape[0])
+        object.__setattr__(
+            self,
+            "unit_ids",
+            resolve_unit_ids(self.unit_ids, n_units),
         )
 
 

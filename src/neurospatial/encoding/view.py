@@ -77,7 +77,7 @@ neurospatial.ops.visibility : Visibility and gaze computation
 from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
@@ -210,6 +210,7 @@ class ViewRateResult(SpatialResultMixin):
     view_distance: float
     smoothing_method: str
     bandwidth: float
+    unit_id: int | str | None = None
 
     def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the view field (firing rate by viewed location).
@@ -555,6 +556,18 @@ class ViewRatesResult(SpatialResultMixin):
     view_distance: float
     smoothing_method: str
     bandwidth: float
+    unit_ids: NDArray[Any] = field(default=None, compare=False)  # type: ignore[arg-type]
+    unit_table: pd.DataFrame | None = field(default=None, compare=False)
+
+    def __post_init__(self) -> None:
+        from neurospatial._results import resolve_unit_ids
+
+        n_units = int(np.asarray(self.firing_rates).shape[0])
+        object.__setattr__(
+            self,
+            "unit_ids",
+            resolve_unit_ids(self.unit_ids, n_units),
+        )
 
     def __len__(self) -> int:
         """Return the number of neurons.
@@ -622,6 +635,7 @@ class ViewRatesResult(SpatialResultMixin):
             view_distance=self.view_distance,
             smoothing_method=self.smoothing_method,
             bandwidth=self.bandwidth,
+            unit_id=self.unit_ids[idx],
         )
 
     def __iter__(self) -> Iterator[ViewRateResult]:
@@ -1289,6 +1303,7 @@ def compute_view_rates(
     min_occupancy: float = 0.0,
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
+    unit_ids: NDArray[Any] | Sequence[Any] | None = None,
 ) -> ViewRatesResult:
     """Compute view fields for multiple neurons.
 
@@ -1356,6 +1371,12 @@ def compute_view_rates(
         - 'numpy': Use NumPy (always available)
         - 'jax': Use JAX for rate computation (requires JAX installation)
         - 'auto': Use JAX if available, otherwise NumPy
+    unit_ids : ndarray or sequence, optional
+        Per-unit identity labels (integers or strings), one per neuron in
+        the same order as ``spike_times``. Stored on the result's
+        ``unit_ids`` field and stamped onto each child's ``unit_id`` when
+        indexing/iterating. Defaults to ``np.arange(n_neurons)``. A
+        wrong-length value raises ``ValueError``.
 
     Returns
     -------
@@ -1513,6 +1534,13 @@ def compute_view_rates(
     spike_times_list = as_spike_trains(spike_times)
     n_neurons = len(spike_times_list)
 
+    # Resolve and validate per-unit identity labels (defaults to arange).
+    from neurospatial._results import resolve_unit_ids
+
+    resolved_unit_ids = resolve_unit_ids(
+        unit_ids, n_neurons, context="compute_view_rates"
+    )
+
     # Convert inputs to arrays
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
@@ -1562,6 +1590,7 @@ def compute_view_rates(
             view_distance=view_distance,
             smoothing_method=smoothing_method,
             bandwidth=bandwidth,
+            unit_ids=resolved_unit_ids,
         )
 
     # Bin spike trains by viewed location and compute view occupancy
@@ -1606,6 +1635,7 @@ def compute_view_rates(
         view_distance=view_distance,
         smoothing_method=smoothing_method,
         bandwidth=bandwidth,
+        unit_ids=resolved_unit_ids,
     )
 
 

@@ -48,7 +48,7 @@ neurospatial.stats.circular : Circular statistics utilities
 from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
@@ -221,6 +221,7 @@ class DirectionalRateResult(SpatialResultMixin):
     bin_size: float
     bandwidth: float | None
     spike_counts: ArrayLike | None = None
+    unit_id: int | str | None = None
 
     @property
     def _bin_centers(self) -> NDArray[np.float64]:
@@ -1050,6 +1051,18 @@ class DirectionalRatesResult(SpatialResultMixin):
     bin_size: float
     bandwidth: float | None
     spike_counts: ArrayLike | None = None  # shape (n_neurons, n_bins)
+    unit_ids: NDArray[Any] = field(default=None, compare=False)  # type: ignore[arg-type]
+    unit_table: pd.DataFrame | None = field(default=None, compare=False)
+
+    def __post_init__(self) -> None:
+        from neurospatial._results import resolve_unit_ids
+
+        n_units = int(np.asarray(self.firing_rates).shape[0])
+        object.__setattr__(
+            self,
+            "unit_ids",
+            resolve_unit_ids(self.unit_ids, n_units),
+        )
 
     @property
     def _bin_centers(self) -> NDArray[np.float64]:
@@ -1109,6 +1122,7 @@ class DirectionalRatesResult(SpatialResultMixin):
             bin_size=self.bin_size,
             bandwidth=self.bandwidth,
             spike_counts=(None if counts is None else np.asarray(counts)[idx]),
+            unit_id=self.unit_ids[idx],
         )
 
     def __iter__(self) -> Iterator[DirectionalRateResult]:
@@ -1753,6 +1767,7 @@ def compute_directional_rates(
     angle_unit: Literal["rad", "deg"] = "rad",
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
+    unit_ids: NDArray[Any] | Sequence[Any] | None = None,
 ) -> DirectionalRatesResult:
     """Compute directional firing rates for multiple neurons.
 
@@ -1820,6 +1835,12 @@ def compute_directional_rates(
         - 'numpy': Use NumPy (always available)
         - 'jax': Use JAX for output arrays (smoothing uses NumPy/SciPy)
         - 'auto': Use JAX if available, otherwise NumPy
+    unit_ids : ndarray or sequence, optional
+        Per-unit identity labels (integers or strings), one per neuron in
+        the same order as ``spike_times``. Stored on the result's
+        ``unit_ids`` field and stamped onto each child's ``unit_id`` when
+        indexing/iterating. Defaults to ``np.arange(n_neurons)``. A
+        wrong-length value raises ``ValueError``.
 
     Returns
     -------
@@ -1917,6 +1938,13 @@ def compute_directional_rates(
     spike_times_list: list[NDArray[np.float64]] = as_spike_trains(spike_times)
     n_neurons = len(spike_times_list)
 
+    # Resolve and validate per-unit identity labels (defaults to arange).
+    from neurospatial._results import resolve_unit_ids
+
+    resolved_unit_ids = resolve_unit_ids(
+        unit_ids, n_neurons, context="compute_directional_rates"
+    )
+
     # Convert inputs to arrays (1D required; validated below)
     times = np.asarray(times, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
@@ -1970,6 +1998,7 @@ def compute_directional_rates(
             bin_size=actual_bin_size_rad,
             bandwidth=bandwidth_rad,
             spike_counts=empty_counts,
+            unit_ids=resolved_unit_ids,
         )
 
     # Helper function to process a single neuron's spike train
@@ -2032,6 +2061,7 @@ def compute_directional_rates(
         bin_size=actual_bin_size_rad,
         bandwidth=bandwidth_rad,
         spike_counts=spike_counts_all,
+        unit_ids=resolved_unit_ids,
     )
 
 

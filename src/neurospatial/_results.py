@@ -35,11 +35,63 @@ without forcing a single tabular shape onto every result.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
+
+import numpy as np
+from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     import pandas as pd
     from matplotlib.axes import Axes
+
+
+def resolve_unit_ids(
+    unit_ids: NDArray[Any] | Sequence[Any] | None,
+    n_units: int,
+    *,
+    context: str = "",
+) -> NDArray[Any]:
+    """Resolve and validate per-unit identity labels.
+
+    Returns an ``ndarray`` of unit identity labels, defaulting to
+    ``np.arange(n_units)`` when ``unit_ids`` is ``None``. When labels are
+    provided, validates that exactly one label is supplied per unit.
+
+    Parameters
+    ----------
+    unit_ids : ndarray or sequence or None
+        Per-unit identity labels. May be integers or strings. When ``None``,
+        defaults to ``np.arange(n_units)``.
+    n_units : int
+        Number of units the labels must describe.
+    context : str, optional
+        Caller name included in the error message on a length mismatch.
+
+    Returns
+    -------
+    ndarray
+        Resolved labels as a 1D array of length ``n_units``.
+
+    Raises
+    ------
+    ValueError
+        If ``unit_ids`` is provided and its length does not equal ``n_units``.
+    """
+    if unit_ids is None:
+        return np.arange(n_units)
+
+    resolved = np.asarray(unit_ids)
+    if resolved.shape[0] != n_units:
+        where = f" in {context}" if context else ""
+        raise ValueError(
+            f"unit_ids length mismatch{where}: got {resolved.shape[0]} "
+            f"label(s) but there are {n_units} unit(s).\n"
+            "  WHY: each unit must have exactly one identity label.\n"
+            "  HOW: pass unit_ids with one entry per unit, or omit it to "
+            "default to np.arange(n_units)."
+        )
+    return resolved
 
 
 class ResultMixin:

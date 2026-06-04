@@ -11,6 +11,24 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ### Added
 
+- Durable unit identity on encoding/events results. Every population result
+  (`SpatialRatesResult`, `DirectionalRatesResult`, `ViewRatesResult`,
+  `EgocentricRatesResult`, `PopulationPeriEventResult`) now carries a
+  `unit_ids: np.ndarray` field (plus an optional `unit_table: pd.DataFrame |
+  None`), and every single-unit result (`SpatialRateResult`,
+  `DirectionalRateResult`, `ViewRateResult`, `EgocentricRateResult`,
+  `PeriEventResult`) carries a singular `unit_id`. Indexing or iterating a
+  population result stamps the per-unit label onto the child
+  (`rates[i].unit_id == rates.unit_ids[i]`, iteration preserves order and
+  labels). The batch compute functions (`compute_spatial_rates`,
+  `compute_directional_rates`, `compute_view_rates`,
+  `compute_egocentric_rates`, `population_peri_event_histogram`) gained a
+  keyword-only `unit_ids=` parameter that threads onto the result; a
+  wrong-length value raises a clear `ValueError`. Fully back-compatible:
+  `unit_ids` defaults to `np.arange(n_units)` and the new fields are
+  `compare=False`, so existing callers and equality/hash behavior are
+  unchanged.
+
 - `decode_session(env, spike_times, times, positions, *, dt, ...)` — one-call
   encode→bin→decode golden path in `neurospatial.decoding.session`.  Glues
   `compute_spatial_rates`, `bin_spikes_in_time`, and `decode_position` into a
