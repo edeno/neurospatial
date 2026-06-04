@@ -237,6 +237,7 @@ result = decode_session(
     positions,
     dt=0.1,  # 100 ms time bins
     bandwidth=5.0,  # place-field smoothing bandwidth (cm)
+    min_occupancy=0.5,  # match the manual path below so the two agree exactly
 )
 
 print("Decoding complete (one call)!")
