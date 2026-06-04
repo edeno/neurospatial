@@ -525,10 +525,13 @@ class EnvironmentQueries:
         if isinstance(targets, str):
             region_name = targets
             if region_name not in self.regions:
-                # Local import: neurospatial.__init__ loads environment.core
-                # (which imports this module) before _exceptions, and
-                # _exceptions imports environment.decorators — so a top-level
-                # import here creates an init-time circular import.
+                # Local import: neurospatial.__init__ imports _exceptions before
+                # environment. _exceptions imports environment.decorators, which
+                # pulls in environment.core, which imports this module — re-
+                # entering while _exceptions is still initializing. A top-level
+                # `from neurospatial._exceptions import RegionNotFoundError` here
+                # would therefore be a partially-initialized-module circular
+                # import.
                 from neurospatial._exceptions import RegionNotFoundError
 
                 raise RegionNotFoundError(

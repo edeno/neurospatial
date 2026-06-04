@@ -140,8 +140,9 @@ def decode_session(
     >>> rng = np.random.default_rng(0)
     >>> positions_raw = np.column_stack([np.linspace(0.0, 100.0, 500), np.zeros(500)])
     >>> env = Environment.from_samples(positions_raw, bin_size=5.0)  # doctest: +SKIP
+    >>> env.units = "cm"  # required by simulate_trajectory_ou  # doctest: +SKIP
     >>> positions, times = simulate_trajectory_ou(  # doctest: +SKIP
-    ...     env, duration=10.0, seed=0
+    ...     env, duration=10.0, speed_units="cm", seed=0
     ... )
     >>> n_neurons = 10
     >>> spike_times = [  # doctest: +SKIP

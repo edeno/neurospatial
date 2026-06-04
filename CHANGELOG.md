@@ -36,6 +36,11 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ### Fixed
 
+- The bare-`Environment()` error now uses a unique code `[E1006]` (was
+  `[E1001]`, which collided with "No active bins found") and points at the
+  correct docs host (`https://edeno.github.io/neurospatial/`).  Documented in
+  `docs/errors.md`.
+
 - `Environment.distance_to(region_name)` now raises `RegionNotFoundError`
   (from `neurospatial._exceptions`) instead of a bare `KeyError` when the
   named region is absent.  `RegionNotFoundError` subclasses `KeyError`, so all

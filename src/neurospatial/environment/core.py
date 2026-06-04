@@ -333,7 +333,7 @@ class _BaseEnvironment(
         """
         if layout is None:
             raise ValueError(
-                "[E1001] Environment cannot be constructed directly — "
+                "[E1006] Environment cannot be constructed directly — "
                 "use a factory method.\n\n"
                 "Most common (from positions you recorded):\n"
                 "    env = Environment.from_samples(positions, bin_size=2.0)\n\n"
@@ -345,7 +345,7 @@ class _BaseEnvironment(
                 "Avoid:\n"
                 "    env = Environment()  # not supported\n\n"
                 "See each factory's docstring for its exact arguments, or:\n"
-                "    https://neurospatial.readthedocs.io/errors/#e1001"
+                "    https://edeno.github.io/neurospatial/errors/#e1006-environment-constructed-directly"
             )
 
         self.name = name

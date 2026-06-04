@@ -960,3 +960,171 @@ class TestWarnOnDrop:
         assert len(time_warnings) == 0, (
             "Should not warn when only 1% of spikes are out-of-window"
         )
+
+    # ------------------------------------------------------------------
+    # 7. n_jobs != 1 warn-once (worker-returns-stats / main aggregation)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _make_env_2d_outside() -> tuple:
+        """Return (env, times, positions_outside) where positions are far
+        outside the active environment bins (so spikes drop to bin -1)."""
+        sample_pos = np.column_stack(
+            [
+                np.linspace(0, 10, 50),
+                np.linspace(0, 10, 50),
+            ]
+        )
+        env = Environment.from_samples(sample_pos, bin_size=2.0)
+        # Sparse times/positions so interpolated spike positions land outside.
+        times_narrow = np.array([0.0, 5.0, 10.0])
+        positions_outside = np.array([[500.0, 500.0], [500.0, 500.0], [500.0, 500.0]])
+        return env, times_narrow, positions_outside
+
+    def test_out_of_window_batch_warns_once_njobs2(self) -> None:
+        """n_jobs=2: 3 neurons all out-of-window → exactly ONE time-window
+        warning.
+
+        Workers return stats as data and the main process aggregates +
+        warns, so the single warning must survive even though joblib's
+        loky backend swallows worker-emitted warnings.
+        """
+        import warnings
+
+        from neurospatial.encoding._binning import bin_spike_trains
+
+        env, times, positions = self._make_env_and_traj()
+        spike_times_ms = [
+            np.array([1000.0, 5000.0]),  # all out-of-window
+            np.array([2000.0, 8000.0]),  # all out-of-window
+            np.array([3000.0, 9000.0]),  # all out-of-window
+        ]
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            bin_spike_trains(env, spike_times_ms, times, positions, n_jobs=2)
+
+        time_window_warnings = [
+            x
+            for x in w
+            if issubclass(x.category, UserWarning) and "spike_times" in str(x.message)
+        ]
+        assert len(time_window_warnings) == 1, (
+            f"Expected exactly 1 time-window warning with n_jobs=2, "
+            f"got {len(time_window_warnings)}"
+        )
+
+    def test_out_of_window_compute_spatial_rates_warns_once_njobs2(self) -> None:
+        """compute_spatial_rates(n_jobs=2): batch all out-of-window → one warning."""
+        import warnings
+
+        from neurospatial.encoding.spatial import compute_spatial_rates
+
+        env, times, positions = self._make_env_and_traj()
+        spike_times_ms = [
+            np.array([1000.0, 5000.0]),
+            np.array([2000.0, 8000.0]),
+            np.array([3000.0, 9000.0]),
+        ]
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            compute_spatial_rates(
+                env, spike_times_ms, times, positions.squeeze(), n_jobs=2
+            )
+
+        time_window_warnings = [
+            x
+            for x in w
+            if issubclass(x.category, UserWarning) and "spike_times" in str(x.message)
+        ]
+        assert len(time_window_warnings) == 1, (
+            f"Expected exactly 1 time-window warning with n_jobs=2, "
+            f"got {len(time_window_warnings)}"
+        )
+
+    # ------------------------------------------------------------------
+    # 8. Batch inactive-bin drop (positions outside the environment)
+    # ------------------------------------------------------------------
+
+    def test_inactive_bin_batch_warns_once_and_counts_zero(self) -> None:
+        """Batch path: spikes interpolating to positions OUTSIDE the env →
+        exactly one inactive-bin warning AND ~zero counts for those neurons."""
+        import warnings
+
+        from neurospatial.encoding._binning import bin_spike_trains
+
+        env, times, positions = self._make_env_2d_outside()
+        # 5 in-window spikes per neuron; positions all map outside env → bin -1.
+        spike_times = [
+            np.array([1.0, 3.0, 5.0, 7.0, 9.0]),
+            np.array([2.0, 4.0, 6.0, 8.0]),
+            np.array([1.5, 3.5, 5.5, 7.5, 9.5]),
+        ]
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            spike_counts, _occupancy = bin_spike_trains(
+                env, spike_times, times, positions
+            )
+
+        inactive_warnings = [
+            x
+            for x in w
+            if issubclass(x.category, UserWarning)
+            and "interpolated to positions outside" in str(x.message)
+        ]
+        assert len(inactive_warnings) == 1, (
+            f"Expected exactly 1 inactive-bin warning, got "
+            f"{[str(x.message) for x in inactive_warnings]}"
+        )
+        # The dropped spikes contribute nothing → all counts are zero.
+        assert spike_counts.shape == (3, env.n_bins)
+        assert np.sum(spike_counts) == 0, (
+            "Spikes mapping to inactive bins must not contribute any counts"
+        )
+
+    # ------------------------------------------------------------------
+    # 9. No cross-contamination: time-window drop alone → only time warning
+    # ------------------------------------------------------------------
+
+    def test_batch_time_window_only_no_inactive_warning(self) -> None:
+        """Batch where ONLY the time-window cause applies (in-environment
+        positions, spike times outside the window) → exactly ONE warning and
+        it is the time-window message (no spurious inactive-bin warning)."""
+        import warnings
+
+        from neurospatial.encoding._binning import bin_spike_trains
+
+        # In-environment positions: the 1D trajectory fixture covers [0, 100].
+        env, times, positions = self._make_env_and_traj()
+        # Spike times in ms while times are in s → all out-of-window, but the
+        # surviving (zero) spikes would map to valid in-env positions.
+        spike_times_ms = [
+            np.array([1000.0, 5000.0]),
+            np.array([2000.0, 8000.0]),
+            np.array([3000.0, 9000.0]),
+        ]
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            bin_spike_trains(env, spike_times_ms, times, positions)
+
+        time_warnings = [
+            x
+            for x in w
+            if issubclass(x.category, UserWarning) and "spike_times" in str(x.message)
+        ]
+        inactive_warnings = [
+            x
+            for x in w
+            if issubclass(x.category, UserWarning)
+            and "interpolated to positions outside" in str(x.message)
+        ]
+        assert len(time_warnings) == 1, (
+            f"Expected exactly 1 time-window warning, got {len(time_warnings)}"
+        )
+        assert len(inactive_warnings) == 0, (
+            f"Unexpected inactive-bin warning(s): "
+            f"{[str(x.message) for x in inactive_warnings]}"
+        )

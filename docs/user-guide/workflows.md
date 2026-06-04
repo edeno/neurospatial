@@ -117,14 +117,21 @@ print(f"Spatial information: {result.spatial_information():.3f} bits/spike")
 - Too small: Insufficient occupancy, noisy firing rates
 - Rule of thumb: 2-5 cm for rat open field (100x100 cm arena)
 
-**Occupancy Threshold**:
-- Exclude bins with low occupancy to avoid noisy firing-rate estimates
-- Typical: 0.5 s minimum; tune down for short sessions
-- Bins below threshold are set to `NaN` in `result.firing_rate`
+**Occupancy Threshold** (`min_occupancy`):
+- For the default KDE methods (`diffusion_kde`/`gaussian_kde`), `min_occupancy`
+  is a threshold on the *smoothed* occupancy density (the firing-rate
+  denominator), not raw seconds — leave it at the default `0.0` unless you have
+  a specific density threshold in mind. Low-coverage bins are already excluded
+  at environment creation via `bin_count_threshold`.
+- Only the legacy `smoothing_method="binned"` thresholds raw per-bin occupancy
+  in seconds.
+- Bins below the threshold are set to `NaN` in `result.firing_rate`.
 
 **Smoothing**:
 - `"diffusion_kde"` (default) is boundary-aware and works on any graph layout
-- `"gaussian_kde"` gives equivalent results for regular rectangular grids
+- `"gaussian_kde"` gives comparable results in the interior of regular
+  rectangular grids (`diffusion_kde` is boundary-aware, so they differ near
+  boundaries)
 - Increase `bandwidth` for noisier data or coarser bins
 
 ## Workflow 2: Region-Based Analysis
