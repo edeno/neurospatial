@@ -254,6 +254,10 @@ class TestAlignSpikesToEvents:
 
         result = align_spikes_to_events(spike_times, event_times, window)
         assert len(result) == 2
+        # Behavioral (not just structural): both spikes land near the first
+        # event; the second event has no spikes in window.
+        np.testing.assert_array_equal(result[0], [0.0, 0.5])
+        assert len(result[1]) == 0
 
     # --- Output properties ---
 
