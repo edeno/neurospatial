@@ -1782,7 +1782,7 @@ def compute_directional_rates(
         - 2D array with NaN padding: shape ``(n_neurons, max_spikes)``
         - 1D array (single neuron): wrapped in list automatically
 
-        All formats are normalized via ``normalize_spike_times()``.
+        All formats are coerced to per-neuron spike trains via ``as_spike_trains()``.
     times : ndarray, shape (n_samples,)
         Timestamps of head direction samples in seconds.
     headings : ndarray, shape (n_samples,)
@@ -1892,7 +1892,7 @@ def compute_directional_rates(
         bin_directional_spike_train,
         compute_directional_occupancy,
     )
-    from neurospatial.encoding._spikes import normalize_spike_times
+    from neurospatial.encoding._spikes import as_spike_trains
     from neurospatial.encoding._validation import (
         validate_spike_times,
         validate_trajectory,
@@ -1914,7 +1914,7 @@ def compute_directional_rates(
         raise ValueError(f"angle_unit must be 'rad' or 'deg', got '{angle_unit}'")
 
     # Normalize spike times to canonical format
-    spike_times_list: list[NDArray[np.float64]] = normalize_spike_times(spike_times)
+    spike_times_list: list[NDArray[np.float64]] = as_spike_trains(spike_times)
     n_neurons = len(spike_times_list)
 
     # Convert inputs to arrays (1D required; validated below)

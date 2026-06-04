@@ -385,7 +385,7 @@ def bin_directional_spike_trains(
         Spike times for each neuron. Can be:
         - List/tuple of 1D arrays (one per neuron)
         - 2D array shape (n_neurons, max_spikes) with NaN padding
-        Input is normalized via normalize_spike_times().
+        Input is coerced to per-neuron spike trains via as_spike_trains().
     times : ndarray, shape (n_samples,)
         Timestamps of head direction samples in seconds.
     headings : ndarray, shape (n_samples,)
@@ -438,12 +438,12 @@ def bin_directional_spike_trains(
     --------
     bin_directional_spike_train : Single-neuron version
     compute_directional_occupancy : Compute occupancy only
-    normalize_spike_times : Input format normalization
+    as_spike_trains : Coerce input to canonical per-neuron spike trains
     """
-    from neurospatial.encoding._spikes import normalize_spike_times
+    from neurospatial.encoding._spikes import as_spike_trains
 
     # Normalize spike times to canonical list-of-arrays format
-    spike_times_list = normalize_spike_times(spike_times)
+    spike_times_list = as_spike_trains(spike_times)
     n_neurons = len(spike_times_list)
 
     times = np.asarray(times, dtype=np.float64)

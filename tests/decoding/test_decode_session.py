@@ -431,24 +431,24 @@ class TestDecodeSessionDecodeKwargs:
         assert len(result.times) == result.posterior.shape[0]
 
 
-class TestNormalizeSpikeTimesPublic:
-    """normalize_spike_times is publicly importable from neurospatial.encoding."""
+class TestAsSpikeTrainsPublic:
+    """as_spike_trains is publicly importable from neurospatial.encoding."""
 
     def test_public_import(self) -> None:
-        """normalize_spike_times importable from neurospatial.encoding."""
-        from neurospatial.encoding import normalize_spike_times  # noqa: F401
+        """as_spike_trains importable from neurospatial.encoding."""
+        from neurospatial.encoding import as_spike_trains  # noqa: F401
 
     def test_public_import_in_all(self) -> None:
-        """normalize_spike_times is in neurospatial.encoding.__all__."""
+        """as_spike_trains is in neurospatial.encoding.__all__."""
         import neurospatial.encoding as enc
 
-        assert "normalize_spike_times" in enc.__all__
+        assert "as_spike_trains" in enc.__all__
 
     def test_normalizes_correctly(self) -> None:
         """Public symbol behaves identically to the private implementation."""
-        from neurospatial.encoding import normalize_spike_times
+        from neurospatial.encoding import as_spike_trains
 
         spikes = np.array([0.1, 0.5, 1.2])
-        result = normalize_spike_times(spikes)
+        result = as_spike_trains(spikes)
         assert len(result) == 1
         assert_allclose(result[0], spikes)

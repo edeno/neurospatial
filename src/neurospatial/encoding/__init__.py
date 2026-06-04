@@ -38,7 +38,7 @@ from neurospatial.encoding._metrics import (
     spatial_coverage_single_cell,
     spatial_information,
 )
-from neurospatial.encoding._spikes import normalize_spike_times
+from neurospatial.encoding._spikes import as_spike_trains
 from neurospatial.encoding.border import (
     border_score,
     compute_region_coverage,
@@ -118,7 +118,7 @@ from neurospatial.encoding.view import (
 
 __all__ = [  # noqa: RUF022 - organized by category
     # Spike-time normalization
-    "normalize_spike_times",
+    "as_spike_trains",
     # Border/boundary cell analysis
     "border_score",
     "compute_region_coverage",

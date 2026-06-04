@@ -664,11 +664,11 @@ class TestBinDirectionalSpikeTrains:
         assert occupancy.shape == (n_bins,)
         assert bin_centers.shape == (n_bins,)
 
-    def test_normalizes_input_via_normalize_spike_times(
+    def test_normalizes_input_via_as_spike_trains(
         self,
         simple_trajectory: dict,
     ) -> None:
-        """Should accept normalized input from normalize_spike_times formats."""
+        """Should accept normalized input from as_spike_trains formats."""
         from neurospatial.encoding._directional_binning import (
             bin_directional_spike_trains,
         )

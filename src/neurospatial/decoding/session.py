@@ -48,7 +48,7 @@ def decode_session(
         connectivity graph.
     spike_times : array or sequence of arrays
         Spike times for one or more neurons.  Accepted formats mirror
-        :func:`~neurospatial.encoding.normalize_spike_times`:
+        :func:`~neurospatial.encoding.as_spike_trains`:
 
         - 1-D array / list of scalars → single neuron
         - 2-D array, shape ``(n_neurons, max_spikes)``, NaN-padded
@@ -187,11 +187,11 @@ def decode_session(
     # Mirrors how encoding/spatial.py defers its own heavy imports.
     from neurospatial.decoding._binning import bin_spikes_in_time
     from neurospatial.decoding.posterior import decode_position
-    from neurospatial.encoding import normalize_spike_times
+    from neurospatial.encoding import as_spike_trains
     from neurospatial.encoding.spatial import compute_spatial_rates
 
     # --- Normalize inputs ---
-    trains = normalize_spike_times(spike_times)
+    trains = as_spike_trains(spike_times)
     times_arr = np.asarray(times, dtype=np.float64)
     if times_arr.size < 2:
         raise ValueError(

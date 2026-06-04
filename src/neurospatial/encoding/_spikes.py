@@ -1,16 +1,18 @@
-"""Spike format normalization for encoding functions.
+"""Coerce spike input into the canonical spike-trains structure.
 
-This module provides helpers to normalize various spike input formats to the
-canonical internal representation: a list of 1D NumPy arrays, one per neuron.
+This module provides helpers to convert the various ways a user might pass
+spike data into one canonical structure: a list of 1D NumPy arrays, one array
+per neuron. It changes the *container shape* only -- the spike-time values are
+never shifted, rescaled, or aligned.
 
-The main function is `normalize_spike_times()`, which accepts:
+The main function is `as_spike_trains()`, which accepts:
 
 - 1D array (single neuron) → wrapped in list
 - 2D array (n_neurons, max_spikes) with NaN padding → split, NaNs removed
 - list/tuple of scalars (single neuron) → converted to 1D array, wrapped in list
 - list/tuple of 1D arrays (canonical format) → each element converted to array
 
-This normalization happens at the entry point of encoding functions, ensuring
+This coercion happens at the entry point of encoding functions, ensuring
 consistent internal handling regardless of how the user provides spike data.
 """
 
@@ -22,13 +24,14 @@ import numpy as np
 from numpy.typing import NDArray
 
 
-def normalize_spike_times(
+def as_spike_trains(
     spike_times: Any,
 ) -> list[NDArray[np.float64]]:
-    """Normalize spike times to canonical list-of-arrays format.
+    """Coerce spike input into the canonical list-of-spike-trains structure.
 
-    Converts various input formats to a consistent representation for
-    internal processing in encoding functions.
+    Returns a list of 1D arrays, one per neuron — the canonical structure the
+    encoding/decoding functions consume. This standardizes the *container
+    shape* only; the spike-time values are not shifted, rescaled, or aligned.
 
     Parameters
     ----------
@@ -60,9 +63,9 @@ def normalize_spike_times(
     Single neuron (1D array):
 
     >>> import numpy as np
-    >>> from neurospatial.encoding import normalize_spike_times
+    >>> from neurospatial.encoding import as_spike_trains
     >>> spikes = np.array([0.1, 0.5, 1.2])
-    >>> normalized = normalize_spike_times(spikes)
+    >>> normalized = as_spike_trains(spikes)
     >>> len(normalized)
     1
     >>> normalized[0]
@@ -71,7 +74,7 @@ def normalize_spike_times(
     Single neuron (list of scalars - common user input):
 
     >>> spikes = [0.1, 0.5, 1.2]  # Plain list of floats
-    >>> normalized = normalize_spike_times(spikes)
+    >>> normalized = as_spike_trains(spikes)
     >>> len(normalized)
     1
     >>> normalized[0]
@@ -80,14 +83,14 @@ def normalize_spike_times(
     Multiple neurons (list of arrays):
 
     >>> spikes = [np.array([0.1, 0.5]), np.array([0.2, 0.3, 0.8])]
-    >>> normalized = normalize_spike_times(spikes)
+    >>> normalized = as_spike_trains(spikes)
     >>> len(normalized)
     2
 
     NaN-padded 2D array:
 
     >>> spikes = np.array([[0.1, 0.5, np.nan], [0.2, 0.3, 0.8]])
-    >>> normalized = normalize_spike_times(spikes)
+    >>> normalized = as_spike_trains(spikes)
     >>> normalized[0]  # NaN removed
     array([0.1, 0.5])
     >>> normalized[1]  # No NaN to remove
@@ -95,7 +98,7 @@ def normalize_spike_times(
 
     Empty list returns empty list:
 
-    >>> normalize_spike_times([])
+    >>> as_spike_trains([])
     []
     """
     # Handle list/tuple explicitly (avoid mypy unreachable code warning)

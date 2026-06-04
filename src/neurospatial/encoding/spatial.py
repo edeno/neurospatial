@@ -1826,7 +1826,7 @@ def compute_spatial_rates(
         - 2D array with NaN padding: shape ``(n_neurons, max_spikes)``
         - 1D array (single neuron): wrapped in list automatically
 
-        All formats are normalized via ``normalize_spike_times()``.
+        All formats are coerced to per-neuron spike trains via ``as_spike_trains()``.
     times : ndarray, shape (n_samples,)
         Timestamps of trajectory samples in seconds.
     positions : ndarray, shape (n_samples, n_dims)
@@ -1973,7 +1973,7 @@ def compute_spatial_rates(
         _validate_smoothing_parameters,
         smooth_rate_maps_batch,
     )
-    from neurospatial.encoding._spikes import normalize_spike_times
+    from neurospatial.encoding._spikes import as_spike_trains
     from neurospatial.encoding._validation import (
         validate_env_fitted,
         validate_spike_times,
@@ -1996,7 +1996,7 @@ def compute_spatial_rates(
     _validate_smoothing_parameters(smoothing_method, bandwidth)
 
     # Normalize spike times to canonical list-of-arrays format
-    spike_times_list = normalize_spike_times(spike_times)
+    spike_times_list = as_spike_trains(spike_times)
     n_neurons = len(spike_times_list)
 
     # Convert inputs to arrays

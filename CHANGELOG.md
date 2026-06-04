@@ -20,11 +20,15 @@ these are called out under a dedicated **Breaking changes** heading.
   entirely.
   Extra keyword arguments are forwarded verbatim to `decode_position`.
 
-- `normalize_spike_times` promoted to public API: now exported from
-  `neurospatial.encoding` (and present in `__all__`).  The implementation
-  remains in `neurospatial.encoding._spikes`; all existing internal callers
-  are unaffected.  The docstring example import path updated to the public
-  form `from neurospatial.encoding import normalize_spike_times`.
+- `as_spike_trains` — public helper that coerces the various spike-input
+  formats (1D array, NaN-padded 2D array, list of scalars, list of 1D arrays)
+  into the canonical list of per-neuron spike-time arrays. Exported from
+  `neurospatial.encoding` (and present in `__all__`); the implementation lives
+  in `neurospatial.encoding._spikes`. It standardizes the container shape only
+  — spike-time values are never shifted, rescaled, or aligned. (This is the
+  previously-internal `normalize_spike_times`, renamed before any public
+  release so the name reads as a structural conversion, not a value transform;
+  no deprecated alias is kept since the public name was never released.)
 
 ### Changed
 
