@@ -11,6 +11,14 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ### Fixed
 
+- `behavior.trajectory` public functions (`compute_turn_angles`,
+  `compute_step_lengths`, `mean_square_displacement`) and
+  `behavior.navigation.traveled_path_length` now coerce `positions` (and
+  `times` for MSD) with `np.asarray` at the public boundary before any
+  `.ndim`/`.shape` access. Passing a plain Python list no longer raises a
+  confusing `AttributeError`; valid list-of-lists inputs succeed, and
+  malformed inputs raise a descriptive `TypeError` or `ValueError`.
+
 - `bin_spike_train` and `bin_spike_trains` in `encoding/_binning.py` no
   longer silently drop spikes outside the trajectory time window or spikes
   that map to inactive environment bins.  When the dropped fraction exceeds
