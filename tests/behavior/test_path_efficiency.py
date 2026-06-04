@@ -45,6 +45,22 @@ class TestTraveledPathLength:
 
         assert_allclose(length, 50.0, rtol=0.01)
 
+    def test_python_list_input_normalized(self):
+        """Python-list positions are coerced; no AttributeError at the boundary."""
+        from neurospatial.behavior.navigation import traveled_path_length
+
+        # 3-4-5 triangle as a plain list-of-lists (not an ndarray).
+        length = traveled_path_length([[0.0, 0.0], [30.0, 40.0]], metric="euclidean")
+
+        assert_allclose(length, 50.0, rtol=0.01)
+
+    def test_malformed_list_input_raises_domain_error(self):
+        """A 1D list raises a domain error, never AttributeError."""
+        from neurospatial.behavior.navigation import traveled_path_length
+
+        with pytest.raises((ValueError, TypeError)):
+            traveled_path_length([0.0, 1.0, 2.0], metric="euclidean")
+
     def test_geodesic_requires_env(self):
         """Test that geodesic metric raises without env."""
         from neurospatial.behavior.navigation import traveled_path_length
