@@ -70,6 +70,7 @@ Run
 from __future__ import annotations
 
 import itertools
+import warnings
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
@@ -321,9 +322,10 @@ class Trial:
 def detect_region_crossings(
     position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
-    region_name: str,
-    env: Environment,
+    arg3: Environment | str,
+    arg4: Environment | None = None,
     *,
+    region_name: str | None = None,
     direction: Literal["both", "entry", "exit"] = "both",
 ) -> list[Crossing]:
     """Detect region entry and exit events in a trajectory.
@@ -332,16 +334,25 @@ def detect_region_crossings(
     Useful for analyzing exploration patterns, region preference, and behavioral
     transitions.
 
+    .. note::
+        The argument order changed in 0.6 to follow the behavioral-segmentation
+        convention ``(position_bins, times, env, *, region_name, ...)``. The old
+        positional order ``(position_bins, times, region_name, env, ...)`` is
+        still accepted for one release with a :class:`DeprecationWarning` and
+        will be removed in 0.7.
+
     Parameters
     ----------
     position_bins : NDArray[np.int64], shape (n_samples,)
         Sequence of bin indices representing the trajectory.
     times : NDArray[np.float64], shape (n_samples,)
         Time stamps corresponding to position bins (seconds).
+    env : Environment
+        Environment containing the region definition. Pass positionally as the
+        third argument.
     region_name : str
         Name of region to detect crossings for. Must exist in env.regions.
-    env : Environment
-        Environment containing the region definition.
+        Keyword-only in the new (0.6+) call form.
     direction : {'both', 'entry', 'exit'}, optional
         Which crossings to detect:
         - 'both': detect entries and exits (default)
@@ -389,13 +400,48 @@ def detect_region_crossings(
     >>> trajectory = np.column_stack([traj_x, traj_y])
     >>> position_bins = env.bin_at(trajectory)
     >>> times = np.arange(len(trajectory), dtype=float)
-    >>> # Detect crossings
+    >>> # Detect crossings (new 0.6+ order: env positional, region_name keyword)
     >>> crossings = detect_region_crossings(
-    ...     position_bins, times, "goal", env, direction="both"
+    ...     position_bins, times, env, region_name="goal", direction="both"
     ... )
     >>> len(crossings) > 0  # Should detect entries and exits
     True
     """
+    # TODO(0.7): collapse to the clean keyword-only signature
+    #   def detect_region_crossings(position_bins, times, env, *,
+    #                               region_name, direction="both")
+    # and drop this transitional dispatch + DeprecationWarning.
+    #
+    # Disambiguate old vs new positional order. The OLD order was
+    # ``(position_bins, times, region_name: str, env)``; the NEW order is
+    # ``(position_bins, times, env, *, region_name=...)``. We are in the old
+    # order if a fourth positional arg was supplied (``arg4 is not None``) OR
+    # the third positional arg is a string (the legacy ``region_name`` slot).
+    env: Environment
+    if arg4 is not None or isinstance(arg3, str):
+        warnings.warn(
+            "detect_region_crossings argument order changed in 0.6: pass "
+            "(position_bins, times, env, region_name=...) instead of "
+            "(position_bins, times, region_name, env). The old positional "
+            "order is deprecated since 0.6 and will be removed in 0.7.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        # Old order: arg3 is region_name, arg4 is env.
+        region_name = arg3  # type: ignore[assignment]
+        env = arg4  # type: ignore[assignment]
+    else:
+        # New order: arg3 is env, region_name is keyword-only.
+        # (mypy narrows arg3 to Environment here via the isinstance check above)
+        env = arg3
+
+    if region_name is None:
+        raise TypeError(
+            "detect_region_crossings() missing required argument 'region_name'. "
+            "Call as detect_region_crossings(position_bins, times, env, "
+            "region_name=...)."
+        )
+
     # Validate inputs
     if region_name not in env.regions:
         available = list(env.regions.keys())
@@ -1200,7 +1246,7 @@ def detect_laps(
         assert start_region is not None
 
         crossings = detect_region_crossings(
-            position_bins, times, start_region, env, direction="entry"
+            position_bins, times, env, region_name=start_region, direction="entry"
         )
 
         if len(crossings) < 2:

@@ -46,7 +46,7 @@ from __future__ import annotations
 import warnings
 from collections import deque
 from collections.abc import Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
@@ -78,6 +78,8 @@ __all__ = [
     "compute_directional_place_fields",
     # Field detection
     "detect_place_fields",
+    # Classification predicates
+    "is_place_cell",
 ]
 
 
@@ -241,6 +243,10 @@ class SpatialRateResult(SpatialResultMixin):
         Smoothing method used.
     bandwidth : float
         Smoothing bandwidth.
+    unit_id : int or str or None
+        Identifier for this unit. Set automatically when indexing/iterating a
+        population result (``rates[i].unit_id == rates.unit_ids[i]``); ``None``
+        for a standalone single-unit computation.
 
     Notes
     -----
@@ -292,6 +298,7 @@ class SpatialRateResult(SpatialResultMixin):
     env: Environment
     smoothing_method: str
     bandwidth: float
+    unit_id: int | str | None = None
 
     def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the spatial rate map.
@@ -756,6 +763,78 @@ class SpatialRateResult(SpatialResultMixin):
         env = cast("EnvironmentProtocol", self.env)
         return compute_region_coverage(field_bins, env, regions=regions)
 
+    def is_place_cell(
+        self,
+        *,
+        threshold: float = 0.2,
+        min_size: int | None = None,
+        max_mean_rate: float = 10.0,
+        detect_subfields: bool = True,
+    ) -> bool:
+        """Classify as a place cell based on detected place fields.
+
+        A neuron is classified as a place cell if :func:`detect_place_fields`
+        finds at least one place field in its firing rate map. This is the
+        single-neuron place predicate, the place-cell sibling of
+        :meth:`is_object_vector_cell` and :meth:`is_spatial_view_cell`.
+
+        .. note::
+           This single-neuron predicate uses **place-field detection**,
+           whereas the batch :meth:`SpatialRatesResult.classify` uses a
+           **spatial-information threshold**. The two criteria can disagree
+           for the same neuron, so this is not guaranteed to equal
+           ``rates.classify()[i]``. Pick the criterion that suits your
+           analysis and apply it consistently.
+
+        Parameters
+        ----------
+        threshold : float, default=0.2
+            Fraction of peak rate for field boundary detection (0-1).
+        min_size : int, optional
+            Minimum number of bins for a valid field. If None, defaults to 9.
+        max_mean_rate : float, default=10.0
+            Maximum mean firing rate (Hz). Neurons exceeding this are excluded
+            as putative interneurons.
+        detect_subfields : bool, default=True
+            If True, recursively detect subfields within large fields.
+
+        Returns
+        -------
+        bool
+            True if the neuron has at least one detected place field.
+
+        See Also
+        --------
+        detect_place_fields : Place field detection algorithm this agrees with
+        is_place_cell : Free-function convenience wrapper
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rate
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 50, (500, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> times = np.linspace(0, 50, 500)
+        >>> spike_times = np.sort(rng.uniform(0, 50, 30))
+        >>> result = compute_spatial_rate(
+        ...     env, spike_times, times, positions, bandwidth=10.0
+        ... )
+        >>> isinstance(result.is_place_cell(), bool)
+        True
+        """
+        firing_rate = _to_numpy(self.firing_rate)
+        fields = detect_place_fields(
+            self.env,
+            firing_rate,
+            threshold=threshold,
+            min_size=min_size,
+            max_mean_rate=max_mean_rate,
+            detect_subfields=detect_subfields,
+        )
+        return len(fields) > 0
+
 
 @dataclass(frozen=True)
 class SpatialRatesResult(SpatialResultMixin):
@@ -793,6 +872,14 @@ class SpatialRatesResult(SpatialResultMixin):
         Smoothing method used.
     bandwidth : float
         Smoothing bandwidth.
+    unit_ids : NDArray, shape (n_units,)
+        Identifier for each unit (row), e.g. from ``read_units`` or passed via
+        ``unit_ids=``. Defaults to ``np.arange(n_units)``. Carried into
+        indexed/iterated single-unit results and into xarray exports.
+    unit_table : pandas.DataFrame or None
+        Optional per-unit metadata aligned to ``unit_ids`` (e.g. region,
+        quality, depth, inclusion flags), one row per unit; ``None`` when not
+        provided. Rides alongside the rates for downstream filtering/grouping.
 
     Notes
     -----
@@ -864,6 +951,19 @@ class SpatialRatesResult(SpatialResultMixin):
     env: Environment
     smoothing_method: str
     bandwidth: float
+    unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
+    unit_table: pd.DataFrame | None = field(default=None, compare=False)
+
+    def __post_init__(self) -> None:
+        from neurospatial._results import resolve_unit_ids, validate_unit_table
+
+        n_units = int(np.asarray(self.firing_rates).shape[0])
+        object.__setattr__(
+            self,
+            "unit_ids",
+            resolve_unit_ids(self.unit_ids, n_units),
+        )
+        validate_unit_table(self.unit_table, n_units, context="SpatialRatesResult")
 
     def __len__(self) -> int:
         """Return number of neurons.
@@ -914,6 +1014,7 @@ class SpatialRatesResult(SpatialResultMixin):
             env=self.env,
             smoothing_method=self.smoothing_method,
             bandwidth=self.bandwidth,
+            unit_id=np.asarray(self.unit_ids)[idx].item(),
         )
 
     def __iter__(self) -> Iterator[SpatialRateResult]:
@@ -943,6 +1044,44 @@ class SpatialRatesResult(SpatialResultMixin):
         """
         for i in range(len(self)):
             yield self[i]
+
+    def peak_locations(self) -> NDArray[np.float64]:
+        """Locations of peak firing for all neurons (batch accessor).
+
+        Plural batch counterpart to :meth:`peak_location`. Returns the
+        bin-center coordinates of the maximum firing rate for each neuron in
+        the population. This is the canonical plural accessor mandated by the
+        v0.6 result-class contract; it returns the same array as the batch
+        form of :meth:`peak_location`.
+
+        Returns
+        -------
+        ndarray, shape (n_neurons, n_dims)
+            Spatial coordinates of the bins with maximum firing rate for
+            each neuron. Uses ``nanargmax`` to handle NaN values.
+
+        See Also
+        --------
+        SpatialRateResult.peak_location : Single-neuron version.
+        peak_firing_rate : Peak firing rate values.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rates
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 50, (500, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> times = np.linspace(0, 50, 500)
+        >>> spike_times = [np.sort(rng.uniform(0, 50, n)) for n in (30, 40, 20)]
+        >>> result = compute_spatial_rates(
+        ...     env, spike_times, times, positions, bandwidth=10.0
+        ... )
+        >>> result.peak_locations().shape
+        (3, 2)
+        """
+        return self.peak_location()
 
     def plot(self, idx: int, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the spatial rate map for a specific neuron.
@@ -991,23 +1130,33 @@ class SpatialRatesResult(SpatialResultMixin):
         return self.env.plot_field(_to_numpy(rates[idx]), ax=ax, **kwargs)
 
     def to_xarray(self) -> Any:
-        """Convert the firing-rate maps to an :class:`xarray.DataArray`.
+        """Convert the firing-rate maps to a labeled :class:`xarray.Dataset`.
 
-        Wraps the ``(n_neurons, n_bins)`` firing-rate matrix in a labeled
-        :class:`xarray.DataArray` with dims ``("neuron", "bin")``. The
-        ``neuron`` coordinate is the integer neuron index and the ``bin``
-        coordinate is the integer bin index.
+        Wraps the ``(n_units, n_bins)`` firing-rate matrix in a labeled
+        :class:`xarray.Dataset` with dims ``("unit_id", "bin")``. The
+        ``unit_id`` index coordinate holds the real per-unit identity labels
+        (:attr:`unit_ids`), enabling label-based selection. The ``bin``
+        dimension carries non-index ``bin_center_x`` / ``bin_center_y``
+        (and ``bin_center_z`` for 3-D envs) coordinates.
 
         Returns
         -------
-        xarray.DataArray
-            Firing rates (Hz) with dims ``("neuron", "bin")``. The array
-            ``.values`` equal :attr:`firing_rates`. ``coords["neuron"]`` is
-            ``np.arange(n_neurons)`` and ``coords["bin"]`` is
-            ``np.arange(n_bins)``.
+        xarray.Dataset
+            Dataset with:
+
+            - data var ``firing_rate`` (Hz), dims ``("unit_id", "bin")``.
+            - data var ``occupancy`` (seconds), dims ``("bin",)``.
+            - index coord ``unit_id`` = :attr:`unit_ids`.
+            - non-index coords ``bin_center_x`` / ``bin_center_y`` /
+              ``bin_center_z`` on ``bin`` (per env dimensionality).
+            - ``attrs``: ``units``, ``bandwidth``, ``env`` fingerprint, and
+              ``software_version``.
 
         Raises
         ------
+        ValueError
+            If :attr:`unit_ids` contains duplicate labels (label-based
+            ``.sel(unit_id=...)`` requires uniqueness).
         ImportError
             If ``xarray`` is not installed. xarray is an optional dependency;
             install it with ``pip install neurospatial[xarray]`` or
@@ -1031,33 +1180,35 @@ class SpatialRatesResult(SpatialResultMixin):
         >>> result = compute_spatial_rates(
         ...     env, spike_times, times, positions, bandwidth=10.0
         ... )
-        >>> da = result.to_xarray()  # doctest: +SKIP
-        >>> da.dims  # doctest: +SKIP
-        ('neuron', 'bin')
+        >>> ds = result.to_xarray()  # doctest: +SKIP
+        >>> ds["firing_rate"].dims  # doctest: +SKIP
+        ('unit_id', 'bin')
+        >>> ds.sel(unit_id=result.unit_ids[0])  # doctest: +SKIP
 
         See Also
         --------
         spatial_information : Per-neuron Skaggs spatial information.
         """
-        try:
-            import xarray as xr
-        except ImportError as exc:
-            raise ImportError(
-                "to_xarray() requires the optional 'xarray' dependency, which "
-                "is not installed. Install it with "
-                "'pip install neurospatial[xarray]' or 'pip install xarray'."
-            ) from exc
+        from neurospatial._results import (
+            build_population_dataset,
+            env_fingerprint,
+            software_version,
+            units_attr,
+        )
 
         rates: NDArray[np.float64] = np.asarray(self.firing_rates)
-        n_neurons, n_bins = rates.shape
-        return xr.DataArray(
+        attrs: dict[str, Any] = {
+            **units_attr(self.env),
+            "bandwidth": self.bandwidth,
+            "env": env_fingerprint(self.env),
+            "software_version": software_version(),
+        }
+        return build_population_dataset(
             rates,
-            dims=("neuron", "bin"),
-            coords={
-                "neuron": np.arange(n_neurons),
-                "bin": np.arange(n_bins),
-            },
-            name="firing_rate",
+            np.asarray(self.unit_ids),
+            env=self.env,
+            occupancy=np.asarray(self.occupancy, dtype=np.float64),
+            attrs=attrs,
         )
 
     def spatial_information(self) -> NDArray[np.float64] | Any:
@@ -1300,17 +1451,22 @@ class SpatialRatesResult(SpatialResultMixin):
             metric=metric,
         )
 
-    def detect_cell_types(
+    def label_cell_types(
         self,
         min_spatial_info: float = 0.5,
         min_grid_score: float = 0.4,
         min_border_score: float = 0.5,
     ) -> NDArray[np.str_]:
-        """Classify neurons into spatial cell types.
+        """Label neurons with multi-class spatial cell types.
 
         Applies threshold-based classification to label neurons as place cells,
         grid cells, border cells, or unclassified based on their spatial
         information, grid score, and border score.
+
+        This is the **multi-class labeler** (returns string labels). It is
+        distinct from the single-type :meth:`classify` boolean predicate; use
+        ``label_cell_types`` when you need ``"place"``/``"grid"``/``"border"``/
+        ``"unclassified"`` labels (e.g. ``df[df["cell_type"] == "place"]``).
 
         Parameters
         ----------
@@ -1359,8 +1515,9 @@ class SpatialRatesResult(SpatialResultMixin):
         spatial_information : Compute spatial information
         grid_scores : Compute grid scores
         border_scores : Compute border scores
-        EgocentricRatesResult.detect_ovcs : Sibling batch classifier
-        ViewRatesResult.detect_view_cells : Sibling batch classifier
+        classify : Single-type place-cell boolean predicate
+        EgocentricRatesResult.classify : Sibling batch classifier
+        ViewRatesResult.classify : Sibling batch classifier
 
         Examples
         --------
@@ -1375,7 +1532,7 @@ class SpatialRatesResult(SpatialResultMixin):
         >>> result = compute_spatial_rates(
         ...     env, spike_times, times, positions, bandwidth=10.0
         ... )
-        >>> labels = result.detect_cell_types()
+        >>> labels = result.label_cell_types()
         >>> labels.shape
         (3,)
         >>> valid = {"grid", "border", "place", "unclassified"}
@@ -1405,32 +1562,136 @@ class SpatialRatesResult(SpatialResultMixin):
 
         return labels
 
-    def to_dataframe(
+    def detect_cell_types(
         self,
-        neuron_ids: Sequence[str] | None = None,
-        include_classification: bool = True,
-    ) -> pd.DataFrame:
-        """Export metrics to DataFrame for exploratory analysis.
+        min_spatial_info: float = 0.5,
+        min_grid_score: float = 0.4,
+        min_border_score: float = 0.5,
+    ) -> NDArray[np.str_]:
+        """Deprecated alias for :meth:`label_cell_types`.
 
-        Computes all spatial metrics and exports them to a pandas DataFrame
-        for easy filtering, sorting, and analysis. This is a host-only method;
-        all metrics are computed as NumPy arrays (not JAX).
+        .. deprecated:: 0.6
+            ``detect_cell_types`` is deprecated since 0.6; use
+            :meth:`label_cell_types` instead. Removed in 0.7.
 
         Parameters
         ----------
-        neuron_ids : sequence of str, optional
-            Identifiers for each neuron. If None, uses integer indices
-            (0, 1, 2, ..., n_neurons-1).
+        min_spatial_info : float, default 0.5
+            Minimum spatial information (bits/spike).
+        min_grid_score : float, default 0.4
+            Minimum grid score for a grid cell.
+        min_border_score : float, default 0.5
+            Minimum border score for a border cell.
+
+        Returns
+        -------
+        ndarray, shape (n_neurons,)
+            String labels: ``"grid"``/``"border"``/``"place"``/
+            ``"unclassified"``.
+        """
+        warnings.warn(
+            "detect_cell_types is deprecated since 0.6, use label_cell_types; "
+            "removed in 0.7",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.label_cell_types(
+            min_spatial_info=min_spatial_info,
+            min_grid_score=min_grid_score,
+            min_border_score=min_border_score,
+        )
+
+    def classify(self, *, min_spatial_info: float = 0.5) -> NDArray[np.bool_]:
+        """Classify neurons as place cells (single-type boolean predicate).
+
+        A neuron is classified as a place cell if its spatial information
+        meets the minimum threshold. This is the single-type boolean
+        predicate ("is this a place cell") sibling of
+        :meth:`EgocentricRatesResult.classify` and
+        :meth:`ViewRatesResult.classify`.
+
+        For multi-class labels (``"place"``/``"grid"``/``"border"``/
+        ``"unclassified"``) use :meth:`label_cell_types` instead.
+
+        .. note::
+           This batch predicate uses a **spatial-information threshold**,
+           whereas the single-neuron
+           :meth:`SpatialRateResult.is_place_cell` uses **place-field
+           detection** (``detect_place_fields``). The two criteria can
+           disagree for the same neuron (high information but no contiguous
+           field, or vice versa), so ``classify()[i]`` is not guaranteed to
+           equal ``result[i].is_place_cell()``. Pick the criterion that suits
+           your analysis and apply it consistently.
+
+        Parameters
+        ----------
+        min_spatial_info : float, default 0.5
+            Minimum spatial information (bits/spike) to be classified as a
+            place cell.
+
+        Returns
+        -------
+        ndarray, shape (n_neurons,)
+            Boolean array where True indicates the neuron is classified as a
+            place cell.
+
+        See Also
+        --------
+        label_cell_types : Multi-class string labeler
+        is_place_cell : Free-function single-neuron place predicate
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rates
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 50, (500, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> times = np.linspace(0, 50, 500)
+        >>> spike_times = [np.sort(rng.uniform(0, 50, n)) for n in (30, 40, 20)]
+        >>> result = compute_spatial_rates(
+        ...     env, spike_times, times, positions, bandwidth=10.0
+        ... )
+        >>> is_place = result.classify()
+        >>> is_place.shape
+        (3,)
+        >>> is_place.dtype == bool
+        True
+        """
+        spatial_info = np.asarray(self.spatial_information())
+        return spatial_info >= min_spatial_info
+
+    def summary_table(
+        self,
+        unit_ids: Sequence[str | int] | None = None,
+        include_classification: bool = True,
+    ) -> pd.DataFrame:
+        """Per-unit scalar summary: one row per unit, ``unit_id``-indexed.
+
+        Computes all spatial metrics and returns one row per unit, indexed by
+        ``unit_id``, with scalar metric columns. This is the per-unit summary a
+        many-neuron user wants for filtering, sorting, and population tables.
+        For the dense per-bin frame (one row per ``(unit, bin)``) use
+        :meth:`to_dataframe` instead.
+
+        This is a host-only method; all metrics are computed as NumPy arrays
+        (not JAX).
+
+        Parameters
+        ----------
+        unit_ids : sequence of str or int, optional
+            Identity labels for the index, one per unit. If ``None``, the
+            result's own :attr:`unit_ids` are used.
         include_classification : bool, default True
-            Whether to include the cell_type column with classification
-            labels from ``detect_cell_types()``.
+            Whether to include the ``cell_type`` column with classification
+            labels from ``label_cell_types()``.
 
         Returns
         -------
         pd.DataFrame
-            DataFrame with columns:
+            One row per unit, indexed by ``unit_id``, with columns:
 
-            - neuron_id: identifier for each neuron
             - peak_x: x-coordinate of peak firing location
             - peak_y: y-coordinate of peak firing location (NaN for 1D)
             - peak_rate: maximum firing rate (Hz)
@@ -1465,11 +1726,13 @@ class SpatialRatesResult(SpatialResultMixin):
         >>> result = compute_spatial_rates(
         ...     env, spike_times, times, positions, bandwidth=10.0
         ... )
-        >>> df = result.to_dataframe()
+        >>> df = result.summary_table()
         >>> "cell_type" in df.columns
         True
         >>> len(df)
         3
+        >>> df.index.name
+        'unit_id'
 
         >>> # Filter for place cells
         >>> place_cells = df[df["cell_type"] == "place"]
@@ -1477,14 +1740,15 @@ class SpatialRatesResult(SpatialResultMixin):
         >>> # Sort by spatial information
         >>> top_cells = df.sort_values("spatial_info", ascending=False)
 
-        >>> # Custom neuron identifiers
-        >>> df = result.to_dataframe(neuron_ids=["unit_0", "unit_1", "unit_2"])
-        >>> df["neuron_id"].tolist()
+        >>> # Custom unit identifiers
+        >>> df = result.summary_table(unit_ids=["unit_0", "unit_1", "unit_2"])
+        >>> df.index.tolist()
         ['unit_0', 'unit_1', 'unit_2']
 
         See Also
         --------
-        detect_cell_types : Cell type classification
+        to_dataframe : Dense per-bin frame (one row per (unit, bin)).
+        label_cell_types : Cell type classification
         spatial_information : Batch spatial information computation
         grid_scores : Batch grid score computation
         border_scores : Batch border score computation
@@ -1493,14 +1757,13 @@ class SpatialRatesResult(SpatialResultMixin):
 
         n_neurons = len(self)
 
-        # Use integer indices if no neuron_ids provided
-        if neuron_ids is None:
-            neuron_ids_list: list[str | int] = list(range(n_neurons))
+        if unit_ids is None:
+            index_ids: list[str | int] = list(np.asarray(self.unit_ids))
         else:
-            neuron_ids_list = list(neuron_ids)
-            if len(neuron_ids_list) != n_neurons:
+            index_ids = list(unit_ids)
+            if len(index_ids) != n_neurons:
                 raise ValueError(
-                    f"neuron_ids has {len(neuron_ids_list)} elements but "
+                    f"unit_ids has {len(index_ids)} elements but "
                     f"result contains {n_neurons} neurons"
                 )
 
@@ -1510,7 +1773,6 @@ class SpatialRatesResult(SpatialResultMixin):
 
         # Build data dictionary
         data: dict[str, Any] = {
-            "neuron_id": neuron_ids_list,
             "peak_x": peaks[:, 0],
             "peak_y": peaks[:, 1] if n_dims > 1 else np.full(n_neurons, np.nan),
             "peak_rate": self.peak_firing_rate(),
@@ -1521,9 +1783,9 @@ class SpatialRatesResult(SpatialResultMixin):
         }
 
         if include_classification:
-            data["cell_type"] = self.detect_cell_types()
+            data["cell_type"] = self.label_cell_types()
 
-        return pd.DataFrame(data)
+        return pd.DataFrame(data, index=pd.Index(index_ids, name="unit_id"))
 
 
 # ==============================================================================
@@ -1806,6 +2068,7 @@ def compute_spatial_rates(
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
     warn_on_drop: bool = True,
+    unit_ids: NDArray[Any] | Sequence[Any] | None = None,
 ) -> SpatialRatesResult:
     """Compute spatial firing rate maps for multiple neurons.
 
@@ -1868,6 +2131,12 @@ def compute_spatial_rates(
         aggregate statistics, so it fires exactly once even when
         ``n_jobs != 1`` (joblib worker warnings are commonly swallowed).
         Set to ``False`` to suppress all drop-related warnings.
+    unit_ids : ndarray or sequence, optional
+        Per-unit identity labels (integers or strings), one per neuron in
+        the same order as ``spike_times``. Stored on the result's
+        ``unit_ids`` field and stamped onto each child's ``unit_id`` when
+        indexing/iterating. Defaults to ``np.arange(n_neurons)``. A
+        wrong-length value raises ``ValueError``.
 
     Returns
     -------
@@ -1947,10 +2216,14 @@ def compute_spatial_rates(
     >>> len(peaks)
     3
 
-    >>> # Get metrics for all neurons
-    >>> df = result.to_dataframe()
-    >>> len(df)
+    >>> # Per-unit scalar summary (one row per unit)
+    >>> summary = result.summary_table()
+    >>> len(summary)
     3
+    >>> # Dense per-bin frame (one row per (unit, bin))
+    >>> df = result.to_dataframe()
+    >>> len(df) == 3 * env.n_bins
+    True
 
     >>> # Use 2D array with NaN padding
     >>> spike_times_2d = np.array(
@@ -1999,6 +2272,13 @@ def compute_spatial_rates(
     spike_times_list = as_spike_trains(spike_times)
     n_neurons = len(spike_times_list)
 
+    # Resolve and validate per-unit identity labels (defaults to arange).
+    from neurospatial._results import resolve_unit_ids
+
+    resolved_unit_ids = resolve_unit_ids(
+        unit_ids, n_neurons, context="compute_spatial_rates"
+    )
+
     # Convert inputs to arrays
     times = np.asarray(times, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
@@ -2031,6 +2311,7 @@ def compute_spatial_rates(
             env=env,
             smoothing_method=smoothing_method,
             bandwidth=bandwidth,
+            unit_ids=resolved_unit_ids,
         )
 
     # Bin spike trains and compute occupancy (always NumPy - CPU/joblib)
@@ -2075,6 +2356,7 @@ def compute_spatial_rates(
         env=env,
         smoothing_method=smoothing_method,
         bandwidth=bandwidth,
+        unit_ids=resolved_unit_ids,
     )
 
 
@@ -2888,6 +3170,100 @@ def detect_place_fields(
             break
 
     return PlaceFieldsResult(fields=fields, excluded_reason=None, n_excluded=0)
+
+
+def is_place_cell(
+    env: Environment,
+    spike_times: NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    smoothing_method: Literal[
+        "diffusion_kde", "gaussian_kde", "binned"
+    ] = "diffusion_kde",
+    bandwidth: float = 5.0,
+    threshold: float = 0.2,
+    min_size: int | None = None,
+    max_mean_rate: float = 10.0,
+    detect_subfields: bool = True,
+) -> bool:
+    """Quick check: Is this a place cell?
+
+    Convenience function for fast screening of neurons. Computes the spatial
+    rate map and checks whether :func:`detect_place_fields` finds at least one
+    place field. Agrees with :func:`detect_place_fields`: returns ``True`` iff
+    that detector finds a field on the same rate map.
+
+    For detailed metrics, use :func:`compute_spatial_rate` and inspect the
+    result's methods (``is_place_cell()``, ``spatial_information()``, etc.).
+
+    Parameters
+    ----------
+    env : Environment
+        Spatial environment defining the discretization.
+    spike_times : NDArray[np.float64], shape (n_spikes,)
+        Times of spikes.
+    times : NDArray[np.float64], shape (n_time,)
+        Timestamps for each behavioral sample.
+    positions : NDArray[np.float64], shape (n_time, n_dims)
+        Animal positions.
+    smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
+        Rate map smoothing method.
+    bandwidth : float, default=5.0
+        Smoothing bandwidth in environment units.
+    threshold : float, default=0.2
+        Fraction of peak rate for field boundary detection (0-1).
+    min_size : int, optional
+        Minimum number of bins for a valid field. If None, defaults to 9.
+    max_mean_rate : float, default=10.0
+        Maximum mean firing rate (Hz). Neurons exceeding this are excluded
+        as putative interneurons.
+    detect_subfields : bool, default=True
+        If True, recursively detect subfields within large fields.
+
+    Returns
+    -------
+    bool
+        True if the neuron passes place-cell criteria (has >= 1 detected
+        place field).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding.spatial import is_place_cell
+    >>> rng = np.random.default_rng(0)
+    >>> positions = rng.uniform(0, 100, (1000, 2))
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
+    >>> times = np.linspace(0, 100, 1000)
+    >>> spike_times = np.sort(rng.uniform(0, 100, 50))
+    >>> result = is_place_cell(env, spike_times, times, positions)
+    >>> type(result)
+    <class 'bool'>
+
+    See Also
+    --------
+    compute_spatial_rate : Full spatial rate computation
+    detect_place_fields : Place field detection algorithm this agrees with
+    SpatialRateResult.is_place_cell : Place-cell classification on a result
+    """
+    try:
+        result = compute_spatial_rate(
+            env,
+            spike_times,
+            times,
+            positions,
+            smoothing_method=smoothing_method,
+            bandwidth=bandwidth,
+        )
+    except (ValueError, RuntimeError):
+        return False
+    return result.is_place_cell(
+        threshold=threshold,
+        min_size=min_size,
+        max_mean_rate=max_mean_rate,
+        detect_subfields=detect_subfields,
+    )
 
 
 def _extract_connected_component_scipy(

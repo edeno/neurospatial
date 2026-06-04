@@ -66,7 +66,9 @@ class TestSafeGatherRegions:
         )
         times = np.linspace(0.0, 1.0, len(position_bins))
 
-        crossings = detect_region_crossings(position_bins, times, region_name, env)
+        crossings = detect_region_crossings(
+            position_bins, times, env, region_name=region_name
+        )
 
         assert crossings == []
 

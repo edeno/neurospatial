@@ -23,7 +23,7 @@ exponentiating log-likelihoods.
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Literal, Protocol, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -33,6 +33,19 @@ from neurospatial.decoding.likelihood import log_poisson_likelihood
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
+
+
+class SpatialRatesLike(Protocol):
+    """Duck-typed protocol for population rate result objects.
+
+    Any object exposing a ``firing_rates`` attribute of shape
+    ``(n_neurons, n_bins)`` -- e.g.
+    :class:`~neurospatial.encoding.spatial.SpatialRatesResult` -- can be passed
+    directly to :func:`decode_position` in place of a raw NumPy array.
+    """
+
+    @property
+    def firing_rates(self) -> NDArray[np.float64]: ...
 
 
 def normalize_to_posterior(
@@ -266,7 +279,7 @@ def normalize_to_posterior(
 def decode_position(
     env: Environment,
     spike_counts: NDArray[np.int64],
-    encoding_models: NDArray[np.float64],
+    encoding_models: NDArray[np.float64] | SpatialRatesLike,
     dt: float,
     *,
     prior: NDArray[np.float64] | None = None,
@@ -285,10 +298,17 @@ def decode_position(
         Spatial environment defining the discretization.
     spike_counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
         Spike counts per neuron per time bin.
-    encoding_models : NDArray[np.float64], shape (n_neurons, n_bins)
+    encoding_models : NDArray[np.float64] or SpatialRatesResult, shape (n_neurons, n_bins)
         Firing rate maps (place fields) for each neuron.
         Expected units: Hz (spikes/second). Typical values: 0-50 Hz.
         Very high rates (>100 Hz) may cause numerical issues.
+
+        A population rate result object (anything exposing a ``firing_rates``
+        attribute, e.g.
+        :class:`~neurospatial.encoding.spatial.SpatialRatesResult`) may be
+        passed directly; its ``firing_rates`` array is used. This removes the
+        ``np.stack([r.firing_rate ...])`` glue between the encoding and
+        decoding steps.
 
         NaN entries (e.g. low-occupancy bins masked by an encoder's
         ``min_occupancy`` when ``fill_value=None``) are tolerated: each such
@@ -411,6 +431,41 @@ def decode_position(
         raise ValueError(
             f"Unknown method '{method}'. Currently only 'poisson' is supported."
         )
+
+    # Accept a population rate result object (duck-typed): if it exposes a
+    # ``firing_rates`` attribute, use that array directly. This removes the
+    # np.stack([r.firing_rate ...]) glue between encode and decode.
+    if hasattr(encoding_models, "firing_rates"):
+        provenance = type(encoding_models).__name__
+        firing_rates = encoding_models.firing_rates
+        # The `.firing_rates` attribute is only a usable encoding model when it
+        # is a 2-D (n_neurons, n_bins) numeric array. Some result objects expose
+        # a `.firing_rates` that is None or a Mapping (e.g.
+        # DirectionalPlaceFields.firing_rates is a dict keyed by direction);
+        # passing those straight to np.asarray below yields an obscure
+        # NumPy-internal TypeError. Reject them here with a clear message.
+        if firing_rates is None:
+            raise ValueError(
+                f"decode_position: the encoding result's `.firing_rates` must "
+                f"be a 2-D (n_neurons, n_bins) array, got None "
+                f"(from {provenance}.firing_rates)."
+            )
+        try:
+            firing_rates_arr = np.asarray(firing_rates, dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"decode_position: the encoding result's `.firing_rates` must "
+                f"be a 2-D (n_neurons, n_bins) array, got "
+                f"{type(firing_rates).__name__} (from {provenance}.firing_rates)."
+            ) from exc
+        if firing_rates_arr.ndim != 2:
+            raise ValueError(
+                f"decode_position: the encoding result's `.firing_rates` must "
+                f"be a 2-D (n_neurons, n_bins) array, got a "
+                f"{firing_rates_arr.ndim}-D array with shape "
+                f"{firing_rates_arr.shape} (from {provenance}.firing_rates)."
+            )
+        encoding_models = firing_rates_arr
 
     # Convert inputs to arrays
     spike_counts = np.asarray(spike_counts)

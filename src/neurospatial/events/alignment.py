@@ -11,7 +11,8 @@ This module provides functions for aligning neural data to events:
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -345,6 +346,7 @@ def population_peri_event_histogram(
     window: tuple[float, float],
     *,
     bin_size: float = 0.025,
+    unit_ids: NDArray[Any] | Sequence[Any] | None = None,
 ) -> PopulationPeriEventResult:
     """
     Compute peri-event histogram for a population of units.
@@ -363,6 +365,11 @@ def population_peri_event_histogram(
         Time window (start, end) relative to each event.
     bin_size : float, default=0.025
         Width of time bins in seconds (default 25ms).
+    unit_ids : ndarray or sequence, optional
+        Per-unit identity labels (integers or strings), one per unit in the
+        same order as ``spike_trains``. Stored on the result's ``unit_ids``
+        field. Defaults to ``np.arange(n_units)``. A wrong-length value
+        raises ``ValueError``.
 
     Returns
     -------
@@ -448,6 +455,13 @@ def population_peri_event_histogram(
     n_units = len(spike_trains)
     n_events = len(event_times)
 
+    # Resolve and validate per-unit identity labels (defaults to arange).
+    from neurospatial._results import resolve_unit_ids
+
+    resolved_unit_ids = resolve_unit_ids(
+        unit_ids, n_units, context="population_peri_event_histogram"
+    )
+
     # Warn about single event
     if n_events == 1:
         warnings.warn(
@@ -496,6 +510,7 @@ def population_peri_event_histogram(
         n_units=n_units,
         window=window,
         bin_size=bin_size,
+        unit_ids=resolved_unit_ids,
     )
 
 

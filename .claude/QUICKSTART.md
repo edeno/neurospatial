@@ -156,9 +156,11 @@ info = result.spatial_information()  # (n_neurons,)
 sparsity = result.sparsity()         # (n_neurons,)
 peaks = result.peak_location()       # (n_neurons, n_dims)
 
-# Export to DataFrame
-df = result.to_dataframe()
-print(df.columns)  # ['neuron_id', 'peak_x', 'peak_y', 'peak_rate', 'spatial_info', ...]
+# Per-unit summary table (one row per unit, unit_id-indexed)
+df = result.summary_table()
+print(df.columns)  # ['peak_x', 'peak_y', 'peak_rate', 'spatial_info', ...]
+# Dense per-bin frame (one row per (unit, bin), carries unit_id):
+dense = result.to_dataframe()
 
 # Iterate over neurons
 for i, single_result in enumerate(result):
@@ -468,10 +470,10 @@ result = compute_egocentric_rates(
 # Batch metrics
 pref_dists = result.preferred_distances()  # (n_neurons,)
 pref_dirs = result.preferred_directions()  # (n_neurons,)
-ovcs = result.detect_ovcs(min_info=0.5)    # (n_neurons,) bool
+ovcs = result.classify(min_info=0.5)       # (n_neurons,) bool
 
-# Export to DataFrame
-df = result.to_dataframe()
+# Per-unit summary table (one row per unit, unit_id-indexed)
+df = result.summary_table()
 ```
 
 **Classify object-vector cells from result metrics:**
@@ -590,12 +592,12 @@ result = compute_view_rates(
 )
 
 # Batch metrics
-peaks = result.peak_view_location()        # (n_neurons, n_dims)
+peaks = result.peak_locations()            # (n_neurons, n_dims)
 info = result.view_spatial_information()   # (n_neurons,)
-view_cells = result.detect_view_cells(min_info=0.5)  # (n_neurons,) bool
+view_cells = result.classify(min_info=0.5)  # (n_neurons,) bool
 
-# Export to DataFrame
-df = result.to_dataframe()
+# Per-unit summary table (one row per unit, unit_id-indexed)
+df = result.summary_table()
 ```
 
 **Classify spatial view cells from result metrics:**
@@ -604,12 +606,12 @@ df = result.to_dataframe()
 # Single-neuron result from compute_view_rate(...)
 print(single.is_spatial_view_cell(min_info=0.5))
 print(f"View information: {single.view_spatial_information():.3f} bits/spike")
-print(f"Peak viewed location: {single.peak_view_location()}")
+print(f"Peak viewed location: {single.peak_location()}")
 
 # Batch result from compute_view_rates(...)
-print(batch.detect_view_cells(min_info=0.5))           # (n_neurons,) bool
+print(batch.classify(min_info=0.5))                    # (n_neurons,) bool
 print(batch.view_spatial_information())                # (n_neurons,)
-print(batch.peak_view_location())                      # (n_neurons, n_dims)
+print(batch.peak_locations())                          # (n_neurons, n_dims)
 ```
 
 **Simulate spatial view cells:**

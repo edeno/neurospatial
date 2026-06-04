@@ -957,12 +957,12 @@ class TestComputeEgocentricRatesResultMethods:
             trajectory_data["object_positions"],
         )
 
-        is_object_vector_cell = result.detect_ovcs()
+        is_object_vector_cell = result.classify()
         assert len(is_object_vector_cell) == len(spike_times_list)
         assert is_object_vector_cell.dtype == bool
 
-    def test_to_dataframe_method_works(self, trajectory_data, spike_times_list):
-        """Test that to_dataframe method works."""
+    def test_summary_table_method_works(self, trajectory_data, spike_times_list):
+        """Test that summary_table (per-unit) and to_dataframe (dense) work."""
         import pandas as pd
 
         from neurospatial.encoding.egocentric import compute_egocentric_rates
@@ -976,6 +976,11 @@ class TestComputeEgocentricRatesResultMethods:
             trajectory_data["object_positions"],
         )
 
-        df = result.to_dataframe()
-        assert isinstance(df, pd.DataFrame)
-        assert len(df) == len(spike_times_list)
+        summary = result.summary_table()
+        assert isinstance(summary, pd.DataFrame)
+        assert len(summary) == len(spike_times_list)
+        assert summary.index.name == "unit_id"
+
+        dense = result.to_dataframe()
+        assert {"unit_id", "bin", "firing_rate"} <= set(dense.columns)
+        assert len(dense) == len(spike_times_list) * result.env.n_bins

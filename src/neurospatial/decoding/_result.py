@@ -460,20 +460,31 @@ class DecodingResult(ResultMixin):
         return pd.DataFrame(data)
 
     def to_xarray(self) -> Any:
-        """Convert the posterior to an :class:`xarray.DataArray`.
+        """Convert the posterior to a labeled :class:`xarray.Dataset`.
 
         Wraps the ``(n_time_bins, n_bins)`` posterior in a labeled
-        :class:`xarray.DataArray` with dims ``("time", "bin")``. The ``time``
-        coordinate is taken from :attr:`times` when available; the ``bin``
-        coordinate is the integer bin index ``np.arange(n_bins)``.
+        :class:`xarray.Dataset` with dims ``("time", "bin")`` -- a posterior
+        over space per decode time bin (no ``unit_id`` axis). The ``time``
+        index coordinate is taken from :attr:`times` when available (see Notes
+        for the fallback); the ``bin`` dimension carries non-index
+        ``bin_center_x`` / ``bin_center_y`` (and ``bin_center_z`` for 3-D, or
+        ``bin_center_distance`` / ``bin_center_angle`` for polar)
+        coordinates.
 
         Returns
         -------
-        xarray.DataArray
-            Posterior with dims ``("time", "bin")``. The array ``.values``
-            equal :attr:`posterior`. ``coords["time"]`` is :attr:`times`
-            (or the integer index fallback, see Notes) and ``coords["bin"]``
-            is the integer bin index.
+        xarray.Dataset
+            Dataset with:
+
+            - data var ``posterior``, dims ``("time", "bin")`` (equals
+              :attr:`posterior`).
+            - data var ``map_position`` per dimension is *not* added; the MAP
+              bin index is exposed via the ``map_bin`` data var on ``time``.
+            - index coord ``time`` (= :attr:`times`, or the integer-index
+              fallback, see Notes).
+            - non-index ``bin_center_*`` coords on ``bin``.
+            - ``attrs``: ``units``, ``env`` fingerprint, and
+              ``software_version``.
 
         Raises
         ------
@@ -504,8 +515,8 @@ class DecodingResult(ResultMixin):
         >>> posterior = np.ones((10, env.n_bins)) / env.n_bins
         >>> times = np.linspace(0.0, 1.0, 10)
         >>> result = DecodingResult(posterior=posterior, env=env, times=times)
-        >>> da = result.to_xarray()  # doctest: +SKIP
-        >>> da.dims  # doctest: +SKIP
+        >>> ds = result.to_xarray()  # doctest: +SKIP
+        >>> ds["posterior"].dims  # doctest: +SKIP
         ('time', 'bin')
 
         See Also
@@ -521,6 +532,13 @@ class DecodingResult(ResultMixin):
                 "'pip install neurospatial[xarray]' or 'pip install xarray'."
             ) from exc
 
+        from neurospatial._results import (
+            _bin_center_coords,
+            env_fingerprint,
+            software_version,
+            units_attr,
+        )
+
         n_time = self.posterior.shape[0]
         n_bins = self.posterior.shape[1]
 
@@ -531,14 +549,22 @@ class DecodingResult(ResultMixin):
         else:
             time_coord = np.arange(n_time)
 
-        bin_coord = np.arange(n_bins)
+        coords: dict[str, Any] = {"time": time_coord, "bin": np.arange(n_bins)}
+        coords.update(_bin_center_coords(self.env, n_bins))
 
-        return xr.DataArray(
-            self.posterior,
-            dims=("time", "bin"),
-            coords={"time": time_coord, "bin": bin_coord},
-            name="posterior",
-        )
+        data_vars: dict[str, Any] = {
+            "posterior": (("time", "bin"), np.asarray(self.posterior)),
+            # map_bin is cheaply available (cached); expose the MAP bin index.
+            "map_bin": (("time",), np.asarray(self.map_estimate)),
+        }
+
+        attrs: dict[str, Any] = {
+            **units_attr(self.env),
+            "env": env_fingerprint(self.env),
+            "software_version": software_version(),
+        }
+
+        return xr.Dataset(data_vars=data_vars, coords=coords, attrs=attrs)
 
     def error_against(
         self,

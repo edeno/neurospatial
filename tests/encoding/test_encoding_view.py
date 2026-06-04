@@ -589,7 +589,7 @@ class TestViewRateResultPeakViewLocation:
             bandwidth=5.0,
         )
 
-        peak = result.peak_view_location()
+        peak = result.peak_location()
         # 2D environment should have 2 dimensions
         assert peak.shape == (2,)
 
@@ -617,7 +617,7 @@ class TestViewRateResultPeakViewLocation:
             bandwidth=5.0,
         )
 
-        peak = result.peak_view_location()
+        peak = result.peak_location()
         expected = simple_env.bin_centers[peak_bin]
         assert_array_equal(peak, expected)
 
@@ -644,7 +644,7 @@ class TestViewRateResultPeakViewLocation:
             bandwidth=5.0,
         )
 
-        peak = result.peak_view_location()
+        peak = result.peak_location()
         expected = simple_env.bin_centers[peak_bin]
         assert_array_equal(peak, expected)
 
@@ -1038,7 +1038,7 @@ class TestViewRatesResultPeakViewLocations:
             bandwidth=5.0,
         )
 
-        peaks = result.peak_view_location()
+        peaks = result.peak_locations()
         # 2D environment with n_neurons neurons
         assert peaks.shape == (n_neurons, 2)
 
@@ -1062,12 +1062,12 @@ class TestViewRatesResultPeakViewLocations:
             bandwidth=5.0,
         )
 
-        batch_peaks = result.peak_view_location()
+        batch_peaks = result.peak_locations()
 
         # Verify each neuron's peak matches single-neuron result
         for i in range(n_neurons):
             single = result[i]
-            single_peak = single.peak_view_location()
+            single_peak = single.peak_location()
             assert_array_equal(batch_peaks[i], single_peak)
 
     def test_peak_view_location_handles_nan(
@@ -1094,7 +1094,7 @@ class TestViewRatesResultPeakViewLocations:
             bandwidth=5.0,
         )
 
-        peaks = result.peak_view_location()
+        peaks = result.peak_locations()
         assert peaks.shape == (2, 2)
         assert_array_equal(peaks[0], simple_env.bin_centers[3])
         assert_array_equal(peaks[1], simple_env.bin_centers[7])
@@ -1122,7 +1122,7 @@ class TestViewRatesResultPeakViewLocations:
             bandwidth=5.0,
         )
 
-        peaks = result.peak_view_location()
+        peaks = result.peak_locations()
         assert peaks.shape == (2, 2)
         # First neuron: all NaN -> NaN coordinates
         assert np.all(np.isnan(peaks[0]))
@@ -1276,7 +1276,7 @@ class TestViewRatesResultDetectViewCells:
             bandwidth=5.0,
         )
 
-        classification = result.detect_view_cells()
+        classification = result.classify()
         assert isinstance(classification, np.ndarray)
 
     def test_detect_view_cells_shape(
@@ -1299,7 +1299,7 @@ class TestViewRatesResultDetectViewCells:
             bandwidth=5.0,
         )
 
-        classification = result.detect_view_cells()
+        classification = result.classify()
         assert classification.shape == (n_neurons,)
         assert classification.dtype == np.bool_
 
@@ -1324,7 +1324,7 @@ class TestViewRatesResultDetectViewCells:
         )
 
         min_info = 0.1  # Use a consistent threshold
-        batch_classification = result.detect_view_cells(min_info=min_info)
+        batch_classification = result.classify(min_info=min_info)
 
         # Verify each neuron's classification matches single-neuron result
         for i in range(n_neurons):
@@ -1363,12 +1363,12 @@ class TestViewRatesResultDetectViewCells:
         )
 
         # With very low threshold, most should pass
-        low_thresh = result.detect_view_cells(min_info=0.0)
+        low_thresh = result.classify(min_info=0.0)
         # At least the peaked neurons should be True
         assert low_thresh[1] or low_thresh[2]
 
         # With high threshold, uniform should definitely fail
-        high_thresh = result.detect_view_cells(min_info=10.0)
+        high_thresh = result.classify(min_info=10.0)
         assert high_thresh[0] is np.False_
 
     def test_detect_view_cells_default_threshold(
@@ -1393,7 +1393,7 @@ class TestViewRatesResultDetectViewCells:
             bandwidth=5.0,
         )
 
-        classification = result.detect_view_cells()
+        classification = result.classify()
         # Uniform firing has zero info, should all be False
         assert not np.any(classification)
 
@@ -1406,7 +1406,7 @@ class TestViewRatesResultDetectViewCells:
 class TestViewRatesResultToDataframe:
     """Test ViewRatesResult.to_dataframe() method."""
 
-    def test_to_dataframe_returns_dataframe(
+    def test_summary_table_returns_dataframe(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
@@ -1427,10 +1427,10 @@ class TestViewRatesResultToDataframe:
 
         import pandas as pd
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert isinstance(df, pd.DataFrame)
 
-    def test_to_dataframe_row_count(
+    def test_summary_table_row_count(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
@@ -1450,16 +1450,16 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert len(df) == n_neurons
 
-    def test_to_dataframe_has_neuron_id_column(
+    def test_summary_table_has_unit_id_column(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() should have neuron_id column."""
+        """summary_table() should be indexed by unit_id."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1472,10 +1472,10 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
-        assert "neuron_id" in df.columns
+        df = result.summary_table()
+        assert df.index.name == "unit_id"
 
-    def test_to_dataframe_has_peak_view_x_column(
+    def test_summary_table_has_peak_view_x_column(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
@@ -1494,10 +1494,10 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "peak_view_x" in df.columns
 
-    def test_to_dataframe_has_peak_view_y_column(
+    def test_summary_table_has_peak_view_y_column(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
@@ -1516,10 +1516,10 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "peak_view_y" in df.columns
 
-    def test_to_dataframe_has_peak_rate_column(
+    def test_summary_table_has_peak_rate_column(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
@@ -1538,10 +1538,10 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "peak_rate" in df.columns
 
-    def test_to_dataframe_has_view_spatial_info_column(
+    def test_summary_table_has_view_spatial_info_column(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
@@ -1560,10 +1560,10 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "view_spatial_info" in df.columns
 
-    def test_to_dataframe_has_is_view_cell_column(
+    def test_summary_table_has_is_view_cell_column(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
@@ -1582,10 +1582,10 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "is_spatial_view_cell" in df.columns
 
-    def test_to_dataframe_default_neuron_ids(
+    def test_summary_table_default_unit_ids(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
@@ -1605,18 +1605,18 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         expected_ids = list(range(n_neurons))
-        assert list(df["neuron_id"]) == expected_ids
+        assert list(df.index) == expected_ids
 
-    def test_to_dataframe_custom_neuron_ids(
+    def test_summary_table_custom_unit_ids(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         n_neurons: int,
     ) -> None:
-        """to_dataframe() should accept custom neuron_ids."""
+        """summary_table() should accept custom unit_ids."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1630,16 +1630,16 @@ class TestViewRatesResultToDataframe:
         )
 
         custom_ids = [f"unit_{i}" for i in range(n_neurons)]
-        df = result.to_dataframe(neuron_ids=custom_ids)
-        assert list(df["neuron_id"]) == custom_ids
+        df = result.summary_table(unit_ids=custom_ids)
+        assert list(df.index) == custom_ids
 
-    def test_to_dataframe_neuron_ids_length_mismatch(
+    def test_summary_table_unit_ids_length_mismatch(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() should raise ValueError for wrong neuron_ids length."""
+        """summary_table() should raise ValueError for wrong unit_ids length."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1654,9 +1654,9 @@ class TestViewRatesResultToDataframe:
 
         # Wrong number of ids
         with pytest.raises(ValueError):
-            result.to_dataframe(neuron_ids=["a", "b"])  # Only 2, but 5 neurons
+            result.summary_table(unit_ids=["a", "b"])  # Only 2, but 5 neurons
 
-    def test_to_dataframe_peak_view_x_matches_batch_method(
+    def test_summary_table_peak_view_x_matches_batch_method(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
@@ -1676,11 +1676,11 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
-        expected = result.peak_view_location()[:, 0]
+        df = result.summary_table()
+        expected = result.peak_locations()[:, 0]
         np.testing.assert_array_almost_equal(df["peak_view_x"].values, expected)
 
-    def test_to_dataframe_peak_view_y_matches_batch_method(
+    def test_summary_table_peak_view_y_matches_batch_method(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
@@ -1700,11 +1700,11 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
-        expected = result.peak_view_location()[:, 1]
+        df = result.summary_table()
+        expected = result.peak_locations()[:, 1]
         np.testing.assert_array_almost_equal(df["peak_view_y"].values, expected)
 
-    def test_to_dataframe_peak_rate_matches_batch_method(
+    def test_summary_table_peak_rate_matches_batch_method(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
@@ -1723,11 +1723,11 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         expected = np.nanmax(batch_firing_rates, axis=1)
         np.testing.assert_array_almost_equal(df["peak_rate"].values, expected)
 
-    def test_to_dataframe_view_spatial_info_matches_batch_method(
+    def test_summary_table_view_spatial_info_matches_batch_method(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
@@ -1746,11 +1746,11 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         expected = result.view_spatial_information()
         np.testing.assert_array_almost_equal(df["view_spatial_info"].values, expected)
 
-    def test_to_dataframe_is_view_cell_matches_batch_method(
+    def test_summary_table_is_view_cell_matches_batch_method(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
@@ -1769,11 +1769,11 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
-        expected = result.detect_view_cells()
+        df = result.summary_table()
+        expected = result.classify()
         np.testing.assert_array_equal(df["is_spatial_view_cell"].values, expected)
 
-    def test_to_dataframe_empty_result(
+    def test_summary_table_empty_result(
         self,
         simple_env: Environment,
         single_occupancy: np.ndarray,
@@ -1795,12 +1795,11 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 0
         # Should still have all columns
         expected_columns = {
-            "neuron_id",
             "peak_view_x",
             "peak_view_y",
             "peak_rate",
@@ -1809,7 +1808,7 @@ class TestViewRatesResultToDataframe:
         }
         assert expected_columns.issubset(set(df.columns))
 
-    def test_to_dataframe_single_neuron(
+    def test_summary_table_single_neuron(
         self,
         simple_env: Environment,
         single_firing_rate: np.ndarray,
@@ -1833,10 +1832,10 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 1
-        assert df["neuron_id"].iloc[0] == 0
+        assert df.index[0] == 0
 
 
 # ==============================================================================

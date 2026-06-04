@@ -9,7 +9,126 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ## [Unreleased]
 
+### Breaking changes
+
+- `to_xarray()` now returns a labeled `xarray.Dataset` instead of an
+  `xarray.DataArray` with integer coordinates. This is a clean break: there is
+  no `DataArray` shim and no `to_dataset()` alias. Two distinct shapes are
+  produced:
+  - **Population rate results** (`SpatialRatesResult`, `DirectionalRatesResult`,
+    `ViewRatesResult`, `EgocentricRatesResult`) return a `Dataset` with dims
+    `("unit_id", "bin")`. `unit_id` is the index coordinate holding the *real*
+    per-unit identity labels (`result.unit_ids`), so units are selected by
+    label. The `bin` dimension carries non-index `bin_center_x` / `bin_center_y`
+    (/ `bin_center_z`) coordinates for Cartesian environments, or
+    `bin_center_distance` / `bin_center_angle` for the polar egocentric result.
+    The rate matrix is the `firing_rate` data var; `occupancy` is a `("bin",)`
+    data var. `attrs` carry `units`, `bandwidth` (where applicable), an `env`
+    fingerprint, and `software_version`. Duplicate `unit_ids` now raise
+    `ValueError` (label-based selection requires uniqueness).
+  - **Decode results** (`DecodingResult`) return a `Dataset` with dims
+    `("time", "bin")` (a posterior over space per time bin; no `unit_id` axis).
+    The `posterior` data var holds the posterior, with the same `bin_center_*`
+    coordinate logic and `units` / `env` / `software_version` attrs.
+
+    Before → after:
+
+    ```python
+    # before (DataArray, integer coords)
+    da = result.to_xarray()
+    da.sel(neuron=0)
+    # after (Dataset, real unit_id labels)
+    ds = result.to_xarray()
+    ds.sel(unit_id=result.unit_ids[0])
+    ```
+
+- The two terminal verbs now mean **one** thing on every result class.
+  `to_dataframe()` on the batch (plural) encoding results — `SpatialRatesResult`,
+  `DirectionalRatesResult`, `ViewRatesResult`, `EgocentricRatesResult` — is now
+  **dense tidy**: one row per `(unit, bin)` (single-unit results: one row per
+  `bin`), always carrying a `unit_id` column plus the bin-center coordinate
+  columns (`bin_center_x`/`y`/`z` for Cartesian, `bin_center_distance`/`angle`
+  for polar egocentric, `bin_center_angle` for directional), `firing_rate`, and
+  `occupancy`. The **per-unit summary** that `to_dataframe()` used to return
+  (one row per neuron with `peak_x`, `peak_rate`, `spatial_info`, `sparsity`,
+  `grid_score`, `border_score`, `cell_type`, etc.) has moved to the new
+  `summary_table()`, which is `unit_id`-indexed. This is a clean break: there is
+  no mode flag and no transition shim. The `neuron_ids=` keyword on the old
+  per-unit `to_dataframe()` is replaced by `unit_ids=` on `summary_table()`
+  (defaulting to the result's own `unit_ids`).
+
+    Before → after:
+
+    ```python
+    # before — to_dataframe() returned one row per neuron with metric columns
+    df = result.to_dataframe()           # columns: neuron_id, peak_x, ...
+    place = df[df["cell_type"] == "place"]
+
+    # after — summary_table() is the per-unit summary; to_dataframe() is dense
+    summary = result.summary_table()     # one row per unit, unit_id-indexed
+    place = summary[summary["cell_type"] == "place"]
+    dense = result.to_dataframe()         # one row per (unit, bin), carries unit_id
+    ```
+
 ### Added
+
+- Experiment-shaped factory presets on `Environment` that speak experiment
+  vocabulary and delegate to the existing `from_*` factories:
+  - `Environment.open_field(positions, bin_size, ...)` — the only
+    positions-based preset; delegates to `from_samples` with `fill_holes=True`
+    flipped on (a sensible open-arena default that fills interior gaps).
+  - `Environment.linear_track(*, endpoints=..., node_positions=..., bin_size)`
+    — builds a 1D track graph (`is_linearized_track == True`) from an explicit
+    topology (two endpoints for a straight track, or waypoints for a
+    piecewise-linear track) and delegates to `from_graph`.
+  - `Environment.maze(kind, *, track_graph=..., node_positions=..., bin_size)`
+    — assembles the standard W / plus / T track-graph topology (or accepts a
+    ready `networkx` graph) and delegates to `from_graph`.
+
+  Track/maze presets require an explicit topology spec; raw positions cannot
+  infer a linear/W/plus/T graph, and calling them without a topology raises a
+  clear `ValueError`.
+
+- `to_xarray()` on `DirectionalRatesResult`, `ViewRatesResult`, and
+  `EgocentricRatesResult` (the directional/view/egocentric population results
+  previously had no xarray export). Each returns the labeled `xr.Dataset`
+  described under Breaking changes above.
+
+- Durable unit identity on encoding/events results. Every population result
+  (`SpatialRatesResult`, `DirectionalRatesResult`, `ViewRatesResult`,
+  `EgocentricRatesResult`, `PopulationPeriEventResult`) now carries a
+  `unit_ids: np.ndarray` field (plus an optional `unit_table: pd.DataFrame |
+  None`), and every single-unit result (`SpatialRateResult`,
+  `DirectionalRateResult`, `ViewRateResult`, `EgocentricRateResult`,
+  `PeriEventResult`) carries a singular `unit_id`. Indexing or iterating a
+  population result stamps the per-unit label onto the child
+  (`rates[i].unit_id == rates.unit_ids[i]`, iteration preserves order and
+  labels). The batch compute functions (`compute_spatial_rates`,
+  `compute_directional_rates`, `compute_view_rates`,
+  `compute_egocentric_rates`, `population_peri_event_histogram`) gained a
+  keyword-only `unit_ids=` parameter that threads onto the result; a
+  wrong-length value raises a clear `ValueError`. Fully back-compatible:
+  `unit_ids` defaults to `np.arange(n_units)` and the new fields are
+  `compare=False`, so existing callers and equality/hash behavior are
+  unchanged.
+
+- `summary_table()` — the per-unit summary terminal verb — on every batch
+  encoding result (`SpatialRatesResult`, `DirectionalRatesResult`,
+  `ViewRatesResult`, `EgocentricRatesResult`) and on `PopulationPeriEventResult`.
+  Returns one row per unit, `unit_id`-indexed, with that result's scalar metric
+  columns (peak location/rate, spatial info, grid/border score, cell type,
+  preferred direction/distance, etc.). Accepts an optional `unit_ids=` to
+  relabel the index.
+
+- PSTH results now carry the uniform result surface. `PeriEventResult` and
+  `PopulationPeriEventResult` inherit the canonical `ResultMixin` and implement
+  the terminal verbs: `to_dataframe()` (dense — one row per time bin for the
+  single-unit result, one row per `(unit, time-bin)` for the population result,
+  always carrying `unit_id`), `summary()` (flat dict of headline scalars —
+  peak rate/latency, baseline rate; population adds `mean_peak_rate` /
+  `population_peak_latency`), `PopulationPeriEventResult.summary_table()` (one
+  row per unit with `peak_rate` / `peak_latency` / `baseline_rate`), and
+  `plot()` (delegates to `plot_peri_event_histogram`, returns the axis).
 
 - `decode_session(env, spike_times, times, positions, *, dt, ...)` — one-call
   encode→bin→decode golden path in `neurospatial.decoding.session`.  Glues
@@ -30,7 +149,45 @@ these are called out under a dedicated **Breaking changes** heading.
   release so the name reads as a structural conversion, not a value transform;
   no deprecated alias is kept since the public name was never released.)
 
+- `classify(*, ...)` — a single-type boolean cell-type predicate (returns
+  `NDArray[np.bool_]`) on every batch encoding result: `EgocentricRatesResult`
+  (OVC, `min_info=0.3`), `ViewRatesResult` (view cell, `min_info=0.5`),
+  `DirectionalRatesResult` (HD cell, `min_mvl`/`alpha`), and `SpatialRatesResult`
+  (place cell, `min_spatial_info=0.5`). These replace the per-domain
+  `detect_ovcs` / `detect_view_cells` / `detect_hd_cells` detectors (now
+  deprecated aliases).
+
+- `label_cell_types(...)` on `SpatialRatesResult` — the multi-class string
+  labeler (`"place"`/`"grid"`/`"border"`/`"unclassified"`, returns
+  `NDArray[np.str_]`). This is the renamed `detect_cell_types` and is kept
+  deliberately SEPARATE from the boolean `classify` (different return type).
+
+- `is_place_cell(...)` — a single-neuron place-cell predicate, both as a free
+  function in `neurospatial.encoding.spatial` (exported from
+  `neurospatial.encoding`) and as a `SpatialRateResult.is_place_cell()` method.
+  Mirrors `is_spatial_view_cell` / `is_object_vector_cell` and agrees with
+  `detect_place_fields` (returns `True` iff that detector finds ≥1 field).
+
+- `decode_position(env, spike_counts, encoding_models, dt, ...)` now accepts a
+  population rate result object (anything exposing a `firing_rates` attribute,
+  e.g. `SpatialRatesResult`) directly in place of the raw `(n_neurons, n_bins)`
+  array, removing the `np.stack([r.firing_rate ...])` glue between the encoding
+  and decoding steps.
+
+- New keyword-only parameter `warn_on_drop: bool = True` on
+  `bin_spike_train`, `bin_spike_trains` (`encoding/_binning.py`),
+  `compute_spatial_rate`, and `compute_spatial_rates` (`encoding/spatial.py`).
+  Set to `False` to intentionally silence all spike-drop warnings (e.g. when
+  the caller handles the diagnostic themselves).
+
 ### Changed
+
+- `detect_region_crossings` argument order changed to follow the
+  behavioral-segmentation convention:
+  `(position_bins, times, env, *, region_name, direction=...)`. The old
+  positional order `(position_bins, times, region_name, env, ...)` is still
+  accepted for one release (transitional dispatch emits a `DeprecationWarning`)
+  and will be removed in 0.7.
 
 - Docs/examples now teach `decode_session` as the one-call decode golden path;
   the manual 3-call path (`compute_spatial_rates` → `bin_spikes_in_time` →
@@ -47,6 +204,22 @@ these are called out under a dedicated **Breaking changes** heading.
   with `simulate_trajectory_ou` + `PlaceCellModel` fixtures, replacing the hand-rolled
   `np.histogram` / `scipy.ndimage.gaussian_filter` approach. Added a CI snippet entry
   (`workflows_place_field_canonical`) to `docs/snippets.yml`.
+
+### Deprecated
+
+All of the following emit a `DeprecationWarning` and are scheduled for removal
+in 0.7. Each old name forwards to its replacement with unchanged behavior.
+
+- `EgocentricRatesResult.detect_ovcs` → `EgocentricRatesResult.classify`.
+- `ViewRatesResult.detect_view_cells` → `ViewRatesResult.classify`.
+- `DirectionalRatesResult.detect_hd_cells` → `DirectionalRatesResult.classify`.
+- `SpatialRatesResult.detect_cell_types` → `SpatialRatesResult.label_cell_types`
+  (the multi-class string labeler; not folded into `classify`).
+- `ViewRateResult.peak_view_location` → `ViewRateResult.peak_location`.
+- `ViewRatesResult.peak_view_location` → `ViewRatesResult.peak_locations`.
+- `detect_region_crossings` old positional order
+  `(position_bins, times, region_name, env, ...)` → new order
+  `(position_bins, times, env, *, region_name, ...)`.
 
 ### Fixed
 
@@ -134,14 +307,6 @@ these are called out under a dedicated **Breaking changes** heading.
   cause** in the main process — never from joblib worker processes where
   warnings are commonly swallowed.  Default behaviour for in-window spikes
   is byte-for-byte unchanged.
-
-### Added
-
-- New keyword-only parameter `warn_on_drop: bool = True` on
-  `bin_spike_train`, `bin_spike_trains` (`encoding/_binning.py`),
-  `compute_spatial_rate`, and `compute_spatial_rates` (`encoding/spatial.py`).
-  Set to `False` to intentionally silence all spike-drop warnings (e.g. when
-  the caller handles the diagnostic themselves).
 
 ## [0.5.0] - 2026-06-04
 

@@ -9,11 +9,14 @@ This module provides:
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
+
+from neurospatial._results import ResultMixin
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -24,7 +27,7 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
-class PeriEventResult:
+class PeriEventResult(ResultMixin):
     """
     Result from peri-event histogram analysis.
 
@@ -48,6 +51,11 @@ class PeriEventResult:
         Time window (start, end) relative to event in seconds.
     bin_size : float
         Width of time bins (seconds).
+    unit_id : int or str or None
+        Identifier for this unit. Set automatically when indexing/iterating a
+        :class:`PopulationPeriEventResult` (``rates[i].unit_id ==
+        rates.unit_ids[i]``); ``None`` for a standalone single-unit
+        computation unless supplied explicitly.
     firing_rate : NDArray[np.float64], shape (n_bins,)
         Firing rate (Hz). Cached on construction as ``histogram /
         bin_size``; treat as a read-only attribute.
@@ -72,15 +80,132 @@ class PeriEventResult:
     n_events: int
     window: tuple[float, float]
     bin_size: float
+    unit_id: int | str | None = None
     firing_rate: NDArray[np.float64] = field(init=False)
 
     def __post_init__(self) -> None:
         # Frozen dataclass: bypass setattr to populate the cached field.
         object.__setattr__(self, "firing_rate", self.histogram / self.bin_size)
 
+    def to_dataframe(self) -> pd.DataFrame:
+        """Dense tidy table of the PSTH: one row per time bin.
+
+        One row per time bin, carrying a ``unit_id`` column (the unit this PSTH
+        was computed for; ``None`` for a standalone single-unit computation).
+        Use this for plotting / detailed inspection.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Columns ``unit_id``, ``bin_center`` (s, time relative to event),
+            ``firing_rate`` (Hz), ``histogram`` (mean spike count per bin), and
+            ``sem`` (count units).
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.events._core import PeriEventResult
+        >>> bc = np.array([-0.5, 0.0, 0.5])
+        >>> result = PeriEventResult(
+        ...     bin_centers=bc,
+        ...     histogram=np.array([0.1, 0.4, 0.2]),
+        ...     sem=np.array([0.01, 0.02, 0.01]),
+        ...     n_events=10,
+        ...     window=(-0.75, 0.75),
+        ...     bin_size=0.5,
+        ...     unit_id="u0",
+        ... )
+        >>> df = result.to_dataframe()
+        >>> list(df.columns)
+        ['unit_id', 'bin_center', 'firing_rate', 'histogram', 'sem']
+        >>> len(df)
+        3
+        """
+        import pandas as pd
+
+        bin_centers = np.asarray(self.bin_centers)
+        n_bins = bin_centers.shape[0]
+        return pd.DataFrame(
+            {
+                "unit_id": [self.unit_id] * n_bins,
+                "bin_center": bin_centers,
+                "firing_rate": np.asarray(self.firing_rate),
+                "histogram": np.asarray(self.histogram),
+                "sem": np.asarray(self.sem),
+            }
+        )
+
+    def summary(self) -> dict[str, Any]:
+        """Flat dict of headline scalars for this PSTH.
+
+        Returns
+        -------
+        dict
+            Mapping with ``unit_id``, ``n_events`` (int), ``peak_rate`` (Hz),
+            ``peak_latency`` (s, time of the peak relative to the event), and
+            ``baseline_rate`` (Hz, mean rate over the pre-event window).
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.events._core import PeriEventResult
+        >>> bc = np.array([-0.5, 0.0, 0.5])
+        >>> result = PeriEventResult(
+        ...     bin_centers=bc,
+        ...     histogram=np.array([0.1, 0.4, 0.2]),
+        ...     sem=np.array([0.01, 0.02, 0.01]),
+        ...     n_events=10,
+        ...     window=(-0.75, 0.75),
+        ...     bin_size=0.5,
+        ... )
+        >>> s = result.summary()
+        >>> sorted(s)
+        ['baseline_rate', 'n_events', 'peak_latency', 'peak_rate', 'unit_id']
+        >>> round(s["peak_latency"], 3)
+        0.0
+        """
+        rate = np.asarray(self.firing_rate)
+        bin_centers = np.asarray(self.bin_centers)
+        if rate.size == 0:
+            peak_rate = float("nan")
+            peak_latency = float("nan")
+        else:
+            peak_idx = int(np.nanargmax(rate))
+            peak_rate = float(rate[peak_idx])
+            peak_latency = float(bin_centers[peak_idx])
+
+        pre = bin_centers < 0
+        baseline_rate = float(np.nanmean(rate[pre])) if np.any(pre) else float("nan")
+        return {
+            "unit_id": self.unit_id,
+            "n_events": int(self.n_events),
+            "peak_rate": peak_rate,
+            "peak_latency": peak_latency,
+            "baseline_rate": baseline_rate,
+        }
+
+    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
+        """Plot the PSTH, returning the axis for composition.
+
+        Delegates to :func:`plot_peri_event_histogram`.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes, optional
+            Axes to plot on. If None, a new figure/axes is created.
+        **kwargs
+            Forwarded to :func:`plot_peri_event_histogram`.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+            The axes the PSTH was drawn on.
+        """
+        return plot_peri_event_histogram(self, ax=ax, **kwargs)
+
 
 @dataclass(frozen=True)
-class PopulationPeriEventResult:
+class PopulationPeriEventResult(ResultMixin):
     """
     Result from population peri-event histogram analysis.
 
@@ -107,6 +232,14 @@ class PopulationPeriEventResult:
         Time window (start, end) relative to event in seconds.
     bin_size : float
         Width of time bins (seconds).
+    unit_ids : NDArray, shape (n_units,)
+        Identifier for each unit (row), e.g. from ``read_units`` or passed via
+        ``unit_ids=``. Defaults to ``np.arange(n_units)``. Carried into
+        indexed/iterated single-unit results and into xarray exports.
+    unit_table : pandas.DataFrame or None
+        Optional per-unit metadata aligned to ``unit_ids`` (e.g. region,
+        quality, depth, inclusion flags), one row per unit; ``None`` when not
+        provided. Rides alongside the rates for downstream filtering/grouping.
     firing_rates : NDArray[np.float64], shape (n_units, n_bins)
         Per-unit firing rates (Hz). Cached on construction as
         ``histograms / bin_size``; treat as a read-only attribute.
@@ -139,15 +272,300 @@ class PopulationPeriEventResult:
     n_units: int
     window: tuple[float, float]
     bin_size: float
+    unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
+    unit_table: pd.DataFrame | None = field(default=None, compare=False)
     firing_rates: NDArray[np.float64] = field(init=False)
     mean_firing_rate: NDArray[np.float64] = field(init=False)
 
     def __post_init__(self) -> None:
+        from neurospatial._results import resolve_unit_ids, validate_unit_table
+
         # Frozen dataclass: bypass setattr to populate the cached fields.
         object.__setattr__(self, "firing_rates", self.histograms / self.bin_size)
         object.__setattr__(
             self, "mean_firing_rate", self.mean_histogram / self.bin_size
         )
+        n_units = int(np.asarray(self.histograms).shape[0])
+        object.__setattr__(
+            self,
+            "unit_ids",
+            resolve_unit_ids(self.unit_ids, n_units),
+        )
+        validate_unit_table(
+            self.unit_table, n_units, context="PopulationPeriEventResult"
+        )
+
+    def __len__(self) -> int:
+        """Return the number of units in the population.
+
+        Returns
+        -------
+        int
+            Number of units (first dimension of ``histograms``).
+        """
+        return int(np.asarray(self.histograms).shape[0])
+
+    def __getitem__(self, idx: int) -> PeriEventResult:
+        """Return the single-unit :class:`PeriEventResult` for unit ``idx``.
+
+        Slices the per-unit ``histograms``/``sem`` rows, carries the shared
+        bin metadata, and stamps ``unit_id`` from :attr:`unit_ids` so that
+        ``self[i].unit_id == self.unit_ids[i]``.
+
+        Parameters
+        ----------
+        idx : int
+            Unit index (0-based).
+
+        Returns
+        -------
+        PeriEventResult
+            The PSTH for the selected unit.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.events._core import PopulationPeriEventResult
+        >>> bc = np.array([-0.5, 0.0, 0.5])
+        >>> hist = np.array([[0.1, 0.4, 0.2], [0.0, 0.1, 0.5]])
+        >>> result = PopulationPeriEventResult(
+        ...     bin_centers=bc,
+        ...     histograms=hist,
+        ...     sem=np.zeros_like(hist),
+        ...     mean_histogram=hist.mean(axis=0),
+        ...     n_events=10,
+        ...     n_units=2,
+        ...     window=(-0.75, 0.75),
+        ...     bin_size=0.5,
+        ...     unit_ids=["a", "b"],
+        ... )
+        >>> result[1].unit_id
+        'b'
+        """
+        histograms = np.asarray(self.histograms)
+        sem = np.asarray(self.sem)
+        unit_id_value = np.asarray(self.unit_ids)[idx]
+        unit_id = (
+            unit_id_value.item() if hasattr(unit_id_value, "item") else unit_id_value
+        )
+        return PeriEventResult(
+            bin_centers=np.asarray(self.bin_centers),
+            histogram=histograms[idx],
+            sem=sem[idx],
+            n_events=self.n_events,
+            window=self.window,
+            bin_size=self.bin_size,
+            unit_id=unit_id,
+        )
+
+    def __iter__(self) -> Iterator[PeriEventResult]:
+        """Iterate over single-unit :class:`PeriEventResult` objects.
+
+        Yields
+        ------
+        PeriEventResult
+            One per unit, in ``unit_ids`` order, each with ``unit_id`` stamped.
+        """
+        for idx in range(len(self)):
+            yield self[idx]
+
+    def to_dataframe(self) -> pd.DataFrame:
+        """Dense tidy table of the population PSTH: one row per (unit, time-bin).
+
+        One row per ``(unit, time-bin)``, carrying a ``unit_id`` column (the
+        real per-unit identity labels, :attr:`unit_ids`). Use this for plotting
+        / detailed inspection; for the per-unit scalar summary use
+        :meth:`summary_table`.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Columns ``unit_id``, ``bin_center`` (s), ``firing_rate`` (Hz),
+            ``histogram`` (mean spike count per bin), and ``sem`` (count units).
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.events._core import PopulationPeriEventResult
+        >>> bc = np.array([-0.5, 0.0, 0.5])
+        >>> hist = np.array([[0.1, 0.4, 0.2], [0.0, 0.1, 0.5]])
+        >>> result = PopulationPeriEventResult(
+        ...     bin_centers=bc,
+        ...     histograms=hist,
+        ...     sem=np.zeros_like(hist),
+        ...     mean_histogram=hist.mean(axis=0),
+        ...     n_events=10,
+        ...     n_units=2,
+        ...     window=(-0.75, 0.75),
+        ...     bin_size=0.5,
+        ... )
+        >>> df = result.to_dataframe()
+        >>> list(df.columns)
+        ['unit_id', 'bin_center', 'firing_rate', 'histogram', 'sem']
+        >>> len(df) == 2 * 3
+        True
+        """
+        import pandas as pd
+
+        bin_centers = np.asarray(self.bin_centers)
+        n_units, n_bins = np.asarray(self.histograms).shape
+        firing_rates = np.asarray(self.firing_rates)
+        histograms = np.asarray(self.histograms)
+        sem = np.asarray(self.sem)
+        return pd.DataFrame(
+            {
+                "unit_id": np.repeat(np.asarray(self.unit_ids), n_bins),
+                "bin_center": np.tile(bin_centers, n_units),
+                "firing_rate": firing_rates.reshape(-1),
+                "histogram": histograms.reshape(-1),
+                "sem": sem.reshape(-1),
+            }
+        )
+
+    def summary_table(self) -> pd.DataFrame:
+        """Per-unit scalar summary: one row per unit, ``unit_id``-indexed.
+
+        One row per unit with scalar response metrics. For the dense per-bin
+        frame (one row per ``(unit, time-bin)``) use :meth:`to_dataframe`.
+
+        Returns
+        -------
+        pandas.DataFrame
+            One row per unit, indexed by ``unit_id``, with columns
+            ``peak_rate`` (Hz), ``peak_latency`` (s, time of the per-unit peak
+            relative to the event), and ``baseline_rate`` (Hz, mean rate over
+            the pre-event window).
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.events._core import PopulationPeriEventResult
+        >>> bc = np.array([-0.5, 0.0, 0.5])
+        >>> hist = np.array([[0.1, 0.4, 0.2], [0.0, 0.1, 0.5]])
+        >>> result = PopulationPeriEventResult(
+        ...     bin_centers=bc,
+        ...     histograms=hist,
+        ...     sem=np.zeros_like(hist),
+        ...     mean_histogram=hist.mean(axis=0),
+        ...     n_events=10,
+        ...     n_units=2,
+        ...     window=(-0.75, 0.75),
+        ...     bin_size=0.5,
+        ... )
+        >>> df = result.summary_table()
+        >>> list(df.columns)
+        ['peak_rate', 'peak_latency', 'baseline_rate']
+        >>> df.index.name
+        'unit_id'
+        >>> len(df)
+        2
+        """
+        import pandas as pd
+
+        rates = np.asarray(self.firing_rates)
+        bin_centers = np.asarray(self.bin_centers)
+        n_units = rates.shape[0]
+
+        if rates.size == 0:
+            peak_rates = np.full(n_units, np.nan)
+            peak_latencies = np.full(n_units, np.nan)
+        else:
+            peak_idx = np.nanargmax(rates, axis=1)
+            peak_rates = rates[np.arange(n_units), peak_idx]
+            peak_latencies = bin_centers[peak_idx]
+
+        pre = bin_centers < 0
+        if np.any(pre):
+            baseline_rates = np.nanmean(rates[:, pre], axis=1)
+        else:
+            baseline_rates = np.full(n_units, np.nan)
+
+        return pd.DataFrame(
+            {
+                "peak_rate": peak_rates,
+                "peak_latency": peak_latencies,
+                "baseline_rate": baseline_rates,
+            },
+            index=pd.Index(np.asarray(self.unit_ids), name="unit_id"),
+        )
+
+    def summary(self) -> dict[str, Any]:
+        """Flat dict of population headline scalars.
+
+        Returns
+        -------
+        dict
+            Mapping with ``n_units`` (int), ``n_events`` (int),
+            ``mean_peak_rate`` (Hz, population-average peak firing rate), and
+            ``population_peak_latency`` (s, time of the mean histogram peak).
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.events._core import PopulationPeriEventResult
+        >>> bc = np.array([-0.5, 0.0, 0.5])
+        >>> hist = np.array([[0.1, 0.4, 0.2], [0.0, 0.1, 0.5]])
+        >>> result = PopulationPeriEventResult(
+        ...     bin_centers=bc,
+        ...     histograms=hist,
+        ...     sem=np.zeros_like(hist),
+        ...     mean_histogram=hist.mean(axis=0),
+        ...     n_events=10,
+        ...     n_units=2,
+        ...     window=(-0.75, 0.75),
+        ...     bin_size=0.5,
+        ... )
+        >>> sorted(result.summary())
+        ['mean_peak_rate', 'n_events', 'n_units', 'population_peak_latency']
+        """
+        mean_rate = np.asarray(self.mean_firing_rate)
+        bin_centers = np.asarray(self.bin_centers)
+        if mean_rate.size == 0:
+            pop_peak_latency = float("nan")
+        else:
+            pop_peak_latency = float(bin_centers[int(np.nanargmax(mean_rate))])
+
+        rates = np.asarray(self.firing_rates)
+        if rates.size == 0:
+            mean_peak_rate = float("nan")
+        else:
+            mean_peak_rate = float(np.nanmean(np.nanmax(rates, axis=1)))
+
+        return {
+            "n_units": int(self.n_units),
+            "n_events": int(self.n_events),
+            "mean_peak_rate": mean_peak_rate,
+            "population_peak_latency": pop_peak_latency,
+        }
+
+    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
+        """Plot the population-average PSTH, returning the axis.
+
+        Builds a :class:`PeriEventResult` from the population-average histogram
+        and delegates to :func:`plot_peri_event_histogram`.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes, optional
+            Axes to plot on. If None, a new figure/axes is created.
+        **kwargs
+            Forwarded to :func:`plot_peri_event_histogram`.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+            The axes the population-average PSTH was drawn on.
+        """
+        mean_sem = np.nanmean(np.asarray(self.sem), axis=0)
+        mean_result = PeriEventResult(
+            bin_centers=np.asarray(self.bin_centers),
+            histogram=np.asarray(self.mean_histogram),
+            sem=mean_sem,
+            n_events=self.n_events,
+            window=self.window,
+            bin_size=self.bin_size,
+        )
+        return plot_peri_event_histogram(mean_result, ax=ax, **kwargs)
 
 
 # --- Validation Helpers ---

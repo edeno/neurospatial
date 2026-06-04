@@ -567,7 +567,7 @@ class TestComputeViewRateResultMethods:
             positions,
             headings,
         )
-        peak = result.peak_view_location()
+        peak = result.peak_location()
         assert isinstance(peak, np.ndarray)
         assert peak.shape == (2,)  # 2D environment
 
