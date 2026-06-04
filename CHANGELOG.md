@@ -1,5 +1,49 @@
 # Changelog
 
+## [v0.5.0] - 2026-06-04
+
+## What's Changed
+
+### Features
+
+
+### Bug Fixes
+- fix(io,regions): atomic writes, NWB metadata round-trip, deep immutability (4307973)
+- fix(animation): grid artist reuse, frame_times, figure/capture leaks (8f862d3)
+- fix(decoding,stats,events): PSTH window, weighted Rayleigh, posterior NaN (301d2b0)
+- fix(simulation): RNG independence, exact Poisson, mixed-mode kwargs (f00c048)
+- fix(encoding): bearing wrap, occupancy masking, phase-precession optimizer (1525ffd)
+- fix(environment,behavior,annotation): invariants, segmentation, leaks (d5c9f34)
+- fix(ops,layout): correctness + safety fixes in core primitives (cefe030)
+- docs(plan): mark test-suite remediation complete (9f18cc6)
+- fix(encoding): recover egocentric distance tuning in binned rate (ef5090a)
+- fix(simulation): place uniform field centers in the interior, not on the boundary (9872487)
+
+### Documentation
+- docs(plan): mark test-suite remediation complete (9f18cc6)
+- docs: address review follow-up on the fix-all changeset (a2ca036)
+- test: reword two docstrings to drop implementation-plan references (28105fe)
+- docs: refresh UX-facing onboarding docs (4080f49)
+- docs: update CHANGELOG.md for v0.4.0 (c03df84)
+
+### Other Changes
+- chore(release): 0.5.0 (#4) (d1afe9d)
+- chore: remove completed test-suite remediation plan (8a7a04b)
+- test(animation): drive visual regression through production renderer (8e5ed03)
+- test: dedup shared test helpers into shared modules (review follow-up) (215c971)
+- test: reword two docstrings to drop implementation-plan references (28105fe)
+- test: tighten thresholds, strengthen sim recovery, hygiene (Phase 7) (fad0dcb)
+- test: replace mocks with real-path tests where they hid integration (Phase 8) (ad3d105)
+- test(ops,layout,environment): core-primitives behavioral coverage (Phase 5) (e23365d)
+- test(nwb): add NWBHDF5IO disk round-trip tests for writers (Phase 6) (628acb2)
+- test(animation): verify real cross-backend color-mapping parity (Phase 4) (b72dc61)
+- test(decoding,stats,events): add closed-form + analytic-reference correctness tests (Phase 3) (d4f8da4)
+- test(encoding): add end-to-end recovery + NumPy/JAX parity tests (Phase 2) (a8b216e)
+- test(encoding): add object_vector_score tests; fix OVC convention doc + CLAUDE.md drift (d73cdc8)
+
+**Full Changelog**: https://github.com/edeno/neurospatial/compare/v0.4.0...v0.5.0
+
+
 All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
