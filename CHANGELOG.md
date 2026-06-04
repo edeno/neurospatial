@@ -211,46 +211,6 @@ these are called out under a dedicated **Breaking changes** heading.
   `grid_shape`, `bin_centers`, and `active_mask` follow (x, y); code relying
   on the previous (y, x) ordering must update.
 
-### Documentation
-
-- Documentation examples are now exercised in CI. Every paste-and-run example
-  that had drifted from the current API was corrected against the live
-  signatures — overlay construction (`PositionOverlay(positions=...)`,
-  `BodypartOverlay(skeleton=Skeleton.from_edge_list(...))`), `path_progress` /
-  `cost_to_goal` argument order, `circular_basis_metrics(..., cov_matrix=...)`,
-  the singular `peak_view_location()` / `mean_vector_length()` result methods,
-  the single-neuron object-vector-cell classification path, `graph_convolve`,
-  `bin_sequence(times, positions)`, and `Environment.plot_field()`. Several
-  stale module paths (`neurospatial.metrics.phase_precession`,
-  `neurospatial.differential`, `neurospatial.reference_frames`,
-  `neurospatial.segmentation`) and a nonexistent `write_intervals()` reference
-  were repointed to their real homes, and rename-corrupted "uncertainty" /
-  "entropy" prose in the decoding docstrings was restored.
-- A new CI doctest gate runs `pytest --doctest-modules src/neurospatial/`, and
-  the curated `docs/snippets.yml` harness gained executable entries for the
-  overlay, object-vector classify, spatial-view classify, VTE, circular-basis,
-  and event-regressor quickstart blocks so these examples can no longer drift
-  out of sync without failing CI.
-- The `decoding` trajectory (replay) module now documents that
-  sharp-wave-ripple intervals come from the external `ripple_detection`
-  package and that its returned `(start, end)` intervals feed
-  `events.peri_event_histogram` directly. neurospatial intentionally does not
-  implement ripple detection; `ripple_detection` is referenced as a
-  recommended external tool, not a hard dependency.
-- `encoding.compute_directional_rate`, `compute_directional_rates`, and
-  `is_head_direction_cell` now note in their docstrings that they expect
-  *head direction* and that a velocity-derived *movement heading* is a common
-  mislabel for a "head direction cell".
-- Dropped unimplemented `exponential_kernel` from the
-  `events.regressors` module docstring.
-- `io.nwb.write_trials` no longer misdirects users to `write_region_crossings()`
-  for storing trial *intervals*: that writer stores point events
-  (`crossing_times`, `region_names`, `event_types`), not intervals. The
-  `overwrite` docstring and the `NotImplementedError` message now point to
-  adding a separate `pynwb.epoch.TimeIntervals` table (via
-  `nwbfile.add_time_intervals`) with its own `start_time`/`stop_time` columns,
-  readable back via `read_intervals`.
-
 ### Fixed
 
 - `DirectionalPlaceFields.to_dataframe()` no longer crashes on an empty result.
@@ -546,6 +506,46 @@ these are called out under a dedicated **Breaking changes** heading.
   up front, so a typo like `angle_unit="degrees"` raises a `ValueError` instead
   of being swallowed by the classifier's `except` into a silent "not an HD
   cell".
+
+### Documentation
+
+- Documentation examples are now exercised in CI. Every paste-and-run example
+  that had drifted from the current API was corrected against the live
+  signatures — overlay construction (`PositionOverlay(positions=...)`,
+  `BodypartOverlay(skeleton=Skeleton.from_edge_list(...))`), `path_progress` /
+  `cost_to_goal` argument order, `circular_basis_metrics(..., cov_matrix=...)`,
+  the singular `peak_view_location()` / `mean_vector_length()` result methods,
+  the single-neuron object-vector-cell classification path, `graph_convolve`,
+  `bin_sequence(times, positions)`, and `Environment.plot_field()`. Several
+  stale module paths (`neurospatial.metrics.phase_precession`,
+  `neurospatial.differential`, `neurospatial.reference_frames`,
+  `neurospatial.segmentation`) and a nonexistent `write_intervals()` reference
+  were repointed to their real homes, and rename-corrupted "uncertainty" /
+  "entropy" prose in the decoding docstrings was restored.
+- A new CI doctest gate runs `pytest --doctest-modules src/neurospatial/`, and
+  the curated `docs/snippets.yml` harness gained executable entries for the
+  overlay, object-vector classify, spatial-view classify, VTE, circular-basis,
+  and event-regressor quickstart blocks so these examples can no longer drift
+  out of sync without failing CI.
+- The `decoding` trajectory (replay) module now documents that
+  sharp-wave-ripple intervals come from the external `ripple_detection`
+  package and that its returned `(start, end)` intervals feed
+  `events.peri_event_histogram` directly. neurospatial intentionally does not
+  implement ripple detection; `ripple_detection` is referenced as a
+  recommended external tool, not a hard dependency.
+- `encoding.compute_directional_rate`, `compute_directional_rates`, and
+  `is_head_direction_cell` now note in their docstrings that they expect
+  *head direction* and that a velocity-derived *movement heading* is a common
+  mislabel for a "head direction cell".
+- Dropped unimplemented `exponential_kernel` from the
+  `events.regressors` module docstring.
+- `io.nwb.write_trials` no longer misdirects users to `write_region_crossings()`
+  for storing trial *intervals*: that writer stores point events
+  (`crossing_times`, `region_names`, `event_types`), not intervals. The
+  `overwrite` docstring and the `NotImplementedError` message now point to
+  adding a separate `pynwb.epoch.TimeIntervals` table (via
+  `nwbfile.add_time_intervals`) with its own `start_time`/`stop_time` columns,
+  readable back via `read_intervals`.
 
 ## [0.4.0] - 2026-05-26
 
