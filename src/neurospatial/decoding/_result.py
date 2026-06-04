@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
-from neurospatial._results import ResultMixin
+from neurospatial._results import ResultMixin, _coord_dim_names
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -441,12 +441,7 @@ class DecodingResult(ResultMixin):
         data["map_bin"] = self.map_estimate
 
         # Add MAP positions
-        n_dims = self.env.n_dims
-        dim_names: list[str] = (
-            ["x", "y", "z"][:n_dims]
-            if n_dims <= 3
-            else [f"dim_{i}" for i in range(n_dims)]
-        )
+        dim_names = _coord_dim_names(self.env.n_dims)
         for i, name in enumerate(dim_names):
             data[f"map_{name}"] = self.map_position[:, i]
 
@@ -795,10 +790,7 @@ class DecodingSummary(ResultMixin):
 
     def _dim_names(self) -> list[str]:
         """Coordinate column names matching ``DecodingResult.to_dataframe``."""
-        n_dims = self.env.n_dims
-        if n_dims <= 3:
-            return ["x", "y", "z"][:n_dims]
-        return [f"dim_{i}" for i in range(n_dims)]
+        return _coord_dim_names(self.env.n_dims)
 
     def to_dataframe(self) -> pd.DataFrame:
         """Convert to a tidy DataFrame, one row per time bin.

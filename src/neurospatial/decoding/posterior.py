@@ -105,8 +105,12 @@ def _normalize_block(
     nan_row_mask = np.isnan(ll_block).any(axis=axis)
 
     # Shift for stability, exponentiate into the output dtype, normalize.
-    ll_shifted = ll_block - ll_max
-    np.exp(ll_shifted, out=out)
+    # Degenerate rows are all -inf, so ``-inf - -inf = nan`` here; that NaN is
+    # expected and handled by the degenerate-row branch below, so suppress the
+    # noisy "invalid value encountered in subtract" warning it would emit.
+    with np.errstate(invalid="ignore"):
+        ll_shifted = ll_block - ll_max
+        np.exp(ll_shifted, out=out)
     out /= out.sum(axis=axis, keepdims=True)
 
     if degenerate_mask.any():
@@ -824,13 +828,24 @@ def _reduce_posterior_block(
     peak_prob : NDArray[np.float64], shape (n_block,)
         Max posterior probability per time bin.
     """
-    map_bin = np.argmax(posterior_block, axis=1).astype(np.int64)
-    mean_position = posterior_block @ bin_centers
-    peak_prob = posterior_block.max(axis=1)
+    # Upcast the block once so all reductions accumulate in float64. The block
+    # is already the smallest array in play (one time-chunk), so this does not
+    # change the memory story, but it prevents float32 working-posterior dtypes
+    # from silently losing precision in the entropy/peak/mean reductions.
+    #
+    # NOTE: this summary path upcasts for precision, whereas the full-posterior
+    # path (DecodingResult.posterior_entropy) historically accumulates entropy
+    # in the stored dtype. The two are intentionally left consistent with each
+    # other for now; a future change that fixes one should align both.
+    pb = np.asarray(posterior_block, dtype=np.float64)
+
+    map_bin = np.argmax(pb, axis=1).astype(np.int64)
+    mean_position = pb @ bin_centers
+    peak_prob = pb.max(axis=1)
 
     # Entropy (bits), mask-based to avoid log(0) bias -- identical to
     # DecodingResult.posterior_entropy.
-    p = np.clip(posterior_block, 0.0, 1.0)
+    p = np.clip(pb, 0.0, 1.0)
     with np.errstate(divide="ignore", invalid="ignore"):
         log_p = np.where(p > 0, np.log2(p), 0.0)
     entropy = -np.sum(p * log_p, axis=1)

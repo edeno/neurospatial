@@ -200,6 +200,46 @@ class TestDecodePositionSummaryParity:
         )
         np.testing.assert_array_equal(summ.times, times)
 
+    def test_float32_summary_reductions_precise(self, medium_2d_env):
+        """float32 working posterior is honored but reductions stay precise.
+
+        The summary path upcasts each block to float64 before reducing, so a
+        float32 ``dtype=`` (smaller working posterior) must produce the SAME MAP
+        as float64 exactly, and entropy/peak_prob/mean within a tight tolerance
+        -- it must NOT accumulate entropy/peak in float32 and lose precision.
+        """
+        from neurospatial.decoding import decode_position_summary
+
+        # Larger n_bins makes float32 accumulation error visible if it leaked.
+        env = medium_2d_env  # 625 bins
+        rng = np.random.default_rng(1)
+        n_time, n_neurons = 200, 10
+        spike_counts = rng.poisson(1.5, (n_time, n_neurons)).astype(np.int64)
+        encoding_models = rng.uniform(0.5, 12.0, (n_neurons, env.n_bins))
+
+        summ64 = decode_position_summary(
+            env, spike_counts, encoding_models, dt=0.025, dtype=np.float64
+        )
+        summ32 = decode_position_summary(
+            env, spike_counts, encoding_models, dt=0.025, dtype=np.float32
+        )
+
+        # MAP is exact: the upcast preserves the argmax bin.
+        np.testing.assert_array_equal(summ32.map_bin, summ64.map_bin)
+        np.testing.assert_array_equal(summ32.map_position, summ64.map_position)
+
+        # Reductions are computed in float64 in both; only the working
+        # posterior differs (float32 vs float64), so they agree tightly.
+        np.testing.assert_allclose(
+            summ32.posterior_entropy, summ64.posterior_entropy, rtol=1e-5, atol=1e-5
+        )
+        np.testing.assert_allclose(
+            summ32.peak_prob, summ64.peak_prob, rtol=1e-5, atol=1e-6
+        )
+        np.testing.assert_allclose(
+            summ32.mean_position, summ64.mean_position, rtol=1e-5, atol=1e-5
+        )
+
 
 class TestDecodingSummaryTerminalVerbs:
     """DecodingSummary implements to_dataframe / summary / plot / to_xarray."""
