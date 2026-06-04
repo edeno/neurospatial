@@ -944,8 +944,8 @@ class TestComputeEgocentricRatesResultMethods:
         np.testing.assert_array_equal(result.preferred_distances(), expected_dist)
         np.testing.assert_array_equal(result.preferred_directions(), expected_dir)
 
-    def test_detect_ovcs_method_works(self, trajectory_data, spike_times_list):
-        """Test that detect_ovcs method works."""
+    def test_classify_method_works(self, trajectory_data, spike_times_list):
+        """Test that classify method works."""
         from neurospatial.encoding.egocentric import compute_egocentric_rates
 
         result = compute_egocentric_rates(

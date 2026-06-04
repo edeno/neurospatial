@@ -2046,13 +2046,13 @@ class TestSpatialRatesResultClassify:
         assert is_place.dtype == bool
         assert is_place.shape == (firing_rates_batch.shape[0],)
 
-    def test_classify_returns_string_array(
+    def test_label_cell_types_returns_string_array(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """classify() should return an ndarray of strings."""
+        """label_cell_types() should return an ndarray of strings."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2254,14 +2254,14 @@ class TestSpatialRatesResultClassify:
 
 
 # ==============================================================================
-# Test SpatialRatesResult.to_dataframe() (Task 2.6)
+# Test SpatialRatesResult.summary_table() (Task 2.6)
 # ==============================================================================
 
 
 class TestSpatialRatesResultSummaryTable:
     """Tests for SpatialRatesResult.summary_table() method (Task 1.3)."""
 
-    def test_has_to_dataframe_method(
+    def test_has_summary_table_method(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
@@ -4299,14 +4299,14 @@ class TestComputeSpatialRatesResultMethods:
         scores = result.border_scores()
         assert scores.shape == (len(multiple_place_cell_spikes),)
 
-    def test_result_has_classify_method(
+    def test_result_has_label_cell_types_method(
         self,
         trajectory_env: Environment,
         multiple_place_cell_spikes: list[NDArray[np.float64]],
         trajectory_times: NDArray[np.float64],
         trajectory_positions: NDArray[np.float64],
     ) -> None:
-        """Result should have classify() returning (n_neurons,) string labels."""
+        """Result should have label_cell_types() returning (n_neurons,) string labels."""
         from neurospatial.encoding.spatial import compute_spatial_rates
 
         result = compute_spatial_rates(
