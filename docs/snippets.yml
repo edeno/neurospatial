@@ -338,6 +338,22 @@ snippets:
       os.environ["MPLBACKEND"] = "Agg"
     timeout: 180
 
+  - id: migration_v06_runnable
+    source: docs/migration/v0.6.md
+    kind: markdown
+    # Block 2 (index 2) in the v0.6 migration guide is the runnable snippet that
+    # exercises the NEW way for BOTH clean breaks: build a SpatialRatesResult via
+    # compute_spatial_rates, then summary_table() (per-unit summary) and the now-
+    # dense to_dataframe(), and the Dataset-shaped to_xarray(). The to_xarray()
+    # call is wrapped in try/except ImportError inside the snippet so it stays
+    # green on the default (no-xarray) install; the dedicated xarray CI job
+    # exercises the Dataset path directly.
+    index: 2
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"
+    timeout: 120
+
   - id: workflows_decode_session_golden_path
     source: docs/user-guide/workflows.md
     kind: markdown

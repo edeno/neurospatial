@@ -89,6 +89,91 @@ sister spatial classifiers (`is_object_vector_cell`,
 
 ---
 
+## 🔤 v0.6 API Naming Contract
+
+These are the durable, cross-domain naming rules established in v0.6. Every
+result class and every new domain MUST follow them so the surface stays
+learnable — a name has **one** meaning everywhere. (Full rationale in
+`.claude/docs/plans/ux-v0.6/api-contract.md`.)
+
+### Terminal verbs (identical name + semantics on every result class)
+
+- **`to_dataframe()`** → **dense tidy**: one row per `(unit, bin)` (single-unit
+  results: one row per `bin`), **always carrying a `unit_id` column** plus the
+  bin-center coordinate columns and `firing_rate` / `occupancy`. For plotting /
+  detailed inspection.
+- **`summary_table()`** → **one row per unit**, **`unit_id`-indexed**, scalar
+  metric columns (peak location/rate, spatial info, grid/border score, cell
+  type, preferred direction/distance). The default a 1000-unit user wants.
+  Accepts an optional `unit_ids=` to relabel the index.
+- **`to_xarray()`** → labeled **`xr.Dataset`** (requires the optional `xarray`
+  extra). **Two distinct shapes — never conflate them:**
+  - **Population rate results** → dims `("unit_id", "bin")`; `unit_id` is the
+    index coord (the real `result.unit_ids` labels — `.sel(unit_id=…)` selects
+    by label), `bin_center_x`/`y`/`z` (or `bin_center_distance`/`angle` for
+    polar/directional) are non-index coords on `bin`. Duplicate `unit_ids`
+    **raise** `ValueError` (label selection requires uniqueness).
+  - **Decode results** (`DecodingResult`) → dims `("time", "bin")` (posterior
+    over space per time bin; **no `unit_id` axis**). `attrs` carry
+    `units` / `bandwidth` / env fingerprint / `software_version`.
+- **`summary()`** → flat dict of scalar headline metrics.
+- **`plot(ax=None, ...)`** → returns the `Axes`.
+- PSTH results (`PeriEventResult`, `PopulationPeriEventResult`) carry
+  `ResultMixin` and these same verbs.
+
+### Cell-type API (one learnable rule)
+
+- **Single-unit predicate:** `is_<celltype>_cell(...)` exists BOTH as a free
+  function and as a result method. Cell types: `place`, `head_direction`,
+  `object_vector`, `spatial_view`, `border`, `grid` (where applicable).
+- **Batch boolean predicate:** `result.classify(*, ...) -> NDArray[bool]` on
+  every plural result class — a **single-type** is-this-cell-type predicate.
+- **Batch multi-class labeler:** `SpatialRatesResult.label_cell_types(*, ...)
+  -> NDArray[str]` (`"place"`/`"grid"`/`"border"`/`"unclassified"`). Kept
+  **SEPARATE** from `classify` (a bool predicate and a str labeler must not
+  share a name — that would silently change a return type).
+- Never ship unspelled acronyms in public names (no `detect_ovcs`).
+
+### Peak / preferred accessors
+
+- **Cartesian peak location:** `peak_location()` (single) / `peak_locations()`
+  (batch).
+- **Genuinely non-Cartesian peaks** keep domain names:
+  `preferred_direction()` / `preferred_distance()` (angle/radius), plural for
+  batch.
+
+### Unit identity
+
+- **`unit_ids: NDArray`** is a field on **every** population result (defaults to
+  `np.arange(n)`). Batch `compute_*` functions accept a keyword-only
+  `unit_ids=`; a wrong-length value raises `ValueError`. Optional
+  `unit_table: pd.DataFrame | None` rides alongside where available.
+- **Singular `unit_id`** on single-unit results. Indexing/iterating a batch
+  result (`rates[i]`, `for r in rates`) **stamps** the child's
+  `unit_id = unit_ids[i]`, so an indexed result keeps its label.
+
+### Argument order
+
+See **"Canonical Argument Order"** above (encoding env-first, directional
+exception, egocentric `(positions, headings, targets)`, segmentation
+`(position_bins, times, env, *, region_params)`). v0.6 adds:
+**`detect_region_crossings(position_bins, times, env, *, region_name,
+direction)`** — env in slot 3 (matches segmentation). The old positional order
+`(..., region_name, env)` still works for one release but warns.
+
+### Factory presets (experiment vocabulary over `from_*`)
+
+- **`Environment.open_field(positions, bin_size, *, ...)`** — the **only
+  positions-only** preset; delegates to `from_samples` (flips
+  `fill_holes=True`).
+- **`Environment.linear_track(*, endpoints | node_positions, bin_size, ...)`**
+  and **`Environment.maze(kind, *, track_graph | node_positions, bin_size,
+  ...)`** require an **explicit topology** (positions alone can't infer a
+  linear/W/plus/T graph) and delegate to `from_graph`. Calling them without a
+  topology spec raises a clear `ValueError`.
+
+---
+
 ## 📦 Package Management
 
 **This project uses `uv` (not pip or conda).**
