@@ -1427,7 +1427,7 @@ class TestViewRatesResultToDataframe:
 
         import pandas as pd
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert isinstance(df, pd.DataFrame)
 
     def test_to_dataframe_row_count(
@@ -1450,7 +1450,7 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert len(df) == n_neurons
 
     def test_to_dataframe_has_neuron_id_column(
@@ -1472,8 +1472,8 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
-        assert "neuron_id" in df.columns
+        df = result.summary_table()
+        assert df.index.name == "unit_id"
 
     def test_to_dataframe_has_peak_view_x_column(
         self,
@@ -1494,7 +1494,7 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "peak_view_x" in df.columns
 
     def test_to_dataframe_has_peak_view_y_column(
@@ -1516,7 +1516,7 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "peak_view_y" in df.columns
 
     def test_to_dataframe_has_peak_rate_column(
@@ -1538,7 +1538,7 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "peak_rate" in df.columns
 
     def test_to_dataframe_has_view_spatial_info_column(
@@ -1560,7 +1560,7 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "view_spatial_info" in df.columns
 
     def test_to_dataframe_has_is_view_cell_column(
@@ -1582,7 +1582,7 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "is_spatial_view_cell" in df.columns
 
     def test_to_dataframe_default_neuron_ids(
@@ -1605,9 +1605,9 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         expected_ids = list(range(n_neurons))
-        assert list(df["neuron_id"]) == expected_ids
+        assert list(df.index) == expected_ids
 
     def test_to_dataframe_custom_neuron_ids(
         self,
@@ -1630,8 +1630,8 @@ class TestViewRatesResultToDataframe:
         )
 
         custom_ids = [f"unit_{i}" for i in range(n_neurons)]
-        df = result.to_dataframe(neuron_ids=custom_ids)
-        assert list(df["neuron_id"]) == custom_ids
+        df = result.summary_table(unit_ids=custom_ids)
+        assert list(df.index) == custom_ids
 
     def test_to_dataframe_neuron_ids_length_mismatch(
         self,
@@ -1654,7 +1654,7 @@ class TestViewRatesResultToDataframe:
 
         # Wrong number of ids
         with pytest.raises(ValueError):
-            result.to_dataframe(neuron_ids=["a", "b"])  # Only 2, but 5 neurons
+            result.summary_table(unit_ids=["a", "b"])  # Only 2, but 5 neurons
 
     def test_to_dataframe_peak_view_x_matches_batch_method(
         self,
@@ -1676,7 +1676,7 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         expected = result.peak_view_location()[:, 0]
         np.testing.assert_array_almost_equal(df["peak_view_x"].values, expected)
 
@@ -1700,7 +1700,7 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         expected = result.peak_view_location()[:, 1]
         np.testing.assert_array_almost_equal(df["peak_view_y"].values, expected)
 
@@ -1723,7 +1723,7 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         expected = np.nanmax(batch_firing_rates, axis=1)
         np.testing.assert_array_almost_equal(df["peak_rate"].values, expected)
 
@@ -1746,7 +1746,7 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         expected = result.view_spatial_information()
         np.testing.assert_array_almost_equal(df["view_spatial_info"].values, expected)
 
@@ -1769,7 +1769,7 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         expected = result.detect_view_cells()
         np.testing.assert_array_equal(df["is_spatial_view_cell"].values, expected)
 
@@ -1795,12 +1795,11 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 0
         # Should still have all columns
         expected_columns = {
-            "neuron_id",
             "peak_view_x",
             "peak_view_y",
             "peak_rate",
@@ -1833,10 +1832,10 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 1
-        assert df["neuron_id"].iloc[0] == 0
+        assert df.index[0] == 0
 
 
 # ==============================================================================

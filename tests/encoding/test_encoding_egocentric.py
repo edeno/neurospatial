@@ -1915,7 +1915,7 @@ class TestEgocentricRatesResultToDataframe:
 
         import pandas as pd
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert isinstance(df, pd.DataFrame)
 
     def test_to_dataframe_row_count(
@@ -1936,7 +1936,7 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert len(df) == 5  # batch_firing_rates has 5 neurons
 
     def test_to_dataframe_has_neuron_id_column(
@@ -1957,8 +1957,8 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
-        assert "neuron_id" in df.columns
+        df = result.summary_table()
+        assert df.index.name == "unit_id"
 
     def test_to_dataframe_has_preferred_distance_column(
         self,
@@ -1978,7 +1978,7 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "preferred_distance" in df.columns
 
     def test_to_dataframe_has_preferred_direction_column(
@@ -1999,7 +1999,7 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "preferred_direction" in df.columns
 
     def test_to_dataframe_has_preferred_direction_deg_column(
@@ -2020,7 +2020,7 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "preferred_direction_deg" in df.columns
 
     def test_to_dataframe_has_peak_rate_column(
@@ -2041,7 +2041,7 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "peak_rate" in df.columns
 
     def test_to_dataframe_has_is_ovc_column(
@@ -2062,7 +2062,7 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "is_object_vector_cell" in df.columns
 
     def test_to_dataframe_default_neuron_ids(
@@ -2083,8 +2083,8 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
-        assert list(df["neuron_id"]) == [0, 1, 2, 3, 4]
+        df = result.summary_table()
+        assert list(df.index) == [0, 1, 2, 3, 4]
 
     def test_to_dataframe_custom_neuron_ids(
         self,
@@ -2105,8 +2105,8 @@ class TestEgocentricRatesResultToDataframe:
         )
 
         custom_ids = ["unit_a", "unit_b", "unit_c", "unit_d", "unit_e"]
-        df = result.to_dataframe(neuron_ids=custom_ids)
-        assert list(df["neuron_id"]) == custom_ids
+        df = result.summary_table(unit_ids=custom_ids)
+        assert list(df.index) == custom_ids
 
     def test_to_dataframe_neuron_ids_length_mismatch_raises(
         self,
@@ -2126,8 +2126,8 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        with pytest.raises(ValueError, match=r"neuron_ids has .* elements"):
-            result.to_dataframe(neuron_ids=["a", "b"])  # Only 2 but need 5
+        with pytest.raises(ValueError, match=r"unit_ids has .* elements"):
+            result.summary_table(unit_ids=["a", "b"])  # Only 2 but need 5
 
     def test_to_dataframe_preferred_distance_correctness(
         self,
@@ -2147,7 +2147,7 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         expected = result.preferred_distances()
         np.testing.assert_array_almost_equal(df["preferred_distance"].values, expected)
 
@@ -2169,7 +2169,7 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         expected = result.preferred_directions()
         np.testing.assert_array_almost_equal(df["preferred_direction"].values, expected)
 
@@ -2191,7 +2191,7 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         expected = np.degrees(result.preferred_directions())
         np.testing.assert_array_almost_equal(
             df["preferred_direction_deg"].values, expected
@@ -2215,7 +2215,7 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         expected = result.peak_firing_rate()
         np.testing.assert_array_almost_equal(df["peak_rate"].values, expected)
 
@@ -2237,7 +2237,7 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         expected = result.detect_ovcs()  # Uses default min_info=0.3
         np.testing.assert_array_equal(df["is_object_vector_cell"].values, expected)
 
@@ -2260,10 +2260,10 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert len(df) == 0
         # Verify all columns exist even for empty DataFrame
-        assert "neuron_id" in df.columns
+        assert df.index.name == "unit_id"
         assert "preferred_distance" in df.columns
         assert "preferred_direction" in df.columns
         assert "preferred_direction_deg" in df.columns
@@ -2291,9 +2291,9 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert len(df) == 1
-        assert df["neuron_id"].iloc[0] == 0
+        assert df.index[0] == 0
 
 
 # =============================================================================

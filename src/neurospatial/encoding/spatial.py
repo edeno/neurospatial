@@ -1443,32 +1443,36 @@ class SpatialRatesResult(SpatialResultMixin):
 
         return labels
 
-    def to_dataframe(
+    def summary_table(
         self,
-        neuron_ids: Sequence[str] | None = None,
+        unit_ids: Sequence[str | int] | None = None,
         include_classification: bool = True,
     ) -> pd.DataFrame:
-        """Export metrics to DataFrame for exploratory analysis.
+        """Per-unit scalar summary: one row per unit, ``unit_id``-indexed.
 
-        Computes all spatial metrics and exports them to a pandas DataFrame
-        for easy filtering, sorting, and analysis. This is a host-only method;
-        all metrics are computed as NumPy arrays (not JAX).
+        Computes all spatial metrics and returns one row per unit, indexed by
+        ``unit_id``, with scalar metric columns. This is the per-unit summary a
+        many-neuron user wants for filtering, sorting, and population tables.
+        For the dense per-bin frame (one row per ``(unit, bin)``) use
+        :meth:`to_dataframe` instead.
+
+        This is a host-only method; all metrics are computed as NumPy arrays
+        (not JAX).
 
         Parameters
         ----------
-        neuron_ids : sequence of str, optional
-            Identifiers for each neuron. If None, uses integer indices
-            (0, 1, 2, ..., n_neurons-1).
+        unit_ids : sequence of str or int, optional
+            Identity labels for the index, one per unit. If ``None``, the
+            result's own :attr:`unit_ids` are used.
         include_classification : bool, default True
-            Whether to include the cell_type column with classification
+            Whether to include the ``cell_type`` column with classification
             labels from ``detect_cell_types()``.
 
         Returns
         -------
         pd.DataFrame
-            DataFrame with columns:
+            One row per unit, indexed by ``unit_id``, with columns:
 
-            - neuron_id: identifier for each neuron
             - peak_x: x-coordinate of peak firing location
             - peak_y: y-coordinate of peak firing location (NaN for 1D)
             - peak_rate: maximum firing rate (Hz)
@@ -1503,11 +1507,13 @@ class SpatialRatesResult(SpatialResultMixin):
         >>> result = compute_spatial_rates(
         ...     env, spike_times, times, positions, bandwidth=10.0
         ... )
-        >>> df = result.to_dataframe()
+        >>> df = result.summary_table()
         >>> "cell_type" in df.columns
         True
         >>> len(df)
         3
+        >>> df.index.name
+        'unit_id'
 
         >>> # Filter for place cells
         >>> place_cells = df[df["cell_type"] == "place"]
@@ -1515,13 +1521,14 @@ class SpatialRatesResult(SpatialResultMixin):
         >>> # Sort by spatial information
         >>> top_cells = df.sort_values("spatial_info", ascending=False)
 
-        >>> # Custom neuron identifiers
-        >>> df = result.to_dataframe(neuron_ids=["unit_0", "unit_1", "unit_2"])
-        >>> df["neuron_id"].tolist()
+        >>> # Custom unit identifiers
+        >>> df = result.summary_table(unit_ids=["unit_0", "unit_1", "unit_2"])
+        >>> df.index.tolist()
         ['unit_0', 'unit_1', 'unit_2']
 
         See Also
         --------
+        to_dataframe : Dense per-bin frame (one row per (unit, bin)).
         detect_cell_types : Cell type classification
         spatial_information : Batch spatial information computation
         grid_scores : Batch grid score computation
@@ -1531,14 +1538,13 @@ class SpatialRatesResult(SpatialResultMixin):
 
         n_neurons = len(self)
 
-        # Use integer indices if no neuron_ids provided
-        if neuron_ids is None:
-            neuron_ids_list: list[str | int] = list(range(n_neurons))
+        if unit_ids is None:
+            index_ids: list[str | int] = list(self.unit_ids)
         else:
-            neuron_ids_list = list(neuron_ids)
-            if len(neuron_ids_list) != n_neurons:
+            index_ids = list(unit_ids)
+            if len(index_ids) != n_neurons:
                 raise ValueError(
-                    f"neuron_ids has {len(neuron_ids_list)} elements but "
+                    f"unit_ids has {len(index_ids)} elements but "
                     f"result contains {n_neurons} neurons"
                 )
 
@@ -1548,7 +1554,6 @@ class SpatialRatesResult(SpatialResultMixin):
 
         # Build data dictionary
         data: dict[str, Any] = {
-            "neuron_id": neuron_ids_list,
             "peak_x": peaks[:, 0],
             "peak_y": peaks[:, 1] if n_dims > 1 else np.full(n_neurons, np.nan),
             "peak_rate": self.peak_firing_rate(),
@@ -1561,7 +1566,7 @@ class SpatialRatesResult(SpatialResultMixin):
         if include_classification:
             data["cell_type"] = self.detect_cell_types()
 
-        return pd.DataFrame(data)
+        return pd.DataFrame(data, index=pd.Index(index_ids, name="unit_id"))
 
 
 # ==============================================================================
@@ -1992,10 +1997,14 @@ def compute_spatial_rates(
     >>> len(peaks)
     3
 
-    >>> # Get metrics for all neurons
-    >>> df = result.to_dataframe()
-    >>> len(df)
+    >>> # Per-unit scalar summary (one row per unit)
+    >>> summary = result.summary_table()
+    >>> len(summary)
     3
+    >>> # Dense per-bin frame (one row per (unit, bin))
+    >>> df = result.to_dataframe()
+    >>> len(df) == 3 * env.n_bins
+    True
 
     >>> # Use 2D array with NaN padding
     >>> spike_times_2d = np.array(

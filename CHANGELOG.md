@@ -42,6 +42,34 @@ these are called out under a dedicated **Breaking changes** heading.
     ds.sel(unit_id=result.unit_ids[0])
     ```
 
+- The two terminal verbs now mean **one** thing on every result class.
+  `to_dataframe()` on the batch (plural) encoding results — `SpatialRatesResult`,
+  `DirectionalRatesResult`, `ViewRatesResult`, `EgocentricRatesResult` — is now
+  **dense tidy**: one row per `(unit, bin)` (single-unit results: one row per
+  `bin`), always carrying a `unit_id` column plus the bin-center coordinate
+  columns (`bin_center_x`/`y`/`z` for Cartesian, `bin_center_distance`/`angle`
+  for polar egocentric, `bin_center_angle` for directional), `firing_rate`, and
+  `occupancy`. The **per-unit summary** that `to_dataframe()` used to return
+  (one row per neuron with `peak_x`, `peak_rate`, `spatial_info`, `sparsity`,
+  `grid_score`, `border_score`, `cell_type`, etc.) has moved to the new
+  `summary_table()`, which is `unit_id`-indexed. This is a clean break: there is
+  no mode flag and no transition shim. The `neuron_ids=` keyword on the old
+  per-unit `to_dataframe()` is replaced by `unit_ids=` on `summary_table()`
+  (defaulting to the result's own `unit_ids`).
+
+    Before → after:
+
+    ```python
+    # before — to_dataframe() returned one row per neuron with metric columns
+    df = result.to_dataframe()           # columns: neuron_id, peak_x, ...
+    place = df[df["cell_type"] == "place"]
+
+    # after — summary_table() is the per-unit summary; to_dataframe() is dense
+    summary = result.summary_table()     # one row per unit, unit_id-indexed
+    place = summary[summary["cell_type"] == "place"]
+    dense = result.to_dataframe()         # one row per (unit, bin), carries unit_id
+    ```
+
 ### Added
 
 - `to_xarray()` on `DirectionalRatesResult`, `ViewRatesResult`, and
@@ -66,6 +94,24 @@ these are called out under a dedicated **Breaking changes** heading.
   `unit_ids` defaults to `np.arange(n_units)` and the new fields are
   `compare=False`, so existing callers and equality/hash behavior are
   unchanged.
+
+- `summary_table()` — the per-unit summary terminal verb — on every batch
+  encoding result (`SpatialRatesResult`, `DirectionalRatesResult`,
+  `ViewRatesResult`, `EgocentricRatesResult`) and on `PopulationPeriEventResult`.
+  Returns one row per unit, `unit_id`-indexed, with that result's scalar metric
+  columns (peak location/rate, spatial info, grid/border score, cell type,
+  preferred direction/distance, etc.). Accepts an optional `unit_ids=` to
+  relabel the index.
+
+- PSTH results now carry the uniform result surface. `PeriEventResult` and
+  `PopulationPeriEventResult` inherit the canonical `ResultMixin` and implement
+  the terminal verbs: `to_dataframe()` (dense — one row per time bin for the
+  single-unit result, one row per `(unit, time-bin)` for the population result,
+  always carrying `unit_id`), `summary()` (flat dict of headline scalars —
+  peak rate/latency, baseline rate; population adds `mean_peak_rate` /
+  `population_peak_latency`), `PopulationPeriEventResult.summary_table()` (one
+  row per unit with `peak_rate` / `peak_latency` / `baseline_rate`), and
+  `plot()` (delegates to `plot_peri_event_histogram`, returns the axis).
 
 - `decode_session(env, spike_times, times, positions, *, dt, ...)` — one-call
   encode→bin→decode golden path in `neurospatial.decoding.session`.  Glues

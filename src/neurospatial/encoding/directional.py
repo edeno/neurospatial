@@ -233,6 +233,11 @@ class DirectionalRateResult(SpatialResultMixin):
         # directly on the dataclass (no Environment).
         return np.asarray(self.bin_centers, dtype=np.float64)
 
+    def _bin_center_columns(self) -> dict[str, NDArray[np.float64]]:
+        # Directional results have no Environment; the bin center is the
+        # angular center (radians). Emit it under the shared vocabulary name.
+        return {"bin_center_angle": np.asarray(self.bin_centers, dtype=np.float64)}
+
     def plot(
         self,
         ax: Axes | PolarAxes | None = None,
@@ -1082,6 +1087,11 @@ class DirectionalRatesResult(SpatialResultMixin):
         # directly on the dataclass (no Environment).
         return np.asarray(self.bin_centers, dtype=np.float64)
 
+    def _bin_center_columns(self) -> dict[str, NDArray[np.float64]]:
+        # Directional results have no Environment; the bin center is the
+        # angular center (radians). Emit it under the shared vocabulary name.
+        return {"bin_center_angle": np.asarray(self.bin_centers, dtype=np.float64)}
+
     def to_xarray(self) -> Any:
         """Convert the tuning curves to a labeled :class:`xarray.Dataset`.
 
@@ -1461,27 +1471,28 @@ class DirectionalRatesResult(SpatialResultMixin):
 
         return is_hd
 
-    def to_dataframe(
+    def summary_table(
         self,
-        neuron_ids: Sequence[str | int] | None = None,
+        unit_ids: Sequence[str | int] | None = None,
     ) -> pd.DataFrame:
-        """Export metrics to DataFrame for exploratory analysis.
+        """Per-unit scalar summary: one row per unit, ``unit_id``-indexed.
 
-        Computes all directional metrics and exports them to a pandas DataFrame
-        for easy filtering, sorting, and analysis.
+        Computes all directional metrics and returns one row per unit, indexed
+        by ``unit_id``, with scalar metric columns. This is the per-unit
+        summary for filtering, sorting, and population tables. For the dense
+        per-bin frame (one row per ``(unit, bin)``) use :meth:`to_dataframe`.
 
         Parameters
         ----------
-        neuron_ids : sequence of str or int, optional
-            Identifiers for each neuron. If None, uses integer indices
-            (0, 1, 2, ..., n_neurons-1).
+        unit_ids : sequence of str or int, optional
+            Identity labels for the index, one per unit. If ``None``, the
+            result's own :attr:`unit_ids` are used.
 
         Returns
         -------
         pd.DataFrame
-            DataFrame with columns:
+            One row per unit, indexed by ``unit_id``, with columns:
 
-            - neuron_id: identifier for each neuron
             - preferred_direction: preferred direction in radians [-π, π]
             - preferred_direction_deg: preferred direction in degrees [-180, 180]
             - mean_vector_length: mean vector length [0, 1]
@@ -1493,7 +1504,7 @@ class DirectionalRatesResult(SpatialResultMixin):
         Raises
         ------
         ValueError
-            If neuron_ids has a different length than the number of neurons.
+            If unit_ids has a different length than the number of neurons.
 
         Notes
         -----
@@ -1521,11 +1532,13 @@ class DirectionalRatesResult(SpatialResultMixin):
         ...     bin_size=np.pi / 30,
         ...     bandwidth=None,
         ... )
-        >>> df = result.to_dataframe()
+        >>> df = result.summary_table()
         >>> len(df)
         3
         >>> "is_head_direction_cell" in df.columns
         True
+        >>> df.index.name
+        'unit_id'
 
         >>> # Filter for HD cells
         >>> hd_cells = df[df["is_head_direction_cell"]]
@@ -1533,13 +1546,14 @@ class DirectionalRatesResult(SpatialResultMixin):
         >>> # Sort by mean vector length
         >>> top_cells = df.sort_values("mean_vector_length", ascending=False)
 
-        >>> # Custom neuron identifiers
-        >>> df = result.to_dataframe(neuron_ids=["unit_0", "unit_1", "unit_2"])
-        >>> list(df["neuron_id"])
+        >>> # Custom unit identifiers
+        >>> df = result.summary_table(unit_ids=["unit_0", "unit_1", "unit_2"])
+        >>> list(df.index)
         ['unit_0', 'unit_1', 'unit_2']
 
         See Also
         --------
+        to_dataframe : Dense per-bin frame (one row per (unit, bin)).
         detect_hd_cells : HD cell classification
         preferred_directions : Batch preferred direction computation
         mean_vector_lengths : Batch mean vector length computation
@@ -1548,14 +1562,13 @@ class DirectionalRatesResult(SpatialResultMixin):
 
         n_neurons = len(self)
 
-        # Use integer indices if no neuron_ids provided
-        if neuron_ids is None:
-            neuron_ids_list: list[str | int] = list(range(n_neurons))
+        if unit_ids is None:
+            index_ids: list[str | int] = list(self.unit_ids)
         else:
-            neuron_ids_list = list(neuron_ids)
-            if len(neuron_ids_list) != n_neurons:
+            index_ids = list(unit_ids)
+            if len(index_ids) != n_neurons:
                 raise ValueError(
-                    f"neuron_ids has {len(neuron_ids_list)} elements but "
+                    f"unit_ids has {len(index_ids)} elements but "
                     f"result contains {n_neurons} neurons"
                 )
 
@@ -1568,7 +1581,6 @@ class DirectionalRatesResult(SpatialResultMixin):
 
         # Build data dictionary
         data: dict[str, Any] = {
-            "neuron_id": neuron_ids_list,
             "preferred_direction": pref_dirs,
             "preferred_direction_deg": np.degrees(pref_dirs),
             "mean_vector_length": mvls,
@@ -1578,7 +1590,7 @@ class DirectionalRatesResult(SpatialResultMixin):
             "is_head_direction_cell": is_hd,
         }
 
-        return pd.DataFrame(data)
+        return pd.DataFrame(data, index=pd.Index(index_ids, name="unit_id"))
 
 
 def compute_directional_rate(

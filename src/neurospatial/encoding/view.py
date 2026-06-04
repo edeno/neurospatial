@@ -950,27 +950,28 @@ class ViewRatesResult(SpatialResultMixin):
         info = self.view_spatial_information()
         return info > min_info
 
-    def to_dataframe(
+    def summary_table(
         self,
-        neuron_ids: Sequence[str | int] | None = None,
+        unit_ids: Sequence[str | int] | None = None,
     ) -> pd.DataFrame:
-        """Export metrics to DataFrame for exploratory analysis.
+        """Per-unit scalar summary: one row per unit, ``unit_id``-indexed.
 
-        Computes all view field metrics and exports them to a pandas DataFrame
-        for easy filtering, sorting, and analysis.
+        Computes all view field metrics and returns one row per unit, indexed
+        by ``unit_id``, with scalar metric columns. This is the per-unit
+        summary for filtering, sorting, and population tables. For the dense
+        per-bin frame (one row per ``(unit, bin)``) use :meth:`to_dataframe`.
 
         Parameters
         ----------
-        neuron_ids : sequence of str or int, optional
-            Identifiers for each neuron. If None, uses integer indices
-            (0, 1, 2, ..., n_neurons-1).
+        unit_ids : sequence of str or int, optional
+            Identity labels for the index, one per unit. If ``None``, the
+            result's own :attr:`unit_ids` are used.
 
         Returns
         -------
         pd.DataFrame
-            DataFrame with columns:
+            One row per unit, indexed by ``unit_id``, with columns:
 
-            - neuron_id: identifier for each neuron
             - peak_view_x: x-coordinate of peak view location
             - peak_view_y: y-coordinate of peak view location
             - peak_rate: maximum firing rate (Hz)
@@ -980,7 +981,7 @@ class ViewRatesResult(SpatialResultMixin):
         Raises
         ------
         ValueError
-            If neuron_ids has a different length than the number of neurons.
+            If unit_ids has a different length than the number of neurons.
 
         Notes
         -----
@@ -1008,18 +1009,21 @@ class ViewRatesResult(SpatialResultMixin):
         >>> result = compute_view_rates(
         ...     env, spike_times, times, trajectory, headings, view_distance=10.0
         ... )
-        >>> df = result.to_dataframe()
+        >>> df = result.summary_table()
         >>> list(df.columns)
-        ['neuron_id', 'peak_view_x', 'peak_view_y', 'peak_rate', 'view_spatial_info', 'is_spatial_view_cell']
+        ['peak_view_x', 'peak_view_y', 'peak_rate', 'view_spatial_info', 'is_spatial_view_cell']
+        >>> df.index.name
+        'unit_id'
 
-        >>> # With custom neuron IDs
-        >>> df = result.to_dataframe(neuron_ids=["unit_0", "unit_1", "unit_2"])
+        >>> # With custom unit IDs
+        >>> df = result.summary_table(unit_ids=["unit_0", "unit_1", "unit_2"])
 
         >>> # Filter to view cells only
         >>> view_cells_df = df[df["is_spatial_view_cell"]]
 
         See Also
         --------
+        to_dataframe : Dense per-bin frame (one row per (unit, bin)).
         peak_view_location : Get peak view locations for all neurons
         view_spatial_information : Get spatial information for all neurons
         detect_view_cells : Classify neurons as view cells
@@ -1028,14 +1032,13 @@ class ViewRatesResult(SpatialResultMixin):
 
         n_neurons = len(self)
 
-        # Validate and convert neuron_ids
-        if neuron_ids is None:
-            neuron_ids_list: list[str | int] = list(range(n_neurons))
+        if unit_ids is None:
+            index_ids: list[str | int] = list(self.unit_ids)
         else:
-            neuron_ids_list = list(neuron_ids)
-            if len(neuron_ids_list) != n_neurons:
+            index_ids = list(unit_ids)
+            if len(index_ids) != n_neurons:
                 raise ValueError(
-                    f"neuron_ids has {len(neuron_ids_list)} elements but "
+                    f"unit_ids has {len(index_ids)} elements but "
                     f"result contains {n_neurons} neurons"
                 )
 
@@ -1052,7 +1055,6 @@ class ViewRatesResult(SpatialResultMixin):
 
         # Build DataFrame
         data: dict[str, Any] = {
-            "neuron_id": neuron_ids_list,
             "peak_view_x": peak_locs[:, 0],
             "peak_view_y": peak_locs[:, 1]
             if n_dims > 1
@@ -1062,7 +1064,7 @@ class ViewRatesResult(SpatialResultMixin):
             "is_spatial_view_cell": is_spatial_view_cell,
         }
 
-        return pd.DataFrame(data)
+        return pd.DataFrame(data, index=pd.Index(index_ids, name="unit_id"))
 
 
 # =============================================================================
@@ -1530,10 +1532,14 @@ def compute_view_rates(
     >>> peak_shapes == [(2,), (2,), (2,)]
     True
 
-    >>> # Get metrics for all neurons
+    >>> # Per-unit scalar summary (one row per unit)
+    >>> summary = result.summary_table()
+    >>> summary.shape
+    (3, 5)
+    >>> # Dense per-bin frame (one row per (unit, bin))
     >>> df = result.to_dataframe()
-    >>> df.shape
-    (3, 6)
+    >>> len(df) == 3 * env.n_bins
+    True
 
     >>> # Use 2D array with NaN padding
     >>> spike_times_2d = np.array(

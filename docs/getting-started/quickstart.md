@@ -244,7 +244,7 @@ population = compute_spatial_rates(
     n_jobs=2,
 )
 
-summary = population.to_dataframe()
+summary = population.summary_table()  # one row per unit, unit_id-indexed
 ```
 
 ### Pattern 2: Distance to Target
