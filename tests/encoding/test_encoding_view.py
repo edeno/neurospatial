@@ -1475,13 +1475,13 @@ class TestViewRatesResultToDataframe:
         df = result.summary_table()
         assert df.index.name == "unit_id"
 
-    def test_summary_table_has_peak_view_x_column(
+    def test_summary_table_has_peak_x_column(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() should have peak_view_x column."""
+        """summary_table() should have peak_x column."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1495,15 +1495,15 @@ class TestViewRatesResultToDataframe:
         )
 
         df = result.summary_table()
-        assert "peak_view_x" in df.columns
+        assert "peak_x" in df.columns
 
-    def test_summary_table_has_peak_view_y_column(
+    def test_summary_table_has_peak_y_column(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() should have peak_view_y column."""
+        """summary_table() should have peak_y column."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1517,7 +1517,7 @@ class TestViewRatesResultToDataframe:
         )
 
         df = result.summary_table()
-        assert "peak_view_y" in df.columns
+        assert "peak_y" in df.columns
 
     def test_summary_table_has_peak_rate_column(
         self,
@@ -1656,14 +1656,14 @@ class TestViewRatesResultToDataframe:
         with pytest.raises(ValueError):
             result.summary_table(unit_ids=["a", "b"])  # Only 2, but 5 neurons
 
-    def test_summary_table_peak_view_x_matches_batch_method(
+    def test_summary_table_peak_x_matches_batch_method(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         n_neurons: int,
     ) -> None:
-        """to_dataframe() peak_view_x should match peak_view_location()[:, 0]."""
+        """summary_table() peak_x should match peak_locations()[:, 0]."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1678,16 +1678,16 @@ class TestViewRatesResultToDataframe:
 
         df = result.summary_table()
         expected = result.peak_locations()[:, 0]
-        np.testing.assert_array_almost_equal(df["peak_view_x"].values, expected)
+        np.testing.assert_array_almost_equal(df["peak_x"].values, expected)
 
-    def test_summary_table_peak_view_y_matches_batch_method(
+    def test_summary_table_peak_y_matches_batch_method(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         n_neurons: int,
     ) -> None:
-        """to_dataframe() peak_view_y should match peak_view_location()[:, 1]."""
+        """summary_table() peak_y should match peak_locations()[:, 1]."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1702,7 +1702,7 @@ class TestViewRatesResultToDataframe:
 
         df = result.summary_table()
         expected = result.peak_locations()[:, 1]
-        np.testing.assert_array_almost_equal(df["peak_view_y"].values, expected)
+        np.testing.assert_array_almost_equal(df["peak_y"].values, expected)
 
     def test_summary_table_peak_rate_matches_batch_method(
         self,
@@ -1800,8 +1800,8 @@ class TestViewRatesResultToDataframe:
         assert len(df) == 0
         # Should still have all columns
         expected_columns = {
-            "peak_view_x",
-            "peak_view_y",
+            "peak_x",
+            "peak_y",
             "peak_rate",
             "view_spatial_info",
             "is_spatial_view_cell",

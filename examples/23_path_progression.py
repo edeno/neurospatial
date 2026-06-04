@@ -240,7 +240,9 @@ position_bins = env.bin_at(positions)
 
 visits: list[tuple[float, str, int]] = []
 for w in well_names:
-    for cr in detect_region_crossings(position_bins, times, w, env, direction="entry"):
+    for cr in detect_region_crossings(
+        position_bins, times, env, region_name=w, direction="entry"
+    ):
         visits.append((cr.time, w, int(cr.bin_index)))
 visits.sort(key=lambda v: v[0])
 

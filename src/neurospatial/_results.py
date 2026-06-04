@@ -362,12 +362,19 @@ def build_population_dataset(
     ids = np.asarray(unit_ids)
 
     # Duplicate unit_ids break label-based .sel(unit_id=...); reject loudly.
-    unique_vals, counts = np.unique(ids, return_counts=True)
-    if np.any(counts > 1):
-        dups = unique_vals[counts > 1]
+    # Use dict counting instead of np.unique so mixed int/string labels never
+    # hit NumPy's object-array sort path.
+    seen: dict[Any, int] = {}
+    dups: list[Any] = []
+    for label in ids.tolist():
+        count = seen.get(label, 0)
+        if count == 1:
+            dups.append(label)
+        seen[label] = count + 1
+    if dups:
         raise ValueError(
             "unit_ids must be unique to build an xarray.Dataset, but these "
-            f"label(s) are duplicated: {list(dups)}.\n"
+            f"label(s) are duplicated: {dups}.\n"
             "  WHY: label-based selection .sel(unit_id=...) requires a unique "
             "index coordinate.\n"
             "  HOW: deduplicate unit_ids (e.g. when concatenating populations) "

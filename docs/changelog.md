@@ -7,12 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- `to_xarray()` now returns a labeled `xarray.Dataset` instead of an
+  `xarray.DataArray`.
+  - Population rate results (`SpatialRatesResult`, `DirectionalRatesResult`,
+    `ViewRatesResult`, `EgocentricRatesResult`) use dims `("unit_id", "bin")`.
+    The rate matrix lives in the `firing_rate` data variable and `unit_id`
+    stores real per-unit identity labels.
+  - Decode results (`DecodingResult`) use dims `("time", "bin")`; they have no
+    `unit_id` axis.
+  - Duplicate `unit_ids` raise `ValueError` because label-based xarray
+    selection requires unique labels.
+- Batch encoding `to_dataframe()` is now dense tidy: one row per `(unit, bin)`,
+  always carrying `unit_id`, bin-center coordinates, `firing_rate`, and
+  `occupancy`.
+- Per-unit metric tables moved to `summary_table()`, which is indexed by
+  `unit_id`. The old `neuron_ids=` relabeling keyword is replaced by
+  `unit_ids=` on `summary_table()`.
+
 ### Added
 
-- Complete MkDocs documentation with Material theme
-- API reference generated with mkdocstrings
-- User guide with detailed examples
-- Getting started tutorials
+- Real unit identity on population results via `unit_ids`, plus singular
+  `unit_id` on indexed/iterated single-unit results.
+- `summary_table()` on batch encoding results and population PSTH results.
+- Experiment-shaped environment presets:
+  `Environment.open_field(...)`, `Environment.linear_track(...)`, and
+  `Environment.maze(...)`.
+- `SpatialRatesResult.label_cell_types()` for multi-class labels, with
+  `SpatialRatesResult.classify()` reserved for the boolean place-cell predicate.
+- `decode_position()` accepts population rate result objects directly.
+
+### Deprecated
+
+- `EgocentricRatesResult.detect_ovcs(...)` -> `classify(...)`
+- `ViewRatesResult.detect_view_cells(...)` -> `classify(...)`
+- `DirectionalRatesResult.detect_hd_cells(...)` -> `classify(...)`
+- `SpatialRatesResult.detect_cell_types(...)` -> `label_cell_types(...)`
+- `ViewRateResult.peak_view_location()` -> `peak_location()`
+- `ViewRatesResult.peak_view_location()` -> `peak_locations()`
+- `detect_region_crossings(position_bins, times, region_name, env, ...)` ->
+  `detect_region_crossings(position_bins, times, env, *, region_name, ...)`
 
 ## [0.1.0] - 2024-11-03
 

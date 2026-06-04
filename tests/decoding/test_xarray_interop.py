@@ -131,6 +131,34 @@ class TestToXarrayDims:
         with pytest.raises(ImportError, match="neurospatial\\[xarray\\]"):
             result.to_xarray()
 
+    def test_bad_times_length_raises_neurospatial_error(self, small_2d_env):
+        """Direct DecodingResult construction validates time-coordinate length."""
+        pytest.importorskip("xarray")
+
+        posterior = np.ones((3, small_2d_env.n_bins)) / small_2d_env.n_bins
+        result = DecodingResult(
+            posterior=posterior,
+            env=small_2d_env,
+            times=np.asarray([0.0, 1.0]),
+        )
+
+        with pytest.raises(ValueError, match="times length mismatch"):
+            result.to_xarray()
+
+    def test_non_1d_times_raise_neurospatial_error(self, small_2d_env):
+        """Direct DecodingResult construction validates time-coordinate shape."""
+        pytest.importorskip("xarray")
+
+        posterior = np.ones((3, small_2d_env.n_bins)) / small_2d_env.n_bins
+        result = DecodingResult(
+            posterior=posterior,
+            env=small_2d_env,
+            times=np.asarray([[0.0], [1.0], [2.0]]),
+        )
+
+        with pytest.raises(ValueError, match="times must be 1-D"):
+            result.to_xarray()
+
 
 class TestErrorAgainst:
     """error_against() aligns the decode grid to ground truth."""

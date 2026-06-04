@@ -161,7 +161,7 @@ else:
 # %%
 # Detect all crossings (both entries and exits)
 crossings = detect_region_crossings(
-    trajectory_bins, times, region_name="goal", env=env, direction="both"
+    trajectory_bins, times, env, region_name="goal", direction="both"
 )
 
 print(f"\nDetected {len(crossings)} region crossings:")

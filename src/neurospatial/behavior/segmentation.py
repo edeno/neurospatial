@@ -414,11 +414,17 @@ def detect_region_crossings(
     #
     # Disambiguate old vs new positional order. The OLD order was
     # ``(position_bins, times, region_name: str, env)``; the NEW order is
-    # ``(position_bins, times, env, *, region_name=...)``. We are in the old
-    # order if a fourth positional arg was supplied (``arg4 is not None``) OR
-    # the third positional arg is a string (the legacy ``region_name`` slot).
+    # ``(position_bins, times, env, *, region_name=...)``. The only accepted
+    # four-positional shape is the old order. A new-order call with positional
+    # region_name must fail clearly because it is not future-compatible.
     env: Environment
-    if arg4 is not None or isinstance(arg3, str):
+    if isinstance(arg3, str):
+        if arg4 is None:
+            raise TypeError(
+                "detect_region_crossings() missing required environment argument. "
+                "Call as detect_region_crossings(position_bins, times, env, "
+                "region_name=...)."
+            )
         warnings.warn(
             "detect_region_crossings argument order changed in 0.6: pass "
             "(position_bins, times, env, region_name=...) instead of "
@@ -430,6 +436,13 @@ def detect_region_crossings(
         # Old order: arg3 is region_name, arg4 is env.
         region_name = arg3  # type: ignore[assignment]
         env = arg4  # type: ignore[assignment]
+    elif arg4 is not None:
+        raise TypeError(
+            "detect_region_crossings() takes region_name as a keyword-only "
+            "argument in the new API. Call as "
+            "detect_region_crossings(position_bins, times, env, "
+            "region_name=...)."
+        )
     else:
         # New order: arg3 is env, region_name is keyword-only.
         # (mypy narrows arg3 to Environment here via the isinstance check above)

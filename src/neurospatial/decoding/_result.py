@@ -546,6 +546,26 @@ class DecodingResult(ResultMixin):
         # rather than passing None into the coord (which would raise).
         if self.times is not None:
             time_coord: NDArray[Any] = np.asarray(self.times)
+            if time_coord.ndim != 1:
+                raise ValueError(
+                    "DecodingResult.to_xarray(): times must be 1-D, but got "
+                    f"shape {time_coord.shape}.\n"
+                    "  WHY: the xarray 'time' coordinate labels one posterior "
+                    "row per decoded time bin.\n"
+                    "  HOW: pass a 1-D times array with length "
+                    "posterior.shape[0], or leave times=None to use integer "
+                    "time-bin indices."
+                )
+            if time_coord.shape[0] != n_time:
+                raise ValueError(
+                    "DecodingResult.to_xarray(): times length mismatch: got "
+                    f"{time_coord.shape[0]} time value(s), but posterior has "
+                    f"{n_time} time bin(s).\n"
+                    "  WHY: the xarray 'time' coordinate must align one-to-one "
+                    "with posterior rows.\n"
+                    "  HOW: pass times with length posterior.shape[0], or "
+                    "leave times=None to use integer time-bin indices."
+                )
         else:
             time_coord = np.arange(n_time)
 

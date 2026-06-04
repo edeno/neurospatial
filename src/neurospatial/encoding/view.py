@@ -994,8 +994,8 @@ class ViewRatesResult(SpatialResultMixin):
         pd.DataFrame
             One row per unit, indexed by ``unit_id``, with columns:
 
-            - peak_view_x: x-coordinate of peak view location
-            - peak_view_y: y-coordinate of peak view location
+            - peak_x: x-coordinate of peak view location
+            - peak_y: y-coordinate of peak view location
             - peak_rate: maximum firing rate (Hz)
             - view_spatial_info: view spatial information (bits/spike)
             - is_spatial_view_cell: whether classified as view cell (using default threshold)
@@ -1033,7 +1033,7 @@ class ViewRatesResult(SpatialResultMixin):
         ... )
         >>> df = result.summary_table()
         >>> list(df.columns)
-        ['peak_view_x', 'peak_view_y', 'peak_rate', 'view_spatial_info', 'is_spatial_view_cell']
+        ['peak_x', 'peak_y', 'peak_rate', 'view_spatial_info', 'is_spatial_view_cell']
         >>> df.index.name
         'unit_id'
 
@@ -1077,10 +1077,8 @@ class ViewRatesResult(SpatialResultMixin):
 
         # Build DataFrame
         data: dict[str, Any] = {
-            "peak_view_x": peak_locs[:, 0],
-            "peak_view_y": peak_locs[:, 1]
-            if n_dims > 1
-            else np.full(n_neurons, np.nan),
+            "peak_x": peak_locs[:, 0],
+            "peak_y": peak_locs[:, 1] if n_dims > 1 else np.full(n_neurons, np.nan),
             "peak_rate": peak_rates,
             "view_spatial_info": view_info,
             "is_spatial_view_cell": is_spatial_view_cell,

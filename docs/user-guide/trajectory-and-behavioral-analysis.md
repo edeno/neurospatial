@@ -237,15 +237,15 @@ from neurospatial.behavior.segmentation import detect_region_crossings
 
 # Detect all crossings (entries and exits)
 crossings = detect_region_crossings(
-    position_bins, times, region_name="goal", env=env, direction="both"
+    position_bins, times, env, region_name="goal", direction="both"
 )
 
 # Filter by direction
 entries = detect_region_crossings(
-    position_bins, times, "goal", env, direction="entry"
+    position_bins, times, env, region_name="goal", direction="entry"
 )
 exits = detect_region_crossings(
-    position_bins, times, "goal", env, direction="exit"
+    position_bins, times, env, region_name="goal", direction="exit"
 )
 
 # Analyze crossing events

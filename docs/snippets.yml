@@ -143,6 +143,36 @@ snippets:
     kind: markdown
     index: 2
 
+  - id: docs_trajectory_region_crossings
+    source: docs/user-guide/trajectory-and-behavioral-analysis.md
+    kind: markdown
+    # Block 4: Region-Based Segmentation > Detecting Region Crossings. This
+    # pins the v0.6 call shape: env in positional slot 3, region_name keyword.
+    index: 4
+    setup: |
+      import numpy as np
+      from shapely.geometry import Point
+
+      from neurospatial import Environment
+
+      positions = np.column_stack([
+          np.linspace(0.0, 100.0, 80),
+          np.full(80, 50.0),
+      ])
+      env = Environment.from_samples(positions, bin_size=5.0)
+      env.regions.add("goal", polygon=Point(50.0, 50.0).buffer(10.0))
+
+      trajectory = np.array([
+          [10.0, 50.0],
+          [30.0, 50.0],
+          [50.0, 50.0],
+          [70.0, 50.0],
+          [50.0, 50.0],
+          [30.0, 50.0],
+      ])
+      position_bins = env.bin_at(trajectory)
+      times = np.arange(len(trajectory), dtype=float)
+
   - id: quickstart_vte_session
     source: .claude/QUICKSTART.md
     kind: markdown

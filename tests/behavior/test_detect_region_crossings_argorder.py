@@ -79,3 +79,9 @@ def test_missing_region_name_in_new_order_raises() -> None:
     env, position_bins, times = _make_env_and_trajectory()
     with pytest.raises(TypeError, match="region_name"):
         detect_region_crossings(position_bins, times, env)
+
+
+def test_new_order_with_positional_region_name_raises_clear_type_error() -> None:
+    env, position_bins, times = _make_env_and_trajectory()
+    with pytest.raises(TypeError, match="keyword-only"):
+        detect_region_crossings(position_bins, times, env, "goal")
