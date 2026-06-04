@@ -63,8 +63,11 @@ PolygonType = type[_shp.Polygon]
 def _add_edge_with_distance(graph: nx.Graph, u: Any, v: Any, edge_id: int) -> None:
     """Add an edge to `graph` with `distance` (from node pos) and `edge_id`.
 
-    The ``edge_id`` attribute is required by ``track_linearization`` for
-    ``to_linear()`` to work (mirrors ``track_linearization.make_track_graph``).
+    Only ``distance`` is consumed by neurospatial's linearization path
+    (``_get_graph_bins`` builds its own edge_id map from edge enumeration and
+    never reads the input ``edge_id``). The ``edge_id`` attribute is set for
+    interoperability/parity with ``track_linearization.make_track_graph`` but is
+    not required for ``to_linear()`` to work.
     """
     p1 = np.asarray(graph.nodes[u]["pos"], dtype=float)
     p2 = np.asarray(graph.nodes[v]["pos"], dtype=float)
@@ -75,14 +78,31 @@ def _assemble_maze_graph(
     kind: str,
     node_positions: dict[Any, Sequence[float]],
 ) -> tuple[nx.Graph, list[tuple[Any, Any]]]:
-    """Assemble a standard W / plus / T maze graph from labelled node positions.
+    """Assemble a standard W / plus / T maze graph from ordered node positions.
+
+    Topology is derived from the DOCUMENTED ORDER of ``node_positions`` (a
+    coordinate-system-independent contract), never from x/y heuristics. The
+    required ordering per `kind` is:
+
+    - ``"plus"`` (5 nodes): ``[center, arm1, arm2, arm3, arm4]`` -> edges
+      center--each arm.
+    - ``"t"`` (4 nodes): ``[stem_end, junction, arm_left, arm_right]`` -> edges
+      stem_end--junction, junction--arm_left, junction--arm_right.
+    - ``"w"`` (6 nodes): ``[base_left, base_mid, base_right, arm_left, arm_mid,
+      arm_right]`` -> connector edges base_left--base_mid--base_right plus arm
+      edges base_left--arm_left, base_mid--arm_mid, base_right--arm_right.
+
+    Because the topology comes from order alone, the SAME graph is produced for
+    any consistent coordinate system (e.g. y increasing downward, or arms in
+    -y); coordinates are stored only as ``pos`` attributes / edge distances.
 
     Parameters
     ----------
     kind : {"w", "plus", "t"}
         Normalized (lower-case) maze kind.
     node_positions : dict
-        Mapping of node label -> (x, y) coordinate.
+        Ordered mapping of node label -> (x, y) coordinate. The insertion order
+        defines the topology (see above). Python dicts preserve insertion order.
 
     Returns
     -------
@@ -94,7 +114,8 @@ def _assemble_maze_graph(
     Raises
     ------
     ValueError
-        If `node_positions` does not contain the expected number of nodes.
+        If `node_positions` does not contain the expected number of nodes for
+        `kind`, or if `kind` is unknown.
     """
     labels = list(node_positions.keys())
     graph = nx.Graph()
@@ -105,11 +126,13 @@ def _assemble_maze_graph(
     edge_id = 0
 
     if kind == "plus":
-        # Star topology: first node is the center, remaining four are arm tips.
+        # Order contract: [center, arm1, arm2, arm3, arm4].
+        # Star topology: center connects to each of the four arm tips.
         if len(labels) != 5:
             raise ValueError(
-                "A plus maze needs exactly 5 nodes in `node_positions`: one "
-                f"center followed by four arm tips. Got {len(labels)}."
+                "A plus maze needs exactly 5 nodes in `node_positions`, ordered "
+                "[center, arm1, arm2, arm3, arm4]: one center followed by four "
+                f"arm tips. Got {len(labels)}."
             )
         center = labels[0]
         for arm in labels[1:]:
@@ -118,54 +141,51 @@ def _assemble_maze_graph(
             edge_id += 1
 
     elif kind == "t":
-        # Stem (start->junction) + crossbar (junction->each arm tip).
+        # Order contract: [stem_end, junction, arm_left, arm_right].
+        # Stem (stem_end->junction) + crossbar (junction->each arm tip).
         if len(labels) != 4:
             raise ValueError(
-                "A T maze needs exactly 4 nodes in `node_positions`: start, "
-                f"junction, and two arm tips. Got {len(labels)}."
+                "A T maze needs exactly 4 nodes in `node_positions`, ordered "
+                "[stem_end, junction, arm_left, arm_right]. "
+                f"Got {len(labels)}."
             )
-        start, junction, arm1, arm2 = labels
-        _add_edge_with_distance(graph, start, junction, edge_id)
-        edge_order.append((start, junction))
+        stem_end, junction, arm_left, arm_right = labels
+        _add_edge_with_distance(graph, stem_end, junction, edge_id)
+        edge_order.append((stem_end, junction))
         edge_id += 1
-        for arm in (arm1, arm2):
+        for arm in (arm_left, arm_right):
             _add_edge_with_distance(graph, junction, arm, edge_id)
             edge_order.append((junction, arm))
             edge_id += 1
 
     elif kind == "w":
-        # Three vertical arms joined by a horizontal connector base.
-        # First three nodes are the base (left, mid, right) ordered by x;
-        # remaining three are arm tips, matched to the base node sharing x.
+        # Order contract:
+        #   [base_left, base_mid, base_right, arm_left, arm_mid, arm_right].
+        # Horizontal connector along the first three base nodes, then one
+        # vertical arm edge joining each base node to the arm tip at the
+        # matching position in the documented order.
         if len(labels) != 6:
             raise ValueError(
-                "A W maze needs exactly 6 nodes in `node_positions`: three "
-                "base/junction nodes and three arm tips (5 base+arm edges). "
-                f"Got {len(labels)}."
+                "A W maze needs exactly 6 nodes in `node_positions`, ordered "
+                "[base_left, base_mid, base_right, arm_left, arm_mid, "
+                "arm_right]: three base/junction nodes followed by three arm "
+                f"tips (5 base+arm edges). Got {len(labels)}."
             )
-        positions = {label: np.asarray(graph.nodes[label]["pos"]) for label in labels}
-        ys = np.array([positions[label][1] for label in labels])
-        y_split = (ys.min() + ys.max()) / 2.0
-        base = [label for label in labels if positions[label][1] <= y_split]
-        arms = [label for label in labels if positions[label][1] > y_split]
-        if len(base) != 3 or len(arms) != 3:
-            raise ValueError(
-                "A W maze needs three base nodes and three arm-tip nodes, "
-                "distinguished by their y-coordinate (base low, arms high). "
-                f"Got {len(base)} base and {len(arms)} arm nodes."
-            )
-        base = sorted(base, key=lambda label: positions[label][0])
-        arms = sorted(arms, key=lambda label: positions[label][0])
-        # Horizontal connector along the base (left -> mid -> right).
+        base = labels[:3]
+        arms = labels[3:]
+        # Horizontal connector along the base (base_left -> base_mid -> base_right).
         for left, right in itertools.pairwise(base):
             _add_edge_with_distance(graph, left, right, edge_id)
             edge_order.append((left, right))
             edge_id += 1
-        # Vertical arms: each base node up to the arm sharing its x order.
-        for base_node, arm_node in zip(base, arms, strict=False):
+        # Vertical arms: each base node up to the arm at the matching position.
+        for base_node, arm_node in zip(base, arms, strict=True):
             _add_edge_with_distance(graph, base_node, arm_node, edge_id)
             edge_order.append((base_node, arm_node))
             edge_id += 1
+
+    else:
+        raise ValueError(f"Unknown maze kind {kind!r}")
 
     return graph, edge_order
 
@@ -682,17 +702,53 @@ class EnvironmentFactories:
         ``node_positions`` from which the standard edge topology for `kind` is
         assembled. The graph is then passed to :meth:`from_graph`.
 
-        Standard topologies assembled from `node_positions`:
+        Standard topologies assembled from `node_positions`. **The topology is
+        derived from the ORDER of the `node_positions` entries, not from their
+        x/y coordinates** -- this is a coordinate-system-independent contract,
+        so it works identically whether y increases up or down and whichever
+        direction the arms extend. The required order per `kind` is:
 
-        - ``"w"``: three vertical arms joined by a horizontal connector
-          (the W shape). Provide three base nodes (left, mid, right) and three
-          arm-tip nodes. Base nodes are connected left-to-right; each arm tip
-          connects to the base node sharing its x-coordinate.
-        - ``"plus"``: four arms radiating from a center node (a star). Provide
-          one center node and four arm-tip nodes.
-        - ``"t"``: a stem plus a crossbar. Provide a start node, a junction
-          node, and two arm-tip nodes; the stem joins start->junction and the
-          crossbar joins junction->each arm tip.
+        - ``"plus"`` (5 nodes): ``[center, arm1, arm2, arm3, arm4]``. The first
+          node is the center; the remaining four are arm tips. Edges join the
+          center to each arm tip (a star). For example::
+
+              {
+                  "center": (0, 0),
+                  "north": (0, 50),
+                  "south": (0, -50),
+                  "east": (50, 0),
+                  "west": (-50, 0),
+              }
+
+        - ``"t"`` (4 nodes): ``[stem_end, junction, arm_left, arm_right]``. The
+          stem joins stem_end--junction; the crossbar joins junction--arm_left
+          and junction--arm_right. For example::
+
+              {
+                  "start": (0, 0),
+                  "junction": (0, 50),
+                  "left": (-50, 50),
+                  "right": (50, 50),
+              }
+
+        - ``"w"`` (6 nodes): ``[base_left, base_mid, base_right, arm_left,
+          arm_mid, arm_right]`` -- three base nodes followed by three arm tips.
+          The base nodes are connected by a horizontal connector
+          (base_left--base_mid--base_right); each arm tip connects to the base
+          node at the matching position in this order (base_left--arm_left,
+          base_mid--arm_mid, base_right--arm_right). For example::
+
+              {
+                  "base_left": (0, 0),
+                  "base_mid": (50, 0),
+                  "base_right": (100, 0),
+                  "arm_left": (0, 50),
+                  "arm_mid": (50, 50),
+                  "arm_right": (100, 50),
+              }
+
+        Python dicts preserve insertion order, so the order you write the
+        entries in is the order used.
 
         Parameters
         ----------
@@ -761,10 +817,16 @@ class EnvironmentFactories:
             )
 
         if track_graph is not None:
-            graph = track_graph
+            # Operate on a copy so the caller's graph is never mutated.
+            graph = track_graph.copy()
             edge_order = list(graph.edges())
-            # Fill in `distance` and `edge_id` from node positions where missing
-            # (both are required by track_linearization for to_linear()).
+            # Fill in `distance` from node positions where missing; this is the
+            # only edge attribute the neurospatial linearization path consumes
+            # (`_get_graph_bins` builds its own edge_id map from edge
+            # enumeration and never reads an input `edge_id`). We also set
+            # `edge_id` for interoperability/parity with
+            # ``track_linearization.make_track_graph``, but neurospatial's
+            # ``to_linear()`` does not consume it.
             for assigned_id, (u, v) in enumerate(graph.edges()):
                 if "distance" not in graph.edges[u, v]:
                     p1 = np.asarray(graph.nodes[u]["pos"], dtype=float)

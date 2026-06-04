@@ -127,6 +127,143 @@ class TestMaze:
         assert graph.number_of_nodes() == 6
         assert graph.number_of_edges() == 5
 
+    def test_w_edge_topology_and_to_linear(self):
+        """W graph edges match the order-based contract and to_linear() works."""
+        env = Environment.maze("w", node_positions=self._w_nodes(), bin_size=5.0)
+        graph = env.layout_parameters["graph_definition"]
+        edges = {frozenset(e) for e in graph.edges()}
+        expected = {
+            # Horizontal connector: base_left -- base_mid -- base_right.
+            frozenset({"base_left", "base_mid"}),
+            frozenset({"base_mid", "base_right"}),
+            # Vertical arms by matching position in the documented order.
+            frozenset({"base_left", "arm_left"}),
+            frozenset({"base_mid", "arm_mid"}),
+            frozenset({"base_right", "arm_right"}),
+        }
+        assert edges == expected
+        # Graph validity: to_linear() produces a finite linear coordinate.
+        linear = env.to_linear(np.array([[50.0, 0.0]]))
+        assert linear.shape[0] == 1
+        assert np.isfinite(linear[0])
+
+    def test_w_topology_is_coordinate_independent(self):
+        """Arms-down coordinates produce the SAME topology (regression).
+
+        This is the test that would have caught the old y<=y_split bug: the
+        base sits at LARGE y and the arms extend to SMALL y, so any
+        y-coordinate heuristic would misclassify base vs. arms. The order-based
+        contract must yield the identical edge topology.
+        """
+        arms_down = {
+            "base_left": (0, 100),
+            "base_mid": (50, 100),
+            "base_right": (100, 100),
+            "arm_left": (0, 50),
+            "arm_mid": (50, 50),
+            "arm_right": (100, 50),
+        }
+        env = Environment.maze("w", node_positions=arms_down, bin_size=5.0)
+        graph = env.layout_parameters["graph_definition"]
+        edges = {frozenset(e) for e in graph.edges()}
+        expected = {
+            frozenset({"base_left", "base_mid"}),
+            frozenset({"base_mid", "base_right"}),
+            frozenset({"base_left", "arm_left"}),
+            frozenset({"base_mid", "arm_mid"}),
+            frozenset({"base_right", "arm_right"}),
+        }
+        assert edges == expected
+        assert env.is_linearized_track is True
+
+    def test_plus_edge_topology_and_to_linear(self):
+        """Plus graph edges (center--each arm) and to_linear() works."""
+        nodes = {
+            "center": (0, 0),
+            "north": (0, 50),
+            "south": (0, -50),
+            "east": (50, 0),
+            "west": (-50, 0),
+        }
+        env = Environment.maze("plus", node_positions=nodes, bin_size=5.0)
+        graph = env.layout_parameters["graph_definition"]
+        edges = {frozenset(e) for e in graph.edges()}
+        expected = {
+            frozenset({"center", "north"}),
+            frozenset({"center", "south"}),
+            frozenset({"center", "east"}),
+            frozenset({"center", "west"}),
+        }
+        assert edges == expected
+        linear = env.to_linear(np.array([[0.0, 25.0]]))
+        assert linear.shape[0] == 1
+        assert np.isfinite(linear[0])
+
+    def test_plus_topology_is_coordinate_independent(self):
+        """Plus topology comes from order, not coordinates (regression)."""
+        # Arms in arbitrary/flipped directions; order alone defines edges.
+        nodes = {
+            "center": (0, 0),
+            "a": (0, -50),
+            "b": (0, -100),
+            "c": (-50, 0),
+            "d": (-100, 0),
+        }
+        env = Environment.maze("plus", node_positions=nodes, bin_size=5.0)
+        graph = env.layout_parameters["graph_definition"]
+        edges = {frozenset(e) for e in graph.edges()}
+        expected = {
+            frozenset({"center", "a"}),
+            frozenset({"center", "b"}),
+            frozenset({"center", "c"}),
+            frozenset({"center", "d"}),
+        }
+        assert edges == expected
+
+    def test_t_edge_topology_and_to_linear(self):
+        """T graph edges (stem + crossbar) and to_linear() works."""
+        nodes = {
+            "start": (0, 0),
+            "junction": (0, 50),
+            "left": (-50, 50),
+            "right": (50, 50),
+        }
+        env = Environment.maze("t", node_positions=nodes, bin_size=5.0)
+        graph = env.layout_parameters["graph_definition"]
+        edges = {frozenset(e) for e in graph.edges()}
+        expected = {
+            frozenset({"start", "junction"}),
+            frozenset({"junction", "left"}),
+            frozenset({"junction", "right"}),
+        }
+        assert edges == expected
+        linear = env.to_linear(np.array([[0.0, 25.0]]))
+        assert linear.shape[0] == 1
+        assert np.isfinite(linear[0])
+
+    def test_t_topology_is_coordinate_independent(self):
+        """T topology comes from order, not coordinates (regression).
+
+        Stem extends to LARGE y and arms to SMALL y -- the opposite of the
+        conventional T -- yet the order-based contract yields the same
+        stem/crossbar edges.
+        """
+        nodes = {
+            "stem_end": (0, 100),
+            "junction": (0, 50),
+            "arm_left": (-50, 0),
+            "arm_right": (50, 0),
+        }
+        env = Environment.maze("t", node_positions=nodes, bin_size=5.0)
+        graph = env.layout_parameters["graph_definition"]
+        edges = {frozenset(e) for e in graph.edges()}
+        expected = {
+            frozenset({"stem_end", "junction"}),
+            frozenset({"junction", "arm_left"}),
+            frozenset({"junction", "arm_right"}),
+        }
+        assert edges == expected
+
     def test_plus_from_node_positions(self):
         nodes = {
             "center": (0, 0),
@@ -165,6 +302,57 @@ class TestMaze:
         env = Environment.maze("w", track_graph=g, bin_size=5.0)
         assert env.is_linearized_track is True
         assert env.n_bins == 20
+
+    def test_track_graph_not_mutated(self):
+        """maze(track_graph=...) must not mutate the caller's graph."""
+        g = nx.Graph()
+        g.add_node("a", pos=(0.0, 0.0))
+        g.add_node("b", pos=(50.0, 0.0))
+        g.add_node("c", pos=(100.0, 0.0))
+        g.add_edge("a", "b")
+        g.add_edge("b", "c")
+
+        env = Environment.maze("w", track_graph=g, bin_size=5.0)
+
+        # The caller's graph must be untouched: no `distance`/`edge_id` written.
+        for u, v in g.edges():
+            assert "distance" not in g.edges[u, v]
+            assert "edge_id" not in g.edges[u, v]
+        # And the built environment must still linearize correctly.
+        assert env.is_linearized_track is True
+
+    def test_track_graph_to_linear_without_edge_id(self):
+        """to_linear() works even though edge_id is not in the input graph."""
+        g = nx.Graph()
+        g.add_node("a", pos=(0.0, 0.0))
+        g.add_node("b", pos=(50.0, 0.0))
+        g.add_node("c", pos=(100.0, 0.0))
+        # Only `distance` provided; no `edge_id` at all.
+        g.add_edge("a", "b", distance=50.0)
+        g.add_edge("b", "c", distance=50.0)
+        env = Environment.maze("w", track_graph=g, bin_size=5.0)
+        linear = env.to_linear(np.array([[50.0, 0.0]]))
+        assert linear.shape[0] == 1
+        assert np.isfinite(linear[0])
+
+    @pytest.mark.parametrize(
+        ("kind", "nodes"),
+        [
+            ("plus", {"center": (0, 0), "north": (0, 50)}),  # too few (needs 5)
+            ("t", {"a": (0, 0), "b": (0, 50), "c": (50, 50)}),  # too few (needs 4)
+            ("w", {"a": (0, 0), "b": (50, 0), "c": (100, 0)}),  # too few (needs 6)
+        ],
+    )
+    def test_wrong_node_count_raises(self, kind, nodes):
+        with pytest.raises(ValueError, match="needs exactly"):
+            Environment.maze(kind, node_positions=nodes, bin_size=5.0)
+
+    def test_assemble_maze_graph_unknown_kind_raises(self):
+        """Direct call with a bad kind raises instead of returning empty graph."""
+        from neurospatial.environment.factories import _assemble_maze_graph
+
+        with pytest.raises(ValueError, match="Unknown maze kind"):
+            _assemble_maze_graph("circle", {"a": (0, 0)})
 
     def test_no_topology_raises(self):
         with pytest.raises(ValueError, match="topology"):
