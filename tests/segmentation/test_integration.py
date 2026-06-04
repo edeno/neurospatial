@@ -183,10 +183,10 @@ class TestFullTrajectoryAnalysisWorkflow:
 
         # Step 2: Detect region crossings
         left_crossings = detect_region_crossings(
-            position_bins, times, "left", env, direction="entry"
+            position_bins, times, env, region_name="left", direction="entry"
         )
         right_crossings = detect_region_crossings(
-            position_bins, times, "right", env, direction="entry"
+            position_bins, times, env, region_name="right", direction="entry"
         )
 
         assert len(left_crossings) >= 1, "Should detect left entries"

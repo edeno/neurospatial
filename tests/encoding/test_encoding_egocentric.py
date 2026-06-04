@@ -1616,7 +1616,7 @@ class TestEgocentricRatesResultDetectOVCs:
             n_direction_bins=12,
         )
 
-        is_object_vector_cell = result.detect_ovcs()
+        is_object_vector_cell = result.classify()
         assert isinstance(is_object_vector_cell, np.ndarray)
 
     def test_detect_ovcs_shape(
@@ -1637,7 +1637,7 @@ class TestEgocentricRatesResultDetectOVCs:
             n_direction_bins=12,
         )
 
-        is_object_vector_cell = result.detect_ovcs()
+        is_object_vector_cell = result.classify()
         assert is_object_vector_cell.shape == (5,)  # 5 neurons in batch_firing_rates
 
     def test_detect_ovcs_returns_bool(
@@ -1658,7 +1658,7 @@ class TestEgocentricRatesResultDetectOVCs:
             n_direction_bins=12,
         )
 
-        is_object_vector_cell = result.detect_ovcs()
+        is_object_vector_cell = result.classify()
         assert is_object_vector_cell.dtype == np.bool_
 
     def test_detect_ovcs_accepts_min_info(
@@ -1680,8 +1680,8 @@ class TestEgocentricRatesResultDetectOVCs:
         )
 
         # Should not raise
-        _ = result.detect_ovcs(min_info=0.3)
-        _ = result.detect_ovcs(min_info=0.5)
+        _ = result.classify(min_info=0.3)
+        _ = result.classify(min_info=0.5)
 
     def test_detect_ovcs_default_threshold_is_0_3(
         self,
@@ -1701,8 +1701,8 @@ class TestEgocentricRatesResultDetectOVCs:
             n_direction_bins=12,
         )
 
-        default_result = result.detect_ovcs()
-        explicit_result = result.detect_ovcs(min_info=0.3)
+        default_result = result.classify()
+        explicit_result = result.classify(min_info=0.3)
         np.testing.assert_array_equal(default_result, explicit_result)
 
     def test_detect_ovcs_matches_single_neuron(
@@ -1723,7 +1723,7 @@ class TestEgocentricRatesResultDetectOVCs:
             n_direction_bins=12,
         )
 
-        batch_is_ovc = result.detect_ovcs()
+        batch_is_ovc = result.classify()
         for i, single in enumerate(result):
             assert batch_is_ovc[i] == single.is_object_vector_cell()
 
@@ -2238,7 +2238,7 @@ class TestEgocentricRatesResultToDataframe:
         )
 
         df = result.summary_table()
-        expected = result.detect_ovcs()  # Uses default min_info=0.3
+        expected = result.classify()  # Uses default min_info=0.3
         np.testing.assert_array_equal(df["is_object_vector_cell"].values, expected)
 
     def test_summary_table_empty_result(

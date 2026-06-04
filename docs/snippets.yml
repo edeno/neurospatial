@@ -207,8 +207,9 @@ snippets:
   - id: quickstart_view_classify
     source: .claude/QUICKSTART.md
     kind: markdown
-    # Block 21: classify spatial-view cells from single + batch results. Both
-    # ViewRateResult and ViewRatesResult expose peak_view_location() (singular).
+    # Block 21: classify spatial-view cells from single + batch results.
+    # ViewRateResult exposes peak_location(); ViewRatesResult exposes the
+    # plural peak_locations().
     index: 21
     setup: |
       import os

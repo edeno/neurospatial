@@ -76,6 +76,7 @@ neurospatial.ops.visibility : Visibility and gaze computation
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
@@ -255,55 +256,29 @@ class ViewRateResult(SpatialResultMixin):
 
         See Also
         --------
-        peak_view_location : Get location of peak view response
+        peak_location : Get location of peak view response
         """
         return self.env.plot_field(_to_numpy(self.firing_rate), ax=ax, **kwargs)
 
     def peak_view_location(self) -> NDArray[np.float64]:
-        """Location of peak view response.
+        """Deprecated alias for :meth:`peak_location`.
 
-        Returns the spatial coordinates where the neuron shows maximum firing
-        rate when the animal *views* that location.
+        .. deprecated:: 0.6
+            ``peak_view_location`` is deprecated since 0.6; use
+            :meth:`peak_location` instead. Removed in 0.7.
 
         Returns
         -------
         ndarray, shape (n_dims,)
             Spatial coordinates of the bin with maximum firing rate.
-            Uses nanargmax to handle NaN values in the firing rate map.
-
-        Notes
-        -----
-        For spatial view cells, the peak view location represents where the
-        neuron fires most when the animal looks there, regardless of where
-        the animal is positioned.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial import Environment
-        >>> from neurospatial.encoding.view import compute_view_rate
-        >>> rng = np.random.default_rng(0)
-        >>> env = Environment.from_samples(rng.random((200, 2)) * 50, bin_size=5.0)
-        >>> times = np.linspace(0, 10, 200)
-        >>> trajectory = rng.random((200, 2)) * 50
-        >>> headings = rng.uniform(-np.pi, np.pi, 200)
-        >>> spike_times = np.sort(rng.uniform(0, 10, 20))
-        >>> result = compute_view_rate(
-        ...     env, spike_times, times, trajectory, headings, view_distance=10.0
-        ... )
-        >>> peak = result.peak_view_location()
-        >>> peak.shape
-        (2,)
-
-        See Also
-        --------
-        view_spatial_information : Quantify spatial selectivity of view response
-        plot : Visualize the view field
         """
-        firing_rate = _to_numpy(self.firing_rate)
-        peak_bin = np.nanargmax(firing_rate)
-        result: NDArray[np.float64] = self.env.bin_centers[peak_bin]
-        return result
+        warnings.warn(
+            "peak_view_location is deprecated since 0.6, use peak_location; "
+            "removed in 0.7",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.peak_location()
 
     def view_spatial_information(self) -> float:
         """Skaggs spatial information based on view occupancy (bits per spike).
@@ -367,7 +342,7 @@ class ViewRateResult(SpatialResultMixin):
 
         See Also
         --------
-        peak_view_location : Get location of peak view response
+        peak_location : Get location of peak view response
         neurospatial.encoding._metrics.spatial_information : Underlying computation
         """
         from neurospatial.encoding._metrics import spatial_information
@@ -453,7 +428,7 @@ class ViewRateResult(SpatialResultMixin):
         See Also
         --------
         view_spatial_information : Compute the spatial information metric
-        peak_view_location : Get location of peak view response
+        peak_location : Get location of peak view response
         """
         return self.view_spatial_information() > min_info
 
@@ -771,7 +746,7 @@ class ViewRatesResult(SpatialResultMixin):
 
         See Also
         --------
-        peak_view_location : Get locations of peak view responses
+        peak_locations : Get locations of peak view responses
         ViewRateResult.plot : Plot for single-neuron result
         """
         return self.env.plot_field(
@@ -780,8 +755,8 @@ class ViewRatesResult(SpatialResultMixin):
             **kwargs,
         )
 
-    def peak_view_location(self) -> NDArray[np.float64]:
-        """Locations of peak view responses for all neurons.
+    def peak_locations(self) -> NDArray[np.float64]:
+        """Locations of peak firing for all neurons.
 
         Returns the spatial coordinates where each neuron shows maximum
         firing rate when the animal *views* that location.
@@ -795,7 +770,7 @@ class ViewRatesResult(SpatialResultMixin):
 
         Notes
         -----
-        For spatial view cells, peak view locations represent where each
+        For spatial view cells, peak locations represent where each
         neuron fires most when the animal looks there, regardless of where
         the animal is positioned.
 
@@ -816,13 +791,13 @@ class ViewRatesResult(SpatialResultMixin):
         >>> result = compute_view_rates(
         ...     env, spike_times, times, trajectory, headings, view_distance=10.0
         ... )
-        >>> peaks = result.peak_view_location()
+        >>> peaks = result.peak_locations()
         >>> peaks.shape
         (3, 2)
 
         See Also
         --------
-        ViewRateResult.peak_view_location : Single-neuron version
+        ViewRateResult.peak_location : Single-neuron version
         view_spatial_information : Quantify spatial selectivity
         """
         firing_rates = _to_numpy(self.firing_rates)
@@ -839,6 +814,27 @@ class ViewRatesResult(SpatialResultMixin):
                 peak_idx = int(np.nanargmax(firing_rates[i]))
                 peak_locs[i] = self.env.bin_centers[peak_idx]
         return peak_locs
+
+    def peak_view_location(self) -> NDArray[np.float64]:
+        """Deprecated alias for :meth:`peak_locations`.
+
+        .. deprecated:: 0.6
+            ``peak_view_location`` is deprecated since 0.6; use
+            :meth:`peak_locations` instead. Removed in 0.7.
+
+        Returns
+        -------
+        ndarray, shape (n_neurons, n_dims)
+            Spatial coordinates of the bins with maximum firing rate for
+            each neuron.
+        """
+        warnings.warn(
+            "peak_view_location is deprecated since 0.6, use peak_locations; "
+            "removed in 0.7",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.peak_locations()
 
     def view_spatial_information(self) -> NDArray[np.float64]:
         """View spatial information for all neurons (bits per spike).
@@ -888,7 +884,7 @@ class ViewRatesResult(SpatialResultMixin):
         See Also
         --------
         ViewRateResult.view_spatial_information : Single-neuron version
-        detect_view_cells : Classify as view cells based on this metric
+        classify : Classify as view cells based on this metric
         """
         from neurospatial.encoding._metrics import batch_spatial_information
 
@@ -896,11 +892,12 @@ class ViewRatesResult(SpatialResultMixin):
             _to_numpy(self.firing_rates), _to_numpy(self.occupancy)
         )
 
-    def detect_view_cells(self, min_info: float = 0.5) -> NDArray[np.bool_]:
+    def classify(self, *, min_info: float = 0.5) -> NDArray[np.bool_]:
         """Classify neurons as spatial view cells.
 
         A neuron is classified as a spatial view cell if its view spatial
-        information exceeds the minimum threshold.
+        information exceeds the minimum threshold. This is the single-type
+        boolean predicate ("is this a view cell") for the batch result.
 
         Parameters
         ----------
@@ -933,12 +930,12 @@ class ViewRatesResult(SpatialResultMixin):
         >>> result = compute_view_rates(
         ...     env, spike_times, times, trajectory, headings, view_distance=10.0
         ... )
-        >>> is_view_cell = result.detect_view_cells()
+        >>> is_view_cell = result.classify()
         >>> is_view_cell.shape
         (3,)
 
         >>> # Use stricter threshold
-        >>> is_view_cell = result.detect_view_cells(min_info=1.0)
+        >>> is_view_cell = result.classify(min_info=1.0)
         >>> is_view_cell.dtype == bool
         True
 
@@ -949,6 +946,30 @@ class ViewRatesResult(SpatialResultMixin):
         """
         info = self.view_spatial_information()
         return info > min_info
+
+    def detect_view_cells(self, min_info: float = 0.5) -> NDArray[np.bool_]:
+        """Deprecated alias for :meth:`classify`.
+
+        .. deprecated:: 0.6
+            ``detect_view_cells`` is deprecated since 0.6; use
+            :meth:`classify` instead. Removed in 0.7.
+
+        Parameters
+        ----------
+        min_info : float, default=0.5
+            Minimum view spatial information threshold in bits/spike.
+
+        Returns
+        -------
+        ndarray, shape (n_neurons,)
+            Boolean array where True indicates a spatial view cell.
+        """
+        warnings.warn(
+            "detect_view_cells is deprecated since 0.6, use classify; removed in 0.7",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.classify(min_info=min_info)
 
     def summary_table(
         self,
@@ -987,7 +1008,7 @@ class ViewRatesResult(SpatialResultMixin):
         -----
         This method computes all metrics at once, which may be slow for
         large populations. For selective metric computation, use the
-        individual methods (``view_spatial_information()``, ``detect_view_cells()``, etc.).
+        individual methods (``view_spatial_information()``, ``classify()``, etc.).
 
         **Common pandas workflows**:
 
@@ -1024,9 +1045,9 @@ class ViewRatesResult(SpatialResultMixin):
         See Also
         --------
         to_dataframe : Dense per-bin frame (one row per (unit, bin)).
-        peak_view_location : Get peak view locations for all neurons
+        peak_locations : Get peak view locations for all neurons
         view_spatial_information : Get spatial information for all neurons
-        detect_view_cells : Classify neurons as view cells
+        classify : Classify neurons as view cells
         """
         import pandas as pd
 
@@ -1043,11 +1064,11 @@ class ViewRatesResult(SpatialResultMixin):
                 )
 
         # Compute all metrics
-        peak_locs = self.peak_view_location()
+        peak_locs = self.peak_locations()
         firing_rates = _to_numpy(self.firing_rates)
         peak_rates = np.nanmax(firing_rates, axis=1) if n_neurons > 0 else np.array([])
         view_info = self.view_spatial_information()
-        is_spatial_view_cell = self.detect_view_cells()
+        is_spatial_view_cell = self.classify()
 
         # Determine dimensionality for peak location columns
         # View encoding is typically 2D, but handle 1D for robustness
@@ -1226,7 +1247,7 @@ def compute_view_rate(
     ... )
 
     >>> # Access results
-    >>> peak = result.peak_view_location()
+    >>> peak = result.peak_location()
     >>> peak.shape
     (2,)
     >>> info = result.view_spatial_information()
@@ -1528,7 +1549,7 @@ def compute_view_rates(
     True
 
     >>> # Iterate over neurons
-    >>> peak_shapes = [single.peak_view_location().shape for single in result]
+    >>> peak_shapes = [single.peak_location().shape for single in result]
     >>> peak_shapes == [(2,), (2,), (2,)]
     True
 

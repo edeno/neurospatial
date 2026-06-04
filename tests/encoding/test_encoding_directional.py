@@ -2044,7 +2044,7 @@ class TestDirectionalRatesResultDetectHdCells:
             bandwidth=None,
         )
 
-        is_hd = result.detect_hd_cells()
+        is_hd = result.classify()
         assert isinstance(is_hd, np.ndarray)
 
     def test_detect_hd_cells_shape(
@@ -2066,7 +2066,7 @@ class TestDirectionalRatesResultDetectHdCells:
             bandwidth=None,
         )
 
-        is_hd = result.detect_hd_cells()
+        is_hd = result.classify()
         assert is_hd.shape == (n_neurons,)
         assert is_hd.dtype == np.bool_
 
@@ -2088,7 +2088,7 @@ class TestDirectionalRatesResultDetectHdCells:
             bandwidth=None,
         )
 
-        is_hd = result.detect_hd_cells()
+        is_hd = result.classify()
 
         for i, single in enumerate(result):
             assert is_hd[i] == single.is_head_direction_cell()
@@ -2112,10 +2112,10 @@ class TestDirectionalRatesResultDetectHdCells:
         )
 
         # Very permissive threshold
-        is_hd_permissive = result.detect_hd_cells(min_mvl=0.0)
+        is_hd_permissive = result.classify(min_mvl=0.0)
 
         # Very strict threshold
-        is_hd_strict = result.detect_hd_cells(min_mvl=0.99)
+        is_hd_strict = result.classify(min_mvl=0.99)
 
         # Strict should have fewer or equal HD cells
         assert np.sum(is_hd_strict) <= np.sum(is_hd_permissive)
@@ -2139,10 +2139,10 @@ class TestDirectionalRatesResultDetectHdCells:
         )
 
         # Very permissive alpha
-        is_hd_permissive = result.detect_hd_cells(alpha=1.0)
+        is_hd_permissive = result.classify(alpha=1.0)
 
         # Very strict alpha
-        is_hd_strict = result.detect_hd_cells(alpha=1e-10)
+        is_hd_strict = result.classify(alpha=1e-10)
 
         # Strict should have fewer or equal HD cells
         assert np.sum(is_hd_strict) <= np.sum(is_hd_permissive)
@@ -2165,8 +2165,8 @@ class TestDirectionalRatesResultDetectHdCells:
             bandwidth=None,
         )
 
-        is_hd_default = result.detect_hd_cells()
-        is_hd_explicit = result.detect_hd_cells(min_mvl=0.4, alpha=0.05)
+        is_hd_default = result.classify()
+        is_hd_explicit = result.classify(min_mvl=0.4, alpha=0.05)
 
         np.testing.assert_array_equal(is_hd_default, is_hd_explicit)
 
@@ -2725,7 +2725,7 @@ class TestDirectionalRatesResultToDataframe:
         )
 
         df = result.summary_table()
-        is_hd = result.detect_hd_cells()
+        is_hd = result.classify()
         np.testing.assert_array_equal(df["is_head_direction_cell"].values, is_hd)
 
     def test_summary_table_empty_result(
@@ -3666,7 +3666,7 @@ class TestComputeDirectionalRatesResultMethods:
         ]
 
         result = compute_directional_rates(spike_times, times, headings)
-        is_hd = result.detect_hd_cells()
+        is_hd = result.classify()
 
         assert isinstance(is_hd, np.ndarray)
         assert is_hd.dtype == np.bool_

@@ -78,6 +78,8 @@ __all__ = [
     "compute_directional_place_fields",
     # Field detection
     "detect_place_fields",
+    # Classification predicates
+    "is_place_cell",
 ]
 
 
@@ -761,6 +763,70 @@ class SpatialRateResult(SpatialResultMixin):
         env = cast("EnvironmentProtocol", self.env)
         return compute_region_coverage(field_bins, env, regions=regions)
 
+    def is_place_cell(
+        self,
+        *,
+        threshold: float = 0.2,
+        min_size: int | None = None,
+        max_mean_rate: float = 10.0,
+        detect_subfields: bool = True,
+    ) -> bool:
+        """Classify as a place cell based on detected place fields.
+
+        A neuron is classified as a place cell if :func:`detect_place_fields`
+        finds at least one place field in its firing rate map. This is the
+        single-neuron place predicate, the place-cell sibling of
+        :meth:`is_object_vector_cell` and :meth:`is_spatial_view_cell`.
+
+        Parameters
+        ----------
+        threshold : float, default=0.2
+            Fraction of peak rate for field boundary detection (0-1).
+        min_size : int, optional
+            Minimum number of bins for a valid field. If None, defaults to 9.
+        max_mean_rate : float, default=10.0
+            Maximum mean firing rate (Hz). Neurons exceeding this are excluded
+            as putative interneurons.
+        detect_subfields : bool, default=True
+            If True, recursively detect subfields within large fields.
+
+        Returns
+        -------
+        bool
+            True if the neuron has at least one detected place field.
+
+        See Also
+        --------
+        detect_place_fields : Place field detection algorithm this agrees with
+        is_place_cell : Free-function convenience wrapper
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rate
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 50, (500, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> times = np.linspace(0, 50, 500)
+        >>> spike_times = np.sort(rng.uniform(0, 50, 30))
+        >>> result = compute_spatial_rate(
+        ...     env, spike_times, times, positions, bandwidth=10.0
+        ... )
+        >>> isinstance(result.is_place_cell(), bool)
+        True
+        """
+        firing_rate = _to_numpy(self.firing_rate)
+        fields = detect_place_fields(
+            self.env,
+            firing_rate,
+            threshold=threshold,
+            min_size=min_size,
+            max_mean_rate=max_mean_rate,
+            detect_subfields=detect_subfields,
+        )
+        return len(fields) > 0
+
 
 @dataclass(frozen=True)
 class SpatialRatesResult(SpatialResultMixin):
@@ -1338,17 +1404,22 @@ class SpatialRatesResult(SpatialResultMixin):
             metric=metric,
         )
 
-    def detect_cell_types(
+    def label_cell_types(
         self,
         min_spatial_info: float = 0.5,
         min_grid_score: float = 0.4,
         min_border_score: float = 0.5,
     ) -> NDArray[np.str_]:
-        """Classify neurons into spatial cell types.
+        """Label neurons with multi-class spatial cell types.
 
         Applies threshold-based classification to label neurons as place cells,
         grid cells, border cells, or unclassified based on their spatial
         information, grid score, and border score.
+
+        This is the **multi-class labeler** (returns string labels). It is
+        distinct from the single-type :meth:`classify` boolean predicate; use
+        ``label_cell_types`` when you need ``"place"``/``"grid"``/``"border"``/
+        ``"unclassified"`` labels (e.g. ``df[df["cell_type"] == "place"]``).
 
         Parameters
         ----------
@@ -1397,8 +1468,9 @@ class SpatialRatesResult(SpatialResultMixin):
         spatial_information : Compute spatial information
         grid_scores : Compute grid scores
         border_scores : Compute border scores
-        EgocentricRatesResult.detect_ovcs : Sibling batch classifier
-        ViewRatesResult.detect_view_cells : Sibling batch classifier
+        classify : Single-type place-cell boolean predicate
+        EgocentricRatesResult.classify : Sibling batch classifier
+        ViewRatesResult.classify : Sibling batch classifier
 
         Examples
         --------
@@ -1413,7 +1485,7 @@ class SpatialRatesResult(SpatialResultMixin):
         >>> result = compute_spatial_rates(
         ...     env, spike_times, times, positions, bandwidth=10.0
         ... )
-        >>> labels = result.detect_cell_types()
+        >>> labels = result.label_cell_types()
         >>> labels.shape
         (3,)
         >>> valid = {"grid", "border", "place", "unclassified"}
@@ -1443,6 +1515,96 @@ class SpatialRatesResult(SpatialResultMixin):
 
         return labels
 
+    def detect_cell_types(
+        self,
+        min_spatial_info: float = 0.5,
+        min_grid_score: float = 0.4,
+        min_border_score: float = 0.5,
+    ) -> NDArray[np.str_]:
+        """Deprecated alias for :meth:`label_cell_types`.
+
+        .. deprecated:: 0.6
+            ``detect_cell_types`` is deprecated since 0.6; use
+            :meth:`label_cell_types` instead. Removed in 0.7.
+
+        Parameters
+        ----------
+        min_spatial_info : float, default 0.5
+            Minimum spatial information (bits/spike).
+        min_grid_score : float, default 0.4
+            Minimum grid score for a grid cell.
+        min_border_score : float, default 0.5
+            Minimum border score for a border cell.
+
+        Returns
+        -------
+        ndarray, shape (n_neurons,)
+            String labels: ``"grid"``/``"border"``/``"place"``/
+            ``"unclassified"``.
+        """
+        warnings.warn(
+            "detect_cell_types is deprecated since 0.6, use label_cell_types; "
+            "removed in 0.7",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.label_cell_types(
+            min_spatial_info=min_spatial_info,
+            min_grid_score=min_grid_score,
+            min_border_score=min_border_score,
+        )
+
+    def classify(self, *, min_spatial_info: float = 0.5) -> NDArray[np.bool_]:
+        """Classify neurons as place cells (single-type boolean predicate).
+
+        A neuron is classified as a place cell if its spatial information
+        meets the minimum threshold. This is the single-type boolean
+        predicate ("is this a place cell") sibling of
+        :meth:`EgocentricRatesResult.classify` and
+        :meth:`ViewRatesResult.classify`.
+
+        For multi-class labels (``"place"``/``"grid"``/``"border"``/
+        ``"unclassified"``) use :meth:`label_cell_types` instead.
+
+        Parameters
+        ----------
+        min_spatial_info : float, default 0.5
+            Minimum spatial information (bits/spike) to be classified as a
+            place cell.
+
+        Returns
+        -------
+        ndarray, shape (n_neurons,)
+            Boolean array where True indicates the neuron is classified as a
+            place cell.
+
+        See Also
+        --------
+        label_cell_types : Multi-class string labeler
+        is_place_cell : Free-function single-neuron place predicate
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rates
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 50, (500, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> times = np.linspace(0, 50, 500)
+        >>> spike_times = [np.sort(rng.uniform(0, 50, n)) for n in (30, 40, 20)]
+        >>> result = compute_spatial_rates(
+        ...     env, spike_times, times, positions, bandwidth=10.0
+        ... )
+        >>> is_place = result.classify()
+        >>> is_place.shape
+        (3,)
+        >>> is_place.dtype == bool
+        True
+        """
+        spatial_info = np.asarray(self.spatial_information())
+        return spatial_info >= min_spatial_info
+
     def summary_table(
         self,
         unit_ids: Sequence[str | int] | None = None,
@@ -1466,7 +1628,7 @@ class SpatialRatesResult(SpatialResultMixin):
             result's own :attr:`unit_ids` are used.
         include_classification : bool, default True
             Whether to include the ``cell_type`` column with classification
-            labels from ``detect_cell_types()``.
+            labels from ``label_cell_types()``.
 
         Returns
         -------
@@ -1529,7 +1691,7 @@ class SpatialRatesResult(SpatialResultMixin):
         See Also
         --------
         to_dataframe : Dense per-bin frame (one row per (unit, bin)).
-        detect_cell_types : Cell type classification
+        label_cell_types : Cell type classification
         spatial_information : Batch spatial information computation
         grid_scores : Batch grid score computation
         border_scores : Batch border score computation
@@ -1564,7 +1726,7 @@ class SpatialRatesResult(SpatialResultMixin):
         }
 
         if include_classification:
-            data["cell_type"] = self.detect_cell_types()
+            data["cell_type"] = self.label_cell_types()
 
         return pd.DataFrame(data, index=pd.Index(index_ids, name="unit_id"))
 
@@ -2951,6 +3113,100 @@ def detect_place_fields(
             break
 
     return PlaceFieldsResult(fields=fields, excluded_reason=None, n_excluded=0)
+
+
+def is_place_cell(
+    env: Environment,
+    spike_times: NDArray[np.float64],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    smoothing_method: Literal[
+        "diffusion_kde", "gaussian_kde", "binned"
+    ] = "diffusion_kde",
+    bandwidth: float = 5.0,
+    threshold: float = 0.2,
+    min_size: int | None = None,
+    max_mean_rate: float = 10.0,
+    detect_subfields: bool = True,
+) -> bool:
+    """Quick check: Is this a place cell?
+
+    Convenience function for fast screening of neurons. Computes the spatial
+    rate map and checks whether :func:`detect_place_fields` finds at least one
+    place field. Agrees with :func:`detect_place_fields`: returns ``True`` iff
+    that detector finds a field on the same rate map.
+
+    For detailed metrics, use :func:`compute_spatial_rate` and inspect the
+    result's methods (``is_place_cell()``, ``spatial_information()``, etc.).
+
+    Parameters
+    ----------
+    env : Environment
+        Spatial environment defining the discretization.
+    spike_times : NDArray[np.float64], shape (n_spikes,)
+        Times of spikes.
+    times : NDArray[np.float64], shape (n_time,)
+        Timestamps for each behavioral sample.
+    positions : NDArray[np.float64], shape (n_time, n_dims)
+        Animal positions.
+    smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
+        Rate map smoothing method.
+    bandwidth : float, default=5.0
+        Smoothing bandwidth in environment units.
+    threshold : float, default=0.2
+        Fraction of peak rate for field boundary detection (0-1).
+    min_size : int, optional
+        Minimum number of bins for a valid field. If None, defaults to 9.
+    max_mean_rate : float, default=10.0
+        Maximum mean firing rate (Hz). Neurons exceeding this are excluded
+        as putative interneurons.
+    detect_subfields : bool, default=True
+        If True, recursively detect subfields within large fields.
+
+    Returns
+    -------
+    bool
+        True if the neuron passes place-cell criteria (has >= 1 detected
+        place field).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding.spatial import is_place_cell
+    >>> rng = np.random.default_rng(0)
+    >>> positions = rng.uniform(0, 100, (1000, 2))
+    >>> env = Environment.from_samples(positions, bin_size=5.0)
+    >>> times = np.linspace(0, 100, 1000)
+    >>> spike_times = np.sort(rng.uniform(0, 100, 50))
+    >>> result = is_place_cell(env, spike_times, times, positions)
+    >>> type(result)
+    <class 'bool'>
+
+    See Also
+    --------
+    compute_spatial_rate : Full spatial rate computation
+    detect_place_fields : Place field detection algorithm this agrees with
+    SpatialRateResult.is_place_cell : Place-cell classification on a result
+    """
+    try:
+        result = compute_spatial_rate(
+            env,
+            spike_times,
+            times,
+            positions,
+            smoothing_method=smoothing_method,
+            bandwidth=bandwidth,
+        )
+    except (ValueError, RuntimeError):
+        return False
+    return result.is_place_cell(
+        threshold=threshold,
+        min_size=min_size,
+        max_mean_rate=max_mean_rate,
+        detect_subfields=detect_subfields,
+    )
 
 
 def _extract_connected_component_scipy(

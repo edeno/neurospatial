@@ -39,7 +39,7 @@ class TestDetectRegionCrossings:
         from neurospatial.behavior.segmentation import detect_region_crossings
 
         crossings = detect_region_crossings(
-            position_bins, times, "target", env, direction="both"
+            position_bins, times, env, region_name="target", direction="both"
         )
 
         # Should detect entries and exits
@@ -68,7 +68,7 @@ class TestDetectRegionCrossings:
         from neurospatial.behavior.segmentation import detect_region_crossings
 
         crossings = detect_region_crossings(
-            position_bins, times, "target", env, direction="entry"
+            position_bins, times, env, region_name="target", direction="entry"
         )
 
         # All crossings should be entries
@@ -93,7 +93,7 @@ class TestDetectRegionCrossings:
         from neurospatial.behavior.segmentation import detect_region_crossings
 
         crossings = detect_region_crossings(
-            position_bins, times, "target", env, direction="exit"
+            position_bins, times, env, region_name="target", direction="exit"
         )
 
         # All crossings should be exits
@@ -118,7 +118,7 @@ class TestDetectRegionCrossings:
         from neurospatial.behavior.segmentation import detect_region_crossings
 
         crossings = detect_region_crossings(
-            position_bins, times, "target", env, direction="both"
+            position_bins, times, env, region_name="target", direction="both"
         )
 
         # Should have no crossings
@@ -499,10 +499,10 @@ class TestRegionSegmentationIntegration:
 
         # 1. Detect region crossings
         source_crossings = detect_region_crossings(
-            position_bins, times, "source", env, direction="both"
+            position_bins, times, env, region_name="source", direction="both"
         )
         target_crossings = detect_region_crossings(
-            position_bins, times, "target", env, direction="both"
+            position_bins, times, env, region_name="target", direction="both"
         )
 
         # 2. Detect runs between regions

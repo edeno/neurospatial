@@ -105,6 +105,7 @@ from neurospatial.encoding.spatial import (
     compute_spatial_rate,
     compute_spatial_rates,
     detect_place_fields,
+    is_place_cell,
 )
 
 # View rate (spatial view cells)
@@ -170,6 +171,7 @@ __all__ = [  # noqa: RUF022 - organized by category
     "compute_directional_place_fields",
     "compute_field_emd",
     "detect_place_fields",
+    "is_place_cell",
     "rate_map_centroid",
     "field_shape_metrics",
     "field_shift_distance",

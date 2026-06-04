@@ -957,7 +957,7 @@ class TestComputeEgocentricRatesResultMethods:
             trajectory_data["object_positions"],
         )
 
-        is_object_vector_cell = result.detect_ovcs()
+        is_object_vector_cell = result.classify()
         assert len(is_object_vector_cell) == len(spike_times_list)
         assert is_object_vector_cell.dtype == bool
 

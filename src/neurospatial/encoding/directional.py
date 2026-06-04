@@ -47,6 +47,7 @@ neurospatial.stats.circular : Circular statistics utilities
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -1416,8 +1417,8 @@ class DirectionalRatesResult(SpatialResultMixin):
 
         return widths
 
-    def detect_hd_cells(
-        self, min_mvl: float = 0.4, alpha: float = 0.05
+    def classify(
+        self, *, min_mvl: float = 0.4, alpha: float = 0.05
     ) -> NDArray[np.bool_]:
         """Classify neurons as head direction cells.
 
@@ -1426,6 +1427,9 @@ class DirectionalRatesResult(SpatialResultMixin):
 
         1. Mean vector length (MVL) > min_mvl (default 0.4)
         2. Rayleigh test p-value < alpha (default 0.05)
+
+        This is the single-type boolean predicate ("is this an HD cell") for
+        the batch result.
 
         Parameters
         ----------
@@ -1454,7 +1458,7 @@ class DirectionalRatesResult(SpatialResultMixin):
         ...     bin_size=np.pi / 30,
         ...     bandwidth=None,
         ... )
-        >>> is_hd = result.detect_hd_cells()
+        >>> is_hd = result.classify()
         >>> is_hd.shape
         (3,)
         >>> n_hd_cells = int(np.sum(is_hd))
@@ -1470,6 +1474,34 @@ class DirectionalRatesResult(SpatialResultMixin):
             is_hd[i] = self[i].is_head_direction_cell(min_mvl=min_mvl, alpha=alpha)
 
         return is_hd
+
+    def detect_hd_cells(
+        self, min_mvl: float = 0.4, alpha: float = 0.05
+    ) -> NDArray[np.bool_]:
+        """Deprecated alias for :meth:`classify`.
+
+        .. deprecated:: 0.6
+            ``detect_hd_cells`` is deprecated since 0.6; use
+            :meth:`classify` instead. Removed in 0.7.
+
+        Parameters
+        ----------
+        min_mvl : float, default=0.4
+            Minimum mean vector length threshold.
+        alpha : float, default=0.05
+            Significance level for Rayleigh test.
+
+        Returns
+        -------
+        numpy.ndarray
+            Boolean array of shape (n_neurons,). True indicates an HD cell.
+        """
+        warnings.warn(
+            "detect_hd_cells is deprecated since 0.6, use classify; removed in 0.7",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.classify(min_mvl=min_mvl, alpha=alpha)
 
     def summary_table(
         self,
@@ -1554,7 +1586,7 @@ class DirectionalRatesResult(SpatialResultMixin):
         See Also
         --------
         to_dataframe : Dense per-bin frame (one row per (unit, bin)).
-        detect_hd_cells : HD cell classification
+        classify : HD cell classification
         preferred_directions : Batch preferred direction computation
         mean_vector_lengths : Batch mean vector length computation
         """
@@ -1577,7 +1609,7 @@ class DirectionalRatesResult(SpatialResultMixin):
         mvls = self.mean_vector_lengths()
         widths = self.tuning_widths()
         peaks = self.peak_firing_rate()
-        is_hd = self.detect_hd_cells()
+        is_hd = self.classify()
 
         # Build data dictionary
         data: dict[str, Any] = {

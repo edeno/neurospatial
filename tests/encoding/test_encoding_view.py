@@ -589,7 +589,7 @@ class TestViewRateResultPeakViewLocation:
             bandwidth=5.0,
         )
 
-        peak = result.peak_view_location()
+        peak = result.peak_location()
         # 2D environment should have 2 dimensions
         assert peak.shape == (2,)
 
@@ -617,7 +617,7 @@ class TestViewRateResultPeakViewLocation:
             bandwidth=5.0,
         )
 
-        peak = result.peak_view_location()
+        peak = result.peak_location()
         expected = simple_env.bin_centers[peak_bin]
         assert_array_equal(peak, expected)
 
@@ -644,7 +644,7 @@ class TestViewRateResultPeakViewLocation:
             bandwidth=5.0,
         )
 
-        peak = result.peak_view_location()
+        peak = result.peak_location()
         expected = simple_env.bin_centers[peak_bin]
         assert_array_equal(peak, expected)
 
@@ -1038,7 +1038,7 @@ class TestViewRatesResultPeakViewLocations:
             bandwidth=5.0,
         )
 
-        peaks = result.peak_view_location()
+        peaks = result.peak_locations()
         # 2D environment with n_neurons neurons
         assert peaks.shape == (n_neurons, 2)
 
@@ -1062,12 +1062,12 @@ class TestViewRatesResultPeakViewLocations:
             bandwidth=5.0,
         )
 
-        batch_peaks = result.peak_view_location()
+        batch_peaks = result.peak_locations()
 
         # Verify each neuron's peak matches single-neuron result
         for i in range(n_neurons):
             single = result[i]
-            single_peak = single.peak_view_location()
+            single_peak = single.peak_location()
             assert_array_equal(batch_peaks[i], single_peak)
 
     def test_peak_view_location_handles_nan(
@@ -1094,7 +1094,7 @@ class TestViewRatesResultPeakViewLocations:
             bandwidth=5.0,
         )
 
-        peaks = result.peak_view_location()
+        peaks = result.peak_locations()
         assert peaks.shape == (2, 2)
         assert_array_equal(peaks[0], simple_env.bin_centers[3])
         assert_array_equal(peaks[1], simple_env.bin_centers[7])
@@ -1122,7 +1122,7 @@ class TestViewRatesResultPeakViewLocations:
             bandwidth=5.0,
         )
 
-        peaks = result.peak_view_location()
+        peaks = result.peak_locations()
         assert peaks.shape == (2, 2)
         # First neuron: all NaN -> NaN coordinates
         assert np.all(np.isnan(peaks[0]))
@@ -1276,7 +1276,7 @@ class TestViewRatesResultDetectViewCells:
             bandwidth=5.0,
         )
 
-        classification = result.detect_view_cells()
+        classification = result.classify()
         assert isinstance(classification, np.ndarray)
 
     def test_detect_view_cells_shape(
@@ -1299,7 +1299,7 @@ class TestViewRatesResultDetectViewCells:
             bandwidth=5.0,
         )
 
-        classification = result.detect_view_cells()
+        classification = result.classify()
         assert classification.shape == (n_neurons,)
         assert classification.dtype == np.bool_
 
@@ -1324,7 +1324,7 @@ class TestViewRatesResultDetectViewCells:
         )
 
         min_info = 0.1  # Use a consistent threshold
-        batch_classification = result.detect_view_cells(min_info=min_info)
+        batch_classification = result.classify(min_info=min_info)
 
         # Verify each neuron's classification matches single-neuron result
         for i in range(n_neurons):
@@ -1363,12 +1363,12 @@ class TestViewRatesResultDetectViewCells:
         )
 
         # With very low threshold, most should pass
-        low_thresh = result.detect_view_cells(min_info=0.0)
+        low_thresh = result.classify(min_info=0.0)
         # At least the peaked neurons should be True
         assert low_thresh[1] or low_thresh[2]
 
         # With high threshold, uniform should definitely fail
-        high_thresh = result.detect_view_cells(min_info=10.0)
+        high_thresh = result.classify(min_info=10.0)
         assert high_thresh[0] is np.False_
 
     def test_detect_view_cells_default_threshold(
@@ -1393,7 +1393,7 @@ class TestViewRatesResultDetectViewCells:
             bandwidth=5.0,
         )
 
-        classification = result.detect_view_cells()
+        classification = result.classify()
         # Uniform firing has zero info, should all be False
         assert not np.any(classification)
 
@@ -1677,7 +1677,7 @@ class TestViewRatesResultToDataframe:
         )
 
         df = result.summary_table()
-        expected = result.peak_view_location()[:, 0]
+        expected = result.peak_locations()[:, 0]
         np.testing.assert_array_almost_equal(df["peak_view_x"].values, expected)
 
     def test_summary_table_peak_view_y_matches_batch_method(
@@ -1701,7 +1701,7 @@ class TestViewRatesResultToDataframe:
         )
 
         df = result.summary_table()
-        expected = result.peak_view_location()[:, 1]
+        expected = result.peak_locations()[:, 1]
         np.testing.assert_array_almost_equal(df["peak_view_y"].values, expected)
 
     def test_summary_table_peak_rate_matches_batch_method(
@@ -1770,7 +1770,7 @@ class TestViewRatesResultToDataframe:
         )
 
         df = result.summary_table()
-        expected = result.detect_view_cells()
+        expected = result.classify()
         np.testing.assert_array_equal(df["is_spatial_view_cell"].values, expected)
 
     def test_summary_table_empty_result(

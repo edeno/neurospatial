@@ -71,6 +71,7 @@ neurospatial.ops.egocentric : Egocentric coordinate transforms
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
@@ -993,7 +994,7 @@ class EgocentricRatesResult(SpatialResultMixin):
         See Also
         --------
         EgocentricRateResult.egocentric_spatial_information : Single-neuron version
-        detect_ovcs : Classify neurons based on this metric
+        classify : Classify neurons based on this metric
         """
         from neurospatial.encoding._metrics import batch_spatial_information
 
@@ -1001,11 +1002,12 @@ class EgocentricRatesResult(SpatialResultMixin):
             _to_numpy(self.firing_rates), _to_numpy(self.occupancy)
         )
 
-    def detect_ovcs(self, min_info: float = 0.3) -> NDArray[np.bool_]:
+    def classify(self, *, min_info: float = 0.3) -> NDArray[np.bool_]:
         """Classify neurons as object-vector cells.
 
         A neuron is classified as an object-vector cell (OVC) if its egocentric
-        spatial information exceeds the minimum threshold.
+        spatial information exceeds the minimum threshold. This is the
+        single-type boolean predicate ("is this an OVC") for the batch result.
 
         Parameters
         ----------
@@ -1041,12 +1043,12 @@ class EgocentricRatesResult(SpatialResultMixin):
         >>> result = compute_egocentric_rates(
         ...     None, spike_times, times, positions, headings, object_positions
         ... )
-        >>> is_object_vector_cell = result.detect_ovcs()
+        >>> is_object_vector_cell = result.classify()
         >>> print(f"Found {is_object_vector_cell.sum()} OVCs")
         Found 3 OVCs
 
         >>> # Use stricter threshold
-        >>> is_object_vector_cell = result.detect_ovcs(min_info=0.5)
+        >>> is_object_vector_cell = result.classify(min_info=0.5)
 
         See Also
         --------
@@ -1055,6 +1057,30 @@ class EgocentricRatesResult(SpatialResultMixin):
         """
         info = self.egocentric_spatial_information()
         return info > min_info
+
+    def detect_ovcs(self, min_info: float = 0.3) -> NDArray[np.bool_]:
+        """Deprecated alias for :meth:`classify`.
+
+        .. deprecated:: 0.6
+            ``detect_ovcs`` is deprecated since 0.6; use
+            :meth:`classify` instead. Removed in 0.7.
+
+        Parameters
+        ----------
+        min_info : float, default=0.3
+            Minimum egocentric spatial information threshold in bits/spike.
+
+        Returns
+        -------
+        ndarray, shape (n_neurons,)
+            Boolean array where True indicates an object-vector cell.
+        """
+        warnings.warn(
+            "detect_ovcs is deprecated since 0.6, use classify; removed in 0.7",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.classify(min_info=min_info)
 
     def summary_table(
         self,
@@ -1093,7 +1119,7 @@ class EgocentricRatesResult(SpatialResultMixin):
         -----
         This method computes all metrics at once, which may be slow for
         large populations. For selective metric computation, use the
-        individual methods (``preferred_distances()``, ``detect_ovcs()``, etc.).
+        individual methods (``preferred_distances()``, ``classify()``, etc.).
 
         **Common pandas workflows**:
 
@@ -1140,7 +1166,7 @@ class EgocentricRatesResult(SpatialResultMixin):
         See Also
         --------
         to_dataframe : Dense per-bin frame (one row per (unit, bin)).
-        detect_ovcs : OVC classification
+        classify : OVC classification
         preferred_distances : Batch preferred distance computation
         preferred_directions : Batch preferred direction computation
         """
@@ -1162,7 +1188,7 @@ class EgocentricRatesResult(SpatialResultMixin):
         pref_dists = self.preferred_distances()
         pref_dirs = self.preferred_directions()
         peak_rates = self.peak_firing_rate()
-        is_object_vector_cell = self.detect_ovcs()
+        is_object_vector_cell = self.classify()
 
         # Build DataFrame
         data: dict[str, Any] = {

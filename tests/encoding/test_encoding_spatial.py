@@ -2014,13 +2014,17 @@ class TestSpatialRatesResultClassify:
         assert hasattr(result, "detect_cell_types")
         assert callable(result.detect_cell_types)
 
-    def test_spatialrates_detect_cell_types_renamed(
+    def test_spatialrates_label_cell_types_multiclass(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """detect_cell_types() replaces classify(); .classify is gone."""
+        """label_cell_types() is the multi-class string labeler.
+
+        Distinct from classify() (a boolean place predicate), label_cell_types
+        returns the place/grid/border/unclassified string labels.
+        """
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2031,14 +2035,16 @@ class TestSpatialRatesResultClassify:
             bandwidth=5.0,
         )
 
-        labels = result.detect_cell_types()
+        labels = result.label_cell_types()
         assert isinstance(labels, np.ndarray)
         assert labels.shape == (firing_rates_batch.shape[0],)
         valid = {"place", "grid", "border", "unclassified"}
         assert set(labels.tolist()).issubset(valid)
 
-        # The old name no longer exists.
-        assert not hasattr(result, "classify")
+        # classify() is now a SEPARATE boolean predicate (not the labeler).
+        is_place = result.classify()
+        assert is_place.dtype == bool
+        assert is_place.shape == (firing_rates_batch.shape[0],)
 
     def test_classify_returns_string_array(
         self,
@@ -2056,7 +2062,7 @@ class TestSpatialRatesResultClassify:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        labels = result.detect_cell_types()
+        labels = result.label_cell_types()
         assert isinstance(labels, np.ndarray)
         assert labels.dtype.kind in ("U", "S", "O")  # Unicode, byte string, or object
 
@@ -2076,7 +2082,7 @@ class TestSpatialRatesResultClassify:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        labels = result.detect_cell_types()
+        labels = result.label_cell_types()
         n_neurons = firing_rates_batch.shape[0]
         assert labels.shape == (n_neurons,)
 
@@ -2097,7 +2103,7 @@ class TestSpatialRatesResultClassify:
             bandwidth=5.0,
         )
         # Should not raise with custom thresholds
-        labels = result.detect_cell_types(
+        labels = result.label_cell_types(
             min_spatial_info=0.3,
             min_grid_score=0.5,
             min_border_score=0.4,
@@ -2120,7 +2126,7 @@ class TestSpatialRatesResultClassify:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        labels = result.detect_cell_types()
+        labels = result.label_cell_types()
         valid_labels = {"place", "grid", "border", "unclassified"}
         for label in labels:
             assert label in valid_labels, f"Unexpected label: {label}"
@@ -2146,7 +2152,7 @@ class TestSpatialRatesResultClassify:
         )
 
         # With high spatial info and no grid/border preference, should be place cells
-        labels = result.detect_cell_types(
+        labels = result.label_cell_types(
             min_spatial_info=0.1, min_grid_score=2.0, min_border_score=2.0
         )
         # All should be labeled as place cells (high spatial info, no grid/border)
@@ -2173,7 +2179,7 @@ class TestSpatialRatesResultClassify:
         )
 
         # Use unreachable thresholds for grid and border to test spatial info threshold
-        labels = result.detect_cell_types(
+        labels = result.label_cell_types(
             min_spatial_info=0.5,
             min_grid_score=2.0,  # Unreachable (max is ~2.0)
             min_border_score=2.0,  # Unreachable (max is 1.0)
@@ -2210,7 +2216,7 @@ class TestSpatialRatesResultClassify:
         border_score = result.border_scores()[0]
         if not np.isnan(border_score) and border_score > 0.0:
             # Set threshold just below the actual score
-            labels = result.detect_cell_types(
+            labels = result.label_cell_types(
                 min_spatial_info=0.0,  # Don't require spatial info
                 min_grid_score=2.0,  # Effectively disable grid classification
                 min_border_score=border_score - 0.1,  # Just below actual score
@@ -2239,7 +2245,7 @@ class TestSpatialRatesResultClassify:
         )
 
         # With only spatial info criterion met, should be place cell
-        labels = result.detect_cell_types(
+        labels = result.label_cell_types(
             min_spatial_info=0.0,  # Low threshold
             min_grid_score=2.0,  # Unreachable threshold
             min_border_score=2.0,  # Unreachable threshold
@@ -2671,7 +2677,7 @@ class TestSpatialRatesResultSummaryTable:
             bandwidth=5.0,
         )
         df = result.summary_table()
-        expected_labels = result.detect_cell_types()
+        expected_labels = result.label_cell_types()
         assert list(df["cell_type"]) == list(expected_labels)
 
     def test_summary_table_peak_locations_match_peak_locations_method(
@@ -4278,7 +4284,7 @@ class TestComputeSpatialRatesResultMethods:
             trajectory_times,
             trajectory_positions,
         )
-        labels = result.detect_cell_types()
+        labels = result.label_cell_types()
         assert labels.shape == (len(multiple_place_cell_spikes),)
         assert labels.dtype.kind == "U"  # String dtype
 

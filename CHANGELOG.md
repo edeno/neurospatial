@@ -132,7 +132,39 @@ these are called out under a dedicated **Breaking changes** heading.
   release so the name reads as a structural conversion, not a value transform;
   no deprecated alias is kept since the public name was never released.)
 
+- `classify(*, ...)` — a single-type boolean cell-type predicate (returns
+  `NDArray[np.bool_]`) on every batch encoding result: `EgocentricRatesResult`
+  (OVC, `min_info=0.3`), `ViewRatesResult` (view cell, `min_info=0.5`),
+  `DirectionalRatesResult` (HD cell, `min_mvl`/`alpha`), and `SpatialRatesResult`
+  (place cell, `min_spatial_info=0.5`). These replace the per-domain
+  `detect_ovcs` / `detect_view_cells` / `detect_hd_cells` detectors (now
+  deprecated aliases).
+
+- `label_cell_types(...)` on `SpatialRatesResult` — the multi-class string
+  labeler (`"place"`/`"grid"`/`"border"`/`"unclassified"`, returns
+  `NDArray[np.str_]`). This is the renamed `detect_cell_types` and is kept
+  deliberately SEPARATE from the boolean `classify` (different return type).
+
+- `is_place_cell(...)` — a single-neuron place-cell predicate, both as a free
+  function in `neurospatial.encoding.spatial` (exported from
+  `neurospatial.encoding`) and as a `SpatialRateResult.is_place_cell()` method.
+  Mirrors `is_spatial_view_cell` / `is_object_vector_cell` and agrees with
+  `detect_place_fields` (returns `True` iff that detector finds ≥1 field).
+
+- `decode_position(env, spike_counts, encoding_models, dt, ...)` now accepts a
+  population rate result object (anything exposing a `firing_rates` attribute,
+  e.g. `SpatialRatesResult`) directly in place of the raw `(n_neurons, n_bins)`
+  array, removing the `np.stack([r.firing_rate ...])` glue between the encoding
+  and decoding steps.
+
 ### Changed
+
+- `detect_region_crossings` argument order changed to follow the
+  behavioral-segmentation convention:
+  `(position_bins, times, env, *, region_name, direction=...)`. The old
+  positional order `(position_bins, times, region_name, env, ...)` is still
+  accepted for one release (transitional dispatch emits a `DeprecationWarning`)
+  and will be removed in 0.7.
 
 - Docs/examples now teach `decode_session` as the one-call decode golden path;
   the manual 3-call path (`compute_spatial_rates` → `bin_spikes_in_time` →
@@ -149,6 +181,22 @@ these are called out under a dedicated **Breaking changes** heading.
   with `simulate_trajectory_ou` + `PlaceCellModel` fixtures, replacing the hand-rolled
   `np.histogram` / `scipy.ndimage.gaussian_filter` approach. Added a CI snippet entry
   (`workflows_place_field_canonical`) to `docs/snippets.yml`.
+
+### Deprecated
+
+All of the following emit a `DeprecationWarning` and are scheduled for removal
+in 0.7. Each old name forwards to its replacement with unchanged behavior.
+
+- `EgocentricRatesResult.detect_ovcs` → `EgocentricRatesResult.classify`.
+- `ViewRatesResult.detect_view_cells` → `ViewRatesResult.classify`.
+- `DirectionalRatesResult.detect_hd_cells` → `DirectionalRatesResult.classify`.
+- `SpatialRatesResult.detect_cell_types` → `SpatialRatesResult.label_cell_types`
+  (the multi-class string labeler; not folded into `classify`).
+- `ViewRateResult.peak_view_location` → `ViewRateResult.peak_location`.
+- `ViewRatesResult.peak_view_location` → `ViewRatesResult.peak_locations`.
+- `detect_region_crossings` old positional order
+  `(position_bins, times, region_name, env, ...)` → new order
+  `(position_bins, times, env, *, region_name, ...)`.
 
 ### Fixed
 
