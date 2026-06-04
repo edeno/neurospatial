@@ -7,9 +7,10 @@
 ---
 
 ### 0.1 — Warn (don't silently drop) spikes outside the trajectory window / inactive bins  ⚑ critical
-- **Files:** `src/neurospatial/encoding/_binning.py:120-141` (and the occupancy path it shares).
+- **Files:** `src/neurospatial/encoding/_binning.py:120-141` (single-neuron drop site) **and the batch boundary** `bin_spike_trains` (`:234,330,335-342`) / `compute_spatial_rates`.
 - **Now:** spikes outside `[times.min(), times.max()]` and spikes mapping to bin `-1` are dropped with no signal (`:121`, `:124`, `:138-141`). A ms-vs-s unit mix → near-empty field, no warning.
 - **Change:** after masking, if the dropped fraction exceeds a threshold (default **0.5**, also fire when *all* spikes drop but ≥1 spike existed), `warnings.warn` naming counts, both time ranges, and the units hypothesis: e.g. `"<n>/<N> spike_times (X%) fell outside the position time window [t0, t1]; spike_times.min()=… max()=…. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute."` Same for inactive-bin drops (coordinate-frame/units hint). Add a `warn_on_drop: bool = True` keyword to silence intentionally.
+- **Placement (M2 — critical):** emit the warning at the **batch boundary** (`bin_spike_trains`/`compute_spatial_rates`), computed once on the shared time window **before** the per-neuron loop. A warning raised inside the per-neuron leaf fires N× (1000× for 1000 neurons) and — under `joblib`'s loky backend (`_binning.py:335-342`) — warnings from worker processes are commonly swallowed, so the batch/1000-neuron path (our target user) would get **no** warning. Single-neuron `compute_spatial_rate` still warns from its own boundary.
 - **Decision:** warn, do **not** raise — a genuinely silent cell is legitimate. (No permissive *silence*, but no false error either.)
 - **Tests:** ms-vs-s mismatch → warns + returns near-zero (fail-before: silent); fully-in-window → no warning; `warn_on_drop=False` → silent.
 
@@ -29,7 +30,7 @@
 - **Tests:** `Environment()` error message contains "from_samples".
 
 ### 0.5 — Remove internal-doc references from user-facing errors
-- **Files:** `src/neurospatial/layout/validation.py:334,400`.
+- **Files:** `src/neurospatial/layout/validation.py:334,400` **and `src/neurospatial/environment/core.py:872`** (also emits "See CLAUDE.md section 'Graph Metadata Requirements'"). The repo-wide grep test below is the backstop.
 - **Change:** drop "See CLAUDE.md section …"; replace with the public docs URL or "please report at <github issues>".
 - **Tests:** no user-facing error string contains "CLAUDE.md" (add a repo-wide grep test).
 

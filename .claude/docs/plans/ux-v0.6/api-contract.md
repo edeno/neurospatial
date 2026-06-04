@@ -23,7 +23,10 @@ This is the rulebook every phase adheres to. After v0.6 it is copied into `CLAUD
 
 ### Cell-type API (one learnable rule)
 - **Single-neuron predicate:** `is_<celltype>_cell(...)` as a free function AND a result method. Cell types: `place`, `head_direction`, `object_vector`, `spatial_view`, `border`, `grid` (where applicable). **Add the missing `is_place_cell`.**
-- **Batch classification:** `result.classify(*, ...) -> NDArray[bool]` on *every* plural result class. Old per-domain names (`detect_cell_types`, `detect_ovcs`, `detect_view_cells`, `detect_hd_cells`) become deprecated aliases. Never ship unspelled acronyms.
+- **Batch — two distinct verbs, because the existing semantics differ (H2):**
+  - **`result.classify(*, ...) -> NDArray[bool]`** — a *single-type boolean predicate* (is-this-cell-type), on every plural result class. The bool-returning per-domain names — `detect_ovcs` (`egocentric.py:928`), `detect_view_cells` (`view.py:824`), `detect_hd_cells` (`directional.py:1336`) — become deprecated aliases of `classify`.
+  - **`SpatialRatesResult.label_cell_types(*, ...) -> NDArray[str]`** — the *multi-class labeler* ("place"/"grid"/"border"/"unclassified"). The existing `detect_cell_types` (`spatial.py:1303`, returns `NDArray[np.str_]`) is **renamed** to `label_cell_types` with a deprecated alias. Do **not** fold it into `classify`: collapsing a str multi-class labeler and bool predicates under one name would silently change a return type and break `df[col=="place"]` filters (violates return-type stability).
+  - Never ship unspelled acronyms (`detect_ovcs`).
 
 ### Peak / preferred accessors
 - Cartesian peak location: `peak_location()` (single) / `peak_locations()` (batch). **Collapse `peak_view_location` → `peak_location`.**
@@ -32,7 +35,10 @@ This is the rulebook every phase adheres to. After v0.6 it is copied into `CLAUD
 ### Terminal verbs (identical name + semantics on every result class)
 - `to_dataframe()` → **dense tidy**, one row per `(unit, bin)` (or `(field, bin)`), always carrying a `unit_id` column. For plotting / detailed inspection.
 - `summary_table()` → **one row per unit**, `unit_id`-indexed, scalar metric columns. The default a 1000-neuron user wants.
-- `to_xarray()` → labeled `xr.Dataset`. Precise index design (so `.sel(unit_id=…)` works): population rate datasets use **dims `("unit_id", "bin")`** with `unit_id` as the **dimension/index coordinate** (the `unit_ids` array) and `bin` as the bin-index dimension; `bin_center_x`/`bin_center_y` are non-index coords *on* the `bin` dim; decoding adds a `time` dim/index coord. **Validate `unit_ids` are unique** before building the index (raise a clear error on duplicates, since label selection requires uniqueness). Attrs carry units/bandwidth/env-hash/software-version.
+- `to_xarray()` → labeled `xr.Dataset`. **Two distinct shapes — do not conflate (M3):**
+  - **Population rate datasets:** dims **`("unit_id", "bin")`**, `unit_id` the dimension/index coordinate (the `unit_ids` array), `bin` the bin-index dim; `bin_center_x`/`bin_center_y` non-index coords *on* `bin`. **Validate `unit_ids` unique** before indexing (raise on duplicates — label selection requires uniqueness). `.sel(unit_id=…)` selects by label.
+  - **Decode datasets** (`DecodingResult`/`DecodingSummary`): dims **`("time", "bin")`** (posterior/MAP over space per time bin) — there is **no `unit_id` axis**; `time` is the index coord, `bin_center_*` non-index coords on `bin`.
+  - Attrs carry units/bandwidth/env-hash/software-version.
 - `summary()` → flat dict of scalar headline metrics.
 - `plot(ax=None, ...) -> Axes`.
 - **PSTH results** (`PeriEventResult`, `PopulationPeriEventResult`) gain `ResultMixin` and these verbs.

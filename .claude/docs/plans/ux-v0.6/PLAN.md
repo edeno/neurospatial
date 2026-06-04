@@ -32,7 +32,7 @@ All phases obey [`api-contract.md`](./api-contract.md), which encodes:
 
 - All renamed/reordered public API keeps the **old form as a deprecated alias** that emits `DeprecationWarning` and still works in `0.6.x`; aliases removed in `0.7.0`. (Pre-1.0, but we still give one release of runway because there are external users.)
 - **Two clean-break behavior changes in 0.6** (D1 + DoD #4 → no transition shim; documented loudly in CHANGELOG `### Breaking changes`): `to_xarray()` returns a labeled `xr.Dataset` (was `DataArray` with integer coords); batch `to_dataframe()` becomes dense tidy and per-unit summaries move to the new `summary_table()`. Renamed/reordered *callables* still ship deprecated aliases (removed 0.7); these two *return-shape* changes do not (a shim that silently changes a return shape is worse than a clean, announced break).
-- Every task: fail-before/pass-after tests, `ruff` + `mypy` clean, CHANGELOG entry, CI green (incl. the `-n0` doctest job and Windows/locale).
+- Every task: fail-before/pass-after tests, `ruff` + `mypy` clean, CHANGELOG entry, CI green (incl. the `-n0` doctest job and Windows/locale). Phase 1 adds an **xarray-present CI job** so the `to_xarray()` → `Dataset` break is exercised (xarray is an optional extra, untested on the default install otherwise).
 
 ## Execution model
 

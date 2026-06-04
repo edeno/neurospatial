@@ -17,19 +17,21 @@
 - **Targets:** 1 hr / 25 ms / 5000 bins: `decode_position_summary` ≤ ~few hundred MB (never allocates `(144k, 5000)`); `decode_position(dtype=float32, time_chunk=N)` ≈ half the float64 stored size with transient peak ≈ 1×.
 - **Tests:** `decode_position_summary` never allocates `(n_time, n_bins)` (trace/peak-memory assert on a fixture) and its MAP equals `decode_position(...).map_position`; `DecodingResult.posterior` stays a real ndarray and all its methods pass unchanged; `dtype=float32` within tol; `time_chunk` parity; `decode_session_summary` forwards correctly.
 
-### 2.2 — Sparse / banded smoothing kernel(s)
-- **Two distinct kernels — target the right cache (finding):**
-  - **Diffusion kernel** (the **default** `smoothing_method="diffusion_kde"`): built by `env.compute_kernel(...)` and cached on **`env._kernel_cache`** keyed `(bandwidth, mode)` (`environment/fields.py:121,135`). This is the primary scale cliff.
-  - **Dense Gaussian-KDE kernel** (`smoothing_method="gaussian_kde"`): the `(n_bins, n_bins)` matrix in `encoding/_smoothing.py:414`, cached in the module-level **weakref** dict (already id-reuse-guarded) and consumed by the batch GEMM `:646-671`.
-- **Problem:** both are dense `(n_bins, n_bins)` float64, scaling `n_bins²` independent of neuron count (3.2 GB @ 20k bins); diffusion is intrinsically local (sparse).
-- **Change (diffusion = REQUIRED v0.6 target):** sparsify the **diffusion** kernel where it is built (`env.compute_kernel`) and store the sparse (CSR) form on `env._kernel_cache`, **preserving existing env cache semantics** (key `(bandwidth, mode)`, `env.clear_cache()`, `cache=` flag). The batch GEMM `kernel @ spike_counts.T` works transparently with a sparse kernel. Keep a dense fallback for tiny `n_bins`. Require **numeric parity vs dense within tol** on a fixture.
-- **Gaussian-KDE sparsification = OPTIONAL / cautious (finding):** truncating the dense `gaussian_kde` kernel (`_smoothing.py`, weakref-guarded) changes numerical results unless the cutoff is carefully defined. Treat it as optional, **gated on BOTH** an explicit parity check (within tol vs dense) **and** a measured memory/perf win. If either fails, leave `gaussian_kde` dense — it is not the default method, so the diffusion win already covers the common path.
+### 2.2 — Smoothing-kernel memory (diffusion is dense by construction — re-scoped, H1+M1)
+- **Two distinct kernels, correct locations (M1):**
+  - **Diffusion kernel** (default `smoothing_method="diffusion_kde"`): built in `ops/smoothing.py:compute_diffusion_kernels` via `scipy.sparse.linalg.expm(-t·L)` (`ops/smoothing.py:161`), then `.toarray()` (`:165`) + dense column-normalization (`:172-193`). `env.compute_kernel(...)` (`encoding/_smoothing.py:414` → `environment/fields.py:121,135`) only **caches** the result on `env._kernel_cache` keyed `(bandwidth, mode)`.
+  - **Dense Gaussian-KDE kernel** (`smoothing_method="gaussian_kde"`): `_get_gaussian_kernel` / module-level weakref `_GAUSSIAN_KERNEL_CACHE` (`encoding/_smoothing.py:78-150`), consumed by the batch GEMM (`:646-671`).
+- **Correction (H1) — the diffusion kernel is NOT intrinsically sparse.** The heat kernel `exp(-t·L)` of a *connected* graph is **mathematically dense** (every entry > 0; it only *decays* with geodesic distance) and is **built dense** by `expm` — the code itself says "Matrix exponential is O(n³) and dense" (`ops/smoothing.py:49`). So "store CSR" (a) cannot avoid the O(n²) **build** peak, and (b) truncating below a threshold **changes results**. The earlier "intrinsically sparse / REQUIRED parity-within-tol" framing was wrong and is dropped.
+- **Re-scoped change (both kernels: optional, parity+memory-gated):**
+  - A truncated-sparse cached form (diffusion or gaussian) is allowed **only if** it (i) holds numeric parity within an explicit, documented tolerance **and** (ii) shows a measured memory/perf win; otherwise leave it dense. The batch GEMM `kernel @ spike_counts.T` works transparently with a sparse kernel.
+  - The *real* fix for the dense **build** peak is a different algorithm — `scipy.sparse.linalg.expm_multiply` applied column-block-wise (never materializing the full kernel) or a Chebyshev/Krylov approximation — a **numerical rewrite flagged as a stretch goal**, not a committed v0.6 deliverable.
+- **Committed v0.6 deliverable:** prominently **document** the kernel memory cost and gate the high-bin path; the *reliable* memory wins this release are `float32` rate maps (§2.5) and `time_chunk`/`DecodingSummary` decode (§2.1). Do **not** promise a guaranteed 3.2 GB → few-MB diffusion win.
 - **Targets:** 20k-bin kernel memory 3.2 GB → few MB; smoothing GEMM `O(n_bins²·n_units)` → `O(nnz·n_units)`; no perf regression at typical (≤5k) bins.
 - **Tests:** sparse vs dense rate-map parity within tol; memory assertion on a high-bin fixture; cache identity guard still holds.
 
 ### 2.3 — Kill double metric recompute + add `n_jobs`
 - **Files:** `encoding/spatial.py:1517` (`to_dataframe`) → `:1387` (`detect_cell_types`/`classify` recomputes grid/border scores), `encoding/population.py:287-296` (`population_coverage` per-neuron `detect_place_fields`).
-- **Change:** compute grid/border scores once and pass them into `classify(grid_scores=…, border_scores=…)`; thread `n_jobs` through `population_coverage` (joblib, mirroring `bin_spike_trains`).
+- **Change:** compute grid/border scores once and pass them into the labeler. **Note (gap):** `detect_cell_types`/`label_cell_types` (`spatial.py:1303`) has **no** `grid_scores=`/`border_scores=` parameters today — add them (additive) so precomputed scores can be injected instead of recomputed. Thread `n_jobs` through `population_coverage` (joblib, mirroring `bin_spike_trains`).
 - **Tests:** grid/border computed once per `to_dataframe()` (call-count assertion); `n_jobs>1` parity with `n_jobs=1`.
 
 ### 2.4 — Stop teaching the per-neuron loop
@@ -42,10 +44,12 @@
 - **Change:** `dtype: np.float32 | np.float64 = float64` on `compute_spatial_rates`; halves `(n_units, n_bins)` and the downstream decode working set.
 - **Tests:** float32 result within tol of float64; dtype honored end-to-end into `decode_session`.
 
-### 2.6 — Expose speed filtering in the batch encode/occupancy path
-- **Files:** `encoding/spatial.py` (`compute_spatial_rate`/`compute_spatial_rates`), shared occupancy in `encoding/_binning.py` / `env.occupancy` (which already supports `min_speed`).
-- **Problem:** `env.occupancy(..., min_speed=…)` can exclude immobility, but the batch `compute_spatial_rates` computes occupancy internally with **no `min_speed`** — so the batch/decoding path can't drop low-speed samples from rate maps, and `decode_session` therefore can't forward it (Phase 0 §0.7 Note B promises this is tracked here).
-- **Change:** add a keyword-only `min_speed: float | None = None` to `compute_spatial_rate(s)`, forwarded into the shared occupancy computation so the batch path matches `env.occupancy`. Then `decode_session` may forward `min_speed`.
-- **Tests:** `compute_spatial_rates(..., min_speed=v)` parity with `env.occupancy(min_speed=v)` masking; default `None` leaves current behavior unchanged.
+### 2.6 — Speed filtering in the batch encode path — must mask BOTH occupancy AND spikes
+- **Files:** `encoding/spatial.py` (`compute_spatial_rate`/`compute_spatial_rates`), `encoding/_binning.py` (spike binning `:120,138`; batch occupancy `compute_occupancy` `:323`), `env.occupancy` (`environment/trajectory.py`).
+- **Problem (correctness, not just a flag):**
+  1. `env.occupancy(..., speed=…, min_speed=…)` requires a **precomputed `speed` array** (`trajectory.py:99,281`) — it does not derive speed from positions. So a `min_speed` knob alone is insufficient; the batch path must obtain a speed signal.
+  2. **Filtering occupancy alone gives WRONG rate maps.** Occupancy is the rate denominator; spike counts are the numerator. The spike binner currently counts spikes over the **full** trajectory window (`_binning.py:120,138`) while batch occupancy is computed **separately** (`_binning.py:323`). If `min_speed` masks occupancy but not spikes, numerator and denominator cover different time samples → biased/wrong rates.
+- **Change:** add keyword-only **`speed: NDArray | None = None`** and **`min_speed: float | None = None`** to `compute_spatial_rate(s)`. Define an explicit **auto-speed policy** when `speed is None` (e.g. finite-difference of `positions`/`times`, documented), or require the caller to pass `speed`. Build **one shared valid-sample / run mask** from `min_speed` (plus the existing finite/in-window checks) and apply that **same mask to both** the spike-binning and the occupancy computations so numerator and denominator stay aligned. Then `decode_session`/`decode_session_summary` may forward `speed`/`min_speed`.
+- **Tests:** masked spikes and masked occupancy use an **identical** sample set (numerator/denominator alignment); `compute_spatial_rates(..., min_speed=v)` parity with a hand-masked reference; passing an explicit `speed` array matches the auto-derived one within tol; default `None`/no-`min_speed` leaves current behavior byte-for-byte unchanged.
 
 **PR deliverable:** Phase 2 PR with a `benchmarks/` (or `tests/.../test_scaling.py`) asserting the memory/throughput bounds on small fixtures; CHANGELOG `### Added`/`### Performance`.

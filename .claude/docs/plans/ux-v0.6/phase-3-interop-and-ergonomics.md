@@ -2,7 +2,7 @@
 
 **Goal:** Meet users where their data already lives (pynapple/NWB), close the result round-trip, and add the thin friendly ergonomics — *without* a hard dependency or a god-object. Raw arrays stay the baseline.
 
-> **Gate:** this is the only phase with real design risk. Before any code, write `phase-3-design.md` (a short brainstorm/RFC) locking: the input Protocol surface, the `Session` bundle shape, and the `BayesianDecoder` API. **D2 = all of Phase 3 targets 0.6** — the RFC gates *design*, not scope. **Escape hatch:** if the RFC finds the combined scope too wide, Phase 3 may split (subset in 0.6, rest in 0.7); this never blocks Phases 0–2. **D3 = the bundle is named `Session`** (immutable, return-new; never a god-object). See [`PLAN.md`](./PLAN.md).
+> **Gate:** this is the only phase with real design risk. Before any code, write `phase-3-design.md` (a short brainstorm/RFC) locking: the input Protocol surface, the `Session` bundle shape, and the `BayesianDecoder` API. **Hard prerequisite: Phase 1's unit-identity threading (§1.1) must land first** — the pynapple `TsGroup`→arrays adapter and `Session.spikes` must carry `unit_ids` into results, else interop silently re-drops the identity §1.1 fixes. **D2 = all of Phase 3 targets 0.6** — the RFC gates *design*, not scope. **Escape hatch:** if the RFC finds the combined scope too wide, Phase 3 may split (subset in 0.6, rest in 0.7); this never blocks Phases 0–2. **D3 = the bundle is named `Session`** (immutable, return-new; never a god-object). See [`PLAN.md`](./PLAN.md).
 
 **Governing:** duck-typing/Protocols (no `isinstance`); optional deps; `io/` stays pure I/O; immutability.
 
