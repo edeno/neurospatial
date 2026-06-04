@@ -1044,6 +1044,44 @@ class SpatialRatesResult(SpatialResultMixin):
         for i in range(len(self)):
             yield self[i]
 
+    def peak_locations(self) -> NDArray[np.float64]:
+        """Locations of peak firing for all neurons (batch accessor).
+
+        Plural batch counterpart to :meth:`peak_location`. Returns the
+        bin-center coordinates of the maximum firing rate for each neuron in
+        the population. This is the canonical plural accessor mandated by the
+        v0.6 result-class contract; it returns the same array as the batch
+        form of :meth:`peak_location`.
+
+        Returns
+        -------
+        ndarray, shape (n_neurons, n_dims)
+            Spatial coordinates of the bins with maximum firing rate for
+            each neuron. Uses ``nanargmax`` to handle NaN values.
+
+        See Also
+        --------
+        SpatialRateResult.peak_location : Single-neuron version.
+        peak_firing_rate : Peak firing rate values.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rates
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 50, (500, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> times = np.linspace(0, 50, 500)
+        >>> spike_times = [np.sort(rng.uniform(0, 50, n)) for n in (30, 40, 20)]
+        >>> result = compute_spatial_rates(
+        ...     env, spike_times, times, positions, bandwidth=10.0
+        ... )
+        >>> result.peak_locations().shape
+        (3, 2)
+        """
+        return self.peak_location()
+
     def plot(self, idx: int, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the spatial rate map for a specific neuron.
 

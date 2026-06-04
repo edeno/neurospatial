@@ -4210,6 +4210,37 @@ class TestComputeSpatialRatesResultMethods:
         assert info.shape == (len(multiple_place_cell_spikes),)
         assert np.all(info >= 0)
 
+    def test_result_has_peak_locations_batch_method(
+        self,
+        trajectory_env: Environment,
+        multiple_place_cell_spikes: list[NDArray[np.float64]],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """peak_locations() should return (n_units, n_dims) matching per-unit peaks."""
+        from neurospatial.encoding.spatial import compute_spatial_rates
+
+        result = compute_spatial_rates(
+            trajectory_env,
+            multiple_place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+        )
+        n_units = len(multiple_place_cell_spikes)
+        n_dims = trajectory_env.bin_centers.shape[1]
+
+        # Plural batch accessor exists and has the right shape.
+        assert hasattr(result, "peak_locations")
+        peaks = result.peak_locations()
+        assert peaks.shape == (n_units, n_dims)
+
+        # Parity with the (batch) peak_location() it delegates to.
+        np.testing.assert_array_equal(peaks, result.peak_location())
+
+        # Parity with per-unit peak_location() on each single-neuron result.
+        per_unit = np.asarray([r.peak_location() for r in result])
+        np.testing.assert_array_equal(peaks, per_unit)
+
     def test_result_has_sparsity_method(
         self,
         trajectory_env: Environment,

@@ -174,6 +174,12 @@ these are called out under a dedicated **Breaking changes** heading.
   array, removing the `np.stack([r.firing_rate ...])` glue between the encoding
   and decoding steps.
 
+- New keyword-only parameter `warn_on_drop: bool = True` on
+  `bin_spike_train`, `bin_spike_trains` (`encoding/_binning.py`),
+  `compute_spatial_rate`, and `compute_spatial_rates` (`encoding/spatial.py`).
+  Set to `False` to intentionally silence all spike-drop warnings (e.g. when
+  the caller handles the diagnostic themselves).
+
 ### Changed
 
 - `detect_region_crossings` argument order changed to follow the
@@ -301,14 +307,6 @@ in 0.7. Each old name forwards to its replacement with unchanged behavior.
   cause** in the main process — never from joblib worker processes where
   warnings are commonly swallowed.  Default behaviour for in-window spikes
   is byte-for-byte unchanged.
-
-### Added
-
-- New keyword-only parameter `warn_on_drop: bool = True` on
-  `bin_spike_train`, `bin_spike_trains` (`encoding/_binning.py`),
-  `compute_spatial_rate`, and `compute_spatial_rates` (`encoding/spatial.py`).
-  Set to `False` to intentionally silence all spike-drop warnings (e.g. when
-  the caller handles the diagnostic themselves).
 
 ## [0.5.0] - 2026-06-04
 

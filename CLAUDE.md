@@ -124,8 +124,12 @@ learnable — a name has **one** meaning everywhere. (Full rationale in
 ### Cell-type API (one learnable rule)
 
 - **Single-unit predicate:** `is_<celltype>_cell(...)` exists BOTH as a free
-  function and as a result method. Cell types: `place`, `head_direction`,
-  `object_vector`, `spatial_view`, `border`, `grid` (where applicable).
+  function and as a result method. The shipped predicates are exactly
+  `is_place_cell`, `is_head_direction_cell`, `is_object_vector_cell`, and
+  `is_spatial_view_cell`. There are **no** `is_border_cell` / `is_grid_cell`
+  predicates — `border` and `grid` are reachable only as *labels* via
+  `SpatialRatesResult.label_cell_types()` (see below), not as predicate
+  functions.
 - **Batch boolean predicate:** `result.classify(*, ...) -> NDArray[bool]` on
   every plural result class — a **single-type** is-this-cell-type predicate.
 - **Batch multi-class labeler:** `SpatialRatesResult.label_cell_types(*, ...)
@@ -137,10 +141,20 @@ learnable — a name has **one** meaning everywhere. (Full rationale in
 ### Peak / preferred accessors
 
 - **Cartesian peak location:** `peak_location()` (single) / `peak_locations()`
-  (batch).
-- **Genuinely non-Cartesian peaks** keep domain names:
-  `preferred_direction()` / `preferred_distance()` (angle/radius), plural for
-  batch.
+  (batch). This applies only to results whose bins are Cartesian world
+  coordinates: `SpatialRateResult`/`SpatialRatesResult` and
+  `ViewRateResult`/`ViewRatesResult`. (`peak_location()` is inherited from
+  `SpatialResultMixin` and returns `(n_dims,)` single / `(n_units, n_dims)`
+  batch; the plural `peak_locations()` returns the same `(n_units, n_dims)`
+  batch array.)
+- **Genuinely non-Cartesian peaks** keep domain names and have **no**
+  `peak_locations()`: directional results (`DirectionalRateResult` /
+  `DirectionalRatesResult`) use `preferred_direction()` /
+  `preferred_directions()` (angle, radians); egocentric/object-vector results
+  (`EgocentricRateResult` / `EgocentricRatesResult`) use
+  `preferred_distance()` / `preferred_distances()` and `preferred_direction()`
+  / `preferred_directions()` (polar radius + angle). A Cartesian
+  `peak_locations()` is intentionally not provided for these.
 
 ### Unit identity
 
