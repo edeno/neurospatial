@@ -24,10 +24,9 @@ def test_no_claude_md_references_in_source() -> None:
     """No .py file under src/neurospatial/ may contain the substring 'CLAUDE.md'."""
     offending: list[str] = []
     for py_file in _all_py_files():
-        try:
-            text = py_file.read_text(encoding="utf-8")
-        except OSError:
-            continue
+        # Let a genuinely unreadable file raise rather than silently skip it
+        # (a swallowed read would falsely pass this backstop).
+        text = py_file.read_text(encoding="utf-8")
         if "CLAUDE.md" in text:
             offending.append(str(py_file))
 
