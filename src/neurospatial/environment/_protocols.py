@@ -306,6 +306,7 @@ class EnvironmentProtocol(Protocol):
         *,
         mode: Literal["transition", "density"] = "density",
         cache: bool = True,
+        allow_large: bool = False,
     ) -> NDArray[np.float64]:
         """
         Compute a smoothing kernel matrix.
@@ -318,6 +319,9 @@ class EnvironmentProtocol(Protocol):
             Kernel normalization mode.
         cache : bool, default=True
             Whether to cache the computed kernel.
+        allow_large : bool, default=False
+            Escape hatch for the high-bin memory gate; pass ``True`` to
+            override the ``MemoryError`` raised above 20,000 bins.
 
         Returns
         -------
