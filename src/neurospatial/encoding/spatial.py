@@ -1080,11 +1080,12 @@ class SpatialRatesResult(SpatialResultMixin):
             build_population_dataset,
             env_fingerprint,
             software_version,
+            units_attr,
         )
 
         rates: NDArray[np.float64] = np.asarray(self.firing_rates)
         attrs: dict[str, Any] = {
-            "units": str(getattr(self.env, "units", None)),
+            **units_attr(self.env),
             "bandwidth": self.bandwidth,
             "env": env_fingerprint(self.env),
             "software_version": software_version(),

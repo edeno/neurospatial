@@ -123,6 +123,34 @@ def software_version() -> str:
         return "unknown"
 
 
+def units_attr(env: Any) -> dict[str, str]:
+    """Return a ``{"units": ...}`` attrs fragment, omitted when units are unset.
+
+    Reads ``env.units`` and returns ``{"units": <value>}`` only when it is a
+    meaningful non-empty string. When ``units`` is ``None`` (or empty, or the
+    env lacks the attribute) an **empty** mapping is returned, so that the
+    literal string ``"None"`` is never stored as a units attribute on an
+    xarray export.
+
+    Parameters
+    ----------
+    env : Any
+        An environment exposing an optional ``units`` attribute.
+
+    Returns
+    -------
+    dict
+        ``{"units": value}`` when units are set, else ``{}``.
+    """
+    units = getattr(env, "units", None)
+    if units is None:
+        return {}
+    units_str = str(units)
+    if units_str == "":
+        return {}
+    return {"units": units_str}
+
+
 def env_fingerprint(env: Any) -> str:
     """Return a stable, human-readable identifier for an environment.
 
@@ -169,16 +197,46 @@ def _bin_center_coords(
     -------
     dict
         Mapping ``name -> ("bin", values)`` for use as xarray ``coords``.
+
+    Raises
+    ------
+    ValueError
+        If ``env`` is given but its ``bin_centers`` is not 2-D or its length
+        (``bin_centers.shape[0]``) does not equal ``n_bins``. The genuine
+        no-env case (``env is None``) is a no-op and returns an empty mapping.
     """
+    # Genuine no-env case (e.g. directional results pass bin_centers directly
+    # and have no env): no bin-center coords to build. This is NOT a mismatch.
     if env is None:
         return {}
 
     from neurospatial.environment.polar import EgocentricPolarEnvironment
 
     bin_centers = np.asarray(env.bin_centers, dtype=np.float64)
-    if bin_centers.ndim != 2 or bin_centers.shape[0] != n_bins:
-        # Defensive: shapes disagree; skip coords rather than emit wrong ones.
-        return {}
+    # bin-center data IS present (env was given); a shape disagreement here is
+    # a real inconsistency between the result and its environment, not an
+    # optional-coord situation. Raise loudly rather than silently dropping it.
+    if bin_centers.ndim != 2:
+        raise ValueError(
+            "Environment bin_centers must be 2-D (n_bins, n_dims) to build "
+            f"xarray bin-center coords, but env produced an array with "
+            f"ndim={bin_centers.ndim} (shape {bin_centers.shape}).\n"
+            "  WHY: each bin needs an (x, y, ...) center for the 'bin' "
+            "coordinate.\n"
+            "  HOW: ensure the environment is fitted and exposes 2-D "
+            "bin_centers."
+        )
+    if bin_centers.shape[0] != n_bins:
+        raise ValueError(
+            "bin_centers length does not match the result's bin count: env "
+            f"bin_centers has {bin_centers.shape[0]} row(s) but the result "
+            f"has {n_bins} bin(s).\n"
+            "  WHY: the 'bin' coordinate must have one center per bin; a "
+            "mismatch would silently produce a structurally-incomplete or "
+            "misaligned Dataset.\n"
+            "  HOW: pass the same environment used to compute the result, or "
+            "recompute the result against this environment."
+        )
 
     if isinstance(env, EgocentricPolarEnvironment):
         return {
@@ -241,7 +299,11 @@ def build_population_dataset(
     Raises
     ------
     ValueError
-        If ``unit_ids`` contains duplicate labels.
+        If ``unit_ids`` contains duplicate labels, if ``occupancy`` is
+        provided but its length does not equal ``n_bins``, or if
+        ``bin_centers`` is provided but is not 1-D of length ``n_bins``.
+        (Absent ``occupancy``/``bin_centers`` are simply omitted; only a
+        present-but-mismatched array raises.)
     ImportError
         If ``xarray`` is not installed.
     """
@@ -275,17 +337,40 @@ def build_population_dataset(
     if env is not None:
         coords.update(_bin_center_coords(env, n_bins))
     if bin_centers is not None:
+        # bin_centers IS present (passed explicitly, e.g. directional angular
+        # centers); a shape disagreement is a real inconsistency, not an
+        # optional coord. Raise rather than silently omitting the coord.
         bc = np.asarray(bin_centers, dtype=np.float64)
-        if bc.ndim == 1 and bc.shape[0] == n_bins:
-            coords["bin_center_angle"] = ("bin", bc)
+        if bc.ndim != 1 or bc.shape[0] != n_bins:
+            raise ValueError(
+                "bin_centers length does not match the firing-rate bin "
+                f"count: bin_centers has shape {bc.shape} but there are "
+                f"{n_bins} bin(s) (firing_rates.shape[1]).\n"
+                "  WHY: the 'bin' coordinate must have one center per bin; a "
+                "mismatch would silently produce a misaligned Dataset.\n"
+                "  HOW: pass a 1-D bin_centers array of length n_bins."
+            )
+        coords["bin_center_angle"] = ("bin", bc)
 
     data_vars: dict[str, Any] = {
         "firing_rate": (("unit_id", "bin"), rates),
     }
     if occupancy is not None:
+        # occupancy IS present; a length disagreement is a real inconsistency,
+        # not an absent-optional. Raise rather than silently dropping the var.
         occ = np.asarray(occupancy, dtype=np.float64)
-        if occ.ndim == 1 and occ.shape[0] == n_bins:
-            data_vars["occupancy"] = (("bin",), occ)
+        if occ.ndim != 1 or occ.shape[0] != n_bins:
+            raise ValueError(
+                "occupancy length does not match the firing-rate bin count: "
+                f"occupancy has shape {occ.shape} but there are {n_bins} "
+                "bin(s) (firing_rates.shape[1]).\n"
+                "  WHY: the 'occupancy' data var is indexed by bin; a length "
+                "mismatch would silently produce a structurally-incomplete "
+                "Dataset.\n"
+                "  HOW: pass a 1-D occupancy array of length n_bins, or omit "
+                "it entirely if unavailable."
+            )
+        data_vars["occupancy"] = (("bin",), occ)
 
     return xr.Dataset(
         data_vars=data_vars,

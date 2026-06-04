@@ -229,6 +229,81 @@ def test_egocentric_rates_to_xarray_polar_coords():
     )
 
 
+def test_spatial_rates_occupancy_length_mismatch_raises(rates_result):
+    """A present occupancy whose length != n_bins raises ValueError.
+
+    Guards against silently dropping the occupancy data var and emitting a
+    structurally-incomplete Dataset.
+    """
+    pytest.importorskip("xarray")
+
+    rates = np.asarray(rates_result.firing_rates)
+    n_bins = rates.shape[1]
+    bad = SpatialRatesResult(
+        firing_rates=rates,
+        # occupancy present but one element too short
+        occupancy=np.ones(n_bins - 1),
+        env=rates_result.env,
+        smoothing_method="binned",
+        bandwidth=5.0,
+    )
+    with pytest.raises(ValueError, match="occupancy length does not match"):
+        bad.to_xarray()
+
+
+def test_directional_bin_centers_length_mismatch_raises():
+    """A present bin_centers whose length != n_bins raises ValueError."""
+    pytest.importorskip("xarray")
+
+    rng = np.random.default_rng(11)
+    n_neurons, n_bins = 3, 60
+    result = DirectionalRatesResult(
+        firing_rates=rng.random((n_neurons, n_bins)) * 10,
+        occupancy=np.ones(n_bins) * 0.5,
+        # bin_centers present but one element too short
+        bin_centers=np.linspace(0, 2 * np.pi, n_bins - 1, endpoint=False),
+        bin_size=np.pi / 30,
+        bandwidth=None,
+    )
+    with pytest.raises(ValueError, match="bin_centers length does not match"):
+        result.to_xarray()
+
+
+def test_build_population_dataset_env_bin_center_mismatch_raises():
+    """An env whose bin_centers length != n_bins raises ValueError."""
+    pytest.importorskip("xarray")
+    from neurospatial._results import build_population_dataset
+
+    rng = np.random.default_rng(12)
+    positions = rng.uniform(0, 50, (300, 2))
+    env = Environment.from_samples(positions, bin_size=5.0)
+    # Claim more bins than the env actually has -> bin-center length mismatch.
+    n_bins = env.n_bins + 1
+    rates = rng.uniform(0, 10, (3, n_bins))
+    with pytest.raises(ValueError, match="bin_centers length does not match"):
+        build_population_dataset(rates, np.arange(3), env=env)
+
+
+def test_spatial_rates_units_none_omits_none_string():
+    """When env.units is None the units attr is absent (never the str 'None')."""
+    pytest.importorskip("xarray")
+
+    rng = np.random.default_rng(13)
+    positions = rng.uniform(0, 50, (300, 2))
+    env = Environment.from_samples(positions, bin_size=5.0)
+    env.units = None
+    result = SpatialRatesResult(
+        firing_rates=rng.uniform(0, 10, (3, env.n_bins)),
+        occupancy=rng.uniform(0.5, 2.0, env.n_bins),
+        env=env,
+        smoothing_method="binned",
+        bandwidth=5.0,
+    )
+    ds = result.to_xarray()
+    assert ds.attrs.get("units", "") != "None"
+    assert "units" not in ds.attrs
+
+
 def test_spatial_rates_to_xarray_without_xarray_raises(rates_result, monkeypatch):
     """A failing xarray import raises a clear, actionable ImportError."""
     real_import = builtins.__import__

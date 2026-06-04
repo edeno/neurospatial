@@ -64,7 +64,11 @@ class TestToXarrayDims:
         )
 
     def test_decode_attrs(self, small_2d_env):
-        """attrs carry units, env fingerprint, and software_version."""
+        """attrs carry env fingerprint and software_version.
+
+        ``small_2d_env`` has ``units=None``, so the ``units`` attr is omitted
+        entirely (never stored as the literal string ``"None"``).
+        """
         pytest.importorskip("xarray")
         n_time = 3
         posterior = np.ones((n_time, small_2d_env.n_bins)) / small_2d_env.n_bins
@@ -72,9 +76,26 @@ class TestToXarrayDims:
 
         ds = result.to_xarray()
 
-        assert "units" in ds.attrs
+        # units unset on this env -> attr omitted, NOT the string "None".
+        assert ds.attrs.get("units", "") != "None"
+        assert "units" not in ds.attrs
         assert "Environment" in ds.attrs["env"]
         assert ds.attrs["software_version"]
+
+    def test_decode_attrs_units_set(self, small_2d_env):
+        """When env.units is set, it is carried through into ds.attrs."""
+        pytest.importorskip("xarray")
+        import copy
+
+        env = copy.copy(small_2d_env)
+        env.units = "cm"
+        n_time = 3
+        posterior = np.ones((n_time, env.n_bins)) / env.n_bins
+        result = DecodingResult(posterior=posterior, env=env)
+
+        ds = result.to_xarray()
+
+        assert ds.attrs["units"] == "cm"
 
     def test_to_xarray_times_none(self, small_2d_env):
         """times=None -> time coord is integer index np.arange(n_time)."""

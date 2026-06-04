@@ -536,6 +536,7 @@ class DecodingResult(ResultMixin):
             _bin_center_coords,
             env_fingerprint,
             software_version,
+            units_attr,
         )
 
         n_time = self.posterior.shape[0]
@@ -558,7 +559,7 @@ class DecodingResult(ResultMixin):
         }
 
         attrs: dict[str, Any] = {
-            "units": str(getattr(self.env, "units", None)),
+            **units_attr(self.env),
             "env": env_fingerprint(self.env),
             "software_version": software_version(),
         }
