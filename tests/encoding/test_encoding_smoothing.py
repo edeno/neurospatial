@@ -8,6 +8,8 @@ Following TDD approach: tests written before implementation.
 
 from __future__ import annotations
 
+import weakref
+
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
@@ -16,6 +18,7 @@ from neurospatial import Environment
 
 # Import will fail until we implement the module
 from neurospatial.encoding._smoothing import (
+    _get_gaussian_kernel,
     smooth_rate_map,
     smooth_rate_maps_batch,
 )
@@ -808,3 +811,129 @@ class TestBackwardCompatibility:
 
         # Result should still be valid
         assert np.any(np.isfinite(result))
+
+
+# =============================================================================
+# Polar Gaussian Kernel: Angular Seam Wrap
+# =============================================================================
+
+
+class TestPolarGaussianKernelSeam:
+    """The polar gaussian kernel must wrap the -pi/+pi angular seam.
+
+    Without wrapping, bins straddling the seam are treated as ~2*pi apart and
+    receive a vanishing Gaussian weight, a hard artifact for egocentric-polar
+    ``gaussian_kde`` smoothing. After the fix, seam-adjacent bins are weighted
+    like any other angularly-adjacent pair.
+    """
+
+    @staticmethod
+    def _polar_env(circular_angle: bool = True) -> Environment:
+        return Environment.from_polar_egocentric(
+            distance_range=(0.0, 50.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=10.0,
+            angle_bin_size=np.pi / 6,  # 12 angular bins
+            circular_angle=circular_angle,
+        )
+
+    @staticmethod
+    def _ring_indices(env: Environment):
+        """Return (seam_a, seam_b, normal_a, normal_b, far_a, far_b) on a ring.
+
+        Works within a single radial ring (skipping the innermost r~0 ring) so
+        only the angular term varies in the kernel.
+        """
+        centers = np.asarray(env.bin_centers)
+        r = centers[:, 0]
+        theta = centers[:, 1]
+        ring_r = np.unique(r)[1]
+        ring = np.flatnonzero(np.isclose(r, ring_r))
+        ring = ring[np.argsort(theta[ring])]
+        ring_theta = theta[ring]
+        # Sanity: seam pair really straddles the seam (angles ~2*pi apart raw).
+        assert abs(ring_theta[-1] - ring_theta[0]) > np.pi
+        seam_a, seam_b = int(ring[0]), int(ring[-1])
+        mid = len(ring) // 2
+        normal_a, normal_b = int(ring[mid]), int(ring[mid + 1])
+        far_a, far_b = int(ring[0]), int(ring[mid])
+        return seam_a, seam_b, normal_a, normal_b, far_a, far_b
+
+    def test_seam_weight_comparable_to_normal_neighbor(self) -> None:
+        env = self._polar_env(circular_angle=True)
+        kernel = _get_gaussian_kernel(env, bandwidth=5.0)
+
+        seam_a, seam_b, normal_a, normal_b, far_a, far_b = self._ring_indices(env)
+
+        seam_w = kernel[seam_a, seam_b]
+        normal_w = kernel[normal_a, normal_b]
+        far_w = kernel[far_a, far_b]
+
+        # Fail-before: seam_w was ~2.7e-7 (vanishing). After wrapping it is
+        # comparable to a normal angular neighbor and clearly >> the old value.
+        assert seam_w == pytest.approx(normal_w, rel=1e-9)
+        assert seam_w > 1e-3
+        # And clearly larger than between two truly-far angular bins.
+        assert seam_w > 10.0 * far_w
+
+    def test_open_axis_seam_not_wrapped(self) -> None:
+        """With circular_angle=False the -pi/+pi seam must NOT be wrapped.
+
+        An open angular axis (no seam edges in the graph) means bins at -pi
+        and +pi are genuinely far apart. Wrapping Delta theta would leak
+        smoothing across a boundary the caller left open.
+
+        Fail-before: circular_angle=False still wrapped, giving seam_w ~ 0.7346
+        (== a true angular neighbor) -- a leak. After the fix the seam weight
+        is SMALL, like a truly-far pair, and far below a real neighbor.
+        """
+        env = self._polar_env(circular_angle=False)
+        kernel = _get_gaussian_kernel(env, bandwidth=5.0)
+
+        seam_a, seam_b, normal_a, normal_b, far_a, far_b = self._ring_indices(env)
+
+        seam_w = kernel[seam_a, seam_b]
+        normal_w = kernel[normal_a, normal_b]
+        far_w = kernel[far_a, far_b]
+
+        # The open-axis seam pair is ~2*pi apart in angle: weight must be tiny,
+        # nothing like a real angular neighbor (which was the leaked ~0.7346).
+        assert seam_w < 1e-3
+        assert seam_w < 1e-3 * normal_w
+        # It behaves like a truly-far pair (also ~no weight at this bandwidth).
+        assert seam_w == pytest.approx(far_w, abs=1e-6)
+
+    def test_kernel_cache_rejects_id_reuse(self) -> None:
+        """A recycled ``id(env)`` must never return another env's cached kernel.
+
+        ``id()`` is unique only among *live* objects, so once an env is GC'd a
+        freshly built one can land at the same address. The kernel cache keys on
+        ``(id(env), bandwidth)`` and previously validated only ``n_bins``; two
+        polar envs that differ only in ``circular_angle`` share ``n_bins``, so a
+        circular env's wrapped kernel could be served for an open-axis env at the
+        reused id (the non-deterministic macos-3.13 CI failure: seam weight came
+        back ~0.29 instead of ~0). The weakref identity guard turns any such
+        reuse into a cache miss. Forge the collision deterministically by seeding
+        the cache under the open env's key with the circular kernel and a weakref
+        pointing at a *different* env.
+        """
+        from neurospatial.encoding import _smoothing
+
+        env_circular = self._polar_env(circular_angle=True)
+        env_open = self._polar_env(circular_angle=False)
+        bandwidth = 5.0
+        circular_kernel = _get_gaussian_kernel(env_circular, bandwidth)
+
+        # Poison: open env's (id, bandwidth) key -> circular kernel + a weakref
+        # to a foreign env. The guard must see ref() is not env_open and recompute.
+        _smoothing._GAUSSIAN_KERNEL_CACHE[(id(env_open), bandwidth)] = (
+            circular_kernel,
+            np.asarray(env_open.bin_centers).shape[0],
+            weakref.ref(env_circular),
+        )
+
+        result = _get_gaussian_kernel(env_open, bandwidth)
+        seam_a, seam_b, *_ = self._ring_indices(env_open)
+        # Recomputed open-axis kernel: seam is NOT wrapped (tiny weight), not the
+        # leaked circular value the poisoned entry would have returned.
+        assert result[seam_a, seam_b] < 1e-3

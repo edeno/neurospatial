@@ -880,3 +880,49 @@ class TestComputeVTESession:
         if len(result.trial_results) > 0:
             expected_fraction = result.n_vte_trials / len(result.trial_results)
             assert_allclose(result.vte_fraction, expected_fraction)
+
+
+def test_compute_vte_session_env_first(t_maze_environment):
+    """compute_vte_session is env-first and runs with positional env."""
+    import inspect
+
+    from neurospatial.behavior.segmentation import Trial
+    from neurospatial.behavior.vte import compute_vte_session
+
+    env = t_maze_environment
+
+    # Signature: env must be the first positional parameter.
+    params = list(inspect.signature(compute_vte_session).parameters)
+    assert params[0] == "env"
+    assert params[1] == "positions"
+    assert params[2] == "times"
+
+    # Build a slow head-scanning trajectory approaching the center region.
+    n = 60
+    dt = 1.0 / 30.0
+    times = np.arange(n) * dt
+    x = 50.0 + 5.0 * np.sin(np.linspace(0, 8 * np.pi, n))
+    y = np.linspace(30.0, 50.0, n)
+    positions = np.column_stack([x, y])
+
+    trials = [
+        Trial(
+            start_time=times[0],
+            end_time=times[-1],
+            start_region="start",
+            end_region="center",
+            success=True,
+        )
+    ]
+
+    # Positional (env, positions, times) call runs without error.
+    result = compute_vte_session(
+        env,
+        positions,
+        times,
+        decision_region="center",
+        trials=trials,
+        window_duration=0.5,
+        min_speed=1.0,
+    )
+    assert result is not None

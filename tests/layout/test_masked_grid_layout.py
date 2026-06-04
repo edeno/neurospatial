@@ -1,6 +1,7 @@
 """Behavioral tests for MaskedGridLayout driven directly through the engine."""
 
 import numpy as np
+import pytest
 
 from neurospatial.layout.engines.masked_grid import MaskedGridLayout
 
@@ -65,3 +66,32 @@ def test_n_bins_excludes_masked():
     assert layout.bin_centers.shape[0] == int(active_mask.sum())
     # 16-cell grid with a 4-cell hole leaves 12 active bins.
     assert layout.bin_centers.shape[0] == 12
+
+
+def test_masked_grid_rejects_float_mask():
+    """A float or int mask raises ValueError naming the dtype; bool still builds."""
+    grid_edges = (np.arange(4.0), np.arange(3.0))  # 3x2 bins
+    bool_mask = np.ones((3, 2), dtype=bool)
+
+    layout_float = MaskedGridLayout()
+    with pytest.raises(ValueError, match="dtype"):
+        layout_float.build(active_mask=bool_mask.astype(float), grid_edges=grid_edges)
+
+    layout_int = MaskedGridLayout()
+    with pytest.raises(ValueError, match="dtype"):
+        layout_int.build(active_mask=bool_mask.astype(int), grid_edges=grid_edges)
+
+    # A genuine boolean mask still builds.
+    layout_ok = MaskedGridLayout()
+    layout_ok.build(active_mask=bool_mask, grid_edges=grid_edges)
+    assert layout_ok.bin_centers.shape[0] == int(bool_mask.sum())
+
+
+def test_masked_grid_rejects_non_array_mask():
+    """A Python list mask raises TypeError."""
+    grid_edges = (np.arange(4.0), np.arange(3.0))
+    list_mask = [[True, True], [True, False], [False, True]]
+
+    layout = MaskedGridLayout()
+    with pytest.raises(TypeError):
+        layout.build(active_mask=list_mask, grid_edges=grid_edges)

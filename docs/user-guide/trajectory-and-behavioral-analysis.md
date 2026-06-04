@@ -1,6 +1,6 @@
 # Trajectory Metrics & Behavioral Segmentation
 
-This guide covers trajectory characterization metrics and automatic behavioral epoch detection using the `neurospatial.behavior.trajectory` and `neurospatial.segmentation` modules.
+This guide covers trajectory characterization metrics and automatic behavioral epoch detection using the `neurospatial.behavior.trajectory` and `neurospatial.behavior.segmentation` modules.
 
 > **Note**: Trajectory functions have been moved to `neurospatial.behavior.trajectory`. Old imports from `neurospatial.metrics.trajectory` still work for backward compatibility.
 
@@ -233,7 +233,7 @@ $$
 Detect when the animal enters or exits named regions.
 
 ```python
-from neurospatial.segmentation import detect_region_crossings
+from neurospatial.behavior.segmentation import detect_region_crossings
 
 # Detect all crossings (entries and exits)
 crossings = detect_region_crossings(
@@ -271,7 +271,7 @@ for crossing in crossings:
 Detect runs from a source region to a target region, tracking success and failure.
 
 ```python
-from neurospatial.segmentation import detect_runs_between_regions
+from neurospatial.behavior.segmentation import detect_runs_between_regions
 
 # Detect runs from start to goal
 runs = detect_runs_between_regions(
@@ -312,7 +312,7 @@ print(f"Mean duration (successful): {np.mean([r.end_time - r.start_time for r in
 Segment trajectory into movement vs rest periods based on velocity.
 
 ```python
-from neurospatial.segmentation import segment_by_velocity
+from neurospatial.behavior.segmentation import segment_by_velocity
 
 # Segment into movement epochs
 movement_epochs = segment_by_velocity(
@@ -362,7 +362,7 @@ Lap detection identifies repeating circular paths (e.g., circular track running)
 Automatically extracts template lap from trajectory.
 
 ```python
-from neurospatial.segmentation import detect_laps
+from neurospatial.behavior.segmentation import detect_laps
 
 # Auto-detect laps using first 10% as template
 laps = detect_laps(
@@ -483,7 +483,7 @@ Segment behavioral tasks into discrete trials based on region entries.
 ### T-maze Trials
 
 ```python
-from neurospatial.segmentation import segment_trials
+from neurospatial.behavior.segmentation import segment_trials
 
 # Define regions
 env.regions.add("start", polygon=Point(50, 10).buffer(8))
@@ -607,7 +607,7 @@ Compare spatial and temporal patterns between trajectories.
 Spatial overlap (set-based, order-independent).
 
 ```python
-from neurospatial.segmentation import trajectory_similarity
+from neurospatial.behavior.segmentation import trajectory_similarity
 
 # Compare two trajectories
 similarity = trajectory_similarity(
@@ -726,7 +726,7 @@ similarity = trajectory_similarity(
 Quantifies how efficiently an animal moves toward a goal.
 
 ```python
-from neurospatial.segmentation import detect_goal_directed_runs
+from neurospatial.behavior.segmentation import detect_goal_directed_runs
 
 # Detect efficient paths toward goal
 goal_runs = detect_goal_directed_runs(

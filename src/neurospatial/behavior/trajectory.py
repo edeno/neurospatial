@@ -24,6 +24,8 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._validation import validate_finite
+
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
 
@@ -500,6 +502,9 @@ def mean_square_displacement(
         If metric="geodesic" but env is None.
         If positions and times have different lengths.
         If positions is not a 2D array.
+        If times contains non-finite values.
+        If the median consecutive time step is <= 0 (all-duplicate or
+        non-increasing timestamps), which would make the lag grid undefined.
 
     Notes
     -----
@@ -603,6 +608,8 @@ def mean_square_displacement(
             "Use metric='euclidean' if env is not available."
         )
 
+    validate_finite(times, name="times")
+
     n_samples = len(positions)
 
     # Determine lag times to compute
@@ -611,10 +618,17 @@ def mean_square_displacement(
 
     # Find all unique time differences up to max_tau
     time_diffs = np.diff(times)
-    # Create lag times by accumulating time differences
-    # We'll use a simple approach: sample lag times at regular intervals
-    # from the time step up to max_tau
-    dt = np.median(time_diffs)  # Typical time step
+    # Create lag times by accumulating time differences. Use the median delta as
+    # the typical time step; reject records whose typical step is not positive
+    # (all-duplicate or non-increasing timestamps), which would make the lag grid
+    # ill-defined (ZeroDivisionError or negative n_lags).
+    dt = float(np.median(time_diffs))  # Typical time step
+    if dt <= 0:
+        raise ValueError(
+            f"times must be increasing: the median consecutive time step is "
+            f"{dt!r} (<= 0), so the lag grid is undefined. Sort and "
+            f"de-duplicate timestamps before calling."
+        )
     n_lags = int(max_tau / dt)
     n_lags = max(1, min(n_lags, n_samples // 2))  # At least 1, at most n_samples/2
 

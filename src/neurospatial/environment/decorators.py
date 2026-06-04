@@ -172,7 +172,7 @@ def check_fitted(method: Callable[..., T]) -> Callable[..., T]:
 
 
 # ----------------------------------------------------------------------
-# Versioned cached property (M5.1)
+# Versioned cached property
 # ----------------------------------------------------------------------
 
 

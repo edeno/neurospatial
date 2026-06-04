@@ -702,7 +702,7 @@ class TestAnimateFieldsIntegration:
 
 
 class TestDispatcherOverlayIntegration:
-    """Test dispatcher integration with overlay system (Milestone 2.2)."""
+    """Test dispatcher integration with overlay system."""
 
     def test_dispatcher_accepts_overlay_parameters(self):
         """Test that dispatcher accepts new overlay parameters."""
@@ -929,7 +929,7 @@ class TestDispatcherOverlayIntegration:
 
 
 class TestArrayPreservation:
-    """Test array format preservation for different backends (Milestone 1).
+    """Test array format preservation for different backends.
 
     These tests verify that:
     - napari backend receives arrays as-is (not converted to list)
@@ -1287,7 +1287,7 @@ class TestEstimateColormapRangeFromSubset:
 
 
 class TestAnimateFieldsSpeedBasedPlayback:
-    """Test animate_fields() speed-based playback API (Milestone 3).
+    """Test animate_fields() speed-based playback API.
 
     These tests verify:
     - frame_times is required (defines temporal structure)

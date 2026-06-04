@@ -6,12 +6,15 @@ HeadDirectionOverlay) and their validation/conversion pipeline.
 
 from __future__ import annotations
 
-from typing import ClassVar, Literal
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 import numpy as np
 import pytest
 from numpy.testing import assert_array_equal
 from numpy.typing import NDArray
+
+if TYPE_CHECKING:
+    from neurospatial import Environment
 
 from neurospatial.animation.overlays import (
     BodypartOverlay,
@@ -194,6 +197,72 @@ class TestHeadDirectionOverlay:
 
         assert overlay.headings.shape == (2, 3)
         assert_array_equal(overlay.headings, data)
+
+
+class TestHeadDirectionInterpolation:
+    """Test 1-D head-direction angle interpolation across the +/-pi wrap."""
+
+    @pytest.fixture
+    def env(self) -> Environment:
+        """A small 2D environment (only n_dims is used for 1-D headings)."""
+        from neurospatial import Environment
+
+        positions = np.array([[0.0, 0.0], [10.0, 0.0], [0.0, 10.0], [10.0, 10.0]])
+        return Environment.from_samples(positions, bin_size=5.0)
+
+    def test_head_direction_interp_crosses_pi_short_way(self, env: Environment) -> None:
+        """Interpolating across the +/-pi wrap takes the short way (near pi)."""
+        overlay = HeadDirectionOverlay(
+            headings=np.array([3.0, -3.0]),
+            times=np.array([0.0, 1.0]),
+        )
+        # Frame_times must span the source range; assert on the midpoint frame.
+        frame_times = np.array([0.0, 0.5, 1.0])
+        result = overlay.convert_to_data(frame_times, n_frames=3, env=env)
+
+        angle = result.data[1]
+        # Short way between +3.0 and -3.0 passes through +/-pi, not 0.
+        assert np.abs(angle) == pytest.approx(np.pi, abs=0.2)
+        assert np.abs(angle) > 2.5  # definitely not near 0
+
+    def test_head_direction_interp_nowrap_unchanged(self, env: Environment) -> None:
+        """No-wrap interpolation matches plain linear interpolation."""
+        overlay = HeadDirectionOverlay(
+            headings=np.array([0.1, 0.2]),
+            times=np.array([0.0, 1.0]),
+        )
+        frame_times = np.array([0.0, 0.5, 1.0])
+        result = overlay.convert_to_data(frame_times, n_frames=3, env=env)
+
+        assert result.data[1] == pytest.approx(0.15, abs=1e-6)
+
+    def test_head_direction_interp_nan_gap_preserved(self, env: Environment) -> None:
+        """Frames outside the source time range stay NaN (extrapolation gap)."""
+        overlay = HeadDirectionOverlay(
+            headings=np.array([0.1, 0.2]),
+            times=np.array([0.0, 1.0]),
+        )
+        # The last frame (2.0) extrapolates beyond [0, 1]; it must yield NaN
+        # while the in-range frames stay finite.
+        frame_times = np.array([0.0, 0.5, 2.0])
+        result = overlay.convert_to_data(frame_times, n_frames=3, env=env)
+
+        assert np.isfinite(result.data[1])
+        assert np.isnan(result.data[2])
+
+    def test_head_direction_vector_form_unchanged(self, env: Environment) -> None:
+        """(n, 2) unit-vector headings interpolate component-wise as before."""
+        # Vectors pointing along +x then +y; midpoint should be (0.5, 0.5).
+        overlay = HeadDirectionOverlay(
+            headings=np.array([[1.0, 0.0], [0.0, 1.0]]),
+            times=np.array([0.0, 1.0]),
+        )
+        frame_times = np.array([0.0, 0.5, 1.0])
+        result = overlay.convert_to_data(frame_times, n_frames=3, env=env)
+
+        assert result.data.shape == (3, 2)
+        assert result.data[1, 0] == pytest.approx(0.5, abs=1e-6)
+        assert result.data[1, 1] == pytest.approx(0.5, abs=1e-6)
 
 
 class TestVideoOverlay:
@@ -732,7 +801,7 @@ class TestMultiAnimalSupport:
 
 
 # =============================================================================
-# Validation Functions Tests (Milestone 1.4)
+# Validation Functions Tests
 # =============================================================================
 
 
@@ -1080,6 +1149,50 @@ class TestValidateBounds:
         user_warnings = [w for w in warn_list if issubclass(w.category, UserWarning)]
         assert len(user_warnings) == 0
 
+    def test_validate_bounds_data_range_ignores_nan(self):
+        """Data-range diagnostic ignores NaN gaps (no 'nan' in message)."""
+        # Mix finite out-of-bounds points with NaN rows from temporal gaps.
+        data = np.array(
+            [
+                [15.0, 16.0],
+                [np.nan, np.nan],
+                [20.0, 25.0],
+                [np.nan, np.nan],
+            ]
+        )
+        dim_ranges = [(0.0, 10.0), (0.0, 10.0)]
+
+        with pytest.warns(UserWarning) as warn_info:
+            _validate_bounds(data, dim_ranges, name="test_data", threshold=0.1)
+
+        warning_msg = str(warn_info[0].message)
+        assert "nan" not in warning_msg.lower()
+        # Finite data range numbers should appear.
+        assert "15" in warning_msg or "20" in warning_msg or "25" in warning_msg
+
+    def test_validate_bounds_all_nan_column_no_crash(self):
+        """An entirely-NaN column does not raise and emits no RuntimeWarning."""
+        import warnings
+
+        # Second column is all NaN; first column trips the threshold.
+        data = np.array(
+            [
+                [15.0, np.nan],
+                [20.0, np.nan],
+                [25.0, np.nan],
+            ]
+        )
+        dim_ranges = [(0.0, 10.0), (0.0, 10.0)]
+
+        with warnings.catch_warnings(record=True) as warn_list:
+            warnings.simplefilter("always")
+            _validate_bounds(data, dim_ranges, name="test_data", threshold=0.1)
+
+        runtime_warnings = [
+            w for w in warn_list if issubclass(w.category, RuntimeWarning)
+        ]
+        assert len(runtime_warnings) == 0
+
 
 class TestValidateSkeletonConsistency:
     """Test _validate_skeleton_consistency() function."""
@@ -1204,7 +1317,7 @@ class TestValidatePickleAbility:
 
 
 # =============================================================================
-# Conversion Funnel Tests (Milestone 1.5)
+# Conversion Funnel Tests
 # =============================================================================
 
 

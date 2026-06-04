@@ -371,15 +371,11 @@ def _map_nearest_neighbor(
     """
     target_probs = np.zeros(n_tgt, dtype=float)
 
-    try:
-        _, idxs = tree.query(src_centers, k=1)
-    except Exception as e:
-        warnings.warn(
-            f"KDTree.query (nearest) failed: {e}. Returning zeros.",
-            category=RuntimeWarning,
-            stacklevel=2,
-        )
-        return target_probs
+    # cKDTree.query does not raise on "no neighbor" (it returns inf distance /
+    # out-of-range index). A raised exception here means genuinely bad input
+    # (e.g. non-finite coordinates) and must propagate rather than degrade to a
+    # silent all-zero map.
+    _, idxs = tree.query(src_centers, k=1)
 
     np.add.at(target_probs, idxs, source_probs)
     return target_probs
@@ -421,15 +417,9 @@ def _map_inverse_distance_weighted(
     # Clamp n_neighbors if larger than number of target bins
     k_eff = min(n_neighbors, n_tgt)
 
-    try:
-        dists, idxs = tree.query(src_centers, k=k_eff)
-    except Exception as e:
-        warnings.warn(
-            f"KDTree.query (inverse-distance-weighted) failed: {e}. Returning zeros.",
-            category=RuntimeWarning,
-            stacklevel=2,
-        )
-        return target_probs
+    # See _map_nearest_neighbor: a raised exception is bad input, not a benign
+    # "no neighbor" — let it propagate.
+    dists, idxs = tree.query(src_centers, k=k_eff)
 
     # If k_eff == 1, we may get 1D arrays; force them to 2D
     if k_eff == 1:
@@ -574,16 +564,10 @@ def map_probabilities(
         source_translation_vector,
     )
 
-    # Build KDTree on target bin centers
-    try:
-        tree = cKDTree(target_env.bin_centers, leafsize=KDTREE_LEAF_SIZE)
-    except Exception as e:
-        warnings.warn(
-            f"KDTree construction on target_env failed: {e}. Returning zeros.",
-            RuntimeWarning,
-            stacklevel=2,
-        )
-        return np.zeros(n_tgt, dtype=float)
+    # Build KDTree on target bin centers. A construction error here means the
+    # target env has malformed (e.g. non-finite or wrong-dimension) bin centers;
+    # surface it instead of returning a misleading all-zero map.
+    tree = cKDTree(target_env.bin_centers, leafsize=KDTREE_LEAF_SIZE)
 
     # Perform the requested mapping
     if mode == "nearest":

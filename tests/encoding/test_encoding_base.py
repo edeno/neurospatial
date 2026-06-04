@@ -634,3 +634,24 @@ class TestComputeRateRequiresFittedEnv:
         encoding_models = np.zeros((1, 1), dtype=np.float64)
         with pytest.raises(EnvironmentNotFittedError):
             decode_position(env, spike_counts, encoding_models, dt=0.01)
+
+
+class TestSummaryEmptyResult:
+    """Spatial ResultMixin.summary() on an empty batch result."""
+
+    def test_empty_batch_summary_does_not_crash(self) -> None:
+        """summary() on a 0-neuron batch returns a dict instead of raising.
+
+        Regression test: an empty batch (0 neurons) has no firing-rate values,
+        so the np.nanmax peak reduction over a zero-size array previously
+        raised "zero-size array to reduction operation fmax".
+        """
+        from neurospatial.encoding.directional import compute_directional_rates
+
+        result = compute_directional_rates([], np.arange(3.0), np.zeros(3))
+        s = result.summary()
+
+        assert isinstance(s, dict)
+        assert s["n_neurons"] == 0
+        # Peak over no neurons is undefined -> NaN, not a crash.
+        assert np.isnan(s["peak_firing_rate"])

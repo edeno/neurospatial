@@ -60,7 +60,9 @@ def log_poisson_likelihood(
     Parameters
     ----------
     spike_counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
-        Spike counts per neuron per time bin.
+        Spike counts per neuron per time bin. Must be 2-D. A 1-D array of
+        shape ``(n_neurons,)`` is rejected (it would silently collapse the
+        time axis); for a single time bin pass ``spike_counts[np.newaxis, :]``.
     encoding_models : NDArray[np.float64], shape (n_neurons, n_bins)
         Firing rate maps (place fields) in Hz. Typical values: 0-50 Hz.
         Values are clipped to [min_rate, inf) internally.
@@ -74,6 +76,15 @@ def log_poisson_likelihood(
     -------
     log_likelihood : NDArray[np.float64], shape (n_time_bins, n_bins)
         Log-likelihood up to an additive constant per time bin.
+
+    Raises
+    ------
+    ValueError
+        If ``dt`` or ``min_rate`` is not positive.
+        If ``spike_counts`` is not 2-D ``(n_time_bins, n_neurons)`` or
+        ``encoding_models`` is not 2-D ``(n_neurons, n_bins)``.
+        If the neuron axis of ``spike_counts`` (axis 1) does not match the
+        neuron axis of ``encoding_models`` (axis 0).
 
     Notes
     -----
@@ -119,6 +130,30 @@ def log_poisson_likelihood(
     # Ensure inputs are proper arrays
     spike_counts = np.asarray(spike_counts)
     encoding_models = np.asarray(encoding_models)
+
+    # spike_counts must be 2-D (n_time_bins, n_neurons). A 1-D array of
+    # shape (n_neurons,) would matmul against the (n_neurons, n_bins)
+    # encoding models to give (n_bins,), silently collapsing the time
+    # axis and yielding a "likelihood" that downstream code mistakes for
+    # a single time bin. Require an explicit time axis instead.
+    if spike_counts.ndim != 2:
+        raise ValueError(
+            f"spike_counts must be 2-D with shape (n_time_bins, n_neurons), "
+            f"got ndim={spike_counts.ndim} with shape {spike_counts.shape}. "
+            f"For a single time bin pass shape (1, n_neurons), e.g. "
+            f"`spike_counts[np.newaxis, :]`."
+        )
+    if encoding_models.ndim != 2:
+        raise ValueError(
+            f"encoding_models must be 2-D with shape (n_neurons, n_bins), "
+            f"got ndim={encoding_models.ndim} with shape {encoding_models.shape}."
+        )
+    if spike_counts.shape[1] != encoding_models.shape[0]:
+        raise ValueError(
+            f"Neuron-count mismatch: spike_counts has {spike_counts.shape[1]} "
+            f"neurons (axis 1) but encoding_models has {encoding_models.shape[0]} "
+            f"neurons (axis 0). These must agree for the Poisson likelihood."
+        )
 
     # Clip rates to avoid log(0)
     # Shape: (n_neurons, n_bins)
@@ -206,7 +241,9 @@ def poisson_likelihood(
     Parameters
     ----------
     spike_counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
-        Spike counts per neuron per time bin.
+        Spike counts per neuron per time bin. Must be 2-D. A 1-D array of
+        shape ``(n_neurons,)`` is rejected (it would silently collapse the
+        time axis); for a single time bin pass ``spike_counts[np.newaxis, :]``.
     encoding_models : NDArray[np.float64], shape (n_neurons, n_bins)
         Firing rate maps (place fields) in Hz.
     dt : float
@@ -219,6 +256,14 @@ def poisson_likelihood(
     likelihood : NDArray[np.float64], shape (n_time_bins, n_bins)
         Likelihood ratios (normalized per time bin to prevent underflow).
         Maximum value per row is 1.0.
+
+    Raises
+    ------
+    ValueError
+        Propagated from :func:`log_poisson_likelihood`: if ``dt`` or
+        ``min_rate`` is not positive, if ``spike_counts`` is not 2-D
+        ``(n_time_bins, n_neurons)``, if ``encoding_models`` is not 2-D, or
+        if their neuron axes disagree.
 
     Notes
     -----

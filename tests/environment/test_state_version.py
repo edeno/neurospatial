@@ -1,4 +1,4 @@
-"""Tests for Environment._state_version and versioned_cached_property (M5.1)."""
+"""Tests for Environment._state_version and versioned_cached_property."""
 
 from __future__ import annotations
 

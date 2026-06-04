@@ -464,7 +464,7 @@ ax.set_title('Reward Field')
 plt.show()
 
 # 2. Check reward gradients point toward goal
-# (Use gradient operators from neurospatial.differential when available)
+# (Use gradient operators from neurospatial.ops.calculus when available)
 
 # 3. Train with and without shaping
 policy_sparse = train_agent(env, reward_sparse)

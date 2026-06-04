@@ -10,6 +10,7 @@ import pytest
 
 # Test imports from the new location
 from neurospatial.ops.alignment import (
+    IDW_MIN_DISTANCE,
     ProbabilityMappingParams,
     apply_similarity_transform,
     get_2d_rotation_matrix,
@@ -205,6 +206,35 @@ class TestMapProbabilities:
         tgt_probs = map_probabilities(src_env, tgt_env, src_probs, source_scale=2.0)
         np.testing.assert_allclose(tgt_probs, [0.6, 0.4])
 
+    def test_map_probabilities_nan_centers_raises(self):
+        """A target env with NaN bin centers raises instead of returning zeros.
+
+        Previously a cKDTree construction failure on malformed centers was
+        swallowed into an all-zero probability map; a genuine error must now
+        propagate.
+        """
+        src_bins = np.array([[0.0, 0.0], [1.0, 0.0]])
+        tgt_bins = np.array([[0.0, 0.0], [np.nan, 0.0]])
+        src_probs = np.array([0.6, 0.4])
+        src_env = MockEnvironment(src_bins, 2)
+        tgt_env = MockEnvironment(tgt_bins, 2)
+
+        with pytest.raises(ValueError):
+            map_probabilities(src_env, tgt_env, src_probs)
+
+    def test_map_probabilities_empty_env_still_returns_zeros(self):
+        """The legitimate empty-target path still returns zeros with a warning."""
+        src_bins = np.array([[0.0, 0.0]])
+        tgt_bins = np.empty((0, 2))
+        src_probs = np.array([1.0])
+        src_env = MockEnvironment(src_bins, 2)
+        tgt_env = MockEnvironment(tgt_bins, 2)
+
+        with pytest.warns(UserWarning, match="zero bins"):
+            tgt_probs = map_probabilities(src_env, tgt_env, src_probs)
+
+        assert tgt_probs.size == 0
+
 
 class TestProbabilityMappingParams:
     """Tests for ProbabilityMappingParams dataclass."""
@@ -229,3 +259,69 @@ class TestProbabilityMappingParams:
         tgt_env = MockEnvironment(tgt_bins, 2)
         with pytest.raises(ValueError, match="Unrecognized mode"):
             ProbabilityMappingParams(src_env, tgt_env, src_probs, mode="invalid")
+
+
+class TestMapProbabilitiesInverseDistanceWeighted:
+    """Positive-behavior matrix for the IDW mapping mode."""
+
+    def test_two_neighbor_split_is_hand_computed(self):
+        # Source mass entirely at (0,0). Targets at distances 1 and 3.
+        src = MockEnvironment(np.array([[0.0, 0.0]]), n_dims=2)
+        tgt = MockEnvironment(np.array([[1.0, 0.0], [3.0, 0.0]]), n_dims=2)
+        out = map_probabilities(
+            src,
+            tgt,
+            np.array([1.0]),
+            mode="inverse-distance-weighted",
+            n_neighbors=2,
+        )
+        eps = IDW_MIN_DISTANCE
+        w = np.array([1.0 / (1.0 + eps), 1.0 / (3.0 + eps)])
+        expected = w / w.sum()  # ~[0.75, 0.25]
+        np.testing.assert_allclose(out, expected, atol=1e-9)
+
+    def test_mass_is_conserved(self):
+        src = MockEnvironment(
+            np.array([[0.0, 0.0], [10.0, 0.0], [0.0, 10.0]]), n_dims=2
+        )
+        tgt = MockEnvironment(
+            np.array([[1.0, 1.0], [9.0, 1.0], [1.0, 9.0], [5.0, 5.0]]), n_dims=2
+        )
+        src_probs = np.array([0.5, 0.3, 0.2])
+        out = map_probabilities(
+            src,
+            tgt,
+            src_probs,
+            mode="inverse-distance-weighted",
+            n_neighbors=3,
+        )
+        # IDW weights per source row are normalized, so total mass is preserved.
+        assert out.sum() == pytest.approx(src_probs.sum())
+        assert out.shape == (tgt.n_bins,)
+
+    def test_n_neighbors_clamped_to_target_count(self):
+        # Requesting more neighbors than target bins must clamp to n_tgt,
+        # giving the same result as requesting exactly n_tgt.
+        src = MockEnvironment(np.array([[0.0, 0.0]]), n_dims=2)
+        tgt = MockEnvironment(np.array([[1.0, 0.0], [3.0, 0.0]]), n_dims=2)
+        sp = np.array([1.0])
+        clamped = map_probabilities(
+            src, tgt, sp, mode="inverse-distance-weighted", n_neighbors=5
+        )
+        exact = map_probabilities(
+            src, tgt, sp, mode="inverse-distance-weighted", n_neighbors=2
+        )
+        np.testing.assert_allclose(clamped, exact, atol=1e-12)
+
+    def test_k_eff_one_is_nearest_only(self):
+        # k_eff == 1: all mass goes to the single nearest target (no split).
+        src = MockEnvironment(np.array([[0.0, 0.0]]), n_dims=2)
+        tgt = MockEnvironment(np.array([[1.0, 0.0], [3.0, 0.0]]), n_dims=2)
+        out = map_probabilities(
+            src,
+            tgt,
+            np.array([1.0]),
+            mode="inverse-distance-weighted",
+            n_neighbors=1,
+        )
+        np.testing.assert_allclose(out, [1.0, 0.0], atol=1e-12)

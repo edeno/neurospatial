@@ -192,3 +192,11 @@ docs/research/
 data/*
 !data/README.md
 !data/load_bandit_data.py
+
+# Parallel-agent worktrees (review remediation)
+.worktrees/
+
+# Generated artifacts from docstring/example round-trips
+my_environment.json
+my_environment.npz
+session.nwb

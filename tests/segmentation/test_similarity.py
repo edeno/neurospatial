@@ -299,7 +299,7 @@ class TestDetectGoalDirectedRuns:
         times = np.array([0.0, 1.0, 2.0])
 
         # Missing goal region
-        with pytest.raises(KeyError, match=r"Region.*not found"):
+        with pytest.raises(ValueError, match=r"Region.*not found"):
             detect_goal_directed_runs(
                 position_bins,
                 times,

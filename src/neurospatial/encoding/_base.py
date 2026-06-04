@@ -20,7 +20,11 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial._results import ResultMixin
+
 if TYPE_CHECKING:
+    import pandas as pd
+
     from neurospatial import Environment
 
 
@@ -155,8 +159,14 @@ class HasEnvironment(Protocol):
     env: Environment
 
 
-class SpatialResultMixin:
+class SpatialResultMixin(ResultMixin):
     """Mixin providing common spatial result methods.
+
+    Extends :class:`neurospatial._results.ResultMixin`, so every spatial result
+    class also carries the uniform ``to_dataframe()`` / ``summary()`` / ``plot()``
+    surface. This mixin supplies sensible spatial defaults for ``summary()`` and
+    a tidy-form ``to_dataframe()`` on top of the peak helpers; ``plot()`` is left
+    to each concrete result (and is optional).
 
     Requires subclass to have:
     - `self.firing_rate` (1D array) OR `self.firing_rates` (2D array)
@@ -256,3 +266,123 @@ class SpatialResultMixin:
             return float(np.nanmax(rates))
         result: NDArray[np.float64] = np.nanmax(rates, axis=1)
         return result
+
+    def summary(self) -> dict[str, Any]:
+        """Scalar headline metrics for this spatial result.
+
+        Provides a uniform, specialization of
+        :meth:`neurospatial._results.ResultMixin.summary` for spatial results.
+        Reports the number of bins, peak firing rate, and total occupancy.
+        For batch results (with ``firing_rates``), the peak is the maximum
+        across all neurons and ``n_neurons`` is included.
+
+        Returns
+        -------
+        dict
+            Mapping with keys ``n_bins`` (int), ``peak_firing_rate`` (float,
+            Hz), and ``total_occupancy`` (float, seconds). Batch results also
+            include ``n_neurons`` (int).
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rate
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 50, (500, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> times = np.linspace(0, 50, 500)
+        >>> spike_times = np.sort(rng.uniform(0, 50, 30))
+        >>> result = compute_spatial_rate(
+        ...     env, spike_times, times, positions, bandwidth=10.0
+        ... )
+        >>> s = result.summary()
+        >>> sorted(s)
+        ['n_bins', 'peak_firing_rate', 'total_occupancy']
+        """
+        rates = _to_numpy(self._get_rates())
+        occupancy = _to_numpy(self.occupancy)  # type: ignore[attr-defined]
+
+        # An empty result (0 neurons in a batch, or 0 bins) has no firing-rate
+        # values to reduce over. np.nanmax over a zero-size axis raises
+        # "zero-size array to reduction operation fmax which has no identity",
+        # so report a NaN peak instead of crashing.
+        if rates.size == 0:
+            peak_value = float("nan")
+        else:
+            peak_value = float(np.nanmax(np.asarray(self.peak_firing_rate())))
+
+        out: dict[str, Any] = {
+            "n_bins": int(rates.shape[-1]),
+            "peak_firing_rate": peak_value,
+            "total_occupancy": float(np.nansum(occupancy)),
+        }
+        if rates.ndim > 1:
+            out["n_neurons"] = int(rates.shape[0])
+        return out
+
+    def to_dataframe(self) -> pd.DataFrame:
+        """Tidy/long-form table of per-bin firing rate and occupancy.
+
+        Specializes :meth:`neurospatial._results.ResultMixin.to_dataframe` for
+        spatial results in **tidy/long form**: one row per (neuron, bin) with a
+        ``firing_rate`` value column, so results from different analyses
+        concatenate without error via ``pandas.concat`` into a union schema
+        (columns absent from a given result are filled with ``NaN``).
+
+        For single-neuron results (``firing_rate``), ``neuron`` is ``0`` for
+        every row. For batch results (``firing_rates``), ``neuron`` ranges over
+        the neuron index. Bin-center coordinates are emitted as ``coord_0``,
+        ``coord_1``, ... columns.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Long-form table with columns ``neuron`` (int), ``bin`` (int),
+            ``coord_0`` ... (float), ``firing_rate`` (float, Hz), and
+            ``occupancy`` (float, seconds).
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rate
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 50, (500, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> times = np.linspace(0, 50, 500)
+        >>> spike_times = np.sort(rng.uniform(0, 50, 30))
+        >>> result = compute_spatial_rate(
+        ...     env, spike_times, times, positions, bandwidth=10.0
+        ... )
+        >>> df = result.to_dataframe()
+        >>> {"neuron", "bin", "firing_rate"} <= set(df.columns)
+        True
+        """
+        import pandas as pd
+
+        rates = _to_numpy(self._get_rates())
+        occupancy = _to_numpy(self.occupancy)  # type: ignore[attr-defined]
+        bin_centers = np.asarray(self._bin_centers)
+        if bin_centers.ndim == 1:
+            bin_centers = bin_centers[:, None]
+
+        rates_2d = rates[None, :] if rates.ndim == 1 else rates
+        n_neurons, n_bins = rates_2d.shape
+
+        neuron_col = np.repeat(np.arange(n_neurons), n_bins)
+        bin_col = np.tile(np.arange(n_bins), n_neurons)
+
+        data: dict[str, Any] = {
+            "neuron": neuron_col,
+            "bin": bin_col,
+        }
+        n_dims = bin_centers.shape[1]
+        for d in range(n_dims):
+            data[f"coord_{d}"] = np.tile(bin_centers[:, d], n_neurons)
+        data["firing_rate"] = rates_2d.reshape(-1)
+        # Occupancy is shared across neurons for batch spatial results.
+        occ = np.asarray(occupancy).reshape(-1)
+        data["occupancy"] = np.tile(occ, n_neurons)
+
+        return pd.DataFrame(data)

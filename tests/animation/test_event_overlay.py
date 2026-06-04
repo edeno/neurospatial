@@ -2,8 +2,6 @@
 
 This module tests the EventOverlay dataclass, its validation logic,
 conversion to EventData, and integration with the animation pipeline.
-
-Tests are organized by milestone tasks from TASKS.md.
 """
 
 from __future__ import annotations
@@ -19,7 +17,7 @@ from numpy.testing import assert_array_equal
 HAS_NAPARI = importlib.util.find_spec("napari") is not None
 
 # =============================================================================
-# Milestone 1: Core Data Structures Tests
+# Core Data Structures Tests
 # =============================================================================
 
 
@@ -1047,7 +1045,7 @@ class TestConvertOverlaysToDataWithEvents:
 
 
 # =============================================================================
-# Milestone 2: Napari Backend Tests
+# Napari Backend Tests
 # =============================================================================
 
 
@@ -1719,7 +1717,7 @@ class TestNapariEventOverlayEdgeCases:
 
 
 # =============================================================================
-# Milestone 3: Video/Matplotlib Backend Tests
+# Video/Matplotlib Backend Tests
 # =============================================================================
 
 

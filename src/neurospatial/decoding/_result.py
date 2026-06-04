@@ -8,11 +8,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
+
+from neurospatial._results import ResultMixin
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -21,7 +23,7 @@ if TYPE_CHECKING:
 
 
 @dataclass
-class DecodingResult:
+class DecodingResult(ResultMixin):
     """Container for Bayesian decoding results.
 
     Stores the posterior distribution over positions for each time bin,
@@ -69,7 +71,7 @@ class DecodingResult:
     >>> print(f"MAP estimate shape: {result.map_estimate.shape}")
     MAP estimate shape: (100,)
     >>> print(
-    ...     f"Mean posterior_entropy: {result.posterior_entropy.mean():.2f} bits"
+    ...     f"Mean entropy: {result.posterior_entropy.mean():.2f} bits"
     ... )  # doctest: +SKIP
 
     Notes
@@ -117,6 +119,12 @@ class DecodingResult:
         -----
         Uses ``np.argmax(axis=1)`` which returns the first maximum
         in case of ties.
+
+        A row whose posterior is entirely non-finite (all-NaN / all-Inf)
+        is undecodable; ``np.argmax`` returns bin 0 for such a row, so the
+        MAP index there is not meaningful. Callers that care about decode
+        failures (e.g. :meth:`error_against`) detect all-non-finite rows
+        separately and treat them as undefined (NaN).
 
         See Also
         --------
@@ -172,7 +180,7 @@ class DecodingResult:
     def posterior_entropy(self) -> NDArray[np.float64]:
         """Posterior entropy in bits.
 
-        Measures the posterior_entropy in the position estimate. Higher values
+        Measures the entropy in the position estimate. Higher values
         indicate more spread-out (uncertain) posteriors.
 
         Returns
@@ -197,7 +205,7 @@ class DecodingResult:
 
         See Also
         --------
-        map_estimate : Point estimate with zero posterior_entropy consideration
+        map_estimate : Point estimate with zero entropy consideration
         """
         p = np.clip(self.posterior, 0.0, 1.0)
         # Vectorized mask-based entropy: avoid log(0) by using np.where
@@ -354,11 +362,42 @@ class DecodingResult:
 
         return ax
 
+    def summary(self) -> dict[str, Any]:
+        """Scalar headline metrics for the decoded posterior.
+
+        Returns
+        -------
+        dict
+            Mapping with keys ``n_time_bins`` (int), ``n_bins`` (int, spatial
+            bins), ``mean_entropy`` (float, bits), and ``max_entropy`` (float,
+            bits) -- the latter being ``log2(n_bins)``, the entropy of a
+            uniform posterior.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.decoding import DecodingResult
+        >>> positions = np.random.default_rng(0).uniform(0, 50, (200, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> posterior = np.ones((10, env.n_bins)) / env.n_bins
+        >>> result = DecodingResult(posterior=posterior, env=env)
+        >>> sorted(result.summary())
+        ['max_entropy', 'mean_entropy', 'n_bins', 'n_time_bins']
+        """
+        n_bins = int(self.posterior.shape[1])
+        return {
+            "n_time_bins": self.n_time_bins,
+            "n_bins": n_bins,
+            "mean_entropy": float(np.mean(self.posterior_entropy)),
+            "max_entropy": float(np.log2(n_bins)) if n_bins > 0 else 0.0,
+        }
+
     def to_dataframe(self) -> pd.DataFrame:
         """Convert to pandas DataFrame with times and position estimates.
 
         Creates a DataFrame with one row per time bin, containing the
-        decoded position estimates and posterior_entropy measures.
+        decoded position estimates and entropy measures.
 
         Returns
         -------
@@ -419,3 +458,232 @@ class DecodingResult:
         data["posterior_entropy"] = self.posterior_entropy
 
         return pd.DataFrame(data)
+
+    def to_xarray(self) -> Any:
+        """Convert the posterior to an :class:`xarray.DataArray`.
+
+        Wraps the ``(n_time_bins, n_bins)`` posterior in a labeled
+        :class:`xarray.DataArray` with dims ``("time", "bin")``. The ``time``
+        coordinate is taken from :attr:`times` when available; the ``bin``
+        coordinate is the integer bin index ``np.arange(n_bins)``.
+
+        Returns
+        -------
+        xarray.DataArray
+            Posterior with dims ``("time", "bin")``. The array ``.values``
+            equal :attr:`posterior`. ``coords["time"]`` is :attr:`times`
+            (or the integer index fallback, see Notes) and ``coords["bin"]``
+            is the integer bin index.
+
+        Raises
+        ------
+        ImportError
+            If ``xarray`` is not installed. xarray is an optional dependency;
+            install it with ``pip install neurospatial[xarray]`` or
+            ``pip install xarray``.
+
+        Notes
+        -----
+        ``xarray`` is imported lazily inside this method, so it never becomes
+        an import-time dependency of ``neurospatial``.
+
+        **Fallback when ``times`` is ``None``.** :attr:`times` defaults to
+        ``None`` (the decode produces no timestamps unless the caller supplies
+        them). In that case the ``time`` coordinate is the positional integer
+        index ``np.arange(n_time_bins)`` rather than ``None`` (passing ``None``
+        as a coordinate would raise). The ``time`` coordinate is therefore a
+        bin index, not seconds, whenever :attr:`times` is unset.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.decoding import DecodingResult
+        >>> positions = np.random.default_rng(0).uniform(0, 50, (200, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> posterior = np.ones((10, env.n_bins)) / env.n_bins
+        >>> times = np.linspace(0.0, 1.0, 10)
+        >>> result = DecodingResult(posterior=posterior, env=env, times=times)
+        >>> da = result.to_xarray()  # doctest: +SKIP
+        >>> da.dims  # doctest: +SKIP
+        ('time', 'bin')
+
+        See Also
+        --------
+        to_dataframe : Export point estimates and entropy to a DataFrame.
+        """
+        try:
+            import xarray as xr
+        except ImportError as exc:
+            raise ImportError(
+                "to_xarray() requires the optional 'xarray' dependency, which "
+                "is not installed. Install it with "
+                "'pip install neurospatial[xarray]' or 'pip install xarray'."
+            ) from exc
+
+        n_time = self.posterior.shape[0]
+        n_bins = self.posterior.shape[1]
+
+        # times defaults to None; fall back to a positional integer index
+        # rather than passing None into the coord (which would raise).
+        if self.times is not None:
+            time_coord: NDArray[Any] = np.asarray(self.times)
+        else:
+            time_coord = np.arange(n_time)
+
+        bin_coord = np.arange(n_bins)
+
+        return xr.DataArray(
+            self.posterior,
+            dims=("time", "bin"),
+            coords={"time": time_coord, "bin": bin_coord},
+            name="posterior",
+        )
+
+    def error_against(
+        self,
+        true_times: NDArray[np.float64],
+        true_positions: NDArray[np.float64],
+        *,
+        metric: Literal["euclidean", "geodesic"] = "euclidean",
+    ) -> NDArray[np.float64]:
+        """Per-time-bin decode error against externally sampled ground truth.
+
+        Aligns this decode's time grid to a separately sampled ground-truth
+        position track and returns the position error at each decode time bin.
+        This removes the hand-rolled ``searchsorted`` alignment that callers
+        otherwise write between decode times and behavioral position samples.
+
+        Parameters
+        ----------
+        true_times : NDArray[np.float64], shape (n_true,)
+            Timestamps (seconds) of the ground-truth positions. Must be sorted
+            ascending.
+        true_positions : NDArray[np.float64], shape (n_true, n_dims)
+            Ground-truth positions sampled at ``true_times``. ``n_dims`` must
+            match the environment dimensionality.
+        metric : {"euclidean", "geodesic"}, default="euclidean"
+            Distance metric passed through to
+            :func:`neurospatial.decoding.metrics.decoding_error`. ``"geodesic"``
+            uses this result's :attr:`env` for graph distances.
+
+        Returns
+        -------
+        errors : NDArray[np.float64], shape (n_time_bins,)
+            Distance between the decoded (MAP) position and the time-aligned
+            ground-truth position at each decode time bin. Units match the
+            environment (e.g. cm). Decode times whose posterior row is entirely
+            non-finite (all-NaN / all-Inf) are undecodable and reported as
+            ``nan`` rather than a spurious finite error from bin 0.
+
+        Raises
+        ------
+        ValueError
+            If :attr:`times` is ``None`` (decode times are required to align),
+            if ``true_times`` is not 1D, if ``true_times`` is not strictly
+            increasing (duplicates are rejected because :func:`numpy.interp`
+            resolves duplicate x-values arbitrarily), if ``true_positions``
+            does not have shape ``(len(true_times), n_dims)``, or if :attr:`times`,
+            ``true_times``, or ``true_positions`` contain any NaN or Inf value
+            (which would otherwise yield silent NaN errors through
+            :func:`numpy.interp`).
+
+        Notes
+        -----
+        Alignment uses linear interpolation of each ground-truth coordinate
+        onto the decode times via :func:`numpy.interp`. Decode times outside
+        the span of ``true_times`` are clamped to the nearest endpoint (the
+        ``numpy.interp`` default), so do not extrapolate beyond the tracked
+        interval. The decoded position is the MAP estimate
+        (:attr:`map_position`); the aligned ground truth is compared against it
+        with :func:`neurospatial.decoding.metrics.decoding_error`.
+
+        Linear interpolation of position assumes the ground-truth samples are
+        dense enough that no linearization-segment boundary / track junction
+        (or circular wrap) is crossed between consecutive ``true_times``;
+        otherwise an interpolated midpoint may not correspond to a real
+        position.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.decoding import DecodingResult
+        >>> positions = np.random.default_rng(0).uniform(0, 50, (200, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> posterior = np.ones((5, env.n_bins)) / env.n_bins
+        >>> decode_times = np.array([0.0, 0.25, 0.5, 0.75, 1.0])
+        >>> result = DecodingResult(posterior=posterior, env=env, times=decode_times)
+        >>> true_times = np.array([0.0, 1.0])
+        >>> true_positions = np.array([[0.0, 0.0], [10.0, 10.0]])
+        >>> errors = result.error_against(true_times, true_positions)
+        >>> errors.shape
+        (5,)
+
+        See Also
+        --------
+        neurospatial.decoding.metrics.decoding_error : Underlying error core.
+        map_position : Decoded MAP position compared against ground truth.
+        """
+        from neurospatial._validation import validate_finite
+        from neurospatial.decoding.metrics import decoding_error
+
+        if self.times is None:
+            raise ValueError(
+                "error_against() requires decode times, but this "
+                "DecodingResult has times=None. Provide `times` when "
+                "constructing the result so the decode grid can be aligned "
+                "to the ground-truth track."
+            )
+
+        # Reject non-finite values up front. A NaN/Inf in any of these arrays
+        # would otherwise propagate silently through np.interp and yield NaN
+        # errors that look like (but are not) decode failures.
+        validate_finite(self.times, name="times")
+        true_times = validate_finite(true_times, name="true_times")
+        true_positions = validate_finite(true_positions, name="true_positions")
+
+        if true_times.ndim != 1:
+            raise ValueError(f"true_times must be 1D, got shape {true_times.shape}")
+        if np.any(np.diff(true_times) <= 0):
+            raise ValueError(
+                "true_times must be strictly increasing (no duplicates); "
+                "error_against() aligns ground truth onto decode times with "
+                "linear interpolation, which silently produces wrong results "
+                "for unsorted or duplicated true_times (np.interp resolves "
+                "duplicate x-values arbitrarily). Deduplicate and sort "
+                "true_times (and reorder true_positions to match) before "
+                "calling."
+            )
+        n_dims = self.env.n_dims
+        if true_positions.shape != (true_times.shape[0], n_dims):
+            raise ValueError(
+                f"true_positions must have shape ({true_times.shape[0]}, "
+                f"{n_dims}) to match true_times and the environment "
+                f"dimensionality, got {true_positions.shape}"
+            )
+
+        # Align ground truth onto decode times by interpolating each
+        # coordinate independently. np.interp clamps out-of-range times to
+        # the nearest endpoint.
+        decode_times = np.asarray(self.times, dtype=np.float64)
+        aligned = np.empty((decode_times.shape[0], n_dims), dtype=np.float64)
+        for d in range(n_dims):
+            aligned[:, d] = np.interp(decode_times, true_times, true_positions[:, d])
+
+        errors = decoding_error(
+            self.map_position,
+            aligned,
+            env=self.env,
+            metric=metric,
+        )
+
+        # Undecodable rows: a posterior row that is entirely non-finite
+        # (all-NaN / all-Inf) carries no position information. np.argmax would
+        # otherwise pick bin 0 and produce a finite, wrong error. Mark these
+        # rows NaN so they are clearly flagged as decode failures.
+        undecodable = ~np.any(np.isfinite(self.posterior), axis=1)
+        if np.any(undecodable):
+            errors = np.asarray(errors, dtype=np.float64).copy()
+            errors[undecodable] = np.nan
+        return errors

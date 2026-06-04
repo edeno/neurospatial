@@ -255,24 +255,19 @@ class EnvironmentTransforms:
 
         # --- Build new connectivity graph ---
 
-        # Check if original had diagonal connections
-        # Sample: check degree of a center node (not on boundary)
-        center_node = grid_shape[0] // 2
-        if n_dims == 2:
-            center_flat_idx = center_node * grid_shape[1] + grid_shape[1] // 2
+        # Infer whether the original grid used diagonal connections by looking
+        # at the MAXIMUM node degree in the active connectivity graph. The
+        # graph is keyed by ACTIVE-bin ids (0..n_bins-1), so we must not index
+        # it with a full-grid flat index. Interior nodes have the full
+        # neighbour count; boundary/hole-adjacent nodes have fewer, so the max
+        # over all active nodes is the robust signal:
+        #   2D: 4-conn -> max degree 4, 8-conn -> max degree 8
+        #   3D: 6-conn -> max degree 6, 26-conn -> max degree 26
+        if self.connectivity.number_of_nodes() > 0:
+            max_degree = max((deg for _, deg in self.connectivity.degree()), default=0)
+            connect_diagonal = max_degree > 2 * n_dims
         else:
-            # For higher dims, just check if any node has more than 2*n_dims neighbors
-            center_flat_idx = 0
-
-        # Get degree
-        if center_flat_idx in self.connectivity:
-            degree = self.connectivity.degree(center_flat_idx)
-            # 2D: 4-conn has degree 4, 8-conn has degree 8
-            # 3D: 6-conn has degree 6, 26-conn has degree 26
-            # Heuristic: if degree > 2*n_dims, assume diagonal connections
-            connect_diagonal = degree > 2 * n_dims
-        else:
-            # Default to True (common case)
+            # Empty graph (degenerate): default to the common case.
             connect_diagonal = True
 
         # Create new layout
@@ -536,7 +531,7 @@ class EnvironmentTransforms:
 
         # --- Grid-env fast path: build via Environment.from_grid_mask ----------
         #
-        # Pre-M1 the subset path produced an inline `SubsetLayout` whose
+        # Previously the subset path produced an inline `SubsetLayout` whose
         # _layout_type_tag was the unregistered string "subset", which
         # broke `to_file` / `from_file` (silent persistence loss --
         # users could subset(), save, restart, and lose the env).
@@ -559,8 +554,7 @@ class EnvironmentTransforms:
         # to the inline `SubsetLayout` path below; that path is still
         # not serializable, but is preserved so existing graph-env
         # subset call sites don't silently corrupt the dimensionality.
-        # Graph subset will get its own registered layout type later
-        # (out of M1 scope).
+        # Graph subset will get its own registered layout type later.
         is_grid_env = (
             not self.is_linearized_track
             and self.active_mask is not None
@@ -600,7 +594,6 @@ class EnvironmentTransforms:
                 sub_env.units = self.units
             if self.frame is not None:
                 sub_env.frame = self.frame
-            sub_env.coordinate_kind = self.coordinate_kind
             return sub_env
 
         # --- Graph-env fallback: extract induced subgraph ---------------
@@ -665,7 +658,7 @@ class EnvironmentTransforms:
                 # graph (linearized) env stays 1-D in 2-D space rather
                 # than masquerading as a fully N-D layout.
                 self.is_linearized_track = is_linearized_track
-                # Lazy KDTree + nearest-neighbor-distance cache (M5.2). The
+                # Lazy KDTree + nearest-neighbor-distance cache. The
                 # KDTree was previously rebuilt on every point_to_bin_index
                 # call, which is O(n log n) per query and dominated cost
                 # for trajectory binning. A cached subset env now spends
@@ -719,7 +712,7 @@ class EnvironmentTransforms:
                 where the 2-D embedding of a 1-D track means
                 ``from_grid_mask`` would silently drop the embedding. A
                 registered serializable graph-subset layout is tracked
-                separately (out of M1 scope).
+                separately.
                 """
                 pts = np.atleast_2d(np.asarray(points, dtype=np.float64))
                 self._ensure_kdtree()
@@ -729,7 +722,7 @@ class EnvironmentTransforms:
                 # used by ops.binning.map_points_to_bins so subset envs
                 # behave like Cartesian envs do for clearly out-of-env
                 # samples. The threshold itself is precomputed once in
-                # _ensure_kdtree (M5.2). We deliberately keep it loose
+                # _ensure_kdtree. We deliberately keep it loose
                 # (10x) here because SubsetLayout has no notion of an
                 # active mask -- only a graph -- and tightening would
                 # spuriously reject points near sparse regions.
@@ -838,17 +831,13 @@ class EnvironmentTransforms:
 
         # --- Preserve Metadata ---
 
-        # Copy units, frame, and coordinate_kind if present. The
-        # coordinate_kind preservation matches the grid-fast-path above
-        # (line 595) so a polar 1-D linearized track (hypothetical for
-        # now; see TASKS.md M1 1.3) doesn't silently flip to Cartesian
-        # on subset.
+        # Copy units and frame if present. The subset preserves the concrete
+        # environment type (Environment or EgocentricPolarEnvironment) because
+        # ``env_cls`` above is ``self.__class__``.
         if hasattr(self, "units") and self.units is not None:
             sub_env.units = self.units
         if hasattr(self, "frame") and self.frame is not None:
             sub_env.frame = self.frame
-        if hasattr(self, "coordinate_kind"):
-            sub_env.coordinate_kind = self.coordinate_kind
 
         # Note: Regions are intentionally dropped (as documented)
 

@@ -447,7 +447,7 @@ class EnvironmentVisualization:
             )
 
         # Polar envs render via the same dispatch but with polar-aware
-        # axis labels and aspect ratio (M1 1.3): bin_centers[:, 0] is
+        # axis labels and aspect ratio: bin_centers[:, 0] is
         # distance (env units), bin_centers[:, 1] is angle in radians.
         # The label switch happens at the bottom of this method, after
         # dispatch.
@@ -541,7 +541,7 @@ class EnvironmentVisualization:
         # extent is independent and physical).
         if not self.layout.is_linearized_track:
             unit_label = f" ({self.units})" if self.units else ""
-            if self.is_polar:
+            if getattr(self, "_POLAR", False):
                 ax.set_xlabel(f"Distance{unit_label}", fontsize=12)
                 ax.set_ylabel("Angle (rad)", fontsize=12)
             else:
@@ -870,27 +870,31 @@ class EnvironmentVisualization:
 
         Pose tracking with skeleton:
 
-        >>> from neurospatial.animation import BodypartOverlay
+        >>> from neurospatial.animation import BodypartOverlay, Skeleton
         >>> pose_data = {
         ...     "nose": np.random.uniform(0, 100, (100, 2)),
         ...     "ear_left": np.random.uniform(0, 100, (100, 2)),
         ...     "ear_right": np.random.uniform(0, 100, (100, 2)),
         ...     "tail_base": np.random.uniform(0, 100, (100, 2)),
         ... }
-        >>> bodypart_overlay = BodypartOverlay(  # doctest: +SKIP
-        ...     data=pose_data,  # doctest: +SKIP
-        ...     skeleton=[  # doctest: +SKIP
+        >>> skeleton = Skeleton.from_edge_list(  # doctest: +SKIP
+        ...     [  # doctest: +SKIP
         ...         ("nose", "ear_left"),  # doctest: +SKIP
         ...         ("nose", "ear_right"),  # doctest: +SKIP
         ...         ("nose", "tail_base"),  # doctest: +SKIP
         ...     ],  # doctest: +SKIP
+        ...     name="rodent",  # doctest: +SKIP
+        ...     edge_color="white",  # doctest: +SKIP
+        ... )  # doctest: +SKIP
+        >>> bodypart_overlay = BodypartOverlay(  # doctest: +SKIP
+        ...     data=pose_data,  # doctest: +SKIP
+        ...     skeleton=skeleton,  # doctest: +SKIP
         ...     colors={  # doctest: +SKIP
         ...         "nose": "red",  # doctest: +SKIP
         ...         "ear_left": "blue",  # doctest: +SKIP
         ...         "ear_right": "blue",  # doctest: +SKIP
         ...         "tail_base": "green",  # doctest: +SKIP
         ...     },  # doctest: +SKIP
-        ...     skeleton_color="white",  # doctest: +SKIP
         ... )  # doctest: +SKIP
         >>> env.animate_fields(  # doctest: +SKIP
         ...     fields,  # doctest: +SKIP

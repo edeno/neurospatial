@@ -371,7 +371,7 @@ def detect_assemblies(
     algorithm: Literal["ica", "pca", "nmf"] = "ica",
     n_components: int | Literal["auto"] = "auto",
     z_threshold: float = 2.0,
-    random_state: int | None = None,
+    rng: int | np.random.Generator | None = None,
 ) -> AssemblyDetectionResult:
     """
     Detect cell assemblies from population spike counts.
@@ -408,8 +408,10 @@ def detect_assemblies(
         - 2.5: Conservative threshold
         - 1.5: Liberal threshold
 
-    random_state : int, optional
-        Random seed for reproducibility. Affects ICA and NMF initialization.
+    rng : int or np.random.Generator, optional
+        Random seed or generator for reproducibility. Affects ICA and NMF
+        initialization. Both ``int`` seeds and ``np.random.Generator``
+        instances are accepted.
 
     Returns
     -------
@@ -540,18 +542,39 @@ def detect_assemblies(
                 f"n_components ({n_comp}) cannot exceed n_neurons ({n_neurons})"
             )
 
+    # The factorization can yield at most min(n_neurons, n_time_bins)
+    # components. Requesting more (short recordings) would index past the
+    # SVD output and raise IndexError downstream; clamp with a warning.
+    max_rank = min(n_neurons, n_time_bins)
+    if n_comp > max_rank:
+        warnings.warn(
+            f"n_components ({n_comp}) exceeds the achievable rank "
+            f"min(n_neurons, n_time_bins) = {max_rank}; using {max_rank}.",
+            UserWarning,
+            stacklevel=2,
+        )
+        n_comp = max_rank
+
+    # Derive an integer seed for sklearn from the public ``rng`` argument.
+    # sklearn estimators accept an int seed (or RandomState), not a numpy
+    # Generator, so normalize a Generator to a reproducible integer seed.
+    if rng is None:
+        seed: int | None = None
+    elif isinstance(rng, np.random.Generator):
+        seed = int(rng.integers(0, 2**32 - 1))
+    else:
+        seed = int(rng)
+
     # Perform dimensionality reduction
     if algorithm == "pca":
         patterns, activations, explained_var = _detect_pca(spike_counts_z, n_comp)
     elif algorithm == "ica":
-        patterns, activations, explained_var = _detect_ica(
-            spike_counts_z, n_comp, random_state
-        )
+        patterns, activations, explained_var = _detect_ica(spike_counts_z, n_comp, seed)
     elif algorithm == "nmf":
         patterns, activations, explained_var = _detect_nmf(
             spike_counts,
             n_comp,
-            random_state,  # NMF uses original counts
+            seed,  # NMF uses original counts
         )
     else:
         raise ValueError(f"Unknown algorithm: {algorithm}. Use 'ica', 'pca', or 'nmf'.")
@@ -942,6 +965,12 @@ def reactivation_strength(
     structure preservation, use `explained_variance_reactivation` with
     pairwise correlations.
 
+    **Normalization**: Both periods are normalized against a *single*
+    baseline — the template period's per-neuron mean and standard
+    deviation — and projected directly onto the assembly pattern. Neither
+    period is z-scored independently, so absolute magnitude survives: a
+    match period with larger projected activity yields ``strength > 1``.
+
     **Interpretation**:
 
     - strength > 1: Assembly is more active during match period
@@ -957,15 +986,43 @@ def reactivation_strength(
     >>> if strength > 1.0:  # doctest: +SKIP
     ...     print("Stronger activation during sleep")  # doctest: +SKIP
     """
-    # Compute activations
-    act_template = assembly_activation(template_counts, pattern)
-    act_match = assembly_activation(match_counts, pattern)
+    # Compute activations WITHOUT any per-period standardization, so the
+    # absolute magnitude of each period's activity survives. The default
+    # assembly_activation path standardizes each period independently (an
+    # inner input z-score AND an outer z-score of the projection), which
+    # erases the very magnitude difference this metric is meant to detect
+    # (strength would sit at ~1 no matter how much stronger the match
+    # activity is). Instead normalize both periods against a *single*
+    # baseline (the template mean/std) and project directly onto the
+    # pattern, so a larger match-period projection produces strength > 1.
+    template_counts = np.asarray(template_counts, dtype=np.float64)
+    match_counts = np.asarray(match_counts, dtype=np.float64)
 
-    # Compare mean absolute activation magnitudes
+    n_template_neurons = template_counts.shape[0]
+    n_match_neurons = match_counts.shape[0]
+    n_weights = len(pattern.weights)
+    if n_template_neurons != n_weights or n_match_neurons != n_weights:
+        raise ValueError(
+            f"template_counts has {n_template_neurons} neurons and "
+            f"match_counts has {n_match_neurons} neurons but pattern has "
+            f"{n_weights} weights. All must match."
+        )
+
+    mean = template_counts.mean(axis=1, keepdims=True)
+    std = template_counts.std(axis=1, keepdims=True)
+    std = np.where(std > 1e-10, std, 1.0)
+
+    template_norm = (template_counts - mean) / std
+    match_norm = (match_counts - mean) / std
+
+    # Project onto the assembly pattern on the shared (template) scale.
+    act_template = pattern.weights @ template_norm
+    act_match = pattern.weights @ match_norm
+
+    # Compare mean absolute activation magnitudes on the shared scale.
     mean_template = np.mean(np.abs(act_template))
     mean_match = np.mean(np.abs(act_match))
 
-    # Ratio of activation strengths
     if mean_template > 1e-10:
         return float(mean_match / mean_template)
     else:
@@ -1009,23 +1066,36 @@ def explained_variance_reactivation(
     -----
     **Explained Variance (EV)**:
 
-    EV is the squared correlation between template and match correlations:
+    When a control is provided, EV is the squared *partial* correlation
+    between template and match correlations, controlling for the control
+    (pre-behavior) baseline:
 
     .. math::
 
-        EV = r(template, match)^2
+        EV = r_{partial}(template, match \\mid control)^2
 
-    This measures how much of the match period correlation structure
-    can be "explained" by the template period.
+    This measures how much of the match period correlation structure is
+    explained by the template period beyond what the control already
+    explains. When no control is provided, EV reduces to the plain
+    squared correlation :math:`r(template, match)^2`.
 
     **Reversed EV (REV)**:
 
-    REV is computed by reversing the roles of template and match.
-    For true reactivation, EV should exceed REV.
+    REV (Kudrimoti 1999) is the same partial-correlation-squared with the
+    roles of template and control **swapped** — the match's correlation
+    with the control, partialled for the template:
+
+    .. math::
+
+        REV = r_{partial}(control, match \\mid template)^2
+
+    For genuine reactivation, EV should exceed REV. Without a control
+    there is no asymmetry to break, so ``EV == REV`` by construction (the
+    control is what makes the EV/REV comparison meaningful).
 
     **Partial Correlation**:
 
-    When control correlations are provided, partial correlation is computed:
+    The partial correlation underlying EV is:
 
     .. math::
 
@@ -1087,32 +1157,48 @@ def explained_variance_reactivation(
             UserWarning,
             stacklevel=2,
         )
+        # With fewer than 3 valid pairs the correlation is undefined: np.corrcoef
+        # returns NaN, and coercing that to 0.0 would masquerade as a confident
+        # "no reactivation". Return NaN statistics so an undefined result reads
+        # as undefined.
+        return ExplainedVarianceResult(
+            explained_variance=np.nan,
+            reversed_ev=np.nan,
+            partial_correlation=np.nan,
+            n_pairs=len(template_valid),
+        )
 
-    # Compute correlation between template and match
-    r_tm = np.corrcoef(template_valid, match_valid)[0, 1]
-    r_tm = np.nan_to_num(r_tm, nan=0.0)
+    # Pairwise correlation between template and match correlation vectors.
+    r_tm = np.nan_to_num(np.corrcoef(template_valid, match_valid)[0, 1], nan=0.0)
 
-    # Explained variance
-    ev = r_tm**2
-
-    # Reversed EV (same as EV for correlation, but conceptually different)
-    rev = ev  # r(match, template)^2 = r(template, match)^2
-
-    # Partial correlation if control provided
     if control_correlations is not None:
         control_valid = control_correlations[valid_mask]
+        r_tc = np.nan_to_num(np.corrcoef(template_valid, control_valid)[0, 1], nan=0.0)
+        r_mc = np.nan_to_num(np.corrcoef(match_valid, control_valid)[0, 1], nan=0.0)
 
-        r_tc = np.corrcoef(template_valid, control_valid)[0, 1]
-        r_mc = np.corrcoef(match_valid, control_valid)[0, 1]
+        # EV: variance of match correlations explained by template, after
+        # partialling out the control (pre-behavior) baseline.
+        #   r_partial(template, match | control)
+        denom_ev = np.sqrt((1.0 - r_tc**2) * (1.0 - r_mc**2))
+        partial_corr = (r_tm - r_tc * r_mc) / denom_ev if denom_ev > 1e-10 else 0.0
+        ev = partial_corr**2
 
-        r_tc = np.nan_to_num(r_tc, nan=0.0)
-        r_mc = np.nan_to_num(r_mc, nan=0.0)
-
-        # Partial correlation formula
-        denom = np.sqrt((1 - r_tc**2) * (1 - r_mc**2))
-        partial_corr = (r_tm - r_tc * r_mc) / denom if denom > 1e-10 else 0.0
+        # REV (Kudrimoti 1999): swap the roles of template and control.
+        # The match's correlation with the control, partialled for the
+        # template, is the reverse-direction "explained variance". For
+        # genuine reactivation EV should exceed REV.
+        #   r_partial(control, match | template)
+        denom_rev = np.sqrt((1.0 - r_tc**2) * (1.0 - r_tm**2))
+        rev_partial = (r_mc - r_tc * r_tm) / denom_rev if denom_rev > 1e-10 else 0.0
+        rev = rev_partial**2
     else:
-        partial_corr = r_tm  # No control, use raw correlation
+        # No control: EV is the plain squared correlation. REV reduces to
+        # the same value because there is no asymmetry to break — the
+        # control is what makes EV != REV meaningful. This is intentional,
+        # not the old hardcoded `rev = ev` shortcut.
+        partial_corr = r_tm
+        ev = r_tm**2
+        rev = r_tm**2
 
     return ExplainedVarianceResult(
         explained_variance=float(ev),

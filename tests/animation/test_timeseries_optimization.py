@@ -1,4 +1,4 @@
-"""Tests for Phase 3.2: Reduce Matplotlib Draw Calls optimizations.
+"""Tests for the reduce-matplotlib-draw-calls optimizations.
 
 This module tests:
 1. Configurable throttle frequency during playback (10 Hz vs 20 Hz)

@@ -243,7 +243,9 @@ def events_to_intervals(
     ValueError
         If event counts don't match (when match_by is None),
         if match_by column is missing from either DataFrame,
-        or if there are unmatched values in the match_by column.
+        if there are unmatched values in the match_by column,
+        or if the match_by column contains duplicate values in either
+        DataFrame (one-to-one pairing is required).
 
     Warns
     -----
@@ -353,6 +355,30 @@ def events_to_intervals(
                 f"  Stop events with no matching start: {unmatched_stop}\n"
                 "  WHY: Each start event needs a matching stop event.\n"
                 "  HOW: Ensure all values in '{match_by}' column have both start and stop."
+            )
+
+        # Each match_by value must appear at most once on each side. Without
+        # this, DataFrame.merge(how="inner") forms a Cartesian product for any
+        # duplicated key, silently inflating the interval count (e.g. two
+        # starts and two stops sharing a key yield four intervals, not two).
+        start_dups = start_events[match_by][
+            start_events[match_by].duplicated(keep=False)
+        ].unique()
+        stop_dups = stop_events[match_by][
+            stop_events[match_by].duplicated(keep=False)
+        ].unique()
+        if len(start_dups) > 0 or len(stop_dups) > 0:
+            raise ValueError(
+                f"Duplicate values in '{match_by}' column prevent one-to-one "
+                f"start/stop pairing.\n"
+                f"  Duplicated in start_events: {sorted(start_dups.tolist())}\n"
+                f"  Duplicated in stop_events: {sorted(stop_dups.tolist())}\n"
+                "  WHY: Matching by a non-unique key would cross-join "
+                "(Cartesian product) every repeated value, producing more "
+                "intervals than real start/stop pairs.\n"
+                "  HOW: De-duplicate so each value of "
+                f"'{match_by}' appears once per side, or use match_by=None "
+                "for sequential pairing of equal-length start/stop events."
             )
 
         # Merge on match_by column

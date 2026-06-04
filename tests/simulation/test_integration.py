@@ -232,7 +232,7 @@ class TestPreConfiguredExamplesIntegration:
 
 
 class TestPlaceFieldDetectionAccuracy:
-    """Tests for place field detection accuracy as specified in SIMULATION_PLAN.md."""
+    """Tests for place field detection accuracy."""
 
     @pytest.mark.slow
     def test_place_field_detection_accuracy(self):

@@ -22,9 +22,9 @@ def shapes_to_regions(
     shapes_data: list[NDArray[np.float64]],
     names: list[str],
     region_types: list[RegionType],
+    *,
     calibration: VideoCalibration | None = None,
     simplify_tolerance: float | None = None,
-    *,
     multiple_boundaries: MultipleBoundaryStrategy = "last",
     validate: bool = True,
     min_area: float = 1e-6,
@@ -109,8 +109,15 @@ def shapes_to_regions(
             pts_world = pts_px
             coord_system = "pixels"
 
-        # Skip invalid polygons
+        # Skip degenerate polygons (need ≥3 vertices to form an area), but warn
+        # so the user knows a drawn shape was dropped rather than annotated.
         if len(pts_world) < 3:
+            warnings.warn(
+                f"Skipping shape '{name}': a polygon needs at least 3 vertices "
+                f"to define an area, but this shape has {len(pts_world)}.",
+                UserWarning,
+                stacklevel=2,
+            )
             continue
 
         poly = shp.Polygon(pts_world)

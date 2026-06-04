@@ -764,3 +764,108 @@ class TestReadHeadDirection:
         assert angles.shape == (100,)
         assert angles.ndim == 1
         assert timestamps.shape == (100,)
+
+
+class TestReadHeadDirectionUnitsAndVectors:
+    """Unit handling, (n, 2) vector form, convention, and length checks."""
+
+    def test_read_head_direction_degrees_to_radians(
+        self, sample_nwb_with_head_direction_degrees
+    ):
+        """A degree-unit series is converted to radians on read."""
+        from neurospatial.io.nwb import read_head_direction
+
+        angles, timestamps = read_head_direction(sample_nwb_with_head_direction_degrees)
+
+        np.testing.assert_allclose(angles, [0.0, np.pi / 2, np.pi], atol=1e-9)
+        assert angles.shape == timestamps.shape
+
+    def test_read_head_direction_vector_form(
+        self, sample_nwb_with_head_direction_vectors
+    ):
+        """An (n, 2) unit-vector series yields n angles via arctan2, not 2n."""
+        from neurospatial.io.nwb import read_head_direction
+
+        angles, timestamps = read_head_direction(sample_nwb_with_head_direction_vectors)
+
+        n_samples = 100
+        assert angles.shape == (n_samples,)
+        assert timestamps.shape == (n_samples,)
+
+        expected = np.linspace(0, 2 * np.pi, n_samples, endpoint=False)
+        # arctan2 returns (-pi, pi]; compare via complex phase to avoid wrap.
+        np.testing.assert_allclose(
+            np.exp(1j * angles), np.exp(1j * expected), atol=1e-9
+        )
+
+    def test_read_head_direction_radians_passthrough(
+        self, sample_nwb_with_head_direction
+    ):
+        """A radians 1-D series is returned unchanged (no regression)."""
+        from neurospatial.io.nwb import read_head_direction
+
+        angles, _ = read_head_direction(sample_nwb_with_head_direction)
+
+        original = sample_nwb_with_head_direction.processing["behavior"][
+            "CompassDirection"
+        ].spatial_series["head_direction"]
+        np.testing.assert_array_almost_equal(angles, original.data[:])
+
+    def test_read_head_direction_length_check(self, empty_nwb):
+        """A data/timestamps length mismatch raises ValueError."""
+        from pynwb.behavior import CompassDirection, SpatialSeries
+
+        from neurospatial.io.nwb import read_head_direction
+
+        behavior_module = empty_nwb.create_processing_module(
+            name="behavior", description="Behavior data"
+        )
+        compass = CompassDirection(name="CompassDirection")
+        series = SpatialSeries(
+            name="heading",
+            data=np.zeros(10),
+            timestamps=np.arange(10) / 30.0,
+            reference_frame="test",
+            unit="radians",
+        )
+        compass.add_spatial_series(series)
+        behavior_module.add(compass)
+
+        # pynwb validates data/timestamps agreement at construction time, so
+        # simulate a corrupt/externally-written series by shrinking data after
+        # the fact. The reader's own length guard must still catch this.
+        series.fields["data"] = np.zeros(8)
+
+        with pytest.raises(ValueError, match="Length mismatch"):
+            read_head_direction(empty_nwb)
+
+
+class TestReadPositionLengthCheck:
+    """read_position must reject mismatched data/timestamp lengths."""
+
+    def test_read_position_length_check(self, empty_nwb):
+        from pynwb.behavior import Position, SpatialSeries
+
+        from neurospatial.io.nwb import read_position
+
+        behavior_module = empty_nwb.create_processing_module(
+            name="behavior", description="Behavior data"
+        )
+        position = Position(name="Position")
+        series = SpatialSeries(
+            name="position",
+            data=np.zeros((10, 2)),
+            timestamps=np.arange(10) / 30.0,
+            reference_frame="test",
+            unit="cm",
+        )
+        position.add_spatial_series(series)
+        behavior_module.add(position)
+
+        # pynwb validates data/timestamps agreement at construction time, so
+        # simulate a corrupt/externally-written series by shrinking data after
+        # the fact. The reader's own length guard must still catch this.
+        series.fields["data"] = np.zeros((8, 2))
+
+        with pytest.raises(ValueError, match="Length mismatch"):
+            read_position(empty_nwb)

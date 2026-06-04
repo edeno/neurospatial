@@ -50,14 +50,15 @@ References
 
 from __future__ import annotations
 
+import weakref
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 if TYPE_CHECKING:
-    from neurospatial.environment import Environment
     from neurospatial.environment._protocols import EnvironmentProtocol
+    from neurospatial.environment.core import _BaseEnvironment
 
 __all__ = [
     "smooth_rate_map",
@@ -66,14 +67,22 @@ __all__ = [
 
 
 # Cache for the dense Gaussian-KDE kernel. Keyed by (id(env), bandwidth);
-# value is the (n_bins, n_bins) weight matrix and its bin-count for a
-# stale-entry sanity check (in case an Environment gets GC'd and another
-# reuses the same id before this dict is purged).
-_GAUSSIAN_KERNEL_CACHE: dict[tuple[int, float], tuple[NDArray[np.float64], int]] = {}
+# value is the (n_bins, n_bins) weight matrix, its bin-count, and a weakref
+# to the owning environment. The weakref is the real id-reuse guard: ``id()``
+# is only unique among *live* objects, so once an Environment is GC'd a freshly
+# built one can reuse its address. A different env reusing the id (or the same
+# id after GC) would otherwise return a stale kernel that does not match the new
+# env's geometry (e.g. a circular vs. open angular axis with identical n_bins).
+# Validating ``ref() is env`` on lookup turns any such reuse into a cache miss.
+_GAUSSIAN_KERNEL_CACHE: dict[
+    tuple[int, float], tuple[NDArray[np.float64], int, weakref.ref[Any]]
+] = {}
 _GAUSSIAN_KERNEL_CACHE_MAX = 32
 
 
-def _get_gaussian_kernel(env: Environment, bandwidth: float) -> NDArray[np.float64]:
+def _get_gaussian_kernel(
+    env: _BaseEnvironment, bandwidth: float
+) -> NDArray[np.float64]:
     """Return the dense Gaussian-KDE weight matrix for ``env`` at ``bandwidth``.
 
     The matrix is ``(n_bins, n_bins)`` and was previously rebuilt at every
@@ -86,27 +95,73 @@ def _get_gaussian_kernel(env: Environment, bandwidth: float) -> NDArray[np.float
     cached = _GAUSSIAN_KERNEL_CACHE.get(key)
     bin_centers = env.bin_centers
     n_bins = bin_centers.shape[0]
-    if cached is not None and cached[1] == n_bins:
+    # Require the cached weakref to still resolve to *this* exact env. A dead
+    # weakref (env GC'd) or one resolving to a different object (id reused by a
+    # new env) means the entry belongs to a now-gone environment -- treat as a
+    # miss and recompute rather than returning a geometrically wrong kernel.
+    if cached is not None and cached[1] == n_bins and cached[2]() is env:
         return cached[0]
 
     two_sigma_sq = 2.0 * bandwidth**2
-    bin_sq_norm = np.sum(bin_centers**2, axis=1, keepdims=True)
-    dist_sq = bin_sq_norm + bin_sq_norm.T - 2 * (bin_centers @ bin_centers.T)
+
+    if getattr(env, "_POLAR", False):
+        # Egocentric polar env: bin_centers[:, 0] is distance (length units),
+        # bin_centers[:, 1] is angle (radians). A naive Euclidean norm on
+        # these columns collapses cm and radians into one scalar. Instead use
+        # the physical polar distance between bin centers:
+        #     d² = Δr² + (r̄ · Δθ)²
+        # with r̄ the mean radius of the two bins. ``bandwidth`` is then a
+        # single physical length (e.g. cm), consistent with the corrected
+        # connectivity edge geometry.
+        r = bin_centers[:, 0]
+        theta = bin_centers[:, 1]
+        d_r = r[:, None] - r[None, :]
+        r_mean = 0.5 * (r[:, None] + r[None, :])
+        d_theta_raw = theta[:, None] - theta[None, :]
+        # Wrap the angular difference into [-pi, pi] ONLY when the angular axis
+        # is circular, so bins straddling the -pi/+pi seam are treated as
+        # adjacent (Delta theta ~ 0) rather than ~2*pi apart. Without this wrap
+        # the seam gets a vanishing Gaussian weight, a hard artifact for a
+        # full-circle egocentric-polar gaussian_kde. When the angular axis is
+        # OPEN (circular_angle=False -- no seam edges in the graph), bins at -pi
+        # and +pi are genuinely far apart, so wrapping would leak smoothing
+        # across a boundary the caller deliberately left open; use the raw
+        # angular difference instead. Circularity is derived from the
+        # connectivity graph (presence of seam edges), so it stays consistent
+        # with the graph and survives serialization. The diffusion_kde path is
+        # unaffected: it smooths over the environment graph directly.
+        if getattr(env, "_angular_is_circular", False):
+            d_theta = (d_theta_raw + np.pi) % (2.0 * np.pi) - np.pi
+        else:
+            d_theta = d_theta_raw
+        arc = r_mean * d_theta
+        dist_sq = d_r**2 + arc**2
+    else:
+        bin_sq_norm = np.sum(bin_centers**2, axis=1, keepdims=True)
+        dist_sq = bin_sq_norm + bin_sq_norm.T - 2 * (bin_centers @ bin_centers.T)
     dist_sq = np.maximum(dist_sq, 0)
     kernel: NDArray[np.float64] = np.exp(-dist_sq / two_sigma_sq).astype(
         np.float64, copy=False
     )
 
+    try:
+        env_ref: weakref.ref[Any] = weakref.ref(env)
+    except TypeError:
+        # Not weakref-able (e.g. __slots__ without __weakref__): skip caching
+        # rather than risk an id-reuse collision we cannot detect. Correctness
+        # over the (optional) speed-up.
+        return kernel
+
     if len(_GAUSSIAN_KERNEL_CACHE) >= _GAUSSIAN_KERNEL_CACHE_MAX:
         # Evict an arbitrary oldest-ish entry. dict insertion order makes
         # iter(...) return the oldest key first.
         _GAUSSIAN_KERNEL_CACHE.pop(next(iter(_GAUSSIAN_KERNEL_CACHE)))
-    _GAUSSIAN_KERNEL_CACHE[key] = (kernel, n_bins)
+    _GAUSSIAN_KERNEL_CACHE[key] = (kernel, n_bins, env_ref)
     return kernel
 
 
 def smooth_rate_map(
-    env: Environment,
+    env: _BaseEnvironment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     *,
@@ -231,19 +286,20 @@ def smooth_rate_map(
     >>> from neurospatial.encoding._smoothing import smooth_rate_map
 
     >>> # Create environment
-    >>> positions = np.random.rand(1000, 2) * 100
+    >>> rng = np.random.default_rng(0)
+    >>> positions = rng.random((1000, 2)) * 100
     >>> env = Environment.from_samples(positions, bin_size=5.0)
 
     >>> # Simulate spike counts and occupancy
-    >>> spike_counts = np.random.poisson(5, env.n_bins).astype(float)
+    >>> spike_counts = rng.poisson(5, env.n_bins).astype(float)
     >>> occupancy = np.ones(env.n_bins) * 1.0  # 1 second per bin
 
     >>> # Compute smoothed rate map
     >>> rate_map = smooth_rate_map(
     ...     env, spike_counts, occupancy, method="diffusion_kde", bandwidth=10.0
     ... )
-    >>> rate_map.shape
-    (400,)
+    >>> rate_map.shape == (env.n_bins,)
+    True
 
     See Also
     --------
@@ -276,7 +332,7 @@ def smooth_rate_map(
 
 
 def smooth_rate_maps_batch(
-    env: Environment,
+    env: _BaseEnvironment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     *,
@@ -377,7 +433,7 @@ def smooth_rate_maps_batch(
 
 
 def _validate_smoothing_inputs(
-    env: Environment,
+    env: _BaseEnvironment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     method: str,
@@ -428,7 +484,7 @@ def _validate_smoothing_parameters(method: str, bandwidth: float) -> None:
 
 
 def _diffusion_kde(
-    env: Environment,
+    env: _BaseEnvironment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     bandwidth: float,
@@ -482,7 +538,7 @@ def _diffusion_kde(
 
 
 def _gaussian_kde(
-    env: Environment,
+    env: _BaseEnvironment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     bandwidth: float,
@@ -524,7 +580,7 @@ def _gaussian_kde(
 
 
 def _binned(
-    env: Environment,
+    env: _BaseEnvironment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     bandwidth: float,
@@ -616,7 +672,7 @@ def _diffusion_kde_batch(
 
 
 def _gaussian_kde_batch(
-    env: Environment,
+    env: _BaseEnvironment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     bandwidth: float,
@@ -644,7 +700,7 @@ def _gaussian_kde_batch(
 
 
 def _binned_batch(
-    env: Environment,
+    env: _BaseEnvironment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     bandwidth: float,
@@ -700,7 +756,7 @@ def _binned_batch(
 
 
 def _smooth_rate_map_jax(
-    env: Environment,
+    env: _BaseEnvironment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     method: Literal["diffusion_kde", "gaussian_kde", "binned"],
@@ -787,7 +843,7 @@ def _smooth_rate_map_jax(
 
 
 def _smooth_rate_maps_batch_jax(
-    env: Environment,
+    env: _BaseEnvironment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     method: Literal["diffusion_kde", "gaussian_kde", "binned"],

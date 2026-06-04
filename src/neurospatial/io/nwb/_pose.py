@@ -90,6 +90,11 @@ def read_pose(
     if timestamps is None:
         raise ValueError("PoseEstimation container has no pose estimation series")
 
+    from neurospatial._validation import validate_lengths
+
+    for bp_name, bp_data in bodyparts.items():
+        validate_lengths({f"bodypart[{bp_name}]": bp_data, "timestamps": timestamps})
+
     # Convert ndx-pose Skeleton to neurospatial Skeleton
     skeleton = NSSkeleton.from_ndx_pose(pose_estimation.skeleton)
 

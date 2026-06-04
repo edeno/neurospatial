@@ -248,23 +248,23 @@ from neurospatial.annotation import regions_from_cvat
 regions = regions_from_cvat("cvat_export.xml", calibration=calibration)
 ```
 
-## Role Types
+## Region Types
 
-Shapes are assigned roles that determine their purpose:
+Shapes are assigned region types that determine their purpose:
 
-| Role | Color | Purpose |
-|------|-------|---------|
+| Region type | Color | Purpose |
+|-------------|-------|---------|
 | `environment` | Cyan | Primary boundary defining spatial extent |
 | `hole` | Red | Excluded areas within the boundary |
 | `region` | Yellow | Named regions of interest |
 
-Access the role type in your code:
+Access the region type in your code:
 
 ```python
-from neurospatial.annotation import Role
+from neurospatial.annotation import RegionType
 
-# Type hint for role parameters
-def process_annotation(role: Role) -> None:
+# Type hint for region-type parameters
+def process_annotation(role: RegionType) -> None:
     if role == "environment":
         # Handle boundary
         ...

@@ -427,3 +427,52 @@ class TestInterpolateDeterminism:
         result2 = env.interpolate(field, points, mode="nearest")
 
         np.testing.assert_array_equal(result1, result2)
+
+
+class TestInterpolateLinearHoledGrid:
+    """Regression: linear interpolation works on holed grids (no reshape crash)."""
+
+    def test_interpolate_linear_holed_grid_returns_nan_over_hole(self, holed_grid_env):
+        """Linear mode returns finite values over active bins and NaN over a hole."""
+        env = holed_grid_env
+
+        # A smooth plane field over the active bins.
+        field = (2.0 * env.bin_centers[:, 0] + 3.0 * env.bin_centers[:, 1]).astype(
+            np.float64
+        )
+
+        edges_x = env.layout.grid_edges[0]
+        edges_y = env.layout.grid_edges[1]
+        centers_x = (edges_x[:-1] + edges_x[1:]) / 2
+        centers_y = (edges_y[:-1] + edges_y[1:]) / 2
+
+        # Point over an active bin, and a point centered on the hole (col/row 5).
+        active_point = [float(centers_x[1]), float(centers_y[1])]
+        hole_point = [float(centers_x[5]), float(centers_y[5])]
+        query_points = np.array([active_point, hole_point])
+
+        # Must not raise (previously: ValueError: cannot reshape ...).
+        values = env.interpolate(field, query_points, mode="linear")
+
+        assert np.isfinite(values[0])
+        assert np.isnan(values[1])
+
+    def test_interpolate_linear_fully_active_unchanged(self, full_grid_env):
+        """On an all-active grid, scatter path matches a direct reshape."""
+        env = full_grid_env
+        field = (2.0 * env.bin_centers[:, 0] + 3.0 * env.bin_centers[:, 1]).astype(
+            np.float64
+        )
+
+        rng = np.random.default_rng(7)
+        # Query points within the interior so they stay in-bounds.
+        lo = env.bin_centers.min(axis=0)
+        hi = env.bin_centers.max(axis=0)
+        query_points = rng.uniform(lo, hi, size=(50, 2))
+
+        values = env.interpolate(field, query_points, mode="linear")
+
+        finite = np.isfinite(values)
+        # The interpolated plane should match the analytic plane where defined.
+        expected = 2.0 * query_points[:, 0] + 3.0 * query_points[:, 1]
+        np.testing.assert_allclose(values[finite], expected[finite], rtol=1e-6)

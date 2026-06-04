@@ -1,6 +1,5 @@
 """Tests for ffmpeg I/O handling in video backend.
 
-Phase 5.2: Control ffmpeg I/O
 - Verifies stdout is discarded (DEVNULL) to avoid buffering issues
 - Verifies stderr is captured for error reporting
 - Tests behavior with large frame counts

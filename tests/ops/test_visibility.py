@@ -631,6 +631,35 @@ class TestVisibleCues:
         assert len(distances) == 3
         assert len(bearings) == 3
 
+    def test_bearings_match_known_geometry(self):
+        """visible_cues returns correct egocentric bearings (0=ahead, +pi/2=left)."""
+        from neurospatial import Environment
+        from neurospatial.ops.visibility import visible_cues
+
+        rng = np.random.default_rng(42)
+        env = Environment.from_samples(rng.uniform(0, 100, (1000, 2)), bin_size=5.0)
+
+        position = np.array([50.0, 50.0])
+        heading = 0.0  # facing East (+x)
+        cue_positions = np.array(
+            [
+                [60.0, 50.0],  # directly ahead (East)  -> 0
+                [40.0, 50.0],  # directly behind (West) -> +/- pi
+                [50.0, 60.0],  # directly left (North)  -> +pi/2
+            ]
+        )
+
+        visible, distances, bearings = visible_cues(
+            env, position, heading, cue_positions
+        )
+
+        assert np.all(visible)  # open arena, all cues in line of sight
+        np.testing.assert_allclose(distances, [10.0, 10.0, 10.0], atol=1e-6)
+        assert bearings[0] == pytest.approx(0.0, abs=1e-6)
+        # Behind: +/- pi (both signs mean "directly behind"; assert magnitude).
+        assert abs(bearings[1]) == pytest.approx(np.pi, abs=1e-6)
+        assert bearings[2] == pytest.approx(np.pi / 2, abs=1e-6)
+
     def test_occluded_cue_not_visible(self):
         """Cue behind obstacle is not visible."""
         from neurospatial import Environment

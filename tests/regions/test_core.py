@@ -191,11 +191,48 @@ def test_regions_area_point():
     assert regs.area("pt") == 0.0
 
 
+@pytest.mark.skipif(not HAS_SHAPELY, reason="Shapely required for polygon tests")
+def test_region_center_empty_polygon_returns_none():
+    """An empty polygon has no centroid; region_center returns None, not IndexError."""
+    regs = Regions([Region("e", kind="polygon", data=shp.Polygon())])
+    assert regs.region_center("e") is None
+
+
+@pytest.mark.skipif(not HAS_SHAPELY, reason="Shapely required for polygon tests")
+def test_region_center_nonempty_polygon_centroid():
+    """A unit-square polygon's center is its centroid (no regression)."""
+    poly = shp.Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
+    regs = Regions([Region("box", kind="polygon", data=poly)])
+    center = regs.region_center("box")
+    assert center is not None
+    np.testing.assert_allclose(center, [0.5, 0.5])
+
+
+def test_region_center_point_unchanged():
+    """A point region returns its coordinates (no regression)."""
+    regs = Regions([Region("pt", kind="point", data=np.array([3.0, 7.0]))])
+    center = regs.region_center("pt")
+    assert center is not None
+    np.testing.assert_allclose(center, [3.0, 7.0])
+
+
+def test_region_center_name_kwarg():
+    """region_center accepts name= keyword; the old region_name= raises TypeError."""
+    regs = Regions([Region("goal", kind="point", data=np.array([1.0, 2.0]))])
+
+    center = regs.region_center(name="goal")
+    assert center is not None
+    np.testing.assert_allclose(center, [1.0, 2.0])
+
+    with pytest.raises(TypeError):
+        regs.region_center(region_name="goal")
+
+
 def test_regions_remove_absent_raises():
-    """Regions.remove now raises on missing name (M5.5).
+    """Regions.remove now raises on missing name.
 
     The previous behavior silently absorbed missing names, masking
-    typos and double-removes. The full M5.5 contract is that every
+    typos and double-removes. The full contract is that every
     Region mutation API raises on the disagree-with-reality case.
     """
     regs = Regions()

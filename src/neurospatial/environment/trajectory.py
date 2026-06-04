@@ -32,6 +32,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._validation import validate_finite
 from neurospatial.environment._protocols import SelfEnv
 from neurospatial.environment.decorators import check_fitted
 
@@ -159,6 +160,9 @@ class EnvironmentTrajectory:
             If positions have wrong number of dimensions.
         ValueError
             If time_allocation is not 'start' or 'linear'.
+        ValueError
+            If ``times`` contains non-finite values (NaN or Inf). The error
+            names ``times`` and the first offending index.
         NotImplementedError
             If time_allocation='linear' is used on non-RegularGridLayout.
 
@@ -193,6 +197,13 @@ class EnvironmentTrajectory:
         - speed[k] ≥ min_speed (if min_speed is not None)
         - positions[k] is inside environment
 
+        For ``time_allocation='linear'`` on a masked grid (one with inactive
+        bins), any time the straight-line path spends crossing **inactive**
+        bins is dropped rather than reassigned, since the animal cannot occupy
+        a bin that does not exist. As a result the linear total may be slightly
+        below the ``time_allocation='start'`` total by exactly that
+        inactive-bin crossing time.
+
         **Kernel smoothing**: When bandwidth is provided, smoothing
         is applied after accumulation using mode='transition' normalization
         (kernel columns sum to 1), which preserves the total occupancy mass.
@@ -223,6 +234,11 @@ class EnvironmentTrajectory:
         # Input validation
         times = np.asarray(times, dtype=np.float64)
         positions = np.asarray(positions, dtype=np.float64)
+
+        # Reject non-finite timestamps up front. Without this, a NaN makes
+        # every np.diff comparison False, so the monotonicity check below
+        # would raise the self-contradictory "0 decreasing interval(s)".
+        times = validate_finite(times, name="times")
 
         # Validate monotonicity of timestamps
         if len(times) > 1 and not np.all(np.diff(times) >= 0):
@@ -312,7 +328,7 @@ class EnvironmentTrajectory:
         # samples a few centimeters outside the active mask silently
         # bind to the nearest edge bin, so a tracking-error overshoot
         # inflated occupancy at the boundary while bin_sequence
-        # correctly flagged the same sample as -1. See M1 task 1.2.
+        # correctly flagged the same sample as -1.
         bin_indices = cast(
             "NDArray[np.int64]",
             self.bin_at(positions).astype(np.int64),
@@ -514,6 +530,9 @@ class EnvironmentTrajectory:
         # Input validation
         times = np.asarray(times, dtype=np.float64)
         positions = np.asarray(positions, dtype=np.float64)
+
+        # Reject non-finite timestamps up front (see occupancy() for rationale).
+        times = validate_finite(times, name="times")
 
         # Validate positions is 2D (consistent with occupancy())
         if positions.ndim != 2:
@@ -1160,8 +1179,35 @@ class EnvironmentTrajectory:
         assert grid_edges is not None, "RegularGridLayout must have grid_edges"
         assert grid_shape is not None, "RegularGridLayout must have grid_shape"
 
-        # Initialize occupancy array
+        # Initialize occupancy array (indexed by ACTIVE-bin id, length self.n_bins)
         occupancy = np.zeros(self.n_bins, dtype=np.float64)
+
+        # The ray-intersection helpers below (_position_to_flat_index /
+        # _compute_ray_grid_intersections) return FULL-GRID row-major flat
+        # indices, but `occupancy` is indexed by active-bin id. On a masked
+        # grid (the common from_samples case) these differ, so we must
+        # translate every full-grid index to its active-bin id before
+        # accumulating. Build the inverse map once (same idiom as
+        # layout/helpers/regular_grid.py). For inactive bins the map holds -1.
+        active_mask = getattr(layout, "active_mask", None)
+        if active_mask is None:
+            # Fully-active grid: full-grid flat index == active-bin id.
+            full_to_active = None
+        else:
+            active_mask_flat = active_mask.ravel()
+            full_to_active = np.full(active_mask_flat.size, -1, dtype=np.intp)
+            active_indices = np.flatnonzero(active_mask_flat)
+            full_to_active[active_indices] = np.arange(
+                active_indices.size, dtype=np.intp
+            )
+
+        def _to_active(full_idx: int) -> int:
+            """Translate a full-grid flat index to active-bin id (-1 if inactive)."""
+            if full_to_active is None:
+                return full_idx
+            if 0 <= full_idx < full_to_active.size:
+                return int(full_to_active[full_idx])
+            return -1
 
         # Process each valid interval
         for i in np.where(valid_mask)[0]:
@@ -1172,7 +1218,8 @@ class EnvironmentTrajectory:
             # Choose weight based on return_seconds parameter
             weight = interval_time if return_seconds else 1.0
 
-            # Get starting and ending bin indices
+            # Get starting and ending bin indices (already active-bin ids,
+            # from bin_at in occupancy()).
             start_bin = bin_indices[i]
             end_bin = bin_indices[i + 1]
 
@@ -1181,27 +1228,28 @@ class EnvironmentTrajectory:
                 occupancy[start_bin] += weight
                 continue
 
-            # Compute ray-grid intersections
-            # Still use interval_time for proportional splitting, then scale by weight
+            # Compute ray-grid intersections. These return FULL-GRID indices.
             bin_times = self._compute_ray_grid_intersections(
                 start_pos, end_pos, list(grid_edges), grid_shape, interval_time
             )
 
-            # Accumulate to each bin
-            # Scale the time allocations proportionally to maintain total weight
+            # Translate full-grid indices to active-bin ids and accumulate.
             if return_seconds:
-                # Already in seconds from ray-grid intersection
-                for bin_idx, time_in_bin in bin_times:
-                    if 0 <= bin_idx < self.n_bins:
-                        occupancy[bin_idx] += time_in_bin
+                for full_idx, time_in_bin in bin_times:
+                    active_idx = _to_active(full_idx)
+                    if active_idx >= 0:
+                        occupancy[active_idx] += time_in_bin
             else:
-                # Convert time proportions to count proportions (sum to 1.0)
+                # Convert time proportions to count proportions (sum to 1.0).
+                # Mass that falls on inactive bins is dropped, matching the
+                # 'start' branch's behaviour of excluding outside/inactive
+                # samples, so the two allocation modes agree bin-for-bin.
                 total_allocated = sum(time for _, time in bin_times)
                 if total_allocated > 0:
-                    for bin_idx, time_in_bin in bin_times:
-                        if 0 <= bin_idx < self.n_bins:
-                            # Proportional allocation that sums to 1.0
-                            occupancy[bin_idx] += (
+                    for full_idx, time_in_bin in bin_times:
+                        active_idx = _to_active(full_idx)
+                        if active_idx >= 0:
+                            occupancy[active_idx] += (
                                 time_in_bin / total_allocated
                             ) * weight
 

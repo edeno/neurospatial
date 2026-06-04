@@ -41,7 +41,7 @@ def open_field_session(
         Additional parameters passed to PlaceCellModel. Common options:
         - max_rate : float - Peak firing rate in Hz (default: 20.0)
         - width : float - Place field width in cm (default: 3*bin_size)
-        - baseline_rate : float - Baseline firing rate in Hz (default: 0.001)
+        - baseline_rate : float - Baseline firing rate in Hz (default: 0.01)
 
     Returns
     -------

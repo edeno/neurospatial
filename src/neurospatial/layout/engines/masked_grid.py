@@ -81,11 +81,23 @@ class MaskedGridLayout(_GridMixin):
 
         Raises
         ------
+        TypeError
+            If `active_mask` is not a NumPy array.
         ValueError
-            If `active_mask` shape does not match `grid_edges` definition,
-            or if `grid_edges` are invalid.
+            If `active_mask` does not have boolean dtype, if its shape does not
+            match the `grid_edges` definition, or if `grid_edges` are invalid.
 
         """
+        if not isinstance(active_mask, np.ndarray):
+            raise TypeError(
+                f"active_mask must be a NumPy array, got {type(active_mask).__name__}."
+            )
+        if active_mask.dtype != np.bool_:
+            raise ValueError(
+                f"active_mask must have boolean dtype (np.bool_), got "
+                f"{active_mask.dtype}. Convert with `mask.astype(bool)` — but be "
+                f"sure the values are genuine True/False flags, not bin data."
+            )
         self.active_mask = active_mask
         self.grid_edges = grid_edges
         self.grid_shape = tuple(len(edge) - 1 for edge in grid_edges)

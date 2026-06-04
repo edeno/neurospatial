@@ -18,6 +18,10 @@ Regions : Container for multiple named regions
     Dict-like interface for managing collections of ROIs.
 CompositeEnvironment : Multi-environment composition
     Merges multiple environments with automatic bridge inference.
+bin_spikes_in_time : Spike-time -> count-matrix binner
+    Bins per-neuron spike-time arrays onto a regular time grid, producing the
+    count matrix ``decode_position`` (or the assembly functions) consume.
+    Re-exported from :mod:`neurospatial.decoding` as a primary entry point.
 
 Submodule Organization
 ----------------------
@@ -213,6 +217,8 @@ Create environment from polygon::
 """
 
 import logging
+from importlib import import_module
+from typing import Any
 
 from neurospatial._exceptions import (
     BinIndexOutOfRangeError,
@@ -223,11 +229,48 @@ from neurospatial._exceptions import (
     RegionNotFoundError,
 )
 from neurospatial.composite import CompositeEnvironment
+from neurospatial.decoding import bin_spikes_in_time
 from neurospatial.environment import Environment
 from neurospatial.regions import Region, Regions
 
 # Add NullHandler to prevent "No handler found" warnings if user doesn't configure logging
 logging.getLogger(__name__).addHandler(logging.NullHandler())
+
+# Submodules exposed via lazy (PEP 562) attribute access. Accessing, e.g.,
+# ``neurospatial.encoding`` imports ``neurospatial.encoding`` on first use and
+# caches it in the package globals; the submodule itself is *not* imported when
+# the package loads. This keeps the top-level namespace cheap to import while
+# letting autocomplete and ``dir(neurospatial)`` reveal every domain.
+_LAZY_SUBMODULES: tuple[str, ...] = (
+    "encoding",
+    "decoding",
+    "behavior",
+    "events",
+    "ops",
+    "layout",
+    "regions",
+    "stats",
+    "simulation",
+    "annotation",
+    "animation",
+    "io",
+)
+
+
+def __getattr__(name: str) -> Any:
+    """Lazily import a known submodule on first attribute access (PEP 562)."""
+    if name in _LAZY_SUBMODULES:
+        module = import_module(f"neurospatial.{name}")
+        # Cache in package globals so subsequent access skips this hook.
+        globals()[name] = module
+        return module
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    """List eager exports plus lazily importable submodules for autocomplete."""
+    return sorted(set(__all__) | set(_LAZY_SUBMODULES))
+
 
 __all__ = [
     "BinIndexOutOfRangeError",
@@ -240,4 +283,17 @@ __all__ = [
     "Region",
     "RegionNotFoundError",
     "Regions",
+    "animation",
+    "annotation",
+    "behavior",
+    "bin_spikes_in_time",
+    "decoding",
+    "encoding",
+    "events",
+    "io",
+    "layout",
+    "ops",
+    "regions",
+    "simulation",
+    "stats",
 ]

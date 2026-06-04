@@ -190,7 +190,7 @@ def simulate_session(
 
         - max_rate : float - Peak firing rate in Hz (default: 20.0)
         - width : float | NDArray - Field width in environment units (default: 3*bin_size)
-        - baseline_rate : float - Baseline firing rate in Hz (default: 0.001)
+        - baseline_rate : float - Baseline firing rate in Hz (default: 0.01)
         - metric : {'euclidean', 'geodesic'} - Distance computation method
         - condition : Callable - Optional conditional firing function
 
@@ -202,7 +202,7 @@ def simulate_session(
           Note: 'width' is NOT remapped for mixed cell types to avoid conflicts with PlaceCellModel.
           Use 'boundary_width' for unambiguous parameter passing in mixed mode.
         - max_rate : float - Peak firing rate in Hz (default: 15.0)
-        - baseline_rate : float - Baseline firing rate in Hz (default: 0.001)
+        - baseline_rate : float - Baseline firing rate in Hz (default: 0.01)
         - metric : {'euclidean', 'geodesic'} - Distance computation method
 
         **Grid cell parameters** (cell_type='grid' or 'mixed'):
@@ -210,7 +210,7 @@ def simulate_session(
         - spacing : float - Grid spacing in environment units (maps to grid_spacing)
         - orientation : float - Grid orientation angle in radians (maps to grid_orientation)
         - max_rate : float - Peak firing rate in Hz (default: 20.0)
-        - baseline_rate : float - Baseline firing rate in Hz (default: 0.1)
+        - baseline_rate : float - Baseline firing rate in Hz (default: 0.01)
 
     Returns
     -------
@@ -398,7 +398,7 @@ def simulate_session(
 
     # Generate trajectory using its own independent seed.
     if trajectory_method == "ou":
-        # speed_units is required by simulate_trajectory_ou (M4.5);
+        # speed_units is required by simulate_trajectory_ou;
         # fall back to env.units when the caller didn't pass it.
         ou_kwargs = dict(kwargs)
         ou_kwargs.setdefault("speed_units", env.units)

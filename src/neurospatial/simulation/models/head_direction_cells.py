@@ -97,7 +97,7 @@ class HeadDirectionCellModel:
     >>> # Create environment and trajectory
     >>> samples = np.random.uniform(0, 100, (1000, 2))
     >>> env = Environment.from_samples(samples, bin_size=2.0)
-    >>> env.units = "cm"  # required for simulate_trajectory_ou (M4.5)
+    >>> env.units = "cm"  # required for simulate_trajectory_ou
     >>> positions, times = simulate_trajectory_ou(
     ...     env, duration=10.0, seed=42, speed_units="cm"
     ... )

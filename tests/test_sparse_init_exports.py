@@ -1,7 +1,7 @@
 """Pin the surface of the top-level ``neurospatial`` package.
 
 v0.4 ships a sparse top-level surface — four core classes plus the public
-exception hierarchy added in M3.4. Everything else lives in submodules,
+exception hierarchy. Everything else lives in submodules,
 on purpose, so that ``from neurospatial import *`` doesn't haul in
 hundreds of names.
 
@@ -28,13 +28,28 @@ def test_all_has_core_classes_and_exceptions():
         "Region",
         "Regions",
         "CompositeEnvironment",
-        # Public exception hierarchy (M3.4)
+        # Public exception hierarchy
         "EnvironmentNotFittedError",
         "GraphValidationError",
         "RegionNotFoundError",
         "BinIndexOutOfRangeError",
         "IncompatibleEnvironmentError",
         "LayoutNotBuiltError",
+        # Eagerly-exported primitives
+        "bin_spikes_in_time",
+        # Lazily-accessible analysis submodules (PEP 562 __getattr__)
+        "encoding",
+        "decoding",
+        "behavior",
+        "events",
+        "ops",
+        "layout",
+        "regions",
+        "stats",
+        "simulation",
+        "annotation",
+        "animation",
+        "io",
     }
     actual = set(neurospatial.__all__)
     assert actual == expected, (

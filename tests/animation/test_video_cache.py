@@ -1,4 +1,4 @@
-"""Tests for VideoOverlay cache_size parameter and prefetching (Phase 2.2).
+"""Tests for VideoOverlay cache_size parameter and prefetching.
 
 Tests verify that:
 1. VideoOverlay accepts cache_size parameter with appropriate defaults

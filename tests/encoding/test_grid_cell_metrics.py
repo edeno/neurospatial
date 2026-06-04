@@ -635,7 +635,7 @@ class TestGridOrientationViaGridProperties:
     """Tests for grid orientation, accessed through ``GridProperties``.
 
     The standalone ``grid_orientation`` function was folded into
-    :func:`grid_properties` in M2.B 2.13. These tests pin the same
+    :func:`grid_properties`. These tests pin the same
     contract on ``grid_properties(...).orientation`` /
     ``.orientation_std`` so the behavior is preserved.
     """

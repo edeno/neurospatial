@@ -160,6 +160,7 @@ def clamp(
 
 def combine_fields(
     fields: Sequence[NDArray[np.float64]],
+    *,
     weights: Sequence[float] | None = None,
     mode: Literal["mean", "max", "min"] = "mean",
 ) -> NDArray[np.float64]:

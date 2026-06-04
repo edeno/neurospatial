@@ -185,6 +185,59 @@ class TestTimestampsFromSeries:
 
         assert result.dtype == np.float64
 
+    def test_rejects_zero_rate(self):
+        """A zero rate yields Inf timestamps and must be rejected."""
+        from neurospatial.io.nwb._adapters import timestamps_from_series
+
+        series = _DuckTimeSeries(
+            data=np.zeros((3, 2)),
+            timestamps=None,
+            rate=0.0,
+            starting_time=0.0,
+        )
+        with pytest.raises(ValueError, match="finite positive"):
+            timestamps_from_series(series)
+
+    def test_rejects_negative_rate(self):
+        """A negative rate produces a decreasing/invalid time axis."""
+        from neurospatial.io.nwb._adapters import timestamps_from_series
+
+        series = _DuckTimeSeries(
+            data=np.zeros((3, 2)),
+            timestamps=None,
+            rate=-30.0,
+            starting_time=0.0,
+        )
+        with pytest.raises(ValueError, match="finite positive"):
+            timestamps_from_series(series)
+
+    @pytest.mark.parametrize("bad_rate", [float("inf"), float("nan")])
+    def test_rejects_nonfinite_rate(self, bad_rate):
+        """An Inf/NaN rate produces non-finite timestamps and must be rejected."""
+        from neurospatial.io.nwb._adapters import timestamps_from_series
+
+        series = _DuckTimeSeries(
+            data=np.zeros((3, 2)),
+            timestamps=None,
+            rate=bad_rate,
+            starting_time=0.0,
+        )
+        with pytest.raises(ValueError, match="finite positive"):
+            timestamps_from_series(series)
+
+    def test_positive_rate_ok(self):
+        """A finite positive rate returns the expected arange(n)/rate axis."""
+        from neurospatial.io.nwb._adapters import timestamps_from_series
+
+        series = _DuckTimeSeries(
+            data=np.zeros((5, 2)),
+            timestamps=None,
+            rate=30.0,
+            starting_time=0.0,
+        )
+        result = timestamps_from_series(series)
+        np.testing.assert_allclose(result, np.arange(5) / 30.0)
+
 
 class TestEventsTableToDataframe:
     """Tests for events_table_to_dataframe() adapter function."""

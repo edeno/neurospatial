@@ -128,7 +128,11 @@ class TestComputeEgocentricOccupancy:
             n_distance_bins=10,
             n_direction_bins=12,
         )
-        assert isinstance(env, Environment)
+        from neurospatial.environment.polar import EgocentricPolarEnvironment
+
+        # Egocentric occupancy builds a distinct polar environment type.
+        assert isinstance(env, EgocentricPolarEnvironment)
+        assert not isinstance(env, Environment)
 
     def test_occupancy_shape(
         self,

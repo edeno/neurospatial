@@ -682,7 +682,7 @@ Environment and napari use different coordinate systems.
 positions = np.array([[10.0, 20.0], [15.0, 25.0]])  # (x, y) format
 
 # Pass directly - transformation happens internally
-overlay = PositionOverlay(data=positions)
+overlay = PositionOverlay(positions=positions)
 env.animate_fields(fields, frame_times=frame_times, overlays=[overlay])
 # Napari displays correctly with Y-axis increasing upward
 ```

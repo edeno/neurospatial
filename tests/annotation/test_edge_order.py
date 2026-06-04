@@ -660,3 +660,107 @@ class TestMoveUpDownButtons:
         assert new_order[0] == initial_order[1]
         assert new_order[1] == initial_order[0]
         viewer.close()
+
+
+# =============================================================================
+# Tests: Overrides invalidated by topology edits (delete_node / delete_edge)
+# =============================================================================
+
+
+class TestOverrideInvalidationOnDelete:
+    """Manual edge order/spacing overrides are cleared on topology edits.
+
+    A manual override is keyed to a specific node/edge topology. Deleting a
+    node or edge changes that topology, so any retained override would silently
+    mis-order the linearization. Deletes therefore clear both overrides and
+    fall back to the inferred layout.
+    """
+
+    @staticmethod
+    def _line_state(n_nodes: int = 4):
+        """Build a straight-line track with ``n_nodes`` nodes and chained edges."""
+        from neurospatial.annotation._track_state import TrackBuilderState
+
+        state = TrackBuilderState()
+        for i in range(n_nodes):
+            state.add_node(float(10 * i), 0.0)
+        for i in range(n_nodes - 1):
+            state.add_edge(i, i + 1)
+        state.set_start_node(0)
+        return state
+
+    def test_delete_node_clears_edge_order_override(self):
+        """delete_node clears a manual edge_order_override."""
+        state = self._line_state()
+        state.set_edge_order([(2, 3), (1, 2), (0, 1)])
+        assert state.edge_order_override is not None
+
+        state.delete_node(0)
+
+        assert state.edge_order_override is None
+
+    def test_delete_node_clears_edge_spacing_override(self):
+        """delete_node clears a manual edge_spacing_override."""
+        state = self._line_state()
+        state.set_edge_spacing([5.0, 5.0])
+        assert state.edge_spacing_override is not None
+
+        state.delete_node(0)
+
+        assert state.edge_spacing_override is None
+
+    def test_delete_edge_clears_overrides(self):
+        """delete_edge clears both manual overrides."""
+        state = self._line_state()
+        state.set_edge_order([(2, 3), (1, 2), (0, 1)])
+        state.set_edge_spacing([5.0, 5.0])
+        assert state.edge_order_override is not None
+        assert state.edge_spacing_override is not None
+
+        state.delete_edge(0)
+
+        assert state.edge_order_override is None
+        assert state.edge_spacing_override is None
+
+    def test_stale_override_does_not_corrupt_linearization(self):
+        """After a delete, the result uses the inferred (not stale) edge order.
+
+        Build a line, set a manual edge order against the current topology, then
+        delete a node that drops an edge. The built result's ``edge_order`` must
+        reflect the auto-inferred layout for the post-delete topology (only the
+        surviving edges), not the stale override.
+        """
+        from neurospatial.annotation._track_helpers import (
+            build_track_graph_result,
+        )
+
+        state = self._line_state()
+        # Stale override keyed to the pre-delete 3-edge topology, reversed.
+        stale_order = [(2, 3), (1, 2), (0, 1)]
+        state.set_edge_order(stale_order)
+
+        # Delete node 0: drops edge (0, 1) and reindexes survivors down by one.
+        state.delete_node(0)
+
+        result = build_track_graph_result(state, calibration=None)
+
+        # Surviving edges after reindex are (0, 1) and (1, 2).
+        assert result.edge_order == [(0, 1), (1, 2)]
+        # The stale override must not survive into the linearization.
+        assert result.edge_order != stale_order
+
+    def test_undo_restores_overrides_after_delete(self):
+        """undo() after a clearing delete restores the override.
+
+        ``delete_node`` snapshots state (including overrides) before mutating,
+        so an undo brings the override back along with the topology.
+        """
+        state = self._line_state()
+        manual_order = [(2, 3), (1, 2), (0, 1)]
+        state.set_edge_order(manual_order)
+
+        state.delete_node(0)
+        assert state.edge_order_override is None
+
+        assert state.undo() is True
+        assert state.edge_order_override == manual_order

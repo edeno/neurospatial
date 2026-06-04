@@ -1,4 +1,4 @@
-"""Tests for time-indexed video layer optimization (Phase 2.1).
+"""Tests for time-indexed video layer optimization.
 
 Tests the optimization that uses napari's native time dimension for in-memory
 video arrays, eliminating per-frame layer.data updates.

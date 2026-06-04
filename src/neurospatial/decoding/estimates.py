@@ -10,7 +10,7 @@ Functions
 posterior_mode : Maximum a posteriori bin index
 map_position : MAP position in environment coordinates
 mean_position : Posterior mean position (expected value)
-posterior_entropy : Posterior entropy in bits (posterior_entropy measure)
+posterior_entropy : Posterior entropy in bits (entropy measure)
 credible_region : Highest posterior density region
 
 Notes
@@ -24,7 +24,7 @@ Examples
 >>> from neurospatial.decoding.estimates import posterior_mode, posterior_entropy
 >>> import numpy as np
 >>>
->>> # Uniform posterior (maximum posterior_entropy)
+>>> # Uniform posterior (maximum entropy)
 >>> posterior = np.ones((10, 100)) / 100
 >>> bins = posterior_mode(posterior)
 >>> ent = posterior_entropy(posterior)
@@ -200,9 +200,9 @@ def mean_position(
 def posterior_entropy(
     posterior: NDArray[np.float64],
 ) -> NDArray[np.float64]:
-    """Posterior entropy in bits (posterior_entropy measure).
+    """Posterior entropy in bits (entropy measure).
 
-    Measures the posterior_entropy in the position estimate. Higher values
+    Measures the entropy in the position estimate. Higher values
     indicate more spread-out (uncertain) posteriors.
 
     Parameters
@@ -310,9 +310,13 @@ def credible_region(
     For a unimodal posterior, the HPD region is a contiguous set of bins
     around the mode.
 
+    NaN/Inf posterior bins (e.g. masked or off-track positions) are
+    excluded from the HPD region: they are never reported as members,
+    including as the leading (highest-density) member.
+
     See Also
     --------
-    posterior_entropy : Scalar posterior_entropy measure
+    posterior_entropy : Scalar entropy measure
     posterior_mode : Point estimate (mode)
 
     Examples
@@ -334,19 +338,31 @@ def credible_region(
     if not 0 < level < 1:
         raise ValueError(f"level must be between 0 and 1 (exclusive), got {level}")
 
-    n_time_bins, n_bins = posterior.shape
+    n_time_bins, _n_bins = posterior.shape
     result: list[NDArray[np.int64]] = []
 
-    # Vectorized sorting: sort all rows at once (descending order)
-    # argsort returns ascending, so we use [:, ::-1] to reverse
-    sorted_indices = np.argsort(posterior, axis=1)[:, ::-1]
+    # NaN bins (e.g. masked/off-track positions) must not be reported as
+    # high-density members of the HPD region. argsort puts NaN last in
+    # ascending order, i.e. FIRST after the descending flip — which would
+    # name a NaN bin as the single highest-density bin. Sink them with
+    # -inf so they sort to the back and are excluded by the cumulative
+    # mass threshold.
+    safe_posterior = np.where(np.isfinite(posterior), posterior, -np.inf)
 
-    # Gather sorted probabilities using advanced indexing
-    # sorted_probs[t, i] = posterior[t, sorted_indices[t, i]]
+    # Vectorized sorting: sort all rows at once (descending order).
+    # argsort returns ascending, so we use [:, ::-1] to reverse.
+    sorted_indices = np.argsort(safe_posterior, axis=1)[:, ::-1]
+
+    # Gather sorted probabilities using advanced indexing.
+    # sorted_probs[t, i] = safe_posterior[t, sorted_indices[t, i]]
     row_indices = np.arange(n_time_bins)[:, np.newaxis]
-    sorted_probs = posterior[row_indices, sorted_indices]
+    sorted_probs = safe_posterior[row_indices, sorted_indices]
 
-    # Vectorized cumulative sum across bins
+    # Treat the -inf placeholders as zero mass for the cumulative sum so
+    # they can never push cumsum over `level`.
+    sorted_probs = np.where(np.isfinite(sorted_probs), sorted_probs, 0.0)
+
+    # Vectorized cumulative sum across bins.
     cumsum = np.cumsum(sorted_probs, axis=1)
 
     # For each row, find how many bins needed to reach level
@@ -359,9 +375,13 @@ def credible_region(
     # If no True found (shouldn't happen for valid posterior), default to all bins
     n_bins_needed = np.argmax(reached_level, axis=1) + 1
 
-    # Handle edge case where cumsum never reaches level (use all bins)
+    # Handle edge case where cumsum never reaches level. This fires when a
+    # row's *finite* mass is below `level` (e.g. off-track/NaN rows). Cap the
+    # fallback at the number of FINITE bins per row so the -inf placeholders
+    # (NaN/Inf bins sunk to the back) are never sliced back into the region.
     never_reached = ~np.any(reached_level, axis=1)
-    n_bins_needed[never_reached] = n_bins
+    n_finite = np.isfinite(posterior).sum(axis=1)
+    n_bins_needed[never_reached] = n_finite[never_reached]
 
     # Build result list (variable-length arrays require Python loop)
     for t in range(n_time_bins):

@@ -22,6 +22,7 @@ Examples
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -51,6 +52,36 @@ __all__ = [
     "TrackGraphResult",
     "annotate_track_graph",
 ]
+
+
+def _apply_initial_edges(
+    state: TrackBuilderState,
+    initial_edges: list[tuple[int, int]],
+) -> None:
+    """Add caller-supplied ``initial_edges`` to ``state``, warning on invalid ones.
+
+    ``TrackBuilderState.add_edge`` returns ``False`` when an edge references a
+    non-existent node, is a self-loop, or duplicates an existing edge. Rather
+    than silently discarding such entries, emit a ``UserWarning`` naming the
+    offending edge so the caller knows it was ignored.
+
+    Parameters
+    ----------
+    state : TrackBuilderState
+        The builder state to add edges to.
+    initial_edges : list of tuple of int
+        Edge connections as ``(node_i, node_j)`` tuples.
+    """
+    for node1, node2 in initial_edges:
+        if not state.add_edge(node1, node2):
+            warnings.warn(
+                f"Ignoring invalid initial edge ({node1}, {node2}): "
+                f"edges must reference existing nodes "
+                f"(0..{len(state.nodes) - 1}), must not be self-loops, "
+                f"and must not duplicate an existing edge.",
+                UserWarning,
+                stacklevel=2,
+            )
 
 
 def annotate_track_graph(
@@ -90,7 +121,10 @@ def annotate_track_graph(
         Pre-existing node positions to display for editing.
         Shape: (n_nodes, 2) with (x, y) coordinates.
     initial_edges : list of tuple, optional
-        Pre-existing edge connections as (node_i, node_j) tuples.
+        Pre-existing edge connections as (node_i, node_j) tuples. Any entry
+        that references a non-existent node, is a self-loop, or duplicates
+        another edge is invalid and is ignored with a ``UserWarning`` rather
+        than silently discarded.
     initial_node_labels : list of str, optional
         Labels for initial nodes (e.g., ["start", "junction", "goal"]).
 
@@ -206,8 +240,7 @@ def annotate_track_graph(
             state.add_node(float(pos[0]), float(pos[1]), label=label)
 
     if initial_edges is not None:
-        for node1, node2 in initial_edges:
-            state.add_edge(node1, node2)
+        _apply_initial_edges(state, initial_edges)
 
     # 6. Add track graph layers (edges, then nodes)
     edges_layer, nodes_layer = setup_track_layers(viewer)

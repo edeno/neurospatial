@@ -859,3 +859,47 @@ class TestRoundTrip:
             recovered["stop_time"].values,
             original["stop_time"].values,
         )
+
+
+class TestEventsToIntervalsMatchByUniqueness:
+    """Tests that match_by requires one-to-one (non-duplicate) keys."""
+
+    def test_events_to_intervals_duplicate_match_key_raises(self):
+        """Duplicate keys on both sides must raise, not cross-join."""
+        from neurospatial.events import events_to_intervals
+
+        starts = pd.DataFrame({"timestamp": [1.0, 2.0, 3.0], "trial_id": [1, 1, 2]})
+        stops = pd.DataFrame({"timestamp": [4.0, 5.0, 6.0], "trial_id": [1, 1, 2]})
+
+        with pytest.raises(ValueError, match=r"[Dd]uplicate"):
+            events_to_intervals(starts, stops, match_by="trial_id")
+
+    def test_events_to_intervals_duplicate_start_only_raises(self):
+        """A duplicate on the start side alone must raise.
+
+        The set-difference (unmatched-values) check cannot catch this:
+        ``{1, 2}`` equals ``{1, 2}`` even though ``trial_id=1`` repeats on
+        the start side.
+        """
+        from neurospatial.events import events_to_intervals
+
+        starts = pd.DataFrame({"timestamp": [1.0, 2.0, 3.0], "trial_id": [1, 1, 2]})
+        stops = pd.DataFrame({"timestamp": [4.0, 6.0], "trial_id": [1, 2]})
+
+        with pytest.raises(ValueError, match=r"[Dd]uplicate"):
+            events_to_intervals(starts, stops, match_by="trial_id")
+
+    def test_events_to_intervals_unique_match_key_unchanged(self):
+        """Unique-key matching still returns the documented 3 intervals."""
+        from neurospatial.events import events_to_intervals
+
+        starts = pd.DataFrame({"timestamp": [1.0, 2.0, 3.0], "trial_id": [1, 2, 3]})
+        stops = pd.DataFrame({"timestamp": [5.0, 4.0, 6.0], "trial_id": [2, 1, 3]})
+
+        intervals = events_to_intervals(starts, stops, match_by="trial_id")
+
+        assert len(intervals) == 3
+        assert_allclose(
+            intervals[["start_time", "stop_time", "duration"]].values,
+            np.array([[1.0, 4.0, 3.0], [2.0, 5.0, 3.0], [3.0, 6.0, 3.0]]),
+        )

@@ -520,3 +520,124 @@ class TestLinearOccupancyAccuracy:
 
         # Total mass conserved
         assert_allclose(occupancy.sum(), 3.0, rtol=1e-6)
+
+
+class TestLinearOccupancyMaskedGrid:
+    """Regression tests for linear time allocation on masked/holed grids.
+
+    The accumulation array in linear allocation is indexed by active-bin id,
+    but the ray-intersection helpers return full-grid flat indices. On a
+    holed grid these differ, so the indices must be translated before
+    accumulating; otherwise mass lands in the wrong active bins.
+    """
+
+    def test_occupancy_linear_masked_grid_mass_conservation(self, holed_grid_env):
+        """Linear allocation on a holed grid keeps all mass in active bins.
+
+        A horizontal trajectory at the center of a hole row crosses three
+        inactive columns. The total linear occupancy must equal the interval
+        time minus the time the straight-line path spends over the hole.
+        """
+        env = holed_grid_env
+        edges_x = env.layout.grid_edges[0]
+        edges_y = env.layout.grid_edges[1]
+        centers_x = (edges_x[:-1] + edges_x[1:]) / 2
+        centers_y = (edges_y[:-1] + edges_y[1:]) / 2
+
+        # Row 5 is a hole row (columns 4, 5, 6 inactive). Travel horizontally
+        # through it at constant y so the path crosses exactly those columns.
+        y0 = float(centers_y[5])
+        x_start = float(centers_x[1])
+        x_end = float(centers_x[9])
+        total_time = 1.0
+
+        times = np.array([0.0, total_time])
+        positions = np.array([[x_start, y0], [x_end, y0]])
+
+        occ = env.occupancy(times, positions, time_allocation="linear", max_gap=None)
+
+        # Indexed by active-bin id, no out-of-bounds write / IndexError.
+        assert occ.shape == (env.n_bins,)
+        assert np.all(np.isfinite(occ))
+        assert occ.sum() <= total_time + 1e-9
+
+        # Expected hole-crossing time: the fraction of the x-extent that lies
+        # between the inactive columns' outer edges (columns 4..6).
+        hole_x_lo = float(edges_x[4])
+        hole_x_hi = float(edges_x[7])
+        path_len = x_end - x_start
+        hole_frac = (hole_x_hi - hole_x_lo) / path_len
+        expected_total = total_time * (1.0 - hole_frac)
+
+        assert occ.sum() == pytest.approx(expected_total, rel=1e-6)
+
+        # Sanity: the start allocation total (entire interval to start bin)
+        # exceeds the linear total by exactly the dropped hole-crossing time.
+        occ_start = env.occupancy(
+            times, positions, time_allocation="start", max_gap=None
+        )
+        assert occ_start.sum() == pytest.approx(total_time, rel=1e-6)
+
+    def test_occupancy_linear_peak_bin_is_where_animal_was(self, holed_grid_env):
+        """The most-occupied linear bin is where the animal actually dwelled.
+
+        A trajectory that lingers in one active bin then briefly crosses the
+        hole must place its peak occupancy on the active bin containing the
+        dwell region -- proving the full-grid -> active-bin translation is
+        correct, not merely that the total is right.
+        """
+        env = holed_grid_env
+        edges_x = env.layout.grid_edges[0]
+        edges_y = env.layout.grid_edges[1]
+        centers_x = (edges_x[:-1] + edges_x[1:]) / 2
+        centers_y = (edges_y[:-1] + edges_y[1:]) / 2
+
+        # A diagonal trajectory in the post-hole region (rows/cols 7-9). The
+        # middle segment is long, so most occupancy accrues to the (row 8,
+        # col 8) bin. That bin's active id is offset from its full-grid flat
+        # index by the inactive bins preceding it, so the peak only lands on
+        # the right bin if the full-grid -> active-bin translation is applied.
+        # The dominant mass flows through the multi-bin ray path (consecutive
+        # samples in different bins), not the same-bin fast path.
+        dwell_xy = [float(centers_x[8]), float(centers_y[8])]
+        dwell_bin = int(env.bin_at(dwell_xy)[0])
+
+        times = np.array([0.0, 9.0, 10.0])
+        positions = np.array(
+            [
+                [float(centers_x[7]), float(centers_y[7])],
+                dwell_xy,
+                [float(centers_x[9]), float(centers_y[9])],
+            ]
+        )
+
+        occ = env.occupancy(times, positions, time_allocation="linear", max_gap=None)
+
+        assert int(np.argmax(occ)) == dwell_bin
+
+    def test_occupancy_linear_matches_start_on_fully_active_grid(self, full_grid_env):
+        """On an all-active grid, linear and start totals agree (no-op guard)."""
+        env = full_grid_env
+        edges_x = env.layout.grid_edges[0]
+        edges_y = env.layout.grid_edges[1]
+        centers_x = (edges_x[:-1] + edges_x[1:]) / 2
+        centers_y = (edges_y[:-1] + edges_y[1:]) / 2
+
+        times = np.array([0.0, 1.0, 2.0, 3.0])
+        positions = np.array(
+            [
+                [float(centers_x[1]), float(centers_y[1])],
+                [float(centers_x[3]), float(centers_y[3])],
+                [float(centers_x[5]), float(centers_y[5])],
+                [float(centers_x[7]), float(centers_y[7])],
+            ]
+        )
+
+        occ_linear = env.occupancy(
+            times, positions, time_allocation="linear", max_gap=None
+        )
+        occ_start = env.occupancy(
+            times, positions, time_allocation="start", max_gap=None
+        )
+
+        assert occ_linear.sum() == pytest.approx(occ_start.sum(), rel=1e-6)

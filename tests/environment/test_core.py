@@ -274,7 +274,7 @@ class TestEnvironmentSerialization:
         """Round-trip an Environment through ``to_file`` / ``from_file``.
 
         Uses a RegularGrid env: ``Environment.save`` / ``Environment.load``
-        are gone (M5.9), so the JSON+npz path defined by ``to_file`` is the
+        are gone, so the JSON+npz path defined by ``to_file`` is the
         only persistence channel a v0.4 user has.
         """
         env = grid_env_from_samples
@@ -343,8 +343,12 @@ def test_from_image():
     assert env._is_fitted
     assert env.n_dims == 2
     assert env.bin_centers.shape[0] == np.sum(image_mask_np)
-    assert np.array_equal(env.active_mask, image_mask_np)
-    assert env.grid_shape == image_mask_np.shape
+    # ImageMaskLayout.build uses (x, y) axis order, so a row-major (y, x) image
+    # mask is transposed into the environment's (x, y) grid.
+    assert np.array_equal(env.active_mask, image_mask_np.T)
+    assert env.grid_shape == image_mask_np.shape[::-1]
+    # Same number of active bins regardless of orientation.
+    assert np.sum(env.active_mask) == np.sum(image_mask_np)
 
 
 def test_from_polygon():
@@ -1221,7 +1225,7 @@ class TestCacheManagement:
 
     def test_clear_cache_clears_differential_operator(self, cache_test_env):
         """Test that clear_cache() clears the differential_operator cache."""
-        # M5.6 changed differential_operator from @cached_property to a
+        # differential_operator changed from @cached_property to a
         # method backed by a versioned_cached_property. The on-instance
         # cache key is now ``_versioned_cache__<name>`` instead of just
         # ``<name>``.
@@ -1268,7 +1272,7 @@ class TestCacheManagement:
         # linearization_properties only exists for 1D environments - skip for 2D grid
         map_points_to_bins(np.array([[5.0, 5.0]]), cache_test_env)
 
-        # M5.6 keys for the three method-form caches.
+        # Keys for the three method-form caches.
         diff_key = "_versioned_cache___differential_operator_cached"
         bin_key = "_versioned_cache___bin_attributes_cached"
         edge_key = "_versioned_cache___edge_attributes_cached"

@@ -669,15 +669,43 @@ class HeadDirectionOverlay:
                 self.headings, env.n_dims, name="HeadDirectionOverlay.headings"
             )
 
-        # Align to frame times (validates times if provided)
-        aligned_data = _align_to_frame_times(
-            self.headings,
-            self.times,
-            frame_times,
-            n_frames,
-            self.interp,
-            name="HeadDirectionOverlay",
-        )
+        # Align to frame times (validates times if provided).
+        #
+        # For 1-D angle data interpolated linearly, plain linear interpolation
+        # of the angle is wrong across the +/-pi wrap (e.g. interpolating
+        # between +3.0 and -3.0 rad yields ~0.0, pointing the arrow the opposite
+        # way). Interpolate on the unit circle instead: split into (cos, sin),
+        # interpolate the components, then recover the angle via arctan2. This
+        # always takes the short way around the circle. The (n, 2) unit-vector
+        # form and the "nearest" method already preserve real samples and need
+        # no special handling.
+        if (
+            self.headings.ndim == 1
+            and self.interp == "linear"
+            and self.times is not None
+        ):
+            components = np.column_stack([np.cos(self.headings), np.sin(self.headings)])
+            aligned_components = _align_to_frame_times(
+                components,
+                self.times,
+                frame_times,
+                n_frames,
+                self.interp,
+                name="HeadDirectionOverlay",
+            )
+            # arctan2 of NaN components stays NaN, preserving extrapolation gaps.
+            aligned_data = np.arctan2(
+                aligned_components[:, 1], aligned_components[:, 0]
+            )
+        else:
+            aligned_data = _align_to_frame_times(
+                self.headings,
+                self.times,
+                frame_times,
+                n_frames,
+                self.interp,
+                name="HeadDirectionOverlay",
+            )
 
         return HeadDirectionData(
             data=aligned_data,
@@ -3385,9 +3413,14 @@ def _validate_bounds(
     pct_outside = (n_outside / n_total) * 100
 
     if pct_outside > (threshold * 100):
-        # Calculate actual data ranges
-        data_mins = data.min(axis=0)
-        data_maxs = data.max(axis=0)
+        # Calculate actual data ranges, ignoring NaN gaps from temporal
+        # extrapolation (which would otherwise make every range read [nan, nan]).
+        with warnings.catch_warnings():
+            # An all-NaN column yields nan from nanmin/nanmax and a RuntimeWarning;
+            # suppress it here (this is a diagnostic message, not a computation).
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            data_mins = np.nanmin(data, axis=0)
+            data_maxs = np.nanmax(data, axis=0)
 
         # Format dimension ranges for display
         env_ranges_str = ", ".join(
@@ -4035,7 +4068,7 @@ def _interp_nearest(
 
 
 # =============================================================================
-# Conversion Funnel (Milestone 1.5)
+# Conversion Funnel
 # =============================================================================
 
 

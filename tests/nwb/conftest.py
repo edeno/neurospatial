@@ -232,6 +232,89 @@ def sample_nwb_with_head_direction():
 
 
 @pytest.fixture
+def sample_nwb_with_head_direction_degrees():
+    """
+    Create NWB file with CompassDirection data stored in degrees.
+
+    The SpatialSeries ``unit`` is "degrees" and ``data`` are angles in degrees,
+    so a reader honoring the stored unit must convert to radians on read.
+
+    Returns
+    -------
+    NWBFile
+        NWB file with a degree-unit CompassDirection in processing/behavior/.
+    """
+    _get_pynwb()  # Ensure pynwb is available
+    from pynwb.behavior import CompassDirection, SpatialSeries
+
+    nwbfile = create_empty_nwb()
+
+    # Angles in degrees: 0, 90, 180 -> 0, pi/2, pi radians.
+    angles_deg = np.array([0.0, 90.0, 180.0])
+    timestamps = np.arange(len(angles_deg)) / 30.0
+
+    compass_direction = CompassDirection(name="CompassDirection")
+    spatial_series = SpatialSeries(
+        name="head_direction",
+        description="Head direction angle in degrees",
+        data=angles_deg,
+        timestamps=timestamps,
+        reference_frame="0 = East, increasing counterclockwise",
+        unit="degrees",
+    )
+    compass_direction.add_spatial_series(spatial_series)
+
+    behavior_module = nwbfile.create_processing_module(
+        name="behavior", description="Behavioral data"
+    )
+    behavior_module.add(compass_direction)
+
+    return nwbfile
+
+
+@pytest.fixture
+def sample_nwb_with_head_direction_vectors():
+    """
+    Create NWB file with CompassDirection data stored as (n, 2) unit vectors.
+
+    The SpatialSeries ``data`` are (cos(theta), sin(theta)) pairs, so a reader
+    must recover ``n`` angles via arctan2 rather than flattening to ``2n``.
+
+    Returns
+    -------
+    NWBFile
+        NWB file with an (n, 2) vector CompassDirection in processing/behavior/.
+    """
+    _get_pynwb()  # Ensure pynwb is available
+    from pynwb.behavior import CompassDirection, SpatialSeries
+
+    nwbfile = create_empty_nwb()
+
+    n_samples = 100
+    timestamps = np.arange(n_samples) / 30.0
+    angles = np.linspace(0, 2 * np.pi, n_samples, endpoint=False)
+    vectors = np.column_stack([np.cos(angles), np.sin(angles)])
+
+    compass_direction = CompassDirection(name="CompassDirection")
+    spatial_series = SpatialSeries(
+        name="head_direction",
+        description="Head direction as unit vectors",
+        data=vectors,
+        timestamps=timestamps,
+        reference_frame="0 = East, increasing counterclockwise",
+        unit="radians",
+    )
+    compass_direction.add_spatial_series(spatial_series)
+
+    behavior_module = nwbfile.create_processing_module(
+        name="behavior", description="Behavioral data"
+    )
+    behavior_module.add(compass_direction)
+
+    return nwbfile
+
+
+@pytest.fixture
 def sample_nwb_with_pose():
     """
     Create NWB file with PoseEstimation data for testing.
@@ -384,4 +467,27 @@ def sample_environment():
     env.regions.add("start", point=(10.0, 10.0))
     env.regions.add("goal", point=(90.0, 90.0))
 
+    return env
+
+
+@pytest.fixture
+def sample_polar_environment():
+    """
+    Create a sample polar (egocentric) Environment for NWB round-trip tests.
+
+    Returns
+    -------
+    Environment
+        An ``EgocentricPolarEnvironment`` (egocentric polar coordinates).
+    """
+    from neurospatial import Environment
+
+    env = Environment.from_polar_egocentric(
+        distance_range=(0.0, 50.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=10.0,
+        angle_bin_size=np.pi / 6,
+    )
+    env.units = "cm"
+    env.frame = "egocentric"
     return env

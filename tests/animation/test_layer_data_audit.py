@@ -1,4 +1,4 @@
-"""Tests for Phase 5.2: Remove Deprecated layer.data Assignments.
+"""Tests for removing deprecated layer.data assignments.
 
 This test module verifies that no overlay does ``layer.data = large_array``
 in callbacks, ensuring only efficient update patterns remain:
@@ -15,7 +15,7 @@ in callbacks, ensuring only efficient update patterns remain:
    - Use native time dimension in Tracks/Points layers
    - No per-frame callbacks or layer.data assignments
 
-These tests ensure the Phase 2.1 optimization remains in place and no
+These tests ensure the in-memory video optimization remains in place and no
 regressions introduce expensive layer.data assignments.
 """
 
@@ -84,7 +84,7 @@ def mock_file_video_reader() -> MagicMock:
 
 
 class TestVideoLayerDataAssignment:
-    """Tests verifying video overlay layer.data patterns per Phase 5.2.
+    """Tests verifying video overlay layer.data patterns.
 
     Key patterns:
     - In-memory video: 4D array with native time dimension (NO layer.data assignment)
@@ -473,13 +473,13 @@ class TestNativeTimeDimensionOverlays:
 class TestLayerDataAuditSummary:
     """Documentation test summarizing the layer.data audit findings.
 
-    This test serves as living documentation for Phase 5.2.
+    This test serves as living documentation for the layer.data audit.
     """
 
     def test_audit_findings(self) -> None:
         """Document layer.data assignment audit findings.
 
-        Layer Data Assignment Audit (Phase 5.2):
+        Layer Data Assignment Audit:
 
         | Overlay Type    | Update Pattern           | layer.data Assignment? | Status       |
         |-----------------|--------------------------|------------------------|--------------|
@@ -511,7 +511,7 @@ class TestNoDeprecatedPatterns:
     """Tests ensuring no deprecated layer.data patterns exist."""
 
     def test_in_memory_video_optimization_in_place(self) -> None:
-        """Verify Phase 2.1 optimization is still in place.
+        """Verify the in-memory video optimization is still in place.
 
         The _add_video_layer function should detect in-memory arrays
         and create 4D layers instead of using callbacks.

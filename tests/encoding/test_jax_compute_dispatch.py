@@ -5,7 +5,7 @@ for core rate/metric computations while keeping binning on CPU.
 
 TDD approach: Tests written first, implementation follows.
 
-Design principle (from PLAN.md):
+Design principle:
 - Binning layer: CPU, joblib (stays NumPy)
 - Core rate/metrics layer: dispatches to NumPy or JAX based on backend parameter
 

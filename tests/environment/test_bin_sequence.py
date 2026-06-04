@@ -572,3 +572,25 @@ class TestBinSequenceEdgeCases:
 
         # Should visit multiple bins along diagonal
         assert len(np.unique(bins)) > 1
+
+
+class TestBinSequenceNonFiniteTimes:
+    """Regression: non-finite timestamps raise a clear, non-contradictory error."""
+
+    @pytest.mark.parametrize("bad_value", [np.nan, np.inf])
+    def test_bin_sequence_nonfinite_times_raises_clear_error(
+        self, holed_grid_env, bad_value
+    ):
+        env = holed_grid_env
+        center = env.bin_centers[0]
+        positions = np.array([center, center, center], dtype=np.float64)
+        times = np.array([0.0, 1.0, 2.0], dtype=np.float64)
+        times[1] = bad_value
+
+        with pytest.raises(ValueError) as excinfo:
+            env.bin_sequence(times, positions)
+
+        message = str(excinfo.value)
+        assert "times" in message
+        assert "non-finite" in message
+        assert "decreasing interval" not in message

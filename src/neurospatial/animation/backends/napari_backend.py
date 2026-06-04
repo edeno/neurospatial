@@ -1066,7 +1066,7 @@ def _add_video_layer(
 
     Notes
     -----
-    **In-Memory Video Optimization (Phase 2.1)**:
+    **In-Memory Video Optimization**:
 
     When the video source is an in-memory np.ndarray, we create a 4D Image
     layer with shape (n_animation_frames, height, width, 3). This allows

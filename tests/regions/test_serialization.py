@@ -114,7 +114,7 @@ class TestRegionsToJson:
         regions_to_json(regions, json_path, indent=4)
 
         # Verify file has proper indentation
-        content = json_path.read_text()
+        content = json_path.read_text(encoding="utf-8")
         assert "    " in content  # 4-space indent
 
     def test_method_and_function_paths_agree(self, tmp_path):
@@ -142,7 +142,9 @@ class TestRegionsToJson:
         regions_to_json(regions, func_path)
         regions.to_json(method_path)
 
-        assert func_path.read_text() == method_path.read_text()
+        assert func_path.read_text(encoding="utf-8") == method_path.read_text(
+            encoding="utf-8"
+        )
 
         # Both loaders reconstruct equivalent collections, metadata included.
         # Stored metadata freezes lists to tuples; to_dict thaws them back.
@@ -313,6 +315,33 @@ class TestLoadLabelmeJson:
 
         assert len(regions) == 0
 
+    def test_unexpected_polygon_error_propagates(self, tmp_path, monkeypatch):
+        """An unexpected error from polygon construction must propagate, not be
+        swallowed.
+
+        The ``except`` around ``shp.Polygon(...)`` is narrowed to
+        ``(TypeError, ValueError, ShapelyError)``; an unrelated error type
+        (e.g. ``KeyError``) should now surface rather than being silently
+        warned-and-skipped.
+        """
+        import neurospatial.regions.io as io_mod
+
+        def _boom(*_args, **_kwargs):
+            raise KeyError("unexpected")
+
+        monkeypatch.setattr(io_mod.shp, "Polygon", _boom)
+
+        json_data = {
+            "shapes": [
+                {"label": "region1", "points": [[0, 0], [10, 0], [10, 10], [0, 10]]}
+            ]
+        }
+        json_path = tmp_path / "boom.json"
+        json_path.write_text(json.dumps(json_data))
+
+        with pytest.raises(KeyError, match="unexpected"):
+            load_labelme_json(json_path)
+
     def test_shapes_key_format(self, tmp_path):
         """Test loading JSON with explicit shapes key."""
         # Implementation expects either {"shapes": [...]} or fallback to empty list if invalid
@@ -431,6 +460,116 @@ class TestRleToMask:
 
         with pytest.raises(ValueError, match="odd number of values"):
             _rle_to_mask(rle, 5, 5)
+
+    def test_rle_negative_start_raises(self):
+        """Negative start index is out of bounds, not a wrap-around."""
+        with pytest.raises(ValueError, match="out of bounds"):
+            _rle_to_mask("-1,3", 5, 5)
+
+    def test_rle_start_past_end_raises(self):
+        """Start at or beyond the last pixel is out of bounds."""
+        # 5x5 image has 25 pixels (indices 0..24); start=30 is past the end.
+        with pytest.raises(ValueError, match="out of bounds"):
+            _rle_to_mask("30,2", 5, 5)
+
+    def test_rle_run_overruns_end_raises(self):
+        """A run whose end exceeds the image is out of bounds."""
+        # start=23, length=5 -> end=28 > 25 pixels.
+        with pytest.raises(ValueError, match="out of bounds"):
+            _rle_to_mask("23,5", 5, 5)
+
+    def test_rle_negative_length_raises(self):
+        """A negative run length is malformed."""
+        with pytest.raises(ValueError, match="negative length"):
+            _rle_to_mask("0,-3", 5, 5)
+
+    def test_rle_in_bounds_still_works(self):
+        """In-bounds runs decode unchanged (no regression)."""
+        mask = _rle_to_mask("0,5,10,3", 5, 5)
+
+        assert mask.shape == (5, 5)
+        assert np.all(mask.flat[0:5] == 1)
+        assert np.all(mask.flat[10:13] == 1)
+
+
+class TestCvatPolygonProcessor:
+    """Tests for the narrowed exception handling in _process_cvat_polygon."""
+
+    def test_cvat_polygon_processor_reraises_unexpected(self):
+        """An unexpected (non-geometry) error propagates instead of being swallowed."""
+        import xml.etree.ElementTree as ET
+        from unittest import mock
+
+        from neurospatial.regions.io import _process_cvat_polygon
+
+        elem = ET.fromstring(
+            '<polygon label="arena" points="10.0,10.0;20.0,10.0;20.0,20.0;10.0,20.0" />'
+        )
+
+        # shapely.Polygon raising KeyError simulates a real programming bug,
+        # which must surface rather than become a warning + dropped shape.
+        with (
+            mock.patch(
+                "neurospatial.regions.io.shp.Polygon", side_effect=KeyError("boom")
+            ),
+            pytest.raises(KeyError),
+        ):
+            _process_cvat_polygon(elem, 0, "img0", None, {})
+
+    def test_cvat_polygon_processor_skips_bad_geometry(self):
+        """A malformed-geometry error still warns and returns None (intended skip)."""
+        import xml.etree.ElementTree as ET
+
+        from neurospatial.regions.io import _process_cvat_polygon
+
+        # Only two distinct points -> shapely cannot build a valid polygon ring.
+        elem = ET.fromstring('<polygon label="arena" points="bad,coords" />')
+
+        with pytest.warns(UserWarning, match="error processing"):
+            result = _process_cvat_polygon(elem, 0, "img0", None, {})
+
+        assert result is None
+
+
+class TestCvatBoxProcessor:
+    """Tests for the narrowed exception handling in _process_cvat_box."""
+
+    def test_cvat_box_processor_reraises_unexpected(self):
+        """An unexpected (non-geometry) error propagates instead of being swallowed."""
+        import xml.etree.ElementTree as ET
+        from unittest import mock
+
+        from neurospatial.regions.io import _process_cvat_box
+
+        elem = ET.fromstring(
+            '<box label="arena" xtl="10.0" ytl="10.0" xbr="20.0" ybr="20.0" />'
+        )
+
+        # shapely.Polygon raising KeyError simulates a real programming bug,
+        # which must surface rather than become a warning + dropped shape.
+        with (
+            mock.patch(
+                "neurospatial.regions.io.shp.Polygon", side_effect=KeyError("boom")
+            ),
+            pytest.raises(KeyError),
+        ):
+            _process_cvat_box(elem, 0, "img0", None, {})
+
+    def test_cvat_box_processor_skips_bad_geometry(self):
+        """A malformed-coordinate error still warns and returns None (intended skip)."""
+        import xml.etree.ElementTree as ET
+
+        from neurospatial.regions.io import _process_cvat_box
+
+        # Non-numeric coordinate -> float() raises ValueError (a real skip).
+        elem = ET.fromstring(
+            '<box label="arena" xtl="bad" ytl="10.0" xbr="20.0" ybr="20.0" />'
+        )
+
+        with pytest.warns(UserWarning, match="error processing"):
+            result = _process_cvat_box(elem, 0, "img0", None, {})
+
+        assert result is None
 
 
 class TestLoadCvatXml:

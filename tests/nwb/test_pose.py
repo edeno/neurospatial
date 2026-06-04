@@ -814,3 +814,60 @@ class TestSkeletonRoundTrip:
             "right_ear",
             "tail",
         }
+
+
+class TestReadPoseLengthCheck:
+    """read_pose must reject a bodypart shorter than the shared timestamps."""
+
+    def test_read_pose_length_check(self, empty_nwb):
+        from ndx_pose import PoseEstimation, PoseEstimationSeries, Skeleton
+
+        from neurospatial.io.nwb import read_pose
+
+        nwbfile = empty_nwb
+        behavior_module = nwbfile.create_processing_module(
+            name="behavior", description="Behavior data"
+        )
+
+        skeleton = Skeleton(
+            name="test_skeleton",
+            nodes=["a", "b"],
+            edges=np.array([[0, 1]], dtype=np.uint8),
+        )
+
+        # "a" is alphabetically first and supplies the shared timestamps (50);
+        # "b" is shorter (40) so its data length disagrees with timestamps.
+        ts_a = np.arange(50) / 30.0
+        ts_b = np.arange(40) / 30.0
+        pose = PoseEstimation(
+            name="PoseEstimation",
+            pose_estimation_series=[
+                PoseEstimationSeries(
+                    name="a",
+                    data=np.ones((50, 2)),
+                    confidence=np.ones(50),
+                    timestamps=ts_a,
+                    reference_frame="test",
+                    unit="cm",
+                ),
+                PoseEstimationSeries(
+                    name="b",
+                    data=np.ones((40, 2)),
+                    confidence=np.ones(40),
+                    timestamps=ts_b,
+                    reference_frame="test",
+                    unit="cm",
+                ),
+            ],
+            skeleton=skeleton,
+            source_software="Test",
+        )
+        behavior_module.add(pose)
+
+        nwbfile.create_processing_module(
+            name="Skeletons", description="Skeleton definitions"
+        )
+        nwbfile.processing["Skeletons"].add(skeleton)
+
+        with pytest.raises(ValueError, match="Length mismatch"):
+            read_pose(nwbfile)

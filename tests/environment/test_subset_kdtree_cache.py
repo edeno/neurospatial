@@ -1,4 +1,4 @@
-"""Tests for SubsetLayout KDTree caching (M5.2)."""
+"""Tests for SubsetLayout KDTree caching."""
 
 from __future__ import annotations
 

@@ -158,12 +158,19 @@ result = compute_spatial_rate(
     env, spike_times, times, positions,
     smoothing_method="diffusion_kde",  # Default: graph-based boundary-aware KDE
     bandwidth=5.0,  # Smoothing bandwidth (cm)
-    min_occupancy=0.5,  # Exclude bins with <0.5s occupancy
+    min_occupancy=0.5,  # Exclude bins with <0.5s occupancy (sets them NaN)
+    fill_value=0.0,  # Replace those NaN bins with 0 Hz for the decoding golden path
 )
 firing_rate = result.firing_rate  # Access firing rate from result object
 
 # Methods: "diffusion_kde" (default), "gaussian_kde", "binned" (legacy)
 # Result also has: result.occupancy, result.env, result.spatial_information(), etc.
+#
+# fill_value default is None: low-occupancy bins stay NaN (no behavior change
+# for existing callers). Pass fill_value=0.0 when feeding decode_position() so
+# the model is explicitly zero-rate there -- the documented encode->decode
+# golden path then composes with no manual np.nan_to_num. decode_position()
+# also tolerates residual NaN bins (treats them as zero-rate, warns once).
 ```
 
 **Need decoding?** See [QUICKSTART.md - Bayesian Decoding](.claude/QUICKSTART.md#neural-analysis)
@@ -194,7 +201,7 @@ from neurospatial.animation import PositionOverlay
 
 # Position overlay with trail
 position_overlay = PositionOverlay(
-    data=trajectory,  # Shape: (n_frames, n_dims) in environment (x, y) coordinates
+    positions=trajectory,  # Shape: (n_frames, n_dims) in environment (x, y) coordinates
     color="red",
     size=12.0,
     trail_length=10  # Show last 10 frames as decaying trail
@@ -279,6 +286,18 @@ result = compute_egocentric_rate(
 # result.preferred_distance(), result.preferred_direction(): peak location
 ```
 
+**Egocentric polar environments are a DISTINCT type.**
+`Environment.from_polar_egocentric(...)` returns an
+`EgocentricPolarEnvironment` (in `neurospatial.environment.polar`), **not** an
+`Environment` — it is a sibling type, not a subclass, so
+`isinstance(polar_env, Environment)` is `False`. Its `bin_centers[:, 0]` is
+distance and `bin_centers[:, 1]` is angle in radians, and its connectivity
+edges carry physically correct polar lengths (arc `r·Δθ`, radial `Δr`,
+diagonal `sqrt(Δr² + (r·Δθ)²)`). Cartesian-only methods (`bin_at`, `contains`,
+`distance_between`, `distance_to(metric="euclidean")`, `apply_transform`) raise
+`NotImplementedError`; use graph operations (`neighbors`, `path_between`,
+`reachable_from`, `distance_to(metric="geodesic")`, `smooth`) instead.
+
 **Need metrics?** See [QUICKSTART.md - Object-Vector Cells](.claude/QUICKSTART.md#object-vector-cells)
 
 ### 9. Compute Spatial View Field
@@ -289,8 +308,8 @@ from neurospatial.encoding import compute_view_rate
 # Compute firing field indexed by VIEWED location (returns ViewRateResult)
 result = compute_view_rate(
     env, spike_times, times, positions, headings,
-    view_distance=20.0,  # cm ahead
     gaze_model="fixed_distance",  # or "ray_cast", "boundary"
+    view_distance=20.0,  # cm ahead
     smoothing_method="diffusion_kde",
     bandwidth=5.0,
 )

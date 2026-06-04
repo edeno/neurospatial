@@ -92,14 +92,14 @@ class TestSelectBasisCenters:
 
     def test_random_state_reproducibility(self, simple_2d_env):
         """Same random_state should give same results."""
-        c1 = select_basis_centers(simple_2d_env, n_centers=10, random_state=42)
-        c2 = select_basis_centers(simple_2d_env, n_centers=10, random_state=42)
+        c1 = select_basis_centers(simple_2d_env, n_centers=10, rng=42)
+        c2 = select_basis_centers(simple_2d_env, n_centers=10, rng=42)
         assert_allclose(c1, c2)
 
     def test_different_random_states_differ(self, simple_2d_env):
         """Different random_states should give different results."""
-        c1 = select_basis_centers(simple_2d_env, n_centers=10, random_state=42)
-        c2 = select_basis_centers(simple_2d_env, n_centers=10, random_state=123)
+        c1 = select_basis_centers(simple_2d_env, n_centers=10, rng=42)
+        c2 = select_basis_centers(simple_2d_env, n_centers=10, rng=123)
         # Not guaranteed to be different but highly likely for kmeans
         # Just check they are both valid
         assert len(c1) == len(c2) == 10
@@ -134,7 +134,7 @@ class TestSelectBasisCenters:
     def test_farthest_point_maximizes_spread(self, linear_env):
         """Farthest point should maximize spatial spread."""
         centers = select_basis_centers(
-            linear_env, n_centers=3, method="farthest_point", random_state=42
+            linear_env, n_centers=3, method="farthest_point", rng=42
         )
         # In a linear environment, 3 farthest points should be spread out
         # (near start, middle, end)
@@ -145,7 +145,7 @@ class TestSelectBasisCenters:
 
 
 # =============================================================================
-# TestGeodesicRBFBasis - Tests to be added after M2 implementation
+# TestGeodesicRBFBasis - Tests to be added after the GeodesicRBFBasis implementation
 # =============================================================================
 
 
@@ -247,7 +247,7 @@ class TestGeodesicRBFBasis:
 
 
 # =============================================================================
-# TestHeatKernelWaveletBasis - Tests to be added after M3 implementation
+# TestHeatKernelWaveletBasis - Tests to be added after the HeatKernelWaveletBasis implementation
 # =============================================================================
 
 
@@ -319,7 +319,7 @@ class TestHeatKernelWaveletBasis:
 
 
 # =============================================================================
-# TestChebyshevFilterBasis - Tests to be added after M4 implementation
+# TestChebyshevFilterBasis - Tests to be added after the ChebyshevFilterBasis implementation
 # =============================================================================
 
 
@@ -372,7 +372,7 @@ class TestChebyshevFilterBasis:
 
 
 # =============================================================================
-# TestSpatialBasis - Tests to be added after M5 implementation
+# TestSpatialBasis - Tests to be added after the SpatialBasis implementation
 # =============================================================================
 
 
@@ -405,13 +405,13 @@ class TestSpatialBasis:
 
     def test_random_state_reproducibility(self, simple_2d_env):
         """Same random_state should give same results."""
-        b1 = spatial_basis(simple_2d_env, random_state=42)
-        b2 = spatial_basis(simple_2d_env, random_state=42)
+        b1 = spatial_basis(simple_2d_env, rng=42)
+        b2 = spatial_basis(simple_2d_env, rng=42)
         assert_allclose(b1, b2)
 
 
 # =============================================================================
-# TestPlotBasisFunctions - Tests to be added after M5 implementation
+# TestPlotBasisFunctions - Tests to be added after the plot_basis_functions implementation
 # =============================================================================
 
 
@@ -445,3 +445,57 @@ class TestPlotBasisFunctions:
 
         # Should have plotted 3 basis functions
         plt.close(fig)
+
+
+class TestEstimateSpectralRadius:
+    """_estimate_spectral_radius must only fall back on ARPACK failures."""
+
+    @staticmethod
+    def _laplacian(env):
+        import networkx as nx
+
+        n_bins = env.n_bins
+        laplacian = nx.laplacian_matrix(
+            env.connectivity, nodelist=range(n_bins), weight="distance"
+        )
+        return laplacian.tocsr()
+
+    def test_estimate_spectral_radius_propagates_non_arpack_error(
+        self, monkeypatch, simple_2d_env
+    ):
+        """A non-ARPACK error from eigsh propagates (no silent fallback)."""
+        import scipy.sparse.linalg
+
+        from neurospatial.ops.basis import _estimate_spectral_radius
+
+        laplacian = self._laplacian(simple_2d_env)
+
+        def _raise_value_error(*args, **kwargs):
+            raise ValueError("malformed input")
+
+        monkeypatch.setattr(scipy.sparse.linalg, "eigsh", _raise_value_error)
+
+        with pytest.raises(ValueError, match="malformed input"):
+            _estimate_spectral_radius(laplacian)
+
+    def test_estimate_spectral_radius_arpack_failure_warns_and_bounds(
+        self, monkeypatch, simple_2d_env
+    ):
+        """An ARPACK convergence failure warns and returns the max-degree bound."""
+        import scipy.sparse.linalg
+        from scipy.sparse.linalg import ArpackNoConvergence
+
+        from neurospatial.ops.basis import _estimate_spectral_radius
+
+        laplacian = self._laplacian(simple_2d_env)
+
+        def _raise_arpack(*args, **kwargs):
+            raise ArpackNoConvergence("did not converge", np.array([]), np.array([]))
+
+        monkeypatch.setattr(scipy.sparse.linalg, "eigsh", _raise_arpack)
+
+        with pytest.warns(UserWarning, match="did not converge"):
+            radius = _estimate_spectral_radius(laplacian)
+
+        expected_bound = 2.0 * float(np.max(laplacian.diagonal()))
+        assert radius == pytest.approx(expected_bound)

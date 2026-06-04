@@ -27,7 +27,7 @@ class TestDirectionalPlaceFieldsDataclass:
         labels = ("A→B", "B→A")
 
         # Test stub: DirectionalPlaceFields requires firing_rates,
-        # occupancy, env, labels (M2.B 2.13). For pure dataclass
+        # occupancy, env, labels. For pure dataclass
         # construction tests we synthesize the new fields with
         # zero occupancy and a tiny synthetic env.
         _fields_for_dpf = fields
@@ -51,7 +51,7 @@ class TestDirectionalPlaceFieldsDataclass:
         labels = ("A→B",)
 
         # Test stub: DirectionalPlaceFields requires firing_rates,
-        # occupancy, env, labels (M2.B 2.13). For pure dataclass
+        # occupancy, env, labels. For pure dataclass
         # construction tests we synthesize the new fields with
         # zero occupancy and a tiny synthetic env.
         _fields_for_dpf = fields
@@ -83,7 +83,7 @@ class TestDirectionalPlaceFieldsDataclass:
         labels = ("first", "second", "third")
 
         # Test stub: DirectionalPlaceFields requires firing_rates,
-        # occupancy, env, labels (M2.B 2.13). For pure dataclass
+        # occupancy, env, labels. For pure dataclass
         # construction tests we synthesize the new fields with
         # zero occupancy and a tiny synthetic env.
         _fields_for_dpf = fields
@@ -107,7 +107,7 @@ class TestDirectionalPlaceFieldsDataclass:
         labels = ("A→B",)
 
         # Test stub: DirectionalPlaceFields requires firing_rates,
-        # occupancy, env, labels (M2.B 2.13). For pure dataclass
+        # occupancy, env, labels. For pure dataclass
         # construction tests we synthesize the new fields with
         # zero occupancy and a tiny synthetic env.
         _fields_for_dpf = fields
@@ -129,7 +129,7 @@ class TestDirectionalPlaceFieldsDataclass:
     def test_empty_fields(self) -> None:
         """Test creation with empty fields."""
         # Test stub: DirectionalPlaceFields requires firing_rates,
-        # occupancy, env, labels (M2.B 2.13). For pure dataclass
+        # occupancy, env, labels. For pure dataclass
         # construction tests we synthesize the new fields with
         # zero occupancy and a tiny synthetic env.
         _fields_for_dpf = {}
@@ -153,7 +153,7 @@ class TestDirectionalPlaceFieldsDataclass:
         labels = ("forward",)
 
         # Test stub: DirectionalPlaceFields requires firing_rates,
-        # occupancy, env, labels (M2.B 2.13). For pure dataclass
+        # occupancy, env, labels. For pure dataclass
         # construction tests we synthesize the new fields with
         # zero occupancy and a tiny synthetic env.
         _fields_for_dpf = fields
@@ -514,3 +514,10 @@ class TestComputeDirectionalPlaceFields:
 
         assert len(result.firing_rates) == 0
         assert len(result.labels) == 0
+
+        # to_dataframe() on this empty result must not crash on pd.concat([]);
+        # it returns an empty frame carrying the documented column schema.
+        df = result.to_dataframe()
+        assert len(df) == 0
+        for col in ("direction", "bin", "coord_0", "firing_rate", "occupancy"):
+            assert col in df.columns

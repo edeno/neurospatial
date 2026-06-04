@@ -52,7 +52,7 @@ Quick Start
 >>> basis = geodesic_rbf_basis(env, n_centers=50, sigma=5.0)  # doctest: +SKIP
 >>>
 >>> # Create GLM design matrix
->>> bin_indices = env.bin_sequence(trajectory, times)  # doctest: +SKIP
+>>> bin_indices = env.bin_sequence(times, trajectory)  # doctest: +SKIP
 >>> X = basis[:, bin_indices].T  # Shape: (n_times, n_basis)  # doctest: +SKIP
 
 Full GLM Workflow
@@ -66,7 +66,7 @@ Full GLM Workflow
 >>> basis = geodesic_rbf_basis(env, n_centers=50, sigma=[5.0, 10.0])  # doctest: +SKIP
 >>>
 >>> # 2. Create design matrix from trajectory
->>> bin_indices = env.bin_sequence(trajectory, times)  # doctest: +SKIP
+>>> bin_indices = env.bin_sequence(times, trajectory)  # doctest: +SKIP
 >>> X_spatial = basis[:, bin_indices].T  # (n_times, n_basis)  # doctest: +SKIP
 >>>
 >>> # 3. Combine with other features (optional)
@@ -84,7 +84,7 @@ Full GLM Workflow
 ...     1 : len(basis) + 1
 ... ]  # Spatial coefficients  # doctest: +SKIP
 >>> place_field = beta_spatial @ basis  # Project back to space  # doctest: +SKIP
->>> env.plot(place_field, title="Fitted Place Field")  # doctest: +SKIP
+>>> env.plot_field(place_field, title="Fitted Place Field")  # doctest: +SKIP
 
 References
 ----------
@@ -117,8 +117,9 @@ __all__ = [
 def select_basis_centers(
     env: Environment,
     n_centers: int,
+    *,
     method: Literal["kmeans", "farthest_point", "random", "grid"] = "kmeans",
-    random_state: int | np.random.Generator | None = None,
+    rng: int | np.random.Generator | None = None,
 ) -> NDArray[np.int_]:
     """
     Select well-distributed center nodes for basis functions.
@@ -149,8 +150,8 @@ def select_basis_centers(
           distance. Guarantees maximum spread but O(n_centers * n_bins).
         - "random": Uniform random selection. Fast but may cluster.
         - "grid": Regular grid subsampling (only for grid-based environments).
-    random_state : int, Generator, or None
-        Random state for reproducibility (kmeans, random methods).
+    rng : int, Generator, or None
+        Random seed or generator for reproducibility (kmeans, random methods).
 
     Returns
     -------
@@ -189,17 +190,17 @@ def select_basis_centers(
         )
 
     # Handle random state
-    if isinstance(random_state, np.random.Generator):
-        rng = random_state
+    if isinstance(rng, np.random.Generator):
+        generator = rng
     else:
-        rng = np.random.default_rng(random_state)
+        generator = np.random.default_rng(rng)
 
     if method == "kmeans":
-        return _select_centers_kmeans(env, n_centers, rng)
+        return _select_centers_kmeans(env, n_centers, generator)
     elif method == "farthest_point":
-        return _select_centers_farthest_point(env, n_centers, rng)
+        return _select_centers_farthest_point(env, n_centers, generator)
     elif method == "random":
-        return _select_centers_random(env, n_centers, rng)
+        return _select_centers_random(env, n_centers, generator)
     elif method == "grid":
         return _select_centers_grid(env, n_centers)
     else:
@@ -347,11 +348,12 @@ def _normalize_basis(
 def geodesic_rbf_basis(
     env: Environment,
     centers: NDArray[np.int_] | None = None,
+    *,
     sigma: float | Sequence[float] = 5.0,
     n_centers: int | None = None,
     center_method: Literal["kmeans", "farthest_point", "random"] = "kmeans",
     normalize: Literal["unit", "max", "none"] = "unit",
-    random_state: int | np.random.Generator | None = None,
+    rng: int | np.random.Generator | None = None,
 ) -> NDArray[np.float64]:
     """
     Compute maze-aware RBF basis using geodesic distances.
@@ -395,8 +397,8 @@ def geodesic_rbf_basis(
           May bias GLM toward small-scale features (they're "peakier").
         - "none": Raw RBF values
           Only use if you're normalizing differently downstream.
-    random_state : int, Generator, or None
-        Random state for center selection.
+    rng : int, Generator, or None
+        Random seed or generator for center selection.
 
     Returns
     -------
@@ -416,7 +418,7 @@ def geodesic_rbf_basis(
             Row 5: center 2, sigma=10
 
         To create GLM design matrix from trajectory:
-        >>> bin_indices = env.bin_sequence(trajectory, times)  # doctest: +SKIP
+        >>> bin_indices = env.bin_sequence(times, trajectory)  # doctest: +SKIP
         >>> X = basis[:, bin_indices].T  # (n_timepoints, n_basis)  # doctest: +SKIP
 
     Raises
@@ -494,9 +496,7 @@ def geodesic_rbf_basis(
                 "\n"
                 "See select_basis_centers() for manual center selection."
             )
-        centers = select_basis_centers(
-            env, n_centers, method=center_method, random_state=random_state
-        )
+        centers = select_basis_centers(env, n_centers, method=center_method, rng=rng)
     centers = np.asarray(centers, dtype=np.int_)
 
     # Handle sigma and validate
@@ -575,11 +575,12 @@ def geodesic_rbf_basis(
 def heat_kernel_wavelet_basis(
     env: Environment,
     centers: NDArray[np.int_] | None = None,
+    *,
     scales: Sequence[float] = (0.5, 1.0, 2.0, 4.0),
     n_centers: int | None = None,
     center_method: Literal["kmeans", "farthest_point", "random"] = "kmeans",
     normalize: Literal["unit", "max", "none"] = "unit",
-    random_state: int | np.random.Generator | None = None,
+    rng: int | np.random.Generator | None = None,
 ) -> NDArray[np.float64]:
     """
     Compute heat kernel wavelet basis via graph diffusion.
@@ -620,8 +621,8 @@ def heat_kernel_wavelet_basis(
         Method for auto center selection.
     normalize : {"unit", "max", "none"}, default="unit"
         Normalization mode (see geodesic_rbf_basis for details).
-    random_state : int, Generator, or None
-        Random state for center selection.
+    rng : int, Generator, or None
+        Random seed or generator for center selection.
 
     Returns
     -------
@@ -695,9 +696,7 @@ def heat_kernel_wavelet_basis(
                 "\n"
                 "See select_basis_centers() for manual center selection."
             )
-        centers = select_basis_centers(
-            env, n_centers, method=center_method, random_state=random_state
-        )
+        centers = select_basis_centers(env, n_centers, method=center_method, rng=rng)
     centers = np.asarray(centers, dtype=np.int_)
 
     # Validate scales
@@ -760,11 +759,12 @@ def heat_kernel_wavelet_basis(
 def chebyshev_filter_basis(
     env: Environment,
     centers: NDArray[np.int_] | None = None,
+    *,
     max_degree: int = 5,
     n_centers: int | None = None,
     center_method: Literal["kmeans", "farthest_point", "random"] = "kmeans",
     normalize: Literal["unit", "max", "none"] = "unit",
-    random_state: int | np.random.Generator | None = None,
+    rng: int | np.random.Generator | None = None,
 ) -> NDArray[np.float64]:
     """
     Compute Chebyshev polynomial filter basis on graph Laplacian.
@@ -801,8 +801,8 @@ def chebyshev_filter_basis(
         Method for auto center selection.
     normalize : {"unit", "max", "none"}, default="unit"
         Normalization mode (see geodesic_rbf_basis for details).
-    random_state : int, Generator, or None
-        Random state for center selection.
+    rng : int, Generator, or None
+        Random seed or generator for center selection.
 
     Returns
     -------
@@ -880,9 +880,7 @@ def chebyshev_filter_basis(
                 "\n"
                 "See select_basis_centers() for manual center selection."
             )
-        centers = select_basis_centers(
-            env, n_centers, method=center_method, random_state=random_state
-        )
+        centers = select_basis_centers(env, n_centers, method=center_method, rng=rng)
     centers = np.asarray(centers, dtype=np.int_)
 
     # Validate max_degree
@@ -984,18 +982,22 @@ def _estimate_spectral_radius(laplacian: Any) -> float:
         # Small matrix: compute directly
         return float(np.max(np.linalg.eigvalsh(laplacian.toarray())))
 
+    from scipy.sparse.linalg import ArpackError, ArpackNoConvergence
+
     # Use eigsh with which='LM' (largest magnitude)
     try:
         eigenvalues = eigsh(laplacian, k=1, which="LM", return_eigenvectors=False)
         return float(eigenvalues[0])
-    except Exception as e:
-        # Fallback: use max-degree bound (2 * max node degree)
-        # For graph Laplacian, lambda_max <= 2 * max_degree
-        # Diagonal of L contains node degrees
+    except (ArpackNoConvergence, ArpackError) as e:
+        # ARPACK failed to converge on the largest eigenvalue. Fall back to the
+        # exact upper bound lambda_max <= 2 * max_degree (diagonal of the graph
+        # Laplacian holds node degrees). Any *other* exception (malformed matrix,
+        # wrong dtype) is a real bug and propagates.
         max_degree_bound = 2.0 * float(np.max(laplacian.diagonal()))
         warnings.warn(
-            f"eigsh failed ({e}), using max-degree bound {max_degree_bound:.2f}. "
-            f"This may be slightly inaccurate for highly irregular graphs.",
+            f"eigsh did not converge ({e}); using max-degree bound "
+            f"{max_degree_bound:.2f}. This is an exact upper bound but may be "
+            f"loose for highly irregular graphs.",
             stacklevel=3,
             category=UserWarning,
         )
@@ -1004,9 +1006,10 @@ def _estimate_spectral_radius(laplacian: Any) -> float:
 
 def spatial_basis(
     env: Environment,
+    *,
     coverage: Literal["local", "medium", "global"] = "medium",
     n_features: int = 100,
-    random_state: int | np.random.Generator | None = None,
+    rng: int | np.random.Generator | None = None,
 ) -> NDArray[np.float64]:
     """
     Create maze-aware spatial basis with automatic parameter selection.
@@ -1033,8 +1036,8 @@ def spatial_basis(
     n_features : int, default=100
         Approximate number of basis functions.
         Actual count may vary slightly due to multi-scale construction.
-    random_state : int, Generator, or None
-        Random state for reproducibility.
+    rng : int, Generator, or None
+        Random seed or generator for reproducibility.
 
     Returns
     -------
@@ -1050,7 +1053,7 @@ def spatial_basis(
     >>> basis = spatial_basis(env)  # Automatic defaults  # doctest: +SKIP
     >>>
     >>> # Use in GLM immediately
-    >>> bin_indices = env.bin_sequence(trajectory, times)  # doctest: +SKIP
+    >>> bin_indices = env.bin_sequence(times, trajectory)  # doctest: +SKIP
     >>> X = basis[:, bin_indices].T  # doctest: +SKIP
 
     Notes
@@ -1092,7 +1095,7 @@ def spatial_basis(
         n_centers=n_centers,
         sigma=sigmas,
         normalize="unit",
-        random_state=random_state,
+        rng=rng,
     )
 
 

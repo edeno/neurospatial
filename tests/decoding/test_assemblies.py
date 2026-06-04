@@ -10,6 +10,7 @@ import pytest
 from numpy.testing import assert_allclose
 
 from neurospatial.decoding.assemblies import (
+    AssemblyPattern,
     ExplainedVarianceResult,
     assembly_activation,
     detect_assemblies,
@@ -127,7 +128,7 @@ class TestDetectAssemblies:
     ) -> None:
         """Should detect embedded assemblies."""
         result = detect_assemblies(
-            spike_counts_with_assemblies, algorithm="ica", random_state=42
+            spike_counts_with_assemblies, algorithm="ica", rng=42
         )
 
         # Should detect 2-5 assemblies (depends on threshold)
@@ -136,7 +137,7 @@ class TestDetectAssemblies:
 
     def test_random_data_few_assemblies(self, random_spike_counts: np.ndarray) -> None:
         """Random data should yield few significant assemblies."""
-        result = detect_assemblies(random_spike_counts, random_state=42)
+        result = detect_assemblies(random_spike_counts, rng=42)
 
         # Random data should have 0-2 significant assemblies
         assert result.n_significant <= 2
@@ -151,14 +152,14 @@ class TestDetectAssemblies:
 
     def test_ica_method(self, small_spike_counts: np.ndarray) -> None:
         """ICA method should work and return valid results."""
-        result = detect_assemblies(small_spike_counts, algorithm="ica", random_state=42)
+        result = detect_assemblies(small_spike_counts, algorithm="ica", rng=42)
 
         assert result.method == "ica"
         assert len(result.patterns) >= 1
 
     def test_nmf_method(self, small_spike_counts: np.ndarray) -> None:
         """NMF method should work and return valid results."""
-        result = detect_assemblies(small_spike_counts, algorithm="nmf", random_state=42)
+        result = detect_assemblies(small_spike_counts, algorithm="nmf", rng=42)
 
         assert result.method == "nmf"
         assert len(result.patterns) >= 1
@@ -166,7 +167,7 @@ class TestDetectAssemblies:
     def test_patterns_have_correct_shape(self, small_spike_counts: np.ndarray) -> None:
         """Pattern weights should have n_neurons elements."""
         n_neurons = small_spike_counts.shape[0]
-        result = detect_assemblies(small_spike_counts, random_state=42)
+        result = detect_assemblies(small_spike_counts, rng=42)
 
         for pattern in result.patterns:
             assert len(pattern.weights) == n_neurons
@@ -176,13 +177,13 @@ class TestDetectAssemblies:
     ) -> None:
         """Activations should have shape (n_assemblies, n_time_bins)."""
         n_time = small_spike_counts.shape[1]
-        result = detect_assemblies(small_spike_counts, random_state=42)
+        result = detect_assemblies(small_spike_counts, rng=42)
 
         assert result.activations.shape == (len(result.patterns), n_time)
 
     def test_eigenvalues_descending(self, small_spike_counts: np.ndarray) -> None:
         """Eigenvalues should be in descending order."""
-        result = detect_assemblies(small_spike_counts, random_state=42)
+        result = detect_assemblies(small_spike_counts, rng=42)
 
         # Check monotonically decreasing
         diffs = np.diff(result.eigenvalues)
@@ -191,18 +192,14 @@ class TestDetectAssemblies:
     def test_n_components_fixed(self, small_spike_counts: np.ndarray) -> None:
         """Should respect fixed n_components parameter."""
         n_comp = 3
-        result = detect_assemblies(
-            small_spike_counts, n_components=n_comp, random_state=42
-        )
+        result = detect_assemblies(small_spike_counts, n_components=n_comp, rng=42)
 
         assert len(result.patterns) == n_comp
         assert result.activations.shape[0] == n_comp
 
     def test_n_components_auto(self, small_spike_counts: np.ndarray) -> None:
         """Auto n_components should use Marchenko-Pastur threshold."""
-        result = detect_assemblies(
-            small_spike_counts, n_components="auto", random_state=42
-        )
+        result = detect_assemblies(small_spike_counts, n_components="auto", rng=42)
 
         # n_significant should be based on threshold
         expected_n = max(1, result.n_significant)
@@ -215,12 +212,12 @@ class TestDetectAssemblies:
         result_low = detect_assemblies(
             spike_counts_with_assemblies,
             z_threshold=1.5,
-            random_state=42,
+            rng=42,
         )
         result_high = detect_assemblies(
             spike_counts_with_assemblies,
             z_threshold=2.5,
-            random_state=42,
+            rng=42,
         )
 
         # Lower threshold = more members on average
@@ -233,8 +230,8 @@ class TestDetectAssemblies:
         self, small_spike_counts: np.ndarray
     ) -> None:
         """Same random_state should give same results."""
-        result1 = detect_assemblies(small_spike_counts, random_state=42)
-        result2 = detect_assemblies(small_spike_counts, random_state=42)
+        result1 = detect_assemblies(small_spike_counts, rng=42)
+        result2 = detect_assemblies(small_spike_counts, rng=42)
 
         assert_allclose(result1.activations, result2.activations)
         for p1, p2 in zip(result1.patterns, result2.patterns, strict=True):
@@ -268,7 +265,7 @@ class TestDetectAssemblies:
         """Should warn when n_time_bins < n_neurons."""
         spike_counts = rng.poisson(5, (20, 10)).astype(np.float64)
         with pytest.warns(UserWarning, match="n_time_bins.*n_neurons"):
-            detect_assemblies(spike_counts, random_state=42)
+            detect_assemblies(spike_counts, rng=42)
 
     def test_handles_zero_variance_neurons(self, rng: np.random.Generator) -> None:
         """Should handle neurons with constant firing."""
@@ -277,7 +274,7 @@ class TestDetectAssemblies:
         spike_counts[0, :] = 5.0
 
         with pytest.warns(UserWarning, match="zero variance"):
-            result = detect_assemblies(spike_counts, random_state=42)
+            result = detect_assemblies(spike_counts, rng=42)
 
         # Should still return valid results
         assert len(result.patterns) >= 1
@@ -295,7 +292,7 @@ class TestAssemblyActivation:
         self, spike_counts_with_assemblies: np.ndarray
     ) -> None:
         """Activation should have n_time_bins elements."""
-        result = detect_assemblies(spike_counts_with_assemblies, random_state=42)
+        result = detect_assemblies(spike_counts_with_assemblies, rng=42)
         pattern = result.patterns[0]
 
         activation = assembly_activation(spike_counts_with_assemblies, pattern)
@@ -306,7 +303,7 @@ class TestAssemblyActivation:
         self, spike_counts_with_assemblies: np.ndarray
     ) -> None:
         """Activation should be z-scored (mean ≈ 0, std ≈ 1)."""
-        result = detect_assemblies(spike_counts_with_assemblies, random_state=42)
+        result = detect_assemblies(spike_counts_with_assemblies, rng=42)
         pattern = result.patterns[0]
 
         activation = assembly_activation(spike_counts_with_assemblies, pattern)
@@ -319,7 +316,7 @@ class TestAssemblyActivation:
         self, spike_counts_with_assemblies: np.ndarray, rng: np.random.Generator
     ) -> None:
         """Should raise ValueError if pattern has wrong number of neurons."""
-        result = detect_assemblies(spike_counts_with_assemblies, random_state=42)
+        result = detect_assemblies(spike_counts_with_assemblies, rng=42)
         pattern = result.patterns[0]
 
         # Create spike counts with different number of neurons
@@ -330,7 +327,7 @@ class TestAssemblyActivation:
 
     def test_invalid_2d_input(self, spike_counts_with_assemblies: np.ndarray) -> None:
         """Should raise ValueError for non-2D input."""
-        result = detect_assemblies(spike_counts_with_assemblies, random_state=42)
+        result = detect_assemblies(spike_counts_with_assemblies, rng=42)
         pattern = result.patterns[0]
 
         with pytest.raises(ValueError, match="must be 2D"):
@@ -340,7 +337,7 @@ class TestAssemblyActivation:
         self, spike_counts_with_assemblies: np.ndarray
     ) -> None:
         """z_score_input=False should skip input normalization."""
-        result = detect_assemblies(spike_counts_with_assemblies, random_state=42)
+        result = detect_assemblies(spike_counts_with_assemblies, rng=42)
         pattern = result.patterns[0]
 
         act_zscore = assembly_activation(
@@ -413,7 +410,7 @@ class TestReactivationStrength:
         self, spike_counts_with_assemblies: np.ndarray
     ) -> None:
         """Reactivation strength should be non-negative (ratio of magnitudes)."""
-        result = detect_assemblies(spike_counts_with_assemblies, random_state=42)
+        result = detect_assemblies(spike_counts_with_assemblies, rng=42)
         pattern = result.patterns[0]
 
         n_time = spike_counts_with_assemblies.shape[1]
@@ -429,7 +426,7 @@ class TestReactivationStrength:
         self, spike_counts_with_assemblies: np.ndarray
     ) -> None:
         """Same data should give strength ≈ 1."""
-        result = detect_assemblies(spike_counts_with_assemblies, random_state=42)
+        result = detect_assemblies(spike_counts_with_assemblies, rng=42)
         pattern = result.patterns[0]
 
         # Use same data for template and match
@@ -532,6 +529,27 @@ class TestExplainedVarianceReactivation:
         # Should exclude NaN pairs (indices 1 and 2)
         assert result.n_pairs == 4
 
+    def test_too_few_valid_pairs_returns_nan(self) -> None:
+        """Fewer than 3 valid pairs after NaN removal should yield NaN, not 0.0.
+
+        With 0 or 1 valid pair the correlation is undefined; previously
+        np.corrcoef returned NaN which was coerced to 0.0, masquerading as a
+        confident "no reactivation". The statistics must read as undefined.
+        """
+        # 5 raw pairs (passes the n_pairs >= 3 guard) but only 1 finite pair
+        # survives the joint NaN mask.
+        corr1 = np.array([0.1, np.nan, np.nan, np.nan, np.nan])
+        corr2 = np.array([0.1, np.nan, np.nan, np.nan, np.nan])
+
+        with pytest.warns(UserWarning, match="valid pairs after removing NaN"):
+            result = explained_variance_reactivation(corr1, corr2)
+
+        assert np.isnan(result.explained_variance)
+        assert np.isnan(result.reversed_ev)
+        assert np.isnan(result.partial_correlation)
+        # n_pairs reflects the actual count of valid pairs.
+        assert result.n_pairs == 1
+
 
 # =============================================================================
 # Integration Tests
@@ -549,7 +567,7 @@ class TestAssemblyWorkflow:
         counts_rest = spike_counts_with_assemblies[:, n_time // 2 :]
 
         # Detect assemblies during behavior
-        result = detect_assemblies(counts_behavior, random_state=42)
+        result = detect_assemblies(counts_behavior, rng=42)
         assert result.n_significant >= 1
 
         # Compute activation during rest
@@ -569,7 +587,7 @@ class TestAssemblyWorkflow:
         self, spike_counts_with_assemblies: np.ndarray
     ) -> None:
         """AssemblyPattern should be immutable (frozen dataclass)."""
-        result = detect_assemblies(spike_counts_with_assemblies, random_state=42)
+        result = detect_assemblies(spike_counts_with_assemblies, rng=42)
         pattern = result.patterns[0]
 
         # Should not be able to modify frozen dataclass
@@ -580,7 +598,7 @@ class TestAssemblyWorkflow:
         self, spike_counts_with_assemblies: np.ndarray
     ) -> None:
         """AssemblyDetectionResult should be immutable (frozen dataclass)."""
-        result = detect_assemblies(spike_counts_with_assemblies, random_state=42)
+        result = detect_assemblies(spike_counts_with_assemblies, rng=42)
 
         with pytest.raises(AttributeError):
             result.n_significant = 100  # type: ignore[misc]
@@ -598,7 +616,7 @@ class TestEdgeCases:
         """Should work with minimum 3 neurons."""
         spike_counts = rng.poisson(5, (3, 500)).astype(np.float64)
 
-        result = detect_assemblies(spike_counts, random_state=42)
+        result = detect_assemblies(spike_counts, rng=42)
 
         assert len(result.patterns) >= 1
 
@@ -606,7 +624,7 @@ class TestEdgeCases:
         self, spike_counts_with_assemblies: np.ndarray, rng: np.random.Generator
     ) -> None:
         """Activation should work even with few time bins."""
-        result = detect_assemblies(spike_counts_with_assemblies, random_state=42)
+        result = detect_assemblies(spike_counts_with_assemblies, rng=42)
         pattern = result.patterns[0]
 
         # Create single time bin data
@@ -620,7 +638,7 @@ class TestEdgeCases:
         spike_counts = np.zeros((10, 100), dtype=np.float64)
 
         with pytest.warns(UserWarning, match="zero variance"):
-            result = detect_assemblies(spike_counts, random_state=42)
+            result = detect_assemblies(spike_counts, rng=42)
 
         # Should not have NaN in results
         assert not np.any(np.isnan(result.activations))
@@ -635,3 +653,120 @@ class TestEdgeCases:
 
         assert_allclose(result.explained_variance, 1.0)
         assert_allclose(result.reversed_ev, 1.0)
+
+
+# =============================================================================
+# Reactivation correctness regressions
+# =============================================================================
+
+
+class TestExplainedVarianceControlAndREV:
+    """EV/REV must use the control and the role-swapped partial correlation."""
+
+    def test_explained_variance_rev_differs_from_ev_with_control(
+        self,
+        corr_triplet: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """With a control, REV is the role-swapped partial corr, not == EV.
+
+        On a reactivation-positive triplet (template->match correlation
+        stronger than control->match after partialling) EV should exceed
+        REV, and the two must not be equal.
+        """
+        template, match, control = corr_triplet
+
+        result = explained_variance_reactivation(
+            template, match, control_correlations=control
+        )
+
+        assert result.reversed_ev != result.explained_variance
+        assert result.explained_variance > result.reversed_ev
+
+    def test_explained_variance_uses_control(
+        self,
+        corr_triplet: tuple[np.ndarray, np.ndarray, np.ndarray],
+    ) -> None:
+        """A control correlated with match must lower EV below r_tm**2."""
+        template, match, control = corr_triplet
+
+        with_control = explained_variance_reactivation(
+            template, match, control_correlations=control
+        )
+        no_control = explained_variance_reactivation(template, match)
+
+        # No-control EV is the plain r_tm**2; partialling out a control
+        # that is itself correlated with match strictly reduces EV.
+        assert with_control.explained_variance < no_control.explained_variance
+
+    def test_explained_variance_no_control_ev_equals_rev(self) -> None:
+        """Without a control, EV == REV == r_tm**2 (symmetric fallback)."""
+        rng = np.random.default_rng(11)
+        template = rng.standard_normal(80)
+        match = 0.7 * template + 0.7 * rng.standard_normal(80)
+
+        result = explained_variance_reactivation(template, match)
+
+        r_tm = np.corrcoef(template, match)[0, 1]
+        assert_allclose(result.explained_variance, r_tm**2)
+        assert_allclose(result.reversed_ev, r_tm**2)
+        assert_allclose(result.explained_variance, result.reversed_ev)
+
+
+class TestReactivationStrengthMagnitude:
+    """reactivation_strength must be sensitive to activation magnitude."""
+
+    def test_reactivation_strength_detects_magnitude(
+        self,
+        template_counts: np.ndarray,
+        assembly_pattern: AssemblyPattern,
+    ) -> None:
+        """A 3x stronger match period yields strength well above 1."""
+        match_counts = 3.0 * template_counts
+
+        strength = reactivation_strength(
+            template_counts, match_counts, assembly_pattern
+        )
+
+        assert strength > 1.5
+
+    def test_reactivation_strength_weak_match_below_one(
+        self,
+        template_counts: np.ndarray,
+        assembly_pattern: AssemblyPattern,
+    ) -> None:
+        """A match period with no assembly co-activation yields strength < 1.
+
+        The member neurons hold near their template baseline (no shared
+        drive), so the pattern projection stays small and the metric
+        reports much weaker match-period activation.
+        """
+        rng = np.random.default_rng(3)
+        baseline = template_counts.mean(axis=1, keepdims=True)
+        match_counts = np.broadcast_to(baseline, template_counts.shape).copy()
+        match_counts += 0.05 * rng.standard_normal(template_counts.shape)
+
+        strength = reactivation_strength(
+            template_counts, match_counts, assembly_pattern
+        )
+
+        assert strength < 1.0
+
+
+class TestDetectAssembliesShortRecording:
+    @pytest.mark.parametrize("algorithm", ["pca", "ica", "nmf"])
+    def test_n_time_bins_below_n_components_does_not_crash(
+        self, rng: np.random.Generator, algorithm: str
+    ) -> None:
+        """n_time_bins < n_components <= n_neurons must clamp, not IndexError."""
+        # 8 neurons, 3 time bins, request 5 components.
+        spike_counts = rng.poisson(5, (8, 3)).astype(np.float64)
+        with pytest.warns(UserWarning, match="achievable rank"):
+            result = detect_assemblies(
+                spike_counts,
+                algorithm=algorithm,
+                n_components=5,
+                rng=0,
+            )
+        # Clamped to min(n_neurons, n_time_bins) == 3 patterns; no crash.
+        assert len(result.patterns) <= 3
+        assert result.activations.shape[1] == 3  # n_time_bins preserved

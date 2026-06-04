@@ -1296,7 +1296,7 @@ class TestTimeSeriesNapariDockWidget:
 
 
 # =============================================================================
-# Phase 3: Video Backend Tests
+# Video Backend Tests
 # =============================================================================
 
 
@@ -1740,7 +1740,7 @@ class TestTimeSeriesArtistManagerPickleSafe:
 
 
 # =============================================================================
-# Phase 4: Widget Backend Tests
+# Widget Backend Tests
 # =============================================================================
 
 
@@ -2024,7 +2024,7 @@ class TestTimeSeriesWidgetBackend:
 
 
 # =============================================================================
-# Phase 5.1: HTML Backend Time Series Warning Tests
+# HTML Backend Time Series Warning Tests
 # =============================================================================
 
 
@@ -2216,7 +2216,7 @@ class TestHTMLBackendTimeSeriesWarning:
 
 
 # =============================================================================
-# Phase 5.2: Performance Testing
+# Performance Testing
 # =============================================================================
 
 
@@ -2445,7 +2445,7 @@ class TestTimeSeriesPerformance:
 
 
 # =============================================================================
-# Phase 5.3: Edge Case Tests
+# Edge Case Tests
 # =============================================================================
 
 
@@ -2748,7 +2748,7 @@ class TestTimeSeriesEdgeCases:
 
 
 # =============================================================================
-# Phase 5.5: Final Integration Tests
+# Final Integration Tests
 # =============================================================================
 
 

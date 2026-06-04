@@ -244,6 +244,44 @@ class TestPointsInAnyRegion:
         assert mask[1]  # Within tolerance
         assert not mask[2]  # Outside tolerance
 
+    def test_point_region_membership_at_real_coordinate(self):
+        """A non-bit-exact query near a point landmark is a hit by default."""
+        regions = Regions(
+            [Region(name="feeder", data=np.array([50.0, 50.0]), kind="point")]
+        )
+        # A bit-exact match and a sub-millimeter offset both lie within the
+        # default spatial tolerance. The offset query is what exposes the old
+        # float-equality (1e-8) bug.
+        pts = np.array([[50.0, 50.0], [50.0001, 49.9998]])
+
+        mask = points_in_any_region(pts, regions)
+
+        assert mask[0]
+        assert mask[1]
+
+    def test_point_region_membership_far_position_false(self):
+        """A position well outside the default tolerance is not a hit."""
+        regions = Regions(
+            [Region(name="feeder", data=np.array([50.0, 50.0]), kind="point")]
+        )
+        pts = np.array([[60.0, 60.0]])
+
+        mask = points_in_any_region(pts, regions)
+
+        assert not mask[0]
+
+    def test_point_region_strict_tolerance_still_available(self):
+        """Passing a tiny tolerance reproduces strict bit-exact matching."""
+        regions = Regions(
+            [Region(name="feeder", data=np.array([50.0, 50.0]), kind="point")]
+        )
+        pts = np.array([[50.0, 50.0], [50.0001, 49.9998]])
+
+        mask = points_in_any_region(pts, regions, point_tolerance=1e-8)
+
+        assert mask[0]  # bit-exact still matches
+        assert not mask[1]  # the small offset no longer matches
+
     def test_with_transform(self):
         """Test with coordinate transform."""
         poly = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])

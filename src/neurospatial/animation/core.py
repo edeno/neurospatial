@@ -470,7 +470,7 @@ def animate_fields(
         }
 
         return render_napari(
-            env,  # type: ignore[arg-type]  # Backend signatures updated in future milestone
+            env,  # type: ignore[arg-type]  # Backend signatures pending update
             fields,  # Now accepts arrays after Task 2.1
             overlay_data=overlay_data,
             show_regions=show_regions,
@@ -513,7 +513,7 @@ def animate_fields(
             _validate_env_pickleable(env)
 
         return render_video(
-            env,  # type: ignore[arg-type]  # Backend signatures updated in future milestone
+            env,  # type: ignore[arg-type]  # Backend signatures pending update
             fields,  # type: ignore[arg-type]  # Converted to list above for non-napari
             save_path,
             overlay_data=overlay_data,
@@ -529,7 +529,7 @@ def animate_fields(
         if save_path is None:
             save_path = "animation.html"
         return render_html(
-            env,  # type: ignore[arg-type]  # Backend signatures updated in future milestone
+            env,  # type: ignore[arg-type]  # Backend signatures pending update
             fields,  # type: ignore[arg-type]  # Converted to list above for non-napari
             save_path,
             overlay_data=overlay_data,
@@ -543,7 +543,7 @@ def animate_fields(
         from neurospatial.animation.backends.widget_backend import render_widget
 
         return render_widget(
-            env,  # type: ignore[arg-type]  # Backend signatures updated in future milestone
+            env,  # type: ignore[arg-type]  # Backend signatures pending update
             fields,  # type: ignore[arg-type]  # Converted to list above for non-napari
             overlay_data=overlay_data,
             show_regions=show_regions,

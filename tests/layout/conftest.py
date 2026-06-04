@@ -85,3 +85,31 @@ def simple_y_maze_graph():
 
     edge_order = [(0, 1), (1, 2), (1, 3)]
     return graph, edge_order
+
+
+@pytest.fixture
+def graph_layout_with_gap(simple_y_maze_graph):
+    """A built 1D ``GraphLayout`` with non-zero ``edge_spacing`` (gaps).
+
+    Linearizing the Y-maze with ``edge_spacing > 0`` inserts inactive gap
+    bins between consecutive edges, so the full (gap-inclusive) bin list is
+    longer than the active-bin list. This is the configuration that
+    distinguishes active-bin indices from full-grid indices.
+
+    Returns
+    -------
+    GraphLayout
+        A built layout whose ``active_mask`` contains at least one ``False``
+        (gap) entry.
+    """
+    from neurospatial.layout.engines.graph import GraphLayout
+
+    graph, edge_order = simple_y_maze_graph
+    layout = GraphLayout()
+    layout.build(
+        graph_definition=graph,
+        edge_order=edge_order,
+        edge_spacing=10.0,
+        bin_size=2.0,
+    )
+    return layout

@@ -181,7 +181,7 @@ class TestEncodingGridFunctionality:
         assert scale > 0
 
     def test_grid_orientation_via_grid_properties_runs(self) -> None:
-        """Orientation is now exposed via grid_properties (M2.B 2.13)."""
+        """Orientation is now exposed via grid_properties."""
         from neurospatial.encoding.grid import grid_properties
 
         autocorr = _create_hexagonal_autocorr()

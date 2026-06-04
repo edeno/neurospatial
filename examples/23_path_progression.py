@@ -90,14 +90,14 @@ _loader_spec.loader.exec_module(_loader_module)
 load_neural_recording_from_files = _loader_module.load_neural_recording_from_files
 
 # Shared styling (Okabe-Ito palette, consistent figure / font sizes)
-import sys  # noqa: E402
+import sys
 
 _here = (
     str(Path(__file__).resolve().parent) if "__file__" in globals() else str(Path.cwd())
 )
 if _here not in sys.path:
     sys.path.insert(0, _here)
-from _style import apply_style  # noqa: E402
+from _style import apply_style
 
 apply_style(figsize=(12, 8), font_size=11)
 

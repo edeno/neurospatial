@@ -7,6 +7,7 @@ re-exported from the new encoding.phase_precession location.
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 
 class TestPhasePrecessionImports:
@@ -85,6 +86,7 @@ class TestPhasePrecessionModuleStructure:
             "phase_precession",
             "has_phase_precession",
             "plot_phase_precession",
+            "theta_phase",
         }
         assert set(pp_module.__all__) == expected
 
@@ -263,3 +265,101 @@ class TestPhasePrecessionFunctionality:
         assert isinstance(interp, str)
         assert "SIGNIFICANT" in interp
         assert "PRECESSION" in interp
+
+
+class TestPhasePrecessionShufflePvalue:
+    """pval is a shuffle p-value at the fitted slope; correlation is descriptive."""
+
+    def test_phase_precession_pval_tracks_fitted_slope(self, precessing_spikes) -> None:
+        from neurospatial.encoding.phase_precession import phase_precession
+
+        d = precessing_spikes
+        n_shuffles = 200
+        true_fit = phase_precession(
+            d["positions"], d["phases"], n_shuffles=n_shuffles, rng=0
+        )
+        assert true_fit.pval < 0.05
+        assert true_fit.slope < 0
+
+        # Pin the SHUFFLE mechanics: a permutation p-value with +1 smoothing
+        # (count+1)/(n_shuffles+1) can never fall below 1/(n_shuffles+1). The
+        # OLD slope-free circular_linear_correlation p-value returned exactly
+        # 0.0 on this strong fixture, violating this floor — so reverting pval
+        # to that analytic value would fail here.
+        smoothing_floor = 1.0 / (n_shuffles + 1)
+        assert true_fit.pval >= smoothing_floor
+
+        # Shuffled phases against the same positions destroy the relationship.
+        shuffled = phase_precession(
+            d["positions"], d["phase_shuffled"], n_shuffles=n_shuffles, rng=0
+        )
+        assert shuffled.pval > 0.5
+
+    def test_phase_precession_pval_deterministic(self, precessing_spikes) -> None:
+        from neurospatial.encoding.phase_precession import phase_precession
+
+        d = precessing_spikes
+        a = phase_precession(d["positions"], d["phases"], n_shuffles=200, rng=7)
+        b = phase_precession(d["positions"], d["phases"], n_shuffles=200, rng=7)
+        assert a.pval == b.pval
+
+    def test_phase_precession_correlation_is_descriptive(
+        self, precessing_spikes
+    ) -> None:
+        from neurospatial.encoding.phase_precession import phase_precession
+        from neurospatial.stats.circular import circular_linear_correlation
+
+        d = precessing_spikes
+        result = phase_precession(d["positions"], d["phases"], n_shuffles=200, rng=0)
+        assert 0.0 <= result.correlation <= 1.0
+        wrapped = d["phases"] % (2 * np.pi)
+        expected, _ = circular_linear_correlation(
+            angles=wrapped, linear_values=d["positions"]
+        )
+        assert result.correlation == pytest.approx(expected, rel=1e-9)
+
+
+class TestHasPhasePrecessionValidation:
+    """Genuine input errors raise; insufficient data still maps to False."""
+
+    def test_has_phase_precession_raises_on_length_mismatch(self) -> None:
+        from neurospatial.encoding.phase_precession import has_phase_precession
+
+        positions = np.linspace(0, 50, 100)
+        phases = np.linspace(0, 2 * np.pi, 90)
+        with pytest.raises(ValueError):
+            has_phase_precession(positions, phases)
+
+    def test_has_phase_precession_false_on_insufficient_spikes(self) -> None:
+        from neurospatial.encoding.phase_precession import has_phase_precession
+
+        positions = np.array([1.0, 2.0, 3.0])
+        phases = np.array([0.1, 0.2, 0.3])
+        assert has_phase_precession(positions, phases) is False
+
+    def test_has_phase_precession_default_work_is_bounded(
+        self, precessing_spikes
+    ) -> None:
+        """The default call completes and uses a bounded shuffle count.
+
+        Replaces an earlier wall-clock ``elapsed < 2.0`` assertion that was
+        inherently flaky: the suite runs under ``pytest -n auto`` (xdist), which
+        saturates every core, so a sub-second op wall-clocks to 2.5-3.7s on CI
+        runners and the bound failed across all Linux/Windows jobs. The real
+        intent -- guard against a pathologically expensive default (e.g. an
+        accidental huge ``n_shuffles``) -- is enforced deterministically here by
+        bounding the default shuffle count and confirming the call returns.
+        """
+        import inspect
+
+        from neurospatial.encoding.phase_precession import has_phase_precession
+
+        default_shuffles = (
+            inspect.signature(has_phase_precession).parameters["n_shuffles"].default
+        )
+        assert isinstance(default_shuffles, int)
+        assert default_shuffles <= 1000
+
+        d = precessing_spikes
+        result = has_phase_precession(d["positions"], d["phases"], rng=0)
+        assert isinstance(result, bool)

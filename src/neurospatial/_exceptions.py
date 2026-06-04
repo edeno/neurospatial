@@ -92,7 +92,8 @@ class IncompatibleEnvironmentError(ValueError):
 
     Typical examples: composing a 2D environment with a 3D one,
     requiring matching ``bin_size`` between source and target, requiring
-    the same ``coordinate_kind`` (Cartesian vs polar), etc.
+    the same environment type (Cartesian ``Environment`` vs egocentric
+    ``EgocentricPolarEnvironment``), etc.
 
     Inherits from :class:`ValueError` so existing ``except ValueError``
     blocks keep working.

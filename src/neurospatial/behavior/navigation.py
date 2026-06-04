@@ -115,6 +115,9 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._validation import validate_finite
+from neurospatial.behavior.segmentation import _positive_dt
+
 if TYPE_CHECKING:
     from neurospatial import Environment
     from neurospatial.behavior.segmentation import Trial
@@ -165,10 +168,13 @@ class PathEfficiencyResult:
         Total path length traveled (sum of step lengths), in environment units.
     shortest_length : float
         Geodesic or Euclidean distance from start to goal, in environment units.
+        Is ``inf`` when the goal is unreachable under the geodesic metric (the
+        goal lies on a disconnected component); it is not clamped to ``0.0``.
     efficiency : float
         Ratio shortest_length / traveled_length. Range (0, 1].
         Value of 1.0 indicates optimal path taken.
-        Returns NaN if traveled_length is 0 or path has < 2 points.
+        Returns NaN if traveled_length is 0, path has < 2 points, or
+        shortest_length is ``inf`` (unreachable goal).
     time_efficiency : float or None
         Ratio T_optimal / T_actual if reference_speed provided, else None.
     angular_efficiency : float
@@ -538,8 +544,8 @@ def path_progress(
     --------
     >>> # Single trial - constant start/goal
     >>> progress = path_progress(  # doctest: +SKIP
-    ...     env,
     ...     position_bins,
+    ...     env,
     ...     start_bins=np.full(len(position_bins), 10),
     ...     goal_bins=np.full(len(position_bins), 50),
     ... )
@@ -550,7 +556,7 @@ def path_progress(
     ...     trials, times, env
     ... )  # doctest: +SKIP
     >>> progress = path_progress(
-    ...     env, position_bins, start_bins, goal_bins
+    ...     position_bins, env, start_bins=start_bins, goal_bins=goal_bins
     ... )  # doctest: +SKIP
 
     See Also
@@ -769,10 +775,10 @@ def cost_to_goal(
 
     Parameters
     ----------
-    env : Environment
-        Spatial environment.
     position_bins : NDArray[np.int_], shape (n_samples,)
         Bin indices over time.
+    env : Environment
+        Spatial environment.
     goal_bins : NDArray[np.int_] or int
         Target bin(s). Can be scalar (constant goal) or array (dynamic goal).
     cost_map : NDArray[np.float64], shape (n_bins,), optional
@@ -794,7 +800,7 @@ def cost_to_goal(
     >>> cost_map = np.ones(env.n_bins)  # doctest: +SKIP
     >>> cost_map[punishment_bins] = 10.0  # doctest: +SKIP
     >>> cost = cost_to_goal(
-    ...     env, position_bins, goal_bin, cost_map=cost_map
+    ...     position_bins, env, goal_bins=goal_bin, cost_map=cost_map
     ... )  # doctest: +SKIP
 
     See Also
@@ -1059,18 +1065,21 @@ def goal_pair_direction_labels(
     --------
     segment_trials : Segment trajectory into behavioral trials
     heading_direction_labels : Direction labels based on heading angle
+    laps_to_direction_labels : Direction labels from detected laps
+    runs_to_direction_labels : Direction labels from detected runs
     """
-    labels = np.full(len(times), "other", dtype=object)
+    from neurospatial.behavior.segmentation import _interval_labels
 
-    for trial in trials:
-        if trial.end_region is None:
-            continue
-
-        label = f"{trial.start_region}\u2192{trial.end_region}"
-        mask = (times >= trial.start_time) & (times <= trial.end_time)
-        labels[mask] = label
-
-    return labels
+    intervals = [
+        (
+            trial.start_time,
+            trial.end_time,
+            f"{trial.start_region}\u2192{trial.end_region}",
+        )
+        for trial in trials
+        if trial.end_region is not None
+    ]
+    return _interval_labels(times, intervals)
 
 
 def heading_direction_labels(
@@ -1100,7 +1109,9 @@ def heading_direction_labels(
     n_directions : int, default=8
         Number of direction bins. Default 8 creates 45 deg bins.
     min_speed : float, default=5.0
-        Minimum speed threshold.
+        Minimum speed threshold below which a sample is labeled "stationary".
+        In the same spatial-units-per-second as ``positions``/``times`` (e.g.
+        cm/s if positions are in cm). The 5.0 default assumes cm/s.
 
     Returns
     -------
@@ -1315,9 +1326,9 @@ def shortest_path_length(
 def time_efficiency(
     positions: NDArray[np.float64],
     times: NDArray[np.float64],
-    goal: NDArray[np.float64],
     *,
     reference_speed: float,
+    optimal_distance: float,
 ) -> float:
     """Compute time efficiency: ratio of optimal to actual travel time.
 
@@ -1327,20 +1338,25 @@ def time_efficiency(
         Trajectory positions.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps in seconds.
-    goal : NDArray[np.float64], shape (n_dims,)
-        Goal position.
     reference_speed : float
         Reference speed in environment units per second.
+    optimal_distance : float
+        Shortest-path distance from start to goal under the caller's chosen
+        metric (Euclidean or geodesic). The optimal time is
+        ``optimal_distance / reference_speed``. Pass ``np.inf`` for an
+        unreachable goal; the result is then ``nan``.
 
     Returns
     -------
     float
-        Time efficiency ratio T_optimal / T_actual.
+        Time efficiency ratio ``T_optimal / T_actual``. ``nan`` if the
+        trajectory has < 2 samples, ``actual_time <= 0``, or
+        ``optimal_distance`` is non-finite.
 
     Examples
     --------
     >>> eff = time_efficiency(
-    ...     positions, times, goal, reference_speed=20.0
+    ...     positions, times, reference_speed=20.0, optimal_distance=50.0
     ... )  # doctest: +SKIP
     >>> print(f"Time efficiency: {eff:.1%}")  # doctest: +SKIP
     """
@@ -1354,15 +1370,14 @@ def time_efficiency(
             f"Check that both arrays cover the same time period."
         )
 
+    if not np.isfinite(optimal_distance):
+        return np.nan
+
     actual_time = times[-1] - times[0]
     if actual_time <= 0:
         return np.nan
 
-    start = positions[0]
-    goal = np.asarray(goal)
-    shortest_dist = float(np.linalg.norm(goal - start))
-
-    optimal_time = shortest_dist / reference_speed
+    optimal_time = optimal_distance / reference_speed
 
     return float(optimal_time / actual_time)
 
@@ -1549,7 +1564,10 @@ def compute_path_efficiency(
     Returns
     -------
     PathEfficiencyResult
-        All path efficiency metrics combined.
+        All path efficiency metrics combined. When the goal is unreachable
+        under ``metric="geodesic"`` (it lies on a disconnected component),
+        ``shortest_length`` is ``inf`` and the derived ``efficiency`` and
+        ``time_efficiency`` fields are ``nan`` (not ``0.0``).
 
     Examples
     --------
@@ -1581,15 +1599,18 @@ def compute_path_efficiency(
     time_eff = None
     if reference_speed is not None and len(positions) >= 2:
         time_eff = time_efficiency(
-            positions, times, goal, reference_speed=reference_speed
+            positions,
+            times,
+            reference_speed=reference_speed,
+            optimal_distance=shortest,
         )
 
     ang_eff = angular_efficiency(positions, goal)
 
     return PathEfficiencyResult(
         traveled_length=traveled,
-        shortest_length=shortest if np.isfinite(shortest) else 0.0,
-        efficiency=eff,
+        shortest_length=shortest,  # may be inf if the goal is unreachable
+        efficiency=eff,  # already nan when shortest is non-finite
         time_efficiency=time_eff,
         angular_efficiency=ang_eff,
         start_position=positions[0] if len(positions) > 0 else np.array([]),
@@ -1818,6 +1839,12 @@ def approach_rate(
     ------
     ValueError
         If metric="geodesic" but env is None.
+    ValueError
+        If positions and times have different lengths.
+    ValueError
+        If times contains non-finite values or is not strictly increasing
+        (duplicate or out-of-order timestamps would yield ``inf``/``nan``
+        rates).
 
     Examples
     --------
@@ -1839,6 +1866,14 @@ def approach_rate(
             "for straight-line distances."
         )
 
+    if len(positions) != len(times):
+        raise ValueError(
+            f"positions and times must have same length. "
+            f"Got positions: {len(positions)}, times: {len(times)}."
+        )
+
+    validate_finite(times, name="times")
+
     if metric == "euclidean":
         goal_vec = goal_vector(positions, goal)
         distances = np.linalg.norm(goal_vec, axis=1)
@@ -1850,7 +1885,7 @@ def approach_rate(
             position_bins, env, target_bins=goal_bin, metric="geodesic"
         )
 
-    dt = np.diff(times)
+    dt = _positive_dt(times, name="times")
     d_distance = np.diff(distances)
 
     rates = np.full(len(positions), np.nan)

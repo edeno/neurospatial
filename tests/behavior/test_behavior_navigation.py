@@ -195,9 +195,10 @@ class TestPathEfficiencyFunctions:
         # Moving at 10 units/s toward goal 50 units away
         positions = np.column_stack([np.linspace(0, 50, 11), np.zeros(11)])
         times = np.linspace(0, 5, 11)  # 5 seconds
-        goal = np.array([50.0, 0.0])
 
-        eff = time_efficiency(positions, times, goal, reference_speed=10.0)
+        eff = time_efficiency(
+            positions, times, reference_speed=10.0, optimal_distance=50.0
+        )
 
         # Optimal time = 50/10 = 5s, actual = 5s, efficiency = 1.0
         assert_allclose(eff, 1.0, atol=0.01)

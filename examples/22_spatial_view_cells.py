@@ -67,15 +67,15 @@ from neurospatial.simulation import (
 rng = np.random.default_rng(42)
 
 # Shared styling (Okabe-Ito palette, consistent figure / font sizes)
-import sys  # noqa: E402
-from pathlib import Path  # noqa: E402
+import sys
+from pathlib import Path
 
 _here = (
     str(Path(__file__).resolve().parent) if "__file__" in globals() else str(Path.cwd())
 )
 if _here not in sys.path:
     sys.path.insert(0, _here)
-from _style import apply_style  # noqa: E402
+from _style import apply_style
 
 apply_style(figsize=(12, 10), font_size=11)
 

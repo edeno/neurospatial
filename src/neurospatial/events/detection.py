@@ -60,6 +60,9 @@ def add_positions(
     ValueError
         If timestamp_column is not in events.
         If times and positions have different lengths.
+        If the trajectory has fewer than 2 samples.
+        If all trajectory ``times`` are identical.
+        If trajectory ``times`` contain non-finite values.
 
     Notes
     -----
@@ -125,10 +128,11 @@ def add_positions(
 
     n_dims = positions.shape[1]
 
-    # Get event timestamps
-    event_times = events[timestamp_column].values.astype(np.float64)
-
-    # Handle empty events
+    # Handle empty events FIRST: with no events to position there is nothing to
+    # interpolate, so we return early without validating the trajectory. This
+    # lets callers pass a 1-sample (or empty) trajectory alongside an empty
+    # event table without tripping the >= 2 sample / finite / non-zero-span
+    # guards below, which only matter when interpolation actually happens.
     if len(events) == 0:
         result = events.copy()
         result["x"] = np.array([], dtype=np.float64)
@@ -137,6 +141,36 @@ def add_positions(
         if n_dims >= 3:
             result["z"] = np.array([], dtype=np.float64)
         return result
+
+    from neurospatial._validation import validate_finite
+
+    # Trajectory timestamps must be finite to define the interpolant; a NaN/Inf
+    # time silently maps every event to NaN/Inf. (Event timestamps may still be
+    # NaN -> NaN position, handled separately below.)
+    times = validate_finite(times, name="times")
+
+    # A linear interpolant needs at least two samples spanning a non-zero time
+    # range. A single sample, or all-identical times, leaves interp1d undefined
+    # and would return all-NaN/Inf positions silently.
+    if len(times) < 2:
+        raise ValueError(
+            f"add_positions needs at least 2 trajectory samples to "
+            f"interpolate, got {len(times)}.\n"
+            "  WHY: linear interpolation is undefined for a single sample and "
+            "would return NaN for every event position.\n"
+            "  HOW: pass a trajectory with >= 2 samples spanning the event times."
+        )
+    if np.ptp(times) == 0:
+        raise ValueError(
+            "add_positions trajectory times are all identical "
+            f"(every sample at t={times[0]:g}).\n"
+            "  WHY: interpolation needs a non-zero time span; duplicate sample "
+            "times leave the interpolant undefined (NaN/Inf positions).\n"
+            "  HOW: pass a trajectory whose timestamps vary."
+        )
+
+    # Get event timestamps
+    event_times = events[timestamp_column].values.astype(np.float64)
 
     # Sort trajectory by time if needed
     sort_idx = np.argsort(times)

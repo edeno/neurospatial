@@ -217,7 +217,7 @@ print(f"Fields: {fields.shape}")
 # - `duration`: Video length in seconds
 
 # %%
-from neurospatial.animation._video_io import VideoReader  # noqa: E402
+from neurospatial.animation._video_io import VideoReader
 
 print("Example 1: Inspecting Video Metadata")
 print("=" * 50)
@@ -638,7 +638,7 @@ except ImportError:
 # 3. **Clear Cache**: Always call `env.clear_cache()` before parallel rendering
 
 # %%
-from neurospatial.animation import subsample_frames  # noqa: E402
+from neurospatial.animation import subsample_frames
 
 print("Example 7: Performance Optimization")
 print("=" * 50)
@@ -682,7 +682,9 @@ print("Cached KDTree and kernel matrices cannot be pickled.")
 print("")
 print("Example:")
 print("  env.clear_cache()  # Make environment pickle-able")
-print("  env.animate_fields(fields, frame_times=frame_times, overlays=[video], n_workers=4, ...)")
+print(
+    "  env.animate_fields(fields, frame_times=frame_times, overlays=[video], n_workers=4, ...)"
+)
 
 # %% [markdown]
 # ## Cleanup

@@ -134,7 +134,7 @@ def neighbor_reduce(
     See Also
     --------
     Environment.smooth : Gaussian smoothing using distance-based kernels
-    convolve : General convolution with custom kernels
+    graph_convolve : General convolution with custom kernels
 
     References
     ----------
@@ -357,7 +357,7 @@ def graph_convolve(
 
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.ops.graph import convolve
+    >>> from neurospatial.ops.graph import graph_convolve
     >>> # Create 3x3 grid
     >>> positions = np.array([[i, j] for i in range(3) for j in range(3)])
     >>> env = Environment.from_samples(positions, bin_size=1.0)
@@ -367,7 +367,7 @@ def graph_convolve(
     >>> # Box kernel: uniform within radius 1.5
     >>> def box_kernel(distances):
     ...     return np.where(distances <= 1.5, 1.0, 0.0)
-    >>> result = convolve(env, field, box_kernel, normalize=True)
+    >>> result = graph_convolve(env, field, box_kernel, normalize=True)
     >>> print(f"Max value: {result.max():.3f}")  # doctest: +SKIP
     Max value: 0.111
 
@@ -378,7 +378,7 @@ def graph_convolve(
     ...     g1 = np.exp(-(distances**2) / (2 * sigma1**2))
     ...     g2 = np.exp(-(distances**2) / (2 * sigma2**2))
     ...     return g1 - g2
-    >>> result = convolve(env, field, mexican_hat, normalize=False)
+    >>> result = graph_convolve(env, field, mexican_hat, normalize=False)
     >>> # Center positive, surrounding negative (edge enhancement)
 
     See Also

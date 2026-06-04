@@ -18,6 +18,7 @@ import warnings
 from typing import TYPE_CHECKING, cast
 
 from shapely import Polygon
+from shapely.errors import GEOSException
 from shapely.geometry.base import BaseGeometry
 from shapely.validation import explain_validity
 
@@ -259,30 +260,47 @@ def validate_region_overlap(
             poly1: Polygon = r1.data
             poly2: Polygon = r2.data
 
-            if not poly1.intersects(poly2):
-                continue
+            try:
+                if not poly1.intersects(poly2):
+                    continue
 
-            intersection = poly1.intersection(poly2)
-            intersection_area = intersection.area
+                intersection = poly1.intersection(poly2)
+                intersection_area = intersection.area
 
-            # Check overlap fraction for both regions
-            overlap_frac_1 = intersection_area / poly1.area if poly1.area > 0 else 0
-            overlap_frac_2 = intersection_area / poly2.area if poly2.area > 0 else 0
-            max_overlap = max(overlap_frac_1, overlap_frac_2)
+                # Check overlap fraction for both regions
+                overlap_frac_1 = intersection_area / poly1.area if poly1.area > 0 else 0
+                overlap_frac_2 = intersection_area / poly2.area if poly2.area > 0 else 0
+                max_overlap = max(overlap_frac_1, overlap_frac_2)
 
-            if max_overlap > overlap_threshold:
+                if max_overlap > overlap_threshold:
+                    issues.append(
+                        f"Regions '{r1.name}' and '{r2.name}' overlap heavily "
+                        f"({max_overlap:.1%} of smaller region)",
+                    )
+                    if warn_overlap:
+                        warnings.warn(
+                            f"Regions '{r1.name}' and '{r2.name}' overlap "
+                            f"heavily ({max_overlap:.1%} of the smaller "
+                            f"region's area). This may be intentional, but "
+                            f"could indicate a drawing error.",
+                            UserWarning,
+                            stacklevel=3,
+                        )
+            except GEOSException as exc:
                 issues.append(
-                    f"Regions '{r1.name}' and '{r2.name}' overlap heavily "
-                    f"({max_overlap:.1%} of smaller region)",
+                    f"Could not check overlap between '{r1.name}' and "
+                    f"'{r2.name}': invalid geometry ({exc})",
                 )
                 if warn_overlap:
                     warnings.warn(
-                        f"Regions '{r1.name}' and '{r2.name}' overlap heavily "
-                        f"({max_overlap:.1%} of the smaller region's area). "
-                        "This may be intentional, but could indicate a drawing error.",
+                        f"Could not check overlap between regions '{r1.name}' "
+                        f"and '{r2.name}' because one of them has invalid "
+                        f"geometry ({exc}). Fix the polygon (e.g. it may be "
+                        f"self-intersecting) and re-validate.",
                         UserWarning,
                         stacklevel=3,
                     )
+                continue
 
     return issues
 

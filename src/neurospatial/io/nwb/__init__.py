@@ -16,6 +16,7 @@ Reading Functions:
     read_pose : Read pose estimation data from ndx-pose PoseEstimation
     read_events : Read events from ndx-events EventsTable
     read_intervals : Read intervals from NWB TimeIntervals (trials, epochs, etc.)
+    read_units : Read spike-time arrays from an NWB units table
     read_environment : Read Environment from NWB scratch space
 
 Writing Functions:
@@ -99,6 +100,7 @@ _LAZY_IMPORTS: dict[str, str] = {
     "read_pose": "neurospatial.io.nwb._pose:read_pose",
     "read_events": "neurospatial.io.nwb._events:read_events",
     "read_intervals": "neurospatial.io.nwb._events:read_intervals",
+    "read_units": "neurospatial.io.nwb._units:read_units",
     "read_environment": "neurospatial.io.nwb._environment:read_environment",
     "read_trials": "neurospatial.io.nwb._events:read_trials",
     # Writing functions
@@ -145,6 +147,7 @@ __all__ = [
     "read_pose",
     "read_position",
     "read_trials",
+    "read_units",
     "write_environment",
     "write_events",
     "write_laps",

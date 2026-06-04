@@ -637,15 +637,11 @@ def _points_to_regular_grid_bin_ind(
 
     n_dims = valid_points.shape[1]
     if n_dims != len(grid_edges) or n_dims != len(grid_shape):
-        # This case should ideally be caught earlier or raise a more specific error.
-        # For now, assume dimensions match if we reach here.
-        # If not, returning all -1s is a safe fallback.
-        warnings.warn(
-            "Dimensionality mismatch between points, grid_edges, or grid_shape.",
-            RuntimeWarning,
-            stacklevel=2,
+        raise ValueError(
+            f"Dimensionality mismatch: points have {n_dims} dimension(s), but "
+            f"grid_edges has {len(grid_edges)} and grid_shape has "
+            f"{len(grid_shape)}. Points must match the grid's dimensionality."
         )
-        return output_indices
 
     # Calculate N-D indices for valid_points
     multi_bin_idx_list = []

@@ -300,11 +300,14 @@ class Regions(MutableMapping[str, Region]):
         >>> r1 = Region(name="goal", kind="point", data=[10.0, 20.0])
         >>> regions["goal"] = r1  # OK — first assignment
         >>> r2 = Region(name="goal", kind="point", data=[15.0, 25.0])
-        >>> regions["goal"] = r2  # raises KeyError
+        >>> regions["goal"] = r2  # doctest: +IGNORE_EXCEPTION_DETAIL
+        Traceback (most recent call last):
+            ...
+        KeyError: "Region 'goal' already exists. ..."
 
         To replace an existing region, pick the explicit path:
 
-        >>> regions.set("goal", r2)  # idempotent replace
+        >>> _ = regions.set("goal", r2)  # idempotent replace
         >>> _ = regions.update_region("goal", point=[15.0, 25.0])  # in-place edit
 
         See Also
@@ -520,7 +523,7 @@ class Regions(MutableMapping[str, Region]):
         ------
         KeyError
             If ``name`` is not in the collection. Mirrors ``del regions[name]``
-            and the rest of the M5.5 contract: every Region API
+            and the rest of the contract: every Region API
             (``add``, ``update_region``, ``__setitem__``, ``__delitem__``,
             ``remove``) raises rather than silently absorbing the case where
             the caller's mental model of the collection disagrees with reality.
@@ -559,12 +562,12 @@ class Regions(MutableMapping[str, Region]):
             return float(region.data.area)
         return 0.0
 
-    def region_center(self, region_name: str) -> NDArray[np.float64] | None:
+    def region_center(self, name: str) -> NDArray[np.float64] | None:
         """Calculate the center of a specified named region.
 
         Parameters
         ----------
-        region_name : str
+        name : str
             Name of region to query.
 
         Returns
@@ -576,19 +579,23 @@ class Regions(MutableMapping[str, Region]):
         Raises
         ------
         KeyError
-            If `region_name` is not present in this collection.
+            If `name` is not present in this collection.
 
         """
-        if region_name not in self._store:
-            raise KeyError(f"Region '{region_name}' not found in this collection.")
+        if name not in self._store:
+            raise KeyError(f"Region '{name}' not found in this collection.")
 
-        region = self._store[region_name]
+        region = self._store[name]
 
         if region.kind == "point":
             return np.asarray(region.data, dtype=float)
-        else:  # region.kind == "polygon"
-            assert isinstance(region.data, Polygon)
-            return np.array(region.data.centroid.coords[0], dtype=float)
+        # region.kind == "polygon"
+        assert isinstance(region.data, Polygon)
+        if region.data.is_empty:
+            # Empty polygon has no centroid coordinates; the documented
+            # contract is to return None rather than raise.
+            return None
+        return np.array(region.data.centroid.coords[0], dtype=float)
 
     def buffer(
         self,

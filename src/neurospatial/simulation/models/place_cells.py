@@ -70,6 +70,14 @@ class PlaceCellModel:
     condition : Callable | None
         Condition function for gated firing.
 
+    Raises
+    ------
+    ValueError
+        If ``width`` contains a non-finite value (NaN or +/-inf), or if any
+        ``width`` value is not strictly positive. ``width`` is the Gaussian
+        standard deviation of the place field, so a zero or negative width
+        gives an undefined (0/0) firing rate at the field center.
+
     Examples
     --------
     Simple place cell in 2D arena:
@@ -199,6 +207,25 @@ class PlaceCellModel:
         else:
             self.width = width
 
+        # Reject non-positive width: width is the Gaussian standard deviation,
+        # so width <= 0 makes the field undefined (0/0 -> NaN at the center,
+        # silently producing zero spikes downstream).
+        width_check = np.asarray(self.width, dtype=np.float64)
+        if not np.all(np.isfinite(width_check)):
+            msg = (
+                f"width must be finite and positive, got {self.width!r}. "
+                "width is the Gaussian standard deviation of the place field."
+            )
+            raise ValueError(msg)
+        if np.any(width_check <= 0.0):
+            msg = (
+                f"width must be strictly positive, got {self.width!r}. "
+                "width is the Gaussian standard deviation of the place field; "
+                "a zero or negative width gives an undefined (0/0) firing rate "
+                "at the field center."
+            )
+            raise ValueError(msg)
+
         # Validate width compatibility with distance metric
         if metric == "geodesic":
             width_arr = np.asarray(self.width)
@@ -313,25 +340,31 @@ class PlaceCellModel:
         # Convert width to array for anisotropic case
         width = np.asarray(self.width)
 
-        # For anisotropic width, compute effective distance using Mahalanobis-like metric
         if width.ndim > 0 and len(width) > 1:
-            # Anisotropic: each dimension has its own width
-            # d_eff = sqrt(sum((x_i - c_i)^2 / width_i^2))
+            # Anisotropic: each dimension has its own width. Build an
+            # effective distance already expressed in standard-deviation
+            # units: d_sigma = sqrt(sum_i ((x_i - c_i) / width_i)^2).
             diff = positions - self.center
             normalized_diff = diff / width
             distances = np.linalg.norm(normalized_diff, axis=1)
-            # Use mean width for clipping threshold
-            width_for_clip = np.mean(width)
+            # `distances` is now in sigma units, so the Gaussian divisor is 1.0.
+            # Use the mean width only as a length scale for the clip threshold,
+            # expressed back in sigma units (5 sigma).
+            sigma_divisor = 1.0
+            clip_threshold = 5.0  # 5 sigma, since `distances` is in sigma units
         else:
-            # Isotropic: single width value
-            width_for_clip = float(width)
+            # Isotropic: `distances` (set above) is a raw Euclidean distance,
+            # so divide by the scalar width to convert to sigma units.
+            scalar_width = float(width)
+            sigma_divisor = scalar_width
+            clip_threshold = 5.0 * scalar_width  # 5 sigma in raw distance units
 
-        # Clip distances for numerical stability (Gaussian < 1e-6 beyond 5σ)
-        distances = np.minimum(distances, 5 * width_for_clip)
+        # Clip for numerical stability (Gaussian < 1e-6 beyond 5 sigma).
+        distances = np.minimum(distances, clip_threshold)
 
-        # Compute Gaussian firing rate
-        # rate = baseline + (max - baseline) * exp(-0.5 * (d/width)^2)
-        gaussian = np.exp(-0.5 * (distances / width_for_clip) ** 2)
+        # Compute Gaussian firing rate:
+        #   rate = baseline + (max - baseline) * exp(-0.5 * (d / sigma)^2)
+        gaussian = np.exp(-0.5 * (distances / sigma_divisor) ** 2)
         rates = self.baseline_rate + (self.max_rate - self.baseline_rate) * gaussian
 
         # Apply condition mask if provided

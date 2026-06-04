@@ -40,7 +40,7 @@ env = Environment.from_samples(
 - `infer_active_bins`: Automatically detect active regions (default: True)
 - `bin_count_threshold`: Minimum samples per active bin
 - `layout`: "RegularGrid" or "Hexagonal" (`from_samples()` supports these two)
-- `dilate`, `fill_holes`, `close`: Morphological operations
+- `dilate`, `fill_holes`, `close_gaps`: Morphological operations
 
 See [API Reference](../api/index.md) for complete parameter documentation.
 

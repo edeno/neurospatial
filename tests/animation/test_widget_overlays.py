@@ -18,6 +18,21 @@ from neurospatial.animation.overlays import (
 from neurospatial.animation.skeleton import Skeleton
 
 
+@pytest.fixture(autouse=True)
+def _force_ipywidgets_available():
+    """Run these tests fully mocked, with or without a real ipywidgets install.
+
+    The tests patch ``widget_backend.ipywidgets``/``display`` with mocks, but
+    ``render_widget`` short-circuits on ``IPYWIDGETS_AVAILABLE``. Force the flag
+    True so the mocked path executes even in a minimal environment where the
+    optional ``animation`` extra is not installed (mirrors test_widget_backend).
+    """
+    with patch(
+        "neurospatial.animation.backends.widget_backend.IPYWIDGETS_AVAILABLE", True
+    ):
+        yield
+
+
 @pytest.fixture
 def simple_env():
     """Create a simple 2D environment for testing."""

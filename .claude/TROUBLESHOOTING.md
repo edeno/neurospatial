@@ -229,7 +229,7 @@ env.animate_fields(
 ```python
 # Don't manually swap x,y or invert
 positions_wrong = np.column_stack([y_coords, x_coords])
-overlay = PositionOverlay(data=positions_wrong)  # Display will be wrong!
+overlay = PositionOverlay(positions=positions_wrong)  # Display will be wrong!
 ```
 
 ✅ **Right:**
@@ -237,7 +237,7 @@ overlay = PositionOverlay(data=positions_wrong)  # Display will be wrong!
 ```python
 # Pass (x, y) format - system handles conversion
 positions = np.column_stack([x_coords, y_coords])
-overlay = PositionOverlay(data=positions)
+overlay = PositionOverlay(positions=positions)
 ```
 
 ### 12. VideoOverlay requires 2D environments

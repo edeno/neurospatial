@@ -24,6 +24,12 @@ try:
 
     IPYWIDGETS_AVAILABLE = True
 except ImportError:
+    # Bind the optional symbols to None so the module always exposes them as
+    # attributes. Actual use is gated by IPYWIDGETS_AVAILABLE; keeping the names
+    # present lets callers (and tests) patch ``widget_backend.ipywidgets`` /
+    # ``widget_backend.display`` even when ipywidgets is not installed.
+    ipywidgets = None
+    display = None  # type: ignore[assignment]
     IPYWIDGETS_AVAILABLE = False
 
 

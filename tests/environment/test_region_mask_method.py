@@ -196,10 +196,10 @@ class TestRegionMaskEdgeCases:
         assert not np.any(mask)
 
     def test_point_region_marks_containing_bin(self):
-        """Point regions select the single bin containing the point (M5.7).
+        """Point regions select the single bin containing the point.
 
         This is the same behavior as the v0.3 ``mask_for_region``; the
-        M5.7 successor ``region_mask`` preserves it. The free function
+        successor ``region_mask`` preserves it. The free function
         ``regions_to_mask`` still returns empty for points (points have
         no area, so the polygon-coverage predicate has nothing to
         report); the env method special-cases points so users can write

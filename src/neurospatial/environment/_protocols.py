@@ -39,10 +39,11 @@ class EnvironmentProtocol(Protocol):
     regions: Regions
     units: str | None
     frame: str | None
-    # "cartesian" for envs whose bin_centers hold (x, y[, z]); "polar"
-    # for envs from from_polar_egocentric where bin_centers[:, 0] is
-    # distance and bin_centers[:, 1] is angle in radians.
-    coordinate_kind: Literal["cartesian", "polar"]
+    # Per-class marker: ``False`` for Cartesian environments, ``True`` for
+    # egocentric polar environments (EgocentricPolarEnvironment). Mixins that
+    # adapt presentation to polar geometry (e.g. plot_field axis labels) read
+    # this; it is a class constant, not a runtime-mutable flag.
+    _POLAR: bool
 
     # Internal/cache attributes that mixins access
     _kernel_cache: dict[
@@ -87,30 +88,6 @@ class EnvironmentProtocol(Protocol):
         -------
         bool
             True if environment supports linearization methods.
-        """
-        ...
-
-    @property
-    def is_polar(self) -> bool:
-        """
-        Whether this environment lives in polar coordinates.
-
-        Returns
-        -------
-        bool
-            True iff ``coordinate_kind == "polar"`` (envs created by
-            ``Environment.from_polar_egocentric``).
-        """
-        ...
-
-    def _check_cartesian(self, method_name: str) -> None:
-        """Raise ``ValueError`` if this env is not Cartesian.
-
-        Mixin methods that interpret inputs as ``(x, y[, z])`` (e.g.
-        ``bin_at``, ``distance_between``, the Euclidean branch of
-        ``distance_to``) call this at the top to fail at the API
-        boundary on a polar env rather than silently treating
-        ``(distance, angle)`` pairs as Cartesian.
         """
         ...
 
@@ -171,7 +148,7 @@ class EnvironmentProtocol(Protocol):
         Method (not property) since v0.4: the underlying computation
         scales with the connectivity-graph size, so the call surface
         keeps that cost visible at the call site. The result is cached
-        and invalidated by ``_state_version`` bumps (M5.1).
+        and invalidated by ``_state_version`` bumps.
 
         See Also
         --------
@@ -382,7 +359,7 @@ class EnvironmentProtocol(Protocol):
         *,
         speed: NDArray[np.float64] | None = None,
         min_speed: float | None = None,
-        max_gap: float | None = None,
+        max_gap: float | None = 0.5,
         bandwidth: float | None = None,
         time_allocation: Literal["start", "linear"] = "start",
         return_seconds: bool = True,
@@ -400,7 +377,7 @@ class EnvironmentProtocol(Protocol):
             Speed at each time point for filtering.
         min_speed : float, optional
             Minimum speed threshold for inclusion.
-        max_gap : float, optional
+        max_gap : float, optional, default=0.5
             Maximum time gap before splitting trajectory.
         bandwidth : float, optional
             Bandwidth for smoothing occupancy.
@@ -719,9 +696,10 @@ class EnvironmentProtocol(Protocol):
         self,
         fields: Any,  # Sequence[NDArray[np.float64]] | NDArray[np.float64]
         *,
+        frame_times: NDArray[np.float64],
         backend: Literal["auto", "napari", "video", "html", "widget"] = "auto",
         save_path: str | None = None,
-        fps: int = 30,
+        speed: float = 1.0,
         cmap: str = "viridis",
         vmin: float | None = None,
         vmax: float | None = None,
@@ -739,7 +717,6 @@ class EnvironmentProtocol(Protocol):
         show_colorbar: bool = False,
         colorbar_label: str = "",
         overlays: list[OverlayProtocol] | None = None,
-        frame_times: NDArray[np.float64] | None = None,
         show_regions: bool | list[str] = False,
         region_alpha: float = 0.3,
         scale_bar: bool | Any = False,  # bool | ScaleBarConfig
@@ -752,12 +729,14 @@ class EnvironmentProtocol(Protocol):
         ----------
         fields : ndarray of shape (n_frames, n_bins) or sequence
             Spatial field values for each frame.
+        frame_times : ndarray of shape (n_frames,)
+            Timestamps for each frame. Required.
         backend : {'auto', 'napari', 'video', 'html', 'widget'}, default='auto'
             Animation backend to use.
         save_path : str, optional
             Path to save video file.
-        fps : int, default=30
-            Frames per second for video output.
+        speed : float, default=1.0
+            Playback speed multiplier relative to real time.
         cmap : str, default='viridis'
             Colormap name.
         vmin : float, optional
@@ -792,8 +771,6 @@ class EnvironmentProtocol(Protocol):
             Label for colorbar.
         overlays : list of OverlayProtocol, optional
             Additional overlay objects.
-        frame_times : ndarray of shape (n_frames,), optional
-            Timestamps for each frame.
         show_regions : bool or list of str, default=False
             Whether to show region boundaries.
         region_alpha : float, default=0.3

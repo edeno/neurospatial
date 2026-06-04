@@ -304,3 +304,27 @@ class TestFullTrajectoryAnalysisWorkflow:
         assert len(goal_home) > 0
         # Exploration should cover more area
         assert len(explore_home) >= len(goal_home)
+
+
+def test_detect_goal_directed_runs_raises_valueerror() -> None:
+    """A missing goal region raises ValueError (not KeyError)."""
+    import pytest
+
+    x = np.linspace(0, 50, 50)
+    y = np.linspace(0, 50, 50)
+    xx, yy = np.meshgrid(x, y)
+    positions = np.column_stack([xx.ravel(), yy.ravel()])
+    env = Environment.from_samples(positions, bin_size=5.0)
+
+    times = np.linspace(0, 10, 20)
+    position_bins = env.bin_at(
+        np.column_stack([np.linspace(5, 45, 20), np.linspace(5, 45, 20)])
+    )
+
+    with pytest.raises(ValueError, match=r"not found in env\.regions"):
+        detect_goal_directed_runs(
+            position_bins,
+            times,
+            env,
+            goal_region="nonexistent",
+        )

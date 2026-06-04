@@ -85,6 +85,9 @@ def read_position(
     positions = np.asarray(spatial_series.data[:], dtype=np.float64)
     timestamps = _get_timestamps(spatial_series)
 
+    from neurospatial._validation import validate_lengths
+
+    validate_lengths({"positions": positions, "timestamps": timestamps})
     return positions, timestamps
 
 
@@ -262,7 +265,11 @@ def read_head_direction(
     Returns
     -------
     angles : NDArray[np.float64], shape (n_samples,)
-        Head direction angles in radians.
+        Head direction angles in radians, allocentric convention
+        (0 = East, increasing counterclockwise; range as stored, typically
+        (-pi, pi] from arctan2 or [0, 2*pi) from a wrapped angle series).
+        If the source SpatialSeries reports a degree unit, values are
+        converted to radians on read.
     timestamps : NDArray[np.float64], shape (n_samples,)
         Timestamps in seconds.
 
@@ -294,8 +301,27 @@ def read_head_direction(
         compass_container, compass_name, "SpatialSeries", "CompassDirection"
     )
 
-    # Extract angle data (1D) and timestamps
-    angles = np.asarray(spatial_series.data[:], dtype=np.float64).ravel()
+    # Extract angle data and timestamps. CompassDirection SpatialSeries store
+    # head direction as either a 1-D angle series or an (n, 2) unit-vector
+    # series; handle both. Angles are returned in the allocentric convention
+    # (0 = East, increasing counterclockwise).
+    raw = np.asarray(spatial_series.data[:], dtype=np.float64)
     timestamps = _get_timestamps(spatial_series)
+
+    if raw.ndim == 2 and raw.shape[1] == 2:
+        # (n, 2) heading vectors -> angle via arctan2 (already radians, 0=East).
+        angles = np.arctan2(raw[:, 1], raw[:, 0])
+    else:
+        angles = raw.reshape(-1)
+        # Honor the stored unit: convert degrees to radians. NWB SpatialSeries
+        # carry a free-text 'unit'; treat anything starting with "deg" as
+        # degrees (e.g. "deg", "degree", "degrees").
+        unit = getattr(spatial_series, "unit", None)
+        if isinstance(unit, str) and unit.strip().lower().startswith("deg"):
+            angles = np.deg2rad(angles)
+
+    from neurospatial._validation import validate_lengths
+
+    validate_lengths({"angles": angles, "timestamps": timestamps})
 
     return angles, timestamps

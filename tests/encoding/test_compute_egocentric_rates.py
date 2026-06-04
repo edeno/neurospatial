@@ -186,7 +186,11 @@ class TestComputeEgocentricRatesReturnsResult:
             trajectory_data["object_positions"],
         )
 
-        assert isinstance(result.env, Environment)
+        from neurospatial.environment.polar import EgocentricPolarEnvironment
+
+        # Egocentric rates run on a distinct polar environment type.
+        assert isinstance(result.env, EgocentricPolarEnvironment)
+        assert not isinstance(result.env, Environment)
 
     def test_env_n_bins_matches_occupancy(self, trajectory_data, spike_times_list):
         """Test env.n_bins matches occupancy length."""

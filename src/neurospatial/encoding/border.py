@@ -172,7 +172,7 @@ def border_score(
 
     See Also
     --------
-    neurospatial.metrics.detect_place_fields : Detect place fields
+    neurospatial.encoding.detect_place_fields : Detect place fields
     Environment.boundary_bins : Get boundary bin indices
     """
     # Validate inputs

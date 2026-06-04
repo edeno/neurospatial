@@ -5,7 +5,7 @@ the napari rendering pipeline:
 - Controller creation after viewer setup
 - Storage in viewer.metadata["playback_controller"]
 - Wiring to play/pause widget
-- Keeping existing dims.events callbacks (for migration in Phase 5)
+- Keeping existing dims.events callbacks (for migration)
 """
 
 from __future__ import annotations

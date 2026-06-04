@@ -34,26 +34,31 @@ has higher spatial information than the place field.
 
 Examples
 --------
->>> from neurospatial import Environment
->>> from neurospatial.encoding.view import ViewRateResult
 >>> import numpy as np
+>>> from neurospatial import Environment
+>>> from neurospatial.encoding.view import compute_view_rate
 
->>> # Create environment
->>> positions = np.random.rand(100, 2) * 100
+>>> # Create environment from sampled positions
+>>> rng = np.random.default_rng(0)
+>>> positions = rng.random((200, 2)) * 50
 >>> env = Environment.from_samples(positions, bin_size=5.0)
 
->>> # Create result (typically from compute_view_rate)
->>> firing_rate = np.random.rand(env.n_bins) * 10
->>> occupancy = np.ones(env.n_bins)
->>> result = ViewRateResult(
-...     firing_rate=firing_rate,
-...     occupancy=occupancy,
-...     env=env,
+>>> # Build a view field from a trajectory (the usual entry point)
+>>> times = np.linspace(0, 10, 200)
+>>> trajectory = rng.random((200, 2)) * 50
+>>> headings = rng.uniform(-np.pi, np.pi, 200)
+>>> spike_times = np.sort(rng.uniform(0, 10, 20))
+>>> result = compute_view_rate(
+...     env,
+...     spike_times,
+...     times,
+...     trajectory,
+...     headings,
 ...     gaze_model="fixed_distance",
 ...     view_distance=10.0,
-...     smoothing_method="diffusion_kde",
-...     bandwidth=5.0,
 ... )
+>>> result.gaze_model
+'fixed_distance'
 
 References
 ----------
@@ -164,28 +169,31 @@ class ViewRateResult(SpatialResultMixin):
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.encoding.view import ViewRateResult
+    >>> from neurospatial.encoding.view import compute_view_rate
 
     >>> # Create a simple environment
-    >>> positions = np.random.rand(100, 2) * 50
+    >>> rng = np.random.default_rng(0)
+    >>> positions = rng.random((200, 2)) * 50
     >>> env = Environment.from_samples(positions, bin_size=5.0)
 
-    >>> # Create result
-    >>> firing_rate = np.random.rand(env.n_bins) * 10
-    >>> occupancy = np.ones(env.n_bins)
-    >>> result = ViewRateResult(
-    ...     firing_rate=firing_rate,
-    ...     occupancy=occupancy,
-    ...     env=env,
+    >>> # Compute a view field (the usual way to obtain a ViewRateResult)
+    >>> times = np.linspace(0, 10, 200)
+    >>> trajectory = rng.random((200, 2)) * 50
+    >>> headings = rng.uniform(-np.pi, np.pi, 200)
+    >>> spike_times = np.sort(rng.uniform(0, 10, 20))
+    >>> result = compute_view_rate(
+    ...     env,
+    ...     spike_times,
+    ...     times,
+    ...     trajectory,
+    ...     headings,
     ...     gaze_model="fixed_distance",
     ...     view_distance=10.0,
-    ...     smoothing_method="diffusion_kde",
-    ...     bandwidth=5.0,
     ... )
 
     >>> # Access fields
-    >>> result.firing_rate.shape
-    (n_bins,)
+    >>> result.firing_rate.shape == (env.n_bins,)
+    True
     >>> result.gaze_model
     'fixed_distance'
 
@@ -233,12 +241,12 @@ class ViewRateResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> result = ViewRateResult(...)
-        >>> ax = result.plot()
-        >>> plt.show()
+        >>> import matplotlib.pyplot as plt
+        >>> ax = result.plot()  # doctest: +SKIP
+        >>> plt.show()  # doctest: +SKIP
 
-        >>> fig, ax = plt.subplots()
-        >>> result.plot(ax=ax, cmap="hot", vmax=20.0)
+        >>> fig, ax = plt.subplots()  # doctest: +SKIP
+        >>> result.plot(ax=ax, cmap="hot", vmax=20.0)  # doctest: +SKIP
 
         See Also
         --------
@@ -266,9 +274,21 @@ class ViewRateResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> result = ViewRateResult(...)
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.view import compute_view_rate
+        >>> rng = np.random.default_rng(0)
+        >>> env = Environment.from_samples(rng.random((200, 2)) * 50, bin_size=5.0)
+        >>> times = np.linspace(0, 10, 200)
+        >>> trajectory = rng.random((200, 2)) * 50
+        >>> headings = rng.uniform(-np.pi, np.pi, 200)
+        >>> spike_times = np.sort(rng.uniform(0, 10, 20))
+        >>> result = compute_view_rate(
+        ...     env, spike_times, times, trajectory, headings, view_distance=10.0
+        ... )
         >>> peak = result.peak_view_location()
-        >>> print(f"Peak view response at ({peak[0]:.1f}, {peak[1]:.1f}) cm")
+        >>> peak.shape
+        (2,)
 
         See Also
         --------
@@ -324,9 +344,21 @@ class ViewRateResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> result = ViewRateResult(...)
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.view import compute_view_rate
+        >>> rng = np.random.default_rng(0)
+        >>> env = Environment.from_samples(rng.random((200, 2)) * 50, bin_size=5.0)
+        >>> times = np.linspace(0, 10, 200)
+        >>> trajectory = rng.random((200, 2)) * 50
+        >>> headings = rng.uniform(-np.pi, np.pi, 200)
+        >>> spike_times = np.sort(rng.uniform(0, 10, 20))
+        >>> result = compute_view_rate(
+        ...     env, spike_times, times, trajectory, headings, view_distance=10.0
+        ... )
         >>> info = result.view_spatial_information()
-        >>> print(f"View spatial information: {info:.2f} bits/spike")
+        >>> bool(info >= 0.0)
+        True
 
         See Also
         --------
@@ -396,11 +428,22 @@ class ViewRateResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> result = ViewRateResult(...)
-        >>> if result.is_spatial_view_cell():
-        ...     print("This is a spatial view cell!")
-        >>> if result.is_spatial_view_cell(min_info=0.3):
-        ...     print("This cell passes a more permissive threshold")
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.view import compute_view_rate
+        >>> rng = np.random.default_rng(0)
+        >>> env = Environment.from_samples(rng.random((200, 2)) * 50, bin_size=5.0)
+        >>> times = np.linspace(0, 10, 200)
+        >>> trajectory = rng.random((200, 2)) * 50
+        >>> headings = rng.uniform(-np.pi, np.pi, 200)
+        >>> spike_times = np.sort(rng.uniform(0, 10, 20))
+        >>> result = compute_view_rate(
+        ...     env, spike_times, times, trajectory, headings, view_distance=10.0
+        ... )
+        >>> isinstance(result.is_spatial_view_cell(), bool)
+        True
+        >>> isinstance(result.is_spatial_view_cell(min_info=0.3), bool)
+        True
 
         See Also
         --------
@@ -468,34 +511,36 @@ class ViewRatesResult(SpatialResultMixin):
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.encoding.view import ViewRatesResult
+    >>> from neurospatial.encoding.view import compute_view_rates
 
     >>> # Create a simple environment
-    >>> positions = np.random.rand(100, 2) * 50
+    >>> rng = np.random.default_rng(0)
+    >>> positions = rng.random((200, 2)) * 50
     >>> env = Environment.from_samples(positions, bin_size=5.0)
 
-    >>> # Create batch result for 3 neurons
-    >>> firing_rates = np.random.rand(3, env.n_bins) * 10
-    >>> occupancy = np.ones(env.n_bins)
-    >>> result = ViewRatesResult(
-    ...     firing_rates=firing_rates,
-    ...     occupancy=occupancy,
-    ...     env=env,
-    ...     gaze_model="fixed_distance",
-    ...     view_distance=10.0,
-    ...     smoothing_method="diffusion_kde",
-    ...     bandwidth=5.0,
+    >>> # Compute view fields for 3 neurons (the usual entry point)
+    >>> times = np.linspace(0, 10, 200)
+    >>> trajectory = rng.random((200, 2)) * 50
+    >>> headings = rng.uniform(-np.pi, np.pi, 200)
+    >>> spike_times = [
+    ...     np.sort(rng.uniform(0, 10, 15)),
+    ...     np.sort(rng.uniform(0, 10, 20)),
+    ...     np.sort(rng.uniform(0, 10, 25)),
+    ... ]
+    >>> result = compute_view_rates(
+    ...     env, spike_times, times, trajectory, headings, view_distance=10.0
     ... )
 
     >>> # Access fields
     >>> len(result)
     3
-    >>> result[0]  # Get first neuron as ViewRateResult
-    ViewRateResult(...)
+    >>> type(result[0]).__name__  # Get first neuron as ViewRateResult
+    'ViewRateResult'
 
     >>> # Iterate over neurons
-    >>> for single in result:
-    ...     print(single.firing_rate.max())
+    >>> peaks = [single.firing_rate.shape for single in result]
+    >>> peaks == [(env.n_bins,)] * 3
+    True
 
     See Also
     --------
@@ -521,8 +566,20 @@ class ViewRatesResult(SpatialResultMixin):
 
         Examples
         --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.view import compute_view_rates
+        >>> rng = np.random.default_rng(0)
+        >>> env = Environment.from_samples(rng.random((200, 2)) * 50, bin_size=5.0)
+        >>> times = np.linspace(0, 10, 200)
+        >>> trajectory = rng.random((200, 2)) * 50
+        >>> headings = rng.uniform(-np.pi, np.pi, 200)
+        >>> spike_times = [np.sort(rng.uniform(0, 10, 15)) for _ in range(3)]
+        >>> result = compute_view_rates(
+        ...     env, spike_times, times, trajectory, headings, view_distance=10.0
+        ... )
         >>> len(result)
-        5
+        3
         """
         return len(self.firing_rates)  # type: ignore[arg-type]
 
@@ -541,6 +598,18 @@ class ViewRatesResult(SpatialResultMixin):
 
         Examples
         --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.view import compute_view_rates, ViewRateResult
+        >>> rng = np.random.default_rng(0)
+        >>> env = Environment.from_samples(rng.random((200, 2)) * 50, bin_size=5.0)
+        >>> times = np.linspace(0, 10, 200)
+        >>> trajectory = rng.random((200, 2)) * 50
+        >>> headings = rng.uniform(-np.pi, np.pi, 200)
+        >>> spike_times = [np.sort(rng.uniform(0, 10, 15)) for _ in range(3)]
+        >>> result = compute_view_rates(
+        ...     env, spike_times, times, trajectory, headings, view_distance=10.0
+        ... )
         >>> single = result[0]
         >>> isinstance(single, ViewRateResult)
         True
@@ -565,8 +634,21 @@ class ViewRatesResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> for single in result:
-        ...     print(single.firing_rate.max())
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.view import compute_view_rates
+        >>> rng = np.random.default_rng(0)
+        >>> env = Environment.from_samples(rng.random((200, 2)) * 50, bin_size=5.0)
+        >>> times = np.linspace(0, 10, 200)
+        >>> trajectory = rng.random((200, 2)) * 50
+        >>> headings = rng.uniform(-np.pi, np.pi, 200)
+        >>> spike_times = [np.sort(rng.uniform(0, 10, 15)) for _ in range(3)]
+        >>> result = compute_view_rates(
+        ...     env, spike_times, times, trajectory, headings, view_distance=10.0
+        ... )
+        >>> shapes = [single.firing_rate.shape for single in result]
+        >>> len(shapes)
+        3
         """
         for i in range(len(self)):
             yield self[i]
@@ -603,13 +685,14 @@ class ViewRatesResult(SpatialResultMixin):
 
         Examples
         --------
+        >>> import matplotlib.pyplot as plt
         >>> # Plot the first neuron's view field
-        >>> ax = result.plot(idx=0)
-        >>> plt.show()
+        >>> ax = result.plot(idx=0)  # doctest: +SKIP
+        >>> plt.show()  # doctest: +SKIP
 
         >>> # Plot neuron 5 with custom colormap
-        >>> fig, ax = plt.subplots()
-        >>> result.plot(idx=5, ax=ax, cmap="hot", vmax=20.0)
+        >>> fig, ax = plt.subplots()  # doctest: +SKIP
+        >>> result.plot(idx=5, ax=ax, cmap="hot", vmax=20.0)  # doctest: +SKIP
 
         See Also
         --------
@@ -646,8 +729,21 @@ class ViewRatesResult(SpatialResultMixin):
 
         Examples
         --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.view import compute_view_rates
+        >>> rng = np.random.default_rng(0)
+        >>> env = Environment.from_samples(rng.random((200, 2)) * 50, bin_size=5.0)
+        >>> times = np.linspace(0, 10, 200)
+        >>> trajectory = rng.random((200, 2)) * 50
+        >>> headings = rng.uniform(-np.pi, np.pi, 200)
+        >>> spike_times = [np.sort(rng.uniform(0, 10, 15)) for _ in range(3)]
+        >>> result = compute_view_rates(
+        ...     env, spike_times, times, trajectory, headings, view_distance=10.0
+        ... )
         >>> peaks = result.peak_view_location()
-        >>> print(f"Neuron 0 peak at ({peaks[0, 0]:.1f}, {peaks[0, 1]:.1f}) cm")
+        >>> peaks.shape
+        (3, 2)
 
         See Also
         --------
@@ -696,9 +792,23 @@ class ViewRatesResult(SpatialResultMixin):
 
         Examples
         --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.view import compute_view_rates
+        >>> rng = np.random.default_rng(0)
+        >>> env = Environment.from_samples(rng.random((200, 2)) * 50, bin_size=5.0)
+        >>> times = np.linspace(0, 10, 200)
+        >>> trajectory = rng.random((200, 2)) * 50
+        >>> headings = rng.uniform(-np.pi, np.pi, 200)
+        >>> spike_times = [np.sort(rng.uniform(0, 10, 15)) for _ in range(3)]
+        >>> result = compute_view_rates(
+        ...     env, spike_times, times, trajectory, headings, view_distance=10.0
+        ... )
         >>> info = result.view_spatial_information()
-        >>> print(f"Neuron with highest info: {np.argmax(info)}")
-        >>> print(f"Info values: {info[:5]}")
+        >>> info.shape
+        (3,)
+        >>> bool(np.all(info >= 0.0))
+        True
 
         See Also
         --------
@@ -736,11 +846,26 @@ class ViewRatesResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> is_spatial_view_cell = result.detect_view_cells()
-        >>> print(f"Found {is_spatial_view_cell.sum()} view cells")
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.view import compute_view_rates
+        >>> rng = np.random.default_rng(0)
+        >>> env = Environment.from_samples(rng.random((200, 2)) * 50, bin_size=5.0)
+        >>> times = np.linspace(0, 10, 200)
+        >>> trajectory = rng.random((200, 2)) * 50
+        >>> headings = rng.uniform(-np.pi, np.pi, 200)
+        >>> spike_times = [np.sort(rng.uniform(0, 10, 15)) for _ in range(3)]
+        >>> result = compute_view_rates(
+        ...     env, spike_times, times, trajectory, headings, view_distance=10.0
+        ... )
+        >>> is_view_cell = result.detect_view_cells()
+        >>> is_view_cell.shape
+        (3,)
 
         >>> # Use stricter threshold
-        >>> is_spatial_view_cell = result.detect_view_cells(min_info=1.0)
+        >>> is_view_cell = result.detect_view_cells(min_info=1.0)
+        >>> is_view_cell.dtype == bool
+        True
 
         See Also
         --------
@@ -796,12 +921,24 @@ class ViewRatesResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> result = ViewRatesResult(...)
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.view import compute_view_rates
+        >>> rng = np.random.default_rng(0)
+        >>> env = Environment.from_samples(rng.random((200, 2)) * 50, bin_size=5.0)
+        >>> times = np.linspace(0, 10, 200)
+        >>> trajectory = rng.random((200, 2)) * 50
+        >>> headings = rng.uniform(-np.pi, np.pi, 200)
+        >>> spike_times = [np.sort(rng.uniform(0, 10, 15)) for _ in range(3)]
+        >>> result = compute_view_rates(
+        ...     env, spike_times, times, trajectory, headings, view_distance=10.0
+        ... )
         >>> df = result.to_dataframe()
-        >>> print(df.head())
+        >>> list(df.columns)
+        ['neuron_id', 'peak_view_x', 'peak_view_y', 'peak_rate', 'view_spatial_info', 'is_spatial_view_cell']
 
         >>> # With custom neuron IDs
-        >>> df = result.to_dataframe(neuron_ids=["unit_1", "unit_2", ...])
+        >>> df = result.to_dataframe(neuron_ids=["unit_0", "unit_1", "unit_2"])
 
         >>> # Filter to view cells only
         >>> view_cells_df = df[df["is_spatial_view_cell"]]
@@ -994,10 +1131,11 @@ def compute_view_rate(
     >>> env = Environment.from_samples(sample_positions, bin_size=5.0)
 
     >>> # Create trajectory with positions and headings
+    >>> rng = np.random.default_rng(0)
     >>> times = np.linspace(0, 10, 1000)
-    >>> positions = np.random.rand(1000, 2) * 100
-    >>> headings = np.random.uniform(0, 2 * np.pi, 1000)
-    >>> spike_times = np.array([1.0, 2.5, 4.0, 7.5, 8.2])
+    >>> positions = rng.random((1000, 2)) * 100
+    >>> headings = rng.uniform(-np.pi, np.pi, 1000)
+    >>> spike_times = np.sort(rng.uniform(0, 10, 50))
 
     >>> # Compute view rate
     >>> result = compute_view_rate(
@@ -1012,11 +1150,16 @@ def compute_view_rate(
 
     >>> # Access results
     >>> peak = result.peak_view_location()
+    >>> peak.shape
+    (2,)
     >>> info = result.view_spatial_information()
-    >>> is_spatial_view_cell = result.is_spatial_view_cell()
+    >>> bool(info >= 0.0)
+    True
+    >>> isinstance(result.is_spatial_view_cell(), bool)
+    True
 
     >>> # Plot the view field
-    >>> ax = result.plot()
+    >>> ax = result.plot()  # doctest: +SKIP
 
     References
     ----------
@@ -1266,19 +1409,20 @@ def compute_view_rates(
     >>> from neurospatial.encoding.view import compute_view_rates
 
     >>> # Create environment from sample positions
-    >>> sample_positions = np.random.rand(1000, 2) * 100
+    >>> rng = np.random.default_rng(0)
+    >>> sample_positions = rng.random((1000, 2)) * 100
     >>> env = Environment.from_samples(sample_positions, bin_size=5.0)
 
     >>> # Create trajectory with positions and headings
     >>> times = np.linspace(0, 10, 1000)
-    >>> positions = np.random.rand(1000, 2) * 100
-    >>> headings = np.random.uniform(0, 2 * np.pi, 1000)
+    >>> positions = rng.random((1000, 2)) * 100
+    >>> headings = rng.uniform(-np.pi, np.pi, 1000)
 
     >>> # Spike times for 3 neurons
     >>> spike_times = [
-    ...     np.array([1.0, 2.5, 4.0]),  # Neuron 0
-    ...     np.array([0.5, 1.5, 2.5, 3.5]),  # Neuron 1
-    ...     np.array([5.0, 8.0]),  # Neuron 2
+    ...     np.sort(rng.uniform(0, 10, 15)),  # Neuron 0
+    ...     np.sort(rng.uniform(0, 10, 20)),  # Neuron 1
+    ...     np.sort(rng.uniform(0, 10, 25)),  # Neuron 2
     ... ]
 
     >>> # Compute view rates for all neurons
@@ -1294,17 +1438,20 @@ def compute_view_rates(
     ... )
 
     >>> # Access results
-    >>> print(f"Number of neurons: {len(result)}")
-    >>> print(f"Firing rates shape: {result.firing_rates.shape}")
+    >>> len(result)
+    3
+    >>> result.firing_rates.shape == (3, env.n_bins)
+    True
 
     >>> # Iterate over neurons
-    >>> for i, single in enumerate(result):
-    ...     peak = single.peak_view_location()
-    ...     print(f"Neuron {i}: peak view at ({peak[0]:.1f}, {peak[1]:.1f})")
+    >>> peak_shapes = [single.peak_view_location().shape for single in result]
+    >>> peak_shapes == [(2,), (2,), (2,)]
+    True
 
     >>> # Get metrics for all neurons
     >>> df = result.to_dataframe()
-    >>> print(df)
+    >>> df.shape
+    (3, 6)
 
     >>> # Use 2D array with NaN padding
     >>> spike_times_2d = np.array(
@@ -1314,6 +1461,8 @@ def compute_view_rates(
     ...     ]
     ... )
     >>> result2 = compute_view_rates(env, spike_times_2d, times, positions, headings)
+    >>> len(result2)
+    2
 
     References
     ----------
@@ -1472,8 +1621,8 @@ def is_spatial_view_cell(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
-    view_distance: float = 10.0,
     gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
+    view_distance: float = 10.0,
     smoothing_method: Literal[
         "diffusion_kde", "gaussian_kde", "binned"
     ] = "diffusion_kde",
@@ -1503,10 +1652,10 @@ def is_spatial_view_cell(
         Animal heading at each time (radians, **allocentric world-frame
         convention**: 0 = East, π/2 = North, π = West, -π/2 = South,
         wrapped to [-π, π]).
-    view_distance : float, default=10.0
-        Distance for fixed_distance gaze model.
     gaze_model : {"fixed_distance", "ray_cast", "boundary"}, default="fixed_distance"
         Method for computing viewed location.
+    view_distance : float, default=10.0
+        Distance for fixed_distance gaze model.
     smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Rate map smoothing method.
     bandwidth : float, default=5.0

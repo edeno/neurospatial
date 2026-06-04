@@ -1,8 +1,8 @@
 """End-to-end integration tests for animation with different layout types.
 
 These tests verify that the full rendering pipeline works across different
-layout types (hexagonal, 1D graph, triangular, masked grid). M6 tests only
-verified delegation, these verify actual rendering output.
+layout types (hexagonal, 1D graph, triangular, masked grid). Earlier tests only
+verified delegation; these verify actual rendering output.
 """
 
 from __future__ import annotations

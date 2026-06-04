@@ -121,3 +121,61 @@ class TestCombineFields:
 
         with pytest.raises(ValueError, match="At least one field"):
             combine_fields([])
+
+
+class TestNormalizeFieldValidation:
+    def test_nan_rejected(self):
+        from neurospatial.ops.normalize import normalize_field
+
+        with pytest.raises(ValueError, match="NaN"):
+            normalize_field(np.array([1.0, np.nan, 3.0]))
+
+    def test_inf_rejected(self):
+        from neurospatial.ops.normalize import normalize_field
+
+        with pytest.raises(ValueError, match="Inf"):
+            normalize_field(np.array([1.0, np.inf, 3.0]))
+
+    def test_all_zeros_rejected(self):
+        from neurospatial.ops.normalize import normalize_field
+
+        with pytest.raises(ValueError, match="all zeros"):
+            normalize_field(np.zeros(4))
+
+    def test_non_positive_eps_rejected(self):
+        from neurospatial.ops.normalize import normalize_field
+
+        with pytest.raises(ValueError, match="eps must be positive"):
+            normalize_field(np.array([1.0, 2.0]), eps=0.0)
+
+
+class TestCombineFieldsValidation:
+    def test_mismatched_shapes_rejected(self):
+        from neurospatial.ops.normalize import combine_fields
+
+        with pytest.raises(ValueError, match="same shape"):
+            combine_fields([np.zeros(3), np.zeros(4)])
+
+    def test_weights_only_valid_for_mean(self):
+        from neurospatial.ops.normalize import combine_fields
+
+        with pytest.raises(ValueError, match="mode='mean'"):
+            combine_fields([np.ones(3), np.ones(3)], weights=[0.5, 0.5], mode="max")
+
+    def test_weights_length_must_match_fields(self):
+        from neurospatial.ops.normalize import combine_fields
+
+        with pytest.raises(ValueError, match="must match"):
+            combine_fields([np.ones(3), np.ones(3)], weights=[1.0])
+
+    def test_weights_must_sum_to_one(self):
+        from neurospatial.ops.normalize import combine_fields
+
+        with pytest.raises(ValueError, match="sum to 1"):
+            combine_fields([np.ones(3), np.ones(3)], weights=[0.3, 0.3])
+
+    def test_unknown_mode_rejected(self):
+        from neurospatial.ops.normalize import combine_fields
+
+        with pytest.raises(ValueError, match="Unknown mode"):
+            combine_fields([np.ones(3), np.ones(3)], mode="median")  # type: ignore[arg-type]

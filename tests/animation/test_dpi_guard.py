@@ -1,6 +1,5 @@
 """Tests for DPI and size guard in video backend.
 
-Phase 5.3: DPI and Size Guard
 - Verifies warning when dpi > 150
 - Verifies warning includes estimated resolution
 - Verifies dry-run shows estimates

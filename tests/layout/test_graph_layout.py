@@ -66,3 +66,44 @@ def test_is_linearized_track_true(simple_y_maze_graph):
     """A graph layout reports itself as a linearized 1D track."""
     layout = _build_graph_layout(simple_y_maze_graph)
     assert layout.is_linearized_track is True
+
+
+def test_graph_linear_point_to_bin_active_indices_with_gap(graph_layout_with_gap):
+    """Linear lookups after a gap return active-bin indices, not full-grid ones.
+
+    With ``edge_spacing > 0`` the full (gap-inclusive) bin list is longer than
+    the active-bin list, so a position in a segment after a gap has a full-grid
+    index that exceeds its active-bin index. The public method must return the
+    active-bin index (consistent with ``bin_centers``), and -1 for positions in
+    a gap or out of range.
+    """
+    layout = graph_layout_with_gap
+    n_active = layout.bin_centers.shape[0]
+    assert not layout.active_mask.all()  # the fixture really has a gap
+
+    # Find the first active bin that follows an inactive (gap) bin and query a
+    # linear position at its center.
+    mask = layout.active_mask
+    full_to_active = np.full(mask.size, -1, dtype=int)
+    full_to_active[mask] = np.arange(int(mask.sum()))
+    post_gap_full = next(i for i in range(1, mask.size) if mask[i] and not mask[i - 1])
+    expected_active = full_to_active[post_gap_full]
+    assert expected_active != post_gap_full  # active idx differs from full idx
+
+    pos = float(layout.linear_bin_centers_[expected_active])
+    result = layout.linear_point_to_bin_ind(np.array([pos]))
+    assert 0 <= result[0] < n_active
+    assert result[0] == expected_active
+    np.testing.assert_allclose(
+        layout.bin_centers[result[0]], layout.bin_centers[expected_active]
+    )
+
+    # A position inside the gap and one out of range both return -1.
+    gap_full = next(i for i in range(mask.size) if not mask[i])
+    gap_pos = 0.5 * (
+        layout.grid_edges[0][gap_full] + layout.grid_edges[0][gap_full + 1]
+    )
+    assert layout.linear_point_to_bin_ind(np.array([gap_pos]))[0] == -1
+
+    track_length = float(layout.grid_edges[0][-1])
+    assert layout.linear_point_to_bin_ind(np.array([track_length + 100.0]))[0] == -1

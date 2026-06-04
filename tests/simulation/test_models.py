@@ -1,6 +1,7 @@
 """Tests for neural models."""
 
 import numpy as np
+import pytest
 
 from neurospatial.simulation.models import NeuralModel, PlaceCellModel
 from neurospatial.simulation.trajectory import simulate_trajectory_ou
@@ -111,6 +112,79 @@ class TestPlaceCellModel:
         # Expected rate at 1σ: max_rate * exp(-0.5) ≈ 0.606 * max_rate
         expected = 20.0 * np.exp(-0.5)
         assert abs(rate[0] - expected) < 0.1
+
+    def test_anisotropic_one_sigma_rate(self, simple_2d_env):
+        """Anisotropic 1σ offset in x yields max_rate * exp(-0.5)."""
+        center = np.array([50.0, 50.0])
+        pc = PlaceCellModel(
+            simple_2d_env,
+            center=center,
+            width=[10.0, 5.0],
+            max_rate=20.0,
+            baseline_rate=0.0,
+        )
+
+        # Offset by exactly the x-width (10.0) along x only -> 1σ in x.
+        positions = np.array([[60.0, 50.0]])
+        rate = pc.firing_rate(positions, np.array([0.0]))
+
+        expected = 20.0 * np.exp(-0.5)
+        assert abs(rate[0] - expected) < 1e-6
+
+    def test_anisotropic_one_sigma_rate_y_axis(self, simple_2d_env):
+        """Anisotropic 1σ offset in y yields max_rate * exp(-0.5)."""
+        center = np.array([50.0, 50.0])
+        pc = PlaceCellModel(
+            simple_2d_env,
+            center=center,
+            width=[10.0, 5.0],
+            max_rate=20.0,
+            baseline_rate=0.0,
+        )
+
+        # Offset by exactly the y-width (5.0) along y only -> 1σ in y.
+        positions = np.array([[50.0, 55.0]])
+        rate = pc.firing_rate(positions, np.array([0.0]))
+
+        expected = 20.0 * np.exp(-0.5)
+        assert abs(rate[0] - expected) < 1e-6
+
+    def test_isotropic_one_sigma_unchanged(self, simple_2d_env):
+        """Isotropic 1σ rate is unchanged: max_rate * exp(-0.5)."""
+        center = np.array([50.0, 50.0])
+        pc = PlaceCellModel(
+            simple_2d_env,
+            center=center,
+            width=10.0,
+            max_rate=20.0,
+            baseline_rate=0.0,
+        )
+
+        positions = np.array([[60.0, 50.0]])  # 1σ in x
+        rate = pc.firing_rate(positions, np.array([0.0]))
+
+        expected = 20.0 * np.exp(-0.5)
+        assert abs(rate[0] - expected) < 1e-6
+
+    def test_width_zero_raises(self, simple_2d_env):
+        """width=0 raises ValueError mentioning 'positive'."""
+        with pytest.raises(ValueError, match="positive"):
+            PlaceCellModel(simple_2d_env, center=[50.0, 50.0], width=0.0)
+
+    def test_width_negative_raises(self, simple_2d_env):
+        """Negative width raises ValueError."""
+        with pytest.raises(ValueError):
+            PlaceCellModel(simple_2d_env, center=[50.0, 50.0], width=-5.0)
+
+    def test_anisotropic_width_zero_component_raises(self, simple_2d_env):
+        """Anisotropic width with a zero component raises ValueError."""
+        with pytest.raises(ValueError):
+            PlaceCellModel(simple_2d_env, center=[50.0, 50.0], width=[10.0, 0.0])
+
+    def test_width_nan_raises(self, simple_2d_env):
+        """NaN width raises ValueError mentioning 'finite'."""
+        with pytest.raises(ValueError, match="finite"):
+            PlaceCellModel(simple_2d_env, center=[50.0, 50.0], width=float("nan"))
 
     def test_euclidean_metric(self, simple_2d_env):
         """Test euclidean distance metric (default)."""

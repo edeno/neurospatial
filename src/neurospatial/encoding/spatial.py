@@ -20,28 +20,25 @@ compute_spatial_rates
 
 Examples
 --------
->>> from neurospatial import Environment
->>> from neurospatial.encoding.spatial import SpatialRateResult
 >>> import numpy as np
+>>> from neurospatial import Environment
+>>> from neurospatial.encoding.spatial import compute_spatial_rate
 
->>> # Create environment
->>> positions = np.random.rand(100, 2) * 100
+>>> # Create environment from a seeded trajectory
+>>> rng = np.random.default_rng(0)
+>>> positions = rng.uniform(0, 50, (500, 2))
 >>> env = Environment.from_samples(positions, bin_size=5.0)
 
->>> # Create result (typically from compute_spatial_rate)
->>> firing_rate = np.random.rand(env.n_bins) * 10
->>> occupancy = np.ones(env.n_bins)
->>> result = SpatialRateResult(
-...     firing_rate=firing_rate,
-...     occupancy=occupancy,
-...     env=env,
-...     smoothing_method="diffusion_kde",
-...     bandwidth=5.0,
-... )
+>>> # Compute a single-neuron spatial rate map (returns SpatialRateResult)
+>>> times = np.linspace(0, 50, 500)
+>>> spike_times = np.sort(rng.uniform(0, 50, 30))
+>>> result = compute_spatial_rate(env, spike_times, times, positions, bandwidth=10.0)
 
 >>> # Use inherited mixin methods
 >>> peak = result.peak_location()  # (n_dims,) coordinates of peak
 >>> peak_rate = result.peak_firing_rate()  # scalar max firing rate
+>>> peak.shape
+(2,)
 """
 
 from __future__ import annotations
@@ -55,6 +52,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial._results import ResultMixin
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
 from neurospatial.encoding._metrics import BatchScoresResult
 
@@ -84,7 +82,7 @@ __all__ = [
 
 
 @dataclass(frozen=True)
-class PlaceFieldsResult:
+class PlaceFieldsResult(ResultMixin):
     """Result of ``detect_place_fields()``: detected fields plus exclusion metadata.
 
     Returned by :func:`detect_place_fields`. Distinguishes "this neuron
@@ -103,7 +101,7 @@ class PlaceFieldsResult:
         ``None`` when the neuron passed all filters and ``fields``
         reflects the actual detection result. A non-None string when a
         filter caused detection to short-circuit. The only value used
-        in M1 is ``"mean_rate_above_threshold"`` (putative interneuron);
+        currently is ``"mean_rate_above_threshold"`` (putative interneuron);
         future filters (e.g. ``"all_nan_rate_map"``) may add more.
     n_excluded : int
         ``1`` if ``excluded_reason`` is set, else ``0``. Provided so
@@ -135,6 +133,75 @@ class PlaceFieldsResult:
         # ergonomic of `if detect_place_fields(...): ...` against the
         # old list[NDArray] return.
         return len(self.fields) > 0
+
+    def summary(self) -> dict[str, Any]:
+        """Scalar headline metrics for the detected place fields.
+
+        Returns
+        -------
+        dict
+            Mapping with keys ``n_fields`` (int, number of detected fields),
+            ``total_bins`` (int, bins across all fields), ``n_excluded``
+            (int), and ``excluded_reason`` (str or ``None``).
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.encoding.spatial import PlaceFieldsResult
+        >>> result = PlaceFieldsResult(fields=[np.array([0, 1, 2])])
+        >>> result.summary()["n_fields"]
+        1
+        >>> result.summary()["total_bins"]
+        3
+        """
+        total_bins = int(sum(len(f) for f in self.fields))
+        return {
+            "n_fields": len(self.fields),
+            "total_bins": total_bins,
+            "n_excluded": int(self.n_excluded),
+            "excluded_reason": self.excluded_reason,
+        }
+
+    def to_dataframe(self) -> pd.DataFrame:
+        """Tidy/long-form table of field membership: one row per (field, bin).
+
+        Each detected place field contributes one row per member bin, with a
+        ``field`` index column. Neurons excluded by a filter (``fields=[]``)
+        yield an empty table; ``excluded_reason`` is exposed via
+        :meth:`summary`.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Long-form table with columns ``field`` (int, field index) and
+            ``bin`` (int, member bin index). Empty (with those columns) when
+            no fields were detected.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.encoding.spatial import PlaceFieldsResult
+        >>> result = PlaceFieldsResult(fields=[np.array([0, 1]), np.array([5])])
+        >>> df = result.to_dataframe()
+        >>> df["field"].tolist()
+        [0, 0, 1]
+        >>> df["bin"].tolist()
+        [0, 1, 5]
+        """
+        import pandas as pd
+
+        field_col: list[int] = []
+        bin_col: list[int] = []
+        for field_idx, field_bins in enumerate(self.fields):
+            for b in np.asarray(field_bins).ravel():
+                field_col.append(field_idx)
+                bin_col.append(int(b))
+        return pd.DataFrame(
+            {
+                "field": np.asarray(field_col, dtype=np.int64),
+                "bin": np.asarray(bin_col, dtype=np.int64),
+            }
+        )
 
 
 @dataclass(frozen=True)
@@ -189,26 +256,23 @@ class SpatialRateResult(SpatialResultMixin):
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.encoding.spatial import SpatialRateResult
+    >>> from neurospatial.encoding.spatial import compute_spatial_rate
 
-    >>> # Create a simple environment
-    >>> positions = np.random.rand(100, 2) * 50
+    >>> # Create a simple environment from a seeded trajectory
+    >>> rng = np.random.default_rng(0)
+    >>> positions = rng.uniform(0, 50, (500, 2))
     >>> env = Environment.from_samples(positions, bin_size=5.0)
 
-    >>> # Create result
-    >>> firing_rate = np.random.rand(env.n_bins) * 10
-    >>> occupancy = np.ones(env.n_bins)
-    >>> result = SpatialRateResult(
-    ...     firing_rate=firing_rate,
-    ...     occupancy=occupancy,
-    ...     env=env,
-    ...     smoothing_method="diffusion_kde",
-    ...     bandwidth=5.0,
+    >>> # Compute result (returns SpatialRateResult)
+    >>> times = np.linspace(0, 50, 500)
+    >>> spike_times = np.sort(rng.uniform(0, 50, 30))
+    >>> result = compute_spatial_rate(
+    ...     env, spike_times, times, positions, bandwidth=10.0
     ... )
 
     >>> # Access fields
-    >>> result.firing_rate.shape
-    (n_bins,)
+    >>> result.firing_rate.shape == (env.n_bins,)
+    True
     >>> result.smoothing_method
     'diffusion_kde'
 
@@ -253,12 +317,22 @@ class SpatialRateResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> result = SpatialRateResult(...)
+        >>> import matplotlib
+        >>> matplotlib.use("Agg")  # non-interactive backend for doctest
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rate
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 50, (500, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> times = np.linspace(0, 50, 500)
+        >>> spike_times = np.sort(rng.uniform(0, 50, 30))
+        >>> result = compute_spatial_rate(
+        ...     env, spike_times, times, positions, bandwidth=10.0
+        ... )
         >>> ax = result.plot()
-        >>> plt.show()
-
-        >>> fig, ax = plt.subplots()
-        >>> result.plot(ax=ax, cmap="hot", vmax=20.0)
+        >>> type(ax).__name__
+        'Axes'
         """
         return self.env.plot_field(_to_numpy(self.firing_rate), ax=ax, **kwargs)
 
@@ -299,9 +373,20 @@ class SpatialRateResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> result = SpatialRateResult(...)
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rate
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 50, (500, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> times = np.linspace(0, 50, 500)
+        >>> spike_times = np.sort(rng.uniform(0, 50, 30))
+        >>> result = compute_spatial_rate(
+        ...     env, spike_times, times, positions, bandwidth=10.0
+        ... )
         >>> info = result.spatial_information()
-        >>> print(f"Spatial information: {info:.2f} bits/spike")
+        >>> bool(info >= 0.0)
+        True
 
         See Also
         --------
@@ -343,9 +428,20 @@ class SpatialRateResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> result = SpatialRateResult(...)
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rate
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 50, (500, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> times = np.linspace(0, 50, 500)
+        >>> spike_times = np.sort(rng.uniform(0, 50, 30))
+        >>> result = compute_spatial_rate(
+        ...     env, spike_times, times, positions, bandwidth=10.0
+        ... )
         >>> spars = result.sparsity()
-        >>> print(f"Sparsity: {spars:.2f}")
+        >>> bool(0.0 <= spars <= 1.0)
+        True
 
         See Also
         --------
@@ -397,9 +493,20 @@ class SpatialRateResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> result = SpatialRateResult(...)
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rate
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 50, (500, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> times = np.linspace(0, 50, 500)
+        >>> spike_times = np.sort(rng.uniform(0, 50, 30))
+        >>> result = compute_spatial_rate(
+        ...     env, spike_times, times, positions, bandwidth=10.0
+        ... )
         >>> score = result.grid_score()
-        >>> print(f"Grid score: {score:.3f}")
+        >>> bool(-2.0 <= score <= 2.0)
+        True
         """
         from neurospatial.encoding.grid import grid_score as gs_func
         from neurospatial.encoding.grid import spatial_autocorrelation
@@ -463,11 +570,20 @@ class SpatialRateResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> result = SpatialRateResult(...)
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rate
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 50, (500, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> times = np.linspace(0, 50, 500)
+        >>> spike_times = np.sort(rng.uniform(0, 50, 30))
+        >>> result = compute_spatial_rate(
+        ...     env, spike_times, times, positions, bandwidth=10.0
+        ... )
         >>> props = result.grid_properties()
-        >>> print(f"Score: {props.score:.2f}")
-        >>> print(f"Scale: {props.scale:.1f} cm")
-        >>> print(f"Orientation: {props.orientation:.1f}°")
+        >>> type(props).__name__
+        'GridProperties'
         """
         from neurospatial.encoding.grid import grid_properties as gp_func
         from neurospatial.encoding.grid import spatial_autocorrelation
@@ -536,9 +652,20 @@ class SpatialRateResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> result = SpatialRateResult(...)
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rate
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 50, (500, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> times = np.linspace(0, 50, 500)
+        >>> spike_times = np.sort(rng.uniform(0, 50, 30))
+        >>> result = compute_spatial_rate(
+        ...     env, spike_times, times, positions, bandwidth=10.0
+        ... )
         >>> score = result.border_score()
-        >>> print(f"Border score: {score:.3f}")
+        >>> bool(-1.0 <= score <= 1.0)
+        True
         """
         from neurospatial.encoding.border import border_score as bs_func
 
@@ -595,10 +722,20 @@ class SpatialRateResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> result = SpatialRateResult(...)
-        >>> coverage = result.region_coverage()
-        >>> for region, cov in sorted(coverage.items()):
-        ...     print(f"{region}: {cov:.1%}")
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rate
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 50, (500, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> times = np.linspace(0, 50, 500)
+        >>> spike_times = np.sort(rng.uniform(0, 50, 30))
+        >>> result = compute_spatial_rate(
+        ...     env, spike_times, times, positions, bandwidth=10.0
+        ... )
+        >>> coverage = result.region_coverage()  # no regions defined -> {}
+        >>> isinstance(coverage, dict)
+        True
         """
         from neurospatial.encoding.border import compute_region_coverage
 
@@ -679,29 +816,25 @@ class SpatialRatesResult(SpatialResultMixin):
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.encoding.spatial import SpatialRatesResult
+    >>> from neurospatial.encoding.spatial import compute_spatial_rates
 
-    >>> # Create environment
-    >>> positions = np.random.rand(100, 2) * 50
+    >>> # Create environment from a seeded trajectory
+    >>> rng = np.random.default_rng(0)
+    >>> positions = rng.uniform(0, 50, (500, 2))
     >>> env = Environment.from_samples(positions, bin_size=5.0)
 
-    >>> # Create batch result (5 neurons)
-    >>> n_neurons = 5
-    >>> firing_rates = np.random.rand(n_neurons, env.n_bins) * 10
-    >>> occupancy = np.ones(env.n_bins)
-    >>> result = SpatialRatesResult(
-    ...     firing_rates=firing_rates,
-    ...     occupancy=occupancy,
-    ...     env=env,
-    ...     smoothing_method="diffusion_kde",
-    ...     bandwidth=5.0,
+    >>> # Compute batch result for 3 neurons (returns SpatialRatesResult)
+    >>> times = np.linspace(0, 50, 500)
+    >>> spike_times = [np.sort(rng.uniform(0, 50, n)) for n in (30, 40, 20)]
+    >>> result = compute_spatial_rates(
+    ...     env, spike_times, times, positions, bandwidth=10.0
     ... )
 
     >>> # Access fields
-    >>> result.firing_rates.shape
-    (5, n_bins)
+    >>> result.firing_rates.shape == (3, env.n_bins)
+    True
     >>> len(result)
-    5
+    3
 
     >>> # Index to get single-neuron result
     >>> single = result[0]
@@ -709,12 +842,15 @@ class SpatialRatesResult(SpatialResultMixin):
     'SpatialRateResult'
 
     >>> # Iterate over neurons
-    >>> for i, r in enumerate(result):
-    ...     print(f"Neuron {i}: peak rate = {r.peak_firing_rate():.2f} Hz")
+    >>> peaks = [round(float(r.peak_firing_rate()), 2) for r in result]
+    >>> len(peaks)
+    3
 
     >>> # Use mixin methods (batch)
     >>> peak_coords = result.peak_location()  # (n_neurons, n_dims)
     >>> max_rates = result.peak_firing_rate()  # (n_neurons,)
+    >>> peak_coords.shape
+    (3, 2)
 
     See Also
     --------
@@ -756,9 +892,20 @@ class SpatialRatesResult(SpatialResultMixin):
 
         Examples
         --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rates
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 50, (500, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> times = np.linspace(0, 50, 500)
+        >>> spike_times = [np.sort(rng.uniform(0, 50, n)) for n in (30, 40, 20)]
+        >>> result = compute_spatial_rates(
+        ...     env, spike_times, times, positions, bandwidth=10.0
+        ... )
         >>> single = result[0]
-        >>> single.firing_rate.shape
-        (n_bins,)
+        >>> single.firing_rate.shape == (env.n_bins,)
+        True
         """
         rates: NDArray[np.float64] = np.asarray(self.firing_rates)
         return SpatialRateResult(
@@ -779,8 +926,20 @@ class SpatialRatesResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> for result in results:
-        ...     print(result.peak_firing_rate())
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rates
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 50, (500, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> times = np.linspace(0, 50, 500)
+        >>> spike_times = [np.sort(rng.uniform(0, 50, n)) for n in (30, 40, 20)]
+        >>> results = compute_spatial_rates(
+        ...     env, spike_times, times, positions, bandwidth=10.0
+        ... )
+        >>> peaks = [float(r.peak_firing_rate()) for r in results]
+        >>> len(peaks)
+        3
         """
         for i in range(len(self)):
             yield self[i]
@@ -811,15 +970,95 @@ class SpatialRatesResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> result = SpatialRatesResult(...)
+        >>> import matplotlib
+        >>> matplotlib.use("Agg")  # non-interactive backend for doctest
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rates
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 50, (500, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> times = np.linspace(0, 50, 500)
+        >>> spike_times = [np.sort(rng.uniform(0, 50, n)) for n in (30, 40, 20)]
+        >>> result = compute_spatial_rates(
+        ...     env, spike_times, times, positions, bandwidth=10.0
+        ... )
         >>> ax = result.plot(idx=0)
-        >>> plt.show()
-
-        >>> fig, ax = plt.subplots()
-        >>> result.plot(idx=2, ax=ax, cmap="hot", vmax=20.0)
+        >>> type(ax).__name__
+        'Axes'
         """
         rates: NDArray[np.float64] = np.asarray(self.firing_rates)
         return self.env.plot_field(_to_numpy(rates[idx]), ax=ax, **kwargs)
+
+    def to_xarray(self) -> Any:
+        """Convert the firing-rate maps to an :class:`xarray.DataArray`.
+
+        Wraps the ``(n_neurons, n_bins)`` firing-rate matrix in a labeled
+        :class:`xarray.DataArray` with dims ``("neuron", "bin")``. The
+        ``neuron`` coordinate is the integer neuron index and the ``bin``
+        coordinate is the integer bin index.
+
+        Returns
+        -------
+        xarray.DataArray
+            Firing rates (Hz) with dims ``("neuron", "bin")``. The array
+            ``.values`` equal :attr:`firing_rates`. ``coords["neuron"]`` is
+            ``np.arange(n_neurons)`` and ``coords["bin"]`` is
+            ``np.arange(n_bins)``.
+
+        Raises
+        ------
+        ImportError
+            If ``xarray`` is not installed. xarray is an optional dependency;
+            install it with ``pip install neurospatial[xarray]`` or
+            ``pip install xarray``.
+
+        Notes
+        -----
+        ``xarray`` is imported lazily inside this method, so it never becomes
+        an import-time dependency of ``neurospatial``.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rates
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 50, (500, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> times = np.linspace(0, 50, 500)
+        >>> spike_times = [np.sort(rng.uniform(0, 50, n)) for n in (30, 40, 20)]
+        >>> result = compute_spatial_rates(
+        ...     env, spike_times, times, positions, bandwidth=10.0
+        ... )
+        >>> da = result.to_xarray()  # doctest: +SKIP
+        >>> da.dims  # doctest: +SKIP
+        ('neuron', 'bin')
+
+        See Also
+        --------
+        spatial_information : Per-neuron Skaggs spatial information.
+        """
+        try:
+            import xarray as xr
+        except ImportError as exc:
+            raise ImportError(
+                "to_xarray() requires the optional 'xarray' dependency, which "
+                "is not installed. Install it with "
+                "'pip install neurospatial[xarray]' or 'pip install xarray'."
+            ) from exc
+
+        rates: NDArray[np.float64] = np.asarray(self.firing_rates)
+        n_neurons, n_bins = rates.shape
+        return xr.DataArray(
+            rates,
+            dims=("neuron", "bin"),
+            coords={
+                "neuron": np.arange(n_neurons),
+                "bin": np.arange(n_bins),
+            },
+            name="firing_rate",
+        )
 
     def spatial_information(self) -> NDArray[np.float64] | Any:
         """Skaggs spatial information (bits per spike) for all neurons.
@@ -858,9 +1097,20 @@ class SpatialRatesResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> result = SpatialRatesResult(...)
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rates
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 50, (500, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> times = np.linspace(0, 50, 500)
+        >>> spike_times = [np.sort(rng.uniform(0, 50, n)) for n in (30, 40, 20)]
+        >>> result = compute_spatial_rates(
+        ...     env, spike_times, times, positions, bandwidth=10.0
+        ... )
         >>> info = result.spatial_information()
-        >>> print(f"Mean spatial information: {info.mean():.2f} bits/spike")
+        >>> info.shape
+        (3,)
 
         See Also
         --------
@@ -902,9 +1152,20 @@ class SpatialRatesResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> result = SpatialRatesResult(...)
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rates
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 50, (500, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> times = np.linspace(0, 50, 500)
+        >>> spike_times = [np.sort(rng.uniform(0, 50, n)) for n in (30, 40, 20)]
+        >>> result = compute_spatial_rates(
+        ...     env, spike_times, times, positions, bandwidth=10.0
+        ... )
         >>> spars = result.sparsity()
-        >>> print(f"Mean sparsity: {spars.mean():.2f}")
+        >>> spars.shape
+        (3,)
 
         See Also
         --------
@@ -1039,7 +1300,7 @@ class SpatialRatesResult(SpatialResultMixin):
             metric=metric,
         )
 
-    def classify(
+    def detect_cell_types(
         self,
         min_spatial_info: float = 0.5,
         min_grid_score: float = 0.4,
@@ -1098,15 +1359,28 @@ class SpatialRatesResult(SpatialResultMixin):
         spatial_information : Compute spatial information
         grid_scores : Compute grid scores
         border_scores : Compute border scores
+        EgocentricRatesResult.detect_ovcs : Sibling batch classifier
+        ViewRatesResult.detect_view_cells : Sibling batch classifier
 
         Examples
         --------
-        >>> result = SpatialRatesResult(...)
-        >>> labels = result.classify()
-        >>> print(f"Grid cells: {np.sum(labels == 'grid')}")
-        >>> print(f"Border cells: {np.sum(labels == 'border')}")
-        >>> print(f"Place cells: {np.sum(labels == 'place')}")
-        >>> print(f"Unclassified: {np.sum(labels == 'unclassified')}")
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rates
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 50, (500, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> times = np.linspace(0, 50, 500)
+        >>> spike_times = [np.sort(rng.uniform(0, 50, n)) for n in (30, 40, 20)]
+        >>> result = compute_spatial_rates(
+        ...     env, spike_times, times, positions, bandwidth=10.0
+        ... )
+        >>> labels = result.detect_cell_types()
+        >>> labels.shape
+        (3,)
+        >>> valid = {"grid", "border", "place", "unclassified"}
+        >>> set(labels.tolist()).issubset(valid)
+        True
         """
         n_neurons = len(self)
 
@@ -1149,7 +1423,7 @@ class SpatialRatesResult(SpatialResultMixin):
             (0, 1, 2, ..., n_neurons-1).
         include_classification : bool, default True
             Whether to include the cell_type column with classification
-            labels from ``classify()``.
+            labels from ``detect_cell_types()``.
 
         Returns
         -------
@@ -1180,24 +1454,37 @@ class SpatialRatesResult(SpatialResultMixin):
 
         Examples
         --------
-        >>> result = SpatialRatesResult(...)
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import compute_spatial_rates
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.uniform(0, 50, (500, 2))
+        >>> env = Environment.from_samples(positions, bin_size=5.0)
+        >>> times = np.linspace(0, 50, 500)
+        >>> spike_times = [np.sort(rng.uniform(0, 50, n)) for n in (30, 40, 20)]
+        >>> result = compute_spatial_rates(
+        ...     env, spike_times, times, positions, bandwidth=10.0
+        ... )
         >>> df = result.to_dataframe()
-        >>> print(df.head())
-           neuron_id  peak_x  peak_y  peak_rate  spatial_info  ...
+        >>> "cell_type" in df.columns
+        True
+        >>> len(df)
+        3
 
         >>> # Filter for place cells
         >>> place_cells = df[df["cell_type"] == "place"]
-        >>> print(f"Found {len(place_cells)} place cells")
 
         >>> # Sort by spatial information
-        >>> top_cells = df.sort_values("spatial_info", ascending=False).head(10)
+        >>> top_cells = df.sort_values("spatial_info", ascending=False)
 
         >>> # Custom neuron identifiers
         >>> df = result.to_dataframe(neuron_ids=["unit_0", "unit_1", "unit_2"])
+        >>> df["neuron_id"].tolist()
+        ['unit_0', 'unit_1', 'unit_2']
 
         See Also
         --------
-        classify : Cell type classification
+        detect_cell_types : Cell type classification
         spatial_information : Batch spatial information computation
         grid_scores : Batch grid score computation
         border_scores : Batch border score computation
@@ -1234,7 +1521,7 @@ class SpatialRatesResult(SpatialResultMixin):
         }
 
         if include_classification:
-            data["cell_type"] = self.classify()
+            data["cell_type"] = self.detect_cell_types()
 
         return pd.DataFrame(data)
 
@@ -1242,6 +1529,36 @@ class SpatialRatesResult(SpatialResultMixin):
 # ==============================================================================
 # Compute Functions
 # ==============================================================================
+
+
+def _fill_nan(rates: ArrayLike, fill_value: float) -> ArrayLike:
+    """Replace NaN entries of a rate map with ``fill_value``.
+
+    Works for both NumPy and JAX arrays. The masked/low-occupancy bins set
+    to NaN by ``min_occupancy`` are the only NaN entries in a rate map, so
+    this targets exactly those bins.
+
+    Parameters
+    ----------
+    rates : ArrayLike
+        Firing rate map (NumPy or JAX array), any shape.
+    fill_value : float
+        Value substituted wherever ``rates`` is NaN.
+
+    Returns
+    -------
+    ArrayLike
+        A new array of the same type/shape with NaN replaced by ``fill_value``.
+    """
+    # JAX arrays expose .at/.dtype but are not numpy ndarrays; dispatch on
+    # whether the object is a numpy array. Both backends support np.isnan via
+    # the array's own namespace, but jnp.where keeps the result on-device.
+    if isinstance(rates, np.ndarray):
+        return np.where(np.isnan(rates), fill_value, rates)
+    import jax.numpy as jnp
+
+    rates_jax = cast("Any", rates)
+    return cast("ArrayLike", jnp.where(jnp.isnan(rates_jax), fill_value, rates_jax))
 
 
 def compute_spatial_rate(
@@ -1255,6 +1572,7 @@ def compute_spatial_rate(
     ] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
+    fill_value: float | None = None,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
 ) -> SpatialRateResult:
     """Compute spatial firing rate map for one neuron.
@@ -1294,6 +1612,15 @@ def compute_spatial_rate(
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included. Bins with
         occupancy below this threshold are set to NaN.
+    fill_value : float | None, default=None
+        Value used to replace NaN bins (masked/low-occupancy bins produced
+        by ``min_occupancy``). When ``None`` (the default), NaN is preserved
+        so existing callers see no behavior change. Pass ``fill_value=0.0``
+        for the recommended decoding golden path: a zero-rate map composes
+        directly with :func:`~neurospatial.decoding.posterior.decode_position`
+        without manual NaN scrubbing. ``occupancy`` is unaffected, so callers
+        can still recover which bins were masked via
+        ``result.occupancy < min_occupancy``.
     backend : {"numpy", "jax", "auto"}, default="numpy"
         Computation backend for rate map smoothing:
 
@@ -1341,13 +1668,13 @@ def compute_spatial_rate(
     >>> from neurospatial import Environment
     >>> from neurospatial.encoding.spatial import compute_spatial_rate
 
-    >>> # Create environment from positions
-    >>> positions = np.random.rand(1000, 2) * 100
+    >>> # Create environment from a seeded trajectory
+    >>> rng = np.random.default_rng(0)
+    >>> positions = rng.uniform(0, 100, (1000, 2))
     >>> env = Environment.from_samples(positions, bin_size=5.0)
 
-    >>> # Create trajectory and spike times
+    >>> # Create trajectory timestamps and (sorted) spike times
     >>> times = np.linspace(0, 10, 1000)
-    >>> trajectory = np.random.rand(1000, 2) * 100
     >>> spike_times = np.array([1.0, 2.5, 4.0, 7.5, 8.2])
 
     >>> # Compute spatial rate
@@ -1355,18 +1682,18 @@ def compute_spatial_rate(
     ...     env,
     ...     spike_times,
     ...     times,
-    ...     trajectory,
+    ...     positions,
     ...     smoothing_method="diffusion_kde",
     ...     bandwidth=10.0,
     ... )
 
     >>> # Access results
-    >>> print(f"Peak rate: {result.peak_firing_rate():.2f} Hz")
-    >>> print(f"Peak location: {result.peak_location()}")
-    >>> print(f"Spatial information: {result.spatial_information():.2f} bits/spike")
-
-    >>> # Plot the rate map
-    >>> ax = result.plot()
+    >>> result.firing_rate.shape == (env.n_bins,)
+    True
+    >>> bool(result.peak_firing_rate() >= 0.0)
+    True
+    >>> result.peak_location().shape
+    (2,)
     """
     from neurospatial.encoding._backend import (
         SUPPORTED_BACKENDS,
@@ -1427,6 +1754,11 @@ def compute_spatial_rate(
         backend=resolved_backend,
     )
 
+    # Replace masked/low-occupancy NaN bins with fill_value when requested.
+    # Default (None) preserves NaN so existing callers see no behavior change.
+    if fill_value is not None:
+        firing_rate = _fill_nan(firing_rate, fill_value)
+
     # Convert occupancy to JAX if JAX backend is selected
     # (firing_rate is already JAX from smooth_rate_map)
     if resolved_backend == "jax" and is_jax_available():
@@ -1455,6 +1787,7 @@ def compute_spatial_rates(
     ] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
+    fill_value: float | None = None,
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
 ) -> SpatialRatesResult:
@@ -1490,6 +1823,15 @@ def compute_spatial_rates(
         Smoothing bandwidth in the same units as bin_size.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included.
+    fill_value : float | None, default=None
+        Value used to replace NaN bins (masked/low-occupancy bins produced
+        by ``min_occupancy``). When ``None`` (the default), NaN is preserved
+        so existing callers see no behavior change. Pass ``fill_value=0.0``
+        for the recommended decoding golden path: zero-rate maps compose
+        directly with :func:`~neurospatial.decoding.posterior.decode_position`
+        without manual NaN scrubbing. ``occupancy`` is unaffected, so callers
+        can still recover which bins were masked via
+        ``result.occupancy < min_occupancy``.
     n_jobs : int, default=1
         Number of parallel jobs for spike counting. Use -1 for all CPUs.
         1 means sequential processing (no parallelization overhead).
@@ -1546,15 +1888,15 @@ def compute_spatial_rates(
     >>> from neurospatial import Environment
     >>> from neurospatial.encoding.spatial import compute_spatial_rates
 
-    >>> # Create environment from positions
-    >>> positions = np.random.rand(1000, 2) * 100
+    >>> # Create environment from a seeded trajectory
+    >>> rng = np.random.default_rng(0)
+    >>> positions = rng.uniform(0, 100, (1000, 2))
     >>> env = Environment.from_samples(positions, bin_size=5.0)
 
-    >>> # Create trajectory
+    >>> # Create trajectory timestamps
     >>> times = np.linspace(0, 10, 1000)
-    >>> trajectory = np.random.rand(1000, 2) * 100
 
-    >>> # Spike times for 3 neurons
+    >>> # Spike times for 3 neurons (each sorted ascending)
     >>> spike_times = [
     ...     np.array([1.0, 2.5, 4.0]),  # Neuron 0
     ...     np.array([0.5, 1.5, 2.5, 3.5]),  # Neuron 1
@@ -1566,24 +1908,26 @@ def compute_spatial_rates(
     ...     env,
     ...     spike_times,
     ...     times,
-    ...     trajectory,
+    ...     positions,
     ...     smoothing_method="diffusion_kde",
     ...     bandwidth=10.0,
-    ...     n_jobs=2,  # Parallel spike binning
     ... )
 
     >>> # Access results
-    >>> print(f"Number of neurons: {len(result)}")
-    >>> print(f"Firing rates shape: {result.firing_rates.shape}")
-    >>> print(f"Peak rates: {result.peak_firing_rate()}")
+    >>> len(result)
+    3
+    >>> result.firing_rates.shape == (3, env.n_bins)
+    True
 
     >>> # Iterate over neurons
-    >>> for i, single in enumerate(result):
-    ...     print(f"Neuron {i}: peak = {single.peak_firing_rate():.2f} Hz")
+    >>> peaks = [round(float(single.peak_firing_rate()), 2) for single in result]
+    >>> len(peaks)
+    3
 
     >>> # Get metrics for all neurons
     >>> df = result.to_dataframe()
-    >>> print(df)
+    >>> len(df)
+    3
 
     >>> # Use 2D array with NaN padding
     >>> spike_times_2d = np.array(
@@ -1592,7 +1936,9 @@ def compute_spatial_rates(
     ...         [0.2, 0.3, 0.8, 1.2],
     ...     ]
     ... )
-    >>> result2 = compute_spatial_rates(env, spike_times_2d, times, trajectory)
+    >>> result2 = compute_spatial_rates(env, spike_times_2d, times, positions)
+    >>> len(result2)
+    2
     """
     from neurospatial.encoding._backend import (
         SUPPORTED_BACKENDS,
@@ -1686,6 +2032,11 @@ def compute_spatial_rates(
         backend=resolved_backend,
     )
 
+    # Replace masked/low-occupancy NaN bins with fill_value when requested.
+    # Default (None) preserves NaN so existing callers see no behavior change.
+    if fill_value is not None:
+        firing_rates = _fill_nan(firing_rates, fill_value)
+
     # Convert occupancy to JAX if JAX backend is selected
     # (firing_rates is already JAX from smooth_rate_maps_batch)
     if resolved_backend == "jax" and is_jax_available():
@@ -1709,7 +2060,7 @@ def compute_spatial_rates(
 
 
 @dataclass(frozen=True)
-class DirectionalPlaceFields:
+class DirectionalPlaceFields(ResultMixin):
     """Container for direction-conditioned place field results.
 
     Stores firing rate maps computed separately for different movement
@@ -1764,6 +2115,312 @@ class DirectionalPlaceFields:
     occupancy: Mapping[str, NDArray[np.float64]]
     env: Environment
     labels: tuple[str, ...]
+
+    def correlation(self, label_a: str, label_b: str) -> float:
+        """Pearson correlation between two directions' rate maps.
+
+        Quantifies how similar the place-field map is between two movement
+        directions (or trial types). A correlation near ``1.0`` means the cell
+        fires in the same locations regardless of direction; values near
+        ``0`` (or negative) indicate direction-specific tuning.
+
+        Bins where either map is NaN are excluded pairwise before the
+        correlation is computed.
+
+        Parameters
+        ----------
+        label_a, label_b : str
+            Direction labels to compare. Must be present in ``labels``.
+
+        Returns
+        -------
+        float
+            Pearson correlation coefficient in ``[-1, 1]``. Returns ``nan``
+            if fewer than two finite overlapping bins exist or if either map
+            has zero variance over the overlap.
+
+        Raises
+        ------
+        KeyError
+            If ``label_a`` or ``label_b`` is not a known direction label.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import DirectionalPlaceFields
+        >>> env = Environment.from_samples(
+        ...     np.linspace(0, 9, 100)[:, None], bin_size=1.0
+        ... )
+        >>> n = env.n_bins
+        >>> rate = np.linspace(1.0, 5.0, n)
+        >>> result = DirectionalPlaceFields(
+        ...     firing_rates={"fwd": rate, "rev": rate.copy()},
+        ...     occupancy={"fwd": np.ones(n), "rev": np.ones(n)},
+        ...     env=env,
+        ...     labels=("fwd", "rev"),
+        ... )
+        >>> bool(np.isclose(result.correlation("fwd", "rev"), 1.0))
+        True
+        """
+        for label in (label_a, label_b):
+            if label not in self.firing_rates:
+                raise KeyError(
+                    f"Unknown direction label {label!r}. "
+                    f"Known labels: {tuple(self.firing_rates)}."
+                )
+        a = _to_numpy(self.firing_rates[label_a]).ravel()
+        b = _to_numpy(self.firing_rates[label_b]).ravel()
+        finite = np.isfinite(a) & np.isfinite(b)
+        if int(finite.sum()) < 2:
+            return float("nan")
+        a, b = a[finite], b[finite]
+        if a.std() == 0.0 or b.std() == 0.0:
+            return float("nan")
+        return float(np.corrcoef(a, b)[0, 1])
+
+    def directionality_index(self, label_a: str, label_b: str) -> float:
+        """Per-bin directionality index between two directions.
+
+        Returns the mean absolute normalized rate difference between the two
+        directions across bins:
+
+        .. math::
+
+            \\mathrm{DI} = \\mathrm{mean}_i
+                \\frac{|r^a_i - r^b_i|}{r^a_i + r^b_i}
+
+        Values near ``0`` indicate direction-independent firing; values near
+        ``1`` indicate strongly direction-selective firing. Bins where either
+        map is NaN, or where both rates are zero, are excluded.
+
+        Parameters
+        ----------
+        label_a, label_b : str
+            Direction labels to compare. Must be present in ``labels``.
+
+        Returns
+        -------
+        float
+            Mean directionality index in ``[0, 1]``. Returns ``nan`` if no
+            bin has a positive summed rate.
+
+        Raises
+        ------
+        KeyError
+            If ``label_a`` or ``label_b`` is not a known direction label.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import DirectionalPlaceFields
+        >>> env = Environment.from_samples(
+        ...     np.linspace(0, 9, 100)[:, None], bin_size=1.0
+        ... )
+        >>> n = env.n_bins
+        >>> rate = np.linspace(1.0, 5.0, n)
+        >>> result = DirectionalPlaceFields(
+        ...     firing_rates={"fwd": rate, "rev": rate.copy()},
+        ...     occupancy={"fwd": np.ones(n), "rev": np.ones(n)},
+        ...     env=env,
+        ...     labels=("fwd", "rev"),
+        ... )
+        >>> bool(np.isclose(result.directionality_index("fwd", "rev"), 0.0))
+        True
+        """
+        for label in (label_a, label_b):
+            if label not in self.firing_rates:
+                raise KeyError(
+                    f"Unknown direction label {label!r}. "
+                    f"Known labels: {tuple(self.firing_rates)}."
+                )
+        a = _to_numpy(self.firing_rates[label_a]).ravel()
+        b = _to_numpy(self.firing_rates[label_b]).ravel()
+        total = a + b
+        valid = np.isfinite(a) & np.isfinite(b) & (total > 0.0)
+        if not valid.any():
+            return float("nan")
+        di = np.abs(a[valid] - b[valid]) / total[valid]
+        return float(np.mean(di))
+
+    def summary(self) -> dict[str, Any]:
+        """Scalar headline metrics across directions.
+
+        Returns
+        -------
+        dict
+            Mapping with ``n_directions`` (int), ``n_bins`` (int), and one
+            ``peak_<label>`` entry per direction giving that direction's peak
+            firing rate (Hz). When exactly two directions are present, a
+            ``correlation`` entry (Pearson r between the two maps) is also
+            included.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import DirectionalPlaceFields
+        >>> env = Environment.from_samples(
+        ...     np.linspace(0, 9, 100)[:, None], bin_size=1.0
+        ... )
+        >>> n = env.n_bins
+        >>> result = DirectionalPlaceFields(
+        ...     firing_rates={
+        ...         "fwd": np.linspace(1.0, 5.0, n),
+        ...         "rev": np.linspace(5.0, 1.0, n),
+        ...     },
+        ...     occupancy={"fwd": np.ones(n), "rev": np.ones(n)},
+        ...     env=env,
+        ...     labels=("fwd", "rev"),
+        ... )
+        >>> result.summary()["n_directions"]
+        2
+        """
+        out: dict[str, Any] = {
+            "n_directions": len(self.labels),
+            "n_bins": int(self.env.n_bins),
+        }
+        for label in self.labels:
+            rate = _to_numpy(self.firing_rates[label])
+            out[f"peak_{label}"] = float(np.nanmax(rate))
+        if len(self.labels) == 2:
+            out["correlation"] = self.correlation(self.labels[0], self.labels[1])
+        return out
+
+    def to_dataframe(self) -> pd.DataFrame:
+        """Tidy/long-form table: one row per (direction, bin).
+
+        Stacks the per-direction rate maps into long form with a ``direction``
+        identifier column, so directional results ``pandas.concat`` cleanly
+        with other tidy result tables. Bin-center coordinates are emitted as
+        ``coord_0``, ``coord_1``, ... columns.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Long-form table with columns ``direction`` (str), ``bin`` (int),
+            ``coord_0`` ... (float), ``firing_rate`` (float, Hz), and
+            ``occupancy`` (float, seconds).
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import DirectionalPlaceFields
+        >>> env = Environment.from_samples(
+        ...     np.linspace(0, 9, 100)[:, None], bin_size=1.0
+        ... )
+        >>> n = env.n_bins
+        >>> result = DirectionalPlaceFields(
+        ...     firing_rates={
+        ...         "fwd": np.linspace(1.0, 5.0, n),
+        ...         "rev": np.linspace(5.0, 1.0, n),
+        ...     },
+        ...     occupancy={"fwd": np.ones(n), "rev": np.ones(n)},
+        ...     env=env,
+        ...     labels=("fwd", "rev"),
+        ... )
+        >>> df = result.to_dataframe()
+        >>> sorted(df["direction"].unique())
+        ['fwd', 'rev']
+        >>> len(df) == 2 * n
+        True
+        """
+        import pandas as pd
+
+        bin_centers = np.asarray(self.env.bin_centers)
+        if bin_centers.ndim == 1:
+            bin_centers = bin_centers[:, None]
+        n_bins, n_dims = bin_centers.shape
+
+        frames: list[pd.DataFrame] = []
+        for label in self.labels:
+            rate = _to_numpy(self.firing_rates[label]).ravel()
+            occ = _to_numpy(self.occupancy[label]).ravel()
+            data: dict[str, Any] = {
+                "direction": np.repeat(label, n_bins),
+                "bin": np.arange(n_bins, dtype=np.int64),
+            }
+            for d in range(n_dims):
+                data[f"coord_{d}"] = bin_centers[:, d]
+            data["firing_rate"] = rate
+            data["occupancy"] = occ
+            frames.append(pd.DataFrame(data))
+        if not frames:
+            # No labelled directions (e.g. compute_directional_place_fields
+            # excluded every "other" sample, leaving labels == ()). Return an
+            # empty frame with the documented column schema instead of letting
+            # pd.concat([]) raise "No objects to concatenate".
+            empty: dict[str, NDArray[Any]] = {
+                "direction": np.array([], dtype=object),
+                "bin": np.array([], dtype=np.int64),
+            }
+            for d in range(n_dims):
+                empty[f"coord_{d}"] = np.array([], dtype=np.float64)
+            empty["firing_rate"] = np.array([], dtype=np.float64)
+            empty["occupancy"] = np.array([], dtype=np.float64)
+            return pd.DataFrame(empty)
+        return pd.concat(frames, ignore_index=True)
+
+    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
+        """Overlay the per-direction firing rate maps on a single axis.
+
+        Plots each direction's firing rate against bin index as one line,
+        producing one artist per direction. This is most informative for
+        1-D / linearized environments where bin index maps to track position.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes, optional
+            Axes to draw on. If None, a new figure and axes are created.
+        **kwargs
+            Additional keyword arguments forwarded to ``ax.plot`` for each
+            direction's line.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+            The axes containing the overlay (one line per direction).
+
+        Examples
+        --------
+        >>> import matplotlib
+        >>> matplotlib.use("Agg")  # non-interactive backend for doctest
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> from neurospatial.encoding.spatial import DirectionalPlaceFields
+        >>> env = Environment.from_samples(
+        ...     np.linspace(0, 9, 100)[:, None], bin_size=1.0
+        ... )
+        >>> n = env.n_bins
+        >>> result = DirectionalPlaceFields(
+        ...     firing_rates={
+        ...         "fwd": np.linspace(1.0, 5.0, n),
+        ...         "rev": np.linspace(5.0, 1.0, n),
+        ...     },
+        ...     occupancy={"fwd": np.ones(n), "rev": np.ones(n)},
+        ...     env=env,
+        ...     labels=("fwd", "rev"),
+        ... )
+        >>> ax = result.plot()
+        >>> len(ax.get_lines())
+        2
+        """
+        import matplotlib.pyplot as plt
+
+        if ax is None:
+            _, ax = plt.subplots()
+
+        for label in self.labels:
+            rate = _to_numpy(self.firing_rates[label]).ravel()
+            ax.plot(np.arange(rate.shape[0]), rate, label=str(label), **kwargs)
+
+        ax.set_xlabel("Bin index")
+        ax.set_ylabel("Firing rate (Hz)")
+        ax.set_title("Directional place fields")
+        ax.legend()
+        return ax
 
 
 def _subset_spikes_by_time_mask(
@@ -1948,14 +2605,15 @@ def compute_directional_place_fields(
     >>> from neurospatial import Environment
     >>> from neurospatial.encoding.spatial import compute_directional_place_fields
     >>>
-    >>> # Create environment and trajectory
-    >>> positions = np.random.uniform(0, 100, (1000, 2))
+    >>> # Create environment and trajectory (seeded for reproducibility)
+    >>> rng = np.random.default_rng(0)
+    >>> positions = rng.uniform(0, 100, (1000, 2))
     >>> times = np.linspace(0, 100, 1000)
     >>> env = Environment.from_samples(positions, bin_size=10.0)
     >>>
     >>> # Create directional labels (first half forward, second half backward)
     >>> labels = np.array(["forward"] * 500 + ["backward"] * 500, dtype=object)
-    >>> spike_times = np.random.uniform(0, 100, 50)
+    >>> spike_times = np.sort(rng.uniform(0, 100, 50))  # spikes must be sorted
     >>>
     >>> # Compute directional place fields
     >>> result = compute_directional_place_fields(

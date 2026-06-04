@@ -7,6 +7,7 @@ import numpy as np
 from numpy.typing import NDArray
 from tqdm.auto import tqdm
 
+from neurospatial._validation import validate_finite
 from neurospatial.simulation.models.base import NeuralModel
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,9 @@ def generate_poisson_spikes(
     firing_rate : NDArray[np.float64], shape (n_time,)
         Instantaneous firing rate in Hz at each time point.
     times : NDArray[np.float64], shape (n_time,)
-        Time points in seconds (must be uniformly spaced).
+        Time points in seconds. Must be strictly increasing. Non-uniform
+        spacing is supported: each interval contributes its own width to
+        the per-bin spike probability.
     refractory_period : float, optional
         Absolute refractory period in seconds (default: 2ms = 0.002s).
         Prevents spikes within this window. Biologically realistic value
@@ -42,15 +45,27 @@ def generate_poisson_spikes(
     spike_times : NDArray[np.float64], shape (n_spikes,)
         Times of generated spikes in seconds, sorted in ascending order.
 
+    Raises
+    ------
+    ValueError
+        If ``firing_rate`` and ``times`` do not have the same length.
+    ValueError
+        If ``firing_rate`` contains non-finite values (NaN or inf), or if
+        ``times`` contains non-finite values (NaN or inf).
+    ValueError
+        If ``times`` is not strictly increasing (i.e. any interval has
+        zero or negative width).
+
     Notes
     -----
     **Algorithm (absolute refractory period implementation)**:
 
     1. Generate candidate spikes from inhomogeneous Poisson process:
 
-       - For each time step: spike if rand() < 1 - exp(-rate[i] * dt)
+       - For each time step: spike if rand() < 1 - exp(-rate[i] * dt[i]),
+         where dt[i] is the width of the interval following time ``i``
          (the exact per-bin probability of >=1 event; the linear form
-         rate[i] * dt is only valid when rate[i] * dt << 1)
+         rate[i] * dt[i] is only valid when rate[i] * dt[i] << 1)
 
     2. Sort candidate spike times (should already be sorted, but ensures correctness)
     3. Apply refractory period filter (single pass, O(n)):
@@ -125,11 +140,44 @@ def generate_poisson_spikes(
     # Initialize random number generator
     rng = np.random.default_rng(seed)
 
-    # Compute time step (assume uniform sampling)
+    times = np.asarray(times, dtype=np.float64)
+    firing_rate = np.asarray(firing_rate, dtype=np.float64)
+
+    if len(firing_rate) != len(times):
+        raise ValueError(
+            f"firing_rate and times must have the same length, got "
+            f"firing_rate={len(firing_rate)}, times={len(times)}."
+        )
+
+    firing_rate = validate_finite(firing_rate, name="firing_rate")
+
     if len(times) < 2:
         return np.array([], dtype=np.float64)
 
-    dt = times[1] - times[0]
+    if not np.all(np.isfinite(times)):
+        n_bad = int(np.sum(~np.isfinite(times)))
+        raise ValueError(f"times must be finite, got {n_bad} NaN/inf entr(y/ies).")
+
+    # Per-bin dt: the inhomogeneous Poisson probability uses the actual
+    # spacing of each interval, so non-uniform sampling is handled correctly.
+    # Require strictly increasing times: a zero-width interval has no spike
+    # probability and a decreasing interval is meaningless for a forward-time
+    # point process.
+    bin_dt = np.diff(times)
+    if np.any(bin_dt <= 0.0):
+        bad_idx = np.where(bin_dt <= 0.0)[0]
+        raise ValueError(
+            "times must be strictly increasing. Found "
+            f"{len(bad_idx)} non-increasing interval(s) at indices: "
+            f"{bad_idx.tolist()[:5]}" + (" ..." if len(bad_idx) > 5 else "")
+        )
+
+    # Pair each time point with the width of the interval that follows it.
+    # The final sample has no following interval; reuse the last dt so the
+    # `firing_rate` and `dt` arrays stay aligned and length-n.
+    dt = np.empty(len(times), dtype=np.float64)
+    dt[:-1] = bin_dt
+    dt[-1] = bin_dt[-1]
 
     # Generate candidate spikes from inhomogeneous Poisson process.
     # Probability of at least one spike in interval dt for a Poisson process
@@ -175,10 +223,10 @@ def generate_population_spikes(
     positions: NDArray[np.float64],
     times: NDArray[np.float64],
     *,
+    headings: NDArray[np.float64] | None = None,
     refractory_period: float = 0.002,
     seed: int | None = None,
     show_progress: bool = True,
-    headings: NDArray[np.float64] | None = None,
 ) -> list[NDArray[np.float64]]:
     """Generate spike trains for population of neurons.
 
@@ -194,6 +242,10 @@ def generate_population_spikes(
         Position trajectory in continuous coordinates.
     times : NDArray[np.float64], shape (n_time,)
         Time points in seconds (must be uniformly spaced).
+    headings : NDArray[np.float64], shape (n_time,), optional
+        Head direction in radians. Required for spatial-view models and
+        directional object-vector models. For head-direction models, headings
+        are used when provided; otherwise they are derived from position velocity.
     refractory_period : float, optional
         Refractory period for each neuron in seconds (default: 2ms).
     seed : int | None, optional
@@ -202,10 +254,6 @@ def generate_population_spikes(
     show_progress : bool, optional
         Show progress bar during spike generation (default: True).
         Set to False for quiet operation in scripts or tests.
-    headings : NDArray[np.float64], shape (n_time,), optional
-        Head direction in radians. Required for spatial-view models and
-        directional object-vector models. For head-direction models, headings
-        are used when provided; otherwise they are derived from position velocity.
 
     Returns
     -------

@@ -352,7 +352,7 @@ class TestCredibleRegion:
 
 
 class TestSuccessCriteria:
-    """Test success criteria from TASKS.md."""
+    """Test success criteria."""
 
 
 class TestEdgeCases:
@@ -412,3 +412,66 @@ class TestEdgeCases:
             assert all(len(r) == 1 for r in regions)
         else:
             pytest.skip("Could not create single-bin environment")
+
+
+class TestCredibleRegionNaN:
+    """credible_region must exclude NaN posterior bins from the HPD set."""
+
+    def test_credible_region_excludes_nan_bin(self, small_2d_env):
+        """A NaN bin is never reported, including as the leading HPD member."""
+        from neurospatial.decoding.estimates import credible_region
+
+        n_bins = small_2d_env.n_bins
+        assert n_bins >= 3
+
+        posterior = np.full((1, n_bins), 0.0)
+        # Clear finite mode at bin 1; a NaN bin at index 0.
+        posterior[0, 1] = 1.0
+        posterior[0, 0] = np.nan
+
+        regions = credible_region(small_2d_env, posterior, level=0.95)
+
+        hpd = regions[0]
+        assert 1 in hpd  # finite mode is included
+        assert 0 not in hpd  # NaN bin is excluded
+
+    def test_credible_region_low_finite_mass_excludes_nan_bins(self, small_2d_env):
+        """Low finite-mass rows must not slice NaN bins back via the fallback.
+
+        When a row's finite probability mass is strictly below ``level``,
+        the cumsum never reaches the target and the ``never_reached``
+        fallback is triggered. The fallback must cap at the number of
+        finite bins so the NaN/Inf placeholder bins are never re-included.
+        """
+        from neurospatial.decoding.estimates import credible_region
+
+        n_bins = small_2d_env.n_bins
+        assert n_bins >= 4
+
+        # Finite mass of 0.5 (< level 0.95) split across two finite bins,
+        # plus two NaN bins. The finite mode is at index 2.
+        posterior = np.full((1, n_bins), 0.0)
+        posterior[0, 0] = np.nan
+        posterior[0, 1] = np.nan
+        posterior[0, 2] = 0.3
+        posterior[0, 3] = 0.2
+
+        regions = credible_region(small_2d_env, posterior, level=0.95)
+
+        hpd = regions[0]
+        # None of the NaN bin indices may appear in the returned region.
+        assert 0 not in hpd
+        assert 1 not in hpd
+        # The finite mode must still be reported.
+        assert 2 in hpd
+
+    def test_credible_region_all_nan_row_returns_no_finite_bins(self, small_2d_env):
+        """An all-NaN row degrades to an empty region without crashing."""
+        from neurospatial.decoding.estimates import credible_region
+
+        n_bins = small_2d_env.n_bins
+        posterior = np.full((1, n_bins), np.nan)
+
+        regions = credible_region(small_2d_env, posterior, level=0.95)
+
+        assert len(regions[0]) == 0

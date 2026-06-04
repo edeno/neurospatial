@@ -848,3 +848,84 @@ class TestDirectionalBinningInputValidation:
                 bin_size=np.pi / 30,
                 angle_unit="invalid",  # type: ignore[arg-type]
             )
+
+
+# ==============================================================================
+# Non-finite headings must not be folded into bin 0
+# ==============================================================================
+
+
+class TestNonFiniteHeadingMasking:
+    """NaN/Inf headings are excluded from occupancy AND spike counts."""
+
+    def test_nan_heading_not_folded_into_bin0(
+        self, nan_block_heading_trajectory
+    ) -> None:
+        from neurospatial.encoding._directional_binning import (
+            compute_directional_occupancy,
+        )
+
+        d = nan_block_heading_trajectory
+        occ_bad, _ = compute_directional_occupancy(
+            d["times"], d["headings"], bin_size=np.pi / 30
+        )
+        occ_clean, _ = compute_directional_occupancy(
+            d["times_clean"], d["headings_clean"], bin_size=np.pi / 30
+        )
+        # Bin-0 occupancy must match the trajectory with bad frames removed.
+        assert occ_bad[0] == pytest.approx(occ_clean[0], abs=1e-9)
+
+    def test_inf_heading_rejected_or_dropped(
+        self, nan_block_heading_trajectory
+    ) -> None:
+        # Parametrized fixture also covers the Inf variant; assert the
+        # non-finite frames are excluded from occupancy (no bin-0 inflation,
+        # and total occupancy excludes the masked frames' deltas).
+        from neurospatial.encoding._directional_binning import (
+            compute_directional_occupancy,
+        )
+
+        d = nan_block_heading_trajectory
+        occ_bad, _ = compute_directional_occupancy(
+            d["times"], d["headings"], bin_size=np.pi / 30
+        )
+        occ_clean, _ = compute_directional_occupancy(
+            d["times_clean"], d["headings_clean"], bin_size=np.pi / 30
+        )
+        # Bin 0 is not inflated by the non-finite block.
+        assert occ_bad[0] == pytest.approx(occ_clean[0], abs=1e-9)
+
+        # Total occupancy equals the time on finite frames only: the masked
+        # frames' own time deltas are dropped, not folded into a bin.
+        times = d["times"]
+        finite = np.isfinite(d["headings"][:-1])
+        expected_total = np.diff(times)[finite].sum()
+        assert occ_bad.sum() == pytest.approx(expected_total, abs=1e-9)
+
+    def test_nan_heading_spikes_excluded(self, nan_block_heading_trajectory) -> None:
+        from neurospatial.encoding._directional_binning import (
+            bin_directional_spike_train,
+        )
+
+        d = nan_block_heading_trajectory
+        times = d["times"]
+        block = d["block"]
+        # Place spikes squarely inside the non-finite-heading block.
+        block_times = times[block]
+        spikes = np.sort(
+            block_times[0] + 0.5 * np.diff(block_times[:2]) + np.arange(10) * 0.0
+        )
+        # Use distinct spike times within the block window.
+        spikes = np.linspace(block_times[1], block_times[-2], 10)
+        counts_bad = bin_directional_spike_train(
+            spikes, times, d["headings"], bin_size=np.pi / 30
+        )
+        # All spikes fall on non-finite-heading frames -> none counted.
+        assert counts_bad.sum() == 0.0
+
+        # Spikes on finite frames are counted as normal.
+        finite_spike = np.array([times[10]])
+        counts_finite = bin_directional_spike_train(
+            finite_spike, times, d["headings"], bin_size=np.pi / 30
+        )
+        assert counts_finite.sum() == 1.0

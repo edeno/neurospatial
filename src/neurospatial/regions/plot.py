@@ -42,10 +42,10 @@ def plot_regions(
 
     Parameters
     ----------
-    ax : matplotlib.axes.Axes
-        Destination Axes.
     regions : Regions
         Collection to draw.
+    ax : matplotlib.axes.Axes, optional
+        Destination Axes. If None, uses the current Axes (``plt.gca()``).
     region_names : optional list or tuple
         If given, plot only these names; otherwise plot *all*.
     default_kwargs : dict, optional
@@ -54,10 +54,12 @@ def plot_regions(
         If supplied, coordinates are mapped **through** this transform
         *before* plotting - handy for overlaying cm-space polygons on
         pixel-space video frames.
+    add_legend : bool, default True
+        If True, add a legend labeling each plotted region.
     **per_region_kwargs
         Per-region overrides::
 
-            plot_regions(ax, regs, Stem={"alpha": 0.1}, Reward={"edgecolor": "red"})
+            plot_regions(regs, Stem={"alpha": 0.1}, Reward={"edgecolor": "red"})
 
     Returns
     -------

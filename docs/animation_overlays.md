@@ -99,7 +99,19 @@ overlay = PositionOverlay(
 Multi-keypoint pose tracking with optional skeleton visualization.
 
 ```python
-from neurospatial.animation import BodypartOverlay
+from neurospatial.animation import BodypartOverlay, Skeleton
+
+# Build a reusable skeleton (edge styling lives here)
+skeleton = Skeleton.from_edge_list(
+    [
+        ("nose", "ear_left"),
+        ("nose", "ear_right"),
+        ("nose", "tail_base"),
+    ],
+    name="rodent",
+    edge_color="white",         # Skeleton edge color
+    edge_width=2.0,             # Edge width
+)
 
 # Pose with skeleton
 overlay = BodypartOverlay(
@@ -110,19 +122,13 @@ overlay = BodypartOverlay(
         "tail_base": tail_coords,   # (n_samples, 2)
     },
     times=timestamps,               # Optional alignment
-    skeleton=[                      # Connect keypoints
-        ("nose", "ear_left"),
-        ("nose", "ear_right"),
-        ("nose", "tail_base"),
-    ],
+    skeleton=skeleton,              # Connect keypoints
     colors={                        # Per-keypoint colors
         "nose": "red",
         "ear_left": "blue",
         "ear_right": "blue",
         "tail_base": "green",
     },
-    skeleton_color="white",         # Skeleton edge color
-    skeleton_width=2.0              # Edge width
 )
 ```
 
@@ -130,10 +136,10 @@ overlay = BodypartOverlay(
 
 - `data`: Dict mapping keypoint names to coordinate arrays `(n_samples, n_dims)`
 - `times`: Optional timestamps for temporal alignment
-- `skeleton`: List of `(part1, part2)` tuples defining edges (default: `None`)
+- `skeleton`: A `Skeleton` defining keypoint edges and edge styling (default: `None`)
 - `colors`: Dict mapping keypoint names to colors (default: `None` = auto-color)
-- `skeleton_color`: Color for skeleton edges (default: `"white"`)
-- `skeleton_width`: Width of skeleton edges (default: `2.0`)
+
+Edge color and width are configured on the `Skeleton` (`edge_color`, `edge_width`).
 
 **Important:** Each keypoint can have **independent timestamps** for per-keypoint interpolation:
 
@@ -527,6 +533,7 @@ from neurospatial.animation import (
     PositionOverlay,
     BodypartOverlay,
     HeadDirectionOverlay,
+    Skeleton,
 )
 from neurospatial.encoding import compute_spatial_rate
 import numpy as np
@@ -556,6 +563,16 @@ position_overlay = PositionOverlay(
     trail_length=8
 )
 
+pose_skeleton = Skeleton.from_edge_list(
+    [
+        ("nose", "ear_left"),
+        ("nose", "ear_right"),
+        ("nose", "tail_base"),
+    ],
+    name="rodent",
+    edge_color="white",
+    edge_width=2.0,
+)
 pose_overlay = BodypartOverlay(
     data={
         "nose": pose_data[:, 0, :],
@@ -564,18 +581,13 @@ pose_overlay = BodypartOverlay(
         "tail_base": pose_data[:, 3, :],
     },
     times=timestamps,
-    skeleton=[
-        ("nose", "ear_left"),
-        ("nose", "ear_right"),
-        ("nose", "tail_base"),
-    ],
+    skeleton=pose_skeleton,
     colors={
         "nose": "yellow",
         "ear_left": "cyan",
         "ear_right": "cyan",
         "tail_base": "magenta",
     },
-    skeleton_color="white",
 )
 
 direction_overlay = HeadDirectionOverlay(
@@ -990,11 +1002,12 @@ env.animate_fields(
 @dataclass
 class PositionOverlay:
     """Single trajectory with optional trail."""
-    data: NDArray[np.float64]           # (n_samples, n_dims)
-    times: NDArray[np.float64] | None   # (n_samples,) or None
+    positions: NDArray[np.float64]              # (n_samples, n_dims)
+    times: NDArray[np.float64] | None = None    # (n_samples,) or None
     color: str = "red"
     size: float = 10.0
     trail_length: int | None = None
+    interp: Literal["linear", "nearest"] = "linear"
 ```
 
 ### BodypartOverlay
@@ -1003,12 +1016,11 @@ class PositionOverlay:
 @dataclass
 class BodypartOverlay:
     """Multi-keypoint pose with optional skeleton."""
-    data: dict[str, NDArray[np.float64]]    # {name: (n_samples, n_dims)}
-    times: NDArray[np.float64] | None       # (n_samples,) or None
-    skeleton: list[tuple[str, str]] | None = None
+    data: dict[str, NDArray[np.float64]]        # {name: (n_samples, n_dims)}
+    times: NDArray[np.float64] | None = None    # (n_samples,) or None
+    skeleton: Skeleton | None = None            # edge styling lives on Skeleton
     colors: dict[str, str] | None = None
-    skeleton_color: str = "white"
-    skeleton_width: float = 2.0
+    interp: Literal["linear", "nearest"] = "linear"
 ```
 
 ### HeadDirectionOverlay

@@ -1005,3 +1005,75 @@ class _MockWidget:
     def sync_from_state(self):
         """Mock sync_from_state method - no-op for testing."""
         pass
+
+
+# -----------------------------------------------------------------------------
+# Tests: invalid initial_edges are rejected with a warning (not silently dropped)
+# -----------------------------------------------------------------------------
+
+
+class TestInitialEdgeValidation:
+    """Invalid ``initial_edges`` entries warn rather than vanish silently.
+
+    Driven through the headless ``_apply_initial_edges`` helper (the same path
+    ``annotate_track_graph`` uses) so no napari viewer is launched.
+    """
+
+    @staticmethod
+    def _two_node_state():
+        from neurospatial.annotation._track_state import TrackBuilderState
+
+        state = TrackBuilderState()
+        state.add_node(0.0, 0.0)
+        state.add_node(10.0, 0.0)
+        return state
+
+    def test_annotate_track_graph_warns_on_invalid_initial_edge(self):
+        """An out-of-range initial edge warns and is not added."""
+        from neurospatial.annotation.track_graph import _apply_initial_edges
+
+        state = self._two_node_state()
+
+        # Node index 5 does not exist (only nodes 0 and 1).
+        with pytest.warns(UserWarning, match="invalid initial edge"):
+            _apply_initial_edges(state, [(0, 5)])
+
+        assert state.edges == []
+
+    def test_self_loop_initial_edge_warns(self):
+        """A self-loop initial edge warns and is not added."""
+        from neurospatial.annotation.track_graph import _apply_initial_edges
+
+        state = self._two_node_state()
+
+        with pytest.warns(UserWarning, match="invalid initial edge"):
+            _apply_initial_edges(state, [(0, 0)])
+
+        assert state.edges == []
+
+    def test_duplicate_initial_edge_warns(self):
+        """A duplicate initial edge warns and is not added twice."""
+        from neurospatial.annotation.track_graph import _apply_initial_edges
+
+        state = self._two_node_state()
+
+        with pytest.warns(UserWarning, match="invalid initial edge"):
+            _apply_initial_edges(state, [(0, 1), (1, 0)])
+
+        # Only the first (valid) edge survives; the reversed duplicate is dropped.
+        assert state.edges == [(0, 1)]
+
+    def test_valid_initial_edges_added_without_warning(self):
+        """Valid initial edges are added and emit no warning."""
+        import warnings as _warnings
+
+        from neurospatial.annotation.track_graph import _apply_initial_edges
+
+        state = self._two_node_state()
+        state.add_node(20.0, 0.0)
+
+        with _warnings.catch_warnings():
+            _warnings.simplefilter("error")
+            _apply_initial_edges(state, [(0, 1), (1, 2)])
+
+        assert state.edges == [(0, 1), (1, 2)]

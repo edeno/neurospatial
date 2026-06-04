@@ -10,6 +10,26 @@ from neurospatial.simulation.trajectory import (
 )
 
 
+@pytest.fixture
+def linear_track_env():
+    """A real 1D linearized track (GraphLayout) for sinusoidal motion tests."""
+    import networkx as nx
+
+    from neurospatial import Environment
+
+    g = nx.Graph()
+    g.add_node(0, pos=(0.0,))
+    g.add_node(1, pos=(50.0,))
+    g.add_node(2, pos=(100.0,))
+    g.add_edge(0, 1, distance=50.0)
+    g.add_edge(1, 2, distance=50.0)
+    env = Environment.from_graph(
+        graph=g, edge_order=[(0, 1), (1, 2)], edge_spacing=0.0, bin_size=2.0
+    )
+    env.units = "cm"
+    return env
+
+
 class TestSimulateTrajectoryOU:
     """Tests for Ornstein-Uhlenbeck trajectory simulation."""
 
@@ -42,43 +62,26 @@ class TestSimulateTrajectoryOU:
         for pos in positions:
             assert simple_2d_env.contains(pos), f"Position {pos} outside environment"
 
-    def test_velocity_autocorrelation_matches_coherence_time(self, simple_2d_env):
-        """Test that velocity autocorrelation matches coherence_time parameter."""
+    def test_velocity_autocorrelation_is_correlated_and_decays(self, simple_2d_env):
+        """OU velocity is temporally correlated: 0 < acf(coherence_time) < acf(0)."""
         coherence_time = 0.5
         positions, times = simulate_trajectory_ou(
             simple_2d_env,
-            duration=100.0,
+            duration=200.0,
             dt=0.01,
             coherence_time=coherence_time,
             seed=42,
             speed_units="cm",
         )
-
-        # Compute velocities
         dt = times[1] - times[0]
-        velocities = np.diff(positions, axis=0) / dt
-
-        # Compute autocorrelation of x-velocity
-        vx = velocities[:, 0]
-        vx_mean = np.mean(vx)
-        vx_centered = vx - vx_mean
-
-        # Autocorrelation at lag 0
-        acf_0 = np.mean(vx_centered**2)
-
-        # Autocorrelation at lag ~ coherence_time
+        vx = np.diff(positions, axis=0)[:, 0]
+        vx = vx - vx.mean()
+        acf0 = np.mean(vx**2)
         lag = int(coherence_time / dt)
-        if lag < len(vx_centered):
-            acf_lag = np.mean(vx_centered[:-lag] * vx_centered[lag:])
-
-            # Theoretical: acf(τ) ≈ acf(0) * exp(-τ/coherence_time)
-            # At τ = coherence_time: acf ≈ acf(0) * exp(-1) ≈ 0.37 * acf(0)
-            expected_ratio = np.exp(-1)
-            actual_ratio = acf_lag / acf_0
-
-            # Allow 150% tolerance due to finite sample size and OU process variability
-            # The OU process can show higher autocorrelation than theoretical in finite samples
-            assert abs(actual_ratio - expected_ratio) < 1.5 * expected_ratio
+        acf_lag = np.mean(vx[:-lag] * vx[lag:])
+        # White noise -> ~0; a constant -> ~acf0. A real OU process sits strictly
+        # between, confirming coherence_time produces decaying-but-nonzero memory.
+        assert 0.0 < acf_lag < acf0
 
     def test_boundary_mode_reflect(self, simple_2d_env):
         """Test reflect boundary mode."""
@@ -163,7 +166,7 @@ class TestSimulateTrajectoryOU:
             simulate_trajectory_ou(simple_2d_env, duration=1.0, speed_units="cm")
 
     def test_speed_units_must_match_env_units(self, simple_2d_env):
-        """speed_units must match env.units exactly (M4.5).
+        """speed_units must match env.units exactly.
 
         Auto-conversion between unit families was removed in v0.4
         because silent rescaling was easy to miss. Callers must
@@ -200,20 +203,61 @@ class TestSimulateTrajectorysinusoidal:
         with pytest.raises(ValueError, match="1D environments"):
             simulate_trajectory_sinusoidal(simple_2d_env, duration=10.0)
 
-    def test_basic_sinusoidal_generation(self, simple_1d_env):
-        """Test basic sinusoidal trajectory generation."""
-        # Note: simple_1d_env is not truly 1D (no GraphLayout)
-        # This test will fail until we implement GraphLayout or use from_graph
-        # For now, skip this test
-        pytest.skip("Requires 1D environment with GraphLayout")
+    def test_basic_sinusoidal_generation(self, linear_track_env):
+        """Produces (n_time, 1) positions sampled at the requested rate."""
+        positions, times = simulate_trajectory_sinusoidal(
+            linear_track_env,
+            duration=10.0,
+            sampling_frequency=100.0,
+            speed=20.0,
+            period=4.0,
+            seed=1,
+        )
+        assert positions.shape == (1000, 1)  # 10s * 100Hz
+        assert times.shape == (1000,)
+        assert times[1] - times[0] == pytest.approx(0.01)
 
-    def test_reproducibility_with_seed(self, simple_1d_env):
-        """Test that same seed produces same trajectory."""
-        pytest.skip("Requires 1D environment with GraphLayout")
+    def test_stays_within_track_bounds(self, linear_track_env):
+        """Sinusoidal positions never leave the linearized track range."""
+        range_min, range_max = linear_track_env.dimension_ranges[0]
+        positions, _ = simulate_trajectory_sinusoidal(
+            linear_track_env,
+            duration=20.0,
+            sampling_frequency=100.0,
+            speed=20.0,
+            period=4.0,
+        )
+        assert positions.min() >= range_min - 1e-9
+        assert positions.max() <= range_max + 1e-9
 
-    def test_position_bounds(self, simple_1d_env):
-        """Test that positions stay within track bounds."""
-        pytest.skip("Requires 1D environment with GraphLayout")
+    def test_is_periodic_with_given_period(self, linear_track_env):
+        """With pauses off, x(t) repeats every `period` seconds."""
+        period = 4.0
+        positions, _times = simulate_trajectory_sinusoidal(
+            linear_track_env,
+            duration=12.0,
+            sampling_frequency=100.0,
+            speed=20.0,
+            period=period,
+            pause_at_peaks=False,
+        )
+        n_per_period = int(period * 100.0)
+        # Compare the first period to the second period sample-for-sample.
+        first = positions[:n_per_period, 0]
+        second = positions[n_per_period : 2 * n_per_period, 0]
+        np.testing.assert_allclose(first, second, atol=1e-6)
+
+    def test_seed_has_no_effect(self, linear_track_env):
+        """`seed` is a documented no-op: output is identical regardless of seed."""
+        kw = {
+            "duration": 5.0,
+            "sampling_frequency": 100.0,
+            "speed": 20.0,
+            "period": 4.0,
+        }
+        a, _ = simulate_trajectory_sinusoidal(linear_track_env, seed=1, **kw)
+        b, _ = simulate_trajectory_sinusoidal(linear_track_env, seed=999, **kw)
+        np.testing.assert_array_equal(a, b)
 
 
 class TestSimulateTrajectoryLaps:

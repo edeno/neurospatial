@@ -298,7 +298,7 @@ class TestMedianDecodingErrorNaNHandling:
 
 
 class TestSuccessCriteria:
-    """Test success criteria from TASKS.md."""
+    """Test success criteria."""
 
 
 class TestEdgeCases:
@@ -389,7 +389,7 @@ class TestConfusionMatrix:
         assert result.dtype == np.float64
 
     def test_confusion_matrix_map_method_sum_equals_n_time_bins(self, small_2d_env):
-        """For summary_method='map', confusion matrix should sum to n_time_bins."""
+        """For method='map', confusion matrix should sum to n_time_bins."""
         from neurospatial.decoding.metrics import confusion_matrix
 
         n_bins = small_2d_env.n_bins
@@ -400,15 +400,13 @@ class TestConfusionMatrix:
         posterior /= posterior.sum(axis=1, keepdims=True)
         actual_bins = rng.integers(0, n_bins, n_time_bins)
 
-        result = confusion_matrix(
-            small_2d_env, posterior, actual_bins, summary_method="map"
-        )
+        result = confusion_matrix(small_2d_env, posterior, actual_bins, method="map")
 
         # For MAP method, total counts should equal n_time_bins
         assert result.sum() == pytest.approx(n_time_bins)
 
     def test_confusion_matrix_expected_method_row_sums(self, small_2d_env):
-        """For summary_method='expected', each row should sum to count of actual bin occurrences."""
+        """For method='expected', each row should sum to count of actual bin occurrences."""
         from neurospatial.decoding.metrics import confusion_matrix
 
         n_bins = small_2d_env.n_bins
@@ -420,7 +418,7 @@ class TestConfusionMatrix:
         actual_bins = rng.integers(0, n_bins, n_time_bins)
 
         result = confusion_matrix(
-            small_2d_env, posterior, actual_bins, summary_method="expected"
+            small_2d_env, posterior, actual_bins, method="expected"
         )
 
         # Each row should sum to the count of times that bin occurred
@@ -444,9 +442,7 @@ class TestConfusionMatrix:
         posterior = np.zeros((n_time_bins, n_bins))
         posterior[np.arange(n_time_bins), actual_bins] = 1.0
 
-        result = confusion_matrix(
-            small_2d_env, posterior, actual_bins, summary_method="map"
-        )
+        result = confusion_matrix(small_2d_env, posterior, actual_bins, method="map")
 
         # Should be diagonal with 2 in each diagonal entry
         expected = np.diag(np.full(n_bins, 2.0))
@@ -467,7 +463,7 @@ class TestConfusionMatrix:
         posterior[np.arange(n_time_bins), actual_bins] = 1.0
 
         result = confusion_matrix(
-            small_2d_env, posterior, actual_bins, summary_method="expected"
+            small_2d_env, posterior, actual_bins, method="expected"
         )
 
         expected = np.diag(np.full(n_bins, 2.0))
@@ -485,7 +481,7 @@ class TestConfusionMatrix:
         actual_bins = np.arange(n_bins)  # Each bin occurs once
 
         result = confusion_matrix(
-            small_2d_env, posterior, actual_bins, summary_method="expected"
+            small_2d_env, posterior, actual_bins, method="expected"
         )
 
         # Each row should sum to 1 (one occurrence per actual bin)
@@ -515,9 +511,7 @@ class TestConfusionMatrix:
 
         actual_bins = np.array([0, 0, 1])
 
-        result = confusion_matrix(
-            small_2d_env, posterior, actual_bins, summary_method="map"
-        )
+        result = confusion_matrix(small_2d_env, posterior, actual_bins, method="map")
 
         # Row 0 (actual=0): decoded=0 once, decoded=1 once
         assert result[0, 0] == pytest.approx(1.0)
@@ -545,7 +539,7 @@ class TestConfusionMatrix:
         actual_bins = np.array([0, 0])
 
         result = confusion_matrix(
-            small_2d_env, posterior, actual_bins, summary_method="expected"
+            small_2d_env, posterior, actual_bins, method="expected"
         )
 
         # Row 0 (actual=0): accumulate posteriors for both time bins
@@ -570,9 +564,9 @@ class TestConfusionMatrix:
 
         for method in ["map", "expected"]:
             result = confusion_matrix(
-                small_2d_env, posterior, actual_bins, summary_method=method
+                small_2d_env, posterior, actual_bins, method=method
             )
-            assert np.all(result >= 0), f"Negative values for summary_method={method}"
+            assert np.all(result >= 0), f"Negative values for method={method}"
 
     def test_confusion_matrix_invalid_method_raises(self, small_2d_env):
         """Invalid method should raise ValueError."""
@@ -583,9 +577,7 @@ class TestConfusionMatrix:
         actual_bins = np.zeros(5, dtype=np.int64)
 
         with pytest.raises(ValueError, match=r"method.*map.*expected"):
-            confusion_matrix(
-                small_2d_env, posterior, actual_bins, summary_method="invalid"
-            )
+            confusion_matrix(small_2d_env, posterior, actual_bins, method="invalid")
 
     def test_confusion_matrix_out_of_range_bins_raises(self, small_2d_env):
         """Actual bins outside valid range should raise ValueError."""
@@ -646,9 +638,7 @@ class TestConfusionMatrix:
         posterior[:, 0] = 1.0  # Always decode to bin 0
         actual_bins = np.zeros(5, dtype=np.int64)  # Always at bin 0
 
-        result = confusion_matrix(
-            small_2d_env, posterior, actual_bins, summary_method="map"
-        )
+        result = confusion_matrix(small_2d_env, posterior, actual_bins, method="map")
 
         # Row 0 should have all mass, rows 1+ should be zero
         assert result[0, 0] == pytest.approx(5.0)
@@ -657,7 +647,7 @@ class TestConfusionMatrix:
 
 
 class TestConfusionMatrixSuccessCriteria:
-    """Test success criteria from TASKS.md for confusion_matrix."""
+    """Test success criteria for confusion_matrix."""
 
 
 class TestDecodingCorrelation:
@@ -949,4 +939,53 @@ class TestDecodingCorrelationEdgeCases:
 
 
 class TestDecodingCorrelationSuccessCriteria:
-    """Test success criteria from TASKS.md for Milestone 2.3."""
+    """Test success criteria for decoding correlation."""
+
+
+class TestConfusionMatrixNaNRows:
+    """confusion_matrix must drop time bins with non-finite posterior rows."""
+
+    def test_confusion_matrix_skips_nan_rows_map(self, small_2d_env):
+        """A NaN row contributes nothing under 'map' and warns."""
+        from neurospatial.decoding.metrics import confusion_matrix
+
+        n_bins = small_2d_env.n_bins
+        assert n_bins >= 3
+
+        # Two finite rows decoding to bin 2, one all-NaN row.
+        posterior = np.zeros((3, n_bins))
+        posterior[0, 2] = 1.0
+        posterior[1, 2] = 1.0
+        posterior[2, :] = np.nan
+        actual_bins = np.array([2, 2, 1], dtype=np.int64)
+
+        with pytest.warns(UserWarning, match="NaN"):
+            cm = confusion_matrix(small_2d_env, posterior, actual_bins, method="map")
+
+        # Only the two finite rows count; bin-0 column is not inflated.
+        assert cm.sum() == 2.0
+        assert cm[2, 2] == 2.0
+        assert cm[:, 0].sum() == 0.0
+
+    def test_confusion_matrix_skips_nan_rows_expected(self, small_2d_env):
+        """A NaN row does not poison its actual-bin row under 'expected'."""
+        from neurospatial.decoding.metrics import confusion_matrix
+
+        n_bins = small_2d_env.n_bins
+        assert n_bins >= 3
+
+        posterior = np.zeros((3, n_bins))
+        posterior[0, 2] = 1.0
+        posterior[1, 2] = 1.0
+        posterior[2, :] = np.nan
+        actual_bins = np.array([2, 2, 1], dtype=np.int64)
+
+        with pytest.warns(UserWarning, match="NaN"):
+            cm = confusion_matrix(
+                small_2d_env, posterior, actual_bins, method="expected"
+            )
+
+        assert np.isfinite(cm).all()
+        # The NaN row's actual_bin (1) is unpoisoned: empty row.
+        assert cm[1, :].sum() == 0.0
+        assert cm[2, 2] == 2.0

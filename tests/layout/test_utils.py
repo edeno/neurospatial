@@ -54,6 +54,23 @@ def test_get_n_bins_invalid_dimension_range():
         get_n_bins(data, bin_size=1, dimension_range=[(0,)])
 
 
+def test_get_n_bins_large_extent_no_int32_overflow():
+    # extent 5000 / bin_size 1e-6 -> 5e9 bins, which overflows int32.
+    # Pass dimension_range so no giant positions array is materialized.
+    dummy_positions = np.zeros((1, 1), dtype=np.float64)
+    bins = get_n_bins(dummy_positions, bin_size=1e-6, dimension_range=[(0.0, 5000.0)])
+    assert bins.dtype == np.int64
+    assert bins[0] == 5_000_000_000
+    assert bins[0] > 0  # never a wrapped/negative int32
+
+
+def test_get_n_bins_overflow_guard_raises():
+    # extent / bin_size implying > 2**63 bins must raise, not silently wrap.
+    dummy_positions = np.zeros((1, 1), dtype=np.float64)
+    with pytest.raises(ValueError, match="overflow"):
+        get_n_bins(dummy_positions, bin_size=1e-300, dimension_range=[(0.0, 1.0)])
+
+
 def test_infer_active_elements_from_samples_basic():
     candidates = np.array([[0, 0], [1, 1], [2, 2]])
     samples = np.array([[0.1, 0.1], [1.1, 1.1], [2.1, 2.1]])

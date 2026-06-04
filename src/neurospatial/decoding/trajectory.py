@@ -4,12 +4,33 @@ This module provides functions for fitting and detecting trajectories in
 posterior probability sequences from Bayesian decoding. These are useful for
 analyzing replay events and sequential activation patterns.
 
+Getting replay (ripple) intervals
+----------------------------------
+The trajectory fits here characterize a posterior *within* a candidate replay
+event; they do not themselves detect the sharp-wave-ripple (SWR) events that
+delimit replay. neurospatial does not implement ripple detection. Instead,
+detect ripple intervals with the external ``ripple_detection`` package
+(``pip install ripple_detection``), then decode the spikes within each
+returned interval and fit the posterior with the functions in this module.
+
+The intervals ``ripple_detection`` returns (an array of ``(start_time,
+end_time)`` pairs in seconds) also feed directly into
+:func:`neurospatial.events.peri_event_histogram` — pass the interval start
+times as the event times to build a peri-ripple histogram. For example::
+
+    from ripple_detection import Kay_ripple_detector
+    from neurospatial.events import peri_event_histogram
+
+    ripple_times = Kay_ripple_detector(time, lfps, speed, sampling_frequency)
+    ripple_starts = ripple_times[:, 0]  # (start, end) pairs -> start times
+    psth = peri_event_histogram(spike_times, ripple_starts, window=(-0.5, 0.5))
+
 Functions
 ---------
 fit_isotonic_trajectory
     Fit monotonic trajectory using isotonic regression.
 fit_linear_trajectory
-    Fit linear trajectory with optional Monte Carlo posterior_entropy.
+    Fit linear trajectory with optional Monte Carlo uncertainty.
 detect_trajectory_radon
     Detect linear trajectory using Radon transform.
 
@@ -78,7 +99,7 @@ class IsotonicFitResult:
 
     Examples
     --------
-    >>> result = fit_isotonic_trajectory(None, posterior, times)  # doctest: +SKIP
+    >>> result = fit_isotonic_trajectory(posterior, times)  # doctest: +SKIP
     >>> print(
     ...     f"R² = {result.r_squared:.3f}, direction = {result.direction}"
     ... )  # doctest: +SKIP
@@ -99,7 +120,7 @@ class LinearFitResult:
 
     Linear regression fits a straight line to the decoded position sequence.
     This provides slope (replay speed) and intercept estimates, optionally
-    with posterior_entropy quantification via Monte Carlo sampling.
+    with uncertainty quantification via Monte Carlo sampling.
 
     Attributes
     ----------
@@ -193,10 +214,10 @@ class RadonDetectionResult:
 
 
 def fit_isotonic_trajectory(
-    env: Environment | None,
     posterior: NDArray[np.float64],
     times: NDArray[np.float64],
     *,
+    env: Environment | None = None,
     increasing: bool | None = None,
     method: Literal["map", "expected"] = "expected",
 ) -> IsotonicFitResult:
@@ -208,17 +229,17 @@ def fit_isotonic_trajectory(
 
     Parameters
     ----------
-    env : Environment | None
-        Spatial environment, kept first to align with the canonical
-        ``(env, posterior, times, *, ...)`` signature shared with
-        :func:`fit_linear_trajectory`. Pass ``None`` here: this function
-        operates entirely in bin-index space and does not consult ``env``.
     posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
         Posterior probability distribution over spatial bins for each time bin.
         Each row should sum to 1.
     times : NDArray[np.float64], shape (n_time_bins,)
         Time values for each time bin. Used as the independent variable (x)
         in the regression.
+    env : Environment | None, optional
+        Spatial environment, accepted as a keyword-only argument for parity
+        with :func:`fit_linear_trajectory`. This function operates entirely in
+        bin-index space and does not consult ``env``; it is a parity
+        placeholder consulted by no code path.
     increasing : bool | None, optional
         Direction constraint for the isotonic fit:
         - True: Fit increasing (non-decreasing) monotonic function
@@ -268,7 +289,7 @@ def fit_isotonic_trajectory(
     ...     posterior[t, t * 2] = 1.0  # Delta posteriors
     >>> times = np.linspace(0, 1, n_time_bins)
     >>>
-    >>> result = fit_isotonic_trajectory(None, posterior, times)
+    >>> result = fit_isotonic_trajectory(posterior, times)
     >>> print(f"R² = {result.r_squared:.3f}, direction = {result.direction}")
     R² = 1.000, direction = increasing
     """
@@ -370,7 +391,7 @@ def fit_linear_trajectory(
 
     Fits a straight line to the decoded position sequence, providing slope
     (replay speed) and intercept estimates. Optionally uses Monte Carlo
-    sampling to quantify posterior_entropy in the slope estimate.
+    sampling to quantify uncertainty in the slope estimate.
 
     Parameters
     ----------
@@ -383,13 +404,13 @@ def fit_linear_trajectory(
         Time values for each time bin. Used as the independent variable (x)
         in the regression. Need not be uniformly spaced.
     n_samples : int, optional
-        Number of Monte Carlo samples from the posterior for posterior_entropy
+        Number of Monte Carlo samples from the posterior for uncertainty
         estimation (only used when method="sample"). Default is 1000.
     method : {"map", "sample"}, optional
         How to fit the linear trajectory:
-        - "map": Use argmax positions directly. Fast but ignores posterior_entropy.
+        - "map": Use argmax positions directly. Fast but ignores uncertainty.
         - "sample" (default): Sample from posterior, fit to each sample,
-          average coefficients. Provides posterior_entropy estimate via slope_std.
+          average coefficients. Provides uncertainty estimate via slope_std.
     rng : np.random.Generator | int | None, optional
         Random number generator for reproducibility (method="sample" only).
         - If Generator: Use directly

@@ -446,7 +446,7 @@ class TestSubsetCropExample:
 
 
 class TestSubsetRoundTripsThroughToFileFromFile:
-    """Regression for M1 1.1: subset envs must serialize round-trip cleanly.
+    """Regression: subset envs must serialize round-trip cleanly.
 
     Pre-fix subset() returned an Environment whose layout_type_used was
     "subset" -- a string the layout factory didn't recognize, so
@@ -469,7 +469,7 @@ class TestSubsetRoundTripsThroughToFileFromFile:
         return Environment.from_samples(positions, bin_size=2.0, name="parent")
 
     def test_subset_to_file_from_file_round_trip(self, tmp_path):
-        """The acceptance test from TASKS.md: subset -> to_file -> from_file."""
+        """Acceptance test: subset -> to_file -> from_file."""
         from neurospatial.io.files import from_file, to_file
 
         env = self._build_grid_env()
@@ -531,8 +531,8 @@ class TestSubsetRoundTripsThroughToFileFromFile:
         """Grid-parent subset envs report MaskedGrid as their layout, not 'subset'.
 
         The 'subset' layout kind was not registered with the layout
-        factory, which is why the round-trip was broken. After M1 1.1
-        the env is built via Environment.from_grid_mask, so its
+        factory, which is why the round-trip was broken. The fix builds
+        the env via Environment.from_grid_mask, so its
         layout_type_used is the canonical 'MaskedGrid'.
         """
         env = self._build_grid_env()

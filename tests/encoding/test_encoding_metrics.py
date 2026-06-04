@@ -707,7 +707,7 @@ class TestBatchGridScores:
         exception that we caught". Constant firing rates have zero
         variance and so the autocorrelation is mathematically undefined,
         but the input itself is well-formed: the failure mask must stay
-        False and no UserWarning should fire. (M1 1.5 review-response.)
+        False and no UserWarning should fire.
         """
         import warnings
 
@@ -926,7 +926,7 @@ class TestBatchGridScoresNonRegularGrid:
         callers using ``np.isnan(scores) & ~failures`` to count
         legitimate-NaNs see the right count, and no
         "computation failed for N neurons" UserWarning fires. This is
-        the regression for the post-M2.B 2.12 review-response: prior
+        the regression for the review-response: prior
         to the fix, irregular envs flooded ``failures`` with True for
         every neuron because the catch-all caught the env-level
         ValueError from the new spatial_autocorrelation contract.
@@ -966,7 +966,7 @@ class TestBatchGridScoresNonRegularGrid:
 
 
 class TestBatchScoresFailuresMask:
-    """Regressions for M1 1.5: batch metric failures must be visible.
+    """Regressions for batch metric failures: failures must be visible.
 
     Previously batch_grid_scores and batch_border_scores swallowed
     (ValueError, RuntimeError) and substituted NaN per neuron with no
@@ -1343,7 +1343,7 @@ class TestBatchBorderScores:
 
 
 class TestBorderScoreRaisesOnDijkstraFailure:
-    """Regression for M1 1.5 follow-up: border_score's Dijkstra failure
+    """Regression: border_score's Dijkstra failure
     must propagate so batch_border_scores can flag the neuron in its
     failures mask. Previously the single-neuron path swallowed the
     exception and returned NaN with a RuntimeWarning, which the batch

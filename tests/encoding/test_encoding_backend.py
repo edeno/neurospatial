@@ -7,7 +7,7 @@ This module tests the backend selection infrastructure:
 
 TDD approach: Tests written first, implementation follows.
 
-Design requirements (from PLAN.md):
+Design requirements:
 - "numpy" (default) works everywhere, including Windows
 - "jax" requires JAX installation (Linux/macOS only)
 - "auto" uses JAX if available, falls back to NumPy silently on Windows

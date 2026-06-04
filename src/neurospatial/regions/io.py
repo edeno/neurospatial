@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 import shapely.geometry as shp
 from numpy.typing import NDArray
+from shapely.errors import ShapelyError
 from shapely.geometry import Polygon
 
 from .core import Region, Regions
@@ -190,7 +191,7 @@ def load_labelme_json(
             continue
         try:
             poly = shp.Polygon(pts_transformed)
-        except Exception as e:  # Catch potential shapely errors
+        except (TypeError, ValueError, ShapelyError) as e:  # Polygon construction
             warnings.warn(
                 f"Could not create polygon for shape '{name}' (index {i}): {e}, skipping.",
                 category=UserWarning,
@@ -242,9 +243,21 @@ def _rle_to_mask(rle: str, height: int, width: int) -> NDArray[np.uint8]:
         raise ValueError(f"RLE string has an odd number of values: {rle}")
 
     mask = np.zeros(height * width, dtype=np.uint8)
+    n_pixels = height * width
 
-    # Unpack RLE values into the mask
-    for start, length in zip(rle_values[::2], rle_values[1::2], strict=False):
+    # Unpack RLE values into the mask. Each (start, length) run must lie fully
+    # within the flattened image; out-of-bounds or negative runs are a malformed
+    # encoding (a clamped NumPy slice would silently produce the wrong mask).
+    for start, length in zip(rle_values[::2], rle_values[1::2], strict=True):
+        if length < 0:
+            raise ValueError(
+                f"RLE run has negative length {length} (start={start}): {rle}"
+            )
+        if start < 0 or start + length > n_pixels:
+            raise ValueError(
+                f"RLE run [{start}, {start + length}) is out of bounds for an "
+                f"image of {n_pixels} pixels ({height}x{width}): {rle}"
+            )
         mask[start : start + length] = 1  # Set the corresponding region to 1
 
     return mask.reshape((height, width))  # Reshape to image dimensions
@@ -432,7 +445,7 @@ def _process_cvat_polygon(
         pts_transformed = pixel_to_world(pts_px) if pixel_to_world else pts_px
         geom = shp.Polygon(pts_transformed)
         return (processed_label, geom, color)
-    except (ValueError, Exception) as e:
+    except (ValueError, ShapelyError) as e:
         warnings.warn(
             f"Image '{image_id_str}', Polygon (raw_label: {raw_label}, "
             f"xml_idx: {elem_idx}): error processing: {e}. Skipping.",
@@ -491,7 +504,7 @@ def _process_cvat_polyline(
             stacklevel=2,
         )
         return None
-    except (ValueError, Exception) as e:
+    except (ValueError, ShapelyError) as e:
         warnings.warn(
             f"Image '{image_id_str}', Polyline (raw_label: {raw_label}, "
             f"xml_idx: {elem_idx}): error processing: {e}. Skipping.",
@@ -545,7 +558,7 @@ def _process_cvat_points(
             geom = shp.Point(pt_data)
             results.append((processed_label_group, geom, color_group))
         return results
-    except (ValueError, Exception) as e:
+    except (ValueError, ShapelyError) as e:
         warnings.warn(
             f"Image '{image_id_str}', Points group (raw_label: {raw_label_group}, "
             f"xml_idx: {elem_idx}): error processing: {e}. Skipping.",
@@ -586,7 +599,7 @@ def _process_cvat_box(
         pts_transformed = pixel_to_world(pts_px) if pixel_to_world else pts_px
         geom = shp.Polygon(pts_transformed)
         return (processed_label, geom, color)
-    except (TypeError, ValueError, Exception) as e:
+    except (TypeError, ValueError, ShapelyError) as e:
         warnings.warn(
             f"Image '{image_id_str}', Box (raw_label: {raw_label}, "
             f"xml_idx: {elem_idx}): error processing: {e}. Skipping.",
@@ -650,7 +663,7 @@ def _process_cvat_mask(
     except ImportError:
         # Let this bubble up so caller can handle it
         raise
-    except (ValueError, Exception) as e:
+    except (ValueError, ShapelyError) as e:
         warnings.warn(
             f"Image '{image_id_str}', Mask (raw_label: {raw_label}, "
             f"xml_idx: {elem_idx}): error processing: {e}. Skipping.",

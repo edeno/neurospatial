@@ -481,7 +481,7 @@ def field_density_map(
         Place fields for each cell. Each element may be either a bare
         ``list[NDArray[np.int64]]`` (legacy hand-built input) or a
         ``PlaceFieldsResult`` (the canonical return of
-        :func:`detect_place_fields` since M1 1.4); both forms iterate as
+        :func:`detect_place_fields`); both forms iterate as
         ``Iterable[NDArray[np.int64]]``.
     n_bins : int
         Total number of bins in the environment.

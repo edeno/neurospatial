@@ -26,7 +26,10 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._validation import validate_finite
+
 __all__ = [
+    "validate_classifier_trajectory",
     "validate_env_fitted",
     "validate_spike_times",
     "validate_times",
@@ -242,3 +245,47 @@ def validate_trajectory(
                 f"in {context}: times length ({n_samples}) must match "
                 f"headings length ({len(headings)})"
             )
+
+
+def validate_classifier_trajectory(
+    spike_times: NDArray[np.float64],
+    times: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    *,
+    context: str,
+) -> None:
+    """Validate ``(spike_times, times, headings)`` for directional classifiers.
+
+    Raises on genuine input errors so they propagate instead of being
+    swallowed as a False classification. Does NOT enforce statistical
+    significance — that is decided after the (valid) computation.
+
+    ``headings`` are intentionally not passed through :func:`validate_finite`:
+    non-finite headings are a legitimate, droppable condition handled by the
+    directional binning layer (masked out of occupancy and spike counts), not
+    a hard error. The guard is for shape/length/timestamp sanity that should
+    surface as errors.
+
+    Parameters
+    ----------
+    spike_times : ndarray, shape (n_spikes,)
+        Spike timestamps in seconds.
+    times : ndarray, shape (n_samples,)
+        Timestamps of head direction samples in seconds.
+    headings : ndarray, shape (n_samples,)
+        Head direction at each time point.
+    context : str
+        Name of the calling function for error messages.
+
+    Raises
+    ------
+    ValueError
+        If lengths disagree, ``times`` is non-finite or not monotonically
+        non-decreasing, or ``spike_times`` is malformed.
+    """
+    times = np.asarray(times, dtype=np.float64)
+    headings = np.asarray(headings, dtype=np.float64)
+    spike_times = np.asarray(spike_times, dtype=np.float64)
+    validate_trajectory(times, headings=headings, context=context)
+    validate_finite(times, name="times")
+    validate_spike_times(spike_times, context=context)

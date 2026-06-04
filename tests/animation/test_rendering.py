@@ -650,3 +650,42 @@ class TestRenderFieldToImageBytesFigureLeak:
 
         # The figure created inside the function must have been closed.
         assert set(plt.get_fignums()) == fignums_before
+
+
+def test_field_to_rgb_for_napari_orientation():
+    """A field peak at a known env corner lands at the predicted napari pixel."""
+    pytest.importorskip("matplotlib")
+
+    from neurospatial.animation.rendering import field_to_rgb_for_napari
+
+    # Dense 4x4 grid covering 0..30 cm so every bin is active and indexable.
+    xs = np.linspace(0, 30, 16)
+    ys = np.linspace(0, 30, 16)
+    xx, yy = np.meshgrid(xs, ys)
+    env = Environment.from_samples(
+        np.column_stack([xx.ravel(), yy.ravel()]), bin_size=10.0
+    )
+    assert env.layout.grid_shape == (4, 4)
+
+    # Identity colormap: index i -> (i, i, i). Channel 0 == colormap index.
+    cmap_lookup = np.stack([np.arange(256)] * 3, axis=1).astype(np.uint8)
+    centers = env.bin_centers
+
+    def bright_pixel(flat_bin_index):
+        field = np.zeros(env.n_bins)
+        field[flat_bin_index] = 1.0  # maps to colormap index 255
+        rgb = field_to_rgb_for_napari(env, field, cmap_lookup, vmin=0, vmax=1)
+        assert rgb.shape == (4, 4, 3)
+        return np.unravel_index(int(np.argmax(rgb[..., 0])), rgb[..., 0].shape)
+
+    # (min x, max y) -> top-left (row 0, col 0)
+    top_left = int(np.lexsort((centers[:, 0], -centers[:, 1]))[0])
+    assert bright_pixel(top_left) == (0, 0)
+
+    # (min x, min y) -> bottom-left (row 3, col 0): napari flips Y downward.
+    bottom_left = int(np.lexsort((centers[:, 0], centers[:, 1]))[0])
+    assert bright_pixel(bottom_left) == (3, 0)
+
+    # (max x, max y) -> top-right (row 0, col 3)
+    top_right = int(np.lexsort((-centers[:, 0], -centers[:, 1]))[0])
+    assert bright_pixel(top_right) == (0, 3)

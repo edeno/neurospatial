@@ -277,13 +277,17 @@ class TestTimeEfficiency:
         # Trajectory: 100 units in 10 seconds = 10 units/s actual speed
         positions = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
         times = np.linspace(0, 10, 21)
-        goal = np.array([100.0, 0.0])
         reference_speed = 20.0  # units/s
 
         # Shortest path = 100, at reference speed 20 = 5 seconds optimal
         # Actual time = 10 seconds
         # Efficiency = 5/10 = 0.5
-        eff = time_efficiency(positions, times, goal, reference_speed=reference_speed)
+        eff = time_efficiency(
+            positions,
+            times,
+            reference_speed=reference_speed,
+            optimal_distance=100.0,
+        )
 
         assert_allclose(eff, 0.5, rtol=0.1)
 

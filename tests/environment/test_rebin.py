@@ -398,3 +398,34 @@ class TestRebinIntegration:
         # Should all be valid (not -1)
         assert np.all(indices >= 0)
         assert np.all(indices < coarse.n_bins)
+
+
+class TestRebinDiagonalConnectivityMaskedGrid:
+    """Regression: rebin infers diagonal connectivity from active-bin degrees."""
+
+    def test_rebin_preserves_diagonal_connectivity_on_masked_grid(
+        self, holed_grid_env_8conn
+    ):
+        """An 8-connected holed source rebins to an 8-connected grid."""
+        env = holed_grid_env_8conn
+
+        # Source should have a degree-8 interior node.
+        src_max_degree = max(deg for _, deg in env.connectivity.degree())
+        assert src_max_degree == 8
+
+        coarse = env.rebin(factor=2)
+        coarse_max_degree = max(deg for _, deg in coarse.connectivity.degree())
+        assert coarse_max_degree == 8
+
+    def test_rebin_preserves_orthogonal_connectivity_on_masked_grid(
+        self, holed_grid_env_4conn
+    ):
+        """A 4-connected holed source rebins to a 4-connected grid."""
+        env = holed_grid_env_4conn
+
+        src_max_degree = max(deg for _, deg in env.connectivity.degree())
+        assert src_max_degree == 4
+
+        coarse = env.rebin(factor=2)
+        coarse_max_degree = max(deg for _, deg in coarse.connectivity.degree())
+        assert coarse_max_degree == 4
