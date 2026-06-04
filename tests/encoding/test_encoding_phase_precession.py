@@ -6,8 +6,6 @@ re-exported from the new encoding.phase_precession location.
 
 from __future__ import annotations
 
-import time
-
 import numpy as np
 import pytest
 
@@ -339,11 +337,29 @@ class TestHasPhasePrecessionValidation:
         phases = np.array([0.1, 0.2, 0.3])
         assert has_phase_precession(positions, phases) is False
 
-    def test_has_phase_precession_within_time_budget(self, precessing_spikes) -> None:
+    def test_has_phase_precession_default_work_is_bounded(
+        self, precessing_spikes
+    ) -> None:
+        """The default call completes and uses a bounded shuffle count.
+
+        Replaces an earlier wall-clock ``elapsed < 2.0`` assertion that was
+        inherently flaky: the suite runs under ``pytest -n auto`` (xdist), which
+        saturates every core, so a sub-second op wall-clocks to 2.5-3.7s on CI
+        runners and the bound failed across all Linux/Windows jobs. The real
+        intent -- guard against a pathologically expensive default (e.g. an
+        accidental huge ``n_shuffles``) -- is enforced deterministically here by
+        bounding the default shuffle count and confirming the call returns.
+        """
+        import inspect
+
         from neurospatial.encoding.phase_precession import has_phase_precession
 
+        default_shuffles = (
+            inspect.signature(has_phase_precession).parameters["n_shuffles"].default
+        )
+        assert isinstance(default_shuffles, int)
+        assert default_shuffles <= 1000
+
         d = precessing_spikes
-        start = time.perf_counter()
-        has_phase_precession(d["positions"], d["phases"], rng=0)
-        elapsed = time.perf_counter() - start
-        assert elapsed < 2.0
+        result = has_phase_precession(d["positions"], d["phases"], rng=0)
+        assert isinstance(result, bool)

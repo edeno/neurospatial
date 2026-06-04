@@ -114,7 +114,7 @@ class TestRegionsToJson:
         regions_to_json(regions, json_path, indent=4)
 
         # Verify file has proper indentation
-        content = json_path.read_text()
+        content = json_path.read_text(encoding="utf-8")
         assert "    " in content  # 4-space indent
 
     def test_method_and_function_paths_agree(self, tmp_path):
@@ -142,7 +142,9 @@ class TestRegionsToJson:
         regions_to_json(regions, func_path)
         regions.to_json(method_path)
 
-        assert func_path.read_text() == method_path.read_text()
+        assert func_path.read_text(encoding="utf-8") == method_path.read_text(
+            encoding="utf-8"
+        )
 
         # Both loaders reconstruct equivalent collections, metadata included.
         # Stored metadata freezes lists to tuples; to_dict thaws them back.

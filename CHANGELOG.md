@@ -213,6 +213,16 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ### Fixed
 
+- `gaussian_kde` smoothing could return a kernel computed for a *different*
+  environment. The internal Gaussian-kernel cache keyed on `(id(env),
+  bandwidth)` and validated only `n_bins`; since `id()` is unique only among
+  live objects, an environment built after an earlier one was garbage-collected
+  could reuse its address and silently receive the stale kernel when `n_bins`
+  matched (e.g. two `from_polar_egocentric` envs differing only in
+  `circular_angle` — the open-axis env would get the circular env's
+  seam-wrapped kernel). The cache now also holds a weakref to the owning env and
+  treats any `ref() is not env` (id reused or env collected) as a miss, so a
+  recycled id can never serve another env's kernel.
 - `DirectionalPlaceFields.to_dataframe()` no longer crashes on an empty result.
   When `compute_directional_place_fields` excludes every sample as `"other"`
   (so `labels == ()`), the method previously built an empty `frames` list and

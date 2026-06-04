@@ -96,7 +96,11 @@ def _html_frame(data: dict, tmp_path, *, vmin=None, vmax=None, cmap=None) -> np.
         dpi=_DPI,
     )
     # Frames are embedded as raw base64 PNGs in a `const frames = [...]` array.
-    b64_frames = re.findall(r'"([A-Za-z0-9+/=]{100,})"', out.read_text())
+    # render_html writes UTF-8; read it back as UTF-8 explicitly so this does not
+    # fall back to the locale codec (cp1252 on Windows -> UnicodeDecodeError).
+    b64_frames = re.findall(
+        r'"([A-Za-z0-9+/=]{100,})"', out.read_text(encoding="utf-8")
+    )
     return decode_png(base64.b64decode(b64_frames[_FRAME]))
 
 

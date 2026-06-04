@@ -8,6 +8,8 @@ Following TDD approach: tests written before implementation.
 
 from __future__ import annotations
 
+import weakref
+
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
@@ -900,3 +902,38 @@ class TestPolarGaussianKernelSeam:
         assert seam_w < 1e-3 * normal_w
         # It behaves like a truly-far pair (also ~no weight at this bandwidth).
         assert seam_w == pytest.approx(far_w, abs=1e-6)
+
+    def test_kernel_cache_rejects_id_reuse(self) -> None:
+        """A recycled ``id(env)`` must never return another env's cached kernel.
+
+        ``id()`` is unique only among *live* objects, so once an env is GC'd a
+        freshly built one can land at the same address. The kernel cache keys on
+        ``(id(env), bandwidth)`` and previously validated only ``n_bins``; two
+        polar envs that differ only in ``circular_angle`` share ``n_bins``, so a
+        circular env's wrapped kernel could be served for an open-axis env at the
+        reused id (the non-deterministic macos-3.13 CI failure: seam weight came
+        back ~0.29 instead of ~0). The weakref identity guard turns any such
+        reuse into a cache miss. Forge the collision deterministically by seeding
+        the cache under the open env's key with the circular kernel and a weakref
+        pointing at a *different* env.
+        """
+        from neurospatial.encoding import _smoothing
+
+        env_circular = self._polar_env(circular_angle=True)
+        env_open = self._polar_env(circular_angle=False)
+        bandwidth = 5.0
+        circular_kernel = _get_gaussian_kernel(env_circular, bandwidth)
+
+        # Poison: open env's (id, bandwidth) key -> circular kernel + a weakref
+        # to a foreign env. The guard must see ref() is not env_open and recompute.
+        _smoothing._GAUSSIAN_KERNEL_CACHE[(id(env_open), bandwidth)] = (
+            circular_kernel,
+            np.asarray(env_open.bin_centers).shape[0],
+            weakref.ref(env_circular),
+        )
+
+        result = _get_gaussian_kernel(env_open, bandwidth)
+        seam_a, seam_b, *_ = self._ring_indices(env_open)
+        # Recomputed open-axis kernel: seam is NOT wrapped (tiny weight), not the
+        # leaked circular value the poisoned entry would have returned.
+        assert result[seam_a, seam_b] < 1e-3

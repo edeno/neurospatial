@@ -50,6 +50,7 @@ References
 
 from __future__ import annotations
 
+import weakref
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
@@ -66,10 +67,16 @@ __all__ = [
 
 
 # Cache for the dense Gaussian-KDE kernel. Keyed by (id(env), bandwidth);
-# value is the (n_bins, n_bins) weight matrix and its bin-count for a
-# stale-entry sanity check (in case an Environment gets GC'd and another
-# reuses the same id before this dict is purged).
-_GAUSSIAN_KERNEL_CACHE: dict[tuple[int, float], tuple[NDArray[np.float64], int]] = {}
+# value is the (n_bins, n_bins) weight matrix, its bin-count, and a weakref
+# to the owning environment. The weakref is the real id-reuse guard: ``id()``
+# is only unique among *live* objects, so once an Environment is GC'd a freshly
+# built one can reuse its address. A different env reusing the id (or the same
+# id after GC) would otherwise return a stale kernel that does not match the new
+# env's geometry (e.g. a circular vs. open angular axis with identical n_bins).
+# Validating ``ref() is env`` on lookup turns any such reuse into a cache miss.
+_GAUSSIAN_KERNEL_CACHE: dict[
+    tuple[int, float], tuple[NDArray[np.float64], int, weakref.ref[Any]]
+] = {}
 _GAUSSIAN_KERNEL_CACHE_MAX = 32
 
 
@@ -88,7 +95,11 @@ def _get_gaussian_kernel(
     cached = _GAUSSIAN_KERNEL_CACHE.get(key)
     bin_centers = env.bin_centers
     n_bins = bin_centers.shape[0]
-    if cached is not None and cached[1] == n_bins:
+    # Require the cached weakref to still resolve to *this* exact env. A dead
+    # weakref (env GC'd) or one resolving to a different object (id reused by a
+    # new env) means the entry belongs to a now-gone environment -- treat as a
+    # miss and recompute rather than returning a geometrically wrong kernel.
+    if cached is not None and cached[1] == n_bins and cached[2]() is env:
         return cached[0]
 
     two_sigma_sq = 2.0 * bandwidth**2
@@ -133,11 +144,19 @@ def _get_gaussian_kernel(
         np.float64, copy=False
     )
 
+    try:
+        env_ref: weakref.ref[Any] = weakref.ref(env)
+    except TypeError:
+        # Not weakref-able (e.g. __slots__ without __weakref__): skip caching
+        # rather than risk an id-reuse collision we cannot detect. Correctness
+        # over the (optional) speed-up.
+        return kernel
+
     if len(_GAUSSIAN_KERNEL_CACHE) >= _GAUSSIAN_KERNEL_CACHE_MAX:
         # Evict an arbitrary oldest-ish entry. dict insertion order makes
         # iter(...) return the oldest key first.
         _GAUSSIAN_KERNEL_CACHE.pop(next(iter(_GAUSSIAN_KERNEL_CACHE)))
-    _GAUSSIAN_KERNEL_CACHE[key] = (kernel, n_bins)
+    _GAUSSIAN_KERNEL_CACHE[key] = (kernel, n_bins, env_ref)
     return kernel
 
 

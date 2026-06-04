@@ -265,6 +265,12 @@ class TestAnimateFieldsWithScaleBar:
                 backend="video",
                 save_path=f.name,
                 scale_bar=True,
+                # Serial rendering: this test checks scale_bar parameter flow,
+                # not parallelism. The default n_workers is cpu_count // 2, which
+                # goes parallel on multi-core CI and pulls in the env-pickling
+                # path (every sibling video test uses n_workers=1 for the same
+                # reason; parallel rendering has its own dedicated coverage).
+                n_workers=1,
             )
             # Video should be created (validates parameter flows through)
             from pathlib import Path
