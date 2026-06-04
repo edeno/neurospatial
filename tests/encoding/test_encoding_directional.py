@@ -2270,7 +2270,7 @@ class TestDirectionalRatesResultPeakFiringRates:
 class TestDirectionalRatesResultToDataframe:
     """Test DirectionalRatesResult.to_dataframe() method."""
 
-    def test_to_dataframe_returns_dataframe(
+    def test_summary_table_returns_dataframe(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
@@ -2292,7 +2292,7 @@ class TestDirectionalRatesResultToDataframe:
         df = result.summary_table()
         assert isinstance(df, pd.DataFrame)
 
-    def test_to_dataframe_has_correct_row_count(
+    def test_summary_table_has_correct_row_count(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
@@ -2315,7 +2315,7 @@ class TestDirectionalRatesResultToDataframe:
         df = result.summary_table()
         assert len(df) == n_neurons
 
-    def test_to_dataframe_has_neuron_id_column(
+    def test_summary_table_has_unit_id_column(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
@@ -2337,7 +2337,7 @@ class TestDirectionalRatesResultToDataframe:
         df = result.summary_table()
         assert df.index.name == "unit_id"
 
-    def test_to_dataframe_has_preferred_direction_column(
+    def test_summary_table_has_preferred_direction_column(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
@@ -2359,7 +2359,7 @@ class TestDirectionalRatesResultToDataframe:
         df = result.summary_table()
         assert "preferred_direction" in df.columns
 
-    def test_to_dataframe_has_preferred_direction_deg_column(
+    def test_summary_table_has_preferred_direction_deg_column(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
@@ -2381,7 +2381,7 @@ class TestDirectionalRatesResultToDataframe:
         df = result.summary_table()
         assert "preferred_direction_deg" in df.columns
 
-    def test_to_dataframe_has_mean_vector_length_column(
+    def test_summary_table_has_mean_vector_length_column(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
@@ -2403,7 +2403,7 @@ class TestDirectionalRatesResultToDataframe:
         df = result.summary_table()
         assert "mean_vector_length" in df.columns
 
-    def test_to_dataframe_has_tuning_width_column(
+    def test_summary_table_has_tuning_width_column(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
@@ -2425,7 +2425,7 @@ class TestDirectionalRatesResultToDataframe:
         df = result.summary_table()
         assert "tuning_width" in df.columns
 
-    def test_to_dataframe_has_tuning_width_deg_column(
+    def test_summary_table_has_tuning_width_deg_column(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
@@ -2447,7 +2447,7 @@ class TestDirectionalRatesResultToDataframe:
         df = result.summary_table()
         assert "tuning_width_deg" in df.columns
 
-    def test_to_dataframe_has_peak_rate_column(
+    def test_summary_table_has_peak_rate_column(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
@@ -2469,7 +2469,7 @@ class TestDirectionalRatesResultToDataframe:
         df = result.summary_table()
         assert "peak_rate" in df.columns
 
-    def test_to_dataframe_has_is_hd_cell_column(
+    def test_summary_table_has_is_hd_cell_column(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
@@ -2491,7 +2491,7 @@ class TestDirectionalRatesResultToDataframe:
         df = result.summary_table()
         assert "is_head_direction_cell" in df.columns
 
-    def test_to_dataframe_neuron_id_default_integers(
+    def test_summary_table_unit_id_default_integers(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
@@ -2515,7 +2515,7 @@ class TestDirectionalRatesResultToDataframe:
         expected_ids = list(range(n_neurons))
         assert list(df.index) == expected_ids
 
-    def test_to_dataframe_custom_neuron_ids(
+    def test_summary_table_custom_unit_ids(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
@@ -2523,7 +2523,7 @@ class TestDirectionalRatesResultToDataframe:
         bin_size: float,
         n_neurons: int,
     ) -> None:
-        """to_dataframe() accepts custom neuron_ids."""
+        """summary_table() accepts custom unit_ids."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2539,14 +2539,14 @@ class TestDirectionalRatesResultToDataframe:
         df = result.summary_table(unit_ids=custom_ids)
         assert list(df.index) == custom_ids
 
-    def test_to_dataframe_neuron_id_length_mismatch(
+    def test_summary_table_unit_id_length_mismatch(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """to_dataframe() raises ValueError for wrong neuron_ids length."""
+        """summary_table() raises ValueError for wrong unit_ids length."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2562,7 +2562,7 @@ class TestDirectionalRatesResultToDataframe:
         with pytest.raises(ValueError, match="unit_ids"):
             result.summary_table(unit_ids=["only_one"])
 
-    def test_to_dataframe_preferred_direction_matches_method(
+    def test_summary_table_preferred_direction_matches_method(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
@@ -2585,7 +2585,7 @@ class TestDirectionalRatesResultToDataframe:
         pref_dirs = result.preferred_directions()
         np.testing.assert_allclose(df["preferred_direction"].values, pref_dirs)
 
-    def test_to_dataframe_preferred_direction_deg_is_conversion(
+    def test_summary_table_preferred_direction_deg_is_conversion(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
@@ -2610,7 +2610,7 @@ class TestDirectionalRatesResultToDataframe:
             np.degrees(df["preferred_direction"].values),
         )
 
-    def test_to_dataframe_mean_vector_length_matches_method(
+    def test_summary_table_mean_vector_length_matches_method(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
@@ -2633,7 +2633,7 @@ class TestDirectionalRatesResultToDataframe:
         mvls = result.mean_vector_lengths()
         np.testing.assert_allclose(df["mean_vector_length"].values, mvls)
 
-    def test_to_dataframe_tuning_width_matches_method(
+    def test_summary_table_tuning_width_matches_method(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
@@ -2656,7 +2656,7 @@ class TestDirectionalRatesResultToDataframe:
         widths = result.tuning_widths()
         np.testing.assert_allclose(df["tuning_width"].values, widths, equal_nan=True)
 
-    def test_to_dataframe_tuning_width_deg_is_conversion(
+    def test_summary_table_tuning_width_deg_is_conversion(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
@@ -2682,7 +2682,7 @@ class TestDirectionalRatesResultToDataframe:
             equal_nan=True,
         )
 
-    def test_to_dataframe_peak_rate_matches_method(
+    def test_summary_table_peak_rate_matches_method(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
@@ -2705,7 +2705,7 @@ class TestDirectionalRatesResultToDataframe:
         peaks = result.peak_firing_rate()
         np.testing.assert_allclose(df["peak_rate"].values, peaks)
 
-    def test_to_dataframe_is_hd_cell_matches_method(
+    def test_summary_table_is_hd_cell_matches_method(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
@@ -2728,7 +2728,7 @@ class TestDirectionalRatesResultToDataframe:
         is_hd = result.detect_hd_cells()
         np.testing.assert_array_equal(df["is_head_direction_cell"].values, is_hd)
 
-    def test_to_dataframe_empty_result(
+    def test_summary_table_empty_result(
         self,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
@@ -2753,7 +2753,7 @@ class TestDirectionalRatesResultToDataframe:
         df = result.summary_table()
         assert len(df) == 0
 
-    def test_to_dataframe_single_neuron(
+    def test_summary_table_single_neuron(
         self,
         single_firing_rate: np.ndarray,
         single_occupancy: np.ndarray,
@@ -3672,7 +3672,7 @@ class TestComputeDirectionalRatesResultMethods:
         assert is_hd.dtype == np.bool_
         assert is_hd.shape == (2,)
 
-    def test_to_dataframe_method(self) -> None:
+    def test_summary_table_method(self) -> None:
         """Result has working to_dataframe method."""
         pytest.importorskip("pandas")
         import pandas as pd
