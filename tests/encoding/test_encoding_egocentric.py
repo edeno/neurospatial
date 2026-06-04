@@ -449,7 +449,7 @@ class TestEgocentricRatesResultLen:
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """Test that len() returns number of neurons."""
+        """Test that len() returns number of units."""
         from neurospatial.encoding.egocentric import EgocentricRatesResult
 
         result = EgocentricRatesResult(
@@ -1924,7 +1924,7 @@ class TestEgocentricRatesResultSummaryTable:
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """summary_table() should have one row per neuron."""
+        """summary_table() should have one row per unit."""
         from neurospatial.encoding.egocentric import EgocentricRatesResult
 
         result = EgocentricRatesResult(

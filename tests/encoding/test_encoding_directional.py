@@ -186,7 +186,7 @@ class TestDirectionalRatesResultIteration:
         bin_size: float,
         n_neurons: int,
     ) -> None:
-        """len() returns number of neurons."""
+        """len() returns number of units."""
         from neurospatial.encoding.directional import DirectionalRatesResult
 
         result = DirectionalRatesResult(
@@ -2300,7 +2300,7 @@ class TestDirectionalRatesResultSummaryTable:
         bin_size: float,
         n_neurons: int,
     ) -> None:
-        """summary_table() returns one row per neuron."""
+        """summary_table() returns one row per unit."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -3258,7 +3258,7 @@ class TestComputeDirectionalRatesBasic:
         assert result.bandwidth is None
 
     def test_len_returns_n_neurons(self) -> None:
-        """len() of result returns number of neurons."""
+        """len() of result returns number of units."""
         from neurospatial.encoding.directional import compute_directional_rates
 
         np.random.seed(42)
@@ -3673,7 +3673,7 @@ class TestComputeDirectionalRatesResultMethods:
         assert is_hd.shape == (2,)
 
     def test_summary_table_method(self) -> None:
-        """Result has working to_dataframe method."""
+        """Result has working summary_table method."""
         pytest.importorskip("pandas")
         import pandas as pd
 

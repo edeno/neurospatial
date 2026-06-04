@@ -1142,7 +1142,7 @@ class DirectionalRatesResult(SpatialResultMixin):
         )
 
     def __len__(self) -> int:
-        """Return number of neurons.
+        """Return number of units.
 
         Returns
         -------
@@ -1537,7 +1537,7 @@ class DirectionalRatesResult(SpatialResultMixin):
         Raises
         ------
         ValueError
-            If unit_ids has a different length than the number of neurons.
+            If unit_ids has a different length than the number of units.
 
         Notes
         -----
@@ -1602,7 +1602,7 @@ class DirectionalRatesResult(SpatialResultMixin):
             if len(index_ids) != n_neurons:
                 raise ValueError(
                     f"unit_ids has {len(index_ids)} elements but "
-                    f"result contains {n_neurons} neurons"
+                    f"result contains {n_neurons} units"
                 )
 
         # Compute all metrics

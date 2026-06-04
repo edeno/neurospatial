@@ -966,7 +966,7 @@ class SpatialRatesResult(SpatialResultMixin):
         validate_unit_table(self.unit_table, n_units, context="SpatialRatesResult")
 
     def __len__(self) -> int:
-        """Return number of neurons.
+        """Return number of units.
 
         Returns
         -------
@@ -1764,7 +1764,7 @@ class SpatialRatesResult(SpatialResultMixin):
             if len(index_ids) != n_neurons:
                 raise ValueError(
                     f"unit_ids has {len(index_ids)} elements but "
-                    f"result contains {n_neurons} neurons"
+                    f"result contains {n_neurons} units"
                 )
 
         # Compute peak locations

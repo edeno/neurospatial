@@ -233,7 +233,7 @@ class TestSpatialRatesResultIteration:
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """__len__ should return number of neurons."""
+        """__len__ should return number of units."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -1993,7 +1993,7 @@ class TestSpatialRatesResultBorderScores:
 
 
 class TestSpatialRatesResultClassify:
-    """Tests for SpatialRatesResult.detect_cell_types() method."""
+    """Tests for SpatialRatesResult.classify() and label_cell_types()."""
 
     def test_has_classify_method(
         self,
@@ -2001,7 +2001,7 @@ class TestSpatialRatesResultClassify:
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """SpatialRatesResult should have a detect_cell_types() method."""
+        """SpatialRatesResult should have a classify() method."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2011,8 +2011,8 @@ class TestSpatialRatesResultClassify:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        assert hasattr(result, "detect_cell_types")
-        assert callable(result.detect_cell_types)
+        assert hasattr(result, "classify")
+        assert callable(result.classify)
 
     def test_spatialrates_label_cell_types_multiclass(
         self,
@@ -2307,7 +2307,7 @@ class TestSpatialRatesResultSummaryTable:
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """summary_table() should have one row per neuron."""
+        """summary_table() should have one row per unit."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2660,13 +2660,13 @@ class TestSpatialRatesResultSummaryTable:
             np.isnan(df["border_score"].values), np.isnan(expected_scores)
         )
 
-    def test_summary_table_cell_type_matches_classify_method(
+    def test_summary_table_cell_type_matches_label_cell_types_method(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """summary_table() cell_type should match classify() method."""
+        """summary_table() cell_type should match label_cell_types() method."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -3625,7 +3625,7 @@ class TestComputeSpatialRatesFunction:
         trajectory_times: NDArray[np.float64],
         trajectory_positions: NDArray[np.float64],
     ) -> None:
-        """len(result) should return number of neurons."""
+        """len(result) should return number of units."""
         from neurospatial.encoding.spatial import compute_spatial_rates
 
         result = compute_spatial_rates(

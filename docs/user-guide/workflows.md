@@ -437,11 +437,13 @@ firing_rate[valid_occupancy] = spike_counts[valid_occupancy] / occupancy_time[va
 ### Pattern: Batch Processing
 
 ```python
-# Process multiple neurons efficiently
-neurons = load_all_neurons()
+# Process multiple units efficiently
+spike_trains_by_unit_id = load_all_neurons()
+unit_ids = []
 firing_rate_maps = []
 
-for neuron_id, spike_times in neurons.items():
+for unit_id, spike_times in spike_trains_by_unit_id.items():
+    unit_ids.append(unit_id)
     spike_positions = interpolate_position(position_data, spike_times)
     spike_bins = env.bin_at(spike_positions)
     spike_counts, _ = np.histogram(spike_bins, bins=np.arange(env.n_bins + 1))
@@ -451,7 +453,7 @@ for neuron_id, spike_times in neurons.items():
 
     firing_rate_maps.append(firing_rate)
 
-firing_rate_maps = np.array(firing_rate_maps)  # Shape: (n_neurons, n_bins)
+firing_rate_maps = np.array(firing_rate_maps)  # Shape: (n_units, n_bins)
 ```
 
 ### Pattern: Progressive Refinement

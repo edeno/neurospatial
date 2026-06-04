@@ -607,7 +607,7 @@ class ViewRatesResult(SpatialResultMixin):
         )
 
     def __len__(self) -> int:
-        """Return the number of neurons.
+        """Return the number of units.
 
         Returns
         -------
@@ -1003,7 +1003,7 @@ class ViewRatesResult(SpatialResultMixin):
         Raises
         ------
         ValueError
-            If unit_ids has a different length than the number of neurons.
+            If unit_ids has a different length than the number of units.
 
         Notes
         -----
@@ -1046,9 +1046,9 @@ class ViewRatesResult(SpatialResultMixin):
         See Also
         --------
         to_dataframe : Dense per-bin frame (one row per (unit, bin)).
-        peak_locations : Get peak view locations for all neurons
-        view_spatial_information : Get spatial information for all neurons
-        classify : Classify neurons as view cells
+        peak_locations : Get peak view locations for all units
+        view_spatial_information : Get spatial information for all units
+        classify : Classify units as view cells
         """
         import pandas as pd
 
@@ -1061,7 +1061,7 @@ class ViewRatesResult(SpatialResultMixin):
             if len(index_ids) != n_neurons:
                 raise ValueError(
                     f"unit_ids has {len(index_ids)} elements but "
-                    f"result contains {n_neurons} neurons"
+                    f"result contains {n_neurons} units"
                 )
 
         # Compute all metrics

@@ -332,7 +332,7 @@ class TestViewRatesResultIteration:
         single_occupancy: np.ndarray,
         n_neurons: int,
     ) -> None:
-        """len(result) should return the number of neurons."""
+        """len(result) should return the number of units."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1437,7 +1437,7 @@ class TestViewRatesResultSummaryTable:
         single_occupancy: np.ndarray,
         n_neurons: int,
     ) -> None:
-        """summary_table() should have one row per neuron."""
+        """summary_table() should have one row per unit."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(

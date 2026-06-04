@@ -2,6 +2,12 @@
 
 **Committed**: 2025-12-05
 
+> **Superseded for current API vocabulary.** This historical task list predates
+> the v0.6 naming contract. Use
+> `.claude/docs/plans/ux-v0.6/api-contract.md` for current terms such as
+> `unit_id`, `summary_table()`, `classify()`, `label_cell_types()`, and
+> `peak_location()`.
+
 This document breaks down the encoding module refactor into actionable tasks. Each task is designed to be completable in a focused work session.
 
 **Reference**: See [PLAN.md](PLAN.md) for full design specifications.

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+This section documents changes planned for v0.6.0. Until the release is cut,
+the published package may still report v0.5.x.
+
 ### Breaking Changes
 
 - `to_xarray()` now returns a labeled `xarray.Dataset` instead of an
