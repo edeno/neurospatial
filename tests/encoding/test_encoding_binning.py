@@ -176,7 +176,9 @@ class TestBinSpikeTrain:
         """Spikes outside time range should be excluded."""
         from neurospatial.encoding._binning import bin_spike_train
 
-        # Spikes at -1.0 and 5.0, both outside the 0-1 second range
+        # Spikes at -1.0 and 5.0, both outside the 0-1 second range.
+        # warn_on_drop=False: this test only checks zero-count behavior,
+        # not the warning itself (see TestWarnOnDrop for warning tests).
         spikes_outside = np.array([-1.0, 5.0])
 
         spike_counts = bin_spike_train(
@@ -184,6 +186,7 @@ class TestBinSpikeTrain:
             spikes_outside,
             trajectory_data["times"],
             trajectory_data["positions"],
+            warn_on_drop=False,
         )
 
         assert np.sum(spike_counts) == 0
@@ -717,7 +720,9 @@ class TestWarnOnDrop:
             for x in w
             if issubclass(x.category, UserWarning)
             and (
-                "spike_times" in str(x.message) or "inactive" in str(x.message).lower()
+                "spike_times" in str(x.message)
+                or "inactive" in str(x.message).lower()
+                or "interpolated to positions" in str(x.message).lower()
             )
         ]
         assert len(drop_warnings) == 0, (
@@ -746,7 +751,9 @@ class TestWarnOnDrop:
             for x in w
             if issubclass(x.category, UserWarning)
             and (
-                "spike_times" in str(x.message) or "inactive" in str(x.message).lower()
+                "spike_times" in str(x.message)
+                or "inactive" in str(x.message).lower()
+                or "interpolated to positions" in str(x.message).lower()
             )
         ]
         assert len(drop_warnings) == 0
@@ -772,7 +779,9 @@ class TestWarnOnDrop:
             for x in w
             if issubclass(x.category, UserWarning)
             and (
-                "spike_times" in str(x.message) or "inactive" in str(x.message).lower()
+                "spike_times" in str(x.message)
+                or "inactive" in str(x.message).lower()
+                or "interpolated to positions" in str(x.message).lower()
             )
         ]
         assert len(drop_warnings) == 0
@@ -801,7 +810,9 @@ class TestWarnOnDrop:
             for x in w
             if issubclass(x.category, UserWarning)
             and (
-                "spike_times" in str(x.message) or "inactive" in str(x.message).lower()
+                "spike_times" in str(x.message)
+                or "inactive" in str(x.message).lower()
+                or "interpolated to positions" in str(x.message).lower()
             )
         ]
         assert len(drop_warnings) == 0
@@ -833,7 +844,9 @@ class TestWarnOnDrop:
             for x in w
             if issubclass(x.category, UserWarning)
             and (
-                "spike_times" in str(x.message) or "inactive" in str(x.message).lower()
+                "spike_times" in str(x.message)
+                or "inactive" in str(x.message).lower()
+                or "interpolated to positions" in str(x.message).lower()
             )
         ]
         assert len(drop_warnings) == 0
@@ -865,9 +878,16 @@ class TestWarnOnDrop:
         msg = str(time_warnings[0].message)
 
         # Must contain n/N (dropped/total)
-        assert "5/5" in msg or ("5" in msg and "5" in msg)
+        assert "5/5" in msg
+        # Must contain the spike_times range fields
+        assert "spike_times.min()=" in msg
+        assert "spike_times.max()=" in msg
+        # Must contain the position time window (format: "[t_min, t_max]")
+        assert "[" in msg and "]" in msg
         # Must mention units (seconds)
         assert "second" in msg.lower() or "units" in msg.lower()
+        # Must include the escape-hatch hint
+        assert "warn_on_drop=False" in msg
 
     # ------------------------------------------------------------------
     # 5. Inactive-bin drop warning
