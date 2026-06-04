@@ -60,7 +60,7 @@ def normalize_spike_times(
     Single neuron (1D array):
 
     >>> import numpy as np
-    >>> from neurospatial.encoding._spikes import normalize_spike_times
+    >>> from neurospatial.encoding import normalize_spike_times
     >>> spikes = np.array([0.1, 0.5, 1.2])
     >>> normalized = normalize_spike_times(spikes)
     >>> len(normalized)

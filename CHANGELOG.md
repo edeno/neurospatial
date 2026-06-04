@@ -9,6 +9,22 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ## [Unreleased]
 
+### Added
+
+- `decode_session(env, spike_times, times, positions, *, dt, ...)` — one-call
+  encode→bin→decode golden path in `neurospatial.decoding.session`.  Glues
+  `compute_spatial_rates`, `bin_spikes_in_time`, and `decode_position` into a
+  single function so beginners can decode position in ≤10 lines.  Exported from
+  both `neurospatial.decoding` and `neurospatial` top-level.  Accepts an
+  optional `encoding_models=` array to bypass the encoding step entirely.
+  Extra keyword arguments are forwarded verbatim to `decode_position`.
+
+- `normalize_spike_times` promoted to public API: now exported from
+  `neurospatial.encoding` (and present in `__all__`).  The implementation
+  remains in `neurospatial.encoding._spikes`; all existing internal callers
+  are unaffected.  The docstring example import path updated to the public
+  form `from neurospatial.encoding import normalize_spike_times`.
+
 ### Changed
 
 - Docs (Phase 0.6 sweep): rewrote Workflow 1 in `docs/user-guide/workflows.md` to use the
