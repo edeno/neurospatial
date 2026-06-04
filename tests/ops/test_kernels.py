@@ -390,6 +390,28 @@ class TestEnvironmentComputeKernel:
         # But should have same values
         assert np.allclose(kernel1, kernel2)
 
+    def test_compute_kernel_hard_limit_gate(self, monkeypatch):
+        """env.compute_kernel raises above the hard limit and allow_large forwards."""
+        from neurospatial.ops import smoothing
+
+        # Build a small env that exceeds a monkeypatched tiny ceiling.
+        rng = np.random.default_rng(0)
+        data = rng.uniform(0, 10, (50, 2))
+        env = Environment.from_samples(data, bin_size=1.0)
+        assert env.n_bins > 5, "Fixture must exceed the patched ceiling"
+
+        monkeypatch.setattr(smoothing, "_KERNEL_HARD_LIMIT_BINS", 5)
+
+        # Without allow_large -> raises MemoryError.
+        with pytest.raises(MemoryError, match="allow_large=True"):
+            env.compute_kernel(bandwidth=1.0, mode="transition", cache=False)
+
+        # With allow_large=True -> forwards through and computes a kernel.
+        kernel = env.compute_kernel(
+            bandwidth=1.0, mode="transition", cache=False, allow_large=True
+        )
+        assert kernel.shape == (env.n_bins, env.n_bins)
+
     def test_compute_kernel_requires_fitted(self):
         """Test that compute_kernel requires fitted environment."""
         # Create an environment but don't fit it by using __init__ directly
@@ -465,6 +487,98 @@ class TestKernelPerformanceWarnings:
                 if "Computing diffusion kernel" in str(warning.message)
             ]
             assert len(kernel_warnings) == 0, "Small graphs should not emit warnings"
+
+
+class TestKernelHardLimitGate:
+    """Tests for the high-bin hard memory gate on compute_diffusion_kernels."""
+
+    @staticmethod
+    def _path_graph_with_distances(n_bins):
+        graph = nx.path_graph(n_bins)
+        for u, v in graph.edges():
+            graph.edges[u, v]["distance"] = 1.0
+        return graph
+
+    def test_over_hard_limit_raises_fast(self, monkeypatch):
+        """n_bins over the hard limit raises before attempting the allocation."""
+        from neurospatial.ops import smoothing
+
+        # Lower the ceiling so we can trigger the gate with a tiny graph
+        # (and prove the raise happens before the expensive dense allocation).
+        monkeypatch.setattr(smoothing, "_KERNEL_HARD_LIMIT_BINS", 5)
+
+        graph = self._path_graph_with_distances(6)  # 6 > 5
+
+        with pytest.raises(MemoryError) as exc_info:
+            smoothing.compute_diffusion_kernels(
+                graph, bandwidth_sigma=1.0, mode="transition"
+            )
+
+        message = str(exc_info.value)
+        # Names the size and the estimated GB, explains why, and the escape hatch.
+        assert "6" in message, "Error should name n_bins"
+        assert "GB" in message, "Error should state the estimated dense size in GB"
+        assert "allow_large=True" in message, (
+            "Error should mention the allow_large escape hatch"
+        )
+        assert "binned" in message, "Error should mention the binned mitigation"
+
+    def test_allow_large_bypasses_gate(self, monkeypatch):
+        """allow_large=True bypasses the gate and computes a kernel."""
+        from neurospatial.ops import smoothing
+
+        monkeypatch.setattr(smoothing, "_KERNEL_HARD_LIMIT_BINS", 5)
+
+        graph = self._path_graph_with_distances(6)  # 6 > 5
+
+        # Should compute and return a kernel (warning may or may not fire
+        # depending on the warn threshold, but it must NOT raise).
+        kernel = smoothing.compute_diffusion_kernels(
+            graph, bandwidth_sigma=1.0, mode="transition", allow_large=True
+        )
+
+        assert kernel.shape == (6, 6)
+        assert kernel.dtype == np.float64
+
+    def test_warn_band_does_not_raise(self, monkeypatch):
+        """In the band above the warn threshold but below the hard limit:
+        warn, do not raise.
+        """
+        from neurospatial.ops import smoothing
+
+        # Warn at >2, hard-fail at >10: an 8-node graph is in the warn band.
+        monkeypatch.setattr(smoothing, "_LARGE_KERNEL_THRESHOLD", 2)
+        monkeypatch.setattr(smoothing, "_KERNEL_HARD_LIMIT_BINS", 10)
+
+        graph = self._path_graph_with_distances(8)  # 2 < 8 <= 10
+
+        with pytest.warns(UserWarning, match=r"Computing diffusion kernel"):
+            kernel = smoothing.compute_diffusion_kernels(
+                graph, bandwidth_sigma=0.5, mode="transition"
+            )
+
+        assert kernel.shape == (8, 8)
+
+    def test_under_hard_limit_no_raise(self, monkeypatch):
+        """At or below the hard limit, no MemoryError is raised."""
+        from neurospatial.ops import smoothing
+
+        monkeypatch.setattr(smoothing, "_KERNEL_HARD_LIMIT_BINS", 5)
+
+        graph = self._path_graph_with_distances(5)  # 5 is NOT > 5
+
+        kernel = smoothing.compute_diffusion_kernels(
+            graph, bandwidth_sigma=1.0, mode="transition"
+        )
+        assert kernel.shape == (5, 5)
+
+    def test_docstring_mentions_memory(self):
+        """Docstring must prominently document the O(n²) memory cost."""
+        from neurospatial.ops.smoothing import compute_diffusion_kernels
+
+        doc = compute_diffusion_kernels.__doc__.lower()
+        assert "memory" in doc, "Docstring should mention memory"
+        assert "gb" in doc, "Docstring should give a GB example figure"
 
 
 class TestSparseMatrixOptimization:

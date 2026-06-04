@@ -214,6 +214,21 @@ these are called out under a dedicated **Breaking changes** heading.
   the new `decode_position_summary` / `decode_session_summary` (see **Added**),
   which never materialize the full `(n_time, n_bins)` posterior.
 
+- Documented the dense diffusion-kernel **O(n²) memory cost** and added a hard
+  high-bin **safety gate**. The heat kernel `exp(-tL)` of a connected graph is
+  dense by construction (every entry > 0), so it always costs
+  `n_bins**2 * 8` bytes of float64 memory (≈ 3.2 GB at 20,000 bins).
+  `compute_diffusion_kernels` and `env.compute_kernel` now **raise**
+  `MemoryError` above 20,000 bins, turning a silent out-of-memory crash into an
+  actionable error that names the size, the GB estimate, and the fixes (reduce
+  bins, use `smoothing_method="binned"`, or pass `allow_large=True` to override
+  if you have the RAM). The existing `UserWarning` above 3,000 bins is kept.
+  No numerical results change — this is documentation plus a default-refuse
+  gate with an explicit opt-out. The reliable scale wins this release remain
+  float32 rate maps and the memory-safe summary decode (above). A faster,
+  lower-peak `expm_multiply` / Chebyshev rewrite of the kernel is a **deferred
+  stretch goal** and is intentionally **not** part of this release.
+
 ### Changed
 
 - `detect_region_crossings` argument order changed to follow the
