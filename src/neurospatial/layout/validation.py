@@ -1,8 +1,7 @@
 """Graph and environment validation utilities for neurospatial.
 
 This module provides validation functions to ensure connectivity graphs and
-environments have the required structure and metadata attributes as documented
-in CLAUDE.md.
+environments have the required structure and metadata attributes.
 
 All layout engines must produce graphs with mandatory node and edge attributes.
 This validator enforces those requirements and provides clear error messages
@@ -20,7 +19,7 @@ from numpy.typing import NDArray
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
 
-# Required attributes per CLAUDE.md
+# Required graph metadata attributes (enforced by validate_connectivity_graph)
 REQUIRED_NODE_ATTRS = {"pos", "source_grid_flat_index", "original_grid_nd_index"}
 REQUIRED_EDGE_ATTRS = {"distance", "vector", "edge_id"}
 OPTIONAL_EDGE_ATTRS = {"angle_2d"}
@@ -241,8 +240,8 @@ def validate_connectivity_graph(
 ) -> None:
     """Validate that connectivity graph has required structure and metadata.
 
-    This function enforces the mandatory graph metadata requirements documented
-    in CLAUDE.md. All layout engines must produce graphs that pass this
+    This function enforces the mandatory graph metadata requirements for all
+    layout engines. All layout engines must produce graphs that pass this
     validation.
 
     Parameters
@@ -330,8 +329,8 @@ def validate_connectivity_graph(
                     f"Node {node_id} missing required attributes: {missing}.\n\n"
                     f"All nodes must have: {REQUIRED_NODE_ATTRS}.\n"
                     f"Node {node_id} has: {set(node_data.keys())}\n\n"
-                    f"This is a layout engine bug. Please report this issue.\n"
-                    f"See CLAUDE.md section 'Graph Metadata Requirements' for details."
+                    f"This is a layout engine bug. Please report it at "
+                    f"https://github.com/edeno/neurospatial/issues"
                 )
 
             # Validate pos attribute
@@ -396,8 +395,8 @@ def validate_connectivity_graph(
                     f"Edge ({u}, {v}) missing required attributes: {missing}.\n\n"
                     f"All edges must have: {REQUIRED_EDGE_ATTRS}.\n"
                     f"Edge ({u}, {v}) has: {set(edge_data.keys())}\n\n"
-                    f"This is a layout engine bug. Please report this issue.\n"
-                    f"See CLAUDE.md section 'Graph Metadata Requirements' for details."
+                    f"This is a layout engine bug. Please report it at "
+                    f"https://github.com/edeno/neurospatial/issues"
                 )
 
             # Validate distance

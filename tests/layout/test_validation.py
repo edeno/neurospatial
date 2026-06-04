@@ -380,10 +380,12 @@ class TestGraphValidation:
         with pytest.raises(GraphValidationError, match=r"Edge \(0, 1\)"):
             validate_connectivity_graph(G, n_dims=2)
 
-    def test_error_message_suggests_claude_md(self):
-        """Test error messages reference CLAUDE.md documentation."""
+    def test_error_message_points_to_issue_tracker(self):
+        """Test error messages point to the public issue tracker, not internal docs."""
         G = nx.Graph()
         G.add_node(0, pos=(10.0, 20.0))  # Missing attrs
 
-        with pytest.raises(GraphValidationError, match=r"CLAUDE\.md"):
+        with pytest.raises(
+            GraphValidationError, match=r"https://github\.com/edeno/neurospatial/issues"
+        ):
             validate_connectivity_graph(G, n_dims=2)

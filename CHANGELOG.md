@@ -11,6 +11,14 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ### Fixed
 
+- `GraphValidationError` messages in `layout/validation.py` and the wrapping
+  `ValueError` in `environment/core.py` no longer reference the internal
+  developer guide `CLAUDE.md`.  Error text now points to the public issue
+  tracker (`https://github.com/edeno/neurospatial/issues`) instead.  A
+  permanent repo-wide backstop test (`tests/test_no_internal_doc_refs.py`)
+  asserts that no source file under `src/neurospatial/` contains this string,
+  preventing the leak from regressing.
+
 - `Environment.__init__` now raises a beginner-grade `ValueError` when called
   without arguments (i.e. bare `Environment()`).  The old message "layout
   parameter is required" gave no actionable guidance; the new message explains

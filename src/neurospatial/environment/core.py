@@ -882,8 +882,8 @@ class _BaseEnvironment(
             raise ValueError(
                 f"Invalid connectivity graph from layout engine "
                 f"'{self.layout._layout_type_tag}': {e}\n\n"
-                f"This is a bug in the layout engine. Please report this issue.\n"
-                f"See CLAUDE.md section 'Graph Metadata Requirements' for details."
+                f"This is a layout engine bug. Please report it at "
+                f"https://github.com/edeno/neurospatial/issues"
             ) from e
 
         # Grid-specific attributes
