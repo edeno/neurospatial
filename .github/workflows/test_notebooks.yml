@@ -8,15 +8,18 @@ on:
     branches:
       - main
 
-# Runs ONE representative notebook end-to-end to catch silent
-# regressions in the example surface that ``test_doc_snippets`` (which
-# only exercises hand-curated snippets) wouldn't see. The choice of
-# notebook is intentional: 11_place_field_analysis exercises
-# ``Environment.from_samples`` → ``compute_spatial_rate`` →
-# ``detect_place_fields`` → the metrics suite, which is the most
-# commonly-failing axis in practice.
+# Runs two representative notebooks end-to-end to catch silent regressions
+# in the example surface that ``test_doc_snippets`` (which only exercises
+# hand-curated snippets) wouldn't see. The choices are intentional:
+# - 11_place_field_analysis exercises ``Environment.from_samples`` →
+#   ``compute_spatial_rate`` → ``detect_place_fields`` → the metrics suite,
+#   the most commonly-failing axis in practice.
+# - 20_bayesian_decoding exercises the decode golden path
+#   (``decode_session``) plus the manual ``compute_spatial_rates`` →
+#   ``bin_spikes_in_time`` → ``decode_position`` path, so the decode
+#   tutorial can't silently drift.
 jobs:
-  re-execute-place-field-notebook:
+  re-execute-notebooks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,3 +47,14 @@ jobs:
             --inplace \
             --ExecutePreprocessor.timeout=600 \
             examples/11_place_field_analysis.ipynb
+
+      - name: Re-execute 20_bayesian_decoding.ipynb
+        env:
+          MPLBACKEND: Agg
+        run: |
+          uv run jupyter nbconvert \
+            --to notebook \
+            --execute \
+            --inplace \
+            --ExecutePreprocessor.timeout=600 \
+            examples/20_bayesian_decoding.ipynb
