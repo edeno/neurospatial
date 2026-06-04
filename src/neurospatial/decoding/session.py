@@ -153,10 +153,13 @@ def decode_session(
         common units footgun — ``spike_times`` in milliseconds while ``times``
         is in seconds — which would otherwise produce an all-zero count matrix
         and a plausible-but-wrong posterior.  The warning fires exactly once
-        per call and covers both the ``encoding_models``-provided branch (which
-        skips the encoder) and the ``encoding_models=None`` branch (where the
-        encoder's own redundant warning is suppressed).  Set to ``False`` to
-        suppress this warning (e.g. for a genuinely sparse session).
+        per call: in the ``encoding_models=None`` branch the encoder
+        (``compute_spatial_rates``) emits it (and additionally warns when
+        spikes map to inactive bins / the wrong coordinate frame); in the
+        ``encoding_models``-provided branch the encoder is skipped, so
+        ``decode_session`` performs the out-of-window check itself.  Set to
+        ``False`` to suppress these warnings (e.g. for a genuinely sparse
+        session) — note this also silences the encoder's inactive-bin warning.
     **decode_kwargs
         Additional keyword arguments forwarded verbatim to
         :func:`~neurospatial.decoding.decode_position`.  Supported kwargs
@@ -284,22 +287,20 @@ def decode_session(
     t_start = float(times_arr.min())
     t_stop = float(times_arr.max())
 
-    # --- Out-of-window drop check (owns the single units-footgun warning) ---
-    # bin_spikes_in_time counts via np.histogram(..., bins=edges), which
-    # silently drops spikes outside [t_start, t_stop].  If spike_times are in
-    # milliseconds while times are in seconds, (nearly) all spikes fall outside
-    # the window → all-zero counts → a plausible-but-wrong posterior.  Surface
-    # this once here so it fires whether or not encoding_models is provided.
-    if warn_on_drop:
-        _warn_if_spikes_out_of_window(trains, t_start, t_stop)
-
     # --- Build encoding models if not provided ---
+    # The units-footgun matters because bin_spikes_in_time counts via
+    # np.histogram(..., bins=edges), which silently drops spikes outside
+    # [t_start, t_stop]; a ms-vs-s mismatch → all-zero counts → a
+    # plausible-but-wrong posterior. Exactly one of the two branches below
+    # surfaces it (never both, so no duplicate warning):
     if encoding_models is None:
         _method = cast(
             "Literal['diffusion_kde', 'gaussian_kde', 'binned']", smoothing_method
         )
-        # warn_on_drop=False: decode_session already warned once above for the
-        # whole golden path; the encoder must not emit a duplicate.
+        # The encoder runs over the same [t_start, t_stop] window and already
+        # emits the spike-drop warning (and additionally an inactive-bin /
+        # wrong-coordinate-frame warning the decode-time check cannot), so we
+        # let it own the warning here and just thread warn_on_drop through.
         rates_result = compute_spatial_rates(
             env,
             trains,
@@ -309,11 +310,16 @@ def decode_session(
             smoothing_method=_method,
             min_occupancy=min_occupancy,
             fill_value=0.0,
-            warn_on_drop=False,
+            warn_on_drop=warn_on_drop,
         )
         firing_rates = np.asarray(rates_result.firing_rates, dtype=np.float64)
     else:
         firing_rates = np.asarray(encoding_models, dtype=np.float64)
+        # Passthrough: the encoder was skipped, so nothing has checked the
+        # spike/trajectory time window. Do the out-of-window check here so the
+        # headline path still warns on a ms-vs-s mismatch before binning.
+        if warn_on_drop:
+            _warn_if_spikes_out_of_window(trains, t_start, t_stop)
 
     # --- Bin spikes in time (default orient="time_x_neuron" → (n_time, n_neurons)) ---
     counts, centers = bin_spikes_in_time(

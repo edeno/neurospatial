@@ -482,10 +482,11 @@ class TestDecodeSessionOutOfWindowWarning:
             )
 
     def test_single_warning_in_non_passthrough_branch(self) -> None:
-        """encoding_models=None branch emits exactly ONE matching warning.
+        """encoding_models=None branch emits exactly ONE out-of-window warning.
 
-        The encoder's own duplicate warning must be suppressed; decode_session
-        owns the single unit-mismatch warning for the whole golden path.
+        In this branch the encoder (compute_spatial_rates) owns the
+        time-window drop warning; decode_session must NOT add a second one, so
+        exactly one out-of-window warning is emitted for the whole golden path.
         """
         import warnings
 
@@ -500,14 +501,17 @@ class TestDecodeSessionOutOfWindowWarning:
             warnings.simplefilter("always")
             decode_session(env, ms_spikes, times, positions, dt=0.1)
 
+        # Either phrasing ("position time window" from the encoder, or "decode
+        # time window" from decode_session) — there must be exactly one.
         matching = [
             w
             for w in caught
             if issubclass(w.category, UserWarning)
-            and "fell outside the decode time window" in str(w.message)
+            and "fell outside the" in str(w.message)
+            and "time window" in str(w.message)
         ]
         assert len(matching) == 1, (
-            f"Expected exactly one decode-window warning, got {len(matching)}: "
+            f"Expected exactly one out-of-window warning, got {len(matching)}: "
             f"{[str(w.message) for w in matching]}"
         )
 
@@ -525,12 +529,41 @@ class TestDecodeSessionOutOfWindowWarning:
             warnings.simplefilter("always")
             decode_session(env, spike_times, times, positions, dt=0.1)
 
-        matching = [
-            w for w in caught if "fell outside the decode time window" in str(w.message)
-        ]
+        matching = [w for w in caught if "fell outside the" in str(w.message)]
         assert not matching, (
             f"In-window decode should not warn, got: "
             f"{[str(w.message) for w in matching]}"
+        )
+
+    def test_inactive_bin_warning_survives_golden_path(self) -> None:
+        """The encoder's inactive-bin warning reaches the user via decode_session.
+
+        Spikes whose interpolated positions fall outside the environment (e.g.
+        positions in the wrong coordinate frame) are an independent footgun from
+        the time-window units mismatch. The encoder warns about it; decode_session
+        must not swallow that warning in the encoding_models=None branch.
+        """
+        import warnings
+
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=10, duration=10.0, seed=55
+        )
+        # In-window spike times (no time-window drop), but positions shifted far
+        # outside the [0, 100] environment → every spike maps to an inactive bin.
+        positions_wrong_frame = positions + 1000.0
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            decode_session(env, spike_times, times, positions_wrong_frame, dt=0.1)
+
+        inactive = [
+            w for w in caught if "interpolated to positions outside" in str(w.message)
+        ]
+        assert inactive, (
+            "decode_session should surface the encoder's inactive-bin warning, "
+            f"got: {[str(w.message) for w in caught]}"
         )
 
     def test_warn_on_drop_false_silences(self) -> None:
