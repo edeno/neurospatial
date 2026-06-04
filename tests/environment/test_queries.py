@@ -542,7 +542,6 @@ class TestDistanceTo:
         3. Include the missing region name in the message.
         4. List available regions in the message when regions exist.
         """
-        import numpy as np
         from shapely.geometry import box
 
         from neurospatial import Environment

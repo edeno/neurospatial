@@ -525,8 +525,10 @@ class EnvironmentQueries:
         if isinstance(targets, str):
             region_name = targets
             if region_name not in self.regions:
-                # Local import avoids circular dependency:
-                # _exceptions → environment.decorators → environment.core → queries
+                # Local import: neurospatial.__init__ loads environment.core
+                # (which imports this module) before _exceptions, and
+                # _exceptions imports environment.decorators — so a top-level
+                # import here creates an init-time circular import.
                 from neurospatial._exceptions import RegionNotFoundError
 
                 raise RegionNotFoundError(
