@@ -21,6 +21,7 @@ The binning layer is intentionally separated from smoothing to allow:
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, cast
 
@@ -38,6 +39,9 @@ __all__ = [
 ]
 
 
+_DROP_WARN_THRESHOLD = 0.5  # warn when fraction dropped exceeds this
+
+
 def bin_spike_train(
     env: Environment,
     spike_times: NDArray[np.float64],
@@ -45,6 +49,7 @@ def bin_spike_train(
     positions: NDArray[np.float64],
     *,
     context: str = "bin_spike_train",
+    warn_on_drop: bool = True,
 ) -> NDArray[np.float64]:
     """Bin spike train into spatial bins.
 
@@ -62,6 +67,17 @@ def bin_spike_train(
         Timestamps of trajectory samples in seconds.
     positions : ndarray, shape (n_samples, n_dims)
         Position coordinates at each time sample.
+    context : str, optional
+        Label used in error messages to identify the calling function.
+    warn_on_drop : bool, default=True
+        If ``True`` (the default), emit a ``UserWarning`` when a large
+        fraction of spikes are silently dropped — either because they
+        fall outside the position time window or because they map to
+        inactive/out-of-environment bins.  A warning is always emitted
+        when **all** spikes are dropped (regardless of threshold).
+        Set to ``False`` to suppress all drop-related warnings (e.g.
+        when the calling batch function will issue its own aggregate
+        warning).
 
     Returns
     -------
@@ -80,6 +96,10 @@ def bin_spike_train(
     spike times onto the trajectory. Spikes outside the trajectory time
     range are excluded. Spikes that fall in invalid bins (outside the
     environment) are excluded from counts.
+
+    The default ``warn_on_drop=True`` guards against common unit
+    mismatches (e.g. spike_times in milliseconds while times is in
+    seconds), which would silently produce a near-empty firing field.
 
     Examples
     --------
@@ -117,9 +137,28 @@ def bin_spike_train(
     if len(spike_times) == 0:
         return spike_counts
 
+    n_total = len(spike_times)
     t_min, t_max = times.min(), times.max()
     valid_time_mask = (spike_times >= t_min) & (spike_times <= t_max)
     spike_times_valid = spike_times[valid_time_mask]
+    n_time_dropped = n_total - len(spike_times_valid)
+
+    # Warn on time-window drops at this boundary (before returning early)
+    if warn_on_drop and n_total > 0 and n_time_dropped > 0:
+        frac_dropped = n_time_dropped / n_total
+        if frac_dropped > _DROP_WARN_THRESHOLD or n_time_dropped == n_total:
+            warnings.warn(
+                f"{n_time_dropped}/{n_total} spike_times "
+                f"({100 * frac_dropped:.0f}%) fell outside the position time "
+                f"window [{t_min:.6g}, {t_max:.6g}]; "
+                f"spike_times.min()={spike_times.min():.6g} "
+                f"spike_times.max()={spike_times.max():.6g}. "
+                f"Check that spike_times and times share units (both seconds). "
+                f"Dropped spikes do not contribute.",
+                UserWarning,
+                stacklevel=2,
+            )
+
     if len(spike_times_valid) == 0:
         return spike_counts
 
@@ -137,6 +176,24 @@ def bin_spike_train(
 
     spike_bins = env.bin_at(spike_positions)
     valid_bins = spike_bins[spike_bins >= 0]
+    n_bin_dropped = len(spike_times_valid) - len(valid_bins)
+
+    # Warn on inactive-bin drops
+    if warn_on_drop and len(spike_times_valid) > 0 and n_bin_dropped > 0:
+        n_after_time = len(spike_times_valid)
+        frac_bin_dropped = n_bin_dropped / n_after_time
+        if frac_bin_dropped > _DROP_WARN_THRESHOLD or n_bin_dropped == n_after_time:
+            warnings.warn(
+                f"{n_bin_dropped}/{n_after_time} spike_times "
+                f"({100 * frac_bin_dropped:.0f}%) mapped to positions outside "
+                f"the active environment bins (bin index -1). "
+                f"Check that spike_times and times share units (both seconds) "
+                f"and that positions are in the same coordinate frame as the "
+                f"environment. Dropped spikes do not contribute.",
+                UserWarning,
+                stacklevel=2,
+            )
+
     if len(valid_bins) == 0:
         return spike_counts
 
@@ -238,6 +295,7 @@ def bin_spike_trains(
     positions: NDArray[np.float64],
     *,
     n_jobs: int = 1,
+    warn_on_drop: bool = True,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Bin multiple spike trains into spatial bins.
 
@@ -261,6 +319,13 @@ def bin_spike_trains(
     n_jobs : int, default=1
         Number of parallel jobs for spike counting. Use -1 for all CPUs.
         1 means sequential processing (no parallelization overhead).
+    warn_on_drop : bool, default=True
+        If ``True`` (the default), emit a single ``UserWarning`` (per drop
+        cause) when a large fraction of spikes are silently dropped across
+        all neurons.  The warning is computed in the main process from
+        aggregate statistics, so it fires exactly once even when
+        ``n_jobs != 1`` (joblib worker warnings are commonly swallowed).
+        Set to ``False`` to suppress all drop-related warnings.
 
     Returns
     -------
@@ -322,19 +387,96 @@ def bin_spike_trains(
     # spike positions), so it stays inside the per-neuron loop.
     occupancy = compute_occupancy(env, times, positions)
 
+    # Always call leaf with warn_on_drop=False: we aggregate and warn ONCE
+    # here in the main process (see below) instead of once per neuron.
+    # This is critical for n_jobs != 1 where joblib worker warnings are
+    # swallowed, but we keep it consistent for n_jobs == 1 too (no duplicates).
     if n_jobs == 1:
         spike_counts = np.zeros((n_neurons, env.n_bins), dtype=np.float64)
         for i, spikes in enumerate(spike_times_list):
-            spike_counts[i] = bin_spike_train(env, spikes, times, positions)
+            spike_counts[i] = bin_spike_train(
+                env, spikes, times, positions, warn_on_drop=False
+            )
     else:
         from joblib import Parallel, delayed
 
         def _process_neuron(spikes: NDArray[np.float64]) -> NDArray[np.float64]:
-            return bin_spike_train(env, spikes, times, positions)
+            # warn_on_drop=False: do NOT warn from workers (warnings swallowed)
+            return bin_spike_train(env, spikes, times, positions, warn_on_drop=False)
 
         results = Parallel(n_jobs=n_jobs)(
             delayed(_process_neuron)(spikes) for spikes in spike_times_list
         )
         spike_counts = np.array(results, dtype=np.float64)
+
+    # Aggregate drop statistics across all neurons and warn ONCE in main process.
+    if warn_on_drop and n_neurons > 0:
+        t_min, t_max = times.min(), times.max()
+
+        total_spikes = 0
+        total_time_dropped = 0
+        total_after_time = 0
+        total_bin_dropped = 0
+
+        for spikes in spike_times_list:
+            spikes_arr = np.asarray(spikes, dtype=np.float64)
+            n = len(spikes_arr)
+            if n == 0:
+                continue
+            total_spikes += n
+            mask = (spikes_arr >= t_min) & (spikes_arr <= t_max)
+            n_valid_time = int(mask.sum())
+            n_time_drop = n - n_valid_time
+            total_time_dropped += n_time_drop
+            # For bin-drop stats we need the spike positions
+            if n_valid_time > 0:
+                total_after_time += n_valid_time
+                spikes_valid = spikes_arr[mask]
+                pos2d = positions.reshape(-1, 1) if positions.ndim == 1 else positions
+                n_dims = pos2d.shape[1]
+                spike_positions = np.empty((n_valid_time, n_dims), dtype=np.float64)
+                for d in range(n_dims):
+                    spike_positions[:, d] = np.interp(spikes_valid, times, pos2d[:, d])
+                spike_bins = env.bin_at(spike_positions)
+                n_bin_drop = int((spike_bins < 0).sum())
+                total_bin_dropped += n_bin_drop
+
+        # Warn for time-window drops
+        if total_spikes > 0 and total_time_dropped > 0:
+            frac = total_time_dropped / total_spikes
+            if frac > _DROP_WARN_THRESHOLD or total_time_dropped == total_spikes:
+                all_spikes_cat = np.concatenate(
+                    [
+                        np.asarray(s, dtype=np.float64)
+                        for s in spike_times_list
+                        if len(s) > 0
+                    ]
+                )
+                warnings.warn(
+                    f"{total_time_dropped}/{total_spikes} spike_times "
+                    f"({100 * frac:.0f}%) across all neurons fell outside the "
+                    f"position time window [{t_min:.6g}, {t_max:.6g}]; "
+                    f"spike_times.min()={all_spikes_cat.min():.6g} "
+                    f"spike_times.max()={all_spikes_cat.max():.6g}. "
+                    f"Check that spike_times and times share units (both "
+                    f"seconds). Dropped spikes do not contribute.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+
+        # Warn for inactive-bin drops
+        if total_after_time > 0 and total_bin_dropped > 0:
+            frac_bin = total_bin_dropped / total_after_time
+            if frac_bin > _DROP_WARN_THRESHOLD or total_bin_dropped == total_after_time:
+                warnings.warn(
+                    f"{total_bin_dropped}/{total_after_time} spike_times "
+                    f"({100 * frac_bin:.0f}%) across all neurons mapped to "
+                    f"positions outside the active environment bins (bin index "
+                    f"-1). Check that spike_times and times share units (both "
+                    f"seconds) and that positions are in the same coordinate "
+                    f"frame as the environment. Dropped spikes do not contribute.",
+                    UserWarning,
+                    stacklevel=2,
+                )
 
     return spike_counts, occupancy

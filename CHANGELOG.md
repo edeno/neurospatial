@@ -9,6 +9,28 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ## [Unreleased]
 
+### Fixed
+
+- `bin_spike_train` and `bin_spike_trains` in `encoding/_binning.py` no
+  longer silently drop spikes outside the trajectory time window or spikes
+  that map to inactive environment bins.  When the dropped fraction exceeds
+  50 % (or all spikes are dropped), a `UserWarning` is emitted naming the
+  dropped count, total, both time ranges, and a units-hypothesis hint (e.g.
+  spike_times in milliseconds vs. times in seconds).  Two separate messages
+  cover the two drop causes (time-window and inactive-bin).  The batch path
+  (`bin_spike_trains`, `compute_spatial_rates`) warns exactly **once per
+  cause** in the main process — never from joblib worker processes where
+  warnings are commonly swallowed.  Default behaviour for in-window spikes
+  is byte-for-byte unchanged.
+
+### Added
+
+- New keyword-only parameter `warn_on_drop: bool = True` on
+  `bin_spike_train`, `bin_spike_trains` (`encoding/_binning.py`),
+  `compute_spatial_rate`, and `compute_spatial_rates` (`encoding/spatial.py`).
+  Set to `False` to intentionally silence all spike-drop warnings (e.g. when
+  the caller handles the diagnostic themselves).
+
 ## [0.5.0] - 2026-06-04
 
 ### Added

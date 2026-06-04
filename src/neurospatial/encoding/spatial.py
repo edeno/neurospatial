@@ -1574,6 +1574,7 @@ def compute_spatial_rate(
     min_occupancy: float = 0.0,
     fill_value: float | None = None,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
+    warn_on_drop: bool = True,
 ) -> SpatialRateResult:
     """Compute spatial firing rate map for one neuron.
 
@@ -1631,6 +1632,15 @@ def compute_spatial_rate(
 
         Note: Binning operations (spike counting, occupancy) always use NumPy.
         Only the smoothing/rate computation uses the selected backend.
+    warn_on_drop : bool, default=True
+        If ``True`` (the default), emit a ``UserWarning`` when a large
+        fraction of spikes are silently dropped — either because they
+        fall outside the position time window or because they map to
+        inactive/out-of-environment bins.  A warning is always emitted
+        when **all** spikes are dropped (regardless of threshold).  This
+        guards against common unit mismatches (e.g. spike_times in
+        milliseconds while times is in seconds).  Set to ``False`` to
+        suppress all drop-related warnings.
 
     Returns
     -------
@@ -1736,7 +1746,12 @@ def compute_spatial_rate(
 
     # Bin spike train into spatial bins (always NumPy - CPU/joblib)
     spike_counts = bin_spike_train(
-        env, spike_times, times, positions, context="compute_spatial_rate"
+        env,
+        spike_times,
+        times,
+        positions,
+        context="compute_spatial_rate",
+        warn_on_drop=warn_on_drop,
     )
 
     # Compute occupancy (always NumPy)
@@ -1790,6 +1805,7 @@ def compute_spatial_rates(
     fill_value: float | None = None,
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
+    warn_on_drop: bool = True,
 ) -> SpatialRatesResult:
     """Compute spatial firing rate maps for multiple neurons.
 
@@ -1845,6 +1861,13 @@ def compute_spatial_rates(
 
         Note: Binning operations (spike counting, occupancy) always use NumPy.
         Only the smoothing/rate computation uses the selected backend.
+    warn_on_drop : bool, default=True
+        If ``True`` (the default), emit a single ``UserWarning`` (per drop
+        cause) when a large fraction of spikes are silently dropped across
+        all neurons.  The warning is computed in the main process from
+        aggregate statistics, so it fires exactly once even when
+        ``n_jobs != 1`` (joblib worker warnings are commonly swallowed).
+        Set to ``False`` to suppress all drop-related warnings.
 
     Returns
     -------
@@ -2018,6 +2041,7 @@ def compute_spatial_rates(
         times,
         positions,
         n_jobs=n_jobs,
+        warn_on_drop=warn_on_drop,
     )
 
     # Apply batch smoothing to compute firing rates
