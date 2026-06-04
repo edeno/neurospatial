@@ -11,6 +11,16 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ### Fixed
 
+- `Environment.__init__` now raises a beginner-grade `ValueError` when called
+  without arguments (i.e. bare `Environment()`).  The old message "layout
+  parameter is required" gave no actionable guidance; the new message explains
+  that `Environment` must be created through a factory method, shows a concrete
+  correct example (`Environment.from_samples(data, bin_size=2.0)`), lists the
+  other available factories (`from_polygon`, `from_graph`, `from_grid_mask`,
+  `from_pixel_mask`), and links to the online docs — matching the style already
+  used by `EnvironmentNotFittedError`.  The exception type remains `ValueError`
+  so existing `except ValueError` callers are unaffected.
+
 - `align_spikes_to_events` in `events/alignment.py` now rejects `event_times`
   containing `Inf` values with a descriptive `ValueError`, matching the
   existing `spike_times` Inf check and fulfilling the docstring promise.

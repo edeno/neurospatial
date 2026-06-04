@@ -332,7 +332,20 @@ class _BaseEnvironment(
 
         """
         if layout is None:
-            raise ValueError("layout parameter is required")
+            raise ValueError(
+                "[ENV-INIT] Environment is not constructed directly — use a factory method.\n\n"
+                "Example (correct usage):\n"
+                "    env = Environment.from_samples(data, bin_size=2.0)\n\n"
+                "Other factories:\n"
+                "    env = Environment.from_polygon(polygon, bin_size=2.0)\n"
+                "    env = Environment.from_graph(graph, edge_order, bin_size=2.0)\n"
+                "    env = Environment.from_grid_mask(grid_edges, mask)\n"
+                "    env = Environment.from_pixel_mask(image_mask, pixel_size=1.0)\n\n"
+                "Avoid:\n"
+                "    env = Environment()  # This will not work!\n\n"
+                "For more information, see: "
+                "https://neurospatial.readthedocs.io/errors/#env-init"
+            )
 
         self.name = name
         self.layout = layout
