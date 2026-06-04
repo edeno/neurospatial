@@ -146,8 +146,62 @@ class TestDecodeSessionGoldenPath:
         from neurospatial.decoding import decode_session
 
         env, spike_times, _, _ = _make_linear_track_sim(n_neurons=3, duration=10.0)
-        with pytest.raises(ValueError, match="times must have at least 2 samples"):
+        with pytest.raises(ValueError, match="At least 2 samples required"):
             decode_session(env, spike_times, np.array([]), np.zeros((0, 2)), dt=0.1)
+
+    def test_nonfinite_times_raise_clear_error_in_passthrough(self) -> None:
+        """NaN/inf `times` raise a beginner-grade error (not a raw int-conversion).
+
+        The encoding_models passthrough branch skips the encoder's own
+        validation, so without an up-front check a NaN/inf in `times` leaked a
+        raw 'cannot convert float NaN to integer' from bin_spikes_in_time.
+        """
+        import pytest
+
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=5, duration=10.0
+        )
+        models = compute_spatial_rates(
+            env, spike_times, times, positions, fill_value=0.0
+        ).firing_rates
+
+        for bad_value in (np.nan, np.inf):
+            bad_times = times.copy()
+            bad_times[3] = bad_value
+            with pytest.raises(ValueError, match="finite"):
+                decode_session(
+                    env,
+                    spike_times,
+                    bad_times,
+                    positions,
+                    dt=0.1,
+                    encoding_models=models,
+                )
+
+    def test_non_1d_times_raise_clear_error(self) -> None:
+        """A 2-D `times` array raises a clear shape error, not a cryptic one."""
+        import pytest
+
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=5, duration=10.0
+        )
+        models = compute_spatial_rates(
+            env, spike_times, times, positions, fill_value=0.0
+        ).firing_rates
+
+        with pytest.raises(ValueError, match="1-D"):
+            decode_session(
+                env,
+                spike_times,
+                times.reshape(-1, 1),
+                positions,
+                dt=0.1,
+                encoding_models=models,
+            )
 
     def test_map_tracks_trajectory(self) -> None:
         """MAP position should track the true trajectory (median error < 25 cm on 100-cm track)."""

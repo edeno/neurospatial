@@ -271,16 +271,23 @@ def decode_session(
     from neurospatial.decoding._binning import bin_spikes_in_time
     from neurospatial.decoding.posterior import decode_position
     from neurospatial.encoding import as_spike_trains
+    from neurospatial.encoding._validation import validate_times
     from neurospatial.encoding.spatial import compute_spatial_rates
 
     # --- Normalize inputs ---
     trains = as_spike_trains(spike_times)
     times_arr = np.asarray(times, dtype=np.float64)
-    if times_arr.size < 2:
+    if times_arr.ndim != 1:
         raise ValueError(
-            f"times must have at least 2 samples to define a trajectory "
-            f"window, got {times_arr.size}."
+            f"times must be a 1-D array of timestamps for decode_session, "
+            f"got shape {times_arr.shape}."
         )
+    # Validate timestamps up front (>=2 samples, finite, sorted). This runs in
+    # BOTH branches — in particular the encoding_models passthrough branch skips
+    # the encoder's own validate_trajectory, so without this a NaN/inf in
+    # `times` would leak a raw "cannot convert float NaN to integer" from
+    # bin_spikes_in_time instead of a beginner-grade message.
+    validate_times(times_arr, context="decode_session")
 
     # Decode window — computed ONCE and reused for both the out-of-window drop
     # check and the bin_spikes_in_time call so they agree exactly.
