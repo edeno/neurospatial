@@ -24,8 +24,9 @@
 #
 # By the end of this notebook, you will be able to:
 #
+# - Decode spatial position in **one call** with `decode_session` (the golden path)
+# - Drop down to the manual three-call path when you need custom control
 # - Build encoding models (place fields) for a population of neurons
-# - Decode spatial position from population spike counts using Bayesian methods
 # - Access and interpret `DecodingResult` properties (posterior, MAP, mean, posterior entropy)
 # - Evaluate decoding accuracy with error metrics
 # - Detect trajectory structure using isotonic/linear regression and Radon transform
@@ -49,6 +50,7 @@ from neurospatial.decoding import (
     bin_spikes_in_time,
     confusion_matrix,
     decode_position,
+    decode_session,
     decoding_correlation,
     decoding_error,
     fit_isotonic_trajectory,
@@ -218,7 +220,80 @@ plt.show()
 # %% [markdown]
 # ---
 #
-# ## Part 2: Build Encoding Models
+# ## Part 2: Decode in One Call (the golden path)
+#
+# For most analyses you do **not** need to wire up the pieces by hand.
+# `decode_session` is the one-call golden path: give it the environment, the
+# population spike trains, the timestamps, and the positions, and it builds the
+# encoding models (place fields), bins the spikes onto a regular time grid, and
+# runs the Bayesian decoder for you — returning a `DecodingResult`.
+
+# %%
+# Decode position from spikes + behavior in a single call.
+result = decode_session(
+    env,
+    spike_times_list,
+    times,
+    positions,
+    dt=0.1,  # 100 ms time bins
+    bandwidth=5.0,  # place-field smoothing bandwidth (cm)
+)
+
+print("Decoding complete (one call)!")
+print(f"Posterior shape: {result.posterior.shape}  (n_time_bins, n_bins)")
+print(f"MAP position shape: {result.map_position.shape}")
+
+# Evaluate: the decoded MAP position should track the true trajectory.
+actual_track = np.interp(result.times, times, positions[:, 0]).reshape(-1, 1)
+median_err = median_decoding_error(result.map_position, actual_track)
+print(f"Median decoding error: {median_err:.1f} cm (track length {track_length:.0f} cm)")
+
+# %%
+# Plot the decoded posterior with the true trajectory overlaid.
+fig, ax = plt.subplots(figsize=(14, 5))
+n_show = 500
+result.plot(ax=ax, show_map=True, colorbar=True)
+ax.plot(
+    result.times[:n_show],
+    actual_track[:n_show, 0],
+    color=COLORS["cyan"],
+    linewidth=2,
+    linestyle="--",
+    label="Actual position",
+)
+ax.set_xlim(0, n_show * 0.1)
+ax.set_xlabel("Time (s)")
+ax.set_ylabel("Position (cm)")
+ax.set_title("decode_session: posterior, MAP (white), actual (cyan)", fontweight="bold")
+ax.legend(loc="upper right")
+plt.tight_layout()
+plt.show()
+
+# %% [markdown]
+# That is the entire encode → bin → decode pipeline in one call. The rest of
+# this notebook opens up the same pipeline so you can see (and customize) each
+# stage — and then builds on it for trajectory analysis and replay significance
+# testing.
+
+# %% [markdown]
+# ---
+#
+# ## Advanced: manual three-call path (custom control)
+#
+# `decode_session` covers the common case. Reach for the manual three-call path
+# (`compute_spatial_rates` → `bin_spikes_in_time` → `decode_position`) when you
+# need to:
+#
+# - pass **custom encoding models** (e.g. fields fit on a different session, or
+#   from a non-default encoder),
+# - **reuse** fitted place fields across many decodes without recomputing them,
+# - **inspect intermediates** — the occupancy map, the smoothed place fields, or
+#   the binned spike counts — for debugging or figures.
+#
+# The next four parts walk through those stages explicitly. They reproduce what
+# `decode_session` did above, so the decoded result matches.
+#
+# ### Build Encoding Models
 #
 # Encoding models are place fields that describe how each neuron's firing rate varies with spatial position. These are the "tuning curves" we use for decoding.
 
@@ -273,9 +348,7 @@ plt.tight_layout()
 plt.show()
 
 # %% [markdown]
-# ---
-#
-# ## Part 3: Bin Spikes for Decoding
+# ### Bin Spikes for Decoding
 #
 # Bayesian decoding works on spike counts in discrete time bins. We need to convert spike times to spike counts:
 
@@ -307,11 +380,9 @@ print(f"Total spikes in binned data: {spike_counts.sum()}")
 print(f"Mean spikes per time bin: {spike_counts.sum(axis=1).mean():.2f}")
 
 # %% [markdown]
-# ---
+# ### Decode Position (manual)
 #
-# ## Part 4: Decode Position
-#
-# Now we can decode position using Bayesian inference. The `decode_position()` function computes the posterior probability distribution over positions for each time bin.
+# Now we can decode position using Bayesian inference. The `decode_position()` function computes the posterior probability distribution over positions for each time bin. This reproduces the `decode_session` result from Part 2 — now with the encoding models and binned spike counts exposed as explicit intermediates you can swap or inspect.
 
 # %%
 # Decode position from spike counts
@@ -428,7 +499,7 @@ plt.show()
 # %% [markdown]
 # ---
 #
-# ## Part 5: Evaluate Decoding Accuracy
+# ## Part 3: Evaluate Decoding Accuracy
 #
 # Let's quantify how well the decoder performs using error metrics:
 
@@ -510,7 +581,7 @@ print(f"Diagonal (correct) proportion: {np.diag(cm).sum() / cm.sum():.1%}")
 # %% [markdown]
 # ---
 #
-# ## Part 6: Trajectory Analysis (for Replay Detection)
+# ## Part 4: Trajectory Analysis (for Replay Detection)
 #
 # For replay detection, we often want to detect whether decoded positions follow a coherent trajectory. Let's analyze a short segment that might resemble replay.
 
@@ -615,7 +686,7 @@ print(f"\n  Speed: {slope_cm_per_s:.1f} cm/s")
 # %% [markdown]
 # ---
 #
-# ## Part 7: Shuffle-Based Significance Testing
+# ## Part 5: Shuffle-Based Significance Testing
 #
 # To determine if a decoded sequence is significant, we compare it to a null distribution generated by shuffling. This is essential for replay detection.
 
@@ -692,7 +763,7 @@ plt.show()
 # %% [markdown]
 # ---
 #
-# ## Part 8: Export Results
+# ## Part 6: Export Results
 #
 # The `DecodingResult` can be exported to a pandas DataFrame for further analysis:
 
@@ -712,13 +783,17 @@ df.head()
 #
 # In this notebook, you learned:
 #
-# ### Building Encoding Models
-# - Compute place fields for all neurons with `compute_spatial_rates()` (access `.firing_rates`)
-# - Result shape: `(n_neurons, n_bins)` — ready for `decode_position()`
+# ### The Golden Path (one call)
+# - `decode_session(env, spike_times, times, positions, dt=...)` runs the whole
+#   encode → bin → decode pipeline and returns a `DecodingResult`
+# - Reach for it first; it covers the common case in a single line
 #
-# ### Bayesian Decoding
+# ### The Manual Three-Call Path (custom control)
+# - Compute place fields for all neurons with `compute_spatial_rates()` (access `.firing_rates`)
+#   — result shape `(n_neurons, n_bins)`, ready for `decode_position()`
 # - Bin spikes with `bin_spikes_in_time(spike_trains, dt, t_start, t_stop)` → shape `(n_time_bins, n_neurons)`
-# - Decode with `decode_position()` to get posterior distribution
+# - Decode with `decode_position()` to get the posterior distribution
+# - Use this when you need custom encoding models, to reuse fitted fields, or to inspect intermediates
 # - Access `DecodingResult` properties: `posterior`, `map_position`, `mean_position`, `posterior_entropy`
 #
 # ### Error Metrics

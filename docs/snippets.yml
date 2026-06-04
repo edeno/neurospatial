@@ -336,3 +336,16 @@ snippets:
       import os
       os.environ["MPLBACKEND"] = "Agg"
     timeout: 180
+
+  - id: workflows_decode_session_golden_path
+    source: docs/user-guide/workflows.md
+    kind: markdown
+    # Block 1: Workflow 2 — the one-call Bayesian decoding golden path.
+    # simulate_trajectory_ou + PlaceCellModel + generate_population_spikes
+    # + decode_session + decoding_error. Decodes a 100 cm linear track to a
+    # few-cm median error (sanity check that the posterior tracks the path).
+    index: 1
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"
+    timeout: 180

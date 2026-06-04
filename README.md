@@ -229,6 +229,14 @@ detect place fields with [`detect_place_fields`](https://edeno.github.io/neurosp
 See [example 11](https://github.com/edeno/neurospatial/blob/main/examples/11_place_field_analysis.ipynb)
 for the full tutorial.
 
+To go the other way — reconstruct position from population spikes — the one-call
+path is
+[`decode_session`](https://edeno.github.io/neurospatial/api/):
+`from neurospatial.decoding import decode_session` runs the whole encode → bin →
+decode pipeline and returns a `DecodingResult`. See
+[example 20](https://github.com/edeno/neurospatial/blob/main/examples/20_bayesian_decoding.ipynb)
+for the full Bayesian decoding tutorial.
+
 ## Core Concepts
 
 ### Bins and Active Bins

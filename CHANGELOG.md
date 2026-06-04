@@ -32,6 +32,16 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ### Changed
 
+- Docs/examples now teach `decode_session` as the one-call decode golden path;
+  the manual 3-call path (`compute_spatial_rates` → `bin_spikes_in_time` →
+  `decode_position`) is kept as an "Advanced: manual three-call path" section.
+  `examples/20_bayesian_decoding` now leads with `decode_session`; a new
+  "Workflow 2: Bayesian Decoding (one call)" section was added to
+  `docs/user-guide/workflows.md` (with a `workflows_decode_session_golden_path`
+  CI snippet in `docs/snippets.yml`); and `README.md` points to
+  `from neurospatial.decoding import decode_session` as the position-decoding
+  entry point.
+
 - Docs (Phase 0.6 sweep): rewrote Workflow 1 in `docs/user-guide/workflows.md` to use the
   canonical `compute_spatial_rate(env, spike_times, times, positions, ...).firing_rate` idiom
   with `simulate_trajectory_ou` + `PlaceCellModel` fixtures, replacing the hand-rolled

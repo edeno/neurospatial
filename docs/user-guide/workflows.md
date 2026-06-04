@@ -134,7 +134,89 @@ print(f"Spatial information: {result.spatial_information():.3f} bits/spike")
   boundaries)
 - Increase `bandwidth` for noisier data or coarser bins
 
-## Workflow 2: Region-Based Analysis
+## Workflow 2: Bayesian Decoding (one call)
+
+Reconstruct an animal's position from population spike trains in a single call.
+
+### Overview
+
+**Goal**: Decode position over time from a population of place cells
+
+**Steps**: Simulate or load `(env, spike_times, times, positions)` → `decode_session(...)` → inspect `result.map_position` / plot
+
+`decode_session` is the one-call golden path: it builds the encoding models
+(place fields), bins the spikes onto a regular time grid, and runs the Bayesian
+decoder for you. The whole encode → bin → decode pipeline fits in one line.
+
+### Complete Example
+
+```python
+import numpy as np
+import matplotlib.pyplot as plt
+
+from neurospatial import Environment
+from neurospatial.decoding import decode_session, decoding_error
+from neurospatial.simulation import (
+    PlaceCellModel,
+    generate_population_spikes,
+    simulate_trajectory_ou,
+)
+
+# Step 1: Simulate a population of place cells on a 100 cm linear track.
+# (In a real analysis, load your env, spike_times, times, and positions here.)
+env = Environment.from_samples(
+    np.linspace(0.0, 100.0, 51).reshape(-1, 1), bin_size=2.0
+)
+env.units = "cm"
+positions, times = simulate_trajectory_ou(
+    env, duration=600.0, dt=0.02, speed_mean=15.0, seed=0, speed_units="cm"
+)
+cells = [
+    PlaceCellModel(env, center=np.array([c]), width=10.0, max_rate=20.0, seed=i)
+    for i, c in enumerate(np.linspace(5.0, 95.0, 25))
+]
+spike_times = generate_population_spikes(
+    cells, positions, times, seed=0, show_progress=False
+)
+
+# Step 2: Decode position in a single call (encode -> bin -> decode).
+result = decode_session(env, spike_times, times, positions, dt=0.1)
+
+print(f"Decoded {result.posterior.shape[0]} time bins over {env.n_bins} bins")
+
+# Step 3: Evaluate — the decoded MAP position should track the trajectory.
+actual = np.interp(result.times, times, positions[:, 0]).reshape(-1, 1)
+median_err = np.nanmedian(decoding_error(result.map_position, actual))
+print(f"Median decoding error: {median_err:.1f} cm")
+
+# Step 4: Plot decoded vs. actual position.
+fig, ax = plt.subplots(figsize=(10, 4))
+ax.plot(result.times, actual[:, 0], label="Actual", linewidth=1)
+ax.plot(result.times, result.map_position[:, 0], label="Decoded (MAP)", linewidth=1)
+ax.set_xlabel("Time (s)")
+ax.set_ylabel("Position (cm)")
+ax.set_title("Bayesian decoding with decode_session")
+ax.legend()
+plt.tight_layout()
+plt.show()
+```
+
+`result` is a `DecodingResult` with `.posterior` (n_time, n_bins),
+`.map_position` (n_time, n_dims), `.mean_position`, `.posterior_entropy`, and
+`.times`. See [`decoding_error`](../api/neurospatial/decoding/index.md) and
+related helpers for accuracy metrics.
+
+### When to reach for the manual path
+
+`decode_session` covers the common case. When you need custom control — passing
+your own `encoding_models`, reusing fitted place fields across sessions, or
+inspecting the binned spike counts — use the manual three-call path
+(`compute_spatial_rates` → `bin_spikes_in_time` → `decode_position`). That
+walk-through, plus trajectory analysis and shuffle-based significance testing
+for replay detection, is covered in
+[example 20](../examples/20_bayesian_decoding.ipynb).
+
+## Workflow 3: Region-Based Analysis
 
 Analyzing behavior across experimentally-defined spatial zones.
 
@@ -238,7 +320,7 @@ ax.set_title('Experimental Regions')
 plt.show()
 ```
 
-## Workflow 3: Multi-Session Alignment
+## Workflow 4: Multi-Session Alignment
 
 Comparing environments across recording sessions.
 
@@ -321,7 +403,7 @@ plt.tight_layout()
 plt.show()
 ```
 
-## Workflow 4: Track Linearization
+## Workflow 5: Track Linearization
 
 Analyzing maze experiments with branching structures.
 
