@@ -581,6 +581,54 @@ class ViewRatesResult(SpatialResultMixin):
             resolve_unit_ids(self.unit_ids, n_units),
         )
 
+    def to_xarray(self) -> Any:
+        """Convert the view fields to a labeled :class:`xarray.Dataset`.
+
+        Wraps the ``(n_units, n_bins)`` view firing-rate matrix in a labeled
+        :class:`xarray.Dataset` with dims ``("unit_id", "bin")``. The
+        ``unit_id`` index coordinate holds the real per-unit identity labels
+        (:attr:`unit_ids`); the ``bin`` dimension carries non-index
+        ``bin_center_x`` / ``bin_center_y`` (and ``bin_center_z`` for 3-D)
+        coordinates derived from the (Cartesian) environment.
+
+        Returns
+        -------
+        xarray.Dataset
+            Dataset with data var ``firing_rate`` (Hz, dims
+            ``("unit_id", "bin")``), data var ``occupancy`` (seconds, dims
+            ``("bin",)``), index coord ``unit_id`` = :attr:`unit_ids`,
+            ``bin_center_*`` coords on ``bin``, and ``attrs`` carrying
+            ``units``, ``bandwidth``, ``env`` fingerprint, and
+            ``software_version``.
+
+        Raises
+        ------
+        ValueError
+            If :attr:`unit_ids` contains duplicate labels.
+        ImportError
+            If ``xarray`` is not installed (optional dependency).
+        """
+        from neurospatial._results import (
+            build_population_dataset,
+            env_fingerprint,
+            software_version,
+        )
+
+        rates: NDArray[np.float64] = np.asarray(self.firing_rates)
+        attrs: dict[str, Any] = {
+            "units": str(getattr(self.env, "units", None)),
+            "bandwidth": self.bandwidth,
+            "env": env_fingerprint(self.env),
+            "software_version": software_version(),
+        }
+        return build_population_dataset(
+            rates,
+            self.unit_ids,
+            env=self.env,
+            occupancy=np.asarray(self.occupancy, dtype=np.float64),
+            attrs=attrs,
+        )
+
     def __len__(self) -> int:
         """Return the number of neurons.
 

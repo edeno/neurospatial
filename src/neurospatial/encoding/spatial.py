@@ -1017,23 +1017,33 @@ class SpatialRatesResult(SpatialResultMixin):
         return self.env.plot_field(_to_numpy(rates[idx]), ax=ax, **kwargs)
 
     def to_xarray(self) -> Any:
-        """Convert the firing-rate maps to an :class:`xarray.DataArray`.
+        """Convert the firing-rate maps to a labeled :class:`xarray.Dataset`.
 
-        Wraps the ``(n_neurons, n_bins)`` firing-rate matrix in a labeled
-        :class:`xarray.DataArray` with dims ``("neuron", "bin")``. The
-        ``neuron`` coordinate is the integer neuron index and the ``bin``
-        coordinate is the integer bin index.
+        Wraps the ``(n_units, n_bins)`` firing-rate matrix in a labeled
+        :class:`xarray.Dataset` with dims ``("unit_id", "bin")``. The
+        ``unit_id`` index coordinate holds the real per-unit identity labels
+        (:attr:`unit_ids`), enabling label-based selection. The ``bin``
+        dimension carries non-index ``bin_center_x`` / ``bin_center_y``
+        (and ``bin_center_z`` for 3-D envs) coordinates.
 
         Returns
         -------
-        xarray.DataArray
-            Firing rates (Hz) with dims ``("neuron", "bin")``. The array
-            ``.values`` equal :attr:`firing_rates`. ``coords["neuron"]`` is
-            ``np.arange(n_neurons)`` and ``coords["bin"]`` is
-            ``np.arange(n_bins)``.
+        xarray.Dataset
+            Dataset with:
+
+            - data var ``firing_rate`` (Hz), dims ``("unit_id", "bin")``.
+            - data var ``occupancy`` (seconds), dims ``("bin",)``.
+            - index coord ``unit_id`` = :attr:`unit_ids`.
+            - non-index coords ``bin_center_x`` / ``bin_center_y`` /
+              ``bin_center_z`` on ``bin`` (per env dimensionality).
+            - ``attrs``: ``units``, ``bandwidth``, ``env`` fingerprint, and
+              ``software_version``.
 
         Raises
         ------
+        ValueError
+            If :attr:`unit_ids` contains duplicate labels (label-based
+            ``.sel(unit_id=...)`` requires uniqueness).
         ImportError
             If ``xarray`` is not installed. xarray is an optional dependency;
             install it with ``pip install neurospatial[xarray]`` or
@@ -1057,33 +1067,34 @@ class SpatialRatesResult(SpatialResultMixin):
         >>> result = compute_spatial_rates(
         ...     env, spike_times, times, positions, bandwidth=10.0
         ... )
-        >>> da = result.to_xarray()  # doctest: +SKIP
-        >>> da.dims  # doctest: +SKIP
-        ('neuron', 'bin')
+        >>> ds = result.to_xarray()  # doctest: +SKIP
+        >>> ds["firing_rate"].dims  # doctest: +SKIP
+        ('unit_id', 'bin')
+        >>> ds.sel(unit_id=result.unit_ids[0])  # doctest: +SKIP
 
         See Also
         --------
         spatial_information : Per-neuron Skaggs spatial information.
         """
-        try:
-            import xarray as xr
-        except ImportError as exc:
-            raise ImportError(
-                "to_xarray() requires the optional 'xarray' dependency, which "
-                "is not installed. Install it with "
-                "'pip install neurospatial[xarray]' or 'pip install xarray'."
-            ) from exc
+        from neurospatial._results import (
+            build_population_dataset,
+            env_fingerprint,
+            software_version,
+        )
 
         rates: NDArray[np.float64] = np.asarray(self.firing_rates)
-        n_neurons, n_bins = rates.shape
-        return xr.DataArray(
+        attrs: dict[str, Any] = {
+            "units": str(getattr(self.env, "units", None)),
+            "bandwidth": self.bandwidth,
+            "env": env_fingerprint(self.env),
+            "software_version": software_version(),
+        }
+        return build_population_dataset(
             rates,
-            dims=("neuron", "bin"),
-            coords={
-                "neuron": np.arange(n_neurons),
-                "bin": np.arange(n_bins),
-            },
-            name="firing_rate",
+            self.unit_ids,
+            env=self.env,
+            occupancy=np.asarray(self.occupancy, dtype=np.float64),
+            attrs=attrs,
         )
 
     def spatial_information(self) -> NDArray[np.float64] | Any:

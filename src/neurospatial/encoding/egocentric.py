@@ -628,6 +628,55 @@ class EgocentricRatesResult(SpatialResultMixin):
         bin_centers: NDArray[np.float64] = self.env.bin_centers
         return bin_centers
 
+    def to_xarray(self) -> Any:
+        """Convert the egocentric fields to a labeled :class:`xarray.Dataset`.
+
+        Wraps the ``(n_units, n_bins)`` egocentric firing-rate matrix in a
+        labeled :class:`xarray.Dataset` with dims ``("unit_id", "bin")``. The
+        ``unit_id`` index coordinate holds the real per-unit identity labels
+        (:attr:`unit_ids`). Because the environment is an
+        :class:`~neurospatial.environment.polar.EgocentricPolarEnvironment`
+        (``bin_centers[:, 0]`` is distance, ``bin_centers[:, 1]`` is angle in
+        radians), the ``bin`` dimension carries ``bin_center_distance`` and
+        ``bin_center_angle`` non-index coordinates (not ``x`` / ``y``).
+
+        Returns
+        -------
+        xarray.Dataset
+            Dataset with data var ``firing_rate`` (Hz, dims
+            ``("unit_id", "bin")``), data var ``occupancy`` (seconds, dims
+            ``("bin",)``), index coord ``unit_id`` = :attr:`unit_ids`,
+            ``bin_center_distance`` / ``bin_center_angle`` coords on ``bin``,
+            and ``attrs`` carrying ``units``, ``env`` fingerprint, and
+            ``software_version``.
+
+        Raises
+        ------
+        ValueError
+            If :attr:`unit_ids` contains duplicate labels.
+        ImportError
+            If ``xarray`` is not installed (optional dependency).
+        """
+        from neurospatial._results import (
+            build_population_dataset,
+            env_fingerprint,
+            software_version,
+        )
+
+        rates: NDArray[np.float64] = np.asarray(self.firing_rates)
+        attrs: dict[str, Any] = {
+            "units": str(getattr(self.env, "units", None)),
+            "env": env_fingerprint(self.env),
+            "software_version": software_version(),
+        }
+        return build_population_dataset(
+            rates,
+            self.unit_ids,
+            env=self.env,
+            occupancy=np.asarray(self.occupancy, dtype=np.float64),
+            attrs=attrs,
+        )
+
     def __len__(self) -> int:
         """Return the number of neurons.
 

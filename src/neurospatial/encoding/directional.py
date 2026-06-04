@@ -1082,6 +1082,53 @@ class DirectionalRatesResult(SpatialResultMixin):
         # directly on the dataclass (no Environment).
         return np.asarray(self.bin_centers, dtype=np.float64)
 
+    def to_xarray(self) -> Any:
+        """Convert the tuning curves to a labeled :class:`xarray.Dataset`.
+
+        Wraps the ``(n_units, n_bins)`` directional tuning-curve matrix in a
+        labeled :class:`xarray.Dataset` with dims ``("unit_id", "bin")``. The
+        ``unit_id`` index coordinate holds the real per-unit identity labels
+        (:attr:`unit_ids`). Directional results have no spatial environment;
+        the ``bin`` dimension indexes angular bins and carries a
+        ``bin_center_angle`` non-index coordinate (radians, from
+        :attr:`bin_centers`).
+
+        Returns
+        -------
+        xarray.Dataset
+            Dataset with data var ``firing_rate`` (Hz, dims
+            ``("unit_id", "bin")``), data var ``occupancy`` (seconds, dims
+            ``("bin",)``), index coord ``unit_id`` = :attr:`unit_ids`,
+            ``bin_center_angle`` coord (radians) on ``bin``, and ``attrs``
+            carrying ``units`` (``"radians"``), ``bandwidth``, and
+            ``software_version``.
+
+        Raises
+        ------
+        ValueError
+            If :attr:`unit_ids` contains duplicate labels.
+        ImportError
+            If ``xarray`` is not installed (optional dependency).
+        """
+        from neurospatial._results import (
+            build_population_dataset,
+            software_version,
+        )
+
+        rates: NDArray[np.float64] = np.asarray(self.firing_rates)
+        attrs: dict[str, Any] = {
+            "units": "radians",
+            "bandwidth": self.bandwidth,
+            "software_version": software_version(),
+        }
+        return build_population_dataset(
+            rates,
+            self.unit_ids,
+            bin_centers=np.asarray(self.bin_centers, dtype=np.float64),
+            occupancy=np.asarray(self.occupancy, dtype=np.float64),
+            attrs=attrs,
+        )
+
     def __len__(self) -> int:
         """Return number of neurons.
 

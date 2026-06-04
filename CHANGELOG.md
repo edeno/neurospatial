@@ -9,7 +9,45 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ## [Unreleased]
 
+### Breaking changes
+
+- `to_xarray()` now returns a labeled `xarray.Dataset` instead of an
+  `xarray.DataArray` with integer coordinates. This is a clean break: there is
+  no `DataArray` shim and no `to_dataset()` alias. Two distinct shapes are
+  produced:
+  - **Population rate results** (`SpatialRatesResult`, `DirectionalRatesResult`,
+    `ViewRatesResult`, `EgocentricRatesResult`) return a `Dataset` with dims
+    `("unit_id", "bin")`. `unit_id` is the index coordinate holding the *real*
+    per-unit identity labels (`result.unit_ids`), so units are selected by
+    label. The `bin` dimension carries non-index `bin_center_x` / `bin_center_y`
+    (/ `bin_center_z`) coordinates for Cartesian environments, or
+    `bin_center_distance` / `bin_center_angle` for the polar egocentric result.
+    The rate matrix is the `firing_rate` data var; `occupancy` is a `("bin",)`
+    data var. `attrs` carry `units`, `bandwidth` (where applicable), an `env`
+    fingerprint, and `software_version`. Duplicate `unit_ids` now raise
+    `ValueError` (label-based selection requires uniqueness).
+  - **Decode results** (`DecodingResult`) return a `Dataset` with dims
+    `("time", "bin")` (a posterior over space per time bin; no `unit_id` axis).
+    The `posterior` data var holds the posterior, with the same `bin_center_*`
+    coordinate logic and `units` / `env` / `software_version` attrs.
+
+    Before → after:
+
+    ```python
+    # before (DataArray, integer coords)
+    da = result.to_xarray()
+    da.sel(neuron=0)
+    # after (Dataset, real unit_id labels)
+    ds = result.to_xarray()
+    ds.sel(unit_id=result.unit_ids[0])
+    ```
+
 ### Added
+
+- `to_xarray()` on `DirectionalRatesResult`, `ViewRatesResult`, and
+  `EgocentricRatesResult` (the directional/view/egocentric population results
+  previously had no xarray export). Each returns the labeled `xr.Dataset`
+  described under Breaking changes above.
 
 - Durable unit identity on encoding/events results. Every population result
   (`SpatialRatesResult`, `DirectionalRatesResult`, `ViewRatesResult`,
