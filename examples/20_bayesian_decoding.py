@@ -247,7 +247,9 @@ print(f"MAP position shape: {result.map_position.shape}")
 # Evaluate: the decoded MAP position should track the true trajectory.
 actual_track = np.interp(result.times, times, positions[:, 0]).reshape(-1, 1)
 median_err = median_decoding_error(result.map_position, actual_track)
-print(f"Median decoding error: {median_err:.1f} cm (track length {track_length:.0f} cm)")
+print(
+    f"Median decoding error: {median_err:.1f} cm (track length {track_length:.0f} cm)"
+)
 
 # %%
 # Plot the decoded posterior with the true trajectory overlaid.
