@@ -778,6 +778,14 @@ class SpatialRateResult(SpatialResultMixin):
         single-neuron place predicate, the place-cell sibling of
         :meth:`is_object_vector_cell` and :meth:`is_spatial_view_cell`.
 
+        .. note::
+           This single-neuron predicate uses **place-field detection**,
+           whereas the batch :meth:`SpatialRatesResult.classify` uses a
+           **spatial-information threshold**. The two criteria can disagree
+           for the same neuron, so this is not guaranteed to equal
+           ``rates.classify()[i]``. Pick the criterion that suits your
+           analysis and apply it consistently.
+
         Parameters
         ----------
         threshold : float, default=0.2
@@ -1565,6 +1573,16 @@ class SpatialRatesResult(SpatialResultMixin):
 
         For multi-class labels (``"place"``/``"grid"``/``"border"``/
         ``"unclassified"``) use :meth:`label_cell_types` instead.
+
+        .. note::
+           This batch predicate uses a **spatial-information threshold**,
+           whereas the single-neuron
+           :meth:`SpatialRateResult.is_place_cell` uses **place-field
+           detection** (``detect_place_fields``). The two criteria can
+           disagree for the same neuron (high information but no contiguous
+           field, or vice versa), so ``classify()[i]`` is not guaranteed to
+           equal ``result[i].is_place_cell()``. Pick the criterion that suits
+           your analysis and apply it consistently.
 
         Parameters
         ----------
