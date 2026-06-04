@@ -9,7 +9,33 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ## [Unreleased]
 
+### Changed
+
+- Docs (Phase 0.6 sweep): rewrote Workflow 1 in `docs/user-guide/workflows.md` to use the
+  canonical `compute_spatial_rate(env, spike_times, times, positions, ...).firing_rate` idiom
+  with `simulate_trajectory_ou` + `PlaceCellModel` fixtures, replacing the hand-rolled
+  `np.histogram` / `scipy.ndimage.gaussian_filter` approach. Added a CI snippet entry
+  (`workflows_place_field_canonical`) to `docs/snippets.yml`.
+
 ### Fixed
+
+- Removed stale `compute_firing_rate(...)` calls (that function does not exist publicly) from
+  `docs/user-guide/workflows.md` (Workflow 3) and `docs/user-guide/spatial-analysis.md`;
+  replaced with the correct `compute_spatial_rate(env, spike_times, times, positions, ...).firing_rate`
+  API and argument order.
+
+- Replaced 11 broken `env.plot(field, ax=...)` calls in `docs/user-guide/spike-field-primitives.md`
+  and `docs/user-guide/rl-primitives.md` with `env.plot_field(field, ax=...)`. The `env.plot()`
+  method's first positional argument is `ax`, not a field array, so passing a field there was silently
+  broken.
+
+- Updated `examples/20_bayesian_decoding.py` (and the jupytext-paired `.ipynb`) to use the batch
+  `compute_spatial_rates(env, spike_times_list, times, positions, ...).firing_rates` for encoding
+  models and the canonical `bin_spikes_in_time(spike_trains, dt, t_start, t_stop)` helper for
+  time-binned spike counts; regenerated the notebook via `jupytext --sync`.
+
+- Bumped stale version strings from `v0.4.0` to `v0.5.0` in `docs/index.md` (status line and
+  BibTeX entry) and `README.md` (dependency table header and BibTeX entry).
 
 - `GraphValidationError` messages in `layout/validation.py` and the wrapping
   `ValueError` in `environment/core.py` no longer reference the internal

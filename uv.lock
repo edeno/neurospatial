@@ -2997,6 +2997,11 @@ xarray = [
     { name = "xarray", version = "2026.4.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "jupytext" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "alphashape", specifier = ">=1.3.0" },
@@ -3051,6 +3056,9 @@ requires-dist = [
     { name = "xarray", marker = "extra == 'xarray'" },
 ]
 provides-extras = ["dev", "docs", "notebooks", "video", "animation", "nwb", "jax", "xarray"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "jupytext", specifier = ">=1.18.1" }]
 
 [[package]]
 name = "nodeenv"

@@ -868,7 +868,11 @@ fine_centers = env_fine.bin_centers
 coarse_bins = env_coarse.bin_at(fine_centers)
 
 # Aggregate field values to coarse grid
-firing_rate_fine = compute_firing_rate(env_fine, spikes, positions)
+from neurospatial.encoding import compute_spatial_rate
+firing_rate_fine = compute_spatial_rate(
+    env_fine, spikes, times, positions,
+    smoothing_method="diffusion_kde", bandwidth=5.0, min_occupancy=0.5,
+).firing_rate
 firing_rate_coarse = np.zeros(env_coarse.n_bins)
 
 for coarse_bin in range(env_coarse.n_bins):

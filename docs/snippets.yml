@@ -323,3 +323,16 @@ snippets:
     setup: |
       import os
       os.environ["MPLBACKEND"] = "Agg"
+
+  - id: workflows_place_field_canonical
+    source: docs/user-guide/workflows.md
+    kind: markdown
+    # Block 0: Workflow 1 — the canonical beginner place-field path.
+    # Uses simulate_trajectory_ou + PlaceCellModel + generate_poisson_spikes
+    # + compute_spatial_rate + env.plot_field. Rewritten in v0.6 to replace
+    # the hand-rolled np.histogram / scipy.ndimage approach.
+    index: 0
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"
+    timeout: 180

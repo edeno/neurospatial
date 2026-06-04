@@ -94,7 +94,7 @@ neurospatial is designed for researchers working with spatial data in neuroscien
 
 ## Project Status
 
-**Status**: Alpha (v0.4.0) - API may change. Contributions and feedback welcome!
+**Status**: Alpha (v0.5.0) - API may change. Contributions and feedback welcome!
 
 ## Citation
 
@@ -106,7 +106,7 @@ If you use neurospatial in your research, please cite:
   title = {neurospatial: Spatial environment discretization for neuroscience},
   year = {2026},
   url = {https://github.com/edeno/neurospatial},
-  version = {0.4.0}
+  version = {0.5.0}
 }
 ```
 

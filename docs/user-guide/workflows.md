@@ -10,151 +10,97 @@ A complete workflow for analyzing spatial firing patterns of neurons during navi
 
 **Goal**: Compute spatial firing rate maps from position tracking and spike data
 
-**Steps**: Load data → Create environment → Compute occupancy → Process spikes → Calculate firing rates → Visualize
+**Steps**: Create environment → Compute place field → Visualize
 
 ### Complete Example
 
 ```python
 import numpy as np
 import matplotlib.pyplot as plt
+
 from neurospatial import Environment
-
-# Step 1: Load experimental data
-# Position data: (n_timepoints, 2) array of x, y coordinates in cm
-# Spike times: timestamps when neuron fired
-position_data = load_position_data()  # Your data loading function
-spike_times = load_spike_times()      # Your spike loading function
-sampling_rate = 30.0  # Hz
-
-# Step 2: Create environment with appropriate parameters
-env = Environment.from_samples(
-    positions=position_data,
-    bin_size=2.5,  # 2.5 cm bins for 100x100 cm arena
-    infer_active_bins=True,
-    bin_count_threshold=5,  # Require at least 5 samples per bin
-    dilate=True,  # Expand active region slightly
-    fill_holes=True,  # Fill interior gaps
-    name="OpenFieldSession1"
+from neurospatial.encoding import compute_spatial_rate
+from neurospatial.simulation import (
+    PlaceCellModel,
+    generate_poisson_spikes,
+    simulate_trajectory_ou,
 )
+
+# Step 1: Simulate a short open-field session (replace with real data loading)
+env_seed = Environment.from_samples(
+    np.random.default_rng(0).uniform([0, 0], [100, 100], (20, 2)),
+    bin_size=2.5,
+)
+env_seed.units = "cm"  # Required by simulate_trajectory_ou
+positions, times = simulate_trajectory_ou(
+    env_seed,
+    duration=120.0,   # 2-minute session
+    dt=1 / 30.0,      # 30 Hz tracking
+    speed_mean=15.0,  # cm/s
+    seed=0,
+    speed_units="cm",
+)
+
+# Step 2: Create environment from the recorded trajectory
+env = Environment.from_samples(
+    positions,
+    bin_size=2.5,        # 2.5 cm bins for a 100x100 cm arena
+    bin_count_threshold=5,
+    dilate=True,
+    fill_holes=True,
+    name="OpenFieldSession1",
+)
+env.units = "cm"
 
 print(f"Created environment with {env.n_bins} active bins")
 print(f"Spatial extent: {env.dimension_ranges}")
 
-# Step 3: Compute occupancy (time spent in each bin)
-position_bin_indices = env.bin_at(position_data)
-occupancy_counts, _ = np.histogram(
-    position_bin_indices,
-    bins=np.arange(env.n_bins + 1)
+# Step 3: Generate spike train for a simulated place cell
+# (In real experiments, load your spike timestamps here.)
+cell = PlaceCellModel(env, center=np.array([50.0, 50.0]), width=12.0, max_rate=20.0)
+rates = cell.firing_rate(positions, times)
+spike_times = generate_poisson_spikes(rates, times, seed=1)
+
+print(f"Total spikes: {len(spike_times)}")
+
+# Step 4: Compute the place field with the canonical one-liner
+result = compute_spatial_rate(
+    env,
+    spike_times,
+    times,
+    positions,
+    smoothing_method="diffusion_kde",  # boundary-aware graph-based KDE
+    bandwidth=5.0,                     # smoothing bandwidth in cm
+    min_occupancy=0.5,                 # exclude bins with < 0.5 s occupancy
 )
-occupancy_time = occupancy_counts / sampling_rate  # Convert to seconds
-
-# Sanity check
-total_time = len(position_data) / sampling_rate
-print(f"Total session time: {total_time:.1f} seconds")
-print(f"Time accounted for: {occupancy_time.sum():.1f} seconds")
-assert np.isclose(occupancy_time.sum(), total_time, rtol=0.01)
-
-# Step 4: Map spikes to bins
-# Find position at each spike time (requires interpolation in real data)
-spike_positions = interpolate_position(position_data, spike_times)
-spike_bin_indices = env.bin_at(spike_positions)
-
-# Count spikes per bin
-spike_counts, _ = np.histogram(
-    spike_bin_indices,
-    bins=np.arange(env.n_bins + 1)
-)
-
-# Step 5: Calculate firing rate map
-# Only compute firing rate for bins with sufficient occupancy
-min_occupancy = 0.1  # seconds
-firing_rate = np.full(env.n_bins, np.nan)
-valid_bins = occupancy_time >= min_occupancy
-
-firing_rate[valid_bins] = (
-    spike_counts[valid_bins] / occupancy_time[valid_bins]
-)
+firing_rate = result.firing_rate
 
 print(f"Peak firing rate: {np.nanmax(firing_rate):.2f} Hz")
 print(f"Mean firing rate: {np.nanmean(firing_rate):.2f} Hz")
-print(f"Bins with valid firing rate: {np.sum(valid_bins)}/{env.n_bins}")
 
-# Step 6: Smooth firing rate map (optional)
-from scipy.ndimage import gaussian_filter
-
-# Reshape to 2D grid for smoothing
-if hasattr(env.layout, 'grid_shape'):
-    grid_shape = env.layout.grid_shape
-    active_mask = env.layout.active_mask
-
-    # Create full grid with NaN for inactive bins
-    firing_rate_grid = np.full(grid_shape, np.nan)
-    firing_rate_grid[active_mask] = firing_rate
-
-    # Smooth (only affects active regions)
-    smoothed_grid = gaussian_filter(
-        np.nan_to_num(firing_rate_grid),
-        sigma=1.0
-    )
-    firing_rate_smoothed = smoothed_grid[active_mask]
-else:
-    firing_rate_smoothed = firing_rate  # Can't smooth non-grid layouts
-
-# Step 7: Visualize results
+# Step 5: Visualize results
 fig, axes = plt.subplots(1, 3, figsize=(15, 5))
 
-# Plot 1: Trajectory with environment
+# Plot 1: Trajectory overlaid on environment layout
 ax1 = axes[0]
 env.plot(ax=ax1)
-ax1.plot(position_data[:, 0], position_data[:, 1],
-         'r-', alpha=0.3, linewidth=0.5)
-ax1.set_title('Trajectory')
+ax1.plot(positions[:, 0], positions[:, 1], "r-", alpha=0.3, linewidth=0.5)
+ax1.set_title("Trajectory")
 
-# Plot 2: Occupancy map
+# Plot 2: Occupancy map (seconds per bin)
 ax2 = axes[1]
-scatter = ax2.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=occupancy_time,
-    s=50,
-    cmap='viridis'
-)
-plt.colorbar(scatter, ax=ax2, label='Time (s)')
-ax2.set_title('Occupancy')
-ax2.set_xlabel('X (cm)')
-ax2.set_ylabel('Y (cm)')
+env.plot_field(result.occupancy, ax=ax2, cmap="viridis")
+ax2.set_title("Occupancy (s)")
 
-# Plot 3: Firing rate map
+# Plot 3: Place field (smoothed firing rate)
 ax3 = axes[2]
-scatter = ax3.scatter(
-    env.bin_centers[:, 0],
-    env.bin_centers[:, 1],
-    c=firing_rate_smoothed,
-    s=50,
-    cmap='hot',
-    vmin=0
-)
-plt.colorbar(scatter, ax=ax3, label='Firing Rate (Hz)')
-ax3.set_title('Place Field')
-ax3.set_xlabel('X (cm)')
-ax3.set_ylabel('Y (cm)')
+env.plot_field(firing_rate, ax=ax3, cmap="hot")
+ax3.set_title("Place Field (Hz)")
 
 plt.tight_layout()
-plt.savefig('place_field_analysis.png', dpi=300)
 plt.show()
 
-# Step 8: Export results
-results = {
-    'environment': env,
-    'occupancy_time': occupancy_time,
-    'spike_counts': spike_counts,
-    'firing_rate': firing_rate,
-    'firing_rate_smoothed': firing_rate_smoothed,
-    'bin_centers': env.bin_centers,
-}
-
-# Save for later analysis
-np.savez('place_field_results.npz', **results)
+print(f"Spatial information: {result.spatial_information():.3f} bits/spike")
 ```
 
 ### Key Considerations
@@ -165,14 +111,14 @@ np.savez('place_field_results.npz', **results)
 - Rule of thumb: 2-5 cm for rat open field (100x100 cm arena)
 
 **Occupancy Threshold**:
-- Exclude bins with low occupancy to avoid division by zero
-- Typical: 0.1-1.0 seconds minimum
-- Trade-off: Coverage vs. reliability
+- Exclude bins with low occupancy to avoid noisy firing-rate estimates
+- Typical: 0.5 s minimum; tune down for short sessions
+- Bins below threshold are set to `NaN` in `result.firing_rate`
 
 **Smoothing**:
-- Reduces noise but blurs fine spatial structure
-- Gaussian filter with sigma=1-2 bins is typical
-- Consider not smoothing if bin size already large
+- `"diffusion_kde"` (default) is boundary-aware and works on any graph layout
+- `"gaussian_kde"` gives equivalent results for regular rectangular grids
+- Increase `bandwidth` for noisier data or coarser bins
 
 ## Workflow 2: Region-Based Analysis
 
@@ -291,25 +237,34 @@ Comparing environments across recording sessions.
 ### Complete Example
 
 ```python
-from neurospatial import Environment
-from neurospatial.ops import map_probabilities
 import numpy as np
+import matplotlib.pyplot as plt
+
+from neurospatial import Environment
+from neurospatial.encoding import compute_spatial_rate
+from neurospatial.ops import map_probabilities
 
 # Session 1 (reference)
 env1 = Environment.from_samples(
     session1_position,
     bin_size=2.5,
-    name="Session1"
+    name="Session1",
 )
-firing_rate1 = compute_firing_rate(env1, session1_position, session1_spikes)
+firing_rate1 = compute_spatial_rate(
+    env1, session1_spikes, session1_times, session1_position,
+    smoothing_method="diffusion_kde", bandwidth=5.0, min_occupancy=0.5,
+).firing_rate
 
 # Session 2 (may have slight camera shift or animal positioning differences)
 env2 = Environment.from_samples(
     session2_position,
     bin_size=2.5,
-    name="Session2"
+    name="Session2",
 )
-firing_rate2 = compute_firing_rate(env2, session2_position, session2_spikes)
+firing_rate2 = compute_spatial_rate(
+    env2, session2_spikes, session2_times, session2_position,
+    smoothing_method="diffusion_kde", bandwidth=5.0, min_occupancy=0.5,
+).firing_rate
 
 # Align session 2 to session 1 coordinate frame
 firing_rate2_aligned = map_probabilities(

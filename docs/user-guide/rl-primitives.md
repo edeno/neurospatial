@@ -170,13 +170,13 @@ reward_smooth = region_reward_field(env, "goal", reward_value=10.0,
 # Visualize
 fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 
-env.plot(reward_sparse, ax=axes[0], cmap='viridis')
+env.plot_field(reward_sparse, ax=axes[0], cmap='viridis')
 axes[0].set_title('Constant (Sparse)')
 
-env.plot(reward_linear, ax=axes[1], cmap='viridis')
+env.plot_field(reward_linear, ax=axes[1], cmap='viridis')
 axes[1].set_title('Linear Decay')
 
-env.plot(reward_smooth, ax=axes[2], cmap='viridis')
+env.plot_field(reward_smooth, ax=axes[2], cmap='viridis')
 axes[2].set_title('Gaussian Falloff')
 
 plt.tight_layout()
@@ -344,13 +344,13 @@ reward_inv = goal_reward_field(env, goal_bin, decay="inverse", scale=10.0)
 # Visualize
 fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 
-env.plot(reward_exp, ax=axes[0], cmap='viridis')
+env.plot_field(reward_exp, ax=axes[0], cmap='viridis')
 axes[0].set_title('Exponential Decay')
 
-env.plot(reward_lin, ax=axes[1], cmap='viridis')
+env.plot_field(reward_lin, ax=axes[1], cmap='viridis')
 axes[1].set_title('Linear Decay')
 
-env.plot(reward_inv, ax=axes[2], cmap='viridis')
+env.plot_field(reward_inv, ax=axes[2], cmap='viridis')
 axes[2].set_title('Inverse Distance')
 
 plt.tight_layout()
@@ -459,7 +459,7 @@ From Ng et al. (1999):
 # 1. Visualize reward field
 import matplotlib.pyplot as plt
 fig, ax = plt.subplots(figsize=(10, 8))
-env.plot(reward_field, ax=ax, cmap='viridis')
+env.plot_field(reward_field, ax=ax, cmap='viridis')
 ax.set_title('Reward Field')
 plt.show()
 
