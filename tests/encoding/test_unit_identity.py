@@ -19,6 +19,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
+from neurospatial._results import resolve_unit_ids
 from neurospatial.encoding.directional import (
     DirectionalRatesResult,
     compute_directional_rates,
@@ -124,6 +125,13 @@ def test_length_mismatch_raises(name, trajectory, spike_trains):
         )
 
 
+def test_resolve_unit_ids_rejects_2d():
+    """A 2-D unit_ids array raises a clear ValueError naming the shape."""
+    bad = np.array([[1, 2], [3, 4]])
+    with pytest.raises(ValueError, match=r"unit_ids must be 1-D.*\(2, 2\)"):
+        resolve_unit_ids(bad, 2)
+
+
 @pytest.mark.parametrize("name", ALL)
 def test_string_ids_round_trip_and_index(name, trajectory, spike_trains):
     """String unit_ids round-trip and index onto children."""
@@ -133,6 +141,27 @@ def test_string_ids_round_trip_and_index(name, trajectory, spike_trains):
     )
     assert list(result.unit_ids) == STR_IDS
     assert result[1].unit_id == "ca1_02"
+
+
+@pytest.mark.parametrize("name", ALL)
+def test_indexed_int_unit_id_is_python_int(name, trajectory, spike_trains):
+    """Integer unit_ids stamp a plain Python ``int`` (not np.int64) onto children."""
+    env, times, positions, headings = trajectory
+    ids = np.array([10, 20, 30])
+    result = _compute(name, env, times, positions, headings, spike_trains, unit_ids=ids)
+    for i in range(len(spike_trains)):
+        assert type(result[i].unit_id) is int
+
+
+@pytest.mark.parametrize("name", ALL)
+def test_indexed_str_unit_id_is_python_str(name, trajectory, spike_trains):
+    """String unit_ids stamp a plain Python ``str`` (not np.str_) onto children."""
+    env, times, positions, headings = trajectory
+    result = _compute(
+        name, env, times, positions, headings, spike_trains, unit_ids=STR_IDS
+    )
+    for i in range(len(spike_trains)):
+        assert type(result[i].unit_id) is str
 
 
 @pytest.mark.parametrize("cls", [SpatialRatesResult, DirectionalRatesResult])

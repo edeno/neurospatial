@@ -146,6 +146,10 @@ class EgocentricRateResult(SpatialResultMixin):
         Number of distance bins.
     n_direction_bins : int
         Number of direction bins.
+    unit_id : int or str or None
+        Identifier for this unit. Set automatically when indexing/iterating a
+        population result (``rates[i].unit_id == rates.unit_ids[i]``); ``None``
+        for a standalone single-unit computation.
 
     Notes
     -----
@@ -540,6 +544,14 @@ class EgocentricRatesResult(SpatialResultMixin):
         Number of distance bins.
     n_direction_bins : int
         Number of direction bins.
+    unit_ids : NDArray, shape (n_units,)
+        Identifier for each unit (row), e.g. from ``read_units`` or passed via
+        ``unit_ids=``. Defaults to ``np.arange(n_units)``. Carried into
+        indexed/iterated single-unit results and into xarray exports.
+    unit_table : pandas.DataFrame or None
+        Optional per-unit metadata aligned to ``unit_ids`` (e.g. region,
+        quality, depth, inclusion flags), one row per unit; ``None`` when not
+        provided. Rides alongside the rates for downstream filtering/grouping.
 
     Notes
     -----
@@ -686,7 +698,7 @@ class EgocentricRatesResult(SpatialResultMixin):
             distance_range=self.distance_range,
             n_distance_bins=self.n_distance_bins,
             n_direction_bins=self.n_direction_bins,
-            unit_id=self.unit_ids[idx],
+            unit_id=self.unit_ids[idx].item(),
         )
 
     def __iter__(self) -> Iterator[EgocentricRateResult]:

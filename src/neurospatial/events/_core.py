@@ -48,6 +48,12 @@ class PeriEventResult:
         Time window (start, end) relative to event in seconds.
     bin_size : float
         Width of time bins (seconds).
+    unit_id : int or str or None
+        Identifier for this unit. Set automatically when indexing/iterating a
+        population result (``rates[i].unit_id == rates.unit_ids[i]``); ``None``
+        for a standalone single-unit computation. Currently set only if
+        provided explicitly: PSTH auto-population is forward-compat scaffolding
+        pending the PSTH ResultMixin work in Phase 1.3.
     firing_rate : NDArray[np.float64], shape (n_bins,)
         Firing rate (Hz). Cached on construction as ``histogram /
         bin_size``; treat as a read-only attribute.
@@ -108,6 +114,14 @@ class PopulationPeriEventResult:
         Time window (start, end) relative to event in seconds.
     bin_size : float
         Width of time bins (seconds).
+    unit_ids : NDArray, shape (n_units,)
+        Identifier for each unit (row), e.g. from ``read_units`` or passed via
+        ``unit_ids=``. Defaults to ``np.arange(n_units)``. Carried into
+        indexed/iterated single-unit results and into xarray exports.
+    unit_table : pandas.DataFrame or None
+        Optional per-unit metadata aligned to ``unit_ids`` (e.g. region,
+        quality, depth, inclusion flags), one row per unit; ``None`` when not
+        provided. Rides alongside the rates for downstream filtering/grouping.
     firing_rates : NDArray[np.float64], shape (n_units, n_bins)
         Per-unit firing rates (Hz). Cached on construction as
         ``histograms / bin_size``; treat as a read-only attribute.

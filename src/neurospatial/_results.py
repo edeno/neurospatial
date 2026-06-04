@@ -76,12 +76,21 @@ def resolve_unit_ids(
     Raises
     ------
     ValueError
-        If ``unit_ids`` is provided and its length does not equal ``n_units``.
+        If ``unit_ids`` is provided and is not 1-D, or if its length does not
+        equal ``n_units``.
     """
     if unit_ids is None:
         return np.arange(n_units)
 
     resolved = np.asarray(unit_ids)
+    if resolved.ndim != 1:
+        where = f" in {context}" if context else ""
+        raise ValueError(
+            f"unit_ids must be 1-D{where}: got shape {resolved.shape}.\n"
+            "  WHY: unit_ids labels one identity per unit (row).\n"
+            "  HOW: pass a 1-D sequence with one entry per unit, or omit it "
+            "to default to np.arange(n_units)."
+        )
     if resolved.shape[0] != n_units:
         where = f" in {context}" if context else ""
         raise ValueError(

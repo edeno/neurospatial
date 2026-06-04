@@ -154,6 +154,10 @@ class ViewRateResult(SpatialResultMixin):
         Smoothing method used.
     bandwidth : float
         Smoothing bandwidth.
+    unit_id : int or str or None
+        Identifier for this unit. Set automatically when indexing/iterating a
+        population result (``rates[i].unit_id == rates.unit_ids[i]``); ``None``
+        for a standalone single-unit computation.
 
     Notes
     -----
@@ -499,6 +503,14 @@ class ViewRatesResult(SpatialResultMixin):
         Smoothing method used.
     bandwidth : float
         Smoothing bandwidth.
+    unit_ids : NDArray, shape (n_units,)
+        Identifier for each unit (row), e.g. from ``read_units`` or passed via
+        ``unit_ids=``. Defaults to ``np.arange(n_units)``. Carried into
+        indexed/iterated single-unit results and into xarray exports.
+    unit_table : pandas.DataFrame or None
+        Optional per-unit metadata aligned to ``unit_ids`` (e.g. region,
+        quality, depth, inclusion flags), one row per unit; ``None`` when not
+        provided. Rides alongside the rates for downstream filtering/grouping.
 
     Notes
     -----
@@ -635,7 +647,7 @@ class ViewRatesResult(SpatialResultMixin):
             view_distance=self.view_distance,
             smoothing_method=self.smoothing_method,
             bandwidth=self.bandwidth,
-            unit_id=self.unit_ids[idx],
+            unit_id=self.unit_ids[idx].item(),
         )
 
     def __iter__(self) -> Iterator[ViewRateResult]:
