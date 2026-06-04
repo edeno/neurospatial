@@ -35,6 +35,11 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ### Fixed
 
+- `Environment.distance_to(region_name)` now raises `RegionNotFoundError`
+  (from `neurospatial._exceptions`) instead of a bare `KeyError` when the
+  named region is absent.  `RegionNotFoundError` subclasses `KeyError`, so all
+  existing `except KeyError` blocks keep working without change.
+
 - Removed stale `compute_firing_rate(...)` calls (that function does not exist publicly) from
   `docs/user-guide/workflows.md` (Workflow 3) and `docs/user-guide/spatial-analysis.md`;
   replaced with the correct `compute_spatial_rate(env, spike_times, times, positions, ...).firing_rate`
