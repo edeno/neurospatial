@@ -111,3 +111,55 @@ def test_peri_event_result_has_unit_id():
     assert labeled.unit_id == "ca1_07"
     # The cached firing_rate field still computes correctly.
     np.testing.assert_allclose(labeled.firing_rate, histogram / 0.5)
+
+
+def test_population_getitem_stamps_unit_id(spike_trains, event_times):
+    """rates[i] returns a single-unit PeriEventResult with unit_id stamped (I5)."""
+    result = population_peri_event_histogram(
+        spike_trains,
+        event_times,
+        window=(-0.5, 1.0),
+        bin_size=0.1,
+        unit_ids=STR_IDS,
+    )
+    for i in range(len(spike_trains)):
+        child = result[i]
+        assert isinstance(child, PeriEventResult)
+        assert child.unit_id == result.unit_ids[i]
+        # The child's histogram is the i-th row of the population histograms.
+        np.testing.assert_array_equal(child.histogram, np.asarray(result.histograms)[i])
+        np.testing.assert_array_equal(child.sem, np.asarray(result.sem)[i])
+        np.testing.assert_array_equal(child.bin_centers, result.bin_centers)
+
+
+def test_population_iteration_preserves_order_and_labels(spike_trains, event_times):
+    """Iterating yields children whose unit_id matches unit_ids, in order (I5)."""
+    result = population_peri_event_histogram(
+        spike_trains,
+        event_times,
+        window=(-0.5, 1.0),
+        bin_size=0.1,
+        unit_ids=STR_IDS,
+    )
+    assert [child.unit_id for child in result] == list(result.unit_ids)
+
+
+def test_population_unit_table_wrong_length_raises(spike_trains, event_times):
+    """A wrong-length unit_table raises a clear ValueError (C2)."""
+    import pandas as pd
+
+    n_units = len(spike_trains)
+    histograms = np.ones((n_units, 3))
+    bad_table = pd.DataFrame({"region": ["ca1"] * (n_units + 1)})
+    with pytest.raises(ValueError, match="unit_table length mismatch"):
+        PopulationPeriEventResult(
+            bin_centers=np.array([-0.25, 0.25, 0.75]),
+            histograms=histograms,
+            sem=np.zeros_like(histograms),
+            mean_histogram=histograms.mean(axis=0),
+            n_events=3,
+            n_units=n_units,
+            window=(-0.5, 1.0),
+            bin_size=0.5,
+            unit_table=bad_table,
+        )

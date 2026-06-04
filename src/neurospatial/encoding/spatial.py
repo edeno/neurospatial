@@ -951,11 +951,11 @@ class SpatialRatesResult(SpatialResultMixin):
     env: Environment
     smoothing_method: str
     bandwidth: float
-    unit_ids: NDArray[Any] = field(default=None, compare=False)  # type: ignore[arg-type]
+    unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
-        from neurospatial._results import resolve_unit_ids
+        from neurospatial._results import resolve_unit_ids, validate_unit_table
 
         n_units = int(np.asarray(self.firing_rates).shape[0])
         object.__setattr__(
@@ -963,6 +963,7 @@ class SpatialRatesResult(SpatialResultMixin):
             "unit_ids",
             resolve_unit_ids(self.unit_ids, n_units),
         )
+        validate_unit_table(self.unit_table, n_units, context="SpatialRatesResult")
 
     def __len__(self) -> int:
         """Return number of neurons.
@@ -1013,7 +1014,7 @@ class SpatialRatesResult(SpatialResultMixin):
             env=self.env,
             smoothing_method=self.smoothing_method,
             bandwidth=self.bandwidth,
-            unit_id=self.unit_ids[idx].item(),
+            unit_id=np.asarray(self.unit_ids)[idx].item(),
         )
 
     def __iter__(self) -> Iterator[SpatialRateResult]:
@@ -1204,7 +1205,7 @@ class SpatialRatesResult(SpatialResultMixin):
         }
         return build_population_dataset(
             rates,
-            self.unit_ids,
+            np.asarray(self.unit_ids),
             env=self.env,
             occupancy=np.asarray(self.occupancy, dtype=np.float64),
             attrs=attrs,
@@ -1757,7 +1758,7 @@ class SpatialRatesResult(SpatialResultMixin):
         n_neurons = len(self)
 
         if unit_ids is None:
-            index_ids: list[str | int] = list(self.unit_ids)
+            index_ids: list[str | int] = list(np.asarray(self.unit_ids))
         else:
             index_ids = list(unit_ids)
             if len(index_ids) != n_neurons:

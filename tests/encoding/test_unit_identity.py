@@ -196,3 +196,64 @@ def test_default_unit_ids_when_constructed_directly(trajectory, spike_trains):
     )
     np.testing.assert_array_equal(rebuilt.unit_ids, np.arange(len(spike_trains)))
     assert isinstance(rebuilt.unit_ids, np.ndarray)
+
+
+def test_unit_table_wrong_length_raises(trajectory, spike_trains):
+    """A unit_table whose row count != n_units raises a clear ValueError."""
+    import pandas as pd
+
+    env, times, positions, _ = trajectory
+    result = compute_spatial_rates(env, spike_trains, times, positions)
+    n_units = len(spike_trains)
+    bad_table = pd.DataFrame({"region": ["ca1"] * (n_units + 1)})
+    with pytest.raises(ValueError, match="unit_table length mismatch"):
+        SpatialRatesResult(
+            firing_rates=np.asarray(result.firing_rates),
+            occupancy=np.asarray(result.occupancy),
+            env=env,
+            smoothing_method=result.smoothing_method,
+            bandwidth=result.bandwidth,
+            unit_table=bad_table,
+        )
+
+
+def test_unit_table_correct_length_accepted(trajectory, spike_trains):
+    """A unit_table with exactly one row per unit is accepted."""
+    import pandas as pd
+
+    env, times, positions, _ = trajectory
+    result = compute_spatial_rates(env, spike_trains, times, positions)
+    n_units = len(spike_trains)
+    good_table = pd.DataFrame({"region": ["ca1"] * n_units})
+    rebuilt = SpatialRatesResult(
+        firing_rates=np.asarray(result.firing_rates),
+        occupancy=np.asarray(result.occupancy),
+        env=env,
+        smoothing_method=result.smoothing_method,
+        bandwidth=result.bandwidth,
+        unit_table=good_table,
+    )
+    assert rebuilt.unit_table is good_table
+
+
+def test_all_nan_unit_summary_table_and_peaks_no_crash(trajectory, spike_trains):
+    """A population with one all-NaN unit yields NaN peaks, no crash (I1)."""
+    env, times, positions, _ = trajectory
+    result = compute_spatial_rates(env, spike_trains, times, positions)
+    rates = np.asarray(result.firing_rates).copy()
+    rates[0, :] = np.nan  # dead unit
+    dead = SpatialRatesResult(
+        firing_rates=rates,
+        occupancy=np.asarray(result.occupancy),
+        env=env,
+        smoothing_method=result.smoothing_method,
+        bandwidth=result.bandwidth,
+    )
+    peaks = dead.peak_locations()
+    assert np.all(np.isnan(peaks[0]))
+    assert np.all(np.isfinite(peaks[1:]))
+
+    table = dead.summary_table()
+    peak_cols = [c for c in table.columns if c.startswith("peak_")]
+    # The dead unit's peak coordinates must be NaN, others finite.
+    assert table.iloc[0][[c for c in peak_cols if c != "peak_rate"]].isna().all()

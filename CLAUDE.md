@@ -115,11 +115,13 @@ learnable — a name has **one** meaning everywhere. (Full rationale in
     **raise** `ValueError` (label selection requires uniqueness).
   - **Decode results** (`DecodingResult`) → dims `("time", "bin")` (posterior
     over space per time bin; **no `unit_id` axis**). `attrs` carry
-    `units` / `bandwidth` / env fingerprint / `software_version`.
+    `units` (when set) / env fingerprint / `software_version`.
 - **`summary()`** → flat dict of scalar headline metrics.
 - **`plot(ax=None, ...)`** → returns the `Axes`.
 - PSTH results (`PeriEventResult`, `PopulationPeriEventResult`) carry
-  `ResultMixin` and these same verbs.
+  `ResultMixin` and implement `to_dataframe()` / `summary()` / `plot()`, plus
+  `summary_table()` on the population class. They do **not** implement
+  `to_xarray()`.
 
 ### Cell-type API (one learnable rule)
 
@@ -140,13 +142,15 @@ learnable — a name has **one** meaning everywhere. (Full rationale in
 
 ### Peak / preferred accessors
 
-- **Cartesian peak location:** `peak_location()` (single) / `peak_locations()`
-  (batch). This applies only to results whose bins are Cartesian world
-  coordinates: `SpatialRateResult`/`SpatialRatesResult` and
-  `ViewRateResult`/`ViewRatesResult`. (`peak_location()` is inherited from
-  `SpatialResultMixin` and returns `(n_dims,)` single / `(n_units, n_dims)`
-  batch; the plural `peak_locations()` returns the same `(n_units, n_dims)`
-  batch array.)
+- **Peak location:** `peak_location()` (singular) is inherited from
+  `SpatialResultMixin` and is callable on **all** families — it returns the
+  bin-center coordinates of the peak in each result's own coordinate space
+  (`(n_dims,)` single / `(n_units, n_dims)` batch; polar `distance`/`angle`
+  centers on egocentric results, angular centers on directional results).
+- **Cartesian `peak_locations()` (plural)** is the Cartesian-only batch
+  accessor: it is provided **only** on results whose bins are Cartesian world
+  coordinates — `SpatialRatesResult` and `ViewRatesResult` — and returns the
+  `(n_units, n_dims)` batch array.
 - **Genuinely non-Cartesian peaks** keep domain names and have **no**
   `peak_locations()`: directional results (`DirectionalRateResult` /
   `DirectionalRatesResult`) use `preferred_direction()` /

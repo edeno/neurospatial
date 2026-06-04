@@ -68,6 +68,15 @@ def test_detect_ovcs_deprecated_alias_of_classify(trajectory) -> None:
     np.testing.assert_array_equal(old, new)
     assert new.dtype == np.bool_
 
+    # Non-default threshold must be forwarded by the alias (regression guard).
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        new_thr = result.classify(min_info=0.1)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        old_thr = result.detect_ovcs(min_info=0.1)
+    assert np.array_equal(old_thr, new_thr)
+
 
 def test_detect_view_cells_deprecated_alias_of_classify(trajectory) -> None:
     from neurospatial.encoding.view import compute_view_rates
@@ -87,6 +96,15 @@ def test_detect_view_cells_deprecated_alias_of_classify(trajectory) -> None:
     np.testing.assert_array_equal(old, new)
     assert new.dtype == np.bool_
 
+    # Non-default threshold must be forwarded by the alias (regression guard).
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        new_thr = result.classify(min_info=0.1)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        old_thr = result.detect_view_cells(min_info=0.1)
+    assert np.array_equal(old_thr, new_thr)
+
 
 def test_detect_hd_cells_deprecated_alias_of_classify(trajectory) -> None:
     from neurospatial.encoding.directional import compute_directional_rates
@@ -103,6 +121,15 @@ def test_detect_hd_cells_deprecated_alias_of_classify(trajectory) -> None:
 
     np.testing.assert_array_equal(old, new)
     assert new.dtype == np.bool_
+
+    # Non-default threshold must be forwarded by the alias (regression guard).
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        new_thr = result.classify(min_mvl=0.1)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        old_thr = result.detect_hd_cells(min_mvl=0.1)
+    assert np.array_equal(old_thr, new_thr)
 
 
 def test_spatialrates_classify_is_bool_place_predicate(trajectory) -> None:
@@ -144,6 +171,15 @@ def test_detect_cell_types_deprecated_alias_of_label_cell_types(trajectory) -> N
     # Multi-class string labels (distinct return type from classify()).
     assert new.dtype.kind == "U"
     assert set(new.tolist()).issubset({"place", "grid", "border", "unclassified"})
+
+    # Non-default threshold must be forwarded by the alias (regression guard).
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        new_thr = result.label_cell_types(min_spatial_info=0.1)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        old_thr = result.detect_cell_types(min_spatial_info=0.1)
+    assert np.array_equal(old_thr, new_thr)
 
 
 def test_label_cell_types_distinct_from_classify(trajectory) -> None:

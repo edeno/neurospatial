@@ -24,6 +24,7 @@ in type hints. At runtime, TYPE_CHECKING is False, so no import occurs.
 from __future__ import annotations
 
 import itertools
+import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, cast
 
@@ -675,6 +676,15 @@ class EnvironmentFactories:
             _add_edge_with_distance(graph, i, i + 1, edge_id=i)
             edge_order.append((i, i + 1))
 
+        total_length = sum(float(graph.edges[u, v]["distance"]) for u, v in edge_order)
+        if total_length <= 0.0:
+            source = "endpoints" if endpoints is not None else "waypoints"
+            raise ValueError(
+                f"linear_track {source} are coincident (total track length is 0); "
+                f"a 1-D track needs at least two distinct points. Got points: "
+                f"{points}."
+            )
+
         return cls.from_graph(
             graph=graph,
             edge_order=edge_order,
@@ -817,6 +827,15 @@ class EnvironmentFactories:
             )
 
         if track_graph is not None:
+            # `kind` is validated above but cannot be reconciled with an
+            # arbitrary supplied graph; the graph topology is authoritative.
+            warnings.warn(
+                f"maze(kind={kind!r}, track_graph=...): `kind` is not consulted "
+                "when an explicit `track_graph` is supplied; the supplied "
+                "`track_graph` is authoritative for the maze topology.",
+                UserWarning,
+                stacklevel=2,
+            )
             # Operate on a copy so the caller's graph is never mutated.
             graph = track_graph.copy()
             edge_order = list(graph.edges())
@@ -843,6 +862,17 @@ class EnvironmentFactories:
                 "`node_positions` (a mapping of node label -> (x, y) coordinate) "
                 "from which the standard topology is assembled. Raw positions "
                 "cannot be used to infer maze topology."
+            )
+
+        total_length = sum(float(graph.edges[u, v]["distance"]) for u, v in edge_order)
+        if total_length <= 0.0:
+            node_pos = {
+                n: tuple(float(c) for c in graph.nodes[n]["pos"]) for n in graph.nodes
+            }
+            raise ValueError(
+                f"maze({kind!r}) node positions are coincident (total track "
+                "length is 0); a 1-D track needs at least two distinct points. "
+                f"Got node positions: {node_pos}."
             )
 
         return cls.from_graph(

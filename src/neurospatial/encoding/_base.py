@@ -244,11 +244,16 @@ class SpatialResultMixin(ResultMixin):
         1-D array of length ``n_units`` suitable for building the dense
         ``unit_id`` column or indexing the per-unit ``summary_table``.
         """
+        import pandas as pd
+
         unit_ids = getattr(self, "unit_ids", None)
         if unit_ids is not None:
             return np.asarray(unit_ids)
         unit_id = getattr(self, "unit_id", None)
-        return np.asarray([0 if unit_id is None else unit_id])
+        # When a standalone single-unit result has no identity, represent the
+        # absence of identity as absence (pd.NA), not a fabricated label like 0
+        # (which would be a real, selectable index value the unit never had).
+        return np.asarray([pd.NA if unit_id is None else unit_id], dtype=object)
 
     def _get_rates(self) -> Any:
         """Get firing rate(s), handling both single and batch results.
@@ -281,13 +286,24 @@ class SpatialResultMixin(ResultMixin):
         """
         rates = _to_numpy(self._get_rates())
         bin_centers = self._bin_centers
+        n_dims = int(bin_centers.shape[1]) if bin_centers.ndim > 1 else 1
 
         if rates.ndim == 1:
+            # A fully-NaN (dead) unit has no defined peak; np.nanargmax would
+            # raise "All-NaN slice encountered". Return NaN coordinates instead.
+            if not np.any(np.isfinite(rates)):
+                return np.full(n_dims, np.nan, dtype=np.float64)
             peak_idx = int(np.nanargmax(rates))
             result: NDArray[np.float64] = bin_centers[peak_idx]
             return result
-        peak_indices = np.nanargmax(rates, axis=1)
-        result = bin_centers[peak_indices]
+
+        # Batch: guard each row so an all-NaN unit yields NaN coordinates
+        # rather than crashing the whole np.nanargmax call.
+        finite_mask = np.any(np.isfinite(rates), axis=1)
+        safe_rates = np.where(finite_mask[:, None], rates, 0.0)
+        peak_indices = np.nanargmax(safe_rates, axis=1)
+        result = bin_centers[peak_indices].astype(np.float64, copy=True)
+        result[~finite_mask] = np.nan
         return result
 
     def peak_firing_rate(self) -> NDArray[np.float64] | float:

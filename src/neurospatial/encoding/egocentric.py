@@ -609,11 +609,11 @@ class EgocentricRatesResult(SpatialResultMixin):
     distance_range: tuple[float, float]
     n_distance_bins: int
     n_direction_bins: int
-    unit_ids: NDArray[Any] = field(default=None, compare=False)  # type: ignore[arg-type]
+    unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
-        from neurospatial._results import resolve_unit_ids
+        from neurospatial._results import resolve_unit_ids, validate_unit_table
 
         n_units = int(np.asarray(self.firing_rates).shape[0])
         object.__setattr__(
@@ -621,6 +621,7 @@ class EgocentricRatesResult(SpatialResultMixin):
             "unit_ids",
             resolve_unit_ids(self.unit_ids, n_units),
         )
+        validate_unit_table(self.unit_table, n_units, context="EgocentricRatesResult")
 
     @property
     def _bin_centers(self) -> NDArray[np.float64]:
@@ -673,7 +674,7 @@ class EgocentricRatesResult(SpatialResultMixin):
         }
         return build_population_dataset(
             rates,
-            self.unit_ids,
+            np.asarray(self.unit_ids),
             env=self.env,
             occupancy=np.asarray(self.occupancy, dtype=np.float64),
             attrs=attrs,
@@ -749,7 +750,7 @@ class EgocentricRatesResult(SpatialResultMixin):
             distance_range=self.distance_range,
             n_distance_bins=self.n_distance_bins,
             n_direction_bins=self.n_direction_bins,
-            unit_id=self.unit_ids[idx].item(),
+            unit_id=np.asarray(self.unit_ids)[idx].item(),
         )
 
     def __iter__(self) -> Iterator[EgocentricRateResult]:
@@ -1175,7 +1176,7 @@ class EgocentricRatesResult(SpatialResultMixin):
         n_neurons = len(self)
 
         if unit_ids is None:
-            index_ids: list[str | int] = list(self.unit_ids)
+            index_ids: list[str | int] = list(np.asarray(self.unit_ids))
         else:
             index_ids = list(unit_ids)
             if len(index_ids) != n_neurons:

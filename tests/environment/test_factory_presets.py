@@ -103,6 +103,18 @@ class TestLinearTrack:
         with pytest.raises(ValueError):
             Environment.linear_track(endpoints=[(0, 0)], bin_size=5.0)
 
+    def test_coincident_endpoints_raise(self):
+        # Zero-length track (coincident endpoints) must raise, not silently
+        # build a NaN environment.
+        with pytest.raises(ValueError, match="coincident"):
+            Environment.linear_track(endpoints=[(0, 0), (0, 0)], bin_size=5.0)
+
+    def test_coincident_waypoints_raise(self):
+        with pytest.raises(ValueError, match="coincident"):
+            Environment.linear_track(
+                node_positions=[(1, 1), (1, 1), (1, 1)], bin_size=5.0
+            )
+
 
 # ---------------------------------------------------------------------------
 # maze
@@ -299,7 +311,8 @@ class TestMaze:
         g.add_node("c", pos=(100.0, 0.0))
         g.add_edge("a", "b")
         g.add_edge("b", "c")
-        env = Environment.maze("w", track_graph=g, bin_size=5.0)
+        with pytest.warns(UserWarning, match="not consulted"):
+            env = Environment.maze("w", track_graph=g, bin_size=5.0)
         assert env.is_linearized_track is True
         assert env.n_bins == 20
 
@@ -312,7 +325,8 @@ class TestMaze:
         g.add_edge("a", "b")
         g.add_edge("b", "c")
 
-        env = Environment.maze("w", track_graph=g, bin_size=5.0)
+        with pytest.warns(UserWarning, match="not consulted"):
+            env = Environment.maze("w", track_graph=g, bin_size=5.0)
 
         # The caller's graph must be untouched: no `distance`/`edge_id` written.
         for u, v in g.edges():
@@ -330,7 +344,8 @@ class TestMaze:
         # Only `distance` provided; no `edge_id` at all.
         g.add_edge("a", "b", distance=50.0)
         g.add_edge("b", "c", distance=50.0)
-        env = Environment.maze("w", track_graph=g, bin_size=5.0)
+        with pytest.warns(UserWarning, match="not consulted"):
+            env = Environment.maze("w", track_graph=g, bin_size=5.0)
         linear = env.to_linear(np.array([[50.0, 0.0]]))
         assert linear.shape[0] == 1
         assert np.isfinite(linear[0])
@@ -362,3 +377,27 @@ class TestMaze:
         nodes = {"center": (0, 0), "north": (0, 50)}
         with pytest.raises(ValueError, match="kind"):
             Environment.maze("circle", node_positions=nodes, bin_size=5.0)
+
+    def test_all_identical_node_positions_raise(self):
+        # All-identical waypoints -> zero total track length -> must raise,
+        # not silently build a NaN environment.
+        nodes = {
+            "stem_end": (1, 1),
+            "junction": (1, 1),
+            "left": (1, 1),
+            "right": (1, 1),
+        }
+        with pytest.raises(ValueError, match="coincident"):
+            Environment.maze("t", node_positions=nodes, bin_size=5.0)
+
+    def test_kind_ignored_warning_with_track_graph(self):
+        # When both kind and track_graph are supplied, kind is not consulted:
+        # warn that the supplied track_graph is authoritative.
+        g = nx.Graph()
+        g.add_node("a", pos=(0.0, 0.0))
+        g.add_node("b", pos=(50.0, 0.0))
+        g.add_node("c", pos=(100.0, 0.0))
+        g.add_edge("a", "b")
+        g.add_edge("b", "c")
+        with pytest.warns(UserWarning, match="kind.*not consulted"):
+            Environment.maze("t", track_graph=g, bin_size=5.0)

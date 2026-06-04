@@ -1069,11 +1069,11 @@ class DirectionalRatesResult(SpatialResultMixin):
     bin_size: float
     bandwidth: float | None
     spike_counts: ArrayLike | None = None  # shape (n_neurons, n_bins)
-    unit_ids: NDArray[Any] = field(default=None, compare=False)  # type: ignore[arg-type]
+    unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
-        from neurospatial._results import resolve_unit_ids
+        from neurospatial._results import resolve_unit_ids, validate_unit_table
 
         n_units = int(np.asarray(self.firing_rates).shape[0])
         object.__setattr__(
@@ -1081,6 +1081,7 @@ class DirectionalRatesResult(SpatialResultMixin):
             "unit_ids",
             resolve_unit_ids(self.unit_ids, n_units),
         )
+        validate_unit_table(self.unit_table, n_units, context="DirectionalRatesResult")
 
     @property
     def _bin_centers(self) -> NDArray[np.float64]:
@@ -1134,7 +1135,7 @@ class DirectionalRatesResult(SpatialResultMixin):
         }
         return build_population_dataset(
             rates,
-            self.unit_ids,
+            np.asarray(self.unit_ids),
             bin_centers=np.asarray(self.bin_centers, dtype=np.float64),
             occupancy=np.asarray(self.occupancy, dtype=np.float64),
             attrs=attrs,
@@ -1192,7 +1193,7 @@ class DirectionalRatesResult(SpatialResultMixin):
             bin_size=self.bin_size,
             bandwidth=self.bandwidth,
             spike_counts=(None if counts is None else np.asarray(counts)[idx]),
-            unit_id=self.unit_ids[idx].item(),
+            unit_id=np.asarray(self.unit_ids)[idx].item(),
         )
 
     def __iter__(self) -> Iterator[DirectionalRateResult]:
@@ -1595,7 +1596,7 @@ class DirectionalRatesResult(SpatialResultMixin):
         n_neurons = len(self)
 
         if unit_ids is None:
-            index_ids: list[str | int] = list(self.unit_ids)
+            index_ids: list[str | int] = list(np.asarray(self.unit_ids))
         else:
             index_ids = list(unit_ids)
             if len(index_ids) != n_neurons:

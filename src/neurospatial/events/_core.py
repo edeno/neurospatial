@@ -9,6 +9,7 @@ This module provides:
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -52,10 +53,9 @@ class PeriEventResult(ResultMixin):
         Width of time bins (seconds).
     unit_id : int or str or None
         Identifier for this unit. Set automatically when indexing/iterating a
-        population result (``rates[i].unit_id == rates.unit_ids[i]``); ``None``
-        for a standalone single-unit computation. Currently set only if
-        provided explicitly: PSTH auto-population is forward-compat scaffolding
-        pending the PSTH ResultMixin work in Phase 1.3.
+        :class:`PopulationPeriEventResult` (``rates[i].unit_id ==
+        rates.unit_ids[i]``); ``None`` for a standalone single-unit
+        computation unless supplied explicitly.
     firing_rate : NDArray[np.float64], shape (n_bins,)
         Firing rate (Hz). Cached on construction as ``histogram /
         bin_size``; treat as a read-only attribute.
@@ -272,13 +272,13 @@ class PopulationPeriEventResult(ResultMixin):
     n_units: int
     window: tuple[float, float]
     bin_size: float
-    unit_ids: NDArray[Any] = field(default=None, compare=False)  # type: ignore[arg-type]
+    unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
     firing_rates: NDArray[np.float64] = field(init=False)
     mean_firing_rate: NDArray[np.float64] = field(init=False)
 
     def __post_init__(self) -> None:
-        from neurospatial._results import resolve_unit_ids
+        from neurospatial._results import resolve_unit_ids, validate_unit_table
 
         # Frozen dataclass: bypass setattr to populate the cached fields.
         object.__setattr__(self, "firing_rates", self.histograms / self.bin_size)
@@ -291,6 +291,83 @@ class PopulationPeriEventResult(ResultMixin):
             "unit_ids",
             resolve_unit_ids(self.unit_ids, n_units),
         )
+        validate_unit_table(
+            self.unit_table, n_units, context="PopulationPeriEventResult"
+        )
+
+    def __len__(self) -> int:
+        """Return the number of units in the population.
+
+        Returns
+        -------
+        int
+            Number of units (first dimension of ``histograms``).
+        """
+        return int(np.asarray(self.histograms).shape[0])
+
+    def __getitem__(self, idx: int) -> PeriEventResult:
+        """Return the single-unit :class:`PeriEventResult` for unit ``idx``.
+
+        Slices the per-unit ``histograms``/``sem`` rows, carries the shared
+        bin metadata, and stamps ``unit_id`` from :attr:`unit_ids` so that
+        ``self[i].unit_id == self.unit_ids[i]``.
+
+        Parameters
+        ----------
+        idx : int
+            Unit index (0-based).
+
+        Returns
+        -------
+        PeriEventResult
+            The PSTH for the selected unit.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial.events._core import PopulationPeriEventResult
+        >>> bc = np.array([-0.5, 0.0, 0.5])
+        >>> hist = np.array([[0.1, 0.4, 0.2], [0.0, 0.1, 0.5]])
+        >>> result = PopulationPeriEventResult(
+        ...     bin_centers=bc,
+        ...     histograms=hist,
+        ...     sem=np.zeros_like(hist),
+        ...     mean_histogram=hist.mean(axis=0),
+        ...     n_events=10,
+        ...     n_units=2,
+        ...     window=(-0.75, 0.75),
+        ...     bin_size=0.5,
+        ...     unit_ids=["a", "b"],
+        ... )
+        >>> result[1].unit_id
+        'b'
+        """
+        histograms = np.asarray(self.histograms)
+        sem = np.asarray(self.sem)
+        unit_id_value = np.asarray(self.unit_ids)[idx]
+        unit_id = (
+            unit_id_value.item() if hasattr(unit_id_value, "item") else unit_id_value
+        )
+        return PeriEventResult(
+            bin_centers=np.asarray(self.bin_centers),
+            histogram=histograms[idx],
+            sem=sem[idx],
+            n_events=self.n_events,
+            window=self.window,
+            bin_size=self.bin_size,
+            unit_id=unit_id,
+        )
+
+    def __iter__(self) -> Iterator[PeriEventResult]:
+        """Iterate over single-unit :class:`PeriEventResult` objects.
+
+        Yields
+        ------
+        PeriEventResult
+            One per unit, in ``unit_ids`` order, each with ``unit_id`` stamped.
+        """
+        for idx in range(len(self)):
+            yield self[idx]
 
     def to_dataframe(self) -> pd.DataFrame:
         """Dense tidy table of the population PSTH: one row per (unit, time-bin).

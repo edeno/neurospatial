@@ -103,6 +103,47 @@ def resolve_unit_ids(
     return resolved
 
 
+def validate_unit_table(
+    unit_table: Any,
+    n_units: int,
+    *,
+    context: str = "",
+) -> None:
+    """Validate an optional per-unit metadata table against the unit count.
+
+    Enforces the documented invariant that ``unit_table`` carries exactly one
+    row per unit, aligned to ``unit_ids``. A ``None`` table is always valid
+    (the field is optional). A non-``None`` table whose row count differs from
+    ``n_units`` raises :class:`ValueError`, naming both lengths.
+
+    Parameters
+    ----------
+    unit_table : pandas.DataFrame or None
+        Optional per-unit metadata table. When ``None``, no validation occurs.
+    n_units : int
+        Number of units the table must describe (one row per unit).
+    context : str, optional
+        Caller / class name included in the error message on a mismatch.
+
+    Raises
+    ------
+    ValueError
+        If ``unit_table`` is not ``None`` and ``len(unit_table) != n_units``.
+    """
+    if unit_table is None:
+        return
+    n_rows = len(unit_table)
+    if n_rows != n_units:
+        where = f" in {context}" if context else ""
+        raise ValueError(
+            f"unit_table length mismatch{where}: got {n_rows} row(s) but "
+            f"there are {n_units} unit(s).\n"
+            "  WHY: unit_table must carry exactly one row per unit, aligned "
+            "to unit_ids.\n"
+            "  HOW: pass a unit_table with one row per unit, or omit it."
+        )
+
+
 def software_version() -> str:
     """Return the installed ``neurospatial`` version string.
 

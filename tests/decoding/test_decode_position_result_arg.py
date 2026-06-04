@@ -7,7 +7,11 @@ should be equivalent to passing its ``firing_rates`` array, removing the
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Any
+
 import numpy as np
+import pytest
 
 from neurospatial import Environment
 from neurospatial.decoding.posterior import decode_position
@@ -41,3 +45,23 @@ def test_decode_position_accepts_result_object() -> None:
         from_result.posterior, from_array.posterior, rtol=1e-12, atol=1e-12
     )
     np.testing.assert_array_equal(from_result.map_estimate, from_array.map_estimate)
+
+
+@dataclass
+class _BadRates:
+    firing_rates: Any
+
+
+def test_decode_position_none_firing_rates_clear_error() -> None:
+    """A result whose .firing_rates is None raises a clear ValueError (I2)."""
+    env, spike_counts, _rates_result, dt = _setup()
+    with pytest.raises(ValueError, match=r"\.firing_rates.*2-D.*None"):
+        decode_position(env, spike_counts, _BadRates(firing_rates=None), dt)
+
+
+def test_decode_position_dict_firing_rates_clear_error() -> None:
+    """A result whose .firing_rates is a dict raises a clear ValueError (I2)."""
+    env, spike_counts, _rates_result, dt = _setup()
+    bad = _BadRates(firing_rates={"north": np.zeros(5), "south": np.zeros(5)})
+    with pytest.raises(ValueError, match=r"\.firing_rates.*2-D"):
+        decode_position(env, spike_counts, bad, dt)

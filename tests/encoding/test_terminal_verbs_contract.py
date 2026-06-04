@@ -150,8 +150,11 @@ def test_single_unit_to_dataframe_carries_unit_id():
     df = result.to_dataframe()
     assert len(df) == env.n_bins
     assert {"unit_id", "bin", "firing_rate"} <= set(df.columns)
-    # Standalone single-unit computation has unit_id None -> column filled 0.
-    assert df["unit_id"].nunique() == 1
+    # Standalone single-unit computation has no identity -> the unit_id column
+    # is a single absent value (pd.NA), not a fabricated 0. Every row shares
+    # that same absent identity.
+    assert df["unit_id"].isna().all()
+    assert df["unit_id"].nunique(dropna=False) == 1
 
 
 def test_single_unit_to_dataframe_uses_unit_id_when_set(spatial_batch):

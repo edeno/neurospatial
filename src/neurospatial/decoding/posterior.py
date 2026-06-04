@@ -436,7 +436,36 @@ def decode_position(
     # ``firing_rates`` attribute, use that array directly. This removes the
     # np.stack([r.firing_rate ...]) glue between encode and decode.
     if hasattr(encoding_models, "firing_rates"):
-        encoding_models = encoding_models.firing_rates
+        provenance = type(encoding_models).__name__
+        firing_rates = encoding_models.firing_rates
+        # The `.firing_rates` attribute is only a usable encoding model when it
+        # is a 2-D (n_neurons, n_bins) numeric array. Some result objects expose
+        # a `.firing_rates` that is None or a Mapping (e.g.
+        # DirectionalPlaceFields.firing_rates is a dict keyed by direction);
+        # passing those straight to np.asarray below yields an obscure
+        # NumPy-internal TypeError. Reject them here with a clear message.
+        if firing_rates is None:
+            raise ValueError(
+                f"decode_position: the encoding result's `.firing_rates` must "
+                f"be a 2-D (n_neurons, n_bins) array, got None "
+                f"(from {provenance}.firing_rates)."
+            )
+        try:
+            firing_rates_arr = np.asarray(firing_rates, dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"decode_position: the encoding result's `.firing_rates` must "
+                f"be a 2-D (n_neurons, n_bins) array, got "
+                f"{type(firing_rates).__name__} (from {provenance}.firing_rates)."
+            ) from exc
+        if firing_rates_arr.ndim != 2:
+            raise ValueError(
+                f"decode_position: the encoding result's `.firing_rates` must "
+                f"be a 2-D (n_neurons, n_bins) array, got a "
+                f"{firing_rates_arr.ndim}-D array with shape "
+                f"{firing_rates_arr.shape} (from {provenance}.firing_rates)."
+            )
+        encoding_models = firing_rates_arr
 
     # Convert inputs to arrays
     spike_counts = np.asarray(spike_counts)
