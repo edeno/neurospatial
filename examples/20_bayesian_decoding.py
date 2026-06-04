@@ -55,7 +55,7 @@ from neurospatial.decoding import (
     fit_linear_trajectory,
     median_decoding_error,
 )
-from neurospatial.encoding import compute_spatial_rates
+from neurospatial.encoding import compute_spatial_rate, compute_spatial_rates
 from neurospatial.simulation import (
     PlaceCellModel,
     generate_poisson_spikes,
@@ -186,8 +186,7 @@ fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 
 for idx, ax in enumerate(axes):
     cell_idx = idx * (n_neurons // 3)
-    from neurospatial.encoding import compute_spatial_rate as _csr
-    result_cell = _csr(
+    result_cell = compute_spatial_rate(
         env,
         spike_times_list[cell_idx],
         times,

@@ -405,5 +405,5 @@ ignore_errors = true
 
 [dependency-groups]
 dev = [
-    "jupytext>=1.18.1",
+    "jupytext>=1.16.0",
 ]

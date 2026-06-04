@@ -3058,7 +3058,7 @@ requires-dist = [
 provides-extras = ["dev", "docs", "notebooks", "video", "animation", "nwb", "jax", "xarray"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "jupytext", specifier = ">=1.18.1" }]
+dev = [{ name = "jupytext", specifier = ">=1.16.0" }]
 
 [[package]]
 name = "nodeenv"

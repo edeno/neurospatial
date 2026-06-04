@@ -10,13 +10,14 @@ A complete workflow for analyzing spatial firing patterns of neurons during navi
 
 **Goal**: Compute spatial firing rate maps from position tracking and spike data
 
-**Steps**: Create environment → Compute place field → Visualize
+**Steps**: Simulate trajectory → Create environment → Generate spikes → Compute place field → Visualize
 
 ### Complete Example
 
 ```python
 import numpy as np
 import matplotlib.pyplot as plt
+from shapely.geometry import box
 
 from neurospatial import Environment
 from neurospatial.encoding import compute_spatial_rate
@@ -26,25 +27,27 @@ from neurospatial.simulation import (
     simulate_trajectory_ou,
 )
 
-# Step 1: Simulate a short open-field session (replace with real data loading)
-env_seed = Environment.from_samples(
-    np.random.default_rng(0).uniform([0, 0], [100, 100], (20, 2)),
-    bin_size=2.5,
-)
+# Step 1: Simulate an open-field session in a 100x100 cm arena.
+# We seed the trajectory simulator with a polygon environment so the animal
+# explores the full arena from the start (avoids a degenerate seed from
+# sparse random points). Duration=300 s gives ~90% arena coverage at 15 cm/s
+# while keeping CI runtime well under 60 s.
+env_seed = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0)
 env_seed.units = "cm"  # Required by simulate_trajectory_ou
 positions, times = simulate_trajectory_ou(
     env_seed,
-    duration=120.0,   # 2-minute session
+    duration=300.0,   # 5-minute session — full arena coverage
     dt=1 / 30.0,      # 30 Hz tracking
     speed_mean=15.0,  # cm/s
     seed=0,
     speed_units="cm",
 )
 
-# Step 2: Create environment from the recorded trajectory
+# Step 2: Create a finer environment from the recorded trajectory
+# (2.5 cm bins → ~1 600 active bins for a 100×100 cm open field)
 env = Environment.from_samples(
     positions,
-    bin_size=2.5,        # 2.5 cm bins for a 100x100 cm arena
+    bin_size=2.5,             # 2.5 cm bins for a 100×100 cm arena
     bin_count_threshold=5,
     dilate=True,
     fill_holes=True,
@@ -54,6 +57,7 @@ env.units = "cm"
 
 print(f"Created environment with {env.n_bins} active bins")
 print(f"Spatial extent: {env.dimension_ranges}")
+assert env.bin_at([50.0, 50.0]) != -1, "Place cell center must be inside env!"
 
 # Step 3: Generate spike train for a simulated place cell
 # (In real experiments, load your spike timestamps here.)
@@ -71,7 +75,10 @@ result = compute_spatial_rate(
     positions,
     smoothing_method="diffusion_kde",  # boundary-aware graph-based KDE
     bandwidth=5.0,                     # smoothing bandwidth in cm
-    min_occupancy=0.5,                 # exclude bins with < 0.5 s occupancy
+    # min_occupancy threshold is applied to the *smoothed* occupancy density,
+    # not raw seconds. Low-coverage bins are excluded by bin_count_threshold
+    # when creating the environment; leave min_occupancy at its default (0.0)
+    # unless you have a specific density threshold in mind.
 )
 firing_rate = result.firing_rate
 
