@@ -333,18 +333,19 @@ class _BaseEnvironment(
         """
         if layout is None:
             raise ValueError(
-                "[ENV-INIT] Environment is not constructed directly — use a factory method.\n\n"
-                "Example (correct usage):\n"
-                "    env = Environment.from_samples(data, bin_size=2.0)\n\n"
-                "Other factories:\n"
-                "    env = Environment.from_polygon(polygon, bin_size=2.0)\n"
-                "    env = Environment.from_graph(graph, edge_order, bin_size=2.0)\n"
-                "    env = Environment.from_grid_mask(grid_edges, mask)\n"
-                "    env = Environment.from_pixel_mask(image_mask, pixel_size=1.0)\n\n"
+                "[E1001] Environment cannot be constructed directly — "
+                "use a factory method.\n\n"
+                "Most common (from positions you recorded):\n"
+                "    env = Environment.from_samples(positions, bin_size=2.0)\n\n"
+                "Other factories, chosen by the data you have:\n"
+                "    from_polygon     — a Shapely polygon boundary\n"
+                "    from_graph       — a track/maze graph (linearized 1D)\n"
+                "    from_grid_mask   — an N-D boolean mask + grid edges\n"
+                "    from_pixel_mask  — a 2D image / pixel mask\n\n"
                 "Avoid:\n"
-                "    env = Environment()  # This will not work!\n\n"
-                "For more information, see: "
-                "https://neurospatial.readthedocs.io/errors/#env-init"
+                "    env = Environment()  # not supported\n\n"
+                "See each factory's docstring for its exact arguments, or:\n"
+                "    https://neurospatial.readthedocs.io/errors/#e1001"
             )
 
         self.name = name
