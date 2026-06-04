@@ -40,31 +40,39 @@
 
 ### 0.7 — `decode_session()` golden-path wrapper  ⚑ headline
 - **Files:** new function in `src/neurospatial/decoding/` (export from `neurospatial.decoding`).
-- **API:**
+- **API (as shipped):**
   ```python
   def decode_session(env, spike_times, times, positions, *,
                      dt=0.025, bandwidth=5.0, smoothing_method="diffusion_kde",
                      min_occupancy=0.0, encoding_models=None,
-                     **decode_kwargs) -> DecodingResult:
+                     warn_on_drop=True, **decode_kwargs) -> DecodingResult:
       """Encode → bin → decode in one call. Glue over compute_spatial_rates,
       bin_spikes_in_time, decode_position. encoding_models optional (else fit here)."""
   ```
-- **Implementation (verified signatures):**
+  (`warn_on_drop` added during the Phase 0 follow-up — see Note C.)
+- **Implementation (as shipped — verified signatures):**
   ```python
-  trains = normalize_spike_times(spike_times)          # -> list[NDArray], one per neuron
+  trains = as_spike_trains(spike_times)                # -> list[NDArray], one per neuron
   times_arr = np.asarray(times, dtype=np.float64)      # accept list/array; normalize once (§0.2)
+  if times_arr.ndim != 1: raise ValueError(...)        # beginner-grade shape error
+  validate_times(times_arr, context="decode_session")  # >=2 samples, finite, sorted (§follow-up)
+  t_start, t_stop = float(times_arr.min()), float(times_arr.max())
   if encoding_models is None:
       encoding_models = compute_spatial_rates(
           env, trains, times_arr, positions,
           bandwidth=bandwidth, smoothing_method=smoothing_method,
           min_occupancy=min_occupancy, fill_value=0.0,
+          warn_on_drop=warn_on_drop,                   # encoder owns the drop warning here
       ).firing_rates                                   # (n_neurons, n_bins)
+  else:                                                # passthrough: encoder skipped
+      if warn_on_drop: _warn_if_spikes_out_of_window(trains, t_start, t_stop)
   counts, centers = bin_spikes_in_time(                # expects a SEQUENCE of per-neuron arrays
-      trains, dt, t_start=times_arr.min(), t_stop=times_arr.max())
+      trains, dt, t_start=t_start, t_stop=t_stop)
   return decode_position(env, counts, encoding_models, dt, times=centers, **decode_kwargs)
   ```
   Returns `DecodingResult` (stable type — constraint 2).
-- **Note A — normalize once (finding):** `bin_spikes_in_time` expects a **sequence of per-neuron arrays**; a bare 1-D single-neuron array passed directly is iterated as scalar "trains" (`decoding/_binning.py:141`) → wrong neuron axis / later shape mismatch. So **normalize `spike_times` once** with the same normalizer `compute_spatial_rates` uses (`encoding/_spikes.py:normalize_spike_times`, currently **private**) and feed that list to **both** the encoder and `bin_spikes_in_time`. Since `decode_session` lives in `decoding/`, **promote `normalize_spike_times` to a shared/public util** (or re-export it) rather than duplicating the logic or cross-importing a private symbol.
+- **Note A — normalize once (finding):** `bin_spikes_in_time` expects a **sequence of per-neuron arrays**; a bare 1-D single-neuron array passed directly is iterated as scalar "trains" (`decoding/_binning.py:141`) → wrong neuron axis / later shape mismatch. So **normalize `spike_times` once** with the same normalizer `compute_spatial_rates` uses (`encoding/_spikes.py`, the helper now named **`as_spike_trains`** — promoted to **public** and exported from `neurospatial.encoding`; renamed from `normalize_spike_times`, which read like a value transform) and feed that list to **both** the encoder and `bin_spikes_in_time`.
+- **Note C — drop/validation safety (Phase 0 follow-up):** the headline path must not silently produce a wrong posterior. `decode_session` validates `times` up front (1-D, ≥2 samples, finite, sorted via `validate_times`) so a NaN/inf raises a beginner-grade error instead of leaking a raw `cannot convert float NaN to integer`, and it surfaces exactly one out-of-window spike-drop warning (the units footgun): the encoder owns it in the `encoding_models=None` branch (also emitting its inactive-bin warning), and `decode_session` does its own check in the passthrough branch. `warn_on_drop=False` silences both.
 - **Note B — signatures (finding #2):** `bin_spikes_in_time` is `(spike_trains, dt, t_start=None, t_stop=None, *, orient="time_x_neuron")` → `(counts, centers)`; pass `dt` **positionally**, the trajectory window via `t_start/t_stop`. `compute_spatial_rates` has **no `min_speed`** (only `min_occupancy`); speed-filtered batch occupancy is a separate enhancement tracked as **Phase 2 §2.6** — do not invent a `min_speed` forward here until §2.6 lands.
 - **Tests:** 5-line golden-path test produces a `DecodingResult` whose MAP tracks a simulated trajectory; equivalence to the manual 3-call path.
 
