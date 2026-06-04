@@ -1291,7 +1291,8 @@ def _egocentric_firing_rate(
         if backend == "jax" and is_jax_available():
             import jax.numpy as jnp
 
-            return jnp.asarray(rate, dtype=jnp.float64)
+            jax_rate: ArrayLike = jnp.asarray(rate, dtype=jnp.float64)
+            return jax_rate
         return rate
 
     from neurospatial.encoding._smoothing import smooth_rate_map
@@ -1582,7 +1583,7 @@ def compute_egocentric_rate(
     if resolved_backend == "jax" and is_jax_available():
         import jax.numpy as jnp
 
-        occupancy = jnp.asarray(occupancy, dtype=jnp.float64)  # type: ignore[assignment]
+        occupancy = jnp.asarray(occupancy, dtype=jnp.float64)
 
     # Return result
     return EgocentricRateResult(
@@ -1924,7 +1925,7 @@ def compute_egocentric_rates(
             import jax.numpy as jnp
 
             firing_rates_result = jnp.asarray(firing_rates_result)
-            occupancy = jnp.asarray(occupancy, dtype=jnp.float64)  # type: ignore[assignment]
+            occupancy = jnp.asarray(occupancy, dtype=jnp.float64)
         return EgocentricRatesResult(
             firing_rates=firing_rates_result,
             occupancy=occupancy,
@@ -1984,7 +1985,7 @@ def compute_egocentric_rates(
     if resolved_backend == "jax" and is_jax_available():
         import jax.numpy as jnp
 
-        occupancy = jnp.asarray(occupancy, dtype=jnp.float64)  # type: ignore[assignment]
+        occupancy = jnp.asarray(occupancy, dtype=jnp.float64)
 
     # Return result
     return EgocentricRatesResult(

@@ -2041,7 +2041,7 @@ def compute_spatial_rate(
     if resolved_backend == "jax" and is_jax_available():
         import jax.numpy as jnp
 
-        occupancy = jnp.asarray(occupancy, dtype=jnp.float64)  # type: ignore[assignment]
+        occupancy = jnp.asarray(occupancy, dtype=jnp.float64)
 
     # Return result
     return SpatialRateResult(
@@ -2303,7 +2303,7 @@ def compute_spatial_rates(
             import jax.numpy as jnp
 
             firing_rates_result = jnp.asarray(firing_rates_result, dtype=jnp.float64)
-            occupancy = jnp.asarray(occupancy, dtype=jnp.float64)  # type: ignore[assignment]
+            occupancy = jnp.asarray(occupancy, dtype=jnp.float64)
 
         return SpatialRatesResult(
             firing_rates=firing_rates_result,
@@ -2347,7 +2347,7 @@ def compute_spatial_rates(
     if resolved_backend == "jax" and is_jax_available():
         import jax.numpy as jnp
 
-        occupancy = jnp.asarray(occupancy, dtype=jnp.float64)  # type: ignore[assignment]
+        occupancy = jnp.asarray(occupancy, dtype=jnp.float64)
 
     # Return result
     return SpatialRatesResult(

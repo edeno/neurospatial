@@ -243,7 +243,7 @@ def spatial_information(
     if _is_jax_array(firing_rate) or _is_jax_array(occupancy):
         from neurospatial.encoding._core_jax import spatial_information_single
 
-        return spatial_information_single(firing_rate, occupancy, base=base)  # type: ignore[arg-type]
+        return spatial_information_single(firing_rate, occupancy, base=base)
 
     # NumPy implementation — input validation here (boundary), kernel in _core_numpy.
     firing_rate_arr = np.asarray(firing_rate)
@@ -322,7 +322,7 @@ def batch_spatial_information(
     if _is_jax_array(firing_rates) or _is_jax_array(occupancy):
         from neurospatial.encoding._core_jax import spatial_information_batch
 
-        return spatial_information_batch(firing_rates, occupancy, base=base)  # type: ignore[arg-type]
+        return spatial_information_batch(firing_rates, occupancy, base=base)
 
     # NumPy implementation — input validation here, kernel in _core_numpy.
     firing_rates_arr = np.asarray(firing_rates)
@@ -426,7 +426,7 @@ def sparsity(
     if _is_jax_array(firing_rate) or _is_jax_array(occupancy):
         from neurospatial.encoding._core_jax import sparsity_single
 
-        return sparsity_single(firing_rate, occupancy)  # type: ignore[arg-type]
+        return sparsity_single(firing_rate, occupancy)
 
     # NumPy implementation — input validation here, kernel in _core_numpy.
     firing_rate_arr = np.asarray(firing_rate)
@@ -501,7 +501,7 @@ def batch_sparsity(
     if _is_jax_array(firing_rates) or _is_jax_array(occupancy):
         from neurospatial.encoding._core_jax import sparsity_batch
 
-        return sparsity_batch(firing_rates, occupancy)  # type: ignore[arg-type]
+        return sparsity_batch(firing_rates, occupancy)
 
     # NumPy implementation
     firing_rates = np.asarray(firing_rates)

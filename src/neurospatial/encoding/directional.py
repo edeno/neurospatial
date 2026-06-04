@@ -1848,8 +1848,8 @@ def compute_directional_rate(
         import jax.numpy as jnp
 
         firing_rate = jnp.asarray(firing_rate)
-        occupancy = jnp.asarray(occupancy)  # type: ignore[assignment]
-        bin_centers = jnp.asarray(bin_centers)  # type: ignore[assignment]
+        occupancy = jnp.asarray(occupancy)
+        bin_centers = jnp.asarray(bin_centers)
 
     return DirectionalRateResult(
         firing_rate=firing_rate,
@@ -2093,8 +2093,8 @@ def compute_directional_rates(
             import jax.numpy as jnp
 
             empty_rates = jnp.asarray(empty_rates)
-            occupancy = jnp.asarray(occupancy)  # type: ignore[assignment]
-            bin_centers = jnp.asarray(bin_centers)  # type: ignore[assignment]
+            occupancy = jnp.asarray(occupancy)
+            bin_centers = jnp.asarray(bin_centers)
         return DirectionalRatesResult(
             firing_rates=empty_rates,
             occupancy=occupancy,
@@ -2154,9 +2154,9 @@ def compute_directional_rates(
     if resolved_backend == "jax" and is_jax_available():
         import jax.numpy as jnp
 
-        firing_rates = jnp.asarray(firing_rates)  # type: ignore[assignment]
-        occupancy = jnp.asarray(occupancy)  # type: ignore[assignment]
-        bin_centers = jnp.asarray(bin_centers)  # type: ignore[assignment]
+        firing_rates = jnp.asarray(firing_rates)
+        occupancy = jnp.asarray(occupancy)
+        bin_centers = jnp.asarray(bin_centers)
 
     return DirectionalRatesResult(
         firing_rates=firing_rates,

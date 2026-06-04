@@ -434,8 +434,8 @@ def detect_region_crossings(
             stacklevel=2,
         )
         # Old order: arg3 is region_name, arg4 is env.
-        region_name = arg3  # type: ignore[assignment]
-        env = arg4  # type: ignore[assignment]
+        region_name = arg3
+        env = arg4
     elif arg4 is not None:
         raise TypeError(
             "detect_region_crossings() takes region_name as a keyword-only "
