@@ -41,8 +41,15 @@ jobs:
       - name: Run module doctests
         env:
           MPLBACKEND: Agg
+        # ``-n0`` disables xdist (pytest.ini sets ``-n auto`` in addopts).
+        # ``--doctest-modules`` imports every module to collect doctests, so each
+        # xdist worker holds a full copy of the library + JAX in memory; running
+        # the heavy simulation-session example doctests across 4 such workers
+        # exhausted the hosted runner's RAM and got the runner killed ("received
+        # a shutdown signal"). Sequential doctests use a single import footprint
+        # and finish in ~30s, well within budget.
         run: >-
-          uv run pytest --doctest-modules src/neurospatial/
+          uv run pytest --doctest-modules src/neurospatial/ -n0
           --ignore=src/neurospatial/annotation/_napari_widget.py
           --ignore=src/neurospatial/annotation/_track_widget.py
           --ignore=src/neurospatial/animation/config.py
