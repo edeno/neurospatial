@@ -72,6 +72,23 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ### Added
 
+- Memory-safe summary decoding for long sessions. `decode_position_summary`
+  is a new sibling of `decode_position` that streams over time, computing the
+  posterior one time-block at a time and reducing each block to per-time
+  scalars/vectors (`map_position` / `map_bin`, `mean_position`,
+  `posterior_entropy`, `peak_prob`) without ever materializing the full
+  `(n_time, n_bins)` posterior. It returns a new `DecodingSummary` frozen
+  dataclass (alongside `DecodingResult`) carrying `ResultMixin` and the
+  standard terminal verbs — `to_dataframe()` (one row per time bin),
+  `summary()`, `plot()`, and `to_xarray()` (a track `Dataset` with a `time`
+  dim and **no** `bin` posterior axis) — sharing accessor names and column
+  conventions with `DecodingResult` so user code ports between the two.
+  `decode_session_summary` is the matching one-call encode→bin→decode wrapper
+  (sibling of `decode_session`). The summary reductions are bit-for-bit
+  identical to reducing the full posterior for `map_position` / `map_bin`, and
+  match to floating-point tolerance for `mean_position` / `posterior_entropy` /
+  `peak_prob`.
+
 - Experiment-shaped factory presets on `Environment` that speak experiment
   vocabulary and delegate to the existing `from_*` factories:
   - `Environment.open_field(positions, bin_size, ...)` — the only
@@ -179,6 +196,23 @@ these are called out under a dedicated **Breaking changes** heading.
   `compute_spatial_rate`, and `compute_spatial_rates` (`encoding/spatial.py`).
   Set to `False` to intentionally silence all spike-drop warnings (e.g. when
   the caller handles the diagnostic themselves).
+
+### Performance
+
+- `decode_position` gains two keyword-only memory knobs with **no change to its
+  return contract** (`.posterior` stays a fully-materialized `ndarray`):
+  - `dtype=np.float32` stores and computes the posterior in single precision,
+    halving stored and transient memory (parity with float64 to ~1e-6
+    relative). Every `DecodingResult` method works unchanged on a float32
+    posterior.
+  - `time_chunk=k` computes the exp/normalize in time-blocks into a single
+    preallocated output array, cutting the transient memory peak from ~3-4× the
+    stored posterior down to ~1×. `time_chunk=None` (the default) reproduces the
+    previous behavior byte-for-byte.
+
+  For sessions where even the stored dense posterior is too large to hold, use
+  the new `decode_position_summary` / `decode_session_summary` (see **Added**),
+  which never materialize the full `(n_time, n_bins)` posterior.
 
 ### Changed
 

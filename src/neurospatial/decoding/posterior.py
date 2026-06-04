@@ -23,12 +23,12 @@ exponentiating log-likelihoods.
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING, Literal, Protocol, cast
+from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.decoding._result import DecodingResult
+from neurospatial.decoding._result import DecodingResult, DecodingSummary
 from neurospatial.decoding.likelihood import log_poisson_likelihood
 
 if TYPE_CHECKING:
@@ -48,12 +48,101 @@ class SpatialRatesLike(Protocol):
     def firing_rates(self) -> NDArray[np.float64]: ...
 
 
+def _validate_posterior_dtype(dtype: Any) -> np.dtype:
+    """Validate and resolve the posterior working/storage dtype.
+
+    Accepts ``np.float32`` / ``np.float64`` (and their ``np.dtype`` forms);
+    anything else raises a clear ``ValueError`` naming the param and the value.
+
+    Parameters
+    ----------
+    dtype : Any
+        The requested posterior dtype.
+
+    Returns
+    -------
+    numpy.dtype
+        The resolved float dtype (``float32`` or ``float64``).
+
+    Raises
+    ------
+    ValueError
+        If ``dtype`` is not float32 or float64.
+    """
+    resolved = np.dtype(dtype)
+    if resolved not in (np.dtype(np.float32), np.dtype(np.float64)):
+        raise ValueError(
+            f"dtype must be np.float32 or np.float64, got {dtype!r}. "
+            "Only single- and double-precision posteriors are supported "
+            "(float32 halves stored and transient memory)."
+        )
+    return cast("np.dtype", resolved)
+
+
+def _normalize_block(
+    ll_block: NDArray[np.float64],
+    *,
+    axis: int,
+    handle_degenerate: Literal["uniform", "nan", "raise"],
+    out: NDArray[np.float64],
+) -> None:
+    """Normalize one time-block of log-likelihood in place into ``out``.
+
+    Performs the log-sum-exp softmax (per-row ``ll_max`` shift, ``exp``,
+    normalize) and the degenerate-row handling for a single block, writing the
+    result into the preallocated ``out`` array. ``ll_block`` is the
+    already-prior-applied log-likelihood for the block; ``out`` must be the
+    same shape and the desired output dtype.
+
+    Degenerate-row handling matches the full-array path exactly: rows whose
+    per-row max is non-finite (all ``-inf`` zero-rate rows, or rows containing
+    ``NaN``) are filled per ``handle_degenerate``.
+    """
+    ll_max = ll_block.max(axis=axis, keepdims=True)
+
+    ll_max_squeezed = ll_max.squeeze(axis=axis)
+    degenerate_mask = ~np.isfinite(ll_max_squeezed)
+    nan_row_mask = np.isnan(ll_block).any(axis=axis)
+
+    # Shift for stability, exponentiate into the output dtype, normalize.
+    ll_shifted = ll_block - ll_max
+    np.exp(ll_shifted, out=out)
+    out /= out.sum(axis=axis, keepdims=True)
+
+    if degenerate_mask.any():
+        if handle_degenerate == "raise":
+            n_degenerate = int(degenerate_mask.sum())
+            n_nan = int(nan_row_mask.sum())
+            if n_nan > 0:
+                n_neg_inf = n_degenerate - n_nan
+                raise ValueError(
+                    f"Found {n_degenerate} degenerate row(s): {n_nan} contain "
+                    f"NaN values (upstream corruption, e.g. a NaN firing rate "
+                    f"leaking into the likelihood) and {n_neg_inf} are all -inf "
+                    f"(zero-rate). Fix the NaN source; the -inf rows can be "
+                    f"handled with handle_degenerate='uniform' or 'nan'."
+                )
+            raise ValueError(
+                f"Found {n_degenerate} degenerate row(s) with all -inf values "
+                f"(zero-rate). Consider using handle_degenerate='uniform' or "
+                f"'nan'."
+            )
+        elif handle_degenerate == "uniform":
+            n_bins = ll_block.shape[axis]
+            uniform_prob = 1.0 / n_bins
+            out[degenerate_mask] = uniform_prob
+        elif handle_degenerate == "nan":
+            out[degenerate_mask] = np.nan
+
+
 def normalize_to_posterior(
     log_likelihood: NDArray[np.float64],
     *,
     prior: NDArray[np.float64] | None = None,
     axis: int = -1,
     handle_degenerate: Literal["uniform", "nan", "raise"] = "uniform",
+    dtype: Any = np.float64,
+    time_chunk: int | None = None,
 ) -> NDArray[np.float64]:
     """Convert log-likelihood to posterior using Bayes' rule.
 
@@ -89,11 +178,23 @@ def normalize_to_posterior(
         - "nan": Return NaN for degenerate rows.
         - "raise": Raise ValueError if any row is degenerate. The message
           distinguishes NaN-corrupted rows from all -inf zero-rate rows.
+    dtype : np.float32 or np.float64, default=np.float64
+        Stored/working dtype of the returned posterior. ``np.float32`` halves
+        the stored and transient memory at the cost of single-precision
+        rounding (parity with float64 to ~1e-6 relative). Must be float32 or
+        float64; any other dtype raises ``ValueError``.
+    time_chunk : int or None, default=None
+        When set, the exp/normalize is computed in time-blocks of
+        ``time_chunk`` rows (axis 0) into a single preallocated output array,
+        cutting the transient memory peak from ~3-4x (from the full-size
+        ``.copy()`` + ``exp``) down to ~1x. When ``None`` (the default), the
+        whole array is normalized at once and the result is byte-for-byte
+        identical to the pre-chunking behavior.
 
     Returns
     -------
-    posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
-        Posterior probability distribution. Each row sums to 1.0.
+    posterior : NDArray, shape (n_time_bins, n_bins)
+        Posterior probability distribution in ``dtype``. Each row sums to 1.0.
 
     Raises
     ------
@@ -126,6 +227,12 @@ def normalize_to_posterior(
     - ll_max will be -inf, ll_shifted will be NaN
     - These are detected and handled according to `handle_degenerate`
 
+    **Memory.** ``dtype=np.float32`` halves the stored posterior; ``time_chunk``
+    blocks the exp/normalize so the transient peak drops from ~3-4x to ~1x the
+    stored posterior. Both default to the original behavior
+    (``dtype=np.float64``, ``time_chunk=None``), which is reproduced
+    byte-for-byte.
+
     Examples
     --------
     >>> ll = np.array([[-1.0, -2.0, -0.5], [-0.2, -0.3, -0.1]])
@@ -149,6 +256,13 @@ def normalize_to_posterior(
         raise ValueError(
             f"handle_degenerate must be 'uniform', 'nan', or 'raise', "
             f"got {handle_degenerate!r}"
+        )
+
+    out_dtype = _validate_posterior_dtype(dtype)
+
+    if time_chunk is not None and time_chunk < 1:
+        raise ValueError(
+            f"time_chunk must be a positive integer or None, got {time_chunk}."
         )
 
     log_likelihood = np.asarray(log_likelihood, dtype=np.float64)
@@ -209,71 +323,36 @@ def normalize_to_posterior(
         # Add log-prior to log-likelihood
         ll = ll + log_prior
 
-    # Log-sum-exp normalization (numerically stable softmax)
-    ll_max = ll.max(axis=axis, keepdims=True)
-
-    # Detect degenerate rows. There are two distinct causes, and we keep
-    # them separate because they mean different things:
+    # Log-sum-exp normalization (numerically stable softmax). Compute into a
+    # preallocated output buffer of the requested dtype. When time_chunk is set,
+    # normalize one time-block at a time so the only full-size working array is
+    # `out` itself (cutting the transient peak from ~3-4x to ~1x); otherwise
+    # normalize the whole array in one block, which is byte-for-byte identical
+    # to the pre-chunking path (modulo the requested dtype).
     #
+    # Degenerate rows have two distinct causes, handled identically per block:
     # - all -inf: a legitimate zero-rate row (e.g. no spikes with a flat
-    #   encoding model). ll.max() is -inf, which is not finite.
-    # - any NaN: upstream corruption (e.g. a NaN firing rate leaking into
-    #   the likelihood). ll.max() propagates NaN, which is also not finite.
-    #
-    # Both fail np.isfinite on the per-row max, so the union is the set of
-    # degenerate rows; the NaN subset is tracked so handle_degenerate="raise"
-    # can report corruption explicitly rather than blaming a flat row.
-    ll_max_squeezed = ll_max.squeeze(axis=axis)
-    degenerate_mask = ~np.isfinite(ll_max_squeezed)
-    nan_row_mask = np.isnan(ll).any(axis=axis)
+    #   encoding model); the per-row max is -inf (non-finite).
+    # - any NaN: upstream corruption; the per-row max propagates NaN.
+    # Both fail np.isfinite on the per-row max, so they share the degenerate
+    # set; the NaN subset is tracked so handle_degenerate="raise" reports
+    # corruption explicitly rather than blaming a flat row.
+    out = np.empty(ll.shape, dtype=out_dtype)
 
-    # Shift for stability
-    ll_shifted = ll - ll_max
-
-    # Exponentiate
-    posterior = np.exp(ll_shifted)
-
-    # Normalize
-    posterior_sum = posterior.sum(axis=axis, keepdims=True)
-    posterior = posterior / posterior_sum
-
-    # Handle degenerate rows
-    if degenerate_mask.any():
-        if handle_degenerate == "raise":
-            n_degenerate = int(degenerate_mask.sum())
-            n_nan = int(nan_row_mask.sum())
-            # Distinguish corruption (NaN) from a legitimate zero-rate row
-            # (all -inf): the former points at an upstream data bug, the
-            # latter at a likelihood/encoding-model mismatch. Conflating
-            # them in the message would send the user looking in the wrong
-            # place.
-            if n_nan > 0:
-                n_neg_inf = n_degenerate - n_nan
-                raise ValueError(
-                    f"Found {n_degenerate} degenerate row(s): {n_nan} contain "
-                    f"NaN values (upstream corruption, e.g. a NaN firing rate "
-                    f"leaking into the likelihood) and {n_neg_inf} are all -inf "
-                    f"(zero-rate). Fix the NaN source; the -inf rows can be "
-                    f"handled with handle_degenerate='uniform' or 'nan'."
-                )
-            raise ValueError(
-                f"Found {n_degenerate} degenerate row(s) with all -inf values "
-                f"(zero-rate). Consider using handle_degenerate='uniform' or "
-                f"'nan'."
+    n_time = ll.shape[0]
+    if time_chunk is None:
+        _normalize_block(ll, axis=axis, handle_degenerate=handle_degenerate, out=out)
+    else:
+        for start in range(0, n_time, time_chunk):
+            stop = min(start + time_chunk, n_time)
+            _normalize_block(
+                ll[start:stop],
+                axis=axis,
+                handle_degenerate=handle_degenerate,
+                out=out[start:stop],
             )
-        elif handle_degenerate == "uniform":
-            # Replace degenerate rows with uniform distribution. This fills
-            # both all -inf rows and NaN-corrupted rows uniformly; if you
-            # need NaN corruption to surface rather than be masked, use
-            # handle_degenerate="raise".
-            n_bins = ll.shape[axis]
-            uniform_prob = 1.0 / n_bins
-            posterior[degenerate_mask] = uniform_prob
-        elif handle_degenerate == "nan":
-            # Keep NaN values (already set by exp of NaN)
-            posterior[degenerate_mask] = np.nan
 
-    return cast("NDArray[np.float64]", posterior)
+    return cast("NDArray[np.float64]", out)
 
 
 def decode_position(
@@ -286,6 +365,8 @@ def decode_position(
     method: Literal["poisson"] = "poisson",
     times: NDArray[np.float64] | None = None,
     validate: bool = True,
+    dtype: Any = np.float64,
+    time_chunk: int | None = None,
 ) -> DecodingResult:
     """Decode position from population spike counts.
 
@@ -364,6 +445,24 @@ def decode_position(
         Pass ``validate=False`` to opt out (e.g., inside a hot inner
         loop where the inputs are guaranteed-clean and the per-call
         overhead matters).
+    dtype : np.float32 or np.float64, default=np.float64
+        Stored/working dtype of the posterior. ``np.float32`` halves the
+        stored and transient memory at the cost of single-precision rounding
+        (parity with float64 to ~1e-6 relative). The returned
+        :attr:`DecodingResult.posterior` is still a fully materialized
+        ``ndarray`` in this dtype, and every :class:`DecodingResult` method
+        works unchanged. Must be float32 or float64; any other value raises
+        ``ValueError``.
+    time_chunk : int or None, default=None
+        When set, the exp/normalize is computed in time-blocks of
+        ``time_chunk`` rows into a single preallocated posterior, cutting the
+        transient memory peak from ~3-4x (from the full-size log-likelihood
+        ``.copy()`` + ``exp``) down to ~1x. When ``None`` (the default), the
+        whole array is normalized at once and the result is byte-for-byte
+        identical to the pre-chunking behavior. This does **not** change the
+        return type: ``.posterior`` is still the full materialized
+        ``(n_time_bins, n_bins)`` array. For a path that never materializes
+        the full posterior, use :func:`decode_position_summary`.
 
     Returns
     -------
@@ -389,10 +488,15 @@ def decode_position(
     Notes
     -----
     Memory usage: The posterior array is shape (n_time_bins, n_bins) and
-    stored as float64. For long recordings (e.g., 1 hour at 25ms bins =
-    144,000 time bins) with fine spatial resolution (e.g., 1000 bins),
-    this requires ~1.1 GB. Consider processing in chunks for very long
-    recordings, or using float32 dtype in future versions.
+    stored as float64 by default. For long recordings (e.g., 1 hour at 25ms
+    bins = 144,000 time bins) with fine spatial resolution (e.g., 1000 bins),
+    this requires ~1.1 GB stored, with a ~3-4x transient peak from the
+    log-sum-exp. Two knobs cut this without changing the return contract:
+    ``dtype=np.float32`` halves the stored and transient memory, and
+    ``time_chunk`` blocks the exp/normalize so the transient peak drops to ~1x
+    the stored posterior. When even the stored ``(n_time_bins, n_bins)`` array
+    is too large to hold, use :func:`decode_position_summary`, which streams
+    over time and keeps only ``(n_time_bins, ...)`` per-time reductions.
 
     Examples
     --------
@@ -422,9 +526,93 @@ def decode_position(
     log_poisson_likelihood : Likelihood function used internally
     normalize_to_posterior : Posterior normalization used internally
     """
+    spike_counts, encoding_models, nonfinite_mask = _prepare_decode_inputs(
+        env,
+        spike_counts,
+        encoding_models,
+        prior=prior,
+        method=method,
+        validate=validate,
+        context="decode_position",
+    )
+    log_ll = _poisson_log_likelihood(spike_counts, encoding_models, nonfinite_mask, dt)
+
+    # Normalize to posterior. dtype/time_chunk control the stored dtype and the
+    # transient memory peak without changing the return contract.
+    posterior = normalize_to_posterior(
+        log_ll, prior=prior, dtype=dtype, time_chunk=time_chunk
+    )
+
+    # Validate output if requested
+    if validate:
+        _validate_output(posterior)
+
+    # Handle times
+    if times is not None:
+        times = np.asarray(times, dtype=np.float64)
+        n_time_bins = posterior.shape[0]
+        if times.ndim != 1 or len(times) != n_time_bins:
+            raise ValueError(
+                f"Length mismatch: times has {times.shape} but posterior has "
+                f"{n_time_bins} time bins. `times` must be a 1-D array of bin "
+                f"centers, one per row of spike_counts."
+            )
+
+    # Return DecodingResult
+    return DecodingResult(posterior=posterior, env=env, times=times)
+
+
+def _prepare_decode_inputs(
+    env: Environment,
+    spike_counts: NDArray[np.int64],
+    encoding_models: NDArray[np.float64] | SpatialRatesLike,
+    *,
+    prior: NDArray[np.float64] | None,
+    method: Literal["poisson"],
+    validate: bool,
+    context: str,
+) -> tuple[NDArray[np.int64], NDArray[np.float64], NDArray[np.bool_] | None]:
+    """Validate inputs and resolve the encoding model (no likelihood yet).
+
+    Shared front half of :func:`decode_position` and
+    :func:`decode_position_summary`: resolves a duck-typed encoding-result
+    object, runs the unconditional correctness guards (no-finite-bins,
+    bin-count agreement) and the optional ``validate=True`` checks, and detects
+    non-finite encoding-model bins (to be treated as zero-rate observations).
+    The actual log-likelihood is computed separately (per time-block in the
+    streaming summary path) by :func:`_poisson_log_likelihood`.
+
+    Parameters
+    ----------
+    env : Environment
+        Spatial environment defining the discretization.
+    spike_counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
+        Spike counts per neuron per time bin.
+    encoding_models : NDArray[np.float64] or SpatialRatesLike
+        Firing-rate maps, or a population rate result exposing
+        ``firing_rates``.
+    prior : NDArray[np.float64] | None
+        Prior over positions (validated here when ``validate=True``).
+    method : {"poisson"}
+        Likelihood model. Only ``"poisson"`` is supported.
+    validate : bool
+        Whether to run the optional input validation checks.
+    context : str
+        Caller name used in error messages.
+
+    Returns
+    -------
+    spike_counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
+        Spike counts as an ndarray.
+    encoding_models : NDArray[np.float64], shape (n_neurons, n_bins)
+        Validated firing-rate maps as an ndarray.
+    nonfinite_mask : NDArray[np.bool_] | None, shape (n_neurons, n_bins)
+        ``True`` where ``encoding_models`` is non-finite (NaN or Inf), or
+        ``None`` when the model is entirely finite.
+    """
     from neurospatial.encoding._validation import validate_env_fitted
 
-    validate_env_fitted(env, context="decode_position")
+    validate_env_fitted(env, context=context)
 
     # Validate method
     if method != "poisson":
@@ -446,7 +634,7 @@ def decode_position(
         # NumPy-internal TypeError. Reject them here with a clear message.
         if firing_rates is None:
             raise ValueError(
-                f"decode_position: the encoding result's `.firing_rates` must "
+                f"{context}: the encoding result's `.firing_rates` must "
                 f"be a 2-D (n_neurons, n_bins) array, got None "
                 f"(from {provenance}.firing_rates)."
             )
@@ -454,13 +642,13 @@ def decode_position(
             firing_rates_arr = np.asarray(firing_rates, dtype=float)
         except (TypeError, ValueError) as exc:
             raise ValueError(
-                f"decode_position: the encoding result's `.firing_rates` must "
+                f"{context}: the encoding result's `.firing_rates` must "
                 f"be a 2-D (n_neurons, n_bins) array, got "
                 f"{type(firing_rates).__name__} (from {provenance}.firing_rates)."
             ) from exc
         if firing_rates_arr.ndim != 2:
             raise ValueError(
-                f"decode_position: the encoding result's `.firing_rates` must "
+                f"{context}: the encoding result's `.firing_rates` must "
                 f"be a 2-D (n_neurons, n_bins) array, got a "
                 f"{firing_rates_arr.ndim}-D array with shape "
                 f"{firing_rates_arr.shape} (from {provenance}.firing_rates)."
@@ -527,7 +715,7 @@ def decode_position(
             "Pass fill_value=0.0 to the encoder to silence this and make the "
             "model explicitly zero-rate there.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=3,
         )
 
     # Validate inputs if requested. Pass a NaN-free view of encoding_models so
@@ -558,37 +746,271 @@ def decode_position(
             f"be defined on the same environment used for decoding."
         )
 
-    # Compute log-likelihood using Poisson model. When some encoding-model
-    # bins are non-finite (NaN or Inf), route through the NaN-safe path that
-    # excludes each such (neuron, bin) from the per-bin Poisson sum. Inf bins
-    # only reach here with validate=False (validate=True rejects them above).
-    if encoding_model_nonfinite_mask is not None:
+    return spike_counts, encoding_models, encoding_model_nonfinite_mask
+
+
+def _poisson_log_likelihood(
+    spike_counts: NDArray[np.int64],
+    encoding_models: NDArray[np.float64],
+    nonfinite_mask: NDArray[np.bool_] | None,
+    dt: float,
+) -> NDArray[np.float64]:
+    """Compute the Poisson log-likelihood for prepared decode inputs.
+
+    Thin dispatch over :func:`log_poisson_likelihood` and the NaN-safe variant,
+    callable on a full ``spike_counts`` or on a single time-block slice (the
+    streaming summary path computes it block-by-block to avoid materializing the
+    full ``(n_time_bins, n_bins)`` log-likelihood).
+
+    Parameters
+    ----------
+    spike_counts : NDArray[np.int64], shape (n_block, n_neurons)
+        Spike counts (possibly a time-block slice).
+    encoding_models : NDArray[np.float64], shape (n_neurons, n_bins)
+        Validated firing-rate maps.
+    nonfinite_mask : NDArray[np.bool_] | None, shape (n_neurons, n_bins)
+        ``True`` where ``encoding_models`` is non-finite; ``None`` if all finite.
+    dt : float
+        Time-bin width in seconds.
+
+    Returns
+    -------
+    log_likelihood : NDArray[np.float64], shape (n_block, n_bins)
+        Poisson log-likelihood, with non-finite encoding-model bins excluded.
+    """
+    # When some encoding-model bins are non-finite (NaN or Inf), route through
+    # the NaN-safe path that excludes each such (neuron, bin) from the per-bin
+    # Poisson sum. Inf bins only reach here with validate=False.
+    if nonfinite_mask is not None:
         log_ll = _log_poisson_likelihood_nan_safe(
-            spike_counts, encoding_models, encoding_model_nonfinite_mask, dt=dt
+            spike_counts, encoding_models, nonfinite_mask, dt=dt
         )
     else:
         log_ll = log_poisson_likelihood(spike_counts, encoding_models, dt=dt)
+    return log_ll
 
-    # Normalize to posterior
-    posterior = normalize_to_posterior(log_ll, prior=prior)
 
-    # Validate output if requested
-    if validate:
-        _validate_output(posterior)
+def _reduce_posterior_block(
+    posterior_block: NDArray[np.float64],
+    bin_centers: NDArray[np.float64],
+) -> tuple[
+    NDArray[np.int64],
+    NDArray[np.float64],
+    NDArray[np.float64],
+    NDArray[np.float64],
+]:
+    """Reduce a posterior time-block to per-time scalars/vectors.
 
-    # Handle times
+    Computes, for each row (time bin) of ``posterior_block``: the MAP bin
+    index, the posterior-mean position, the posterior entropy (bits), and the
+    peak (max) posterior probability. Mirrors the reductions on
+    :class:`DecodingResult` so streaming and full-posterior paths agree.
+
+    Parameters
+    ----------
+    posterior_block : NDArray[np.float64], shape (n_block, n_bins)
+        Posterior probabilities for a block of time bins (rows sum to 1).
+    bin_centers : NDArray[np.float64], shape (n_bins, n_dims)
+        Environment bin-center coordinates.
+
+    Returns
+    -------
+    map_bin : NDArray[np.int64], shape (n_block,)
+        MAP bin index per time bin (``argmax`` along bins).
+    mean_position : NDArray[np.float64], shape (n_block, n_dims)
+        Posterior-mean position per time bin (``posterior @ bin_centers``).
+    entropy : NDArray[np.float64], shape (n_block,)
+        Posterior entropy in bits.
+    peak_prob : NDArray[np.float64], shape (n_block,)
+        Max posterior probability per time bin.
+    """
+    map_bin = np.argmax(posterior_block, axis=1).astype(np.int64)
+    mean_position = posterior_block @ bin_centers
+    peak_prob = posterior_block.max(axis=1)
+
+    # Entropy (bits), mask-based to avoid log(0) bias -- identical to
+    # DecodingResult.posterior_entropy.
+    p = np.clip(posterior_block, 0.0, 1.0)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        log_p = np.where(p > 0, np.log2(p), 0.0)
+    entropy = -np.sum(p * log_p, axis=1)
+
+    return (
+        map_bin,
+        np.asarray(mean_position, dtype=np.float64),
+        np.asarray(entropy, dtype=np.float64),
+        np.asarray(peak_prob, dtype=np.float64),
+    )
+
+
+def decode_position_summary(
+    env: Environment,
+    spike_counts: NDArray[np.int64],
+    encoding_models: NDArray[np.float64] | SpatialRatesLike,
+    dt: float,
+    *,
+    prior: NDArray[np.float64] | None = None,
+    method: Literal["poisson"] = "poisson",
+    times: NDArray[np.float64] | None = None,
+    validate: bool = True,
+    dtype: Any = np.float64,
+    time_chunk: int | None = 1024,
+) -> DecodingSummary:
+    """Memory-safe decode that streams per-time reductions, not the posterior.
+
+    Same inputs as :func:`decode_position`, but **never materializes the full
+    ``(n_time_bins, n_bins)`` posterior**. It computes the posterior one
+    time-block at a time, reduces each block to per-time scalars/vectors (MAP
+    position, mean position, entropy, peak probability), discards the block,
+    and returns a :class:`~neurospatial.decoding.DecodingSummary` holding only
+    the ``(n_time_bins, ...)`` reductions. Use this when even the stored dense
+    posterior is too large to hold (e.g. a 1-hour session at 25 ms / 5000 bins
+    is ~5.8 GB stored).
+
+    This is a SEPARATE function with its OWN return type by design: it does not
+    change :func:`decode_position`'s return contract, whose ``.posterior`` is a
+    real, fully-materialized ndarray everywhere.
+
+    Parameters
+    ----------
+    env : Environment
+        Spatial environment defining the discretization.
+    spike_counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
+        Spike counts per neuron per time bin.
+    encoding_models : NDArray[np.float64] or SpatialRatesResult, shape (n_neurons, n_bins)
+        Firing-rate maps (place fields) for each neuron, or a population rate
+        result object exposing ``firing_rates``. Same semantics (NaN/Inf
+        handling, no-finite-bins guard) as :func:`decode_position`.
+    dt : float
+        Time-bin width in seconds.
+    prior : NDArray[np.float64] | None, default=None
+        Prior over positions. Same shapes/semantics as :func:`decode_position`.
+    method : {"poisson"}, default="poisson"
+        Likelihood model. Currently only Poisson is supported.
+    times : NDArray[np.float64] | None, default=None
+        Time-bin centers (seconds). Stored in the returned summary.
+    validate : bool, default=True
+        Run the same input validation as :func:`decode_position`. The
+        per-row posterior-sum output check is performed per block.
+    dtype : np.float32 or np.float64, default=np.float64
+        Working dtype of each posterior block. ``np.float32`` halves the
+        transient per-block memory.
+    time_chunk : int or None, default=1024
+        Time-block size (rows) processed at a time. Smaller blocks use less
+        transient memory; ``None`` would process all time bins in one block
+        (materializing the full posterior transiently, which defeats the
+        purpose), so it defaults to a sensible non-None value.
+
+    Returns
+    -------
+    DecodingSummary
+        Per-time reductions: ``map_position`` / ``map_bin`` / ``mean_position``
+        / ``posterior_entropy`` / ``peak_prob`` (all length ``n_time_bins``),
+        plus ``times`` and ``env``.
+
+    Raises
+    ------
+    ValueError
+        Same conditions as :func:`decode_position` (invalid method, no finite
+        bins, bin-count mismatch, bad ``times`` length, validation failures).
+
+    Notes
+    -----
+    The per-time reductions are bit-for-bit identical to reducing the full
+    :class:`DecodingResult` posterior: ``map_position`` / ``map_bin`` match
+    exactly; ``mean_position`` / ``posterior_entropy`` / ``peak_prob`` match to
+    floating-point tolerance. See :func:`decode_position` for a path that keeps
+    the full posterior (with optional ``dtype`` / ``time_chunk`` memory knobs).
+
+    See Also
+    --------
+    decode_position : Full-posterior decode (return contract unchanged).
+    DecodingSummary : Streamed per-time reductions container.
+    decode_session_summary : One-call encode->bin->summary-decode wrapper.
+    """
+    if time_chunk is not None and time_chunk < 1:
+        raise ValueError(
+            f"time_chunk must be a positive integer or None, got {time_chunk}."
+        )
+
+    spike_counts, encoding_models, nonfinite_mask = _prepare_decode_inputs(
+        env,
+        spike_counts,
+        encoding_models,
+        prior=prior,
+        method=method,
+        validate=validate,
+        context="decode_position_summary",
+    )
+
+    n_time = spike_counts.shape[0]
+
+    # Validate times length up front (cheap, avoids a wasted full decode).
+    times_arr: NDArray[np.float64] | None = None
     if times is not None:
-        times = np.asarray(times, dtype=np.float64)
-        n_time_bins = posterior.shape[0]
-        if times.ndim != 1 or len(times) != n_time_bins:
+        times_arr = np.asarray(times, dtype=np.float64)
+        if times_arr.ndim != 1 or len(times_arr) != n_time:
             raise ValueError(
-                f"Length mismatch: times has {times.shape} but posterior has "
-                f"{n_time_bins} time bins. `times` must be a 1-D array of bin "
+                f"Length mismatch: times has {times_arr.shape} but there are "
+                f"{n_time} time bins. `times` must be a 1-D array of bin "
                 f"centers, one per row of spike_counts."
             )
 
-    # Return DecodingResult
-    return DecodingResult(posterior=posterior, env=env, times=times)
+    bin_centers = np.asarray(env.bin_centers, dtype=np.float64)
+    n_dims = bin_centers.shape[1]
+
+    map_bin = np.empty(n_time, dtype=np.int64)
+    map_position = np.empty((n_time, n_dims), dtype=np.float64)
+    mean_position = np.empty((n_time, n_dims), dtype=np.float64)
+    posterior_entropy = np.empty(n_time, dtype=np.float64)
+    peak_prob = np.empty(n_time, dtype=np.float64)
+
+    # A time-varying (2-D) prior must be sliced to each block so its shape
+    # matches the block log-likelihood; a stationary (1-D) prior is reused.
+    prior_is_time_varying = prior is not None and np.asarray(prior).ndim == 2
+
+    block = n_time if time_chunk is None else time_chunk
+    for start in range(0, n_time, block):
+        stop = min(start + block, n_time)
+        block_prior = prior
+        if prior_is_time_varying:
+            block_prior = np.asarray(prior)[start:stop]
+        # Compute the log-likelihood for THIS time-block only, then normalize
+        # it. Computing the likelihood per block (rather than once for the
+        # whole session) is what keeps peak memory at one block, never the full
+        # (n_time, n_bins) array. The math matches decode_position exactly.
+        log_ll_block = _poisson_log_likelihood(
+            spike_counts[start:stop], encoding_models, nonfinite_mask, dt
+        )
+        post_block = normalize_to_posterior(
+            log_ll_block,
+            prior=block_prior,
+            dtype=dtype,
+        )
+        if validate:
+            _validate_output(post_block)
+        (
+            block_map_bin,
+            block_mean,
+            block_entropy,
+            block_peak,
+        ) = _reduce_posterior_block(post_block, bin_centers)
+        map_bin[start:stop] = block_map_bin
+        map_position[start:stop] = bin_centers[block_map_bin]
+        mean_position[start:stop] = block_mean
+        posterior_entropy[start:stop] = block_entropy
+        peak_prob[start:stop] = block_peak
+        # post_block goes out of scope and is reclaimed before the next block.
+
+    return DecodingSummary(
+        times=times_arr,
+        map_position=map_position,
+        mean_position=mean_position,
+        posterior_entropy=posterior_entropy,
+        peak_prob=peak_prob,
+        map_bin=map_bin,
+        env=env,
+    )
 
 
 def _log_poisson_likelihood_nan_safe(

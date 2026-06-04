@@ -20,7 +20,7 @@ from numpy.typing import ArrayLike, NDArray
 _DROP_WARN_THRESHOLD = 0.5
 
 if TYPE_CHECKING:
-    from neurospatial.decoding._result import DecodingResult
+    from neurospatial.decoding._result import DecodingResult, DecodingSummary
     from neurospatial.environment import Environment
 
 
@@ -264,12 +264,68 @@ def decode_session(
     ...     encoding_models=models,
     ... )
     """
+    from neurospatial.decoding.posterior import decode_position
+
+    firing_rates, counts, centers = _encode_and_bin(
+        env,
+        spike_times,
+        times,
+        positions,
+        dt=dt,
+        bandwidth=bandwidth,
+        smoothing_method=smoothing_method,
+        min_occupancy=min_occupancy,
+        encoding_models=encoding_models,
+        warn_on_drop=warn_on_drop,
+    )
+
+    # --- Decode ---
+    return decode_position(
+        env,
+        counts,
+        firing_rates,
+        dt,
+        times=centers,
+        **decode_kwargs,
+    )
+
+
+def _encode_and_bin(
+    env: Environment,
+    spike_times: Any,
+    times: ArrayLike,
+    positions: NDArray[np.float64],
+    *,
+    dt: float,
+    bandwidth: float,
+    smoothing_method: str,
+    min_occupancy: float,
+    encoding_models: NDArray[np.float64] | None,
+    warn_on_drop: bool,
+) -> tuple[NDArray[np.float64], NDArray[np.int64], NDArray[np.float64]]:
+    """Shared encode->bin glue for ``decode_session*``.
+
+    Builds (or accepts) the encoding models and bins spikes into a time-grid
+    count matrix, returning ``(firing_rates, counts, centers)`` ready to hand
+    to a decoder. Factored out so :func:`decode_session` and
+    :func:`decode_session_summary` share byte-for-byte identical pre-decode
+    behavior (input normalization, the units-footgun warning, ``fill_value=0.0``
+    encoding, and the time grid).
+
+    Returns
+    -------
+    firing_rates : NDArray[np.float64], shape (n_neurons, n_bins)
+        Encoding-model firing-rate maps.
+    counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
+        Spike-count matrix (``orient="time_x_neuron"``).
+    centers : NDArray[np.float64], shape (n_time_bins,)
+        Decode time-bin centers (seconds).
+    """
     # Defer the `encoding` imports until call time: this keeps the decoding
     # package importable even if `encoding` were ever to import from `decoding`
     # (it does not today), so there is no circular-import risk at module load.
     # Mirrors how encoding/spatial.py defers its own heavy imports.
     from neurospatial.decoding._binning import bin_spikes_in_time
-    from neurospatial.decoding.posterior import decode_position
     from neurospatial.encoding import as_spike_trains
     from neurospatial.encoding._validation import validate_times
     from neurospatial.encoding.spatial import compute_spatial_rates
@@ -336,9 +392,69 @@ def decode_session(
         t_stop=t_stop,
     )
     # counts shape: (n_time_bins, n_neurons)  ← what decode_position expects
+    return firing_rates, counts, centers
 
-    # --- Decode ---
-    return decode_position(
+
+def decode_session_summary(
+    env: Environment,
+    spike_times: Any,
+    times: ArrayLike,
+    positions: NDArray[np.float64],
+    *,
+    dt: float = 0.025,
+    bandwidth: float = 5.0,
+    smoothing_method: str = "diffusion_kde",
+    min_occupancy: float = 0.0,
+    encoding_models: NDArray[np.float64] | None = None,
+    warn_on_drop: bool = True,
+    **decode_kwargs: Any,
+) -> DecodingSummary:
+    """Memory-safe sibling of :func:`decode_session`.
+
+    Identical encode->bin glue as :func:`decode_session`, but calls
+    :func:`~neurospatial.decoding.decode_position_summary` at the final step so
+    the full ``(n_time_bins, n_bins)`` posterior is never materialized. Returns
+    a :class:`~neurospatial.decoding.DecodingSummary` of per-time reductions.
+    Use this for long sessions where the dense posterior would not fit in
+    memory.
+
+    Parameters
+    ----------
+    env, spike_times, times, positions, dt, bandwidth, smoothing_method, \
+min_occupancy, encoding_models, warn_on_drop
+        Same as :func:`decode_session`.
+    **decode_kwargs
+        Forwarded to
+        :func:`~neurospatial.decoding.decode_position_summary` (e.g. ``prior``,
+        ``validate``, ``dtype``, ``time_chunk``).
+
+    Returns
+    -------
+    DecodingSummary
+        Per-time reductions (MAP position/bin, mean position, entropy, peak
+        probability) plus ``times`` and ``env``.
+
+    See Also
+    --------
+    decode_session : Full-posterior golden path.
+    neurospatial.decoding.decode_position_summary : The streamed decoder used here.
+    """
+    from neurospatial.decoding.posterior import decode_position_summary
+
+    firing_rates, counts, centers = _encode_and_bin(
+        env,
+        spike_times,
+        times,
+        positions,
+        dt=dt,
+        bandwidth=bandwidth,
+        smoothing_method=smoothing_method,
+        min_occupancy=min_occupancy,
+        encoding_models=encoding_models,
+        warn_on_drop=warn_on_drop,
+    )
+
+    return decode_position_summary(
         env,
         counts,
         firing_rates,
