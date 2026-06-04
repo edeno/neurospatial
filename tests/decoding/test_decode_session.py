@@ -99,8 +99,7 @@ class TestDecodeSessionGoldenPath:
     """decode_session exists and produces a tracking DecodingResult."""
 
     def test_import(self) -> None:
-        """decode_session is importable from both neurospatial and neurospatial.decoding."""
-        from neurospatial import decode_session as ds2  # noqa: F401
+        """decode_session is importable from neurospatial.decoding (canonical path)."""
         from neurospatial.decoding import decode_session  # noqa: F401
 
     def test_returns_decoding_result(self) -> None:

@@ -229,7 +229,7 @@ from neurospatial._exceptions import (
     RegionNotFoundError,
 )
 from neurospatial.composite import CompositeEnvironment
-from neurospatial.decoding import bin_spikes_in_time, decode_session
+from neurospatial.decoding import bin_spikes_in_time
 from neurospatial.environment import Environment
 from neurospatial.regions import Region, Regions
 
@@ -287,7 +287,6 @@ __all__ = [
     "annotation",
     "behavior",
     "bin_spikes_in_time",
-    "decode_session",
     "decoding",
     "encoding",
     "events",

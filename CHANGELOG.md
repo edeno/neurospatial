@@ -15,8 +15,9 @@ these are called out under a dedicated **Breaking changes** heading.
   encode→bin→decode golden path in `neurospatial.decoding.session`.  Glues
   `compute_spatial_rates`, `bin_spikes_in_time`, and `decode_position` into a
   single function so beginners can decode position in ≤10 lines.  Exported from
-  both `neurospatial.decoding` and `neurospatial` top-level.  Accepts an
-  optional `encoding_models=` array to bypass the encoding step entirely.
+  `neurospatial.decoding` (`from neurospatial.decoding import decode_session`).
+  Accepts an optional `encoding_models=` array to bypass the encoding step
+  entirely.
   Extra keyword arguments are forwarded verbatim to `decode_position`.
 
 - `normalize_spike_times` promoted to public API: now exported from
