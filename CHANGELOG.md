@@ -9,6 +9,112 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ## [Unreleased]
 
+### Added
+
+- `decode_session(env, spike_times, times, positions, *, dt, ...)` — one-call
+  encode→bin→decode golden path in `neurospatial.decoding.session`.  Glues
+  `compute_spatial_rates`, `bin_spikes_in_time`, and `decode_position` into a
+  single function so beginners can decode position in ≤10 lines.  Exported from
+  `neurospatial.decoding` (`from neurospatial.decoding import decode_session`).
+  Accepts an optional `encoding_models=` array to bypass the encoding step
+  entirely.
+  Extra keyword arguments are forwarded verbatim to `decode_position`.
+
+- `normalize_spike_times` promoted to public API: now exported from
+  `neurospatial.encoding` (and present in `__all__`).  The implementation
+  remains in `neurospatial.encoding._spikes`; all existing internal callers
+  are unaffected.  The docstring example import path updated to the public
+  form `from neurospatial.encoding import normalize_spike_times`.
+
+### Changed
+
+- Docs (Phase 0.6 sweep): rewrote Workflow 1 in `docs/user-guide/workflows.md` to use the
+  canonical `compute_spatial_rate(env, spike_times, times, positions, ...).firing_rate` idiom
+  with `simulate_trajectory_ou` + `PlaceCellModel` fixtures, replacing the hand-rolled
+  `np.histogram` / `scipy.ndimage.gaussian_filter` approach. Added a CI snippet entry
+  (`workflows_place_field_canonical`) to `docs/snippets.yml`.
+
+### Fixed
+
+- The bare-`Environment()` error now uses a unique code `[E1006]` (was
+  `[E1001]`, which collided with "No active bins found") and points at the
+  correct docs host (`https://edeno.github.io/neurospatial/`).  Documented in
+  `docs/errors.md`.
+
+- `Environment.distance_to(region_name)` now raises `RegionNotFoundError`
+  (from `neurospatial._exceptions`) instead of a bare `KeyError` when the
+  named region is absent.  `RegionNotFoundError` subclasses `KeyError`, so all
+  existing `except KeyError` blocks keep working without change.
+
+- Removed stale `compute_firing_rate(...)` calls (that function does not exist publicly) from
+  `docs/user-guide/workflows.md` (Workflow 3) and `docs/user-guide/spatial-analysis.md`;
+  replaced with the correct `compute_spatial_rate(env, spike_times, times, positions, ...).firing_rate`
+  API and argument order.
+
+- Replaced 11 broken `env.plot(field, ax=...)` calls in `docs/user-guide/spike-field-primitives.md`
+  and `docs/user-guide/rl-primitives.md` with `env.plot_field(field, ax=...)`. The `env.plot()`
+  method's first positional argument is `ax`, not a field array, so passing a field there was silently
+  broken.
+
+- Updated `examples/20_bayesian_decoding.py` (and the jupytext-paired `.ipynb`) to use the batch
+  `compute_spatial_rates(env, spike_times_list, times, positions, ...).firing_rates` for encoding
+  models and the canonical `bin_spikes_in_time(spike_trains, dt, t_start, t_stop)` helper for
+  time-binned spike counts; regenerated the notebook via `jupytext --sync`.
+
+- Bumped stale version strings from `v0.4.0` to `v0.5.0` in `docs/index.md` (status line and
+  BibTeX entry) and `README.md` (dependency table header and BibTeX entry).
+
+- `GraphValidationError` messages in `layout/validation.py` and the wrapping
+  `ValueError` in `environment/core.py` no longer reference the internal
+  developer guide `CLAUDE.md`.  Error text now points to the public issue
+  tracker (`https://github.com/edeno/neurospatial/issues`) instead.  A
+  permanent repo-wide backstop test (`tests/test_no_internal_doc_refs.py`)
+  asserts that no source file under `src/neurospatial/` contains this string,
+  preventing the leak from regressing.
+
+- `Environment.__init__` now raises a beginner-grade `ValueError` when called
+  without arguments (i.e. bare `Environment()`).  The old message "layout
+  parameter is required" gave no actionable guidance; the new message explains
+  that `Environment` must be created through a factory method, shows a concrete
+  correct example (`Environment.from_samples(data, bin_size=2.0)`), lists the
+  other available factories (`from_polygon`, `from_graph`, `from_grid_mask`,
+  `from_pixel_mask`), and links to the online docs — matching the style already
+  used by `EnvironmentNotFittedError`.  The exception type remains `ValueError`
+  so existing `except ValueError` callers are unaffected.
+
+- `align_spikes_to_events` in `events/alignment.py` now rejects `event_times`
+  containing `Inf` values with a descriptive `ValueError`, matching the
+  existing `spike_times` Inf check and fulfilling the docstring promise.
+  Previously an `Inf` event time silently produced an empty-or-wrong result.
+
+- `behavior.trajectory` public functions (`compute_turn_angles`,
+  `compute_step_lengths`, `mean_square_displacement`) and
+  `behavior.navigation.traveled_path_length` now coerce `positions` (and
+  `times` for MSD) with `np.asarray` at the public boundary before any
+  `.ndim`/`.shape` access. Passing a plain Python list no longer raises a
+  confusing `AttributeError`; valid list-of-lists inputs succeed, and
+  malformed inputs raise a descriptive `TypeError` or `ValueError`.
+
+- `bin_spike_train` and `bin_spike_trains` in `encoding/_binning.py` no
+  longer silently drop spikes outside the trajectory time window or spikes
+  that map to inactive environment bins.  When the dropped fraction exceeds
+  50 % (or all spikes are dropped), a `UserWarning` is emitted naming the
+  dropped count, total, both time ranges, and a units-hypothesis hint (e.g.
+  spike_times in milliseconds vs. times in seconds).  Two separate messages
+  cover the two drop causes (time-window and inactive-bin).  The batch path
+  (`bin_spike_trains`, `compute_spatial_rates`) warns exactly **once per
+  cause** in the main process — never from joblib worker processes where
+  warnings are commonly swallowed.  Default behaviour for in-window spikes
+  is byte-for-byte unchanged.
+
+### Added
+
+- New keyword-only parameter `warn_on_drop: bool = True` on
+  `bin_spike_train`, `bin_spike_trains` (`encoding/_binning.py`),
+  `compute_spatial_rate`, and `compute_spatial_rates` (`encoding/spatial.py`).
+  Set to `False` to intentionally silence all spike-drop warnings (e.g. when
+  the caller handles the diagnostic themselves).
+
 ## [0.5.0] - 2026-06-04
 
 ### Added

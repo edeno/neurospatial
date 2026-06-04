@@ -402,3 +402,8 @@ ignore_errors = true
 [[tool.mypy.overrides]]
 module = "docs.examples.*"
 ignore_errors = true
+
+[dependency-groups]
+dev = [
+    "jupytext>=1.16.0",
+]

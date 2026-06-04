@@ -1251,6 +1251,16 @@ def traveled_path_length(
     """
     from neurospatial.behavior.trajectory import compute_step_lengths
 
+    # Coerce array-likes (e.g. Python lists) before any .ndim access.
+    try:
+        positions = np.asarray(positions, dtype=float)
+    except (TypeError, ValueError) as e:
+        actual_type = type(positions).__name__
+        raise TypeError(
+            f"positions must be a numeric array-like object (e.g., numpy array, "
+            f"list of lists, pandas DataFrame). Got {actual_type}: {positions!r}"
+        ) from e
+
     if positions.ndim != 2:
         raise ValueError(
             f"positions must be 2D array (n_samples, n_dims), got {positions.ndim}D"

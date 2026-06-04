@@ -521,3 +521,112 @@ class TestGeodesicDistanceOptimization:
 
         # Step lengths should be finite for connected steps, inf for disconnected
         assert np.all(step_lengths >= 0), "All step lengths should be non-negative"
+
+
+class TestArrayLikeNormalization:
+    """Tests that public boundary functions coerce array-likes before .ndim/.shape access.
+
+    These tests enforce that passing a plain Python list (a common beginner input)
+    either succeeds cleanly or raises a domain ValueError/TypeError — NEVER an
+    AttributeError from accessing .ndim on a list.
+    """
+
+    # --- compute_turn_angles ---
+
+    def test_compute_turn_angles_accepts_list_of_lists(self):
+        """compute_turn_angles must accept a valid Python list-of-lists."""
+        positions_list = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+        # Should succeed — not raise AttributeError or anything else
+        result = compute_turn_angles(positions_list)
+        assert isinstance(result, np.ndarray)
+
+    def test_compute_turn_angles_list_no_attribute_error(self):
+        """compute_turn_angles must not raise AttributeError for a list input."""
+        positions_list = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]]
+        try:
+            compute_turn_angles(positions_list)
+        except AttributeError:
+            pytest.fail(
+                "compute_turn_angles raised AttributeError on list input — "
+                "must coerce with np.asarray before accessing .ndim"
+            )
+        except (ValueError, TypeError):
+            pass  # Domain error is fine
+
+    def test_compute_turn_angles_1d_list_raises_domain_error(self):
+        """compute_turn_angles must raise ValueError/TypeError (not AttributeError) for 1-D input."""
+        with pytest.raises((ValueError, TypeError)):
+            compute_turn_angles([0.0, 1.0, 2.0])  # 1D, not 2D
+
+    def test_compute_turn_angles_non_numeric_raises_domain_error(self):
+        """compute_turn_angles must raise TypeError (not AttributeError) for non-numeric input."""
+        with pytest.raises((TypeError, ValueError)):
+            compute_turn_angles([["a", "b"], ["c", "d"], ["e", "f"]])
+
+    # --- compute_step_lengths ---
+
+    def test_compute_step_lengths_accepts_list_of_lists(self):
+        """compute_step_lengths must accept a valid Python list-of-lists."""
+        positions_list = [[0.0, 0.0], [1.0, 0.0], [2.0, 0.0], [3.0, 0.0]]
+        result = compute_step_lengths(positions_list, metric="euclidean")
+        assert isinstance(result, np.ndarray)
+        assert len(result) == 3
+
+    def test_compute_step_lengths_list_no_attribute_error(self):
+        """compute_step_lengths must not raise AttributeError for a list input."""
+        positions_list = [[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]]
+        try:
+            compute_step_lengths(positions_list)
+        except AttributeError:
+            pytest.fail(
+                "compute_step_lengths raised AttributeError on list input — "
+                "must coerce with np.asarray before accessing .ndim"
+            )
+        except (ValueError, TypeError):
+            pass  # Domain error is fine
+
+    def test_compute_step_lengths_1d_list_raises_domain_error(self):
+        """compute_step_lengths must raise ValueError/TypeError (not AttributeError) for 1-D input."""
+        with pytest.raises((ValueError, TypeError)):
+            compute_step_lengths([0.0, 1.0, 2.0])  # 1D flat list
+
+    def test_compute_step_lengths_non_numeric_raises_domain_error(self):
+        """compute_step_lengths must raise TypeError (not AttributeError) for non-numeric input."""
+        with pytest.raises((TypeError, ValueError)):
+            compute_step_lengths([["a", "b"], ["c", "d"]])
+
+    # --- mean_square_displacement ---
+
+    def test_msd_accepts_list_of_lists(self):
+        """mean_square_displacement must accept a valid Python list-of-lists."""
+        positions_list = [[float(i), 0.0] for i in range(10)]
+        times_list = [float(i) * 0.1 for i in range(10)]
+        result = mean_square_displacement(positions_list, times_list)
+        assert hasattr(result, "lags")
+        assert hasattr(result, "msd")
+
+    def test_msd_list_no_attribute_error(self):
+        """mean_square_displacement must not raise AttributeError for list input."""
+        positions_list = [[float(i), 0.0] for i in range(10)]
+        times_list = [float(i) * 0.1 for i in range(10)]
+        try:
+            mean_square_displacement(positions_list, times_list)
+        except AttributeError:
+            pytest.fail(
+                "mean_square_displacement raised AttributeError on list input — "
+                "must coerce with np.asarray before accessing .ndim"
+            )
+        except (ValueError, TypeError):
+            pass  # Domain error is fine
+
+    def test_msd_1d_list_raises_domain_error(self):
+        """mean_square_displacement raises ValueError/TypeError (not AttributeError) for 1-D input."""
+        times_list = [0.0, 0.1, 0.2]
+        with pytest.raises((ValueError, TypeError)):
+            mean_square_displacement([0.0, 1.0, 2.0], times_list)  # 1D flat list
+
+    def test_msd_non_numeric_raises_domain_error(self):
+        """mean_square_displacement raises TypeError (not AttributeError) for non-numeric input."""
+        times_list = [0.0, 0.1, 0.2]
+        with pytest.raises((TypeError, ValueError)):
+            mean_square_displacement([["a", "b"], ["c", "d"], ["e", "f"]], times_list)

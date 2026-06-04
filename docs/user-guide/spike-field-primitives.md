@@ -276,13 +276,13 @@ place_field = compute_spatial_rate(
 # Visualize using environment plotting
 fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 
-env.plot(occupancy, ax=axes[0], cmap='viridis')
+env.plot_field(occupancy, ax=axes[0], cmap='viridis')
 axes[0].set_title('Occupancy (seconds)')
 
-env.plot(firing_rate, ax=axes[1], cmap='hot')
+env.plot_field(firing_rate, ax=axes[1], cmap='hot')
 axes[1].set_title('Firing Rate (raw)')
 
-env.plot(place_field, ax=axes[2], cmap='hot')
+env.plot_field(place_field, ax=axes[2], cmap='hot')
 axes[2].set_title('Place Field (smoothed)')
 
 plt.tight_layout()
@@ -293,7 +293,7 @@ plt.show()
 
 - Use `cmap='viridis'` for occupancy (sequential)
 - Use `cmap='hot'` or `cmap='inferno'` for firing rates (perceptually uniform, peaks visible)
-- The `env.plot()` method automatically handles NaN values (shown as white/transparent)
+- The `env.plot_field()` method automatically handles NaN values (shown as white/transparent)
 
 ## Complete Example
 
@@ -336,7 +336,7 @@ place_field = result.firing_rate
 # 5. Visualize
 import matplotlib.pyplot as plt
 fig, ax = plt.subplots(figsize=(8, 6))
-env.plot(place_field, ax=ax, cmap='hot')
+env.plot_field(place_field, ax=ax, cmap='hot')
 ax.set_title('Place Field')
 plt.show()
 

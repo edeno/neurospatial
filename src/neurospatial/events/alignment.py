@@ -153,12 +153,19 @@ def align_spikes_to_events(
                 "  HOW: Remove Inf values before alignment."
             )
 
-    if event_times.size > 0 and np.any(np.isnan(event_times)):
-        raise ValueError(
-            "event_times contains NaN values.\n"
-            "  WHY: Cannot align spikes to undefined event times.\n"
-            "  HOW: Remove NaN event times before alignment."
-        )
+    if event_times.size > 0:
+        if np.any(np.isnan(event_times)):
+            raise ValueError(
+                "event_times contains NaN values.\n"
+                "  WHY: Cannot align spikes to undefined event times.\n"
+                "  HOW: Remove NaN event times before alignment."
+            )
+        if np.any(np.isinf(event_times)):
+            raise ValueError(
+                "event_times contains Inf values.\n"
+                "  WHY: Cannot align spikes to infinite event times.\n"
+                "  HOW: Remove Inf event times before alignment."
+            )
 
     # Handle empty cases
     if event_times.size == 0:

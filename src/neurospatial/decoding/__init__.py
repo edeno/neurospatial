@@ -167,6 +167,7 @@ from neurospatial.decoding.posterior import (
     decode_position,
     normalize_to_posterior,
 )
+from neurospatial.decoding.session import decode_session
 from neurospatial.decoding.trajectory import (
     IsotonicFitResult,
     LinearFitResult,
@@ -196,6 +197,8 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     # Metrics
     "confusion_matrix",
     "credible_region",
+    # One-call golden path
+    "decode_session",
     # Core decoding
     "decode_position",
     "decoding_correlation",

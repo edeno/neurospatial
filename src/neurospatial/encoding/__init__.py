@@ -17,6 +17,7 @@ phase_precession : Theta phase precession analysis
 population : Population-level metrics
 """
 
+# Spike-time normalization (public helper used by decode_session and internal callers)
 # Border/boundary cell analysis
 # Field metrics (from _field_metrics and _metrics modules)
 from neurospatial.encoding._field_metrics import (
@@ -37,6 +38,7 @@ from neurospatial.encoding._metrics import (
     spatial_coverage_single_cell,
     spatial_information,
 )
+from neurospatial.encoding._spikes import normalize_spike_times
 from neurospatial.encoding.border import (
     border_score,
     compute_region_coverage,
@@ -115,6 +117,8 @@ from neurospatial.encoding.view import (
 )
 
 __all__ = [  # noqa: RUF022 - organized by category
+    # Spike-time normalization
+    "normalize_spike_times",
     # Border/boundary cell analysis
     "border_score",
     "compute_region_coverage",
