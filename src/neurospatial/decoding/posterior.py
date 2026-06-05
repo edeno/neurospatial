@@ -1156,7 +1156,7 @@ def decode_position_summary(
     times: NDArray[np.float64] | None = None,
     validate: bool = True,
     dtype: Any = np.float64,
-    time_chunk: int | None = 1024,
+    time_chunk: int = 1024,
 ) -> DecodingSummary:
     """Memory-safe decode that streams per-time reductions, not the posterior.
 
@@ -1197,11 +1197,13 @@ def decode_position_summary(
     dtype : np.float32 or np.float64, default=np.float64
         Working dtype of each posterior block. ``np.float32`` halves the
         transient per-block memory.
-    time_chunk : int or None, default=1024
-        Time-block size (rows) processed at a time. Smaller blocks use less
-        transient memory; ``None`` would process all time bins in one block
-        (materializing the full posterior transiently, which defeats the
-        purpose), so it defaults to a sensible non-None value.
+    time_chunk : int, default=1024
+        Time-block size (rows) processed at a time; must be a positive integer.
+        Smaller blocks use less transient memory. ``None`` is **rejected**:
+        processing all time bins in one block would materialize the full
+        ``(n_time_bins, n_bins)`` posterior transiently, defeating the purpose
+        of this streamed summary decoder. Use :func:`decode_position` if you
+        want the full posterior.
 
     Returns
     -------
@@ -1213,8 +1215,9 @@ def decode_position_summary(
     Raises
     ------
     ValueError
-        Same conditions as :func:`decode_position` (invalid method, no finite
-        bins, bin-count mismatch, bad ``times`` length, validation failures).
+        If ``time_chunk`` is ``None`` or not a positive integer. Plus the same
+        conditions as :func:`decode_position` (invalid method, no finite bins,
+        bin-count mismatch, bad ``times`` length, validation failures).
 
     Notes
     -----
@@ -1230,10 +1233,17 @@ def decode_position_summary(
     DecodingSummary : Streamed per-time reductions container.
     decode_session_summary : One-call encode->bin->summary-decode wrapper.
     """
-    if time_chunk is not None and time_chunk < 1:
+    if time_chunk is None:
         raise ValueError(
-            f"time_chunk must be a positive integer or None, got {time_chunk}."
+            "time_chunk=None is not allowed for decode_position_summary: this "
+            "streamed summary decoder processes the posterior one time-block at "
+            "a time, and None would materialize the full (n_time, n_bins) "
+            "posterior, defeating its purpose. Use decode_position if you want "
+            "the full posterior, or pass a positive time_chunk (default 1024) "
+            "here."
         )
+    if time_chunk < 1:
+        raise ValueError(f"time_chunk must be a positive integer, got {time_chunk}.")
 
     spike_counts, encoding_models, nonfinite_mask = _prepare_decode_inputs(
         env,
@@ -1284,7 +1294,10 @@ def decode_position_summary(
     # matches the block log-likelihood; a stationary (1-D) prior is reused.
     prior_is_time_varying = prior is not None and np.asarray(prior).ndim == 2
 
-    block = n_time if time_chunk is None else time_chunk
+    # time_chunk is guaranteed a positive int by the up-front guard, so the
+    # block is always bounded — the full (n_time, n_bins) posterior is never
+    # materialized in one shot.
+    block = time_chunk
     for start in range(0, n_time, block):
         stop = min(start + block, n_time)
         block_prior = prior

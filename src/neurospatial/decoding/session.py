@@ -566,7 +566,10 @@ min_occupancy, speed, min_speed, max_gap, encoding_models, warn_on_drop
         Forwarded to the per-block decode (same semantics as
         :func:`~neurospatial.decoding.decode_position_summary`): ``prior``,
         ``method``, ``validate``, ``dtype``, and ``time_chunk`` (the streaming
-        block size; defaults to 1024). Unknown kwargs raise ``TypeError``.
+        block size; a positive integer, defaults to 1024 — ``None`` is rejected
+        because it would materialize the full posterior; use
+        :func:`decode_session` for the full posterior). Unknown kwargs raise
+        ``TypeError``.
 
     Returns
     -------
@@ -577,7 +580,7 @@ min_occupancy, speed, min_speed, max_gap, encoding_models, warn_on_drop
     Raises
     ------
     ValueError
-        If ``time_chunk`` is not a positive integer or ``None``; if a forwarded
+        If ``time_chunk`` is ``None`` or not a positive integer; if a forwarded
         ``prior`` has a shape inconsistent with the decode (1-D must be
         ``(n_bins,)``, 2-D must be ``(n_time, n_bins)``); plus the same
         conditions as :func:`~neurospatial.decoding.decode_position`.
@@ -607,10 +610,17 @@ min_occupancy, speed, min_speed, max_gap, encoding_models, warn_on_drop
             f"method, validate, dtype, time_chunk."
         )
 
-    if time_chunk is not None and time_chunk < 1:
+    if time_chunk is None:
         raise ValueError(
-            f"time_chunk must be a positive integer or None, got {time_chunk}."
+            "time_chunk=None is not allowed for decode_session_summary: this "
+            "streamed summary decoder bins time and reduces the posterior one "
+            "time-block at a time, and None would materialize the full "
+            "(n_time, n_bins) posterior, defeating its purpose. Use "
+            "decode_session if you want the full posterior, or pass a positive "
+            "time_chunk (default 1024) here."
         )
+    if time_chunk < 1:
+        raise ValueError(f"time_chunk must be a positive integer, got {time_chunk}.")
 
     # --- Encode once + build the global decode time grid (no count matrix) ---
     (
@@ -695,7 +705,10 @@ min_occupancy, speed, min_speed, max_gap, encoding_models, warn_on_drop
     posterior_entropy = np.empty(n_time, dtype=np.float64)
     peak_prob = np.empty(n_time, dtype=np.float64)
 
-    block = n_time if time_chunk is None else time_chunk
+    # time_chunk is guaranteed a positive int by the up-front guard, so the
+    # streamed-binning loop and the posterior reduction below both stay bounded
+    # — the full (n_time, n_bins) posterior is never materialized in one shot.
+    block = time_chunk
     for start in range(0, n_time, block):
         stop = min(start + block, n_time)
         is_last_block = stop == n_time

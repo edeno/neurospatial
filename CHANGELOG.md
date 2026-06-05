@@ -9,6 +9,16 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ## [Unreleased]
 
+### Fixed
+
+- The summary decoders `decode_position_summary` and `decode_session_summary`
+  now **reject `time_chunk=None`** (raising a clear `ValueError`). Previously a
+  `None` value set the streaming block to the full session length, materializing
+  the full `(n_time, n_bins)` posterior transiently and defeating the
+  memory-safe "never materialize the full posterior" contract these functions
+  promise. `time_chunk` must be a positive integer (default `1024`); use
+  `decode_position` / `decode_session` if you want the full posterior.
+
 ### Added
 
 - Speed filtering on the encode path. `compute_spatial_rate` and

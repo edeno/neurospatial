@@ -12,6 +12,7 @@ Tests
 from __future__ import annotations
 
 import numpy as np
+import pytest
 from numpy.testing import assert_allclose
 
 from neurospatial import Environment
@@ -937,21 +938,46 @@ class TestDecodeSessionSummaryStreaming:
         # Sanity: the chunking really did straddle a non-multiple boundary.
         assert got.map_bin.shape[0] % 37 != 0
 
-    def test_parity_time_chunk_none_single_block(self) -> None:
-        """time_chunk=None processes the whole session as one block, same result."""
+    def test_time_chunk_none_rejected(self) -> None:
+        """R12: time_chunk=None is rejected (it would materialize the posterior)."""
         from neurospatial.decoding import decode_session_summary
 
         env, spike_times, times, positions = _make_linear_track_sim(
             n_neurons=10, duration=10.0, seed=21
         )
         dt = 0.1
-        ref = _summary_reference(
-            env, spike_times, times, positions, dt=dt, time_chunk=None
+        with pytest.raises(ValueError, match=r"full.*posterior|decode_session"):
+            decode_session_summary(
+                env, spike_times, times, positions, dt=dt, time_chunk=None
+            )
+
+    @pytest.mark.parametrize("bad", [0, -1])
+    def test_time_chunk_non_positive_rejected(self, bad) -> None:
+        """R12: time_chunk < 1 is rejected up front with a clear ValueError."""
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=10, duration=10.0, seed=21
         )
-        got = decode_session_summary(
-            env, spike_times, times, positions, dt=dt, time_chunk=None
+        dt = 0.1
+        with pytest.raises(ValueError, match="time_chunk must be a positive integer"):
+            decode_session_summary(
+                env, spike_times, times, positions, dt=dt, time_chunk=bad
+            )
+
+    def test_default_and_explicit_chunk_agree(self) -> None:
+        """R12 regression: default time_chunk and an explicit positive chunk agree."""
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=10, duration=10.0, seed=21
         )
-        self._assert_summary_equal(got, ref)
+        dt = 0.1
+        default = decode_session_summary(env, spike_times, times, positions, dt=dt)
+        chunked = decode_session_summary(
+            env, spike_times, times, positions, dt=dt, time_chunk=37
+        )
+        self._assert_summary_equal(chunked, default)
 
     def test_parity_with_precomputed_encoding_models(self) -> None:
         """encoding_models passthrough also streams correctly."""
