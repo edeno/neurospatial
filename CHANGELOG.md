@@ -48,6 +48,24 @@ these are called out under a dedicated **Breaking changes** heading.
     (check units; pass `max_gap=None`), instead of silently returning an empty
     rate map. The warning fires once per call (not per neuron in the batch
     path) and is suppressed by `warn_on_drop=False`.
+- `decode_session` and `decode_session_summary` gain a keyword-only `dtype`
+  parameter (`np.float32` / `np.float64`, default `np.float64`). "Decode in
+  this dtype": a single `decode_session(dtype=np.float32)` controls **both**
+  the encoding-model working set and the posterior dtype, end-to-end — the
+  functions no longer force-promote encoding models back to `float64`. On
+  `decode_session_summary` it is now an explicit parameter rather than a
+  `decode_kwargs` entry. Default `np.float64` leaves every existing caller
+  byte-for-byte unchanged; any other dtype raises `ValueError`.
+
+### Performance
+
+- `decode_session(dtype=np.float32)` / `decode_session_summary(dtype=np.float32)`
+  now actually halve the decode working set on the beginner golden path: the
+  `float32` rate-map dtype is honored end-to-end (encoding-model working set +
+  posterior) instead of being silently promoted back to `float64` inside the
+  session helpers. Values match `float64` within `float32` tolerance (the rate
+  computation is done in `float64` and only the result is cast, per
+  `compute_spatial_rates`).
 
 ### Breaking changes
 
