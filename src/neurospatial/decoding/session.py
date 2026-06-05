@@ -640,6 +640,13 @@ min_occupancy, speed, min_speed, max_gap, encoding_models, warn_on_drop
     # zero-row block here only to satisfy the helper's interface; its actual
     # per-block counts come from the streamed binning below. We pass a
     # (1, n_neurons) row so the neuron-count agreement check still fires.
+    #
+    # NOTE: the real per-block counts produced by the streamed binning below are
+    # intentionally NOT routed through _validate_inputs. They come straight from
+    # np.histogram on float spike times, so they are non-negative int64 by
+    # construction (cannot be fractional, negative, or NaN) — the value checks
+    # _validate_inputs performs are already guaranteed, so the exemption is
+    # deliberate, not an oversight.
     n_neurons = firing_rates.shape[0]
     _dummy_counts = np.zeros((1, n_neurons), dtype=np.int64)
     _checked_counts, firing_rates, nonfinite_mask = _prepare_decode_inputs(
@@ -721,16 +728,20 @@ min_occupancy, speed, min_speed, max_gap, encoding_models, warn_on_drop
 
         # Block alignment contract: the block has exactly `stop - start` bins
         # and its centers equal the global centers slice (no off-by-one / gap /
-        # double-count at block boundaries). Assert cheaply in-loop.
-        assert counts_block.shape == (stop - start, n_neurons), (
-            f"block count shape {counts_block.shape} != expected "
-            f"{(stop - start, n_neurons)} for block [{start}, {stop})"
-        )
+        # double-count at block boundaries). These guard a load-bearing
+        # correctness invariant, so raise unconditionally (do NOT use bare
+        # `assert`, which `python -O` strips).
+        if counts_block.shape != (stop - start, n_neurons):
+            raise RuntimeError(
+                f"block count shape {counts_block.shape} != expected "
+                f"{(stop - start, n_neurons)} for block [{start}, {stop})"
+            )
         block_centers = block_edges[:-1] + dt / 2.0
-        assert np.array_equal(block_centers, bin_centers_time[start:stop]), (
-            "streamed block centers drifted from the global time grid; "
-            "block-boundary alignment is broken"
-        )
+        if not np.array_equal(block_centers, bin_centers_time[start:stop]):
+            raise RuntimeError(
+                f"streamed block centers drifted from the global time grid for "
+                f"block [{start}, {stop}); block-boundary alignment is broken"
+            )
 
         block_prior = prior
         if prior_is_time_varying:
