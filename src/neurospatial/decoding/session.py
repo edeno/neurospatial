@@ -95,6 +95,7 @@ def decode_session(
     min_occupancy: float = 0.0,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
+    max_gap: float | None = 0.5,
     encoding_models: NDArray[np.float64] | None = None,
     warn_on_drop: bool = True,
     **decode_kwargs: Any,
@@ -152,6 +153,14 @@ def decode_session(
         the occupancy denominator of the encoding model via one shared gate.
         When ``None`` (default) no speed filtering is applied (unchanged).
         Ignored when ``encoding_models`` is provided.
+    max_gap : float or None, optional
+        Maximum trajectory time gap (seconds), forwarded to the encoding step
+        (see :func:`~neurospatial.encoding.compute_spatial_rates`). Intervals
+        with ``dt > max_gap`` are dropped from BOTH the spike numerator and the
+        occupancy denominator of the encoding model. Default 0.5 (matches
+        ``compute_spatial_rates``); pass ``None`` to count all intervals
+        regardless of gap size (e.g. for intentionally-gappy data). Ignored
+        when ``encoding_models`` is provided.
     encoding_models : NDArray[np.float64], shape (n_neurons, n_bins) or None
         Pre-computed place-field firing-rate maps.  When provided, the
         encoding step (``compute_spatial_rates``) is skipped entirely and
@@ -291,6 +300,7 @@ def decode_session(
         min_occupancy=min_occupancy,
         speed=speed,
         min_speed=min_speed,
+        max_gap=max_gap,
         encoding_models=encoding_models,
         warn_on_drop=warn_on_drop,
     )
@@ -318,6 +328,7 @@ def _encode_and_bin(
     min_occupancy: float,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
+    max_gap: float | None = 0.5,
     encoding_models: NDArray[np.float64] | None,
     warn_on_drop: bool,
 ) -> tuple[NDArray[np.float64], NDArray[np.int64], NDArray[np.float64]]:
@@ -393,6 +404,7 @@ def _encode_and_bin(
             fill_value=0.0,
             speed=speed,
             min_speed=min_speed,
+            max_gap=max_gap,
             warn_on_drop=warn_on_drop,
         )
         firing_rates = np.asarray(rates_result.firing_rates, dtype=np.float64)
@@ -427,6 +439,7 @@ def decode_session_summary(
     min_occupancy: float = 0.0,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
+    max_gap: float | None = 0.5,
     encoding_models: NDArray[np.float64] | None = None,
     warn_on_drop: bool = True,
     **decode_kwargs: Any,
@@ -443,8 +456,9 @@ def decode_session_summary(
     Parameters
     ----------
     env, spike_times, times, positions, dt, bandwidth, smoothing_method, \
-min_occupancy, speed, min_speed, encoding_models, warn_on_drop
-        Same as :func:`decode_session`.
+min_occupancy, speed, min_speed, max_gap, encoding_models, warn_on_drop
+        Same as :func:`decode_session` (``max_gap`` forwards to
+        :func:`~neurospatial.encoding.compute_spatial_rates`).
     **decode_kwargs
         Forwarded to
         :func:`~neurospatial.decoding.decode_position_summary` (e.g. ``prior``,
@@ -474,6 +488,7 @@ min_occupancy, speed, min_speed, encoding_models, warn_on_drop
         min_occupancy=min_occupancy,
         speed=speed,
         min_speed=min_speed,
+        max_gap=max_gap,
         encoding_models=encoding_models,
         warn_on_drop=warn_on_drop,
     )

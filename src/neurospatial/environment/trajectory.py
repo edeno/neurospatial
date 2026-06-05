@@ -94,6 +94,7 @@ def interval_valid_mask(
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
+    start_bin: NDArray[np.int64] | None = None,
 ) -> NDArray[np.bool_]:
     """Compute the per-interval validity mask shared by spikes and occupancy.
 
@@ -138,6 +139,14 @@ def interval_valid_mask(
         Maximum time gap in seconds. Intervals with ``dt > max_gap`` are
         dropped. Default 0.5; ``None`` disables gap gating on BOTH sides
         (spikes and occupancy) so they stay aligned.
+    start_bin : ndarray of int64, shape (n_samples,), or None
+        Optional precomputed ``env.bin_at(positions)`` result. When provided,
+        it is used directly for the out-of-bounds-start gate instead of
+        recomputing ``env.bin_at`` internally — letting callers that have
+        already mapped ``positions`` to bins (e.g. ``env.occupancy``) avoid a
+        redundant second ``bin_at`` pass. When ``None`` (default), ``bin_at``
+        is computed here as before. Behaviour is identical either way; the
+        passed array must be the ``bin_at`` of the SAME ``positions``.
 
     Returns
     -------
@@ -168,7 +177,10 @@ def interval_valid_mask(
 
     # Filter out intervals whose START sample is outside the active
     # environment (bin_at returns -1 for points outside any active bin).
-    start_bin = cast("NDArray[np.int64]", env.bin_at(positions).astype(np.int64))
+    # Reuse a caller-supplied bin_at result when available (e.g. env.occupancy
+    # already computes bin_at(positions)); otherwise compute it here.
+    if start_bin is None:
+        start_bin = cast("NDArray[np.int64]", env.bin_at(positions).astype(np.int64))
     valid_mask &= start_bin[:-1] >= 0
 
     return valid_mask
@@ -438,6 +450,7 @@ class EnvironmentTrajectory:
             speed=speed,
             min_speed=min_speed,
             max_gap=max_gap,
+            start_bin=bin_indices,
         )
 
         # Initialize occupancy array

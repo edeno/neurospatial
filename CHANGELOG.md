@@ -291,6 +291,15 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ### Changed
 
+- **Default rate-map output changed for gappy / out-of-bounds data.** With the
+  new `max_gap` default of `0.5 s`, `compute_spatial_rate` /
+  `compute_spatial_rates` (and `decode_session` / `decode_session_summary`,
+  which forward `max_gap`) now exclude spikes inside large tracking gaps and
+  out-of-bounds excursions from the numerator so it matches the occupancy
+  denominator. See the **Fixed** entry "Firing-rate numerator/denominator
+  alignment on the FULL interval mask" for the full rationale and the
+  `max_gap=None` opt-out.
+
 - `detect_region_crossings` argument order changed to follow the
   behavioral-segmentation convention:
   `(position_bins, times, env, *, region_name, direction=...)`. The old

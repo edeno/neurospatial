@@ -181,6 +181,7 @@ def _bin_spike_train_with_stats(
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
+    interval_mask: NDArray[np.bool_] | None = None,
 ) -> tuple[
     NDArray[np.float64],  # spike_counts, shape (n_bins,)
     int,  # n_time_dropped
@@ -230,6 +231,16 @@ def _bin_spike_train_with_stats(
         gaps, out-of-bounds start, low speed) are INTENTIONAL exclusions and
         are NOT counted as ``n_bin_dropped`` (the drop stats stay about
         time-window and inactive-bin drops only).
+    interval_mask : ndarray of bool, shape (n_samples - 1,), or None
+        Optional precomputed interval-valid mask (the result of
+        :func:`~neurospatial.environment.trajectory.interval_valid_mask` for
+        this ``(times, positions, env, speed, min_speed, max_gap)``). The mask
+        depends only on the trajectory and gate parameters — NOT on the
+        per-neuron ``spike_times`` — so the batch path computes it ONCE and
+        passes it into every per-neuron call here, avoiding a redundant
+        ``env.bin_at(positions)`` over the full trajectory per neuron. When
+        ``None`` (e.g. a direct kernel caller), the mask is computed here as a
+        fallback. Either way the result is byte-for-byte identical.
 
     Returns
     -------
@@ -279,16 +290,22 @@ def _bin_spike_train_with_stats(
     # handle that degenerate case upstream.)
     gate_active = max_gap is not None or (speed is not None and min_speed is not None)
     if gate_active and len(spike_times_valid) > 0 and len(times) >= 2:
-        from neurospatial.environment.trajectory import interval_valid_mask
+        # Use the caller-precomputed mask when supplied (the batch path computes
+        # it ONCE for the whole trajectory and reuses it across all neurons);
+        # otherwise compute it here as a fallback for direct kernel callers.
+        if interval_mask is not None:
+            valid_mask = interval_mask
+        else:
+            from neurospatial.environment.trajectory import interval_valid_mask
 
-        valid_mask = interval_valid_mask(
-            times,
-            positions,
-            cast("EnvironmentProtocol", env),
-            speed=speed,
-            min_speed=min_speed,
-            max_gap=max_gap,
-        )
+            valid_mask = interval_valid_mask(
+                times,
+                positions,
+                cast("EnvironmentProtocol", env),
+                speed=speed,
+                min_speed=min_speed,
+                max_gap=max_gap,
+            )
         spike_interval = np.searchsorted(times, spike_times_valid, side="right") - 1
         upper = max(len(times) - 2, 0)
         spike_interval = np.clip(spike_interval, 0, upper)
@@ -317,6 +334,65 @@ def _bin_spike_train_with_stats(
         spike_counts = np.bincount(valid_bins, minlength=n_bins).astype(np.float64)
 
     return spike_counts, n_time_dropped, n_bin_dropped, n_total, n_after_time
+
+
+def _resolve_interval_mask(
+    env: Environment,
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    speed: NDArray[np.float64] | None,
+    min_speed: float | None,
+    max_gap: float | None,
+) -> NDArray[np.bool_] | None:
+    """Compute the per-interval validity mask once for a whole trajectory.
+
+    The interval-valid mask depends only on ``(times, positions, env, speed,
+    min_speed, max_gap)`` — none of which vary per neuron — so the batch path
+    computes it ONCE here and reuses it across every per-neuron spike-binning
+    call, instead of re-running ``env.bin_at(positions)`` over the full
+    trajectory inside each neuron's kernel call. The single-neuron path uses it
+    too, keeping one code path.
+
+    Returns ``None`` when no gate is active (``max_gap is None`` and no speed
+    filter) or when there are fewer than two samples — in those cases the
+    kernel never consults a mask, so there is nothing to precompute.
+
+    Parameters
+    ----------
+    env : Environment
+        The spatial environment.
+    times : ndarray, shape (n_samples,)
+        Trajectory timestamps (already cast/finite).
+    positions : ndarray, shape (n_samples, n_dims)
+        Trajectory positions (already reshaped to 2-D).
+    speed : ndarray, shape (n_samples,), or None
+        Resolved speed array.
+    min_speed : float or None
+        Speed threshold.
+    max_gap : float or None
+        Maximum interval gap in seconds.
+
+    Returns
+    -------
+    ndarray of bool, shape (n_samples - 1,), or None
+        The shared interval-valid mask, or ``None`` when no gate is active or
+        there are too few samples to form an interval.
+    """
+    gate_active = max_gap is not None or (speed is not None and min_speed is not None)
+    if not gate_active or len(times) < 2:
+        return None
+
+    from neurospatial.environment.trajectory import interval_valid_mask
+
+    return interval_valid_mask(
+        times,
+        positions,
+        cast("EnvironmentProtocol", env),
+        speed=speed,
+        min_speed=min_speed,
+        max_gap=max_gap,
+    )
 
 
 def _emit_all_excluded_speed_warning(
@@ -574,6 +650,14 @@ def bin_spike_train(
     if positions.ndim == 1:
         positions = positions.reshape(-1, 1)
 
+    # Compute the interval-valid mask once (it depends only on the trajectory
+    # and gate params, not on spike_times) and pass it into the kernel. Trivial
+    # here for the single-neuron path, but keeps a single code path with the
+    # batch path where it removes a per-neuron recompute.
+    interval_mask = _resolve_interval_mask(
+        env, times, positions, speed=speed, min_speed=min_speed, max_gap=max_gap
+    )
+
     spike_counts, n_time_dropped, n_bin_dropped, n_total, n_after_time = (
         _bin_spike_train_with_stats(
             env,
@@ -583,6 +667,7 @@ def bin_spike_train(
             speed=speed,
             min_speed=min_speed,
             max_gap=max_gap,
+            interval_mask=interval_mask,
         )
     )
 
@@ -853,6 +938,22 @@ def bin_spike_trains(
         max_gap=max_gap,
     )
 
+    # Compute the interval-valid mask ONCE for the whole trajectory and reuse it
+    # across every per-neuron kernel call. The mask depends only on
+    # (times, positions, env, speed, min_speed, max_gap) — none vary per neuron
+    # — so computing it inside the per-neuron loop (as before) re-ran
+    # env.bin_at over the full trajectory once per neuron, a pure-redundant cost
+    # paid on every batch call now that max_gap defaults to 0.5. Pickling this
+    # boolean array to joblib workers is cheaper than recomputing bin_at there.
+    interval_mask = _resolve_interval_mask(
+        env,
+        times,
+        positions,
+        speed=resolved_speed,
+        min_speed=min_speed,
+        max_gap=max_gap,
+    )
+
     # Spike-counting pass.  We use the private kernel _bin_spike_train_with_stats
     # which returns (counts, n_time_dropped, n_bin_dropped, n_total, n_after_time)
     # so that drop statistics are accumulated FOR FREE during the single counting
@@ -879,6 +980,7 @@ def bin_spike_trains(
                 speed=resolved_speed,
                 min_speed=min_speed,
                 max_gap=max_gap,
+                interval_mask=interval_mask,
             )
             spike_counts[i] = counts
             total_spikes += n_tot
@@ -900,6 +1002,7 @@ def bin_spike_trains(
                 speed=resolved_speed,
                 min_speed=min_speed,
                 max_gap=max_gap,
+                interval_mask=interval_mask,
             )
 
         results = Parallel(n_jobs=n_jobs)(

@@ -546,3 +546,117 @@ def test_batch_njobs_parity_under_max_gap(env_1d, gap_trajectory) -> None:
     assert c1[0].sum() == 2.0
     assert c1[1].sum() == 2.0
     assert c1[2].sum() == 1.0
+
+
+# ==============================================================================
+# 7. Performance: interval-valid mask is computed ONCE per batch, not per neuron
+# ==============================================================================
+
+
+def _make_many_neurons(times, n_neurons: int, seed: int = 0):
+    """A list of ``n_neurons`` random spike trains spanning the time window."""
+    rng = np.random.default_rng(seed)
+    t0, t1 = float(times.min()), float(times.max())
+    return [np.sort(rng.uniform(t0, t1, size=20)) for _ in range(n_neurons)]
+
+
+def test_interval_mask_not_recomputed_per_neuron_batch(
+    monkeypatch, env_1d, gap_trajectory
+) -> None:
+    """``interval_valid_mask`` call count is INDEPENDENT of n_neurons (batch).
+
+    The interval-valid mask depends only on ``(times, positions, env, speed,
+    min_speed, max_gap)`` — none vary per neuron — so the batch path must
+    compute it ONCE and reuse it across neurons. We spy on the single shared
+    helper and assert its call count does not grow with the neuron count (the
+    pre-fix code called it once per neuron inside the loop).
+    """
+    import neurospatial.environment.trajectory as traj_mod
+
+    times = gap_trajectory["times"]
+    positions = gap_trajectory["positions"]
+
+    real_mask = traj_mod.interval_valid_mask
+    calls = {"n": 0}
+
+    def _spy(*args, **kwargs):
+        calls["n"] += 1
+        return real_mask(*args, **kwargs)
+
+    monkeypatch.setattr(traj_mod, "interval_valid_mask", _spy)
+
+    # 5 neurons.
+    calls["n"] = 0
+    bin_spike_trains(
+        env_1d,
+        _make_many_neurons(times, 5),
+        times,
+        positions,
+        n_jobs=1,
+        warn_on_drop=False,
+    )
+    calls_5 = calls["n"]
+
+    # 50 neurons — same trajectory, same gate params.
+    calls["n"] = 0
+    bin_spike_trains(
+        env_1d,
+        _make_many_neurons(times, 50),
+        times,
+        positions,
+        n_jobs=1,
+        warn_on_drop=False,
+    )
+    calls_50 = calls["n"]
+
+    # Constant regardless of neuron count (the recompute-per-neuron is gone).
+    assert calls_5 == calls_50
+    # Concretely: once for env.occupancy's denominator mask + once for the
+    # shared spike-side mask = 2 per batch call (NOT n_neurons + 1).
+    assert calls_5 == 2
+
+
+def test_compute_spatial_rates_mask_computed_once(
+    monkeypatch, env_1d, gap_trajectory
+) -> None:
+    """A `compute_spatial_rates` call computes the shared mask a constant # of times."""
+    import neurospatial.environment.trajectory as traj_mod
+
+    times = gap_trajectory["times"]
+    positions = gap_trajectory["positions"]
+
+    real_mask = traj_mod.interval_valid_mask
+    calls = {"n": 0}
+
+    def _spy(*args, **kwargs):
+        calls["n"] += 1
+        return real_mask(*args, **kwargs)
+
+    monkeypatch.setattr(traj_mod, "interval_valid_mask", _spy)
+
+    n_neurons = 8
+    spike_trains = _make_many_neurons(times, n_neurons, seed=1)
+
+    calls["n"] = 0
+    compute_spatial_rates(env_1d, spike_trains, times, positions, warn_on_drop=False)
+    # Independent of n_neurons: NOT n_neurons-scaled. (2 = occupancy + spikes.)
+    assert calls["n"] == 2
+
+
+def test_interval_mask_precompute_results_unchanged(env_1d, gap_trajectory) -> None:
+    """Precomputing the mask once yields byte-for-byte identical batch results.
+
+    Cross-checks the once-computed batch path against the single-neuron path
+    (which also precomputes-and-passes), so the optimization cannot have
+    changed any count.
+    """
+    times = gap_trajectory["times"]
+    positions = gap_trajectory["positions"]
+    spike_trains = _make_many_neurons(times, 6, seed=2)
+
+    batch_counts, _ = bin_spike_trains(
+        env_1d, spike_trains, times, positions, n_jobs=1, warn_on_drop=False
+    )
+    for i, spikes in enumerate(spike_trains):
+        single = bin_spike_train(env_1d, spikes, times, positions, warn_on_drop=False)
+        np.testing.assert_array_equal(batch_counts[i], single)

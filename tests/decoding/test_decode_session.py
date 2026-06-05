@@ -725,3 +725,99 @@ class TestDecodeSessionFloat32Models:
             atol=1e-4,
             err_msg="float32 encoding models decoded too far from float64",
         )
+
+
+# ---------------------------------------------------------------------------
+# max_gap passthrough (R1 follow-up)
+# ---------------------------------------------------------------------------
+
+
+class TestDecodeSessionMaxGap:
+    """decode_session / decode_session_summary forward max_gap to the encoder."""
+
+    def _gap_session(self):
+        """1D track with one >0.5 s tracking gap and a spike inside that gap.
+
+        Returns (env, spike_times, times, positions, t_gap). The lone gap
+        interval is dropped by default (max_gap=0.5) but kept under
+        max_gap=None, so the encoding firing-rate maps differ between the two.
+        """
+        env = Environment.from_samples(
+            np.linspace(0, 100, 101).reshape(-1, 1), bin_size=10.0
+        )
+        dt = 0.1
+        n_a, n_b = 30, 30
+        xa = 10.0 + np.arange(n_a) * 0.1
+        xb = 13.0 + np.arange(n_b) * 0.1
+        positions = np.concatenate([xa, xb]).reshape(-1, 1)
+        ta = np.arange(n_a) * dt
+        tb = ta[-1] + 1.0 + np.arange(n_b) * dt  # 1.0 s gap
+        times = np.concatenate([ta, tb])
+        gap_interval = n_a - 1
+        t_gap = 0.5 * (times[gap_interval] + times[gap_interval + 1])
+        # Two neurons; neuron 0 fires inside the gap, plus some valid spikes.
+        spike_times = [
+            np.array([0.5, 1.2, t_gap, 4.5]),
+            np.array([1.0, 2.0, 5.0]),
+        ]
+        return env, spike_times, times, positions, t_gap
+
+    def test_max_gap_forwarded_to_encoder(self, monkeypatch) -> None:
+        """The max_gap kwarg reaches compute_spatial_rates verbatim."""
+        import neurospatial.encoding.spatial as spatial_mod
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions, _ = self._gap_session()
+
+        seen = {}
+        real = spatial_mod.compute_spatial_rates
+
+        def _spy(*args, **kwargs):
+            seen["max_gap"] = kwargs.get("max_gap", "MISSING")
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(spatial_mod, "compute_spatial_rates", _spy)
+
+        decode_session(env, spike_times, times, positions, dt=0.1, max_gap=None)
+        assert seen["max_gap"] is None
+
+        decode_session(env, spike_times, times, positions, dt=0.1)
+        assert seen["max_gap"] == 0.5
+
+    def test_max_gap_none_changes_encoding(self) -> None:
+        """max_gap=None keeps the gap spike, changing the posterior vs default."""
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions, _ = self._gap_session()
+
+        res_default = decode_session(
+            env, spike_times, times, positions, dt=0.1, warn_on_drop=False
+        )
+        res_no_gap = decode_session(
+            env,
+            spike_times,
+            times,
+            positions,
+            dt=0.1,
+            max_gap=None,
+            warn_on_drop=False,
+        )
+        # Dropping vs keeping the in-gap spike changes the encoding model and
+        # therefore the posterior.
+        assert not np.allclose(res_default.posterior, res_no_gap.posterior)
+
+    def test_summary_accepts_max_gap(self) -> None:
+        """decode_session_summary also accepts and forwards max_gap."""
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions, _ = self._gap_session()
+        summary = decode_session_summary(
+            env,
+            spike_times,
+            times,
+            positions,
+            dt=0.1,
+            max_gap=None,
+            warn_on_drop=False,
+        )
+        assert summary.map_position.shape[1] == env.n_dims
