@@ -250,15 +250,19 @@ these are called out under a dedicated **Breaking changes** heading.
     halving stored and transient memory (parity with float64 to ~1e-6
     relative). Every `DecodingResult` method works unchanged on a float32
     posterior.
-  - `time_chunk=k` computes the exp/normalize in time-blocks into a single
-    preallocated output array, materializing the full-size `ll_shifted`
-    temporary one block at a time instead of all at once. This drops the
-    transient memory peak from ~4× to ~3× the stored posterior — the full-size
-    log-likelihood and its working copy still coexist with the output, so it is
-    not a ~1× path (that is `decode_position_summary`, which computes the
-    likelihood per block and never holds the full log-likelihood).
-    `time_chunk=None` (the default) reproduces the previous behavior
-    byte-for-byte.
+  - `time_chunk` is now **hybrid**. `time_chunk=None` (the default) keeps the
+    full-matmul path **byte-for-byte unchanged** — the Poisson log-likelihood is
+    computed once over the whole window and normalized at once (transient peak
+    ~3× the stored posterior). An **explicit `time_chunk=k`** now computes the
+    Poisson log-likelihood **blockwise directly into the preallocated
+    posterior**, so the full-size log-likelihood and its working copy are never
+    materialized — cutting the transient peak to **~1×** over the returned
+    posterior (the posterior itself is unavoidably 1×, since `decode_position`
+    returns the full dense array). The opt-in path is **tolerance-equal**, not
+    byte-exact, to the full path: the per-block likelihood matmul is a different
+    BLAS shape than the full matmul, so it differs by ~1e-15 (MAP/argmax
+    identical; every row sums to 1). For a path that never holds even the full
+    posterior, use `decode_position_summary`.
 
   For sessions where even the stored dense posterior is too large to hold, use
   the new `decode_position_summary` / `decode_session_summary` (see **Added**),

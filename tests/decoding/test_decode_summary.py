@@ -86,7 +86,15 @@ class TestDtypeParam:
 
 
 class TestTimeChunkParam:
-    """decode_position(..., time_chunk=k) is byte-for-byte chunked decode."""
+    """decode_position(..., time_chunk=k) is tolerance-equal to the full path.
+
+    HYBRID R11: ``time_chunk=None`` (default) keeps the byte-exact full-matmul
+    path; an explicit ``time_chunk=k`` computes the Poisson log-likelihood
+    blockwise into the preallocated posterior. The per-block likelihood matmul
+    is a different BLAS shape than the full matmul, so the chunked posterior is
+    tolerance-equal (~1e-15), not byte-exact, to the full path. MAP/argmax is
+    identical and every row sums to 1.
+    """
 
     @pytest.mark.parametrize("k", [1, 7, 40, 120, 1000])
     def test_time_chunk_parity(self, small_2d_env, k):
@@ -101,7 +109,12 @@ class TestTimeChunkParam:
             dt=0.025,
             time_chunk=k,
         )
-        np.testing.assert_allclose(chunked.posterior, ref.posterior, rtol=0, atol=0)
+        # Tolerance-equal (BLAS shape-dependence), MAP identical, rows sum to 1.
+        np.testing.assert_allclose(chunked.posterior, ref.posterior, rtol=0, atol=1e-12)
+        np.testing.assert_array_equal(chunked.map_estimate, ref.map_estimate)
+        np.testing.assert_allclose(
+            np.asarray(chunked.posterior).sum(axis=1), 1.0, atol=1e-9
+        )
 
     def test_time_chunk_with_prior(self, small_2d_env):
         from neurospatial.decoding import decode_position
@@ -119,7 +132,8 @@ class TestTimeChunkParam:
             prior=prior,
             time_chunk=13,
         )
-        np.testing.assert_allclose(chunked.posterior, ref.posterior, rtol=0, atol=0)
+        np.testing.assert_allclose(chunked.posterior, ref.posterior, rtol=0, atol=1e-12)
+        np.testing.assert_array_equal(chunked.map_estimate, ref.map_estimate)
 
 
 class TestNormalizeDegenerateChunking:
