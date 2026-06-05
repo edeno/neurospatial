@@ -843,6 +843,20 @@ class TestDecodeSessionDtype:
         ):
             decode_session(env, spike_times, times, positions, dt=0.1, dtype=np.int32)
 
+    def test_unparseable_dtype_raises_clean_valueerror(self) -> None:
+        """An unparseable dtype string raises ValueError naming `dtype`.
+
+        Without the wrapped ``np.dtype(dtype)`` parse, ``dtype="bogus"`` leaked a
+        raw ``TypeError: data type 'bogus' not understood`` from NumPy.
+        """
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=5, duration=5.0, seed=1
+        )
+        with pytest.raises(ValueError, match="dtype"):
+            decode_session(env, spike_times, times, positions, dt=0.1, dtype="bogus")  # type: ignore[arg-type]
+
     def test_precomputed_models_decode_within_tol(self) -> None:
         """Precomputed float32 vs float64 encoding_models decode within tol."""
         from neurospatial.decoding import decode_session
@@ -1382,6 +1396,18 @@ class TestDecodeSessionSummaryDtype:
             decode_session_summary(
                 env, spike_times, times, positions, dt=0.1, dtype=np.int32
             )
+
+    def test_unparseable_dtype_raises_clean_valueerror(self) -> None:
+        """An unparseable dtype string raises ValueError naming `dtype`."""
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=5, duration=5.0, seed=2
+        )
+        with pytest.raises(ValueError, match="dtype"):
+            decode_session_summary(
+                env, spike_times, times, positions, dt=0.1, dtype="bogus"
+            )  # type: ignore[arg-type]
 
     def test_dtype_via_decode_kwargs_now_collides(self) -> None:
         """dtype is an explicit param, no longer a decode_kwargs entry.

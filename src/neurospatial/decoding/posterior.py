@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, cast, overload
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.decoding._binning import validate_dt
 from neurospatial.decoding._result import DecodingResult, DecodingSummary
 from neurospatial.decoding.likelihood import log_poisson_likelihood
 
@@ -69,13 +70,20 @@ def _validate_posterior_dtype(dtype: Any) -> np.dtype:
     ValueError
         If ``dtype`` is not float32 or float64.
     """
-    resolved = np.dtype(dtype)
+    msg = (
+        f"dtype must be np.float32 or np.float64, got {dtype!r}. "
+        "Only single- and double-precision posteriors are supported "
+        "(float32 halves stored and transient memory)."
+    )
+    # Wrap the parse so an unparseable dtype string (e.g. "bogus") raises this
+    # clean ValueError naming `dtype`, not a raw NumPy
+    # ``TypeError: data type 'bogus' not understood``.
+    try:
+        resolved = np.dtype(dtype)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(msg) from exc
     if resolved not in (np.dtype(np.float32), np.dtype(np.float64)):
-        raise ValueError(
-            f"dtype must be np.float32 or np.float64, got {dtype!r}. "
-            "Only single- and double-precision posteriors are supported "
-            "(float32 halves stored and transient memory)."
-        )
+        raise ValueError(msg)
     return cast("np.dtype", resolved)
 
 
@@ -639,6 +647,11 @@ def decode_position(
     log_poisson_likelihood : Likelihood function used internally
     normalize_to_posterior : Posterior normalization used internally
     """
+    # Validate dt up front so a non-numeric/bool/non-finite dt raises the same
+    # clean message as every other decoding entry point, rather than leaking a
+    # raw TypeError (dt="0.1") or a misleading downstream error (dt=NaN/<=0)
+    # from log_poisson_likelihood.
+    dt = validate_dt(dt)
     time_chunk = _validate_time_chunk(time_chunk, allow_none=True)
 
     spike_counts, encoding_models, nonfinite_mask = _prepare_decode_inputs(

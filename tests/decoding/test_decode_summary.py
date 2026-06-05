@@ -87,6 +87,24 @@ class TestDtypeParam:
                 dtype=np.float16,  # type: ignore[arg-type]
             )
 
+    def test_unparseable_dtype_raises_clean_valueerror(self, small_2d_env):
+        """An unparseable dtype string raises ValueError naming `dtype`.
+
+        Without the wrapped ``np.dtype(dtype)`` parse, ``dtype="bogus"`` leaked a
+        raw ``TypeError: data type 'bogus' not understood`` from NumPy.
+        """
+        from neurospatial.decoding import decode_position, decode_position_summary
+
+        spike_counts, encoding_models = _make_decode_inputs(small_2d_env)
+        with pytest.raises(ValueError, match="dtype"):
+            decode_position(
+                small_2d_env, spike_counts, encoding_models, dt=0.025, dtype="bogus"
+            )  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="dtype"):
+            decode_position_summary(
+                small_2d_env, spike_counts, encoding_models, dt=0.025, dtype="bogus"
+            )  # type: ignore[arg-type]
+
 
 class TestTimeChunkParam:
     """decode_position(..., time_chunk=k) is tolerance-equal to the full path.
