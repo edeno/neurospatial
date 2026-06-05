@@ -39,7 +39,9 @@ the published package may still report v0.5.x.
   `Environment.maze(...)`.
 - `SpatialRatesResult.label_cell_types()` for multi-class labels, with
   `SpatialRatesResult.classify()` reserved for the boolean place-cell predicate.
-- `decode_position()` accepts population rate result objects directly.
+- `decode_position()` accepts population rate result objects directly, and
+  preserves their dtype (a `float32` rate result decodes in `float32` rather
+  than being promoted back to `float64`).
 - Memory-safe summary decoding for long sessions. `decode_position_summary`
   returns a new `DecodingSummary` result that streams over time and reduces
   each block to per-time scalars/vectors (`map_position` / `map_bin`,
@@ -49,16 +51,34 @@ the published package may still report v0.5.x.
   streams the time-binning so the full count matrix is never materialized
   either. `DecodingSummary` carries the standard terminal verbs
   (`to_dataframe()`, `summary()`, `plot()`, `to_xarray()`).
+- `decode_session()` and `decode_session_summary()` gain a keyword-only `dtype`
+  parameter (`np.float32` / `np.float64`, default `np.float64`) that is honored
+  **end-to-end** — a single `dtype=np.float32` controls both the encoding-model
+  working set and the posterior, halving the decode working set on the golden
+  path (no silent promotion back to `float64`). Default `np.float64` leaves
+  every existing caller byte-for-byte unchanged; any other dtype raises
+  `ValueError`.
 - `decode_position()` gains keyword-only `dtype` (`np.float32` / `np.float64`,
-  default `np.float64`) and `time_chunk` (compute the posterior in time-blocks
-  to cap peak memory). `decode_session()` forwards both.
+  default `np.float64`) and a **hybrid** `time_chunk`. `time_chunk=None` (the
+  default) keeps the full-matmul path byte-for-byte unchanged;
+  `decode_position(time_chunk=N)` computes the Poisson likelihood blockwise
+  directly into the preallocated posterior, cutting the transient peak to ~1×
+  over the returned posterior (tolerance-equal to the default, not byte-exact).
+  `decode_session()` forwards both.
+- The summary decoders (`decode_position_summary` / `decode_session_summary`)
+  **reject `time_chunk=None`** (raising a clear `ValueError`): a `None` value
+  would set the streaming block to the full session length and materialize the
+  full `(n_time, n_bins)` posterior, defeating their never-materialize contract.
+  `time_chunk` must be a positive integer (default `1024`); use
+  `decode_position` / `decode_session` if you want the full posterior.
 - `compute_spatial_rates()` gains a keyword-only `dtype` (`np.float32` /
   `np.float64`, default `np.float64`) to halve the memory of stored rate maps.
 - Speed filtering on the encode path: `compute_spatial_rate` /
   `compute_spatial_rates` gain keyword-only `speed` / `min_speed` (forwarded by
-  `decode_session`). When `min_speed` is set, **one shared per-interval speed
-  gate** filters **both** the spike numerator and the occupancy denominator, so
-  a `min_speed` knob can never bias firing rates by filtering only one side.
+  **both** `decode_session` and `decode_session_summary`). When `min_speed` is
+  set, **one shared per-interval speed gate** filters **both** the spike
+  numerator and the occupancy denominator, so a `min_speed` knob can never bias
+  firing rates by filtering only one side.
 - `population_coverage()` gains a keyword-only `n_jobs` parameter to
   parallelize per-neuron coverage; results are identical regardless of
   `n_jobs`.
