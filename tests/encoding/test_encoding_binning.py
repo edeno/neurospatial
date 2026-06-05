@@ -1156,3 +1156,156 @@ class TestWarnOnDrop:
             f"Unexpected inactive-bin warning(s): "
             f"{[str(x.message) for x in inactive_warnings]}"
         )
+
+
+# ==============================================================================
+# Test _bin_spike_train_with_stats: interval_mask=None fallback path
+# ==============================================================================
+
+
+class TestBinSpikeTrainWithStatsFallbackMask:
+    """Pin the ``interval_mask=None`` fallback to the precomputed-mask path.
+
+    The private kernel ``_bin_spike_train_with_stats`` recomputes the shared
+    interval-valid mask internally when ``interval_mask=None`` (a direct-caller
+    convenience). Every public path always passes a precomputed mask, so this
+    fallback recompute branch is otherwise untested — a drift in its gate args
+    would be invisible. These tests assert byte-for-byte equality (counts AND
+    drop stats) between the fallback and an explicitly-resolved mask, using a
+    non-trivial trajectory (a >max_gap gap AND an out-of-bounds excursion) so
+    the mask actually excludes intervals.
+    """
+
+    @pytest.fixture
+    def env_1d(self) -> Environment:
+        """A simple 1D environment spanning 0-100."""
+        positions = np.linspace(0, 100, 101).reshape(-1, 1)
+        return Environment.from_samples(positions, bin_size=10.0)
+
+    @pytest.fixture
+    def gap_and_oob_trajectory(self) -> dict:
+        """A 1D trajectory with BOTH a >max_gap gap and an out-of-bounds sample.
+
+        - Samples 0..4 dense at dt=0.1 s, in-bounds (x in [10, 14]).
+        - Sample 5 is out of bounds (x=-50) -> the interval starting at it is
+          dropped by the start_bin<0 gate.
+        - Between sample 8 and 9 there is a 1.0 s time gap (dt>max_gap=0.5).
+        """
+        dt = 0.1
+        x = np.array(
+            [10.0, 11.0, 12.0, 13.0, 14.0, -50.0, 30.0, 31.0, 32.0, 33.0, 34.0],
+            dtype=np.float64,
+        )
+        positions = x.reshape(-1, 1)
+        t = np.arange(len(x), dtype=np.float64) * dt
+        # Insert a 1.0 s gap between sample 8 and 9.
+        t[9:] += 1.0
+        return {"times": t, "positions": positions}
+
+    def test_fallback_matches_precomputed_mask(
+        self, env_1d: Environment, gap_and_oob_trajectory: dict
+    ) -> None:
+        """interval_mask=None reproduces the explicitly-resolved mask exactly."""
+        from neurospatial.encoding._binning import _bin_spike_train_with_stats
+        from neurospatial.environment.trajectory import interval_valid_mask
+
+        times = gap_and_oob_trajectory["times"]
+        positions = gap_and_oob_trajectory["positions"]
+        # Spikes spanning valid, gapped, and out-of-bounds intervals.
+        spike_times = np.array([0.05, 0.25, 0.55, 0.85, 1.85])
+
+        max_gap = 0.5
+        speed = None
+        min_speed = None
+
+        # Explicitly-resolved mask (the public-path input).
+        explicit_mask = interval_valid_mask(
+            times,
+            positions,
+            env_1d,
+            speed=speed,
+            min_speed=min_speed,
+            max_gap=max_gap,
+        )
+        # Sanity: the mask is non-trivial (excludes at least the gap + OOB).
+        assert not explicit_mask.all()
+        assert explicit_mask.any()
+
+        result_explicit = _bin_spike_train_with_stats(
+            env_1d,
+            spike_times,
+            times,
+            positions,
+            speed=speed,
+            min_speed=min_speed,
+            max_gap=max_gap,
+            interval_mask=explicit_mask,
+        )
+        result_fallback = _bin_spike_train_with_stats(
+            env_1d,
+            spike_times,
+            times,
+            positions,
+            speed=speed,
+            min_speed=min_speed,
+            max_gap=max_gap,
+            interval_mask=None,
+        )
+
+        counts_e, *stats_e = result_explicit
+        counts_f, *stats_f = result_fallback
+        np.testing.assert_array_equal(counts_e, counts_f)
+        assert stats_e == stats_f
+
+    def test_fallback_matches_precomputed_mask_with_min_speed(
+        self, env_1d: Environment, gap_and_oob_trajectory: dict
+    ) -> None:
+        """Fallback also matches when a speed gate is active."""
+        from neurospatial.encoding._binning import (
+            _bin_spike_train_with_stats,
+            resolve_speed,
+        )
+        from neurospatial.environment.trajectory import interval_valid_mask
+
+        times = gap_and_oob_trajectory["times"]
+        positions = gap_and_oob_trajectory["positions"]
+        spike_times = np.array([0.05, 0.25, 0.55, 0.85, 1.85])
+
+        max_gap = 0.5
+        min_speed = 5.0
+        speed = resolve_speed(times, positions, None, min_speed)
+
+        explicit_mask = interval_valid_mask(
+            times,
+            positions,
+            env_1d,
+            speed=speed,
+            min_speed=min_speed,
+            max_gap=max_gap,
+        )
+
+        result_explicit = _bin_spike_train_with_stats(
+            env_1d,
+            spike_times,
+            times,
+            positions,
+            speed=speed,
+            min_speed=min_speed,
+            max_gap=max_gap,
+            interval_mask=explicit_mask,
+        )
+        result_fallback = _bin_spike_train_with_stats(
+            env_1d,
+            spike_times,
+            times,
+            positions,
+            speed=speed,
+            min_speed=min_speed,
+            max_gap=max_gap,
+            interval_mask=None,
+        )
+
+        counts_e, *stats_e = result_explicit
+        counts_f, *stats_f = result_fallback
+        np.testing.assert_array_equal(counts_e, counts_f)
+        assert stats_e == stats_f

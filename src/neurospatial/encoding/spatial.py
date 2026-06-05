@@ -2073,7 +2073,8 @@ def compute_spatial_rate(
         is_jax_available,
     )
     from neurospatial.encoding._binning import (
-        _emit_all_excluded_speed_warning,
+        _emit_all_excluded_intervals_warning,
+        _resolve_interval_mask,
         bin_spike_train,
         compute_occupancy,
         resolve_speed,
@@ -2117,11 +2118,23 @@ def compute_spatial_rate(
     # nothing speed-related changes downstream (byte-for-byte unchanged).
     resolved_speed = resolve_speed(times, positions, speed, min_speed)
 
-    # Warn once if min_speed excluded ALL movement intervals (empty rate map,
-    # commonly a units footgun). Gated by warn_on_drop; no-op when min_speed
-    # is None.
+    # Resolve the FULL interval-valid mask once (max_gap ∪ out-of-bounds-start ∪
+    # min_speed) so we can warn ONCE if EVERY interval is excluded (empty rate
+    # map), regardless of WHICH gate caused it. Gated by warn_on_drop. Reshape
+    # 1-D positions so _resolve_interval_mask sees the canonical 2-D shape.
     if warn_on_drop:
-        _emit_all_excluded_speed_warning(resolved_speed, min_speed, stacklevel=2)
+        _positions_2d = positions.reshape(-1, 1) if positions.ndim == 1 else positions
+        _interval_mask = _resolve_interval_mask(
+            env,
+            times,
+            _positions_2d,
+            speed=resolved_speed,
+            min_speed=min_speed,
+            max_gap=max_gap,
+        )
+        _emit_all_excluded_intervals_warning(
+            _interval_mask, max_gap=max_gap, min_speed=min_speed, stacklevel=2
+        )
 
     # Bin spike train into spatial bins (always NumPy - CPU/joblib)
     spike_counts = bin_spike_train(
@@ -2432,7 +2445,8 @@ def compute_spatial_rates(
         is_jax_available,
     )
     from neurospatial.encoding._binning import (
-        _emit_all_excluded_speed_warning,
+        _emit_all_excluded_intervals_warning,
+        _resolve_interval_mask,
         bin_spike_trains,
         resolve_speed,
     )
@@ -2499,12 +2513,23 @@ def compute_spatial_rates(
     # re-derive it.
     resolved_speed = resolve_speed(times, positions, speed, min_speed)
 
-    # Warn once if min_speed excluded ALL movement intervals (empty rate maps,
-    # commonly a units footgun). Gated by warn_on_drop; no-op when min_speed
-    # is None. Computed here from the single resolved mask so it fires once for
-    # the whole batch, not once per neuron.
+    # Resolve the FULL interval-valid mask once (max_gap ∪ out-of-bounds-start ∪
+    # min_speed) so we can warn ONCE for the whole batch if EVERY interval is
+    # excluded (empty rate maps), regardless of WHICH gate caused it — not once
+    # per neuron. Gated by warn_on_drop. Reshape 1-D positions to canonical 2-D.
     if warn_on_drop:
-        _emit_all_excluded_speed_warning(resolved_speed, min_speed, stacklevel=2)
+        _positions_2d = positions.reshape(-1, 1) if positions.ndim == 1 else positions
+        _interval_mask = _resolve_interval_mask(
+            env,
+            times,
+            _positions_2d,
+            speed=resolved_speed,
+            min_speed=min_speed,
+            max_gap=max_gap,
+        )
+        _emit_all_excluded_intervals_warning(
+            _interval_mask, max_gap=max_gap, min_speed=min_speed, stacklevel=2
+        )
 
     # Handle edge case: no neurons
     # Still compute occupancy from trajectory (occupancy is independent of neural data)

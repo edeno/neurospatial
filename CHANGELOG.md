@@ -31,11 +31,13 @@ these are called out under a dedicated **Breaking changes** heading.
   - Passing `speed` **without** `min_speed` now raises `ValueError` (instead of
     silently ignoring `speed`), mirroring `env.occupancy`, which raises on
     `min_speed` without `speed`.
-  - When `min_speed` excludes **all** trajectory intervals (e.g. a wrong-units
-    threshold), `compute_spatial_rate` / `compute_spatial_rates` now emit one
-    `UserWarning` naming `min_speed` and the resolved speed range — instead of
-    silently returning an empty rate map. The warning fires once per call
-    (not per neuron in the batch path) and is suppressed by `warn_on_drop=False`.
+  - When the interval filter excludes **all** trajectory intervals — whether
+    via `min_speed`, `max_gap`, or the out-of-bounds-start rule (e.g. a
+    wrong-units threshold) — `compute_spatial_rate` / `compute_spatial_rates`
+    now emit one `UserWarning` naming the active gate(s) and suggesting fixes
+    (check units; pass `max_gap=None`), instead of silently returning an empty
+    rate map. The warning fires once per call (not per neuron in the batch
+    path) and is suppressed by `warn_on_drop=False`.
 
 ### Breaking changes
 
@@ -396,6 +398,15 @@ in 0.7. Each old name forwards to its replacement with unchanged behavior.
     `max_gap=None` to disable gap gating on **both** sides (restoring the
     pre-fix, no-gap-gating behavior while keeping numerator and denominator
     aligned).
+  - **No more silent empty rate maps.** When the interval filter excludes
+    **every** trajectory interval (so occupancy is all-zero and the rate map is
+    all-NaN/0), `compute_spatial_rate` / `compute_spatial_rates` now emit a
+    single `UserWarning` naming the active gate(s) (`max_gap`, `min_speed`,
+    and/or the out-of-bounds-start possibility) and suggesting fixes (check
+    units; pass `max_gap=None`). Previously only the `min_speed` gate warned —
+    a too-large `max_gap` (or a wrong-units one) and the out-of-bounds-start
+    rule emptied the map **silently**. Gated by `warn_on_drop=True` (the
+    default); fires once per call (not per neuron in the batch path).
 
 - `decode_session` now warns loudly when most spikes fall outside the decode
   time window `[times.min(), times.max()]` instead of silently dropping them.

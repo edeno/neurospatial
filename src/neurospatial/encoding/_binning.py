@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from neurospatial.environment._protocols import EnvironmentProtocol
 
 __all__ = [
-    "_emit_all_excluded_speed_warning",
+    "_emit_all_excluded_intervals_warning",
     "bin_spike_train",
     "bin_spike_trains",
     "compute_occupancy",
@@ -395,53 +395,83 @@ def _resolve_interval_mask(
     )
 
 
-def _emit_all_excluded_speed_warning(
-    speed: NDArray[np.float64] | None,
-    min_speed: float | None,
+def _emit_all_excluded_intervals_warning(
+    interval_mask: NDArray[np.bool_] | None,
     *,
+    max_gap: float | None,
+    min_speed: float | None,
     stacklevel: int = 2,
 ) -> None:
-    """Emit a UserWarning when ``min_speed`` excludes (almost) all intervals.
+    """Emit a UserWarning when the interval filter excludes ALL intervals.
 
-    A ``min_speed`` set too high — or in the wrong units (e.g. an m/s threshold
-    against a cm/s trajectory) — can exclude EVERY movement interval, leaving an
-    all-zero occupancy and an all-NaN/zero rate map with no other signal. This
-    mirrors the unit-mismatch tone of the time-window / inactive-bin warnings.
+    The firing-rate map is ``spike_counts / occupancy`` per bin, and BOTH sides
+    are gated by the SAME per-interval validity mask
+    (:func:`~neurospatial.environment.trajectory.interval_valid_mask`). That
+    mask drops an interval for any of THREE reasons — a too-large time gap
+    (``dt > max_gap``), an out-of-bounds start sample (``start_bin < 0``), or a
+    too-low speed (``speed < min_speed``). If EVERY interval is dropped,
+    occupancy is all-zero and the rate map is all-NaN/zero with no other signal.
 
-    Detection uses the resolved per-interval speed gate
-    (``speed[:-1] >= min_speed``) — the exact same mask ``env.occupancy`` and the
-    spike kernel apply — so it fires iff the rate map is genuinely empty.
+    Before this guard only the ``min_speed`` case warned; ``max_gap`` (e.g. a
+    legitimately gappy session or a wrong-units ``max_gap``) and the
+    out-of-bounds-start rule emptied the map SILENTLY. This generalized guard
+    fires uniformly for all three gates whenever the resolved interval-valid
+    mask is entirely ``False``, naming whichever gate(s) are active so the user
+    knows what to check.
+
+    Detection uses the resolved interval-valid mask — the exact same mask
+    ``env.occupancy`` and the spike kernel apply — so it fires iff the rate map
+    is genuinely empty. It is a no-op (returns silently) when there is no mask
+    to check (``None`` — no active gate or fewer than two samples), when the
+    mask is empty, or when at least one interval survives.
 
     Parameters
     ----------
-    speed : ndarray, shape (n_samples,), or None
-        Resolved speed array (from :func:`resolve_speed`). ``None`` means no
-        filtering was requested; nothing is emitted.
+    interval_mask : ndarray of bool, shape (n_samples - 1,), or None
+        The resolved per-interval validity mask (from
+        :func:`_resolve_interval_mask`). ``None`` means no gate is active (or
+        too few samples); nothing is emitted.
+    max_gap : float or None
+        The active maximum-gap threshold (named in the message when set).
     min_speed : float or None
-        Speed threshold. ``None`` means no filtering; nothing is emitted.
+        The active speed threshold (named in the message when set).
     stacklevel : int, optional
         ``warnings.warn`` stacklevel.
     """
-    if speed is None or min_speed is None:
+    if interval_mask is None or interval_mask.size == 0:
         return
-    # Per-interval gate: interval k spans [t_k, t_{k+1}) and uses speed[k],
-    # so only the first n-1 entries gate occupancy (matching env.occupancy).
-    interval_speed = speed[:-1]
-    if interval_speed.size == 0:
+    if interval_mask.any():
         return
-    if np.any(interval_speed >= min_speed):
-        return
-    finite = interval_speed[np.isfinite(interval_speed)]
-    if finite.size > 0:
-        s_min = float(finite.min())
-        s_max = float(finite.max())
-        range_part = f"speed in [{s_min:.3g}, {s_max:.3g}] units/s"
+
+    # Name whichever gate(s) are active so the user knows what to check. The
+    # out-of-bounds-start rule is always implicitly active (it has no toggle),
+    # so it is always mentioned as a possibility.
+    causes: list[str] = []
+    if max_gap is not None:
+        causes.append(f"max_gap={max_gap}")
+    if min_speed is not None:
+        causes.append(f"min_speed={min_speed}")
+    if causes:
+        gate_part = (
+            f"active gate(s) {', '.join(causes)} (or all start samples out of bounds)"
+        )
     else:
-        range_part = "no finite speeds"
+        gate_part = "all start samples out of bounds"
+
+    fixes: list[str] = []
+    if max_gap is not None or min_speed is not None:
+        unit_targets = " / ".join(causes) if causes else "the gate thresholds"
+        fixes.append(
+            f"check units ({unit_targets} vs the trajectory's time/space units)"
+        )
+    if max_gap is not None:
+        fixes.append("pass max_gap=None to disable gap gating")
+    fix_part = ("; ".join(fixes) + ". ") if fixes else ""
+
     warnings.warn(
-        f"min_speed={min_speed} excluded all trajectory intervals "
-        f"({range_part}); the rate map is empty. Check that min_speed and "
-        f"the trajectory share units. "
+        f"Interval filtering excluded ALL trajectory intervals "
+        f"({gate_part}); the rate map is empty. "
+        f"{fix_part}"
         f"Set warn_on_drop=False to suppress this warning.",
         UserWarning,
         stacklevel=stacklevel,
