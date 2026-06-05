@@ -341,6 +341,13 @@ in 0.7. Each old name forwards to its replacement with unchanged behavior.
 
 ### Fixed
 
+- `decode_position_summary` now validates `prior` shape (was silently
+  truncating over-long 2-D priors), matching `decode_position`. A 1-D prior
+  must be `(n_bins,)` and a 2-D time-varying prior must be exactly
+  `(n_time, n_bins)`; an over-long or short 2-D prior, a wrong-length 1-D
+  prior, or a non-1-D/2-D prior now raises `ValueError` before streaming
+  instead of silently slicing the prior to the decoded time range.
+
 - **Firing-rate numerator/denominator alignment on the FULL interval mask.**
   A firing-rate map is `spike_counts (numerator) / occupancy (denominator)`
   per bin. `env.occupancy` drops a trajectory interval `k` for **three**
