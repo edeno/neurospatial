@@ -227,6 +227,21 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ### Performance
 
+- `decode_session_summary` now **streams the time-binning** so the full
+  `(n_time, n_neurons)` spike-count matrix is never materialized. It builds the
+  encoding model once over the whole session (small, `(n_neurons, n_bins)`),
+  then bins spikes block-by-block against a contiguous slice of the global time
+  grid and decodes + reduces each block via the same shared inner-loop helper as
+  `decode_position_summary`. Peak memory is now
+  `O(time_chunk × max(n_neurons, n_bins))` plus the `(n_neurons, n_bins)`
+  encoding model — **independent of session length** — meeting the
+  1 hr / 25 ms / 5000-bin / <500 MB summary-decode DoD golden path (the dense
+  `(144000, 1000)` count matrix alone would be ~1.15 GB). The result is
+  byte-for-byte identical to the prior materialize-then-stream path; per-block
+  counts are binned against the precomputed global edges so they match a single
+  global histogram exactly, and boundary spikes are counted exactly once.
+  `decode_session` (the full-posterior path) is unchanged.
+
 - `decode_position` gains two keyword-only memory knobs with **no change to its
   return contract** (`.posterior` stays a fully-materialized `ndarray`):
   - `dtype=np.float32` stores and computes the posterior in single precision,

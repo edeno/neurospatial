@@ -880,6 +880,84 @@ def _reduce_posterior_block(
     )
 
 
+def _decode_and_reduce_block(
+    counts_block: NDArray[np.int64],
+    encoding_models: NDArray[np.float64],
+    dt: float,
+    bin_centers: NDArray[np.float64],
+    *,
+    prior_block: NDArray[np.float64] | None,
+    nonfinite_mask: NDArray[np.bool_] | None,
+    validate: bool,
+    dtype: Any,
+) -> tuple[
+    NDArray[np.int64],
+    NDArray[np.float64],
+    NDArray[np.float64],
+    NDArray[np.float64],
+    NDArray[np.float64],
+]:
+    """Decode one time-block and reduce it to per-time vectors.
+
+    Single shared implementation of the streaming summary inner loop, used by
+    BOTH :func:`decode_position_summary` (array-first) and
+    :func:`~neurospatial.decoding.decode_session_summary` (which streams the
+    time-binning). Computes the Poisson log-likelihood for this block only,
+    normalizes it to a posterior block, optionally validates the block's row
+    sums, and reduces it to per-time scalars/vectors. Never holds more than one
+    block's ``(n_block, n_bins)`` posterior at a time.
+
+    Parameters
+    ----------
+    counts_block : NDArray[np.int64], shape (n_block, n_neurons)
+        Spike counts for this time-block.
+    encoding_models : NDArray[np.float64], shape (n_neurons, n_bins)
+        Validated firing-rate maps (whole session; small).
+    dt : float
+        Time-bin width in seconds.
+    bin_centers : NDArray[np.float64], shape (n_bins, n_dims)
+        Environment bin-center coordinates.
+    prior_block : NDArray[np.float64] | None
+        Prior for this block: a 1-D stationary prior (reused per block) or the
+        ``(n_block, n_bins)`` slice of a 2-D time-varying prior, or ``None``.
+    nonfinite_mask : NDArray[np.bool_] | None, shape (n_neurons, n_bins)
+        ``True`` where ``encoding_models`` is non-finite; ``None`` if all finite.
+    validate : bool
+        If ``True``, run the per-block posterior-sum output check.
+    dtype : np.float32 or np.float64
+        Working dtype of the posterior block.
+
+    Returns
+    -------
+    map_bin : NDArray[np.int64], shape (n_block,)
+        MAP bin index per time bin.
+    map_position : NDArray[np.float64], shape (n_block, n_dims)
+        MAP position per time bin (``bin_centers[map_bin]``).
+    mean_position : NDArray[np.float64], shape (n_block, n_dims)
+        Posterior-mean position per time bin.
+    entropy : NDArray[np.float64], shape (n_block,)
+        Posterior entropy (bits) per time bin.
+    peak_prob : NDArray[np.float64], shape (n_block,)
+        Max posterior probability per time bin.
+    """
+    log_ll_block = _poisson_log_likelihood(
+        counts_block, encoding_models, nonfinite_mask, dt
+    )
+    post_block = normalize_to_posterior(
+        log_ll_block,
+        prior=prior_block,
+        dtype=dtype,
+    )
+    if validate:
+        _validate_output(post_block)
+    block_map_bin, block_mean, block_entropy, block_peak = _reduce_posterior_block(
+        post_block, bin_centers
+    )
+    block_map_position = bin_centers[block_map_bin]
+    # post_block goes out of scope and is reclaimed before the next block.
+    return block_map_bin, block_map_position, block_mean, block_entropy, block_peak
+
+
 def decode_position_summary(
     env: Environment,
     spike_counts: NDArray[np.int64],
@@ -1040,32 +1118,32 @@ def decode_position_summary(
         block_prior = prior
         if prior_is_time_varying:
             block_prior = np.asarray(prior)[start:stop]
-        # Compute the log-likelihood for THIS time-block only, then normalize
-        # it. Computing the likelihood per block (rather than once for the
-        # whole session) is what keeps peak memory at one block, never the full
-        # (n_time, n_bins) array. The math matches decode_position exactly.
-        log_ll_block = _poisson_log_likelihood(
-            spike_counts[start:stop], encoding_models, nonfinite_mask, dt
-        )
-        post_block = normalize_to_posterior(
-            log_ll_block,
-            prior=block_prior,
-            dtype=dtype,
-        )
-        if validate:
-            _validate_output(post_block)
+        # Decode + reduce THIS time-block only via the shared inner-loop helper.
+        # Computing the likelihood per block (rather than once for the whole
+        # session) is what keeps peak memory at one block, never the full
+        # (n_time, n_bins) array. The math matches decode_position exactly. The
+        # same helper backs decode_session_summary's streaming-binning loop.
         (
             block_map_bin,
+            block_map_position,
             block_mean,
             block_entropy,
             block_peak,
-        ) = _reduce_posterior_block(post_block, bin_centers)
+        ) = _decode_and_reduce_block(
+            spike_counts[start:stop],
+            encoding_models,
+            dt,
+            bin_centers,
+            prior_block=block_prior,
+            nonfinite_mask=nonfinite_mask,
+            validate=validate,
+            dtype=dtype,
+        )
         map_bin[start:stop] = block_map_bin
-        map_position[start:stop] = bin_centers[block_map_bin]
+        map_position[start:stop] = block_map_position
         mean_position[start:stop] = block_mean
         posterior_entropy[start:stop] = block_entropy
         peak_prob[start:stop] = block_peak
-        # post_block goes out of scope and is reclaimed before the next block.
 
     return DecodingSummary(
         times=times_arr,
