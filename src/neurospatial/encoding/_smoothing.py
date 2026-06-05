@@ -35,10 +35,22 @@ batch call computes it once and reuses it across all neurons; the per-neuron
 cost is then a single O(n_bins²) matmul, i.e. O(n_neurons × n_bins²) for the
 matmuls but only one weight-matrix build.
 
-For environments with more than a few thousand bins, ``gaussian_kde`` may
-still be memory-prohibitive because the weight matrix is dense. Prefer
-``diffusion_kde`` which uses sparse graph operations and precomputes the
-kernel once per environment.
+``diffusion_kde`` is **not** sparse: the diffusion heat kernel ``exp(-tL)`` is
+dense by construction (every entry is positive), so it too is a dense
+``(n_bins, n_bins)`` matrix costing O(n_bins²) memory. It is built once via a
+matrix exponential (a one-time O(n_bins³) cost) and cached per
+``(environment, bandwidth)``; the per-neuron smoothing is then a dense
+O(n_bins²) matmul. Its advantage over ``gaussian_kde`` is boundary-awareness
+(it diffuses over the environment graph and so respects walls), not lower
+asymptotic cost.
+
+Because **both** ``diffusion_kde`` and ``gaussian_kde`` materialize a dense
+``(n_bins, n_bins)`` kernel, both are memory-gated for very large
+environments: above ``_KERNEL_HARD_LIMIT_BINS`` bins each refuses with a
+``MemoryError`` (escape hatch ``allow_large=True``). For environments that
+exceed the ceiling, use ``binned`` (it smooths the already-normalized rate map
+over the environment graph and builds **no** dense kernel), or reduce the bin
+count (increase ``bin_size``).
 
 References
 ----------
@@ -55,6 +67,11 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
+
+# Single shared high-bin ceiling. Reuse the diffusion-kernel gate's constant so
+# both dense O(n_bins^2) smoothing paths (diffusion + gaussian) refuse the same
+# over-large environments -- one ceiling, not a divergent copy.
+from neurospatial.ops.smoothing import _KERNEL_HARD_LIMIT_BINS
 
 if TYPE_CHECKING:
     from neurospatial.environment._protocols import EnvironmentProtocol
@@ -81,7 +98,7 @@ _GAUSSIAN_KERNEL_CACHE_MAX = 32
 
 
 def _get_gaussian_kernel(
-    env: _BaseEnvironment, bandwidth: float
+    env: _BaseEnvironment, bandwidth: float, *, allow_large: bool = False
 ) -> NDArray[np.float64]:
     """Return the dense Gaussian-KDE weight matrix for ``env`` at ``bandwidth``.
 
@@ -90,11 +107,49 @@ def _get_gaussian_kernel(
     ``n_bins`` of a few thousand that materialization plus exp is
     measurable; cache the result keyed on ``(id(env), bandwidth)`` and
     verify ``n_bins`` to defend against id reuse after GC.
+
+    Parameters
+    ----------
+    env : Environment
+        The spatial environment whose bin centers define the kernel geometry.
+    bandwidth : float
+        Gaussian ``sigma`` in environment units.
+    allow_large : bool, default=False
+        Whether to bypass the high-bin memory gate. The weight matrix is dense
+        ``(n_bins, n_bins)`` -- O(n_bins**2) memory -- so when ``n_bins`` exceeds
+        ``_KERNEL_HARD_LIMIT_BINS`` this function **raises** ``MemoryError``
+        before allocating the matrix. Pass ``allow_large=True`` to override the
+        gate and attempt the dense allocation anyway.
+
+    Raises
+    ------
+    MemoryError
+        If ``n_bins > _KERNEL_HARD_LIMIT_BINS`` and ``allow_large`` is False.
     """
     key = (id(env), float(bandwidth))
     cached = _GAUSSIAN_KERNEL_CACHE.get(key)
     bin_centers = env.bin_centers
     n_bins = bin_centers.shape[0]
+
+    # Hard memory gate -- mirrors the diffusion-kernel gate in ops/smoothing.py
+    # and shares its ceiling. Runs BEFORE materializing the dense weight matrix
+    # so an over-large request fails fast instead of attempting (and crashing
+    # on) the dense n_bins x n_bins float64 allocation. A cache hit below would
+    # never reach here for an over-large env because building it the first time
+    # would already have raised.
+    if n_bins > _KERNEL_HARD_LIMIT_BINS and not allow_large:
+        estimated_gb = n_bins * n_bins * 8 / 1e9
+        raise MemoryError(
+            f"Refusing to build a Gaussian-KDE kernel for {n_bins} bins: the "
+            f"weight matrix exp(-d^2/2sigma^2) is dense by construction (every "
+            f"entry > 0), so it requires an {n_bins} x {n_bins} float64 matrix "
+            f"(~{estimated_gb:.1f} GB) -- O(n^2) memory. This exceeds the "
+            f"{_KERNEL_HARD_LIMIT_BINS}-bin safety ceiling. To proceed, either "
+            f"reduce the number of bins (increase bin_size), use "
+            f"smoothing_method='binned' (no dense kernel), or pass "
+            f"allow_large=True to override this gate if you have enough RAM."
+        )
+
     # Require the cached weakref to still resolve to *this* exact env. A dead
     # weakref (env GC'd) or one resolving to a different object (id reused by a
     # new env) means the entry belongs to a now-gone environment -- treat as a
@@ -239,22 +294,32 @@ def smooth_rate_map(
     -----
     **Method Comparison**:
 
-    +--------------+----------------+----------------------+--------------+
-    | Method       | Boundaries     | Complexity           | Artifacts    |
-    +==============+================+======================+==============+
-    | diffusion_kde| Respects       | O(n_bins) per neuron | None         |
-    +--------------+----------------+----------------------+--------------+
-    | gaussian_kde | Ignores        | O(n_bins²) per neuron| Wall bleed   |
-    +--------------+----------------+----------------------+--------------+
-    | binned       | Respects*      | O(n_bins) per neuron | Discretization|
-    +--------------+----------------+----------------------+--------------+
+    +--------------+----------------+-----------------------+--------------+
+    | Method       | Boundaries     | Complexity            | Artifacts    |
+    +==============+================+=======================+==============+
+    | diffusion_kde| Respects       | O(n_bins²) per neuron | None         |
+    +--------------+----------------+-----------------------+--------------+
+    | gaussian_kde | Ignores        | O(n_bins²) per neuron | Wall bleed   |
+    +--------------+----------------+-----------------------+--------------+
+    | binned       | Respects*      | O(n_bins) per neuron  | Discretization|
+    +--------------+----------------+-----------------------+--------------+
 
     *binned uses graph smoothing but applies it after normalization.
 
-    **Performance recommendation**: For environments with >1000 bins, use
-    ``diffusion_kde`` (default). ``gaussian_kde`` recomputes a dense
-    n_bins × n_bins weight matrix for each neuron, which is slow for large
-    environments or large populations.
+    The ``diffusion_kde`` kernel is dense ``(n_bins, n_bins)`` and built once
+    per ``(env, bandwidth)`` via a matrix exponential (a one-time O(n_bins³)
+    build); the per-neuron smoothing is then the dense O(n_bins²) matmul
+    ``kernel @ counts``. Both ``diffusion_kde`` and ``gaussian_kde`` are
+    memory-gated above ``_KERNEL_HARD_LIMIT_BINS`` bins; ``binned`` builds no
+    dense kernel and is the low-memory option.
+
+    **Performance recommendation**: For most analyses use ``diffusion_kde``
+    (default) -- it is boundary-aware. Both ``diffusion_kde`` and
+    ``gaussian_kde`` build a dense ``(n_bins, n_bins)`` kernel (cached per
+    ``(env, bandwidth)`` and reused across neurons), so both cost O(n_bins²)
+    memory and are hard-gated above ``_KERNEL_HARD_LIMIT_BINS`` bins. For
+    environments too large for a dense kernel, use ``binned`` (no dense kernel)
+    or increase ``bin_size`` to reduce the bin count.
 
     **Backend behavior**: When ``backend="jax"``, the kernel smoothing and
     rate computation use JAX operations. The kernel itself is computed from

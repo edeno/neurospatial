@@ -289,6 +289,19 @@ these are called out under a dedicated **Breaking changes** heading.
   lower-peak `expm_multiply` / Chebyshev rewrite of the kernel is a **deferred
   stretch goal** and is intentionally **not** part of this release.
 
+- Gated the dense **Gaussian-KDE** high-bin path the same way as the diffusion
+  kernel. `smoothing_method="gaussian_kde"` builds a dense `(n_bins, n_bins)`
+  weight matrix (`exp(-d²/2σ²)`, every entry > 0), so it carries the same
+  O(n_bins²) memory cost; it now **raises** `MemoryError` above the shared
+  `_KERNEL_HARD_LIMIT_BINS` ceiling (20,000 bins) before allocating the matrix,
+  naming the size, the GB estimate, and the fixes (reduce bins, use
+  `smoothing_method="binned"`, or `allow_large=True`). One ceiling constant is
+  now shared by both dense smoothing paths instead of a divergent copy. Also
+  corrected stale `encoding/_smoothing.py` docs that wrongly described the
+  diffusion kernel as "sparse" / `O(n_bins)` — it is dense `(n_bins, n_bins)`,
+  O(n_bins²) per neuron, with a one-time O(n_bins³) matrix-exponential build.
+  No numerical results change.
+
 - `SpatialRatesResult.summary_table()` no longer double-computes grid and
   border scores. It previously ran the expensive per-neuron grid/border score
   computation **twice** per call (once for the `grid_score`/`border_score`
