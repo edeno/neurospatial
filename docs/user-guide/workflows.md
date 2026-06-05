@@ -206,6 +206,28 @@ plt.show()
 `.times`. See [`decoding_error`](../api/neurospatial/decoding/index.md) and
 related helpers for accuracy metrics.
 
+### Long sessions / thousands of units: stream the decode
+
+`decode_session` materializes the full `(n_time, n_bins)` posterior. For long
+recordings or large populations that array can be too big to hold in memory.
+Use the memory-safe summary decoder instead:
+
+```python
+from neurospatial.decoding import decode_session_summary
+
+summary = decode_session_summary(env, spike_times, times, positions, dt=0.1)
+df = summary.to_dataframe()  # per-time MAP / mean / entropy / peak
+print(summary.summary())     # headline scalar metrics
+print(summary.map_position)  # (n_time, n_dims) MAP estimate
+```
+
+`decode_session_summary` streams the decode in time chunks and returns a
+`DecodingSummary` carrying per-time MAP / mean / entropy / peak via
+`.to_dataframe()` and `.summary()` (plus `.map_position`) — **without ever
+materializing the full posterior**. If you already have binned spike counts and
+encoding models, `decode_position_summary(env, spike_counts, encoding_models,
+dt, *, time_chunk=...)` is the array-level equivalent.
+
 ### When to reach for the manual path
 
 `decode_session` covers the common case. When you need custom control — passing
@@ -437,24 +459,23 @@ firing_rate[valid_occupancy] = spike_counts[valid_occupancy] / occupancy_time[va
 ### Pattern: Batch Processing
 
 ```python
-# Process multiple units efficiently
+from neurospatial.encoding import compute_spatial_rates
+
+# Process multiple units efficiently with the batch API.
 spike_trains_by_unit_id = load_all_neurons()
-unit_ids = []
-firing_rate_maps = []
+unit_ids = list(spike_trains_by_unit_id.keys())
+spike_times = list(spike_trains_by_unit_id.values())
 
-for unit_id, spike_times in spike_trains_by_unit_id.items():
-    unit_ids.append(unit_id)
-    spike_positions = interpolate_position(position_data, spike_times)
-    spike_bins = env.bin_at(spike_positions)
-    spike_counts, _ = np.histogram(spike_bins, bins=np.arange(env.n_bins + 1))
-
-    firing_rate = spike_counts / occupancy_time
-    firing_rate[occupancy_time < min_occupancy] = np.nan
-
-    firing_rate_maps.append(firing_rate)
-
-firing_rate_maps = np.array(firing_rate_maps)  # Shape: (n_units, n_bins)
+result = compute_spatial_rates(
+    env, spike_times, times, positions, unit_ids=unit_ids
+)
+firing_rate_maps = result.firing_rates  # Shape: (n_units, n_bins)
 ```
+
+`compute_spatial_rates` handles spike-to-position interpolation, occupancy
+normalization, and smoothing for the whole population in one call, returning a
+`SpatialRatesResult` whose `unit_ids` line up with `firing_rates`. Prefer it
+over a manual per-neuron loop.
 
 ### Pattern: Progressive Refinement
 
