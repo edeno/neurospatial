@@ -89,6 +89,7 @@ def test_time_chunk_reduces_transient_peak(medium_2d_env):
     _, peak_chunked = tracemalloc.get_traced_memory()
     tracemalloc.stop()
 
-    # Chunked path must not peak higher than the unchunked path; it should be
-    # meaningfully lower since it avoids a full-size log-likelihood .copy().
-    assert peak_chunked < peak_unchunked
+    # Chunked path must peak meaningfully below the unchunked path (it avoids
+    # the full-size ll_shifted temporary). Use a margin for tracemalloc-noise
+    # robustness, consistent with the sibling test's reasoning.
+    assert peak_chunked < 0.9 * peak_unchunked

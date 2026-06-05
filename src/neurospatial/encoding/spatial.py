@@ -2321,7 +2321,7 @@ def compute_spatial_rates(
     float64 internally, so passing a float32 model there does not by itself
     shrink the decode working set; the decode-side memory knobs are
     ``decode_position(..., dtype=..., time_chunk=...)`` and
-    ``decode_position_summary`` (see Task 2.1).
+    ``decode_position_summary``.
 
     Examples
     --------

@@ -241,6 +241,54 @@ class TestDecodePositionSummaryParity:
         )
 
 
+class TestDecodingSummaryPortability:
+    """DecodingSummary parity accessor + direct-construction shape guard."""
+
+    def test_map_estimate_aliases_map_bin(self, small_2d_env):
+        from neurospatial.decoding import decode_position_summary
+
+        spike_counts, encoding_models = _make_decode_inputs(small_2d_env)
+        summ = decode_position_summary(
+            small_2d_env, spike_counts, encoding_models, dt=0.025
+        )
+        # map_estimate ports from DecodingResult: it is the MAP bin index.
+        np.testing.assert_array_equal(summ.map_estimate, summ.map_bin)
+
+    def test_post_init_rejects_ragged_field(self, small_2d_env):
+        from neurospatial.decoding._result import DecodingSummary
+
+        env = small_2d_env
+        n_time, n_dims = 5, env.n_dims
+        map_bin = np.zeros(n_time, dtype=np.int64)
+        # mean_position has the wrong length -> should raise naming the field.
+        with pytest.raises(ValueError, match="mean_position"):
+            DecodingSummary(
+                times=None,
+                map_position=np.zeros((n_time, n_dims)),
+                mean_position=np.zeros((n_time - 1, n_dims)),
+                posterior_entropy=np.zeros(n_time),
+                peak_prob=np.zeros(n_time),
+                env=env,
+                map_bin=map_bin,
+            )
+
+    def test_post_init_accepts_consistent_shapes(self, small_2d_env):
+        from neurospatial.decoding._result import DecodingSummary
+
+        env = small_2d_env
+        n_time, n_dims = 5, env.n_dims
+        # A fully-consistent construction must not raise.
+        DecodingSummary(
+            times=np.arange(n_time, dtype=np.float64),
+            map_position=np.zeros((n_time, n_dims)),
+            mean_position=np.zeros((n_time, n_dims)),
+            posterior_entropy=np.zeros(n_time),
+            peak_prob=np.zeros(n_time),
+            env=env,
+            map_bin=np.zeros(n_time, dtype=np.int64),
+        )
+
+
 class TestDecodingSummaryTerminalVerbs:
     """DecodingSummary implements to_dataframe / summary / plot / to_xarray."""
 

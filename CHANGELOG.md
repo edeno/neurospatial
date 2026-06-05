@@ -234,9 +234,14 @@ these are called out under a dedicated **Breaking changes** heading.
     relative). Every `DecodingResult` method works unchanged on a float32
     posterior.
   - `time_chunk=k` computes the exp/normalize in time-blocks into a single
-    preallocated output array, cutting the transient memory peak from ~3-4× the
-    stored posterior down to ~1×. `time_chunk=None` (the default) reproduces the
-    previous behavior byte-for-byte.
+    preallocated output array, materializing the full-size `ll_shifted`
+    temporary one block at a time instead of all at once. This drops the
+    transient memory peak from ~4× to ~3× the stored posterior — the full-size
+    log-likelihood and its working copy still coexist with the output, so it is
+    not a ~1× path (that is `decode_position_summary`, which computes the
+    likelihood per block and never holds the full log-likelihood).
+    `time_chunk=None` (the default) reproduces the previous behavior
+    byte-for-byte.
 
   For sessions where even the stored dense posterior is too large to hold, use
   the new `decode_position_summary` / `decode_session_summary` (see **Added**),

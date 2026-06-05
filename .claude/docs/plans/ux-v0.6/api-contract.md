@@ -37,7 +37,9 @@ This is the rulebook every phase adheres to. After v0.6 it is copied into `CLAUD
 - `summary_table()` → **one row per unit**, `unit_id`-indexed, scalar metric columns. The default a 1000-neuron user wants.
 - `to_xarray()` → labeled `xr.Dataset`. **Two distinct shapes — do not conflate (M3):**
   - **Population rate datasets:** dims **`("unit_id", "bin")`**, `unit_id` the dimension/index coordinate (the `unit_ids` array), `bin` the bin-index dim; `bin_center_x`/`bin_center_y` non-index coords *on* `bin`. **Validate `unit_ids` unique** before indexing (raise on duplicates — label selection requires uniqueness). `.sel(unit_id=…)` selects by label.
-  - **Decode datasets** (`DecodingResult`/`DecodingSummary`): dims **`("time", "bin")`** (posterior/MAP over space per time bin) — there is **no `unit_id` axis**; `time` is the index coord, `bin_center_*` non-index coords on `bin`.
+  - **Decode datasets** — there is **no `unit_id` axis**; `time` is the index coord. Two distinct shapes:
+    - `DecodingResult.to_xarray()` → dims **`("time", "bin")`** (posterior over space per time bin); `bin_center_*` non-index coords on `bin`.
+    - `DecodingSummary.to_xarray()` → a bin-less track `Dataset` on **`("time",)`** only (per-time reductions: map/mean position, entropy, peak_prob, map_bin — there is no posterior to put on a `bin` axis).
   - Attrs carry units/bandwidth/env-hash/software-version.
 - `summary()` → flat dict of scalar headline metrics.
 - `plot(ax=None, ...) -> Axes`.

@@ -777,6 +777,37 @@ class DecodingSummary(ResultMixin):
     env: Environment
     map_bin: NDArray[np.int64]
 
+    def __post_init__(self) -> None:
+        """Validate that all per-time arrays share a consistent shape.
+
+        ``DecodingSummary`` is public/exported, so it may be constructed
+        directly. Catch ragged inputs here with a clear ``ValueError`` naming
+        the offending field rather than failing late and cryptically in a
+        reduction or export. ``n_time`` is derived from ``map_bin``; every other
+        per-time field must agree (``(n_time,)`` for scalars, ``(n_time,
+        n_dims)`` for position vectors, and ``times`` likewise when provided).
+        """
+        n_time = self.map_bin.shape[0]
+        n_dims = self.env.n_dims
+        checks: list[tuple[str, NDArray[Any] | None, tuple[int, ...]]] = [
+            ("map_position", self.map_position, (n_time, n_dims)),
+            ("mean_position", self.mean_position, (n_time, n_dims)),
+            ("posterior_entropy", self.posterior_entropy, (n_time,)),
+            ("peak_prob", self.peak_prob, (n_time,)),
+        ]
+        if self.times is not None:
+            checks.append(("times", self.times, (n_time,)))
+        for name, arr, expected in checks:
+            if arr is None:
+                continue
+            if arr.shape != expected:
+                raise ValueError(
+                    f"DecodingSummary.{name} has shape {arr.shape}, but expected "
+                    f"{expected} (n_time={n_time} from map_bin"
+                    + (f", n_dims={n_dims} from env" if len(expected) == 2 else "")
+                    + "). All per-time fields must share the same n_time."
+                )
+
     @property
     def n_time_bins(self) -> int:
         """Number of decoded time bins.
@@ -787,6 +818,21 @@ class DecodingSummary(ResultMixin):
             Length of the per-time reduction arrays.
         """
         return int(self.map_bin.shape[0])
+
+    @property
+    def map_estimate(self) -> NDArray[np.int64]:
+        """MAP bin index per time bin.
+
+        Alias of :attr:`map_bin` for parity with
+        :attr:`DecodingResult.map_estimate`, so user code ports between the
+        full and summary decoders without renaming.
+
+        Returns
+        -------
+        NDArray[np.int64]
+            MAP bin index per time bin, shape ``(n_time_bins,)``.
+        """
+        return self.map_bin
 
     def _dim_names(self) -> list[str]:
         """Coordinate column names matching ``DecodingResult.to_dataframe``."""

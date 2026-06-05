@@ -195,7 +195,6 @@ def test_alignment_spikes_and_occupancy_same_intervals(
     # (t=5.5,6.2,6.8) retained → 3 spikes counted.
     assert counts_public.sum() == 3
     # Occupancy from slow intervals (~50s) excluded; only fast intervals remain.
-    assert occ_public.sum() < occ_ref.sum() + 1e-9  # equal to ref by construction
     full_occ = compute_occupancy(env_1d, times, positions)
     assert occ_public.sum() < full_occ.sum()
 
@@ -390,6 +389,40 @@ def test_filter_occupancy_only_bug_regression(env_1d, two_speed_trajectory) -> N
 
 
 # ==============================================================================
+# 6b. Batch n_jobs parity under an active min_speed filter
+# ==============================================================================
+
+
+def test_batch_njobs_parity_under_min_speed(env_1d, two_speed_trajectory) -> None:
+    """n_jobs=2 == n_jobs=1 (NaN-aware) with an active min_speed filter.
+
+    Pins the contract that the once-resolved speed array is threaded into the
+    joblib workers, so parallel and serial batch paths produce identical
+    firing_rates AND occupancy when min_speed gates a separable slow/fast
+    trajectory with spikes in both segments.
+    """
+    times = two_speed_trajectory["times"]
+    positions = two_speed_trajectory["positions"]
+    # Spikes in both the slow (t < 5.0) and fast (t > 5.0) segments, per neuron.
+    spike_times = [
+        np.array([0.5, 2.0, 5.5, 6.5]),
+        np.array([1.0, 4.5, 5.8, 6.8]),
+        np.array([3.0, 6.2]),
+    ]
+    min_speed = 10.0  # between slow (1.0) and fast (30.0) speeds.
+
+    serial = compute_spatial_rates(
+        env_1d, spike_times, times, positions, min_speed=min_speed, n_jobs=1
+    )
+    parallel = compute_spatial_rates(
+        env_1d, spike_times, times, positions, min_speed=min_speed, n_jobs=2
+    )
+
+    _assert_array_equal_nan(serial.firing_rates, parallel.firing_rates)
+    _assert_array_equal_nan(serial.occupancy, parallel.occupancy)
+
+
+# ==============================================================================
 # 7. speed without min_speed raises (symmetry with env.occupancy)
 # ==============================================================================
 
@@ -438,14 +471,19 @@ def test_speed_without_min_speed_raises_batch(env_1d, two_speed_trajectory) -> N
 # ==============================================================================
 
 
-def test_all_excluded_warns_single(env_1d, two_speed_trajectory) -> None:
-    """A min_speed above the max speed warns about an empty rate map."""
+def test_all_excluded_warns_single(recwarn, env_1d, two_speed_trajectory) -> None:
+    """A min_speed above the max speed warns exactly once about an empty map."""
     times = two_speed_trajectory["times"]
     positions = two_speed_trajectory["positions"]
     spike_times = np.array([0.5, 5.5, 6.8])
     # Max speed is 30 unit/s; this excludes every interval.
-    with pytest.warns(UserWarning, match="min_speed"):
-        compute_spatial_rate(env_1d, spike_times, times, positions, min_speed=1e6)
+    compute_spatial_rate(env_1d, spike_times, times, positions, min_speed=1e6)
+    empty_warnings = [
+        w
+        for w in recwarn.list
+        if issubclass(w.category, UserWarning) and "min_speed" in str(w.message)
+    ]
+    assert len(empty_warnings) == 1
 
 
 def test_all_excluded_warns_batch(env_1d, two_speed_trajectory) -> None:

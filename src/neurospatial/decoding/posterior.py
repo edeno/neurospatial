@@ -190,10 +190,14 @@ def normalize_to_posterior(
     time_chunk : int or None, default=None
         When set, the exp/normalize is computed in time-blocks of
         ``time_chunk`` rows (axis 0) into a single preallocated output array,
-        cutting the transient memory peak from ~3-4x (from the full-size
-        ``.copy()`` + ``exp``) down to ~1x. When ``None`` (the default), the
-        whole array is normalized at once and the result is byte-for-byte
-        identical to the pre-chunking behavior.
+        so the per-block ``ll_shifted`` temporary is materialized one
+        time-block at a time rather than full-size. This removes only that
+        full-size temporary: the incoming ``log_likelihood`` and its working
+        copy ``ll`` are still full-size and persist across the whole loop
+        alongside the output, so the in-flight peak drops from ~4x to ~3x the
+        stored posterior, not to ~1x. When ``None`` (the default), the whole
+        array is normalized at once and the result is byte-for-byte identical
+        to the pre-chunking behavior.
 
     Returns
     -------
@@ -232,10 +236,14 @@ def normalize_to_posterior(
     - These are detected and handled according to `handle_degenerate`
 
     **Memory.** ``dtype=np.float32`` halves the stored posterior; ``time_chunk``
-    blocks the exp/normalize so the transient peak drops from ~3-4x to ~1x the
-    stored posterior. Both default to the original behavior
-    (``dtype=np.float64``, ``time_chunk=None``), which is reproduced
-    byte-for-byte.
+    blocks the exp/normalize so the full-size ``ll_shifted`` temporary is no
+    longer materialized, dropping the transient peak from ~4x to ~3x the stored
+    posterior. It removes only that temporary -- the incoming ``log_likelihood``
+    and its working copy ``ll`` remain full-size across the loop -- so this is
+    not a ~1x path; for that, compute the likelihood per block and never hold
+    the full log-likelihood (see :func:`decode_position_summary`). Both knobs
+    default to the original behavior (``dtype=np.float64``,
+    ``time_chunk=None``), which is reproduced byte-for-byte.
 
     Examples
     --------
@@ -329,10 +337,14 @@ def normalize_to_posterior(
 
     # Log-sum-exp normalization (numerically stable softmax). Compute into a
     # preallocated output buffer of the requested dtype. When time_chunk is set,
-    # normalize one time-block at a time so the only full-size working array is
-    # `out` itself (cutting the transient peak from ~3-4x to ~1x); otherwise
-    # normalize the whole array in one block, which is byte-for-byte identical
-    # to the pre-chunking path (modulo the requested dtype).
+    # normalize one time-block at a time so the per-block `ll_shifted` temporary
+    # is materialized one block at a time rather than full-size. This removes
+    # only that temporary: `log_likelihood` (the incoming array) and its working
+    # copy `ll` are still full-size and persist across the whole loop alongside
+    # `out`, so the transient peak drops from ~4x to ~3x the stored posterior,
+    # NOT to ~1x. Otherwise normalize the whole array in one block, which is
+    # byte-for-byte identical to the pre-chunking path (modulo the requested
+    # dtype).
     #
     # Degenerate rows have two distinct causes, handled identically per block:
     # - all -inf: a legitimate zero-rate row (e.g. no spikes with a flat
@@ -459,14 +471,19 @@ def decode_position(
         ``ValueError``.
     time_chunk : int or None, default=None
         When set, the exp/normalize is computed in time-blocks of
-        ``time_chunk`` rows into a single preallocated posterior, cutting the
-        transient memory peak from ~3-4x (from the full-size log-likelihood
-        ``.copy()`` + ``exp``) down to ~1x. When ``None`` (the default), the
-        whole array is normalized at once and the result is byte-for-byte
-        identical to the pre-chunking behavior. This does **not** change the
-        return type: ``.posterior`` is still the full materialized
-        ``(n_time_bins, n_bins)`` array. For a path that never materializes
-        the full posterior, use :func:`decode_position_summary`.
+        ``time_chunk`` rows into a single preallocated posterior, so the
+        largest *transient temporary* (the per-block ``ll_shifted`` of the
+        log-sum-exp) is materialized one time-block at a time rather than
+        full-size. This cuts the in-flight peak from ~4x to ~3x the stored
+        posterior: the full-size log-likelihood and its working copy still
+        coexist with the output array across the whole loop, so ``time_chunk``
+        only removes the full-size ``ll_shifted`` temporary, not those two.
+        When ``None`` (the default), the whole array is normalized at once and
+        the result is byte-for-byte identical to the pre-chunking behavior.
+        This does **not** change the return type: ``.posterior`` is still the
+        full materialized ``(n_time_bins, n_bins)`` array. For a true ~1x path
+        that never materializes the full log-likelihood, use
+        :func:`decode_position_summary`.
 
     Returns
     -------
@@ -494,13 +511,18 @@ def decode_position(
     Memory usage: The posterior array is shape (n_time_bins, n_bins) and
     stored as float64 by default. For long recordings (e.g., 1 hour at 25ms
     bins = 144,000 time bins) with fine spatial resolution (e.g., 1000 bins),
-    this requires ~1.1 GB stored, with a ~3-4x transient peak from the
-    log-sum-exp. Two knobs cut this without changing the return contract:
-    ``dtype=np.float32`` halves the stored and transient memory, and
-    ``time_chunk`` blocks the exp/normalize so the transient peak drops to ~1x
-    the stored posterior. When even the stored ``(n_time_bins, n_bins)`` array
-    is too large to hold, use :func:`decode_position_summary`, which streams
-    over time and keeps only ``(n_time_bins, ...)`` per-time reductions.
+    this requires ~1.1 GB stored, with a ~4x transient peak from the
+    log-sum-exp (the full-size log-likelihood, its working copy, the
+    ``ll_shifted`` temporary, and the output all coexist). Two knobs cut this
+    without changing the return contract: ``dtype=np.float32`` halves the
+    stored and transient memory, and ``time_chunk`` blocks the exp/normalize so
+    the full-size ``ll_shifted`` temporary is no longer materialized, dropping
+    the peak from ~4x to ~3x the stored posterior (the full-size log-likelihood
+    and its working copy still coexist with the output). When even the stored
+    ``(n_time_bins, n_bins)`` array is too large to hold, use
+    :func:`decode_position_summary`, which streams over time -- computing the
+    likelihood per block so it never materializes the full log-likelihood -- and
+    keeps only ``(n_time_bins, ...)`` per-time reductions (a genuine ~1x path).
 
     Examples
     --------
