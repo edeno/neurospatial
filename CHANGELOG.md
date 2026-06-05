@@ -372,6 +372,20 @@ in 0.7. Each old name forwards to its replacement with unchanged behavior.
   warnings are commonly swallowed.  Default behaviour for in-window spikes
   is byte-for-byte unchanged.
 
+### Documentation
+
+- `population_coverage` docstring example now shows the vectorized batch path
+  (`compute_spatial_rates(...).firing_rates`) instead of the per-neuron
+  `compute_spatial_rate` loop; the pre-existing arg-order bug
+  (`population_coverage(firing_rates, env)`) has been corrected to
+  `population_coverage(env, firing_rates)`.
+- `population_coverage` shape-mismatch `ValueError` message now steers users to
+  `compute_spatial_rates` (the batch function) rather than the slow
+  `compute_spatial_rate` + `np.stack` recipe.
+- `compute_spatial_rate` (singular) docstring now includes a short note pointing
+  many-neuron users to `compute_spatial_rates` (plural), which shares occupancy
+  and smoothing-kernel work across the whole population.
+
 ## [0.5.0] - 2026-06-04
 
 ### Added

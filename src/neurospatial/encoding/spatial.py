@@ -1888,6 +1888,11 @@ def compute_spatial_rate(
     and trajectory data. The result is a SpatialRateResult object containing
     the firing rate map, occupancy, and metadata.
 
+    Computing rate maps for many neurons? Use
+    :func:`compute_spatial_rates` (plural) instead — it shares the occupancy
+    and smoothing-kernel computation across the whole population in one call
+    rather than recomputing it per neuron.
+
     Parameters
     ----------
     env : Environment
