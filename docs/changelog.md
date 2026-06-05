@@ -75,9 +75,11 @@ the published package may still report v0.5.x.
   gap gating on both sides.
 - `SpatialRatesResult.summary_table()` no longer double-computes grid and
   border scores (single pass, faster for large populations).
-- A smoothing-kernel memory gate now raises when a smoothing kernel over a
-  very large bin count would allocate an oversized dense matrix; pass
-  `allow_large=True` to override (or use `smoothing_method="binned"`).
+- The dense smoothing kernels (`diffusion_kde` and `gaussian_kde`) are
+  `O(n_bins²)` memory by construction. For very large bin counts they now emit
+  a loud `UserWarning` (with the estimated size) and **proceed** — there is no
+  hard limit and no opt-out parameter. To reduce memory, use
+  `smoothing_method="binned"` (or fewer bins / a larger `bin_size`).
 
 ### Deprecated
 
