@@ -12,6 +12,9 @@ Covers:
 
 from __future__ import annotations
 
+import math
+from unittest.mock import patch
+
 import numpy as np
 import pytest
 
@@ -613,3 +616,169 @@ class TestDecodePositionSummaryPriorValidation:
             decode_position_summary(
                 small_2d_env, spike_counts, encoding_models, dt=0.025, prior=bad_prior
             )
+
+
+class TestSummaryDecodeStreamingThroughput:
+    """Structural (NON-timing) throughput guard for the summary decoders.
+
+    The summary decode path promises to stream the posterior in time-blocks of
+    ``time_chunk`` rather than (a) materializing the whole ``(n_time, n_bins)``
+    posterior in one shot or (b) doing work that fans out with neuron count.
+    Both ``decode_position_summary`` and ``decode_session_summary`` express that
+    by looping ``for start in range(0, n_time, time_chunk)`` and calling the
+    shared per-block helper ``_decode_and_reduce_block`` exactly once per block.
+
+    These tests spy on ``_decode_and_reduce_block`` (preserving its behavior via
+    ``wraps=real``) and assert the call count equals ``ceil(n_time/time_chunk)``
+    and is INDEPENDENT of ``n_neurons``. They are deterministic (call counts,
+    not tracemalloc/timing), so they run in default CI without flaking.
+
+    Why these catch the two structural regressions:
+
+    - **Materialize-in-one-block:** if the summary path decoded the whole window
+      in a single block, ``_decode_and_reduce_block`` would be called exactly
+      once (== ``ceil(n_time/n_time) == 1``) instead of ``ceil(n_time/k)``, so
+      the block-count assertion fails.
+    - **Per-neuron fan-out:** if the per-block work were split per neuron, the
+      call count would scale with ``n_neurons`` (e.g. 12x), so the
+      n=1-vs-n=12 equality fails.
+    """
+
+    def test_position_summary_block_count_eq_ceil_n_time_over_chunk(self, small_2d_env):
+        """Block count == ceil(n_time/time_chunk); non-dividing chunk so ceil matters."""
+        import neurospatial.decoding.posterior as posterior_mod
+        from neurospatial.decoding import decode_position_summary
+
+        real = posterior_mod._decode_and_reduce_block
+        n_time, time_chunk = 100, 32
+        expected_blocks = math.ceil(n_time / time_chunk)  # ceil(100/32) == 4
+        assert expected_blocks == 4
+
+        spike_counts, encoding_models = _make_decode_inputs(
+            small_2d_env, n_time=n_time, n_neurons=8
+        )
+        with patch.object(posterior_mod, "_decode_and_reduce_block", wraps=real) as spy:
+            decode_position_summary(
+                small_2d_env,
+                spike_counts,
+                encoding_models,
+                dt=0.025,
+                time_chunk=time_chunk,
+            )
+        # Spy actually fired (not a no-op patch) and streamed in 4 blocks.
+        assert spy.call_count > 0
+        assert spy.call_count == expected_blocks
+
+    @pytest.mark.parametrize("n_neurons", [1, 12])
+    def test_position_summary_block_count_independent_of_n_neurons(
+        self, small_2d_env, n_neurons
+    ):
+        """Same n_time/time_chunk -> identical block count for n=1 and n=12 neurons.
+
+        A per-neuron fan-out would make this scale with ``n_neurons``; pinning it
+        to the same ``ceil(n_time/time_chunk)`` for both neuron counts guards
+        against that regression.
+        """
+        import neurospatial.decoding.posterior as posterior_mod
+        from neurospatial.decoding import decode_position_summary
+
+        real = posterior_mod._decode_and_reduce_block
+        n_time, time_chunk = 100, 32
+        expected_blocks = math.ceil(n_time / time_chunk)  # 4, regardless of n_neurons
+
+        spike_counts, encoding_models = _make_decode_inputs(
+            small_2d_env, n_time=n_time, n_neurons=n_neurons
+        )
+        with patch.object(posterior_mod, "_decode_and_reduce_block", wraps=real) as spy:
+            decode_position_summary(
+                small_2d_env,
+                spike_counts,
+                encoding_models,
+                dt=0.025,
+                time_chunk=time_chunk,
+            )
+        assert spy.call_count == expected_blocks == 4
+
+    def test_position_summary_block_count_scales_with_n_time(self, small_2d_env):
+        """Doubling n_time ~doubles the block count (pins 'streams over time')."""
+        import neurospatial.decoding.posterior as posterior_mod
+        from neurospatial.decoding import decode_position_summary
+
+        real = posterior_mod._decode_and_reduce_block
+        time_chunk = 32
+
+        def _count_blocks(n_time):
+            spike_counts, encoding_models = _make_decode_inputs(
+                small_2d_env, n_time=n_time, n_neurons=8
+            )
+            with patch.object(
+                posterior_mod, "_decode_and_reduce_block", wraps=real
+            ) as spy:
+                decode_position_summary(
+                    small_2d_env,
+                    spike_counts,
+                    encoding_models,
+                    dt=0.025,
+                    time_chunk=time_chunk,
+                )
+            return spy.call_count
+
+        blocks_64 = _count_blocks(64)
+        blocks_128 = _count_blocks(128)
+        assert blocks_64 == math.ceil(64 / time_chunk)  # 2
+        assert blocks_128 == math.ceil(128 / time_chunk)  # 4
+        assert blocks_128 == 2 * blocks_64
+
+    def _session_inputs(self, env, *, n_neurons, seed=0):
+        """Tiny deterministic session: t in [0, 10], so n_time = floor(10/dt + eps)."""
+        rng = np.random.default_rng(seed)
+        n_frames = 400
+        times = np.linspace(0.0, 10.0, n_frames)
+        lo = env.bin_centers.min(axis=0)
+        hi = env.bin_centers.max(axis=0)
+        positions = rng.uniform(lo, hi, (n_frames, env.n_dims))
+        spike_times = [
+            np.sort(rng.uniform(0.0, 10.0, rng.integers(20, 60)))
+            for _ in range(n_neurons)
+        ]
+        return spike_times, times, positions
+
+    @pytest.mark.parametrize("n_neurons", [1, 12])
+    def test_session_summary_block_count_eq_ceil_and_indep_of_n_neurons(
+        self, small_2d_env, n_neurons
+    ):
+        """decode_session_summary: per-block decode count == ceil(n_time/chunk).
+
+        ``session.py`` does a function-local
+        ``from neurospatial.decoding.posterior import _decode_and_reduce_block``,
+        so it is looked up on the ``posterior`` module at call time -- patch it
+        THERE. With ``times`` spanning [0, 10] and ``dt=0.1``, the global grid is
+        ``n_time = floor(10/0.1 + 1e-9) = 100`` (mirrors session.py's grid math),
+        so a non-dividing ``time_chunk=32`` gives ``ceil(100/32) == 4`` blocks --
+        identical for n=1 and n=12 neurons.
+        """
+        import neurospatial.decoding.posterior as posterior_mod
+        from neurospatial.decoding import decode_session_summary
+
+        real = posterior_mod._decode_and_reduce_block
+        dt, time_chunk = 0.1, 32
+        n_time = 100  # floor((10 - 0) / 0.1 + 1e-9)
+        expected_blocks = math.ceil(n_time / time_chunk)  # 4
+        assert expected_blocks == 4
+
+        spike_times, times, positions = self._session_inputs(
+            small_2d_env, n_neurons=n_neurons
+        )
+        with patch.object(posterior_mod, "_decode_and_reduce_block", wraps=real) as spy:
+            result = decode_session_summary(
+                small_2d_env,
+                spike_times,
+                times,
+                positions,
+                dt=dt,
+                time_chunk=time_chunk,
+            )
+        # Confirm the fixture's actual n_time matches the computed grid.
+        assert result.map_bin.shape[0] == n_time
+        assert spy.call_count > 0
+        assert spy.call_count == expected_blocks == 4
