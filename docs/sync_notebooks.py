@@ -20,4 +20,18 @@ for pattern in patterns:
         shutil.copy2(source, dest)
         synced += 1
 
+# Prune stale mirrors: remove any synced-type file in docs/examples/ whose
+# source no longer exists in examples/ (e.g. a deleted or renamed example).
+# Only *.ipynb / *.py are pruned -- hand-maintained files such as index.md
+# are never touched.
+pruned = 0
+for pattern in patterns:
+    for mirror in sorted(docs_examples_dir.glob(pattern)):
+        source = examples_dir / mirror.name
+        if not source.exists():
+            print(f"Pruning stale {mirror.name} (no source in examples/)...")
+            mirror.unlink()
+            pruned += 1
+
 print(f"✓ Synced {synced} example files")
+print(f"✓ Pruned {pruned} stale mirror files")
