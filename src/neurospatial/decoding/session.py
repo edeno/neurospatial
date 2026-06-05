@@ -655,6 +655,7 @@ min_occupancy, speed, min_speed, max_gap, encoding_models, warn_on_drop, dtype
     from neurospatial.decoding.posterior import (
         _decode_and_reduce_block,
         _prepare_decode_inputs,
+        _validate_time_chunk,
     )
 
     # Split out the decode-time knobs from decode_kwargs; everything else is an
@@ -679,8 +680,7 @@ min_occupancy, speed, min_speed, max_gap, encoding_models, warn_on_drop, dtype
             "decode_session if you want the full posterior, or pass a positive "
             "time_chunk (default 1024) here."
         )
-    if time_chunk < 1:
-        raise ValueError(f"time_chunk must be a positive integer, got {time_chunk}.")
+    time_chunk = _validate_time_chunk(time_chunk, allow_none=False)
 
     # --- Encode once + build the global decode time grid (no count matrix) ---
     (

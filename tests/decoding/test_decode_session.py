@@ -1420,3 +1420,50 @@ class TestDecodeSessionSummaryDtype:
             atol=1e-4,
             err_msg="float32 decode_session_summary decoded too far from float64",
         )
+
+
+class TestDecodeSessionSummaryTimeChunkValidation:
+    """decode_session_summary validates time_chunk as a positive int (Fix B)."""
+
+    @pytest.mark.parametrize("bad", [1.5, "2", True, False, 0, -1])
+    def test_rejects_bad_time_chunk(self, bad: object) -> None:
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim()
+        with pytest.raises(ValueError, match="time_chunk"):
+            decode_session_summary(
+                env,
+                spike_times,
+                times,
+                positions,
+                dt=0.025,
+                time_chunk=bad,
+            )
+
+    def test_none_time_chunk_specific_message(self) -> None:
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim()
+        with pytest.raises(ValueError, match="decode_session"):
+            decode_session_summary(
+                env,
+                spike_times,
+                times,
+                positions,
+                dt=0.025,
+                time_chunk=None,
+            )
+
+    def test_accepts_valid_int_time_chunk(self) -> None:
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim()
+        summ = decode_session_summary(
+            env,
+            spike_times,
+            times,
+            positions,
+            dt=0.025,
+            time_chunk=64,
+        )
+        assert summ.map_position.shape[0] > 0
