@@ -12,6 +12,7 @@ Tests
 from __future__ import annotations
 
 import numpy as np
+import pytest
 from numpy.testing import assert_allclose
 
 from neurospatial import Environment
@@ -682,11 +683,168 @@ class TestAsSpikeTrainsPublic:
         assert_allclose(result[0], spikes)
 
 
-class TestDecodeSessionFloat32Models:
-    """float32 encoding models flow into the decode working set (Task 2.5)."""
+class TestDecodeSessionDtype:
+    """The `dtype` knob honors float32 end-to-end (R8).
 
-    def test_float32_models_decode_within_tol(self) -> None:
-        """A float32 SpatialRatesResult.firing_rates decodes within tol of f64."""
+    "Decode in this dtype": a single ``dtype=np.float32`` controls BOTH the
+    encoding-model working set that reaches ``decode_position`` AND the
+    posterior dtype, on both the computed and the precomputed-``encoding_models``
+    branches. Default ``np.float64`` is byte-for-byte unchanged.
+    """
+
+    def _spy_decode_position(self, monkeypatch):
+        """Wrap decode_position to capture the encoding-model dtype it receives.
+
+        Returns the ``seen`` dict; ``seen["models_dtype"]`` is the dtype of the
+        firing-rate model array passed into the real ``decode_position`` (i.e.
+        the working set), and the real function still runs so the decode
+        completes.
+        """
+        import neurospatial.decoding.session as session_mod
+        from neurospatial.decoding import posterior as posterior_mod
+
+        seen: dict = {}
+        real = posterior_mod.decode_position
+
+        def _spy(env, counts, firing_rates, dt, **kw):
+            seen["models_dtype"] = np.asarray(firing_rates).dtype
+            seen["posterior_dtype_kw"] = kw.get("dtype", "MISSING")
+            return real(env, counts, firing_rates, dt, **kw)
+
+        # decode_session imports decode_position locally from
+        # neurospatial.decoding.posterior, so patch it there.
+        monkeypatch.setattr(posterior_mod, "decode_position", _spy)
+        # Guard against decode_session resolving the name another way.
+        if hasattr(session_mod, "decode_position"):
+            monkeypatch.setattr(session_mod, "decode_position", _spy, raising=False)
+        return seen
+
+    def test_computed_branch_float32_reaches_working_set(self, monkeypatch) -> None:
+        """dtype=np.float32 (computed branch) → decode_position gets float32 models."""
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=8, duration=8.0, seed=3
+        )
+        seen = self._spy_decode_position(monkeypatch)
+
+        decode_session(env, spike_times, times, positions, dt=0.1, dtype=np.float32)
+
+        assert seen["models_dtype"] == np.float32
+        assert seen["posterior_dtype_kw"] is np.float32
+
+    def test_computed_branch_default_is_float64(self, monkeypatch) -> None:
+        """Default dtype (computed branch) → decode_position gets float64 models."""
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=8, duration=8.0, seed=3
+        )
+        seen = self._spy_decode_position(monkeypatch)
+
+        decode_session(env, spike_times, times, positions, dt=0.1)
+
+        assert seen["models_dtype"] == np.float64
+        assert seen["posterior_dtype_kw"] is np.float64
+
+    def test_passthrough_branch_float32_reaches_working_set(self, monkeypatch) -> None:
+        """float64 encoding_models + dtype=float32 → decode_position gets float32."""
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=8, duration=8.0, seed=5
+        )
+        times_arr = np.asarray(times, dtype=np.float64)
+        models64 = compute_spatial_rates(
+            env,
+            spike_times,
+            times_arr,
+            positions,
+            bandwidth=5.0,
+            fill_value=0.0,
+            dtype=np.float64,
+        ).firing_rates
+        assert models64.dtype == np.float64
+
+        seen = self._spy_decode_position(monkeypatch)
+        decode_session(
+            env,
+            spike_times,
+            times,
+            positions,
+            dt=0.1,
+            encoding_models=models64,
+            dtype=np.float32,
+        )
+
+        # dtype is authoritative end-to-end: float64-in is cast down to float32.
+        assert seen["models_dtype"] == np.float32
+        assert seen["posterior_dtype_kw"] is np.float32
+
+    def test_posterior_dtype_follows_knob(self) -> None:
+        """decode_session(dtype=...) sets the posterior dtype; default float64."""
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=8, duration=8.0, seed=9
+        )
+
+        res32 = decode_session(
+            env, spike_times, times, positions, dt=0.1, dtype=np.float32
+        )
+        res64 = decode_session(env, spike_times, times, positions, dt=0.1)
+
+        assert res32.posterior.dtype == np.float32
+        assert res64.posterior.dtype == np.float64
+
+    def test_parity_within_tol(self) -> None:
+        """float32 decode map_position matches float64 within tolerance."""
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=10, duration=10.0, seed=7
+        )
+        res32 = decode_session(
+            env, spike_times, times, positions, dt=0.1, dtype=np.float32
+        )
+        res64 = decode_session(env, spike_times, times, positions, dt=0.1)
+
+        assert_allclose(
+            res32.map_position,
+            res64.map_position,
+            rtol=1e-4,
+            atol=1e-4,
+            err_msg="float32 decode_session decoded too far from float64",
+        )
+
+    def test_default_byte_for_byte_unchanged(self) -> None:
+        """No dtype == explicit float64 == byte-for-byte identical posterior."""
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=10, duration=10.0, seed=7
+        )
+        res_default = decode_session(env, spike_times, times, positions, dt=0.1)
+        res_f64 = decode_session(
+            env, spike_times, times, positions, dt=0.1, dtype=np.float64
+        )
+        # NaN-aware exact equality.
+        np.testing.assert_array_equal(res_default.posterior, res_f64.posterior)
+
+    def test_invalid_dtype_raises(self) -> None:
+        """A non-float32/64 dtype raises ValueError naming `dtype`."""
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=5, duration=5.0, seed=1
+        )
+        with pytest.raises(
+            ValueError, match="dtype must be np\\.float32 or np\\.float64"
+        ):
+            decode_session(env, spike_times, times, positions, dt=0.1, dtype=np.int32)
+
+    def test_precomputed_models_decode_within_tol(self) -> None:
+        """Precomputed float32 vs float64 encoding_models decode within tol."""
         from neurospatial.decoding import decode_session
 
         env, spike_times, times, positions = _make_linear_track_sim(
@@ -937,21 +1095,46 @@ class TestDecodeSessionSummaryStreaming:
         # Sanity: the chunking really did straddle a non-multiple boundary.
         assert got.map_bin.shape[0] % 37 != 0
 
-    def test_parity_time_chunk_none_single_block(self) -> None:
-        """time_chunk=None processes the whole session as one block, same result."""
+    def test_time_chunk_none_rejected(self) -> None:
+        """R12: time_chunk=None is rejected (it would materialize the posterior)."""
         from neurospatial.decoding import decode_session_summary
 
         env, spike_times, times, positions = _make_linear_track_sim(
             n_neurons=10, duration=10.0, seed=21
         )
         dt = 0.1
-        ref = _summary_reference(
-            env, spike_times, times, positions, dt=dt, time_chunk=None
+        with pytest.raises(ValueError, match=r"full.*posterior|decode_session"):
+            decode_session_summary(
+                env, spike_times, times, positions, dt=dt, time_chunk=None
+            )
+
+    @pytest.mark.parametrize("bad", [0, -1])
+    def test_time_chunk_non_positive_rejected(self, bad) -> None:
+        """R12: time_chunk < 1 is rejected up front with a clear ValueError."""
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=10, duration=10.0, seed=21
         )
-        got = decode_session_summary(
-            env, spike_times, times, positions, dt=dt, time_chunk=None
+        dt = 0.1
+        with pytest.raises(ValueError, match="time_chunk must be a positive integer"):
+            decode_session_summary(
+                env, spike_times, times, positions, dt=dt, time_chunk=bad
+            )
+
+    def test_default_and_explicit_chunk_agree(self) -> None:
+        """R12 regression: default time_chunk and an explicit positive chunk agree."""
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=10, duration=10.0, seed=21
         )
-        self._assert_summary_equal(got, ref)
+        dt = 0.1
+        default = decode_session_summary(env, spike_times, times, positions, dt=dt)
+        chunked = decode_session_summary(
+            env, spike_times, times, positions, dt=dt, time_chunk=37
+        )
+        self._assert_summary_equal(chunked, default)
 
     def test_parity_with_precomputed_encoding_models(self) -> None:
         """encoding_models passthrough also streams correctly."""
@@ -1131,3 +1314,109 @@ class TestDecodeSessionSummaryStreaming:
             decode_session_summary(
                 env, spike_times, times, positions, dt=0.1, not_a_real_kwarg=1
             )
+
+
+class TestDecodeSessionSummaryDtype:
+    """decode_session_summary honors the dtype knob (working set + parity, R8)."""
+
+    def _spy_reduce_block(self, monkeypatch):
+        """Wrap _decode_and_reduce_block to capture firing-rates + dtype it gets.
+
+        Records the dtype of the per-block working set: ``seen["models_dtype"]``
+        is the firing-rate model dtype reaching the block decode, and
+        ``seen["dtype"]`` is the working dtype forwarded to it.
+        """
+        from neurospatial.decoding import posterior as posterior_mod
+
+        seen: dict = {}
+        real = posterior_mod._decode_and_reduce_block
+
+        def _spy(counts_block, firing_rates, dt, bin_centers, **kw):
+            seen.setdefault("models_dtype", np.asarray(firing_rates).dtype)
+            seen.setdefault("dtype", kw.get("dtype", "MISSING"))
+            return real(counts_block, firing_rates, dt, bin_centers, **kw)
+
+        monkeypatch.setattr(posterior_mod, "_decode_and_reduce_block", _spy)
+        return seen
+
+    def test_float32_reaches_block_working_set(self, monkeypatch) -> None:
+        """dtype=np.float32 → the streamed block decode gets float32 models + dtype."""
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=8, duration=8.0, seed=4
+        )
+        seen = self._spy_reduce_block(monkeypatch)
+
+        decode_session_summary(
+            env, spike_times, times, positions, dt=0.1, dtype=np.float32
+        )
+
+        assert seen["models_dtype"] == np.float32
+        assert seen["dtype"] is np.float32
+
+    def test_default_block_working_set_is_float64(self, monkeypatch) -> None:
+        """Default dtype → the streamed block decode gets float64 models + dtype."""
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=8, duration=8.0, seed=4
+        )
+        seen = self._spy_reduce_block(monkeypatch)
+
+        decode_session_summary(env, spike_times, times, positions, dt=0.1)
+
+        assert seen["models_dtype"] == np.float64
+        assert seen["dtype"] is np.float64
+
+    def test_invalid_dtype_raises(self) -> None:
+        """A non-float32/64 dtype raises ValueError naming `dtype`."""
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=5, duration=5.0, seed=2
+        )
+        with pytest.raises(
+            ValueError, match="dtype must be np\\.float32 or np\\.float64"
+        ):
+            decode_session_summary(
+                env, spike_times, times, positions, dt=0.1, dtype=np.int32
+            )
+
+    def test_dtype_via_decode_kwargs_now_collides(self) -> None:
+        """dtype is an explicit param, no longer a decode_kwargs entry.
+
+        Passing dtype both ways is a duplicate-keyword TypeError at call time;
+        passing it once via the explicit param is the supported route.
+        """
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=5, duration=5.0, seed=2
+        )
+        # Single explicit dtype works (no longer routed through **decode_kwargs).
+        summary = decode_session_summary(
+            env, spike_times, times, positions, dt=0.1, dtype=np.float32
+        )
+        assert summary.map_position.shape[1] == env.n_dims
+
+    def test_parity_within_tol(self) -> None:
+        """float32 summary MAP matches float64 summary within tolerance."""
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=10, duration=10.0, seed=7
+        )
+        summ32 = decode_session_summary(
+            env, spike_times, times, positions, dt=0.1, dtype=np.float32
+        )
+        summ64 = decode_session_summary(
+            env, spike_times, times, positions, dt=0.1, dtype=np.float64
+        )
+        assert_allclose(
+            summ32.map_position,
+            summ64.map_position,
+            rtol=1e-4,
+            atol=1e-4,
+            err_msg="float32 decode_session_summary decoded too far from float64",
+        )

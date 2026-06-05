@@ -470,19 +470,29 @@ def decode_position(
         works unchanged. Must be float32 or float64; any other value raises
         ``ValueError``.
     time_chunk : int or None, default=None
-        When set, the exp/normalize is computed in time-blocks of
-        ``time_chunk`` rows into a single preallocated posterior, so the
-        largest *transient temporary* (the per-block ``ll_shifted`` of the
-        log-sum-exp) is materialized one time-block at a time rather than
-        full-size. This cuts the in-flight peak from ~4x to ~3x the stored
-        posterior: the full-size log-likelihood and its working copy still
-        coexist with the output array across the whole loop, so ``time_chunk``
-        only removes the full-size ``ll_shifted`` temporary, not those two.
-        When ``None`` (the default), the whole array is normalized at once and
-        the result is byte-for-byte identical to the pre-chunking behavior.
-        This does **not** change the return type: ``.posterior`` is still the
-        full materialized ``(n_time_bins, n_bins)`` array. For a true ~1x path
-        that never materializes the full log-likelihood, use
+        Hybrid memory knob. Two distinct paths:
+
+        - ``None`` (the default): the Poisson log-likelihood is computed once
+          over the whole window (a single full-size matmul) and the whole
+          posterior is normalized at once. This is the original full-matmul
+          path, reproduced **byte-for-byte** -- every existing caller gets
+          bit-identical output. Its in-flight transient peak is ~3x over the
+          returned posterior (the full-size log-likelihood, its working copy,
+          and the output coexist).
+        - an explicit positive int: the Poisson log-likelihood is computed and
+          normalized **one time-block of ``time_chunk`` rows at a time, directly
+          into the preallocated posterior**, so the full ``(n_time_bins,
+          n_bins)`` log-likelihood and its working copy are never materialized.
+          This cuts the transient peak to **~1x over the returned posterior**
+          (the posterior itself is unavoidably 1x -- this path is returned
+          fully materialized). It is **tolerance-equal, not byte-exact**, to the
+          ``None`` path: the per-block likelihood matmul is a different BLAS
+          shape than the full matmul, so it differs by ~1e-15 ULPs. MAP/argmax
+          is identical and every row sums to 1.0.
+
+        Either way the return type is unchanged: ``.posterior`` is the full
+        materialized ``(n_time_bins, n_bins)`` array. For a path that never
+        materializes even the full posterior, use
         :func:`decode_position_summary`.
 
     Returns
@@ -511,18 +521,19 @@ def decode_position(
     Memory usage: The posterior array is shape (n_time_bins, n_bins) and
     stored as float64 by default. For long recordings (e.g., 1 hour at 25ms
     bins = 144,000 time bins) with fine spatial resolution (e.g., 1000 bins),
-    this requires ~1.1 GB stored, with a ~4x transient peak from the
-    log-sum-exp (the full-size log-likelihood, its working copy, the
-    ``ll_shifted`` temporary, and the output all coexist). Two knobs cut this
-    without changing the return contract: ``dtype=np.float32`` halves the
-    stored and transient memory, and ``time_chunk`` blocks the exp/normalize so
-    the full-size ``ll_shifted`` temporary is no longer materialized, dropping
-    the peak from ~4x to ~3x the stored posterior (the full-size log-likelihood
-    and its working copy still coexist with the output). When even the stored
-    ``(n_time_bins, n_bins)`` array is too large to hold, use
+    this requires ~1.1 GB stored. The default ``time_chunk=None`` full-matmul
+    path has a ~3x transient peak (the full-size log-likelihood, its working
+    copy, and the output coexist), and is byte-for-byte the original behavior.
+    Two knobs cut the transient without changing the return contract:
+    ``dtype=np.float32`` halves the stored and transient memory, and an explicit
+    ``time_chunk=N`` computes the likelihood blockwise into the preallocated
+    posterior so the full-size log-likelihood and its copy are never
+    materialized -- dropping the transient peak to ~1x over the returned
+    posterior (tolerance-equal to the full path; ~1e-15; MAP identical). When
+    even the stored ``(n_time_bins, n_bins)`` array is too large to hold, use
     :func:`decode_position_summary`, which streams over time -- computing the
     likelihood per block so it never materializes the full log-likelihood -- and
-    keeps only ``(n_time_bins, ...)`` per-time reductions (a genuine ~1x path).
+    keeps only ``(n_time_bins, ...)`` per-time reductions.
 
     Examples
     --------
@@ -552,6 +563,11 @@ def decode_position(
     log_poisson_likelihood : Likelihood function used internally
     normalize_to_posterior : Posterior normalization used internally
     """
+    if time_chunk is not None and time_chunk < 1:
+        raise ValueError(
+            f"time_chunk must be a positive integer or None, got {time_chunk}."
+        )
+
     spike_counts, encoding_models, nonfinite_mask = _prepare_decode_inputs(
         env,
         spike_counts,
@@ -561,17 +577,42 @@ def decode_position(
         validate=validate,
         context="decode_position",
     )
-    log_ll = _poisson_log_likelihood(spike_counts, encoding_models, nonfinite_mask, dt)
 
-    # Normalize to posterior. dtype/time_chunk control the stored dtype and the
-    # transient memory peak without changing the return contract.
-    posterior = normalize_to_posterior(
-        log_ll, prior=prior, dtype=dtype, time_chunk=time_chunk
-    )
+    if time_chunk is None:
+        # Default path: full-matmul log-likelihood over the whole window, then
+        # normalize the full array at once. Kept byte-for-byte identical to the
+        # pre-hybrid behavior -- the likelihood matmul runs once at full size, so
+        # there is no BLAS shape-dependence and every existing caller gets
+        # bit-identical output.
+        log_ll = _poisson_log_likelihood(
+            spike_counts, encoding_models, nonfinite_mask, dt
+        )
+        posterior = normalize_to_posterior(
+            log_ll, prior=prior, dtype=dtype, time_chunk=None
+        )
 
-    # Validate output if requested
-    if validate:
-        _validate_output(posterior)
+        # Validate output if requested
+        if validate:
+            _validate_output(posterior)
+    else:
+        # Opt-in path: compute the Poisson log-likelihood ONE time-block at a
+        # time directly into the preallocated posterior, never materializing the
+        # full (n_time, n_bins) log-likelihood or its copy. This cuts the
+        # transient peak from ~3x to ~1x over the returned posterior. It is
+        # tolerance-equal (not byte-exact) to the full path: the per-block
+        # likelihood matmul is a different BLAS shape than the full matmul, so it
+        # differs by ~1e-15 ULPs (MAP/argmax identical; rows still sum to 1).
+        posterior = _decode_blockwise(
+            env,
+            spike_counts,
+            encoding_models,
+            dt,
+            prior=prior,
+            nonfinite_mask=nonfinite_mask,
+            validate=validate,
+            dtype=dtype,
+            time_chunk=time_chunk,
+        )
 
     # Handle times
     if times is not None:
@@ -586,6 +627,152 @@ def decode_position(
 
     # Return DecodingResult
     return DecodingResult(posterior=posterior, env=env, times=times)
+
+
+def _validate_prior_shape(
+    prior: NDArray[np.float64],
+    *,
+    n_time: int,
+    n_bins: int,
+) -> bool:
+    """Validate a prior's shape against the decode dimensions.
+
+    Mirrors :func:`normalize_to_posterior`'s prior-shape checks so the blockwise
+    ``decode_position`` path reports mismatches up front (before the block loop)
+    rather than only at whichever block first slices a bad row.
+
+    Parameters
+    ----------
+    prior : NDArray[np.float64]
+        Prior over positions, already an ndarray.
+    n_time : int
+        Number of time bins being decoded.
+    n_bins : int
+        Number of position bins.
+
+    Returns
+    -------
+    bool
+        ``True`` if the prior is time-varying (2-D), ``False`` if stationary
+        (1-D).
+
+    Raises
+    ------
+    ValueError
+        If the prior is not 1-D ``(n_bins,)`` or 2-D ``(n_time, n_bins)``.
+    """
+    if prior.ndim == 1:
+        if prior.shape[0] != n_bins:
+            raise ValueError(
+                f"1D prior must have shape ({n_bins},) to match log_likelihood "
+                f"position axis, got shape {prior.shape}"
+            )
+        return False
+    if prior.ndim == 2:
+        if prior.shape != (n_time, n_bins):
+            raise ValueError(
+                f"2D prior must have shape {(n_time, n_bins)} to match "
+                f"log_likelihood, got shape {prior.shape}"
+            )
+        return True
+    raise ValueError(
+        f"prior must be 1D (stationary) or 2D (time-varying), "
+        f"got {prior.ndim}D with shape {prior.shape}"
+    )
+
+
+def _decode_blockwise(
+    env: Environment,
+    spike_counts: NDArray[np.int64],
+    encoding_models: NDArray[np.float64],
+    dt: float,
+    *,
+    prior: NDArray[np.float64] | None,
+    nonfinite_mask: NDArray[np.bool_] | None,
+    validate: bool,
+    dtype: Any,
+    time_chunk: int,
+) -> NDArray[np.float64]:
+    """Fill a preallocated posterior one time-block at a time.
+
+    Opt-in (``time_chunk=N``) path for :func:`decode_position`: computes the
+    Poisson log-likelihood for each ``spike_counts[start:stop]`` block via the
+    R5 block machinery (:func:`_poisson_log_likelihood` +
+    :func:`normalize_to_posterior` per block, as :func:`decode_position_summary`
+    does) and writes the normalized posterior directly into the corresponding
+    slice of a single preallocated ``(n_time, n_bins)`` output. The full
+    ``(n_time, n_bins)`` log-likelihood and its working copy are never
+    materialized, so the transient peak is ~1x over the returned posterior.
+
+    The result is the same full materialized posterior as the ``time_chunk=None``
+    path, but tolerance-equal (not byte-exact): the per-block likelihood matmul
+    is a different BLAS shape than the full matmul, so it differs by ~1e-15 ULPs.
+    MAP/argmax is identical and every row sums to 1.0.
+
+    Parameters
+    ----------
+    env : Environment
+        Spatial environment (used for ``n_bins``).
+    spike_counts : NDArray[np.int64], shape (n_time, n_neurons)
+        Validated spike counts.
+    encoding_models : NDArray[np.float64], shape (n_neurons, n_bins)
+        Validated firing-rate maps.
+    dt : float
+        Time-bin width in seconds.
+    prior : NDArray[np.float64] | None
+        Prior over positions (1-D stationary or 2-D time-varying), or ``None``.
+        Its shape is validated up front.
+    nonfinite_mask : NDArray[np.bool_] | None, shape (n_neurons, n_bins)
+        ``True`` where ``encoding_models`` is non-finite; ``None`` if all finite.
+    validate : bool
+        If ``True``, run :func:`_validate_output` on each posterior block.
+    dtype : np.float32 or np.float64
+        Stored/working dtype of the posterior.
+    time_chunk : int
+        Positive time-block size (rows per block).
+
+    Returns
+    -------
+    posterior : NDArray, shape (n_time, n_bins)
+        Full materialized posterior in ``dtype``; each row sums to 1.0.
+    """
+    out_dtype = _validate_posterior_dtype(dtype)
+    n_time = spike_counts.shape[0]
+    n_bins = encoding_models.shape[1]
+
+    # Validate prior shape ONCE, up front, before the time-block loop -- the loop
+    # only slices n_time rows, so a wrong-shaped 2-D prior would otherwise be
+    # silently truncated or caught only at the final block. Mirrors
+    # normalize_to_posterior's checks so both paths report mismatches the same.
+    prior_is_time_varying = False
+    prior_arr: NDArray[np.float64] | None = None
+    if prior is not None:
+        prior_arr = np.asarray(prior, dtype=np.float64)
+        prior_is_time_varying = _validate_prior_shape(
+            prior_arr, n_time=n_time, n_bins=n_bins
+        )
+
+    posterior = np.empty((n_time, n_bins), dtype=out_dtype)
+
+    for start in range(0, n_time, time_chunk):
+        stop = min(start + time_chunk, n_time)
+        block_prior: NDArray[np.float64] | None = prior_arr
+        if prior_is_time_varying and prior_arr is not None:
+            block_prior = prior_arr[start:stop]
+        # Compute the likelihood for THIS block only (never the full window) and
+        # normalize it straight into the output slice. This is the ~1x-transient
+        # core: no full (n_time, n_bins) log-likelihood is ever held.
+        log_ll_block = _poisson_log_likelihood(
+            spike_counts[start:stop], encoding_models, nonfinite_mask, dt
+        )
+        post_block = normalize_to_posterior(
+            log_ll_block, prior=block_prior, dtype=dtype
+        )
+        if validate:
+            _validate_output(post_block)
+        posterior[start:stop] = post_block
+
+    return cast("NDArray[np.float64]", posterior)
 
 
 def _prepare_decode_inputs(
@@ -969,7 +1156,7 @@ def decode_position_summary(
     times: NDArray[np.float64] | None = None,
     validate: bool = True,
     dtype: Any = np.float64,
-    time_chunk: int | None = 1024,
+    time_chunk: int = 1024,
 ) -> DecodingSummary:
     """Memory-safe decode that streams per-time reductions, not the posterior.
 
@@ -1010,11 +1197,13 @@ def decode_position_summary(
     dtype : np.float32 or np.float64, default=np.float64
         Working dtype of each posterior block. ``np.float32`` halves the
         transient per-block memory.
-    time_chunk : int or None, default=1024
-        Time-block size (rows) processed at a time. Smaller blocks use less
-        transient memory; ``None`` would process all time bins in one block
-        (materializing the full posterior transiently, which defeats the
-        purpose), so it defaults to a sensible non-None value.
+    time_chunk : int, default=1024
+        Time-block size (rows) processed at a time; must be a positive integer.
+        Smaller blocks use less transient memory. ``None`` is **rejected**:
+        processing all time bins in one block would materialize the full
+        ``(n_time_bins, n_bins)`` posterior transiently, defeating the purpose
+        of this streamed summary decoder. Use :func:`decode_position` if you
+        want the full posterior.
 
     Returns
     -------
@@ -1026,8 +1215,9 @@ def decode_position_summary(
     Raises
     ------
     ValueError
-        Same conditions as :func:`decode_position` (invalid method, no finite
-        bins, bin-count mismatch, bad ``times`` length, validation failures).
+        If ``time_chunk`` is ``None`` or not a positive integer. Plus the same
+        conditions as :func:`decode_position` (invalid method, no finite bins,
+        bin-count mismatch, bad ``times`` length, validation failures).
 
     Notes
     -----
@@ -1043,10 +1233,17 @@ def decode_position_summary(
     DecodingSummary : Streamed per-time reductions container.
     decode_session_summary : One-call encode->bin->summary-decode wrapper.
     """
-    if time_chunk is not None and time_chunk < 1:
+    if time_chunk is None:
         raise ValueError(
-            f"time_chunk must be a positive integer or None, got {time_chunk}."
+            "time_chunk=None is not allowed for decode_position_summary: this "
+            "streamed summary decoder processes the posterior one time-block at "
+            "a time, and None would materialize the full (n_time, n_bins) "
+            "posterior, defeating its purpose. Use decode_position if you want "
+            "the full posterior, or pass a positive time_chunk (default 1024) "
+            "here."
         )
+    if time_chunk < 1:
+        raise ValueError(f"time_chunk must be a positive integer, got {time_chunk}.")
 
     spike_counts, encoding_models, nonfinite_mask = _prepare_decode_inputs(
         env,
@@ -1074,30 +1271,15 @@ def decode_position_summary(
     # Validate prior shape ONCE, up front, before the time-block loop. The
     # loop only iterates over n_time rows, so an over-long 2-D prior would be
     # silently truncated (the extra rows never sliced) and a short 2-D prior
-    # would only be caught by normalize_to_posterior at the final block. Mirror
-    # decode_position's contract (see normalize_to_posterior's prior-shape
-    # checks) so both paths report mismatches consistently.
+    # would only be caught by normalize_to_posterior at the final block. Route
+    # through the shared _validate_prior_shape helper so decode_position and
+    # decode_position_summary enforce one prior-shape rule with one message.
     if prior is not None:
-        prior_arr = np.asarray(prior)
-        n_bins = encoding_models.shape[1]
-        if prior_arr.ndim == 1:
-            if prior_arr.shape[0] != n_bins:
-                raise ValueError(
-                    f"1D prior must have shape ({n_bins},) to match the number "
-                    f"of position bins, got shape {prior_arr.shape}"
-                )
-        elif prior_arr.ndim == 2:
-            if prior_arr.shape != (n_time, n_bins):
-                raise ValueError(
-                    f"2D prior must have shape {(n_time, n_bins)} to match the "
-                    f"({n_time} time bins, {n_bins} position bins) being "
-                    f"decoded, got shape {prior_arr.shape}"
-                )
-        else:
-            raise ValueError(
-                f"prior must be 1D (stationary) or 2D (time-varying), "
-                f"got {prior_arr.ndim}D with shape {prior_arr.shape}"
-            )
+        _validate_prior_shape(
+            np.asarray(prior),
+            n_time=n_time,
+            n_bins=encoding_models.shape[1],
+        )
 
     bin_centers = np.asarray(env.bin_centers, dtype=np.float64)
     n_dims = bin_centers.shape[1]
@@ -1112,7 +1294,10 @@ def decode_position_summary(
     # matches the block log-likelihood; a stationary (1-D) prior is reused.
     prior_is_time_varying = prior is not None and np.asarray(prior).ndim == 2
 
-    block = n_time if time_chunk is None else time_chunk
+    # time_chunk is guaranteed a positive int by the up-front guard, so the
+    # block is always bounded — the full (n_time, n_bins) posterior is never
+    # materialized in one shot.
+    block = time_chunk
     for start in range(0, n_time, block):
         stop = min(start + block, n_time)
         block_prior = prior

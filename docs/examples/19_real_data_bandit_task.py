@@ -26,6 +26,8 @@
 #
 # **Estimated time**: 20-25 minutes
 #
+# **Prerequisites**: [05_track_linearization.ipynb](05_track_linearization.ipynb), [11_place_field_analysis.ipynb](11_place_field_analysis.ipynb), [13_trajectory_analysis.ipynb](13_trajectory_analysis.ipynb)
+#
 # ## Learning Objectives
 #
 # By the end of this notebook, you will be able to:
@@ -111,9 +113,17 @@ _loader_module = importlib.util.module_from_spec(_loader_spec)
 _loader_spec.loader.exec_module(_loader_module)
 load_neural_recording_from_files = _loader_module.load_neural_recording_from_files
 
-# Configure matplotlib
-plt.rcParams["figure.figsize"] = (14, 10)
-plt.rcParams["font.size"] = 12
+# Shared styling (Okabe-Ito palette, consistent figure / font sizes)
+import sys
+
+_here = (
+    str(Path(__file__).resolve().parent) if "__file__" in globals() else str(Path.cwd())
+)
+if _here not in sys.path:
+    sys.path.insert(0, _here)
+from _style import apply_style
+
+apply_style(figsize=(14, 10), font_size=12)
 
 # %% [markdown]
 # ## Part 1: Load the Neural Recording Data
@@ -658,7 +668,7 @@ for unit_idx in example_units:
             label=f"Field {i + 1}",
         )
 
-        # Mark centroid using graph-based method (respects maze geometry)
+        # Mark centroid using geodesic method (respects maze geometry)
         centroid = rate_map_centroid(env_2d, field, field_bins, method="geodesic")
         ax.scatter(
             centroid[0],

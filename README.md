@@ -500,19 +500,17 @@ import numpy as np
 
 from neurospatial import Environment
 from neurospatial.animation import subsample_frames
-from neurospatial.encoding import compute_spatial_rate
+from neurospatial.encoding import compute_spatial_rates
 
 # Assumes you already have:
-#   positions: shape (n_samples, 2) animal trajectory
-#   times:     shape (n_samples,)   timestamps in seconds
-#   spikes:    list of length 30, each entry is a 1-D array of spike
-#              times for one cell (see "Your First Place Field" above
-#              for an end-to-end simulation that produces these arrays)
+#   positions:   shape (n_samples, 2) animal trajectory
+#   times:       shape (n_samples,)   timestamps in seconds
+#   spike_times: list of length 30, each entry is a 1-D array of spike
+#                times for one cell (see "Your First Place Field" above
+#                for an end-to-end simulation that produces these arrays)
 env = Environment.from_samples(positions, bin_size=2.5)
-fields = [
-    compute_spatial_rate(env, spikes[i], times, positions).firing_rate
-    for i in range(30)
-]
+# Batch-encode all 30 cells at once: fields has shape (30, n_bins)
+fields = compute_spatial_rates(env, spike_times, times, positions).firing_rates
 
 # frame_times is required: one timestamp per field (seconds)
 frame_times = np.arange(len(fields)) / 30.0  # 30 Hz

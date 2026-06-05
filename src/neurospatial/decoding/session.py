@@ -103,6 +103,7 @@ def decode_session(
     max_gap: float | None = 0.5,
     encoding_models: NDArray[np.float64] | None = None,
     warn_on_drop: bool = True,
+    dtype: type[np.float32] | type[np.float64] = np.float64,
     **decode_kwargs: Any,
 ) -> DecodingResult:
     """Encode, bin, and decode in one call.
@@ -188,10 +189,23 @@ def decode_session(
         ``decode_session`` performs the out-of-window check itself.  Set to
         ``False`` to suppress these warnings (e.g. for a genuinely sparse
         session) — note this also silences the encoder's inactive-bin warning.
+    dtype : {np.float32, np.float64}, default=np.float64
+        "Decode in this dtype." Controls BOTH the encoding-model working set
+        AND the posterior dtype end-to-end. ``np.float32`` halves the
+        encoding-model + posterior working set on the beginner golden path;
+        values match the float64 default within float32 tolerance (the rate
+        computation itself is done in float64 and only the stored result is
+        cast, per :func:`~neurospatial.encoding.compute_spatial_rates`). Any
+        other dtype raises ``ValueError``. Default ``np.float64`` leaves every
+        existing caller byte-for-byte unchanged. Note: do not also pass
+        ``dtype`` via ``decode_kwargs`` — this explicit parameter is the single
+        source forwarded to :func:`~neurospatial.decoding.decode_position`, and
+        a duplicate would raise ``TypeError``.
     **decode_kwargs
         Additional keyword arguments forwarded verbatim to
         :func:`~neurospatial.decoding.decode_position`.  Supported kwargs
-        include ``prior``, ``method``, and ``validate``.
+        include ``prior``, ``method``, and ``validate``.  (Pass ``dtype`` via
+        the explicit ``dtype`` parameter, not here.)
 
     Returns
     -------
@@ -308,15 +322,20 @@ def decode_session(
         max_gap=max_gap,
         encoding_models=encoding_models,
         warn_on_drop=warn_on_drop,
+        dtype=dtype,
     )
 
     # --- Decode ---
+    # Forward the explicit `dtype` as the single source for the posterior dtype.
+    # It is intentionally NOT left in decode_kwargs, so there is no duplicate
+    # `dtype` keyword (which would be a TypeError at call time).
     return decode_position(
         env,
         counts,
         firing_rates,
         dt,
         times=centers,
+        dtype=dtype,
         **decode_kwargs,
     )
 
@@ -336,6 +355,7 @@ def _build_encoding_model(
     max_gap: float | None = 0.5,
     encoding_models: NDArray[np.float64] | None,
     warn_on_drop: bool,
+    dtype: type[np.float32] | type[np.float64] = np.float64,
 ) -> tuple[
     list[NDArray[np.float64]],
     NDArray[np.float64],
@@ -358,12 +378,20 @@ def _build_encoding_model(
     ``block_t_start + k*dt`` per block would drift by float rounding and break
     parity; slicing the precomputed global ``edges`` does not.)
 
+    The ``dtype`` knob controls the dtype of the returned ``firing_rates``
+    (the encoding-model working set): in the computed branch it is threaded
+    into :func:`~neurospatial.encoding.compute_spatial_rates` so the model is
+    built directly in that dtype (no promotion); in the passthrough branch the
+    supplied ``encoding_models`` array is cast to that dtype (so ``dtype`` is
+    authoritative end-to-end). Default ``np.float64`` keeps current behavior
+    byte-for-byte.
+
     Returns
     -------
     trains : list of NDArray[np.float64]
         Normalized per-neuron spike-time arrays.
     firing_rates : NDArray[np.float64], shape (n_neurons, n_bins)
-        Encoding-model firing-rate maps.
+        Encoding-model firing-rate maps, in the requested ``dtype``.
     n_time : int
         Number of decode time bins on the global grid,
         ``floor((t_stop - t_start) / dt + 1e-9)``.
@@ -379,6 +407,18 @@ def _build_encoding_model(
     from neurospatial.encoding import as_spike_trains
     from neurospatial.encoding._validation import validate_times
     from neurospatial.encoding.spatial import compute_spatial_rates
+
+    # Validate dtype: only single/double precision working sets are supported.
+    # Mirrors compute_spatial_rates' dtype validation wording.
+    if np.dtype(dtype) not in (np.dtype(np.float32), np.dtype(np.float64)):
+        raise ValueError(
+            f"dtype must be np.float32 or np.float64, got {dtype!r}. "
+            "Only single- and double-precision rate maps are supported "
+            "(float32 halves the encoding-model working set and the "
+            "downstream decode posterior)."
+        )
+    # Normalize to the canonical numpy scalar type for downstream casts.
+    dtype = np.float32 if np.dtype(dtype) == np.dtype(np.float32) else np.float64
 
     # --- Normalize inputs ---
     trains = as_spike_trains(spike_times)
@@ -427,10 +467,23 @@ def _build_encoding_model(
             min_speed=min_speed,
             max_gap=max_gap,
             warn_on_drop=warn_on_drop,
+            dtype=dtype,
         )
-        firing_rates = np.asarray(rates_result.firing_rates, dtype=np.float64)
+        # compute_spatial_rates already stores the result in `dtype`; the cast
+        # is a cheap no-op guard so the working set is honored end-to-end. The
+        # array is float32 OR float64; the declared NDArray[np.float64] return
+        # type is the family annotation (cast keeps mypy happy).
+        firing_rates = cast(
+            "NDArray[np.float64]",
+            np.asarray(rates_result.firing_rates, dtype=dtype),
+        )
     else:
-        firing_rates = np.asarray(encoding_models, dtype=np.float64)
+        # Passthrough: cast the supplied models to the requested dtype so
+        # `dtype` is authoritative end-to-end (default np.float64 keeps existing
+        # float64-in callers byte-for-byte unchanged).
+        firing_rates = cast(
+            "NDArray[np.float64]", np.asarray(encoding_models, dtype=dtype)
+        )
         # Passthrough: the encoder was skipped, so nothing has checked the
         # spike/trajectory time window. Do the out-of-window check here so the
         # headline path still warns on a ms-vs-s mismatch before binning.
@@ -469,6 +522,7 @@ def _encode_and_bin(
     max_gap: float | None = 0.5,
     encoding_models: NDArray[np.float64] | None,
     warn_on_drop: bool,
+    dtype: type[np.float32] | type[np.float64] = np.float64,
 ) -> tuple[NDArray[np.float64], NDArray[np.int64], NDArray[np.float64]]:
     """Shared encode->bin glue for the FULL-posterior :func:`decode_session`.
 
@@ -503,6 +557,7 @@ def _encode_and_bin(
         max_gap=max_gap,
         encoding_models=encoding_models,
         warn_on_drop=warn_on_drop,
+        dtype=dtype,
     )
 
     # --- Bin spikes against the GLOBAL edges (orient="time_x_neuron") ---
@@ -532,6 +587,7 @@ def decode_session_summary(
     max_gap: float | None = 0.5,
     encoding_models: NDArray[np.float64] | None = None,
     warn_on_drop: bool = True,
+    dtype: type[np.float32] | type[np.float64] = np.float64,
     **decode_kwargs: Any,
 ) -> DecodingSummary:
     """Memory-safe sibling of :func:`decode_session`.
@@ -559,14 +615,22 @@ def decode_session_summary(
     Parameters
     ----------
     env, spike_times, times, positions, dt, bandwidth, smoothing_method, \
-min_occupancy, speed, min_speed, max_gap, encoding_models, warn_on_drop
+min_occupancy, speed, min_speed, max_gap, encoding_models, warn_on_drop, dtype
         Same as :func:`decode_session` (``max_gap`` forwards to
-        :func:`~neurospatial.encoding.compute_spatial_rates`).
+        :func:`~neurospatial.encoding.compute_spatial_rates`). ``dtype``
+        ("decode in this dtype") controls BOTH the encoding-model working set
+        AND the streamed per-block posterior: ``np.float32`` halves both;
+        default ``np.float64`` is byte-for-byte unchanged. Pass it via this
+        explicit parameter, NOT via ``decode_kwargs``.
     **decode_kwargs
         Forwarded to the per-block decode (same semantics as
         :func:`~neurospatial.decoding.decode_position_summary`): ``prior``,
-        ``method``, ``validate``, ``dtype``, and ``time_chunk`` (the streaming
-        block size; defaults to 1024). Unknown kwargs raise ``TypeError``.
+        ``method``, ``validate``, and ``time_chunk`` (the streaming
+        block size; a positive integer, defaults to 1024 — ``None`` is rejected
+        because it would materialize the full posterior; use
+        :func:`decode_session` for the full posterior). ``dtype`` is the
+        explicit parameter above, not a ``decode_kwargs`` entry. Unknown kwargs
+        raise ``TypeError``.
 
     Returns
     -------
@@ -577,7 +641,7 @@ min_occupancy, speed, min_speed, max_gap, encoding_models, warn_on_drop
     Raises
     ------
     ValueError
-        If ``time_chunk`` is not a positive integer or ``None``; if a forwarded
+        If ``time_chunk`` is ``None`` or not a positive integer; if a forwarded
         ``prior`` has a shape inconsistent with the decode (1-D must be
         ``(n_bins,)``, 2-D must be ``(n_time, n_bins)``); plus the same
         conditions as :func:`~neurospatial.decoding.decode_position`.
@@ -598,19 +662,25 @@ min_occupancy, speed, min_speed, max_gap, encoding_models, warn_on_drop
     prior = decode_kwargs.pop("prior", None)
     method = decode_kwargs.pop("method", "poisson")
     validate = decode_kwargs.pop("validate", True)
-    dtype = decode_kwargs.pop("dtype", np.float64)
     time_chunk = decode_kwargs.pop("time_chunk", _SUMMARY_DEFAULT_TIME_CHUNK)
     if decode_kwargs:
         raise TypeError(
             f"decode_session_summary got unexpected keyword argument(s): "
             f"{sorted(decode_kwargs)}. Supported decode kwargs are prior, "
-            f"method, validate, dtype, time_chunk."
+            f"method, validate, time_chunk (dtype is an explicit parameter)."
         )
 
-    if time_chunk is not None and time_chunk < 1:
+    if time_chunk is None:
         raise ValueError(
-            f"time_chunk must be a positive integer or None, got {time_chunk}."
+            "time_chunk=None is not allowed for decode_session_summary: this "
+            "streamed summary decoder bins time and reduces the posterior one "
+            "time-block at a time, and None would materialize the full "
+            "(n_time, n_bins) posterior, defeating its purpose. Use "
+            "decode_session if you want the full posterior, or pass a positive "
+            "time_chunk (default 1024) here."
         )
+    if time_chunk < 1:
+        raise ValueError(f"time_chunk must be a positive integer, got {time_chunk}.")
 
     # --- Encode once + build the global decode time grid (no count matrix) ---
     (
@@ -633,6 +703,7 @@ min_occupancy, speed, min_speed, max_gap, encoding_models, warn_on_drop
         max_gap=max_gap,
         encoding_models=encoding_models,
         warn_on_drop=warn_on_drop,
+        dtype=dtype,
     )
 
     # Validate the encoding model + resolve the non-finite mask ONCE (the same
@@ -695,7 +766,10 @@ min_occupancy, speed, min_speed, max_gap, encoding_models, warn_on_drop
     posterior_entropy = np.empty(n_time, dtype=np.float64)
     peak_prob = np.empty(n_time, dtype=np.float64)
 
-    block = n_time if time_chunk is None else time_chunk
+    # time_chunk is guaranteed a positive int by the up-front guard, so the
+    # streamed-binning loop and the posterior reduction below both stay bounded
+    # — the full (n_time, n_bins) posterior is never materialized in one shot.
+    block = time_chunk
     for start in range(0, n_time, block):
         stop = min(start + block, n_time)
         is_last_block = stop == n_time

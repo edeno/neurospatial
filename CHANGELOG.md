@@ -9,6 +9,16 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ## [Unreleased]
 
+### Fixed
+
+- The summary decoders `decode_position_summary` and `decode_session_summary`
+  now **reject `time_chunk=None`** (raising a clear `ValueError`). Previously a
+  `None` value set the streaming block to the full session length, materializing
+  the full `(n_time, n_bins)` posterior transiently and defeating the
+  memory-safe "never materialize the full posterior" contract these functions
+  promise. `time_chunk` must be a positive integer (default `1024`); use
+  `decode_position` / `decode_session` if you want the full posterior.
+
 ### Added
 
 - Speed filtering on the encode path. `compute_spatial_rate` and
@@ -38,6 +48,24 @@ these are called out under a dedicated **Breaking changes** heading.
     (check units; pass `max_gap=None`), instead of silently returning an empty
     rate map. The warning fires once per call (not per neuron in the batch
     path) and is suppressed by `warn_on_drop=False`.
+- `decode_session` and `decode_session_summary` gain a keyword-only `dtype`
+  parameter (`np.float32` / `np.float64`, default `np.float64`). "Decode in
+  this dtype": a single `decode_session(dtype=np.float32)` controls **both**
+  the encoding-model working set and the posterior dtype, end-to-end — the
+  functions no longer force-promote encoding models back to `float64`. On
+  `decode_session_summary` it is now an explicit parameter rather than a
+  `decode_kwargs` entry. Default `np.float64` leaves every existing caller
+  byte-for-byte unchanged; any other dtype raises `ValueError`.
+
+### Performance
+
+- `decode_session(dtype=np.float32)` / `decode_session_summary(dtype=np.float32)`
+  now actually halve the decode working set on the beginner golden path: the
+  `float32` rate-map dtype is honored end-to-end (encoding-model working set +
+  posterior) instead of being silently promoted back to `float64` inside the
+  session helpers. Values match `float64` within `float32` tolerance (the rate
+  computation is done in `float64` and only the result is cast, per
+  `compute_spatial_rates`).
 
 ### Breaking changes
 
@@ -250,15 +278,19 @@ these are called out under a dedicated **Breaking changes** heading.
     halving stored and transient memory (parity with float64 to ~1e-6
     relative). Every `DecodingResult` method works unchanged on a float32
     posterior.
-  - `time_chunk=k` computes the exp/normalize in time-blocks into a single
-    preallocated output array, materializing the full-size `ll_shifted`
-    temporary one block at a time instead of all at once. This drops the
-    transient memory peak from ~4× to ~3× the stored posterior — the full-size
-    log-likelihood and its working copy still coexist with the output, so it is
-    not a ~1× path (that is `decode_position_summary`, which computes the
-    likelihood per block and never holds the full log-likelihood).
-    `time_chunk=None` (the default) reproduces the previous behavior
-    byte-for-byte.
+  - `time_chunk` is now **hybrid**. `time_chunk=None` (the default) keeps the
+    full-matmul path **byte-for-byte unchanged** — the Poisson log-likelihood is
+    computed once over the whole window and normalized at once (transient peak
+    ~3× the stored posterior). An **explicit `time_chunk=k`** now computes the
+    Poisson log-likelihood **blockwise directly into the preallocated
+    posterior**, so the full-size log-likelihood and its working copy are never
+    materialized — cutting the transient peak to **~1×** over the returned
+    posterior (the posterior itself is unavoidably 1×, since `decode_position`
+    returns the full dense array). The opt-in path is **tolerance-equal**, not
+    byte-exact, to the full path: the per-block likelihood matmul is a different
+    BLAS shape than the full matmul, so it differs by ~1e-15 (MAP/argmax
+    identical; every row sums to 1). For a path that never holds even the full
+    posterior, use `decode_position_summary`.
 
   For sessions where even the stored dense posterior is too large to hold, use
   the new `decode_position_summary` / `decode_session_summary` (see **Added**),
@@ -268,12 +300,12 @@ these are called out under a dedicated **Breaking changes** heading.
   `np.float64`, default `np.float64`). `dtype=np.float32` halves the stored
   `(n_units, n_bins)` rate-map array. The rate computation (GEMM / division) is
   still performed in float64 and only the final result is cast, so float32
-  values match the float64 default within float32 tolerance. Note:
-  `decode_session` currently re-materializes encoding models as float64
-  internally, so passing a float32 `SpatialRatesResult.firing_rates` there does
-  not by itself shrink the decode working set; the decode-side memory knobs are
-  `decode_position(..., dtype=..., time_chunk=...)` and
-  `decode_position_summary`. Default `np.float64` leaves every existing caller
+  values match the float64 default within float32 tolerance. `decode_session` /
+  `decode_session_summary` now accept their own `dtype` parameter (default
+  float64) that honors float32 end-to-end — the encoding-model working set and
+  the posterior — so `decode_session(dtype=np.float32)` halves the decode
+  working set on the golden path (see the `decode_session` / `decode_session_summary`
+  `dtype` entry above). Default `np.float64` leaves every existing caller
   byte-for-byte unchanged; any other dtype raises `ValueError`.
 
 - Documented the dense diffusion-kernel **O(n²) memory cost** and added a loud

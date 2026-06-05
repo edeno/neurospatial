@@ -178,23 +178,48 @@ def test_session_summary_streams_binning_under_full_matrix(small_2d_env):
 
 
 def test_time_chunk_reduces_transient_peak(medium_2d_env):
-    """decode_position(time_chunk=k) peaks below the unchunked decode."""
+    """decode_position(time_chunk=k) peaks ~1x over the output, far below None.
+
+    Hybrid R11: with an explicit ``time_chunk``, the Poisson log-likelihood is
+    computed and normalized one block at a time directly into the preallocated
+    posterior, so the full ``(n_time, n_bins)`` log-likelihood + its working
+    copy are never materialized. The transient peak is therefore ~1x over the
+    returned posterior -- which is itself unavoidably 1x, because
+    ``decode_position`` always returns the full dense posterior. So the
+    assertion is "the transient barely exceeds the output", plus "well below the
+    ``time_chunk=None`` full-matmul peak". Both comparands are measured here,
+    in-process and back-to-back, so the result is robust whether this file runs
+    alone or alongside the rest of the suite (same pattern as
+    ``test_summary_never_allocates_full_posterior``).
+    """
     from neurospatial.decoding import decode_position
 
     env = medium_2d_env
     n_time = 2000
     spike_counts, encoding_models = _inputs(env, n_time=n_time)
 
+    # The returned posterior is float64 (n_time, n_bins); this is the 1x baseline
+    # the chunked transient should barely exceed.
+    output_bytes = n_time * env.n_bins * 8
+
     tracemalloc.start()
     tracemalloc.reset_peak()
-    decode_position(env, spike_counts, encoding_models, dt=0.025)
-    _, peak_unchunked = tracemalloc.get_traced_memory()
+    decode_position(env, spike_counts, encoding_models, dt=0.025, time_chunk=None)
+    _, peak_none = tracemalloc.get_traced_memory()
     tracemalloc.reset_peak()
     decode_position(env, spike_counts, encoding_models, dt=0.025, time_chunk=128)
     _, peak_chunked = tracemalloc.get_traced_memory()
     tracemalloc.stop()
 
-    # Chunked path must peak meaningfully below the unchunked path (it avoids
-    # the full-size ll_shifted temporary). Use a margin for tracemalloc-noise
-    # robustness, consistent with the sibling test's reasoning.
-    assert peak_chunked < 0.9 * peak_unchunked
+    # The chunked transient barely exceeds the 1x output (the output itself is
+    # unavoidably 1x; only the transient overhead is what time_chunk shrinks).
+    assert peak_chunked < 2.0 * output_bytes, (
+        f"chunked peak {peak_chunked} bytes is not ~1x over the "
+        f"{output_bytes}-byte output"
+    )
+    # ... and well below the full-matmul (time_chunk=None) path, which holds the
+    # full log-likelihood + its copy + ll_shifted alongside the output (~3-4x).
+    assert peak_chunked < 0.6 * peak_none, (
+        f"chunked peak {peak_chunked} bytes is not well below the "
+        f"time_chunk=None peak {peak_none} bytes"
+    )

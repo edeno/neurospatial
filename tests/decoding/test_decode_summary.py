@@ -86,7 +86,15 @@ class TestDtypeParam:
 
 
 class TestTimeChunkParam:
-    """decode_position(..., time_chunk=k) is byte-for-byte chunked decode."""
+    """decode_position(..., time_chunk=k) is tolerance-equal to the full path.
+
+    HYBRID R11: ``time_chunk=None`` (default) keeps the byte-exact full-matmul
+    path; an explicit ``time_chunk=k`` computes the Poisson log-likelihood
+    blockwise into the preallocated posterior. The per-block likelihood matmul
+    is a different BLAS shape than the full matmul, so the chunked posterior is
+    tolerance-equal (~1e-15), not byte-exact, to the full path. MAP/argmax is
+    identical and every row sums to 1.
+    """
 
     @pytest.mark.parametrize("k", [1, 7, 40, 120, 1000])
     def test_time_chunk_parity(self, small_2d_env, k):
@@ -101,7 +109,12 @@ class TestTimeChunkParam:
             dt=0.025,
             time_chunk=k,
         )
-        np.testing.assert_allclose(chunked.posterior, ref.posterior, rtol=0, atol=0)
+        # Tolerance-equal (BLAS shape-dependence), MAP identical, rows sum to 1.
+        np.testing.assert_allclose(chunked.posterior, ref.posterior, rtol=0, atol=1e-12)
+        np.testing.assert_array_equal(chunked.map_estimate, ref.map_estimate)
+        np.testing.assert_allclose(
+            np.asarray(chunked.posterior).sum(axis=1), 1.0, atol=1e-9
+        )
 
     def test_time_chunk_with_prior(self, small_2d_env):
         from neurospatial.decoding import decode_position
@@ -119,7 +132,8 @@ class TestTimeChunkParam:
             prior=prior,
             time_chunk=13,
         )
-        np.testing.assert_allclose(chunked.posterior, ref.posterior, rtol=0, atol=0)
+        np.testing.assert_allclose(chunked.posterior, ref.posterior, rtol=0, atol=1e-12)
+        np.testing.assert_array_equal(chunked.map_estimate, ref.map_estimate)
 
 
 class TestNormalizeDegenerateChunking:
@@ -238,6 +252,73 @@ class TestDecodePositionSummaryParity:
         )
         np.testing.assert_allclose(
             summ32.mean_position, summ64.mean_position, rtol=1e-5, atol=1e-5
+        )
+
+
+class TestDecodePositionSummaryTimeChunkGuard:
+    """decode_position_summary rejects time_chunk=None and non-positive values.
+
+    R12: the summary decoder promises never to materialize the full
+    ``(n_time, n_bins)`` posterior. ``time_chunk=None`` would set the block to
+    the whole session and thereby materialize it transiently, defeating the
+    purpose, so it is rejected up front (as are 0 and negatives).
+    """
+
+    def test_time_chunk_none_raises(self, small_2d_env):
+        from neurospatial.decoding import decode_position_summary
+
+        spike_counts, encoding_models = _make_decode_inputs(small_2d_env)
+        with pytest.raises(ValueError, match=r"full.*posterior|decode_position"):
+            decode_position_summary(
+                small_2d_env,
+                spike_counts,
+                encoding_models,
+                dt=0.025,
+                time_chunk=None,  # type: ignore[arg-type]
+            )
+
+    @pytest.mark.parametrize("bad", [0, -1])
+    def test_time_chunk_non_positive_raises(self, small_2d_env, bad):
+        from neurospatial.decoding import decode_position_summary
+
+        spike_counts, encoding_models = _make_decode_inputs(small_2d_env)
+        with pytest.raises(ValueError, match="time_chunk must be a positive integer"):
+            decode_position_summary(
+                small_2d_env,
+                spike_counts,
+                encoding_models,
+                dt=0.025,
+                time_chunk=bad,
+            )
+
+    def test_default_and_explicit_positive_chunk_agree(self, small_2d_env):
+        """Default (no time_chunk) and an explicit positive chunk give same result.
+
+        Regression pin: the guard must not change the default behavior, and an
+        explicit positive ``time_chunk`` streams to the same reductions.
+        """
+        from neurospatial.decoding import decode_position_summary
+
+        spike_counts, encoding_models = _make_decode_inputs(small_2d_env)
+        default = decode_position_summary(
+            small_2d_env, spike_counts, encoding_models, dt=0.025
+        )
+        chunked = decode_position_summary(
+            small_2d_env, spike_counts, encoding_models, dt=0.025, time_chunk=17
+        )
+        np.testing.assert_array_equal(chunked.map_bin, default.map_bin)
+        np.testing.assert_array_equal(chunked.map_position, default.map_position)
+        np.testing.assert_allclose(
+            chunked.mean_position, default.mean_position, rtol=1e-12, atol=1e-12
+        )
+        np.testing.assert_allclose(
+            chunked.posterior_entropy,
+            default.posterior_entropy,
+            rtol=1e-12,
+            atol=1e-12,
+        )
+        np.testing.assert_allclose(
+            chunked.peak_prob, default.peak_prob, rtol=1e-12, atol=1e-12
         )
 
 

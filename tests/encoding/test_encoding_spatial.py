@@ -4772,6 +4772,41 @@ class TestComputeSpatialRatesDtype:
         )
         assert result.firing_rates.dtype == np.float64
 
+    def test_float32_halves_rate_map_footprint(
+        self,
+        trajectory_env: Environment,
+        multiple_place_cell_spikes: list[NDArray[np.float64]],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """float32 halves the stored (n_units, n_bins) rate-map footprint.
+
+        Deterministic, non-timing assertion pinning the §2.5 memory contract:
+        on identical inputs, the float32 rate-map array occupies exactly half
+        the bytes of the float64 default (and is genuinely float32).
+        """
+        from neurospatial.encoding.spatial import compute_spatial_rates
+
+        r64 = compute_spatial_rates(
+            trajectory_env,
+            multiple_place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+            dtype=np.float64,
+        )
+        r32 = compute_spatial_rates(
+            trajectory_env,
+            multiple_place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+            dtype=np.float32,
+        )
+        # Same logical shape, half the storage.
+        assert r32.firing_rates.shape == r64.firing_rates.shape
+        assert r32.firing_rates.dtype == np.float32
+        assert r64.firing_rates.dtype == np.float64
+        assert r32.firing_rates.nbytes == r64.firing_rates.nbytes // 2
+
     @pytest.mark.parametrize("method", ["diffusion_kde", "gaussian_kde", "binned"])
     def test_dtype_float32_honored(
         self,

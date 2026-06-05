@@ -469,20 +469,16 @@ print(f"Place cell: {is_place_cell}")
 
 ```python
 from neurospatial.encoding import (
+    compute_spatial_rates,
     population_coverage,
     plot_population_coverage,
     spatial_information,
 )
 import numpy as np
 
-# Compute firing rate maps for all cells
-firing_rates = []
-for cell_spikes in all_spike_trains:
-    rate_map = compute_spatial_rate(env, cell_spikes, times, positions).firing_rate
-    firing_rates.append(rate_map)
-
-# Stack into array: shape (n_neurons, n_bins)
-firing_rates = np.array(firing_rates)
+# Batch-encode firing rate maps for all cells: shape (n_neurons, n_bins)
+# all_spike_trains is a list of per-cell spike-time arrays.
+firing_rates = compute_spatial_rates(env, all_spike_trains, times, positions).firing_rates
 
 # Analyze population coverage (runs detect_place_fields internally)
 result = population_coverage(env, firing_rates)
