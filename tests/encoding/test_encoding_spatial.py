@@ -4921,16 +4921,21 @@ class TestComputeSpatialRatesDtype:
             atol=1e-6,
         )
 
-    @pytest.mark.parametrize("bad_dtype", [np.int32, np.float16])
+    @pytest.mark.parametrize("bad_dtype", [np.int32, np.float16, "bogus"])
     def test_invalid_dtype_raises(
         self,
         trajectory_env: Environment,
         multiple_place_cell_spikes: list[NDArray[np.float64]],
         trajectory_times: NDArray[np.float64],
         trajectory_positions: NDArray[np.float64],
-        bad_dtype: type,
+        bad_dtype: object,
     ) -> None:
-        """An unsupported dtype raises ValueError naming the param."""
+        """An unsupported or unparseable dtype raises ValueError naming the param.
+
+        ``"bogus"`` is the unparseable-string case: without the wrapped
+        ``np.dtype(dtype)`` parse it leaked a raw
+        ``TypeError: data type 'bogus' not understood``.
+        """
         from neurospatial.encoding.spatial import compute_spatial_rates
 
         with pytest.raises(ValueError, match="dtype"):

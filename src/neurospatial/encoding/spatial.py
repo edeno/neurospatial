@@ -2474,15 +2474,23 @@ def compute_spatial_rates(
     resolved_backend = get_backend_name(backend)
 
     # Validate dtype: only single/double precision rate maps are supported.
-    if np.dtype(dtype) not in (np.dtype(np.float32), np.dtype(np.float64)):
-        raise ValueError(
-            f"dtype must be np.float32 or np.float64, got {dtype!r}. "
-            "Only single- and double-precision rate maps are supported "
-            "(float32 halves the (n_units, n_bins) storage and the downstream "
-            "decode working set)."
-        )
+    # Wrap the parse so an unparseable dtype string (e.g. "bogus") raises this
+    # clean ValueError naming `dtype`, not a raw NumPy
+    # ``TypeError: data type 'bogus' not understood``.
+    _dtype_msg = (
+        f"dtype must be np.float32 or np.float64, got {dtype!r}. "
+        "Only single- and double-precision rate maps are supported "
+        "(float32 halves the (n_units, n_bins) storage and the downstream "
+        "decode working set)."
+    )
+    try:
+        _resolved_dtype = np.dtype(dtype)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(_dtype_msg) from exc
+    if _resolved_dtype not in (np.dtype(np.float32), np.dtype(np.float64)):
+        raise ValueError(_dtype_msg)
     # Normalize to the canonical numpy scalar type for downstream casts.
-    dtype = np.float32 if np.dtype(dtype) == np.dtype(np.float32) else np.float64
+    dtype = np.float32 if _resolved_dtype == np.dtype(np.float32) else np.float64
 
     _validate_smoothing_parameters(smoothing_method, bandwidth)
 

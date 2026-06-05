@@ -58,16 +58,16 @@ def test_bin_spikes_rejects_bad_dt() -> None:
     """dt <= 0, non-finite dt, and t_stop <= t_start raise ValueError."""
     spike_trains = [np.array([0.01, 0.05])]
 
-    with pytest.raises(ValueError, match="dt must be finite and > 0"):
+    with pytest.raises(ValueError, match="dt must be a finite number > 0"):
         bin_spikes_in_time(spike_trains, dt=0.0)
 
-    with pytest.raises(ValueError, match="dt must be finite and > 0"):
+    with pytest.raises(ValueError, match="dt must be a finite number > 0"):
         bin_spikes_in_time(spike_trains, dt=-0.025)
 
-    with pytest.raises(ValueError, match="dt must be finite and > 0"):
+    with pytest.raises(ValueError, match="dt must be a finite number > 0"):
         bin_spikes_in_time(spike_trains, dt=np.inf)
 
-    with pytest.raises(ValueError, match="dt must be finite and > 0"):
+    with pytest.raises(ValueError, match="dt must be a finite number > 0"):
         bin_spikes_in_time(spike_trains, dt=np.nan)
 
     with pytest.raises(ValueError, match="must be > t_start"):
@@ -75,6 +75,73 @@ def test_bin_spikes_rejects_bad_dt() -> None:
 
     with pytest.raises(ValueError, match="must be > t_start"):
         bin_spikes_in_time(spike_trains, dt=0.025, t_start=1.0, t_stop=1.0)
+
+
+def test_bin_spikes_rejects_non_numeric_and_bool_dt() -> None:
+    """Non-numeric (incl. numeric string) and bool dt raise a clean ValueError.
+
+    Before the shared ``validate_dt`` guard, a numeric STRING leaked a raw
+    ``TypeError`` from ``"0.1" <= 0`` and ``dt=True`` was silently accepted
+    (``True <= 0`` is False; ``isfinite(True)`` is True) and used as a chunk
+    size of 1. Both now raise the same ``ValueError`` as the other decoding
+    entry points.
+    """
+    spike_trains = [np.array([0.01, 0.05])]
+
+    # Numeric string (would otherwise be silently float()-able or raw TypeError).
+    with pytest.raises(ValueError, match="dt must"):
+        bin_spikes_in_time(spike_trains, dt="0.1")  # type: ignore[arg-type]
+
+    # Non-numeric string.
+    with pytest.raises(ValueError, match="dt must"):
+        bin_spikes_in_time(spike_trains, dt="abc")  # type: ignore[arg-type]
+
+    # bool: NOT silently accepted as chunk size 1. Both True and False are
+    # rejected by the bool guard; False is the dangerous one (float(False) == 0.0
+    # would otherwise sneak past the numeric guard only to fail downstream).
+    with pytest.raises(ValueError, match="dt must"):
+        bin_spikes_in_time(spike_trains, dt=True)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="dt must"):
+        bin_spikes_in_time(spike_trains, dt=False)  # type: ignore[arg-type]
+
+    # Numeric-but-invalid values still raise (regression on the shared helper).
+    for bad in (0, -1, np.nan, np.inf):
+        with pytest.raises(ValueError, match="dt must"):
+            bin_spikes_in_time(spike_trains, dt=bad)
+
+
+def test_validate_dt_direct() -> None:
+    """validate_dt returns a plain float for valid input and rejects bad input.
+
+    Direct unit coverage of the shared guard: it must coerce NumPy scalars /
+    ints to a plain Python ``float`` (its docstring's promise) and reject
+    bool / numeric-string / non-finite values with a ``"dt must"`` ValueError.
+    """
+    from neurospatial.decoding._binning import validate_dt
+
+    # Valid inputs return a plain Python float (not a NumPy scalar).
+    out32 = validate_dt(np.float32(0.025))
+    assert type(out32) is float
+    assert out32 == pytest.approx(0.025)
+
+    out_int = validate_dt(1)
+    assert type(out_int) is float
+    assert out_int == 1.0
+
+    # Invalid inputs raise the shared "dt must" ValueError.
+    for bad in (True, "0.1", np.nan):
+        with pytest.raises(ValueError, match="dt must"):
+            validate_dt(bad)  # type: ignore[arg-type]
+
+
+def test_bin_spikes_valid_dt_still_works() -> None:
+    """A valid dt still bins normally (regression after the shared guard)."""
+    spike_trains = [np.array([0.01, 0.06, 0.07]), np.array([0.03, 0.09])]
+    counts, bin_centers = bin_spikes_in_time(
+        spike_trains, dt=0.025, t_start=0.0, t_stop=0.1
+    )
+    assert counts.shape == (4, 2)
+    assert_allclose(bin_centers, [0.0125, 0.0375, 0.0625, 0.0875])
 
 
 def test_bin_spikes_rejects_bad_orient() -> None:

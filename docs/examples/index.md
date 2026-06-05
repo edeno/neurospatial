@@ -1,11 +1,14 @@
 # Examples
 
 Real-world examples demonstrating neurospatial's capabilities through
-interactive Jupyter notebooks. Notebooks are paired with `.py`
-(jupytext, percent format) and `.ipynb` files; either can be edited
-and the pair syncs via `docs/sync_notebooks.py`.
+interactive Jupyter notebooks. In the `examples/` directory each notebook
+is a jupytext pair — a `.py` (percent format) and a `.ipynb` — so editing
+either keeps the pair in sync via jupytext. A separate step,
+`docs/sync_notebooks.py`, then copies `examples/` → `docs/examples/` to
+produce the committed docs mirror shown here.
 
-This index mirrors `examples/README.md` in the repo.
+This page lists the example notebooks; see `examples/README.md` in the repo
+for the full catalog and details.
 
 ## Goal → Notebook
 

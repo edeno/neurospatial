@@ -11,6 +11,19 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ### Fixed
 
+- `bin_spikes_in_time` now **validates `dt` consistently** with
+  `decode_session` / `decode_session_summary` via a shared `validate_dt` helper:
+  a non-numeric `dt` (including a numeric string like `"0.1"`) and a `bool`
+  (`dt=True`) now raise a clear `ValueError` (`"dt must be a finite number >
+  0, ..."`). Previously a numeric string leaked a raw `TypeError` from
+  `"0.1" <= 0` and `dt=True` was silently accepted and used as a chunk size of
+  `1`. `decode_position` routes through the same helper, so an invalid `dt`
+  there also raises the clean message instead of a cryptic downstream error.
+- An **unparseable `dtype`** (e.g. `dtype="bogus"`) now raises a clear
+  `ValueError` naming `dtype` across the decode/encode entry points
+  (`decode_position`, `decode_position_summary`, `compute_spatial_rates`,
+  `decode_session`, `decode_session_summary`) instead of a raw NumPy
+  `TypeError: data type 'bogus' not understood`.
 - `decode_session` and `decode_session_summary` now **validate `dt`** (finite,
   `> 0`) up front with a clear `ValueError`, matching `bin_spikes_in_time`'s
   wording (`"dt must be finite and > 0, got ..."`). Previously the shared

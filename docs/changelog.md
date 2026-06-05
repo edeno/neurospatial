@@ -83,6 +83,38 @@ the published package may still report v0.5.x.
   parallelize per-neuron coverage; results are identical regardless of
   `n_jobs`.
 
+### Fixed
+
+- `decode_session` / `decode_session_summary` now **validate `dt`** (finite,
+  `> 0`; non-numeric and `bool` rejected) up front with a clear `ValueError`,
+  matching `bin_spikes_in_time`. Previously the shared decode-grid builder
+  bypassed that guard, so an invalid `dt` leaked a cryptic downstream error
+  (`dt=0` -> `ZeroDivisionError`, `dt=NaN` -> "cannot convert float NaN to
+  integer", `dt<0` -> a misleading "span smaller than one bin" message).
+- `bin_spikes_in_time` now **validates `dt` consistently** via the same shared
+  helper: a non-numeric `dt` (including a numeric string like `"0.1"`) and a
+  `bool` (`dt=True`) now raise a clear `ValueError` ("dt must be a finite
+  number > 0, ..."). Previously a numeric string leaked a raw `TypeError` and
+  `dt=True` was silently accepted as a chunk size of `1`.
+- An **unparseable `dtype`** (e.g. `dtype="bogus"`) now raises a clear
+  `ValueError` naming `dtype` across the decode/encode entry points
+  (`decode_position`, `decode_position_summary`, `compute_spatial_rates`,
+  `decode_session`, `decode_session_summary`) instead of a raw NumPy
+  `TypeError: data type 'bogus' not understood`.
+- `decode_position` now **preserves `float32`** when handed a rate-result
+  object (anything exposing `.firing_rates`). Previously the friendly object
+  path promoted a `float32` `.firing_rates` to `float64`, silently losing part
+  of the `dtype=np.float32` memory win the raw-array path already delivered.
+  The object path now matches the raw-array path byte-for-byte: `float32` stays
+  `float32`, `float64` stays `float64`, an integer rate map is promoted to
+  `float64`, and a `None` / dict / non-2-D `.firing_rates` still raises the
+  same clear `ValueError`.
+- `time_chunk` is now **validated as a positive integer (not `bool`)** across
+  `normalize_to_posterior`, `decode_position`, `decode_position_summary`, and
+  `decode_session_summary`, raising a clear `ValueError` naming the value and
+  its type. Previously a float (`1.5`) or string (`"2"`) leaked a raw
+  `TypeError`, and `True` was silently accepted as a chunk size of `1`.
+
 ### Changed
 
 - **Firing-rate numerator/denominator alignment (behavior change for gappy /

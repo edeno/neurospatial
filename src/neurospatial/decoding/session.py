@@ -404,6 +404,7 @@ def _build_encoding_model(
     # package importable even if `encoding` were ever to import from `decoding`
     # (it does not today), so there is no circular-import risk at module load.
     # Mirrors how encoding/spatial.py defers its own heavy imports.
+    from neurospatial.decoding._binning import validate_dt
     from neurospatial.encoding import as_spike_trains
     from neurospatial.encoding._validation import validate_times
     from neurospatial.encoding.spatial import compute_spatial_rates
@@ -412,29 +413,31 @@ def _build_encoding_model(
     # grid directly (bypassing bin_spikes_in_time's own guard). Without this,
     # invalid dt leaks cryptic errors: dt=0 → ZeroDivisionError; dt=NaN →
     # "cannot convert float NaN to integer"; dt<0 → a MISLEADING "span smaller
-    # than one bin dt" message; dt=inf → a similar cryptic failure. Mirror
-    # bin_spikes_in_time's message exactly so both paths report identically.
-    # The legitimate n_time < 1 "span smaller than one bin" check below still
-    # covers a valid positive dt with a too-short span.
-    if not isinstance(dt, (int, float, np.integer, np.floating)) or isinstance(
-        dt, bool
-    ):
-        raise ValueError(f"dt must be a finite number > 0, got {dt!r}.")
-    dt = float(dt)
-    if dt <= 0 or not np.isfinite(dt):
-        raise ValueError(f"dt must be finite and > 0, got {dt!r}.")
+    # than one bin dt" message; dt=inf → a similar cryptic failure. Route
+    # through the shared bin_spikes_in_time guard so both paths report
+    # identically. The legitimate n_time < 1 "span smaller than one bin" check
+    # below still covers a valid positive dt with a too-short span.
+    dt = validate_dt(dt)
 
     # Validate dtype: only single/double precision working sets are supported.
-    # Mirrors compute_spatial_rates' dtype validation wording.
-    if np.dtype(dtype) not in (np.dtype(np.float32), np.dtype(np.float64)):
-        raise ValueError(
-            f"dtype must be np.float32 or np.float64, got {dtype!r}. "
-            "Only single- and double-precision rate maps are supported "
-            "(float32 halves the encoding-model working set and the "
-            "downstream decode posterior)."
-        )
+    # Mirrors compute_spatial_rates' dtype validation wording. Wrap the parse so
+    # an unparseable dtype string (e.g. "bogus") raises this clean ValueError
+    # naming `dtype`, not a raw NumPy
+    # ``TypeError: data type 'bogus' not understood``.
+    _dtype_msg = (
+        f"dtype must be np.float32 or np.float64, got {dtype!r}. "
+        "Only single- and double-precision rate maps are supported "
+        "(float32 halves the encoding-model working set and the "
+        "downstream decode posterior)."
+    )
+    try:
+        _resolved_dtype = np.dtype(dtype)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(_dtype_msg) from exc
+    if _resolved_dtype not in (np.dtype(np.float32), np.dtype(np.float64)):
+        raise ValueError(_dtype_msg)
     # Normalize to the canonical numpy scalar type for downstream casts.
-    dtype = np.float32 if np.dtype(dtype) == np.dtype(np.float32) else np.float64
+    dtype = np.float32 if _resolved_dtype == np.dtype(np.float32) else np.float64
 
     # --- Normalize inputs ---
     trains = as_spike_trains(spike_times)

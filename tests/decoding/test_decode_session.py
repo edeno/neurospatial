@@ -843,6 +843,20 @@ class TestDecodeSessionDtype:
         ):
             decode_session(env, spike_times, times, positions, dt=0.1, dtype=np.int32)
 
+    def test_unparseable_dtype_raises_clean_valueerror(self) -> None:
+        """An unparseable dtype string raises ValueError naming `dtype`.
+
+        Without the wrapped ``np.dtype(dtype)`` parse, ``dtype="bogus"`` leaked a
+        raw ``TypeError: data type 'bogus' not understood`` from NumPy.
+        """
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=5, duration=5.0, seed=1
+        )
+        with pytest.raises(ValueError, match="dtype"):
+            decode_session(env, spike_times, times, positions, dt=0.1, dtype="bogus")  # type: ignore[arg-type]
+
     def test_precomputed_models_decode_within_tol(self) -> None:
         """Precomputed float32 vs float64 encoding_models decode within tol."""
         from neurospatial.decoding import decode_session
@@ -1383,6 +1397,18 @@ class TestDecodeSessionSummaryDtype:
                 env, spike_times, times, positions, dt=0.1, dtype=np.int32
             )
 
+    def test_unparseable_dtype_raises_clean_valueerror(self) -> None:
+        """An unparseable dtype string raises ValueError naming `dtype`."""
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=5, duration=5.0, seed=2
+        )
+        with pytest.raises(ValueError, match="dtype"):
+            decode_session_summary(
+                env, spike_times, times, positions, dt=0.1, dtype="bogus"
+            )  # type: ignore[arg-type]
+
     def test_dtype_via_decode_kwargs_now_collides(self) -> None:
         """dtype is an explicit param, no longer a decode_kwargs entry.
 
@@ -1478,35 +1504,35 @@ class TestDecodeSessionDtValidation:
     ``dt=0`` → ``ZeroDivisionError``; ``dt=nan`` → "cannot convert float NaN to
     integer"; ``dt<0`` → a MISLEADING "span smaller than one bin" message;
     ``dt=inf`` → a similar cryptic failure. The fix mirrors
-    ``bin_spikes_in_time``'s wording: "dt must be finite and > 0, got ...".
+    ``bin_spikes_in_time``'s wording: "dt must be a finite number > 0, got ...".
     """
 
     def test_decode_session_dt_zero_raises_valueerror(self) -> None:
         from neurospatial.decoding import decode_session
 
         env, spike_times, times, positions = _make_linear_track_sim()
-        with pytest.raises(ValueError, match=r"dt must be finite and > 0"):
+        with pytest.raises(ValueError, match=r"dt must be a finite number > 0"):
             decode_session(env, spike_times, times, positions, dt=0.0)
 
     def test_decode_session_dt_nan_raises_valueerror(self) -> None:
         from neurospatial.decoding import decode_session
 
         env, spike_times, times, positions = _make_linear_track_sim()
-        with pytest.raises(ValueError, match=r"dt must be finite and > 0"):
+        with pytest.raises(ValueError, match=r"dt must be a finite number > 0"):
             decode_session(env, spike_times, times, positions, dt=np.nan)
 
     def test_decode_session_dt_negative_raises_valueerror(self) -> None:
         from neurospatial.decoding import decode_session
 
         env, spike_times, times, positions = _make_linear_track_sim()
-        with pytest.raises(ValueError, match=r"dt must be finite and > 0"):
+        with pytest.raises(ValueError, match=r"dt must be a finite number > 0"):
             decode_session(env, spike_times, times, positions, dt=-0.1)
 
     def test_decode_session_dt_inf_raises_valueerror(self) -> None:
         from neurospatial.decoding import decode_session
 
         env, spike_times, times, positions = _make_linear_track_sim()
-        with pytest.raises(ValueError, match=r"dt must be finite and > 0"):
+        with pytest.raises(ValueError, match=r"dt must be a finite number > 0"):
             decode_session(env, spike_times, times, positions, dt=np.inf)
 
     def test_decode_session_valid_dt_still_works(self) -> None:
@@ -1520,28 +1546,28 @@ class TestDecodeSessionDtValidation:
         from neurospatial.decoding import decode_session_summary
 
         env, spike_times, times, positions = _make_linear_track_sim()
-        with pytest.raises(ValueError, match=r"dt must be finite and > 0"):
+        with pytest.raises(ValueError, match=r"dt must be a finite number > 0"):
             decode_session_summary(env, spike_times, times, positions, dt=0.0)
 
     def test_decode_session_summary_dt_nan_raises_valueerror(self) -> None:
         from neurospatial.decoding import decode_session_summary
 
         env, spike_times, times, positions = _make_linear_track_sim()
-        with pytest.raises(ValueError, match=r"dt must be finite and > 0"):
+        with pytest.raises(ValueError, match=r"dt must be a finite number > 0"):
             decode_session_summary(env, spike_times, times, positions, dt=np.nan)
 
     def test_decode_session_summary_dt_negative_raises_valueerror(self) -> None:
         from neurospatial.decoding import decode_session_summary
 
         env, spike_times, times, positions = _make_linear_track_sim()
-        with pytest.raises(ValueError, match=r"dt must be finite and > 0"):
+        with pytest.raises(ValueError, match=r"dt must be a finite number > 0"):
             decode_session_summary(env, spike_times, times, positions, dt=-0.1)
 
     def test_decode_session_summary_dt_inf_raises_valueerror(self) -> None:
         from neurospatial.decoding import decode_session_summary
 
         env, spike_times, times, positions = _make_linear_track_sim()
-        with pytest.raises(ValueError, match=r"dt must be finite and > 0"):
+        with pytest.raises(ValueError, match=r"dt must be a finite number > 0"):
             decode_session_summary(env, spike_times, times, positions, dt=np.inf)
 
     def test_decode_session_summary_valid_dt_still_works(self) -> None:

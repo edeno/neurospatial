@@ -353,9 +353,12 @@ fields = np.memmap(
     shape=(n_frames, n_bins)
 )
 
-# Compute fields (writes directly to disk)
-for i, frame in enumerate(frames):
-    fields[i] = compute_spatial_rate(env, spikes, times, positions[i]).firing_rate
+# `frame_fields` is your (n_frames, n_bins) per-frame field source —
+# e.g. a decoded posterior over time: decode_session(...).posterior
+# Write it to disk in chunks so the full array never lives in RAM at once.
+chunk = 10_000
+for start in range(0, n_frames, chunk):
+    fields[start:start + chunk] = frame_fields[start:start + chunk]
 
 # Option 1: Interactive exploration (Napari lazy loads from disk)
 env.animate_fields(fields, frame_times=frame_times, backend="napari")
