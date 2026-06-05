@@ -937,3 +937,118 @@ class TestPolarGaussianKernelSeam:
         # Recomputed open-axis kernel: seam is NOT wrapped (tiny weight), not the
         # leaked circular value the poisoned entry would have returned.
         assert result[seam_a, seam_b] < 1e-3
+
+
+# =============================================================================
+# Test high-bin memory WARNING for the dense Gaussian-KDE kernel
+# =============================================================================
+
+
+class TestGaussianKernelMemoryWarning:
+    """The dense gaussian-KDE kernel WARNS (never raises) above a bin threshold.
+
+    Mirrors the diffusion-kernel warning in ``ops/smoothing.py``: the
+    ``(n_bins, n_bins)`` Gaussian weight matrix is O(n_bins**2) memory, so
+    above ``_LARGE_KERNEL_THRESHOLD`` ``_get_gaussian_kernel`` emits a loud
+    ``UserWarning`` (with a GB estimate) and proceeds -- there is no hard limit.
+    Tests run FAST by monkeypatching the threshold to a tiny value where
+    ``_get_gaussian_kernel`` reads it
+    (``neurospatial.ops.smoothing._LARGE_KERNEL_THRESHOLD`` is imported into
+    ``_smoothing``).
+    """
+
+    def test_warns_and_returns_above_threshold(
+        self, simple_env: Environment, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Above the (patched) threshold: warn (naming GB) and still return."""
+        from neurospatial.encoding import _smoothing
+
+        # Patch the threshold below the env's bin count so it trips.
+        monkeypatch.setattr(_smoothing, "_LARGE_KERNEL_THRESHOLD", 1)
+
+        with pytest.warns(UserWarning) as record:
+            kernel = _smoothing._get_gaussian_kernel(simple_env, bandwidth=5.0)
+
+        msg = str(record[0].message)
+        assert str(simple_env.n_bins) in msg
+        assert "GB" in msg
+        assert "binned" in msg
+        # Must have actually built and returned the kernel (no raise).
+        assert kernel.shape == (simple_env.n_bins, simple_env.n_bins)
+
+    def test_below_threshold_no_warn(
+        self,
+        simple_env: Environment,
+        spike_counts_center: np.ndarray,
+        uniform_occupancy: np.ndarray,
+    ) -> None:
+        """Below the (default, large) threshold, ordinary gaussian_kde is unaffected.
+
+        Regression guard: a normal small-env ``compute_spatial_rate``-style
+        gaussian smoothing call must still succeed with no warning.
+        """
+        # Single and batch gaussian paths both run without raising or warning.
+        single = smooth_rate_map(
+            simple_env,
+            spike_counts_center,
+            uniform_occupancy,
+            method="gaussian_kde",
+            bandwidth=5.0,
+        )
+        assert np.asarray(single).shape == (simple_env.n_bins,)
+
+        batch = smooth_rate_maps_batch(
+            simple_env,
+            spike_counts_center[None, :],
+            uniform_occupancy,
+            method="gaussian_kde",
+            bandwidth=5.0,
+        )
+        assert np.asarray(batch).shape == (1, simple_env.n_bins)
+
+    def test_batch_path_warns_and_computes(
+        self,
+        simple_env: Environment,
+        spike_counts_center: np.ndarray,
+        uniform_occupancy: np.ndarray,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The batch gaussian path warns (naming GB) and still computes rates."""
+        from neurospatial.encoding import _smoothing
+
+        monkeypatch.setattr(_smoothing, "_LARGE_KERNEL_THRESHOLD", 1)
+
+        with pytest.warns(UserWarning, match="GB"):
+            batch = smooth_rate_maps_batch(
+                simple_env,
+                spike_counts_center[None, :],
+                uniform_occupancy,
+                method="gaussian_kde",
+                bandwidth=5.0,
+            )
+        assert np.asarray(batch).shape == (1, simple_env.n_bins)
+
+
+# =============================================================================
+# Test module docstring accuracy (diffusion kernel is dense + gated)
+# =============================================================================
+
+
+def test_module_docstring_does_not_claim_diffusion_sparse() -> None:
+    """The module docstring must not call the diffusion kernel sparse.
+
+    The diffusion heat kernel is dense by construction (built via expm) and
+    WARNS (never raises) for high bins. The stale claim that it "uses sparse
+    graph operations" is removed; the docstring should describe the dense/warn
+    nature instead. No hard-gate language (``allow_large`` / ``MemoryError`` /
+    ``_KERNEL_HARD_LIMIT_BINS``) should remain.
+    """
+    from neurospatial.encoding import _smoothing
+
+    doc = _smoothing.__doc__ or ""
+    assert "sparse graph operations" not in doc
+    assert "dense" in doc
+    # The hard gate was replaced by a warn-only path; no gate language remains.
+    assert "allow_large" not in doc
+    assert "MemoryError" not in doc
+    assert "_KERNEL_HARD_LIMIT_BINS" not in doc

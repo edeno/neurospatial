@@ -544,6 +544,156 @@ def test_all_excluded_suppressed_when_warn_off(
 
 
 # ==============================================================================
+# 8b. The all-excluded warning also fires for max_gap / out-of-bounds (R-follow)
+# ==============================================================================
+#
+# Before this fix only the min_speed gate warned when it emptied the rate map;
+# the SAME interval-valid mask also drops intervals for max_gap (large gaps)
+# and out-of-bounds start samples, but those emptied the map SILENTLY. The
+# generalized guard now fires uniformly for ALL THREE gates.
+
+
+@pytest.fixture
+def all_gap_trajectory() -> dict:
+    """A trajectory where EVERY interval exceeds the default max_gap of 0.5 s.
+
+    Sampled at dt=1.0 s, so every dt > 0.5 and the default max_gap excludes all
+    intervals -> occupancy is all-zero and the rate map is empty. This emptied
+    the map SILENTLY before the generalized warning.
+    """
+    dt = 1.0
+    x = 10.0 + np.arange(10) * 1.0  # 10..19, all in-bounds
+    positions = x.reshape(-1, 1)
+    times = np.arange(len(x), dtype=np.float64) * dt
+    return {"times": times, "positions": positions}
+
+
+def _empty_map_warnings(recwarn) -> list:
+    """Warnings matching the generalized empty-rate-map message."""
+    return [
+        w
+        for w in recwarn.list
+        if issubclass(w.category, UserWarning)
+        and "excluded ALL trajectory intervals" in str(w.message)
+        and "the rate map is empty" in str(w.message)
+    ]
+
+
+def test_max_gap_excludes_all_warns_single(recwarn, env_1d, all_gap_trajectory) -> None:
+    """max_gap (default 0.5) excluding every interval now WARNS (was silent)."""
+    times = all_gap_trajectory["times"]
+    positions = all_gap_trajectory["positions"]
+    spike_times = np.array([0.5, 3.5, 6.5])
+
+    res = compute_spatial_rate(env_1d, spike_times, times, positions)
+
+    warns = _empty_map_warnings(recwarn)
+    assert len(warns) == 1
+    msg = str(warns[0].message)
+    assert "max_gap=0.5" in msg  # names the active gate
+    # The map is genuinely empty.
+    assert np.nansum(res.occupancy) == 0.0
+    fr = res.firing_rate
+    assert np.all(np.isnan(fr)) or np.nansum(fr) == 0.0
+
+
+def test_max_gap_excludes_all_warns_batch(recwarn, env_1d, all_gap_trajectory) -> None:
+    """Batch path warns once when max_gap empties the rate map."""
+    times = all_gap_trajectory["times"]
+    positions = all_gap_trajectory["positions"]
+    spike_times = [np.array([0.5, 3.5]), np.array([2.5, 6.5])]
+
+    compute_spatial_rates(env_1d, spike_times, times, positions)
+    assert len(_empty_map_warnings(recwarn)) == 1
+
+
+def test_max_gap_excludes_all_suppressed_when_warn_off(
+    recwarn, env_1d, all_gap_trajectory
+) -> None:
+    """warn_on_drop=False suppresses the max_gap empty-map warning."""
+    times = all_gap_trajectory["times"]
+    positions = all_gap_trajectory["positions"]
+
+    compute_spatial_rate(
+        env_1d,
+        np.array([0.5]),
+        times,
+        positions,
+        warn_on_drop=False,
+    )
+    compute_spatial_rates(
+        env_1d,
+        [np.array([0.5])],
+        times,
+        positions,
+        warn_on_drop=False,
+    )
+    assert _empty_map_warnings(recwarn) == []
+
+
+def test_oob_start_excludes_all_warns(recwarn, env_1d) -> None:
+    """Every interval starting out of bounds empties the map and WARNS."""
+    # Every START sample is out of bounds (x=-50), so every interval is dropped
+    # by the start_bin < 0 gate. dt=0.1 keeps max_gap inactive and there is no
+    # min_speed, so out-of-bounds is the SOLE cause.
+    x = np.full(10, -50.0)
+    positions = x.reshape(-1, 1)
+    times = np.arange(len(x), dtype=np.float64) * 0.1
+    assert env_1d.bin_at(np.array([[-50.0]]))[0] < 0
+    spike_times = np.array([0.15, 0.45, 0.75])
+
+    compute_spatial_rate(env_1d, spike_times, times, positions)
+    warns = _empty_map_warnings(recwarn)
+    assert len(warns) == 1
+    # No max_gap / min_speed named; only the out-of-bounds possibility.
+    msg = str(warns[0].message)
+    assert "out of bounds" in msg
+
+
+def test_min_speed_excludes_all_still_warns_and_names_min_speed(
+    recwarn, env_1d, two_speed_trajectory
+) -> None:
+    """The min_speed case STILL warns under the generalized guard and names it."""
+    times = two_speed_trajectory["times"]
+    positions = two_speed_trajectory["positions"]
+    spike_times = np.array([0.5, 5.5, 6.8])
+
+    compute_spatial_rate(env_1d, spike_times, times, positions, min_speed=1e6)
+    warns = _empty_map_warnings(recwarn)
+    assert len(warns) == 1
+    assert "min_speed=1000000.0" in str(warns[0].message)
+
+
+def test_empty_map_warning_fires_once_for_batch(
+    recwarn, env_1d, all_gap_trajectory
+) -> None:
+    """Exactly ONE empty-map warning for a multi-neuron batch (not per neuron)."""
+    times = all_gap_trajectory["times"]
+    positions = all_gap_trajectory["positions"]
+    spike_times = [
+        np.array([0.5]),
+        np.array([3.5]),
+        np.array([6.5]),
+        np.array([2.5]),
+    ]
+    compute_spatial_rates(env_1d, spike_times, times, positions)
+    assert len(_empty_map_warnings(recwarn)) == 1
+
+
+def test_normal_session_does_not_warn_empty_map(
+    recwarn, env_1d, two_speed_trajectory
+) -> None:
+    """A normal (non-empty) session emits NO empty-map warning (single + batch)."""
+    times = two_speed_trajectory["times"]
+    positions = two_speed_trajectory["positions"]
+    spike_times = np.array([0.5, 2.5, 5.5, 6.5])
+
+    compute_spatial_rate(env_1d, spike_times, times, positions)
+    compute_spatial_rates(env_1d, [spike_times, spike_times], times, positions)
+    assert _empty_map_warnings(recwarn) == []
+
+
+# ==============================================================================
 # 9. Final-sample gate symmetry for caller-supplied speed
 # ==============================================================================
 

@@ -31,11 +31,13 @@ these are called out under a dedicated **Breaking changes** heading.
   - Passing `speed` **without** `min_speed` now raises `ValueError` (instead of
     silently ignoring `speed`), mirroring `env.occupancy`, which raises on
     `min_speed` without `speed`.
-  - When `min_speed` excludes **all** trajectory intervals (e.g. a wrong-units
-    threshold), `compute_spatial_rate` / `compute_spatial_rates` now emit one
-    `UserWarning` naming `min_speed` and the resolved speed range — instead of
-    silently returning an empty rate map. The warning fires once per call
-    (not per neuron in the batch path) and is suppressed by `warn_on_drop=False`.
+  - When the interval filter excludes **all** trajectory intervals — whether
+    via `min_speed`, `max_gap`, or the out-of-bounds-start rule (e.g. a
+    wrong-units threshold) — `compute_spatial_rate` / `compute_spatial_rates`
+    now emit one `UserWarning` naming the active gate(s) and suggesting fixes
+    (check units; pass `max_gap=None`), instead of silently returning an empty
+    rate map. The warning fires once per call (not per neuron in the batch
+    path) and is suppressed by `warn_on_drop=False`.
 
 ### Breaking changes
 
@@ -227,6 +229,21 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ### Performance
 
+- `decode_session_summary` now **streams the time-binning** so the full
+  `(n_time, n_neurons)` spike-count matrix is never materialized. It builds the
+  encoding model once over the whole session (small, `(n_neurons, n_bins)`),
+  then bins spikes block-by-block against a contiguous slice of the global time
+  grid and decodes + reduces each block via the same shared inner-loop helper as
+  `decode_position_summary`. Peak memory is now
+  `O(time_chunk × max(n_neurons, n_bins))` plus the `(n_neurons, n_bins)`
+  encoding model — **independent of session length** — meeting the
+  1 hr / 25 ms / 5000-bin / <500 MB summary-decode DoD golden path (the dense
+  `(144000, 1000)` count matrix alone would be ~1.15 GB). The result is
+  byte-for-byte identical to the prior materialize-then-stream path; per-block
+  counts are binned against the precomputed global edges so they match a single
+  global histogram exactly, and boundary spikes are counted exactly once.
+  `decode_session` (the full-posterior path) is unchanged.
+
 - `decode_position` gains two keyword-only memory knobs with **no change to its
   return contract** (`.posterior` stays a fully-materialized `ndarray`):
   - `dtype=np.float32` stores and computes the posterior in single precision,
@@ -259,20 +276,31 @@ these are called out under a dedicated **Breaking changes** heading.
   `decode_position_summary`. Default `np.float64` leaves every existing caller
   byte-for-byte unchanged; any other dtype raises `ValueError`.
 
-- Documented the dense diffusion-kernel **O(n²) memory cost** and added a hard
-  high-bin **safety gate**. The heat kernel `exp(-tL)` of a connected graph is
-  dense by construction (every entry > 0), so it always costs
+- Documented the dense diffusion-kernel **O(n²) memory cost** and added a loud
+  high-bin memory **warning**. The heat kernel `exp(-tL)` of a connected graph
+  is dense by construction (every entry > 0), so it always costs
   `n_bins**2 * 8` bytes of float64 memory (≈ 3.2 GB at 20,000 bins).
-  `compute_diffusion_kernels` and `env.compute_kernel` now **raise**
-  `MemoryError` above 20,000 bins, turning a silent out-of-memory crash into an
-  actionable error that names the size, the GB estimate, and the fixes (reduce
-  bins, use `smoothing_method="binned"`, or pass `allow_large=True` to override
-  if you have the RAM). The existing `UserWarning` above 3,000 bins is kept.
-  No numerical results change — this is documentation plus a default-refuse
-  gate with an explicit opt-out. The reliable scale wins this release remain
-  float32 rate maps and the memory-safe summary decode (above). A faster,
-  lower-peak `expm_multiply` / Chebyshev rewrite of the kernel is a **deferred
-  stretch goal** and is intentionally **not** part of this release.
+  `compute_diffusion_kernels` and `env.compute_kernel` now emit a loud
+  `UserWarning` (with a GB estimate) above 3,000 bins and then **proceed** —
+  there is **no hard limit** and no `allow_large` opt-out. The warning names the
+  size, the GB estimate, the dense O(n²) reason, and the fixes (reduce bins or
+  use `smoothing_method="binned"`). No numerical results change — this is
+  documentation plus a warn-and-proceed guard. The reliable scale wins this
+  release remain float32 rate maps and the memory-safe summary decode (above). A
+  faster, lower-peak `expm_multiply` / Chebyshev rewrite of the kernel is a
+  **deferred stretch goal** and is intentionally **not** part of this release.
+
+- Warned on the dense **Gaussian-KDE** high-bin path the same way as the
+  diffusion kernel. `smoothing_method="gaussian_kde"` builds a dense
+  `(n_bins, n_bins)` weight matrix (`exp(-d²/2σ²)`, every entry > 0), so it
+  carries the same O(n_bins²) memory cost; it now emits a loud `UserWarning`
+  (with a GB estimate) above the shared `_LARGE_KERNEL_THRESHOLD` (3,000 bins)
+  and proceeds — no hard limit, no `allow_large`. One warn threshold is shared
+  by both dense smoothing paths instead of a divergent copy. Also corrected
+  stale `encoding/_smoothing.py` docs that wrongly described the diffusion
+  kernel as "sparse" / `O(n_bins)` — it is dense `(n_bins, n_bins)`,
+  O(n_bins²) per neuron, with a one-time O(n_bins³) matrix-exponential build.
+  No numerical results change.
 
 - `SpatialRatesResult.summary_table()` no longer double-computes grid and
   border scores. It previously ran the expensive per-neuron grid/border score
@@ -290,6 +318,15 @@ these are called out under a dedicated **Breaking changes** heading.
   per-neuron exclusion warnings are not surfaced under `n_jobs != 1`).
 
 ### Changed
+
+- **Default rate-map output changed for gappy / out-of-bounds data.** With the
+  new `max_gap` default of `0.5 s`, `compute_spatial_rate` /
+  `compute_spatial_rates` (and `decode_session` / `decode_session_summary`,
+  which forward `max_gap`) now exclude spikes inside large tracking gaps and
+  out-of-bounds excursions from the numerator so it matches the occupancy
+  denominator. See the **Fixed** entry "Firing-rate numerator/denominator
+  alignment on the FULL interval mask" for the full rationale and the
+  `max_gap=None` opt-out.
 
 - `detect_region_crossings` argument order changed to follow the
   behavioral-segmentation convention:
@@ -331,6 +368,45 @@ in 0.7. Each old name forwards to its replacement with unchanged behavior.
   `(position_bins, times, env, *, region_name, ...)`.
 
 ### Fixed
+
+- `decode_position_summary` now validates `prior` shape (was silently
+  truncating over-long 2-D priors), matching `decode_position`. A 1-D prior
+  must be `(n_bins,)` and a 2-D time-varying prior must be exactly
+  `(n_time, n_bins)`; an over-long or short 2-D prior, a wrong-length 1-D
+  prior, or a non-1-D/2-D prior now raises `ValueError` before streaming
+  instead of silently slicing the prior to the decoded time range.
+
+- **Firing-rate numerator/denominator alignment on the FULL interval mask.**
+  A firing-rate map is `spike_counts (numerator) / occupancy (denominator)`
+  per bin. `env.occupancy` drops a trajectory interval `k` for **three**
+  reasons — `dt[k] > max_gap` (large tracking gap), `speed[k] < min_speed`
+  (low speed), and `start_bin[k] < 0` (interval's start sample out of the
+  active environment) — but the spike binner previously only filtered by the
+  time window and (since the speed-filter work) by speed. A spike inside a
+  dropped interval (e.g. a 1 s tracking gap, or an out-of-bounds excursion)
+  was therefore **counted in the numerator** while occupancy **excluded that
+  interval's time from the denominator**, inflating/biasing the rate. The
+  spike numerator and the occupancy denominator now drop the **identical** set
+  of intervals via one shared `interval_valid_mask` helper (the single source
+  of truth that `env.occupancy` also consumes). `compute_spatial_rate` /
+  `compute_spatial_rates` gain a keyword-only `max_gap: float | None = 0.5`
+  (matching `env.occupancy`'s default, so occupancy behavior is unchanged)
+  that gates **both** sides identically.
+  - **Behavior change:** rate maps now differ for sessions that contain large
+    tracking gaps (intervals longer than `max_gap`) or out-of-bounds samples —
+    previously those rates were inflated. This is a correctness fix. Pass
+    `max_gap=None` to disable gap gating on **both** sides (restoring the
+    pre-fix, no-gap-gating behavior while keeping numerator and denominator
+    aligned).
+  - **No more silent empty rate maps.** When the interval filter excludes
+    **every** trajectory interval (so occupancy is all-zero and the rate map is
+    all-NaN/0), `compute_spatial_rate` / `compute_spatial_rates` now emit a
+    single `UserWarning` naming the active gate(s) (`max_gap`, `min_speed`,
+    and/or the out-of-bounds-start possibility) and suggesting fixes (check
+    units; pass `max_gap=None`). Previously only the `min_speed` gate warned —
+    a too-large `max_gap` (or a wrong-units one) and the out-of-bounds-start
+    rule emptied the map **silently**. Gated by `warn_on_drop=True` (the
+    default); fires once per call (not per neuron in the batch path).
 
 - `decode_session` now warns loudly when most spikes fall outside the decode
   time window `[times.min(), times.max()]` instead of silently dropping them.

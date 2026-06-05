@@ -101,23 +101,39 @@ locations.
 
 Examples
 --------
-Basic decoding workflow::
+One-call golden path (encode + time-bin + decode in a single call)::
 
     >>> from neurospatial import Environment  # doctest: +SKIP
-    >>> from neurospatial.encoding import compute_spatial_rate  # doctest: +SKIP
-    >>> from neurospatial.decoding import decode_position  # doctest: +SKIP
+    >>> from neurospatial.decoding import decode_session  # doctest: +SKIP
     >>> env = Environment.from_samples(positions, bin_size=5.0)  # doctest: +SKIP
-    >>> encoding_models = np.array([  # doctest: +SKIP
-    ...     compute_spatial_rate(env, spikes, times, positions).firing_rate
-    ...     for spikes in spike_times_list
-    ... ])
-    >>> result = decode_position(env, spike_counts, encoding_models, dt=0.025)  # doctest: +SKIP
+    >>> result = decode_session(  # doctest: +SKIP
+    ...     env, spike_times, times, positions, dt=0.025
+    ... )
     >>> print(f"Decoded positions: {result.map_position[:5]}")  # doctest: +SKIP
     >>> print(f"Uncertainty: {result.posterior_entropy.mean():.2f} bits")  # doctest: +SKIP
 
+Explicit two-step form (build batch encoding models, then decode)::
+
+    >>> from neurospatial.encoding import compute_spatial_rates  # doctest: +SKIP
+    >>> from neurospatial.decoding import (  # doctest: +SKIP
+    ...     bin_spikes_in_time,
+    ...     decode_position,
+    ... )
+    >>> # Batch place fields for the whole population in one call
+    >>> encoding_models = compute_spatial_rates(  # doctest: +SKIP
+    ...     env, spike_times, times, positions, fill_value=0.0
+    ... ).firing_rates
+    >>> spike_counts, time_grid = bin_spikes_in_time(  # doctest: +SKIP
+    ...     spike_times, dt=0.025
+    ... )
+    >>> result = decode_position(  # doctest: +SKIP
+    ...     env, spike_counts, encoding_models, dt=0.025
+    ... )
+
 See Also
 --------
-neurospatial.encoding.compute_spatial_rate : Compute encoding models (place fields)
+neurospatial.decoding.decode_session : One-call encode + time-bin + decode
+neurospatial.encoding.compute_spatial_rates : Batch encoding models (place fields)
 neurospatial.Environment : Spatial discretization
 
 Notes

@@ -39,6 +39,8 @@ from neurospatial.environment.decorators import check_fitted
 if TYPE_CHECKING:
     import scipy.sparse
 
+    from neurospatial.environment._protocols import EnvironmentProtocol
+
 
 # Numerical stability constants
 # Epsilon threshold for detecting near-zero values in ray-grid intersection.
@@ -82,6 +84,106 @@ class BinSequenceWithRuns:
     bins: NDArray[np.int32]
     run_starts: NDArray[np.int64]
     run_lengths: NDArray[np.int64]
+
+
+def interval_valid_mask(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    env: EnvironmentProtocol,
+    *,
+    speed: NDArray[np.float64] | None = None,
+    min_speed: float | None = None,
+    max_gap: float | None = 0.5,
+    start_bin: NDArray[np.int64] | None = None,
+) -> NDArray[np.bool_]:
+    """Compute the per-interval validity mask shared by spikes and occupancy.
+
+    This is the **single source of truth** for which trajectory intervals are
+    counted toward a firing-rate map. A rate map is
+    ``spike_counts (numerator) / occupancy (denominator)`` per bin, and BOTH
+    sides MUST drop the IDENTICAL set of intervals or the rate is biased.
+    ``env.occupancy`` calls this helper to build its interval mask, and the
+    spike-binning kernel gates each spike by the validity of the interval it
+    falls in using this SAME helper — so numerator and denominator stay aligned
+    by construction.
+
+    Interval ``k`` spans ``[t_k, t_{k+1})`` (``time_allocation="start"``
+    semantics) and is assigned to the bin at sample ``k``. It is valid iff:
+
+    .. math::
+        (\\text{max\\_gap is None or } \\Delta t_k \\le \\text{max\\_gap})
+        \\;\\wedge\\;
+        (\\text{min\\_speed is None or } \\text{speed}_k \\ge \\text{min\\_speed})
+        \\;\\wedge\\;
+        (\\text{start\\_bin}_k \\ge 0)
+
+    where ``start_bin = env.bin_at(positions)`` and ``\\Delta t = diff(times)``.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_samples,)
+        Trajectory timestamps in seconds (assumed sorted/finite; validated
+        upstream).
+    positions : ndarray, shape (n_samples, n_dims)
+        Trajectory position coordinates.
+    env : Environment
+        The spatial environment; ``env.bin_at`` maps each start sample to its
+        bin (``-1`` outside the active mask).
+    speed : ndarray, shape (n_samples,), or None
+        Per-sample speed. Only consulted when ``min_speed`` is set; the gate
+        uses ``speed[:-1] >= min_speed`` (the speed of each interval's start
+        sample). Consumed as-is; never re-derived here.
+    min_speed : float or None
+        Minimum speed threshold. When ``None`` (default) no speed gating.
+    max_gap : float or None
+        Maximum time gap in seconds. Intervals with ``dt > max_gap`` are
+        dropped. Default 0.5; ``None`` disables gap gating on BOTH sides
+        (spikes and occupancy) so they stay aligned.
+    start_bin : ndarray of int64, shape (n_samples,), or None
+        Optional precomputed ``env.bin_at(positions)`` result. When provided,
+        it is used directly for the out-of-bounds-start gate instead of
+        recomputing ``env.bin_at`` internally — letting callers that have
+        already mapped ``positions`` to bins (e.g. ``env.occupancy``) avoid a
+        redundant second ``bin_at`` pass. When ``None`` (default), ``bin_at``
+        is computed here as before. Behaviour is identical either way; the
+        passed array must be the ``bin_at`` of the SAME ``positions``.
+
+    Returns
+    -------
+    ndarray of bool, shape (n_samples - 1,)
+        ``True`` for each valid interval. Empty (length 0) when fewer than
+        two samples are provided.
+    """
+    times = np.asarray(times, dtype=np.float64)
+    positions = np.asarray(positions, dtype=np.float64)
+    if positions.ndim == 1:
+        positions = positions.reshape(-1, 1)
+
+    n_samples = len(times)
+    if n_samples < 2:
+        return np.zeros(max(n_samples - 1, 0), dtype=bool)
+
+    dt = np.diff(times)
+    valid_mask = np.ones(len(dt), dtype=bool)
+
+    # Filter by max_gap.
+    if max_gap is not None:
+        valid_mask &= dt <= max_gap
+
+    # Filter by min_speed (speed of each interval's starting sample).
+    if min_speed is not None and speed is not None:
+        speed = np.asarray(speed, dtype=np.float64)
+        valid_mask &= speed[:-1] >= min_speed
+
+    # Filter out intervals whose START sample is outside the active
+    # environment (bin_at returns -1 for points outside any active bin).
+    # Reuse a caller-supplied bin_at result when available (e.g. env.occupancy
+    # already computes bin_at(positions)); otherwise compute it here.
+    if start_bin is None:
+        start_bin = cast("NDArray[np.int64]", env.bin_at(positions).astype(np.int64))
+    valid_mask &= start_bin[:-1] >= 0
+
+    return valid_mask
 
 
 class EnvironmentTrajectory:
@@ -337,20 +439,19 @@ class EnvironmentTrajectory:
         # Compute time intervals
         dt = np.diff(times)
 
-        # Build mask for valid intervals
-        valid_mask = np.ones(len(dt), dtype=bool)
-
-        # Filter by max_gap
-        if max_gap is not None:
-            valid_mask &= dt <= max_gap
-
-        # Filter by min_speed (applied to starting position of each interval)
-        if min_speed is not None and speed is not None:
-            valid_mask &= speed[:-1] >= min_speed
-
-        # Filter out intervals starting outside environment bounds
-        # (bin_at returns -1 for points outside any active bin).
-        valid_mask &= bin_indices[:-1] >= 0
+        # Build mask for valid intervals using the SHARED helper so that the
+        # occupancy denominator and the spike numerator drop the IDENTICAL set
+        # of intervals (max_gap ∪ low-speed ∪ out-of-bounds-start). See
+        # ``interval_valid_mask`` and ``encoding/_binning.py``.
+        valid_mask = interval_valid_mask(
+            times,
+            positions,
+            self,
+            speed=speed,
+            min_speed=min_speed,
+            max_gap=max_gap,
+            start_bin=bin_indices,
+        )
 
         # Initialize occupancy array
         occupancy = np.zeros(self.n_bins, dtype=np.float64)

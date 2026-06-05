@@ -19,6 +19,11 @@ from numpy.typing import ArrayLike, NDArray
 # Always < 1.0, so the 100%-dropped case (frac == 1.0) always warns.
 _DROP_WARN_THRESHOLD = 0.5
 
+# Default time-block size for the streaming summary path. Matches
+# decode_position_summary's default ``time_chunk`` so the two paths block the
+# time axis identically.
+_SUMMARY_DEFAULT_TIME_CHUNK = 1024
+
 if TYPE_CHECKING:
     from neurospatial.decoding._result import DecodingResult, DecodingSummary
     from neurospatial.environment import Environment
@@ -95,6 +100,7 @@ def decode_session(
     min_occupancy: float = 0.0,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
+    max_gap: float | None = 0.5,
     encoding_models: NDArray[np.float64] | None = None,
     warn_on_drop: bool = True,
     **decode_kwargs: Any,
@@ -152,6 +158,14 @@ def decode_session(
         the occupancy denominator of the encoding model via one shared gate.
         When ``None`` (default) no speed filtering is applied (unchanged).
         Ignored when ``encoding_models`` is provided.
+    max_gap : float or None, optional
+        Maximum trajectory time gap (seconds), forwarded to the encoding step
+        (see :func:`~neurospatial.encoding.compute_spatial_rates`). Intervals
+        with ``dt > max_gap`` are dropped from BOTH the spike numerator and the
+        occupancy denominator of the encoding model. Default 0.5 (matches
+        ``compute_spatial_rates``); pass ``None`` to count all intervals
+        regardless of gap size (e.g. for intentionally-gappy data). Ignored
+        when ``encoding_models`` is provided.
     encoding_models : NDArray[np.float64], shape (n_neurons, n_bins) or None
         Pre-computed place-field firing-rate maps.  When provided, the
         encoding step (``compute_spatial_rates``) is skipped entirely and
@@ -291,6 +305,7 @@ def decode_session(
         min_occupancy=min_occupancy,
         speed=speed,
         min_speed=min_speed,
+        max_gap=max_gap,
         encoding_models=encoding_models,
         warn_on_drop=warn_on_drop,
     )
@@ -306,7 +321,7 @@ def decode_session(
     )
 
 
-def _encode_and_bin(
+def _build_encoding_model(
     env: Environment,
     spike_times: Any,
     times: ArrayLike,
@@ -318,32 +333,49 @@ def _encode_and_bin(
     min_occupancy: float,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
+    max_gap: float | None = 0.5,
     encoding_models: NDArray[np.float64] | None,
     warn_on_drop: bool,
-) -> tuple[NDArray[np.float64], NDArray[np.int64], NDArray[np.float64]]:
-    """Shared encode->bin glue for ``decode_session*``.
+) -> tuple[
+    list[NDArray[np.float64]],
+    NDArray[np.float64],
+    int,
+    NDArray[np.float64],
+    NDArray[np.float64],
+]:
+    """Encode-only glue: build firing rates and the global decode time grid.
 
-    Builds (or accepts) the encoding models and bins spikes into a time-grid
-    count matrix, returning ``(firing_rates, counts, centers)`` ready to hand
-    to a decoder. Factored out so :func:`decode_session` and
-    :func:`decode_session_summary` share byte-for-byte identical pre-decode
-    behavior (input normalization, the units-footgun warning, ``fill_value=0.0``
-    encoding, and the time grid).
+    Does everything :func:`_encode_and_bin` does **except** building the full
+    ``(n_time, n_neurons)`` count matrix. It normalizes spike trains, validates
+    timestamps, builds (or accepts) the encoding models, emits the
+    units-footgun warning, and computes the global decode time grid
+    (``n_time``, the global bin ``edges``, and ``bin_centers``) using the SAME
+    grid math as :func:`~neurospatial.decoding.bin_spikes_in_time`. The
+    streaming summary path uses this to bin spikes block-by-block against the
+    GLOBAL edges (a contiguous edge slice per block, NOT recomputed per block),
+    so the dense count matrix is never materialized AND the per-block counts are
+    byte-for-byte identical to a single global histogram. (Recomputing edges as
+    ``block_t_start + k*dt`` per block would drift by float rounding and break
+    parity; slicing the precomputed global ``edges`` does not.)
 
     Returns
     -------
+    trains : list of NDArray[np.float64]
+        Normalized per-neuron spike-time arrays.
     firing_rates : NDArray[np.float64], shape (n_neurons, n_bins)
         Encoding-model firing-rate maps.
-    counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
-        Spike-count matrix (``orient="time_x_neuron"``).
-    centers : NDArray[np.float64], shape (n_time_bins,)
-        Decode time-bin centers (seconds).
+    n_time : int
+        Number of decode time bins on the global grid,
+        ``floor((t_stop - t_start) / dt + 1e-9)``.
+    edges : NDArray[np.float64], shape (n_time + 1,)
+        Global decode time-bin edges, ``t_start + dt * arange(n_time + 1)``.
+    bin_centers : NDArray[np.float64], shape (n_time,)
+        Global decode time-bin centers (left edge + ``dt / 2``).
     """
     # Defer the `encoding` imports until call time: this keeps the decoding
     # package importable even if `encoding` were ever to import from `decoding`
     # (it does not today), so there is no circular-import risk at module load.
     # Mirrors how encoding/spatial.py defers its own heavy imports.
-    from neurospatial.decoding._binning import bin_spikes_in_time
     from neurospatial.encoding import as_spike_trains
     from neurospatial.encoding._validation import validate_times
     from neurospatial.encoding.spatial import compute_spatial_rates
@@ -364,12 +396,12 @@ def _encode_and_bin(
     validate_times(times_arr, context="decode_session")
 
     # Decode window — computed ONCE and reused for both the out-of-window drop
-    # check and the bin_spikes_in_time call so they agree exactly.
+    # check and the time-grid construction so they agree exactly.
     t_start = float(times_arr.min())
     t_stop = float(times_arr.max())
 
     # --- Build encoding models if not provided ---
-    # The units-footgun matters because bin_spikes_in_time counts via
+    # The units-footgun matters because the time-binning counts via
     # np.histogram(..., bins=edges), which silently drops spikes outside
     # [t_start, t_stop]; a ms-vs-s mismatch → all-zero counts → a
     # plausible-but-wrong posterior. Exactly one of the two branches below
@@ -393,6 +425,7 @@ def _encode_and_bin(
             fill_value=0.0,
             speed=speed,
             min_speed=min_speed,
+            max_gap=max_gap,
             warn_on_drop=warn_on_drop,
         )
         firing_rates = np.asarray(rates_result.firing_rates, dtype=np.float64)
@@ -404,12 +437,81 @@ def _encode_and_bin(
         if warn_on_drop:
             _warn_if_spikes_out_of_window(trains, t_start, t_stop)
 
-    # --- Bin spikes in time (default orient="time_x_neuron" → (n_time, n_neurons)) ---
-    counts, centers = bin_spikes_in_time(
-        trains,
-        dt,
-        t_start=t_start,
-        t_stop=t_stop,
+    # --- Global decode time grid ---
+    # Mirror bin_spikes_in_time exactly: n_bins = floor(span/dt + 1e-9), edges
+    # at t_start + k*dt, centers at left-edge + dt/2. Computing it here (rather
+    # than calling bin_spikes_in_time) lets the streaming path slice the grid
+    # into blocks whose per-block bin() calls land on exactly these edges.
+    n_time = int(np.floor((t_stop - t_start) / dt + 1e-9))
+    if n_time < 1:
+        raise ValueError(
+            f"Span t_stop - t_start ({t_stop - t_start}) is smaller than one "
+            f"bin dt ({dt}); no whole time bin fits."
+        )
+    edges = t_start + dt * np.arange(n_time + 1, dtype=np.float64)
+    bin_centers = edges[:-1] + dt / 2.0
+
+    return trains, firing_rates, n_time, edges, bin_centers
+
+
+def _encode_and_bin(
+    env: Environment,
+    spike_times: Any,
+    times: ArrayLike,
+    positions: NDArray[np.float64],
+    *,
+    dt: float,
+    bandwidth: float,
+    smoothing_method: str,
+    min_occupancy: float,
+    speed: NDArray[np.float64] | None = None,
+    min_speed: float | None = None,
+    max_gap: float | None = 0.5,
+    encoding_models: NDArray[np.float64] | None,
+    warn_on_drop: bool,
+) -> tuple[NDArray[np.float64], NDArray[np.int64], NDArray[np.float64]]:
+    """Shared encode->bin glue for the FULL-posterior :func:`decode_session`.
+
+    Builds (or accepts) the encoding models via :func:`_build_encoding_model`
+    and bins spikes into a time-grid count matrix, returning
+    ``(firing_rates, counts, centers)`` ready to hand to a decoder. This is the
+    materialize-the-full-count-matrix path; :func:`decode_session` uses it
+    unchanged. :func:`decode_session_summary` does NOT use this — it streams the
+    binning (see :func:`_build_encoding_model`) so the full count matrix is
+    never materialized.
+
+    Returns
+    -------
+    firing_rates : NDArray[np.float64], shape (n_neurons, n_bins)
+        Encoding-model firing-rate maps.
+    counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
+        Spike-count matrix (``orient="time_x_neuron"``).
+    centers : NDArray[np.float64], shape (n_time_bins,)
+        Decode time-bin centers (seconds).
+    """
+    trains, firing_rates, _n_time, edges, centers = _build_encoding_model(
+        env,
+        spike_times,
+        times,
+        positions,
+        dt=dt,
+        bandwidth=bandwidth,
+        smoothing_method=smoothing_method,
+        min_occupancy=min_occupancy,
+        speed=speed,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        encoding_models=encoding_models,
+        warn_on_drop=warn_on_drop,
+    )
+
+    # --- Bin spikes against the GLOBAL edges (orient="time_x_neuron") ---
+    # Histogram each train against the precomputed global `edges`, exactly as
+    # bin_spikes_in_time does internally. This yields the identical
+    # (n_time, n_neurons) count matrix as before (same edges, same right-closed
+    # last bin via np.histogram), with no behavior change for decode_session.
+    counts = np.stack([np.histogram(s, bins=edges)[0] for s in trains], axis=1).astype(
+        np.int64
     )
     # counts shape: (n_time_bins, n_neurons)  ← what decode_position expects
     return firing_rates, counts, centers
@@ -427,28 +529,44 @@ def decode_session_summary(
     min_occupancy: float = 0.0,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
+    max_gap: float | None = 0.5,
     encoding_models: NDArray[np.float64] | None = None,
     warn_on_drop: bool = True,
     **decode_kwargs: Any,
 ) -> DecodingSummary:
     """Memory-safe sibling of :func:`decode_session`.
 
-    Identical encode->bin glue as :func:`decode_session`, but calls
-    :func:`~neurospatial.decoding.decode_position_summary` at the final step so
-    the full ``(n_time_bins, n_bins)`` posterior is never materialized. Returns
-    a :class:`~neurospatial.decoding.DecodingSummary` of per-time reductions.
-    Use this for long sessions where the dense posterior would not fit in
-    memory.
+    Same encode step as :func:`decode_session`, but **streams the
+    time-binning** so the full ``(n_time, n_neurons)`` count matrix is never
+    materialized, and reduces the posterior block-by-block so the full
+    ``(n_time, n_bins)`` posterior is never materialized either. Returns a
+    :class:`~neurospatial.decoding.DecodingSummary` of per-time reductions. Use
+    this for long sessions where the dense count matrix and/or posterior would
+    not fit in memory.
+
+    The encoding model (firing rates, shape ``(n_neurons, n_bins)``) is built
+    once over the whole session (it is small). Then time is processed in blocks
+    of ``time_chunk`` bins: each block bins ONLY that block's spikes (a
+    contiguous slice of the global time grid) and decodes + reduces it via the
+    SAME shared inner-loop helper as
+    :func:`~neurospatial.decoding.decode_position_summary`. Peak memory is
+    therefore ``O(time_chunk * max(n_neurons, n_bins))`` plus the
+    ``(n_neurons, n_bins)`` encoding model, **independent of session length**.
+    The result is identical to running
+    :func:`~neurospatial.decoding.decode_position_summary` on the fully
+    materialized count matrix.
 
     Parameters
     ----------
     env, spike_times, times, positions, dt, bandwidth, smoothing_method, \
-min_occupancy, speed, min_speed, encoding_models, warn_on_drop
-        Same as :func:`decode_session`.
+min_occupancy, speed, min_speed, max_gap, encoding_models, warn_on_drop
+        Same as :func:`decode_session` (``max_gap`` forwards to
+        :func:`~neurospatial.encoding.compute_spatial_rates`).
     **decode_kwargs
-        Forwarded to
-        :func:`~neurospatial.decoding.decode_position_summary` (e.g. ``prior``,
-        ``validate``, ``dtype``, ``time_chunk``).
+        Forwarded to the per-block decode (same semantics as
+        :func:`~neurospatial.decoding.decode_position_summary`): ``prior``,
+        ``method``, ``validate``, ``dtype``, and ``time_chunk`` (the streaming
+        block size; defaults to 1024). Unknown kwargs raise ``TypeError``.
 
     Returns
     -------
@@ -456,14 +574,52 @@ min_occupancy, speed, min_speed, encoding_models, warn_on_drop
         Per-time reductions (MAP position/bin, mean position, entropy, peak
         probability) plus ``times`` and ``env``.
 
+    Raises
+    ------
+    ValueError
+        If ``time_chunk`` is not a positive integer or ``None``; if a forwarded
+        ``prior`` has a shape inconsistent with the decode (1-D must be
+        ``(n_bins,)``, 2-D must be ``(n_time, n_bins)``); plus the same
+        conditions as :func:`~neurospatial.decoding.decode_position`.
+
     See Also
     --------
     decode_session : Full-posterior golden path.
-    neurospatial.decoding.decode_position_summary : The streamed decoder used here.
+    neurospatial.decoding.decode_position_summary : Array-first streamed decoder.
     """
-    from neurospatial.decoding.posterior import decode_position_summary
+    from neurospatial.decoding._result import DecodingSummary
+    from neurospatial.decoding.posterior import (
+        _decode_and_reduce_block,
+        _prepare_decode_inputs,
+    )
 
-    firing_rates, counts, centers = _encode_and_bin(
+    # Split out the decode-time knobs from decode_kwargs; everything else is an
+    # unknown kwarg and must error rather than be silently dropped.
+    prior = decode_kwargs.pop("prior", None)
+    method = decode_kwargs.pop("method", "poisson")
+    validate = decode_kwargs.pop("validate", True)
+    dtype = decode_kwargs.pop("dtype", np.float64)
+    time_chunk = decode_kwargs.pop("time_chunk", _SUMMARY_DEFAULT_TIME_CHUNK)
+    if decode_kwargs:
+        raise TypeError(
+            f"decode_session_summary got unexpected keyword argument(s): "
+            f"{sorted(decode_kwargs)}. Supported decode kwargs are prior, "
+            f"method, validate, dtype, time_chunk."
+        )
+
+    if time_chunk is not None and time_chunk < 1:
+        raise ValueError(
+            f"time_chunk must be a positive integer or None, got {time_chunk}."
+        )
+
+    # --- Encode once + build the global decode time grid (no count matrix) ---
+    (
+        trains,
+        firing_rates,
+        n_time,
+        edges,
+        bin_centers_time,
+    ) = _build_encoding_model(
         env,
         spike_times,
         times,
@@ -474,15 +630,152 @@ min_occupancy, speed, min_speed, encoding_models, warn_on_drop
         min_occupancy=min_occupancy,
         speed=speed,
         min_speed=min_speed,
+        max_gap=max_gap,
         encoding_models=encoding_models,
         warn_on_drop=warn_on_drop,
     )
 
-    return decode_position_summary(
+    # Validate the encoding model + resolve the non-finite mask ONCE (the same
+    # front-half decode_position_summary runs). spike_counts is faked with a
+    # zero-row block here only to satisfy the helper's interface; its actual
+    # per-block counts come from the streamed binning below. We pass a
+    # (1, n_neurons) row so the neuron-count agreement check still fires.
+    #
+    # NOTE: the real per-block counts produced by the streamed binning below are
+    # intentionally NOT routed through _validate_inputs. They come straight from
+    # np.histogram on float spike times, so they are non-negative int64 by
+    # construction (cannot be fractional, negative, or NaN) — the value checks
+    # _validate_inputs performs are already guaranteed, so the exemption is
+    # deliberate, not an oversight.
+    n_neurons = firing_rates.shape[0]
+    _dummy_counts = np.zeros((1, n_neurons), dtype=np.int64)
+    _checked_counts, firing_rates, nonfinite_mask = _prepare_decode_inputs(
         env,
-        counts,
+        _dummy_counts,
         firing_rates,
-        dt,
-        times=centers,
-        **decode_kwargs,
+        prior=prior,
+        method=method,
+        validate=validate,
+        context="decode_session_summary",
+    )
+
+    # Validate prior shape ONCE, up front, against the GLOBAL (n_time, n_bins)
+    # grid — mirrors decode_position_summary so an over-long 2-D prior raises
+    # here instead of being silently truncated by the block loop (R2).
+    n_bins = firing_rates.shape[1]
+    prior_is_time_varying = False
+    if prior is not None:
+        prior_arr = np.asarray(prior)
+        if prior_arr.ndim == 1:
+            if prior_arr.shape[0] != n_bins:
+                raise ValueError(
+                    f"1D prior must have shape ({n_bins},) to match the number "
+                    f"of position bins, got shape {prior_arr.shape}"
+                )
+        elif prior_arr.ndim == 2:
+            if prior_arr.shape != (n_time, n_bins):
+                raise ValueError(
+                    f"2D prior must have shape {(n_time, n_bins)} to match the "
+                    f"({n_time} time bins, {n_bins} position bins) being "
+                    f"decoded, got shape {prior_arr.shape}"
+                )
+            prior_is_time_varying = True
+        else:
+            raise ValueError(
+                f"prior must be 1D (stationary) or 2D (time-varying), "
+                f"got {prior_arr.ndim}D with shape {prior_arr.shape}"
+            )
+
+    bin_centers = np.asarray(env.bin_centers, dtype=np.float64)
+    n_dims = bin_centers.shape[1]
+
+    map_bin = np.empty(n_time, dtype=np.int64)
+    map_position = np.empty((n_time, n_dims), dtype=np.float64)
+    mean_position = np.empty((n_time, n_dims), dtype=np.float64)
+    posterior_entropy = np.empty(n_time, dtype=np.float64)
+    peak_prob = np.empty(n_time, dtype=np.float64)
+
+    block = n_time if time_chunk is None else time_chunk
+    for start in range(0, n_time, block):
+        stop = min(start + block, n_time)
+        is_last_block = stop == n_time
+
+        # Bin ONLY this block's spikes, against the GLOBAL edge slice
+        # edges[start : stop + 1]. Slicing the precomputed global edges (rather
+        # than recomputing block_t_start + k*dt) is what makes the per-block
+        # counts byte-for-byte identical to a single global histogram: the
+        # interior edges are the SAME float values, so each spike lands in the
+        # same bin either way.
+        lo = edges[start]
+        hi = edges[stop]
+        block_edges = edges[start : stop + 1]
+
+        # Avoid double-counting boundary spikes. np.histogram right-closes its
+        # LAST bin, so a spike exactly on an interior global edge `stop` would
+        # otherwise be counted in BOTH this block's last bin (right-closed) AND
+        # the next block's first (left-closed) bin. For every block except the
+        # final one, drop spikes sitting on the right edge by scoping to
+        # [lo, hi). The final block keeps the right edge closed (matching the
+        # global grid's right-closed final bin: a spike at edges[-1] counts).
+        if is_last_block:
+            block_trains = [s[(s >= lo) & (s <= hi)] for s in trains]
+        else:
+            block_trains = [s[(s >= lo) & (s < hi)] for s in trains]
+
+        counts_block = np.stack(
+            [np.histogram(s, bins=block_edges)[0] for s in block_trains], axis=1
+        ).astype(np.int64)  # (stop - start, n_neurons)
+
+        # Block alignment contract: the block has exactly `stop - start` bins
+        # and its centers equal the global centers slice (no off-by-one / gap /
+        # double-count at block boundaries). These guard a load-bearing
+        # correctness invariant, so raise unconditionally (do NOT use bare
+        # `assert`, which `python -O` strips).
+        if counts_block.shape != (stop - start, n_neurons):
+            raise RuntimeError(
+                f"block count shape {counts_block.shape} != expected "
+                f"{(stop - start, n_neurons)} for block [{start}, {stop})"
+            )
+        block_centers = block_edges[:-1] + dt / 2.0
+        if not np.array_equal(block_centers, bin_centers_time[start:stop]):
+            raise RuntimeError(
+                f"streamed block centers drifted from the global time grid for "
+                f"block [{start}, {stop}); block-boundary alignment is broken"
+            )
+
+        block_prior = prior
+        if prior_is_time_varying:
+            block_prior = np.asarray(prior)[start:stop]
+
+        (
+            block_map_bin,
+            block_map_position,
+            block_mean,
+            block_entropy,
+            block_peak,
+        ) = _decode_and_reduce_block(
+            counts_block,
+            firing_rates,
+            dt,
+            bin_centers,
+            prior_block=block_prior,
+            nonfinite_mask=nonfinite_mask,
+            validate=validate,
+            dtype=dtype,
+        )
+        map_bin[start:stop] = block_map_bin
+        map_position[start:stop] = block_map_position
+        mean_position[start:stop] = block_mean
+        posterior_entropy[start:stop] = block_entropy
+        peak_prob[start:stop] = block_peak
+        # counts_block / block posterior go out of scope before the next block.
+
+    return DecodingSummary(
+        times=bin_centers_time,
+        map_position=map_position,
+        mean_position=mean_position,
+        posterior_entropy=posterior_entropy,
+        peak_prob=peak_prob,
+        map_bin=map_bin,
+        env=env,
     )

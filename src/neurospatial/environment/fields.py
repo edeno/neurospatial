@@ -47,7 +47,6 @@ class EnvironmentFields:
         *,
         mode: Literal["transition", "density"] = "density",
         cache: bool = True,
-        allow_large: bool = False,
     ) -> NDArray[np.float64]:
         """Compute diffusion kernel for smoothing operations.
 
@@ -68,12 +67,6 @@ class EnvironmentFields:
         cache : bool, default=True
             If True, cache the computed kernel for reuse. Subsequent calls
             with the same (bandwidth, mode) will return the cached result.
-        allow_large : bool, default=False
-            Escape hatch for the high-bin memory gate (see Notes). By default
-            kernel computation **raises** ``MemoryError`` when the environment
-            has more than 20,000 bins, because the dense kernel would need an
-            ``n_bins**2 * 8`` byte allocation (≈ 3.2 GB at 20,000 bins). Pass
-            ``allow_large=True`` to override the gate if you have the RAM.
 
         Returns
         -------
@@ -87,9 +80,6 @@ class EnvironmentFields:
             If called before the environment is fitted.
         ValueError
             If bandwidth is not positive.
-        MemoryError
-            If the environment has more than 20,000 bins and ``allow_large``
-            is ``False`` (the dense kernel would not fit comfortably in memory).
 
         See Also
         --------
@@ -112,10 +102,9 @@ class EnvironmentFields:
         connected graph is *dense by construction* (every entry > 0), so the
         returned matrix occupies ``n_bins**2 * 8`` bytes of float64 memory —
         for example ``20000**2 * 8 / 1e9 ≈ 3.2 GB`` at 20,000 bins. This peak
-        cannot be avoided while using the dense diffusion kernel. Two guard
-        rails bound the cost: a ``UserWarning`` estimating the GB is issued
-        above 3,000 bins, and this method **raises** ``MemoryError`` above
-        20,000 bins unless ``allow_large=True`` is passed. The matrix
+        cannot be avoided while using the dense diffusion kernel. There is no
+        hard limit: a ``UserWarning`` estimating the GB is issued above 3,000
+        bins and the kernel is then built regardless of size. The matrix
         exponential is also O(n³) in time, so large environments are slow as
         well as memory-hungry.
 
@@ -150,7 +139,6 @@ class EnvironmentFields:
             bandwidth_sigma=bandwidth,
             bin_sizes=self.bin_sizes if mode == "density" else None,
             mode=mode,
-            allow_large=allow_large,
         )
 
         # Store in cache if enabled

@@ -601,16 +601,28 @@ class TestDecodeSessionOutOfWindowWarning:
 
         from neurospatial.decoding import decode_session
 
-        env, spike_times, times, positions = _make_linear_track_sim(
+        env, _spike_times, times, positions = _make_linear_track_sim(
             n_neurons=10, duration=10.0, seed=55
         )
-        # In-window spike times (no time-window drop), but positions shifted far
-        # outside the [0, 100] environment → every spike maps to an inactive bin.
-        positions_wrong_frame = positions + 1000.0
+        # In-window spikes (no time-window drop). The interval STARTS stay
+        # in-bounds (so the interval-valid mask keeps them), but every other
+        # sample jumps far outside the [0, 100] environment. We place every
+        # spike at the MIDPOINT of a valid (even-indexed) interval, so each
+        # spike interpolates toward the far excursion and maps to an inactive
+        # bin. This exercises the inactive-bin drop path (distinct from the
+        # interval mask, which gates by the start sample).
+        positions_wrong_frame = positions.copy()
+        positions_wrong_frame[1::2] = 1000.0
+        n_frames = len(times)
+        # Midpoints of intervals 0, 2, 4, ... (those starting at in-bounds
+        # samples); each interpolates to ~500 → out of the environment.
+        even_starts = np.arange(0, n_frames - 1, 2)
+        midpoints = 0.5 * (times[even_starts] + times[even_starts + 1])
+        oob_spikes = [midpoints.copy() for _ in range(10)]
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            decode_session(env, spike_times, times, positions_wrong_frame, dt=0.1)
+            decode_session(env, oob_spikes, times, positions_wrong_frame, dt=0.1)
 
         inactive = [
             w for w in caught if "interpolated to positions outside" in str(w.message)
@@ -713,3 +725,409 @@ class TestDecodeSessionFloat32Models:
             atol=1e-4,
             err_msg="float32 encoding models decoded too far from float64",
         )
+
+
+# ---------------------------------------------------------------------------
+# max_gap passthrough (R1 follow-up)
+# ---------------------------------------------------------------------------
+
+
+class TestDecodeSessionMaxGap:
+    """decode_session / decode_session_summary forward max_gap to the encoder."""
+
+    def _gap_session(self):
+        """1D track with one >0.5 s tracking gap and a spike inside that gap.
+
+        Returns (env, spike_times, times, positions, t_gap). The lone gap
+        interval is dropped by default (max_gap=0.5) but kept under
+        max_gap=None, so the encoding firing-rate maps differ between the two.
+        """
+        env = Environment.from_samples(
+            np.linspace(0, 100, 101).reshape(-1, 1), bin_size=10.0
+        )
+        dt = 0.1
+        n_a, n_b = 30, 30
+        xa = 10.0 + np.arange(n_a) * 0.1
+        xb = 13.0 + np.arange(n_b) * 0.1
+        positions = np.concatenate([xa, xb]).reshape(-1, 1)
+        ta = np.arange(n_a) * dt
+        tb = ta[-1] + 1.0 + np.arange(n_b) * dt  # 1.0 s gap
+        times = np.concatenate([ta, tb])
+        gap_interval = n_a - 1
+        t_gap = 0.5 * (times[gap_interval] + times[gap_interval + 1])
+        # Two neurons; neuron 0 fires inside the gap, plus some valid spikes.
+        spike_times = [
+            np.array([0.5, 1.2, t_gap, 4.5]),
+            np.array([1.0, 2.0, 5.0]),
+        ]
+        return env, spike_times, times, positions, t_gap
+
+    def test_max_gap_forwarded_to_encoder(self, monkeypatch) -> None:
+        """The max_gap kwarg reaches compute_spatial_rates verbatim."""
+        import neurospatial.encoding.spatial as spatial_mod
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions, _ = self._gap_session()
+
+        seen = {}
+        real = spatial_mod.compute_spatial_rates
+
+        def _spy(*args, **kwargs):
+            seen["max_gap"] = kwargs.get("max_gap", "MISSING")
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(spatial_mod, "compute_spatial_rates", _spy)
+
+        decode_session(env, spike_times, times, positions, dt=0.1, max_gap=None)
+        assert seen["max_gap"] is None
+
+        decode_session(env, spike_times, times, positions, dt=0.1)
+        assert seen["max_gap"] == 0.5
+
+    def test_max_gap_none_changes_encoding(self) -> None:
+        """max_gap=None keeps the gap spike, changing the posterior vs default."""
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions, _ = self._gap_session()
+
+        res_default = decode_session(
+            env, spike_times, times, positions, dt=0.1, warn_on_drop=False
+        )
+        res_no_gap = decode_session(
+            env,
+            spike_times,
+            times,
+            positions,
+            dt=0.1,
+            max_gap=None,
+            warn_on_drop=False,
+        )
+        # Dropping vs keeping the in-gap spike changes the encoding model and
+        # therefore the posterior.
+        assert not np.allclose(res_default.posterior, res_no_gap.posterior)
+
+    def test_summary_accepts_max_gap(self) -> None:
+        """decode_session_summary also accepts and forwards max_gap."""
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions, _ = self._gap_session()
+        summary = decode_session_summary(
+            env,
+            spike_times,
+            times,
+            positions,
+            dt=0.1,
+            max_gap=None,
+            warn_on_drop=False,
+        )
+        assert summary.map_position.shape[1] == env.n_dims
+
+
+# ---------------------------------------------------------------------------
+# R5: decode_session_summary streams the time-binning (no full count matrix)
+# ---------------------------------------------------------------------------
+
+
+def _summary_reference(env, spike_times, times, positions, *, dt, time_chunk, **kw):
+    """PRE-R5 reference: materialize the FULL count matrix, then stream-decode.
+
+    This is exactly what decode_session_summary did before R5 (encode -> bin
+    the WHOLE session into a dense (n_time, n_neurons) count matrix ->
+    decode_position_summary). R5 streams the binning, so the new
+    decode_session_summary must match this byte-for-byte.
+    """
+    from neurospatial.decoding import (
+        bin_spikes_in_time,
+        decode_position_summary,
+    )
+    from neurospatial.encoding import compute_spatial_rates
+
+    times_arr = np.asarray(times, dtype=np.float64)
+    firing_rates = compute_spatial_rates(
+        env,
+        spike_times,
+        times_arr,
+        positions,
+        bandwidth=5.0,
+        smoothing_method="diffusion_kde",
+        min_occupancy=0.0,
+        fill_value=0.0,
+    ).firing_rates
+    counts, centers = bin_spikes_in_time(
+        spike_times, dt, t_start=times_arr.min(), t_stop=times_arr.max()
+    )
+    return decode_position_summary(
+        env,
+        counts,
+        firing_rates,
+        dt,
+        times=centers,
+        time_chunk=time_chunk,
+        **kw,
+    )
+
+
+class TestDecodeSessionSummaryStreaming:
+    """decode_session_summary streams binning; result == materialize-then-stream."""
+
+    def _assert_summary_equal(self, a, b, *, exact=True) -> None:
+        """Assert two DecodingSummary objects agree (byte-for-byte or tight)."""
+        np.testing.assert_array_equal(a.map_bin, b.map_bin)
+        np.testing.assert_array_equal(a.map_position, b.map_position)
+        np.testing.assert_array_equal(a.times, b.times)
+        if exact:
+            np.testing.assert_array_equal(a.mean_position, b.mean_position)
+            np.testing.assert_array_equal(a.posterior_entropy, b.posterior_entropy)
+            np.testing.assert_array_equal(a.peak_prob, b.peak_prob)
+        else:
+            assert_allclose(a.mean_position, b.mean_position, rtol=1e-12, atol=1e-12)
+            assert_allclose(
+                a.posterior_entropy, b.posterior_entropy, rtol=1e-12, atol=1e-12
+            )
+            assert_allclose(a.peak_prob, b.peak_prob, rtol=1e-12, atol=1e-12)
+
+    def test_parity_dt_divides_evenly(self) -> None:
+        """dt evenly divides the session: streamed == materialize-then-stream."""
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=12, duration=20.0, seed=3
+        )
+        # times spans [0, ~20]; dt=0.1 -> grid is a clean multiple.
+        dt = 0.1
+        ref = _summary_reference(
+            env, spike_times, times, positions, dt=dt, time_chunk=64
+        )
+        got = decode_session_summary(
+            env, spike_times, times, positions, dt=dt, time_chunk=64
+        )
+        self._assert_summary_equal(got, ref)
+
+    def test_parity_dt_not_dividing_evenly(self) -> None:
+        """dt that does NOT evenly divide the span: trailing partial bin dropped."""
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=12, duration=20.0, seed=9
+        )
+        dt = 0.07  # 20 / 0.07 is not integral
+        ref = _summary_reference(
+            env, spike_times, times, positions, dt=dt, time_chunk=64
+        )
+        got = decode_session_summary(
+            env, spike_times, times, positions, dt=dt, time_chunk=64
+        )
+        self._assert_summary_equal(got, ref)
+
+    def test_parity_n_time_not_multiple_of_chunk(self) -> None:
+        """n_time not a multiple of time_chunk: final short block handled."""
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=10, duration=15.0, seed=15
+        )
+        dt = 0.1  # ~150 bins; chunk=37 leaves a short final block
+        ref = _summary_reference(
+            env, spike_times, times, positions, dt=dt, time_chunk=37
+        )
+        got = decode_session_summary(
+            env, spike_times, times, positions, dt=dt, time_chunk=37
+        )
+        self._assert_summary_equal(got, ref)
+        # Sanity: the chunking really did straddle a non-multiple boundary.
+        assert got.map_bin.shape[0] % 37 != 0
+
+    def test_parity_time_chunk_none_single_block(self) -> None:
+        """time_chunk=None processes the whole session as one block, same result."""
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=10, duration=10.0, seed=21
+        )
+        dt = 0.1
+        ref = _summary_reference(
+            env, spike_times, times, positions, dt=dt, time_chunk=None
+        )
+        got = decode_session_summary(
+            env, spike_times, times, positions, dt=dt, time_chunk=None
+        )
+        self._assert_summary_equal(got, ref)
+
+    def test_parity_with_precomputed_encoding_models(self) -> None:
+        """encoding_models passthrough also streams correctly."""
+        from neurospatial.decoding import (
+            bin_spikes_in_time,
+            decode_position_summary,
+            decode_session_summary,
+        )
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=10, duration=12.0, seed=27
+        )
+        dt = 0.1
+        times_arr = np.asarray(times, dtype=np.float64)
+        models = compute_spatial_rates(
+            env, spike_times, times_arr, positions, fill_value=0.0
+        ).firing_rates
+
+        counts, centers = bin_spikes_in_time(
+            spike_times, dt, t_start=times_arr.min(), t_stop=times_arr.max()
+        )
+        ref = decode_position_summary(
+            env, counts, models, dt, times=centers, time_chunk=50
+        )
+        got = decode_session_summary(
+            env,
+            spike_times,
+            times,
+            positions,
+            dt=dt,
+            encoding_models=models,
+            time_chunk=50,
+        )
+        self._assert_summary_equal(got, ref)
+
+    def test_block_centers_match_global_grid(self) -> None:
+        """Each streamed block's centers equal the global bin_centers slice.
+
+        The streaming loop asserts block alignment in-line (a streamed block's
+        centers must equal the corresponding slice of the global grid). Running
+        decode_session_summary across several non-trivial chunk sizes therefore
+        exercises that assertion for every block boundary; the returned
+        ``.times`` must equal the global grid exactly. Also independently
+        reconstruct the per-block global-edge slices and assert they tile the
+        grid with no gap / overlap / off-by-one.
+        """
+        from neurospatial.decoding import bin_spikes_in_time, decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=8, duration=12.0, seed=31
+        )
+        dt = 0.1
+        times_arr = np.asarray(times, dtype=np.float64)
+
+        # Global grid (reference) via the public binning primitive.
+        _, global_centers = bin_spikes_in_time(
+            spike_times, dt, t_start=times_arr.min(), t_stop=times_arr.max()
+        )
+        n_time = len(global_centers)
+
+        # The in-loop alignment assertions fire for every block boundary across
+        # these chunk sizes; if any block drifted, the call would raise.
+        for chunk in (1, 7, 40, n_time, n_time + 5):
+            summ = decode_session_summary(
+                env, spike_times, times, positions, dt=dt, time_chunk=chunk
+            )
+            # The summary's time grid must equal the global grid exactly.
+            assert_allclose(summ.times, global_centers, atol=1e-12)
+
+        # Independent reconstruction: per-block global-edge slices must tile the
+        # global grid contiguously with no gap/overlap. Reconstruct the global
+        # edges the same way the implementation does.
+        t_start = float(times_arr.min())
+        edges = t_start + dt * np.arange(n_time + 1, dtype=np.float64)
+        chunk = 40
+        assembled: list[np.ndarray] = []
+        for start in range(0, n_time, chunk):
+            stop = min(start + chunk, n_time)
+            block_edges = edges[start : stop + 1]
+            assembled.append(block_edges[:-1] + dt / 2.0)
+        assert_allclose(np.concatenate(assembled), global_centers, atol=1e-12)
+
+    def test_boundary_spike_counted_once(self) -> None:
+        """A spike exactly on a block boundary is counted exactly once.
+
+        Place a single spike exactly on an interior global edge that also
+        happens to be a block boundary. The streamed result must match the
+        full-materialization reference (where one histogram call assigns that
+        spike to exactly one bin). bin_spikes_in_time right-closes its last bin,
+        so without per-block edge-exclusion the spike would be double-counted.
+        """
+        from neurospatial.decoding import decode_session_summary
+
+        env = Environment.from_samples(
+            np.linspace(0.0, 100.0, 201).reshape(-1, 1), bin_size=5.0
+        )
+        env.units = "cm"
+        dt = 0.1
+        t0, t1 = 0.0, 10.0
+        n_frames = 200
+        times = np.linspace(t0, t1, n_frames)
+        positions = np.linspace(0.0, 100.0, n_frames).reshape(-1, 1)
+
+        time_chunk = 40
+        # Block boundary 0 ends at global edge index 40 -> time = 40*dt = 4.0,
+        # an interior edge AND a block boundary.
+        boundary_time = time_chunk * dt  # 4.0
+        # One neuron with a spike exactly on that boundary (plus a couple of
+        # ordinary in-window spikes so the encoding model is non-degenerate).
+        spike_times = [np.array([1.05, boundary_time, 7.25])]
+
+        ref = _summary_reference(
+            env, spike_times, times, positions, dt=dt, time_chunk=time_chunk
+        )
+        got = decode_session_summary(
+            env,
+            spike_times,
+            times,
+            positions,
+            dt=dt,
+            time_chunk=time_chunk,
+        )
+        # If the boundary spike were double-counted, the count matrix (hence the
+        # posterior, MAP, entropy) at the boundary bins would diverge.
+        self._assert_summary_equal(got, ref)
+
+    def test_streaming_2d_prior_parity(self) -> None:
+        """A 2-D time-varying prior streamed == full-materialization reference."""
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=10, duration=12.0, seed=44
+        )
+        dt = 0.1
+        # Build the reference first to learn n_time, then build a matching prior.
+        ref_no_prior = _summary_reference(
+            env, spike_times, times, positions, dt=dt, time_chunk=64
+        )
+        n_time = ref_no_prior.map_bin.shape[0]
+        rng = np.random.default_rng(2)
+        prior = rng.uniform(0.5, 2.0, (n_time, env.n_bins))
+
+        ref = _summary_reference(
+            env, spike_times, times, positions, dt=dt, time_chunk=64, prior=prior
+        )
+        got = decode_session_summary(
+            env, spike_times, times, positions, dt=dt, time_chunk=64, prior=prior
+        )
+        self._assert_summary_equal(got, ref)
+
+    def test_streaming_overlong_2d_prior_raises(self) -> None:
+        """An over-long 2-D prior raises up front (inherits R2), not truncates."""
+        import pytest
+
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=8, duration=10.0, seed=51
+        )
+        dt = 0.1
+        bad_prior = np.ones((100000, env.n_bins))  # clearly over-long
+        with pytest.raises(ValueError, match="prior"):
+            decode_session_summary(
+                env, spike_times, times, positions, dt=dt, prior=bad_prior
+            )
+
+    def test_unknown_kwarg_raises(self) -> None:
+        """An unknown decode kwarg is not silently dropped."""
+        import pytest
+
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=5, duration=6.0, seed=61
+        )
+        with pytest.raises(TypeError, match="unexpected keyword"):
+            decode_session_summary(
+                env, spike_times, times, positions, dt=0.1, not_a_real_kwarg=1
+            )

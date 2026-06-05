@@ -1881,6 +1881,7 @@ def compute_spatial_rate(
     fill_value: float | None = None,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
+    max_gap: float | None = 0.5,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
     warn_on_drop: bool = True,
 ) -> SpatialRateResult:
@@ -1962,6 +1963,25 @@ def compute_spatial_rate(
         times[k])`` for ``k = 0 .. n-2``, with ``speed[n-1] = speed[n-2]`` (the
         last sample starts no occupancy interval). This Euclidean default is
         simple; for geodesic / track environments pass an explicit ``speed``.
+    max_gap : float | None, default=0.5
+        Maximum trajectory time gap in seconds. Intervals with
+        ``dt > max_gap`` (large tracking gaps) are excluded from BOTH the
+        spike numerator AND the occupancy denominator using ONE shared
+        per-interval mask, so the firing rate stays correct. This default
+        matches ``env.occupancy``'s own default, so occupancy behavior is
+        unchanged.
+
+        .. note::
+           **Behavior change (correctness fix).** Spikes occurring inside
+           intervals longer than ``max_gap`` (large tracking gaps) or inside
+           intervals whose start sample is out of bounds are now excluded from
+           spike counts, matching occupancy. Previously such spikes were
+           counted while their time was excluded from the denominator,
+           inflating the rate. This changes firing-rate maps for sessions
+           with large tracking gaps or out-of-bounds excursions. Pass
+           ``max_gap=None`` to disable gap gating on BOTH sides (restoring the
+           pre-fix, no-gap-gating behavior while keeping the two sides
+           aligned).
     backend : {"numpy", "jax", "auto"}, default="numpy"
         Computation backend for rate map smoothing:
 
@@ -2053,7 +2073,8 @@ def compute_spatial_rate(
         is_jax_available,
     )
     from neurospatial.encoding._binning import (
-        _emit_all_excluded_speed_warning,
+        _emit_all_excluded_intervals_warning,
+        _resolve_interval_mask,
         bin_spike_train,
         compute_occupancy,
         resolve_speed,
@@ -2097,11 +2118,23 @@ def compute_spatial_rate(
     # nothing speed-related changes downstream (byte-for-byte unchanged).
     resolved_speed = resolve_speed(times, positions, speed, min_speed)
 
-    # Warn once if min_speed excluded ALL movement intervals (empty rate map,
-    # commonly a units footgun). Gated by warn_on_drop; no-op when min_speed
-    # is None.
+    # Resolve the FULL interval-valid mask once (max_gap ∪ out-of-bounds-start ∪
+    # min_speed) so we can warn ONCE if EVERY interval is excluded (empty rate
+    # map), regardless of WHICH gate caused it. Gated by warn_on_drop. Reshape
+    # 1-D positions so _resolve_interval_mask sees the canonical 2-D shape.
     if warn_on_drop:
-        _emit_all_excluded_speed_warning(resolved_speed, min_speed, stacklevel=2)
+        _positions_2d = positions.reshape(-1, 1) if positions.ndim == 1 else positions
+        _interval_mask = _resolve_interval_mask(
+            env,
+            times,
+            _positions_2d,
+            speed=resolved_speed,
+            min_speed=min_speed,
+            max_gap=max_gap,
+        )
+        _emit_all_excluded_intervals_warning(
+            _interval_mask, max_gap=max_gap, min_speed=min_speed, stacklevel=2
+        )
 
     # Bin spike train into spatial bins (always NumPy - CPU/joblib)
     spike_counts = bin_spike_train(
@@ -2111,17 +2144,21 @@ def compute_spatial_rate(
         positions,
         speed=resolved_speed,
         min_speed=min_speed,
+        max_gap=max_gap,
         context="compute_spatial_rate",
         warn_on_drop=warn_on_drop,
     )
 
-    # Compute occupancy (always NumPy) using the SAME resolved speed gate.
+    # Compute occupancy (always NumPy) using the SAME resolved speed gate and
+    # the SAME max_gap, so the numerator and denominator drop identical
+    # intervals.
     occupancy = compute_occupancy(
         env,
         times,
         positions,
         speed=resolved_speed,
         min_speed=min_speed,
+        max_gap=max_gap,
         context="compute_spatial_rate",
     )
 
@@ -2173,6 +2210,7 @@ def compute_spatial_rates(
     fill_value: float | None = None,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
+    max_gap: float | None = 0.5,
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
     warn_on_drop: bool = True,
@@ -2238,6 +2276,22 @@ def compute_spatial_rates(
         ``speed[k] = ||positions[k+1] - positions[k]||_2 / (times[k+1] -
         times[k])`` with ``speed[n-1] = speed[n-2]``; pass an explicit ``speed``
         for geodesic / linearized-track environments.
+    max_gap : float | None, default=0.5
+        Maximum trajectory time gap in seconds. Intervals with
+        ``dt > max_gap`` (large tracking gaps) are excluded from BOTH the
+        shared occupancy denominator AND every per-neuron spike numerator
+        using ONE shared per-interval mask. This default matches
+        ``env.occupancy``'s own default, so occupancy is unchanged.
+
+        .. note::
+           **Behavior change (correctness fix).** Spikes inside intervals
+           longer than ``max_gap`` or inside intervals whose start sample is
+           out of bounds are now excluded from spike counts, matching
+           occupancy. Previously such spikes were counted while their time was
+           excluded from the denominator, inflating the rate. This changes
+           rate maps for sessions with large tracking gaps / out-of-bounds
+           excursions. Pass ``max_gap=None`` to disable gap gating on BOTH
+           sides (pre-fix behavior, still aligned).
     n_jobs : int, default=1
         Number of parallel jobs for spike counting. Use -1 for all CPUs.
         1 means sequential processing (no parallelization overhead).
@@ -2391,7 +2445,8 @@ def compute_spatial_rates(
         is_jax_available,
     )
     from neurospatial.encoding._binning import (
-        _emit_all_excluded_speed_warning,
+        _emit_all_excluded_intervals_warning,
+        _resolve_interval_mask,
         bin_spike_trains,
         resolve_speed,
     )
@@ -2458,12 +2513,23 @@ def compute_spatial_rates(
     # re-derive it.
     resolved_speed = resolve_speed(times, positions, speed, min_speed)
 
-    # Warn once if min_speed excluded ALL movement intervals (empty rate maps,
-    # commonly a units footgun). Gated by warn_on_drop; no-op when min_speed
-    # is None. Computed here from the single resolved mask so it fires once for
-    # the whole batch, not once per neuron.
+    # Resolve the FULL interval-valid mask once (max_gap ∪ out-of-bounds-start ∪
+    # min_speed) so we can warn ONCE for the whole batch if EVERY interval is
+    # excluded (empty rate maps), regardless of WHICH gate caused it — not once
+    # per neuron. Gated by warn_on_drop. Reshape 1-D positions to canonical 2-D.
     if warn_on_drop:
-        _emit_all_excluded_speed_warning(resolved_speed, min_speed, stacklevel=2)
+        _positions_2d = positions.reshape(-1, 1) if positions.ndim == 1 else positions
+        _interval_mask = _resolve_interval_mask(
+            env,
+            times,
+            _positions_2d,
+            speed=resolved_speed,
+            min_speed=min_speed,
+            max_gap=max_gap,
+        )
+        _emit_all_excluded_intervals_warning(
+            _interval_mask, max_gap=max_gap, min_speed=min_speed, stacklevel=2
+        )
 
     # Handle edge case: no neurons
     # Still compute occupancy from trajectory (occupancy is independent of neural data)
@@ -2477,6 +2543,7 @@ def compute_spatial_rates(
             positions,
             speed=resolved_speed,
             min_speed=min_speed,
+            max_gap=max_gap,
             context="compute_spatial_rates",
         )
 
@@ -2507,6 +2574,7 @@ def compute_spatial_rates(
         positions,
         speed=resolved_speed,
         min_speed=min_speed,
+        max_gap=max_gap,
         n_jobs=n_jobs,
         warn_on_drop=warn_on_drop,
     )
