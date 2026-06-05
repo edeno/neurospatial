@@ -2316,14 +2316,13 @@ def compute_spatial_rates(
         Storage dtype of the returned ``(n_units, n_bins)`` rate-map array.
         ``np.float32`` halves the stored rate-map array. The rate computation
         is still performed in float64 and only the final result is cast, so
-        float32 values match float64 within float32 tolerance. Note that
-        ``decode_session`` currently re-materializes encoding models as float64
-        internally, so passing a float32 model there does not by itself shrink
-        the decode working set; the decode-side memory knobs are
-        ``decode_position(..., dtype=..., time_chunk=...)`` and
-        ``decode_position_summary``. Default ``np.float64`` leaves every
-        existing caller byte-for-byte unchanged. Any other dtype raises
-        ``ValueError``.
+        float32 values match float64 within float32 tolerance.
+        ``decode_session`` / ``decode_session_summary`` now accept their own
+        ``dtype`` parameter (default float64) that honors float32 end-to-end --
+        the encoding-model working set AND the posterior -- so
+        ``decode_session(dtype=np.float32)`` halves the decode working set on
+        the golden path. Default ``np.float64`` leaves every existing caller
+        byte-for-byte unchanged. Any other dtype raises ``ValueError``.
     unit_ids : ndarray or sequence, optional
         Per-unit identity labels (integers or strings), one per neuron in
         the same order as ``spike_times``. Stored on the result's
@@ -2371,11 +2370,11 @@ def compute_spatial_rates(
     ``(n_units, n_bins)`` rate-map array. The rate computation (GEMM /
     division) is still done in float64 and only the final result is cast to
     ``dtype``, so values match the float64 default within float32 tolerance.
-    Note: ``decode_session`` currently re-materializes encoding models as
-    float64 internally, so passing a float32 model there does not by itself
-    shrink the decode working set; the decode-side memory knobs are
-    ``decode_position(..., dtype=..., time_chunk=...)`` and
-    ``decode_position_summary``.
+    ``decode_session`` / ``decode_session_summary`` now accept their own
+    ``dtype`` parameter (default float64) that honors float32 end-to-end --
+    the encoding-model working set AND the posterior -- so
+    ``decode_session(dtype=np.float32)`` halves the decode working set on the
+    golden path.
 
     Examples
     --------

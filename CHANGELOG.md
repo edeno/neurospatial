@@ -300,12 +300,12 @@ these are called out under a dedicated **Breaking changes** heading.
   `np.float64`, default `np.float64`). `dtype=np.float32` halves the stored
   `(n_units, n_bins)` rate-map array. The rate computation (GEMM / division) is
   still performed in float64 and only the final result is cast, so float32
-  values match the float64 default within float32 tolerance. Note:
-  `decode_session` currently re-materializes encoding models as float64
-  internally, so passing a float32 `SpatialRatesResult.firing_rates` there does
-  not by itself shrink the decode working set; the decode-side memory knobs are
-  `decode_position(..., dtype=..., time_chunk=...)` and
-  `decode_position_summary`. Default `np.float64` leaves every existing caller
+  values match the float64 default within float32 tolerance. `decode_session` /
+  `decode_session_summary` now accept their own `dtype` parameter (default
+  float64) that honors float32 end-to-end — the encoding-model working set and
+  the posterior — so `decode_session(dtype=np.float32)` halves the decode
+  working set on the golden path (see the `decode_session` / `decode_session_summary`
+  `dtype` entry above). Default `np.float64` leaves every existing caller
   byte-for-byte unchanged; any other dtype raises `ValueError`.
 
 - Documented the dense diffusion-kernel **O(n²) memory cost** and added a loud

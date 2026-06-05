@@ -1223,6 +1223,63 @@ class TestDecodePositionTimeChunkHybrid:
                 time_chunk=bad,
             )
 
+    @pytest.mark.parametrize(
+        ("prior_shape", "match"),
+        [
+            # Wrong 1-D prior length -> caught by the up-front _validate_prior_shape.
+            (("n_bins+5",), "1D prior must have shape"),
+            # Short 2-D prior: the silent-truncation footgun the up-front check
+            # closes. The block loop only slices n_time rows, so without the
+            # up-front check a too-short prior would be caught (if at all) only at
+            # the final block -- here it must raise before any block is decoded.
+            (("n_time-1", "n_bins"), "2D prior must have shape"),
+            # Over-long 2-D prior also raises up front.
+            (("n_time+3", "n_bins"), "2D prior must have shape"),
+        ],
+    )
+    def test_time_chunk_prior_shape_validation(
+        self,
+        medium_2d_env: Environment,
+        prior_shape: tuple,
+        match: str,
+    ) -> None:
+        """Blockwise time_chunk path validates prior shape up front.
+
+        ``_decode_blockwise`` calls ``_validate_prior_shape`` before the
+        time-block loop, so a wrong-length 1-D prior or a wrong-length 2-D prior
+        raises a clear ``ValueError`` immediately rather than being silently
+        truncated/looped into a per-block slice. Exercises the ``time_chunk=N``
+        branch (not ``normalize_to_posterior``'s own check) -- a short 2-D prior
+        is the silent-truncation case the up-front check closes.
+        """
+        from neurospatial.decoding.posterior import decode_position
+
+        env = medium_2d_env
+        n_time = 40
+        spike_counts, encoding_models = self._bigger_inputs(env, n_time=n_time)
+
+        dims = {"n_bins": env.n_bins, "n_time": n_time}
+
+        def _resolve(spec: str) -> int:
+            for name, value in dims.items():
+                if spec.startswith(name):
+                    offset = spec[len(name) :]
+                    return value + (int(offset) if offset else 0)
+            raise AssertionError(f"unrecognized dim spec: {spec}")
+
+        shape = tuple(_resolve(s) for s in prior_shape)
+        prior = np.random.default_rng(0).uniform(0.1, 1.0, shape)
+
+        with pytest.raises(ValueError, match=match):
+            decode_position(
+                env,
+                spike_counts,
+                encoding_models,
+                dt=0.025,
+                prior=prior,
+                time_chunk=7,
+            )
+
 
 # =============================================================================
 # Edge Cases
