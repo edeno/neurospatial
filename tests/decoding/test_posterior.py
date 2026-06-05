@@ -1203,6 +1203,26 @@ class TestDecodePositionTimeChunkHybrid:
         assert_array_equal(chunked.map_estimate, full.map_estimate)
         assert_allclose(post_chunked.sum(axis=1), 1.0, atol=1e-9)
 
+    @pytest.mark.parametrize("bad", [0, -1])
+    def test_time_chunk_below_one_raises(
+        self,
+        simple_env: Environment,
+        simple_spike_counts: np.ndarray,
+        simple_encoding_models: np.ndarray,
+        bad: int,
+    ) -> None:
+        """time_chunk < 1 is rejected up front with a clear ValueError."""
+        from neurospatial.decoding.posterior import decode_position
+
+        with pytest.raises(ValueError, match="time_chunk must be a positive integer"):
+            decode_position(
+                simple_env,
+                simple_spike_counts,
+                simple_encoding_models,
+                dt=0.025,
+                time_chunk=bad,
+            )
+
 
 # =============================================================================
 # Edge Cases

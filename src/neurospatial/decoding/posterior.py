@@ -1261,30 +1261,15 @@ def decode_position_summary(
     # Validate prior shape ONCE, up front, before the time-block loop. The
     # loop only iterates over n_time rows, so an over-long 2-D prior would be
     # silently truncated (the extra rows never sliced) and a short 2-D prior
-    # would only be caught by normalize_to_posterior at the final block. Mirror
-    # decode_position's contract (see normalize_to_posterior's prior-shape
-    # checks) so both paths report mismatches consistently.
+    # would only be caught by normalize_to_posterior at the final block. Route
+    # through the shared _validate_prior_shape helper so decode_position and
+    # decode_position_summary enforce one prior-shape rule with one message.
     if prior is not None:
-        prior_arr = np.asarray(prior)
-        n_bins = encoding_models.shape[1]
-        if prior_arr.ndim == 1:
-            if prior_arr.shape[0] != n_bins:
-                raise ValueError(
-                    f"1D prior must have shape ({n_bins},) to match the number "
-                    f"of position bins, got shape {prior_arr.shape}"
-                )
-        elif prior_arr.ndim == 2:
-            if prior_arr.shape != (n_time, n_bins):
-                raise ValueError(
-                    f"2D prior must have shape {(n_time, n_bins)} to match the "
-                    f"({n_time} time bins, {n_bins} position bins) being "
-                    f"decoded, got shape {prior_arr.shape}"
-                )
-        else:
-            raise ValueError(
-                f"prior must be 1D (stationary) or 2D (time-varying), "
-                f"got {prior_arr.ndim}D with shape {prior_arr.shape}"
-            )
+        _validate_prior_shape(
+            np.asarray(prior),
+            n_time=n_time,
+            n_bins=encoding_models.shape[1],
+        )
 
     bin_centers = np.asarray(env.bin_centers, dtype=np.float64)
     n_dims = bin_centers.shape[1]
