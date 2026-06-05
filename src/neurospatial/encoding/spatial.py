@@ -1456,6 +1456,9 @@ class SpatialRatesResult(SpatialResultMixin):
         min_spatial_info: float = 0.5,
         min_grid_score: float = 0.4,
         min_border_score: float = 0.5,
+        *,
+        grid_scores: NDArray[np.float64] | None = None,
+        border_scores: NDArray[np.float64] | None = None,
     ) -> NDArray[np.str_]:
         """Label neurons with multi-class spatial cell types.
 
@@ -1479,6 +1482,16 @@ class SpatialRatesResult(SpatialResultMixin):
         min_border_score : float, default 0.5
             Minimum border score to be classified as a border cell. Standard
             threshold from Solstad et al. (2008).
+        grid_scores : ndarray of shape (n_neurons,), optional
+            Precomputed grid scores, one per neuron. When provided, these are
+            used directly instead of recomputing via :meth:`grid_scores`. Must
+            be 1-D with length equal to the number of neurons. When ``None``
+            (the default), grid scores are recomputed.
+        border_scores : ndarray of shape (n_neurons,), optional
+            Precomputed border scores, one per neuron. When provided, these are
+            used directly instead of recomputing via :meth:`border_scores`. Must
+            be 1-D with length equal to the number of neurons. When ``None``
+            (the default), border scores are recomputed.
 
         Returns
         -------
@@ -1491,6 +1504,10 @@ class SpatialRatesResult(SpatialResultMixin):
 
         Notes
         -----
+        Pass precomputed scores via ``grid_scores=``/``border_scores=`` to avoid
+        recomputation when you've already computed them, e.g. from
+        :meth:`summary_table` (which computes them once and forwards them here).
+
         **Classification priority** (higher takes precedence):
 
         1. **Grid cell**: grid_score >= min_grid_score
@@ -1544,8 +1561,26 @@ class SpatialRatesResult(SpatialResultMixin):
         spatial_info = self.spatial_information()
         # grid_scores() / border_scores() return BatchScoresResult; pull
         # the float array out via .scores for the boolean masks below.
-        grid_scores_arr = self.grid_scores().scores
-        border_scores_arr = self.border_scores().scores
+        # Callers (e.g. summary_table) may pass precomputed score arrays to
+        # avoid the expensive double recompute.
+        if grid_scores is None:
+            grid_scores_arr = self.grid_scores().scores
+        else:
+            grid_scores_arr = np.asarray(grid_scores)
+            if grid_scores_arr.ndim != 1 or grid_scores_arr.shape[0] != n_neurons:
+                raise ValueError(
+                    f"grid_scores must be a 1-D array of length {n_neurons} "
+                    f"(one per neuron), got shape {grid_scores_arr.shape}"
+                )
+        if border_scores is None:
+            border_scores_arr = self.border_scores().scores
+        else:
+            border_scores_arr = np.asarray(border_scores)
+            if border_scores_arr.ndim != 1 or border_scores_arr.shape[0] != n_neurons:
+                raise ValueError(
+                    f"border_scores must be a 1-D array of length {n_neurons} "
+                    f"(one per neuron), got shape {border_scores_arr.shape}"
+                )
 
         labels = np.full(n_neurons, "unclassified", dtype="<U14")
         is_place = spatial_info >= min_spatial_info
@@ -1771,6 +1806,12 @@ class SpatialRatesResult(SpatialResultMixin):
         peaks = self.peak_location()
         n_dims = peaks.shape[1] if peaks.ndim > 1 else 1
 
+        # Compute grid/border scores ONCE and reuse them for both the score
+        # columns and label_cell_types(), avoiding a double recompute (the
+        # expensive batch_grid_scores/batch_border_scores each run once).
+        grid_scores_arr = self.grid_scores().scores
+        border_scores_arr = self.border_scores().scores
+
         # Build data dictionary
         data: dict[str, Any] = {
             "peak_x": peaks[:, 0],
@@ -1778,12 +1819,15 @@ class SpatialRatesResult(SpatialResultMixin):
             "peak_rate": self.peak_firing_rate(),
             "spatial_info": self.spatial_information(),
             "sparsity": self.sparsity(),
-            "grid_score": self.grid_scores().scores,
-            "border_score": self.border_scores().scores,
+            "grid_score": grid_scores_arr,
+            "border_score": border_scores_arr,
         }
 
         if include_classification:
-            data["cell_type"] = self.label_cell_types()
+            data["cell_type"] = self.label_cell_types(
+                grid_scores=grid_scores_arr,
+                border_scores=border_scores_arr,
+            )
 
         return pd.DataFrame(data, index=pd.Index(index_ids, name="unit_id"))
 

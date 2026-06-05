@@ -229,6 +229,20 @@ these are called out under a dedicated **Breaking changes** heading.
   lower-peak `expm_multiply` / Chebyshev rewrite of the kernel is a **deferred
   stretch goal** and is intentionally **not** part of this release.
 
+- `SpatialRatesResult.summary_table()` no longer double-computes grid and
+  border scores. It previously ran the expensive per-neuron grid/border score
+  computation **twice** per call (once for the `grid_score`/`border_score`
+  columns and again inside `label_cell_types()`); it now computes each once and
+  forwards them. `label_cell_types()` gains optional keyword-only
+  `grid_scores=` / `border_scores=` parameters to accept precomputed score
+  arrays (validated to be 1-D and length `n_neurons`); when omitted it
+  recomputes as before, so existing callers are unchanged.
+
+- `population_coverage()` gains a keyword-only `n_jobs` parameter (default `1`)
+  to parallelize per-neuron place-field detection via joblib (`-1` uses all
+  CPUs). `n_jobs=1` keeps the sequential path with no joblib overhead; results
+  are byte-for-byte identical regardless of `n_jobs`.
+
 ### Changed
 
 - `detect_region_crossings` argument order changed to follow the

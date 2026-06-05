@@ -2754,6 +2754,212 @@ class TestSpatialRatesResultSummaryTable:
 
 
 # ==============================================================================
+# Test summary_table() / label_cell_types() double-recompute avoidance (Task 2.3)
+# ==============================================================================
+
+
+class TestSummaryTableScoreRecompute:
+    """summary_table() must compute grid/border scores exactly once.
+
+    Regression: before the Task 2.3 fix, summary_table() computed grid and
+    border scores TWICE per call (once for the score columns, once inside
+    label_cell_types()). These tests pin the call count to exactly 1.
+    """
+
+    def test_summary_table_computes_grid_score_once(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """batch_grid_scores runs exactly once per summary_table() (was 2)."""
+        from unittest.mock import patch
+
+        import neurospatial.encoding._metrics as _metrics
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        with patch.object(
+            _metrics,
+            "batch_grid_scores",
+            wraps=_metrics.batch_grid_scores,
+        ) as mock_grid:
+            result.summary_table()
+
+        assert mock_grid.call_count == 1, (
+            f"batch_grid_scores called {mock_grid.call_count} times, "
+            "expected exactly 1 (regression: was 2 before Task 2.3 fix)"
+        )
+
+    def test_summary_table_computes_border_score_once(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """batch_border_scores runs exactly once per summary_table() (was 2)."""
+        from unittest.mock import patch
+
+        import neurospatial.encoding._metrics as _metrics
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        with patch.object(
+            _metrics,
+            "batch_border_scores",
+            wraps=_metrics.batch_border_scores,
+        ) as mock_border:
+            result.summary_table()
+
+        assert mock_border.call_count == 1, (
+            f"batch_border_scores called {mock_border.call_count} times, "
+            "expected exactly 1 (regression: was 2 before Task 2.3 fix)"
+        )
+
+
+class TestLabelCellTypesPrecomputedScores:
+    """label_cell_types() accepts precomputed grid/border score arrays."""
+
+    def test_precomputed_scores_match_recompute(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """Passing precomputed scores yields identical labels to recompute."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        gs = result.grid_scores().scores
+        bs = result.border_scores().scores
+
+        labels_recompute = result.label_cell_types()
+        labels_precomputed = result.label_cell_types(grid_scores=gs, border_scores=bs)
+
+        np.testing.assert_array_equal(labels_recompute, labels_precomputed)
+
+    def test_precomputed_scores_match_with_custom_thresholds(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """Precomputed scores compose with non-default thresholds."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        gs = result.grid_scores().scores
+        bs = result.border_scores().scores
+
+        labels_recompute = result.label_cell_types(
+            min_spatial_info=0.3, min_grid_score=0.5, min_border_score=0.4
+        )
+        labels_precomputed = result.label_cell_types(
+            min_spatial_info=0.3,
+            min_grid_score=0.5,
+            min_border_score=0.4,
+            grid_scores=gs,
+            border_scores=bs,
+        )
+
+        np.testing.assert_array_equal(labels_recompute, labels_precomputed)
+
+    def test_wrong_length_grid_scores_raises(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """Wrong-length grid_scores raises an informative ValueError."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        n_neurons = firing_rates_batch.shape[0]
+        bad = np.zeros(n_neurons + 1, dtype=np.float64)
+
+        with pytest.raises(ValueError, match="grid_scores"):
+            result.label_cell_types(grid_scores=bad)
+
+    def test_wrong_length_border_scores_raises(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """Wrong-length border_scores raises an informative ValueError."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        n_neurons = firing_rates_batch.shape[0]
+        bad = np.zeros(n_neurons + 1, dtype=np.float64)
+
+        with pytest.raises(ValueError, match="border_scores"):
+            result.label_cell_types(border_scores=bad)
+
+    def test_2d_grid_scores_raises(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """Non-1-D grid_scores raises an informative ValueError."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        n_neurons = firing_rates_batch.shape[0]
+        bad = np.zeros((n_neurons, 1), dtype=np.float64)
+
+        with pytest.raises(ValueError, match="grid_scores"):
+            result.label_cell_types(grid_scores=bad)
+
+
+# ==============================================================================
 # Test compute_spatial_rate() function (Task 2.8)
 # ==============================================================================
 
