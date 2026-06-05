@@ -2189,10 +2189,14 @@ def compute_spatial_rates(
         Set to ``False`` to suppress all drop-related warnings.
     dtype : {np.float32, np.float64}, default=np.float64
         Storage dtype of the returned ``(n_units, n_bins)`` rate-map array.
-        ``np.float32`` halves the rate-map storage (and the downstream decode
-        working set that consumes it). The rate computation is still performed
-        in float64 and only the final result is cast, so float32 values match
-        float64 within float32 tolerance. Default ``np.float64`` leaves every
+        ``np.float32`` halves the stored rate-map array. The rate computation
+        is still performed in float64 and only the final result is cast, so
+        float32 values match float64 within float32 tolerance. Note that
+        ``decode_session`` currently re-materializes encoding models as float64
+        internally, so passing a float32 model there does not by itself shrink
+        the decode working set; the decode-side memory knobs are
+        ``decode_position(..., dtype=..., time_chunk=...)`` and
+        ``decode_position_summary``. Default ``np.float64`` leaves every
         existing caller byte-for-byte unchanged. Any other dtype raises
         ``ValueError``.
     unit_ids : ndarray or sequence, optional
@@ -2239,10 +2243,14 @@ def compute_spatial_rates(
       you need fine-grained control over individual neurons.
 
     **Memory (``dtype``).** Passing ``dtype=np.float32`` halves the stored
-    ``(n_units, n_bins)`` rate-map array and the downstream decode working set
-    that consumes it. The rate computation (GEMM / division) is still done in
-    float64 and only the final result is cast to ``dtype``, so values match the
-    float64 default within float32 tolerance.
+    ``(n_units, n_bins)`` rate-map array. The rate computation (GEMM /
+    division) is still done in float64 and only the final result is cast to
+    ``dtype``, so values match the float64 default within float32 tolerance.
+    Note: ``decode_session`` currently re-materializes encoding models as
+    float64 internally, so passing a float32 model there does not by itself
+    shrink the decode working set; the decode-side memory knobs are
+    ``decode_position(..., dtype=..., time_chunk=...)`` and
+    ``decode_position_summary`` (see Task 2.1).
 
     Examples
     --------

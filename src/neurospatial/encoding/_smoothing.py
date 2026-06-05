@@ -668,7 +668,7 @@ def _diffusion_kde_batch(
     kernel: NDArray[np.float64],
     *,
     dtype: type[np.float32] | type[np.float64] = np.float64,
-) -> NDArray[np.float64]:
+) -> NDArray[np.floating[Any]]:
     """Apply diffusion KDE smoothing for multiple neurons."""
     spike_counts = np.asarray(spike_counts, dtype=np.float64)
     occupancy = np.asarray(occupancy, dtype=np.float64)
@@ -698,7 +698,7 @@ def _gaussian_kde_batch(
     min_occupancy: float,
     *,
     dtype: type[np.float32] | type[np.float64] = np.float64,
-) -> NDArray[np.float64]:
+) -> NDArray[np.floating[Any]]:
     """Apply Gaussian KDE smoothing for multiple neurons."""
     spike_counts = np.asarray(spike_counts, dtype=np.float64)
     occupancy = np.asarray(occupancy, dtype=np.float64)
@@ -728,7 +728,7 @@ def _binned_batch(
     min_occupancy: float,
     *,
     dtype: type[np.float32] | type[np.float64] = np.float64,
-) -> NDArray[np.float64]:
+) -> NDArray[np.floating[Any]]:
     """Apply binned smoothing for multiple neurons."""
     spike_counts = np.asarray(spike_counts, dtype=np.float64)
     occupancy = np.asarray(occupancy, dtype=np.float64)

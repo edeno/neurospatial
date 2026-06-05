@@ -216,13 +216,15 @@ these are called out under a dedicated **Breaking changes** heading.
 
 - `compute_spatial_rates` gains a keyword-only `dtype` (`np.float32` /
   `np.float64`, default `np.float64`). `dtype=np.float32` halves the stored
-  `(n_units, n_bins)` rate-map array and the downstream decode working set that
-  consumes it (a float32 `SpatialRatesResult.firing_rates` flows into
-  `decode_session(..., encoding_models=...)` unchanged). The rate computation
-  (GEMM / division) is still performed in float64 and only the final result is
-  cast, so float32 values match the float64 default within float32 tolerance.
-  Default `np.float64` leaves every existing caller byte-for-byte unchanged;
-  any other dtype raises `ValueError`.
+  `(n_units, n_bins)` rate-map array. The rate computation (GEMM / division) is
+  still performed in float64 and only the final result is cast, so float32
+  values match the float64 default within float32 tolerance. Note:
+  `decode_session` currently re-materializes encoding models as float64
+  internally, so passing a float32 `SpatialRatesResult.firing_rates` there does
+  not by itself shrink the decode working set; the decode-side memory knobs are
+  `decode_position(..., dtype=..., time_chunk=...)` and
+  `decode_position_summary`. Default `np.float64` leaves every existing caller
+  byte-for-byte unchanged; any other dtype raises `ValueError`.
 
 - Documented the dense diffusion-kernel **O(n²) memory cost** and added a hard
   high-bin **safety gate**. The heat kernel `exp(-tL)` of a connected graph is
