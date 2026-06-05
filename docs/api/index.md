@@ -98,6 +98,12 @@ Bayesian decoding of position from spike counts.
 **Key Functions:**
 
 - `decode_position()`: Single-step or sequential Bayesian decoder
+- `decode_session()`: End-to-end decode of a full session (encode +
+  decode) returning a `DecodingResult`
+- `decode_position_summary()` / `decode_session_summary()`:
+  Memory-safe, streaming decoders that return per-time summaries
+  (MAP / mean / entropy / peak) without materializing the full
+  `(n_time, n_bins)` posterior — for long sessions / thousands of units
 - `decoding_error()`, `median_decoding_error()`: Accuracy metrics
 - `fit_isotonic_trajectory()`, `fit_linear_trajectory()`: Detect
   trajectory structure in posteriors
@@ -105,6 +111,8 @@ Bayesian decoding of position from spike counts.
 **Key Classes:**
 
 - `DecodingResult`: Posterior + helpers (MAP, mean, entropy)
+- `DecodingSummary`: Per-time decode summary (MAP / mean / entropy /
+  peak) from the memory-safe summary decoders
 
 ### [neurospatial.behavior](neurospatial/behavior/index.md)
 

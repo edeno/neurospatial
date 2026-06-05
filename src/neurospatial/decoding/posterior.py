@@ -23,7 +23,7 @@ exponentiating log-likelihoods.
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
+from typing import TYPE_CHECKING, Any, Literal, Protocol, cast, overload
 
 import numpy as np
 from numpy.typing import NDArray
@@ -77,6 +77,85 @@ def _validate_posterior_dtype(dtype: Any) -> np.dtype:
             "(float32 halves stored and transient memory)."
         )
     return cast("np.dtype", resolved)
+
+
+@overload
+def _validate_time_chunk(
+    time_chunk: Any,
+    *,
+    allow_none: Literal[True],
+    context: str = ...,
+) -> int | None: ...
+
+
+@overload
+def _validate_time_chunk(
+    time_chunk: Any,
+    *,
+    allow_none: Literal[False],
+    context: str = ...,
+) -> int: ...
+
+
+def _validate_time_chunk(
+    time_chunk: Any,
+    *,
+    allow_none: bool,
+    context: str = "time_chunk",
+) -> int | None:
+    """Validate ``time_chunk`` as a genuine positive integer (or ``None``).
+
+    Centralizes the ``time_chunk`` contract so a clear ``ValueError`` is raised
+    instead of a raw ``TypeError`` leaking from ``range(...)`` (for floats /
+    strings) and instead of silently accepting ``True`` as a chunk size of 1.
+
+    Rules: ``time_chunk`` must be a real Python/NumPy integer (``bool`` is
+    rejected even though it subclasses ``int``) and ``>= 1``. When
+    ``allow_none`` is ``True``, ``None`` passes through unchanged; when it is
+    ``False``, ``None`` raises (the caller is expected to pre-handle ``None``
+    with its own actionable message before calling this helper).
+
+    Parameters
+    ----------
+    time_chunk : Any
+        The received ``time_chunk`` value.
+    allow_none : bool
+        Whether ``None`` is a permitted value.
+    context : str, default="time_chunk"
+        Parameter name used in the error message.
+
+    Returns
+    -------
+    int or None
+        The validated ``time_chunk`` (``None`` only when ``allow_none``).
+
+    Raises
+    ------
+    ValueError
+        If ``time_chunk`` is not a positive integer (or ``None`` when allowed).
+    """
+    if time_chunk is None:
+        if allow_none:
+            return None
+        none_clause = ""
+        raise ValueError(
+            f"{context} must be a positive integer{none_clause}, "
+            f"got {time_chunk!r} (type {type(time_chunk).__name__})."
+        )
+    # bool is a subclass of int but is never a valid chunk size here.
+    if isinstance(time_chunk, bool) or not isinstance(time_chunk, (int, np.integer)):
+        none_clause = " or None" if allow_none else ""
+        raise ValueError(
+            f"{context} must be a positive integer{none_clause}, "
+            f"got {time_chunk!r} (type {type(time_chunk).__name__})."
+        )
+    if time_chunk < 1:
+        none_clause = " or None" if allow_none else ""
+        raise ValueError(
+            f"{context} must be a positive integer{none_clause}, "
+            f"got {time_chunk!r} (type {type(time_chunk).__name__})."
+        )
+    return int(time_chunk)
 
 
 def _normalize_block(
@@ -272,10 +351,7 @@ def normalize_to_posterior(
 
     out_dtype = _validate_posterior_dtype(dtype)
 
-    if time_chunk is not None and time_chunk < 1:
-        raise ValueError(
-            f"time_chunk must be a positive integer or None, got {time_chunk}."
-        )
+    time_chunk = _validate_time_chunk(time_chunk, allow_none=True)
 
     log_likelihood = np.asarray(log_likelihood, dtype=np.float64)
 
@@ -563,10 +639,7 @@ def decode_position(
     log_poisson_likelihood : Likelihood function used internally
     normalize_to_posterior : Posterior normalization used internally
     """
-    if time_chunk is not None and time_chunk < 1:
-        raise ValueError(
-            f"time_chunk must be a positive integer or None, got {time_chunk}."
-        )
+    time_chunk = _validate_time_chunk(time_chunk, allow_none=True)
 
     spike_counts, encoding_models, nonfinite_mask = _prepare_decode_inputs(
         env,
@@ -851,14 +924,33 @@ def _prepare_decode_inputs(
                 f"be a 2-D (n_neurons, n_bins) array, got None "
                 f"(from {provenance}.firing_rates)."
             )
+        # Convert WITHOUT forcing a dtype so a float32 `.firing_rates` stays
+        # float32 (matching the raw-array path, which never re-casts) -- forcing
+        # dtype=float here would silently promote float32 to float64 and erase
+        # part of the dtype=np.float32 memory win.
         try:
-            firing_rates_arr = np.asarray(firing_rates, dtype=float)
+            firing_rates_arr = np.asarray(firing_rates)
         except (TypeError, ValueError) as exc:
             raise ValueError(
                 f"{context}: the encoding result's `.firing_rates` must "
                 f"be a 2-D (n_neurons, n_bins) array, got "
                 f"{type(firing_rates).__name__} (from {provenance}.firing_rates)."
             ) from exc
+        # Validate it became a usable numeric float array. A Mapping/dict
+        # produces a 0-d object-dtype array (not floating); an integer rate map
+        # is unusual but should still work, so promote it to float64.
+        if not np.issubdtype(firing_rates_arr.dtype, np.floating):
+            if np.issubdtype(firing_rates_arr.dtype, np.integer):
+                firing_rates_arr = firing_rates_arr.astype(np.float64)
+            else:
+                # object/non-numeric (e.g. a dict that became a 0-d object
+                # array) -- reject with the same clear message.
+                raise ValueError(
+                    f"{context}: the encoding result's `.firing_rates` must "
+                    f"be a 2-D (n_neurons, n_bins) array, got "
+                    f"{type(firing_rates).__name__} "
+                    f"(from {provenance}.firing_rates)."
+                )
         if firing_rates_arr.ndim != 2:
             raise ValueError(
                 f"{context}: the encoding result's `.firing_rates` must "
@@ -1242,8 +1334,7 @@ def decode_position_summary(
             "the full posterior, or pass a positive time_chunk (default 1024) "
             "here."
         )
-    if time_chunk < 1:
-        raise ValueError(f"time_chunk must be a positive integer, got {time_chunk}.")
+    time_chunk = _validate_time_chunk(time_chunk, allow_none=False)
 
     spike_counts, encoding_models, nonfinite_mask = _prepare_decode_inputs(
         env,

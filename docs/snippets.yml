@@ -396,3 +396,78 @@ snippets:
       import os
       os.environ["MPLBACKEND"] = "Agg"
     timeout: 180
+
+  - id: workflows_decode_session_summary_streaming
+    source: docs/user-guide/workflows.md
+    kind: markdown
+    # Block 2: Workflow 2 long-session callout — the memory-safe streaming
+    # decoder. decode_session_summary(...).to_dataframe()/.summary()/.map_position
+    # never materializes the full (n_time, n_bins) posterior. Setup mirrors the
+    # decode_session golden-path fixture (linear track + population of place
+    # cells) so the summary path is exercised on the same env/spikes shape.
+    index: 2
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"
+      import numpy as np
+      from neurospatial import Environment
+      from neurospatial.simulation import (
+          PlaceCellModel,
+          generate_population_spikes,
+          simulate_trajectory_ou,
+      )
+      env = Environment.from_samples(
+          np.linspace(0.0, 100.0, 51).reshape(-1, 1), bin_size=2.0
+      )
+      env.units = "cm"
+      positions, times = simulate_trajectory_ou(
+          env, duration=120.0, dt=0.02, speed_mean=15.0, seed=0, speed_units="cm"
+      )
+      cells = [
+          PlaceCellModel(env, center=np.array([c]), width=10.0, max_rate=20.0, seed=i)
+          for i, c in enumerate(np.linspace(5.0, 95.0, 15))
+      ]
+      spike_times = generate_population_spikes(
+          cells, positions, times, seed=0, show_progress=False
+      )
+    timeout: 180
+
+  - id: workflows_batch_processing_compute_spatial_rates
+    source: docs/user-guide/workflows.md
+    kind: markdown
+    # Block 6: "Pattern: Batch Processing" — the recommended batch API
+    # (compute_spatial_rates) that replaced the old manual per-neuron loop.
+    # Setup provides a linear-track env + trajectory and a load_all_neurons()
+    # fixture returning a {unit_id: spike_times} dict so the snippet's
+    # dict-driven batch call runs end-to-end.
+    index: 6
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"
+      import numpy as np
+      from neurospatial import Environment
+      from neurospatial.simulation import (
+          PlaceCellModel,
+          generate_poisson_spikes,
+          simulate_trajectory_ou,
+      )
+      env = Environment.from_samples(
+          np.linspace(0.0, 100.0, 51).reshape(-1, 1), bin_size=2.0
+      )
+      env.units = "cm"
+      positions, times = simulate_trajectory_ou(
+          env, duration=120.0, dt=0.02, speed_mean=15.0, seed=0, speed_units="cm"
+      )
+
+      def load_all_neurons():
+          cells = [
+              PlaceCellModel(env, center=np.array([c]), width=10.0, max_rate=20.0, seed=i)
+              for i, c in enumerate(np.linspace(5.0, 95.0, 5))
+          ]
+          return {
+              f"unit_{i}": generate_poisson_spikes(
+                  cell.firing_rate(positions), times, seed=i
+              )
+              for i, cell in enumerate(cells)
+          }
+    timeout: 180

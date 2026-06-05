@@ -11,6 +11,20 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ### Fixed
 
+- `decode_position` now **preserves `float32`** when handed a rate-result object
+  (anything exposing `.firing_rates`). Previously the friendly object path
+  promoted a `float32` `.firing_rates` to `float64`, silently losing part of the
+  `dtype=np.float32` memory win that the raw-array path already delivered. The
+  object path now matches the raw-array path byte-for-byte: `float32` stays
+  `float32`, `float64` stays `float64`, an integer rate map is promoted to
+  `float64`, and a `None` / dict / non-2-D `.firing_rates` still raises the same
+  clear `ValueError`.
+- `time_chunk` is now validated as a **positive integer (not `bool`)** across
+  `normalize_to_posterior`, `decode_position`, `decode_position_summary`, and
+  `decode_session_summary`, via a shared validator that raises a clear
+  `ValueError` naming the value and its type. Previously a float (`1.5`) or
+  string (`"2"`) leaked a raw `TypeError` from `range(...)`/comparison, and
+  `True` was silently accepted as a chunk size of `1`.
 - The summary decoders `decode_position_summary` and `decode_session_summary`
   now **reject `time_chunk=None`** (raising a clear `ValueError`). Previously a
   `None` value set the streaming block to the full session length, materializing
