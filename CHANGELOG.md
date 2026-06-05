@@ -274,31 +274,29 @@ these are called out under a dedicated **Breaking changes** heading.
   `decode_position_summary`. Default `np.float64` leaves every existing caller
   byte-for-byte unchanged; any other dtype raises `ValueError`.
 
-- Documented the dense diffusion-kernel **O(n²) memory cost** and added a hard
-  high-bin **safety gate**. The heat kernel `exp(-tL)` of a connected graph is
-  dense by construction (every entry > 0), so it always costs
+- Documented the dense diffusion-kernel **O(n²) memory cost** and added a loud
+  high-bin memory **warning**. The heat kernel `exp(-tL)` of a connected graph
+  is dense by construction (every entry > 0), so it always costs
   `n_bins**2 * 8` bytes of float64 memory (≈ 3.2 GB at 20,000 bins).
-  `compute_diffusion_kernels` and `env.compute_kernel` now **raise**
-  `MemoryError` above 20,000 bins, turning a silent out-of-memory crash into an
-  actionable error that names the size, the GB estimate, and the fixes (reduce
-  bins, use `smoothing_method="binned"`, or pass `allow_large=True` to override
-  if you have the RAM). The existing `UserWarning` above 3,000 bins is kept.
-  No numerical results change — this is documentation plus a default-refuse
-  gate with an explicit opt-out. The reliable scale wins this release remain
-  float32 rate maps and the memory-safe summary decode (above). A faster,
-  lower-peak `expm_multiply` / Chebyshev rewrite of the kernel is a **deferred
-  stretch goal** and is intentionally **not** part of this release.
+  `compute_diffusion_kernels` and `env.compute_kernel` now emit a loud
+  `UserWarning` (with a GB estimate) above 3,000 bins and then **proceed** —
+  there is **no hard limit** and no `allow_large` opt-out. The warning names the
+  size, the GB estimate, the dense O(n²) reason, and the fixes (reduce bins or
+  use `smoothing_method="binned"`). No numerical results change — this is
+  documentation plus a warn-and-proceed guard. The reliable scale wins this
+  release remain float32 rate maps and the memory-safe summary decode (above). A
+  faster, lower-peak `expm_multiply` / Chebyshev rewrite of the kernel is a
+  **deferred stretch goal** and is intentionally **not** part of this release.
 
-- Gated the dense **Gaussian-KDE** high-bin path the same way as the diffusion
-  kernel. `smoothing_method="gaussian_kde"` builds a dense `(n_bins, n_bins)`
-  weight matrix (`exp(-d²/2σ²)`, every entry > 0), so it carries the same
-  O(n_bins²) memory cost; it now **raises** `MemoryError` above the shared
-  `_KERNEL_HARD_LIMIT_BINS` ceiling (20,000 bins) before allocating the matrix,
-  naming the size, the GB estimate, and the fixes (reduce bins, use
-  `smoothing_method="binned"`, or `allow_large=True`). One ceiling constant is
-  now shared by both dense smoothing paths instead of a divergent copy. Also
-  corrected stale `encoding/_smoothing.py` docs that wrongly described the
-  diffusion kernel as "sparse" / `O(n_bins)` — it is dense `(n_bins, n_bins)`,
+- Warned on the dense **Gaussian-KDE** high-bin path the same way as the
+  diffusion kernel. `smoothing_method="gaussian_kde"` builds a dense
+  `(n_bins, n_bins)` weight matrix (`exp(-d²/2σ²)`, every entry > 0), so it
+  carries the same O(n_bins²) memory cost; it now emits a loud `UserWarning`
+  (with a GB estimate) above the shared `_LARGE_KERNEL_THRESHOLD` (3,000 bins)
+  and proceeds — no hard limit, no `allow_large`. One warn threshold is shared
+  by both dense smoothing paths instead of a divergent copy. Also corrected
+  stale `encoding/_smoothing.py` docs that wrongly described the diffusion
+  kernel as "sparse" / `O(n_bins)` — it is dense `(n_bins, n_bins)`,
   O(n_bins²) per neuron, with a one-time O(n_bins³) matrix-exponential build.
   No numerical results change.
 

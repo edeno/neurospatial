@@ -46,16 +46,10 @@ __all__ = [
 ]
 
 # Threshold for warning about large kernel computation
-# Matrix exponential is O(n³) and dense, so warn for large environments
+# Matrix exponential is O(n³) and dense, so warn for large environments. This
+# is the SOLE high-bin guard: there is no hard limit -- a large request always
+# warns (with a GB estimate) and proceeds.
 _LARGE_KERNEL_THRESHOLD = 3000
-
-# Hard ceiling above which kernel computation refuses to run by default.
-# The diffusion heat kernel exp(-tL) of a connected graph is mathematically
-# dense (every entry > 0) and is built dense, so it costs n_bins**2 * 8 bytes
-# of float64 memory. At 20,000 bins that is 20_000**2 * 8 / 1e9 ≈ 3.2 GB for a
-# single kernel. Above this ceiling we raise (turning a silent OOM into an
-# actionable error) unless the caller passes ``allow_large=True``.
-_KERNEL_HARD_LIMIT_BINS = 20_000
 
 
 def _assign_gaussian_weights_from_distance(
@@ -81,7 +75,6 @@ def compute_diffusion_kernels(
     *,
     bin_sizes: NDArray | None = None,
     mode: Literal["transition", "density"] = "transition",
-    allow_large: bool = False,
 ) -> NDArray[np.float64]:
     """
     Computes a diffusion-based kernel for all bins (nodes) of `graph` via
@@ -104,15 +97,6 @@ def compute_diffusion_kernels(
         - "density":     Return a continuous-KDE kernel so that ∑_i [K[i,j] * bin_sizes[i]] = 1.
                          Requires `bin_sizes` ≢ None.  (You exponentiate M^{-1} L, then rescale
                          each column so that its weighted-sum by bin_areas is 1.)
-    allow_large : bool, default=False
-        Escape hatch for the high-bin memory gate. By default this function
-        **raises** ``MemoryError`` when ``n_bins`` exceeds
-        ``_KERNEL_HARD_LIMIT_BINS`` (20,000), because the dense kernel would
-        require an ``n_bins**2 * 8`` byte allocation (≈ 3.2 GB at 20,000 bins).
-        Pass ``allow_large=True`` to override the gate and attempt the
-        allocation anyway (only if you have the RAM). Setting this flag does
-        **not** suppress the ``UserWarning`` issued above
-        ``_LARGE_KERNEL_THRESHOLD`` (3,000) bins.
 
     Returns
     -------
@@ -121,15 +105,6 @@ def compute_diffusion_kernels(
         - mode="transition": each column j sums to 1 (∑_i K[i,j] = 1)
         - mode="density": each column j integrates to 1 over area
                          (∑_i K[i,j] * bin_sizes[i] = 1)
-
-    Raises
-    ------
-    MemoryError
-        If ``n_bins > _KERNEL_HARD_LIMIT_BINS`` (20,000) and ``allow_large`` is
-        ``False``. The kernel would not fit comfortably in memory; the message
-        names ``n_bins``, the estimated dense size in GB, and the escape
-        hatches. This check runs *before* the expensive matrix exponential, so
-        an over-large request fails fast.
 
     Notes
     -----
@@ -146,13 +121,12 @@ def compute_diffusion_kernels(
     truncated form that preserves the numerical result, so this peak cannot be
     avoided while using the dense diffusion kernel.
 
-    Two guard rails bound this cost:
-
-    - **Warn threshold (3,000 bins):** a ``UserWarning`` estimating the GB cost
-      is issued when ``n_bins > _LARGE_KERNEL_THRESHOLD``.
-    - **Hard gate (20,000 bins):** the call **raises** ``MemoryError`` when
-      ``n_bins > _KERNEL_HARD_LIMIT_BINS`` unless ``allow_large=True`` is
-      passed. This turns a silent out-of-memory crash into an actionable error.
+    **There is no hard limit — high-bin kernels warn and proceed.** A
+    ``UserWarning`` estimating the GB cost is issued when
+    ``n_bins > _LARGE_KERNEL_THRESHOLD`` (3,000 bins); the kernel is then built
+    regardless of size. The warning names ``n_bins``, the GB estimate, the
+    dense O(n²) reason, and the mitigations (reduce bins / use
+    ``smoothing_method="binned"``). It is the sole high-bin guard.
 
     Performance: the matrix exponential is also O(n³) in time, so large
     environments are slow as well as memory-hungry.
@@ -178,48 +152,36 @@ def compute_diffusion_kernels(
 
     n_bins = graph.number_of_nodes()
 
-    # 2) Hard memory gate -- runs BEFORE the expensive expm so an over-large
-    #    request fails fast instead of attempting (and crashing on) the dense
-    #    n_bins x n_bins float64 allocation.
-    if n_bins > _KERNEL_HARD_LIMIT_BINS and not allow_large:
+    # 2) Warn (never raise) for large environments. The dense heat kernel
+    #    exp(-tL) costs n_bins**2 * 8 bytes of float64 memory; we estimate that
+    #    and proceed. There is no hard limit -- the call always returns a kernel.
+    if n_bins > _LARGE_KERNEL_THRESHOLD:
         estimated_gb = n_bins * n_bins * 8 / 1e9
-        raise MemoryError(
-            f"Refusing to build a diffusion kernel for {n_bins} bins: the heat "
+        warnings.warn(
+            f"Computing a dense diffusion kernel for {n_bins} bins. The heat "
             f"kernel exp(-tL) is dense by construction (every entry > 0), so it "
             f"requires an {n_bins} x {n_bins} float64 matrix "
-            f"(~{estimated_gb:.1f} GB) -- O(n^2) memory. This exceeds the "
-            f"{_KERNEL_HARD_LIMIT_BINS}-bin safety ceiling. To proceed, either "
-            f"reduce the number of bins (increase bin_size), use "
-            f"smoothing_method='binned' in the higher-level encoding function, "
-            f"or pass allow_large=True to override this gate if you have enough "
-            f"RAM."
-        )
-
-    # 3) Issue warning for large environments
-    if n_bins > _LARGE_KERNEL_THRESHOLD:
-        warnings.warn(
-            f"Computing diffusion kernel for {n_bins} bins. "
-            f"Matrix exponential has O(n³) complexity and O(n²) memory. "
-            f"This may be slow and memory-intensive (estimated "
-            f"{n_bins * n_bins * 8 / 1e9:.1f} GB for kernel matrix). "
-            f"Consider using method='binned' or reducing bin_size to decrease "
-            f"the number of bins.",
+            f"(~{estimated_gb:.1f} GB) -- O(n^2) memory (and O(n^3) time for the "
+            f"matrix exponential). Proceeding anyway; this may be slow and "
+            f"memory-intensive. To reduce the cost, increase bin_size (fewer "
+            f"bins) or use smoothing_method='binned' in the higher-level "
+            f"encoding function (it builds no dense kernel).",
             UserWarning,
             stacklevel=2,
         )
 
-    # 4) Re-compute edge "weight" = exp( - dist^2/(2σ^2) )
+    # 3) Re-compute edge "weight" = exp( - dist^2/(2σ^2) )
     #    Operate on a copy so the caller's graph (and any "weight" attributes it
     #    relies on) is never mutated as a side effect.
     working_graph = graph.copy()
     _assign_gaussian_weights_from_distance(working_graph, bandwidth_sigma)
 
-    # 5) Build unnormalized Laplacian L = D - W
+    # 4) Build unnormalized Laplacian L = D - W
     laplacian = nx.laplacian_matrix(
         working_graph, nodelist=range(n_bins), weight="weight"
     )
 
-    # 6) If bin_sizes is given, form M⁻¹ = diag(1/bin_sizes),
+    # 5) If bin_sizes is given, form M⁻¹ = diag(1/bin_sizes),
     #    then replace L ← M⁻¹ @ L (so we solve du/dt = - M⁻¹ L u).
     #    IMPORTANT: Use sparse diagonal matrix to avoid O(n²) dense matrix creation
     if bin_sizes is not None:
@@ -231,7 +193,7 @@ def compute_diffusion_kernels(
         mass_inv = scipy.sparse.diags(1.0 / bin_sizes, format="csr")
         laplacian = mass_inv @ laplacian  # Sparse @ Sparse = Sparse
 
-    # 7) Exponentiate: kernel = exp( - (σ^2 / 2) * L )
+    # 6) Exponentiate: kernel = exp( - (σ^2 / 2) * L )
     t = bandwidth_sigma**2 / 2.0
     # expm returns a dense numpy array
     kernel = scipy.sparse.linalg.expm(-t * laplacian)
@@ -240,10 +202,10 @@ def compute_diffusion_kernels(
     if hasattr(kernel, "toarray"):
         kernel = kernel.toarray()
 
-    # 8) Clip tiny negative noise to zero
+    # 7) Clip tiny negative noise to zero
     kernel = np.clip(kernel, a_min=0.0, a_max=None)
 
-    # 9) Final normalization:
+    # 8) Final normalization:
     #   - If mode="transition":  ∑_i K[i,j] = 1  (pure discrete)
     #   - If mode="density":     ∑_i [K[i,j] * areas[i]] = 1  (continuous KDE)
     match mode:
