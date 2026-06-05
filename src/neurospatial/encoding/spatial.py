@@ -2121,6 +2121,7 @@ def compute_spatial_rates(
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
     warn_on_drop: bool = True,
+    dtype: type[np.float32] | type[np.float64] = np.float64,
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
 ) -> SpatialRatesResult:
     """Compute spatial firing rate maps for multiple neurons.
@@ -2186,6 +2187,14 @@ def compute_spatial_rates(
         aggregate statistics, so it fires exactly once even when
         ``n_jobs != 1`` (joblib worker warnings are commonly swallowed).
         Set to ``False`` to suppress all drop-related warnings.
+    dtype : {np.float32, np.float64}, default=np.float64
+        Storage dtype of the returned ``(n_units, n_bins)`` rate-map array.
+        ``np.float32`` halves the rate-map storage (and the downstream decode
+        working set that consumes it). The rate computation is still performed
+        in float64 and only the final result is cast, so float32 values match
+        float64 within float32 tolerance. Default ``np.float64`` leaves every
+        existing caller byte-for-byte unchanged. Any other dtype raises
+        ``ValueError``.
     unit_ids : ndarray or sequence, optional
         Per-unit identity labels (integers or strings), one per neuron in
         the same order as ``spike_times``. Stored on the result's
@@ -2228,6 +2237,12 @@ def compute_spatial_rates(
       is amortized over multiple neurons.
     - **Single** (``compute_spatial_rate``): Processing 1-2 neurons, or when
       you need fine-grained control over individual neurons.
+
+    **Memory (``dtype``).** Passing ``dtype=np.float32`` halves the stored
+    ``(n_units, n_bins)`` rate-map array and the downstream decode working set
+    that consumes it. The rate computation (GEMM / division) is still done in
+    float64 and only the final result is cast to ``dtype``, so values match the
+    float64 default within float32 tolerance.
 
     Examples
     --------
@@ -2321,6 +2336,17 @@ def compute_spatial_rates(
     # This raises ImportError if backend="jax" and JAX is unavailable
     resolved_backend = get_backend_name(backend)
 
+    # Validate dtype: only single/double precision rate maps are supported.
+    if np.dtype(dtype) not in (np.dtype(np.float32), np.dtype(np.float64)):
+        raise ValueError(
+            f"dtype must be np.float32 or np.float64, got {dtype!r}. "
+            "Only single- and double-precision rate maps are supported "
+            "(float32 halves the (n_units, n_bins) storage and the downstream "
+            "decode working set)."
+        )
+    # Normalize to the canonical numpy scalar type for downstream casts.
+    dtype = np.float32 if np.dtype(dtype) == np.dtype(np.float32) else np.float64
+
     _validate_smoothing_parameters(smoothing_method, bandwidth)
 
     # Normalize spike times to canonical list-of-arrays format
@@ -2353,11 +2379,12 @@ def compute_spatial_rates(
         )
 
         # Convert to JAX if needed
-        firing_rates_result: ArrayLike = np.empty((0, env.n_bins), dtype=np.float64)
+        firing_rates_result: ArrayLike = np.empty((0, env.n_bins), dtype=dtype)
         if resolved_backend == "jax" and is_jax_available():
             import jax.numpy as jnp
 
-            firing_rates_result = jnp.asarray(firing_rates_result, dtype=jnp.float64)
+            jnp_dtype = jnp.float32 if dtype is np.float32 else jnp.float64
+            firing_rates_result = jnp.asarray(firing_rates_result, dtype=jnp_dtype)
             occupancy = jnp.asarray(occupancy, dtype=jnp.float64)
 
         return SpatialRatesResult(
@@ -2390,12 +2417,24 @@ def compute_spatial_rates(
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
         backend=resolved_backend,
+        dtype=dtype,
     )
 
     # Replace masked/low-occupancy NaN bins with fill_value when requested.
     # Default (None) preserves NaN so existing callers see no behavior change.
     if fill_value is not None:
         firing_rates = _fill_nan(firing_rates, fill_value)
+
+    # Defensive final cast to the requested dtype. Under NEP 50,
+    # np.where(mask, 0.0, f32_array) keeps float32, but this guarantees the
+    # stored dtype regardless of the fill_value / backend path.
+    if isinstance(firing_rates, np.ndarray):
+        firing_rates = firing_rates.astype(dtype, copy=False)
+    elif is_jax_available():
+        import jax.numpy as jnp
+
+        jnp_dtype = jnp.float32 if dtype is np.float32 else jnp.float64
+        firing_rates = jnp.asarray(firing_rates, dtype=jnp_dtype)
 
     # Convert occupancy to JAX if JAX backend is selected
     # (firing_rates is already JAX from smooth_rate_maps_batch)
