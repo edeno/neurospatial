@@ -15,6 +15,7 @@ Task 2.1: Result class definitions
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
+from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -4940,3 +4941,129 @@ class TestComputeSpatialRatesDtype:
                 trajectory_positions,
                 dtype=bad_dtype,
             )
+
+
+# ==============================================================================
+# Batch throughput contract (deterministic, CI-enforced; NON-timing)
+# ==============================================================================
+
+
+def _make_batch_inputs(
+    n_neurons: int, *, seed: int = 0
+) -> tuple[
+    Environment, NDArray[np.float64], NDArray[np.float64], list[NDArray[np.float64]]
+]:
+    """Build a tiny fitted env + trajectory + spike trains for ``n_neurons``.
+
+    Returns a fresh environment each call (so the per-env diffusion-kernel cache
+    starts cold) on a small grid with few bins, keeping the test fast. The same
+    trajectory/env layout is used regardless of ``n_neurons`` so that any change
+    in shared-work call counts is attributable to the neuron count alone.
+    """
+    rng = np.random.default_rng(seed)
+    n_samples = 400
+    positions = np.column_stack(
+        [
+            50 + np.cumsum(rng.normal(0, 1, n_samples)),
+            50 + np.cumsum(rng.normal(0, 1, n_samples)),
+        ]
+    )
+    positions = np.clip(positions, 0, 100)
+    env = Environment.from_samples(positions, bin_size=20.0)  # few bins -> fast
+    times = np.arange(n_samples) * 0.02
+    spike_times = [
+        np.sort(rng.uniform(0.0, float(times[-1]), 20)) for _ in range(n_neurons)
+    ]
+    return env, times, positions, spike_times
+
+
+class TestComputeSpatialRatesThroughputContract:
+    """Deterministic throughput contract for the Phase 2 batch encode path.
+
+    ``compute_spatial_rates`` MUST share the expensive per-population work
+    (occupancy computation + diffusion smoothing kernel build) across all
+    neurons, computing each ONCE per call rather than once per neuron. A
+    regression to per-neuron work is the throughput cliff that Phase 2 removed.
+
+    These tests assert *call counts*, not wall-clock time, so they are fully
+    deterministic and cannot flake. The load-bearing property is that the call
+    count does NOT scale with the number of neurons: it is the SAME small
+    constant for 1 neuron and for 25 neurons. Had the implementation regressed
+    to recomputing occupancy/kernel inside the per-neuron loop, the n=25 count
+    would be 25x the n=1 count and these assertions would fail.
+    """
+
+    def test_occupancy_computed_once_regardless_of_neuron_count(self) -> None:
+        """compute_occupancy fires exactly once per call, for n=1 and n=25."""
+        import neurospatial.encoding._binning as binning_mod
+        from neurospatial.encoding.spatial import compute_spatial_rates
+
+        def run(n_neurons: int) -> int:
+            env, times, positions, spikes = _make_batch_inputs(n_neurons)
+            # Patch at the module where compute_spatial_rates looks it up
+            # (function-local `from ..._binning import ... compute_occupancy`
+            # resolves the name on the _binning module at call time), wrapping
+            # the real function so behavior is preserved.
+            with patch.object(
+                binning_mod,
+                "compute_occupancy",
+                wraps=binning_mod.compute_occupancy,
+            ) as occ_spy:
+                compute_spatial_rates(
+                    env,
+                    spikes,
+                    times,
+                    positions,
+                    smoothing_method="diffusion_kde",
+                    bandwidth=20.0,
+                )
+            return occ_spy.call_count
+
+        calls_n1 = run(1)
+        calls_n25 = run(25)
+
+        # Spy actually fired (guards against a no-op test where the patch
+        # target is wrong and call_count stays 0).
+        assert calls_n1 > 0
+        # Occupancy is shared population work: exactly ONE computation per call.
+        assert calls_n1 == 1
+        # The load-bearing assertion: call count does NOT scale with n_neurons.
+        # A per-neuron regression would make this 25, not 1.
+        assert calls_n25 == calls_n1 == 1
+
+    def test_diffusion_kernel_built_once_regardless_of_neuron_count(self) -> None:
+        """compute_diffusion_kernels fires exactly once per call, n=1 and n=25."""
+        import neurospatial.ops.smoothing as smoothing_mod
+        from neurospatial.encoding.spatial import compute_spatial_rates
+
+        def run(n_neurons: int) -> int:
+            # Fresh env per call => cold kernel cache => any build is counted.
+            env, times, positions, spikes = _make_batch_inputs(n_neurons)
+            # env.compute_kernel() does a function-local
+            # `from neurospatial.ops.smoothing import compute_diffusion_kernels`,
+            # so patch the expensive build at its definition module.
+            with patch.object(
+                smoothing_mod,
+                "compute_diffusion_kernels",
+                wraps=smoothing_mod.compute_diffusion_kernels,
+            ) as kernel_spy:
+                compute_spatial_rates(
+                    env,
+                    spikes,
+                    times,
+                    positions,
+                    smoothing_method="diffusion_kde",
+                    bandwidth=20.0,
+                )
+            return kernel_spy.call_count
+
+        calls_n1 = run(1)
+        calls_n25 = run(25)
+
+        # Spy actually fired (not a no-op test).
+        assert calls_n1 > 0
+        # The smoothing kernel is shared population work: built ONCE per call.
+        assert calls_n1 == 1
+        # The load-bearing assertion: call count does NOT scale with n_neurons.
+        # A per-neuron regression would make this 25, not 1.
+        assert calls_n25 == calls_n1 == 1
