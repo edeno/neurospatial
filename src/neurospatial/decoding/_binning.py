@@ -56,7 +56,7 @@ def validate_dt(dt: float) -> float:
         raise ValueError(f"dt must be a finite number > 0, got {dt!r}.")
     dt = float(dt)
     if dt <= 0 or not np.isfinite(dt):
-        raise ValueError(f"dt must be finite and > 0, got {dt!r}.")
+        raise ValueError(f"dt must be a finite number > 0, got {dt!r}.")
     return dt
 
 

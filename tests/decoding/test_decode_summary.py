@@ -106,6 +106,62 @@ class TestDtypeParam:
             )  # type: ignore[arg-type]
 
 
+class TestDtParam:
+    """decode_position / decode_position_summary validate dt up front.
+
+    Both route through the shared ``validate_dt`` guard so a non-numeric/bool/
+    non-finite ``dt`` raises a clean ``ValueError`` (matching every other
+    decoding entry point) rather than leaking a raw ``TypeError`` (dt="0.1") or
+    silently accepting ``dt=True`` as a chunk size / divisor of ``1``.
+    """
+
+    @pytest.mark.parametrize("bad", ["0.1", "abc", True, False, 0, -1, np.nan, np.inf])
+    def test_decode_position_rejects_bad_dt(self, small_2d_env, bad):
+        from neurospatial.decoding import decode_position
+
+        spike_counts, encoding_models = _make_decode_inputs(small_2d_env)
+        with pytest.raises(ValueError, match=r"dt must"):
+            decode_position(
+                small_2d_env,
+                spike_counts,
+                encoding_models,
+                dt=bad,  # type: ignore[arg-type]
+            )
+
+    @pytest.mark.parametrize("bad", ["0.1", "abc", True, False, 0, -1, np.nan, np.inf])
+    def test_decode_position_summary_rejects_bad_dt(self, small_2d_env, bad):
+        from neurospatial.decoding import decode_position_summary
+
+        spike_counts, encoding_models = _make_decode_inputs(small_2d_env)
+        with pytest.raises(ValueError, match=r"dt must"):
+            decode_position_summary(
+                small_2d_env,
+                spike_counts,
+                encoding_models,
+                dt=bad,  # type: ignore[arg-type]
+            )
+
+    def test_decode_position_valid_dt_still_works(self, small_2d_env):
+        from neurospatial.decoding import DecodingResult, decode_position
+
+        spike_counts, encoding_models = _make_decode_inputs(small_2d_env)
+        result = decode_position(small_2d_env, spike_counts, encoding_models, dt=0.025)
+        assert isinstance(result, DecodingResult)
+        assert np.isfinite(result.posterior).all()
+        np.testing.assert_allclose(result.posterior.sum(axis=1), 1.0, atol=1e-9)
+
+    def test_decode_position_summary_valid_dt_still_works(self, small_2d_env):
+        from neurospatial.decoding import decode_position_summary
+        from neurospatial.decoding._result import DecodingSummary
+
+        spike_counts, encoding_models = _make_decode_inputs(small_2d_env)
+        summ = decode_position_summary(
+            small_2d_env, spike_counts, encoding_models, dt=0.025
+        )
+        assert isinstance(summ, DecodingSummary)
+        assert summ.map_position.shape[0] == spike_counts.shape[0]
+
+
 class TestTimeChunkParam:
     """decode_position(..., time_chunk=k) is tolerance-equal to the full path.
 

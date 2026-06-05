@@ -1,6 +1,6 @@
 # neurospatial Examples
 
-This directory contains Jupyter notebook tutorials demonstrating the features and capabilities of the neurospatial package. The notebooks are paired `.py` (jupytext, percent format) and `.ipynb` files; either can be edited and the pair will sync via `docs/sync_notebooks.py`.
+This directory contains Jupyter notebook tutorials demonstrating the features and capabilities of the neurospatial package. Each notebook is a jupytext pair — a `.py` (percent format) and a `.ipynb` — so editing either keeps the pair in sync via jupytext, within `examples/`. A separate step, `docs/sync_notebooks.py`, then copies `examples/` → `docs/examples/` to produce the committed docs mirror.
 
 ## Getting Started
 

@@ -1349,6 +1349,11 @@ def decode_position_summary(
         )
     time_chunk = _validate_time_chunk(time_chunk, allow_none=False)
 
+    # Validate dt up front so a non-numeric/bool/non-finite dt raises the same
+    # clean message as every other decoding entry point, rather than leaking a
+    # raw TypeError (dt="0.1") or silently accepting dt=True as 1.
+    dt = validate_dt(dt)
+
     spike_counts, encoding_models, nonfinite_mask = _prepare_decode_inputs(
         env,
         spike_counts,
