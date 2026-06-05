@@ -40,6 +40,44 @@ the published package may still report v0.5.x.
 - `SpatialRatesResult.label_cell_types()` for multi-class labels, with
   `SpatialRatesResult.classify()` reserved for the boolean place-cell predicate.
 - `decode_position()` accepts population rate result objects directly.
+- Memory-safe summary decoding for long sessions. `decode_position_summary`
+  returns a new `DecodingSummary` result that streams over time and reduces
+  each block to per-time scalars/vectors (`map_position` / `map_bin`,
+  `mean_position`, `posterior_entropy`, `peak_prob`) without ever
+  materializing the full `(n_time, n_bins)` posterior. `decode_session_summary`
+  is the matching one-call encode -> bin -> decode wrapper, and now also
+  streams the time-binning so the full count matrix is never materialized
+  either. `DecodingSummary` carries the standard terminal verbs
+  (`to_dataframe()`, `summary()`, `plot()`, `to_xarray()`).
+- `decode_position()` gains keyword-only `dtype` (`np.float32` / `np.float64`,
+  default `np.float64`) and `time_chunk` (compute the posterior in time-blocks
+  to cap peak memory). `decode_session()` forwards both.
+- `compute_spatial_rates()` gains a keyword-only `dtype` (`np.float32` /
+  `np.float64`, default `np.float64`) to halve the memory of stored rate maps.
+- Speed filtering on the encode path: `compute_spatial_rate` /
+  `compute_spatial_rates` gain keyword-only `speed` / `min_speed` (forwarded by
+  `decode_session`). When `min_speed` is set, **one shared per-interval speed
+  gate** filters **both** the spike numerator and the occupancy denominator, so
+  a `min_speed` knob can never bias firing rates by filtering only one side.
+- `population_coverage()` gains a keyword-only `n_jobs` parameter to
+  parallelize per-neuron coverage; results are identical regardless of
+  `n_jobs`.
+
+### Changed
+
+- **Firing-rate numerator/denominator alignment (behavior change for gappy /
+  out-of-bounds data).** `compute_spatial_rate` / `compute_spatial_rates` gain
+  a keyword-only `max_gap` (default `0.5 s`); spikes inside large tracking gaps
+  and out-of-bounds excursions are now excluded from the numerator so it drops
+  the **identical** set of intervals that `env.occupancy` drops from the
+  denominator. Rate maps now differ (and are more correct) for sessions with
+  large tracking gaps or out-of-bounds samples; pass `max_gap=None` to disable
+  gap gating on both sides.
+- `SpatialRatesResult.summary_table()` no longer double-computes grid and
+  border scores (single pass, faster for large populations).
+- A smoothing-kernel memory gate now raises when a smoothing kernel over a
+  very large bin count would allocate an oversized dense matrix; pass
+  `allow_large=True` to override (or use `smoothing_method="binned"`).
 
 ### Deprecated
 

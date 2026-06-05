@@ -46,6 +46,7 @@ import numpy as np
 
 from neurospatial import Environment
 from neurospatial.decoding import (
+    bin_spikes_in_time,
     confusion_matrix,
     decode_position,
     decoding_correlation,
@@ -54,7 +55,7 @@ from neurospatial.decoding import (
     fit_linear_trajectory,
     median_decoding_error,
 )
-from neurospatial.encoding import compute_spatial_rate
+from neurospatial.encoding import compute_spatial_rate, compute_spatial_rates
 from neurospatial.simulation import (
     PlaceCellModel,
     generate_poisson_spikes,
@@ -66,15 +67,15 @@ from neurospatial.stats.shuffle import compute_shuffle_pvalue, shuffle_time_bins
 np.random.seed(42)
 
 # Shared styling (Okabe-Ito palette, consistent figure / font sizes)
-import sys  # noqa: E402
-from pathlib import Path  # noqa: E402
+import sys
+from pathlib import Path
 
 _here = (
     str(Path(__file__).resolve().parent) if "__file__" in globals() else str(Path.cwd())
 )
 if _here not in sys.path:
     sys.path.insert(0, _here)
-from _style import apply_style  # noqa: E402
+from _style import apply_style
 
 apply_style(figsize=(12, 5), font_size=12)
 
@@ -222,27 +223,27 @@ plt.show()
 # Encoding models are place fields that describe how each neuron's firing rate varies with spatial position. These are the "tuning curves" we use for decoding.
 
 # %%
-# Compute place fields for all neurons (encoding models).
+# Compute place fields for the whole population in a single batch call.
+#
+# ``compute_spatial_rates`` (plural) encodes every neuron at once and returns a
+# ``(n_neurons, n_bins)`` rate-map stack via ``.firing_rates`` -- prefer this
+# over looping the single-neuron ``compute_spatial_rate`` per neuron, which
+# recomputes the shared occupancy/geometry for every cell and does not scale.
 #
 # Passing ``fill_value=0.0`` replaces low-occupancy bins (NaN under the
 # default ``fill_value=None``) with an explicit zero firing rate, so the
 # encoding models compose directly with ``decode_position`` -- no manual
 # ``np.nan_to_num`` scrubbing required.
-encoding_models = np.array(
-    [
-        compute_spatial_rate(
-            env,
-            spike_times_list[i],
-            times,
-            positions,
-            smoothing_method="diffusion_kde",
-            bandwidth=5.0,
-            min_occupancy=0.5,
-            fill_value=0.0,
-        ).firing_rate
-        for i in range(n_neurons)
-    ]
-)
+encoding_models = compute_spatial_rates(
+    env,
+    spike_times_list,
+    times,
+    positions,
+    smoothing_method="diffusion_kde",
+    bandwidth=5.0,
+    min_occupancy=0.5,
+    fill_value=0.0,
+).firing_rates
 
 print(f"Encoding models shape: {encoding_models.shape}")
 print(f"  (n_neurons, n_bins) = ({n_neurons}, {env.n_bins})")
@@ -283,16 +284,17 @@ plt.show()
 # %%
 # Time bin parameters
 dt = 0.1  # 100 ms time bins (typical for spatial decoding)
-time_bins = np.arange(0, times[-1], dt)
-n_time_bins = len(time_bins) - 1
 
-# Bin spikes for each neuron
-spike_counts = np.zeros((n_time_bins, n_neurons), dtype=np.int64)
-for i, spikes in enumerate(spike_times_list):
-    spike_counts[:, i], _ = np.histogram(spikes, bins=time_bins)
+# ``bin_spikes_in_time`` owns the time-grid construction: it builds a regular
+# grid spanning ``[t_start, t_stop)`` and returns the ``(time, neuron)`` count
+# matrix together with the matching bin centers -- no manual per-neuron
+# ``np.histogram`` loop and no off-by-one bin-edge bookkeeping.
+spike_counts, time_bin_centers = bin_spikes_in_time(
+    spike_times_list, dt, t_start=0.0, t_stop=float(times[-1])
+)
+n_time_bins = spike_counts.shape[0]
 
 # Get actual positions at each time bin center
-time_bin_centers = time_bins[:-1] + dt / 2
 actual_bin_indices = np.searchsorted(times, time_bin_centers) - 1
 actual_bin_indices = np.clip(actual_bin_indices, 0, len(positions) - 1)
 actual_positions = positions[actual_bin_indices]
