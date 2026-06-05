@@ -20,12 +20,16 @@ for pattern in patterns:
         shutil.copy2(source, dest)
         synced += 1
 
-# Prune stale mirrors: remove any synced-type file in docs/examples/ whose
-# source no longer exists in examples/ (e.g. a deleted or renamed example).
-# Only *.ipynb / *.py are pruned -- hand-maintained files such as index.md
-# are never touched.
+# Prune stale mirrors: remove a synced numbered-example file in docs/examples/
+# whose source no longer exists in examples/ (e.g. a deleted or renamed
+# example). The prune scan is restricted to the numbered-example naming
+# convention the sync actually produces (``NN_*.ipynb`` / ``NN_*.py``, e.g.
+# ``23_path_progression.ipynb``), so hand-maintained docs-only files -- such as
+# index.md, a local conftest.py, or any non-numbered helper -- are never
+# candidates for deletion.
+prune_patterns = ("[0-9][0-9]_*.ipynb", "[0-9][0-9]_*.py")
 pruned = 0
-for pattern in patterns:
+for pattern in prune_patterns:
     for mirror in sorted(docs_examples_dir.glob(pattern)):
         source = examples_dir / mirror.name
         if not source.exists():

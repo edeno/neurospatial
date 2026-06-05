@@ -416,6 +416,10 @@ def _build_encoding_model(
     # bin_spikes_in_time's message exactly so both paths report identically.
     # The legitimate n_time < 1 "span smaller than one bin" check below still
     # covers a valid positive dt with a too-short span.
+    if not isinstance(dt, (int, float, np.integer, np.floating)) or isinstance(
+        dt, bool
+    ):
+        raise ValueError(f"dt must be a finite number > 0, got {dt!r}.")
     dt = float(dt)
     if dt <= 0 or not np.isfinite(dt):
         raise ValueError(f"dt must be finite and > 0, got {dt!r}.")

@@ -1550,3 +1550,53 @@ class TestDecodeSessionDtValidation:
         env, spike_times, times, positions = _make_linear_track_sim()
         summ = decode_session_summary(env, spike_times, times, positions, dt=0.1)
         assert summ.map_position.shape[0] > 0
+
+    # Non-numeric / bool dt: an isinstance guard runs BEFORE float() coercion so
+    # a numeric STRING (e.g. dt="0.1", which float() would silently accept while
+    # the caller's dt stays a str and leaks a downstream TypeError) and a bool
+    # (dt=True would coerce to 1.0 silently) both raise the clean message early.
+    def test_decode_session_dt_numeric_string_raises_valueerror(self) -> None:
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions = _make_linear_track_sim()
+        with pytest.raises(ValueError, match=r"dt must"):
+            decode_session(env, spike_times, times, positions, dt="0.1")  # type: ignore[arg-type]
+
+    def test_decode_session_dt_non_numeric_string_raises_valueerror(self) -> None:
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions = _make_linear_track_sim()
+        with pytest.raises(ValueError, match=r"dt must"):
+            decode_session(env, spike_times, times, positions, dt="abc")  # type: ignore[arg-type]
+
+    def test_decode_session_dt_bool_raises_valueerror(self) -> None:
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions = _make_linear_track_sim()
+        with pytest.raises(ValueError, match=r"dt must"):
+            decode_session(env, spike_times, times, positions, dt=True)  # type: ignore[arg-type]
+
+    def test_decode_session_summary_dt_numeric_string_raises_valueerror(
+        self,
+    ) -> None:
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim()
+        with pytest.raises(ValueError, match=r"dt must"):
+            decode_session_summary(env, spike_times, times, positions, dt="0.1")  # type: ignore[arg-type]
+
+    def test_decode_session_summary_dt_non_numeric_string_raises_valueerror(
+        self,
+    ) -> None:
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim()
+        with pytest.raises(ValueError, match=r"dt must"):
+            decode_session_summary(env, spike_times, times, positions, dt="abc")  # type: ignore[arg-type]
+
+    def test_decode_session_summary_dt_bool_raises_valueerror(self) -> None:
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim()
+        with pytest.raises(ValueError, match=r"dt must"):
+            decode_session_summary(env, spike_times, times, positions, dt=True)  # type: ignore[arg-type]
