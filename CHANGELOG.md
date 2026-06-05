@@ -11,6 +11,14 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ### Fixed
 
+- `decode_session` and `decode_session_summary` now **validate `dt`** (finite,
+  `> 0`) up front with a clear `ValueError`, matching `bin_spikes_in_time`'s
+  wording (`"dt must be finite and > 0, got ..."`). Previously the shared
+  `_build_encoding_model` built the decode time grid directly, bypassing
+  `bin_spikes_in_time`'s guard, so an invalid `dt` leaked a cryptic error:
+  `dt=0` → `ZeroDivisionError`, `dt=NaN` → "cannot convert float NaN to
+  integer", `dt<0` → a misleading "span smaller than one bin" message, and
+  `dt=inf` → a similar cryptic failure.
 - `decode_position` now **preserves `float32`** when handed a rate-result object
   (anything exposing `.firing_rates`). Previously the friendly object path
   promoted a `float32` `.firing_rates` to `float64`, silently losing part of the

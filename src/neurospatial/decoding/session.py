@@ -408,6 +408,18 @@ def _build_encoding_model(
     from neurospatial.encoding._validation import validate_times
     from neurospatial.encoding.spatial import compute_spatial_rates
 
+    # Validate dt up front, BEFORE the grid math below builds the decode time
+    # grid directly (bypassing bin_spikes_in_time's own guard). Without this,
+    # invalid dt leaks cryptic errors: dt=0 → ZeroDivisionError; dt=NaN →
+    # "cannot convert float NaN to integer"; dt<0 → a MISLEADING "span smaller
+    # than one bin dt" message; dt=inf → a similar cryptic failure. Mirror
+    # bin_spikes_in_time's message exactly so both paths report identically.
+    # The legitimate n_time < 1 "span smaller than one bin" check below still
+    # covers a valid positive dt with a too-short span.
+    dt = float(dt)
+    if dt <= 0 or not np.isfinite(dt):
+        raise ValueError(f"dt must be finite and > 0, got {dt!r}.")
+
     # Validate dtype: only single/double precision working sets are supported.
     # Mirrors compute_spatial_rates' dtype validation wording.
     if np.dtype(dtype) not in (np.dtype(np.float32), np.dtype(np.float64)):

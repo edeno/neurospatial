@@ -1467,3 +1467,86 @@ class TestDecodeSessionSummaryTimeChunkValidation:
             time_chunk=64,
         )
         assert summ.map_position.shape[0] > 0
+
+
+class TestDecodeSessionDtValidation:
+    """decode_session / decode_session_summary validate dt up front.
+
+    Both route through ``_build_encoding_model``, which computes the decode
+    time grid directly (bypassing ``bin_spikes_in_time``'s dt guard). Without an
+    explicit up-front check, invalid ``dt`` leaks cryptic errors:
+    ``dt=0`` → ``ZeroDivisionError``; ``dt=nan`` → "cannot convert float NaN to
+    integer"; ``dt<0`` → a MISLEADING "span smaller than one bin" message;
+    ``dt=inf`` → a similar cryptic failure. The fix mirrors
+    ``bin_spikes_in_time``'s wording: "dt must be finite and > 0, got ...".
+    """
+
+    def test_decode_session_dt_zero_raises_valueerror(self) -> None:
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions = _make_linear_track_sim()
+        with pytest.raises(ValueError, match=r"dt must be finite and > 0"):
+            decode_session(env, spike_times, times, positions, dt=0.0)
+
+    def test_decode_session_dt_nan_raises_valueerror(self) -> None:
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions = _make_linear_track_sim()
+        with pytest.raises(ValueError, match=r"dt must be finite and > 0"):
+            decode_session(env, spike_times, times, positions, dt=np.nan)
+
+    def test_decode_session_dt_negative_raises_valueerror(self) -> None:
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions = _make_linear_track_sim()
+        with pytest.raises(ValueError, match=r"dt must be finite and > 0"):
+            decode_session(env, spike_times, times, positions, dt=-0.1)
+
+    def test_decode_session_dt_inf_raises_valueerror(self) -> None:
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions = _make_linear_track_sim()
+        with pytest.raises(ValueError, match=r"dt must be finite and > 0"):
+            decode_session(env, spike_times, times, positions, dt=np.inf)
+
+    def test_decode_session_valid_dt_still_works(self) -> None:
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions = _make_linear_track_sim()
+        result = decode_session(env, spike_times, times, positions, dt=0.1)
+        assert isinstance(result, DecodingResult)
+
+    def test_decode_session_summary_dt_zero_raises_valueerror(self) -> None:
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim()
+        with pytest.raises(ValueError, match=r"dt must be finite and > 0"):
+            decode_session_summary(env, spike_times, times, positions, dt=0.0)
+
+    def test_decode_session_summary_dt_nan_raises_valueerror(self) -> None:
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim()
+        with pytest.raises(ValueError, match=r"dt must be finite and > 0"):
+            decode_session_summary(env, spike_times, times, positions, dt=np.nan)
+
+    def test_decode_session_summary_dt_negative_raises_valueerror(self) -> None:
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim()
+        with pytest.raises(ValueError, match=r"dt must be finite and > 0"):
+            decode_session_summary(env, spike_times, times, positions, dt=-0.1)
+
+    def test_decode_session_summary_dt_inf_raises_valueerror(self) -> None:
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim()
+        with pytest.raises(ValueError, match=r"dt must be finite and > 0"):
+            decode_session_summary(env, spike_times, times, positions, dt=np.inf)
+
+    def test_decode_session_summary_valid_dt_still_works(self) -> None:
+        from neurospatial.decoding import decode_session_summary
+
+        env, spike_times, times, positions = _make_linear_track_sim()
+        summ = decode_session_summary(env, spike_times, times, positions, dt=0.1)
+        assert summ.map_position.shape[0] > 0
