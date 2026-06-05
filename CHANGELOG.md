@@ -28,6 +28,14 @@ these are called out under a dedicated **Breaking changes** heading.
   `time_allocation="start"` interval semantics; pass an explicit `speed` for
   geodesic / linearized-track environments. `min_speed=None` (the default)
   applies no filtering and leaves output byte-for-byte unchanged.
+  - Passing `speed` **without** `min_speed` now raises `ValueError` (instead of
+    silently ignoring `speed`), mirroring `env.occupancy`, which raises on
+    `min_speed` without `speed`.
+  - When `min_speed` excludes **all** trajectory intervals (e.g. a wrong-units
+    threshold), `compute_spatial_rate` / `compute_spatial_rates` now emit one
+    `UserWarning` naming `min_speed` and the resolved speed range — instead of
+    silently returning an empty rate map. The warning fires once per call
+    (not per neuron in the batch path) and is suppressed by `warn_on_drop=False`.
 
 ### Breaking changes
 

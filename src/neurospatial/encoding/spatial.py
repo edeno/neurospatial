@@ -2053,6 +2053,7 @@ def compute_spatial_rate(
         is_jax_available,
     )
     from neurospatial.encoding._binning import (
+        _emit_all_excluded_speed_warning,
         bin_spike_train,
         compute_occupancy,
         resolve_speed,
@@ -2095,6 +2096,12 @@ def compute_spatial_rate(
     # alignment by construction). When min_speed is None this returns None and
     # nothing speed-related changes downstream (byte-for-byte unchanged).
     resolved_speed = resolve_speed(times, positions, speed, min_speed)
+
+    # Warn once if min_speed excluded ALL movement intervals (empty rate map,
+    # commonly a units footgun). Gated by warn_on_drop; no-op when min_speed
+    # is None.
+    if warn_on_drop:
+        _emit_all_excluded_speed_warning(resolved_speed, min_speed, stacklevel=2)
 
     # Bin spike train into spatial bins (always NumPy - CPU/joblib)
     spike_counts = bin_spike_train(
@@ -2383,7 +2390,11 @@ def compute_spatial_rates(
         get_backend_name,
         is_jax_available,
     )
-    from neurospatial.encoding._binning import bin_spike_trains
+    from neurospatial.encoding._binning import (
+        _emit_all_excluded_speed_warning,
+        bin_spike_trains,
+        resolve_speed,
+    )
     from neurospatial.encoding._smoothing import (
         _validate_smoothing_parameters,
         smooth_rate_maps_batch,
@@ -2440,14 +2451,24 @@ def compute_spatial_rates(
     for i, st in enumerate(spike_times_list):
         validate_spike_times(st, context=f"compute_spatial_rates (neuron {i})")
 
+    # Resolve the shared speed gate ONCE here (raises on speed-without-min_speed,
+    # mirroring env.occupancy). Resolving once also lets us warn a single time
+    # if min_speed excludes ALL intervals — instead of per-neuron in the batch
+    # path below. The resolved array is forwarded so bin_spike_trains does not
+    # re-derive it.
+    resolved_speed = resolve_speed(times, positions, speed, min_speed)
+
+    # Warn once if min_speed excluded ALL movement intervals (empty rate maps,
+    # commonly a units footgun). Gated by warn_on_drop; no-op when min_speed
+    # is None. Computed here from the single resolved mask so it fires once for
+    # the whole batch, not once per neuron.
+    if warn_on_drop:
+        _emit_all_excluded_speed_warning(resolved_speed, min_speed, stacklevel=2)
+
     # Handle edge case: no neurons
     # Still compute occupancy from trajectory (occupancy is independent of neural data)
     if n_neurons == 0:
-        from neurospatial.encoding._binning import compute_occupancy, resolve_speed
-
-        # Resolve the shared speed gate (None when min_speed is None) so the
-        # no-neurons occupancy matches the speed-filtered path used below.
-        resolved_speed = resolve_speed(times, positions, speed, min_speed)
+        from neurospatial.encoding._binning import compute_occupancy
 
         # Use compute_occupancy which handles 1D position reshaping
         occupancy = compute_occupancy(
@@ -2484,7 +2505,7 @@ def compute_spatial_rates(
         spike_times_list,
         times,
         positions,
-        speed=speed,
+        speed=resolved_speed,
         min_speed=min_speed,
         n_jobs=n_jobs,
         warn_on_drop=warn_on_drop,

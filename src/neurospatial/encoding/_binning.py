@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from neurospatial.environment._protocols import EnvironmentProtocol
 
 __all__ = [
+    "_emit_all_excluded_speed_warning",
     "bin_spike_train",
     "bin_spike_trains",
     "compute_occupancy",
@@ -76,7 +77,10 @@ def resolve_speed(
         Speed threshold. When ``None``, NO speed filtering happens: this
         returns ``None`` and the caller passes nothing speed-related to
         ``env.occupancy`` (so ``max_gap`` etc. stay exactly as before — the
-        output is byte-for-byte unchanged).
+        output is byte-for-byte unchanged). It is an error to pass ``speed``
+        without ``min_speed`` (see Raises): a bare ``speed`` would otherwise be
+        silently ignored, asymmetric with ``env.occupancy`` (which raises on
+        ``min_speed`` without ``speed``).
 
     Returns
     -------
@@ -88,6 +92,9 @@ def resolve_speed(
     Raises
     ------
     ValueError
+        If ``speed`` is provided without ``min_speed`` (the message names both
+        ``speed`` and ``min_speed``). This mirrors ``env.occupancy``, which
+        raises on ``min_speed`` without ``speed``.
         If a ``speed`` array is passed whose length does not match
         ``times`` (the message names ``speed``).
 
@@ -112,6 +119,16 @@ def resolve_speed(
     auto-derivation.
     """
     if min_speed is None:
+        if speed is not None:
+            # Asymmetric footgun: a caller passing `speed` without `min_speed`
+            # would otherwise have it silently ignored (no filtering applied).
+            # env.occupancy raises the mirror case (min_speed without speed),
+            # so raise here too rather than swallow `speed`.
+            raise ValueError(
+                "speed was provided without min_speed; pass "
+                "min_speed=<threshold> to enable speed filtering, or omit "
+                "speed."
+            )
         # No filtering requested: return None so callers leave env.occupancy
         # exactly as before (byte-for-byte unchanged output).
         return None
@@ -234,7 +251,7 @@ def _bin_spike_train_with_stats(
 
     # Speed gate: applied AFTER the time-window filter and BEFORE bin_at.
     # For each surviving spike at time t, find the interval it falls in
-    #   k = searchsorted(times, t, side="right") - 1   (clamped to [0, n-1])
+    #   k = searchsorted(times, t, side="right") - 1   (clamped to [0, n-2])
     # and keep it iff speed[k] >= min_speed. This is the SAME per-interval
     # gate env.occupancy uses (speed[:-1] >= min_speed), so spikes and
     # occupancy drop exactly the same intervals — numerator/denominator stay
@@ -242,9 +259,22 @@ def _bin_spike_train_with_stats(
     # dropped (they do not inflate n_bin_dropped or its warning). The full
     # trajectory is still used for position interpolation below; only which
     # spikes survive changes.
+    #
+    # The upper clip is n-2 (the index of the LAST occupancy interval), not
+    # n-1: a spike landing exactly on times[-1] would otherwise be gated by
+    # speed[n-1], which occupancy never consults (it gates the last interval by
+    # speed[n-2] via speed[:-1]). For auto-derived speed this is harmless
+    # (speed[n-1] == speed[n-2]), but a caller-supplied speed with a differing
+    # final element could drop a t_max spike while occupancy keeps the matching
+    # last interval. Clipping to n-2 gates the t_max spike by speed[n-2],
+    # matching occupancy's last interval exactly. (Guarded for n >= 2; for
+    # n == 1 there are no intervals and this branch's speed gate never excludes
+    # — n-2 == -1 only when len(times) == 1, which is handled by resolve_speed
+    # returning all-zeros for that degenerate case.)
     if speed is not None and min_speed is not None and len(spike_times_valid) > 0:
         spike_interval = np.searchsorted(times, spike_times_valid, side="right") - 1
-        spike_interval = np.clip(spike_interval, 0, len(times) - 1)
+        upper = max(len(times) - 2, 0)
+        spike_interval = np.clip(spike_interval, 0, upper)
         speed_keep = speed[spike_interval] >= min_speed
         spike_times_valid = spike_times_valid[speed_keep]
 
@@ -270,6 +300,59 @@ def _bin_spike_train_with_stats(
         spike_counts = np.bincount(valid_bins, minlength=n_bins).astype(np.float64)
 
     return spike_counts, n_time_dropped, n_bin_dropped, n_total, n_after_time
+
+
+def _emit_all_excluded_speed_warning(
+    speed: NDArray[np.float64] | None,
+    min_speed: float | None,
+    *,
+    stacklevel: int = 2,
+) -> None:
+    """Emit a UserWarning when ``min_speed`` excludes (almost) all intervals.
+
+    A ``min_speed`` set too high — or in the wrong units (e.g. an m/s threshold
+    against a cm/s trajectory) — can exclude EVERY movement interval, leaving an
+    all-zero occupancy and an all-NaN/zero rate map with no other signal. This
+    mirrors the unit-mismatch tone of the time-window / inactive-bin warnings.
+
+    Detection uses the resolved per-interval speed gate
+    (``speed[:-1] >= min_speed``) — the exact same mask ``env.occupancy`` and the
+    spike kernel apply — so it fires iff the rate map is genuinely empty.
+
+    Parameters
+    ----------
+    speed : ndarray, shape (n_samples,), or None
+        Resolved speed array (from :func:`resolve_speed`). ``None`` means no
+        filtering was requested; nothing is emitted.
+    min_speed : float or None
+        Speed threshold. ``None`` means no filtering; nothing is emitted.
+    stacklevel : int, optional
+        ``warnings.warn`` stacklevel.
+    """
+    if speed is None or min_speed is None:
+        return
+    # Per-interval gate: interval k spans [t_k, t_{k+1}) and uses speed[k],
+    # so only the first n-1 entries gate occupancy (matching env.occupancy).
+    interval_speed = speed[:-1]
+    if interval_speed.size == 0:
+        return
+    if np.any(interval_speed >= min_speed):
+        return
+    finite = interval_speed[np.isfinite(interval_speed)]
+    if finite.size > 0:
+        s_min = float(finite.min())
+        s_max = float(finite.max())
+        range_part = f"speed in [{s_min:.3g}, {s_max:.3g}] units/s"
+    else:
+        range_part = "no finite speeds"
+    warnings.warn(
+        f"min_speed={min_speed} excluded all trajectory intervals "
+        f"({range_part}); the rate map is empty. Check that min_speed and "
+        f"the trajectory share units. "
+        f"Set warn_on_drop=False to suppress this warning.",
+        UserWarning,
+        stacklevel=stacklevel,
+    )
 
 
 def _emit_time_window_warning(

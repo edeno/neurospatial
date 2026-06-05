@@ -387,3 +387,159 @@ def test_filter_occupancy_only_bug_regression(env_1d, two_speed_trajectory) -> N
     raw_rate = np.divide(counts, occ, out=np.full_like(counts, np.nan), where=occ > 0)
     # No finite positive rate anywhere (no spikes survived).
     assert not np.any(raw_rate > 0)
+
+
+# ==============================================================================
+# 7. speed without min_speed raises (symmetry with env.occupancy)
+# ==============================================================================
+
+
+def test_speed_without_min_speed_raises_resolve(env_1d, two_speed_trajectory) -> None:
+    """resolve_speed raises when speed is passed without min_speed."""
+    times = two_speed_trajectory["times"]
+    positions = two_speed_trajectory["positions"]
+    speed = np.ones(len(times))
+    with pytest.raises(ValueError, match="min_speed"):
+        resolve_speed(times, positions, speed, None)
+
+
+def test_speed_without_min_speed_raises_single(env_1d, two_speed_trajectory) -> None:
+    """compute_spatial_rate(speed=...) without min_speed raises ValueError."""
+    times = two_speed_trajectory["times"]
+    positions = two_speed_trajectory["positions"]
+    speed = np.ones(len(times))
+    with pytest.raises(ValueError, match="speed"):
+        compute_spatial_rate(
+            env_1d,
+            np.array([5.0]),
+            times,
+            positions,
+            speed=speed,
+        )
+
+
+def test_speed_without_min_speed_raises_batch(env_1d, two_speed_trajectory) -> None:
+    """compute_spatial_rates(speed=...) without min_speed raises ValueError."""
+    times = two_speed_trajectory["times"]
+    positions = two_speed_trajectory["positions"]
+    speed = np.ones(len(times))
+    with pytest.raises(ValueError, match="speed"):
+        compute_spatial_rates(
+            env_1d,
+            [np.array([5.0])],
+            times,
+            positions,
+            speed=speed,
+        )
+
+
+# ==============================================================================
+# 8. min_speed excluding ALL intervals warns once (empty rate map)
+# ==============================================================================
+
+
+def test_all_excluded_warns_single(env_1d, two_speed_trajectory) -> None:
+    """A min_speed above the max speed warns about an empty rate map."""
+    times = two_speed_trajectory["times"]
+    positions = two_speed_trajectory["positions"]
+    spike_times = np.array([0.5, 5.5, 6.8])
+    # Max speed is 30 unit/s; this excludes every interval.
+    with pytest.warns(UserWarning, match="min_speed"):
+        compute_spatial_rate(env_1d, spike_times, times, positions, min_speed=1e6)
+
+
+def test_all_excluded_warns_batch(env_1d, two_speed_trajectory) -> None:
+    """The all-excluded warning fires for the batch path too."""
+    times = two_speed_trajectory["times"]
+    positions = two_speed_trajectory["positions"]
+    spike_times = [np.array([0.5, 5.5]), np.array([2.0, 6.2])]
+    with pytest.warns(UserWarning, match="min_speed"):
+        compute_spatial_rates(env_1d, spike_times, times, positions, min_speed=1e6)
+
+
+def test_all_excluded_warns_once_batch(recwarn, env_1d, two_speed_trajectory) -> None:
+    """The all-excluded warning fires exactly once for a multi-neuron batch."""
+    times = two_speed_trajectory["times"]
+    positions = two_speed_trajectory["positions"]
+    spike_times = [np.array([0.5]), np.array([2.0]), np.array([6.2])]
+    compute_spatial_rates(env_1d, spike_times, times, positions, min_speed=1e6)
+    empty_warnings = [
+        w
+        for w in recwarn.list
+        if issubclass(w.category, UserWarning)
+        and "min_speed" in str(w.message)
+        and "empty" in str(w.message)
+    ]
+    assert len(empty_warnings) == 1
+
+
+def test_all_excluded_suppressed_when_warn_off(
+    recwarn, env_1d, two_speed_trajectory
+) -> None:
+    """warn_on_drop=False suppresses the all-excluded warning (single + batch)."""
+    times = two_speed_trajectory["times"]
+    positions = two_speed_trajectory["positions"]
+
+    compute_spatial_rate(
+        env_1d,
+        np.array([0.5]),
+        times,
+        positions,
+        min_speed=1e6,
+        warn_on_drop=False,
+    )
+    compute_spatial_rates(
+        env_1d,
+        [np.array([0.5])],
+        times,
+        positions,
+        min_speed=1e6,
+        warn_on_drop=False,
+    )
+
+    empty_warnings = [
+        w
+        for w in recwarn.list
+        if issubclass(w.category, UserWarning) and "empty" in str(w.message)
+    ]
+    assert empty_warnings == []
+
+
+# ==============================================================================
+# 9. Final-sample gate symmetry for caller-supplied speed
+# ==============================================================================
+
+
+def test_final_sample_gate_matches_last_occupancy_interval(env_1d) -> None:
+    """A spike exactly at times[-1] is gated by speed[n-2], like occupancy.
+
+    Uses a caller-supplied speed whose last two elements DIFFER: speed[n-2]
+    (the last occupancy interval) is above min_speed, while speed[n-1] is
+    below. Occupancy keeps the last interval; the t_max spike must be kept too
+    (gated by speed[n-2]), not dropped by the never-consulted speed[n-1].
+    """
+    # Dense slow ramp so each interval is under env.occupancy's default max_gap.
+    x = np.linspace(10.0, 30.0, 11)
+    positions = x.reshape(-1, 1)
+    times = np.arange(len(x), dtype=np.float64) * 0.1
+    n = len(times)
+    min_speed = 5.0
+
+    # Caller-supplied speed: last interval (n-2) HIGH (kept), final sample
+    # (n-1) LOW (must be ignored for gating the t_max spike).
+    speed = np.full(n, 10.0)
+    speed[n - 1] = 0.0  # would drop the t_max spike under the old n-1 clip
+
+    # A single spike landing exactly on the final timestamp.
+    spike_times = np.array([times[-1]])
+
+    counts = bin_spike_train(
+        env_1d, spike_times, times, positions, speed=speed, min_speed=min_speed
+    )
+    # Occupancy keeps the last interval (speed[n-2]=10 >= 5), so the spike must
+    # survive the gate (gated by speed[n-2], not the low speed[n-1]).
+    assert counts.sum() == 1
+
+    # Mirror: occupancy's last interval is non-empty (kept).
+    occ = compute_occupancy(env_1d, times, positions, speed=speed, min_speed=min_speed)
+    assert occ.sum() > 0
