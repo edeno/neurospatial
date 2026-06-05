@@ -49,6 +49,19 @@ class TestPopulationCoverageDocstring:
             "list-comprehension loop"
         )
 
+    def test_docstring_example_uses_env_first_arg_order(self) -> None:
+        """Docstring example must use env-first argument order (canonical v0.6 convention)."""
+        doc = population_coverage.__doc__
+        assert doc is not None
+        assert "population_coverage(env, firing_rates)" in doc, (
+            "Docstring example must call population_coverage(env, firing_rates) "
+            "with env as the first argument"
+        )
+        assert "population_coverage(firing_rates, env)" not in doc, (
+            "Docstring example must not use the old reversed order "
+            "population_coverage(firing_rates, env)"
+        )
+
 
 class TestPopulationCoverageErrorMessage:
     """Ensure the shape-mismatch ValueError message teaches the batch path."""
