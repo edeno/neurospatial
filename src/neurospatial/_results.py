@@ -214,6 +214,30 @@ def env_fingerprint(env: Any) -> str:
     return repr(env)
 
 
+def _coord_dim_names(n_dims: int) -> list[str]:
+    """Per-dimension coordinate column names for tidy decode dataframes.
+
+    Returns ``["x", "y", "z"][:n_dims]`` for ``n_dims <= 3`` and
+    ``["dim_0", "dim_1", ...]`` otherwise. Shared by
+    :meth:`DecodingResult.to_dataframe` and
+    :meth:`DecodingSummary.to_dataframe` so their coordinate column naming
+    (``map_x``/``mean_x``/... vs ``map_dim_0``/...) stays identical.
+
+    Parameters
+    ----------
+    n_dims : int
+        Number of spatial dimensions.
+
+    Returns
+    -------
+    list[str]
+        Coordinate names, one per dimension.
+    """
+    if n_dims <= 3:
+        return ["x", "y", "z"][:n_dims]
+    return [f"dim_{i}" for i in range(n_dims)]
+
+
 def _bin_center_coords(
     env: Any, n_bins: int
 ) -> dict[str, tuple[str, NDArray[np.float64]]]:

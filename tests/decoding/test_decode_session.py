@@ -668,3 +668,48 @@ class TestAsSpikeTrainsPublic:
         result = as_spike_trains(spikes)
         assert len(result) == 1
         assert_allclose(result[0], spikes)
+
+
+class TestDecodeSessionFloat32Models:
+    """float32 encoding models flow into the decode working set (Task 2.5)."""
+
+    def test_float32_models_decode_within_tol(self) -> None:
+        """A float32 SpatialRatesResult.firing_rates decodes within tol of f64."""
+        from neurospatial.decoding import decode_session
+
+        env, spike_times, times, positions = _make_linear_track_sim(
+            n_neurons=10, duration=10.0, seed=7
+        )
+        dt = 0.1
+        times_arr = np.asarray(times, dtype=np.float64)
+
+        kwargs = {
+            "bandwidth": 5.0,
+            "smoothing_method": "diffusion_kde",
+            "min_occupancy": 0.0,
+            "fill_value": 0.0,
+        }
+        models32 = compute_spatial_rates(
+            env, spike_times, times_arr, positions, dtype=np.float32, **kwargs
+        ).firing_rates
+        models64 = compute_spatial_rates(
+            env, spike_times, times_arr, positions, dtype=np.float64, **kwargs
+        ).firing_rates
+
+        assert models32.dtype == np.float32
+        assert models64.dtype == np.float64
+
+        result32 = decode_session(
+            env, spike_times, times, positions, dt=dt, encoding_models=models32
+        )
+        result64 = decode_session(
+            env, spike_times, times, positions, dt=dt, encoding_models=models64
+        )
+
+        assert_allclose(
+            result32.map_position,
+            result64.map_position,
+            rtol=1e-4,
+            atol=1e-4,
+            err_msg="float32 encoding models decoded too far from float64",
+        )

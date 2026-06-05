@@ -2754,6 +2754,236 @@ class TestSpatialRatesResultSummaryTable:
 
 
 # ==============================================================================
+# Test summary_table() / label_cell_types() double-recompute avoidance (Task 2.3)
+# ==============================================================================
+
+
+class TestSummaryTableScoreRecompute:
+    """summary_table() must compute grid/border scores exactly once.
+
+    Regression: before the Task 2.3 fix, summary_table() computed grid and
+    border scores TWICE per call (once for the score columns, once inside
+    label_cell_types()). These tests pin the call count to exactly 1.
+    """
+
+    def test_summary_table_computes_grid_score_once(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """batch_grid_scores runs exactly once per summary_table() (was 2)."""
+        from unittest.mock import patch
+
+        import neurospatial.encoding._metrics as _metrics
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        with patch.object(
+            _metrics,
+            "batch_grid_scores",
+            wraps=_metrics.batch_grid_scores,
+        ) as mock_grid:
+            result.summary_table()
+
+        assert mock_grid.call_count == 1, (
+            f"batch_grid_scores called {mock_grid.call_count} times, "
+            "expected exactly 1 (regression: was 2 before Task 2.3 fix)"
+        )
+
+    def test_summary_table_computes_border_score_once(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """batch_border_scores runs exactly once per summary_table() (was 2)."""
+        from unittest.mock import patch
+
+        import neurospatial.encoding._metrics as _metrics
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        with patch.object(
+            _metrics,
+            "batch_border_scores",
+            wraps=_metrics.batch_border_scores,
+        ) as mock_border:
+            result.summary_table()
+
+        assert mock_border.call_count == 1, (
+            f"batch_border_scores called {mock_border.call_count} times, "
+            "expected exactly 1 (regression: was 2 before Task 2.3 fix)"
+        )
+
+
+class TestLabelCellTypesPrecomputedScores:
+    """label_cell_types() accepts precomputed grid/border score arrays."""
+
+    def test_precomputed_scores_match_recompute(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """Passing precomputed scores yields identical labels to recompute."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        gs = result.grid_scores().scores
+        bs = result.border_scores().scores
+
+        labels_recompute = result.label_cell_types()
+        labels_precomputed = result.label_cell_types(grid_scores=gs, border_scores=bs)
+
+        np.testing.assert_array_equal(labels_recompute, labels_precomputed)
+
+    def test_precomputed_scores_match_with_custom_thresholds(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """Precomputed scores compose with non-default thresholds."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        gs = result.grid_scores().scores
+        bs = result.border_scores().scores
+
+        labels_recompute = result.label_cell_types(
+            min_spatial_info=0.3, min_grid_score=0.5, min_border_score=0.4
+        )
+        labels_precomputed = result.label_cell_types(
+            min_spatial_info=0.3,
+            min_grid_score=0.5,
+            min_border_score=0.4,
+            grid_scores=gs,
+            border_scores=bs,
+        )
+
+        np.testing.assert_array_equal(labels_recompute, labels_precomputed)
+
+    def test_wrong_length_grid_scores_raises(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """Wrong-length grid_scores raises an informative ValueError."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        n_neurons = firing_rates_batch.shape[0]
+        bad = np.zeros(n_neurons + 1, dtype=np.float64)
+
+        with pytest.raises(ValueError, match="grid_scores"):
+            result.label_cell_types(grid_scores=bad)
+
+    def test_wrong_length_border_scores_raises(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """Wrong-length border_scores raises an informative ValueError."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        n_neurons = firing_rates_batch.shape[0]
+        bad = np.zeros(n_neurons + 1, dtype=np.float64)
+
+        with pytest.raises(ValueError, match="border_scores"):
+            result.label_cell_types(border_scores=bad)
+
+    def test_2d_grid_scores_raises(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """Non-1-D grid_scores raises an informative ValueError."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        n_neurons = firing_rates_batch.shape[0]
+        bad = np.zeros((n_neurons, 1), dtype=np.float64)
+
+        with pytest.raises(ValueError, match="grid_scores"):
+            result.label_cell_types(grid_scores=bad)
+
+    def test_integer_dtype_scores_coerced(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """Integer-dtype precomputed scores are coerced to float, not raised on."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        n_neurons = firing_rates_batch.shape[0]
+        gs = np.zeros(n_neurons, dtype=np.int64)
+        bs = np.zeros(n_neurons, dtype=np.int64)
+
+        # Should not raise a TypeError from np.isnan on integer dtype.
+        labels = result.label_cell_types(grid_scores=gs, border_scores=bs)
+        assert labels.shape == (n_neurons,)
+
+
+# ==============================================================================
 # Test compute_spatial_rate() function (Task 2.8)
 # ==============================================================================
 
@@ -4497,3 +4727,181 @@ class TestSpatialRateNaNPositionHandling:
         clean_peak = float(np.nanmax(clean.firing_rate))
         nan_peak = float(np.nanmax(nan_run.firing_rate))
         assert np.isclose(nan_peak, clean_peak, rtol=0.25)
+
+
+# ==============================================================================
+# Test compute_spatial_rates() float32 dtype option (Task 2.5)
+# ==============================================================================
+
+
+def _compare_finite(
+    a: NDArray[np.float64],
+    b: NDArray[np.float64],
+    *,
+    rtol: float = 1e-5,
+    atol: float = 1e-6,
+) -> None:
+    """Assert two rate-map arrays match on finite bins and share NaN masks."""
+    a = np.asarray(a, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+    nan_a = np.isnan(a)
+    nan_b = np.isnan(b)
+    np.testing.assert_array_equal(nan_a, nan_b)
+    finite = ~nan_a
+    np.testing.assert_allclose(a[finite], b[finite], rtol=rtol, atol=atol)
+
+
+class TestComputeSpatialRatesDtype:
+    """Tests for the ``dtype`` (float32) option on ``compute_spatial_rates``."""
+
+    def test_default_dtype_is_float64(
+        self,
+        trajectory_env: Environment,
+        multiple_place_cell_spikes: list[NDArray[np.float64]],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """No dtype argument keeps the float64 default."""
+        from neurospatial.encoding.spatial import compute_spatial_rates
+
+        result = compute_spatial_rates(
+            trajectory_env,
+            multiple_place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+        )
+        assert result.firing_rates.dtype == np.float64
+
+    @pytest.mark.parametrize("method", ["diffusion_kde", "gaussian_kde", "binned"])
+    def test_dtype_float32_honored(
+        self,
+        trajectory_env: Environment,
+        multiple_place_cell_spikes: list[NDArray[np.float64]],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+        method: str,
+    ) -> None:
+        """``dtype=np.float32`` yields a float32 rate-map array for every method."""
+        from neurospatial.encoding.spatial import compute_spatial_rates
+
+        result = compute_spatial_rates(
+            trajectory_env,
+            multiple_place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+            smoothing_method=method,
+            dtype=np.float32,
+        )
+        assert result.firing_rates.dtype == np.float32
+
+    def test_empty_neurons_float32(
+        self,
+        trajectory_env: Environment,
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """Empty-neuron path with dtype=float32 returns (0, n_bins) float32."""
+        from neurospatial.encoding.spatial import compute_spatial_rates
+
+        result = compute_spatial_rates(
+            trajectory_env,
+            [],
+            trajectory_times,
+            trajectory_positions,
+            dtype=np.float32,
+        )
+        assert result.firing_rates.shape == (0, trajectory_env.n_bins)
+        assert result.firing_rates.dtype == np.float32
+
+    @pytest.mark.parametrize("method", ["diffusion_kde", "gaussian_kde", "binned"])
+    def test_float32_matches_float64_within_tol(
+        self,
+        trajectory_env: Environment,
+        multiple_place_cell_spikes: list[NDArray[np.float64]],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+        method: str,
+    ) -> None:
+        """float32 rate maps match float64 within float32 tolerance."""
+        from neurospatial.encoding.spatial import compute_spatial_rates
+
+        kwargs = {
+            "smoothing_method": method,
+            "min_occupancy": 0.1,
+        }
+        r64 = compute_spatial_rates(
+            trajectory_env,
+            multiple_place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+            dtype=np.float64,
+            **kwargs,
+        )
+        r32 = compute_spatial_rates(
+            trajectory_env,
+            multiple_place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+            dtype=np.float32,
+            **kwargs,
+        )
+        assert r32.firing_rates.dtype == np.float32
+        _compare_finite(r32.firing_rates, r64.firing_rates)
+
+    def test_fill_value_float32_path(
+        self,
+        trajectory_env: Environment,
+        multiple_place_cell_spikes: list[NDArray[np.float64]],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """dtype=float32 with fill_value=0.0 gives float32, no NaN, matches f64."""
+        from neurospatial.encoding.spatial import compute_spatial_rates
+
+        r32 = compute_spatial_rates(
+            trajectory_env,
+            multiple_place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+            min_occupancy=0.1,
+            fill_value=0.0,
+            dtype=np.float32,
+        )
+        r64 = compute_spatial_rates(
+            trajectory_env,
+            multiple_place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+            min_occupancy=0.1,
+            fill_value=0.0,
+            dtype=np.float64,
+        )
+        assert r32.firing_rates.dtype == np.float32
+        assert not np.isnan(np.asarray(r32.firing_rates)).any()
+        np.testing.assert_allclose(
+            np.asarray(r32.firing_rates, dtype=np.float64),
+            np.asarray(r64.firing_rates, dtype=np.float64),
+            rtol=1e-5,
+            atol=1e-6,
+        )
+
+    @pytest.mark.parametrize("bad_dtype", [np.int32, np.float16])
+    def test_invalid_dtype_raises(
+        self,
+        trajectory_env: Environment,
+        multiple_place_cell_spikes: list[NDArray[np.float64]],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+        bad_dtype: type,
+    ) -> None:
+        """An unsupported dtype raises ValueError naming the param."""
+        from neurospatial.encoding.spatial import compute_spatial_rates
+
+        with pytest.raises(ValueError, match="dtype"):
+            compute_spatial_rates(
+                trajectory_env,
+                multiple_place_cell_spikes,
+                trajectory_times,
+                trajectory_positions,
+                dtype=bad_dtype,
+            )

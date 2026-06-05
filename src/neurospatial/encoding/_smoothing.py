@@ -341,6 +341,7 @@ def smooth_rate_maps_batch(
     min_occupancy: float = 0.0,
     kernel: NDArray[np.float64] | None = None,
     backend: Literal["numpy", "jax"] = "numpy",
+    dtype: type[np.float32] | type[np.float64] = np.float64,
 ) -> ArrayLike:
     """Compute smoothed firing rate maps for multiple neurons.
 
@@ -367,6 +368,13 @@ def smooth_rate_maps_batch(
         Computation backend. When "jax", uses JAX array operations for the
         core rate computation (smoothing/division). See smooth_rate_map for
         details on backend behavior.
+    dtype : {np.float32, np.float64}, default=np.float64
+        Storage dtype of the returned rate-map array. The matmul/division is
+        always done in float64 for accuracy; only the final returned array is
+        cast to ``dtype``. ``np.float32`` halves the ``(n_neurons, n_bins)``
+        storage. Default ``np.float64`` leaves every existing caller
+        byte-for-byte unchanged. Honored on the NumPy path; on the JAX path the
+        cast is applied to the returned array as well.
 
     Returns
     -------
@@ -405,7 +413,14 @@ def smooth_rate_maps_batch(
     # Dispatch to JAX or NumPy implementation.
     if backend == "jax":
         return _smooth_rate_maps_batch_jax(  # type: ignore[no-any-return]
-            env, spike_counts, occupancy, method, bandwidth, min_occupancy, kernel
+            env,
+            spike_counts,
+            occupancy,
+            method,
+            bandwidth,
+            min_occupancy,
+            kernel,
+            dtype=dtype,
         )
 
     # Dispatch to NumPy vectorized implementations
@@ -415,14 +430,16 @@ def smooth_rate_maps_batch(
                 bandwidth, mode="density", cache=True
             )
         return _diffusion_kde_batch(
-            spike_counts, occupancy, bandwidth, min_occupancy, kernel
+            spike_counts, occupancy, bandwidth, min_occupancy, kernel, dtype=dtype
         )
     elif method == "gaussian_kde":
         return _gaussian_kde_batch(
-            env, spike_counts, occupancy, bandwidth, min_occupancy
+            env, spike_counts, occupancy, bandwidth, min_occupancy, dtype=dtype
         )
     elif method == "binned":
-        return _binned_batch(env, spike_counts, occupancy, bandwidth, min_occupancy)
+        return _binned_batch(
+            env, spike_counts, occupancy, bandwidth, min_occupancy, dtype=dtype
+        )
     else:
         raise ValueError(f"Unknown method: {method}")
 
@@ -649,7 +666,9 @@ def _diffusion_kde_batch(
     bandwidth: float,
     min_occupancy: float,
     kernel: NDArray[np.float64],
-) -> NDArray[np.float64]:
+    *,
+    dtype: type[np.float32] | type[np.float64] = np.float64,
+) -> NDArray[np.floating[Any]]:
     """Apply diffusion KDE smoothing for multiple neurons."""
     spike_counts = np.asarray(spike_counts, dtype=np.float64)
     occupancy = np.asarray(occupancy, dtype=np.float64)
@@ -668,7 +687,7 @@ def _diffusion_kde_batch(
             np.nan,
         )
 
-    return firing_rates.astype(np.float64)
+    return firing_rates.astype(dtype)
 
 
 def _gaussian_kde_batch(
@@ -677,7 +696,9 @@ def _gaussian_kde_batch(
     occupancy: NDArray[np.float64],
     bandwidth: float,
     min_occupancy: float,
-) -> NDArray[np.float64]:
+    *,
+    dtype: type[np.float32] | type[np.float64] = np.float64,
+) -> NDArray[np.floating[Any]]:
     """Apply Gaussian KDE smoothing for multiple neurons."""
     spike_counts = np.asarray(spike_counts, dtype=np.float64)
     occupancy = np.asarray(occupancy, dtype=np.float64)
@@ -696,7 +717,7 @@ def _gaussian_kde_batch(
             np.nan,
         )
 
-    return firing_rates.astype(np.float64)
+    return firing_rates.astype(dtype)
 
 
 def _binned_batch(
@@ -705,7 +726,9 @@ def _binned_batch(
     occupancy: NDArray[np.float64],
     bandwidth: float,
     min_occupancy: float,
-) -> NDArray[np.float64]:
+    *,
+    dtype: type[np.float32] | type[np.float64] = np.float64,
+) -> NDArray[np.floating[Any]]:
     """Apply binned smoothing for multiple neurons."""
     spike_counts = np.asarray(spike_counts, dtype=np.float64)
     occupancy = np.asarray(occupancy, dtype=np.float64)
@@ -717,7 +740,7 @@ def _binned_batch(
         raw_rates = np.where(occupancy >= min_occupancy, raw_rates, np.nan)
 
     if bandwidth <= 0:
-        return raw_rates.astype(np.float64)
+        return raw_rates.astype(dtype)
 
     n_neurons = raw_rates.shape[0]
     result = np.empty_like(raw_rates, dtype=np.float64)
@@ -747,7 +770,7 @@ def _binned_batch(
                 np.nan,
             )
 
-    return result.astype(np.float64)
+    return result.astype(dtype)
 
 
 # =============================================================================
@@ -850,15 +873,24 @@ def _smooth_rate_maps_batch_jax(
     bandwidth: float,
     min_occupancy: float,
     kernel: NDArray[np.float64] | None,
+    *,
+    dtype: type[np.float32] | type[np.float64] = np.float64,
 ) -> Any:
     """JAX implementation of smooth_rate_maps_batch.
 
     Uses JAX array operations for the core computation while keeping
-    kernel computation on NumPy (from Environment).
+    kernel computation on NumPy (from Environment). The core matmul/division
+    runs in float64; only the returned array is cast to ``dtype``. When JAX
+    x64 is disabled, the float64 request is naturally narrowed by JAX; the
+    final defensive cast in ``compute_spatial_rates`` guarantees the requested
+    dtype regardless.
     """
     import jax.numpy as jnp
 
     from neurospatial.encoding._core_jax import compute_firing_rates_batch
+
+    # Resolve the matching jnp dtype for the final cast.
+    jnp_dtype = jnp.float32 if dtype is np.float32 else jnp.float64
 
     # Convert inputs to JAX with explicit float64
     spike_counts_j = jnp.asarray(spike_counts, dtype=jnp.float64)
@@ -872,7 +904,7 @@ def _smooth_rate_maps_batch_jax(
         )
 
         if bandwidth <= 0:
-            return firing_rates
+            return jnp.asarray(firing_rates, dtype=jnp_dtype)
 
         # Smoothing uses NumPy (Environment.smooth) - per-neuron loop
         # This method is not optimized for JAX
@@ -904,7 +936,7 @@ def _smooth_rate_maps_batch_jax(
                     np.nan,
                 )
 
-        return jnp.asarray(result, dtype=jnp.float64)
+        return jnp.asarray(result, dtype=jnp_dtype)
 
     # For diffusion_kde and gaussian_kde: smooth then normalize
     # Get kernel (computed by Environment, so NumPy)
@@ -935,4 +967,4 @@ def _smooth_rate_maps_batch_jax(
         jnp.nan,
     )
 
-    return firing_rates
+    return jnp.asarray(firing_rates, dtype=jnp_dtype)

@@ -134,7 +134,7 @@ with numerical stability considerations for log-domain computation.
 """
 
 from neurospatial.decoding._binning import bin_spikes_in_time
-from neurospatial.decoding._result import DecodingResult
+from neurospatial.decoding._result import DecodingResult, DecodingSummary
 from neurospatial.decoding.assemblies import (
     AssemblyDetectionResult,
     AssemblyPattern,
@@ -165,9 +165,10 @@ from neurospatial.decoding.metrics import (
 )
 from neurospatial.decoding.posterior import (
     decode_position,
+    decode_position_summary,
     normalize_to_posterior,
 )
-from neurospatial.decoding.session import decode_session
+from neurospatial.decoding.session import decode_session, decode_session_summary
 from neurospatial.decoding.trajectory import (
     IsotonicFitResult,
     LinearFitResult,
@@ -186,6 +187,7 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "AssemblyDetectionResult",
     "AssemblyPattern",
     "DecodingResult",
+    "DecodingSummary",
     "ExplainedVarianceResult",
     "IsotonicFitResult",
     "LinearFitResult",
@@ -199,8 +201,10 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "credible_region",
     # One-call golden path
     "decode_session",
+    "decode_session_summary",
     # Core decoding
     "decode_position",
+    "decode_position_summary",
     "decoding_correlation",
     "decoding_error",
     "detect_assemblies",

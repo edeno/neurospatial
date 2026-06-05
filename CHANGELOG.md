@@ -9,6 +9,34 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ## [Unreleased]
 
+### Added
+
+- Speed filtering on the encode path. `compute_spatial_rate` and
+  `compute_spatial_rates` gain keyword-only `speed` / `min_speed` parameters
+  (also forwarded by `decode_session` / `decode_session_summary`). When
+  `min_speed` is set, low-speed periods are excluded using **one shared
+  per-interval speed gate** applied to **both** the spike numerator and the
+  occupancy denominator, so a `min_speed` knob can never silently bias firing
+  rates by filtering only one side. The spike gate matches the occupancy gate
+  exactly: occupancy keeps interval `k` iff `speed[k] >= min_speed`, and a
+  spike at time `t` is kept iff
+  `speed[searchsorted(times, t, "right") - 1] >= min_speed` — the same
+  per-interval criterion, so identical intervals drop on both sides. When
+  `speed` is omitted it is auto-derived with a **forward difference**
+  (`speed[k] = ||positions[k+1] - positions[k]|| / (times[k+1] - times[k])`,
+  with `speed[n-1] = speed[n-2]`) to match `env.occupancy`'s
+  `time_allocation="start"` interval semantics; pass an explicit `speed` for
+  geodesic / linearized-track environments. `min_speed=None` (the default)
+  applies no filtering and leaves output byte-for-byte unchanged.
+  - Passing `speed` **without** `min_speed` now raises `ValueError` (instead of
+    silently ignoring `speed`), mirroring `env.occupancy`, which raises on
+    `min_speed` without `speed`.
+  - When `min_speed` excludes **all** trajectory intervals (e.g. a wrong-units
+    threshold), `compute_spatial_rate` / `compute_spatial_rates` now emit one
+    `UserWarning` naming `min_speed` and the resolved speed range — instead of
+    silently returning an empty rate map. The warning fires once per call
+    (not per neuron in the batch path) and is suppressed by `warn_on_drop=False`.
+
 ### Breaking changes
 
 - `to_xarray()` now returns a labeled `xarray.Dataset` instead of an
@@ -71,6 +99,23 @@ these are called out under a dedicated **Breaking changes** heading.
     ```
 
 ### Added
+
+- Memory-safe summary decoding for long sessions. `decode_position_summary`
+  is a new sibling of `decode_position` that streams over time, computing the
+  posterior one time-block at a time and reducing each block to per-time
+  scalars/vectors (`map_position` / `map_bin`, `mean_position`,
+  `posterior_entropy`, `peak_prob`) without ever materializing the full
+  `(n_time, n_bins)` posterior. It returns a new `DecodingSummary` frozen
+  dataclass (alongside `DecodingResult`) carrying `ResultMixin` and the
+  standard terminal verbs — `to_dataframe()` (one row per time bin),
+  `summary()`, `plot()`, and `to_xarray()` (a track `Dataset` with a `time`
+  dim and **no** `bin` posterior axis) — sharing accessor names and column
+  conventions with `DecodingResult` so user code ports between the two.
+  `decode_session_summary` is the matching one-call encode→bin→decode wrapper
+  (sibling of `decode_session`). The summary reductions are bit-for-bit
+  identical to reducing the full posterior for `map_position` / `map_bin`, and
+  match to floating-point tolerance for `mean_position` / `posterior_entropy` /
+  `peak_prob`.
 
 - Experiment-shaped factory presets on `Environment` that speak experiment
   vocabulary and delegate to the existing `from_*` factories:
@@ -179,6 +224,70 @@ these are called out under a dedicated **Breaking changes** heading.
   `compute_spatial_rate`, and `compute_spatial_rates` (`encoding/spatial.py`).
   Set to `False` to intentionally silence all spike-drop warnings (e.g. when
   the caller handles the diagnostic themselves).
+
+### Performance
+
+- `decode_position` gains two keyword-only memory knobs with **no change to its
+  return contract** (`.posterior` stays a fully-materialized `ndarray`):
+  - `dtype=np.float32` stores and computes the posterior in single precision,
+    halving stored and transient memory (parity with float64 to ~1e-6
+    relative). Every `DecodingResult` method works unchanged on a float32
+    posterior.
+  - `time_chunk=k` computes the exp/normalize in time-blocks into a single
+    preallocated output array, materializing the full-size `ll_shifted`
+    temporary one block at a time instead of all at once. This drops the
+    transient memory peak from ~4× to ~3× the stored posterior — the full-size
+    log-likelihood and its working copy still coexist with the output, so it is
+    not a ~1× path (that is `decode_position_summary`, which computes the
+    likelihood per block and never holds the full log-likelihood).
+    `time_chunk=None` (the default) reproduces the previous behavior
+    byte-for-byte.
+
+  For sessions where even the stored dense posterior is too large to hold, use
+  the new `decode_position_summary` / `decode_session_summary` (see **Added**),
+  which never materialize the full `(n_time, n_bins)` posterior.
+
+- `compute_spatial_rates` gains a keyword-only `dtype` (`np.float32` /
+  `np.float64`, default `np.float64`). `dtype=np.float32` halves the stored
+  `(n_units, n_bins)` rate-map array. The rate computation (GEMM / division) is
+  still performed in float64 and only the final result is cast, so float32
+  values match the float64 default within float32 tolerance. Note:
+  `decode_session` currently re-materializes encoding models as float64
+  internally, so passing a float32 `SpatialRatesResult.firing_rates` there does
+  not by itself shrink the decode working set; the decode-side memory knobs are
+  `decode_position(..., dtype=..., time_chunk=...)` and
+  `decode_position_summary`. Default `np.float64` leaves every existing caller
+  byte-for-byte unchanged; any other dtype raises `ValueError`.
+
+- Documented the dense diffusion-kernel **O(n²) memory cost** and added a hard
+  high-bin **safety gate**. The heat kernel `exp(-tL)` of a connected graph is
+  dense by construction (every entry > 0), so it always costs
+  `n_bins**2 * 8` bytes of float64 memory (≈ 3.2 GB at 20,000 bins).
+  `compute_diffusion_kernels` and `env.compute_kernel` now **raise**
+  `MemoryError` above 20,000 bins, turning a silent out-of-memory crash into an
+  actionable error that names the size, the GB estimate, and the fixes (reduce
+  bins, use `smoothing_method="binned"`, or pass `allow_large=True` to override
+  if you have the RAM). The existing `UserWarning` above 3,000 bins is kept.
+  No numerical results change — this is documentation plus a default-refuse
+  gate with an explicit opt-out. The reliable scale wins this release remain
+  float32 rate maps and the memory-safe summary decode (above). A faster,
+  lower-peak `expm_multiply` / Chebyshev rewrite of the kernel is a **deferred
+  stretch goal** and is intentionally **not** part of this release.
+
+- `SpatialRatesResult.summary_table()` no longer double-computes grid and
+  border scores. It previously ran the expensive per-neuron grid/border score
+  computation **twice** per call (once for the `grid_score`/`border_score`
+  columns and again inside `label_cell_types()`); it now computes each once and
+  forwards them. `label_cell_types()` gains optional keyword-only
+  `grid_scores=` / `border_scores=` parameters to accept precomputed score
+  arrays (validated to be 1-D and length `n_neurons`); when omitted it
+  recomputes as before, so existing callers are unchanged.
+
+- `population_coverage()` gains a keyword-only `n_jobs` parameter (default `1`)
+  to parallelize per-neuron place-field detection via joblib (`-1` uses all
+  CPUs). `n_jobs=1` keeps the sequential path with no joblib overhead; results
+  are byte-for-byte identical regardless of `n_jobs` (returned data identical;
+  per-neuron exclusion warnings are not surfaced under `n_jobs != 1`).
 
 ### Changed
 
@@ -307,6 +416,20 @@ in 0.7. Each old name forwards to its replacement with unchanged behavior.
   cause** in the main process — never from joblib worker processes where
   warnings are commonly swallowed.  Default behaviour for in-window spikes
   is byte-for-byte unchanged.
+
+### Documentation
+
+- `population_coverage` docstring example now shows the vectorized batch path
+  (`compute_spatial_rates(...).firing_rates`) instead of the per-neuron
+  `compute_spatial_rate` loop; the pre-existing arg-order bug
+  (`population_coverage(firing_rates, env)`) has been corrected to
+  `population_coverage(env, firing_rates)`.
+- `population_coverage` shape-mismatch `ValueError` message now steers users to
+  `compute_spatial_rates` (the batch function) rather than the slow
+  `compute_spatial_rate` + `np.stack` recipe.
+- `compute_spatial_rate` (singular) docstring now includes a short note pointing
+  many-neuron users to `compute_spatial_rates` (plural), which shares occupancy
+  and smoothing-kernel work across the whole population.
 
 ## [0.5.0] - 2026-06-04
 

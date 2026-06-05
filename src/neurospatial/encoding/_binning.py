@@ -33,9 +33,11 @@ if TYPE_CHECKING:
     from neurospatial.environment._protocols import EnvironmentProtocol
 
 __all__ = [
+    "_emit_all_excluded_speed_warning",
     "bin_spike_train",
     "bin_spike_trains",
     "compute_occupancy",
+    "resolve_speed",
 ]
 
 
@@ -44,11 +46,140 @@ __all__ = [
 _DROP_WARN_THRESHOLD = 0.5  # warn when fraction dropped exceeds this
 
 
+def resolve_speed(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    speed: NDArray[np.float64] | None,
+    min_speed: float | None,
+) -> NDArray[np.float64] | None:
+    """Resolve the speed array used for the shared speed gate.
+
+    This is the single source of truth for the speed array that gates BOTH
+    the spike numerator and the occupancy denominator. Both the single and
+    batch encode paths call this ONCE at the top and pass the resulting
+    concrete array down to both the spike kernel and ``env.occupancy`` — so
+    the retained-sample set is identical on both sides by construction, and a
+    firing rate (spikes / occupancy) cannot become biased by gating only one
+    side.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_samples,)
+        Trajectory timestamps in seconds (assumed sorted/finite; validated
+        upstream by ``validate_trajectory``). Division by ``Δt`` is guarded
+        defensively against non-positive gaps.
+    positions : ndarray, shape (n_samples, n_dims)
+        Trajectory position coordinates.
+    speed : ndarray, shape (n_samples,), or None
+        Caller-supplied speed array. When provided, it is validated and
+        returned unchanged (no re-derivation downstream).
+    min_speed : float or None
+        Speed threshold. When ``None``, NO speed filtering happens: this
+        returns ``None`` and the caller passes nothing speed-related to
+        ``env.occupancy`` (so ``max_gap`` etc. stay exactly as before — the
+        output is byte-for-byte unchanged). It is an error to pass ``speed``
+        without ``min_speed`` (see Raises): a bare ``speed`` would otherwise be
+        silently ignored, asymmetric with ``env.occupancy`` (which raises on
+        ``min_speed`` without ``speed``).
+
+    Returns
+    -------
+    ndarray, shape (n_samples,), or None
+        - ``None`` when ``min_speed is None`` (no filtering).
+        - The validated ``speed`` array when one was passed.
+        - Otherwise an auto-derived forward-difference speed array.
+
+    Raises
+    ------
+    ValueError
+        If ``speed`` is provided without ``min_speed`` (the message names both
+        ``speed`` and ``min_speed``). This mirrors ``env.occupancy``, which
+        raises on ``min_speed`` without ``speed``.
+        If a ``speed`` array is passed whose length does not match
+        ``times`` (the message names ``speed``).
+
+    Notes
+    -----
+    **Auto-speed convention (forward difference).** When ``speed is None`` and
+    ``min_speed is not None``, speed is derived from the trajectory with a
+    FORWARD difference, matching ``env.occupancy``'s ``time_allocation="start"``
+    interval semantics (interval ``k`` spans ``[t_k, t_{k+1})`` and is assigned
+    to the bin at sample ``k``):
+
+    .. math::
+        \\text{speed}[k] = \\frac{\\lVert p_{k+1} - p_k \\rVert_2}
+                                  {t_{k+1} - t_k}, \\quad k = 0 \\ldots n-2
+
+    The final sample starts no occupancy interval, so its speed is defined by
+    repeating the last finite-difference value: ``speed[n-1] = speed[n-2]``.
+
+    This Euclidean default is intentionally simple. For geodesic / linearized
+    track environments where straight-line distance is not the relevant speed,
+    pass your own precomputed ``speed`` array instead of relying on the
+    auto-derivation.
+    """
+    if min_speed is None:
+        if speed is not None:
+            # Asymmetric footgun: a caller passing `speed` without `min_speed`
+            # would otherwise have it silently ignored (no filtering applied).
+            # env.occupancy raises the mirror case (min_speed without speed),
+            # so raise here too rather than swallow `speed`.
+            raise ValueError(
+                "speed was provided without min_speed; pass "
+                "min_speed=<threshold> to enable speed filtering, or omit "
+                "speed."
+            )
+        # No filtering requested: return None so callers leave env.occupancy
+        # exactly as before (byte-for-byte unchanged output).
+        return None
+
+    times = np.asarray(times, dtype=np.float64)
+    positions = np.asarray(positions, dtype=np.float64)
+    if positions.ndim == 1:
+        positions = positions.reshape(-1, 1)
+
+    if speed is not None:
+        speed_arr = np.asarray(speed, dtype=np.float64)
+        if len(speed_arr) != len(times):
+            raise ValueError(
+                f"speed length ({len(speed_arr)}) must match times length "
+                f"({len(times)})."
+            )
+        return speed_arr
+
+    n_samples = len(times)
+    if n_samples <= 1:
+        # No intervals: speed is undefined; return zeros so a min_speed gate
+        # consistently excludes the (non-existent) intervals on both sides.
+        return np.zeros(n_samples, dtype=np.float64)
+
+    dt = np.diff(times)
+    # Forward differences in position (Euclidean) over each interval.
+    step = np.linalg.norm(np.diff(positions, axis=0), axis=1)
+
+    # Guard division against non-positive / non-finite dt (duplicate
+    # timestamps). validate_trajectory enforces sorted/finite upstream, but
+    # equal consecutive timestamps (dt == 0) are still possible.
+    interval_speed = np.zeros(n_samples - 1, dtype=np.float64)
+    valid_dt = dt > 0
+    interval_speed[valid_dt] = step[valid_dt] / dt[valid_dt]
+
+    speed_full = np.empty(n_samples, dtype=np.float64)
+    speed_full[: n_samples - 1] = interval_speed
+    # The final sample starts no occupancy interval; repeat the last value so
+    # a spike landing exactly on the final sample is gated consistently.
+    speed_full[n_samples - 1] = interval_speed[-1]
+    return speed_full
+
+
 def _bin_spike_train_with_stats(
     env: Environment,
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
+    *,
+    speed: NDArray[np.float64] | None = None,
+    min_speed: float | None = None,
 ) -> tuple[
     NDArray[np.float64],  # spike_counts, shape (n_bins,)
     int,  # n_time_dropped
@@ -75,6 +206,21 @@ def _bin_spike_train_with_stats(
         Already cast to float64.
     positions : ndarray, shape (n_samples, n_dims)
         Already reshaped to 2-D and cast to float64.
+    speed : ndarray, shape (n_samples,), or None
+        Concrete, already-resolved speed array (from :func:`resolve_speed`).
+        Consumed as-is; this kernel never re-derives speed.
+    min_speed : float or None
+        Speed threshold. When both ``speed`` and ``min_speed`` are provided,
+        each time-window-valid spike is gated by the speed of the interval it
+        falls in: for a spike at time ``t``, its interval index is
+        ``k = searchsorted(times, t, side="right") - 1`` (clamped to
+        ``[0, n_samples-1]``), and the spike is KEPT iff
+        ``speed[k] >= min_speed``. This is the SAME per-interval gate that
+        ``env.occupancy`` applies to occupancy (``speed[:-1] >= min_speed``),
+        so the numerator (spikes) and denominator (occupancy) drop exactly the
+        same intervals. Speed-excluded spikes are INTENTIONAL exclusions and
+        are NOT counted as ``n_bin_dropped`` (the drop stats stay about
+        time-window and inactive-bin drops only).
 
     Returns
     -------
@@ -82,11 +228,14 @@ def _bin_spike_train_with_stats(
     n_time_dropped : int
         Spikes outside the position time window.
     n_bin_dropped : int
-        Time-valid spikes that mapped to inactive/out-of-environment bins.
+        Time-valid (and speed-valid) spikes that mapped to
+        inactive/out-of-environment bins.
     n_total : int
         Total number of spikes (= len(spike_times)).
     n_after_time : int
-        Spikes surviving the time-window filter.
+        Spikes surviving the time-window filter (and, when speed filtering is
+        active, the speed gate) — i.e. the denominator for the inactive-bin
+        drop fraction.
     """
     n_bins = env.n_bins
     spike_counts = np.zeros(n_bins, dtype=np.float64)
@@ -99,6 +248,36 @@ def _bin_spike_train_with_stats(
     valid_time_mask = (spike_times >= t_min) & (spike_times <= t_max)
     spike_times_valid = spike_times[valid_time_mask]
     n_time_dropped = n_total - len(spike_times_valid)
+
+    # Speed gate: applied AFTER the time-window filter and BEFORE bin_at.
+    # For each surviving spike at time t, find the interval it falls in
+    #   k = searchsorted(times, t, side="right") - 1   (clamped to [0, n-2])
+    # and keep it iff speed[k] >= min_speed. This is the SAME per-interval
+    # gate env.occupancy uses (speed[:-1] >= min_speed), so spikes and
+    # occupancy drop exactly the same intervals — numerator/denominator stay
+    # aligned. Speed-excluded spikes are INTENTIONAL: they are NOT counted as
+    # dropped (they do not inflate n_bin_dropped or its warning). The full
+    # trajectory is still used for position interpolation below; only which
+    # spikes survive changes.
+    #
+    # The upper clip is n-2 (the index of the LAST occupancy interval), not
+    # n-1: a spike landing exactly on times[-1] would otherwise be gated by
+    # speed[n-1], which occupancy never consults (it gates the last interval by
+    # speed[n-2] via speed[:-1]). For auto-derived speed this is harmless
+    # (speed[n-1] == speed[n-2]), but a caller-supplied speed with a differing
+    # final element could drop a t_max spike while occupancy keeps the matching
+    # last interval. Clipping to n-2 gates the t_max spike by speed[n-2],
+    # matching occupancy's last interval exactly. (Guarded for n >= 2; for
+    # n == 1 there are no intervals and this branch's speed gate never excludes
+    # — n-2 == -1 only when len(times) == 1, which is handled by resolve_speed
+    # returning all-zeros for that degenerate case.)
+    if speed is not None and min_speed is not None and len(spike_times_valid) > 0:
+        spike_interval = np.searchsorted(times, spike_times_valid, side="right") - 1
+        upper = max(len(times) - 2, 0)
+        spike_interval = np.clip(spike_interval, 0, upper)
+        speed_keep = speed[spike_interval] >= min_speed
+        spike_times_valid = spike_times_valid[speed_keep]
+
     n_after_time = len(spike_times_valid)
 
     if n_after_time == 0:
@@ -121,6 +300,59 @@ def _bin_spike_train_with_stats(
         spike_counts = np.bincount(valid_bins, minlength=n_bins).astype(np.float64)
 
     return spike_counts, n_time_dropped, n_bin_dropped, n_total, n_after_time
+
+
+def _emit_all_excluded_speed_warning(
+    speed: NDArray[np.float64] | None,
+    min_speed: float | None,
+    *,
+    stacklevel: int = 2,
+) -> None:
+    """Emit a UserWarning when ``min_speed`` excludes (almost) all intervals.
+
+    A ``min_speed`` set too high — or in the wrong units (e.g. an m/s threshold
+    against a cm/s trajectory) — can exclude EVERY movement interval, leaving an
+    all-zero occupancy and an all-NaN/zero rate map with no other signal. This
+    mirrors the unit-mismatch tone of the time-window / inactive-bin warnings.
+
+    Detection uses the resolved per-interval speed gate
+    (``speed[:-1] >= min_speed``) — the exact same mask ``env.occupancy`` and the
+    spike kernel apply — so it fires iff the rate map is genuinely empty.
+
+    Parameters
+    ----------
+    speed : ndarray, shape (n_samples,), or None
+        Resolved speed array (from :func:`resolve_speed`). ``None`` means no
+        filtering was requested; nothing is emitted.
+    min_speed : float or None
+        Speed threshold. ``None`` means no filtering; nothing is emitted.
+    stacklevel : int, optional
+        ``warnings.warn`` stacklevel.
+    """
+    if speed is None or min_speed is None:
+        return
+    # Per-interval gate: interval k spans [t_k, t_{k+1}) and uses speed[k],
+    # so only the first n-1 entries gate occupancy (matching env.occupancy).
+    interval_speed = speed[:-1]
+    if interval_speed.size == 0:
+        return
+    if np.any(interval_speed >= min_speed):
+        return
+    finite = interval_speed[np.isfinite(interval_speed)]
+    if finite.size > 0:
+        s_min = float(finite.min())
+        s_max = float(finite.max())
+        range_part = f"speed in [{s_min:.3g}, {s_max:.3g}] units/s"
+    else:
+        range_part = "no finite speeds"
+    warnings.warn(
+        f"min_speed={min_speed} excluded all trajectory intervals "
+        f"({range_part}); the rate map is empty. Check that min_speed and "
+        f"the trajectory share units. "
+        f"Set warn_on_drop=False to suppress this warning.",
+        UserWarning,
+        stacklevel=stacklevel,
+    )
 
 
 def _emit_time_window_warning(
@@ -220,6 +452,8 @@ def bin_spike_train(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
+    speed: NDArray[np.float64] | None = None,
+    min_speed: float | None = None,
     context: str = "bin_spike_train",
     warn_on_drop: bool = True,
 ) -> NDArray[np.float64]:
@@ -239,6 +473,17 @@ def bin_spike_train(
         Timestamps of trajectory samples in seconds.
     positions : ndarray, shape (n_samples, n_dims)
         Position coordinates at each time sample.
+    speed : ndarray, shape (n_samples,), or None
+        Concrete, already-resolved speed array (typically from
+        :func:`resolve_speed`). When provided with ``min_speed``, spikes are
+        gated by the same per-interval speed criterion ``env.occupancy`` uses
+        (see ``min_speed``). Consumed as-is; never re-derived here.
+    min_speed : float or None
+        Minimum speed threshold. When provided together with ``speed``, each
+        time-window-valid spike at time ``t`` is kept iff
+        ``speed[searchsorted(times, t, "right") - 1] >= min_speed`` — the same
+        per-interval gate ``env.occupancy`` applies to the denominator. When
+        ``None`` (default) no speed filtering happens.
     context : str, optional
         Label used in error messages to identify the calling function.
     warn_on_drop : bool, default=True
@@ -307,7 +552,9 @@ def bin_spike_train(
         positions = positions.reshape(-1, 1)
 
     spike_counts, n_time_dropped, n_bin_dropped, n_total, n_after_time = (
-        _bin_spike_train_with_stats(env, spike_times, times, positions)
+        _bin_spike_train_with_stats(
+            env, spike_times, times, positions, speed=speed, min_speed=min_speed
+        )
     )
 
     if warn_on_drop:
@@ -334,6 +581,8 @@ def compute_occupancy(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
+    speed: NDArray[np.float64] | None = None,
+    min_speed: float | None = None,
     context: str = "compute_occupancy",
 ) -> NDArray[np.float64]:
     """Compute occupancy (time spent in each bin).
@@ -349,6 +598,14 @@ def compute_occupancy(
         Timestamps of trajectory samples in seconds.
     positions : ndarray, shape (n_samples, n_dims)
         Position coordinates at each time sample.
+    speed : ndarray, shape (n_samples,), or None
+        Concrete, already-resolved speed array (typically from
+        :func:`resolve_speed`). Forwarded to ``env.occupancy``; when provided
+        with ``min_speed``, interval ``k`` is gated by ``speed[k] >= min_speed``.
+    min_speed : float or None
+        Minimum speed threshold. When ``None`` (default), no speed filtering
+        is applied and nothing speed-related is passed to ``env.occupancy``, so
+        the result is byte-for-byte identical to before.
 
     Returns
     -------
@@ -409,10 +666,21 @@ def compute_occupancy(
             f"but environment has {env.n_dims} dimensions"
         )
 
-    # Delegate to Environment.occupancy() which handles all the complexity
-    occupancy = cast("EnvironmentProtocol", env).occupancy(
-        times, positions, return_seconds=True
-    )
+    # Delegate to Environment.occupancy() which handles all the complexity.
+    # When min_speed is None we pass nothing speed-related so the call is
+    # byte-for-byte identical to before (max_gap defaults etc. untouched).
+    if min_speed is None:
+        occupancy = cast("EnvironmentProtocol", env).occupancy(
+            times, positions, return_seconds=True
+        )
+    else:
+        occupancy = cast("EnvironmentProtocol", env).occupancy(
+            times,
+            positions,
+            speed=speed,
+            min_speed=min_speed,
+            return_seconds=True,
+        )
 
     return occupancy.astype(np.float64)
 
@@ -423,6 +691,8 @@ def bin_spike_trains(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
+    speed: NDArray[np.float64] | None = None,
+    min_speed: float | None = None,
     n_jobs: int = 1,
     warn_on_drop: bool = True,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
@@ -445,6 +715,18 @@ def bin_spike_trains(
         Timestamps of trajectory samples in seconds.
     positions : ndarray, shape (n_samples, n_dims)
         Position coordinates at each time sample.
+    speed : ndarray, shape (n_samples,), or None
+        Caller-supplied speed array. When ``min_speed`` is set, the speed
+        array is resolved ONCE (auto-derived via forward difference if this is
+        ``None``) and the SAME concrete array gates BOTH the shared occupancy
+        denominator and every per-neuron spike numerator, guaranteeing
+        numerator/denominator alignment by construction. See
+        :func:`resolve_speed`.
+    min_speed : float or None
+        Minimum speed threshold (physical units / second). When ``None``
+        (default) no speed filtering happens and the output is byte-for-byte
+        unchanged. When set, low-speed intervals are excluded from BOTH
+        occupancy and spike counts.
     n_jobs : int, default=1
         Number of parallel jobs for spike counting. Use -1 for all CPUs.
         1 means sequential processing (no parallelization overhead).
@@ -511,10 +793,17 @@ def bin_spike_trains(
     if positions.ndim == 1:
         positions = positions.reshape(-1, 1)
 
+    # Resolve the speed gate ONCE here so the SAME concrete array feeds both
+    # the (shared) occupancy denominator and every per-neuron spike numerator.
+    # This is what guarantees numerator/denominator alignment by construction.
+    resolved_speed = resolve_speed(times, positions, speed, min_speed)
+
     # Occupancy is independent of which neuron we're binning, so compute once.
     # Spike binning itself depends on per-neuron spike_times (interpolated to
     # spike positions), so it stays inside the per-neuron loop.
-    occupancy = compute_occupancy(env, times, positions)
+    occupancy = compute_occupancy(
+        env, times, positions, speed=resolved_speed, min_speed=min_speed
+    )
 
     # Spike-counting pass.  We use the private kernel _bin_spike_train_with_stats
     # which returns (counts, n_time_dropped, n_bin_dropped, n_total, n_after_time)
@@ -535,7 +824,12 @@ def bin_spike_trains(
 
         for i, spikes in enumerate(spike_arrays):
             counts, n_td, n_bd, n_tot, n_at = _bin_spike_train_with_stats(
-                env, spikes, times, positions
+                env,
+                spikes,
+                times,
+                positions,
+                speed=resolved_speed,
+                min_speed=min_speed,
             )
             spike_counts[i] = counts
             total_spikes += n_tot
@@ -549,7 +843,14 @@ def bin_spike_trains(
             spikes: NDArray[np.float64],
         ) -> tuple[NDArray[np.float64], int, int, int, int]:
             # Return stats as data — do NOT call warnings.warn() from here.
-            return _bin_spike_train_with_stats(env, spikes, times, positions)
+            return _bin_spike_train_with_stats(
+                env,
+                spikes,
+                times,
+                positions,
+                speed=resolved_speed,
+                min_speed=min_speed,
+            )
 
         results = Parallel(n_jobs=n_jobs)(
             delayed(_process_neuron)(spikes) for spikes in spike_arrays
