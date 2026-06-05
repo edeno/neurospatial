@@ -1566,7 +1566,7 @@ class SpatialRatesResult(SpatialResultMixin):
         if grid_scores is None:
             grid_scores_arr = self.grid_scores().scores
         else:
-            grid_scores_arr = np.asarray(grid_scores)
+            grid_scores_arr = np.asarray(grid_scores, dtype=np.float64)
             if grid_scores_arr.ndim != 1 or grid_scores_arr.shape[0] != n_neurons:
                 raise ValueError(
                     f"grid_scores must be a 1-D array of length {n_neurons} "
@@ -1575,7 +1575,7 @@ class SpatialRatesResult(SpatialResultMixin):
         if border_scores is None:
             border_scores_arr = self.border_scores().scores
         else:
-            border_scores_arr = np.asarray(border_scores)
+            border_scores_arr = np.asarray(border_scores, dtype=np.float64)
             if border_scores_arr.ndim != 1 or border_scores_arr.shape[0] != n_neurons:
                 raise ValueError(
                     f"border_scores must be a 1-D array of length {n_neurons} "

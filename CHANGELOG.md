@@ -241,7 +241,8 @@ these are called out under a dedicated **Breaking changes** heading.
 - `population_coverage()` gains a keyword-only `n_jobs` parameter (default `1`)
   to parallelize per-neuron place-field detection via joblib (`-1` uses all
   CPUs). `n_jobs=1` keeps the sequential path with no joblib overhead; results
-  are byte-for-byte identical regardless of `n_jobs`.
+  are byte-for-byte identical regardless of `n_jobs` (returned data identical;
+  per-neuron exclusion warnings are not surfaced under `n_jobs != 1`).
 
 ### Changed
 

@@ -2958,6 +2958,30 @@ class TestLabelCellTypesPrecomputedScores:
         with pytest.raises(ValueError, match="grid_scores"):
             result.label_cell_types(grid_scores=bad)
 
+    def test_integer_dtype_scores_coerced(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """Integer-dtype precomputed scores are coerced to float, not raised on."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        n_neurons = firing_rates_batch.shape[0]
+        gs = np.zeros(n_neurons, dtype=np.int64)
+        bs = np.zeros(n_neurons, dtype=np.int64)
+
+        # Should not raise a TypeError from np.isnan on integer dtype.
+        labels = result.label_cell_types(grid_scores=gs, border_scores=bs)
+        assert labels.shape == (n_neurons,)
+
 
 # ==============================================================================
 # Test compute_spatial_rate() function (Task 2.8)

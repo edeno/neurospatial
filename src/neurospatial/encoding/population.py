@@ -152,7 +152,7 @@ def population_coverage(
     detect_subfields: bool = True,
     n_jobs: int = 1,
 ) -> PopulationCoverageResult:
-    """Compute spatial coverage of a place cell population.
+    r"""Compute spatial coverage of a place cell population.
 
     Detects place fields for each neuron, then computes comprehensive
     coverage statistics including gap locations.
@@ -180,7 +180,11 @@ def population_coverage(
         Number of parallel jobs for per-neuron place-field detection. Use
         ``-1`` for all CPUs. ``1`` means sequential processing (no joblib
         overhead). Results are byte-for-byte identical regardless of
-        ``n_jobs`` (joblib preserves submission order).
+        ``n_jobs`` (joblib preserves submission order). Note: per-neuron
+        interneuron-exclusion ``UserWarning``\s from ``detect_place_fields``
+        are not surfaced when ``n_jobs != 1`` (joblib worker warnings are
+        commonly swallowed); inspect ``result.place_fields[i].excluded_reason``
+        instead.
 
     Returns
     -------
