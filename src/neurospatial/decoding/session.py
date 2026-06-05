@@ -93,6 +93,8 @@ def decode_session(
     bandwidth: float = 5.0,
     smoothing_method: str = "diffusion_kde",
     min_occupancy: float = 0.0,
+    speed: NDArray[np.float64] | None = None,
+    min_speed: float | None = None,
     encoding_models: NDArray[np.float64] | None = None,
     warn_on_drop: bool = True,
     **decode_kwargs: Any,
@@ -138,6 +140,18 @@ def decode_session(
         encoding model.  Bins below threshold are set to ``fill_value=0.0``
         so the decoder never receives NaN rates.  Default is 0.0 (no
         threshold).  Ignored when ``encoding_models`` is provided.
+    speed : NDArray[np.float64], shape (n_frames,) or None
+        Precomputed instantaneous speed at each trajectory sample, forwarded to
+        :func:`~neurospatial.encoding.compute_spatial_rates`. Only used when
+        ``min_speed`` is set; auto-derived when ``None``. Ignored when
+        ``encoding_models`` is provided.
+    min_speed : float or None
+        Minimum speed threshold (physical units / second), forwarded to the
+        encoding step so the decode golden path can speed-filter encoding. When
+        set, low-speed periods are excluded from BOTH the spike numerator and
+        the occupancy denominator of the encoding model via one shared gate.
+        When ``None`` (default) no speed filtering is applied (unchanged).
+        Ignored when ``encoding_models`` is provided.
     encoding_models : NDArray[np.float64], shape (n_neurons, n_bins) or None
         Pre-computed place-field firing-rate maps.  When provided, the
         encoding step (``compute_spatial_rates``) is skipped entirely and
@@ -275,6 +289,8 @@ def decode_session(
         bandwidth=bandwidth,
         smoothing_method=smoothing_method,
         min_occupancy=min_occupancy,
+        speed=speed,
+        min_speed=min_speed,
         encoding_models=encoding_models,
         warn_on_drop=warn_on_drop,
     )
@@ -300,6 +316,8 @@ def _encode_and_bin(
     bandwidth: float,
     smoothing_method: str,
     min_occupancy: float,
+    speed: NDArray[np.float64] | None = None,
+    min_speed: float | None = None,
     encoding_models: NDArray[np.float64] | None,
     warn_on_drop: bool,
 ) -> tuple[NDArray[np.float64], NDArray[np.int64], NDArray[np.float64]]:
@@ -373,6 +391,8 @@ def _encode_and_bin(
             smoothing_method=_method,
             min_occupancy=min_occupancy,
             fill_value=0.0,
+            speed=speed,
+            min_speed=min_speed,
             warn_on_drop=warn_on_drop,
         )
         firing_rates = np.asarray(rates_result.firing_rates, dtype=np.float64)
@@ -405,6 +425,8 @@ def decode_session_summary(
     bandwidth: float = 5.0,
     smoothing_method: str = "diffusion_kde",
     min_occupancy: float = 0.0,
+    speed: NDArray[np.float64] | None = None,
+    min_speed: float | None = None,
     encoding_models: NDArray[np.float64] | None = None,
     warn_on_drop: bool = True,
     **decode_kwargs: Any,
@@ -421,7 +443,7 @@ def decode_session_summary(
     Parameters
     ----------
     env, spike_times, times, positions, dt, bandwidth, smoothing_method, \
-min_occupancy, encoding_models, warn_on_drop
+min_occupancy, speed, min_speed, encoding_models, warn_on_drop
         Same as :func:`decode_session`.
     **decode_kwargs
         Forwarded to
@@ -450,6 +472,8 @@ min_occupancy, encoding_models, warn_on_drop
         bandwidth=bandwidth,
         smoothing_method=smoothing_method,
         min_occupancy=min_occupancy,
+        speed=speed,
+        min_speed=min_speed,
         encoding_models=encoding_models,
         warn_on_drop=warn_on_drop,
     )

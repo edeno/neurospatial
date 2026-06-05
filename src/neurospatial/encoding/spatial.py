@@ -1879,6 +1879,8 @@ def compute_spatial_rate(
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
     fill_value: float | None = None,
+    speed: NDArray[np.float64] | None = None,
+    min_speed: float | None = None,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
     warn_on_drop: bool = True,
 ) -> SpatialRateResult:
@@ -1937,6 +1939,29 @@ def compute_spatial_rate(
         without manual NaN scrubbing. ``occupancy`` is unaffected, so callers
         can still recover which bins were masked via
         ``result.occupancy < min_occupancy``.
+    speed : ndarray, shape (n_samples,), optional
+        Precomputed instantaneous speed at each trajectory sample (physical
+        units / second). Only used when ``min_speed`` is set. When
+        ``min_speed`` is set and ``speed`` is ``None``, speed is auto-derived
+        from the trajectory (see ``min_speed``). Pass your own ``speed`` for
+        geodesic / linearized-track environments where the Euclidean
+        auto-default is not appropriate. A wrong-length array raises
+        ``ValueError``.
+    min_speed : float, optional
+        Minimum speed threshold (physical units / second). When set, low-speed
+        periods are excluded from BOTH the spike numerator AND the occupancy
+        denominator using ONE shared per-interval speed gate, so the firing
+        rate stays correct (gating only one side would bias the rate). When
+        ``None`` (the default) NO speed filtering is applied and the output is
+        byte-for-byte identical to before.
+
+        **Auto-speed convention.** When ``min_speed`` is set and ``speed`` is
+        ``None``, speed is derived with a FORWARD difference to match the
+        occupancy interval semantics (``time_allocation="start"``):
+        ``speed[k] = ||positions[k+1] - positions[k]||_2 / (times[k+1] -
+        times[k])`` for ``k = 0 .. n-2``, with ``speed[n-1] = speed[n-2]`` (the
+        last sample starts no occupancy interval). This Euclidean default is
+        simple; for geodesic / track environments pass an explicit ``speed``.
     backend : {"numpy", "jax", "auto"}, default="numpy"
         Computation backend for rate map smoothing:
 
@@ -1955,7 +1980,9 @@ def compute_spatial_rate(
         when **all** spikes are dropped (regardless of threshold).  This
         guards against common unit mismatches (e.g. spike_times in
         milliseconds while times is in seconds).  Set to ``False`` to
-        suppress all drop-related warnings.
+        suppress all drop-related warnings. Speed-excluded spikes (via
+        ``min_speed``) are intentional exclusions and do NOT trigger this
+        warning.
 
     Returns
     -------
@@ -2025,7 +2052,11 @@ def compute_spatial_rate(
         get_backend_name,
         is_jax_available,
     )
-    from neurospatial.encoding._binning import bin_spike_train, compute_occupancy
+    from neurospatial.encoding._binning import (
+        bin_spike_train,
+        compute_occupancy,
+        resolve_speed,
+    )
     from neurospatial.encoding._smoothing import (
         _validate_smoothing_parameters,
         smooth_rate_map,
@@ -2059,18 +2090,33 @@ def compute_spatial_rate(
     validate_trajectory(times, positions=positions, context="compute_spatial_rate")
     validate_spike_times(spike_times, context="compute_spatial_rate")
 
+    # Resolve the speed gate ONCE so the SAME concrete array feeds both the
+    # spike numerator and the occupancy denominator (numerator/denominator
+    # alignment by construction). When min_speed is None this returns None and
+    # nothing speed-related changes downstream (byte-for-byte unchanged).
+    resolved_speed = resolve_speed(times, positions, speed, min_speed)
+
     # Bin spike train into spatial bins (always NumPy - CPU/joblib)
     spike_counts = bin_spike_train(
         env,
         spike_times,
         times,
         positions,
+        speed=resolved_speed,
+        min_speed=min_speed,
         context="compute_spatial_rate",
         warn_on_drop=warn_on_drop,
     )
 
-    # Compute occupancy (always NumPy)
-    occupancy = compute_occupancy(env, times, positions, context="compute_spatial_rate")
+    # Compute occupancy (always NumPy) using the SAME resolved speed gate.
+    occupancy = compute_occupancy(
+        env,
+        times,
+        positions,
+        speed=resolved_speed,
+        min_speed=min_speed,
+        context="compute_spatial_rate",
+    )
 
     # Apply smoothing to compute firing rate
     # When backend="jax", uses JAX for the core rate computation
@@ -2118,6 +2164,8 @@ def compute_spatial_rates(
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
     fill_value: float | None = None,
+    speed: NDArray[np.float64] | None = None,
+    min_speed: float | None = None,
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
     warn_on_drop: bool = True,
@@ -2167,6 +2215,22 @@ def compute_spatial_rates(
         without manual NaN scrubbing. ``occupancy`` is unaffected, so callers
         can still recover which bins were masked via
         ``result.occupancy < min_occupancy``.
+    speed : ndarray, shape (n_samples,), optional
+        Precomputed instantaneous speed at each trajectory sample (physical
+        units / second). Only used when ``min_speed`` is set; auto-derived from
+        the trajectory when ``None``. See ``min_speed``. A wrong-length array
+        raises ``ValueError``.
+    min_speed : float, optional
+        Minimum speed threshold (physical units / second). When set, low-speed
+        periods are excluded from BOTH the (shared) occupancy denominator AND
+        every per-neuron spike numerator using ONE shared per-interval speed
+        gate, so firing rates stay correct. When ``None`` (default) NO speed
+        filtering is applied and the output is byte-for-byte identical to
+        before. Auto-speed uses a FORWARD difference (matching the
+        ``time_allocation="start"`` occupancy semantics):
+        ``speed[k] = ||positions[k+1] - positions[k]||_2 / (times[k+1] -
+        times[k])`` with ``speed[n-1] = speed[n-2]``; pass an explicit ``speed``
+        for geodesic / linearized-track environments.
     n_jobs : int, default=1
         Number of parallel jobs for spike counting. Use -1 for all CPUs.
         1 means sequential processing (no parallelization overhead).
@@ -2379,11 +2443,20 @@ def compute_spatial_rates(
     # Handle edge case: no neurons
     # Still compute occupancy from trajectory (occupancy is independent of neural data)
     if n_neurons == 0:
-        from neurospatial.encoding._binning import compute_occupancy
+        from neurospatial.encoding._binning import compute_occupancy, resolve_speed
+
+        # Resolve the shared speed gate (None when min_speed is None) so the
+        # no-neurons occupancy matches the speed-filtered path used below.
+        resolved_speed = resolve_speed(times, positions, speed, min_speed)
 
         # Use compute_occupancy which handles 1D position reshaping
         occupancy = compute_occupancy(
-            env, times, positions, context="compute_spatial_rates"
+            env,
+            times,
+            positions,
+            speed=resolved_speed,
+            min_speed=min_speed,
+            context="compute_spatial_rates",
         )
 
         # Convert to JAX if needed
@@ -2411,6 +2484,8 @@ def compute_spatial_rates(
         spike_times_list,
         times,
         positions,
+        speed=speed,
+        min_speed=min_speed,
         n_jobs=n_jobs,
         warn_on_drop=warn_on_drop,
     )

@@ -9,6 +9,26 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ## [Unreleased]
 
+### Added
+
+- Speed filtering on the encode path. `compute_spatial_rate` and
+  `compute_spatial_rates` gain keyword-only `speed` / `min_speed` parameters
+  (also forwarded by `decode_session` / `decode_session_summary`). When
+  `min_speed` is set, low-speed periods are excluded using **one shared
+  per-interval speed gate** applied to **both** the spike numerator and the
+  occupancy denominator, so a `min_speed` knob can never silently bias firing
+  rates by filtering only one side. The spike gate matches the occupancy gate
+  exactly: occupancy keeps interval `k` iff `speed[k] >= min_speed`, and a
+  spike at time `t` is kept iff
+  `speed[searchsorted(times, t, "right") - 1] >= min_speed` — the same
+  per-interval criterion, so identical intervals drop on both sides. When
+  `speed` is omitted it is auto-derived with a **forward difference**
+  (`speed[k] = ||positions[k+1] - positions[k]|| / (times[k+1] - times[k])`,
+  with `speed[n-1] = speed[n-2]`) to match `env.occupancy`'s
+  `time_allocation="start"` interval semantics; pass an explicit `speed` for
+  geodesic / linearized-track environments. `min_speed=None` (the default)
+  applies no filtering and leaves output byte-for-byte unchanged.
+
 ### Breaking changes
 
 - `to_xarray()` now returns a labeled `xarray.Dataset` instead of an
