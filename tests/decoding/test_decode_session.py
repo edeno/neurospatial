@@ -601,16 +601,28 @@ class TestDecodeSessionOutOfWindowWarning:
 
         from neurospatial.decoding import decode_session
 
-        env, spike_times, times, positions = _make_linear_track_sim(
+        env, _spike_times, times, positions = _make_linear_track_sim(
             n_neurons=10, duration=10.0, seed=55
         )
-        # In-window spike times (no time-window drop), but positions shifted far
-        # outside the [0, 100] environment → every spike maps to an inactive bin.
-        positions_wrong_frame = positions + 1000.0
+        # In-window spikes (no time-window drop). The interval STARTS stay
+        # in-bounds (so the interval-valid mask keeps them), but every other
+        # sample jumps far outside the [0, 100] environment. We place every
+        # spike at the MIDPOINT of a valid (even-indexed) interval, so each
+        # spike interpolates toward the far excursion and maps to an inactive
+        # bin. This exercises the inactive-bin drop path (distinct from the
+        # interval mask, which gates by the start sample).
+        positions_wrong_frame = positions.copy()
+        positions_wrong_frame[1::2] = 1000.0
+        n_frames = len(times)
+        # Midpoints of intervals 0, 2, 4, ... (those starting at in-bounds
+        # samples); each interpolates to ~500 → out of the environment.
+        even_starts = np.arange(0, n_frames - 1, 2)
+        midpoints = 0.5 * (times[even_starts] + times[even_starts + 1])
+        oob_spikes = [midpoints.copy() for _ in range(10)]
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            decode_session(env, spike_times, times, positions_wrong_frame, dt=0.1)
+            decode_session(env, oob_spikes, times, positions_wrong_frame, dt=0.1)
 
         inactive = [
             w for w in caught if "interpolated to positions outside" in str(w.message)

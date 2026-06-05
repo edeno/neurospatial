@@ -553,7 +553,9 @@ class TestSpikeInterpolationRegression:
         # which falls in the same bin as 7.5 (a different bin from position 0).
         spike_times = np.array([0.75])
 
-        counts = bin_spike_train(env, spike_times, times, positions)
+        # The 1 s sampling here exceeds the default max_gap (0.5 s), so disable
+        # gap gating to isolate the interpolation behavior this test targets.
+        counts = bin_spike_train(env, spike_times, times, positions, max_gap=None)
 
         # Identify the bin that interpolated position 7.5 lives in, vs the
         # bin that the snapshot position 0.0 lives in. The two must differ
@@ -908,16 +910,31 @@ class TestWarnOnDrop:
         )
         env = Environment.from_samples(sample_pos, bin_size=2.0)
 
-        # All spikes are at times within the window, but at positions OUTSIDE
-        # the environment bounds (far from sample_pos).
-        # Use sparse times/positions so interpolated spike positions land outside.
-        times_narrow = np.array([0.0, 5.0, 10.0])
-        positions_outside = np.array([[500.0, 500.0], [500.0, 500.0], [500.0, 500.0]])
-        spike_times = np.array([1.0, 3.0, 5.0, 7.0, 9.0])  # 5 spikes, all in-window
+        # Dense, in-bounds trajectory whose interval STARTS are all valid
+        # (small dt, in-bounds start samples), but where the animal briefly
+        # jumps far outside between samples so spikes interpolated into those
+        # excursions map to inactive bins (the inactive-bin-drop path, distinct
+        # from the interval mask which gates by the START sample).
+        times_narrow = np.array([0.0, 0.1, 0.2, 0.3, 0.4, 0.5])
+        positions_in = np.array(
+            [
+                [5.0, 5.0],  # in-bounds start of interval 0
+                [500.0, 500.0],  # far excursion (interval 0 interpolates here)
+                [5.0, 5.0],
+                [500.0, 500.0],
+                [5.0, 5.0],
+                [5.0, 5.0],
+            ]
+        )
+        # Spikes just after the in-bounds samples interpolate toward the far
+        # excursion → out-of-environment interpolated position, but their
+        # interval starts in-bounds (valid), so they reach the inactive-bin
+        # drop path rather than the interval mask.
+        spike_times = np.array([0.05, 0.25])  # both in valid intervals 0 and 2
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            bin_spike_train(env, spike_times, times_narrow, positions_outside)
+            bin_spike_train(env, spike_times, times_narrow, positions_in)
 
         inactive_warnings = [
             x
@@ -967,8 +984,11 @@ class TestWarnOnDrop:
 
     @staticmethod
     def _make_env_2d_outside() -> tuple:
-        """Return (env, times, positions_outside) where positions are far
-        outside the active environment bins (so spikes drop to bin -1)."""
+        """Return (env, times, positions) where interval STARTS are in-bounds
+        but the animal jumps far outside between samples, so spikes
+        interpolated into those excursions map to bin -1 (the inactive-bin
+        drop path, distinct from the interval-valid mask which gates by the
+        START sample)."""
         sample_pos = np.column_stack(
             [
                 np.linspace(0, 10, 50),
@@ -976,10 +996,17 @@ class TestWarnOnDrop:
             ]
         )
         env = Environment.from_samples(sample_pos, bin_size=2.0)
-        # Sparse times/positions so interpolated spike positions land outside.
-        times_narrow = np.array([0.0, 5.0, 10.0])
-        positions_outside = np.array([[500.0, 500.0], [500.0, 500.0], [500.0, 500.0]])
-        return env, times_narrow, positions_outside
+        # Dense (dt=0.1 < max_gap) trajectory: in-bounds start samples
+        # alternating with far excursions, so spikes just after each in-bounds
+        # sample interpolate out of the environment while their interval starts
+        # in-bounds (valid). Spikes are placed in the valid intervals 0, 2, 4,
+        # 6, 8 (those starting at the in-bounds [5, 5] samples).
+        n = 11
+        times_narrow = np.arange(n) * 0.1
+        positions = np.empty((n, 2))
+        positions[0::2] = [5.0, 5.0]  # in-bounds starts
+        positions[1::2] = [500.0, 500.0]  # far excursions
+        return env, times_narrow, positions
 
     def test_out_of_window_batch_warns_once_njobs2(self) -> None:
         """n_jobs=2: 3 neurons all out-of-window → exactly ONE time-window
@@ -1055,11 +1082,12 @@ class TestWarnOnDrop:
         from neurospatial.encoding._binning import bin_spike_trains
 
         env, times, positions = self._make_env_2d_outside()
-        # 5 in-window spikes per neuron; positions all map outside env → bin -1.
+        # Spikes in valid (in-bounds-start) intervals 0, 2, 4, 6, 8; each
+        # interpolates toward the far excursion → maps to bin -1 (inactive).
         spike_times = [
-            np.array([1.0, 3.0, 5.0, 7.0, 9.0]),
-            np.array([2.0, 4.0, 6.0, 8.0]),
-            np.array([1.5, 3.5, 5.5, 7.5, 9.5]),
+            np.array([0.05, 0.25, 0.45, 0.65, 0.85]),
+            np.array([0.05, 0.25, 0.65, 0.85]),
+            np.array([0.05, 0.25, 0.45, 0.65, 0.85]),
         ]
 
         with warnings.catch_warnings(record=True) as w:

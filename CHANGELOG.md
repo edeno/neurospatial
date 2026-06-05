@@ -332,6 +332,29 @@ in 0.7. Each old name forwards to its replacement with unchanged behavior.
 
 ### Fixed
 
+- **Firing-rate numerator/denominator alignment on the FULL interval mask.**
+  A firing-rate map is `spike_counts (numerator) / occupancy (denominator)`
+  per bin. `env.occupancy` drops a trajectory interval `k` for **three**
+  reasons — `dt[k] > max_gap` (large tracking gap), `speed[k] < min_speed`
+  (low speed), and `start_bin[k] < 0` (interval's start sample out of the
+  active environment) — but the spike binner previously only filtered by the
+  time window and (since the speed-filter work) by speed. A spike inside a
+  dropped interval (e.g. a 1 s tracking gap, or an out-of-bounds excursion)
+  was therefore **counted in the numerator** while occupancy **excluded that
+  interval's time from the denominator**, inflating/biasing the rate. The
+  spike numerator and the occupancy denominator now drop the **identical** set
+  of intervals via one shared `interval_valid_mask` helper (the single source
+  of truth that `env.occupancy` also consumes). `compute_spatial_rate` /
+  `compute_spatial_rates` gain a keyword-only `max_gap: float | None = 0.5`
+  (matching `env.occupancy`'s default, so occupancy behavior is unchanged)
+  that gates **both** sides identically.
+  - **Behavior change:** rate maps now differ for sessions that contain large
+    tracking gaps (intervals longer than `max_gap`) or out-of-bounds samples —
+    previously those rates were inflated. This is a correctness fix. Pass
+    `max_gap=None` to disable gap gating on **both** sides (restoring the
+    pre-fix, no-gap-gating behavior while keeping numerator and denominator
+    aligned).
+
 - `decode_session` now warns loudly when most spikes fall outside the decode
   time window `[times.min(), times.max()]` instead of silently dropping them.
   Previously, when `encoding_models=` was passed (which skips
