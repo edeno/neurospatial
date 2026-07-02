@@ -361,6 +361,7 @@ def _build_encoding_model(
     encoding_models: NDArray[np.float64] | None,
     warn_on_drop: bool,
     dtype: type[np.float32] | type[np.float64] = np.float64,
+    context: str = "decode_session",
 ) -> tuple[
     list[NDArray[np.float64]],
     NDArray[np.float64],
@@ -390,6 +391,13 @@ def _build_encoding_model(
     supplied ``encoding_models`` array is cast to that dtype (so ``dtype`` is
     authoritative end-to-end). Default ``np.float64`` keeps current behavior
     byte-for-byte.
+
+    ``context`` names the caller in the up-front timestamp-validation error
+    (``validate_times``) so a too-few-samples failure points at the real entry
+    point. It defaults to ``"decode_session"`` (the message every existing
+    caller already produced); ``BayesianDecoder.fit`` passes its own name so an
+    epoch that selects too-few training samples names ``fit``, not the internal
+    ``decode_session``.
 
     Returns
     -------
@@ -481,7 +489,7 @@ def _build_encoding_model(
     # the encoder's own validate_trajectory, so without this a NaN/inf in
     # `times` would leak a raw "cannot convert float NaN to integer" from
     # bin_spikes_in_time instead of a beginner-grade message.
-    validate_times(times_arr, context="decode_session")
+    validate_times(times_arr, context=context)
 
     # Decode window — computed ONCE and reused for both the out-of-window drop
     # check and the time-grid construction so they agree exactly.

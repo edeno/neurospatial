@@ -20,6 +20,7 @@ Tests
 from __future__ import annotations
 
 import dataclasses
+import warnings
 
 import numpy as np
 import pytest
@@ -85,6 +86,37 @@ def _make_sim(
 def sim() -> tuple[Environment, list[np.ndarray], np.ndarray, np.ndarray]:
     """Module-scoped simulation reused across tests (cheap fit/predict at dt=0.5)."""
     return _make_sim()
+
+
+def _small_env() -> Environment:
+    """Tiny 2-D env for fast construction / validation tests."""
+    positions = np.array([[0.0, 0.0], [10.0, 0.0], [0.0, 10.0], [10.0, 10.0]])
+    return Environment.from_samples(positions, bin_size=5.0)
+
+
+def _make_linear_sim(
+    seed: int = 0,
+) -> tuple[Environment, list[np.ndarray], np.ndarray, np.ndarray]:
+    """1-D linearized-track sim (back-and-forth), for graph/geodesic decoding."""
+    from neurospatial.simulation import PlaceCellModel, generate_poisson_spikes
+
+    env = Environment.linear_track(endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=5.0)
+    env.units = "cm"
+
+    times = np.linspace(0.0, 20.0, 1000)
+    x = 50.0 + 50.0 * np.sin(2 * np.pi * times / 20.0)
+    positions = np.column_stack([x, np.zeros_like(x)])
+
+    rng = np.random.default_rng(seed)
+    centers = np.column_stack([np.linspace(5.0, 95.0, 6), np.zeros(6)])
+    spikes: list[np.ndarray] = []
+    for i in range(6):
+        cell = PlaceCellModel(env, center=centers[i], width=15.0, max_rate=30.0, seed=i)
+        rates = cell.firing_rate(positions, times)
+        spikes.append(
+            generate_poisson_spikes(rates, times, seed=int(rng.integers(0, 2**31)))
+        )
+    return env, spikes, times, positions
 
 
 # ---------------------------------------------------------------------------
@@ -328,29 +360,8 @@ def test_plain_list_unit_ids_default_to_arange(sim) -> None:
 
 def test_linearized_track_smoke() -> None:
     """fit + predict runs on a 1-D linearized track env (env-based decode)."""
-    from neurospatial.simulation import (
-        PlaceCellModel,
-        generate_poisson_spikes,
-    )
-
-    env = Environment.linear_track(endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=5.0)
-    env.units = "cm"
+    env, spikes, times, positions = _make_linear_sim()
     assert env.is_linearized_track
-
-    # Simple back-and-forth trajectory along the track (world coords, y=0).
-    times = np.linspace(0.0, 20.0, 1000)
-    x = 50.0 + 50.0 * np.sin(2 * np.pi * times / 20.0)
-    positions = np.column_stack([x, np.zeros_like(x)])
-
-    rng = np.random.default_rng(0)
-    centers = np.column_stack([np.linspace(5.0, 95.0, 6), np.zeros(6)])
-    spikes = []
-    for i in range(6):
-        cell = PlaceCellModel(env, center=centers[i], width=15.0, max_rate=30.0, seed=i)
-        rates = cell.firing_rate(positions, times)
-        spikes.append(
-            generate_poisson_spikes(rates, times, seed=int(rng.integers(0, 2**31)))
-        )
 
     fit = BayesianDecoder(env, dt=0.5).fit(spikes, times, positions)
     result = fit.predict(spikes, times)
@@ -358,3 +369,208 @@ def test_linearized_track_smoke() -> None:
     assert isinstance(result, DecodingResult)
     assert result.posterior.shape[1] == env.n_bins
     assert result.posterior.shape[0] == result.times.shape[0]
+
+
+# ---------------------------------------------------------------------------
+# 9. score: undecodable-bin handling + distance= (FIX 1)
+# ---------------------------------------------------------------------------
+
+
+def _fitted_minimal(env: Environment | None = None) -> BayesianDecoder:
+    """A fitted decoder built by directly injecting valid fitted state."""
+    env = env if env is not None else _small_env()
+    models = np.ones((2, env.n_bins))
+    return BayesianDecoder(env, encoding_models=models, unit_ids=np.arange(2))
+
+
+def _result_with_nan_rows(
+    env: Environment, nan_rows: list[int], n_time: int = 4
+) -> DecodingResult:
+    """A DecodingResult whose listed posterior rows are entirely NaN."""
+    n_bins = env.n_bins
+    posterior = np.full((n_time, n_bins), 1.0 / n_bins)
+    for r in nan_rows:
+        posterior[r] = np.nan
+    decode_times = np.linspace(0.0, 0.75, n_time)
+    return DecodingResult(posterior=posterior, env=env, times=decode_times)
+
+
+class TestScoreUndecodable:
+    _TRUE_TIMES = np.array([0.0, 1.0])
+    _TRUE_POS = np.array([[0.0, 0.0], [10.0, 10.0]])
+
+    def test_partially_undecodable_warns_and_scores_survivors(self, monkeypatch):
+        dec = _fitted_minimal()
+        result = _result_with_nan_rows(dec.env, nan_rows=[1])
+        monkeypatch.setattr(BayesianDecoder, "predict", lambda self, s, t: result)
+
+        with pytest.warns(UserWarning, match="undecodable"):
+            score = dec.score([np.array([0.1])] * 2, self._TRUE_TIMES, self._TRUE_POS)
+
+        errors = result.error_against(self._TRUE_TIMES, self._TRUE_POS)
+        assert np.isnan(errors[1])  # the undecodable row is dropped by nanmedian
+        assert score == pytest.approx(float(np.nanmedian(errors)))
+        assert np.isfinite(score)
+
+    def test_all_undecodable_raises_not_nan(self, monkeypatch):
+        dec = _fitted_minimal()
+        result = _result_with_nan_rows(dec.env, nan_rows=[0, 1, 2, 3])
+        monkeypatch.setattr(BayesianDecoder, "predict", lambda self, s, t: result)
+
+        with pytest.raises(ValueError, match="could not decode any time bin"):
+            dec.score([np.array([0.1])] * 2, self._TRUE_TIMES, self._TRUE_POS)
+
+    def test_all_decodable_no_warning_and_equals_nanmedian(self, sim):
+        env, spikes, times, positions = sim
+        fit = BayesianDecoder(env, dt=0.5).fit(spikes, times, positions)
+
+        with warnings.catch_warnings(record=True) as rec:
+            warnings.simplefilter("always")
+            score = fit.score(spikes, times, positions)
+        assert not any("undecodable" in str(w.message) for w in rec)
+
+        errors = fit.predict(spikes, times).error_against(times, positions)
+        assert score == pytest.approx(float(np.nanmedian(errors)))
+
+    def test_distance_geodesic_forwards_on_graph_env(self):
+        env, spikes, times, positions = _make_linear_sim()
+        fit = BayesianDecoder(env, dt=0.5).fit(spikes, times, positions)
+
+        score = fit.score(spikes, times, positions, distance="geodesic")
+        errors = fit.predict(spikes, times).error_against(
+            times, positions, metric="geodesic"
+        )
+        assert score == pytest.approx(float(np.nanmedian(errors)))
+        assert np.isfinite(score)
+
+    def test_unknown_metric_raises_before_predict(self, monkeypatch):
+        dec = _fitted_minimal()
+
+        def _spy(self, *a, **k):
+            raise AssertionError("predict must not run when metric is invalid")
+
+        monkeypatch.setattr(BayesianDecoder, "predict", _spy)
+        with pytest.raises(ValueError, match="metric"):
+            dec.score(
+                [np.array([0.1])] * 2, self._TRUE_TIMES, self._TRUE_POS, metric="rmse"
+            )
+
+    def test_unknown_distance_raises_before_predict(self, monkeypatch):
+        dec = _fitted_minimal()
+
+        def _spy(self, *a, **k):
+            raise AssertionError("predict must not run when distance is invalid")
+
+        monkeypatch.setattr(BayesianDecoder, "predict", _spy)
+        with pytest.raises(ValueError, match="distance"):
+            dec.score(
+                [np.array([0.1])] * 2,
+                self._TRUE_TIMES,
+                self._TRUE_POS,
+                distance="manhattan",
+            )
+
+
+# ---------------------------------------------------------------------------
+# 10. Construction-time validation via __post_init__ (FIX 2)
+# ---------------------------------------------------------------------------
+
+
+class TestConstructionValidation:
+    def test_negative_dt_raises(self):
+        env = _small_env()
+        with pytest.raises(ValueError, match="dt"):
+            BayesianDecoder(env, dt=-1.0)
+
+    def test_zero_dt_raises(self):
+        env = _small_env()
+        with pytest.raises(ValueError, match="dt"):
+            BayesianDecoder(env, dt=0.0)
+
+    def test_bad_dtype_raises(self):
+        env = _small_env()
+        with pytest.raises(ValueError, match="dtype"):
+            BayesianDecoder(env, dtype=np.float16)  # type: ignore[arg-type]
+
+    def test_encoding_models_wrong_nbins_raises(self):
+        env = _small_env()
+        bad = np.zeros((3, env.n_bins + 1))  # wrong bin axis
+        with pytest.raises(ValueError, match="bins"):
+            BayesianDecoder(env, encoding_models=bad, unit_ids=np.array([0, 1, 2]))
+
+    def test_encoding_models_without_unit_ids_raises(self):
+        env = _small_env()
+        models = np.ones((2, env.n_bins))
+        with pytest.raises(ValueError, match="unit_ids"):
+            BayesianDecoder(env, encoding_models=models)
+
+    def test_encoding_models_unit_count_mismatch_raises(self):
+        env = _small_env()
+        models = np.ones((2, env.n_bins))
+        with pytest.raises(ValueError, match="unit"):
+            BayesianDecoder(env, encoding_models=models, unit_ids=np.array([0, 1, 2]))
+
+    def test_unfitted_construct_ok(self):
+        env = _small_env()
+        dec = BayesianDecoder(env)
+        assert dec.encoding_models is None
+
+    def test_real_fit_construct_ok(self, sim):
+        env, spikes, times, positions = sim
+        fit = BayesianDecoder(env, dt=0.5).fit(spikes, times, positions)
+        assert fit.encoding_models is not None
+        assert fit.encoding_models.shape[1] == env.n_bins
+
+
+# ---------------------------------------------------------------------------
+# 11. is_fitted read-only property (FIX 3)
+# ---------------------------------------------------------------------------
+
+
+class TestIsFitted:
+    def test_false_when_unfitted(self):
+        assert BayesianDecoder(_small_env()).is_fitted is False
+
+    def test_true_after_fit(self, sim):
+        env, spikes, times, positions = sim
+        fit = BayesianDecoder(env, dt=0.5).fit(spikes, times, positions)
+        assert fit.is_fitted is True
+
+
+# ---------------------------------------------------------------------------
+# 12. warn_on_drop config knob (FIX 4)
+# ---------------------------------------------------------------------------
+
+
+def test_warn_on_drop_false_silences_out_of_window_warning(sim):
+    env, spikes, times, positions = sim
+    fit = BayesianDecoder(env, dt=0.5).fit(spikes, times, positions)
+    fit_silent = BayesianDecoder(env, dt=0.5, warn_on_drop=False).fit(
+        spikes, times, positions
+    )
+
+    # Out-of-window spikes (ms vs s): >50% fall outside the decode window.
+    bad_spikes = [s * 1000.0 for s in spikes]
+    msg = "fell outside the decode time window"
+
+    with warnings.catch_warnings(record=True) as rec_default:
+        warnings.simplefilter("always")
+        fit.predict(bad_spikes, times)
+    assert any(msg in str(w.message) for w in rec_default)
+
+    with warnings.catch_warnings(record=True) as rec_silent:
+        warnings.simplefilter("always")
+        fit_silent.predict(bad_spikes, times)
+    assert not any(msg in str(w.message) for w in rec_silent)
+
+
+# ---------------------------------------------------------------------------
+# 13. Error provenance for fit(epoch=...) (FIX 5)
+# ---------------------------------------------------------------------------
+
+
+def test_fit_epoch_too_small_names_bayesian_decoder(sim):
+    env, spikes, times, positions = sim
+    empty_epoch = (float(times[0]) - 5.0, float(times[0]) - 1.0)  # selects 0 samples
+    with pytest.raises(ValueError, match=r"BayesianDecoder\.fit"):
+        BayesianDecoder(env, dt=0.5).fit(spikes, times, positions, epoch=empty_epoch)

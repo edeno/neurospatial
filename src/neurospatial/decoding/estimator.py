@@ -20,8 +20,9 @@ track or a masked open field, not just a rectangular grid.
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -82,6 +83,14 @@ class BayesianDecoder:
         Working dtype for the encoding models and the posterior. ``np.float32``
         halves the working set; ``np.float64`` (default) is byte-for-byte the
         reference decode.
+    warn_on_drop : bool, default=True
+        Forwarded to the encode step (:meth:`fit`) and the decode step
+        (:meth:`predict` / :meth:`predict_summary`). When ``True`` (default) a
+        single ``UserWarning`` fires if a large fraction of spikes fall outside
+        the decode/encode time window (the seconds-vs-milliseconds footgun).
+        Set ``False`` to silence those warnings on a genuinely sparse session;
+        a single knob covers both the fit and predict passes (the default would
+        otherwise warn once per pass).
     encoding_models : NDArray[np.float64], shape (n_neurons, n_bins) or None
         Fitted encoding-model firing-rate maps. ``None`` (default) marks the
         decoder **unfitted**; :meth:`predict` / :meth:`predict_summary` /
@@ -94,15 +103,24 @@ class BayesianDecoder:
 
     Attributes
     ----------
-    env, dt, bandwidth, smoothing_method, min_occupancy, max_gap, dtype
+    env, dt, bandwidth, smoothing_method, min_occupancy, max_gap, dtype, \
+warn_on_drop
         The configuration passed at construction (immutable).
     encoding_models : NDArray[np.float64] or None
         The fitted encoding models, or ``None`` when unfitted.
     unit_ids : NDArray or None
         Per-model identity labels, or ``None`` when unfitted.
+    is_fitted : bool
+        Read-only property: ``True`` once :meth:`fit` has populated the
+        encoding models, ``False`` otherwise.
 
     Raises
     ------
+    ValueError
+        At construction, if ``dt`` is not a finite ``> 0`` number, if ``dtype``
+        is not ``np.float32`` / ``np.float64``, or (when ``encoding_models`` is
+        injected directly) if the fitted state is inconsistent (missing
+        ``unit_ids``, wrong ndim, or a bin/unit-count mismatch against ``env``).
     RuntimeError
         From :meth:`predict` / :meth:`predict_summary` / :meth:`score` if the
         decoder is unfitted.
@@ -135,9 +153,75 @@ class BayesianDecoder:
     min_occupancy: float = 0.0
     max_gap: float | None = 0.5
     dtype: type[np.float32] | type[np.float64] = np.float64
+    warn_on_drop: bool = True
     # Fitted state (private; ``None`` => unfitted). Set only via :meth:`fit`.
     encoding_models: NDArray[np.float64] | None = None
     unit_ids: NDArray[Any] | None = None
+
+    def __post_init__(self) -> None:
+        """Validate config domain and (if injected) fitted-state coupling.
+
+        Runs at construction and again on every :func:`~dataclasses.replace`
+        (so :meth:`fit`'s returned decoder is validated too). The dataclass is
+        frozen, so this only raises -- it never assigns fields. Reuses the core
+        :func:`~neurospatial.decoding._binning.validate_dt` so ``dt`` semantics
+        cannot drift from the decode entry points; ``smoothing_method`` is left
+        to :meth:`fit` / ``compute_spatial_rates`` (no duplicate allow-set).
+        """
+        from neurospatial.decoding._binning import validate_dt
+
+        # Config domain: dt (shared core validator) and dtype.
+        validate_dt(self.dt)
+        if self.dtype not in (np.float32, np.float64):
+            raise ValueError(
+                f"dtype must be np.float32 or np.float64, got {self.dtype!r}."
+            )
+
+        # Fitted-state coupling: only meaningful when encoding_models is set.
+        # This closes the direct-injection backdoor
+        # (``BayesianDecoder(env, encoding_models=arr)``): a hand-built fitted
+        # decoder is now checked for the same invariants ``fit`` guarantees.
+        if self.encoding_models is not None:
+            if self.unit_ids is None:
+                raise ValueError(
+                    "encoding_models is set but unit_ids is None; a fitted "
+                    "BayesianDecoder must carry one unit_id per encoding model. "
+                    "Build fitted decoders via `.fit(...)` (which populates "
+                    "unit_ids), or pass a matching `unit_ids` array."
+                )
+            models = np.asarray(self.encoding_models)
+            if models.ndim != 2:
+                raise ValueError(
+                    f"encoding_models must be 2-D (n_units, n_bins), got "
+                    f"{models.ndim}-D with shape {models.shape}."
+                )
+            if models.shape[1] != self.env.n_bins:
+                raise ValueError(
+                    f"encoding_models has {models.shape[1]} bins but env.n_bins "
+                    f"is {self.env.n_bins}; the encoding model's bin axis must "
+                    f"match the environment it decodes over."
+                )
+            if models.shape[0] != len(self.unit_ids):
+                raise ValueError(
+                    f"encoding_models has {models.shape[0]} units but unit_ids "
+                    f"has length {len(self.unit_ids)}; there must be exactly one "
+                    f"unit_id per encoding model."
+                )
+
+    @property
+    def is_fitted(self) -> bool:
+        """Whether :meth:`fit` has populated the encoding models.
+
+        Returns
+        -------
+        bool
+            ``True`` once :meth:`fit` has built the encoding models, ``False``
+            for a freshly constructed (unfitted) decoder. Lets callers branch
+            without catching the :class:`RuntimeError` that
+            :meth:`predict` / :meth:`predict_summary` / :meth:`score` raise when
+            unfitted.
+        """
+        return self.encoding_models is not None
 
     def _check_fitted(self) -> NDArray[np.float64]:
         """Return the fitted encoding models, or raise if unfitted.
@@ -209,6 +293,15 @@ class BayesianDecoder:
             ``encoding_models`` and ``unit_ids`` populated. The original is
             unchanged.
 
+        Notes
+        -----
+        The default ``min_occupancy=0.0`` (paired with the decode golden path's
+        ``fill_value=0.0``) means a small ``epoch`` or sparse training data can
+        build a **degenerate low-coverage** encoding model *without erroring* --
+        most bins fall back to ``0.0`` Hz, so the fit "succeeds" but decodes
+        poorly. For short epochs, raise ``min_occupancy`` or check the fitted
+        model's spatial coverage before trusting a decode.
+
         Examples
         --------
         >>> decoder = BayesianDecoder(env).fit(  # doctest: +SKIP
@@ -251,8 +344,9 @@ class BayesianDecoder:
             min_speed=min_speed,
             max_gap=self.max_gap,
             encoding_models=None,
-            warn_on_drop=True,
+            warn_on_drop=self.warn_on_drop,
             dtype=self.dtype,
+            context="BayesianDecoder.fit",
         )[1]
 
         if unit_ids is None:
@@ -300,6 +394,7 @@ class BayesianDecoder:
             positions=None,
             dt=self.dt,
             encoding_models=encoding_models,
+            warn_on_drop=self.warn_on_drop,
             dtype=self.dtype,
         )
 
@@ -348,6 +443,7 @@ class BayesianDecoder:
             positions=None,
             dt=self.dt,
             encoding_models=encoding_models,
+            warn_on_drop=self.warn_on_drop,
             dtype=self.dtype,
             time_chunk=time_chunk,
         )
@@ -359,6 +455,7 @@ class BayesianDecoder:
         positions: NDArray[np.float64] | None = None,
         *,
         metric: str = "median_error",
+        distance: str = "euclidean",
     ) -> float:
         """Decode and report position error against ground truth (lower is better).
 
@@ -366,6 +463,15 @@ class BayesianDecoder:
         MAP estimate to the ground-truth track (``times``, ``positions``) with
         :meth:`~neurospatial.decoding.DecodingResult.error_against`, and reduces
         the per-time-bin errors to a single scalar. **Lower is better.**
+
+        Undecodable decode time bins -- those whose posterior row is entirely
+        non-finite -- are stamped ``nan`` by ``error_against`` and are
+        **excluded** from the reduction. Because ``nanmedian`` / ``nanmean``
+        silently ignore them, a decoder that decodes only part of the session
+        could otherwise report a misleadingly good score; this method therefore
+        **warns** (naming the dropped fraction) when any bin is dropped and
+        **raises** (rather than returning ``nan``) when *no* bin is decodable.
+        The all-decodable path stays warning-free.
 
         Parameters
         ----------
@@ -378,8 +484,13 @@ class BayesianDecoder:
             Ground-truth positions to score against. Omit only when ``times`` is
             a ``PositionLike``.
         metric : {"median_error", "mean_error"}, default="median_error"
-            Reduction over per-time-bin Euclidean errors. ``"median_error"`` ->
-            ``nanmedian``; ``"mean_error"`` -> ``nanmean``.
+            Reduction over the per-time-bin errors. ``"median_error"`` ->
+            ``nanmedian``; ``"mean_error"`` -> ``nanmean``. Lower is better.
+        distance : {"euclidean", "geodesic"}, default="euclidean"
+            Distance metric forwarded to ``error_against`` for the per-time-bin
+            error. ``"geodesic"`` uses the environment's connectivity graph
+            (shortest-path along the track / masked field), the differentiator
+            over straight-line euclidean error; ``"euclidean"`` is the default.
 
         Returns
         -------
@@ -392,9 +503,29 @@ class BayesianDecoder:
         RuntimeError
             If the decoder is unfitted.
         ValueError
-            If ``metric`` is not ``"median_error"`` or ``"mean_error"``.
+            If ``metric`` is not ``"median_error"`` / ``"mean_error"``, if
+            ``distance`` is not ``"euclidean"`` / ``"geodesic"`` (both checked
+            **before** decoding, so a typo does not cost a full decode), or if
+            **no** decode time bin was decodable (every posterior row was
+            non-finite) -- likely a degenerate/empty encoding model from too few
+            training samples, or a spikes/times unit mismatch (seconds vs
+            milliseconds).
         """
         from neurospatial._typing import as_times_positions
+
+        # Validate the reduction (`metric`) and error metric (`distance`) up
+        # front, BEFORE any decode -- a typo should raise cheaply, not after a
+        # full decode pass.
+        if metric not in ("median_error", "mean_error"):
+            raise ValueError(
+                f"Unknown metric {metric!r}; `metric` selects the reduction and "
+                f"must be one of 'median_error', 'mean_error'."
+            )
+        if distance not in ("euclidean", "geodesic"):
+            raise ValueError(
+                f"Unknown distance {distance!r}; `distance` selects the error "
+                f"metric and must be one of 'euclidean', 'geodesic'."
+            )
 
         self._check_fitted()
 
@@ -403,13 +534,38 @@ class BayesianDecoder:
         times_arr, positions_arr = as_times_positions(times, positions)
 
         result = self.predict(spike_times, times_arr)
-        errors = result.error_against(times_arr, positions_arr, metric="euclidean")
+        # `distance` is validated above, so narrowing it to the Literal the
+        # DecodingResult expects is safe.
+        errors = result.error_against(
+            times_arr,
+            positions_arr,
+            metric=cast("Literal['euclidean', 'geodesic']", distance),
+        )
+
+        # Guard against silently reducing over dropped bins. error_against stamps
+        # nan for every undecodable decode time bin; nanmedian/nanmean would
+        # ignore those without a trace, biasing model selection toward decoders
+        # that decode fewer bins.
+        n = int(errors.size)
+        n_bad = int(np.isnan(errors).sum())
+        if n == 0 or n_bad == n:
+            raise ValueError(
+                "score() could not decode any time bin: every decode time bin's "
+                "posterior was entirely non-finite (undecodable), so there is no "
+                "error to reduce. Likely causes: a degenerate/empty encoding "
+                "model built from too few training samples, or a spikes/times "
+                "unit mismatch (e.g. spike_times in milliseconds while times is "
+                "in seconds). Check the encoding-model coverage and that "
+                "spike_times and times share units (both seconds)."
+            )
+        if n_bad > 0:
+            warnings.warn(
+                f"{n_bad}/{n} decode time bins were undecodable and excluded "
+                f"from the score.",
+                UserWarning,
+                stacklevel=2,
+            )
 
         if metric == "median_error":
             return float(np.nanmedian(errors))
-        if metric == "mean_error":
-            return float(np.nanmean(errors))
-        raise ValueError(
-            f"Unknown metric {metric!r}; `metric` must be one of "
-            f"'median_error', 'mean_error'."
-        )
+        return float(np.nanmean(errors))
