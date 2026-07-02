@@ -40,6 +40,9 @@ def test_all_has_core_classes_and_exceptions():
         # Lazily-accessible public container (PEP 562 __getattr__); the one
         # justified new container (ragged spike times don't fit an array).
         "SpikeTrains",
+        # Lazily-accessible headline one-liner (PEP 562 __getattr__): array-native
+        # epoch selection (behavior.epochs.restrict).
+        "restrict",
         # Lazily-accessible analysis submodules (PEP 562 __getattr__)
         "encoding",
         "decoding",
