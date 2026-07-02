@@ -327,9 +327,11 @@ warn_on_drop
             times, positions = restrict(times, positions, epochs=epoch)
             spike_input: Any = restrict_spike_trains(trains, epoch)
         else:
-            # No epoch: hand the RAW inputs straight to the encoder so the
-            # encoding step is byte-for-byte identical to decode_session's.
-            spike_input = spike_times
+            # No epoch: reuse the trains already coerced above rather than
+            # re-coercing the raw input inside the encoder. Re-coercing a
+            # list[float64 array] is a no-op, so the encode stays byte-for-byte
+            # identical to decode_session's (and to the epoch branch above).
+            spike_input = trains
 
         firing_rates = _build_encoding_model(
             self.env,

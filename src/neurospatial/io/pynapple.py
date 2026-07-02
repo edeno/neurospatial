@@ -19,7 +19,7 @@ to_pynapple
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -93,25 +93,34 @@ def from_pynapple(
     # actionable and consistent with ``to_pynapple``.
     _require_pynapple()
 
-    # Tsd / TsdFrame: a value time series -> (times, positions).
+    # Tsd / TsdFrame: a value time series -> (times, positions). Delegate to the
+    # shared position boundary adapter -- identical duck-type guard and float64
+    # coercion (including the ``.d`` alias fallback), so this stays a single
+    # implementation of that coercion.
     if hasattr(obj, "t") and (hasattr(obj, "values") or hasattr(obj, "d")):
-        times = np.asarray(obj.t, dtype=np.float64)
-        values = getattr(obj, "values", None)
-        if values is None:
-            values = obj.d
-        return times, np.asarray(values, dtype=np.float64)
+        from neurospatial._typing import as_times_positions
 
-    # IntervalSet: epochs -> (start, end).
+        return as_times_positions(obj)
+
+    # IntervalSet: epochs -> (start, end). No public adapter equivalent, so this
+    # branch keeps its own coercion.
     if hasattr(obj, "start") and hasattr(obj, "end"):
         start = np.asarray(obj.start, dtype=np.float64)
         end = np.asarray(obj.end, dtype=np.float64)
         return start, end
 
-    # TsGroup: dict-like of unit id -> Ts -> (trains, unit_ids).
+    # TsGroup: dict-like of unit id -> Ts -> (trains, unit_ids). Delegate to the
+    # shared spike boundary adapter, which extracts trains by unit-id index (a
+    # TsGroup is a UserDict; iterating it would yield KEYS, not trains) and
+    # surfaces the group's ids. For a genuine group the ids are never ``None``,
+    # so the cast to the non-optional group return arm is safe.
     if hasattr(obj, "index"):
-        unit_ids = np.asarray(list(obj.index))
-        trains = [np.asarray(obj[uid].t, dtype=np.float64) for uid in unit_ids]
-        return trains, unit_ids
+        from neurospatial.encoding import as_spike_trains_with_ids
+
+        return cast(
+            "tuple[list[NDArray[np.float64]], NDArray[Any]]",
+            as_spike_trains_with_ids(obj),
+        )
 
     raise TypeError(
         f"from_pynapple does not recognize {type(obj).__name__!r}. Expected a "
