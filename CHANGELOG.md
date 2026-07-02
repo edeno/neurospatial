@@ -65,6 +65,21 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ### Added
 
+- `restrict` / `in_epochs` / `restrict_spike_trains` — array-native epoch
+  selection ("give me my running periods / trial N") in a new
+  `neurospatial.behavior.epochs`. `epochs` accepts `(start, end)` scalars, two
+  `(starts, ends)` 1-D arrays, an `(n, 2)` array, **or a pynapple `IntervalSet`**
+  — the `IntervalSet` is **duck-typed** (`.start` / `.end`), so this stays
+  array-first and **never imports pynapple**. Endpoints are **inclusive** by
+  default (`closed="both"`, matching `behavior.segmentation` and pynapple; also
+  `"left"` / `"right"` / `"neither"`). `restrict(times, *arrays, epochs=...)`
+  slices `times` and any arrays **aligned to `times`** (e.g. `positions`) by the
+  same in-epoch mask, order preserved (`t, pos = restrict(times, positions,
+  epochs=run_epochs)`); with no extra arrays it restricts an event-time array by
+  its own timestamps (`restrict(spike_train, epochs=...)`).
+  `restrict_spike_trains(trains, epochs)` restricts **ragged** per-unit spikes,
+  each train by its **own** timestamps, and accepts a plain sequence or a
+  `SpikeTrains`. `restrict` is also exported at the top level (`neurospatial.restrict`).
 - `SpikeTrains` — a frozen ragged-spike-train container (label access
   `st[unit_id]`, `filter("region == 'CA1'")`, optional per-unit `unit_table`),
   the one justified new container (ragged per-unit spike times genuinely don't

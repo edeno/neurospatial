@@ -265,6 +265,7 @@ _LAZY_SUBMODULES: tuple[str, ...] = (
 # Maps the attribute name to its ``(submodule, attribute)`` source.
 _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     "SpikeTrains": ("encoding.spike_trains", "SpikeTrains"),
+    "restrict": ("behavior.epochs", "restrict"),
 }
 
 
@@ -311,6 +312,7 @@ __all__ = [
     "layout",
     "ops",
     "regions",
+    "restrict",
     "simulation",
     "stats",
 ]
