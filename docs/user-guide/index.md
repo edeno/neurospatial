@@ -13,6 +13,7 @@ This guide provides detailed explanations of neurospatial's features and workflo
 - **[Spatial Analysis](spatial-analysis.md)**: Trajectory analysis, movement patterns, and field operations
 - **[Performance & Caching](performance.md)**: Memory management, optimization, and benchmarks
 - **[Complete Workflows](workflows.md)**: End-to-end analysis examples
+- **[Interoperability](interoperability.md)**: Session bundle, SpikeTrains, BayesianDecoder, and pynapple / NWB adapters
 
 ## Who This Guide Is For
 

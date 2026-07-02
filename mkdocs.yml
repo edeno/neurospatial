@@ -177,6 +177,7 @@ nav:
       - Animation Overlays: animation_overlays.md
       - Dimensionality Support: dimensionality_support.md
       - Complete Workflows: user-guide/workflows.md
+      - Interoperability: user-guide/interoperability.md
       - Performance: user-guide/performance.md
   - Reference:
       - Errors: errors.md
