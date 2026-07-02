@@ -52,7 +52,7 @@ class TestTypeValidation:
         """Test error for non-Environment element in list."""
         with pytest.raises(
             TypeError,
-            match=r"subenvs\[1\] must be an Environment instance.*got str",
+            match=r"subenvs\[1\] must be an Environment-like object.*got str",
         ):
             CompositeEnvironment([sample_env_2d, "not an environment"])
 
@@ -60,7 +60,7 @@ class TestTypeValidation:
         """Test error for dict element in list."""
         with pytest.raises(
             TypeError,
-            match=r"subenvs\[1\] must be an Environment instance.*got dict",
+            match=r"subenvs\[1\] must be an Environment-like object.*got dict",
         ):
             CompositeEnvironment([sample_env_2d, {"not": "env"}])
 
@@ -68,7 +68,7 @@ class TestTypeValidation:
         """Test error for None element in list."""
         with pytest.raises(
             TypeError,
-            match=r"subenvs\[0\] must be an Environment instance.*got NoneType",
+            match=r"subenvs\[0\] must be an Environment-like object.*got NoneType",
         ):
             CompositeEnvironment([None, sample_env_2d])
 
@@ -76,7 +76,7 @@ class TestTypeValidation:
         """Test error when multiple invalid elements (reports first)."""
         with pytest.raises(
             TypeError,
-            match=r"subenvs\[1\] must be an Environment instance",
+            match=r"subenvs\[1\] must be an Environment-like object",
         ):
             CompositeEnvironment([sample_env_2d, 42, "invalid", None])
 

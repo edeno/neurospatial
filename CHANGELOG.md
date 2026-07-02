@@ -65,6 +65,39 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ### Added
 
+- Input Protocol surface + pynapple ingress/egress (optional). A new
+  `neurospatial/_typing.py` defines the structural Protocols that let
+  third-party objects flow into the **array-first** scientific core without the
+  core ever importing or `isinstance`-checking them:
+  - `PositionLike` — a `.t` / `.values` time-series (pynapple `Tsd` / `TsdFrame`
+    conform). `compute_spatial_rate` / `compute_spatial_rates` and
+    `decode_session` / `decode_session_summary` now accept a `PositionLike` in
+    the `times` slot (with `positions` omitted) and normalize it to plain
+    `float64` arrays at the boundary via `as_times_positions`. The plain-array
+    path is unchanged byte-for-byte.
+  - `SpikeTrainsLike` — the accepted spike-input union, plus a real pynapple
+    `TsGroup`. A `TsGroup` is a `collections.UserDict`, so **iterating it yields
+    the unit-id keys, not the per-unit trains**; `SpikeTrainsLike` is therefore
+    the *indexable-by-id* surface (`.index` of unit ids + `group[uid]` returning
+    a per-unit `Ts` with `.t`). A new `encoding.as_spike_trains_with_ids`
+    extracts trains by indexing each id (never by iterating), so a raw `TsGroup`
+    flows correctly into `compute_spatial_rates` / `decode_session`; it surfaces
+    the ids without changing `as_spike_trains`'s `list[NDArray]` contract, and
+    when a group carries ids and the caller passes no `unit_ids=`, they now flow
+    into `SpatialRatesResult.unit_ids` instead of being silently dropped.
+  - `EnvironmentLike` — a public re-export of `EnvironmentProtocol`. The
+    internal `isinstance(env, Environment)` check in `CompositeEnvironment` is
+    replaced by a duck-typed `is_environment_like` check, fixing the surprise
+    that the sibling `EgocentricPolarEnvironment` (not an `Environment`
+    subclass) was rejected even though it is a legitimate environment.
+- pynapple I/O shim behind a new optional `pynapple` extra:
+  `neurospatial.io.from_pynapple` (`TsGroup` → `(trains, unit_ids)`;
+  `Tsd` / `TsdFrame` → `(times, positions)`; `IntervalSet` → `(start, end)`) and
+  `neurospatial.io.to_pynapple` (a decoded MAP track / `times`+`values` →
+  `Tsd` / `TsdFrame`). `import pynapple` is lazy inside these functions, so the
+  package and the array path import and run with pynapple absent; calling them
+  without it raises a clear `ImportError` naming `neurospatial[pynapple]`. The
+  scientific modules never import pynapple.
 - Speed filtering on the encode path. `compute_spatial_rate` and
   `compute_spatial_rates` gain keyword-only `speed` / `min_speed` parameters
   (also forwarded by `decode_session` / `decode_session_summary`). When

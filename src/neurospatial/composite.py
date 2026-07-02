@@ -42,6 +42,7 @@ from sklearn.neighbors import KDTree
 
 from neurospatial._constants import KDTREE_COMPOSITE_LEAF_SIZE
 from neurospatial._logging import log_composite_build
+from neurospatial._typing import is_environment_like
 from neurospatial.environment import Environment
 from neurospatial.environment.decorators import EnvironmentNotFittedError
 from neurospatial.regions import Regions
@@ -79,11 +80,16 @@ def _validate_subenvs(subenvs: Any) -> list[Environment]:
     if not subenvs:
         raise ValueError("At least one sub-environment is required.")
 
-    # Element type check
+    # Element type check. Duck-typed against the shared Environment surface
+    # (``is_environment_like``) rather than ``isinstance(env, Environment)``:
+    # the sibling ``EgocentricPolarEnvironment`` is NOT an ``Environment``
+    # subclass, so a strict ``isinstance`` wrongly rejected a legitimate polar
+    # environment. Graph-based composite operations work on its shared surface.
     for i, env in enumerate(subenvs):
-        if not isinstance(env, Environment):
+        if not is_environment_like(env):
             raise TypeError(
-                f"subenvs[{i}] must be an Environment instance, "
+                f"subenvs[{i}] must be an Environment-like object (exposing "
+                f"bin_centers, connectivity, neighbors), "
                 f"got {type(env).__name__}."
             )
         if not env._is_fitted:
