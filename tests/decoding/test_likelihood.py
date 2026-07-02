@@ -347,14 +347,14 @@ class TestEdgeCases:
         self, simple_spike_counts: np.ndarray, simple_encoding_models: np.ndarray
     ) -> None:
         """dt=0 should raise ValueError."""
-        with pytest.raises(ValueError, match="dt must be positive"):
+        with pytest.raises(ValueError, match="dt must be a finite number"):
             log_poisson_likelihood(simple_spike_counts, simple_encoding_models, dt=0.0)
 
     def test_dt_negative_raises(
         self, simple_spike_counts: np.ndarray, simple_encoding_models: np.ndarray
     ) -> None:
         """Negative dt should raise ValueError."""
-        with pytest.raises(ValueError, match="dt must be positive"):
+        with pytest.raises(ValueError, match="dt must be a finite number"):
             log_poisson_likelihood(
                 simple_spike_counts, simple_encoding_models, dt=-0.025
             )
@@ -376,6 +376,70 @@ class TestEdgeCases:
             log_poisson_likelihood(
                 simple_spike_counts, simple_encoding_models, dt=0.025, min_rate=-1e-10
             )
+
+
+# =============================================================================
+# Shared dt validation (log_poisson_likelihood + poisson_likelihood)
+# =============================================================================
+
+
+class TestDtValidation:
+    """Both public likelihood functions route dt through the shared validate_dt.
+
+    The public likelihood surface must reject non-numeric, ``bool``, and
+    non-finite ``dt`` with the same ``ValueError`` as the decode entry points
+    (previously a numeric string leaked a raw ``TypeError``, ``dt=True`` was
+    silently accepted as ``1``, and ``nan``/``inf`` slipped through).
+    """
+
+    @pytest.mark.parametrize(
+        "func",
+        [log_poisson_likelihood, poisson_likelihood],
+        ids=["log_poisson_likelihood", "poisson_likelihood"],
+    )
+    @pytest.mark.parametrize(
+        "bad_dt",
+        ["0.1", "abc", True, False, np.nan, np.inf, 0, -1],
+        ids=[
+            "str-numeric",
+            "str-nonnumeric",
+            "bool-true",
+            "bool-false",
+            "nan",
+            "inf",
+            "zero",
+            "negative",
+        ],
+    )
+    def test_invalid_dt_raises_valueerror(
+        self,
+        func,
+        bad_dt,
+        simple_spike_counts: np.ndarray,
+        simple_encoding_models: np.ndarray,
+    ) -> None:
+        """Non-numeric / bool / non-finite / non-positive dt raises ValueError."""
+        with pytest.raises(ValueError, match=r"dt must"):
+            func(simple_spike_counts, simple_encoding_models, dt=bad_dt)
+
+    @pytest.mark.parametrize(
+        "func",
+        [log_poisson_likelihood, poisson_likelihood],
+        ids=["log_poisson_likelihood", "poisson_likelihood"],
+    )
+    def test_valid_dt_returns_expected_shape(
+        self,
+        func,
+        simple_spike_counts: np.ndarray,
+        simple_encoding_models: np.ndarray,
+    ) -> None:
+        """A valid dt still returns a finite (n_time_bins, n_bins) array."""
+        out = func(simple_spike_counts, simple_encoding_models, dt=0.025)
+        assert out.shape == (
+            simple_spike_counts.shape[0],
+            simple_encoding_models.shape[1],
+        )
+        assert np.isfinite(out).all()
 
 
 # =============================================================================

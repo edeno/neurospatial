@@ -1496,11 +1496,7 @@ def _log_poisson_likelihood_nan_safe(
         encoding-model bins excluded from each neuron's contribution and
         all-NaN bins set to ``-inf``.
     """
-    if dt <= 0:
-        raise ValueError(
-            f"dt must be positive, got {dt}. "
-            f"Time bin width should be in seconds (typical values: 0.001-0.1s)."
-        )
+    dt = validate_dt(dt)
     if min_rate <= 0:
         raise ValueError(
             f"min_rate must be positive, got {min_rate}. "

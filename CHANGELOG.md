@@ -11,6 +11,15 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ### Fixed
 
+- The public likelihood functions `log_poisson_likelihood` and
+  `poisson_likelihood` now **validate `dt` via the shared `validate_dt`
+  helper**, consistent with the decode entry points. A non-numeric `dt`
+  (including a numeric string like `"0.1"`), a `bool` (`dt=True`), and a
+  non-finite `dt` (`nan`/`inf`) now raise a clear `ValueError` instead of the
+  weaker `dt <= 0` guard (which leaked a raw `TypeError` on strings, silently
+  accepted `dt=True` as `1`, and let `nan`/`inf` slip through). The error
+  message changed from `"dt must be positive"` to `"dt must be a finite number
+  > 0"`.
 - `bin_spikes_in_time` now **validates `dt` consistently** with
   `decode_session` / `decode_session_summary` via a shared `validate_dt` helper:
   a non-numeric `dt` (including a numeric string like `"0.1"`) and a `bool`
