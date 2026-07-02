@@ -153,3 +153,75 @@ def as_spike_trains(
         f"spike_times must be 1D array, 2D array, or sequence of arrays, "
         f"got shape {arr.shape}"
     )
+
+
+def _looks_like_spike_group(obj: Any) -> bool:
+    """Return whether ``obj`` is a ``SpikeTrainsLike`` group carrying unit ids.
+
+    Duck-typed detection of a pynapple-``TsGroup``-like object (or the future
+    ``SpikeTrains`` container): an object that is **not** one of the canonical
+    array spike inputs and that exposes a non-callable ``.index`` (the unit
+    ids). A plain ``list`` / ``tuple`` has an ``.index`` *method* (callable), so
+    the callable check keeps the canonical list-of-arrays format on the
+    array path; a NumPy array has no ``.index`` at all.
+    """
+    if isinstance(obj, (list, tuple, np.ndarray)):
+        return False
+    index = getattr(obj, "index", None)
+    return index is not None and not callable(index)
+
+
+def as_spike_trains_with_ids(
+    spike_times: Any,
+) -> tuple[list[NDArray[np.float64]], NDArray[Any] | None]:
+    """Coerce spike input to canonical trains AND surface unit ids when present.
+
+    A companion to :func:`as_spike_trains` that additionally extracts per-unit
+    identity labels from a ``SpikeTrainsLike`` group (a pynapple-``TsGroup``-like
+    object, or the future ``SpikeTrains`` container). Its purpose is to keep
+    unit identity from being silently dropped when a group object flows into a
+    batch encoding function.
+
+    :func:`as_spike_trains` keeps its original ``list[NDArray]`` return contract
+    unchanged; this function is the *separate* id-surfacing normalizer.
+
+    Duck-typed, never ``isinstance`` on a third-party type: a group is detected
+    by a non-callable ``.index`` (see :func:`_looks_like_spike_group`) and is
+    expected to be **iterable yielding per-unit 1-D timestamp arrays**. A real
+    pynapple ``TsGroup`` should instead be converted via
+    :func:`neurospatial.io.from_pynapple` (which knows its exact API); this
+    adapter targets the duck-typed group surface used by the ``SpikeTrains``
+    container and by test doubles.
+
+    Parameters
+    ----------
+    spike_times : array, sequence of arrays, or SpikeTrainsLike
+        Any input :func:`as_spike_trains` accepts (1-D array, 2-D NaN-padded
+        array, or sequence of 1-D arrays), or a group object exposing an
+        ``.index`` of unit ids and iterating to yield per-unit timestamp arrays.
+
+    Returns
+    -------
+    trains : list[NDArray[np.float64]]
+        Per-unit spike-time arrays, exactly as :func:`as_spike_trains` produces.
+    unit_ids : NDArray or None
+        Unit ids extracted from the group's ``.index`` (one per train), or
+        ``None`` for a plain array / sequence input (which carries no ids).
+
+    Examples
+    --------
+    Plain sequence input carries no ids:
+
+    >>> import numpy as np
+    >>> from neurospatial.encoding import as_spike_trains_with_ids
+    >>> trains, ids = as_spike_trains_with_ids([np.array([0.1]), np.array([0.2])])
+    >>> len(trains), ids
+    (2, None)
+    """
+    if _looks_like_spike_group(spike_times):
+        # Iterable yielding per-unit 1-D timestamp arrays; ``.index`` carries the
+        # aligned unit ids (same order as iteration).
+        trains = [np.asarray(train, dtype=np.float64) for train in spike_times]
+        unit_ids = np.asarray(list(spike_times.index))
+        return trains, unit_ids
+    return as_spike_trains(spike_times), None

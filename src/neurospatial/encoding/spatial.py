@@ -61,6 +61,7 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
     from neurospatial import Environment
+    from neurospatial._typing import PositionLike, SpikeTrainsLike
     from neurospatial.encoding.grid import GridProperties
     from neurospatial.environment._protocols import EnvironmentProtocol
 
@@ -1870,8 +1871,8 @@ def _fill_nan(rates: ArrayLike, fill_value: float) -> ArrayLike:
 def compute_spatial_rate(
     env: Environment,
     spike_times: NDArray[np.float64],
-    times: NDArray[np.float64],
-    positions: NDArray[np.float64],
+    times: NDArray[np.float64] | PositionLike,
+    positions: NDArray[np.float64] | None = None,
     *,
     smoothing_method: Literal[
         "diffusion_kde", "gaussian_kde", "binned"
@@ -1903,12 +1904,16 @@ def compute_spatial_rate(
         (e.g., created via ``Environment.from_samples()``).
     spike_times : ndarray, shape (n_spikes,)
         Times of spike events in seconds. Can be empty.
-    times : ndarray, shape (n_samples,)
-        Timestamps of trajectory samples in seconds.
-    positions : ndarray, shape (n_samples, n_dims)
+    times : ndarray, shape (n_samples,), or PositionLike
+        Timestamps of trajectory samples in seconds. May instead be a single
+        ``PositionLike`` object (exposing ``.t`` and ``.values``, e.g. a
+        pynapple ``Tsd`` / ``TsdFrame``) carrying both times and positions, in
+        which case ``positions`` must be omitted.
+    positions : ndarray, shape (n_samples, n_dims), optional
         Position coordinates at each time sample. NaN values are treated as
         missing data and excluded from occupancy and firing-rate computation;
-        callers do not need to pre-filter tracking dropouts.
+        callers do not need to pre-filter tracking dropouts. Omit only when
+        ``times`` is a ``PositionLike`` object carrying the positions.
     smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Smoothing method to use:
 
@@ -2104,6 +2109,14 @@ def compute_spatial_rate(
 
     _validate_smoothing_parameters(smoothing_method, bandwidth)
 
+    # Boundary adapter: accept EITHER a PositionLike (e.g. a pynapple
+    # Tsd/TsdFrame exposing .t/.values) OR explicit (times, positions) arrays,
+    # normalizing to plain float64 arrays here at the public entry. The array
+    # path is unchanged byte-for-byte (plain arrays pass straight through).
+    from neurospatial._typing import as_times_positions
+
+    times, positions = as_times_positions(times, positions)
+
     # Convert inputs to arrays
     spike_times = np.asarray(spike_times, dtype=np.float64)
     times = np.asarray(times, dtype=np.float64)
@@ -2198,9 +2211,9 @@ def compute_spatial_rate(
 
 def compute_spatial_rates(
     env: Environment,
-    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64],
-    times: NDArray[np.float64],
-    positions: NDArray[np.float64],
+    spike_times: Sequence[NDArray[np.float64]] | NDArray[np.float64] | SpikeTrainsLike,
+    times: NDArray[np.float64] | PositionLike,
+    positions: NDArray[np.float64] | None = None,
     *,
     smoothing_method: Literal[
         "diffusion_kde", "gaussian_kde", "binned"
@@ -2235,14 +2248,22 @@ def compute_spatial_rates(
         - List/tuple of 1D arrays: ``[spikes_0, spikes_1, ...]`` (canonical)
         - 2D array with NaN padding: shape ``(n_neurons, max_spikes)``
         - 1D array (single neuron): wrapped in list automatically
+        - A ``SpikeTrainsLike`` group (e.g. a pynapple-``TsGroup``-like object
+          iterating per-unit trains and carrying an ``.index`` of unit ids)
 
         All formats are coerced to per-neuron spike trains via ``as_spike_trains()``.
-    times : ndarray, shape (n_samples,)
-        Timestamps of trajectory samples in seconds.
-    positions : ndarray, shape (n_samples, n_dims)
+        When a group carries unit ids and ``unit_ids`` is not passed, those ids
+        are threaded into the result's ``unit_ids``.
+    times : ndarray, shape (n_samples,), or PositionLike
+        Timestamps of trajectory samples in seconds. May instead be a single
+        ``PositionLike`` object (exposing ``.t`` and ``.values``, e.g. a
+        pynapple ``Tsd`` / ``TsdFrame``) carrying both times and positions, in
+        which case ``positions`` must be omitted.
+    positions : ndarray, shape (n_samples, n_dims), optional
         Position coordinates at each time sample. NaN values are treated as
         missing data and excluded from occupancy and firing-rate computation;
-        callers do not need to pre-filter tracking dropouts.
+        callers do not need to pre-filter tracking dropouts. Omit only when
+        ``times`` is a ``PositionLike`` object carrying the positions.
     smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Smoothing method to use. See ``compute_spatial_rate()`` for details.
         Note: the default ``diffusion_kde`` builds a dense O(n²) diffusion
@@ -2453,7 +2474,7 @@ def compute_spatial_rates(
         _validate_smoothing_parameters,
         smooth_rate_maps_batch,
     )
-    from neurospatial.encoding._spikes import as_spike_trains
+    from neurospatial.encoding._spikes import as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
         validate_env_fitted,
         validate_spike_times,
@@ -2494,16 +2515,28 @@ def compute_spatial_rates(
 
     _validate_smoothing_parameters(smoothing_method, bandwidth)
 
-    # Normalize spike times to canonical list-of-arrays format
-    spike_times_list = as_spike_trains(spike_times)
+    # Normalize spike times to canonical list-of-arrays format, surfacing any
+    # unit ids the spikes object carries (a SpikeTrainsLike group, e.g. a
+    # pynapple-TsGroup-like). Plain-array/sequence inputs return `None` ids, so
+    # the trains are byte-for-byte identical to `as_spike_trains(spike_times)`.
+    spike_times_list, extracted_unit_ids = as_spike_trains_with_ids(spike_times)
     n_neurons = len(spike_times_list)
 
-    # Resolve and validate per-unit identity labels (defaults to arange).
+    # Resolve and validate per-unit identity labels (defaults to arange). An
+    # explicit `unit_ids=` always wins; otherwise the ids extracted from the
+    # spikes object are threaded through so identity is not silently dropped.
     from neurospatial._results import resolve_unit_ids
 
+    effective_unit_ids = unit_ids if unit_ids is not None else extracted_unit_ids
     resolved_unit_ids = resolve_unit_ids(
-        unit_ids, n_neurons, context="compute_spatial_rates"
+        effective_unit_ids, n_neurons, context="compute_spatial_rates"
     )
+
+    # Boundary adapter: accept EITHER a PositionLike (e.g. a pynapple
+    # Tsd/TsdFrame) OR explicit (times, positions) arrays. Array path unchanged.
+    from neurospatial._typing import as_times_positions
+
+    times, positions = as_times_positions(times, positions)
 
     # Convert inputs to arrays
     times = np.asarray(times, dtype=np.float64)

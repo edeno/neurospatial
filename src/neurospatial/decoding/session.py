@@ -25,6 +25,7 @@ _DROP_WARN_THRESHOLD = 0.5
 _SUMMARY_DEFAULT_TIME_CHUNK = 1024
 
 if TYPE_CHECKING:
+    from neurospatial._typing import PositionLike
     from neurospatial.decoding._result import DecodingResult, DecodingSummary
     from neurospatial.environment import Environment
 
@@ -91,8 +92,8 @@ def _warn_if_spikes_out_of_window(
 def decode_session(
     env: Environment,
     spike_times: Any,
-    times: ArrayLike,
-    positions: NDArray[np.float64],
+    times: ArrayLike | PositionLike,
+    positions: NDArray[np.float64] | None = None,
     *,
     dt: float = 0.025,
     bandwidth: float = 5.0,
@@ -127,12 +128,16 @@ def decode_session(
         - 1-D array / list of scalars → single neuron
         - 2-D array, shape ``(n_neurons, max_spikes)``, NaN-padded
         - List/tuple of 1-D arrays → one array per neuron (canonical)
-    times : array-like, shape (n_frames,)
+    times : array-like, shape (n_frames,), or PositionLike
         Timestamps (seconds) at which ``positions`` were recorded.
         Used both to build encoding models and to set the decoding time
-        grid via ``t_start = times.min()`` / ``t_stop = times.max()``.
-    positions : NDArray[np.float64], shape (n_frames, n_dims)
-        Animal position at each frame in ``times``.
+        grid via ``t_start = times.min()`` / ``t_stop = times.max()``. May
+        instead be a single ``PositionLike`` object (exposing ``.t`` and
+        ``.values``, e.g. a pynapple ``Tsd`` / ``TsdFrame``) carrying both
+        times and positions, in which case ``positions`` must be omitted.
+    positions : NDArray[np.float64], shape (n_frames, n_dims), optional
+        Animal position at each frame in ``times``. Omit only when ``times``
+        is a ``PositionLike`` object carrying the positions.
     dt : float, optional
         Decoding time-bin width in seconds.  Default is 0.025 (25 ms).
     bandwidth : float, optional
@@ -343,8 +348,8 @@ def decode_session(
 def _build_encoding_model(
     env: Environment,
     spike_times: Any,
-    times: ArrayLike,
-    positions: NDArray[np.float64],
+    times: ArrayLike | PositionLike,
+    positions: NDArray[np.float64] | None,
     *,
     dt: float,
     bandwidth: float,
@@ -404,8 +409,9 @@ def _build_encoding_model(
     # package importable even if `encoding` were ever to import from `decoding`
     # (it does not today), so there is no circular-import risk at module load.
     # Mirrors how encoding/spatial.py defers its own heavy imports.
+    from neurospatial._typing import as_times_positions
     from neurospatial.decoding._binning import validate_dt
-    from neurospatial.encoding import as_spike_trains
+    from neurospatial.encoding import as_spike_trains_with_ids
     from neurospatial.encoding._validation import validate_times
     from neurospatial.encoding.spatial import compute_spatial_rates
 
@@ -440,7 +446,14 @@ def _build_encoding_model(
     dtype = np.float32 if _resolved_dtype == np.dtype(np.float32) else np.float64
 
     # --- Normalize inputs ---
-    trains = as_spike_trains(spike_times)
+    # Boundary adapters: accept EITHER a PositionLike (e.g. a pynapple
+    # Tsd/TsdFrame) OR explicit (times, positions) arrays, and a SpikeTrainsLike
+    # group OR the canonical array formats. The scientific core below is
+    # array-only; a plain-array caller is byte-for-byte unchanged. Decoding
+    # results carry no unit axis, so extracted unit ids are intentionally
+    # dropped here (identity is surfaced by the encoding path, not the decode).
+    times, positions = as_times_positions(times, positions)
+    trains, _ = as_spike_trains_with_ids(spike_times)
     times_arr = np.asarray(times, dtype=np.float64)
     if times_arr.ndim != 1:
         raise ValueError(
@@ -529,8 +542,8 @@ def _build_encoding_model(
 def _encode_and_bin(
     env: Environment,
     spike_times: Any,
-    times: ArrayLike,
-    positions: NDArray[np.float64],
+    times: ArrayLike | PositionLike,
+    positions: NDArray[np.float64] | None,
     *,
     dt: float,
     bandwidth: float,
@@ -594,8 +607,8 @@ def _encode_and_bin(
 def decode_session_summary(
     env: Environment,
     spike_times: Any,
-    times: ArrayLike,
-    positions: NDArray[np.float64],
+    times: ArrayLike | PositionLike,
+    positions: NDArray[np.float64] | None = None,
     *,
     dt: float = 0.025,
     bandwidth: float = 5.0,
