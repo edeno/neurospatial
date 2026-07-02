@@ -257,6 +257,57 @@ Generate synthetic spatial data, neural activity, and spike trains for testing a
 
 - [Simulation Workflows Tutorial](../examples/15_simulation_workflows.ipynb): Comprehensive examples and quick start guide
 
+### Interoperability & Session Ergonomics
+
+Optional, session-first conveniences layered **on top of** the array-first API
+(see the [Interoperability guide](../user-guide/interoperability.md)). The array
+path never depends on these; `import neurospatial` never imports pynapple or
+pynwb.
+
+**Session bundle** ([neurospatial.recording](neurospatial/recording.md)):
+
+- `Session`: Frozen bundle of `env` + position + `spikes` (+ optional `epochs` /
+  `metadata`). `Session.from_arrays(...)` / `Session.from_nwb(...)` build it;
+  `.times` / `.positions` / `.env` / `.spikes` accessors expose the raw data;
+  `.with_environment(env)` and `.restrict(epochs)` return **new** sessions.
+- `load_session(path_or_nwbfile)`: Load a `Session` from an NWB path or open
+  `NWBFile` (dispatches to `Session.from_nwb`).
+
+**Spike-train container** ([neurospatial.encoding.spike_trains](neurospatial/encoding/spike_trains.md)):
+
+- `SpikeTrains`: Frozen ragged per-unit spike trains with `unit_ids` / optional
+  `unit_table`. Label access (`st[unit_id]`), iteration, `.filter(query)`; flows
+  directly into the batch `compute_*` / `decode_*` functions.
+
+**Epoch selection** ([neurospatial.behavior.epochs](neurospatial/behavior/epochs.md)):
+
+- `restrict(times, *arrays, epochs=...)`: Slice `times` and time-aligned arrays
+  to a set of epochs.
+- `in_epochs(t, epochs)`: Boolean mask, `True` where `t` falls in any epoch.
+- `restrict_spike_trains(trains, epochs)`: Mask ragged per-unit trains, each by
+  its own timestamps.
+
+**Bayesian decoder object** ([neurospatial.decoding.estimator](neurospatial/decoding/estimator.md)):
+
+- `BayesianDecoder`: Frozen `fit(...)` → `predict(...)` / `predict_summary(...)`
+  / `score(...)` wrapper over `decode_session` (byte-exact). Decodes through the
+  `Environment`, so linearized-track / geodesic decoding works.
+
+**pynapple adapters** ([neurospatial.io.pynapple](neurospatial/io/pynapple.md)) — requires `neurospatial[pynapple]`:
+
+- `from_pynapple(obj)`: `TsGroup` → `(trains, unit_ids)`, `Tsd` / `TsdFrame` →
+  `(times, positions)`, `IntervalSet` → `(start, end)`.
+- `to_pynapple(times, values=...)`: Decoded track / arrays → `Tsd` / `TsdFrame`.
+
+**NWB adapters** ([neurospatial.io.nwb](neurospatial/io/nwb/index.md)) — requires `neurospatial[nwb]`:
+
+- `read_units(nwbfile, *, unit_ids=None, lazy=False)`: `(trains, unit_ids)` from
+  the NWB `units` table. `read_position` / `read_pose` / `read_units` accept
+  `lazy=True` (handles valid only while the file is open).
+- `write_spatial_rates(nwbfile, result)` / `read_place_field(nwbfile, env=None)`:
+  Round-trip a `SpatialRatesResult` (firing rates / occupancy / unit ids /
+  `unit_table` + a persisted, connected environment).
+
 ## Layout Engines
 
 Detailed documentation for each layout engine:
