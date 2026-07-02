@@ -76,8 +76,9 @@ these are called out under a dedicated **Breaking changes** heading.
   (and the other batch encoders/decoders) with `unit_ids` preserved. Label
   access (`st[unit_id]`) and the adapter's positional iteration coexist because
   they use different dunders (`__getitem__` vs `__iter__` / `.index`). Frozen
-  and immutable: `filter` returns a new container and never mutates the
-  original; duplicate `unit_ids` raise `ValueError`.
+  and immutable: `trains` is stored as a `tuple` so in-place mutation raises,
+  `filter` returns a new container and never mutates the original; duplicate
+  `unit_ids` raise `ValueError`.
 - Input Protocol surface + pynapple ingress/egress (optional). A new
   `neurospatial/_typing.py` defines the structural Protocols that let
   third-party objects flow into the **array-first** scientific core without the

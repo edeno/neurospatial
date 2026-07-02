@@ -187,6 +187,22 @@ def test_reassigning_field_raises(trains: list[np.ndarray]) -> None:
         st.unit_ids = np.array([1, 2, 3])  # type: ignore[misc]
 
 
+def test_trains_stored_as_immutable_tuple(trains: list[np.ndarray]) -> None:
+    # trains is stored as a tuple, so in-place mutation raises AttributeError
+    # (a tuple has no ``append``) -- this keeps len(unit_ids) == len(trains).
+    st = SpikeTrains(trains)
+    assert isinstance(st.trains, tuple)
+    with pytest.raises(AttributeError):
+        st.trains.append(np.array([9.9]))  # type: ignore[attr-defined]
+
+
+def test_list_input_still_accepted(trains: list[np.ndarray]) -> None:
+    # Users pass a plain list; it is accepted and coerced to a tuple.
+    st = SpikeTrains(list(trains))
+    assert isinstance(st.trains, tuple)
+    assert len(st) == len(trains)
+
+
 def test_top_level_and_encoding_export_same_class() -> None:
     assert SpikeTrains is SpikeTrainsFromEncoding
 

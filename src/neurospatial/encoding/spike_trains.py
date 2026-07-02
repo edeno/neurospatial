@@ -35,8 +35,8 @@ access keyed by unit id.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from dataclasses import dataclass, field
+from collections.abc import Iterator, Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -65,10 +65,11 @@ class SpikeTrains:
 
     Parameters
     ----------
-    trains : list of ndarray
-        Ragged per-unit spike times, one 1-D array per unit. Each element is
-        coerced to a 1-D ``float64`` array at construction; a non-1-D element
-        raises :class:`ValueError`.
+    trains : sequence of ndarray
+        Ragged per-unit spike times, one 1-D array per unit (a ``list`` is the
+        ergonomic input). Each element is coerced to a 1-D ``float64`` array at
+        construction and the result is stored as an immutable ``tuple``; a
+        non-1-D element raises :class:`ValueError`.
     unit_ids : ndarray or sequence, optional
         Identity label for each unit, one per train. Defaults to
         ``np.arange(len(trains))``. Must be 1-D, length ``len(trains)``, and
@@ -82,10 +83,10 @@ class SpikeTrains:
 
     Attributes
     ----------
-    trains : list of ndarray
-        The per-unit ``float64`` spike-time arrays. The list is a plain
-        ``list`` for ergonomics, but the dataclass is frozen: do not mutate it
-        in place -- build a new :class:`SpikeTrains` instead.
+    trains : tuple of ndarray
+        The per-unit ``float64`` spike-time arrays, stored as an immutable
+        ``tuple`` so in-place mutation raises. Build a new
+        :class:`SpikeTrains` to change the trains.
     unit_ids : ndarray
         Resolved identity labels, one per train.
     unit_table : pandas.DataFrame or None
@@ -105,9 +106,9 @@ class SpikeTrains:
     array([0.2, 0.3, 0.8])
     """
 
-    trains: list[NDArray[np.float64]]
+    trains: Sequence[NDArray[np.float64]]
     unit_ids: NDArray[Any] | None = None
-    unit_table: pd.DataFrame | None = field(default=None)
+    unit_table: pd.DataFrame | None = None
 
     def __post_init__(self) -> None:
         """Coerce trains, resolve/validate unit ids, and validate the table."""
@@ -122,7 +123,9 @@ class SpikeTrains:
                     "  HOW: pass a 1-D array of spike times for each unit."
                 )
             coerced.append(arr)
-        object.__setattr__(self, "trains", coerced)
+        # Store as a tuple so in-place mutation (e.g. ``st.trains.append(...)``)
+        # raises, keeping the ``len(unit_ids) == len(trains)`` invariant intact.
+        object.__setattr__(self, "trains", tuple(coerced))
 
         n_units = len(coerced)
         resolved = resolve_unit_ids(self.unit_ids, n_units, context="SpikeTrains")

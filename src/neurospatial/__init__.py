@@ -258,7 +258,10 @@ _LAZY_SUBMODULES: tuple[str, ...] = (
 
 
 # Public classes exposed at the top level but *lazily* imported, so that
-# reaching for one does not eagerly pull in its (otherwise lazy) domain package.
+# ``import neurospatial`` does not eagerly import the domain packages; the
+# owning package loads on first attribute access. (Accessing the class does
+# then pull in its whole domain package, but plain ``import neurospatial``
+# stays cheap.)
 # Maps the attribute name to its ``(submodule, attribute)`` source.
 _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     "SpikeTrains": ("encoding.spike_trains", "SpikeTrains"),
