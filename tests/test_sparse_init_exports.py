@@ -37,6 +37,9 @@ def test_all_has_core_classes_and_exceptions():
         "LayoutNotBuiltError",
         # Eagerly-exported primitives
         "bin_spikes_in_time",
+        # Lazily-accessible public container (PEP 562 __getattr__); the one
+        # justified new container (ragged spike times don't fit an array).
+        "SpikeTrains",
         # Lazily-accessible analysis submodules (PEP 562 __getattr__)
         "encoding",
         "decoding",
