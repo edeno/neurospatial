@@ -9,6 +9,17 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ## [Unreleased]
 
+### Changed
+
+- `decode_session` / `decode_session_summary` now accept `positions=None` when
+  `encoding_models` is supplied (the passthrough decode never uses a position
+  track). Previously this raised `"as_times_positions received a timestamp array
+  but no positions"`; now the position track is normalized only when actually
+  needed (the encode step, or a `PositionLike` `times`). Every existing caller
+  that passes `positions` is byte-for-byte unchanged. This enables the
+  fitted-model decode path used by `BayesianDecoder.predict` /
+  `predict_summary`.
+
 ### Fixed
 
 - The public likelihood functions `log_poisson_likelihood` and
@@ -65,6 +76,21 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ### Added
 
+- `BayesianDecoder` — an immutable (`frozen`) `fit`/`predict`/`predict_summary`/
+  `score` wrapper over the decode core (`neurospatial.decoding`, also exported at
+  the top level). `fit(spike_times, times, positions, *, speed=None,
+  min_speed=None, epoch=None)` builds encoding models by reusing
+  `decode_session`'s internal encoder and returns a **new** fitted decoder
+  (never mutates the original); an optional `epoch` restricts the training data
+  first (via `behavior.restrict` / `restrict_spike_trains`) for train/test
+  splits. `predict` / `predict_summary` delegate to `decode_session` /
+  `decode_session_summary` with the fitted models, so a fitted decoder's
+  posterior is **byte-exact** with `decode_session` on the same inputs; `score`
+  reports decode error (`"median_error"` / `"mean_error"`, lower is better) via
+  `DecodingResult.error_against`. Accepts `SpikeTrainsLike` / `PositionLike`
+  inputs, and decodes through the `Environment`, so geodesic / linearized-track /
+  graph-based decoding works (unlike pynapple `decode_1d` / `decode_2d`).
+  Unfitted `predict` / `predict_summary` / `score` raise a clear `RuntimeError`.
 - `Session` — a frozen **discoverability bundle** (`neurospatial.recording`,
   also exported at the top level) grouping `env` / `position` / `spikes` /
   `epochs` / `metadata`. It is **not a god-object**: it exposes the raw arrays

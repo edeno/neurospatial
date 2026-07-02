@@ -169,6 +169,7 @@ from neurospatial.decoding.estimates import (
     posterior_entropy,
     posterior_mode,
 )
+from neurospatial.decoding.estimator import BayesianDecoder
 from neurospatial.decoding.likelihood import (
     log_poisson_likelihood,
     poisson_likelihood,
@@ -199,6 +200,8 @@ from neurospatial.decoding.trajectory import (
 # =============================================================================
 
 __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
+    # Immutable fit/predict estimator
+    "BayesianDecoder",
     # Result containers
     "AssemblyDetectionResult",
     "AssemblyPattern",

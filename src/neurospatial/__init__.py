@@ -268,6 +268,7 @@ _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     "restrict": ("behavior.epochs", "restrict"),
     "Session": ("recording", "Session"),
     "load_session": ("recording", "load_session"),
+    "BayesianDecoder": ("decoding.estimator", "BayesianDecoder"),
 }
 
 
@@ -292,6 +293,7 @@ def __dir__() -> list[str]:
 
 
 __all__ = [
+    "BayesianDecoder",
     "BinIndexOutOfRangeError",
     "CompositeEnvironment",
     "Environment",

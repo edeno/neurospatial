@@ -409,7 +409,7 @@ def _build_encoding_model(
     # package importable even if `encoding` were ever to import from `decoding`
     # (it does not today), so there is no circular-import risk at module load.
     # Mirrors how encoding/spatial.py defers its own heavy imports.
-    from neurospatial._typing import as_times_positions
+    from neurospatial._typing import _is_position_like, as_times_positions
     from neurospatial.decoding._binning import validate_dt
     from neurospatial.encoding import as_spike_trains_with_ids
     from neurospatial.encoding._validation import validate_times
@@ -452,7 +452,23 @@ def _build_encoding_model(
     # array-only; a plain-array caller is byte-for-byte unchanged. Decoding
     # results carry no unit axis, so extracted unit ids are intentionally
     # dropped here (identity is surfaced by the encoding path, not the decode).
-    times, positions = as_times_positions(times, positions)
+    #
+    # The position track is required only for the ENCODE step. When
+    # ``encoding_models`` is supplied (passthrough decode) the positions are
+    # never touched, so a caller may omit ``positions`` entirely — the
+    # fitted-model decode path (e.g. ``BayesianDecoder.predict``) has no
+    # position track to pass. In that one case we normalize only ``times``
+    # (still handling a PositionLike, whose positions are simply unused);
+    # otherwise the full ``(times, positions)`` normalization runs unchanged, so
+    # every existing caller is byte-for-byte identical.
+    if (
+        positions is None
+        and encoding_models is not None
+        and not _is_position_like(times)
+    ):
+        times = np.asarray(times, dtype=np.float64)
+    else:
+        times, positions = as_times_positions(times, positions)
     trains, _ = as_spike_trains_with_ids(spike_times)
     times_arr = np.asarray(times, dtype=np.float64)
     if times_arr.ndim != 1:
