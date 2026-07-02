@@ -361,6 +361,7 @@ def _build_encoding_model(
     encoding_models: NDArray[np.float64] | None,
     warn_on_drop: bool,
     dtype: type[np.float32] | type[np.float64] = np.float64,
+    context: str = "decode_session",
 ) -> tuple[
     list[NDArray[np.float64]],
     NDArray[np.float64],
@@ -391,6 +392,13 @@ def _build_encoding_model(
     authoritative end-to-end). Default ``np.float64`` keeps current behavior
     byte-for-byte.
 
+    ``context`` names the caller in the up-front timestamp-validation error
+    (``validate_times``) so a too-few-samples failure points at the real entry
+    point. It defaults to ``"decode_session"`` (the message every existing
+    caller already produced); ``BayesianDecoder.fit`` passes its own name so an
+    epoch that selects too-few training samples names ``fit``, not the internal
+    ``decode_session``.
+
     Returns
     -------
     trains : list of NDArray[np.float64]
@@ -409,7 +417,7 @@ def _build_encoding_model(
     # package importable even if `encoding` were ever to import from `decoding`
     # (it does not today), so there is no circular-import risk at module load.
     # Mirrors how encoding/spatial.py defers its own heavy imports.
-    from neurospatial._typing import as_times_positions
+    from neurospatial._typing import _is_position_like, as_times_positions
     from neurospatial.decoding._binning import validate_dt
     from neurospatial.encoding import as_spike_trains_with_ids
     from neurospatial.encoding._validation import validate_times
@@ -452,7 +460,23 @@ def _build_encoding_model(
     # array-only; a plain-array caller is byte-for-byte unchanged. Decoding
     # results carry no unit axis, so extracted unit ids are intentionally
     # dropped here (identity is surfaced by the encoding path, not the decode).
-    times, positions = as_times_positions(times, positions)
+    #
+    # The position track is required only for the ENCODE step. When
+    # ``encoding_models`` is supplied (passthrough decode) the positions are
+    # never touched, so a caller may omit ``positions`` entirely — the
+    # fitted-model decode path (e.g. ``BayesianDecoder.predict``) has no
+    # position track to pass. In that one case we normalize only ``times``
+    # (still handling a PositionLike, whose positions are simply unused);
+    # otherwise the full ``(times, positions)`` normalization runs unchanged, so
+    # every existing caller is byte-for-byte identical.
+    if (
+        positions is None
+        and encoding_models is not None
+        and not _is_position_like(times)
+    ):
+        times = np.asarray(times, dtype=np.float64)
+    else:
+        times, positions = as_times_positions(times, positions)
     trains, _ = as_spike_trains_with_ids(spike_times)
     times_arr = np.asarray(times, dtype=np.float64)
     if times_arr.ndim != 1:
@@ -465,7 +489,7 @@ def _build_encoding_model(
     # the encoder's own validate_trajectory, so without this a NaN/inf in
     # `times` would leak a raw "cannot convert float NaN to integer" from
     # bin_spikes_in_time instead of a beginner-grade message.
-    validate_times(times_arr, context="decode_session")
+    validate_times(times_arr, context=context)
 
     # Decode window — computed ONCE and reused for both the out-of-window drop
     # check and the time-grid construction so they agree exactly.

@@ -9,6 +9,25 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ## [Unreleased]
 
+### Changed
+
+- The internal `_build_encoding_model` (shared by `decode_session` /
+  `decode_session_summary` / `BayesianDecoder.fit`) gained an optional
+  `context` parameter that names the caller in its up-front
+  timestamp-validation error. `BayesianDecoder.fit` passes
+  `context="BayesianDecoder.fit"`, so an `epoch` that selects too-few training
+  samples now raises `"At least 2 samples required for BayesianDecoder.fit,
+  got N"` instead of the misleading `decode_session` provenance. The default
+  preserves every existing message.
+- `decode_session` / `decode_session_summary` now accept `positions=None` when
+  `encoding_models` is supplied (the passthrough decode never uses a position
+  track). Previously this raised `"as_times_positions received a timestamp array
+  but no positions"`; now the position track is normalized only when actually
+  needed (the encode step, or a `PositionLike` `times`). Every existing caller
+  that passes `positions` is byte-for-byte unchanged. This enables the
+  fitted-model decode path used by `BayesianDecoder.predict` /
+  `predict_summary`.
+
 ### Fixed
 
 - The public likelihood functions `log_poisson_likelihood` and
@@ -65,6 +84,41 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ### Added
 
+- `BayesianDecoder` — an immutable (`frozen`) `fit`/`predict`/`predict_summary`/
+  `score` wrapper over the decode core (`neurospatial.decoding`, also exported at
+  the top level). `fit(spike_times, times, positions, *, speed=None,
+  min_speed=None, epoch=None)` builds encoding models by reusing
+  `decode_session`'s internal encoder and returns a **new** fitted decoder
+  (never mutates the original); an optional `epoch` restricts the training data
+  first (via `behavior.restrict` / `restrict_spike_trains`) for train/test
+  splits. `predict` / `predict_summary` delegate to `decode_session` /
+  `decode_session_summary` with the fitted models, so a fitted decoder's
+  posterior is **byte-exact** with `decode_session` on the same inputs; `score`
+  reports decode error (`"median_error"` / `"mean_error"`, lower is better) via
+  `DecodingResult.error_against`. `score` gained a `distance=` option
+  (`"euclidean"` default or `"geodesic"`, forwarded to `error_against`) so
+  scoring can use the environment's graph distance, not only straight-line
+  error, and now **does not silently drop undecodable bins**: it **warns**
+  (naming the excluded fraction) when any decode time bin is undecodable
+  (all-non-finite posterior row, which `nanmedian` / `nanmean` would otherwise
+  ignore) and **raises** a clear `ValueError` — instead of returning `nan` — when
+  *no* bin is decodable (naming the likely degenerate-encoding-model or
+  seconds-vs-milliseconds unit-mismatch cause); the all-decodable path stays
+  warning-free. Invalid `metric` / `distance` are validated **before** decoding
+  so a typo does not cost a full decode. Construction now validates config and
+  fitted state: `dt` (via the shared `validate_dt`) and `dtype` are checked at
+  build time, and a directly-injected fitted decoder
+  (`BayesianDecoder(env, encoding_models=..., unit_ids=...)`) is checked for
+  fitted-state coupling (`unit_ids` present, 2-D models, and a bin/unit-count
+  match against `env`) instead of detonating later inside the core. A new
+  read-only `is_fitted` property lets callers branch without catching
+  `RuntimeError`, and a `warn_on_drop` config field (default `True`) threads to
+  both the `fit` encode step and the `predict` / `predict_summary` decode steps
+  as a single knob to silence the spikes-out-of-window warnings. Accepts
+  `SpikeTrainsLike` / `PositionLike` inputs, and decodes through the
+  `Environment`, so geodesic / linearized-track / graph-based decoding works
+  (unlike pynapple `decode_1d` / `decode_2d`). Unfitted `predict` /
+  `predict_summary` / `score` raise a clear `RuntimeError`.
 - `Session` — a frozen **discoverability bundle** (`neurospatial.recording`,
   also exported at the top level) grouping `env` / `position` / `spikes` /
   `epochs` / `metadata`. It is **not a god-object**: it exposes the raw arrays

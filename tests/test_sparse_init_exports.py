@@ -47,6 +47,9 @@ def test_all_has_core_classes_and_exceptions():
         # frozen discoverability bundle (recording.Session) and its NWB loader.
         "Session",
         "load_session",
+        # Lazily-accessible immutable decoder (PEP 562 __getattr__): fit/predict
+        # wrapper over the decode core (decoding.estimator.BayesianDecoder).
+        "BayesianDecoder",
         # Lazily-accessible analysis submodules (PEP 562 __getattr__)
         "encoding",
         "decoding",
