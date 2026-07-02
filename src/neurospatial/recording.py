@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import dataclasses
 import os
+import warnings
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -79,18 +80,43 @@ class Position:
     Parameters
     ----------
     t : ndarray, shape (n,)
-        Timestamps in seconds. Coerced to ``float64``.
+        Timestamps in seconds. Coerced to ``float64``. Must be 1-D.
     values : ndarray, shape (n,) or (n, n_dims)
-        Position samples. Coerced to ``float64``.
+        Position samples. Coerced to ``float64``. Must have the same length as
+        ``t`` (one timestamp per sample).
+
+    Raises
+    ------
+    ValueError
+        If ``t`` is not 1-D, or if ``len(t) != len(values)``.
     """
 
     t: NDArray[np.float64]
     values: NDArray[np.float64]
 
     def __post_init__(self) -> None:
-        """Coerce ``t`` and ``values`` to ``float64`` arrays."""
-        object.__setattr__(self, "t", np.asarray(self.t, dtype=np.float64))
-        object.__setattr__(self, "values", np.asarray(self.values, dtype=np.float64))
+        """Coerce to ``float64`` and enforce a 1-D ``t`` matching ``values``."""
+        t = np.asarray(self.t, dtype=np.float64)
+        values = np.asarray(self.values, dtype=np.float64)
+        object.__setattr__(self, "t", t)
+        object.__setattr__(self, "values", values)
+
+        if t.ndim != 1:
+            raise ValueError(
+                f"Position.t must be 1-D, but got a {t.ndim}-D array with shape "
+                f"{t.shape}.\n"
+                "  WHY: `t` is the 1-D timestamp axis, one entry per position "
+                "sample.\n"
+                "  HOW: pass a 1-D array of timestamps (seconds)."
+            )
+        if len(t) != len(values):
+            raise ValueError(
+                f"Position.t and Position.values must have the same length, but "
+                f"len(t)={len(t)} and len(values)={len(values)}.\n"
+                "  WHY: each position sample needs exactly one timestamp.\n"
+                "  HOW: pass `t` and `values` of equal length (one timestamp per "
+                "sample)."
+            )
 
 
 @dataclass(frozen=True)
@@ -137,6 +163,12 @@ class Session:
     Frozen: :meth:`with_environment` and :meth:`restrict` return a **new**
     ``Session`` and never mutate the original.
 
+    Treat the bundle as **read-only**. ``metadata`` is not defensively copied
+    (the mapping you pass in is stored as-is), and :attr:`times` / :attr:`positions`
+    may return **views** into the underlying position arrays -- do not mutate the
+    returned arrays (or the passed-in ``metadata``) in place, or you will alter
+    the session's data behind its back.
+
     Examples
     --------
     >>> import numpy as np
@@ -173,6 +205,23 @@ class Session:
         if not isinstance(spikes_in, SpikeTrains):
             trains, unit_ids = as_spike_trains_with_ids(spikes_in)
             object.__setattr__(self, "spikes", SpikeTrains(trains, unit_ids=unit_ids))
+
+        # ``position`` must expose the PositionLike surface (.t / .values) --
+        # duck-checked (never isinstance) so a Position holder OR a pynapple
+        # Tsd / TsdFrame both pass, but a raw array raises a clean ValueError
+        # (not a bare AttributeError below).
+        position = self.position
+        if not (hasattr(position, "t") and hasattr(position, "values")):
+            raise ValueError(
+                "position must be a PositionLike object exposing `.t` "
+                "(timestamps) and `.values` (positions), got "
+                f"{type(position).__name__}.\n"
+                "  WHY: Session reads the animal's trajectory from position.t "
+                "and position.values.\n"
+                "  HOW: build with Session.from_arrays(times=..., positions=...) "
+                "(which wraps arrays into a Position holder), or pass a pynapple "
+                "Tsd / TsdFrame."
+            )
 
         # Position must have matching timestamp / sample counts.
         n_t = len(np.asarray(self.position.t))
@@ -318,6 +367,7 @@ class Session:
         cls,
         path_or_file: str | os.PathLike[str] | Any,
         *,
+        environment_name: str | None = None,
         unit_ids: Sequence[int] | None = None,
         **read_kwargs: Any,
     ) -> Session:
@@ -326,16 +376,28 @@ class Session:
         Uses the existing :mod:`neurospatial.io.nwb` readers, which import pynwb
         **lazily**; this module never imports pynwb. Reads spikes
         (:func:`~neurospatial.io.nwb.read_units`), position
-        (:func:`~neurospatial.io.nwb.read_position`), and -- if present in the
-        file -- the environment
-        (:func:`~neurospatial.io.nwb.read_environment`); a file with no stored
-        environment yields ``env=None``.
+        (:func:`~neurospatial.io.nwb.read_position`), and -- if a scratch entry
+        named ``environment_name`` is present -- the environment
+        (:func:`~neurospatial.io.nwb.read_environment`).
+
+        Environment presence is decided by **membership** (is the scratch entry
+        there?), not by catching an error, so the two cases stay distinct: a
+        file with **no** stored environment yields ``env=None``, while an
+        environment that IS present but cannot be read (malformed / wrong schema)
+        **raises** -- it is never silently turned into ``None``.
 
         Parameters
         ----------
         path_or_file : str, os.PathLike, or NWBFile
             An ``.nwb`` file path (opened and closed here) or an already-open
             pynwb ``NWBFile`` (the caller owns its lifecycle).
+        environment_name : str or None, optional
+            Name of the environment scratch entry to read. Default (``None``)
+            reads the standard ``spatial_environment`` scratch entry; pass a
+            custom name to select an environment written under a non-default
+            name. If the named entry is absent, ``env`` is ``None``; if it is
+            present but unreadable, the read error propagates (it is not swapped
+            for ``None``).
         unit_ids : sequence of int, optional
             Subset of unit ids to read (forwarded to
             :func:`~neurospatial.io.nwb.read_units`). Default reads all units.
@@ -364,14 +426,25 @@ class Session:
         )
         from neurospatial.io.nwb._core import open_nwbfile
 
+        # Function-local so no pynwb / reader constant is imported at module
+        # load (preserving the array-first import guarantee).
+        from neurospatial.io.nwb._environment import DEFAULT_ENVIRONMENT_NAME
+
+        name = (
+            DEFAULT_ENVIRONMENT_NAME if environment_name is None else environment_name
+        )
+
         with open_nwbfile(path_or_file) as nwbfile:
             trains, ids = read_units(nwbfile, unit_ids=unit_ids)
             # read_position returns (positions, timestamps) -- positions first.
             positions, times = read_position(nwbfile, **read_kwargs)
-            try:
-                env: EnvironmentLike | None = read_environment(nwbfile)
-            except KeyError:
-                # No environment stored in the file -> None (env is optional).
+            # Gate on presence, not on catching KeyError: a genuinely-absent env
+            # maps to None, while ANY error reading a present-but-malformed env
+            # propagates to the caller (instead of being silenced to None).
+            env: EnvironmentLike | None
+            if name in nwbfile.scratch:
+                env = read_environment(nwbfile, name=name)
+            else:
                 env = None
 
         return cls.from_arrays(
@@ -428,6 +501,22 @@ class Session:
             A new session whose ``position`` / ``spikes`` are restricted to
             ``epochs`` and whose ``epochs`` records the restriction. ``env`` and
             ``metadata`` ride along unchanged.
+
+        Warns
+        -----
+        UserWarning
+            If ``epochs`` keep **zero** position samples (the epochs do not
+            overlap the session at all -- often a seconds-vs-milliseconds unit
+            mismatch). The empty session is still returned. Per-unit *empty spike
+            trains* while some position samples survive are legitimate and do
+            **not** warn.
+
+        Notes
+        -----
+        ``.epochs`` records only the **most recent** restriction. Chaining
+        (``s.restrict(a).restrict(b)``) restricts the data to the intersection
+        of ``a`` and ``b``, but the returned session's ``.epochs == b`` (it does
+        not accumulate the chain).
         """
         from neurospatial.behavior import restrict as _restrict
         from neurospatial.behavior import restrict_spike_trains
@@ -436,6 +525,19 @@ class Session:
         times_kept, positions_kept = _restrict(
             self.times, self.positions, epochs=epochs
         )
+        # Zero surviving position samples means the epochs miss the session
+        # entirely -- warn (naming the likely cause) but still return the empty
+        # session, since per-unit empty trains alone remain a legitimate outcome.
+        if len(times_kept) == 0:
+            warnings.warn(
+                "restrict(epochs) kept zero position samples: the epochs do not "
+                "overlap this session's time range.\n"
+                "  WHY: a common cause is a seconds-vs-milliseconds unit "
+                "mismatch between `epochs` and the session timestamps.\n"
+                "  HOW: check that `epochs` are in the same time units (seconds) "
+                "as session.times.",
+                stacklevel=2,
+            )
         new_position = Position(t=times_kept, values=positions_kept)
 
         # restrict_spike_trains returns a plain list (type-stable); rebuild the

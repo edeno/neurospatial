@@ -24,6 +24,7 @@ import dataclasses
 import importlib.util
 import subprocess
 import sys
+import warnings
 from collections.abc import Mapping
 
 import numpy as np
@@ -88,6 +89,15 @@ class _FakeTsGroup(Mapping):
 
     def __len__(self):
         return len(self._data)
+
+
+# A minimal PositionLike that is NOT a ``Position`` (so it bypasses
+# ``Position.__post_init__``), used to exercise ``Session.__post_init__``'s own
+# length guard -- the guard that protects the pynapple-``Tsd`` path.
+class _FakePosition:
+    def __init__(self, t, values):
+        self.t = np.asarray(t, dtype=np.float64)
+        self.values = np.asarray(values, dtype=np.float64)
 
 
 # ---------------------------------------------------------------------------
@@ -264,6 +274,50 @@ def test_restrict_composes_with_compute_spatial_rates(arrays, env):
     np.testing.assert_array_equal(result.unit_ids, ref.unit_ids)
 
 
+def test_restrict_out_of_range_epochs_warns(arrays, env):
+    times, positions, trains, unit_ids = arrays
+    sess = Session.from_arrays(
+        env=env,
+        times=times,
+        positions=positions,
+        spike_times=trains,
+        unit_ids=unit_ids,
+    )
+    # Epochs far outside [0, ~10] s keep ZERO position samples (a classic
+    # seconds-vs-milliseconds unit error) -> warn, but still return a Session.
+    with pytest.warns(UserWarning, match=r"(?i)overlap|zero position|units"):
+        sess_r = sess.restrict((1000.0, 2000.0))
+
+    assert isinstance(sess_r, Session)
+    assert len(sess_r.times) == 0
+    assert len(sess_r.positions) == 0
+    # Identity still preserved on the (empty) restricted spikes.
+    np.testing.assert_array_equal(sess_r.spikes.unit_ids, unit_ids)
+
+
+def test_restrict_normal_does_not_warn(arrays, env):
+    times, positions, trains, unit_ids = arrays
+    sess = Session.from_arrays(
+        env=env,
+        times=times,
+        positions=positions,
+        spike_times=trains,
+        unit_ids=unit_ids,
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        sess_r = sess.restrict((2.0, 6.0))
+
+    overlap_warnings = [
+        w
+        for w in caught
+        if "overlap" in str(w.message).lower()
+        or "zero position" in str(w.message).lower()
+    ]
+    assert not overlap_warnings
+    assert len(sess_r.times) > 0
+
+
 # ---------------------------------------------------------------------------
 # 4. __post_init__ validation
 # ---------------------------------------------------------------------------
@@ -271,9 +325,31 @@ def test_restrict_composes_with_compute_spatial_rates(arrays, env):
 
 def test_mismatched_position_lengths_raise(arrays, env):
     times, positions, trains, _ = arrays
-    bad_position = Position(t=times[:-1], values=positions)  # length mismatch
+    # Use a non-Position PositionLike (fake pynapple Tsd) so the mismatch reaches
+    # Session.__post_init__'s guard rather than Position's own self-check.
+    bad_position = _FakePosition(t=times[:-1], values=positions)  # length mismatch
     with pytest.raises(ValueError, match=r"(?i)length|len|position"):
         Session(env=env, position=bad_position, spikes=SpikeTrains(trains))
+
+
+def test_position_length_mismatch_raises():
+    # Position self-enforces its invariant, independent of Session.
+    with pytest.raises(ValueError, match=r"(?i)length|len"):
+        Position(t=np.zeros(5), values=np.zeros(3))
+
+
+def test_position_2d_t_raises():
+    # A 2-D timestamp axis is invalid: ``t`` must be 1-D.
+    with pytest.raises(ValueError, match=r"(?i)1-?d|one.?dimensional|dim"):
+        Position(t=np.zeros((5, 2)), values=np.zeros(5))
+
+
+def test_direct_construction_non_positionlike_raises(arrays, env):
+    _times, _positions, trains, _ = arrays
+    # A raw ndarray does not expose .t/.values -> clean ValueError (not a bare
+    # AttributeError) pointing the user at from_arrays.
+    with pytest.raises(ValueError, match=r"(?i)\.t|\.values|from_arrays"):
+        Session(env=None, position=np.zeros((5, 2)), spikes=trains)
 
 
 def test_non_environment_env_raises(arrays):
@@ -328,8 +404,12 @@ def test_recording_import_does_not_load_pynwb_or_pynapple():
 # ---------------------------------------------------------------------------
 
 
-def _make_nwbfile(with_env: bool):
-    """Build a small in-memory NWBFile: units + position (+ optional env)."""
+def _make_nwbfile(with_env: bool, *, env_name: str | None = None):
+    """Build a small in-memory NWBFile: units + position (+ optional env).
+
+    When ``with_env`` is True the environment is written under ``env_name`` (the
+    reader's default ``spatial_environment`` when ``env_name`` is None).
+    """
     from datetime import datetime, timezone
 
     from pynwb import NWBFile
@@ -370,7 +450,10 @@ def _make_nwbfile(with_env: bool):
         from neurospatial.io.nwb import write_environment
 
         env = Environment.from_samples(positions, bin_size=10.0)
-        write_environment(nwbfile, env)
+        if env_name is None:
+            write_environment(nwbfile, env)
+        else:
+            write_environment(nwbfile, env, name=env_name)
 
     return nwbfile, timestamps, positions, trains, np.asarray(unit_ids)
 
@@ -416,6 +499,52 @@ def test_from_nwb_without_env_is_none():
     sess = Session.from_nwb(nwbfile)
     assert sess.env is None
     np.testing.assert_array_equal(sess.spikes.unit_ids, unit_ids)
+
+
+@pytest.mark.nwb
+@pytest.mark.skipif(not HAS_PYNWB, reason="pynwb not installed")
+def test_from_nwb_malformed_present_env_propagates():
+    """A present-but-unreadable env RAISES (not silently env=None)."""
+    import json
+
+    from neurospatial.io.nwb._environment import (
+        COL_METADATA,
+        DEFAULT_ENVIRONMENT_NAME,
+    )
+
+    nwbfile, *_ = _make_nwbfile(with_env=True)
+
+    # Corrupt the stored metadata so read_environment raises on an internal
+    # lookup (metadata["n_bins"]) while the env IS present in scratch.
+    table = nwbfile.scratch[DEFAULT_ENVIRONMENT_NAME]
+    corrupted = json.loads(table[COL_METADATA][0])
+    del corrupted["n_bins"]
+    table[COL_METADATA].data[0] = json.dumps(corrupted)
+
+    with pytest.raises(KeyError, match="n_bins"):
+        Session.from_nwb(nwbfile)
+
+
+@pytest.mark.nwb
+@pytest.mark.skipif(not HAS_PYNWB, reason="pynwb not installed")
+def test_from_nwb_selects_custom_environment_name():
+    """An env written under a custom name loads via environment_name=."""
+    nwbfile, _, _, _, _ = _make_nwbfile(with_env=True, env_name="linear_track")
+
+    # The default name is absent -> None; the custom name is selectable.
+    assert Session.from_nwb(nwbfile).env is None
+    sess = Session.from_nwb(nwbfile, environment_name="linear_track")
+    assert sess.env is not None
+    assert sess.env.n_bins > 0
+
+
+@pytest.mark.nwb
+@pytest.mark.skipif(not HAS_PYNWB, reason="pynwb not installed")
+def test_from_nwb_absent_environment_name_yields_none():
+    """A genuinely-absent env name maps to env=None (not an error)."""
+    nwbfile, _, _, _, _ = _make_nwbfile(with_env=True)  # default name present
+    sess = Session.from_nwb(nwbfile, environment_name="definitely_absent")
+    assert sess.env is None
 
 
 @pytest.mark.nwb
