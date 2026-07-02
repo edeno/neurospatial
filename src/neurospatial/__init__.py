@@ -257,19 +257,35 @@ _LAZY_SUBMODULES: tuple[str, ...] = (
 )
 
 
+# Public classes exposed at the top level but *lazily* imported, so that
+# ``import neurospatial`` does not eagerly import the domain packages; the
+# owning package loads on first attribute access. (Accessing the class does
+# then pull in its whole domain package, but plain ``import neurospatial``
+# stays cheap.)
+# Maps the attribute name to its ``(submodule, attribute)`` source.
+_LAZY_ATTRS: dict[str, tuple[str, str]] = {
+    "SpikeTrains": ("encoding.spike_trains", "SpikeTrains"),
+}
+
+
 def __getattr__(name: str) -> Any:
-    """Lazily import a known submodule on first attribute access (PEP 562)."""
+    """Lazily import a known submodule / class on first access (PEP 562)."""
     if name in _LAZY_SUBMODULES:
         module = import_module(f"neurospatial.{name}")
         # Cache in package globals so subsequent access skips this hook.
         globals()[name] = module
         return module
+    if name in _LAZY_ATTRS:
+        submodule, attr = _LAZY_ATTRS[name]
+        obj = getattr(import_module(f"neurospatial.{submodule}"), attr)
+        globals()[name] = obj
+        return obj
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def __dir__() -> list[str]:
     """List eager exports plus lazily importable submodules for autocomplete."""
-    return sorted(set(__all__) | set(_LAZY_SUBMODULES))
+    return sorted(set(__all__) | set(_LAZY_SUBMODULES) | set(_LAZY_ATTRS))
 
 
 __all__ = [
@@ -283,6 +299,7 @@ __all__ = [
     "Region",
     "RegionNotFoundError",
     "Regions",
+    "SpikeTrains",
     "animation",
     "annotation",
     "behavior",

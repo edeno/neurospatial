@@ -107,6 +107,7 @@ from neurospatial.encoding.spatial import (
     detect_place_fields,
     is_place_cell,
 )
+from neurospatial.encoding.spike_trains import SpikeTrains
 
 # View rate (spatial view cells)
 from neurospatial.encoding.view import (
@@ -121,6 +122,8 @@ __all__ = [  # noqa: RUF022 - organized by category
     # Spike-time normalization
     "as_spike_trains",
     "as_spike_trains_with_ids",
+    # Ragged-spike-train container
+    "SpikeTrains",
     # Border/boundary cell analysis
     "border_score",
     "compute_region_coverage",

@@ -65,6 +65,20 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ### Added
 
+- `SpikeTrains` — a frozen ragged-spike-train container (label access
+  `st[unit_id]`, `filter("region == 'CA1'")`, optional per-unit `unit_table`),
+  the one justified new container (ragged per-unit spike times genuinely don't
+  fit a rectangular array). Exported from both `neurospatial` (top level) and
+  `neurospatial.encoding`. It **duck-types as `SpikeTrainsLike`** — it is not a
+  `Mapping`, exposes a non-callable `.index` property (the unit ids), and its
+  `__iter__` yields the per-unit **train arrays** — so it flows through the
+  Phase 3.1 spike-input adapter's iterate branch and into `compute_spatial_rates`
+  (and the other batch encoders/decoders) with `unit_ids` preserved. Label
+  access (`st[unit_id]`) and the adapter's positional iteration coexist because
+  they use different dunders (`__getitem__` vs `__iter__` / `.index`). Frozen
+  and immutable: `trains` is stored as a `tuple` so in-place mutation raises,
+  `filter` returns a new container and never mutates the original; duplicate
+  `unit_ids` raise `ValueError`.
 - Input Protocol surface + pynapple ingress/egress (optional). A new
   `neurospatial/_typing.py` defines the structural Protocols that let
   third-party objects flow into the **array-first** scientific core without the
