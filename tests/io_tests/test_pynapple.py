@@ -175,3 +175,13 @@ def test_to_pynapple_roundtrips_a_track() -> None:
 
     np.testing.assert_allclose(out_times, times)
     np.testing.assert_allclose(out_positions, positions)
+
+
+@pytest.mark.pynapple
+@pytest.mark.skipif(not HAS_PYNAPPLE, reason="requires the pynapple extra")
+def test_to_pynapple_non_result_without_values_raises_typeerror() -> None:
+    # values=None + a `times` that is not a decode result (no `.times` /
+    # `.map_position`) must raise a clear TypeError naming the expected inputs,
+    # not a bare AttributeError.
+    with pytest.raises(TypeError, match="decode result"):
+        to_pynapple(object(), values=None)
