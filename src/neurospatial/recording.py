@@ -67,6 +67,38 @@ if TYPE_CHECKING:
 __all__ = ["Position", "Session", "load_session"]
 
 
+def _validate_aligned_lengths(n_times: int, n_values: int, *, owner: str) -> None:
+    """Raise if a position source's timestamp and sample counts differ.
+
+    Shared by :class:`Position` and :class:`Session`, which both require exactly
+    one timestamp per position sample. ``owner`` names the calling surface (e.g.
+    ``"Position"`` or ``"position"``) so the error points at that site's ``.t`` /
+    ``.values`` attributes.
+
+    Parameters
+    ----------
+    n_times : int
+        Number of timestamps (``len(.t)``).
+    n_values : int
+        Number of position samples (``len(.values)``).
+    owner : str
+        The attribute-owner name interpolated into the message.
+
+    Raises
+    ------
+    ValueError
+        If ``n_times != n_values``.
+    """
+    if n_times != n_values:
+        raise ValueError(
+            f"{owner}.t and {owner}.values must have the same length, but "
+            f"len({owner}.t)={n_times} and len({owner}.values)={n_values}.\n"
+            "  WHY: each position sample needs exactly one timestamp.\n"
+            "  HOW: pass `t` and `values` of equal length (one timestamp per "
+            "sample)."
+        )
+
+
 @dataclass(frozen=True)
 class Position:
     """Minimal frozen position holder exposing ``.t`` and ``.values``.
@@ -109,14 +141,7 @@ class Position:
                 "sample.\n"
                 "  HOW: pass a 1-D array of timestamps (seconds)."
             )
-        if len(t) != len(values):
-            raise ValueError(
-                f"Position.t and Position.values must have the same length, but "
-                f"len(t)={len(t)} and len(values)={len(values)}.\n"
-                "  WHY: each position sample needs exactly one timestamp.\n"
-                "  HOW: pass `t` and `values` of equal length (one timestamp per "
-                "sample)."
-            )
+        _validate_aligned_lengths(len(t), len(values), owner="Position")
 
 
 @dataclass(frozen=True)
@@ -209,7 +234,9 @@ class Session:
         # ``position`` must expose the PositionLike surface (.t / .values) --
         # duck-checked (never isinstance) so a Position holder OR a pynapple
         # Tsd / TsdFrame both pass, but a raw array raises a clean ValueError
-        # (not a bare AttributeError below).
+        # (not a bare AttributeError below). Unlike ``_typing._is_position_like``,
+        # the ``.d`` alias is deliberately NOT accepted here: ``Session.positions``
+        # reads ``.values`` directly, so a ``.d``-only source would break downstream.
         position = self.position
         if not (hasattr(position, "t") and hasattr(position, "values")):
             raise ValueError(
@@ -226,14 +253,7 @@ class Session:
         # Position must have matching timestamp / sample counts.
         n_t = len(np.asarray(self.position.t))
         n_v = len(np.asarray(self.position.values))
-        if n_t != n_v:
-            raise ValueError(
-                f"position.t and position.values must have the same length, "
-                f"but len(position.t)={n_t} and len(position.values)={n_v}.\n"
-                "  WHY: each position sample needs exactly one timestamp.\n"
-                "  HOW: pass times and positions of equal length (one row per "
-                "sample)."
-            )
+        _validate_aligned_lengths(n_t, n_v, owner="position")
 
         # A non-None env must be a real spatial environment (or its polar
         # sibling) -- duck-typed, never isinstance on Environment.
@@ -335,24 +355,20 @@ class Session:
             None if unit_ids is None else np.asarray(unit_ids)
         )
 
-        if isinstance(spike_times, SpikeTrains):
-            # Preserve the container; honor explicit overrides when given.
-            spikes = SpikeTrains(
-                trains=list(spike_times),
-                unit_ids=(
-                    override_ids if override_ids is not None else spike_times.unit_ids
-                ),
-                unit_table=(
-                    unit_table if unit_table is not None else spike_times.unit_table
-                ),
-            )
-        else:
-            trains, group_ids = as_spike_trains_with_ids(spike_times)
-            spikes = SpikeTrains(
-                trains=trains,
-                unit_ids=override_ids if override_ids is not None else group_ids,
-                unit_table=unit_table,
-            )
+        # One construction for every accepted spike input: the adapter already
+        # handles a SpikeTrains (surfacing its ids) as well as the array / group
+        # forms. Ids precedence: explicit `unit_ids=` override, else the group's
+        # ids. Table precedence: explicit `unit_table=` override, else a passed
+        # SpikeTrains's own table (arrays carry none).
+        trains, group_ids = as_spike_trains_with_ids(spike_times)
+        table = unit_table
+        if table is None and isinstance(spike_times, SpikeTrains):
+            table = spike_times.unit_table
+        spikes = SpikeTrains(
+            trains=trains,
+            unit_ids=override_ids if override_ids is not None else group_ids,
+            unit_table=table,
+        )
 
         return cls(
             env=env,

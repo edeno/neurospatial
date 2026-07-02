@@ -179,6 +179,67 @@ def _as_intervals(epochs: Any) -> NDArray[np.float64]:
     return intervals
 
 
+def _mask_in_intervals(
+    t: NDArray[np.float64],
+    intervals: NDArray[np.float64],
+    *,
+    closed: _Closed,
+) -> NDArray[np.bool_]:
+    """Boolean mask of ``t`` against PRE-normalized ``(n, 2)`` intervals.
+
+    The vectorized core shared by :func:`in_epochs` and
+    :func:`restrict_spike_trains`. ``intervals`` must already be an ``(n, 2)``
+    ``float64`` array (as :func:`_as_intervals` returns), so a caller restricting
+    many trains against one epoch set can normalize **once** and reuse this per
+    train instead of re-normalizing the same intervals for every unit.
+
+    Parameters
+    ----------
+    t : ndarray
+        Timestamps to test (any shape; the mask has the same shape).
+    intervals : ndarray, shape (n_intervals, 2)
+        Normalized ``[start, end]`` rows (from :func:`_as_intervals`).
+    closed : {"both", "left", "right", "neither"}
+        Which endpoints are inclusive.
+
+    Returns
+    -------
+    ndarray of bool
+        Same shape as ``t``; ``True`` where ``t`` is inside any interval.
+
+    Notes
+    -----
+    ``closed`` is validated here too, so this stays safe to call directly (e.g.
+    per train from :func:`restrict_spike_trains`); :func:`in_epochs` validates it
+    a second time, up front, only to report a bad ``closed`` *before* a malformed
+    ``epochs`` (this helper runs after ``_as_intervals``).
+    """
+    if closed not in ("both", "left", "right", "neither"):
+        raise ValueError(
+            f"closed must be one of 'both', 'left', 'right', 'neither', got {closed!r}."
+        )
+
+    t_arr = np.asarray(t, dtype=np.float64)
+
+    if intervals.shape[0] == 0:
+        return np.zeros(t_arr.shape, dtype=np.bool_)
+
+    starts = intervals[:, 0]
+    ends = intervals[:, 1]
+    # Broadcast samples (..., 1) against intervals (n_intervals,) -> (..., n).
+    tt = t_arr[..., np.newaxis]
+    if closed == "both":
+        inside = (tt >= starts) & (tt <= ends)
+    elif closed == "left":
+        inside = (tt >= starts) & (tt < ends)
+    elif closed == "right":
+        inside = (tt > starts) & (tt <= ends)
+    else:  # "neither" (validated above)
+        inside = (tt > starts) & (tt < ends)
+    mask: NDArray[np.bool_] = np.any(inside, axis=-1)
+    return mask
+
+
 def in_epochs(
     t: NDArray[np.float64],
     epochs: Any,
@@ -219,33 +280,16 @@ def in_epochs(
     >>> in_epochs(np.array([0.0, 2.5, 5.0, 6.0]), (0.0, 5.0))
     array([ True,  True,  True, False])
     """
-    # Validate ``closed`` up front -- before the empty-epochs early return -- so a
-    # bad value always raises, even when there are no intervals to test against.
+    # Validate ``closed`` up front -- before ``_as_intervals`` and the
+    # empty-epochs early return -- so a bad value always raises (even with no
+    # intervals) AND is reported before a malformed ``epochs``.
     if closed not in ("both", "left", "right", "neither"):
         raise ValueError(
             f"closed must be one of 'both', 'left', 'right', 'neither', got {closed!r}."
         )
 
-    t_arr = np.asarray(t, dtype=np.float64)
     intervals = _as_intervals(epochs)
-
-    if intervals.shape[0] == 0:
-        return np.zeros(t_arr.shape, dtype=np.bool_)
-
-    starts = intervals[:, 0]
-    ends = intervals[:, 1]
-    # Broadcast samples (..., 1) against intervals (n_intervals,) -> (..., n).
-    tt = t_arr[..., np.newaxis]
-    if closed == "both":
-        inside = (tt >= starts) & (tt <= ends)
-    elif closed == "left":
-        inside = (tt >= starts) & (tt < ends)
-    elif closed == "right":
-        inside = (tt > starts) & (tt <= ends)
-    else:  # "neither" (validated above)
-        inside = (tt > starts) & (tt < ends)
-    mask: NDArray[np.bool_] = np.any(inside, axis=-1)
-    return mask
+    return _mask_in_intervals(t, intervals, closed=closed)
 
 
 def restrict(
@@ -370,10 +414,13 @@ def restrict_spike_trains(
     >>> restrict_spike_trains(trains, (1.0, 3.5))
     [array([1.5, 2.9]), array([3.])]
     """
-    # Normalize once so a malformed epochs raises up front (not per train).
+    # Normalize the intervals ONCE (not per train): a malformed epochs raises up
+    # front, and each train is then masked against the same pre-normalized
+    # ``(n, 2)`` array via ``_mask_in_intervals`` -- avoiding the per-unit
+    # re-normalization that ``in_epochs`` would repeat on every call.
     intervals = _as_intervals(epochs)
     out: list[NDArray[np.float64]] = []
     for train in trains:
         t = np.asarray(train, dtype=np.float64)
-        out.append(t[in_epochs(t, intervals, closed=closed)])
+        out.append(t[_mask_in_intervals(t, intervals, closed=closed)])
     return out
