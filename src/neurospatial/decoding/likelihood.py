@@ -82,7 +82,8 @@ def log_poisson_likelihood(
     Raises
     ------
     ValueError
-        If ``dt`` or ``min_rate`` is not positive.
+        If ``dt`` is not a finite number > 0 (non-numeric, ``bool``, ``NaN``,
+        ``Inf``, or ``<= 0`` all raise), or if ``min_rate`` is not positive.
         If ``spike_counts`` is not 2-D ``(n_time_bins, n_neurons)`` or
         ``encoding_models`` is not 2-D ``(n_neurons, n_bins)``.
         If the neuron axis of ``spike_counts`` (axis 1) does not match the
@@ -261,9 +262,10 @@ def poisson_likelihood(
     Raises
     ------
     ValueError
-        Propagated from :func:`log_poisson_likelihood`: if ``dt`` or
-        ``min_rate`` is not positive, if ``spike_counts`` is not 2-D
-        ``(n_time_bins, n_neurons)``, if ``encoding_models`` is not 2-D, or
+        Propagated from :func:`log_poisson_likelihood`: if ``dt`` is not a
+        finite number > 0 (non-numeric, ``bool``, ``NaN``, ``Inf``, or
+        ``<= 0``), if ``min_rate`` is not positive, if ``spike_counts`` is not
+        2-D ``(n_time_bins, n_neurons)``, if ``encoding_models`` is not 2-D, or
         if their neuron axes disagree.
 
     Notes
