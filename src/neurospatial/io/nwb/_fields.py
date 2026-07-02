@@ -7,6 +7,7 @@ This module provides functions for writing spatial analysis results
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -22,6 +23,7 @@ if TYPE_CHECKING:
     from pynwb import NWBFile
 
     from neurospatial import Environment
+    from neurospatial.encoding.spatial import SpatialRatesResult
 
 # =============================================================================
 # Constants for NWB spatial fields
@@ -33,6 +35,16 @@ BIN_CENTERS_NAME: str = "bin_centers"
 # Default names for field containers
 DEFAULT_PLACE_FIELD_NAME: str = "place_field"
 DEFAULT_OCCUPANCY_NAME: str = "occupancy"
+
+# Default name for the population spatial-rates container (unit axis)
+DEFAULT_SPATIAL_RATES_NAME: str = "spatial_rates"
+
+# Schema version for the spatial-rates DynamicTable metadata blob
+SPATIAL_RATES_SCHEMA_VERSION: str = "1.0"
+
+# Column names within the spatial-rates DynamicTable
+COL_UNIT_ID: str = "unit_id"
+COL_FIRING_RATE: str = "firing_rate"
 
 # Default processing module for analysis results
 DEFAULT_ANALYSIS_MODULE: str = "analysis"
@@ -412,3 +424,356 @@ def write_occupancy(
 
     analysis.add(occupancy_ts)
     logger.debug("Wrote occupancy '%s' with shape %s", name, occupancy.shape)
+
+
+# =============================================================================
+# Population spatial-rates round-trip (SpatialRatesResult <-> NWB)
+# =============================================================================
+
+
+def write_spatial_rates(
+    nwbfile: NWBFile,
+    result: SpatialRatesResult,
+    *,
+    name: str = DEFAULT_SPATIAL_RATES_NAME,
+    overwrite: bool = False,
+) -> None:
+    """
+    Write a population :class:`SpatialRatesResult` to NWB with a unit axis.
+
+    Stores the whole population -- per-unit firing-rate maps, shared occupancy,
+    unit identities, and optional per-unit metadata -- so that
+    :func:`read_place_field` reconstructs an equal ``SpatialRatesResult``.
+
+    The container is a :class:`~hdmf.common.DynamicTable` (one row per unit) in
+    the ``analysis`` processing module, with a ``unit_id`` column, a 2-D
+    ``firing_rate`` column of shape ``(n_units, n_bins)`` on the bin axis, and
+    one column per ``unit_table`` field. ``smoothing_method``, ``bandwidth``,
+    ``n_bins``, ``n_units`` and the ``unit_table`` column names are stored as a
+    JSON blob in the table description. Occupancy is stored once (it is shared
+    across units) as a companion ``TimeSeries`` named ``f"{name}_occupancy"``,
+    and the environment's bin-center coordinates are stored once via the shared
+    ``bin_centers`` dataset (deduplicated with any place fields).
+
+    Parameters
+    ----------
+    nwbfile : NWBFile
+        The NWB file to write to.
+    result : SpatialRatesResult
+        Population spatial-rate result to serialize. Its ``env``,
+        ``firing_rates`` ``(n_units, n_bins)``, ``occupancy`` ``(n_bins,)``,
+        ``unit_ids``, ``unit_table``, ``smoothing_method`` and ``bandwidth`` are
+        all preserved.
+    name : str, default "spatial_rates"
+        Name for the spatial-rates DynamicTable in ``analysis/``.
+    overwrite : bool, default False
+        If True, replace an existing container (and its companion occupancy)
+        with the same name. If False, raise ``ValueError`` on a duplicate name.
+
+    Raises
+    ------
+    ValueError
+        If a container named ``name`` exists and ``overwrite=False``; if
+        ``firing_rates.shape`` is not ``(len(unit_ids), env.n_bins)``; or if
+        ``occupancy.shape`` is not ``(env.n_bins,)``.
+    ImportError
+        If pynwb is not installed.
+
+    Notes
+    -----
+    This function mutates only ``nwbfile`` (adds the DynamicTable, the companion
+    occupancy TimeSeries and, if absent, the shared bin_centers dataset). The
+    ``result`` object and its arrays are never modified.
+
+    Examples
+    --------
+    >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
+    >>> from neurospatial.encoding import compute_spatial_rates  # doctest: +SKIP
+    >>> rates = compute_spatial_rates(
+    ...     env, spike_times, times, positions
+    ... )  # doctest: +SKIP
+    >>> with NWBHDF5IO("session.nwb", "r+") as io:  # doctest: +SKIP
+    ...     nwbfile = io.read()
+    ...     write_spatial_rates(nwbfile, rates, name="ca1_place_fields")
+    ...     io.write(nwbfile)
+    """
+    _require_pynwb()
+    from hdmf.common import DynamicTable, VectorData
+    from pynwb import TimeSeries
+
+    env = result.env
+    firing_rates = np.asarray(result.firing_rates)
+    occupancy = np.asarray(result.occupancy)
+    unit_ids = np.asarray(result.unit_ids)
+    n_units = int(unit_ids.shape[0])
+
+    # Validate shapes with param-named errors.
+    if firing_rates.shape != (n_units, env.n_bins):
+        raise ValueError(
+            f"firing_rates shape {firing_rates.shape} does not match "
+            f"(len(unit_ids), env.n_bins) = ({n_units}, {env.n_bins})."
+        )
+    if occupancy.shape != (env.n_bins,):
+        raise ValueError(
+            f"occupancy shape {occupancy.shape} does not match "
+            f"(env.n_bins,) = ({env.n_bins},)."
+        )
+
+    analysis = _get_or_create_processing_module(
+        nwbfile, DEFAULT_ANALYSIS_MODULE, "Analysis results including spatial fields"
+    )
+    occupancy_name = f"{name}_occupancy"
+
+    # Overwrite handling (mirror write_place_field): drop the table AND its
+    # companion occupancy so a re-write starts clean.
+    if name in analysis.data_interfaces:
+        if not overwrite:
+            raise ValueError(
+                f"Spatial rates '{name}' already exists. Use overwrite=True to replace."
+            )
+        del analysis.data_interfaces[name]
+        if occupancy_name in analysis.data_interfaces:
+            del analysis.data_interfaces[occupancy_name]
+        logger.info("Overwriting existing spatial rates '%s'", name)
+
+    # Shared bin_centers (deduplicated with place fields).
+    _ensure_bin_centers(nwbfile, env)
+
+    # Optional per-unit metadata columns.
+    unit_table = result.unit_table
+    unit_table_columns: list[str] = []
+    extra_columns: list[VectorData] = []
+    if unit_table is not None:
+        unit_table_columns = [str(c) for c in unit_table.columns]
+        extra_columns = [
+            VectorData(
+                name=str(col),
+                description=f"unit_table column '{col}'",
+                data=unit_table[col].to_numpy(),
+            )
+            for col in unit_table.columns
+        ]
+
+    description = json.dumps(
+        {
+            "schema_version": SPATIAL_RATES_SCHEMA_VERSION,
+            "smoothing_method": str(result.smoothing_method),
+            "bandwidth": float(result.bandwidth),
+            "n_bins": int(env.n_bins),
+            "n_units": n_units,
+            "unit_table_columns": unit_table_columns,
+            "occupancy_name": occupancy_name,
+        }
+    )
+
+    table = DynamicTable(
+        name=name,
+        description=description,
+        columns=[
+            VectorData(
+                name=COL_UNIT_ID,
+                description="Per-unit identity labels (unit_ids)",
+                data=unit_ids,
+            ),
+            VectorData(
+                name=COL_FIRING_RATE,
+                description=(
+                    f"Per-unit firing-rate map (n_units, n_bins) in Hz; "
+                    f"n_bins={env.n_bins}. See 'bin_centers' for coordinates."
+                ),
+                data=firing_rates,
+            ),
+            *extra_columns,
+        ],
+    )
+    analysis.add(table)
+
+    # Occupancy is shared across units: store once as (1, n_bins) TimeSeries.
+    occupancy_ts = TimeSeries(
+        name=occupancy_name,
+        description=f"Occupancy (seconds) shared across units for '{name}'",
+        data=occupancy.reshape(1, -1),
+        unit=DEFAULT_OCCUPANCY_UNIT,
+        timestamps=[DEFAULT_STATIC_TIMESTAMP],
+        comments=f"Occupancy for spatial rates '{name}', n_bins={env.n_bins}.",
+    )
+    analysis.add(occupancy_ts)
+
+    logger.debug(
+        "Wrote spatial rates '%s' with %d units and %d bins",
+        name,
+        n_units,
+        env.n_bins,
+    )
+
+
+def read_place_field(
+    nwbfile: NWBFile,
+    *,
+    name: str = DEFAULT_SPATIAL_RATES_NAME,
+    env: Environment | None = None,
+) -> SpatialRatesResult:
+    """
+    Read a population :class:`SpatialRatesResult` written by ``write_spatial_rates``.
+
+    The inverse of :func:`write_spatial_rates`. Reconstructs the per-unit
+    firing-rate maps, shared occupancy, ``unit_ids``, optional ``unit_table``,
+    ``smoothing_method`` and ``bandwidth``.
+
+    Parameters
+    ----------
+    nwbfile : NWBFile
+        The NWB file to read from.
+    name : str, default "spatial_rates"
+        Name of the spatial-rates DynamicTable in ``analysis/``.
+    env : Environment, optional
+        Environment to attach to the result. If provided, it is used as-is
+        (recommended -- it preserves the original bin geometry exactly). If
+        ``None``, an environment is recovered from the file: the stored
+        environment (via :func:`read_environment`) when one is present in
+        ``scratch/``, otherwise a minimal KDTree-backed environment
+        reconstructed from the shared ``bin_centers`` coordinates.
+
+    Returns
+    -------
+    SpatialRatesResult
+        Population result equal to the one originally written.
+
+    Raises
+    ------
+    KeyError
+        If the ``analysis`` module, the named table, or its companion occupancy
+        is missing from ``nwbfile``.
+    ImportError
+        If pynwb is not installed.
+
+    Examples
+    --------
+    >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
+    >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
+    ...     nwbfile = io.read()
+    ...     rates = read_place_field(nwbfile, name="ca1_place_fields")
+    ...     rates.firing_rates.shape  # (n_units, n_bins)
+    """
+    _require_pynwb()
+    from neurospatial.encoding.spatial import SpatialRatesResult
+
+    if DEFAULT_ANALYSIS_MODULE not in nwbfile.processing:
+        raise KeyError(
+            f"No '{DEFAULT_ANALYSIS_MODULE}' processing module in NWB file; "
+            f"cannot read spatial rates '{name}'."
+        )
+    analysis = nwbfile.processing[DEFAULT_ANALYSIS_MODULE]
+    if name not in analysis.data_interfaces:
+        available = list(analysis.data_interfaces.keys())
+        raise KeyError(
+            f"Spatial rates '{name}' not found in analysis/. Available: {available}"
+        )
+
+    table = analysis[name]
+    meta = json.loads(table.description)
+    smoothing_method = meta["smoothing_method"]
+    bandwidth = meta["bandwidth"]
+    unit_table_columns = meta.get("unit_table_columns", [])
+    occupancy_name = meta.get("occupancy_name", f"{name}_occupancy")
+
+    firing_rates = np.asarray(table[COL_FIRING_RATE][:])
+    unit_ids = np.asarray(table[COL_UNIT_ID][:])
+
+    unit_table = None
+    if unit_table_columns:
+        import pandas as pd
+
+        unit_table = pd.DataFrame(
+            {col: np.asarray(table[col][:]) for col in unit_table_columns}
+        )
+
+    if occupancy_name not in analysis.data_interfaces:
+        raise KeyError(
+            f"Occupancy '{occupancy_name}' for spatial rates '{name}' not found "
+            "in analysis/."
+        )
+    occupancy = np.asarray(analysis[occupancy_name].data[:]).reshape(-1)
+
+    if env is None:
+        env = _read_or_reconstruct_env(nwbfile)
+
+    return SpatialRatesResult(
+        firing_rates=firing_rates,
+        occupancy=occupancy,
+        env=env,
+        smoothing_method=smoothing_method,
+        bandwidth=bandwidth,
+        unit_ids=unit_ids,
+        unit_table=unit_table,
+    )
+
+
+def _read_bin_centers(nwbfile: NWBFile) -> NDArray[np.float64]:
+    """Read the shared bin_centers dataset stored by ``_ensure_bin_centers``.
+
+    The dataset is stored with a leading singleton time axis
+    ``(1, n_bins, n_dims)``; the leading axis is dropped here.
+    """
+    analysis = nwbfile.processing[DEFAULT_ANALYSIS_MODULE]
+    data = np.asarray(analysis[BIN_CENTERS_NAME].data[:], dtype=np.float64)
+    if data.ndim == 3:
+        data = data[0]
+    return np.asarray(data, dtype=np.float64)
+
+
+def _read_or_reconstruct_env(nwbfile: NWBFile) -> Environment:
+    """Recover an Environment for a spatial-rates result read without ``env=``.
+
+    Prefers a full environment stored in ``scratch/`` (via
+    :func:`read_environment`); otherwise builds a minimal KDTree-backed
+    environment from the shared ``bin_centers`` coordinates.
+    """
+    from neurospatial.io.nwb._environment import (
+        DEFAULT_ENVIRONMENT_NAME,
+        read_environment,
+    )
+
+    if nwbfile.scratch is not None and DEFAULT_ENVIRONMENT_NAME in nwbfile.scratch:
+        return read_environment(nwbfile)
+
+    return _minimal_env_from_bin_centers(_read_bin_centers(nwbfile))
+
+
+def _minimal_env_from_bin_centers(
+    bin_centers: NDArray[np.float64],
+) -> Environment:
+    """Build a minimal KDTree-backed Environment from bin-center coordinates.
+
+    Reuses the reconstruction machinery from ``_environment`` (the same path
+    ``read_environment`` uses for non-grid layouts). The result has the correct
+    ``n_bins`` and ``bin_centers`` for peak/coordinate accessors; it does not
+    reconstruct the original layout engine's exact bin geometry. Pass the
+    original ``env=`` to :func:`read_place_field` when exact geometry matters.
+    """
+    from neurospatial import Environment
+    from neurospatial.io.nwb._environment import (
+        _reconstruct_graph,
+        _ReconstructedLayout,
+    )
+
+    bin_centers = np.asarray(bin_centers, dtype=np.float64)
+    n_dims = bin_centers.shape[1]
+    connectivity = _reconstruct_graph(
+        bin_centers,
+        np.empty((0, 2), dtype=np.int64),
+        np.empty((0,), dtype=np.float64),
+    )
+    dimension_ranges = [
+        (float(bin_centers[:, d].min()), float(bin_centers[:, d].max()))
+        for d in range(n_dims)
+    ]
+    layout = _ReconstructedLayout(
+        bin_centers=bin_centers,
+        connectivity=connectivity,
+        dimension_ranges=dimension_ranges,
+        layout_type="unknown",
+    )
+    env = Environment(layout=layout)  # type: ignore[arg-type]
+    env._setup_from_layout()
+    return env

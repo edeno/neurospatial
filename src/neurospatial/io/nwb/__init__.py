@@ -17,10 +17,12 @@ Reading Functions:
     read_events : Read events from ndx-events EventsTable
     read_intervals : Read intervals from NWB TimeIntervals (trials, epochs, etc.)
     read_units : Read spike-time arrays from an NWB units table
+    read_place_field : Read a population SpatialRatesResult from NWB analysis/
     read_environment : Read Environment from NWB scratch space
 
 Writing Functions:
     write_place_field : Write place field to NWB analysis/
+    write_spatial_rates : Write a population SpatialRatesResult to NWB analysis/
     write_occupancy : Write occupancy map to NWB analysis/
     write_events : Write generic events DataFrame to NWB EventsTable
     write_laps : Write lap events to NWB processing/behavior/
@@ -101,10 +103,12 @@ _LAZY_IMPORTS: dict[str, str] = {
     "read_events": "neurospatial.io.nwb._events:read_events",
     "read_intervals": "neurospatial.io.nwb._events:read_intervals",
     "read_units": "neurospatial.io.nwb._units:read_units",
+    "read_place_field": "neurospatial.io.nwb._fields:read_place_field",
     "read_environment": "neurospatial.io.nwb._environment:read_environment",
     "read_trials": "neurospatial.io.nwb._events:read_trials",
     # Writing functions
     "write_place_field": "neurospatial.io.nwb._fields:write_place_field",
+    "write_spatial_rates": "neurospatial.io.nwb._fields:write_spatial_rates",
     "write_occupancy": "neurospatial.io.nwb._fields:write_occupancy",
     "write_events": "neurospatial.io.nwb._events:write_events",
     "write_laps": "neurospatial.io.nwb._events:write_laps",
@@ -144,6 +148,7 @@ __all__ = [
     "read_events",
     "read_head_direction",
     "read_intervals",
+    "read_place_field",
     "read_pose",
     "read_position",
     "read_trials",
@@ -154,5 +159,6 @@ __all__ = [
     "write_occupancy",
     "write_place_field",
     "write_region_crossings",
+    "write_spatial_rates",
     "write_trials",
 ]

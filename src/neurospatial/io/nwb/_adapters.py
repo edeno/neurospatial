@@ -78,6 +78,43 @@ def timestamps_from_series(series: Any) -> NDArray[np.float64]:
     return np.asarray(timestamps, dtype=np.float64)
 
 
+def timestamps_handle_from_series(series: Any) -> Any:
+    """
+    Return a lazy timestamps handle for a time series-like object.
+
+    The lazy counterpart to :func:`timestamps_from_series`. When the series
+    carries an explicit ``timestamps`` array, that backing store is returned
+    **without** copying (an ``h5py.Dataset`` for a file-backed series), so it
+    materializes only when sliced or ``np.asarray``-ed. When the series is
+    rate-based (no stored ``timestamps``), the time axis must be computed, so a
+    fully-materialized array is returned instead -- there is no on-disk array to
+    reference lazily.
+
+    Parameters
+    ----------
+    series : Any
+        Object with at least ``data`` and either ``timestamps`` or ``rate``
+        (and optionally ``starting_time``) attributes.
+
+    Returns
+    -------
+    Any
+        The h5py-backed (or in-memory) ``timestamps`` handle when explicit
+        timestamps are present, otherwise a materialized ``NDArray[np.float64]``
+        of rate-derived timestamps.
+
+    Raises
+    ------
+    ValueError
+        If neither explicit timestamps nor a valid sampling ``rate`` are
+        available (same contract as :func:`timestamps_from_series`).
+    """
+    timestamps_attr = getattr(series, "timestamps", None)
+    if timestamps_attr is not None:
+        return timestamps_attr
+    return timestamps_from_series(series)
+
+
 def events_table_to_dataframe(events_table: Any, *, table_name: str) -> pd.DataFrame:
     """
     Convert an EventsTable-like object to a DataFrame and validate it.

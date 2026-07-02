@@ -84,6 +84,27 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ### Added
 
+- NWB `SpatialRatesResult` round-trip + lazy reads (`neurospatial.io.nwb`).
+  `write_spatial_rates(nwbfile, result, *, name="spatial_rates", overwrite=False)`
+  stores a population result on a **unit axis** — a `DynamicTable` (one row per
+  unit) in `analysis/` with a `unit_id` column, a 2-D `firing_rate` column of
+  shape `(n_units, n_bins)`, and one column per `unit_table` field; occupancy is
+  stored once as a companion `TimeSeries`, `smoothing_method` / `bandwidth` /
+  bin counts ride in the table description, and bin centers are shared via the
+  existing `bin_centers` dataset. `read_place_field(nwbfile, *,
+  name="spatial_rates", env=None)` is the inverse, reconstructing a
+  `SpatialRatesResult` with `firing_rates` / `occupancy` / `unit_ids` /
+  `unit_table` / `smoothing_method` / `bandwidth` all preserved (**`unit_ids` and
+  `unit_table` links survive** non-default ids and non-trivial tables); when
+  `env=` is omitted it recovers a stored environment or reconstructs a minimal
+  KDTree env from the bin centers. Shape mismatches raise param-named
+  `ValueError`s and duplicate names honor `overwrite`. `read_position` /
+  `read_pose` / `read_units` gain a keyword-only `lazy=False`: `lazy=True`
+  returns h5py-backed handles (per-unit spike-time handles for `read_units`)
+  that materialize only when sliced / `np.asarray`-ed — valid only while the
+  backing `NWBFile` is open — while the default eager path stays byte-for-byte
+  unchanged. `neurospatial` still never imports pynwb (loaded lazily in
+  `io/nwb`).
 - `BayesianDecoder` — an immutable (`frozen`) `fit`/`predict`/`predict_summary`/
   `score` wrapper over the decode core (`neurospatial.decoding`, also exported at
   the top level). `fit(spike_times, times, positions, *, speed=None,
