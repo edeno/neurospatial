@@ -49,9 +49,16 @@ def test_as_intervals_scalar_tuple() -> None:
 
 
 def test_as_intervals_two_arrays() -> None:
-    """Two 1-D arrays (starts, ends) -> n intervals."""
-    out = _as_intervals((np.array([0.0, 10.0]), np.array([5.0, 15.0])))
-    np.testing.assert_array_equal(out, np.array([[0.0, 5.0], [10.0, 15.0]]))
+    """Two 1-D (starts, ends) arrays of length != 2 -> parallel n intervals.
+
+    Length-2 arrays are the *ambiguous* case (see
+    ``test_as_intervals_ambiguous_nested_pair_raises``); three intervals is
+    unambiguous, so this exercises the parallel-arrays path.
+    """
+    out = _as_intervals((np.array([0.0, 10.0, 20.0]), np.array([5.0, 15.0, 25.0])))
+    np.testing.assert_array_equal(
+        out, np.array([[0.0, 5.0], [10.0, 15.0], [20.0, 25.0]])
+    )
 
 
 def test_as_intervals_n_by_2_array() -> None:
@@ -59,6 +66,34 @@ def test_as_intervals_n_by_2_array() -> None:
     arr = np.array([[0.0, 5.0], [10.0, 15.0], [20.0, 25.0]])
     out = _as_intervals(arr)
     np.testing.assert_array_equal(out, arr)
+
+
+def test_as_intervals_n_by_2_array_two_rows() -> None:
+    """A 2-row (n, 2) NumPy array reads as two interval rows, not parallel arrays.
+
+    ``np.array([[0, 5], [10, 15]])`` is unambiguous (it is an ndarray, not a
+    bare nested list) and must read as the rows ``(0, 5)`` and ``(10, 15)``.
+    """
+    out = _as_intervals(np.array([[0.0, 5.0], [10.0, 15.0]]))
+    np.testing.assert_array_equal(out, np.array([[0.0, 5.0], [10.0, 15.0]]))
+
+
+@pytest.mark.parametrize(
+    "ambiguous",
+    [
+        [[0.0, 5.0], [10.0, 15.0]],
+        ([0.0, 5.0], [10.0, 15.0]),
+        (np.array([0.0, 10.0]), np.array([5.0, 15.0])),
+    ],
+)
+def test_as_intervals_ambiguous_nested_pair_raises(ambiguous) -> None:
+    """A length-2 pair of length-2 sequences is irreducibly ambiguous -> raise.
+
+    Could mean two ``(start, end)`` rows or two parallel ``(starts, ends)``
+    arrays; force the user to disambiguate with an ``(n, 2)`` array.
+    """
+    with pytest.raises(ValueError, match="Ambiguous"):
+        _as_intervals(ambiguous)
 
 
 def test_as_intervals_intervalset_like() -> None:
@@ -97,7 +132,7 @@ def test_in_epochs_single_interval_inclusive() -> None:
 def test_in_epochs_multiple_intervals_union() -> None:
     """Union across multiple intervals."""
     t = np.array([0.5, 3.0, 7.0, 12.0, 20.0])
-    mask = in_epochs(t, (np.array([0.0, 10.0]), np.array([5.0, 15.0])))
+    mask = in_epochs(t, np.array([[0.0, 5.0], [10.0, 15.0]]))
     np.testing.assert_array_equal(mask, [True, True, False, True, False])
 
 
@@ -142,6 +177,12 @@ def test_in_epochs_bad_closed_raises() -> None:
     """An unknown closed value raises ValueError."""
     with pytest.raises(ValueError, match="closed"):
         in_epochs(np.array([1.0]), (0.0, 5.0), closed="inner")
+
+
+def test_in_epochs_bad_closed_raises_even_on_empty_epochs() -> None:
+    """A bad ``closed`` raises even when epochs are empty (validated up front)."""
+    with pytest.raises(ValueError, match="closed"):
+        in_epochs(np.array([1.0]), np.empty((0, 2)), closed="garbage")
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +242,9 @@ def test_restrict_array_vs_fake_intervalset_parity() -> None:
     starts = np.array([2.0, 12.0])
     ends = np.array([6.0, 16.0])
 
-    t_arr, pos_arr = restrict(times, positions, epochs=(starts, ends))
+    # Two length-2 arrays as (starts, ends) is now ambiguous, so pass the
+    # unambiguous (n, 2) interval-rows form for the array side.
+    t_arr, pos_arr = restrict(times, positions, epochs=np.column_stack([starts, ends]))
     iset = FakeIntervalSet(start=starts, end=ends)
     t_iset, pos_iset = restrict(times, positions, epochs=iset)
 
@@ -220,7 +263,9 @@ def test_restrict_array_vs_real_intervalset_parity() -> None:
     starts = np.array([2.0, 12.0])
     ends = np.array([6.0, 16.0])
 
-    t_arr, pos_arr = restrict(times, positions, epochs=(starts, ends))
+    # Two length-2 arrays as (starts, ends) is now ambiguous, so pass the
+    # unambiguous (n, 2) interval-rows form for the array side.
+    t_arr, pos_arr = restrict(times, positions, epochs=np.column_stack([starts, ends]))
     iset = nap.IntervalSet(start=starts, end=ends)
     t_iset, pos_iset = restrict(times, positions, epochs=iset)
 

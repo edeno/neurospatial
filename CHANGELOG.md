@@ -70,7 +70,11 @@ these are called out under a dedicated **Breaking changes** heading.
   `neurospatial.behavior.epochs`. `epochs` accepts `(start, end)` scalars, two
   `(starts, ends)` 1-D arrays, an `(n, 2)` array, **or a pynapple `IntervalSet`**
   — the `IntervalSet` is **duck-typed** (`.start` / `.end`), so this stays
-  array-first and **never imports pynapple**. Endpoints are **inclusive** by
+  array-first and **never imports pynapple**. The one genuinely ambiguous form
+  — a length-2 pair of length-2 sequences (`[[0, 5], [10, 15]]`), which could
+  mean two `(start, end)` interval rows **or** two parallel `(starts, ends)`
+  arrays — **raises** `ValueError`; pass an `(n, 2)` NumPy array (interval rows)
+  or explicit 1-D `start`/`end` arrays to disambiguate. Endpoints are **inclusive** by
   default (`closed="both"`, matching `behavior.segmentation` and pynapple; also
   `"left"` / `"right"` / `"neither"`). `restrict(times, *arrays, epochs=...)`
   slices `times` and any arrays **aligned to `times`** (e.g. `positions`) by the
