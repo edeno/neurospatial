@@ -266,6 +266,8 @@ _LAZY_SUBMODULES: tuple[str, ...] = (
 _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     "SpikeTrains": ("encoding.spike_trains", "SpikeTrains"),
     "restrict": ("behavior.epochs", "restrict"),
+    "Session": ("recording", "Session"),
+    "load_session": ("recording", "load_session"),
 }
 
 
@@ -300,6 +302,7 @@ __all__ = [
     "Region",
     "RegionNotFoundError",
     "Regions",
+    "Session",
     "SpikeTrains",
     "animation",
     "annotation",
@@ -310,6 +313,7 @@ __all__ = [
     "events",
     "io",
     "layout",
+    "load_session",
     "ops",
     "regions",
     "restrict",

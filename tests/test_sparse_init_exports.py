@@ -43,6 +43,10 @@ def test_all_has_core_classes_and_exceptions():
         # Lazily-accessible headline one-liner (PEP 562 __getattr__): array-native
         # epoch selection (behavior.epochs.restrict).
         "restrict",
+        # Lazily-accessible session bundle + loader (PEP 562 __getattr__): a
+        # frozen discoverability bundle (recording.Session) and its NWB loader.
+        "Session",
+        "load_session",
         # Lazily-accessible analysis submodules (PEP 562 __getattr__)
         "encoding",
         "decoding",

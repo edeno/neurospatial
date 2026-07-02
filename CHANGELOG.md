@@ -65,6 +65,36 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ### Added
 
+- `Session` — a frozen **discoverability bundle** (`neurospatial.recording`,
+  also exported at the top level) grouping `env` / `position` / `spikes` /
+  `epochs` / `metadata`. It is **not a god-object**: it exposes the raw arrays
+  (`session.times` / `session.positions` / `session.spikes`) but carries **no**
+  heavy analysis methods — compute stays functional, e.g.
+  `compute_spatial_rates(session.env, session.spikes, session.times,
+  session.positions)`. `position` uniformly exposes `.t` / `.values` (arrays are
+  wrapped in a small internal `Position` holder; a pynapple `Tsd` / `TsdFrame`
+  already conforms). Constructors: `Session.from_arrays(*, env=None, times,
+  positions, spike_times, unit_ids=None, unit_table=None, epochs=None,
+  metadata=None)` (accepts arrays or a `PositionLike`, and a list / 2-D array /
+  `SpikeTrains` / pynapple `TsGroup` for spikes, threading `unit_ids` /
+  `unit_table`) and `Session.from_nwb(path_or_file, *, unit_ids=None,
+  **read_kwargs)`. Frozen / immutable: `with_environment(env)` and
+  `restrict(epochs)` return a **new** `Session` and never mutate the original.
+  `restrict` slices the position and the spikes to the epochs and is
+  **identity-preserving** — restriction trims spikes per unit (never drops
+  units), so it rebuilds a `SpikeTrains` carrying the original `unit_ids` /
+  `unit_table` unchanged, and records the epochs on the new session. A
+  mismatched `position.t` / `position.values` length or a non-`EnvironmentLike`
+  `env` raises a clear `ValueError`.
+- `load_session(source, **kwargs)` — dispatches an NWB file path (`str` /
+  `os.PathLike`) or an open pynwb `NWBFile` to `Session.from_nwb`; any other
+  `source` raises a clear `TypeError` directing you to `Session.from_arrays`.
+  `Session.from_nwb` builds the bundle via the existing lazy
+  `neurospatial.io.nwb` readers (`read_units` / `read_position` /
+  `read_environment`, with the environment optional → `env=None` when absent),
+  so `neurospatial.recording` **never imports pynwb / pynapple** and
+  `import neurospatial` stays cheap. (The lazily-materialized `lazy=True` NWB
+  read path is intentionally deferred to a later phase.)
 - `restrict` / `in_epochs` / `restrict_spike_trains` — array-native epoch
   selection ("give me my running periods / trial N") in a new
   `neurospatial.behavior.epochs`. `epochs` accepts `(start, end)` scalars, two
