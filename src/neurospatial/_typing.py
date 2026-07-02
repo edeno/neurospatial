@@ -23,30 +23,28 @@ PositionLike
     A position/time-series source exposing ``.t`` and ``.values`` (pynapple
     ``Tsd`` / ``TsdFrame`` conform).
 SpikeTrainsLike
-    Anything :func:`neurospatial.encoding.as_spike_trains` accepts, plus a
-    pynapple-``TsGroup``-like object (iterable of per-unit timestamp arrays
-    with an ``.index`` carrying unit ids).
+    A per-unit spike-train collection **indexable by unit id**: exposes
+    ``.index`` (the unit ids / keys) and ``obj[unit_id]`` returning a per-unit
+    timestamp source with a ``.t`` attribute. A real pynapple ``TsGroup`` (a
+    ``collections.UserDict`` — iterating it yields **keys**, not trains) and the
+    future :class:`SpikeTrains` container both satisfy this.
 EnvironmentLike
-    Public re-export of :class:`EnvironmentProtocol` — the shared structural
-    surface of :class:`~neurospatial.environment.Environment` and
-    :class:`~neurospatial.environment.polar.EgocentricPolarEnvironment`.
+    The minimal structural surface shared by
+    :class:`~neurospatial.environment.Environment` and its polar sibling
+    :class:`~neurospatial.environment.polar.EgocentricPolarEnvironment`
+    (``bin_centers`` / ``connectivity`` / ``neighbors``) — matched to the
+    runtime :func:`is_environment_like` check.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-# Public re-export: downstream code depends on ``_typing.EnvironmentLike`` so it
-# never has to reach into the environment package's private ``_protocols``
-# module. ``EnvironmentLike`` IS ``EnvironmentProtocol`` — the shared surface of
-# ``Environment`` and the sibling ``EgocentricPolarEnvironment`` (which is NOT a
-# subclass, so ``isinstance(polar, Environment)`` is ``False``). Use it in
-# annotations and use :func:`is_environment_like` for the runtime duck-check.
-from neurospatial.environment._protocols import EnvironmentProtocol as EnvironmentLike
+if TYPE_CHECKING:
+    import networkx as nx
 
 __all__ = [
     "EnvironmentLike",
@@ -62,32 +60,50 @@ class PositionLike(Protocol):
 
     An object exposing ``.t`` (1-D timestamps, seconds) and ``.values``
     (position samples, shape ``(n,)`` or ``(n, n_dims)``). pynapple ``Tsd`` and
-    ``TsdFrame`` conform (they additionally expose ``.d`` as an alias for
-    ``.values``, which :func:`as_times_positions` also accepts).
+    ``TsdFrame`` conform.
+
+    The member types are intentionally loose (``NDArray[Any]``): pynapple's
+    ``.values`` is frequently not ``float64`` (the boundary adapter coerces).
+    The runtime adapter :func:`as_times_positions` additionally accepts a ``.d``
+    alias for ``.values`` (pynapple's data accessor), so an object exposing
+    ``.t`` + ``.d`` conforms in practice even though ``.d`` is not declared here.
 
     Convert an instance to plain arrays with :func:`as_times_positions`; the
     scientific core only ever sees the returned ``(times, positions)`` arrays.
     """
 
     @property
-    def t(self) -> NDArray[np.float64]:
+    def t(self) -> NDArray[Any]:
         """1-D timestamps (seconds)."""
         ...
 
     @property
-    def values(self) -> NDArray[np.float64]:
+    def values(self) -> NDArray[Any]:
         """Position samples, shape ``(n,)`` or ``(n, n_dims)``."""
         ...
 
 
-class SpikeTrainsLike(Protocol):
-    """Structural type for a per-unit spike-train collection carrying ids.
+class _HasTimes(Protocol):
+    """A per-unit timestamp source exposing ``.t`` (pynapple ``Ts`` conforms)."""
 
-    This Protocol captures the *interesting* third-party case — a
-    pynapple-``TsGroup``-like object, or the future
-    :class:`~neurospatial.encoding.SpikeTrains` container — that is **iterable
-    yielding per-unit 1-D timestamp arrays** and carries an ``.index`` (or
-    dict-like keys) of unit ids.
+    @property
+    def t(self) -> NDArray[np.float64]:
+        """1-D spike timestamps (seconds)."""
+        ...
+
+
+class SpikeTrainsLike(Protocol):
+    """Structural type for a per-unit spike-train collection indexable by id.
+
+    Captures the *interesting* third-party case — a real pynapple ``TsGroup``
+    (a ``collections.UserDict``: iterating it yields **unit-id keys**, not
+    trains), or the future :class:`~neurospatial.encoding.SpikeTrains`
+    container. Both expose ``.index`` (the unit ids / keys) and support
+    ``obj[unit_id]`` returning a per-unit timestamp source with a ``.t``
+    attribute. The id-surfacing adapter
+    :func:`neurospatial.encoding.as_spike_trains_with_ids` extracts trains by
+    **indexing each id** (``obj[uid].t``); for a ``TsGroup`` it must NOT iterate
+    the object, because iterating a ``UserDict`` yields its keys, not its trains.
 
     It is primarily a *documentation / typing* alias for the union of inputs the
     spike boundary accepts. In practice
@@ -102,11 +118,44 @@ class SpikeTrainsLike(Protocol):
 
     @property
     def index(self) -> Any:
-        """Unit ids, one per train (array-like / sequence)."""
+        """Unit ids / keys, one per train (array-like / sequence)."""
         ...
 
-    def __iter__(self) -> Iterator[Any]:
-        """Yield per-unit 1-D timestamp arrays."""
+    def __getitem__(self, unit_id: Any) -> _HasTimes:
+        """Return the per-unit timestamp source for ``unit_id``."""
+        ...
+
+
+class EnvironmentLike(Protocol):
+    """Minimal structural surface of a neurospatial spatial environment.
+
+    The **narrow** public contract shared by
+    :class:`~neurospatial.environment.Environment` and its sibling
+    :class:`~neurospatial.environment.polar.EgocentricPolarEnvironment` (which is
+    NOT an ``Environment`` subclass, so ``isinstance(polar, Environment)`` is
+    ``False``). Deliberately just the three members a consumer needs to treat an
+    object as a spatial environment — ``bin_centers``, ``connectivity``,
+    ``neighbors`` — matched exactly to the runtime :func:`is_environment_like`
+    duck-check (:data:`_ENVIRONMENT_LIKE_ATTRS`).
+
+    It intentionally does NOT republish the internal ``EnvironmentProtocol`` (the
+    mixin ``self`` type), whose ~14 members are private implementation surface,
+    not a public contract. Use this in annotations, and use
+    :func:`is_environment_like` for the runtime duck-check.
+    """
+
+    @property
+    def bin_centers(self) -> NDArray[np.float64]:
+        """Bin-center coordinates, shape ``(n_bins, n_dims)``."""
+        ...
+
+    @property
+    def connectivity(self) -> nx.Graph:
+        """Connectivity graph over active bins."""
+        ...
+
+    def neighbors(self, bin_index: int) -> list[int]:
+        """Active-bin indices adjacent to ``bin_index``."""
         ...
 
 

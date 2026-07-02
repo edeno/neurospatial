@@ -75,12 +75,16 @@ these are called out under a dedicated **Breaking changes** heading.
     the `times` slot (with `positions` omitted) and normalize it to plain
     `float64` arrays at the boundary via `as_times_positions`. The plain-array
     path is unchanged byte-for-byte.
-  - `SpikeTrainsLike` — the accepted spike-input union, plus a pynapple-
-    `TsGroup`-like object (iterable of per-unit trains with an `.index` of unit
-    ids). A new `encoding.as_spike_trains_with_ids` surfaces those ids without
-    changing `as_spike_trains`'s `list[NDArray]` contract; when a group carries
-    ids and the caller passes no `unit_ids=`, they now flow into
-    `SpatialRatesResult.unit_ids` instead of being silently dropped.
+  - `SpikeTrainsLike` — the accepted spike-input union, plus a real pynapple
+    `TsGroup`. A `TsGroup` is a `collections.UserDict`, so **iterating it yields
+    the unit-id keys, not the per-unit trains**; `SpikeTrainsLike` is therefore
+    the *indexable-by-id* surface (`.index` of unit ids + `group[uid]` returning
+    a per-unit `Ts` with `.t`). A new `encoding.as_spike_trains_with_ids`
+    extracts trains by indexing each id (never by iterating), so a raw `TsGroup`
+    flows correctly into `compute_spatial_rates` / `decode_session`; it surfaces
+    the ids without changing `as_spike_trains`'s `list[NDArray]` contract, and
+    when a group carries ids and the caller passes no `unit_ids=`, they now flow
+    into `SpatialRatesResult.unit_ids` instead of being silently dropped.
   - `EnvironmentLike` — a public re-export of `EnvironmentProtocol`. The
     internal `isinstance(env, Environment)` check in `CompositeEnvironment` is
     replaced by a duck-typed `is_environment_like` check, fixing the surprise

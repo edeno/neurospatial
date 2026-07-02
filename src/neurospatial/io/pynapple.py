@@ -153,6 +153,9 @@ def to_pynapple(
     ------
     ImportError
         If pynapple is not installed.
+    TypeError
+        If ``values`` is ``None`` and ``times`` is not a decode result exposing
+        ``.times`` and ``.map_position``.
 
     Examples
     --------
@@ -163,8 +166,17 @@ def to_pynapple(
     nap = _require_pynapple()
 
     if values is None:
-        # Duck-typed decode result: pull the MAP track off it.
+        # Duck-typed decode result: pull the MAP track off it. Guard the
+        # duck-type up front so a non-result `times` yields an actionable error
+        # naming the expected inputs, not a bare AttributeError on `.times`.
         result = times
+        if not (hasattr(result, "times") and hasattr(result, "map_position")):
+            raise TypeError(
+                "to_pynapple(times) with values=None expects a decode result "
+                "exposing `.times` and `.map_position` (e.g. a "
+                "neurospatial.decoding.DecodingResult). To convert plain arrays, "
+                "pass to_pynapple(times, values) with an explicit `values` array."
+            )
         times = np.asarray(result.times, dtype=np.float64)
         values = np.asarray(result.map_position, dtype=np.float64)
     else:

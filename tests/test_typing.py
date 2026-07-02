@@ -2,7 +2,9 @@
 
 Covers, without pynapple installed:
 
-- ``EnvironmentLike`` is the re-exported ``EnvironmentProtocol``.
+- ``EnvironmentLike`` is a purpose-built NARROW Protocol (not the internal
+  ``EnvironmentProtocol`` mixin re-export) that ``Environment`` and the polar
+  sibling both structurally satisfy, matched to ``is_environment_like``.
 - ``as_times_positions`` normalizes both the array pair and a duck-typed
   ``PositionLike`` object.
 - ``is_environment_like`` accepts an ``Environment`` and the polar sibling
@@ -67,8 +69,24 @@ def polar_env() -> EgocentricPolarEnvironment:
     )
 
 
-def test_environmentlike_is_environment_protocol() -> None:
-    assert EnvironmentLike is EnvironmentProtocol
+def test_environmentlike_is_narrow_protocol(
+    env: Environment, polar_env: EgocentricPolarEnvironment
+) -> None:
+    # EnvironmentLike is now a purpose-built NARROW Protocol, no longer the
+    # internal mixin ``EnvironmentProtocol`` re-export (which published ~14
+    # private members and disagreed with the 3-attr runtime check).
+    assert EnvironmentLike is not EnvironmentProtocol
+
+    # Environment and its polar sibling both structurally satisfy the narrow
+    # surface (bin_centers / connectivity / neighbors), and it agrees with the
+    # runtime ``is_environment_like`` duck-check.
+    def _accepts_env_like(e: EnvironmentLike) -> tuple[object, object, object]:
+        return e.bin_centers, e.connectivity, e.neighbors(0)
+
+    _accepts_env_like(env)
+    _accepts_env_like(polar_env)
+    assert is_environment_like(env)
+    assert is_environment_like(polar_env)
 
 
 def test_as_times_positions_array_pair_returns_float64() -> None:

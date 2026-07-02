@@ -2,15 +2,19 @@
 
 Verifies, in the default env (no pynapple installed):
 
-- ``as_spike_trains_with_ids`` normalizes arrays (ids ``None``) and a duck-typed
-  ``TsGroup``-like (surfacing ids).
+- ``as_spike_trains_with_ids`` normalizes arrays (ids ``None``) and both group
+  shapes (surfacing ids): an iterate-yields-trains double (the future
+  ``SpikeTrains``) AND a ``UserDict``-based double (a real pynapple ``TsGroup``,
+  whose iteration yields KEYS, not trains).
 - ``compute_spatial_rate`` / ``compute_spatial_rates`` accept a duck-typed
   ``PositionLike`` and produce results byte-for-byte identical to the array path.
-- Unit ids from a ``TsGroup``-like flow into ``SpatialRatesResult.unit_ids``,
+- Unit ids from a group flow into ``SpatialRatesResult.unit_ids``,
   while the firing rates stay identical to the plain-array input.
 """
 
 from __future__ import annotations
+
+from collections import UserDict
 
 import numpy as np
 import pytest
@@ -41,7 +45,11 @@ class _FakeTsdFrame:
 
 
 class _FakeTsGroup:
-    """Duck-typed ``SpikeTrainsLike``: iterates trains, carries ``.index`` ids."""
+    """Iterate-yields-trains double (models the future ``SpikeTrains``).
+
+    Iterating yields the per-unit trains directly; carries ``.index`` ids. This
+    is NOT how a real pynapple ``TsGroup`` behaves (see ``_FakeTsGroupMapping``).
+    """
 
     def __init__(self, trains: list[np.ndarray], index: np.ndarray) -> None:
         self._trains = trains
@@ -49,6 +57,34 @@ class _FakeTsGroup:
 
     def __iter__(self):
         return iter(self._trains)
+
+
+class _FakeTs:
+    """Minimal pynapple ``Ts`` stand-in: exposes ``.t`` (spike timestamps)."""
+
+    def __init__(self, t: np.ndarray) -> None:
+        self.t = t
+
+
+class _FakeTsGroupMapping(UserDict):
+    """``UserDict``-based ``TsGroup`` double: iterating yields KEYS, not trains.
+
+    Models a real pynapple ``TsGroup``, which subclasses ``collections.UserDict``.
+    Iterating it yields the unit-id keys; ``group[uid]`` returns a ``Ts``-like
+    object with ``.t``; ``.index`` returns the keys. Extracting trains by
+    iterating (instead of indexing by id) silently yields the ids as 0-d arrays
+    — the C1 bug this double guards against.
+    """
+
+    def __init__(self, trains: list[np.ndarray], index: np.ndarray) -> None:
+        super().__init__(
+            {int(uid): _FakeTs(t) for uid, t in zip(index, trains, strict=True)}
+        )
+        self._index = np.asarray(index)
+
+    @property
+    def index(self) -> np.ndarray:
+        return self._index
 
 
 @pytest.fixture
@@ -101,6 +137,22 @@ def test_as_spike_trains_with_ids_group_surfaces_ids() -> None:
     np.testing.assert_array_equal(trains[1], trains_in[1])
 
 
+def test_as_spike_trains_with_ids_mapping_group_extracts_by_index() -> None:
+    """Regression for the TsGroup-as-UserDict trap (C1): a Mapping-based group
+    must extract trains by INDEXING each id, not by iterating (iterating a
+    ``UserDict`` yields KEYS, which would silently give 0-d id arrays). Runs in
+    the default env (no pynapple installed)."""
+    trains_in = [np.array([0.1, 0.5]), np.array([0.2, 0.9, 1.3])]
+    group = _FakeTsGroupMapping(trains_in, index=np.array([7, 9]))
+
+    trains, ids = as_spike_trains_with_ids(group)
+
+    np.testing.assert_array_equal(ids, np.array([7, 9]))
+    assert len(trains) == len(trains_in)
+    for got, ref in zip(trains, trains_in, strict=True):
+        np.testing.assert_array_equal(got, ref)
+
+
 # ---------------------------------------------------------------------------
 # compute_spatial_rate(s): PositionLike + array-path parity
 # ---------------------------------------------------------------------------
@@ -148,6 +200,20 @@ def test_compute_spatial_rates_group_ids_flow_into_result(session) -> None:
     from_group = compute_spatial_rates(env, group, times, positions, bandwidth=5.0)
 
     # unit ids surfaced from the group; rates identical to the plain-array path.
+    np.testing.assert_array_equal(from_group.unit_ids, np.array([11, 22, 33]))
+    np.testing.assert_array_equal(from_arrays.firing_rates, from_group.firing_rates)
+
+
+def test_compute_spatial_rates_mapping_group_matches_arrays(session) -> None:
+    """A ``UserDict``-based ``TsGroup`` double (iteration yields keys) must
+    produce the same rates as the plain-array path and surface its ids. Catches
+    C1 in the default env, with no pynapple installed."""
+    env, times, positions, spikes = session
+    group = _FakeTsGroupMapping(spikes, index=np.array([11, 22, 33]))
+
+    from_arrays = compute_spatial_rates(env, spikes, times, positions, bandwidth=5.0)
+    from_group = compute_spatial_rates(env, group, times, positions, bandwidth=5.0)
+
     np.testing.assert_array_equal(from_group.unit_ids, np.array([11, 22, 33]))
     np.testing.assert_array_equal(from_arrays.firing_rates, from_group.firing_rates)
 
