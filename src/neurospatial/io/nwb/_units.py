@@ -9,7 +9,7 @@ every multi-cell workflow has to start in bare ``pynwb``.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -22,11 +22,57 @@ if TYPE_CHECKING:
     from pynwb import NWBFile
 
 
+class _LazyUnitSpikeTrain:
+    """Lazy per-unit spike-time handle backed by the open NWB ``units`` table.
+
+    Wraps a ``(units, row)`` pair and defers reading that unit's ragged
+    spike-time slice until it is materialized via ``np.asarray`` or indexing.
+    On materialization it returns the same sorted ``float64`` array the eager
+    path produces, reading only the requested unit's slice from the h5py-backed
+    ragged column. Valid only while the backing ``NWBFile`` is open.
+
+    The materialized array is **memoized** on first access: the ragged slice is
+    read and sorted once, then cached and reused on every subsequent
+    ``__getitem__`` / ``__len__`` / ``np.asarray``, so repeated access does not
+    re-read and re-sort the whole unit off disk.
+    """
+
+    __slots__ = ("_cache", "_row", "_units")
+
+    def __init__(self, units: Any, row: int) -> None:
+        self._units = units
+        self._row = row
+        # ``None`` is the "not yet materialized" sentinel; a materialized train
+        # is always an ndarray (empty for a unit with no spikes), never None.
+        self._cache: NDArray[np.float64] | None = None
+
+    def _materialize(self) -> NDArray[np.float64]:
+        if self._cache is None:
+            self._cache = np.sort(
+                np.asarray(self._units[self._row, "spike_times"], dtype=np.float64)
+            )
+        return self._cache
+
+    def __array__(
+        self, dtype: Any = None, copy: bool | None = None
+    ) -> NDArray[np.float64]:
+        arr = self._materialize()
+        return arr if dtype is None else arr.astype(dtype)
+
+    def __getitem__(self, key: Any) -> Any:
+        # Indexing may yield an array or a scalar depending on ``key``.
+        return self._materialize()[key]
+
+    def __len__(self) -> int:
+        return len(self._materialize())
+
+
 def read_units(
     nwbfile: NWBFile,
     *,
     unit_ids: Sequence[int] | None = None,
-) -> tuple[list[NDArray[np.float64]], NDArray]:
+    lazy: bool = False,
+) -> tuple[list[NDArray[np.float64] | Any], NDArray]:
     """
     Read spike-time arrays from an NWB ``units`` table.
 
@@ -39,12 +85,20 @@ def read_units(
         identifiers in ``units.id``), not row indices. Each requested id is
         matched against ``units.id``; any id not present raises ``ValueError``
         naming the missing id(s). Default reads all units in table order.
+    lazy : bool, default False
+        If ``False`` (default), each unit's spike train is fully materialized
+        into a sorted ``NDArray[np.float64]`` up front -- the historical,
+        byte-for-byte-unchanged behavior. If ``True``, each list entry is a lazy
+        per-unit handle that reads and sorts only that unit's spike-time slice
+        when it is ``np.asarray``-ed or indexed, keeping large recordings
+        off-RAM until a unit is actually accessed.
 
     Returns
     -------
-    spike_trains : list of NDArray[np.float64]
+    spike_trains : list of NDArray[np.float64] or lazy handles
         One sorted 1-D array of spike times (seconds) per unit, aligned with
-        ``unit_ids``.
+        ``unit_ids`` -- materialized arrays when ``lazy=False``, lazy handles
+        when ``lazy=True``.
     unit_ids : NDArray
         The unit identifiers, aligned with ``spike_trains``.
 
@@ -63,6 +117,11 @@ def read_units(
     spike-count matrix and pass it, with a place-field model, to
     :func:`neurospatial.decoding.decode_position` to reconstruct the animal's
     trajectory.
+
+    Lazy handles are **only valid while the backing ``NWBFile`` / ``NWBHDF5IO``
+    is open**. Materialize them (``np.asarray`` or indexing) inside the
+    ``with NWBHDF5IO(...)`` block; ``lazy=False`` returns arrays that remain
+    valid after the file closes.
 
     Examples
     --------
@@ -117,7 +176,11 @@ def read_units(
 
     # pynwb exposes ragged columns via row-then-column indexing
     # (`units[row, "spike_times"]`), returning one neuron's spike-time list.
-    spike_trains = [
-        np.sort(np.asarray(units[i, "spike_times"], dtype=np.float64)) for i in rows
-    ]
+    spike_trains: list[NDArray[np.float64] | Any]
+    if lazy:
+        spike_trains = [_LazyUnitSpikeTrain(units, i) for i in rows]
+    else:
+        spike_trains = [
+            np.sort(np.asarray(units[i, "spike_times"], dtype=np.float64)) for i in rows
+        ]
     return spike_trains, out_ids

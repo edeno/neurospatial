@@ -84,6 +84,49 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ### Added
 
+- NWB `SpatialRatesResult` round-trip + lazy reads (`neurospatial.io.nwb`).
+  `write_spatial_rates(nwbfile, result, *, name="spatial_rates", overwrite=False)`
+  stores a population result on a **unit axis** — a `DynamicTable` (one row per
+  unit) in `analysis/` with a `unit_id` column, a 2-D `firing_rate` column of
+  shape `(n_units, n_bins)`, and one column per `unit_table` field; occupancy is
+  stored once as a companion `TimeSeries`, `smoothing_method` / `bandwidth` /
+  bin counts ride in the table description, and bin centers are shared via the
+  existing `bin_centers` dataset. The full `Environment` is now **persisted**
+  alongside the rates (via `write_environment` under the derived name
+  `f"{name}_environment"`), so it round-trips with its **connectivity edges and
+  geometry intact**. The write is **atomic**: all name collisions (the table,
+  `f"{name}_occupancy"`, `f"{name}_environment"`) and shape validation are
+  resolved before the first object is added, so a duplicate without `overwrite`
+  raises before any mutation and `overwrite=True` cleans every companion; a
+  later add failure rolls back the partial write. `firing_rates` / `occupancy`
+  are defensively copied so the NWB containers never alias the live result, and a
+  `unit_table` column named `unit_id` / `firing_rate` (reserved) raises a clear
+  `ValueError`. `read_place_field(nwbfile, *, name="spatial_rates", env=None)` is
+  the inverse, reconstructing a `SpatialRatesResult` with `firing_rates` /
+  `occupancy` / `unit_ids` / `unit_table` / `smoothing_method` / `bandwidth` all
+  preserved (**`unit_ids` and `unit_table` links survive** non-default ids and
+  non-trivial tables). When `env=` is omitted it restores the **persisted
+  environment with full connectivity** (`read_place_field(nwb).env.neighbors(i)`
+  matches the original; there is no connectivity-less bin-centers fabrication),
+  and it raises if neither an `env=` nor a persisted env is present. A mismatched
+  or stale `env=` (its `n_bins` disagreeing with the stored rates) now raises a
+  clear `ValueError` instead of silently attaching, the companion occupancy
+  length is validated at read against the table's recorded `n_bins`, and a `name`
+  pointing at a non-spatial-rates table raises a clear `ValueError`. Shape
+  mismatches raise param-named `ValueError`s and duplicate names honor
+  `overwrite`. `read_position` / `read_pose` / `read_units` gain a keyword-only
+  `lazy=False`: `lazy=True` returns h5py-backed handles (per-unit spike-time
+  handles for `read_units`) that materialize only when sliced / `np.asarray`-ed —
+  valid only while the backing `NWBFile` is open — while the default eager path
+  stays byte-for-byte unchanged. The lazy `read_position` / `read_pose` paths now
+  **validate lengths** via the handles' `.shape[0]` (no materialization), so a
+  positions/timestamps or per-bodypart mismatch raises exactly as the eager path
+  (lazy pose no longer silently misaligns bodyparts of differing length), and the
+  lazy per-unit spike-time handle **caches** its materialized array (the ragged
+  slice is read and sorted at most once). A `test_nwb.yml` CI job installs the
+  `nwb` extra and runs the NWB tests (`tests/nwb` + `tests/test_recording.py`),
+  which the default `dev`-only job skips. `neurospatial` still never imports
+  pynwb (loaded lazily in `io/nwb`).
 - `BayesianDecoder` — an immutable (`frozen`) `fit`/`predict`/`predict_summary`/
   `score` wrapper over the decode core (`neurospatial.decoding`, also exported at
   the top level). `fit(spike_times, times, positions, *, speed=None,

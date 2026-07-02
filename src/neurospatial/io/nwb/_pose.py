@@ -12,7 +12,11 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.io.nwb._adapters import timestamps_from_series
+from neurospatial.io.nwb._adapters import (
+    timestamps_from_series,
+    timestamps_handle_from_series,
+    validate_handle_lengths,
+)
 from neurospatial.io.nwb._core import (
     _find_containers_by_type,
     _require_ndx_pose,
@@ -28,7 +32,9 @@ if TYPE_CHECKING:
 def read_pose(
     nwbfile: NWBFile,
     pose_estimation_name: str | None = None,
-) -> tuple[dict[str, NDArray[np.float64]], NDArray[np.float64], Skeleton]:
+    *,
+    lazy: bool = False,
+) -> tuple[dict[str, NDArray[np.float64] | Any], NDArray[np.float64] | Any, Skeleton]:
     """
     Read pose estimation data from NWB file.
 
@@ -40,13 +46,23 @@ def read_pose(
         Name of the specific PoseEstimation container.
         If None, auto-discovers using priority order:
         processing/behavior > processing/*.
+    lazy : bool, default False
+        If ``False`` (default), each bodypart trajectory and the timestamps are
+        fully materialized into ``NDArray[np.float64]`` -- the historical,
+        byte-for-byte-unchanged behavior. If ``True``, the h5py-backed
+        ``PoseEstimationSeries.data`` handles (and the timestamps handle) are
+        returned **without** copying, so they materialize only when sliced or
+        ``np.asarray``-ed.
 
     Returns
     -------
-    bodyparts : dict[str, NDArray[np.float64]]
-        Mapping from bodypart name to coordinates, each shape (n_samples, n_dims).
-    timestamps : NDArray[np.float64], shape (n_samples,)
-        Timestamps in seconds (shared across all bodyparts).
+    bodyparts : dict[str, NDArray[np.float64] or h5py.Dataset]
+        Mapping from bodypart name to coordinates, each shape
+        (n_samples, n_dims). Values are materialized arrays when ``lazy=False``
+        and lazy handles when ``lazy=True``.
+    timestamps : NDArray[np.float64] or h5py.Dataset, shape (n_samples,)
+        Timestamps in seconds (shared across all bodyparts). A lazy handle when
+        ``lazy=True`` and the series carries explicit timestamps.
     skeleton : Skeleton
         Skeleton definition from the PoseEstimation container.
 
@@ -56,6 +72,23 @@ def read_pose(
         If no PoseEstimation container found, or if specified name not found.
     ImportError
         If ndx-pose is not installed.
+
+    Notes
+    -----
+    Lazy handles are **only valid while the backing ``NWBFile`` / ``NWBHDF5IO``
+    is open**. Slice or ``np.asarray`` them inside the ``with NWBHDF5IO(...)``
+    block. ``lazy=False`` returns fully-materialized arrays as before.
+
+    The per-bodypart length validation runs on **both** paths: the lazy path
+    compares each bodypart handle's ``.shape[0]`` against the shared timestamps
+    handle length (which an ``h5py.Dataset`` exposes without materializing
+    values), so bodyparts of differing length raise the same ``ValueError`` the
+    eager path raises instead of being silently misaligned.
+
+    ``lazy=True`` returns the **stored** dtype (whatever each
+    ``PoseEstimationSeries`` was written with, e.g. ``float32``), whereas
+    ``lazy=False`` casts to ``float64``. The values are equal; only the dtype may
+    differ.
 
     Examples
     --------
@@ -76,24 +109,46 @@ def read_pose(
     )
 
     # Extract bodyparts as dict
-    bodyparts: dict[str, NDArray[np.float64]] = {}
-    timestamps: NDArray[np.float64] | None = None
+    bodyparts: dict[str, NDArray[np.float64] | Any] = {}
+    timestamps: NDArray[np.float64] | Any | None = None
 
     for series_name in sorted(pose_estimation.pose_estimation_series.keys()):
         series = pose_estimation.pose_estimation_series[series_name]
-        bodyparts[series_name] = np.asarray(series.data[:], dtype=np.float64)
-
-        # Get timestamps from the first series (they should all be the same)
-        if timestamps is None:
-            timestamps = _get_timestamps(series)
+        if lazy:
+            # h5py-backed handle without copy; materializes on slice.
+            bodyparts[series_name] = series.data
+            if timestamps is None:
+                timestamps = timestamps_handle_from_series(series)
+        else:
+            bodyparts[series_name] = np.asarray(series.data[:], dtype=np.float64)
+            # Get timestamps from the first series (they should all be the same)
+            if timestamps is None:
+                timestamps = _get_timestamps(series)
 
     if timestamps is None:
         raise ValueError("PoseEstimation container has no pose estimation series")
 
-    from neurospatial._validation import validate_lengths
+    if lazy:
+        # The lazy path reuses the FIRST series' timestamps for every bodypart,
+        # so bodyparts of differing length would be silently misaligned. Validate
+        # each bodypart handle's .shape[0] against the shared timestamps handle
+        # length (an h5py Dataset exposes .shape WITHOUT materializing values, so
+        # this stays lazy) and raise the SAME ValueError the eager path raises.
+        ts_len = int(timestamps.shape[0])
+        for bp_name, bp_handle in bodyparts.items():
+            validate_handle_lengths(
+                {
+                    f"bodypart[{bp_name}]": int(bp_handle.shape[0]),
+                    "timestamps": ts_len,
+                }
+            )
+    else:
+        from neurospatial._validation import validate_lengths
 
-    for bp_name, bp_data in bodyparts.items():
-        validate_lengths({f"bodypart[{bp_name}]": bp_data, "timestamps": timestamps})
+        for bp_name, bp_data in bodyparts.items():
+            validate_lengths(
+                {f"bodypart[{bp_name}]": bp_data, "timestamps": timestamps}
+            )
 
     # Convert ndx-pose Skeleton to neurospatial Skeleton
     skeleton = NSSkeleton.from_ndx_pose(pose_estimation.skeleton)
