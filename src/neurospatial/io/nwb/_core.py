@@ -8,12 +8,62 @@ including container discovery, import helpers, and validation.
 from __future__ import annotations
 
 import logging
+import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from pynwb import NWBFile
 
 logger = logging.getLogger("neurospatial.nwb")
+
+
+@contextmanager
+def open_nwbfile(
+    path_or_file: str | os.PathLike[str] | NWBFile,
+) -> Iterator[NWBFile]:
+    """Yield an open ``NWBFile`` from a path, or pass through an open one.
+
+    The single place NWB file **opening** lives, so callers (e.g.
+    :meth:`neurospatial.recording.Session.from_nwb`) never import pynwb
+    themselves: pynwb is imported lazily here via :func:`_require_pynwb`.
+
+    Parameters
+    ----------
+    path_or_file : str, os.PathLike, or NWBFile
+        A filesystem path to an ``.nwb`` file -- opened read-only and **closed**
+        when the context exits -- or an already-open ``NWBFile``, which is
+        yielded unchanged (its lifecycle stays with the caller; this helper does
+        not close it).
+
+    Yields
+    ------
+    NWBFile
+        The open NWB file.
+
+    Notes
+    -----
+    Path opening uses eager reads (the readers materialize arrays inside the
+    ``with`` block). A lazily-materialized read path is a separate, later
+    addition.
+
+    Examples
+    --------
+    >>> from neurospatial.io.nwb._core import open_nwbfile
+    >>> with open_nwbfile("session.nwb") as nwbfile:  # doctest: +SKIP
+    ...     positions, timestamps = read_position(nwbfile)
+    """
+    if isinstance(path_or_file, (str, os.PathLike)):
+        pynwb = _require_pynwb()
+        io = pynwb.NWBHDF5IO(str(path_or_file), mode="r")
+        try:
+            yield io.read()
+        finally:
+            io.close()
+    else:
+        # Already-open NWBFile: yield as-is; the caller owns its lifecycle.
+        yield path_or_file
 
 
 def _require_pynwb() -> Any:

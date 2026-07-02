@@ -78,19 +78,38 @@ def test_no_eager_submodule_import() -> None:
     Uses ``animation`` as a representative submodule that is not pulled in by the
     package's eager imports, then confirms it loads on first access.
     """
+
     # Re-import the package in a clean module state so the assertion is robust to
-    # whatever other tests already imported.
-    for mod_name in list(sys.modules):
-        if mod_name == "neurospatial" or mod_name.startswith("neurospatial."):
+    # whatever other tests already imported. Snapshot the original module objects
+    # first and restore them afterward: purging ``neurospatial.*`` without
+    # restoring would split class identity for any test later in this worker that
+    # imported a neurospatial class at collection time (e.g.
+    # ``isinstance(x, SpikeTrains)`` would then compare against a stale class).
+    def _neurospatial_modnames() -> list[str]:
+        return [
+            name
+            for name in sys.modules
+            if name == "neurospatial" or name.startswith("neurospatial.")
+        ]
+
+    saved = {name: sys.modules[name] for name in _neurospatial_modnames()}
+    for mod_name in list(saved):
+        del sys.modules[mod_name]
+
+    try:
+        fresh = importlib.import_module("neurospatial")
+
+        assert "neurospatial.animation" not in sys.modules, (
+            "neurospatial.animation should not be imported until first accessed"
+        )
+
+        # First access triggers the lazy import.
+        module = fresh.animation
+        assert isinstance(module, ModuleType)
+        assert "neurospatial.animation" in sys.modules
+    finally:
+        # Restore the original module objects so later tests in this worker see
+        # the same class identities they imported at collection time.
+        for mod_name in _neurospatial_modnames():
             del sys.modules[mod_name]
-
-    fresh = importlib.import_module("neurospatial")
-
-    assert "neurospatial.animation" not in sys.modules, (
-        "neurospatial.animation should not be imported until first accessed"
-    )
-
-    # First access triggers the lazy import.
-    module = fresh.animation
-    assert isinstance(module, ModuleType)
-    assert "neurospatial.animation" in sys.modules
+        sys.modules.update(saved)
