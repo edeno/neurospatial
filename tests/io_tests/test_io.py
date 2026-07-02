@@ -1,14 +1,39 @@
 """Tests for neurospatial.io serialization functionality."""
 
 import json
+import re
 from pathlib import Path
 
 import networkx as nx
 import numpy as np
 import pytest
+import tomllib
 
+import neurospatial
 from neurospatial import Environment
 from neurospatial.io import from_dict, from_file, to_dict, to_file
+
+
+def test_nwb_docstring_only_references_real_extras() -> None:
+    """The io.nwb install hint must name extras that actually exist.
+
+    Regression: the docstring advertised ``neurospatial[nwb-full]``, but only an
+    ``nwb`` extra is defined -- following that hint gives a bad-extra error.
+    """
+    import neurospatial.io.nwb as nwb_module
+
+    root = Path(neurospatial.__file__).resolve().parents[2]
+    pyproject = tomllib.loads((root / "pyproject.toml").read_text())
+    defined = set(pyproject["project"]["optional-dependencies"])
+
+    referenced = set(
+        re.findall(r"neurospatial\[([a-z0-9-]+)\]", nwb_module.__doc__ or "")
+    )
+    assert referenced, "expected the io.nwb docstring to document an install extra"
+    assert referenced <= defined, (
+        f"io.nwb docstring references undefined extra(s): "
+        f"{sorted(referenced - defined)}"
+    )
 
 
 class TestSerialization:

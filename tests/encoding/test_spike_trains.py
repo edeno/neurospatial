@@ -97,6 +97,22 @@ def test_duplicate_unit_ids_raise(trains: list[np.ndarray]) -> None:
         SpikeTrains(trains, unit_ids=np.array([5, 5, 7]))
 
 
+def test_mixed_type_unique_unit_ids_are_accepted(trains: list[np.ndarray]) -> None:
+    # Regression: uniqueness was checked with np.unique, which cannot sort a
+    # mixed int/str object array and raised TypeError before validation. Unique
+    # mixed labels must simply be accepted.
+    st = SpikeTrains(trains, unit_ids=np.array([1, "a", 2], dtype=object))
+    np.testing.assert_array_equal(st.unit_ids, np.array([1, "a", 2], dtype=object))
+    np.testing.assert_array_equal(st["a"], trains[1])  # label access still works
+
+
+def test_mixed_type_duplicate_unit_ids_raise(trains: list[np.ndarray]) -> None:
+    # Duplicate mixed labels must fail with the intended uniqueness ValueError,
+    # not a TypeError from attempting to sort ints against strings.
+    with pytest.raises(ValueError, match="unique"):
+        SpikeTrains(trains, unit_ids=np.array([1, "a", 1], dtype=object))
+
+
 # ---------------------------------------------------------------------------
 # 2. Label access (by unit id, NOT position)
 # ---------------------------------------------------------------------------
