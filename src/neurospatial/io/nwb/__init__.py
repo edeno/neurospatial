@@ -5,8 +5,7 @@ This module provides functions for reading and writing neurospatial data
 to/from NWB (Neurodata Without Borders) files.
 
 All NWB dependencies are optional and loaded lazily. Install with:
-    pip install neurospatial[nwb]       # Basic NWB support
-    pip install neurospatial[nwb-full]  # Full NWB support with extensions
+    pip install neurospatial[nwb]  # pynwb + hdmf + ndx-pose / ndx-events extensions
 
 Public API
 ----------

@@ -264,6 +264,46 @@ def test_epoch_restricts_encoding(sim) -> None:
     assert not np.array_equal(fit.encoding_models, full.encoding_models)
 
 
+def test_epoch_with_speed_restricts_speed(sim) -> None:
+    """fit(epoch=..., speed=...) slices the time-aligned speed by the epoch too.
+
+    Regression: the epoch branch restricted times/positions/trains but passed
+    the full-length ``speed`` straight to the encoder, raising a length
+    mismatch. ``speed`` is aligned to ``times`` and must be sliced identically.
+    """
+    env, spikes, times, positions = sim
+    t_mid = float(times[len(times) // 2])
+    train_epoch = (float(times[0]), t_mid)
+
+    # Full-length speed aligned to `times` (a plausible per-sample speed track).
+    speed = np.full(times.shape[0], 20.0, dtype=np.float64)
+
+    fit = BayesianDecoder(env, dt=0.5).fit(
+        spikes, times, positions, epoch=train_epoch, speed=speed, min_speed=5.0
+    )
+    assert fit.is_fitted
+
+    # Equivalent to hand-restricting all three (times, positions, speed) first.
+    t_tr, pos_tr, speed_tr = restrict(times, positions, speed, epochs=train_epoch)
+    ref_models = _build_encoding_model(
+        env,
+        restrict_spike_trains(spikes, train_epoch),
+        t_tr,
+        pos_tr,
+        dt=0.5,
+        bandwidth=5.0,
+        smoothing_method="diffusion_kde",
+        min_occupancy=0.0,
+        speed=speed_tr,
+        min_speed=5.0,
+        max_gap=0.5,
+        encoding_models=None,
+        warn_on_drop=True,
+        dtype=np.float64,
+    )[1]
+    assert_array_equal(fit.encoding_models, ref_models)
+
+
 # ---------------------------------------------------------------------------
 # 5. Unfitted raises
 # ---------------------------------------------------------------------------

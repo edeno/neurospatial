@@ -35,6 +35,7 @@ access keyed by unit id.
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -131,13 +132,16 @@ class SpikeTrains:
         resolved = resolve_unit_ids(self.unit_ids, n_units, context="SpikeTrains")
 
         # Uniqueness is required: label access (st[unit_id]) and downstream
-        # label-based selection are ambiguous with duplicate ids.
-        unique_vals, counts = np.unique(resolved, return_counts=True)
-        if unique_vals.shape[0] != resolved.shape[0]:
-            duplicated = unique_vals[counts > 1]
+        # label-based selection are ambiguous with duplicate ids. Count with a
+        # hash-based Counter rather than np.unique: unit_ids may be a mixed
+        # int/str object array (e.g. [1, "a", 2]), which np.unique cannot sort
+        # (TypeError). Counter needs only hashability, not ordering.
+        counts = Counter(resolved.tolist())
+        duplicated = [label for label, count in counts.items() if count > 1]
+        if duplicated:
             raise ValueError(
                 f"unit_ids must be unique in SpikeTrains: duplicated label(s) "
-                f"{duplicated.tolist()}.\n"
+                f"{duplicated}.\n"
                 "  WHY: label access st[unit_id] and downstream selection "
                 "require one row per label.\n"
                 "  HOW: pass distinct unit_ids, or omit them to default to "

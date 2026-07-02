@@ -322,9 +322,18 @@ warn_on_drop
             # Restrict the training data to the epoch BEFORE encoding. Normalize
             # the position track to arrays first (restrict needs a shared time
             # axis); restrict the already-normalized trains (never the raw group
-            # -- iterating a TsGroup would yield ids, not trains).
+            # -- iterating a TsGroup would yield ids, not trains). ``speed`` (if
+            # given) is time-aligned to ``times``, so it must be sliced by the
+            # SAME epoch mask -- otherwise the full-length speed reaches the
+            # encoder with the restricted times and raises a length mismatch.
             times, positions = as_times_positions(times, positions)
-            times, positions = restrict(times, positions, epochs=epoch)
+            if speed is not None:
+                speed_arr = np.asarray(speed, dtype=np.float64)
+                times, positions, speed = restrict(
+                    times, positions, speed_arr, epochs=epoch
+                )
+            else:
+                times, positions = restrict(times, positions, epochs=epoch)
             spike_input: Any = restrict_spike_trains(trains, epoch)
         else:
             # No epoch: reuse the trains already coerced above rather than
