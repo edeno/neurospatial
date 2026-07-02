@@ -126,3 +126,40 @@ class TestReadUnits:
         from neurospatial.io.nwb import read_units
 
         assert callable(read_units)
+
+
+class TestLazyUnitSpikeTrainCaching:
+    """_LazyUnitSpikeTrain memoizes: the ragged slice is read at most once."""
+
+    def test_materialize_reads_ragged_slice_once(self):
+        """Multiple accesses read+sort the unit's slice exactly one time."""
+        from neurospatial.io.nwb._units import _LazyUnitSpikeTrain
+
+        class _CountingUnits:
+            """Stand-in for the NWB units table counting ragged reads."""
+
+            def __init__(self, per_row):
+                self._per_row = per_row
+                self.reads = 0
+
+            def __getitem__(self, key):
+                # pynwb ragged access is units[row, "spike_times"].
+                row, col = key
+                assert col == "spike_times"
+                self.reads += 1
+                return self._per_row[row]
+
+        units = _CountingUnits({0: np.array([3.0, 1.0, 2.0])})
+        train = _LazyUnitSpikeTrain(units, 0)
+
+        # Access the handle several different ways.
+        first = np.asarray(train)
+        _ = train[0]
+        _ = len(train)
+        second = np.asarray(train)
+
+        # The underlying ragged slice was read exactly once, not per-access.
+        assert units.reads == 1
+        # And it returns the same sorted array the eager path would.
+        np.testing.assert_array_equal(first, [1.0, 2.0, 3.0])
+        np.testing.assert_array_equal(second, [1.0, 2.0, 3.0])

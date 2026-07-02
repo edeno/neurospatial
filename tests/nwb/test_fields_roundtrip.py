@@ -110,18 +110,62 @@ class TestSpatialRatesRoundTrip:
         assert back.unit_table is None
         np.testing.assert_array_equal(back.unit_ids, np.arange(3))
 
-    def test_reconstructs_env_when_not_passed(self, empty_nwb, sample_environment):
-        """With env=None, a minimal env is reconstructed from stored bin_centers."""
+    def test_env_none_restores_connected_env(self, empty_nwb, sample_environment):
+        """env=None restores the PERSISTED env with its connectivity intact."""
         from neurospatial.io.nwb import read_place_field, write_spatial_rates
 
         env = sample_environment
         result = _make_rates_result(env)
 
         write_spatial_rates(empty_nwb, result)
-        back = read_place_field(empty_nwb)  # env=None
+        back = read_place_field(empty_nwb)  # env=None -> persisted env
 
         assert back.env.n_bins == env.n_bins
         np.testing.assert_allclose(back.env.bin_centers, env.bin_centers)
+
+        # The restored env is NOT a degenerate, edgeless env: it carries the
+        # original connectivity, so graph ops work and neighbors match.
+        assert back.env.connectivity.number_of_edges() > 0
+        assert env.connectivity.number_of_edges() == (
+            back.env.connectivity.number_of_edges()
+        )
+        # neighbors() matches the original for several bins, and at least one is
+        # genuinely non-empty (proving connectivity was restored, not fabricated).
+        checked_bins = [i for i in (0, 1, 2, env.n_bins - 1) if 0 <= i < env.n_bins]
+        for i in checked_bins:
+            assert set(back.env.neighbors(i)) == set(env.neighbors(i))
+        assert any(len(back.env.neighbors(i)) > 0 for i in checked_bins)
+
+    def test_env_none_without_persisted_env_raises(self, empty_nwb, sample_environment):
+        """env=None AND no persisted env -> clear ValueError (no fabrication)."""
+        from neurospatial.io.nwb import read_place_field, write_spatial_rates
+
+        env = sample_environment
+        result = _make_rates_result(env)
+
+        write_spatial_rates(empty_nwb, result)
+        # Drop the persisted environment so neither source is available.
+        del empty_nwb.scratch["spatial_rates_environment"]
+
+        with pytest.raises(ValueError, match="no attached environment"):
+            read_place_field(empty_nwb)  # env=None
+
+    def test_mismatched_explicit_env_raises(self, empty_nwb, sample_environment):
+        """A wrong-n_bins explicit env= raises instead of silently attaching."""
+        from neurospatial import Environment
+        from neurospatial.io.nwb import read_place_field, write_spatial_rates
+
+        env = sample_environment
+        result = _make_rates_result(env)
+        write_spatial_rates(empty_nwb, result)
+
+        # A clearly coarser env has a different (smaller) n_bins.
+        rng = np.random.default_rng(1)
+        other = Environment.from_samples(rng.uniform(0, 100, (500, 2)), bin_size=25.0)
+        assert other.n_bins != env.n_bins
+
+        with pytest.raises(ValueError, match="n_bins"):
+            read_place_field(empty_nwb, env=other)
 
     def test_overwrite_semantics(self, empty_nwb, sample_environment):
         """Duplicate name raises without overwrite; replaces with overwrite=True."""
@@ -140,6 +184,153 @@ class TestSpatialRatesRoundTrip:
         np.testing.assert_array_equal(
             np.asarray(back.firing_rates), np.asarray(second.firing_rates)
         )
+
+        # overwrite=True cleanly replaced ALL companions: the persisted env is
+        # still readable (exactly one copy) and env=None restores it.
+        back_env_none = read_place_field(empty_nwb)
+        assert back_env_none.env.n_bins == env.n_bins
+        np.testing.assert_array_equal(
+            np.asarray(back_env_none.firing_rates), np.asarray(second.firing_rates)
+        )
+
+    def test_orphaned_occupancy_blocks_write_without_overwrite(
+        self, empty_nwb, sample_environment
+    ):
+        """A pre-existing orphan {name}_occupancy blocks the write, leaving no table."""
+        from pynwb import TimeSeries
+
+        from neurospatial.io.nwb import write_spatial_rates
+        from neurospatial.io.nwb._core import _get_or_create_processing_module
+
+        env = sample_environment
+        result = _make_rates_result(env)
+
+        # Simulate a half-written state: an orphan occupancy companion with the
+        # table itself absent.
+        analysis = _get_or_create_processing_module(
+            empty_nwb, "analysis", "Analysis results"
+        )
+        analysis.add(
+            TimeSeries(
+                name="spatial_rates_occupancy",
+                data=np.zeros((1, env.n_bins)),
+                unit="seconds",
+                timestamps=[0.0],
+            )
+        )
+
+        with pytest.raises(ValueError, match="already exists"):
+            write_spatial_rates(empty_nwb, result)  # overwrite=False
+
+        # The write aborted BEFORE any mutation: no new table was created.
+        assert "spatial_rates" not in analysis.data_interfaces
+
+    def test_orphaned_occupancy_overwrite_replaces_cleanly(
+        self, empty_nwb, sample_environment
+    ):
+        """overwrite=True replaces a stale orphan occupancy and reads back clean."""
+        from pynwb import TimeSeries
+
+        from neurospatial.io.nwb import read_place_field, write_spatial_rates
+        from neurospatial.io.nwb._core import _get_or_create_processing_module
+
+        env = sample_environment
+        result = _make_rates_result(env)
+
+        analysis = _get_or_create_processing_module(
+            empty_nwb, "analysis", "Analysis results"
+        )
+        # Stale orphan with a WRONG length (would corrupt a name-only pairing).
+        analysis.add(
+            TimeSeries(
+                name="spatial_rates_occupancy",
+                data=np.zeros((1, env.n_bins + 5)),
+                unit="seconds",
+                timestamps=[0.0],
+            )
+        )
+
+        write_spatial_rates(empty_nwb, result, overwrite=True)
+        back = read_place_field(empty_nwb, env=env)
+        np.testing.assert_array_equal(
+            np.asarray(back.occupancy), np.asarray(result.occupancy)
+        )
+
+    def test_wrong_length_occupancy_raises_at_read(self, empty_nwb, sample_environment):
+        """A companion occupancy of wrong length raises at READ time (FIX 3)."""
+        from pynwb import TimeSeries
+
+        from neurospatial.io.nwb import read_place_field, write_spatial_rates
+
+        env = sample_environment
+        result = _make_rates_result(env)
+        write_spatial_rates(empty_nwb, result)
+
+        # Corrupt the occupancy companion to a wrong length after the write.
+        analysis = empty_nwb.processing["analysis"]
+        del analysis.data_interfaces["spatial_rates_occupancy"]
+        analysis.add(
+            TimeSeries(
+                name="spatial_rates_occupancy",
+                data=np.zeros((1, env.n_bins + 3)),
+                unit="seconds",
+                timestamps=[0.0],
+            )
+        )
+
+        with pytest.raises(ValueError, match="Occupancy companion"):
+            read_place_field(empty_nwb, env=env)
+
+    def test_wrong_table_name_raises_clear_error(self, empty_nwb, sample_environment):
+        """A name pointing at a non-spatial-rates table raises a clear error (L2)."""
+        from hdmf.common import DynamicTable, VectorData
+
+        from neurospatial.io.nwb import read_place_field
+        from neurospatial.io.nwb._core import _get_or_create_processing_module
+
+        analysis = _get_or_create_processing_module(
+            empty_nwb, "analysis", "Analysis results"
+        )
+        analysis.add(
+            DynamicTable(
+                name="not_rates",
+                description="just a plain description, not JSON metadata",
+                columns=[VectorData(name="x", description="d", data=np.arange(3))],
+            )
+        )
+
+        with pytest.raises(ValueError, match="not a spatial-rates table"):
+            read_place_field(empty_nwb, name="not_rates", env=sample_environment)
+
+    def test_reserved_unit_table_columns_raise(self, empty_nwb, sample_environment):
+        """A unit_table column named unit_id/firing_rate raises a clear error (L3)."""
+        from neurospatial.io.nwb import write_spatial_rates
+
+        env = sample_environment
+        bad_table = pd.DataFrame({"unit_id": [1, 2, 3], "region": ["a", "b", "c"]})
+        result = _make_rates_result(env, unit_table=bad_table)
+
+        with pytest.raises(ValueError, match="reserved"):
+            write_spatial_rates(empty_nwb, result)
+
+    def test_copy_on_write_decouples_from_result(self, empty_nwb, sample_environment):
+        """Mutating result arrays after write does not change what was written (L1)."""
+        from neurospatial.io.nwb import read_place_field, write_spatial_rates
+
+        env = sample_environment
+        result = _make_rates_result(env)
+        original_rates = np.array(result.firing_rates, copy=True)
+        original_occ = np.array(result.occupancy, copy=True)
+
+        write_spatial_rates(empty_nwb, result)
+
+        # Mutate the live result's arrays in place after the write.
+        np.asarray(result.firing_rates)[:] = -999.0
+        np.asarray(result.occupancy)[:] = -1.0
+
+        back = read_place_field(empty_nwb, env=env)
+        np.testing.assert_array_equal(np.asarray(back.firing_rates), original_rates)
+        np.testing.assert_array_equal(np.asarray(back.occupancy), original_occ)
 
     def test_firing_rates_shape_validation(self, empty_nwb, sample_environment):
         """Wrong firing_rates n_bins raises a param-named ValueError."""
@@ -208,6 +399,40 @@ class TestSpatialRatesRoundTrip:
             np.testing.assert_array_equal(np.asarray(back.unit_ids), unit_ids)
             assert list(back.unit_table["region"]) == ["CA1", "CA1", "CA3"]
 
+    def test_disk_roundtrip_env_none_restores_connectivity(
+        self, sample_environment, tmp_path
+    ):
+        """On disk, env=None restores the env WITH connectivity (neighbors match)."""
+        from pynwb import NWBHDF5IO
+
+        from neurospatial.io.nwb import read_place_field, write_spatial_rates
+
+        from ._nwb_helpers import create_roundtrip_nwb
+
+        env = sample_environment
+        result = _make_rates_result(env)
+
+        nwbfile = create_roundtrip_nwb()
+        write_spatial_rates(nwbfile, result)
+
+        nwb_path = tmp_path / "rates_env.nwb"
+        with NWBHDF5IO(str(nwb_path), "w") as io:
+            io.write(nwbfile)
+        with NWBHDF5IO(str(nwb_path), "r") as io:
+            reopened = io.read()
+            back = read_place_field(reopened)  # env=None -> persisted env
+
+            assert back.env.n_bins == env.n_bins
+            assert back.env.connectivity.number_of_edges() > 0
+            assert (
+                back.env.connectivity.number_of_edges()
+                == env.connectivity.number_of_edges()
+            )
+            checked = [i for i in (0, 1, env.n_bins - 1) if 0 <= i < env.n_bins]
+            for i in checked:
+                assert set(back.env.neighbors(i)) == set(env.neighbors(i))
+            assert any(len(back.env.neighbors(i)) > 0 for i in checked)
+
 
 class TestReadPositionLazy:
     """lazy=True on read_position returns h5py-backed handles."""
@@ -259,6 +484,33 @@ class TestReadPositionLazy:
             assert isinstance(pos_default, np.ndarray)
             np.testing.assert_array_equal(pos_default, raw_pos)
             np.testing.assert_array_equal(ts_default, raw_ts)
+
+    def test_lazy_length_mismatch_raises_like_eager(self, empty_nwb):
+        """lazy=True validates positions/timestamps lengths like the eager path."""
+        from pynwb.behavior import Position, SpatialSeries
+
+        from neurospatial.io.nwb import read_position
+
+        behavior_module = empty_nwb.create_processing_module(
+            name="behavior", description="Behavior data"
+        )
+        position = Position(name="Position")
+        series = SpatialSeries(
+            name="position",
+            data=np.zeros((10, 2)),
+            timestamps=np.arange(10) / 30.0,
+            reference_frame="test",
+            unit="cm",
+        )
+        position.add_spatial_series(series)
+        behavior_module.add(position)
+
+        # pynwb validates data/timestamps agreement at construction, so simulate
+        # a corrupt/externally-written series by shrinking data after the fact.
+        series.fields["data"] = np.zeros((8, 2))
+
+        with pytest.raises(ValueError, match="Length mismatch"):
+            read_position(empty_nwb, lazy=True)
 
 
 class TestReadUnitsLazy:
@@ -335,3 +587,52 @@ class TestReadPoseLazy:
                 ).__module__.startswith("h5py")
                 np.testing.assert_array_equal(np.asarray(handle), bp_eager[name])
             np.testing.assert_array_equal(np.asarray(ts_lazy), ts_eager)
+
+    def test_lazy_bodypart_length_mismatch_raises_like_eager(self, empty_nwb):
+        """Two bodyparts of differing length raise on lazy read, like the eager path."""
+        pytest.importorskip("ndx_pose")
+        from ndx_pose import PoseEstimation, PoseEstimationSeries, Skeleton
+
+        from neurospatial.io.nwb import read_pose
+
+        behavior_module = empty_nwb.create_processing_module(
+            name="behavior", description="Behavior data"
+        )
+        skeleton = Skeleton(
+            name="test_skeleton",
+            nodes=["a", "b"],
+            edges=np.array([[0, 1]], dtype=np.uint8),
+        )
+        # "a" (alphabetically first) supplies the shared timestamps (50); "b" is
+        # shorter (40), so its length disagrees with the shared timestamps.
+        pose = PoseEstimation(
+            name="PoseEstimation",
+            pose_estimation_series=[
+                PoseEstimationSeries(
+                    name="a",
+                    data=np.ones((50, 2)),
+                    confidence=np.ones(50),
+                    timestamps=np.arange(50) / 30.0,
+                    reference_frame="test",
+                    unit="cm",
+                ),
+                PoseEstimationSeries(
+                    name="b",
+                    data=np.ones((40, 2)),
+                    confidence=np.ones(40),
+                    timestamps=np.arange(40) / 30.0,
+                    reference_frame="test",
+                    unit="cm",
+                ),
+            ],
+            skeleton=skeleton,
+            source_software="Test",
+        )
+        behavior_module.add(pose)
+        empty_nwb.create_processing_module(
+            name="Skeletons", description="Skeleton definitions"
+        )
+        empty_nwb.processing["Skeletons"].add(skeleton)
+
+        with pytest.raises(ValueError, match="Length mismatch"):
+            read_pose(empty_nwb, lazy=True)

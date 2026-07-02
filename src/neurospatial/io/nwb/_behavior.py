@@ -15,6 +15,7 @@ from numpy.typing import NDArray
 from neurospatial.io.nwb._adapters import (
     timestamps_from_series,
     timestamps_handle_from_series,
+    validate_handle_lengths,
 )
 from neurospatial.io.nwb._core import _find_containers_by_type, _require_pynwb, logger
 
@@ -82,9 +83,16 @@ def read_position(
     is open**. Slice or ``np.asarray`` them inside the ``with NWBHDF5IO(...)``
     block; accessing them after the file is closed raises an error from the HDF5
     layer. ``lazy=False`` returns fully-materialized arrays as before and is safe
-    to use after the file closes. Length validation (positions vs. timestamps) is
-    performed only on the eager path; the lazy path skips it to avoid forcing a
-    full read.
+    to use after the file closes.
+
+    Length validation (positions vs. timestamps) runs on **both** paths: the lazy
+    path compares the handles' ``.shape[0]`` (which an ``h5py.Dataset`` exposes
+    without materializing values), so a mismatch raises the same ``ValueError``
+    the eager path raises.
+
+    ``lazy=True`` returns the **stored** dtype (whatever the SpatialSeries was
+    written with, e.g. ``float32``), whereas ``lazy=False`` casts to
+    ``float64``. The values are equal; only the dtype may differ.
 
     Examples
     --------
@@ -115,8 +123,19 @@ def read_position(
 
     if lazy:
         # Return the h5py-backed handles without copying; they materialize on
-        # slice / np.asarray. Skip validate_lengths (it would force a full read).
-        return spatial_series.data, timestamps_handle_from_series(spatial_series)
+        # slice / np.asarray. Validate lengths using the handles' .shape[0]
+        # (an h5py Dataset exposes .shape WITHOUT materializing values, so this
+        # stays lazy) so the lazy path raises the SAME ValueError the eager path
+        # raises on a positions/timestamps length mismatch.
+        data_handle = spatial_series.data
+        timestamps_handle = timestamps_handle_from_series(spatial_series)
+        validate_handle_lengths(
+            {
+                "positions": int(data_handle.shape[0]),
+                "timestamps": int(timestamps_handle.shape[0]),
+            }
+        )
+        return data_handle, timestamps_handle
 
     # Extract position data and timestamps
     positions = np.asarray(spatial_series.data[:], dtype=np.float64)

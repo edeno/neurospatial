@@ -1,0 +1,42 @@
+name: Tests (NWB interop)
+
+# NWB (pynwb) is an optional extra. The default test job installs only the dev
+# extra, so the NWB round-trip / lazy-read tests and the Session.from_nwb tests
+# would otherwise only ever be skipped. This job installs the nwb extra and runs
+# the NWB tests.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  nwb:
+    name: NWB interop tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Install dependencies (with nwb extra)
+        run: |
+          uv sync --extra dev --extra nwb
+
+      - name: Run NWB interop tests
+        run: |
+          uv run pytest tests/nwb tests/test_recording.py -n 0 -q
+        env:
+          MPLBACKEND: Agg

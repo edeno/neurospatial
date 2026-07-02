@@ -15,6 +15,7 @@ from numpy.typing import NDArray
 from neurospatial.io.nwb._adapters import (
     timestamps_from_series,
     timestamps_handle_from_series,
+    validate_handle_lengths,
 )
 from neurospatial.io.nwb._core import (
     _find_containers_by_type,
@@ -76,9 +77,18 @@ def read_pose(
     -----
     Lazy handles are **only valid while the backing ``NWBFile`` / ``NWBHDF5IO``
     is open**. Slice or ``np.asarray`` them inside the ``with NWBHDF5IO(...)``
-    block. ``lazy=False`` returns fully-materialized arrays as before. The
-    per-bodypart length validation runs only on the eager path; the lazy path
-    skips it to avoid forcing a full read.
+    block. ``lazy=False`` returns fully-materialized arrays as before.
+
+    The per-bodypart length validation runs on **both** paths: the lazy path
+    compares each bodypart handle's ``.shape[0]`` against the shared timestamps
+    handle length (which an ``h5py.Dataset`` exposes without materializing
+    values), so bodyparts of differing length raise the same ``ValueError`` the
+    eager path raises instead of being silently misaligned.
+
+    ``lazy=True`` returns the **stored** dtype (whatever each
+    ``PoseEstimationSeries`` was written with, e.g. ``float32``), whereas
+    ``lazy=False`` casts to ``float64``. The values are equal; only the dtype may
+    differ.
 
     Examples
     --------
@@ -118,7 +128,21 @@ def read_pose(
     if timestamps is None:
         raise ValueError("PoseEstimation container has no pose estimation series")
 
-    if not lazy:
+    if lazy:
+        # The lazy path reuses the FIRST series' timestamps for every bodypart,
+        # so bodyparts of differing length would be silently misaligned. Validate
+        # each bodypart handle's .shape[0] against the shared timestamps handle
+        # length (an h5py Dataset exposes .shape WITHOUT materializing values, so
+        # this stays lazy) and raise the SAME ValueError the eager path raises.
+        ts_len = int(timestamps.shape[0])
+        for bp_name, bp_handle in bodyparts.items():
+            validate_handle_lengths(
+                {
+                    f"bodypart[{bp_name}]": int(bp_handle.shape[0]),
+                    "timestamps": ts_len,
+                }
+            )
+    else:
         from neurospatial._validation import validate_lengths
 
         for bp_name, bp_data in bodyparts.items():

@@ -30,18 +30,28 @@ class _LazyUnitSpikeTrain:
     On materialization it returns the same sorted ``float64`` array the eager
     path produces, reading only the requested unit's slice from the h5py-backed
     ragged column. Valid only while the backing ``NWBFile`` is open.
+
+    The materialized array is **memoized** on first access: the ragged slice is
+    read and sorted once, then cached and reused on every subsequent
+    ``__getitem__`` / ``__len__`` / ``np.asarray``, so repeated access does not
+    re-read and re-sort the whole unit off disk.
     """
 
-    __slots__ = ("_row", "_units")
+    __slots__ = ("_cache", "_row", "_units")
 
     def __init__(self, units: Any, row: int) -> None:
         self._units = units
         self._row = row
+        # ``None`` is the "not yet materialized" sentinel; a materialized train
+        # is always an ndarray (empty for a unit with no spikes), never None.
+        self._cache: NDArray[np.float64] | None = None
 
     def _materialize(self) -> NDArray[np.float64]:
-        return np.sort(
-            np.asarray(self._units[self._row, "spike_times"], dtype=np.float64)
-        )
+        if self._cache is None:
+            self._cache = np.sort(
+                np.asarray(self._units[self._row, "spike_times"], dtype=np.float64)
+            )
+        return self._cache
 
     def __array__(
         self, dtype: Any = None, copy: bool | None = None

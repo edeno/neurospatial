@@ -455,6 +455,21 @@ def write_spatial_rates(
     and the environment's bin-center coordinates are stored once via the shared
     ``bin_centers`` dataset (deduplicated with any place fields).
 
+    The full :class:`~neurospatial.Environment` is **persisted** alongside the
+    rates (via :func:`~neurospatial.io.nwb.write_environment` under the derived
+    name ``f"{name}_environment"``), so it round-trips with its connectivity
+    edges and geometry intact. :func:`read_place_field` restores that
+    environment when called without ``env=``; the persisted env is a separate
+    copy from any default-named environment, so multiple results and a standalone
+    ``write_environment`` never collide.
+
+    The write is **atomic**: all name collisions (the table, ``f"{name}_occupancy"``
+    and ``f"{name}_environment"``) and all shape validation are resolved *before*
+    the first object is added, so a duplicate without ``overwrite`` raises before
+    any mutation and ``overwrite=True`` cleans every companion. If a later add
+    still fails, the already-added objects are rolled back and a ``ValueError`` is
+    raised.
+
     Parameters
     ----------
     nwbfile : NWBFile
@@ -467,23 +482,31 @@ def write_spatial_rates(
     name : str, default "spatial_rates"
         Name for the spatial-rates DynamicTable in ``analysis/``.
     overwrite : bool, default False
-        If True, replace an existing container (and its companion occupancy)
-        with the same name. If False, raise ``ValueError`` on a duplicate name.
+        If True, replace an existing container and *all* its companions (the
+        ``f"{name}_occupancy"`` TimeSeries and the ``f"{name}_environment"``
+        environment). If False, raise ``ValueError`` when any of those names is
+        already present.
 
     Raises
     ------
     ValueError
-        If a container named ``name`` exists and ``overwrite=False``; if
-        ``firing_rates.shape`` is not ``(len(unit_ids), env.n_bins)``; or if
-        ``occupancy.shape`` is not ``(env.n_bins,)``.
+        If a container named ``name`` (or one of its companions) exists and
+        ``overwrite=False``; if ``firing_rates.shape`` is not
+        ``(len(unit_ids), env.n_bins)``; if ``occupancy.shape`` is not
+        ``(env.n_bins,)``; if a ``unit_table`` column is named ``unit_id`` or
+        ``firing_rate`` (reserved); or if a companion add fails after a partial
+        write (the partial objects are rolled back first).
     ImportError
         If pynwb is not installed.
 
     Notes
     -----
     This function mutates only ``nwbfile`` (adds the DynamicTable, the companion
-    occupancy TimeSeries and, if absent, the shared bin_centers dataset). The
-    ``result`` object and its arrays are never modified.
+    occupancy TimeSeries, the persisted environment in ``scratch/`` and, if
+    absent, the shared bin_centers dataset). The ``result`` object and its arrays
+    are never modified -- ``firing_rates`` and ``occupancy`` are defensively
+    copied before being handed to the NWB containers, so mutating the live result
+    after the write does not change what was written (and vice versa).
 
     Examples
     --------
@@ -501,13 +524,22 @@ def write_spatial_rates(
     from hdmf.common import DynamicTable, VectorData
     from pynwb import TimeSeries
 
+    from neurospatial.io.nwb._environment import write_environment
+
     env = result.env
-    firing_rates = np.asarray(result.firing_rates)
-    occupancy = np.asarray(result.occupancy)
+    # L1: defensively COPY the arrays (np.array, not a no-copy np.asarray) so the
+    # NWB containers never alias the live result's memory. Mutating
+    # result.firing_rates / result.occupancy after the write must not change what
+    # was written, and vice versa. dtype is preserved.
+    firing_rates = np.array(result.firing_rates)
+    occupancy = np.array(result.occupancy)
     unit_ids = np.asarray(result.unit_ids)
     n_units = int(unit_ids.shape[0])
 
-    # Validate shapes with param-named errors.
+    occupancy_name = f"{name}_occupancy"
+    env_name = f"{name}_environment"
+
+    # --- Preflight (BEFORE any mutation): shape + reserved-name validation ----
     if firing_rates.shape != (n_units, env.n_bins):
         raise ValueError(
             f"firing_rates shape {firing_rates.shape} does not match "
@@ -519,28 +551,52 @@ def write_spatial_rates(
             f"(env.n_bins,) = ({env.n_bins},)."
         )
 
+    # L3: `unit_id` / `firing_rate` are reserved for the table's own columns; a
+    # unit_table column with either name would collide inside the DynamicTable.
+    # Raise a clear param-named error instead of a low-level hdmf error.
+    unit_table = result.unit_table
+    if unit_table is not None:
+        reserved_clash = [
+            str(c)
+            for c in unit_table.columns
+            if str(c) in (COL_UNIT_ID, COL_FIRING_RATE)
+        ]
+        if reserved_clash:
+            raise ValueError(
+                f"unit_table has reserved column name(s) {reserved_clash}: "
+                f"'{COL_UNIT_ID}' and '{COL_FIRING_RATE}' are reserved for the "
+                f"spatial-rates table's own columns. Rename these unit_table columns."
+            )
+
     analysis = _get_or_create_processing_module(
         nwbfile, DEFAULT_ANALYSIS_MODULE, "Analysis results including spatial fields"
     )
-    occupancy_name = f"{name}_occupancy"
 
-    # Overwrite handling (mirror write_place_field): drop the table AND its
-    # companion occupancy so a re-write starts clean.
-    if name in analysis.data_interfaces:
+    # FIX 2 (atomic write): resolve ALL name collisions -- the table, its
+    # companion occupancy AND the persisted environment -- BEFORE the first add.
+    # A duplicate without overwrite raises before any mutation; overwrite=True
+    # cleans every companion so a re-write starts clean.
+    existing = [n for n in (name, occupancy_name) if n in analysis.data_interfaces]
+    if env_name in nwbfile.scratch:
+        existing.append(env_name)
+    if existing:
         if not overwrite:
             raise ValueError(
-                f"Spatial rates '{name}' already exists. Use overwrite=True to replace."
+                f"Spatial rates '{name}' already exists (found: {existing}). "
+                f"Use overwrite=True to replace it and its companions."
             )
-        del analysis.data_interfaces[name]
-        if occupancy_name in analysis.data_interfaces:
-            del analysis.data_interfaces[occupancy_name]
-        logger.info("Overwriting existing spatial rates '%s'", name)
+        for obj_name in (name, occupancy_name):
+            if obj_name in analysis.data_interfaces:
+                del analysis.data_interfaces[obj_name]
+        if env_name in nwbfile.scratch:
+            del nwbfile.scratch[env_name]
+        logger.info("Overwriting existing spatial rates '%s' and its companions", name)
 
-    # Shared bin_centers (deduplicated with place fields).
+    # Shared bin_centers (deduplicated with place fields). Idempotent and shared
+    # across fields, so it is intentionally NOT rolled back on a later failure.
     _ensure_bin_centers(nwbfile, env)
 
     # Optional per-unit metadata columns.
-    unit_table = result.unit_table
     unit_table_columns: list[str] = []
     extra_columns: list[VectorData] = []
     if unit_table is not None:
@@ -586,7 +642,6 @@ def write_spatial_rates(
             *extra_columns,
         ],
     )
-    analysis.add(table)
 
     # Occupancy is shared across units: store once as (1, n_bins) TimeSeries.
     occupancy_ts = TimeSeries(
@@ -597,7 +652,39 @@ def write_spatial_rates(
         timestamps=[DEFAULT_STATIC_TIMESTAMP],
         comments=f"Occupancy for spatial rates '{name}', n_bins={env.n_bins}.",
     )
-    analysis.add(occupancy_ts)
+
+    # FIX 2 (atomic write): add the table, its companion occupancy, then persist
+    # the full environment (with connectivity + geometry). If any add after the
+    # first fails, best-effort roll back the already-added objects so the file is
+    # never left half-written, and surface a neurospatial-level ValueError.
+    added: list[tuple[str, str]] = []
+    try:
+        analysis.add(table)
+        added.append(("analysis", name))
+        analysis.add(occupancy_ts)
+        added.append(("analysis", occupancy_name))
+        # Collisions were resolved in preflight, so overwrite=True here just
+        # guarantees no late collision raise inside the try-block.
+        write_environment(nwbfile, env, name=env_name, overwrite=True)
+        added.append(("scratch", env_name))
+    except Exception as exc:
+        for namespace, obj_name in reversed(added):
+            try:
+                if namespace == "analysis":
+                    del analysis.data_interfaces[obj_name]
+                else:
+                    del nwbfile.scratch[obj_name]
+            except Exception:
+                logger.warning(
+                    "Rollback of '%s' failed while aborting spatial-rates write '%s'",
+                    obj_name,
+                    name,
+                )
+        raise ValueError(
+            f"Aborted writing spatial rates '{name}': a companion write failed "
+            f"after a partial write ({exc!r}). The already-added objects were "
+            f"rolled back, but the NWB file may still need inspection."
+        ) from exc
 
     logger.debug(
         "Wrote spatial rates '%s' with %d units and %d bins",
@@ -627,12 +714,15 @@ def read_place_field(
     name : str, default "spatial_rates"
         Name of the spatial-rates DynamicTable in ``analysis/``.
     env : Environment, optional
-        Environment to attach to the result. If provided, it is used as-is
-        (recommended -- it preserves the original bin geometry exactly). If
-        ``None``, an environment is recovered from the file: the stored
-        environment (via :func:`read_environment`) when one is present in
-        ``scratch/``, otherwise a minimal KDTree-backed environment
-        reconstructed from the shared ``bin_centers`` coordinates.
+        Environment to attach to the result. Obtained from EXACTLY two sources,
+        in order: (a) this ``env=`` argument when given (used as-is); else (b)
+        the environment :func:`write_spatial_rates` persisted under
+        ``f"{name}_environment"`` -- which round-trips with its connectivity
+        edges and geometry **intact**, so graph operations (``neighbors``,
+        ``path_between``, ...) work on the restored env. There is no
+        connectivity-less fabrication from bin centers. Whichever env is
+        obtained, its ``n_bins`` must equal the stored ``firing_rates`` bin
+        count; a mismatched or stale ``env=`` raises ``ValueError``.
 
     Returns
     -------
@@ -644,6 +734,12 @@ def read_place_field(
     KeyError
         If the ``analysis`` module, the named table, or its companion occupancy
         is missing from ``nwbfile``.
+    ValueError
+        If ``name`` points at a table not written by ``write_spatial_rates``; if
+        the companion occupancy length does not match the table's recorded
+        ``n_bins``; if ``env=`` is omitted and no persisted environment is in the
+        file; or if the obtained environment's ``n_bins`` does not match the
+        stored ``firing_rates`` (a mismatched or stale ``env=``).
     ImportError
         If pynwb is not installed.
 
@@ -671,11 +767,33 @@ def read_place_field(
         )
 
     table = analysis[name]
-    meta = json.loads(table.description)
+
+    # L2: a ``name`` pointing at a table NOT written by write_spatial_rates has a
+    # plain-text (non-JSON) description; surface a clear ValueError rather than a
+    # raw JSONDecodeError leaking from json.loads.
+    try:
+        meta = json.loads(table.description)
+    except (json.JSONDecodeError, TypeError) as exc:
+        raise ValueError(
+            f"'{name}' is not a spatial-rates table: its description is not the "
+            f"JSON metadata written by write_spatial_rates."
+        ) from exc
+    if (
+        not isinstance(meta, dict)
+        or "smoothing_method" not in meta
+        or "n_bins" not in meta
+    ):
+        raise ValueError(
+            f"'{name}' is not a spatial-rates table: its description JSON is "
+            f"missing the expected spatial-rates metadata "
+            f"('smoothing_method', 'n_bins')."
+        )
+
     smoothing_method = meta["smoothing_method"]
     bandwidth = meta["bandwidth"]
     unit_table_columns = meta.get("unit_table_columns", [])
     occupancy_name = meta.get("occupancy_name", f"{name}_occupancy")
+    meta_n_bins = int(meta["n_bins"])
 
     firing_rates = np.asarray(table[COL_FIRING_RATE][:])
     unit_ids = np.asarray(table[COL_UNIT_ID][:])
@@ -695,8 +813,47 @@ def read_place_field(
         )
     occupancy = np.asarray(analysis[occupancy_name].data[:]).reshape(-1)
 
+    # FIX 3: occupancy integrity guard at READ time. Validate the companion's
+    # length against the table's OWN recorded n_bins (not occupancy's own
+    # length), so a wrong-length companion is caught here rather than deferred to
+    # a distant spatial_information() call.
+    if occupancy.shape != (meta_n_bins,):
+        raise ValueError(
+            f"Occupancy companion '{occupancy_name}' has length "
+            f"{occupancy.shape[0]} but spatial-rates table '{name}' records "
+            f"n_bins={meta_n_bins}. The stored occupancy does not match the rates; "
+            f"the file may be corrupt or the wrong companion was written."
+        )
+
+    # FIX 1: obtain the environment from EXACTLY two sources, in order --
+    # (a) the explicit env= arg, else (b) the environment this writer persisted
+    # under f"{name}_environment" (full connectivity + geometry). No
+    # connectivity-less fabrication from bin centers.
     if env is None:
-        env = _read_or_reconstruct_env(nwbfile)
+        env_name = f"{name}_environment"
+        if env_name in nwbfile.scratch:
+            from neurospatial.io.nwb._environment import read_environment
+
+            env = read_environment(nwbfile, name=env_name)
+        else:
+            raise ValueError(
+                f"Spatial rates '{name}' has no attached environment: env= was "
+                f"not provided and no persisted environment '{env_name}' is in "
+                f"the file. Pass env= explicitly, or (re)write with "
+                f"write_spatial_rates, which now persists the environment "
+                f"automatically."
+            )
+
+    # FIX 1 geometry guard (kills the silent mismatched/stale-env failure): the
+    # obtained env must match the stored rates' bin count.
+    n_bins = int(firing_rates.shape[1])
+    if env.n_bins != n_bins:
+        raise ValueError(
+            f"Environment n_bins ({env.n_bins}) does not match the stored "
+            f"firing_rates bin count ({n_bins}) for spatial rates '{name}'. This "
+            f"usually means a mismatched or stale env= was passed; pass the "
+            f"Environment used to compute these rates."
+        )
 
     return SpatialRatesResult(
         firing_rates=firing_rates,
@@ -707,73 +864,3 @@ def read_place_field(
         unit_ids=unit_ids,
         unit_table=unit_table,
     )
-
-
-def _read_bin_centers(nwbfile: NWBFile) -> NDArray[np.float64]:
-    """Read the shared bin_centers dataset stored by ``_ensure_bin_centers``.
-
-    The dataset is stored with a leading singleton time axis
-    ``(1, n_bins, n_dims)``; the leading axis is dropped here.
-    """
-    analysis = nwbfile.processing[DEFAULT_ANALYSIS_MODULE]
-    data = np.asarray(analysis[BIN_CENTERS_NAME].data[:], dtype=np.float64)
-    if data.ndim == 3:
-        data = data[0]
-    return np.asarray(data, dtype=np.float64)
-
-
-def _read_or_reconstruct_env(nwbfile: NWBFile) -> Environment:
-    """Recover an Environment for a spatial-rates result read without ``env=``.
-
-    Prefers a full environment stored in ``scratch/`` (via
-    :func:`read_environment`); otherwise builds a minimal KDTree-backed
-    environment from the shared ``bin_centers`` coordinates.
-    """
-    from neurospatial.io.nwb._environment import (
-        DEFAULT_ENVIRONMENT_NAME,
-        read_environment,
-    )
-
-    if nwbfile.scratch is not None and DEFAULT_ENVIRONMENT_NAME in nwbfile.scratch:
-        return read_environment(nwbfile)
-
-    return _minimal_env_from_bin_centers(_read_bin_centers(nwbfile))
-
-
-def _minimal_env_from_bin_centers(
-    bin_centers: NDArray[np.float64],
-) -> Environment:
-    """Build a minimal KDTree-backed Environment from bin-center coordinates.
-
-    Reuses the reconstruction machinery from ``_environment`` (the same path
-    ``read_environment`` uses for non-grid layouts). The result has the correct
-    ``n_bins`` and ``bin_centers`` for peak/coordinate accessors; it does not
-    reconstruct the original layout engine's exact bin geometry. Pass the
-    original ``env=`` to :func:`read_place_field` when exact geometry matters.
-    """
-    from neurospatial import Environment
-    from neurospatial.io.nwb._environment import (
-        _reconstruct_graph,
-        _ReconstructedLayout,
-    )
-
-    bin_centers = np.asarray(bin_centers, dtype=np.float64)
-    n_dims = bin_centers.shape[1]
-    connectivity = _reconstruct_graph(
-        bin_centers,
-        np.empty((0, 2), dtype=np.int64),
-        np.empty((0,), dtype=np.float64),
-    )
-    dimension_ranges = [
-        (float(bin_centers[:, d].min()), float(bin_centers[:, d].max()))
-        for d in range(n_dims)
-    ]
-    layout = _ReconstructedLayout(
-        bin_centers=bin_centers,
-        connectivity=connectivity,
-        dimension_ranges=dimension_ranges,
-        layout_type="unknown",
-    )
-    env = Environment(layout=layout)  # type: ignore[arg-type]
-    env._setup_from_layout()
-    return env

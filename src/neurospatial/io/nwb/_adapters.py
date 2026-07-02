@@ -115,6 +115,37 @@ def timestamps_handle_from_series(series: Any) -> Any:
     return timestamps_from_series(series)
 
 
+def validate_handle_lengths(name_to_length: dict[str, int]) -> None:
+    """Raise ``ValueError`` if named lazy handles do not share a length.
+
+    The lazy counterpart to :func:`neurospatial._validation.validate_lengths`.
+    It takes **precomputed integer lengths** (read from a handle's ``.shape[0]``,
+    which an ``h5py.Dataset`` exposes WITHOUT materializing its values) instead
+    of arrays, so the length check on a lazy read stays lazy. The raised message
+    is byte-for-byte identical to the eager ``validate_lengths`` message, so a
+    lazy read raises exactly as the eager path does on a mismatch.
+
+    Parameters
+    ----------
+    name_to_length : dict of str to int
+        Mapping from argument name to its length (``handle.shape[0]``).
+
+    Returns
+    -------
+    None
+        Returns nothing when all lengths agree.
+
+    Raises
+    ------
+    ValueError
+        If the lengths do not all agree. The message lists each name and its
+        length.
+    """
+    if len(set(name_to_length.values())) > 1:
+        pairs = ", ".join(f"{k}={n}" for k, n in name_to_length.items())
+        raise ValueError(f"Length mismatch: {pairs}. These must agree.")
+
+
 def events_table_to_dataframe(events_table: Any, *, table_name: str) -> pd.DataFrame:
     """
     Convert an EventsTable-like object to a DataFrame and validate it.
