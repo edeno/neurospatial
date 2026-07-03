@@ -165,6 +165,9 @@ def to_pynapple(
     TypeError
         If ``values`` is ``None`` and ``times`` is not a decode result exposing
         ``.times`` and ``.map_position``.
+    ValueError
+        If ``times`` is not 1-D, ``values`` is not 1-D or 2-D, or ``times`` and
+        ``values`` differ in length.
 
     Examples
     --------
@@ -191,6 +194,31 @@ def to_pynapple(
     else:
         times = np.asarray(times, dtype=np.float64)
         values = np.asarray(values, dtype=np.float64)
+
+    # Prevalidate at this boundary so bad shapes raise an actionable
+    # neurospatial ValueError rather than a raw pynapple AssertionError from
+    # deep inside nap.Tsd / nap.TsdFrame.
+    if times.ndim != 1:
+        raise ValueError(
+            f"`times` must be 1-D, got shape {times.shape}.\n"
+            "  WHY: pynapple indexes a Tsd/TsdFrame by a 1-D time axis.\n"
+            "  HOW: pass a 1-D array of timestamps."
+        )
+    if values.ndim not in (1, 2):
+        raise ValueError(
+            f"`values` must be 1-D or 2-D, got {values.ndim}-D (shape "
+            f"{values.shape}).\n"
+            "  WHY: a Tsd holds 1-D values, a TsdFrame holds 2-D "
+            "(n_samples, n_columns) values.\n"
+            "  HOW: pass values shaped (n,) or (n, n_columns)."
+        )
+    if len(times) != len(values):
+        raise ValueError(
+            f"`times` and `values` must have the same length, got "
+            f"{len(times)} timestamps and {len(values)} value rows.\n"
+            "  WHY: each value (row) is sampled at one timestamp.\n"
+            "  HOW: pass times and values with matching first-axis length."
+        )
 
     if values.ndim == 1:
         return nap.Tsd(t=times, d=values)

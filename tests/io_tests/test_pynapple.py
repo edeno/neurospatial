@@ -185,3 +185,23 @@ def test_to_pynapple_non_result_without_values_raises_typeerror() -> None:
     # not a bare AttributeError.
     with pytest.raises(TypeError, match="decode result"):
         to_pynapple(object(), values=None)
+
+
+@pytest.mark.pynapple
+@pytest.mark.skipif(not HAS_PYNAPPLE, reason="requires the pynapple extra")
+def test_to_pynapple_bad_shapes_raise_valueerror() -> None:
+    # Invalid shapes/lengths must raise a neurospatial ValueError at the adapter
+    # boundary, not a raw pynapple AssertionError from inside Tsd/TsdFrame.
+    times = np.linspace(0.0, 1.0, 5)
+
+    # 2-D times.
+    with pytest.raises(ValueError, match=r"`times` must be 1-D"):
+        to_pynapple(times.reshape(5, 1), np.zeros(5))
+
+    # 3-D values.
+    with pytest.raises(ValueError, match=r"`values` must be 1-D or 2-D"):
+        to_pynapple(times, np.zeros((5, 2, 2)))
+
+    # Length mismatch.
+    with pytest.raises(ValueError, match=r"same length"):
+        to_pynapple(times, np.zeros(4))
