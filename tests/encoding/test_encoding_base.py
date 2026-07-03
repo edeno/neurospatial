@@ -337,6 +337,85 @@ class TestSpatialResultMixin:
         # Should still find the peak correctly, ignoring NaNs
         np.testing.assert_array_equal(peak, simple_env.bin_centers[peak_bin])
 
+    def test_peak_location_all_nan_single_no_crash(
+        self, simple_env: Environment
+    ) -> None:
+        """A fully-NaN single-unit row yields NaN coords, not a crash (I1)."""
+        from neurospatial.encoding._base import SpatialResultMixin
+
+        @dataclass
+        class MockSingleResult(SpatialResultMixin):
+            firing_rate: NDArray[np.float64]
+            occupancy: NDArray[np.float64]
+            env: Environment
+
+        n_bins = simple_env.n_bins
+        result = MockSingleResult(
+            firing_rate=np.full(n_bins, np.nan),
+            occupancy=np.ones(n_bins),
+            env=simple_env,
+        )
+        peak = result.peak_location()
+        assert peak.shape == (simple_env.bin_centers.shape[1],)
+        assert np.all(np.isnan(peak))
+
+    def test_peak_location_all_nan_batch_row_no_crash(
+        self, simple_env: Environment
+    ) -> None:
+        """An all-NaN row in a batch yields NaN coords for that unit only (I1)."""
+        from neurospatial.encoding._base import SpatialResultMixin
+
+        @dataclass
+        class MockBatchResult(SpatialResultMixin):
+            firing_rates: NDArray[np.float64]
+            occupancy: NDArray[np.float64]
+            env: Environment
+
+        n_bins = simple_env.n_bins
+        rates = np.zeros((2, n_bins))
+        rates[0, :] = np.nan  # dead unit
+        rates[1, n_bins // 2] = 10.0
+        result = MockBatchResult(
+            firing_rates=rates,
+            occupancy=np.ones(n_bins),
+            env=simple_env,
+        )
+        peaks = result.peak_location()
+        assert np.all(np.isnan(peaks[0]))
+        np.testing.assert_array_equal(peaks[1], simple_env.bin_centers[n_bins // 2])
+
+    def test_single_unit_summary_table_na_when_no_unit_id(
+        self, simple_env: Environment
+    ) -> None:
+        """summary_table() uses NA (not 0) as the index when unit_id is None (I6)."""
+        import pandas as pd
+
+        from neurospatial.encoding._base import SpatialResultMixin
+
+        @dataclass
+        class MockSingleResult(SpatialResultMixin):
+            firing_rate: NDArray[np.float64]
+            occupancy: NDArray[np.float64]
+            env: Environment
+            unit_id: int | None = None
+
+        n_bins = simple_env.n_bins
+        firing_rate = np.zeros(n_bins)
+        firing_rate[n_bins // 2] = 10.0
+        result = MockSingleResult(
+            firing_rate=firing_rate,
+            occupancy=np.ones(n_bins),
+            env=simple_env,
+        )
+        table = result.summary_table()
+        assert len(table) == 1
+        # The unit_id index value must be absence-of-identity (pd.NA / None),
+        # not a fabricated 0.
+        idx_value = table.index[0]
+        assert idx_value is pd.NA or idx_value is None or pd.isna(idx_value)
+        # And it is genuinely absent, not the fabricated integer 0.
+        assert not (isinstance(idx_value, int) and idx_value == 0)
+
     def test_peak_firing_rate_with_nan(self, simple_env: Environment) -> None:
         """peak_firing_rate() should handle NaN values correctly using nanmax."""
         from neurospatial.encoding._base import SpatialResultMixin

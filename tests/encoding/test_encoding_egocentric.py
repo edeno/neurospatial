@@ -449,7 +449,7 @@ class TestEgocentricRatesResultLen:
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """Test that len() returns number of neurons."""
+        """Test that len() returns number of units."""
         from neurospatial.encoding.egocentric import EgocentricRatesResult
 
         result = EgocentricRatesResult(
@@ -1595,16 +1595,16 @@ class TestEgocentricRatesResultPreferredDirections:
             )
 
 
-class TestEgocentricRatesResultDetectOVCs:
-    """Test detect_ovcs() method of EgocentricRatesResult."""
+class TestEgocentricRatesResultClassify:
+    """Test classify() method of EgocentricRatesResult."""
 
-    def test_detect_ovcs_returns_array(
+    def test_classify_returns_array(
         self,
         sample_env: Environment,
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """Test that detect_ovcs() returns an ndarray."""
+        """Test that classify() returns an ndarray."""
         from neurospatial.encoding.egocentric import EgocentricRatesResult
 
         result = EgocentricRatesResult(
@@ -1616,16 +1616,16 @@ class TestEgocentricRatesResultDetectOVCs:
             n_direction_bins=12,
         )
 
-        is_object_vector_cell = result.detect_ovcs()
+        is_object_vector_cell = result.classify()
         assert isinstance(is_object_vector_cell, np.ndarray)
 
-    def test_detect_ovcs_shape(
+    def test_classify_shape(
         self,
         sample_env: Environment,
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """Test that detect_ovcs() has correct shape (n_neurons,)."""
+        """Test that classify() has correct shape (n_neurons,)."""
         from neurospatial.encoding.egocentric import EgocentricRatesResult
 
         result = EgocentricRatesResult(
@@ -1637,16 +1637,16 @@ class TestEgocentricRatesResultDetectOVCs:
             n_direction_bins=12,
         )
 
-        is_object_vector_cell = result.detect_ovcs()
+        is_object_vector_cell = result.classify()
         assert is_object_vector_cell.shape == (5,)  # 5 neurons in batch_firing_rates
 
-    def test_detect_ovcs_returns_bool(
+    def test_classify_returns_bool(
         self,
         sample_env: Environment,
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """Test that detect_ovcs() returns boolean dtype."""
+        """Test that classify() returns boolean dtype."""
         from neurospatial.encoding.egocentric import EgocentricRatesResult
 
         result = EgocentricRatesResult(
@@ -1658,16 +1658,16 @@ class TestEgocentricRatesResultDetectOVCs:
             n_direction_bins=12,
         )
 
-        is_object_vector_cell = result.detect_ovcs()
+        is_object_vector_cell = result.classify()
         assert is_object_vector_cell.dtype == np.bool_
 
-    def test_detect_ovcs_accepts_min_info(
+    def test_classify_accepts_min_info(
         self,
         sample_env: Environment,
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """Test that detect_ovcs() accepts min_info parameter."""
+        """Test that classify() accepts min_info parameter."""
         from neurospatial.encoding.egocentric import EgocentricRatesResult
 
         result = EgocentricRatesResult(
@@ -1680,16 +1680,16 @@ class TestEgocentricRatesResultDetectOVCs:
         )
 
         # Should not raise
-        _ = result.detect_ovcs(min_info=0.3)
-        _ = result.detect_ovcs(min_info=0.5)
+        _ = result.classify(min_info=0.3)
+        _ = result.classify(min_info=0.5)
 
-    def test_detect_ovcs_default_threshold_is_0_3(
+    def test_classify_default_threshold_is_0_3(
         self,
         sample_env: Environment,
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """Test that detect_ovcs() has default min_info=0.3."""
+        """Test that classify() has default min_info=0.3."""
         from neurospatial.encoding.egocentric import EgocentricRatesResult
 
         result = EgocentricRatesResult(
@@ -1701,17 +1701,17 @@ class TestEgocentricRatesResultDetectOVCs:
             n_direction_bins=12,
         )
 
-        default_result = result.detect_ovcs()
-        explicit_result = result.detect_ovcs(min_info=0.3)
+        default_result = result.classify()
+        explicit_result = result.classify(min_info=0.3)
         np.testing.assert_array_equal(default_result, explicit_result)
 
-    def test_detect_ovcs_matches_single_neuron(
+    def test_classify_matches_single_neuron(
         self,
         sample_env: Environment,
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """Test that detect_ovcs() matches single-neuron is_object_vector_cell() method."""
+        """Test that classify() matches single-neuron is_object_vector_cell() method."""
         from neurospatial.encoding.egocentric import EgocentricRatesResult
 
         result = EgocentricRatesResult(
@@ -1723,7 +1723,7 @@ class TestEgocentricRatesResultDetectOVCs:
             n_direction_bins=12,
         )
 
-        batch_is_ovc = result.detect_ovcs()
+        batch_is_ovc = result.classify()
         for i, single in enumerate(result):
             assert batch_is_ovc[i] == single.is_object_vector_cell()
 
@@ -1888,20 +1888,20 @@ class TestEgocentricRatesResultPeakFiringRates:
 
 
 # =============================================================================
-# EgocentricRatesResult.to_dataframe() Tests (Task 5.5)
+# EgocentricRatesResult.summary_table() Tests (Task 5.5)
 # =============================================================================
 
 
-class TestEgocentricRatesResultToDataframe:
-    """Test EgocentricRatesResult.to_dataframe() method."""
+class TestEgocentricRatesResultSummaryTable:
+    """Test EgocentricRatesResult.summary_table() method."""
 
-    def test_to_dataframe_returns_dataframe(
+    def test_summary_table_returns_dataframe(
         self,
         sample_env: Environment,
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() should return a pandas DataFrame."""
+        """summary_table() should return a pandas DataFrame."""
         from neurospatial.encoding.egocentric import EgocentricRatesResult
 
         result = EgocentricRatesResult(
@@ -1915,16 +1915,16 @@ class TestEgocentricRatesResultToDataframe:
 
         import pandas as pd
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert isinstance(df, pd.DataFrame)
 
-    def test_to_dataframe_row_count(
+    def test_summary_table_row_count(
         self,
         sample_env: Environment,
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() should have one row per neuron."""
+        """summary_table() should have one row per unit."""
         from neurospatial.encoding.egocentric import EgocentricRatesResult
 
         result = EgocentricRatesResult(
@@ -1936,16 +1936,16 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert len(df) == 5  # batch_firing_rates has 5 neurons
 
-    def test_to_dataframe_has_neuron_id_column(
+    def test_summary_table_has_unit_id_column(
         self,
         sample_env: Environment,
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() should have neuron_id column."""
+        """summary_table() should be indexed by unit_id."""
         from neurospatial.encoding.egocentric import EgocentricRatesResult
 
         result = EgocentricRatesResult(
@@ -1957,16 +1957,16 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
-        assert "neuron_id" in df.columns
+        df = result.summary_table()
+        assert df.index.name == "unit_id"
 
-    def test_to_dataframe_has_preferred_distance_column(
+    def test_summary_table_has_preferred_distance_column(
         self,
         sample_env: Environment,
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() should have preferred_distance column."""
+        """summary_table() should have preferred_distance column."""
         from neurospatial.encoding.egocentric import EgocentricRatesResult
 
         result = EgocentricRatesResult(
@@ -1978,16 +1978,16 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "preferred_distance" in df.columns
 
-    def test_to_dataframe_has_preferred_direction_column(
+    def test_summary_table_has_preferred_direction_column(
         self,
         sample_env: Environment,
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() should have preferred_direction column."""
+        """summary_table() should have preferred_direction column."""
         from neurospatial.encoding.egocentric import EgocentricRatesResult
 
         result = EgocentricRatesResult(
@@ -1999,16 +1999,16 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "preferred_direction" in df.columns
 
-    def test_to_dataframe_has_preferred_direction_deg_column(
+    def test_summary_table_has_preferred_direction_deg_column(
         self,
         sample_env: Environment,
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() should have preferred_direction_deg column."""
+        """summary_table() should have preferred_direction_deg column."""
         from neurospatial.encoding.egocentric import EgocentricRatesResult
 
         result = EgocentricRatesResult(
@@ -2020,16 +2020,16 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "preferred_direction_deg" in df.columns
 
-    def test_to_dataframe_has_peak_rate_column(
+    def test_summary_table_has_peak_rate_column(
         self,
         sample_env: Environment,
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() should have peak_rate column."""
+        """summary_table() should have peak_rate column."""
         from neurospatial.encoding.egocentric import EgocentricRatesResult
 
         result = EgocentricRatesResult(
@@ -2041,16 +2041,16 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "peak_rate" in df.columns
 
-    def test_to_dataframe_has_is_ovc_column(
+    def test_summary_table_has_is_ovc_column(
         self,
         sample_env: Environment,
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() should have is_object_vector_cell column."""
+        """summary_table() should have is_object_vector_cell column."""
         from neurospatial.encoding.egocentric import EgocentricRatesResult
 
         result = EgocentricRatesResult(
@@ -2062,16 +2062,16 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "is_object_vector_cell" in df.columns
 
-    def test_to_dataframe_default_neuron_ids(
+    def test_summary_table_default_unit_ids(
         self,
         sample_env: Environment,
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() should use integer indices as default neuron_ids."""
+        """summary_table() should use integer indices as default unit_ids."""
         from neurospatial.encoding.egocentric import EgocentricRatesResult
 
         result = EgocentricRatesResult(
@@ -2083,16 +2083,16 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
-        assert list(df["neuron_id"]) == [0, 1, 2, 3, 4]
+        df = result.summary_table()
+        assert list(df.index) == [0, 1, 2, 3, 4]
 
-    def test_to_dataframe_custom_neuron_ids(
+    def test_summary_table_custom_unit_ids(
         self,
         sample_env: Environment,
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() should accept custom neuron_ids."""
+        """summary_table() should accept custom unit_ids."""
         from neurospatial.encoding.egocentric import EgocentricRatesResult
 
         result = EgocentricRatesResult(
@@ -2105,16 +2105,16 @@ class TestEgocentricRatesResultToDataframe:
         )
 
         custom_ids = ["unit_a", "unit_b", "unit_c", "unit_d", "unit_e"]
-        df = result.to_dataframe(neuron_ids=custom_ids)
-        assert list(df["neuron_id"]) == custom_ids
+        df = result.summary_table(unit_ids=custom_ids)
+        assert list(df.index) == custom_ids
 
-    def test_to_dataframe_neuron_ids_length_mismatch_raises(
+    def test_summary_table_unit_ids_length_mismatch_raises(
         self,
         sample_env: Environment,
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() should raise ValueError if neuron_ids length is wrong."""
+        """summary_table() should raise ValueError for wrong unit_ids length."""
         from neurospatial.encoding.egocentric import EgocentricRatesResult
 
         result = EgocentricRatesResult(
@@ -2126,16 +2126,16 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        with pytest.raises(ValueError, match=r"neuron_ids has .* elements"):
-            result.to_dataframe(neuron_ids=["a", "b"])  # Only 2 but need 5
+        with pytest.raises(ValueError, match=r"unit_ids has .* elements"):
+            result.summary_table(unit_ids=["a", "b"])  # Only 2 but need 5
 
-    def test_to_dataframe_preferred_distance_correctness(
+    def test_summary_table_preferred_distance_correctness(
         self,
         sample_env: Environment,
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() preferred_distance should match preferred_distances()."""
+        """summary_table() preferred_distance should match preferred_distances()."""
         from neurospatial.encoding.egocentric import EgocentricRatesResult
 
         result = EgocentricRatesResult(
@@ -2147,17 +2147,17 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         expected = result.preferred_distances()
         np.testing.assert_array_almost_equal(df["preferred_distance"].values, expected)
 
-    def test_to_dataframe_preferred_direction_correctness(
+    def test_summary_table_preferred_direction_correctness(
         self,
         sample_env: Environment,
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() preferred_direction should match preferred_directions()."""
+        """summary_table() preferred_direction should match preferred_directions()."""
         from neurospatial.encoding.egocentric import EgocentricRatesResult
 
         result = EgocentricRatesResult(
@@ -2169,17 +2169,17 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         expected = result.preferred_directions()
         np.testing.assert_array_almost_equal(df["preferred_direction"].values, expected)
 
-    def test_to_dataframe_preferred_direction_deg_correctness(
+    def test_summary_table_preferred_direction_deg_correctness(
         self,
         sample_env: Environment,
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() preferred_direction_deg should be degrees of preferred_direction."""
+        """summary_table() preferred_direction_deg should be degrees of preferred_direction."""
         from neurospatial.encoding.egocentric import EgocentricRatesResult
 
         result = EgocentricRatesResult(
@@ -2191,19 +2191,19 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         expected = np.degrees(result.preferred_directions())
         np.testing.assert_array_almost_equal(
             df["preferred_direction_deg"].values, expected
         )
 
-    def test_to_dataframe_peak_rate_correctness(
+    def test_summary_table_peak_rate_correctness(
         self,
         sample_env: Environment,
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() peak_rate should match peak_firing_rate()."""
+        """summary_table() peak_rate should match peak_firing_rate()."""
         from neurospatial.encoding.egocentric import EgocentricRatesResult
 
         result = EgocentricRatesResult(
@@ -2215,17 +2215,17 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         expected = result.peak_firing_rate()
         np.testing.assert_array_almost_equal(df["peak_rate"].values, expected)
 
-    def test_to_dataframe_is_ovc_correctness(
+    def test_summary_table_is_ovc_correctness(
         self,
         sample_env: Environment,
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() is_object_vector_cell should match detect_ovcs() with default threshold."""
+        """summary_table() is_object_vector_cell should match classify()."""
         from neurospatial.encoding.egocentric import EgocentricRatesResult
 
         result = EgocentricRatesResult(
@@ -2237,16 +2237,16 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
-        expected = result.detect_ovcs()  # Uses default min_info=0.3
+        df = result.summary_table()
+        expected = result.classify()  # Uses default min_info=0.3
         np.testing.assert_array_equal(df["is_object_vector_cell"].values, expected)
 
-    def test_to_dataframe_empty_result(
+    def test_summary_table_empty_result(
         self,
         sample_env: Environment,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() should handle empty result (0 neurons) gracefully."""
+        """summary_table() should handle empty result (0 neurons) gracefully."""
         from neurospatial.encoding.egocentric import EgocentricRatesResult
 
         empty_rates = np.empty((0, sample_env.n_bins))
@@ -2260,23 +2260,23 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert len(df) == 0
         # Verify all columns exist even for empty DataFrame
-        assert "neuron_id" in df.columns
+        assert df.index.name == "unit_id"
         assert "preferred_distance" in df.columns
         assert "preferred_direction" in df.columns
         assert "preferred_direction_deg" in df.columns
         assert "peak_rate" in df.columns
         assert "is_object_vector_cell" in df.columns
 
-    def test_to_dataframe_single_neuron(
+    def test_summary_table_single_neuron(
         self,
         sample_env: Environment,
         single_neuron_firing_rate: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() should work correctly for a single neuron."""
+        """summary_table() should work correctly for a single neuron."""
         from neurospatial.encoding.egocentric import EgocentricRatesResult
 
         # Wrap single neuron as (1, n_bins) array
@@ -2291,9 +2291,9 @@ class TestEgocentricRatesResultToDataframe:
             n_direction_bins=12,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert len(df) == 1
-        assert df["neuron_id"].iloc[0] == 0
+        assert df.index[0] == 0
 
 
 # =============================================================================

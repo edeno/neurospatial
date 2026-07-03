@@ -64,3 +64,14 @@ def test_from_graph_requires_bin_size():
 
     with pytest.raises(TypeError, match=r"missing.*required.*(bin_size|edge_spacing)"):
         Environment.from_graph(graph, edge_order)
+
+
+def test_bare_environment_raises_beginner_grade_error():
+    """Bare ``Environment()`` must raise ValueError with factory guidance.
+
+    The message must mention ``from_samples`` so beginners know the correct
+    approach immediately from the error text.
+    """
+    with pytest.raises(ValueError) as exc_info:
+        Environment()
+    assert "from_samples" in str(exc_info.value)

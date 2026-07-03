@@ -9,6 +9,7 @@ computations.
 Submodules
 ----------
 trajectory : Step lengths, turn angles, MSD, home range, curvature
+epochs : Restrict times / arrays / spike trains to time intervals (epochs)
 segmentation : Laps, trials, region crossings, runs
 navigation : Path efficiency, goal-directed metrics, path progress
 decisions : Decision analysis, choice points, Voronoi boundaries
@@ -29,6 +30,11 @@ from neurospatial.behavior.decisions import (
     geodesic_voronoi_labels,
     pre_decision_heading_stats,
     pre_decision_speed_stats,
+)
+from neurospatial.behavior.epochs import (
+    in_epochs,
+    restrict,
+    restrict_spike_trains,
 )
 from neurospatial.behavior.navigation import (
     GoalDirectedMetrics,
@@ -109,6 +115,10 @@ __all__ = [  # noqa: RUF022
     "geodesic_voronoi_labels",
     "pre_decision_heading_stats",
     "pre_decision_speed_stats",
+    # epochs module
+    "in_epochs",
+    "restrict",
+    "restrict_spike_trains",
     # vte module
     "VTESessionResult",
     "VTETrialResult",

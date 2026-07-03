@@ -525,9 +525,17 @@ class EnvironmentQueries:
         if isinstance(targets, str):
             region_name = targets
             if region_name not in self.regions:
-                raise KeyError(
-                    f"Region '{region_name}' not found in environment regions. "
-                    f"Available regions: {list(self.regions.keys())}"
+                # Local import: neurospatial.__init__ imports _exceptions before
+                # environment. _exceptions imports environment.decorators, which
+                # pulls in environment.core, which imports this module — re-
+                # entering while _exceptions is still initializing. A top-level
+                # `from neurospatial._exceptions import RegionNotFoundError` here
+                # would therefore be a partially-initialized-module circular
+                # import.
+                from neurospatial._exceptions import RegionNotFoundError
+
+                raise RegionNotFoundError(
+                    region_name, available=list(self.regions.keys())
                 )
 
             # Get bins in region via membership

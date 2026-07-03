@@ -36,6 +36,8 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy import sparse
 
+from neurospatial.decoding._binning import validate_dt
+
 
 def log_poisson_likelihood(
     spike_counts: NDArray[np.int64],
@@ -80,7 +82,8 @@ def log_poisson_likelihood(
     Raises
     ------
     ValueError
-        If ``dt`` or ``min_rate`` is not positive.
+        If ``dt`` is not a finite number > 0 (non-numeric, ``bool``, ``NaN``,
+        ``Inf``, or ``<= 0`` all raise), or if ``min_rate`` is not positive.
         If ``spike_counts`` is not 2-D ``(n_time_bins, n_neurons)`` or
         ``encoding_models`` is not 2-D ``(n_neurons, n_bins)``.
         If the neuron axis of ``spike_counts`` (axis 1) does not match the
@@ -115,12 +118,11 @@ def log_poisson_likelihood(
     poisson_likelihood : Thin wrapper returning probability-space likelihoods
     normalize_to_posterior : Convert log-likelihood to posterior
     """
-    # Validate dt and min_rate parameters
-    if dt <= 0:
-        raise ValueError(
-            f"dt must be positive, got {dt}. "
-            f"Time bin width should be in seconds (typical values: 0.001-0.1s)."
-        )
+    # Validate dt and min_rate parameters. Route dt through the shared
+    # validate_dt so the public likelihood surface reports dt errors
+    # identically to the decode entry points (rejecting non-numeric, bool,
+    # and non-finite dt), not just dt <= 0.
+    dt = validate_dt(dt)
     if min_rate <= 0:
         raise ValueError(
             f"min_rate must be positive, got {min_rate}. "
@@ -260,9 +262,10 @@ def poisson_likelihood(
     Raises
     ------
     ValueError
-        Propagated from :func:`log_poisson_likelihood`: if ``dt`` or
-        ``min_rate`` is not positive, if ``spike_counts`` is not 2-D
-        ``(n_time_bins, n_neurons)``, if ``encoding_models`` is not 2-D, or
+        Propagated from :func:`log_poisson_likelihood`: if ``dt`` is not a
+        finite number > 0 (non-numeric, ``bool``, ``NaN``, ``Inf``, or
+        ``<= 0``), if ``min_rate`` is not positive, if ``spike_counts`` is not
+        2-D ``(n_time_bins, n_neurons)``, if ``encoding_models`` is not 2-D, or
         if their neuron axes disagree.
 
     Notes

@@ -2,6 +2,12 @@
 
 **Committed**: 2025-12-05
 
+> **Superseded for current API vocabulary.** This historical plan predates the
+> v0.6 naming contract. Do not treat names such as `neuron_id`,
+> `to_dataframe(neuron_ids=...)`, `detect_hd_cells`, `detect_view_cells`, or
+> `peak_view_x` / `peak_view_y` as current guidance. Use
+> `.claude/docs/plans/ux-v0.6/api-contract.md` for the active API contract.
+
 ## Overview
 
 Refactor the `neurospatial.encoding` module to provide a consistent, user-friendly API optimized for batch processing of neural populations.

@@ -98,9 +98,19 @@ class EnvironmentFields:
         For mode='density', the Laplacian is volume-corrected to properly
         handle bins of varying sizes.
 
-        Performance warning: Kernel computation has O(n³) complexity where
-        n is the number of bins. For large environments (>1000 bins),
-        computation may be slow. Consider caching or using smaller bandwidths.
+        **Memory cost is O(n²).** The diffusion heat kernel ``exp(-t L)`` of a
+        connected graph is *dense by construction* (every entry > 0), so the
+        returned matrix occupies ``n_bins**2 * 8`` bytes of float64 memory —
+        for example ``20000**2 * 8 / 1e9 ≈ 3.2 GB`` at 20,000 bins. This peak
+        cannot be avoided while using the dense diffusion kernel. There is no
+        hard limit: a ``UserWarning`` estimating the GB is issued above 3,000
+        bins and the kernel is then built regardless of size. The matrix
+        exponential is also O(n³) in time, so large environments are slow as
+        well as memory-hungry.
+
+        For large environments, prefer ``smoothing_method="binned"`` in the
+        higher-level encoding functions, or reduce the number of bins by
+        increasing ``bin_size`` when constructing the environment.
 
         Examples
         --------

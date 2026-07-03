@@ -26,23 +26,76 @@ def _delta_posterior(env, bin_indices):
 class TestToXarrayDims:
     """to_xarray() dims, coords, and values."""
 
-    def test_decoding_result_to_xarray_dims(self, small_2d_env):
-        """Returns dims ('time','bin'); time coord matches times; values match."""
-        pytest.importorskip("xarray")
+    def test_decoding_result_to_xarray_is_dataset(self, small_2d_env):
+        """Returns xr.Dataset; dims ('time','bin'); posterior matches."""
+        xr = pytest.importorskip("xarray")
         n_time = 7
         posterior = np.random.default_rng(0).random((n_time, small_2d_env.n_bins))
         posterior /= posterior.sum(axis=1, keepdims=True)
         times = np.linspace(0.0, 3.0, n_time)
         result = DecodingResult(posterior=posterior, env=small_2d_env, times=times)
 
-        da = result.to_xarray()
+        ds = result.to_xarray()
 
-        assert da.dims == ("time", "bin")
-        np.testing.assert_array_equal(da.coords["time"].values, times)
+        assert isinstance(ds, xr.Dataset)
+        assert ds["posterior"].dims == ("time", "bin")
+        # No unit_id axis on a decode result.
+        assert "unit_id" not in ds.dims
+        np.testing.assert_array_equal(ds.coords["time"].values, times)
         np.testing.assert_array_equal(
-            da.coords["bin"].values, np.arange(small_2d_env.n_bins)
+            ds.coords["bin"].values, np.arange(small_2d_env.n_bins)
         )
-        np.testing.assert_array_equal(da.values, posterior)
+        np.testing.assert_array_equal(ds["posterior"].values, posterior)
+
+    def test_decode_bin_center_coords(self, small_2d_env):
+        """bin_center_x / bin_center_y are non-index coords on bin."""
+        pytest.importorskip("xarray")
+        n_time = 4
+        posterior = np.ones((n_time, small_2d_env.n_bins)) / small_2d_env.n_bins
+        result = DecodingResult(posterior=posterior, env=small_2d_env)
+
+        ds = result.to_xarray()
+
+        assert "bin_center_x" in ds.coords
+        assert "bin_center_y" in ds.coords
+        assert ds.coords["bin_center_x"].dims == ("bin",)
+        np.testing.assert_array_equal(
+            ds.coords["bin_center_x"].values, small_2d_env.bin_centers[:, 0]
+        )
+
+    def test_decode_attrs(self, small_2d_env):
+        """attrs carry env fingerprint and software_version.
+
+        ``small_2d_env`` has ``units=None``, so the ``units`` attr is omitted
+        entirely (never stored as the literal string ``"None"``).
+        """
+        pytest.importorskip("xarray")
+        n_time = 3
+        posterior = np.ones((n_time, small_2d_env.n_bins)) / small_2d_env.n_bins
+        result = DecodingResult(posterior=posterior, env=small_2d_env)
+
+        ds = result.to_xarray()
+
+        # units unset on this env -> attr omitted, NOT the string "None".
+        assert ds.attrs.get("units", "") != "None"
+        assert "units" not in ds.attrs
+        assert "Environment" in ds.attrs["env"]
+        assert ds.attrs["software_version"]
+
+    def test_decode_attrs_units_set(self, small_2d_env):
+        """When env.units is set, it is carried through into ds.attrs."""
+        pytest.importorskip("xarray")
+        import copy
+
+        env = copy.copy(small_2d_env)
+        env.units = "cm"
+        n_time = 3
+        posterior = np.ones((n_time, env.n_bins)) / env.n_bins
+        result = DecodingResult(posterior=posterior, env=env)
+
+        ds = result.to_xarray()
+
+        assert ds.attrs["units"] == "cm"
 
     def test_to_xarray_times_none(self, small_2d_env):
         """times=None -> time coord is integer index np.arange(n_time)."""
@@ -52,14 +105,14 @@ class TestToXarrayDims:
         result = DecodingResult(posterior=posterior, env=small_2d_env)
         assert result.times is None
 
-        da = result.to_xarray()
+        ds = result.to_xarray()
 
-        assert da.dims == ("time", "bin")
-        np.testing.assert_array_equal(da.coords["time"].values, np.arange(n_time))
+        assert ds["posterior"].dims == ("time", "bin")
+        np.testing.assert_array_equal(ds.coords["time"].values, np.arange(n_time))
         np.testing.assert_array_equal(
-            da.coords["bin"].values, np.arange(small_2d_env.n_bins)
+            ds.coords["bin"].values, np.arange(small_2d_env.n_bins)
         )
-        np.testing.assert_array_equal(da.values, posterior)
+        np.testing.assert_array_equal(ds["posterior"].values, posterior)
 
     def test_to_xarray_without_xarray_raises(self, small_2d_env, monkeypatch):
         """A failing xarray import raises a clear, actionable ImportError."""
@@ -76,6 +129,34 @@ class TestToXarrayDims:
         monkeypatch.setattr(builtins, "__import__", _fake_import)
 
         with pytest.raises(ImportError, match="neurospatial\\[xarray\\]"):
+            result.to_xarray()
+
+    def test_bad_times_length_raises_neurospatial_error(self, small_2d_env):
+        """Direct DecodingResult construction validates time-coordinate length."""
+        pytest.importorskip("xarray")
+
+        posterior = np.ones((3, small_2d_env.n_bins)) / small_2d_env.n_bins
+        result = DecodingResult(
+            posterior=posterior,
+            env=small_2d_env,
+            times=np.asarray([0.0, 1.0]),
+        )
+
+        with pytest.raises(ValueError, match="times length mismatch"):
+            result.to_xarray()
+
+    def test_non_1d_times_raise_neurospatial_error(self, small_2d_env):
+        """Direct DecodingResult construction validates time-coordinate shape."""
+        pytest.importorskip("xarray")
+
+        posterior = np.ones((3, small_2d_env.n_bins)) / small_2d_env.n_bins
+        result = DecodingResult(
+            posterior=posterior,
+            env=small_2d_env,
+            times=np.asarray([[0.0], [1.0], [2.0]]),
+        )
+
+        with pytest.raises(ValueError, match="times must be 1-D"):
             result.to_xarray()
 
 

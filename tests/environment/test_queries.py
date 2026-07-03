@@ -533,6 +533,48 @@ class TestDistanceTo:
         with pytest.raises(ValueError, match="Target bin indices must be in range"):
             small_2d_env.distance_to(invalid_target, metric="geodesic")
 
+    def test_distance_to_missing_region_raises_region_not_found_error(self):
+        """distance_to raises RegionNotFoundError for an unknown region name.
+
+        The error must:
+        1. Be an instance of RegionNotFoundError (the specific type).
+        2. Still be caught by ``except KeyError`` (back-compat via subclassing).
+        3. Include the missing region name in the message.
+        4. List available regions in the message when regions exist.
+        """
+        from shapely.geometry import box
+
+        from neurospatial import Environment
+        from neurospatial._exceptions import RegionNotFoundError
+        from neurospatial.regions import Regions
+
+        # Build a small env with a named region so available-regions shows up.
+        positions = np.array([[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])
+        env = Environment.from_samples(positions, bin_size=1.0)
+        regions = Regions()
+        polygon = box(0.0, 0.0, 2.0, 2.0)
+        regions.add("goal", polygon=polygon)
+        env.regions = regions
+
+        # 1. Raises the specific RegionNotFoundError subtype.
+        with pytest.raises(RegionNotFoundError, match="nonexistent_region"):
+            env.distance_to("nonexistent_region")
+
+        # 2. Back-compat: bare KeyError still catches it.
+        with pytest.raises(KeyError):
+            env.distance_to("nonexistent_region")
+
+        # 3 & 4. Message contains region name and "Available regions".
+        with pytest.raises(RegionNotFoundError) as exc_info:
+            env.distance_to("my_missing_region")
+
+        # KeyError stores args as (msg,); extract the string.
+        msg = exc_info.value.args[0]
+        assert "my_missing_region" in msg
+        assert "Available regions" in msg
+        # Also check that the existing region name is listed.
+        assert "goal" in msg
+
 
 class TestReachableFrom:
     """Tests for Environment.reachable_from() method."""

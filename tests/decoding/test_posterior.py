@@ -871,6 +871,417 @@ class TestDecodePosition:
 
 
 # =============================================================================
+# Hybrid time_chunk: None = byte-exact full path; int = blockwise likelihood
+# =============================================================================
+
+
+class TestDecodePositionTimeChunkHybrid:
+    """``decode_position`` hybrid ``time_chunk`` semantics.
+
+    ``time_chunk=None`` (default) keeps the full-matmul path byte-for-byte
+    unchanged. An explicit ``time_chunk=N`` computes the Poisson
+    log-likelihood blockwise into the preallocated posterior; this is
+    tolerance-equal to the full path (~1e-15; MAP/argmax identical; rows sum
+    to 1) due to BLAS shape-dependence.
+    """
+
+    @staticmethod
+    def _full_path_reference(env, spike_counts, encoding_models, dt, *, prior=None):
+        """Recompute the full-matmul posterior independently of decode_position.
+
+        Mirrors the ``time_chunk=None`` code path exactly: full Poisson
+        log-likelihood over the whole window -> normalize_to_posterior with
+        ``time_chunk=None``.
+        """
+        from neurospatial.decoding.likelihood import log_poisson_likelihood
+        from neurospatial.decoding.posterior import normalize_to_posterior
+
+        log_ll = log_poisson_likelihood(spike_counts, encoding_models, dt=dt)
+        return normalize_to_posterior(log_ll, prior=prior, time_chunk=None)
+
+    def test_default_is_byte_exact_full_path(
+        self,
+        simple_env: Environment,
+        simple_spike_counts: np.ndarray,
+        simple_encoding_models: np.ndarray,
+    ) -> None:
+        """time_chunk=None (and the plain default) == the full-matmul reference.
+
+        Guards that the default path was NOT routed through blockwise: it must
+        reproduce the independently-computed full-matmul posterior
+        byte-for-byte (atol=0).
+        """
+        from neurospatial.decoding.posterior import decode_position
+
+        reference = self._full_path_reference(
+            simple_env, simple_spike_counts, simple_encoding_models, 0.025
+        )
+
+        result_default = decode_position(
+            simple_env, simple_spike_counts, simple_encoding_models, dt=0.025
+        )
+        result_none = decode_position(
+            simple_env,
+            simple_spike_counts,
+            simple_encoding_models,
+            dt=0.025,
+            time_chunk=None,
+        )
+
+        assert_array_equal(np.asarray(result_default.posterior), reference)
+        assert_array_equal(np.asarray(result_none.posterior), reference)
+
+    @pytest.mark.parametrize("k", [1, 2, 3])
+    def test_small_env_time_chunk_parity(
+        self,
+        simple_env: Environment,
+        simple_spike_counts: np.ndarray,
+        simple_encoding_models: np.ndarray,
+        k: int,
+    ) -> None:
+        """time_chunk=k matches the full path to tolerance with identical MAP."""
+        from neurospatial.decoding.posterior import decode_position
+
+        full = decode_position(
+            simple_env, simple_spike_counts, simple_encoding_models, dt=0.025
+        )
+        chunked = decode_position(
+            simple_env,
+            simple_spike_counts,
+            simple_encoding_models,
+            dt=0.025,
+            time_chunk=k,
+        )
+        post_full = np.asarray(full.posterior)
+        post_chunked = np.asarray(chunked.posterior)
+
+        assert np.allclose(post_chunked, post_full, rtol=0, atol=1e-12)
+        assert_array_equal(chunked.map_estimate, full.map_estimate)
+        assert_allclose(post_chunked.sum(axis=1), 1.0, atol=1e-9)
+
+    @staticmethod
+    def _bigger_inputs(env, *, n_time=40, n_neurons=8, seed=3):
+        rng = np.random.default_rng(seed)
+        spike_counts = rng.poisson(1.5, (n_time, n_neurons)).astype(np.int64)
+        encoding_models = rng.uniform(0.5, 12.0, (n_neurons, env.n_bins))
+        return spike_counts, encoding_models
+
+    @pytest.mark.parametrize("k", [1, 7, 64, 40, 45])
+    def test_time_chunk_parity_stationary_prior(
+        self, medium_2d_env: Environment, k: int
+    ) -> None:
+        """Parity for k in {1,7,64,n_time,n_time+5} with a 1-D stationary prior.
+
+        Covers non-dividing block sizes (7, 45) and a stationary prior reused
+        across blocks.
+        """
+        from neurospatial.decoding.posterior import decode_position
+
+        env = medium_2d_env
+        n_time = 40
+        spike_counts, encoding_models = self._bigger_inputs(env, n_time=n_time)
+        rng = np.random.default_rng(11)
+        prior = rng.uniform(0.1, 1.0, env.n_bins)
+
+        full = decode_position(
+            env, spike_counts, encoding_models, dt=0.025, prior=prior
+        )
+        chunked = decode_position(
+            env, spike_counts, encoding_models, dt=0.025, prior=prior, time_chunk=k
+        )
+        post_full = np.asarray(full.posterior)
+        post_chunked = np.asarray(chunked.posterior)
+
+        assert np.allclose(post_chunked, post_full, rtol=0, atol=1e-12)
+        assert_array_equal(chunked.map_estimate, full.map_estimate)
+        assert_allclose(post_chunked.sum(axis=1), 1.0, atol=1e-9)
+
+    @pytest.mark.parametrize("k", [1, 7, 64, 40, 45])
+    def test_time_chunk_parity_time_varying_prior(
+        self, medium_2d_env: Environment, k: int
+    ) -> None:
+        """Parity with a 2-D time-varying prior sliced per block."""
+        from neurospatial.decoding.posterior import decode_position
+
+        env = medium_2d_env
+        n_time = 40
+        spike_counts, encoding_models = self._bigger_inputs(env, n_time=n_time)
+        rng = np.random.default_rng(12)
+        prior = rng.uniform(0.1, 1.0, (n_time, env.n_bins))
+
+        full = decode_position(
+            env, spike_counts, encoding_models, dt=0.025, prior=prior
+        )
+        chunked = decode_position(
+            env, spike_counts, encoding_models, dt=0.025, prior=prior, time_chunk=k
+        )
+        post_full = np.asarray(full.posterior)
+        post_chunked = np.asarray(chunked.posterior)
+
+        assert np.allclose(post_chunked, post_full, rtol=0, atol=1e-12)
+        assert_array_equal(chunked.map_estimate, full.map_estimate)
+        assert_allclose(post_chunked.sum(axis=1), 1.0, atol=1e-9)
+
+    @pytest.mark.parametrize("k", [1, 7, 64, 40, 45])
+    def test_time_chunk_parity_nan_safe_encoding(
+        self, medium_2d_env: Environment, k: int
+    ) -> None:
+        """Parity for the NaN-safe encoding-model path (some NaN bins).
+
+        validate=False so NaN encoding bins are absorbed as zero-rate; the
+        block loop must route through the NaN-safe likelihood identically.
+        """
+        from neurospatial.decoding.posterior import decode_position
+
+        env = medium_2d_env
+        n_time = 40
+        spike_counts, encoding_models = self._bigger_inputs(env, n_time=n_time)
+        # Inject NaN into a few (neuron, bin) entries, leaving every bin finite
+        # for at least one neuron (so the no-finite-bins guard does not fire).
+        encoding_models = encoding_models.copy()
+        encoding_models[0, 1] = np.nan
+        encoding_models[2, 3] = np.nan
+        encoding_models[1, 5] = np.nan
+
+        with pytest.warns(UserWarning, match="non-finite"):
+            full = decode_position(
+                env,
+                spike_counts,
+                encoding_models,
+                dt=0.025,
+                validate=False,
+            )
+        with pytest.warns(UserWarning, match="non-finite"):
+            chunked = decode_position(
+                env,
+                spike_counts,
+                encoding_models,
+                dt=0.025,
+                validate=False,
+                time_chunk=k,
+            )
+        post_full = np.asarray(full.posterior)
+        post_chunked = np.asarray(chunked.posterior)
+
+        assert np.allclose(post_chunked, post_full, rtol=0, atol=1e-12, equal_nan=True)
+        assert_array_equal(chunked.map_estimate, full.map_estimate)
+        assert_allclose(post_chunked.sum(axis=1), 1.0, atol=1e-9)
+
+    @pytest.mark.parametrize("k", [1, 7, 64, 40, 45])
+    def test_time_chunk_parity_float32(
+        self, medium_2d_env: Environment, k: int
+    ) -> None:
+        """Parity at dtype=float32 (looser atol) with identical MAP."""
+        from neurospatial.decoding.posterior import decode_position
+
+        env = medium_2d_env
+        n_time = 40
+        spike_counts, encoding_models = self._bigger_inputs(env, n_time=n_time)
+
+        full = decode_position(
+            env, spike_counts, encoding_models, dt=0.025, dtype=np.float32
+        )
+        chunked = decode_position(
+            env,
+            spike_counts,
+            encoding_models,
+            dt=0.025,
+            dtype=np.float32,
+            time_chunk=k,
+        )
+        post_full = np.asarray(full.posterior)
+        post_chunked = np.asarray(chunked.posterior)
+
+        assert post_chunked.dtype == np.float32
+        assert np.allclose(post_chunked, post_full, rtol=0, atol=1e-5)
+        assert_array_equal(chunked.map_estimate, full.map_estimate)
+        assert_allclose(post_chunked.sum(axis=1), 1.0, atol=1e-5)
+
+    @pytest.mark.parametrize("validate", [True, False])
+    def test_time_chunk_parity_validate_flag(
+        self, medium_2d_env: Environment, validate: bool
+    ) -> None:
+        """Parity holds with validate=True and validate=False, non-dividing k."""
+        from neurospatial.decoding.posterior import decode_position
+
+        env = medium_2d_env
+        n_time = 40
+        spike_counts, encoding_models = self._bigger_inputs(env, n_time=n_time)
+
+        full = decode_position(
+            env, spike_counts, encoding_models, dt=0.025, validate=validate
+        )
+        chunked = decode_position(
+            env,
+            spike_counts,
+            encoding_models,
+            dt=0.025,
+            validate=validate,
+            time_chunk=7,
+        )
+        post_full = np.asarray(full.posterior)
+        post_chunked = np.asarray(chunked.posterior)
+
+        assert np.allclose(post_chunked, post_full, rtol=0, atol=1e-12)
+        assert_array_equal(chunked.map_estimate, full.map_estimate)
+        assert_allclose(post_chunked.sum(axis=1), 1.0, atol=1e-9)
+
+    def test_time_chunk_degenerate_all_neg_inf_rows(
+        self, medium_2d_env: Environment
+    ) -> None:
+        """All -inf rows (zero spikes + flat model) handled identically.
+
+        Uses a non-dividing block size so a degenerate row falls on a block
+        boundary, and checks handle_degenerate='uniform' (the default) gives
+        the same uniform rows under chunking as the full path.
+        """
+        from neurospatial.decoding.posterior import decode_position
+
+        env = medium_2d_env
+        n_time = 13
+        n_neurons = 4
+        # Flat encoding model -> zero-spike rows are all -inf (degenerate).
+        encoding_models = np.full((n_neurons, env.n_bins), 3.0)
+        rng = np.random.default_rng(7)
+        spike_counts = rng.poisson(1.0, (n_time, n_neurons)).astype(np.int64)
+        # Force a couple of all-zero (degenerate) rows at non-block-boundaries.
+        spike_counts[5] = 0
+        spike_counts[10] = 0
+
+        full = decode_position(env, spike_counts, encoding_models, dt=0.025)
+        chunked = decode_position(
+            env, spike_counts, encoding_models, dt=0.025, time_chunk=7
+        )
+        post_full = np.asarray(full.posterior)
+        post_chunked = np.asarray(chunked.posterior)
+
+        # Degenerate rows became uniform on the full path; chunking must match.
+        assert np.allclose(post_chunked, post_full, rtol=0, atol=1e-12)
+        assert_allclose(post_chunked.sum(axis=1), 1.0, atol=1e-9)
+
+    def test_time_chunk_degenerate_nan_injected_rows(
+        self, medium_2d_env: Environment
+    ) -> None:
+        """NaN-injected degenerate handling matches across a block boundary.
+
+        handle_degenerate is 'uniform' by default; an all-NaN bin (NaN across
+        every neuron) becomes -inf in the likelihood, which combined with a
+        zero-spike row can be exercised. We instead inject a fully-degenerate
+        encoding (all-NaN bin) and check the chunked/full paths agree.
+        """
+        from neurospatial.decoding.posterior import decode_position
+
+        env = medium_2d_env
+        n_time = 13
+        n_neurons = 4
+        rng = np.random.default_rng(9)
+        encoding_models = rng.uniform(0.5, 12.0, (n_neurons, env.n_bins))
+        # Make one bin all-NaN (NaN for every neuron): it becomes -inf in the
+        # likelihood (zero posterior mass) on both paths.
+        encoding_models[:, 2] = np.nan
+        spike_counts = rng.poisson(1.5, (n_time, n_neurons)).astype(np.int64)
+
+        with pytest.warns(UserWarning, match="non-finite"):
+            full = decode_position(
+                env, spike_counts, encoding_models, dt=0.025, validate=False
+            )
+        with pytest.warns(UserWarning, match="non-finite"):
+            chunked = decode_position(
+                env,
+                spike_counts,
+                encoding_models,
+                dt=0.025,
+                validate=False,
+                time_chunk=7,
+            )
+        post_full = np.asarray(full.posterior)
+        post_chunked = np.asarray(chunked.posterior)
+
+        assert np.allclose(post_chunked, post_full, rtol=0, atol=1e-12, equal_nan=True)
+        # The all-NaN bin has zero posterior mass on both paths.
+        assert np.allclose(post_chunked[:, 2], 0.0, atol=1e-12)
+        assert_array_equal(chunked.map_estimate, full.map_estimate)
+        assert_allclose(post_chunked.sum(axis=1), 1.0, atol=1e-9)
+
+    @pytest.mark.parametrize("bad", [0, -1])
+    def test_time_chunk_below_one_raises(
+        self,
+        simple_env: Environment,
+        simple_spike_counts: np.ndarray,
+        simple_encoding_models: np.ndarray,
+        bad: int,
+    ) -> None:
+        """time_chunk < 1 is rejected up front with a clear ValueError."""
+        from neurospatial.decoding.posterior import decode_position
+
+        with pytest.raises(ValueError, match="time_chunk must be a positive integer"):
+            decode_position(
+                simple_env,
+                simple_spike_counts,
+                simple_encoding_models,
+                dt=0.025,
+                time_chunk=bad,
+            )
+
+    @pytest.mark.parametrize(
+        ("prior_shape", "match"),
+        [
+            # Wrong 1-D prior length -> caught by the up-front _validate_prior_shape.
+            (("n_bins+5",), "1D prior must have shape"),
+            # Short 2-D prior: the silent-truncation footgun the up-front check
+            # closes. The block loop only slices n_time rows, so without the
+            # up-front check a too-short prior would be caught (if at all) only at
+            # the final block -- here it must raise before any block is decoded.
+            (("n_time-1", "n_bins"), "2D prior must have shape"),
+            # Over-long 2-D prior also raises up front.
+            (("n_time+3", "n_bins"), "2D prior must have shape"),
+        ],
+    )
+    def test_time_chunk_prior_shape_validation(
+        self,
+        medium_2d_env: Environment,
+        prior_shape: tuple,
+        match: str,
+    ) -> None:
+        """Blockwise time_chunk path validates prior shape up front.
+
+        ``_decode_blockwise`` calls ``_validate_prior_shape`` before the
+        time-block loop, so a wrong-length 1-D prior or a wrong-length 2-D prior
+        raises a clear ``ValueError`` immediately rather than being silently
+        truncated/looped into a per-block slice. Exercises the ``time_chunk=N``
+        branch (not ``normalize_to_posterior``'s own check) -- a short 2-D prior
+        is the silent-truncation case the up-front check closes.
+        """
+        from neurospatial.decoding.posterior import decode_position
+
+        env = medium_2d_env
+        n_time = 40
+        spike_counts, encoding_models = self._bigger_inputs(env, n_time=n_time)
+
+        dims = {"n_bins": env.n_bins, "n_time": n_time}
+
+        def _resolve(spec: str) -> int:
+            for name, value in dims.items():
+                if spec.startswith(name):
+                    offset = spec[len(name) :]
+                    return value + (int(offset) if offset else 0)
+            raise AssertionError(f"unrecognized dim spec: {spec}")
+
+        shape = tuple(_resolve(s) for s in prior_shape)
+        prior = np.random.default_rng(0).uniform(0.1, 1.0, shape)
+
+        with pytest.raises(ValueError, match=match):
+            decode_position(
+                env,
+                spike_counts,
+                encoding_models,
+                dt=0.025,
+                prior=prior,
+                time_chunk=7,
+            )
+
+
+# =============================================================================
 # Edge Cases
 # =============================================================================
 
@@ -1136,4 +1547,105 @@ class TestDecodePositionValidation:
                 simple_encoding_models,
                 dt=0.025,
                 times=bad_times,
+            )
+
+
+# =============================================================================
+# Tests for centralized time_chunk validation (Fix B)
+# =============================================================================
+
+
+class TestTimeChunkValidation:
+    """time_chunk must be a genuine positive int (not bool/float/str)."""
+
+    @pytest.mark.parametrize("bad", [1.5, "2", True, False, 0, -1])
+    def test_normalize_to_posterior_rejects_bad_time_chunk(
+        self, simple_log_likelihood: np.ndarray, bad: object
+    ) -> None:
+        from neurospatial.decoding.posterior import normalize_to_posterior
+
+        with pytest.raises(ValueError, match="time_chunk"):
+            normalize_to_posterior(simple_log_likelihood, time_chunk=bad)
+
+    @pytest.mark.parametrize("good", [None, 1, 2, np.int64(3)])
+    def test_normalize_to_posterior_accepts_good_time_chunk(
+        self, simple_log_likelihood: np.ndarray, good: object
+    ) -> None:
+        from neurospatial.decoding.posterior import normalize_to_posterior
+
+        posterior = normalize_to_posterior(simple_log_likelihood, time_chunk=good)
+        assert posterior.shape == simple_log_likelihood.shape
+
+    @pytest.mark.parametrize("bad", [1.5, "2", True, False, 0, -1])
+    def test_decode_position_rejects_bad_time_chunk(
+        self,
+        simple_env: Environment,
+        simple_spike_counts: np.ndarray,
+        simple_encoding_models: np.ndarray,
+        bad: object,
+    ) -> None:
+        from neurospatial.decoding.posterior import decode_position
+
+        with pytest.raises(ValueError, match="time_chunk"):
+            decode_position(
+                simple_env,
+                simple_spike_counts,
+                simple_encoding_models,
+                dt=0.025,
+                time_chunk=bad,
+            )
+
+    @pytest.mark.parametrize("good", [None, 1, 2, np.int64(3)])
+    def test_decode_position_accepts_good_time_chunk(
+        self,
+        simple_env: Environment,
+        simple_spike_counts: np.ndarray,
+        simple_encoding_models: np.ndarray,
+        good: object,
+    ) -> None:
+        from neurospatial.decoding.posterior import decode_position
+
+        result = decode_position(
+            simple_env,
+            simple_spike_counts,
+            simple_encoding_models,
+            dt=0.025,
+            time_chunk=good,
+        )
+        assert result.posterior.shape[0] == simple_spike_counts.shape[0]
+
+    @pytest.mark.parametrize("bad", [1.5, "2", True, False, 0, -1])
+    def test_decode_position_summary_rejects_bad_time_chunk(
+        self,
+        simple_env: Environment,
+        simple_spike_counts: np.ndarray,
+        simple_encoding_models: np.ndarray,
+        bad: object,
+    ) -> None:
+        from neurospatial.decoding.posterior import decode_position_summary
+
+        with pytest.raises(ValueError, match="time_chunk"):
+            decode_position_summary(
+                simple_env,
+                simple_spike_counts,
+                simple_encoding_models,
+                dt=0.025,
+                time_chunk=bad,
+            )
+
+    def test_decode_position_summary_none_time_chunk_specific_message(
+        self,
+        simple_env: Environment,
+        simple_spike_counts: np.ndarray,
+        simple_encoding_models: np.ndarray,
+    ) -> None:
+        from neurospatial.decoding.posterior import decode_position_summary
+
+        with pytest.raises(ValueError, match="decode_position"):
+            decode_position_summary(
+                simple_env,
+                simple_spike_counts,
+                simple_encoding_models,
+                dt=0.025,
+                time_chunk=None,
             )

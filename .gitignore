@@ -200,3 +200,6 @@ data/*
 my_environment.json
 my_environment.npz
 session.nwb
+
+# subagent-driven per-task worktrees (local, not tracked)
+.claude/worktrees/

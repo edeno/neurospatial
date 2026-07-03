@@ -46,7 +46,9 @@ __all__ = [
 ]
 
 # Threshold for warning about large kernel computation
-# Matrix exponential is O(n³) and dense, so warn for large environments
+# Matrix exponential is O(n³) and dense, so warn for large environments. This
+# is the SOLE high-bin guard: there is no hard limit -- a large request always
+# warns (with a GB estimate) and proceeds.
 _LARGE_KERNEL_THRESHOLD = 3000
 
 
@@ -106,12 +108,43 @@ def compute_diffusion_kernels(
 
     Notes
     -----
-    Performance warning: Matrix exponential has O(n³) complexity where n is the
-    number of bins. For large environments (>1000 bins), computation may be slow.
+    **Memory cost is O(n²) and unavoidable.** The diffusion heat kernel
+    ``exp(-t L)`` of a connected graph is *mathematically dense* — every entry
+    is strictly positive, decaying only with graph distance — and SciPy builds
+    it dense. The returned matrix therefore occupies
 
-    A UserWarning is issued when n_bins > 3000. For very large environments,
-    consider using ``smoothing_method="binned"`` in higher-level functions or reducing
-    bin_size to decrease the number of bins.
+    .. math::
+        \\text{bytes} = n\\_bins^2 \\times 8
+
+    of float64 memory. For example a 20,000-bin environment needs
+    ``20000**2 * 8 / 1e9 ≈ 3.2 GB`` for a single kernel. There is no sparse or
+    truncated form that preserves the numerical result, so this peak cannot be
+    avoided while using the dense diffusion kernel.
+
+    **There is no hard limit — high-bin kernels warn and proceed.** A
+    ``UserWarning`` estimating the GB cost is issued when
+    ``n_bins > _LARGE_KERNEL_THRESHOLD`` (3,000 bins); the kernel is then built
+    regardless of size. The warning names ``n_bins``, the GB estimate, the
+    dense O(n²) reason, and the mitigations (reduce bins / use
+    ``smoothing_method="binned"``). It is the sole high-bin guard.
+
+    Performance: the matrix exponential is also O(n³) in time, so large
+    environments are slow as well as memory-hungry.
+
+    **Mitigations for large environments:**
+
+    - Use ``smoothing_method="binned"`` in higher-level encoding functions
+      (e.g. :func:`~neurospatial.encoding.spatial.compute_spatial_rate`) to
+      avoid building the dense kernel entirely.
+    - Reduce the number of bins by increasing ``bin_size`` when constructing
+      the environment.
+    - For population decoding at scale, the memory-safe paths this release are
+      float32 rate maps and the summary decode
+      (:func:`~neurospatial.decoding.posterior.decode_position_summary`), which
+      avoid materializing a full dense posterior.
+
+    A faster, lower-peak ``expm_multiply`` / Chebyshev rewrite of this kernel is
+    a deferred stretch goal and is **not** implemented in this release.
     """
     # 1) Validate bandwidth is positive
     if bandwidth_sigma <= 0:
@@ -119,15 +152,20 @@ def compute_diffusion_kernels(
 
     n_bins = graph.number_of_nodes()
 
-    # 2) Issue warning for large environments
+    # 2) Warn (never raise) for large environments. The dense heat kernel
+    #    exp(-tL) costs n_bins**2 * 8 bytes of float64 memory; we estimate that
+    #    and proceed. There is no hard limit -- the call always returns a kernel.
     if n_bins > _LARGE_KERNEL_THRESHOLD:
+        estimated_gb = n_bins * n_bins * 8 / 1e9
         warnings.warn(
-            f"Computing diffusion kernel for {n_bins} bins. "
-            f"Matrix exponential has O(n³) complexity and O(n²) memory. "
-            f"This may be slow and memory-intensive (estimated "
-            f"{n_bins * n_bins * 8 / 1e9:.1f} GB for kernel matrix). "
-            f"Consider using method='binned' or reducing bin_size to decrease "
-            f"the number of bins.",
+            f"Computing a dense diffusion kernel for {n_bins} bins. The heat "
+            f"kernel exp(-tL) is dense by construction (every entry > 0), so it "
+            f"requires an {n_bins} x {n_bins} float64 matrix "
+            f"(~{estimated_gb:.1f} GB) -- O(n^2) memory (and O(n^3) time for the "
+            f"matrix exponential). Proceeding anyway; this may be slow and "
+            f"memory-intensive. To reduce the cost, increase bin_size (fewer "
+            f"bins) or use smoothing_method='binned' in the higher-level "
+            f"encoding function (it builds no dense kernel).",
             UserWarning,
             stacklevel=2,
         )

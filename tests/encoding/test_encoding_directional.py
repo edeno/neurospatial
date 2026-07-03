@@ -186,7 +186,7 @@ class TestDirectionalRatesResultIteration:
         bin_size: float,
         n_neurons: int,
     ) -> None:
-        """len() returns number of neurons."""
+        """len() returns number of units."""
         from neurospatial.encoding.directional import DirectionalRatesResult
 
         result = DirectionalRatesResult(
@@ -2023,17 +2023,17 @@ class TestDirectionalRatesResultTuningWidths:
             assert np.all(valid_widths <= np.pi)
 
 
-class TestDirectionalRatesResultDetectHdCells:
-    """Test DirectionalRatesResult.detect_hd_cells() method."""
+class TestDirectionalRatesResultClassify:
+    """Test DirectionalRatesResult.classify() method."""
 
-    def test_detect_hd_cells_returns_array(
+    def test_classify_returns_array(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """detect_hd_cells() returns numpy array."""
+        """classify() returns numpy array."""
         from neurospatial.encoding.directional import DirectionalRatesResult
 
         result = DirectionalRatesResult(
@@ -2044,10 +2044,10 @@ class TestDirectionalRatesResultDetectHdCells:
             bandwidth=None,
         )
 
-        is_hd = result.detect_hd_cells()
+        is_hd = result.classify()
         assert isinstance(is_hd, np.ndarray)
 
-    def test_detect_hd_cells_shape(
+    def test_classify_shape(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
@@ -2055,7 +2055,7 @@ class TestDirectionalRatesResultDetectHdCells:
         bin_size: float,
         n_neurons: int,
     ) -> None:
-        """detect_hd_cells() returns (n_neurons,) bool array."""
+        """classify() returns (n_neurons,) bool array."""
         from neurospatial.encoding.directional import DirectionalRatesResult
 
         result = DirectionalRatesResult(
@@ -2066,18 +2066,18 @@ class TestDirectionalRatesResultDetectHdCells:
             bandwidth=None,
         )
 
-        is_hd = result.detect_hd_cells()
+        is_hd = result.classify()
         assert is_hd.shape == (n_neurons,)
         assert is_hd.dtype == np.bool_
 
-    def test_detect_hd_cells_matches_single(
+    def test_classify_matches_single(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """detect_hd_cells() matches iteration over single results."""
+        """classify() matches iteration over single results."""
         from neurospatial.encoding.directional import DirectionalRatesResult
 
         result = DirectionalRatesResult(
@@ -2088,19 +2088,19 @@ class TestDirectionalRatesResultDetectHdCells:
             bandwidth=None,
         )
 
-        is_hd = result.detect_hd_cells()
+        is_hd = result.classify()
 
         for i, single in enumerate(result):
             assert is_hd[i] == single.is_head_direction_cell()
 
-    def test_detect_hd_cells_respects_min_mvl(
+    def test_classify_respects_min_mvl(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """detect_hd_cells() respects min_mvl parameter."""
+        """classify() respects min_mvl parameter."""
         from neurospatial.encoding.directional import DirectionalRatesResult
 
         result = DirectionalRatesResult(
@@ -2112,22 +2112,22 @@ class TestDirectionalRatesResultDetectHdCells:
         )
 
         # Very permissive threshold
-        is_hd_permissive = result.detect_hd_cells(min_mvl=0.0)
+        is_hd_permissive = result.classify(min_mvl=0.0)
 
         # Very strict threshold
-        is_hd_strict = result.detect_hd_cells(min_mvl=0.99)
+        is_hd_strict = result.classify(min_mvl=0.99)
 
         # Strict should have fewer or equal HD cells
         assert np.sum(is_hd_strict) <= np.sum(is_hd_permissive)
 
-    def test_detect_hd_cells_respects_alpha(
+    def test_classify_respects_alpha(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """detect_hd_cells() respects alpha parameter."""
+        """classify() respects alpha parameter."""
         from neurospatial.encoding.directional import DirectionalRatesResult
 
         result = DirectionalRatesResult(
@@ -2139,22 +2139,22 @@ class TestDirectionalRatesResultDetectHdCells:
         )
 
         # Very permissive alpha
-        is_hd_permissive = result.detect_hd_cells(alpha=1.0)
+        is_hd_permissive = result.classify(alpha=1.0)
 
         # Very strict alpha
-        is_hd_strict = result.detect_hd_cells(alpha=1e-10)
+        is_hd_strict = result.classify(alpha=1e-10)
 
         # Strict should have fewer or equal HD cells
         assert np.sum(is_hd_strict) <= np.sum(is_hd_permissive)
 
-    def test_detect_hd_cells_default_thresholds(
+    def test_classify_default_thresholds(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """detect_hd_cells() uses default thresholds of min_mvl=0.4, alpha=0.05."""
+        """classify() uses default thresholds of min_mvl=0.4, alpha=0.05."""
         from neurospatial.encoding.directional import DirectionalRatesResult
 
         result = DirectionalRatesResult(
@@ -2165,8 +2165,8 @@ class TestDirectionalRatesResultDetectHdCells:
             bandwidth=None,
         )
 
-        is_hd_default = result.detect_hd_cells()
-        is_hd_explicit = result.detect_hd_cells(min_mvl=0.4, alpha=0.05)
+        is_hd_default = result.classify()
+        is_hd_explicit = result.classify(min_mvl=0.4, alpha=0.05)
 
         np.testing.assert_array_equal(is_hd_default, is_hd_explicit)
 
@@ -2263,21 +2263,21 @@ class TestDirectionalRatesResultPeakFiringRates:
 
 
 # ==============================================================================
-# DirectionalRatesResult.to_dataframe() Tests - Task 3.6
+# DirectionalRatesResult.summary_table() Tests - Task 3.6
 # ==============================================================================
 
 
-class TestDirectionalRatesResultToDataframe:
-    """Test DirectionalRatesResult.to_dataframe() method."""
+class TestDirectionalRatesResultSummaryTable:
+    """Test DirectionalRatesResult.summary_table() method."""
 
-    def test_to_dataframe_returns_dataframe(
+    def test_summary_table_returns_dataframe(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """to_dataframe() returns a pandas DataFrame."""
+        """summary_table() returns a pandas DataFrame."""
         pd = pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2289,10 +2289,10 @@ class TestDirectionalRatesResultToDataframe:
             bandwidth=None,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert isinstance(df, pd.DataFrame)
 
-    def test_to_dataframe_has_correct_row_count(
+    def test_summary_table_has_correct_row_count(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
@@ -2300,7 +2300,7 @@ class TestDirectionalRatesResultToDataframe:
         bin_size: float,
         n_neurons: int,
     ) -> None:
-        """to_dataframe() returns one row per neuron."""
+        """summary_table() returns one row per unit."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2312,17 +2312,17 @@ class TestDirectionalRatesResultToDataframe:
             bandwidth=None,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert len(df) == n_neurons
 
-    def test_to_dataframe_has_neuron_id_column(
+    def test_summary_table_has_unit_id_column(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """to_dataframe() includes neuron_id column."""
+        """summary_table() is indexed by unit_id."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2334,17 +2334,17 @@ class TestDirectionalRatesResultToDataframe:
             bandwidth=None,
         )
 
-        df = result.to_dataframe()
-        assert "neuron_id" in df.columns
+        df = result.summary_table()
+        assert df.index.name == "unit_id"
 
-    def test_to_dataframe_has_preferred_direction_column(
+    def test_summary_table_has_preferred_direction_column(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """to_dataframe() includes preferred_direction column (radians)."""
+        """summary_table() includes preferred_direction column (radians)."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2356,17 +2356,17 @@ class TestDirectionalRatesResultToDataframe:
             bandwidth=None,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "preferred_direction" in df.columns
 
-    def test_to_dataframe_has_preferred_direction_deg_column(
+    def test_summary_table_has_preferred_direction_deg_column(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """to_dataframe() includes preferred_direction_deg column."""
+        """summary_table() includes preferred_direction_deg column."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2378,17 +2378,17 @@ class TestDirectionalRatesResultToDataframe:
             bandwidth=None,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "preferred_direction_deg" in df.columns
 
-    def test_to_dataframe_has_mean_vector_length_column(
+    def test_summary_table_has_mean_vector_length_column(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """to_dataframe() includes mean_vector_length column."""
+        """summary_table() includes mean_vector_length column."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2400,17 +2400,17 @@ class TestDirectionalRatesResultToDataframe:
             bandwidth=None,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "mean_vector_length" in df.columns
 
-    def test_to_dataframe_has_tuning_width_column(
+    def test_summary_table_has_tuning_width_column(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """to_dataframe() includes tuning_width column (radians)."""
+        """summary_table() includes tuning_width column (radians)."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2422,17 +2422,17 @@ class TestDirectionalRatesResultToDataframe:
             bandwidth=None,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "tuning_width" in df.columns
 
-    def test_to_dataframe_has_tuning_width_deg_column(
+    def test_summary_table_has_tuning_width_deg_column(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """to_dataframe() includes tuning_width_deg column."""
+        """summary_table() includes tuning_width_deg column."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2444,17 +2444,17 @@ class TestDirectionalRatesResultToDataframe:
             bandwidth=None,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "tuning_width_deg" in df.columns
 
-    def test_to_dataframe_has_peak_rate_column(
+    def test_summary_table_has_peak_rate_column(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """to_dataframe() includes peak_rate column."""
+        """summary_table() includes peak_rate column."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2466,17 +2466,17 @@ class TestDirectionalRatesResultToDataframe:
             bandwidth=None,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "peak_rate" in df.columns
 
-    def test_to_dataframe_has_is_hd_cell_column(
+    def test_summary_table_has_is_hd_cell_column(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """to_dataframe() includes is_head_direction_cell column."""
+        """summary_table() includes is_head_direction_cell column."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2488,10 +2488,10 @@ class TestDirectionalRatesResultToDataframe:
             bandwidth=None,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "is_head_direction_cell" in df.columns
 
-    def test_to_dataframe_neuron_id_default_integers(
+    def test_summary_table_unit_id_default_integers(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
@@ -2499,7 +2499,7 @@ class TestDirectionalRatesResultToDataframe:
         bin_size: float,
         n_neurons: int,
     ) -> None:
-        """to_dataframe() uses integer indices as default neuron_id."""
+        """summary_table() uses integer unit_id index labels by default."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2511,11 +2511,11 @@ class TestDirectionalRatesResultToDataframe:
             bandwidth=None,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         expected_ids = list(range(n_neurons))
-        assert list(df["neuron_id"]) == expected_ids
+        assert list(df.index) == expected_ids
 
-    def test_to_dataframe_custom_neuron_ids(
+    def test_summary_table_custom_unit_ids(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
@@ -2523,7 +2523,7 @@ class TestDirectionalRatesResultToDataframe:
         bin_size: float,
         n_neurons: int,
     ) -> None:
-        """to_dataframe() accepts custom neuron_ids."""
+        """summary_table() accepts custom unit_ids."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2536,17 +2536,17 @@ class TestDirectionalRatesResultToDataframe:
         )
 
         custom_ids = [f"unit_{i}" for i in range(n_neurons)]
-        df = result.to_dataframe(neuron_ids=custom_ids)
-        assert list(df["neuron_id"]) == custom_ids
+        df = result.summary_table(unit_ids=custom_ids)
+        assert list(df.index) == custom_ids
 
-    def test_to_dataframe_neuron_id_length_mismatch(
+    def test_summary_table_unit_id_length_mismatch(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """to_dataframe() raises ValueError for wrong neuron_ids length."""
+        """summary_table() raises ValueError for wrong unit_ids length."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2558,18 +2558,18 @@ class TestDirectionalRatesResultToDataframe:
             bandwidth=None,
         )
 
-        # Wrong number of neuron_ids
-        with pytest.raises(ValueError, match="neuron_ids"):
-            result.to_dataframe(neuron_ids=["only_one"])
+        # Wrong number of unit_ids
+        with pytest.raises(ValueError, match="unit_ids"):
+            result.summary_table(unit_ids=["only_one"])
 
-    def test_to_dataframe_preferred_direction_matches_method(
+    def test_summary_table_preferred_direction_matches_method(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """to_dataframe() preferred_direction matches preferred_directions()."""
+        """summary_table() preferred_direction matches preferred_directions()."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2581,18 +2581,18 @@ class TestDirectionalRatesResultToDataframe:
             bandwidth=None,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         pref_dirs = result.preferred_directions()
         np.testing.assert_allclose(df["preferred_direction"].values, pref_dirs)
 
-    def test_to_dataframe_preferred_direction_deg_is_conversion(
+    def test_summary_table_preferred_direction_deg_is_conversion(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """to_dataframe() preferred_direction_deg is degrees conversion."""
+        """summary_table() preferred_direction_deg is degrees conversion."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2604,20 +2604,20 @@ class TestDirectionalRatesResultToDataframe:
             bandwidth=None,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         np.testing.assert_allclose(
             df["preferred_direction_deg"].values,
             np.degrees(df["preferred_direction"].values),
         )
 
-    def test_to_dataframe_mean_vector_length_matches_method(
+    def test_summary_table_mean_vector_length_matches_method(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """to_dataframe() mean_vector_length matches mean_vector_lengths()."""
+        """summary_table() mean_vector_length matches mean_vector_lengths()."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2629,18 +2629,18 @@ class TestDirectionalRatesResultToDataframe:
             bandwidth=None,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         mvls = result.mean_vector_lengths()
         np.testing.assert_allclose(df["mean_vector_length"].values, mvls)
 
-    def test_to_dataframe_tuning_width_matches_method(
+    def test_summary_table_tuning_width_matches_method(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """to_dataframe() tuning_width matches tuning_widths()."""
+        """summary_table() tuning_width matches tuning_widths()."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2652,18 +2652,18 @@ class TestDirectionalRatesResultToDataframe:
             bandwidth=None,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         widths = result.tuning_widths()
         np.testing.assert_allclose(df["tuning_width"].values, widths, equal_nan=True)
 
-    def test_to_dataframe_tuning_width_deg_is_conversion(
+    def test_summary_table_tuning_width_deg_is_conversion(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """to_dataframe() tuning_width_deg is degrees conversion."""
+        """summary_table() tuning_width_deg is degrees conversion."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2675,21 +2675,21 @@ class TestDirectionalRatesResultToDataframe:
             bandwidth=None,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         np.testing.assert_allclose(
             df["tuning_width_deg"].values,
             np.degrees(df["tuning_width"].values),
             equal_nan=True,
         )
 
-    def test_to_dataframe_peak_rate_matches_method(
+    def test_summary_table_peak_rate_matches_method(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """to_dataframe() peak_rate matches peak_firing_rate()."""
+        """summary_table() peak_rate matches peak_firing_rate()."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2701,18 +2701,18 @@ class TestDirectionalRatesResultToDataframe:
             bandwidth=None,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         peaks = result.peak_firing_rate()
         np.testing.assert_allclose(df["peak_rate"].values, peaks)
 
-    def test_to_dataframe_is_hd_cell_matches_method(
+    def test_summary_table_is_hd_cell_matches_method(
         self,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """to_dataframe() is_head_direction_cell matches detect_hd_cells()."""
+        """summary_table() is_head_direction_cell matches classify()."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2724,18 +2724,18 @@ class TestDirectionalRatesResultToDataframe:
             bandwidth=None,
         )
 
-        df = result.to_dataframe()
-        is_hd = result.detect_hd_cells()
+        df = result.summary_table()
+        is_hd = result.classify()
         np.testing.assert_array_equal(df["is_head_direction_cell"].values, is_hd)
 
-    def test_to_dataframe_empty_result(
+    def test_summary_table_empty_result(
         self,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
         n_bins: int,
     ) -> None:
-        """to_dataframe() works with zero neurons."""
+        """summary_table() works with zero neurons."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2750,17 +2750,17 @@ class TestDirectionalRatesResultToDataframe:
             bandwidth=None,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert len(df) == 0
 
-    def test_to_dataframe_single_neuron(
+    def test_summary_table_single_neuron(
         self,
         single_firing_rate: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """to_dataframe() works with single neuron."""
+        """summary_table() works with single neuron."""
         pytest.importorskip("pandas")
         from neurospatial.encoding.directional import DirectionalRatesResult
 
@@ -2775,7 +2775,7 @@ class TestDirectionalRatesResultToDataframe:
             bandwidth=None,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert len(df) == 1
 
 
@@ -3258,7 +3258,7 @@ class TestComputeDirectionalRatesBasic:
         assert result.bandwidth is None
 
     def test_len_returns_n_neurons(self) -> None:
-        """len() of result returns number of neurons."""
+        """len() of result returns number of units."""
         from neurospatial.encoding.directional import compute_directional_rates
 
         np.random.seed(42)
@@ -3653,8 +3653,8 @@ class TestComputeDirectionalRatesResultMethods:
         assert mvls.shape == (2,)
         assert np.all((mvls >= 0) & (mvls <= 1))
 
-    def test_detect_hd_cells_method(self) -> None:
-        """Result has working detect_hd_cells method."""
+    def test_classify_method(self) -> None:
+        """Result has working classify method."""
         from neurospatial.encoding.directional import compute_directional_rates
 
         np.random.seed(42)
@@ -3666,14 +3666,14 @@ class TestComputeDirectionalRatesResultMethods:
         ]
 
         result = compute_directional_rates(spike_times, times, headings)
-        is_hd = result.detect_hd_cells()
+        is_hd = result.classify()
 
         assert isinstance(is_hd, np.ndarray)
         assert is_hd.dtype == np.bool_
         assert is_hd.shape == (2,)
 
-    def test_to_dataframe_method(self) -> None:
-        """Result has working to_dataframe method."""
+    def test_summary_table_method(self) -> None:
+        """Result has working summary_table method."""
         pytest.importorskip("pandas")
         import pandas as pd
 
@@ -3688,11 +3688,11 @@ class TestComputeDirectionalRatesResultMethods:
         ]
 
         result = compute_directional_rates(spike_times, times, headings)
-        df = result.to_dataframe()
+        df = result.summary_table()
 
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 2
-        assert "neuron_id" in df.columns
+        assert df.index.name == "unit_id"
         assert "preferred_direction" in df.columns
         assert "mean_vector_length" in df.columns
         assert "is_head_direction_cell" in df.columns

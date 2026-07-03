@@ -352,6 +352,46 @@ class TestPopulationCoverage:
         with pytest.raises(ValueError, match="max_mean_rate must be positive"):
             population_coverage(simple_env, firing_rates, max_mean_rate=-1.0)
 
+    def test_n_jobs_parity(self, simple_env: Environment) -> None:
+        """population_coverage(n_jobs=2) equals n_jobs=1 on the same input (Task 2.3)."""
+        n_bins = simple_env.n_bins
+        # A handful of neurons with distinct place fields.
+        rng = np.random.default_rng(7)
+        n_neurons = 6
+        firing_rates = np.zeros((n_neurons, n_bins))
+        for i in range(n_neurons):
+            peak = (i * 7) % n_bins
+            firing_rates[i, peak] = 10.0
+            for j in simple_env.neighbors(peak):
+                firing_rates[i, j] = 5.0
+        # Add a little noise so detection is non-trivial.
+        firing_rates += rng.random((n_neurons, n_bins)) * 0.1
+
+        seq = population_coverage(simple_env, firing_rates, min_size=1, n_jobs=1)
+        par = population_coverage(simple_env, firing_rates, min_size=1, n_jobs=2)
+
+        # Scalar stats identical.
+        assert seq.coverage_fraction == par.coverage_fraction
+        assert seq.n_neurons == par.n_neurons
+        assert seq.n_place_cells == par.n_place_cells
+        assert seq.n_fields == par.n_fields
+
+        # Array stats byte-for-byte identical.
+        np.testing.assert_array_equal(seq.field_count, par.field_count)
+        np.testing.assert_array_equal(seq.is_covered, par.is_covered)
+        np.testing.assert_array_equal(seq.covered_bins, par.covered_bins)
+        np.testing.assert_array_equal(seq.uncovered_bins, par.uncovered_bins)
+        np.testing.assert_array_equal(seq.uncovered_positions, par.uncovered_positions)
+
+        # Per-neuron place fields identical and in order.
+        assert len(seq.place_fields) == len(par.place_fields)
+        for seq_fields, par_fields in zip(
+            seq.place_fields, par.place_fields, strict=True
+        ):
+            assert len(seq_fields) == len(par_fields)
+            for seq_field, par_field in zip(seq_fields, par_fields, strict=True):
+                np.testing.assert_array_equal(seq_field, par_field)
+
 
 class TestPlotPopulationCoverage:
     """Test plot_population_coverage function."""

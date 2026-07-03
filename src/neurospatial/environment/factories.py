@@ -23,6 +23,8 @@ in type hints. At runtime, TYPE_CHECKING is False, so no import occurs.
 
 from __future__ import annotations
 
+import itertools
+import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, cast
 
@@ -57,6 +59,136 @@ except ModuleNotFoundError:
 
 
 PolygonType = type[_shp.Polygon]
+
+
+def _add_edge_with_distance(graph: nx.Graph, u: Any, v: Any, edge_id: int) -> None:
+    """Add an edge to `graph` with `distance` (from node pos) and `edge_id`.
+
+    Only ``distance`` is consumed by neurospatial's linearization path
+    (``_get_graph_bins`` builds its own edge_id map from edge enumeration and
+    never reads the input ``edge_id``). The ``edge_id`` attribute is set for
+    interoperability/parity with ``track_linearization.make_track_graph`` but is
+    not required for ``to_linear()`` to work.
+    """
+    p1 = np.asarray(graph.nodes[u]["pos"], dtype=float)
+    p2 = np.asarray(graph.nodes[v]["pos"], dtype=float)
+    graph.add_edge(u, v, distance=float(np.linalg.norm(p2 - p1)), edge_id=edge_id)
+
+
+def _assemble_maze_graph(
+    kind: str,
+    node_positions: dict[Any, Sequence[float]],
+) -> tuple[nx.Graph, list[tuple[Any, Any]]]:
+    """Assemble a standard W / plus / T maze graph from ordered node positions.
+
+    Topology is derived from the DOCUMENTED ORDER of ``node_positions`` (a
+    coordinate-system-independent contract), never from x/y heuristics. The
+    required ordering per `kind` is:
+
+    - ``"plus"`` (5 nodes): ``[center, arm1, arm2, arm3, arm4]`` -> edges
+      center--each arm.
+    - ``"t"`` (4 nodes): ``[stem_end, junction, arm_left, arm_right]`` -> edges
+      stem_end--junction, junction--arm_left, junction--arm_right.
+    - ``"w"`` (6 nodes): ``[base_left, base_mid, base_right, arm_left, arm_mid,
+      arm_right]`` -> connector edges base_left--base_mid--base_right plus arm
+      edges base_left--arm_left, base_mid--arm_mid, base_right--arm_right.
+
+    Because the topology comes from order alone, the SAME graph is produced for
+    any consistent coordinate system (e.g. y increasing downward, or arms in
+    -y); coordinates are stored only as ``pos`` attributes / edge distances.
+
+    Parameters
+    ----------
+    kind : {"w", "plus", "t"}
+        Normalized (lower-case) maze kind.
+    node_positions : dict
+        Ordered mapping of node label -> (x, y) coordinate. The insertion order
+        defines the topology (see above). Python dicts preserve insertion order.
+
+    Returns
+    -------
+    graph : networkx.Graph
+        Track graph with `pos` node attributes and `distance` edge weights.
+    edge_order : list of (node, node)
+        Ordered edge list for linearization.
+
+    Raises
+    ------
+    ValueError
+        If `node_positions` does not contain the expected number of nodes for
+        `kind`, or if `kind` is unknown.
+    """
+    labels = list(node_positions.keys())
+    graph = nx.Graph()
+    for label, pos in node_positions.items():
+        graph.add_node(label, pos=tuple(float(c) for c in pos))
+
+    edge_order: list[tuple[Any, Any]] = []
+    edge_id = 0
+
+    if kind == "plus":
+        # Order contract: [center, arm1, arm2, arm3, arm4].
+        # Star topology: center connects to each of the four arm tips.
+        if len(labels) != 5:
+            raise ValueError(
+                "A plus maze needs exactly 5 nodes in `node_positions`, ordered "
+                "[center, arm1, arm2, arm3, arm4]: one center followed by four "
+                f"arm tips. Got {len(labels)}."
+            )
+        center = labels[0]
+        for arm in labels[1:]:
+            _add_edge_with_distance(graph, center, arm, edge_id)
+            edge_order.append((center, arm))
+            edge_id += 1
+
+    elif kind == "t":
+        # Order contract: [stem_end, junction, arm_left, arm_right].
+        # Stem (stem_end->junction) + crossbar (junction->each arm tip).
+        if len(labels) != 4:
+            raise ValueError(
+                "A T maze needs exactly 4 nodes in `node_positions`, ordered "
+                "[stem_end, junction, arm_left, arm_right]. "
+                f"Got {len(labels)}."
+            )
+        stem_end, junction, arm_left, arm_right = labels
+        _add_edge_with_distance(graph, stem_end, junction, edge_id)
+        edge_order.append((stem_end, junction))
+        edge_id += 1
+        for arm in (arm_left, arm_right):
+            _add_edge_with_distance(graph, junction, arm, edge_id)
+            edge_order.append((junction, arm))
+            edge_id += 1
+
+    elif kind == "w":
+        # Order contract:
+        #   [base_left, base_mid, base_right, arm_left, arm_mid, arm_right].
+        # Horizontal connector along the first three base nodes, then one
+        # vertical arm edge joining each base node to the arm tip at the
+        # matching position in the documented order.
+        if len(labels) != 6:
+            raise ValueError(
+                "A W maze needs exactly 6 nodes in `node_positions`, ordered "
+                "[base_left, base_mid, base_right, arm_left, arm_mid, "
+                "arm_right]: three base/junction nodes followed by three arm "
+                f"tips (5 base+arm edges). Got {len(labels)}."
+            )
+        base = labels[:3]
+        arms = labels[3:]
+        # Horizontal connector along the base (base_left -> base_mid -> base_right).
+        for left, right in itertools.pairwise(base):
+            _add_edge_with_distance(graph, left, right, edge_id)
+            edge_order.append((left, right))
+            edge_id += 1
+        # Vertical arms: each base node up to the arm at the matching position.
+        for base_node, arm_node in zip(base, arms, strict=True):
+            _add_edge_with_distance(graph, base_node, arm_node, edge_id)
+            edge_order.append((base_node, arm_node))
+            edge_id += 1
+
+    else:
+        raise ValueError(f"Unknown maze kind {kind!r}")
+
+    return graph, edge_order
 
 
 class EnvironmentFactories:
@@ -150,6 +282,16 @@ class EnvironmentFactories:
             all options and `get_layout_parameters()` for layout-specific parameters.
         infer_active_bins : bool, default True
             If True, only bins containing ≥ `bin_count_threshold` samples are "active."
+        connect_diagonal_neighbors : bool, default True
+            If True, connect grid bins diagonally when building connectivity.
+
+        Other Parameters
+        ----------------
+        These are *advanced / cleanup* knobs for tidying the inferred active
+        region. The common path (`positions` + `bin_size`) needs none of them;
+        reach for these only when sparse or noisy sampling leaves holes, gaps,
+        or a ragged boundary in the active-bin mask.
+
         bin_count_threshold : int, default 0
             Minimum number of data points required for a bin to be considered "active."
         dilate : bool, default False
@@ -160,8 +302,6 @@ class EnvironmentFactories:
             If True, close small gaps between active bins.
         add_boundary_bins : bool, default False
             If True, add peripheral bins around the bounding region of samples.
-        connect_diagonal_neighbors : bool, default True
-            If True, connect grid bins diagonally when building connectivity.
 
         Returns
         -------
@@ -321,6 +461,427 @@ class EnvironmentFactories:
         }
 
         return cls.from_layout(kind=layout_str, layout_params=layout_params, name=name)
+
+    # ------------------------------------------------------------------
+    # Experiment-shaped presets
+    #
+    # These classmethods speak experiment vocabulary (open field, linear
+    # track, W/plus/T maze) and delegate to the general-purpose ``from_*``
+    # factories. Track/maze presets require an EXPLICIT topology spec --
+    # raw positions alone cannot infer a linear/W/plus/T graph. Only
+    # ``open_field`` is positions-based.
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def open_field(
+        cls,
+        positions: NDArray[np.float64],
+        bin_size: float | Sequence[float],
+        *,
+        name: str = "",
+        layout: LayoutType | str = LayoutType.REGULAR_GRID,
+        infer_active_bins: bool = True,
+        bin_count_threshold: int = 0,
+        dilate: bool = False,
+        close_gaps: bool = False,
+        add_boundary_bins: bool = False,
+        connect_diagonal_neighbors: bool = True,
+        **layout_specific_kwargs: Any,
+    ) -> Environment:
+        """Create an open-arena Environment from sampled positions.
+
+        This is the only positions-based preset. It delegates to
+        :meth:`from_samples` and flips ``fill_holes=True`` -- a sensible
+        open-arena default that fills interior gaps left by uneven sampling,
+        so a freely explored 2D arena reads as one filled region rather than
+        a speckled mask. All other :meth:`from_samples` options pass through
+        unchanged.
+
+        Parameters
+        ----------
+        positions : array, shape (n_samples, n_dims)
+            Coordinates of sample points used to infer which bins are "active."
+        bin_size : float or sequence of floats
+            Size of each bin in the same units as `positions` coordinates.
+        name : str, default ""
+            Optional name for the resulting Environment.
+        layout : LayoutType | str, default LayoutType.REGULAR_GRID
+            Layout engine type to use. See :meth:`from_samples`.
+        infer_active_bins : bool, default True
+            If True, only bins containing ≥ `bin_count_threshold` samples are "active."
+        bin_count_threshold : int, default 0
+            Minimum number of data points required for a bin to be "active."
+        dilate : bool, default False
+            If True, apply morphological dilation to the active-bin mask.
+        close_gaps : bool, default False
+            If True, close small gaps between active bins.
+        add_boundary_bins : bool, default False
+            If True, add peripheral bins around the bounding region of samples.
+        connect_diagonal_neighbors : bool, default True
+            If True, connect grid bins diagonally when building connectivity.
+        **layout_specific_kwargs
+            Additional keyword arguments forwarded to :meth:`from_samples`.
+
+        Returns
+        -------
+        env : Environment
+            A newly created open-arena Environment, fitted to the samples.
+
+        See Also
+        --------
+        from_samples : The general factory this preset delegates to.
+        linear_track : Linear / piecewise-linear track preset (explicit topology).
+        maze : W / plus / T maze preset (explicit topology).
+
+        Notes
+        -----
+        ``fill_holes`` is forced to ``True`` and is therefore not exposed as a
+        parameter here. If you need the un-filled active mask, call
+        :meth:`from_samples` directly with ``fill_holes=False``.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> from neurospatial import Environment
+        >>> rng = np.random.default_rng(0)
+        >>> positions = rng.random((1000, 2)) * 100  # cm
+        >>> env = Environment.open_field(positions, bin_size=5.0)
+        >>> env.is_linearized_track
+        False
+        """
+        return cls.from_samples(
+            positions,
+            bin_size,
+            name=name,
+            layout=layout,
+            infer_active_bins=infer_active_bins,
+            bin_count_threshold=bin_count_threshold,
+            dilate=dilate,
+            fill_holes=True,
+            close_gaps=close_gaps,
+            add_boundary_bins=add_boundary_bins,
+            connect_diagonal_neighbors=connect_diagonal_neighbors,
+            **layout_specific_kwargs,
+        )
+
+    @classmethod
+    def linear_track(
+        cls,
+        *,
+        endpoints: Sequence[Sequence[float]] | None = None,
+        node_positions: Sequence[Sequence[float]] | None = None,
+        bin_size: float,
+        edge_spacing: float | Sequence[float] = 0.0,
+        name: str = "",
+    ) -> Environment:
+        """Create a 1D linearized track Environment from an explicit topology.
+
+        Unlike :meth:`open_field`, a linear track is defined by its *topology*,
+        not by raw positions -- a cloud of (x, y) samples cannot tell apart a
+        straight track, an L-shaped track, or an open arena. You must therefore
+        supply either ``endpoints`` (a straight two-point track) or
+        ``node_positions`` (a piecewise-linear sequence of waypoints). A
+        :mod:`networkx` track graph is assembled (nodes carry ``pos``
+        attributes, edges join consecutive nodes with a ``distance`` weight)
+        and passed to :meth:`from_graph`.
+
+        Parameters
+        ----------
+        endpoints : sequence of two (x, y) points, optional
+            The two ends of a straight track, e.g. ``[(0, 0), (100, 0)]``.
+            Mutually exclusive with `node_positions`.
+        node_positions : sequence of (x, y) points, optional
+            Ordered waypoints of a piecewise-linear track (>= 2 points). Edges
+            connect each consecutive pair. Mutually exclusive with `endpoints`.
+        bin_size : float
+            Length of each bin along the linearized track, in the units of the
+            node coordinates.
+        edge_spacing : float or sequence of floats, default 0.0
+            Spacing inserted between consecutive edges during linearization.
+            For a single contiguous track this is typically 0.0.
+        name : str, default ""
+            Optional name for the resulting Environment.
+
+        Returns
+        -------
+        Environment
+            A 1D linearized-track Environment (``is_linearized_track`` is True).
+
+        Raises
+        ------
+        ValueError
+            If neither `endpoints` nor `node_positions` is given (a linear track
+            needs an explicit topology, not raw positions), if both are given,
+            or if too few points are supplied.
+
+        See Also
+        --------
+        from_graph : The general factory this preset delegates to.
+        open_field : The only positions-based preset.
+        maze : W / plus / T maze preset (explicit topology).
+
+        Examples
+        --------
+        Straight track from its two endpoints:
+
+        >>> from neurospatial import Environment
+        >>> env = Environment.linear_track(endpoints=[(0, 0), (100, 0)], bin_size=5.0)
+        >>> env.is_linearized_track
+        True
+        >>> env.n_bins
+        20
+
+        L-shaped (piecewise-linear) track from waypoints:
+
+        >>> env = Environment.linear_track(
+        ...     node_positions=[(0, 0), (50, 0), (50, 50)], bin_size=5.0
+        ... )
+        >>> env.is_linearized_track
+        True
+        """
+        if endpoints is not None and node_positions is not None:
+            raise ValueError(
+                "Provide exactly one of `endpoints` or `node_positions`, not both."
+            )
+
+        if endpoints is not None:
+            points = [tuple(float(c) for c in p) for p in endpoints]
+            if len(points) != 2:
+                raise ValueError(
+                    "`endpoints` must contain exactly two (x, y) points defining "
+                    f"the ends of a straight track. Got {len(points)} point(s)."
+                )
+        elif node_positions is not None:
+            points = [tuple(float(c) for c in p) for p in node_positions]
+            if len(points) < 2:
+                raise ValueError(
+                    "`node_positions` must contain at least two (x, y) waypoints "
+                    f"for a piecewise-linear track. Got {len(points)} point(s)."
+                )
+        else:
+            raise ValueError(
+                "linear_track requires an explicit topology: pass `endpoints` "
+                "(two (x, y) points for a straight track) or `node_positions` "
+                "(a sequence of (x, y) waypoints for a piecewise-linear track). "
+                "Raw positions cannot be used to infer a 1D track -- a point "
+                "cloud is indistinguishable from an open arena. For an open "
+                "arena use Environment.open_field(positions, bin_size)."
+            )
+
+        graph = nx.Graph()
+        for i, pos in enumerate(points):
+            graph.add_node(i, pos=pos)
+        edge_order: list[tuple[Any, Any]] = []
+        for i in range(len(points) - 1):
+            _add_edge_with_distance(graph, i, i + 1, edge_id=i)
+            edge_order.append((i, i + 1))
+
+        total_length = sum(float(graph.edges[u, v]["distance"]) for u, v in edge_order)
+        if total_length <= 0.0:
+            source = "endpoints" if endpoints is not None else "waypoints"
+            raise ValueError(
+                f"linear_track {source} are coincident (total track length is 0); "
+                f"a 1-D track needs at least two distinct points. Got points: "
+                f"{points}."
+            )
+
+        return cls.from_graph(
+            graph=graph,
+            edge_order=edge_order,
+            edge_spacing=edge_spacing,
+            bin_size=bin_size,
+            name=name,
+        )
+
+    @classmethod
+    def maze(
+        cls,
+        kind: str,
+        *,
+        track_graph: nx.Graph | None = None,
+        node_positions: dict[Any, Sequence[float]] | None = None,
+        bin_size: float,
+        edge_spacing: float | Sequence[float] = 0.0,
+        name: str = "",
+    ) -> Environment:
+        """Create a 1D linearized W / plus / T maze Environment.
+
+        Like :meth:`linear_track`, a maze is defined by its *topology*, not by
+        raw positions. You must supply either a ready ``track_graph`` (a
+        :mod:`networkx` graph whose nodes carry ``pos`` attributes) or
+        ``node_positions`` from which the standard edge topology for `kind` is
+        assembled. The graph is then passed to :meth:`from_graph`.
+
+        Standard topologies assembled from `node_positions`. **The topology is
+        derived from the ORDER of the `node_positions` entries, not from their
+        x/y coordinates** -- this is a coordinate-system-independent contract,
+        so it works identically whether y increases up or down and whichever
+        direction the arms extend. The required order per `kind` is:
+
+        - ``"plus"`` (5 nodes): ``[center, arm1, arm2, arm3, arm4]``. The first
+          node is the center; the remaining four are arm tips. Edges join the
+          center to each arm tip (a star). For example::
+
+              {
+                  "center": (0, 0),
+                  "north": (0, 50),
+                  "south": (0, -50),
+                  "east": (50, 0),
+                  "west": (-50, 0),
+              }
+
+        - ``"t"`` (4 nodes): ``[stem_end, junction, arm_left, arm_right]``. The
+          stem joins stem_end--junction; the crossbar joins junction--arm_left
+          and junction--arm_right. For example::
+
+              {
+                  "start": (0, 0),
+                  "junction": (0, 50),
+                  "left": (-50, 50),
+                  "right": (50, 50),
+              }
+
+        - ``"w"`` (6 nodes): ``[base_left, base_mid, base_right, arm_left,
+          arm_mid, arm_right]`` -- three base nodes followed by three arm tips.
+          The base nodes are connected by a horizontal connector
+          (base_left--base_mid--base_right); each arm tip connects to the base
+          node at the matching position in this order (base_left--arm_left,
+          base_mid--arm_mid, base_right--arm_right). For example::
+
+              {
+                  "base_left": (0, 0),
+                  "base_mid": (50, 0),
+                  "base_right": (100, 0),
+                  "arm_left": (0, 50),
+                  "arm_mid": (50, 50),
+                  "arm_right": (100, 50),
+              }
+
+        Python dicts preserve insertion order, so the order you write the
+        entries in is the order used.
+
+        Parameters
+        ----------
+        kind : {"w", "plus", "t"}
+            Which standard maze topology to build.
+        track_graph : networkx.Graph, optional
+            A ready track graph with ``pos`` node attributes. Edges join the
+            nodes that define the maze; ``distance`` weights are filled in from
+            node positions if absent. Mutually exclusive with `node_positions`.
+        node_positions : dict, optional
+            Mapping of node label -> (x, y) coordinate from which the standard
+            `kind` topology is assembled. Mutually exclusive with `track_graph`.
+        bin_size : float
+            Length of each bin along the linearized track.
+        edge_spacing : float or sequence of floats, default 0.0
+            Spacing inserted between consecutive edges during linearization.
+        name : str, default ""
+            Optional name for the resulting Environment.
+
+        Returns
+        -------
+        Environment
+            A 1D linearized-track Environment (``is_linearized_track`` is True).
+
+        Raises
+        ------
+        ValueError
+            If `kind` is not one of ``{"w", "plus", "t"}``; if neither
+            `track_graph` nor `node_positions` is given (positions alone cannot
+            infer maze topology); if both are given; or if `node_positions` does
+            not contain the expected number of nodes for `kind`.
+
+        See Also
+        --------
+        from_graph : The general factory this preset delegates to.
+        linear_track : Linear / piecewise-linear track preset.
+        open_field : The only positions-based preset.
+
+        Examples
+        --------
+        Plus maze from labelled node positions:
+
+        >>> from neurospatial import Environment
+        >>> nodes = {
+        ...     "center": (0, 0),
+        ...     "north": (0, 50),
+        ...     "south": (0, -50),
+        ...     "east": (50, 0),
+        ...     "west": (-50, 0),
+        ... }
+        >>> env = Environment.maze("plus", node_positions=nodes, bin_size=5.0)
+        >>> env.is_linearized_track
+        True
+        """
+        allowed = ("w", "plus", "t")
+        kind_normalized = kind.lower() if isinstance(kind, str) else kind
+        if kind_normalized not in allowed:
+            raise ValueError(
+                f"Unknown maze kind {kind!r}. `kind` must be one of "
+                f"{allowed} (W maze, plus/cross maze, or T maze)."
+            )
+
+        if track_graph is not None and node_positions is not None:
+            raise ValueError(
+                "Provide exactly one of `track_graph` or `node_positions`, not both."
+            )
+
+        if track_graph is not None:
+            # `kind` is validated above but cannot be reconciled with an
+            # arbitrary supplied graph; the graph topology is authoritative.
+            warnings.warn(
+                f"maze(kind={kind!r}, track_graph=...): `kind` is not consulted "
+                "when an explicit `track_graph` is supplied; the supplied "
+                "`track_graph` is authoritative for the maze topology.",
+                UserWarning,
+                stacklevel=2,
+            )
+            # Operate on a copy so the caller's graph is never mutated.
+            graph = track_graph.copy()
+            edge_order = list(graph.edges())
+            # Fill in `distance` from node positions where missing; this is the
+            # only edge attribute the neurospatial linearization path consumes
+            # (`_get_graph_bins` builds its own edge_id map from edge
+            # enumeration and never reads an input `edge_id`). We also set
+            # `edge_id` for interoperability/parity with
+            # ``track_linearization.make_track_graph``, but neurospatial's
+            # ``to_linear()`` does not consume it.
+            for assigned_id, (u, v) in enumerate(graph.edges()):
+                if "distance" not in graph.edges[u, v]:
+                    p1 = np.asarray(graph.nodes[u]["pos"], dtype=float)
+                    p2 = np.asarray(graph.nodes[v]["pos"], dtype=float)
+                    graph.edges[u, v]["distance"] = float(np.linalg.norm(p2 - p1))
+                if "edge_id" not in graph.edges[u, v]:
+                    graph.edges[u, v]["edge_id"] = assigned_id
+        elif node_positions is not None:
+            graph, edge_order = _assemble_maze_graph(kind_normalized, node_positions)
+        else:
+            raise ValueError(
+                f"maze({kind!r}) requires an explicit topology: pass a ready "
+                "`track_graph` (a networkx.Graph with `pos` node attributes) or "
+                "`node_positions` (a mapping of node label -> (x, y) coordinate) "
+                "from which the standard topology is assembled. Raw positions "
+                "cannot be used to infer maze topology."
+            )
+
+        total_length = sum(float(graph.edges[u, v]["distance"]) for u, v in edge_order)
+        if total_length <= 0.0:
+            node_pos = {
+                n: tuple(float(c) for c in graph.nodes[n]["pos"]) for n in graph.nodes
+            }
+            raise ValueError(
+                f"maze({kind!r}) node positions are coincident (total track "
+                "length is 0); a 1-D track needs at least two distinct points. "
+                f"Got node positions: {node_pos}."
+            )
+
+        return cls.from_graph(
+            graph=graph,
+            edge_order=edge_order,
+            edge_spacing=edge_spacing,
+            bin_size=bin_size,
+            name=name,
+        )
 
     @classmethod
     def from_graph(

@@ -143,6 +143,36 @@ snippets:
     kind: markdown
     index: 2
 
+  - id: docs_trajectory_region_crossings
+    source: docs/user-guide/trajectory-and-behavioral-analysis.md
+    kind: markdown
+    # Block 4: Region-Based Segmentation > Detecting Region Crossings. This
+    # pins the v0.6 call shape: env in positional slot 3, region_name keyword.
+    index: 4
+    setup: |
+      import numpy as np
+      from shapely.geometry import Point
+
+      from neurospatial import Environment
+
+      positions = np.column_stack([
+          np.linspace(0.0, 100.0, 80),
+          np.full(80, 50.0),
+      ])
+      env = Environment.from_samples(positions, bin_size=5.0)
+      env.regions.add("goal", polygon=Point(50.0, 50.0).buffer(10.0))
+
+      trajectory = np.array([
+          [10.0, 50.0],
+          [30.0, 50.0],
+          [50.0, 50.0],
+          [70.0, 50.0],
+          [50.0, 50.0],
+          [30.0, 50.0],
+      ])
+      position_bins = env.bin_at(trajectory)
+      times = np.arange(len(trajectory), dtype=float)
+
   - id: quickstart_vte_session
     source: .claude/QUICKSTART.md
     kind: markdown
@@ -207,8 +237,9 @@ snippets:
   - id: quickstart_view_classify
     source: .claude/QUICKSTART.md
     kind: markdown
-    # Block 21: classify spatial-view cells from single + batch results. Both
-    # ViewRateResult and ViewRatesResult expose peak_view_location() (singular).
+    # Block 21: classify spatial-view cells from single + batch results.
+    # ViewRateResult exposes peak_location(); ViewRatesResult exposes the
+    # plural peak_locations().
     index: 21
     setup: |
       import os
@@ -323,3 +354,138 @@ snippets:
     setup: |
       import os
       os.environ["MPLBACKEND"] = "Agg"
+
+  - id: workflows_place_field_canonical
+    source: docs/user-guide/workflows.md
+    kind: markdown
+    # Block 0: Workflow 1 — the canonical beginner place-field path.
+    # Uses simulate_trajectory_ou + PlaceCellModel + generate_poisson_spikes
+    # + compute_spatial_rate + env.plot_field. Rewritten in v0.6 to replace
+    # the hand-rolled np.histogram / scipy.ndimage approach.
+    index: 0
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"
+    timeout: 180
+
+  - id: migration_v06_runnable
+    source: docs/migration/v0.6.md
+    kind: markdown
+    # Block 2 (index 2) in the v0.6 migration guide is the runnable snippet that
+    # exercises the NEW way for BOTH clean breaks: build a SpatialRatesResult via
+    # compute_spatial_rates, then summary_table() (per-unit summary) and the now-
+    # dense to_dataframe(), and the Dataset-shaped to_xarray(). The to_xarray()
+    # call is wrapped in try/except ImportError inside the snippet so it stays
+    # green on the default (no-xarray) install; the dedicated xarray CI job
+    # exercises the Dataset path directly.
+    index: 2
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"
+    timeout: 120
+
+  - id: workflows_decode_session_golden_path
+    source: docs/user-guide/workflows.md
+    kind: markdown
+    # Block 1: Workflow 2 — the one-call Bayesian decoding golden path.
+    # simulate_trajectory_ou + PlaceCellModel + generate_population_spikes
+    # + decode_session + decoding_error. Decodes a 100 cm linear track to a
+    # few-cm median error (sanity check that the posterior tracks the path).
+    index: 1
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"
+    timeout: 180
+
+  - id: workflows_decode_session_summary_streaming
+    source: docs/user-guide/workflows.md
+    kind: markdown
+    # Block 2: Workflow 2 long-session callout — the memory-safe streaming
+    # decoder. decode_session_summary(...).to_dataframe()/.summary()/.map_position
+    # never materializes the full (n_time, n_bins) posterior. Setup mirrors the
+    # decode_session golden-path fixture (linear track + population of place
+    # cells) so the summary path is exercised on the same env/spikes shape.
+    index: 2
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"
+      import numpy as np
+      from neurospatial import Environment
+      from neurospatial.simulation import (
+          PlaceCellModel,
+          generate_population_spikes,
+          simulate_trajectory_ou,
+      )
+      env = Environment.from_samples(
+          np.linspace(0.0, 100.0, 51).reshape(-1, 1), bin_size=2.0
+      )
+      env.units = "cm"
+      positions, times = simulate_trajectory_ou(
+          env, duration=120.0, dt=0.02, speed_mean=15.0, seed=0, speed_units="cm"
+      )
+      cells = [
+          PlaceCellModel(env, center=np.array([c]), width=10.0, max_rate=20.0, seed=i)
+          for i, c in enumerate(np.linspace(5.0, 95.0, 15))
+      ]
+      spike_times = generate_population_spikes(
+          cells, positions, times, seed=0, show_progress=False
+      )
+    timeout: 180
+
+  - id: interop_session_first_optional
+    source: docs/user-guide/interoperability.md
+    kind: markdown
+    # Block 0: the "Array-first stays primary" end-to-end example. It runs the
+    # SAME analysis three ways with NO optional deps: array-first
+    # (compute_spatial_rates + decode_session), the Session.from_arrays bundle
+    # (compute stays functional on sess.env/spikes/times/positions), and the
+    # BayesianDecoder object wrapper (fit/predict/score, asserting byte-exact
+    # parity with decode_session). This pins the core session-first-optional
+    # surface. pynapple/NWB blocks on the page are illustrative only and are
+    # intentionally NOT in the manifest (those extras are not installed in the
+    # docs-snippet CI job, which uses `--extra dev`).
+    index: 0
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"
+    timeout: 180
+
+  - id: workflows_batch_processing_compute_spatial_rates
+    source: docs/user-guide/workflows.md
+    kind: markdown
+    # Block 6: "Pattern: Batch Processing" — the recommended batch API
+    # (compute_spatial_rates) that replaced the old manual per-neuron loop.
+    # Setup provides a linear-track env + trajectory and a load_all_neurons()
+    # fixture returning a {unit_id: spike_times} dict so the snippet's
+    # dict-driven batch call runs end-to-end.
+    index: 6
+    setup: |
+      import os
+      os.environ["MPLBACKEND"] = "Agg"
+      import numpy as np
+      from neurospatial import Environment
+      from neurospatial.simulation import (
+          PlaceCellModel,
+          generate_poisson_spikes,
+          simulate_trajectory_ou,
+      )
+      env = Environment.from_samples(
+          np.linspace(0.0, 100.0, 51).reshape(-1, 1), bin_size=2.0
+      )
+      env.units = "cm"
+      positions, times = simulate_trajectory_ou(
+          env, duration=120.0, dt=0.02, speed_mean=15.0, seed=0, speed_units="cm"
+      )
+
+      def load_all_neurons():
+          cells = [
+              PlaceCellModel(env, center=np.array([c]), width=10.0, max_rate=20.0, seed=i)
+              for i, c in enumerate(np.linspace(5.0, 95.0, 5))
+          ]
+          return {
+              f"unit_{i}": generate_poisson_spikes(
+                  cell.firing_rate(positions), times, seed=i
+              )
+              for i, cell in enumerate(cells)
+          }
+    timeout: 180

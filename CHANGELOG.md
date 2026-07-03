@@ -1,11 +1,796 @@
 # Changelog
 
+All notable changes to this project are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+While the project is pre-1.0, minor releases may still include breaking changes;
+these are called out under a dedicated **Breaking changes** heading.
+
+## [Unreleased]
+
+### Changed
+
+- The internal `_build_encoding_model` (shared by `decode_session` /
+  `decode_session_summary` / `BayesianDecoder.fit`) gained an optional
+  `context` parameter that names the caller in its up-front
+  timestamp-validation error. `BayesianDecoder.fit` passes
+  `context="BayesianDecoder.fit"`, so an `epoch` that selects too-few training
+  samples now raises `"At least 2 samples required for BayesianDecoder.fit,
+  got N"` instead of the misleading `decode_session` provenance. The default
+  preserves every existing message.
+- `decode_session` / `decode_session_summary` now accept `positions=None` when
+  `encoding_models` is supplied (the passthrough decode never uses a position
+  track). Previously this raised `"as_times_positions received a timestamp array
+  but no positions"`; now the position track is normalized only when actually
+  needed (the encode step, or a `PositionLike` `times`). Every existing caller
+  that passes `positions` is byte-for-byte unchanged. This enables the
+  fitted-model decode path used by `BayesianDecoder.predict` /
+  `predict_summary`.
+
+### Fixed
+
+- The public likelihood functions `log_poisson_likelihood` and
+  `poisson_likelihood` now **validate `dt` via the shared `validate_dt`
+  helper**, consistent with the decode entry points. A non-numeric `dt`
+  (including a numeric string like `"0.1"`), a `bool` (`dt=True`), and a
+  non-finite `dt` (`nan`/`inf`) now raise a clear `ValueError` instead of the
+  weaker `dt <= 0` guard (which leaked a raw `TypeError` on strings, silently
+  accepted `dt=True` as `1`, and let `nan`/`inf` slip through). The error
+  message changed from `"dt must be positive"` to `"dt must be a finite number
+  > 0"`.
+- `bin_spikes_in_time` now **validates `dt` consistently** with
+  `decode_session` / `decode_session_summary` via a shared `validate_dt` helper:
+  a non-numeric `dt` (including a numeric string like `"0.1"`) and a `bool`
+  (`dt=True`) now raise a clear `ValueError` (`"dt must be a finite number >
+  0, ..."`). Previously a numeric string leaked a raw `TypeError` from
+  `"0.1" <= 0` and `dt=True` was silently accepted and used as a chunk size of
+  `1`. `decode_position` routes through the same helper, so an invalid `dt`
+  there also raises the clean message instead of a cryptic downstream error.
+- An **unparseable `dtype`** (e.g. `dtype="bogus"`) now raises a clear
+  `ValueError` naming `dtype` across the decode/encode entry points
+  (`decode_position`, `decode_position_summary`, `compute_spatial_rates`,
+  `decode_session`, `decode_session_summary`) instead of a raw NumPy
+  `TypeError: data type 'bogus' not understood`.
+- `decode_session` and `decode_session_summary` now **validate `dt`** (finite,
+  `> 0`) up front with a clear `ValueError`, matching `bin_spikes_in_time`'s
+  wording (`"dt must be finite and > 0, got ..."`). Previously the shared
+  `_build_encoding_model` built the decode time grid directly, bypassing
+  `bin_spikes_in_time`'s guard, so an invalid `dt` leaked a cryptic error:
+  `dt=0` → `ZeroDivisionError`, `dt=NaN` → "cannot convert float NaN to
+  integer", `dt<0` → a misleading "span smaller than one bin" message, and
+  `dt=inf` → a similar cryptic failure.
+- `decode_position` now **preserves `float32`** when handed a rate-result object
+  (anything exposing `.firing_rates`). Previously the friendly object path
+  promoted a `float32` `.firing_rates` to `float64`, silently losing part of the
+  `dtype=np.float32` memory win that the raw-array path already delivered. The
+  object path now matches the raw-array path byte-for-byte: `float32` stays
+  `float32`, `float64` stays `float64`, an integer rate map is promoted to
+  `float64`, and a `None` / dict / non-2-D `.firing_rates` still raises the same
+  clear `ValueError`.
+- `time_chunk` is now validated as a **positive integer (not `bool`)** across
+  `normalize_to_posterior`, `decode_position`, `decode_position_summary`, and
+  `decode_session_summary`, via a shared validator that raises a clear
+  `ValueError` naming the value and its type. Previously a float (`1.5`) or
+  string (`"2"`) leaked a raw `TypeError` from `range(...)`/comparison, and
+  `True` was silently accepted as a chunk size of `1`.
+- The summary decoders `decode_position_summary` and `decode_session_summary`
+  now **reject `time_chunk=None`** (raising a clear `ValueError`). Previously a
+  `None` value set the streaming block to the full session length, materializing
+  the full `(n_time, n_bins)` posterior transiently and defeating the
+  memory-safe "never materialize the full posterior" contract these functions
+  promise. `time_chunk` must be a positive integer (default `1024`); use
+  `decode_position` / `decode_session` if you want the full posterior.
+
+### Added
+
+- NWB `SpatialRatesResult` round-trip + lazy reads (`neurospatial.io.nwb`).
+  `write_spatial_rates(nwbfile, result, *, name="spatial_rates", overwrite=False)`
+  stores a population result on a **unit axis** — a `DynamicTable` (one row per
+  unit) in `analysis/` with a `unit_id` column, a 2-D `firing_rate` column of
+  shape `(n_units, n_bins)`, and one column per `unit_table` field; occupancy is
+  stored once as a companion `TimeSeries`, `smoothing_method` / `bandwidth` /
+  bin counts ride in the table description, and bin centers are shared via the
+  existing `bin_centers` dataset. The full `Environment` is now **persisted**
+  alongside the rates (via `write_environment` under the derived name
+  `f"{name}_environment"`), so it round-trips with its **connectivity edges and
+  geometry intact**. The write is **atomic**: all name collisions (the table,
+  `f"{name}_occupancy"`, `f"{name}_environment"`) and shape validation are
+  resolved before the first object is added, so a duplicate without `overwrite`
+  raises before any mutation and `overwrite=True` cleans every companion; a
+  later add failure rolls back the partial write. `firing_rates` / `occupancy`
+  are defensively copied so the NWB containers never alias the live result, and a
+  `unit_table` column named `unit_id` / `firing_rate` (reserved) raises a clear
+  `ValueError`. `read_place_field(nwbfile, *, name="spatial_rates", env=None)` is
+  the inverse, reconstructing a `SpatialRatesResult` with `firing_rates` /
+  `occupancy` / `unit_ids` / `unit_table` / `smoothing_method` / `bandwidth` all
+  preserved (**`unit_ids` and `unit_table` links survive** non-default ids and
+  non-trivial tables). When `env=` is omitted it restores the **persisted
+  environment with full connectivity** (`read_place_field(nwb).env.neighbors(i)`
+  matches the original; there is no connectivity-less bin-centers fabrication),
+  and it raises if neither an `env=` nor a persisted env is present. A mismatched
+  or stale `env=` (its `n_bins` disagreeing with the stored rates) now raises a
+  clear `ValueError` instead of silently attaching, the companion occupancy
+  length is validated at read against the table's recorded `n_bins`, and a `name`
+  pointing at a non-spatial-rates table raises a clear `ValueError`. Shape
+  mismatches raise param-named `ValueError`s and duplicate names honor
+  `overwrite`. `read_position` / `read_pose` / `read_units` gain a keyword-only
+  `lazy=False`: `lazy=True` returns h5py-backed handles (per-unit spike-time
+  handles for `read_units`) that materialize only when sliced / `np.asarray`-ed —
+  valid only while the backing `NWBFile` is open — while the default eager path
+  stays byte-for-byte unchanged. The lazy `read_position` / `read_pose` paths now
+  **validate lengths** via the handles' `.shape[0]` (no materialization), so a
+  positions/timestamps or per-bodypart mismatch raises exactly as the eager path
+  (lazy pose no longer silently misaligns bodyparts of differing length), and the
+  lazy per-unit spike-time handle **caches** its materialized array (the ragged
+  slice is read and sorted at most once). A `test_nwb.yml` CI job installs the
+  `nwb` extra and runs the NWB tests (`tests/nwb` + `tests/test_recording.py`),
+  which the default `dev`-only job skips. `neurospatial` still never imports
+  pynwb (loaded lazily in `io/nwb`).
+- `BayesianDecoder` — an immutable (`frozen`) `fit`/`predict`/`predict_summary`/
+  `score` wrapper over the decode core (`neurospatial.decoding`, also exported at
+  the top level). `fit(spike_times, times, positions, *, speed=None,
+  min_speed=None, epoch=None)` builds encoding models by reusing
+  `decode_session`'s internal encoder and returns a **new** fitted decoder
+  (never mutates the original); an optional `epoch` restricts the training data
+  first (via `behavior.restrict` / `restrict_spike_trains`) for train/test
+  splits. `predict` / `predict_summary` delegate to `decode_session` /
+  `decode_session_summary` with the fitted models, so a fitted decoder's
+  posterior is **byte-exact** with `decode_session` on the same inputs; `score`
+  reports decode error (`"median_error"` / `"mean_error"`, lower is better) via
+  `DecodingResult.error_against`. `score` gained a `distance=` option
+  (`"euclidean"` default or `"geodesic"`, forwarded to `error_against`) so
+  scoring can use the environment's graph distance, not only straight-line
+  error, and now **does not silently drop undecodable bins**: it **warns**
+  (naming the excluded fraction) when any decode time bin is undecodable
+  (all-non-finite posterior row, which `nanmedian` / `nanmean` would otherwise
+  ignore) and **raises** a clear `ValueError` — instead of returning `nan` — when
+  *no* bin is decodable (naming the likely degenerate-encoding-model or
+  seconds-vs-milliseconds unit-mismatch cause); the all-decodable path stays
+  warning-free. Invalid `metric` / `distance` are validated **before** decoding
+  so a typo does not cost a full decode. Construction now validates config and
+  fitted state: `dt` (via the shared `validate_dt`) and `dtype` are checked at
+  build time, and a directly-injected fitted decoder
+  (`BayesianDecoder(env, encoding_models=..., unit_ids=...)`) is checked for
+  fitted-state coupling (`unit_ids` present, 2-D models, and a bin/unit-count
+  match against `env`) instead of detonating later inside the core. A new
+  read-only `is_fitted` property lets callers branch without catching
+  `RuntimeError`, and a `warn_on_drop` config field (default `True`) threads to
+  both the `fit` encode step and the `predict` / `predict_summary` decode steps
+  as a single knob to silence the spikes-out-of-window warnings. Accepts
+  `SpikeTrainsLike` / `PositionLike` inputs, and decodes through the
+  `Environment`, so geodesic / linearized-track / graph-based decoding works
+  (unlike pynapple `decode_1d` / `decode_2d`). Unfitted `predict` /
+  `predict_summary` / `score` raise a clear `RuntimeError`.
+- `Session` — a frozen **discoverability bundle** (`neurospatial.recording`,
+  also exported at the top level) grouping `env` / `position` / `spikes` /
+  `epochs` / `metadata`. It is **not a god-object**: it exposes the raw arrays
+  (`session.times` / `session.positions` / `session.spikes`) but carries **no**
+  heavy analysis methods — compute stays functional, e.g.
+  `compute_spatial_rates(session.env, session.spikes, session.times,
+  session.positions)`. `position` uniformly exposes `.t` / `.values` (arrays are
+  wrapped in a small internal `Position` holder; a pynapple `Tsd` / `TsdFrame`
+  already conforms). Constructors: `Session.from_arrays(*, env=None, times,
+  positions, spike_times, unit_ids=None, unit_table=None, epochs=None,
+  metadata=None)` (accepts arrays or a `PositionLike`, and a list / 2-D array /
+  `SpikeTrains` / pynapple `TsGroup` for spikes, threading `unit_ids` /
+  `unit_table`) and `Session.from_nwb(path_or_file, *, environment_name=None,
+  unit_ids=None, **read_kwargs)`. Frozen / immutable: `with_environment(env)` and
+  `restrict(epochs)` return a **new** `Session` and never mutate the original.
+  `restrict` slices the position and the spikes to the epochs and is
+  **identity-preserving** — restriction trims spikes per unit (never drops
+  units), so it rebuilds a `SpikeTrains` carrying the original `unit_ids` /
+  `unit_table` unchanged, and records the epochs on the new session. A
+  `restrict` that keeps **zero** position samples (epochs that miss the session
+  entirely — often a seconds-vs-milliseconds unit mismatch) emits a
+  `UserWarning` naming the likely cause and returns the (empty) session. A
+  mismatched `position.t` / `position.values` length (also self-enforced by the
+  internal `Position` holder, which additionally requires a 1-D `t`), a
+  `position` that is not `PositionLike` (missing `.t` / `.values`), or a
+  non-`EnvironmentLike` `env` raises a clear `ValueError`.
+- `load_session(source, **kwargs)` — dispatches an NWB file path (`str` /
+  `os.PathLike`) or an open pynwb `NWBFile` to `Session.from_nwb`; any other
+  `source` raises a clear `TypeError` directing you to `Session.from_arrays`.
+  `Session.from_nwb` builds the bundle via the existing lazy
+  `neurospatial.io.nwb` readers (`read_units` / `read_position` /
+  `read_environment`), so `neurospatial.recording` **never imports pynwb /
+  pynapple** and `import neurospatial` stays cheap. The environment is read by
+  **presence** (membership in `nwbfile.scratch`), not by catching an error: a
+  genuinely-absent environment maps to `env=None`, while an environment that is
+  **present but unreadable** (malformed / wrong schema) now **raises** instead of
+  being silently swallowed to `None`. The new `environment_name=` selector reads
+  the standard `spatial_environment` scratch entry by default and can select an
+  environment written under a custom name. (The lazily-materialized `lazy=True`
+  NWB read path is intentionally deferred to a later phase.)
+- `restrict` / `in_epochs` / `restrict_spike_trains` — array-native epoch
+  selection ("give me my running periods / trial N") in a new
+  `neurospatial.behavior.epochs`. `epochs` accepts `(start, end)` scalars, two
+  `(starts, ends)` 1-D arrays, an `(n, 2)` array, **or a pynapple `IntervalSet`**
+  — the `IntervalSet` is **duck-typed** (`.start` / `.end`), so this stays
+  array-first and **never imports pynapple**. The one genuinely ambiguous form
+  — a length-2 pair of length-2 sequences (`[[0, 5], [10, 15]]`), which could
+  mean two `(start, end)` interval rows **or** two parallel `(starts, ends)`
+  arrays — **raises** `ValueError`; pass an `(n, 2)` NumPy array (interval rows)
+  or explicit 1-D `start`/`end` arrays to disambiguate. Endpoints are **inclusive** by
+  default (`closed="both"`, matching `behavior.segmentation` and pynapple; also
+  `"left"` / `"right"` / `"neither"`). `restrict(times, *arrays, epochs=...)`
+  slices `times` and any arrays **aligned to `times`** (e.g. `positions`) by the
+  same in-epoch mask, order preserved (`t, pos = restrict(times, positions,
+  epochs=run_epochs)`); with no extra arrays it restricts an event-time array by
+  its own timestamps (`restrict(spike_train, epochs=...)`).
+  `restrict_spike_trains(trains, epochs)` restricts **ragged** per-unit spikes,
+  each train by its **own** timestamps, and accepts a plain sequence or a
+  `SpikeTrains`. `restrict` is also exported at the top level (`neurospatial.restrict`).
+- `SpikeTrains` — a frozen ragged-spike-train container (label access
+  `st[unit_id]`, `filter("region == 'CA1'")`, optional per-unit `unit_table`),
+  the one justified new container (ragged per-unit spike times genuinely don't
+  fit a rectangular array). Exported from both `neurospatial` (top level) and
+  `neurospatial.encoding`. It **duck-types as `SpikeTrainsLike`** — it is not a
+  `Mapping`, exposes a non-callable `.index` property (the unit ids), and its
+  `__iter__` yields the per-unit **train arrays** — so it flows through the
+  Phase 3.1 spike-input adapter's iterate branch and into `compute_spatial_rates`
+  (and the other batch encoders/decoders) with `unit_ids` preserved. Label
+  access (`st[unit_id]`) and the adapter's positional iteration coexist because
+  they use different dunders (`__getitem__` vs `__iter__` / `.index`). Frozen
+  and immutable: `trains` is stored as a `tuple` so in-place mutation raises,
+  `filter` returns a new container and never mutates the original; duplicate
+  `unit_ids` raise `ValueError`.
+- Input Protocol surface + pynapple ingress/egress (optional). A new
+  `neurospatial/_typing.py` defines the structural Protocols that let
+  third-party objects flow into the **array-first** scientific core without the
+  core ever importing or `isinstance`-checking them:
+  - `PositionLike` — a `.t` / `.values` time-series (pynapple `Tsd` / `TsdFrame`
+    conform). `compute_spatial_rate` / `compute_spatial_rates` and
+    `decode_session` / `decode_session_summary` now accept a `PositionLike` in
+    the `times` slot (with `positions` omitted) and normalize it to plain
+    `float64` arrays at the boundary via `as_times_positions`. The plain-array
+    path is unchanged byte-for-byte.
+  - `SpikeTrainsLike` — the accepted spike-input union, plus a real pynapple
+    `TsGroup`. A `TsGroup` is a `collections.UserDict`, so **iterating it yields
+    the unit-id keys, not the per-unit trains**; `SpikeTrainsLike` is therefore
+    the *indexable-by-id* surface (`.index` of unit ids + `group[uid]` returning
+    a per-unit `Ts` with `.t`). A new `encoding.as_spike_trains_with_ids`
+    extracts trains by indexing each id (never by iterating), so a raw `TsGroup`
+    flows correctly into `compute_spatial_rates` / `decode_session`; it surfaces
+    the ids without changing `as_spike_trains`'s `list[NDArray]` contract, and
+    when a group carries ids and the caller passes no `unit_ids=`, they now flow
+    into `SpatialRatesResult.unit_ids` instead of being silently dropped.
+  - `EnvironmentLike` — a public re-export of `EnvironmentProtocol`. The
+    internal `isinstance(env, Environment)` check in `CompositeEnvironment` is
+    replaced by a duck-typed `is_environment_like` check, fixing the surprise
+    that the sibling `EgocentricPolarEnvironment` (not an `Environment`
+    subclass) was rejected even though it is a legitimate environment.
+- pynapple I/O shim behind a new optional `pynapple` extra:
+  `neurospatial.io.from_pynapple` (`TsGroup` → `(trains, unit_ids)`;
+  `Tsd` / `TsdFrame` → `(times, positions)`; `IntervalSet` → `(start, end)`) and
+  `neurospatial.io.to_pynapple` (a decoded MAP track / `times`+`values` →
+  `Tsd` / `TsdFrame`). `import pynapple` is lazy inside these functions, so the
+  package and the array path import and run with pynapple absent; calling them
+  without it raises a clear `ImportError` naming `neurospatial[pynapple]`. The
+  scientific modules never import pynapple.
+- Speed filtering on the encode path. `compute_spatial_rate` and
+  `compute_spatial_rates` gain keyword-only `speed` / `min_speed` parameters
+  (also forwarded by `decode_session` / `decode_session_summary`). When
+  `min_speed` is set, low-speed periods are excluded using **one shared
+  per-interval speed gate** applied to **both** the spike numerator and the
+  occupancy denominator, so a `min_speed` knob can never silently bias firing
+  rates by filtering only one side. The spike gate matches the occupancy gate
+  exactly: occupancy keeps interval `k` iff `speed[k] >= min_speed`, and a
+  spike at time `t` is kept iff
+  `speed[searchsorted(times, t, "right") - 1] >= min_speed` — the same
+  per-interval criterion, so identical intervals drop on both sides. When
+  `speed` is omitted it is auto-derived with a **forward difference**
+  (`speed[k] = ||positions[k+1] - positions[k]|| / (times[k+1] - times[k])`,
+  with `speed[n-1] = speed[n-2]`) to match `env.occupancy`'s
+  `time_allocation="start"` interval semantics; pass an explicit `speed` for
+  geodesic / linearized-track environments. `min_speed=None` (the default)
+  applies no filtering and leaves output byte-for-byte unchanged.
+  - Passing `speed` **without** `min_speed` now raises `ValueError` (instead of
+    silently ignoring `speed`), mirroring `env.occupancy`, which raises on
+    `min_speed` without `speed`.
+  - When the interval filter excludes **all** trajectory intervals — whether
+    via `min_speed`, `max_gap`, or the out-of-bounds-start rule (e.g. a
+    wrong-units threshold) — `compute_spatial_rate` / `compute_spatial_rates`
+    now emit one `UserWarning` naming the active gate(s) and suggesting fixes
+    (check units; pass `max_gap=None`), instead of silently returning an empty
+    rate map. The warning fires once per call (not per neuron in the batch
+    path) and is suppressed by `warn_on_drop=False`.
+- `decode_session` and `decode_session_summary` gain a keyword-only `dtype`
+  parameter (`np.float32` / `np.float64`, default `np.float64`). "Decode in
+  this dtype": a single `decode_session(dtype=np.float32)` controls **both**
+  the encoding-model working set and the posterior dtype, end-to-end — the
+  functions no longer force-promote encoding models back to `float64`. On
+  `decode_session_summary` it is now an explicit parameter rather than a
+  `decode_kwargs` entry. Default `np.float64` leaves every existing caller
+  byte-for-byte unchanged; any other dtype raises `ValueError`.
+
+### Performance
+
+- `decode_session(dtype=np.float32)` / `decode_session_summary(dtype=np.float32)`
+  now actually halve the decode working set on the beginner golden path: the
+  `float32` rate-map dtype is honored end-to-end (encoding-model working set +
+  posterior) instead of being silently promoted back to `float64` inside the
+  session helpers. Values match `float64` within `float32` tolerance (the rate
+  computation is done in `float64` and only the result is cast, per
+  `compute_spatial_rates`).
+
+### Breaking changes
+
+- `to_xarray()` now returns a labeled `xarray.Dataset` instead of an
+  `xarray.DataArray` with integer coordinates. This is a clean break: there is
+  no `DataArray` shim and no `to_dataset()` alias. Two distinct shapes are
+  produced:
+  - **Population rate results** (`SpatialRatesResult`, `DirectionalRatesResult`,
+    `ViewRatesResult`, `EgocentricRatesResult`) return a `Dataset` with dims
+    `("unit_id", "bin")`. `unit_id` is the index coordinate holding the *real*
+    per-unit identity labels (`result.unit_ids`), so units are selected by
+    label. The `bin` dimension carries non-index `bin_center_x` / `bin_center_y`
+    (/ `bin_center_z`) coordinates for Cartesian environments, or
+    `bin_center_distance` / `bin_center_angle` for the polar egocentric result.
+    The rate matrix is the `firing_rate` data var; `occupancy` is a `("bin",)`
+    data var. `attrs` carry `units`, `bandwidth` (where applicable), an `env`
+    fingerprint, and `software_version`. Duplicate `unit_ids` now raise
+    `ValueError` (label-based selection requires uniqueness).
+  - **Decode results** (`DecodingResult`) return a `Dataset` with dims
+    `("time", "bin")` (a posterior over space per time bin; no `unit_id` axis).
+    The `posterior` data var holds the posterior, with the same `bin_center_*`
+    coordinate logic and `units` / `env` / `software_version` attrs.
+
+    Before → after:
+
+    ```python
+    # before (DataArray, integer coords)
+    da = result.to_xarray()
+    da.sel(neuron=0)
+    # after (Dataset, real unit_id labels)
+    ds = result.to_xarray()
+    ds.sel(unit_id=result.unit_ids[0])
+    ```
+
+- The two terminal verbs now mean **one** thing on every result class.
+  `to_dataframe()` on the batch (plural) encoding results — `SpatialRatesResult`,
+  `DirectionalRatesResult`, `ViewRatesResult`, `EgocentricRatesResult` — is now
+  **dense tidy**: one row per `(unit, bin)` (single-unit results: one row per
+  `bin`), always carrying a `unit_id` column plus the bin-center coordinate
+  columns (`bin_center_x`/`y`/`z` for Cartesian, `bin_center_distance`/`angle`
+  for polar egocentric, `bin_center_angle` for directional), `firing_rate`, and
+  `occupancy`. The **per-unit summary** that `to_dataframe()` used to return
+  (one row per neuron with `peak_x`, `peak_rate`, `spatial_info`, `sparsity`,
+  `grid_score`, `border_score`, `cell_type`, etc.) has moved to the new
+  `summary_table()`, which is `unit_id`-indexed. This is a clean break: there is
+  no mode flag and no transition shim. The `neuron_ids=` keyword on the old
+  per-unit `to_dataframe()` is replaced by `unit_ids=` on `summary_table()`
+  (defaulting to the result's own `unit_ids`).
+
+    Before → after:
+
+    ```python
+    # before — to_dataframe() returned one row per neuron with metric columns
+    df = result.to_dataframe()           # columns: neuron_id, peak_x, ...
+    place = df[df["cell_type"] == "place"]
+
+    # after — summary_table() is the per-unit summary; to_dataframe() is dense
+    summary = result.summary_table()     # one row per unit, unit_id-indexed
+    place = summary[summary["cell_type"] == "place"]
+    dense = result.to_dataframe()         # one row per (unit, bin), carries unit_id
+    ```
+
+### Added
+
+- Memory-safe summary decoding for long sessions. `decode_position_summary`
+  is a new sibling of `decode_position` that streams over time, computing the
+  posterior one time-block at a time and reducing each block to per-time
+  scalars/vectors (`map_position` / `map_bin`, `mean_position`,
+  `posterior_entropy`, `peak_prob`) without ever materializing the full
+  `(n_time, n_bins)` posterior. It returns a new `DecodingSummary` frozen
+  dataclass (alongside `DecodingResult`) carrying `ResultMixin` and the
+  standard terminal verbs — `to_dataframe()` (one row per time bin),
+  `summary()`, `plot()`, and `to_xarray()` (a track `Dataset` with a `time`
+  dim and **no** `bin` posterior axis) — sharing accessor names and column
+  conventions with `DecodingResult` so user code ports between the two.
+  `decode_session_summary` is the matching one-call encode→bin→decode wrapper
+  (sibling of `decode_session`). The summary reductions are bit-for-bit
+  identical to reducing the full posterior for `map_position` / `map_bin`, and
+  match to floating-point tolerance for `mean_position` / `posterior_entropy` /
+  `peak_prob`.
+
+- Experiment-shaped factory presets on `Environment` that speak experiment
+  vocabulary and delegate to the existing `from_*` factories:
+  - `Environment.open_field(positions, bin_size, ...)` — the only
+    positions-based preset; delegates to `from_samples` with `fill_holes=True`
+    flipped on (a sensible open-arena default that fills interior gaps).
+  - `Environment.linear_track(*, endpoints=..., node_positions=..., bin_size)`
+    — builds a 1D track graph (`is_linearized_track == True`) from an explicit
+    topology (two endpoints for a straight track, or waypoints for a
+    piecewise-linear track) and delegates to `from_graph`.
+  - `Environment.maze(kind, *, track_graph=..., node_positions=..., bin_size)`
+    — assembles the standard W / plus / T track-graph topology (or accepts a
+    ready `networkx` graph) and delegates to `from_graph`.
+
+  Track/maze presets require an explicit topology spec; raw positions cannot
+  infer a linear/W/plus/T graph, and calling them without a topology raises a
+  clear `ValueError`.
+
+- `to_xarray()` on `DirectionalRatesResult`, `ViewRatesResult`, and
+  `EgocentricRatesResult` (the directional/view/egocentric population results
+  previously had no xarray export). Each returns the labeled `xr.Dataset`
+  described under Breaking changes above.
+
+- Durable unit identity on encoding/events results. Every population result
+  (`SpatialRatesResult`, `DirectionalRatesResult`, `ViewRatesResult`,
+  `EgocentricRatesResult`, `PopulationPeriEventResult`) now carries a
+  `unit_ids: np.ndarray` field (plus an optional `unit_table: pd.DataFrame |
+  None`), and every single-unit result (`SpatialRateResult`,
+  `DirectionalRateResult`, `ViewRateResult`, `EgocentricRateResult`,
+  `PeriEventResult`) carries a singular `unit_id`. Indexing or iterating a
+  population result stamps the per-unit label onto the child
+  (`rates[i].unit_id == rates.unit_ids[i]`, iteration preserves order and
+  labels). The batch compute functions (`compute_spatial_rates`,
+  `compute_directional_rates`, `compute_view_rates`,
+  `compute_egocentric_rates`, `population_peri_event_histogram`) gained a
+  keyword-only `unit_ids=` parameter that threads onto the result; a
+  wrong-length value raises a clear `ValueError`. Fully back-compatible:
+  `unit_ids` defaults to `np.arange(n_units)` and the new fields are
+  `compare=False`, so existing callers and equality/hash behavior are
+  unchanged.
+
+- `summary_table()` — the per-unit summary terminal verb — on every batch
+  encoding result (`SpatialRatesResult`, `DirectionalRatesResult`,
+  `ViewRatesResult`, `EgocentricRatesResult`) and on `PopulationPeriEventResult`.
+  Returns one row per unit, `unit_id`-indexed, with that result's scalar metric
+  columns (peak location/rate, spatial info, grid/border score, cell type,
+  preferred direction/distance, etc.). Accepts an optional `unit_ids=` to
+  relabel the index.
+
+- PSTH results now carry the uniform result surface. `PeriEventResult` and
+  `PopulationPeriEventResult` inherit the canonical `ResultMixin` and implement
+  the terminal verbs: `to_dataframe()` (dense — one row per time bin for the
+  single-unit result, one row per `(unit, time-bin)` for the population result,
+  always carrying `unit_id`), `summary()` (flat dict of headline scalars —
+  peak rate/latency, baseline rate; population adds `mean_peak_rate` /
+  `population_peak_latency`), `PopulationPeriEventResult.summary_table()` (one
+  row per unit with `peak_rate` / `peak_latency` / `baseline_rate`), and
+  `plot()` (delegates to `plot_peri_event_histogram`, returns the axis).
+
+- `decode_session(env, spike_times, times, positions, *, dt, ...)` — one-call
+  encode→bin→decode golden path in `neurospatial.decoding.session`.  Glues
+  `compute_spatial_rates`, `bin_spikes_in_time`, and `decode_position` into a
+  single function so beginners can decode position in ≤10 lines.  Exported from
+  `neurospatial.decoding` (`from neurospatial.decoding import decode_session`).
+  Accepts an optional `encoding_models=` array to bypass the encoding step
+  entirely.
+  Extra keyword arguments are forwarded verbatim to `decode_position`.
+
+- `as_spike_trains` — public helper that coerces the various spike-input
+  formats (1D array, NaN-padded 2D array, list of scalars, list of 1D arrays)
+  into the canonical list of per-neuron spike-time arrays. Exported from
+  `neurospatial.encoding` (and present in `__all__`); the implementation lives
+  in `neurospatial.encoding._spikes`. It standardizes the container shape only
+  — spike-time values are never shifted, rescaled, or aligned. (This is the
+  previously-internal `normalize_spike_times`, renamed before any public
+  release so the name reads as a structural conversion, not a value transform;
+  no deprecated alias is kept since the public name was never released.)
+
+- `classify(*, ...)` — a single-type boolean cell-type predicate (returns
+  `NDArray[np.bool_]`) on every batch encoding result: `EgocentricRatesResult`
+  (OVC, `min_info=0.3`), `ViewRatesResult` (view cell, `min_info=0.5`),
+  `DirectionalRatesResult` (HD cell, `min_mvl`/`alpha`), and `SpatialRatesResult`
+  (place cell, `min_spatial_info=0.5`). These replace the per-domain
+  `detect_ovcs` / `detect_view_cells` / `detect_hd_cells` detectors (now
+  deprecated aliases).
+
+- `label_cell_types(...)` on `SpatialRatesResult` — the multi-class string
+  labeler (`"place"`/`"grid"`/`"border"`/`"unclassified"`, returns
+  `NDArray[np.str_]`). This is the renamed `detect_cell_types` and is kept
+  deliberately SEPARATE from the boolean `classify` (different return type).
+
+- `is_place_cell(...)` — a single-neuron place-cell predicate, both as a free
+  function in `neurospatial.encoding.spatial` (exported from
+  `neurospatial.encoding`) and as a `SpatialRateResult.is_place_cell()` method.
+  Mirrors `is_spatial_view_cell` / `is_object_vector_cell` and agrees with
+  `detect_place_fields` (returns `True` iff that detector finds ≥1 field).
+
+- `decode_position(env, spike_counts, encoding_models, dt, ...)` now accepts a
+  population rate result object (anything exposing a `firing_rates` attribute,
+  e.g. `SpatialRatesResult`) directly in place of the raw `(n_neurons, n_bins)`
+  array, removing the `np.stack([r.firing_rate ...])` glue between the encoding
+  and decoding steps.
+
+- New keyword-only parameter `warn_on_drop: bool = True` on
+  `bin_spike_train`, `bin_spike_trains` (`encoding/_binning.py`),
+  `compute_spatial_rate`, and `compute_spatial_rates` (`encoding/spatial.py`).
+  Set to `False` to intentionally silence all spike-drop warnings (e.g. when
+  the caller handles the diagnostic themselves).
+
+### Performance
+
+- `decode_session_summary` now **streams the time-binning** so the full
+  `(n_time, n_neurons)` spike-count matrix is never materialized. It builds the
+  encoding model once over the whole session (small, `(n_neurons, n_bins)`),
+  then bins spikes block-by-block against a contiguous slice of the global time
+  grid and decodes + reduces each block via the same shared inner-loop helper as
+  `decode_position_summary`. Peak memory is now
+  `O(time_chunk × max(n_neurons, n_bins))` plus the `(n_neurons, n_bins)`
+  encoding model — **independent of session length** — meeting the
+  1 hr / 25 ms / 5000-bin / <500 MB summary-decode DoD golden path (the dense
+  `(144000, 1000)` count matrix alone would be ~1.15 GB). The result is
+  byte-for-byte identical to the prior materialize-then-stream path; per-block
+  counts are binned against the precomputed global edges so they match a single
+  global histogram exactly, and boundary spikes are counted exactly once.
+  `decode_session` (the full-posterior path) is unchanged.
+
+- `decode_position` gains two keyword-only memory knobs with **no change to its
+  return contract** (`.posterior` stays a fully-materialized `ndarray`):
+  - `dtype=np.float32` stores and computes the posterior in single precision,
+    halving stored and transient memory (parity with float64 to ~1e-6
+    relative). Every `DecodingResult` method works unchanged on a float32
+    posterior.
+  - `time_chunk` is now **hybrid**. `time_chunk=None` (the default) keeps the
+    full-matmul path **byte-for-byte unchanged** — the Poisson log-likelihood is
+    computed once over the whole window and normalized at once (transient peak
+    ~3× the stored posterior). An **explicit `time_chunk=k`** now computes the
+    Poisson log-likelihood **blockwise directly into the preallocated
+    posterior**, so the full-size log-likelihood and its working copy are never
+    materialized — cutting the transient peak to **~1×** over the returned
+    posterior (the posterior itself is unavoidably 1×, since `decode_position`
+    returns the full dense array). The opt-in path is **tolerance-equal**, not
+    byte-exact, to the full path: the per-block likelihood matmul is a different
+    BLAS shape than the full matmul, so it differs by ~1e-15 (MAP/argmax
+    identical; every row sums to 1). For a path that never holds even the full
+    posterior, use `decode_position_summary`.
+
+  For sessions where even the stored dense posterior is too large to hold, use
+  the new `decode_position_summary` / `decode_session_summary` (see **Added**),
+  which never materialize the full `(n_time, n_bins)` posterior.
+
+- `compute_spatial_rates` gains a keyword-only `dtype` (`np.float32` /
+  `np.float64`, default `np.float64`). `dtype=np.float32` halves the stored
+  `(n_units, n_bins)` rate-map array. The rate computation (GEMM / division) is
+  still performed in float64 and only the final result is cast, so float32
+  values match the float64 default within float32 tolerance. `decode_session` /
+  `decode_session_summary` now accept their own `dtype` parameter (default
+  float64) that honors float32 end-to-end — the encoding-model working set and
+  the posterior — so `decode_session(dtype=np.float32)` halves the decode
+  working set on the golden path (see the `decode_session` / `decode_session_summary`
+  `dtype` entry above). Default `np.float64` leaves every existing caller
+  byte-for-byte unchanged; any other dtype raises `ValueError`.
+
+- Documented the dense diffusion-kernel **O(n²) memory cost** and added a loud
+  high-bin memory **warning**. The heat kernel `exp(-tL)` of a connected graph
+  is dense by construction (every entry > 0), so it always costs
+  `n_bins**2 * 8` bytes of float64 memory (≈ 3.2 GB at 20,000 bins).
+  `compute_diffusion_kernels` and `env.compute_kernel` now emit a loud
+  `UserWarning` (with a GB estimate) above 3,000 bins and then **proceed** —
+  there is **no hard limit** and no `allow_large` opt-out. The warning names the
+  size, the GB estimate, the dense O(n²) reason, and the fixes (reduce bins or
+  use `smoothing_method="binned"`). No numerical results change — this is
+  documentation plus a warn-and-proceed guard. The reliable scale wins this
+  release remain float32 rate maps and the memory-safe summary decode (above). A
+  faster, lower-peak `expm_multiply` / Chebyshev rewrite of the kernel is a
+  **deferred stretch goal** and is intentionally **not** part of this release.
+
+- Warned on the dense **Gaussian-KDE** high-bin path the same way as the
+  diffusion kernel. `smoothing_method="gaussian_kde"` builds a dense
+  `(n_bins, n_bins)` weight matrix (`exp(-d²/2σ²)`, every entry > 0), so it
+  carries the same O(n_bins²) memory cost; it now emits a loud `UserWarning`
+  (with a GB estimate) above the shared `_LARGE_KERNEL_THRESHOLD` (3,000 bins)
+  and proceeds — no hard limit, no `allow_large`. One warn threshold is shared
+  by both dense smoothing paths instead of a divergent copy. Also corrected
+  stale `encoding/_smoothing.py` docs that wrongly described the diffusion
+  kernel as "sparse" / `O(n_bins)` — it is dense `(n_bins, n_bins)`,
+  O(n_bins²) per neuron, with a one-time O(n_bins³) matrix-exponential build.
+  No numerical results change.
+
+- `SpatialRatesResult.summary_table()` no longer double-computes grid and
+  border scores. It previously ran the expensive per-neuron grid/border score
+  computation **twice** per call (once for the `grid_score`/`border_score`
+  columns and again inside `label_cell_types()`); it now computes each once and
+  forwards them. `label_cell_types()` gains optional keyword-only
+  `grid_scores=` / `border_scores=` parameters to accept precomputed score
+  arrays (validated to be 1-D and length `n_neurons`); when omitted it
+  recomputes as before, so existing callers are unchanged.
+
+- `population_coverage()` gains a keyword-only `n_jobs` parameter (default `1`)
+  to parallelize per-neuron place-field detection via joblib (`-1` uses all
+  CPUs). `n_jobs=1` keeps the sequential path with no joblib overhead; results
+  are byte-for-byte identical regardless of `n_jobs` (returned data identical;
+  per-neuron exclusion warnings are not surfaced under `n_jobs != 1`).
+
+### Changed
+
+- **Default rate-map output changed for gappy / out-of-bounds data.** With the
+  new `max_gap` default of `0.5 s`, `compute_spatial_rate` /
+  `compute_spatial_rates` (and `decode_session` / `decode_session_summary`,
+  which forward `max_gap`) now exclude spikes inside large tracking gaps and
+  out-of-bounds excursions from the numerator so it matches the occupancy
+  denominator. See the **Fixed** entry "Firing-rate numerator/denominator
+  alignment on the FULL interval mask" for the full rationale and the
+  `max_gap=None` opt-out.
+
+- `detect_region_crossings` argument order changed to follow the
+  behavioral-segmentation convention:
+  `(position_bins, times, env, *, region_name, direction=...)`. The old
+  positional order `(position_bins, times, region_name, env, ...)` is still
+  accepted for one release (transitional dispatch emits a `DeprecationWarning`)
+  and will be removed in 0.7.
+
+- Docs/examples now teach `decode_session` as the one-call decode golden path;
+  the manual 3-call path (`compute_spatial_rates` → `bin_spikes_in_time` →
+  `decode_position`) is kept as an "Advanced: manual three-call path" section.
+  `examples/20_bayesian_decoding` now leads with `decode_session`; a new
+  "Workflow 2: Bayesian Decoding (one call)" section was added to
+  `docs/user-guide/workflows.md` (with a `workflows_decode_session_golden_path`
+  CI snippet in `docs/snippets.yml`); and `README.md` points to
+  `from neurospatial.decoding import decode_session` as the position-decoding
+  entry point.
+
+- Docs (Phase 0.6 sweep): rewrote Workflow 1 in `docs/user-guide/workflows.md` to use the
+  canonical `compute_spatial_rate(env, spike_times, times, positions, ...).firing_rate` idiom
+  with `simulate_trajectory_ou` + `PlaceCellModel` fixtures, replacing the hand-rolled
+  `np.histogram` / `scipy.ndimage.gaussian_filter` approach. Added a CI snippet entry
+  (`workflows_place_field_canonical`) to `docs/snippets.yml`.
+
+### Deprecated
+
+All of the following emit a `DeprecationWarning` and are scheduled for removal
+in 0.7. Each old name forwards to its replacement with unchanged behavior.
+
+- `EgocentricRatesResult.detect_ovcs` → `EgocentricRatesResult.classify`.
+- `ViewRatesResult.detect_view_cells` → `ViewRatesResult.classify`.
+- `DirectionalRatesResult.detect_hd_cells` → `DirectionalRatesResult.classify`.
+- `SpatialRatesResult.detect_cell_types` → `SpatialRatesResult.label_cell_types`
+  (the multi-class string labeler; not folded into `classify`).
+- `ViewRateResult.peak_view_location` → `ViewRateResult.peak_location`.
+- `ViewRatesResult.peak_view_location` → `ViewRatesResult.peak_locations`.
+- `detect_region_crossings` old positional order
+  `(position_bins, times, region_name, env, ...)` → new order
+  `(position_bins, times, env, *, region_name, ...)`.
+
+### Fixed
+
+- `decode_position_summary` now validates `prior` shape (was silently
+  truncating over-long 2-D priors), matching `decode_position`. A 1-D prior
+  must be `(n_bins,)` and a 2-D time-varying prior must be exactly
+  `(n_time, n_bins)`; an over-long or short 2-D prior, a wrong-length 1-D
+  prior, or a non-1-D/2-D prior now raises `ValueError` before streaming
+  instead of silently slicing the prior to the decoded time range.
+
+- **Firing-rate numerator/denominator alignment on the FULL interval mask.**
+  A firing-rate map is `spike_counts (numerator) / occupancy (denominator)`
+  per bin. `env.occupancy` drops a trajectory interval `k` for **three**
+  reasons — `dt[k] > max_gap` (large tracking gap), `speed[k] < min_speed`
+  (low speed), and `start_bin[k] < 0` (interval's start sample out of the
+  active environment) — but the spike binner previously only filtered by the
+  time window and (since the speed-filter work) by speed. A spike inside a
+  dropped interval (e.g. a 1 s tracking gap, or an out-of-bounds excursion)
+  was therefore **counted in the numerator** while occupancy **excluded that
+  interval's time from the denominator**, inflating/biasing the rate. The
+  spike numerator and the occupancy denominator now drop the **identical** set
+  of intervals via one shared `interval_valid_mask` helper (the single source
+  of truth that `env.occupancy` also consumes). `compute_spatial_rate` /
+  `compute_spatial_rates` gain a keyword-only `max_gap: float | None = 0.5`
+  (matching `env.occupancy`'s default, so occupancy behavior is unchanged)
+  that gates **both** sides identically.
+  - **Behavior change:** rate maps now differ for sessions that contain large
+    tracking gaps (intervals longer than `max_gap`) or out-of-bounds samples —
+    previously those rates were inflated. This is a correctness fix. Pass
+    `max_gap=None` to disable gap gating on **both** sides (restoring the
+    pre-fix, no-gap-gating behavior while keeping numerator and denominator
+    aligned).
+  - **No more silent empty rate maps.** When the interval filter excludes
+    **every** trajectory interval (so occupancy is all-zero and the rate map is
+    all-NaN/0), `compute_spatial_rate` / `compute_spatial_rates` now emit a
+    single `UserWarning` naming the active gate(s) (`max_gap`, `min_speed`,
+    and/or the out-of-bounds-start possibility) and suggesting fixes (check
+    units; pass `max_gap=None`). Previously only the `min_speed` gate warned —
+    a too-large `max_gap` (or a wrong-units one) and the out-of-bounds-start
+    rule emptied the map **silently**. Gated by `warn_on_drop=True` (the
+    default); fires once per call (not per neuron in the batch path).
+
+- `decode_session` now warns loudly when most spikes fall outside the decode
+  time window `[times.min(), times.max()]` instead of silently dropping them.
+  Previously, when `encoding_models=` was passed (which skips
+  `compute_spatial_rates`), spikes outside the window were silently discarded
+  by `bin_spikes_in_time`'s `np.histogram`, so a milliseconds-vs-seconds unit
+  mismatch produced an all-zero count matrix and a plausible-but-wrong
+  posterior with no warning.  `decode_session` now owns a single
+  `UserWarning` (naming the dropped count/total, percentage, decode window,
+  spike range, and units hypothesis) that covers **both** the
+  `encoding_models`-provided and `encoding_models=None` branches; the
+  encoder's now-redundant duplicate is suppressed.  A new keyword-only
+  `warn_on_drop: bool = True` parameter silences it for genuinely sparse
+  sessions.
+
+- The bare-`Environment()` error now uses a unique code `[E1006]` (was
+  `[E1001]`, which collided with "No active bins found") and points at the
+  correct docs host (`https://edeno.github.io/neurospatial/`).  Documented in
+  `docs/errors.md`.
+
+- `Environment.distance_to(region_name)` now raises `RegionNotFoundError`
+  (from `neurospatial._exceptions`) instead of a bare `KeyError` when the
+  named region is absent.  `RegionNotFoundError` subclasses `KeyError`, so all
+  existing `except KeyError` blocks keep working without change.
+
+- Removed stale `compute_firing_rate(...)` calls (that function does not exist publicly) from
+  `docs/user-guide/workflows.md` (Workflow 3) and `docs/user-guide/spatial-analysis.md`;
+  replaced with the correct `compute_spatial_rate(env, spike_times, times, positions, ...).firing_rate`
+  API and argument order.
+
+- Replaced 11 broken `env.plot(field, ax=...)` calls in `docs/user-guide/spike-field-primitives.md`
+  and `docs/user-guide/rl-primitives.md` with `env.plot_field(field, ax=...)`. The `env.plot()`
+  method's first positional argument is `ax`, not a field array, so passing a field there was silently
+  broken.
+
+- Updated `examples/20_bayesian_decoding.py` (and the jupytext-paired `.ipynb`) to use the batch
+  `compute_spatial_rates(env, spike_times_list, times, positions, ...).firing_rates` for encoding
+  models and the canonical `bin_spikes_in_time(spike_trains, dt, t_start, t_stop)` helper for
+  time-binned spike counts; regenerated the notebook via `jupytext --sync`.
+
+- Bumped stale version strings from `v0.4.0` to `v0.5.0` in `docs/index.md` (status line and
+  BibTeX entry) and `README.md` (dependency table header and BibTeX entry).
+
+- `GraphValidationError` messages in `layout/validation.py` and the wrapping
+  `ValueError` in `environment/core.py` no longer reference the internal
+  developer guide `CLAUDE.md`.  Error text now points to the public issue
+  tracker (`https://github.com/edeno/neurospatial/issues`) instead.  A
+  permanent repo-wide backstop test (`tests/test_no_internal_doc_refs.py`)
+  asserts that no source file under `src/neurospatial/` contains this string,
+  preventing the leak from regressing.
+
+- `Environment.__init__` now raises a beginner-grade `ValueError` when called
+  without arguments (i.e. bare `Environment()`).  The old message "layout
+  parameter is required" gave no actionable guidance; the new message explains
+  that `Environment` must be created through a factory method, shows a concrete
+  correct example (`Environment.from_samples(data, bin_size=2.0)`), lists the
+  other available factories (`from_polygon`, `from_graph`, `from_grid_mask`,
+  `from_pixel_mask`), and links to the online docs — matching the style already
+  used by `EnvironmentNotFittedError`.  The exception type remains `ValueError`
+  so existing `except ValueError` callers are unaffected.
+
+- `align_spikes_to_events` in `events/alignment.py` now rejects `event_times`
+  containing `Inf` values with a descriptive `ValueError`, matching the
+  existing `spike_times` Inf check and fulfilling the docstring promise.
+  Previously an `Inf` event time silently produced an empty-or-wrong result.
+
+- `behavior.trajectory` public functions (`compute_turn_angles`,
+  `compute_step_lengths`, `mean_square_displacement`) and
+  `behavior.navigation.traveled_path_length` now coerce `positions` (and
+  `times` for MSD) with `np.asarray` at the public boundary before any
+  `.ndim`/`.shape` access. Passing a plain Python list no longer raises a
+  confusing `AttributeError`; valid list-of-lists inputs succeed, and
+  malformed inputs raise a descriptive `TypeError` or `ValueError`.
+
+- `bin_spike_train` and `bin_spike_trains` in `encoding/_binning.py` no
+  longer silently drop spikes outside the trajectory time window or spikes
+  that map to inactive environment bins.  When the dropped fraction exceeds
+  50 % (or all spikes are dropped), a `UserWarning` is emitted naming the
+  dropped count, total, both time ranges, and a units-hypothesis hint (e.g.
+  spike_times in milliseconds vs. times in seconds).  Two separate messages
+  cover the two drop causes (time-window and inactive-bin).  The batch path
+  (`bin_spike_trains`, `compute_spatial_rates`) warns exactly **once per
+  cause** in the main process — never from joblib worker processes where
+  warnings are commonly swallowed.  Default behaviour for in-window spikes
+  is byte-for-byte unchanged.
+
+### Documentation
+
+- `population_coverage` docstring example now shows the vectorized batch path
+  (`compute_spatial_rates(...).firing_rates`) instead of the per-neuron
+  `compute_spatial_rate` loop; the pre-existing arg-order bug
+  (`population_coverage(firing_rates, env)`) has been corrected to
+  `population_coverage(env, firing_rates)`.
+- `population_coverage` shape-mismatch `ValueError` message now steers users to
+  `compute_spatial_rates` (the batch function) rather than the slow
+  `compute_spatial_rate` + `np.stack` recipe.
+- `compute_spatial_rate` (singular) docstring now includes a short note pointing
+  many-neuron users to `compute_spatial_rates` (plural), which shares occupancy
+  and smoothing-kernel work across the whole population.
+
 ## [v0.5.0] - 2026-06-04
 
 ## What's Changed
 
 ### Features
-
 
 ### Bug Fixes
 - fix(io,regions): atomic writes, NWB metadata round-trip, deep immutability (4307973)
@@ -42,566 +827,6 @@
 - test(encoding): add object_vector_score tests; fix OVC convention doc + CLAUDE.md drift (d73cdc8)
 
 **Full Changelog**: https://github.com/edeno/neurospatial/compare/v0.4.0...v0.5.0
-
-
-All notable changes to this project are documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-While the project is pre-1.0, minor releases may still include breaking changes;
-these are called out under a dedicated **Breaking changes** heading.
-
-## [Unreleased]
-
-## [0.5.0] - 2026-06-04
-
-### Added
-
-- `compute_spatial_rate` and `compute_spatial_rates` gain a
-  `fill_value: float | None = None` keyword. The default `None` preserves the
-  existing behavior: bins masked by `min_occupancy` remain NaN, so existing
-  callers see no change. Passing `fill_value=0.0` (the recommended decoding
-  golden path) replaces those NaN bins with an explicit zero firing rate so the
-  encoding model composes directly with `decode_position()` without manual
-  `np.nan_to_num` scrubbing. `occupancy` is left untouched, so the masked-bin
-  set is still recoverable via `result.occupancy < min_occupancy`.
-- `decode_position` now tolerates NaN bins in `encoding_models` (e.g. a
-  `fill_value=None` rate map carrying `min_occupancy` masks): each NaN
-  `(neuron, bin)` is treated as a zero-rate observation and excluded from that
-  neuron's contribution to the Poisson log-likelihood at that bin, and a single
-  `UserWarning` is emitted per call instead of raising. A **partial-NaN bin**
-  (NaN for some neurons but observed by at least one other) still decodes
-  normally from its observing neurons — excluded, not penalized. A bin that is
-  NaN for **every** neuron, however, carries no information: excluding all of
-  its terms would leave a neutral log-likelihood and could let an
-  uninformative bin spuriously win the MAP. Such all-NaN bins now get `-inf`
-  log-likelihood (zero posterior mass) and can never be the argmax. This is
-  reconciled with the `validate=True` NaN guard: the zero-rate exclusion runs
-  first, so `validate=True` no longer rejects NaN *encoding-model* bins (it
-  still rejects NaN/Inf in `spike_counts` and `prior`, and Inf/negative entries
-  in `encoding_models`). The recommended path remains passing `fill_value=0.0`
-  to the encoder so no NaN reaches the decoder.
-- Array-shaped result objects now export to `xarray`. `DecodingResult.to_xarray()`
-  returns a labeled `DataArray` with dims `("time", "bin")` (the `time` coord is
-  `result.times`, or a positional integer index `np.arange(n_time)` when `times`
-  is `None`), and `SpatialRatesResult.to_xarray()` returns a `DataArray` with
-  dims `("neuron", "bin")`. `xarray` is imported lazily inside these methods and
-  remains an **optional** dependency — install it with
-  `pip install neurospatial[xarray]` (a new `xarray` extra) or `pip install
-  xarray`. Calling `to_xarray()` without it raises an actionable `ImportError`.
-- `DecodingResult.error_against(true_times, true_positions, *, metric="euclidean")`
-  computes per-time-bin decode error against an independently sampled
-  ground-truth position track, interpolating the ground truth onto the decode
-  times so callers no longer hand-roll `searchsorted` alignment. It reuses the
-  existing `decoding_error` core and supports `"euclidean"` and `"geodesic"`
-  metrics.
-- The top-level `neurospatial` package now exposes its analysis submodules
-  (`encoding`, `decoding`, `behavior`, `events`, `ops`, `layout`, `regions`,
-  `stats`, `simulation`, `annotation`, `animation`, `io`) via lazy (PEP 562)
-  attribute access. Writing `import neurospatial as ns; ns.encoding` now
-  resolves the submodule on first use and `dir(ns)` lists every domain
-  alongside the eager exports, so autocomplete reveals the full API. The
-  submodules are imported only when first accessed — importing the package no
-  longer pulls them in eagerly — and unknown attributes still raise
-  `AttributeError` so typos fail loudly. The eager top-level exports
-  (`Environment`, `Region`, `Regions`, `CompositeEnvironment`,
-  `bin_spikes_in_time`) are unchanged.
-- Introduced a unified result-object surface so the verbs that end an analysis
-  -- "summarize it", "plot it", "put it in a table" -- always have a home. A
-  new `neurospatial._results.ResultMixin` base guarantees `to_dataframe()`
-  (tidy/long form, so heterogeneous results `pandas.concat` cleanly),
-  `summary()` (a flat dict of scalar headline metrics), and an optional
-  `plot(ax=None, ...)` that returns the axis for multi-panel composition.
-  `pandas` and `matplotlib` are imported lazily so neither becomes an
-  import-time dependency. The existing `encoding._base.SpatialResultMixin` now
-  extends `ResultMixin` (additive: all existing accessors such as
-  `firing_rate`, `occupancy`, `peak_location()`, and `spatial_information()`
-  are preserved) and gains default `summary()` / tidy `to_dataframe()`
-  implementations. The previously bare `PlaceFieldsResult` and
-  `DirectionalPlaceFields` dataclasses now carry the surface;
-  `DirectionalPlaceFields` additionally gains `correlation(label_a, label_b)`,
-  a per-bin `directionality_index(label_a, label_b)`, and a per-direction
-  overlay `plot()`. `DecodingResult` gains `summary()` and now also extends
-  `ResultMixin`.
-- `encoding.theta_phase(lfp, sampling_rate, *, band=(6, 10))` extracts the
-  instantaneous theta phase from a single LFP channel using a zero-phase
-  Butterworth band-pass plus the Hilbert analytic-signal phase. The phase is
-  returned in radians wrapped to `[0, 2*pi)`, the convention
-  `encoding.phase_precession` consumes, so the output is drop-in for
-  phase-precession analysis once sampled at spike times. Uses `scipy.signal`
-  only — no new dependency. Exported from `neurospatial.encoding`.
-- `encoding.phase_precession` and `encoding.has_phase_precession` gained a
-  shuffle-based significance test via two new keyword-only parameters,
-  `n_shuffles` (default `1000` / `200` respectively) and `rng`
-  (`int | numpy.random.Generator | None`, for a deterministic result). The
-  null is built by permuting the phase–position pairing and re-fitting the
-  slope on each shuffle, so `PhasePrecessionResult.pval` is now this
-  fitted-slope shuffle p-value (with `+1` smoothing, never exactly zero)
-  rather than the slope-free circular-linear value; `correlation` is retained
-  as a slope-independent descriptive effect size.
-- Added `bin_spikes_in_time`, a public primitive that bins a sequence of
-  per-neuron spike-time arrays onto a regular time grid (owning the bin
-  edges and `dt / 2` bin centers) and returns an integer count matrix. Its
-  `orient` argument makes the axis order explicit — `"time_x_neuron"` (the
-  default, matching `decode_position`'s `(n_time_bins, n_neurons)` input) or
-  `"neuron_x_time"` (matching the cell-assembly functions) — defusing the
-  silent-transpose footgun between those two consumers. Exported from both
-  `neurospatial.decoding` and the top-level `neurospatial` package.
-- `neurospatial.io.nwb.read_units` reads per-neuron spike-time arrays from an
-  NWB `units` table, returning a `(spike_trains, unit_ids)` tuple that mirrors
-  the existing `read_position` contract. `unit_ids` selects a subset by the
-  table's `id` values (not row indices); an unknown id raises a clear
-  `ValueError` rather than silently returning the wrong unit. This closes the
-  last gap in the NWB reader family, so multi-cell workflows no longer have to
-  start in bare `pynwb`.
-- `behavior.segmentation` gains three direction-label bridges so detected
-  laps/runs can feed `compute_directional_place_fields` directly:
-  `laps_to_direction_labels` (lap `direction` -> per-timepoint labels),
-  `runs_to_direction_labels` (caller-supplied scalar or per-run labels), and
-  `running_direction_labels` (first-class `{"inbound", "outbound", "other"}`
-  labeler for linear / W-tracks). All three return the
-  `NDArray[np.object_]` of shape `(n_times,)` with the `"other"` sentinel that
-  `compute_directional_place_fields` consumes, closing the lap/run ->
-  directional-place-field gap previously reachable only from a `Trial` via
-  `goal_pair_direction_labels`. Exported from `neurospatial.behavior`.
-
-### Changed
-
-- Renamed the `random_state` argument to `rng` in `detect_assemblies`
-  (`neurospatial.decoding`) and in `select_basis_centers`,
-  `geodesic_rbf_basis`, `heat_kernel_wavelet_basis`, `chebyshev_filter_basis`,
-  and `spatial_basis` (`neurospatial.ops.basis`), for consistency with the
-  rest of the library. Both `int` seeds and `np.random.Generator` instances
-  are still accepted. Pre-1.0: no alias is kept — update call sites to `rng=`.
-- `fit_isotonic_trajectory` no longer takes a mandatory leading `env`; `env`
-  is now an optional keyword-only argument (it was unused). Drop the `None`
-  you previously passed as the first positional argument.
-- `decoding_error`'s `env` is now keyword-only (was an optional 3rd positional).
-- `confusion_matrix`'s `summary_method` argument was renamed to `method`,
-  matching `fit_isotonic_trajectory`.
-- Unified the time-window argument across the events GLM regressors:
-  `event_indicator` and `event_count_in_window` now both take a keyword-only
-  `window=(start, end)` tuple (relative seconds). `event_indicator` previously
-  took a scalar symmetric half-width; rewrite `window=w` as `window=(-w, w)`.
-  `event_count_in_window`'s `window` is now keyword-only. `time_to_nearest_event`
-  keeps its distinct scalar `max_time` (it is a continuous regressor, not a
-  windowing function).
-- `is_object_vector_cell` (free function in `neurospatial.encoding.egocentric`)
-  now delegates to `EgocentricRateResult.is_object_vector_cell`, using the
-  egocentric-spatial-information criterion. It replaces the old
-  `score_threshold`/`min_peak_rate` parameters with a single `min_info`
-  (default 0.3, matching the result method), so the quick-check and the
-  result-object classification can no longer disagree.
-- Reordered the keyword-only `gaze_model`/`view_distance` parameters in
-  `is_spatial_view_cell` to match `compute_view_rate` (`gaze_model` first).
-  Keyword callers are unaffected.
-- Renamed `SpatialRatesResult.classify` to `SpatialRatesResult.detect_cell_types`
-  for naming parity with `EgocentricRatesResult.detect_ovcs` and
-  `ViewRatesResult.detect_view_cells`.
-- `compute_vte_session` is now env-first — `(env, positions, times, *, ...)` —
-  matching `compute_decision_analysis`. Update positional callers.
-- `detect_goal_directed_runs` now raises `ValueError` (was `KeyError`) when the
-  requested region is absent, matching sibling behavior validators.
-- `calibration` (and `method`/`simplify_tolerance` where present) are now
-  keyword-only in `regions_from_labelme`, `regions_from_cvat`,
-  `boundary_from_positions`, and `shapes_to_regions`.
-- `Regions.region_center`'s parameter was renamed from `region_name` to `name`,
-  matching `Regions.area`. Update keyword callers.
-- The optional arguments of `simulate_trajectory_sinusoidal` and
-  `simulate_trajectory_laps` (`neurospatial.simulation`) are now keyword-only.
-  Only the leading required positionals remain positional — `(env, duration)`
-  for `simulate_trajectory_sinusoidal` and `(env, n_laps)` for
-  `simulate_trajectory_laps`. Positional callers such as
-  `simulate_trajectory_sinusoidal(env, 10.0, 100.0)` must update to
-  `simulate_trajectory_sinusoidal(env, 10.0, sampling_frequency=100.0)`.
-
-### Breaking changes
-
-- **Egocentric polar space is now a distinct type.**
-  `Environment.from_polar_egocentric(...)` now returns a new
-  `EgocentricPolarEnvironment` (in `neurospatial.environment.polar`) instead
-  of an `Environment` carrying a hidden `coordinate_kind="polar"` flag.
-  `EgocentricPolarEnvironment` is a *sibling* of `Environment` (both share a
-  common `_BaseEnvironment` base), **not** a subclass — so
-  `isinstance(polar_env, Environment)` is now `False`. The Cartesian-only
-  methods that previously raised `ValueError` at runtime on a polar env now
-  raise `NotImplementedError` (and are simply absent from the type's
-  contract): `bin_at`, `contains`, `distance_between`,
-  `distance_to(metric="euclidean")`, and `apply_transform`. Graph operations
-  (`neighbors`, `path_between`, `reachable_from`,
-  `distance_to(metric="geodesic")`, `smooth`) remain available. Consequences:
-  the `Environment.coordinate_kind` attribute, the `Environment.is_polar`
-  property, and the `Environment._check_cartesian` guard are removed. Along
-  with the type change, polar geometry is now physically correct — connectivity
-  edge `distance` weights use arc length `r·Δθ` for angular steps, `Δr` for
-  radial steps, and `sqrt(Δr² + (r·Δθ)²)` for diagonals (previously the
-  Euclidean norm of `(Δr, Δθ)` collapsed cm and radians), `bin_sizes` returns
-  the true annular-sector area `0.5·(r₁²−r₀²)·Δθ`, and the egocentric
-  `gaussian_kde` smoothing kernel uses the physical polar distance with a
-  single length-unit bandwidth rather than mixing cm and radians. NWB and
-  file (`to_file`/`from_file`, `to_dict`/`from_dict`) round-trips restore the
-  `EgocentricPolarEnvironment` type (the on-disk `coordinate_kind` marker is
-  retained for backward compatibility).
-- `time_efficiency` lost its positional `goal` parameter and now takes a
-  keyword-only `optimal_distance` (with `reference_speed` also keyword-only);
-  external callers must update their call sites. This also fixes a latent
-  bug: the function always used the Euclidean start-to-goal distance even for
-  geodesic callers, so `optimal_distance` must now be supplied explicitly.
-- `points_in_any_region` / `regions_containing_points` changed their default
-  `point_tolerance` from ~1e-8 to 1.0 coordinate unit. Zero-area point
-  regions need a real spatial tolerance to match nearby query points; pass
-  `point_tolerance=1e-8` to restore the previous strict matching behavior.
-- `ImageMaskLayout` / `Environment.from_pixel_mask`: the build key `bin_size`
-  is renamed to `pixel_size` (the legacy `bin_size` is still accepted as a
-  deprecated alias). The layout is now stored in consistent (x, y) order, so
-  `grid_shape`, `bin_centers`, and `active_mask` follow (x, y); code relying
-  on the previous (y, x) ordering must update.
-
-### Fixed
-
-- `gaussian_kde` smoothing could return a kernel computed for a *different*
-  environment. The internal Gaussian-kernel cache keyed on `(id(env),
-  bandwidth)` and validated only `n_bins`; since `id()` is unique only among
-  live objects, an environment built after an earlier one was garbage-collected
-  could reuse its address and silently receive the stale kernel when `n_bins`
-  matched (e.g. two `from_polar_egocentric` envs differing only in
-  `circular_angle` — the open-axis env would get the circular env's
-  seam-wrapped kernel). The cache now also holds a weakref to the owning env and
-  treats any `ref() is not env` (id reused or env collected) as a miss, so a
-  recycled id can never serve another env's kernel.
-- `DirectionalPlaceFields.to_dataframe()` no longer crashes on an empty result.
-  When `compute_directional_place_fields` excludes every sample as `"other"`
-  (so `labels == ()`), the method previously built an empty `frames` list and
-  called `pd.concat([])`, raising `ValueError: No objects to concatenate`. It
-  now returns an empty `DataFrame` carrying the documented column schema
-  (`direction`, `bin`, `coord_0…`, `firing_rate`, `occupancy`).
-- `DirectionalRateResult.rayleigh_pvalue` now restricts the weighted Rayleigh
-  test to **occupied** heading bins (positive occupancy and finite firing
-  rate). Previously a bin the animal never occupied (zero occupancy → `NaN`
-  rate) could still contribute its raw spike counts to the test and drive
-  spurious significance (e.g. 100 spikes assigned to unvisited bins yielded
-  `p ≈ 3.7e-44`); such cases now return `NaN` (insufficient valid bins). A
-  genuinely-visited cell concentrated in 1–2 occupied bins remains significant.
-- `DecodingResult.error_against` now reports `NaN` error for **undecodable**
-  time bins whose posterior row is entirely non-finite (all-`NaN`/`Inf`).
-  Previously `np.argmax` picked bin 0 for such rows, producing a finite (wrong)
-  error; finite posterior rows are unaffected.
-- `decode_position` now treats **`Inf`** encoding-model bins like `NaN` bins in
-  its per-bin exclusion path (`validate=False`): a partial-`Inf` model such as
-  `rates=[inf, inf, 5]` now concentrates posterior mass on the single finite
-  bin instead of warning and returning a uniform posterior. The detection was
-  broadened from `np.isnan` to `~np.isfinite`. The `validate=True` Inf
-  rejection, the `fill_value=0.0` golden path, and the existing all-`NaN`/
-  partial-`NaN` semantics are unchanged.
-- `SpatialResultMixin.summary` (shared encoding result summary) no longer
-  raises on an **empty** result (0 neurons or 0 bins). Previously the peak
-  reduction over a zero-size array raised `ValueError: zero-size array to
-  reduction operation fmax which has no identity` (e.g.
-  `compute_directional_rates([], ...).summary()`); it now returns a dict with
-  `n_neurons=0` and a `NaN` `peak_firing_rate`.
-- Anisotropic pixel-mask environments now round-trip through
-  `Environment.to_dict()`/`from_dict()` (and `to_file`/`from_file`) again. An
-  env built with `from_pixel_mask(mask, pixel_size=(3.0, 1.0))` serialized
-  `pixel_size` as a list; deserialization rebuilt it as an ndarray, and the
-  scalar `pixel_size <= 0` validation in `ImageMaskLayout.build` then raised
-  `ValueError: The truth value of an array with more than one element is
-  ambiguous`. The validation is now array-safe
-  (`np.any(np.asarray(pixel_size, dtype=float) <= 0)`) and covers both scalar
-  and per-axis pixel sizes.
-- `decode_position` now raises a clear `ValueError` when `encoding_models` has
-  **no finite bins** — every spatial bin is non-finite (`NaN` **or** `Inf`)
-  across all neurons (e.g. `np.full((n_neurons, n_bins), np.nan)` or
-  `np.full((n_neurons, n_bins), np.inf)`). Such a model carries zero
-  information; previously the all-NaN-bin→`-inf` handling left the entire
-  likelihood `-inf`, and `normalize_to_posterior(handle_degenerate="uniform")`
-  then returned a confident-looking **uniform posterior over invalid
-  positions**. The guard is now `np.isfinite`-based, so it catches all-`Inf`
-  (and mixed `NaN`/`Inf`) models that slipped through the earlier `np.isnan`-only
-  check when `validate=False` bypassed the `Inf` rejection. The check is
-  column-wise (a bin is usable if finite for any neuron) and runs
-  unconditionally, even with `validate=False`. Partial-NaN models with at least
-  one finite bin still decode normally, and a legitimate no-spike time bin
-  against a valid finite model still yields the correct flat (uniform)
-  posterior.
-- `DecodingResult.error_against` now requires `true_times` to be **strictly
-  increasing** and rejects duplicates (`np.diff(true_times) <= 0`). Previously
-  only descending values were rejected; duplicate timestamps (e.g.
-  `[0.0, 0.0, 1.0]`) were allowed and `np.interp` resolved the tied x-values
-  arbitrarily, silently mis-aligning the ground truth.
-- Egocentric-polar connectivity now adds **diagonal** edges across the ±π seam
-  when `connect_diagonal_neighbors=True` and `circular_angle=True`. Previously
-  interior diagonals and same-ring seam (wrap) edges were added, but the
-  diagonal edges crossing the seam between adjacent distance rings
-  (`(r_i, last_angle)`↔`(r_{i+1}, first_angle)` and vice-versa) were missing, so
-  the ±π boundary had fewer connections than every other angular step (an
-  anisotropic seam). These seam diagonals now mirror the interior diagonal
-  connectivity and carry the correct physical polar diagonal length
-  `sqrt(Δr² + (r̄·Δθ)²)`. `circular_angle=False` still adds no seam edges
-  (diagonal or same-ring), leaving the angular axis open.
-- `DecodingResult.error_against` now validates that `times`, `true_times`, and
-  `true_positions` are all finite up front, raising a clear `ValueError` on any
-  NaN or Inf. Previously a non-finite decode time or ground-truth value passed
-  silently through the `numpy.interp` alignment and produced a NaN error that
-  looked like (but was not) a decode failure. The existing sorted-`true_times`
-  check is unchanged.
-- Egocentric-polar `gaussian_kde` smoothing now respects `circular_angle`.
-  A previous fix unconditionally wrapped the angular difference into
-  `[-pi, pi]`, but `Environment.from_polar_egocentric(..., circular_angle=False)`
-  builds an **open** angular axis (no seam edges in the connectivity graph),
-  where bins at `-pi` and `+pi` are genuinely far apart. Wrapping there leaked
-  smoothing across a boundary the caller deliberately left open (the `-pi/+pi`
-  seam pair got weight ~`0.7346`, the same as a true angular neighbor). The
-  dense polar Gaussian kernel now wraps `Delta theta` **only** when the angular
-  axis is circular and uses the raw angular difference otherwise. Circularity
-  is derived from the connectivity graph (presence of seam edges), so it stays
-  consistent with the graph and survives `to_file`/`from_file`, NWB round-trip,
-  and `copy()`. For `circular_angle=True` the seam still receives a full
-  angular-neighbor weight (unchanged); for `circular_angle=False` the seam now
-  receives a tiny weight like any other far pair.
-- Egocentric-polar circular **seam edges** now use the actual realized angular
-  bin step instead of the requested `angle_bin_size`. When `angle_bin_size`
-  does not evenly divide the angular range, `ceil` binning yields a slightly
-  different realized step, and the regular angular edges already used that
-  realized step; the seam (wrap) edge alone used the requested value, biasing
-  seam geodesics. For example, `angle_bin_size=1.0` over `[-pi, pi]` realizes a
-  step of ~`0.8976`, so a regular angular edge at radius `r` had distance
-  ~`r*0.8976` while the seam edge had `r*1.0` (e.g. `4.488` vs `5.0` at `r=5`).
-  The seam edge arc length is now `r * Delta_theta_actual`, matching the
-  regular angular edges at the same radius.
-- The weighted (count) Rayleigh test no longer rejects strongly-tuned cells
-  whose spikes concentrate in only 1–2 angular bins. `rayleigh_test` validated
-  the minimum sample size against the number of distinct angles, and
-  `DirectionalRateResult.rayleigh_pvalue()` gated on the number of nonzero-count
-  bins (`< 3 -> NaN`); a head-direction/object-vector cell with all spikes in
-  two adjacent bins was therefore reported as NaN despite being genuinely,
-  strongly tuned. For weighted input the effective sample size is now the total
-  weight (`sum(counts)`), so 100 spikes in 2 bins returns a significant
-  p-value (≈`8e-44`, matching `np.repeat` physical replication) instead of NaN.
-  Genuinely-insufficient data is still rejected (`sum(weights) < 3`), and the
-  count-weighting (not Hz), scale-invariance, and NaN co-filter behavior are
-  unchanged.
-- `EgocentricPolarEnvironment` now rejects **every** inherited method that
-  assumes Cartesian `(x, y[, z])` coordinates or a Cartesian grid, raising
-  `NotImplementedError` with a polar-specific message instead of silently
-  returning geometric nonsense. Previously only five methods (`bin_at`,
-  `contains`, `distance_between`, Euclidean `distance_to`, `apply_transform`)
-  were overridden; notably `interpolate` bypassed the overridden `bin_at` and
-  silently returned an array when given `(distance, angle)` points. The
-  override set now also covers `interpolate`, `occupancy`, `bin_sequence`,
-  `bin_sequence_with_runs`, `to_linear`, `linear_to_nd`, `rebin`, and
-  `subset`. Graph operations (`neighbors`, `path_between`, `reachable_from`,
-  `smooth`, `distance_to(metric="geodesic")`) remain valid and unchanged.
-  Relatedly, `repr()` of any environment now reflects the concrete type
-  (e.g. `EgocentricPolarEnvironment(...)`) instead of always printing
-  `Environment(...)`.
-- `detect_assemblies` now clamps `n_components` to the achievable factorization
-  rank `min(n_neurons, n_time_bins)` (emitting a `UserWarning`) instead of
-  crashing on short recordings. Previously, requesting more components than
-  `n_time_bins` (with `n_time_bins < n_components <= n_neurons`) raised an
-  opaque `IndexError` for `pca`/`ica` or a `ValueError` for `nmf` from deep
-  inside the membership loop.
-- Weighted circular statistics (`rayleigh_test`, `circular_mean`,
-  `circular_variance`, `mean_resultant_length`) now validate that `weights`
-  is the same length as `angles` (a length-1 array is rejected, not
-  broadcast) and is non-negative; previously a mismatched or signed weight
-  array could silently produce an out-of-range result. `rayleigh_test`
-  additionally co-filters `weights` with the same mask used to drop NaN
-  angles (keeping the two arrays aligned), and now raises a `ValueError`
-  when the total weight (sum of weights) is zero instead of raising a bare
-  `ZeroDivisionError` or returning a meaningless statistic.
-- `explained_variance_reactivation` now returns `np.nan` for
-  `explained_variance`, `reversed_ev`, and `partial_correlation` (with
-  `n_pairs` set to the actual valid-pair count) when fewer than 3 valid
-  neuron pairs survive NaN removal. Previously `np.corrcoef` returned NaN for
-  0/1 pairs and `np.nan_to_num(..., nan=0.0)` coerced it to `0.0`, which read
-  as a confident "no reactivation" rather than an undefined statistic. The
-  existing `UserWarning` is unchanged.
-- `compute_shuffle_pvalue` now drops non-finite null scores (NaN/Inf) with a
-  warning and excludes them from `n` before computing the p-value;
-  previously they were silently excluded from the count of extreme values
-  while still inflating `n`, biasing the p-value toward significance. An
-  all-non-finite null distribution now raises a `ValueError`. A non-finite
-  `observed` score now raises a `ValueError` early instead of silently
-  returning the floor p-value `1/(n+1)` (all comparisons against the null are
-  `False` for a NaN observed).
-- `load_labelme_json` now lets unexpected errors from polygon construction
-  propagate instead of swallowing them: the `except` around `shapely.Polygon`
-  is narrowed to `(TypeError, ValueError, ShapelyError)`, matching the sibling
-  CVAT loaders. Malformed coordinate data is still warned-and-skipped; genuine
-  bugs (e.g. a `KeyError` from a faulty `pixel_to_world` transform) now surface.
-- `shuffle_cell_identity` now validates that the number of neurons in
-  `spike_counts` (columns) matches the number of rows in `encoding_models`,
-  raising a `ValueError` instead of silently yielding wrong decodes.
-- `events_to_intervals(match_by=...)` now raises a `ValueError` on duplicate
-  match keys instead of silently forming a Cartesian product
-  (`DataFrame.merge(how="inner")` cross-joins repeated keys, producing more
-  intervals than real start/stop pairs).
-- `distance_to_reward` now raises a `ValueError` on non-finite
-  `times`/`positions`/`reward_times`, and on unsorted `times` when inferring
-  reward positions (no explicit `reward_positions`), instead of returning
-  silently-wrong distances from corrupted interpolation.
-- `add_positions` now raises a `ValueError` on degenerate trajectories (a
-  single sample, all-identical trajectory times, or non-finite trajectory
-  times) instead of returning all-NaN/Inf position columns.
-- `Environment.bin_at`, `contains`, and `distance_between` now raise a
-  `ValueError` when queried with points whose dimensionality differs from
-  the environment (e.g. 3-D points against a 2-D environment), instead of
-  warning and silently returning `-1`/`inf`. The legitimate
-  outside-the-environment sentinel (in-dimension points that fall outside
-  the active bins) is unchanged.
-- `compute_egocentric_distance(metric="geodesic")` previously honored only
-  the first timestep's targets when called with a time-varying target array
-  of shape `(n_time, n_targets, 2)`. Now distances are computed
-  per-timestep, with an internal cache so repeated targets remain cheap.
-  Static-target callers (passing shape `(n_targets, 2)`) see no behavior
-  change.
-- `detect_runs_between_regions(min_speed=...)` no longer treats an
-  off-environment (`-1`) or out-of-range bin in a run as a real position. The
-  velocity filter indexed `env.bin_centers[run_bin_idx]` with raw run bins, so
-  a `-1` sample silently wrapped to `bin_centers[-1]` (inflating the mean speed
-  and keeping runs that should be filtered out), and an index `>= n_bins` would
-  raise `IndexError`. Speed is now computed only over consecutive sample pairs
-  whose endpoints both map to a valid bin; runs with no usable pair are not
-  filtered on a spurious velocity. Fully on-environment runs are unaffected.
-- Weighted circular statistics (`rayleigh_test`, `circular_mean`,
-  `mean_resultant_length`, `circular_variance`) now reject non-finite
-  `weights` (NaN/Inf) with a `ValueError` via `_validate_weights`. Previously
-  only negative weights were rejected, so a NaN/Inf weight flowed into
-  `sum(weights)` and silently turned the statistic into `nan` instead of
-  raising on invalid count/frequency input. The non-negativity / equal-length
-  checks and the NaN-*angle* co-filter (which drops NaN angles, not weights)
-  are unchanged.
-- Weighted `circular_mean`, `mean_resultant_length`, and `circular_variance`
-  now apply the same NaN-*angle* co-filter that `rayleigh_test` already used:
-  a NaN angle is dropped together with its paired weight, and the statistic is
-  computed on the remainder. Previously a single NaN angle propagated through
-  `cos`/`sin` and turned the weighted result into `nan` even when the other
-  samples were valid. Non-finite *weights* still raise (unchanged); only NaN
-  *angles* are dropped.
-- `detect_runs_between_regions(min_speed=...)` now drops a run when there is no
-  usable speed estimate (no consecutive on-environment bin pair from which to
-  compute a velocity), instead of silently keeping it. A run whose speed cannot
-  be validated must not pass a speed gate it never satisfied; e.g. a run slice
-  like `[bin, -1, bin]` with `min_speed > 0` is now dropped. Runs with `min_speed
-  is None` and fully on-environment runs are unaffected.
-- Masked-grid occupancy is now routed correctly. `_allocate_time_linear`
-  translates full-grid ray-intersection indices to active-bin ids through a
-  prebuilt inverse map, so on masked (holed) grids occupancy time lands in the
-  right bins instead of being silently misrouted or dropped.
-  `Environment.interpolate` scatters active values into a `NaN`-filled full
-  grid before reshaping, so it works on holed grids (was a reshape crash) and
-  returns `NaN` over holes; `rebin` infers diagonal-vs-orthogonal connectivity
-  from the active graph's max degree rather than probing a possibly-inactive
-  full-grid center node; and `occupancy` validates finite timestamps before the
-  monotonicity check (clearer error, no self-contradictory message).
-- `MaskedGridLayout` rejects a non-array / non-boolean `active_mask`, and
-  `get_n_bins` is computed in `float64` with an overflow guard before casting to
-  `int64`, so large spatial extents no longer overflow `int32`. `GraphLayout`
-  linear-point lookups remap gap-inclusive full-grid indices to active-bin
-  indices, preserving the `-1` off-track sentinel.
-- Environment file/dict I/O round-trips non-trivial `layout_parameters`:
-  `networkx` graphs are encoded node-link and `shapely` geometries as WKT (and
-  decoded on load), fixing a `to_file` crash for graph/polygon layouts and
-  restoring graph `edge_order` on read. NWB `read_environment` round-trips
-  `coordinate_kind` (defaulting to `cartesian` for legacy files), the NWB rate
-  adapter rejects non-finite/non-positive rates, `read_position`/`read_pose`
-  validate data/timestamp length agreement, and `read_head_direction` converts
-  degrees to radians (and `(n, 2)` vectors via `arctan2`) under the documented
-  `0 = East` convention.
-- Decoding correctness fixes: `explained_variance_reactivation` now computes the
-  true Kudrimoti role-swapped reversed EV and a control-aware
-  (partial-correlation) EV instead of the inert `rev = ev`;
-  `reactivation_strength` is magnitude-sensitive (shared template-baseline
-  normalization rather than a per-period double z-score that pinned it near 1);
-  `credible_region` excludes non-finite bins from the HPD set (including the
-  low-mass fallback); `confusion_matrix` drops non-finite posterior rows with a
-  warning; and `log_poisson_likelihood` requires a 2-D
-  `(n_time_bins, n_neurons)` `spike_counts` with a matching neuron axis,
-  rejecting the silent time-axis collapse. `decode_position` also validates the
-  `encoding_models` bin count against `env.n_bins` and the `spike_counts` time
-  length even when `validate=False`.
-- `ops` robustness: `resample_field` (diffuse) zero-fills out-of-source bins
-  before the kernel and re-masks after, so a single `NaN` no longer poisons
-  every reachable bin; `heading_from_velocity` rejects non-positive/non-finite
-  `dt` and non-finite positions; `_wrap_angle` is now half-open `(-pi, pi]`
-  (keeping `+pi` at the antipode); `estimate_transform` applies the Kabsch
-  determinant sign-correction so the fit is a proper rotation with no
-  reflection; and several broad `except Exception` guards (KDTree mappers,
-  spectral-radius estimation) were narrowed so real errors surface.
-- `simulation`: `PlaceCellModel` rejects a non-positive/non-finite `width` at
-  construction and no longer double-normalizes anisotropic distances (the
-  isotropic firing-rate path is byte-for-byte unchanged);
-  `generate_poisson_spikes` validates `firing_rate`/`times` length agreement and
-  finiteness, requires strictly-increasing `times`, and uses a per-bin `dt` so
-  non-uniform sampling is supported.
-- `annotation`: boundary inference raises a `ValueError` (suggesting
-  `convex_hull`) when the alpha shape is not a non-empty polygon instead of
-  returning a degenerate geometry; `TrackBuilderState` node/edge deletion
-  invalidates stale edge-layout overrides so they can no longer corrupt
-  linearization; and `validate_region_overlap` warns and records an issue on a
-  shapely `GEOSException` instead of aborting the whole validation.
-- `regions`: RLE mask decoding validates each run's start/length against the
-  mask size (rejecting negatives) instead of writing out of bounds;
-  `region_center` returns `None` for an empty polygon instead of raising; and
-  the remaining broad `_process_cvat_box` catch-all was narrowed to
-  `(TypeError, ValueError, ShapelyError)` so real bugs (e.g. a `KeyError`)
-  propagate while malformed coordinates still warn-and-skip.
-- `behavior`: off-environment / `-1` "no bin" indices now resolve to an explicit
-  fill (`False` or `-1`) across segmentation (crossings, runs, trials) and
-  decision analysis instead of wrapping to the last bin/region, and finite-time
-  plus positive-`dt` guards were added before the velocity/rate divisions in
-  `detect_runs_between_regions`, `segment_by_velocity`, `approach_rate`, and
-  `mean_square_displacement`.
-- `animation`: overlay coordinate transforms allocate `float64` outputs so
-  integer-dtyped inputs no longer truncate sub-pixel positions;
-  `HeadDirectionOverlay` interpolates headings via `(cos, sin)` → `arctan2` (the
-  short way across the `+/-pi` wrap); bounds diagnostics use NaN-safe
-  `nanmin`/`nanmax`; and event-overlay artists are rendered/updated/cleared in
-  the artist-reuse path so events appear in reused-figure animations.
-- `encoding.is_head_direction_cell` validates `angle_unit in ("rad", "deg")`
-  up front, so a typo like `angle_unit="degrees"` raises a `ValueError` instead
-  of being swallowed by the classifier's `except` into a silent "not an HD
-  cell".
-
-### Documentation
-
-- Documentation examples are now exercised in CI. Every paste-and-run example
-  that had drifted from the current API was corrected against the live
-  signatures — overlay construction (`PositionOverlay(positions=...)`,
-  `BodypartOverlay(skeleton=Skeleton.from_edge_list(...))`), `path_progress` /
-  `cost_to_goal` argument order, `circular_basis_metrics(..., cov_matrix=...)`,
-  the singular `peak_view_location()` / `mean_vector_length()` result methods,
-  the single-neuron object-vector-cell classification path, `graph_convolve`,
-  `bin_sequence(times, positions)`, and `Environment.plot_field()`. Several
-  stale module paths (`neurospatial.metrics.phase_precession`,
-  `neurospatial.differential`, `neurospatial.reference_frames`,
-  `neurospatial.segmentation`) and a nonexistent `write_intervals()` reference
-  were repointed to their real homes, and rename-corrupted "uncertainty" /
-  "entropy" prose in the decoding docstrings was restored.
-- A new CI doctest gate runs `pytest --doctest-modules src/neurospatial/`, and
-  the curated `docs/snippets.yml` harness gained executable entries for the
-  overlay, object-vector classify, spatial-view classify, VTE, circular-basis,
-  and event-regressor quickstart blocks so these examples can no longer drift
-  out of sync without failing CI.
-- The `decoding` trajectory (replay) module now documents that
-  sharp-wave-ripple intervals come from the external `ripple_detection`
-  package and that its returned `(start, end)` intervals feed
-  `events.peri_event_histogram` directly. neurospatial intentionally does not
-  implement ripple detection; `ripple_detection` is referenced as a
-  recommended external tool, not a hard dependency.
-- `encoding.compute_directional_rate`, `compute_directional_rates`, and
-  `is_head_direction_cell` now note in their docstrings that they expect
-  *head direction* and that a velocity-derived *movement heading* is a common
-  mislabel for a "head direction cell".
-- Dropped unimplemented `exponential_kernel` from the
-  `events.regressors` module docstring.
-- `io.nwb.write_trials` no longer misdirects users to `write_region_crossings()`
-  for storing trial *intervals*: that writer stores point events
-  (`crossing_times`, `region_names`, `event_types`), not intervals. The
-  `overwrite` docstring and the `NotImplementedError` message now point to
-  adding a separate `pynwb.epoch.TimeIntervals` table (via
-  `nwbfile.add_time_intervals`) with its own `start_time`/`stop_time` columns,
-  readable back via `read_intervals`.
 
 ## [0.4.0] - 2026-05-26
 

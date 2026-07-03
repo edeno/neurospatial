@@ -332,7 +332,21 @@ class _BaseEnvironment(
 
         """
         if layout is None:
-            raise ValueError("layout parameter is required")
+            raise ValueError(
+                "[E1006] Environment cannot be constructed directly — "
+                "use a factory method.\n\n"
+                "Most common (from positions you recorded):\n"
+                "    env = Environment.from_samples(positions, bin_size=2.0)\n\n"
+                "Other factories, chosen by the data you have:\n"
+                "    from_polygon     — a Shapely polygon boundary\n"
+                "    from_graph       — a track/maze graph (linearized 1D)\n"
+                "    from_grid_mask   — an N-D boolean mask + grid edges\n"
+                "    from_pixel_mask  — a 2D image / pixel mask\n\n"
+                "Avoid:\n"
+                "    env = Environment()  # not supported\n\n"
+                "See each factory's docstring for its exact arguments, or:\n"
+                "    https://edeno.github.io/neurospatial/errors/#e1006-environment-constructed-directly"
+            )
 
         self.name = name
         self.layout = layout
@@ -868,8 +882,8 @@ class _BaseEnvironment(
             raise ValueError(
                 f"Invalid connectivity graph from layout engine "
                 f"'{self.layout._layout_type_tag}': {e}\n\n"
-                f"This is a bug in the layout engine. Please report this issue.\n"
-                f"See CLAUDE.md section 'Graph Metadata Requirements' for details."
+                f"This is a layout engine bug. Please report it at "
+                f"https://github.com/edeno/neurospatial/issues"
             ) from e
 
         # Grid-specific attributes

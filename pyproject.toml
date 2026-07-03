@@ -118,6 +118,11 @@ jax = [
 # Enables `.to_xarray()` on array-shaped result objects (DecodingResult,
 # SpatialRatesResult). xarray is imported lazily, never at import time.
 xarray = ["xarray"]
+# pynapple interop (optional)
+# Enables `neurospatial.io.from_pynapple` / `to_pynapple`. pynapple is imported
+# lazily inside those functions, never at import time; the scientific core stays
+# array-first and never imports pynapple.
+pynapple = ["pynapple>=0.6.0"]
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -147,6 +152,7 @@ markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: integration tests with external dependencies",
     "napari: napari GUI tests (require single-threaded execution)",
+    "pynapple: tests requiring the optional pynapple extra (run in a dedicated CI job)",
     "benchmark: performance benchmark tests",
     "hypothesis: property-based tests using Hypothesis",
     "thread_unsafe: tests that cannot be parallelized safely",
@@ -370,6 +376,9 @@ module = [
     "jax.*",
     "jaxlib",
     "jaxlib.*",
+    # pynapple (optional dependency)
+    "pynapple",
+    "pynapple.*",
 ]
 ignore_missing_imports = true
 
@@ -402,3 +411,8 @@ ignore_errors = true
 [[tool.mypy.overrides]]
 module = "docs.examples.*"
 ignore_errors = true
+
+[dependency-groups]
+dev = [
+    "jupytext>=1.16.0",
+]

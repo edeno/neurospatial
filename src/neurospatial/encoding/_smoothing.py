@@ -35,10 +35,22 @@ batch call computes it once and reuses it across all neurons; the per-neuron
 cost is then a single O(n_bins²) matmul, i.e. O(n_neurons × n_bins²) for the
 matmuls but only one weight-matrix build.
 
-For environments with more than a few thousand bins, ``gaussian_kde`` may
-still be memory-prohibitive because the weight matrix is dense. Prefer
-``diffusion_kde`` which uses sparse graph operations and precomputes the
-kernel once per environment.
+``diffusion_kde`` is **not** sparse: the diffusion heat kernel ``exp(-tL)`` is
+dense by construction (every entry is positive), so it too is a dense
+``(n_bins, n_bins)`` matrix costing O(n_bins²) memory. It is built once via a
+matrix exponential (a one-time O(n_bins³) cost) and cached per
+``(environment, bandwidth)``; the per-neuron smoothing is then a dense
+O(n_bins²) matmul. Its advantage over ``gaussian_kde`` is boundary-awareness
+(it diffuses over the environment graph and so respects walls), not lower
+asymptotic cost.
+
+Because **both** ``diffusion_kde`` and ``gaussian_kde`` materialize a dense
+``(n_bins, n_bins)`` kernel, both emit a loud memory ``UserWarning`` (with a GB
+estimate) for very large environments — above ``_LARGE_KERNEL_THRESHOLD`` bins
+each warns and then proceeds. There is **no** hard limit. For environments that
+would not fit in RAM, use ``binned`` (it smooths the already-normalized rate
+map over the environment graph and builds **no** dense kernel), or reduce the
+bin count (increase ``bin_size``).
 
 References
 ----------
@@ -50,11 +62,19 @@ References
 
 from __future__ import annotations
 
+import warnings
 import weakref
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
+
+# Single shared high-bin warn threshold. Reuse the diffusion-kernel warn
+# threshold so both dense O(n_bins^2) smoothing paths (diffusion + gaussian)
+# warn at the same bin count -- one threshold, not a divergent copy. Neither
+# path imposes a hard limit; above the threshold each warns (with a GB
+# estimate) and proceeds.
+from neurospatial.ops.smoothing import _LARGE_KERNEL_THRESHOLD
 
 if TYPE_CHECKING:
     from neurospatial.environment._protocols import EnvironmentProtocol
@@ -90,17 +110,51 @@ def _get_gaussian_kernel(
     ``n_bins`` of a few thousand that materialization plus exp is
     measurable; cache the result keyed on ``(id(env), bandwidth)`` and
     verify ``n_bins`` to defend against id reuse after GC.
+
+    The weight matrix is dense ``(n_bins, n_bins)`` -- O(n_bins**2) memory --
+    so when ``n_bins`` exceeds ``_LARGE_KERNEL_THRESHOLD`` a loud memory
+    ``UserWarning`` (with a GB estimate) is emitted and the matrix is built
+    anyway. There is no hard limit. The warning fires once per kernel *build*
+    (a cache hit returns before warning), mirroring the diffusion-kernel warning
+    in ``ops/smoothing.py``.
+
+    Parameters
+    ----------
+    env : Environment
+        The spatial environment whose bin centers define the kernel geometry.
+    bandwidth : float
+        Gaussian ``sigma`` in environment units.
     """
     key = (id(env), float(bandwidth))
     cached = _GAUSSIAN_KERNEL_CACHE.get(key)
     bin_centers = env.bin_centers
     n_bins = bin_centers.shape[0]
+
     # Require the cached weakref to still resolve to *this* exact env. A dead
     # weakref (env GC'd) or one resolving to a different object (id reused by a
     # new env) means the entry belongs to a now-gone environment -- treat as a
     # miss and recompute rather than returning a geometrically wrong kernel.
     if cached is not None and cached[1] == n_bins and cached[2]() is env:
         return cached[0]
+
+    # Warn (never raise) for large environments. The dense weight matrix
+    # exp(-d^2/2sigma^2) costs n_bins**2 * 8 bytes of float64 memory; we
+    # estimate that and proceed. Mirrors the diffusion-kernel warning and shares
+    # its threshold. Placed after the cache-hit check so it fires once per
+    # build, not per call.
+    if n_bins > _LARGE_KERNEL_THRESHOLD:
+        estimated_gb = n_bins * n_bins * 8 / 1e9
+        warnings.warn(
+            f"Computing a dense Gaussian-KDE kernel for {n_bins} bins. The "
+            f"weight matrix exp(-d^2/2sigma^2) is dense by construction (every "
+            f"entry > 0), so it requires an {n_bins} x {n_bins} float64 matrix "
+            f"(~{estimated_gb:.1f} GB) -- O(n^2) memory. Proceeding anyway; this "
+            f"may be slow and memory-intensive. To reduce the cost, increase "
+            f"bin_size (fewer bins) or use smoothing_method='binned' (it builds "
+            f"no dense kernel).",
+            UserWarning,
+            stacklevel=2,
+        )
 
     two_sigma_sq = 2.0 * bandwidth**2
 
@@ -239,22 +293,34 @@ def smooth_rate_map(
     -----
     **Method Comparison**:
 
-    +--------------+----------------+----------------------+--------------+
-    | Method       | Boundaries     | Complexity           | Artifacts    |
-    +==============+================+======================+==============+
-    | diffusion_kde| Respects       | O(n_bins) per neuron | None         |
-    +--------------+----------------+----------------------+--------------+
-    | gaussian_kde | Ignores        | O(n_bins²) per neuron| Wall bleed   |
-    +--------------+----------------+----------------------+--------------+
-    | binned       | Respects*      | O(n_bins) per neuron | Discretization|
-    +--------------+----------------+----------------------+--------------+
+    +--------------+----------------+-----------------------+--------------+
+    | Method       | Boundaries     | Complexity            | Artifacts    |
+    +==============+================+=======================+==============+
+    | diffusion_kde| Respects       | O(n_bins²) per neuron | None         |
+    +--------------+----------------+-----------------------+--------------+
+    | gaussian_kde | Ignores        | O(n_bins²) per neuron | Wall bleed   |
+    +--------------+----------------+-----------------------+--------------+
+    | binned       | Respects*      | O(n_bins) per neuron  | Discretization|
+    +--------------+----------------+-----------------------+--------------+
 
     *binned uses graph smoothing but applies it after normalization.
 
-    **Performance recommendation**: For environments with >1000 bins, use
-    ``diffusion_kde`` (default). ``gaussian_kde`` recomputes a dense
-    n_bins × n_bins weight matrix for each neuron, which is slow for large
-    environments or large populations.
+    The ``diffusion_kde`` kernel is dense ``(n_bins, n_bins)`` and built once
+    per ``(env, bandwidth)`` via a matrix exponential (a one-time O(n_bins³)
+    build); the per-neuron smoothing is then the dense O(n_bins²) matmul
+    ``kernel @ counts``. Both ``diffusion_kde`` and ``gaussian_kde`` emit a loud
+    memory ``UserWarning`` (with a GB estimate) above ``_LARGE_KERNEL_THRESHOLD``
+    bins and then proceed (no hard limit); ``binned`` builds no dense kernel and
+    is the low-memory option.
+
+    **Performance recommendation**: For most analyses use ``diffusion_kde``
+    (default) -- it is boundary-aware. Both ``diffusion_kde`` and
+    ``gaussian_kde`` build a dense ``(n_bins, n_bins)`` kernel (cached per
+    ``(env, bandwidth)`` and reused across neurons), so both cost O(n_bins²)
+    memory and warn (with a GB estimate) above ``_LARGE_KERNEL_THRESHOLD`` bins
+    before proceeding. For environments too large for a dense kernel, use
+    ``binned`` (no dense kernel) or increase ``bin_size`` to reduce the bin
+    count.
 
     **Backend behavior**: When ``backend="jax"``, the kernel smoothing and
     rate computation use JAX operations. The kernel itself is computed from
@@ -341,6 +407,7 @@ def smooth_rate_maps_batch(
     min_occupancy: float = 0.0,
     kernel: NDArray[np.float64] | None = None,
     backend: Literal["numpy", "jax"] = "numpy",
+    dtype: type[np.float32] | type[np.float64] = np.float64,
 ) -> ArrayLike:
     """Compute smoothed firing rate maps for multiple neurons.
 
@@ -367,6 +434,13 @@ def smooth_rate_maps_batch(
         Computation backend. When "jax", uses JAX array operations for the
         core rate computation (smoothing/division). See smooth_rate_map for
         details on backend behavior.
+    dtype : {np.float32, np.float64}, default=np.float64
+        Storage dtype of the returned rate-map array. The matmul/division is
+        always done in float64 for accuracy; only the final returned array is
+        cast to ``dtype``. ``np.float32`` halves the ``(n_neurons, n_bins)``
+        storage. Default ``np.float64`` leaves every existing caller
+        byte-for-byte unchanged. Honored on the NumPy path; on the JAX path the
+        cast is applied to the returned array as well.
 
     Returns
     -------
@@ -405,7 +479,14 @@ def smooth_rate_maps_batch(
     # Dispatch to JAX or NumPy implementation.
     if backend == "jax":
         return _smooth_rate_maps_batch_jax(  # type: ignore[no-any-return]
-            env, spike_counts, occupancy, method, bandwidth, min_occupancy, kernel
+            env,
+            spike_counts,
+            occupancy,
+            method,
+            bandwidth,
+            min_occupancy,
+            kernel,
+            dtype=dtype,
         )
 
     # Dispatch to NumPy vectorized implementations
@@ -415,14 +496,16 @@ def smooth_rate_maps_batch(
                 bandwidth, mode="density", cache=True
             )
         return _diffusion_kde_batch(
-            spike_counts, occupancy, bandwidth, min_occupancy, kernel
+            spike_counts, occupancy, bandwidth, min_occupancy, kernel, dtype=dtype
         )
     elif method == "gaussian_kde":
         return _gaussian_kde_batch(
-            env, spike_counts, occupancy, bandwidth, min_occupancy
+            env, spike_counts, occupancy, bandwidth, min_occupancy, dtype=dtype
         )
     elif method == "binned":
-        return _binned_batch(env, spike_counts, occupancy, bandwidth, min_occupancy)
+        return _binned_batch(
+            env, spike_counts, occupancy, bandwidth, min_occupancy, dtype=dtype
+        )
     else:
         raise ValueError(f"Unknown method: {method}")
 
@@ -649,7 +732,9 @@ def _diffusion_kde_batch(
     bandwidth: float,
     min_occupancy: float,
     kernel: NDArray[np.float64],
-) -> NDArray[np.float64]:
+    *,
+    dtype: type[np.float32] | type[np.float64] = np.float64,
+) -> NDArray[np.floating[Any]]:
     """Apply diffusion KDE smoothing for multiple neurons."""
     spike_counts = np.asarray(spike_counts, dtype=np.float64)
     occupancy = np.asarray(occupancy, dtype=np.float64)
@@ -668,7 +753,7 @@ def _diffusion_kde_batch(
             np.nan,
         )
 
-    return firing_rates.astype(np.float64)
+    return firing_rates.astype(dtype)
 
 
 def _gaussian_kde_batch(
@@ -677,7 +762,9 @@ def _gaussian_kde_batch(
     occupancy: NDArray[np.float64],
     bandwidth: float,
     min_occupancy: float,
-) -> NDArray[np.float64]:
+    *,
+    dtype: type[np.float32] | type[np.float64] = np.float64,
+) -> NDArray[np.floating[Any]]:
     """Apply Gaussian KDE smoothing for multiple neurons."""
     spike_counts = np.asarray(spike_counts, dtype=np.float64)
     occupancy = np.asarray(occupancy, dtype=np.float64)
@@ -696,7 +783,7 @@ def _gaussian_kde_batch(
             np.nan,
         )
 
-    return firing_rates.astype(np.float64)
+    return firing_rates.astype(dtype)
 
 
 def _binned_batch(
@@ -705,7 +792,9 @@ def _binned_batch(
     occupancy: NDArray[np.float64],
     bandwidth: float,
     min_occupancy: float,
-) -> NDArray[np.float64]:
+    *,
+    dtype: type[np.float32] | type[np.float64] = np.float64,
+) -> NDArray[np.floating[Any]]:
     """Apply binned smoothing for multiple neurons."""
     spike_counts = np.asarray(spike_counts, dtype=np.float64)
     occupancy = np.asarray(occupancy, dtype=np.float64)
@@ -717,7 +806,7 @@ def _binned_batch(
         raw_rates = np.where(occupancy >= min_occupancy, raw_rates, np.nan)
 
     if bandwidth <= 0:
-        return raw_rates.astype(np.float64)
+        return raw_rates.astype(dtype)
 
     n_neurons = raw_rates.shape[0]
     result = np.empty_like(raw_rates, dtype=np.float64)
@@ -747,7 +836,7 @@ def _binned_batch(
                 np.nan,
             )
 
-    return result.astype(np.float64)
+    return result.astype(dtype)
 
 
 # =============================================================================
@@ -850,15 +939,24 @@ def _smooth_rate_maps_batch_jax(
     bandwidth: float,
     min_occupancy: float,
     kernel: NDArray[np.float64] | None,
+    *,
+    dtype: type[np.float32] | type[np.float64] = np.float64,
 ) -> Any:
     """JAX implementation of smooth_rate_maps_batch.
 
     Uses JAX array operations for the core computation while keeping
-    kernel computation on NumPy (from Environment).
+    kernel computation on NumPy (from Environment). The core matmul/division
+    runs in float64; only the returned array is cast to ``dtype``. When JAX
+    x64 is disabled, the float64 request is naturally narrowed by JAX; the
+    final defensive cast in ``compute_spatial_rates`` guarantees the requested
+    dtype regardless.
     """
     import jax.numpy as jnp
 
     from neurospatial.encoding._core_jax import compute_firing_rates_batch
+
+    # Resolve the matching jnp dtype for the final cast.
+    jnp_dtype = jnp.float32 if dtype is np.float32 else jnp.float64
 
     # Convert inputs to JAX with explicit float64
     spike_counts_j = jnp.asarray(spike_counts, dtype=jnp.float64)
@@ -872,7 +970,7 @@ def _smooth_rate_maps_batch_jax(
         )
 
         if bandwidth <= 0:
-            return firing_rates
+            return jnp.asarray(firing_rates, dtype=jnp_dtype)
 
         # Smoothing uses NumPy (Environment.smooth) - per-neuron loop
         # This method is not optimized for JAX
@@ -904,7 +1002,7 @@ def _smooth_rate_maps_batch_jax(
                     np.nan,
                 )
 
-        return jnp.asarray(result, dtype=jnp.float64)
+        return jnp.asarray(result, dtype=jnp_dtype)
 
     # For diffusion_kde and gaussian_kde: smooth then normalize
     # Get kernel (computed by Environment, so NumPy)
@@ -935,4 +1033,4 @@ def _smooth_rate_maps_batch_jax(
         jnp.nan,
     )
 
-    return firing_rates
+    return jnp.asarray(firing_rates, dtype=jnp_dtype)

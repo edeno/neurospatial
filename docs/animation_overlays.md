@@ -7,15 +7,13 @@ Visualize animal behavior alongside spatial field dynamics using flexible overla
 ```python
 from neurospatial import Environment
 from neurospatial.animation import PositionOverlay, BodypartOverlay, HeadDirectionOverlay
-from neurospatial.encoding import compute_spatial_rate
+from neurospatial.encoding import compute_spatial_rates
 import numpy as np
 
-# Create environment and fields
+# Create environment and batch-encode all cells at once.
+# spike_times is a list of per-cell spike-time arrays (length 100 here).
 env = Environment.from_samples(positions, bin_size=2.5)
-fields = [
-    compute_spatial_rate(env, spikes[i], times, positions).firing_rate
-    for i in range(100)
-]
+fields = compute_spatial_rates(env, spike_times, times, positions).firing_rates  # (100, n_bins)
 frame_times = np.arange(len(fields), dtype=float) / 30.0  # one timestamp per field
 
 # Position overlay with trail
@@ -535,7 +533,7 @@ from neurospatial.animation import (
     HeadDirectionOverlay,
     Skeleton,
 )
-from neurospatial.encoding import compute_spatial_rate
+from neurospatial.encoding import compute_spatial_rates
 import numpy as np
 
 # Load data
@@ -543,16 +541,14 @@ positions = np.load("positions.npy")  # Animal position data
 pose_data = np.load("pose.npy")  # DLC/SLEAP output
 head_angles = np.load("angles.npy")  # Computed head direction
 timestamps = np.load("times.npy")  # Timestamps in seconds
+spike_times = ...  # list of per-cell spike-time arrays (length 50 here)
 
 # Create environment
 env = Environment.from_samples(positions, bin_size=2.5, units="cm")
 env.regions.add("goal", point=np.array([80.0, 80.0]))
 
-# Compute fields (e.g., place fields over trials)
-fields = [
-    compute_spatial_rate(env, spike_times[i], timestamps, positions).firing_rate
-    for i in range(50)
-]
+# Batch-encode all cells at once (e.g., place fields for the population)
+fields = compute_spatial_rates(env, spike_times, timestamps, positions).firing_rates  # (50, n_bins)
 
 # Create overlays
 position_overlay = PositionOverlay(

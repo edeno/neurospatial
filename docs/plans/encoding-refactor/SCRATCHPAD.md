@@ -2,6 +2,12 @@
 
 **Committed**: 2025-10-31
 
+> **Superseded for current API vocabulary.** This historical scratchpad predates
+> the v0.6 naming contract. Use
+> `.claude/docs/plans/ux-v0.6/api-contract.md` for current terms such as
+> `unit_id`, `summary_table()`, `classify()`, `label_cell_types()`, and
+> `peak_location()`.
+
 ## Current Status
 
 **Date**: 2026-05-07

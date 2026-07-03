@@ -177,10 +177,12 @@ nav:
       - Animation Overlays: animation_overlays.md
       - Dimensionality Support: dimensionality_support.md
       - Complete Workflows: user-guide/workflows.md
+      - Interoperability: user-guide/interoperability.md
       - Performance: user-guide/performance.md
   - Reference:
       - Errors: errors.md
       - Glossary: glossary.md
+      - Migrating to v0.6: migration/v0.6.md
   - API Reference:
       - api/index.md
   - Examples:

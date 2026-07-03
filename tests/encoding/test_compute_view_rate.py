@@ -550,13 +550,13 @@ class TestComputeViewRateResultMethods:
         assert hasattr(result, "plot")
         assert callable(result.plot)
 
-    def test_result_has_peak_view_location_method(
+    def test_result_has_peak_location_method(
         self,
         simple_env: Environment,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
         spike_times: np.ndarray,
     ) -> None:
-        """Result should have peak_view_location() method that works."""
+        """Result should have peak_location() method that works."""
         from neurospatial.encoding.view import compute_view_rate
 
         times, positions, headings = trajectory_data
@@ -567,7 +567,7 @@ class TestComputeViewRateResultMethods:
             positions,
             headings,
         )
-        peak = result.peak_view_location()
+        peak = result.peak_location()
         assert isinstance(peak, np.ndarray)
         assert peak.shape == (2,)  # 2D environment
 

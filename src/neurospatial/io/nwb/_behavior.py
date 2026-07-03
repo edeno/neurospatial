@@ -7,12 +7,16 @@ data from pynwb.behavior containers.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.io.nwb._adapters import timestamps_from_series
+from neurospatial.io.nwb._adapters import (
+    timestamps_from_series,
+    timestamps_handle_from_series,
+    validate_handle_lengths,
+)
 from neurospatial.io.nwb._core import _find_containers_by_type, _require_pynwb, logger
 
 if TYPE_CHECKING:
@@ -31,7 +35,9 @@ def read_position(
     nwbfile: NWBFile,
     processing_module: str | None = None,
     position_name: str | None = None,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    *,
+    lazy: bool = False,
+) -> tuple[NDArray[np.float64] | Any, NDArray[np.float64] | Any]:
     """
     Read position data from NWB file.
 
@@ -46,13 +52,23 @@ def read_position(
     position_name : str, optional
         Name of the specific SpatialSeries within Position.
         If None and multiple exist, uses first alphabetically with INFO log.
+    lazy : bool, default False
+        If ``False`` (default), positions and timestamps are fully materialized
+        into ``NDArray[np.float64]`` -- the historical, byte-for-byte-unchanged
+        behavior. If ``True``, the h5py-backed ``SpatialSeries.data`` handle (and
+        the timestamps handle) are returned **without** copying, so they
+        materialize only when sliced or ``np.asarray``-ed. Use this to keep large
+        recordings off-RAM.
 
     Returns
     -------
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position coordinates.
-    timestamps : NDArray[np.float64], shape (n_samples,)
-        Timestamps in seconds.
+    positions : NDArray[np.float64] or h5py.Dataset, shape (n_samples, n_dims)
+        Position coordinates. A materialized array when ``lazy=False``; a lazy
+        handle when ``lazy=True``.
+    timestamps : NDArray[np.float64] or h5py.Dataset, shape (n_samples,)
+        Timestamps in seconds. A materialized array when ``lazy=False``; a lazy
+        handle when ``lazy=True`` and the series carries explicit timestamps (a
+        rate-based series still returns a computed array).
 
     Raises
     ------
@@ -61,12 +77,36 @@ def read_position(
     ImportError
         If pynwb is not installed.
 
+    Notes
+    -----
+    Lazy handles are **only valid while the backing ``NWBFile`` / ``NWBHDF5IO``
+    is open**. Slice or ``np.asarray`` them inside the ``with NWBHDF5IO(...)``
+    block; accessing them after the file is closed raises an error from the HDF5
+    layer. ``lazy=False`` returns fully-materialized arrays as before and is safe
+    to use after the file closes.
+
+    Length validation (positions vs. timestamps) runs on **both** paths: the lazy
+    path compares the handles' ``.shape[0]`` (which an ``h5py.Dataset`` exposes
+    without materializing values), so a mismatch raises the same ``ValueError``
+    the eager path raises.
+
+    ``lazy=True`` returns the **stored** dtype (whatever the SpatialSeries was
+    written with, e.g. ``float32``), whereas ``lazy=False`` casts to
+    ``float64``. The values are equal; only the dtype may differ.
+
     Examples
     --------
     >>> from pynwb import NWBHDF5IO  # doctest: +SKIP
     >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
     ...     nwbfile = io.read()
     ...     positions, timestamps = read_position(nwbfile)
+
+    Lazy read (materialize a slice inside the open-file block):
+
+    >>> with NWBHDF5IO("session.nwb", "r") as io:  # doctest: +SKIP
+    ...     nwbfile = io.read()
+    ...     positions, timestamps = read_position(nwbfile, lazy=True)
+    ...     first_100 = positions[:100]  # only this slice is read from disk
     """
     _require_pynwb()
     from pynwb.behavior import Position as PositionType
@@ -80,6 +120,22 @@ def read_position(
     spatial_series = _get_spatial_series(
         position_container, position_name, "SpatialSeries", "Position"
     )
+
+    if lazy:
+        # Return the h5py-backed handles without copying; they materialize on
+        # slice / np.asarray. Validate lengths using the handles' .shape[0]
+        # (an h5py Dataset exposes .shape WITHOUT materializing values, so this
+        # stays lazy) so the lazy path raises the SAME ValueError the eager path
+        # raises on a positions/timestamps length mismatch.
+        data_handle = spatial_series.data
+        timestamps_handle = timestamps_handle_from_series(spatial_series)
+        validate_handle_lengths(
+            {
+                "positions": int(data_handle.shape[0]),
+                "timestamps": int(timestamps_handle.shape[0]),
+            }
+        )
+        return data_handle, timestamps_handle
 
     # Extract position data and timestamps
     positions = np.asarray(spatial_series.data[:], dtype=np.float64)

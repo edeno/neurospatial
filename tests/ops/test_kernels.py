@@ -390,6 +390,23 @@ class TestEnvironmentComputeKernel:
         # But should have same values
         assert np.allclose(kernel1, kernel2)
 
+    def test_compute_kernel_high_bin_warns_and_returns(self, monkeypatch):
+        """env.compute_kernel warns above the threshold and still returns a kernel."""
+        from neurospatial.ops import smoothing
+
+        # Build a small env that exceeds a monkeypatched tiny warn threshold.
+        rng = np.random.default_rng(0)
+        data = rng.uniform(0, 10, (50, 2))
+        env = Environment.from_samples(data, bin_size=1.0)
+        assert env.n_bins > 1, "Fixture must exceed the patched threshold"
+
+        monkeypatch.setattr(smoothing, "_LARGE_KERNEL_THRESHOLD", 1)
+
+        # Warns (with a GB estimate) and proceeds -- never raises.
+        with pytest.warns(UserWarning, match="GB"):
+            kernel = env.compute_kernel(bandwidth=1.0, mode="transition", cache=False)
+        assert kernel.shape == (env.n_bins, env.n_bins)
+
     def test_compute_kernel_requires_fitted(self):
         """Test that compute_kernel requires fitted environment."""
         # Create an environment but don't fit it by using __init__ directly
@@ -438,7 +455,7 @@ class TestKernelPerformanceWarnings:
             graph.edges[u, v]["distance"] = 1.0
 
         # Should emit UserWarning about performance
-        with pytest.warns(UserWarning, match=r"Computing diffusion kernel"):
+        with pytest.warns(UserWarning, match=r"diffusion kernel"):
             # Use a small bandwidth to make computation faster
             # (kernel won't be useful but we just need to test warning)
             compute_diffusion_kernels(graph, bandwidth_sigma=0.01, mode="transition")
@@ -460,11 +477,91 @@ class TestKernelPerformanceWarnings:
             compute_diffusion_kernels(graph, bandwidth_sigma=1.0, mode="transition")
             # Filter for our specific warning
             kernel_warnings = [
-                warning
-                for warning in w
-                if "Computing diffusion kernel" in str(warning.message)
+                warning for warning in w if "diffusion kernel" in str(warning.message)
             ]
             assert len(kernel_warnings) == 0, "Small graphs should not emit warnings"
+
+
+class TestKernelHighBinWarning:
+    """Tests for the high-bin memory WARNING on compute_diffusion_kernels.
+
+    There is no hard limit: above the warn threshold the call emits a loud
+    ``UserWarning`` (with a GB estimate) and always proceeds, returning a kernel.
+    """
+
+    @staticmethod
+    def _path_graph_with_distances(n_bins):
+        graph = nx.path_graph(n_bins)
+        for u, v in graph.edges():
+            graph.edges[u, v]["distance"] = 1.0
+        return graph
+
+    def test_high_bin_warns_and_returns(self, monkeypatch):
+        """Above the (patched) threshold: warn (naming GB) and still return."""
+        from neurospatial.ops import smoothing
+
+        # Lower the warn threshold so a tiny graph trips it.
+        monkeypatch.setattr(smoothing, "_LARGE_KERNEL_THRESHOLD", 5)
+
+        graph = self._path_graph_with_distances(6)  # 6 > 5
+
+        with pytest.warns(UserWarning) as record:
+            kernel = smoothing.compute_diffusion_kernels(
+                graph, bandwidth_sigma=1.0, mode="transition"
+            )
+
+        message = str(record[0].message)
+        # Names the size, the estimated GB, the dense reason, and a mitigation.
+        assert "6" in message, "Warning should name n_bins"
+        assert "GB" in message, "Warning should state the estimated dense size in GB"
+        assert "binned" in message, "Warning should mention the binned mitigation"
+        # Must have actually built and returned the kernel (no raise).
+        assert kernel.shape == (6, 6)
+        assert kernel.dtype == np.float64
+
+    def test_does_not_raise(self, monkeypatch):
+        """A high-bin request must never raise -- warn-and-proceed only."""
+        from neurospatial.ops import smoothing
+
+        monkeypatch.setattr(smoothing, "_LARGE_KERNEL_THRESHOLD", 2)
+
+        graph = self._path_graph_with_distances(8)  # 2 < 8
+
+        with pytest.warns(UserWarning, match="GB"):
+            kernel = smoothing.compute_diffusion_kernels(
+                graph, bandwidth_sigma=0.5, mode="transition"
+            )
+
+        assert kernel.shape == (8, 8)
+
+    def test_under_threshold_no_warn(self, monkeypatch):
+        """At or below the threshold, no warning is emitted."""
+        import warnings as _warnings
+
+        from neurospatial.ops import smoothing
+
+        monkeypatch.setattr(smoothing, "_LARGE_KERNEL_THRESHOLD", 5)
+
+        graph = self._path_graph_with_distances(5)  # 5 is NOT > 5
+
+        with _warnings.catch_warnings(record=True) as w:
+            _warnings.simplefilter("always")
+            kernel = smoothing.compute_diffusion_kernels(
+                graph, bandwidth_sigma=1.0, mode="transition"
+            )
+            kernel_warnings = [
+                warning for warning in w if "diffusion kernel" in str(warning.message)
+            ]
+            assert len(kernel_warnings) == 0
+        assert kernel.shape == (5, 5)
+
+    def test_docstring_mentions_memory(self):
+        """Docstring must prominently document the O(n²) memory cost."""
+        from neurospatial.ops.smoothing import compute_diffusion_kernels
+
+        doc = compute_diffusion_kernels.__doc__.lower()
+        assert "memory" in doc, "Docstring should mention memory"
+        assert "gb" in doc, "Docstring should give a GB example figure"
 
 
 class TestSparseMatrixOptimization:

@@ -1,14 +1,41 @@
 """Tests for neurospatial.io serialization functionality."""
 
 import json
+import re
 from pathlib import Path
 
 import networkx as nx
 import numpy as np
 import pytest
+import tomllib
 
+import neurospatial
 from neurospatial import Environment
 from neurospatial.io import from_dict, from_file, to_dict, to_file
+
+
+def test_source_install_hints_reference_real_extras() -> None:
+    """Every ``neurospatial[...]`` install hint in the package must name a real extra.
+
+    Scans ALL of ``src/neurospatial`` (docstrings AND ImportError messages), so a
+    hint pointing at an undefined extra fails loudly wherever it lives. Regressions
+    fixed: ``nwb-full`` / ``nwb-pose`` / ``nwb-events`` (only the combined ``nwb``
+    extra exists) and ``trajectory`` (scikit-image is a core dependency, not an
+    extra).
+    """
+    root = Path(neurospatial.__file__).resolve().parents[2]
+    pyproject = tomllib.loads((root / "pyproject.toml").read_text())
+    defined = set(pyproject["project"]["optional-dependencies"])
+
+    pkg_dir = Path(neurospatial.__file__).resolve().parent
+    referenced: dict[str, str] = {}
+    for source in pkg_dir.rglob("*.py"):
+        for extra in re.findall(r"neurospatial\[([a-z0-9-]+)\]", source.read_text()):
+            referenced.setdefault(extra, str(source.relative_to(pkg_dir)))
+
+    assert referenced, "expected the package to document at least one install extra"
+    undefined = {e: loc for e, loc in referenced.items() if e not in defined}
+    assert not undefined, f"install hints reference undefined extra(s): {undefined}"
 
 
 class TestSerialization:

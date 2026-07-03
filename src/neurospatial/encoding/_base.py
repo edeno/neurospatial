@@ -203,6 +203,58 @@ class SpatialResultMixin(ResultMixin):
         bin_centers: NDArray[np.float64] = env.bin_centers
         return bin_centers
 
+    def _bin_center_columns(self) -> dict[str, NDArray[np.float64]]:
+        """Per-bin center coordinates as consistently-named DataFrame columns.
+
+        Maps each bin's center to one or more named columns following the
+        shared vocabulary used across all result classes:
+
+        - Cartesian environments: ``bin_center_x`` / ``bin_center_y`` /
+          ``bin_center_z`` (and ``bin_center_dim_3`` ... for >3-D).
+        - Polar egocentric environments: ``bin_center_distance`` and
+          ``bin_center_angle``.
+        - Directional results (no environment, angular centers): subclasses
+          override to emit ``bin_center_angle`` directly.
+
+        The default reads ``self.env`` and dispatches Cartesian vs. polar via
+        :func:`neurospatial._results._bin_center_coords`, which raises if the
+        environment's ``bin_centers`` disagree with the result's bin count.
+
+        Returns
+        -------
+        dict
+            Mapping ``column_name -> values`` (each a 1-D array of length
+            ``n_bins``). Empty when no environment is available.
+        """
+        from neurospatial._results import _bin_center_coords
+
+        env: Any = getattr(self, "env", None)
+        if env is None:
+            return {}
+        rates = _to_numpy(self._get_rates())
+        n_bins = int(rates.shape[-1])
+        coords = _bin_center_coords(env, n_bins)
+        return {name: np.asarray(values) for name, (_dim, values) in coords.items()}
+
+    def _row_unit_ids(self) -> NDArray[Any]:
+        """Per-unit identity labels, one per unit (row).
+
+        Batch results expose ``unit_ids`` (length ``n_units``); single-unit
+        results expose a scalar ``unit_id`` (possibly ``None``). This returns a
+        1-D array of length ``n_units`` suitable for building the dense
+        ``unit_id`` column or indexing the per-unit ``summary_table``.
+        """
+        import pandas as pd
+
+        unit_ids = getattr(self, "unit_ids", None)
+        if unit_ids is not None:
+            return np.asarray(unit_ids)
+        unit_id = getattr(self, "unit_id", None)
+        # When a standalone single-unit result has no identity, represent the
+        # absence of identity as absence (pd.NA), not a fabricated label like 0
+        # (which would be a real, selectable index value the unit never had).
+        return np.asarray([pd.NA if unit_id is None else unit_id], dtype=object)
+
     def _get_rates(self) -> Any:
         """Get firing rate(s), handling both single and batch results.
 
@@ -234,13 +286,24 @@ class SpatialResultMixin(ResultMixin):
         """
         rates = _to_numpy(self._get_rates())
         bin_centers = self._bin_centers
+        n_dims = int(bin_centers.shape[1]) if bin_centers.ndim > 1 else 1
 
         if rates.ndim == 1:
+            # A fully-NaN (dead) unit has no defined peak; np.nanargmax would
+            # raise "All-NaN slice encountered". Return NaN coordinates instead.
+            if not np.any(np.isfinite(rates)):
+                return np.full(n_dims, np.nan, dtype=np.float64)
             peak_idx = int(np.nanargmax(rates))
             result: NDArray[np.float64] = bin_centers[peak_idx]
             return result
-        peak_indices = np.nanargmax(rates, axis=1)
-        result = bin_centers[peak_indices]
+
+        # Batch: guard each row so an all-NaN unit yields NaN coordinates
+        # rather than crashing the whole np.nanargmax call.
+        finite_mask = np.any(np.isfinite(rates), axis=1)
+        safe_rates = np.where(finite_mask[:, None], rates, 0.0)
+        peak_indices = np.nanargmax(safe_rates, axis=1)
+        result = bin_centers[peak_indices].astype(np.float64, copy=True)
+        result[~finite_mask] = np.nan
         return result
 
     def peak_firing_rate(self) -> NDArray[np.float64] | float:
@@ -322,25 +385,29 @@ class SpatialResultMixin(ResultMixin):
         return out
 
     def to_dataframe(self) -> pd.DataFrame:
-        """Tidy/long-form table of per-bin firing rate and occupancy.
+        """Dense tidy table of per-bin firing rate and occupancy.
 
-        Specializes :meth:`neurospatial._results.ResultMixin.to_dataframe` for
-        spatial results in **tidy/long form**: one row per (neuron, bin) with a
-        ``firing_rate`` value column, so results from different analyses
-        concatenate without error via ``pandas.concat`` into a union schema
-        (columns absent from a given result are filled with ``NaN``).
+        Specializes :meth:`neurospatial._results.ResultMixin.to_dataframe` as
+        the **dense** terminal verb: one row per ``(unit, bin)`` (single-unit
+        results: one row per ``bin``), **always** carrying a ``unit_id``
+        column. This is the frame for plotting / detailed per-bin inspection.
+        For the per-unit scalar summary (peak location, spatial info, cell
+        type, ...) use :meth:`summary_table` instead.
 
-        For single-neuron results (``firing_rate``), ``neuron`` is ``0`` for
-        every row. For batch results (``firing_rates``), ``neuron`` ranges over
-        the neuron index. Bin-center coordinates are emitted as ``coord_0``,
-        ``coord_1``, ... columns.
+        The ``unit_id`` column carries the real per-unit identity labels
+        (:attr:`unit_ids` for batch results, :attr:`unit_id` for single-unit
+        results). Bin-center coordinates are emitted with the shared
+        vocabulary: ``bin_center_x`` / ``bin_center_y`` / ``bin_center_z`` for
+        Cartesian environments, ``bin_center_distance`` /
+        ``bin_center_angle`` for polar egocentric environments, and
+        ``bin_center_angle`` for directional results.
 
         Returns
         -------
         pandas.DataFrame
-            Long-form table with columns ``neuron`` (int), ``bin`` (int),
-            ``coord_0`` ... (float), ``firing_rate`` (float, Hz), and
-            ``occupancy`` (float, seconds).
+            Long-form table with columns ``unit_id``, ``bin`` (int),
+            the ``bin_center_*`` coordinate columns (float), ``firing_rate``
+            (float, Hz), and ``occupancy`` (float, seconds).
 
         Examples
         --------
@@ -356,33 +423,74 @@ class SpatialResultMixin(ResultMixin):
         ...     env, spike_times, times, positions, bandwidth=10.0
         ... )
         >>> df = result.to_dataframe()
-        >>> {"neuron", "bin", "firing_rate"} <= set(df.columns)
+        >>> {"unit_id", "bin", "firing_rate"} <= set(df.columns)
+        True
+        >>> len(df) == env.n_bins
         True
         """
         import pandas as pd
 
         rates = _to_numpy(self._get_rates())
         occupancy = _to_numpy(self.occupancy)  # type: ignore[attr-defined]
-        bin_centers = np.asarray(self._bin_centers)
-        if bin_centers.ndim == 1:
-            bin_centers = bin_centers[:, None]
 
         rates_2d = rates[None, :] if rates.ndim == 1 else rates
         n_neurons, n_bins = rates_2d.shape
 
-        neuron_col = np.repeat(np.arange(n_neurons), n_bins)
+        row_unit_ids = self._row_unit_ids()
+        unit_col = np.repeat(np.asarray(row_unit_ids), n_bins)
         bin_col = np.tile(np.arange(n_bins), n_neurons)
 
         data: dict[str, Any] = {
-            "neuron": neuron_col,
+            "unit_id": unit_col,
             "bin": bin_col,
         }
-        n_dims = bin_centers.shape[1]
-        for d in range(n_dims):
-            data[f"coord_{d}"] = np.tile(bin_centers[:, d], n_neurons)
+        for name, values in self._bin_center_columns().items():
+            data[name] = np.tile(np.asarray(values), n_neurons)
         data["firing_rate"] = rates_2d.reshape(-1)
         # Occupancy is shared across neurons for batch spatial results.
         occ = np.asarray(occupancy).reshape(-1)
         data["occupancy"] = np.tile(occ, n_neurons)
 
         return pd.DataFrame(data)
+
+    def summary_table(self) -> pd.DataFrame:
+        """Per-unit scalar summary, one row per unit, ``unit_id``-indexed.
+
+        Complements :meth:`to_dataframe` (dense, one row per ``(unit, bin)``)
+        as the **per-unit summary** terminal verb: one row per unit with scalar
+        metric columns (peak location, peak rate, and the spatial metrics each
+        result class can compute). This is the table a many-neuron user wants
+        for filtering, sorting, and population summaries.
+
+        The base implementation provides the shared columns
+        (``peak_*`` coordinates and ``peak_rate``); concrete batch result
+        classes extend it with their domain metrics (spatial information,
+        grid/border scores, cell type, preferred direction, etc.).
+
+        Returns
+        -------
+        pandas.DataFrame
+            One row per unit, indexed by ``unit_id``, with at least
+            ``peak_<coord>`` columns and ``peak_rate`` (float, Hz).
+        """
+        import pandas as pd
+
+        row_unit_ids = self._row_unit_ids()
+        peaks = np.atleast_2d(self.peak_location())
+        peak_rates = np.atleast_1d(self.peak_firing_rate())
+
+        data: dict[str, Any] = {}
+        coord_names = list(self._bin_center_columns().keys())
+        n_dims = peaks.shape[1]
+        for d in range(n_dims):
+            # Reuse the bin-center vocabulary for peak columns:
+            # bin_center_x -> peak_x, bin_center_distance -> peak_distance.
+            if d < len(coord_names):
+                col = "peak_" + coord_names[d].removeprefix("bin_center_")
+            else:
+                col = f"peak_coord_{d}"
+            data[col] = peaks[:, d]
+        data["peak_rate"] = peak_rates
+
+        df = pd.DataFrame(data, index=pd.Index(row_unit_ids, name="unit_id"))
+        return df

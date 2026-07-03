@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
-from neurospatial._results import ResultMixin
+from neurospatial._results import ResultMixin, _coord_dim_names
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -441,12 +441,7 @@ class DecodingResult(ResultMixin):
         data["map_bin"] = self.map_estimate
 
         # Add MAP positions
-        n_dims = self.env.n_dims
-        dim_names: list[str] = (
-            ["x", "y", "z"][:n_dims]
-            if n_dims <= 3
-            else [f"dim_{i}" for i in range(n_dims)]
-        )
+        dim_names = _coord_dim_names(self.env.n_dims)
         for i, name in enumerate(dim_names):
             data[f"map_{name}"] = self.map_position[:, i]
 
@@ -460,20 +455,31 @@ class DecodingResult(ResultMixin):
         return pd.DataFrame(data)
 
     def to_xarray(self) -> Any:
-        """Convert the posterior to an :class:`xarray.DataArray`.
+        """Convert the posterior to a labeled :class:`xarray.Dataset`.
 
         Wraps the ``(n_time_bins, n_bins)`` posterior in a labeled
-        :class:`xarray.DataArray` with dims ``("time", "bin")``. The ``time``
-        coordinate is taken from :attr:`times` when available; the ``bin``
-        coordinate is the integer bin index ``np.arange(n_bins)``.
+        :class:`xarray.Dataset` with dims ``("time", "bin")`` -- a posterior
+        over space per decode time bin (no ``unit_id`` axis). The ``time``
+        index coordinate is taken from :attr:`times` when available (see Notes
+        for the fallback); the ``bin`` dimension carries non-index
+        ``bin_center_x`` / ``bin_center_y`` (and ``bin_center_z`` for 3-D, or
+        ``bin_center_distance`` / ``bin_center_angle`` for polar)
+        coordinates.
 
         Returns
         -------
-        xarray.DataArray
-            Posterior with dims ``("time", "bin")``. The array ``.values``
-            equal :attr:`posterior`. ``coords["time"]`` is :attr:`times`
-            (or the integer index fallback, see Notes) and ``coords["bin"]``
-            is the integer bin index.
+        xarray.Dataset
+            Dataset with:
+
+            - data var ``posterior``, dims ``("time", "bin")`` (equals
+              :attr:`posterior`).
+            - data var ``map_position`` per dimension is *not* added; the MAP
+              bin index is exposed via the ``map_bin`` data var on ``time``.
+            - index coord ``time`` (= :attr:`times`, or the integer-index
+              fallback, see Notes).
+            - non-index ``bin_center_*`` coords on ``bin``.
+            - ``attrs``: ``units``, ``env`` fingerprint, and
+              ``software_version``.
 
         Raises
         ------
@@ -504,8 +510,8 @@ class DecodingResult(ResultMixin):
         >>> posterior = np.ones((10, env.n_bins)) / env.n_bins
         >>> times = np.linspace(0.0, 1.0, 10)
         >>> result = DecodingResult(posterior=posterior, env=env, times=times)
-        >>> da = result.to_xarray()  # doctest: +SKIP
-        >>> da.dims  # doctest: +SKIP
+        >>> ds = result.to_xarray()  # doctest: +SKIP
+        >>> ds["posterior"].dims  # doctest: +SKIP
         ('time', 'bin')
 
         See Also
@@ -521,6 +527,13 @@ class DecodingResult(ResultMixin):
                 "'pip install neurospatial[xarray]' or 'pip install xarray'."
             ) from exc
 
+        from neurospatial._results import (
+            _bin_center_coords,
+            env_fingerprint,
+            software_version,
+            units_attr,
+        )
+
         n_time = self.posterior.shape[0]
         n_bins = self.posterior.shape[1]
 
@@ -528,17 +541,45 @@ class DecodingResult(ResultMixin):
         # rather than passing None into the coord (which would raise).
         if self.times is not None:
             time_coord: NDArray[Any] = np.asarray(self.times)
+            if time_coord.ndim != 1:
+                raise ValueError(
+                    "DecodingResult.to_xarray(): times must be 1-D, but got "
+                    f"shape {time_coord.shape}.\n"
+                    "  WHY: the xarray 'time' coordinate labels one posterior "
+                    "row per decoded time bin.\n"
+                    "  HOW: pass a 1-D times array with length "
+                    "posterior.shape[0], or leave times=None to use integer "
+                    "time-bin indices."
+                )
+            if time_coord.shape[0] != n_time:
+                raise ValueError(
+                    "DecodingResult.to_xarray(): times length mismatch: got "
+                    f"{time_coord.shape[0]} time value(s), but posterior has "
+                    f"{n_time} time bin(s).\n"
+                    "  WHY: the xarray 'time' coordinate must align one-to-one "
+                    "with posterior rows.\n"
+                    "  HOW: pass times with length posterior.shape[0], or "
+                    "leave times=None to use integer time-bin indices."
+                )
         else:
             time_coord = np.arange(n_time)
 
-        bin_coord = np.arange(n_bins)
+        coords: dict[str, Any] = {"time": time_coord, "bin": np.arange(n_bins)}
+        coords.update(_bin_center_coords(self.env, n_bins))
 
-        return xr.DataArray(
-            self.posterior,
-            dims=("time", "bin"),
-            coords={"time": time_coord, "bin": bin_coord},
-            name="posterior",
-        )
+        data_vars: dict[str, Any] = {
+            "posterior": (("time", "bin"), np.asarray(self.posterior)),
+            # map_bin is cheaply available (cached); expose the MAP bin index.
+            "map_bin": (("time",), np.asarray(self.map_estimate)),
+        }
+
+        attrs: dict[str, Any] = {
+            **units_attr(self.env),
+            "env": env_fingerprint(self.env),
+            "software_version": software_version(),
+        }
+
+        return xr.Dataset(data_vars=data_vars, coords=coords, attrs=attrs)
 
     def error_against(
         self,
@@ -687,3 +728,313 @@ class DecodingResult(ResultMixin):
             errors = np.asarray(errors, dtype=np.float64).copy()
             errors[undecodable] = np.nan
         return errors
+
+
+@dataclass(frozen=True)
+class DecodingSummary(ResultMixin):
+    """Per-time decode reductions, without the full posterior.
+
+    Memory-safe sibling of :class:`DecodingResult`. Produced by
+    :func:`~neurospatial.decoding.decode_position_summary` (and
+    :func:`~neurospatial.decoding.decode_session_summary`), which stream over
+    time and never materialize the full ``(n_time_bins, n_bins)`` posterior.
+    This container therefore holds only the ``(n_time_bins, ...)`` reductions.
+
+    The accessor *names* deliberately match :class:`DecodingResult`
+    (``map_position``, ``mean_position``, ``posterior_entropy``, ``map_bin``)
+    so user code ports between the full and summary decoders with no renaming.
+    The key difference is that here they are **fields** holding the streamed
+    result rather than cached properties computed from a posterior.
+
+    Parameters
+    ----------
+    times : NDArray[np.float64] | None
+        Time-bin centers in seconds, or ``None`` if not supplied.
+    map_position : NDArray[np.float64], shape (n_time_bins, n_dims)
+        MAP (maximum a posteriori) position per time bin.
+    mean_position : NDArray[np.float64], shape (n_time_bins, n_dims)
+        Posterior-mean position per time bin.
+    posterior_entropy : NDArray[np.float64], shape (n_time_bins,)
+        Posterior entropy per time bin, in bits.
+    peak_prob : NDArray[np.float64], shape (n_time_bins,)
+        Maximum posterior probability per time bin.
+    env : Environment
+        Reference to the environment used for decoding.
+    map_bin : NDArray[np.int64], shape (n_time_bins,)
+        MAP bin index per time bin.
+
+    See Also
+    --------
+    DecodingResult : Full-posterior decode result.
+    neurospatial.decoding.decode_position_summary : Produces this container.
+    """
+
+    times: NDArray[np.float64] | None
+    map_position: NDArray[np.float64]
+    mean_position: NDArray[np.float64]
+    posterior_entropy: NDArray[np.float64]
+    peak_prob: NDArray[np.float64]
+    env: Environment
+    map_bin: NDArray[np.int64]
+
+    def __post_init__(self) -> None:
+        """Validate that all per-time arrays share a consistent shape.
+
+        ``DecodingSummary`` is public/exported, so it may be constructed
+        directly. Catch ragged inputs here with a clear ``ValueError`` naming
+        the offending field rather than failing late and cryptically in a
+        reduction or export. ``n_time`` is derived from ``map_bin``; every other
+        per-time field must agree (``(n_time,)`` for scalars, ``(n_time,
+        n_dims)`` for position vectors, and ``times`` likewise when provided).
+        """
+        n_time = self.map_bin.shape[0]
+        n_dims = self.env.n_dims
+        checks: list[tuple[str, NDArray[Any] | None, tuple[int, ...]]] = [
+            ("map_position", self.map_position, (n_time, n_dims)),
+            ("mean_position", self.mean_position, (n_time, n_dims)),
+            ("posterior_entropy", self.posterior_entropy, (n_time,)),
+            ("peak_prob", self.peak_prob, (n_time,)),
+        ]
+        if self.times is not None:
+            checks.append(("times", self.times, (n_time,)))
+        for name, arr, expected in checks:
+            if arr is None:
+                continue
+            if arr.shape != expected:
+                raise ValueError(
+                    f"DecodingSummary.{name} has shape {arr.shape}, but expected "
+                    f"{expected} (n_time={n_time} from map_bin"
+                    + (f", n_dims={n_dims} from env" if len(expected) == 2 else "")
+                    + "). All per-time fields must share the same n_time."
+                )
+
+    @property
+    def n_time_bins(self) -> int:
+        """Number of decoded time bins.
+
+        Returns
+        -------
+        int
+            Length of the per-time reduction arrays.
+        """
+        return int(self.map_bin.shape[0])
+
+    @property
+    def map_estimate(self) -> NDArray[np.int64]:
+        """MAP bin index per time bin.
+
+        Alias of :attr:`map_bin` for parity with
+        :attr:`DecodingResult.map_estimate`, so user code ports between the
+        full and summary decoders without renaming.
+
+        Returns
+        -------
+        NDArray[np.int64]
+            MAP bin index per time bin, shape ``(n_time_bins,)``.
+        """
+        return self.map_bin
+
+    def _dim_names(self) -> list[str]:
+        """Coordinate column names matching ``DecodingResult.to_dataframe``."""
+        return _coord_dim_names(self.env.n_dims)
+
+    def to_dataframe(self) -> pd.DataFrame:
+        """Convert to a tidy DataFrame, one row per time bin.
+
+        Returns
+        -------
+        pandas.DataFrame
+            DataFrame with columns:
+
+            - ``time`` : time-bin center in seconds (only if ``times`` set)
+            - ``map_bin`` : MAP bin index
+            - ``map_x``, ``map_y``, ... : MAP position coordinates
+            - ``mean_x``, ``mean_y``, ... : mean position coordinates
+            - ``posterior_entropy`` : posterior entropy (bits)
+            - ``peak_prob`` : max posterior probability
+
+        Notes
+        -----
+        Coordinate column naming matches
+        :meth:`DecodingResult.to_dataframe` exactly (``x``/``y``/``z`` for
+        <=3-D, ``dim_i`` otherwise).
+        """
+        data: dict[str, Any] = {}
+
+        if self.times is not None:
+            data["time"] = self.times
+
+        data["map_bin"] = self.map_bin
+
+        dim_names = self._dim_names()
+        for i, name in enumerate(dim_names):
+            data[f"map_{name}"] = self.map_position[:, i]
+        for i, name in enumerate(dim_names):
+            data[f"mean_{name}"] = self.mean_position[:, i]
+
+        data["posterior_entropy"] = self.posterior_entropy
+        data["peak_prob"] = self.peak_prob
+
+        return pd.DataFrame(data)
+
+    def summary(self) -> dict[str, Any]:
+        """Scalar headline metrics for the streamed decode.
+
+        Returns
+        -------
+        dict
+            Mapping with keys ``n_time_bins`` (int), ``n_bins`` (int, the
+            environment's spatial bin count), ``mean_entropy`` (float, bits),
+            ``max_entropy`` (float, bits = ``log2(n_bins)``), and
+            ``mean_peak_prob`` (float).
+
+        Notes
+        -----
+        ``n_bins`` is read from ``env.n_bins`` here (there is no posterior to
+        read a shape from). The shared keys (``n_time_bins``, ``n_bins``,
+        ``mean_entropy``, ``max_entropy``) match
+        :meth:`DecodingResult.summary`.
+        """
+        n_bins = int(self.env.n_bins)
+        return {
+            "n_time_bins": self.n_time_bins,
+            "n_bins": n_bins,
+            "mean_entropy": float(np.mean(self.posterior_entropy))
+            if self.posterior_entropy.size
+            else 0.0,
+            "max_entropy": float(np.log2(n_bins)) if n_bins > 0 else 0.0,
+            "mean_peak_prob": float(np.mean(self.peak_prob))
+            if self.peak_prob.size
+            else 0.0,
+        }
+
+    def plot(
+        self,
+        ax: Axes | None = None,
+        *,
+        quantity: Literal["entropy", "map"] = "entropy",
+        **kwargs: Any,
+    ) -> Axes:
+        """Plot a per-time summary over time.
+
+        Since there is no full posterior to display as a heatmap, this plots a
+        per-time scalar over time: either the posterior entropy (default) or
+        the MAP position coordinate(s).
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes | None, optional
+            Axes to plot on. If None, a new figure and axes are created.
+        quantity : {"entropy", "map"}, default="entropy"
+            What to plot: ``"entropy"`` plots ``posterior_entropy`` vs time;
+            ``"map"`` plots each MAP position coordinate vs time.
+        **kwargs
+            Additional keyword arguments forwarded to ``ax.plot``.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+            The axes containing the plot.
+        """
+        import matplotlib.pyplot as plt
+
+        if ax is None:
+            _, ax = plt.subplots()
+
+        if self.times is not None:
+            x = np.asarray(self.times, dtype=np.float64)
+            x_label = "Time (s)"
+        else:
+            x = np.arange(self.n_time_bins, dtype=np.float64)
+            x_label = "Time bin"
+
+        if quantity == "entropy":
+            ax.plot(x, self.posterior_entropy, **kwargs)
+            ax.set_ylabel("Posterior entropy (bits)")
+            ax.set_title("Posterior entropy over time")
+        elif quantity == "map":
+            for i, name in enumerate(self._dim_names()):
+                ax.plot(x, self.map_position[:, i], label=f"map_{name}", **kwargs)
+            ax.set_ylabel("MAP position")
+            ax.set_title("MAP position over time")
+            ax.legend()
+        else:
+            raise ValueError(f"quantity must be 'entropy' or 'map', got {quantity!r}.")
+
+        ax.set_xlabel(x_label)
+        return ax
+
+    def to_xarray(self) -> Any:
+        """Convert the per-time reductions to a labeled :class:`xarray.Dataset`.
+
+        Produces a "track" Dataset with a single ``time`` dimension and **no**
+        ``bin`` posterior axis (the full posterior was never materialized).
+
+        Returns
+        -------
+        xarray.Dataset
+            Dataset with data vars on ``("time",)``: ``map_bin``,
+            ``map_x``/``map_y``/... , ``mean_x``/..., ``posterior_entropy``,
+            ``peak_prob``. The ``time`` index coordinate is :attr:`times` when
+            set, else the integer index ``np.arange(n_time_bins)``. ``attrs``
+            carry ``units`` (when set), an ``env`` fingerprint, and
+            ``software_version``.
+
+        Raises
+        ------
+        ImportError
+            If ``xarray`` is not installed (optional dependency).
+        """
+        try:
+            import xarray as xr
+        except ImportError as exc:
+            raise ImportError(
+                "to_xarray() requires the optional 'xarray' dependency, which "
+                "is not installed. Install it with "
+                "'pip install neurospatial[xarray]' or 'pip install xarray'."
+            ) from exc
+
+        from neurospatial._results import (
+            env_fingerprint,
+            software_version,
+            units_attr,
+        )
+
+        n_time = self.n_time_bins
+
+        if self.times is not None:
+            time_coord: NDArray[Any] = np.asarray(self.times)
+            if time_coord.ndim != 1 or time_coord.shape[0] != n_time:
+                raise ValueError(
+                    "DecodingSummary.to_xarray(): times must be 1-D with "
+                    f"length n_time_bins ({n_time}), got shape "
+                    f"{time_coord.shape}."
+                )
+        else:
+            time_coord = np.arange(n_time)
+
+        dim_names = self._dim_names()
+        data_vars: dict[str, Any] = {
+            "map_bin": (("time",), np.asarray(self.map_bin)),
+            "posterior_entropy": (
+                ("time",),
+                np.asarray(self.posterior_entropy),
+            ),
+            "peak_prob": (("time",), np.asarray(self.peak_prob)),
+        }
+        for i, name in enumerate(dim_names):
+            data_vars[f"map_{name}"] = (("time",), self.map_position[:, i])
+        for i, name in enumerate(dim_names):
+            data_vars[f"mean_{name}"] = (("time",), self.mean_position[:, i])
+
+        attrs: dict[str, Any] = {
+            **units_attr(self.env),
+            "env": env_fingerprint(self.env),
+            "software_version": software_version(),
+        }
+
+        return xr.Dataset(
+            data_vars=data_vars,
+            coords={"time": time_coord},
+            attrs=attrs,
+        )

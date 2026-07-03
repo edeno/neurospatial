@@ -815,12 +815,12 @@ class TestBinViewSpikeTrains:
         assert spike_counts.shape == (1, simple_env.n_bins)
         assert occupancy.shape == (simple_env.n_bins,)
 
-    def test_normalizes_input_via_normalize_spike_times(
+    def test_normalizes_input_via_as_spike_trains(
         self,
         simple_env: Environment,
         trajectory_data: dict,
     ) -> None:
-        """Should accept normalized input from normalize_spike_times formats."""
+        """Should accept normalized input from as_spike_trains formats."""
         from neurospatial.encoding._view_binning import bin_view_spike_trains
 
         # Test with 2D NaN-padded array (common format)

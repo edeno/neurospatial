@@ -15,6 +15,7 @@ Task 2.1: Result class definitions
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
+from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -233,7 +234,7 @@ class TestSpatialRatesResultIteration:
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """__len__ should return number of neurons."""
+        """__len__ should return number of units."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -1993,7 +1994,7 @@ class TestSpatialRatesResultBorderScores:
 
 
 class TestSpatialRatesResultClassify:
-    """Tests for SpatialRatesResult.detect_cell_types() method."""
+    """Tests for SpatialRatesResult.classify() and label_cell_types()."""
 
     def test_has_classify_method(
         self,
@@ -2001,7 +2002,7 @@ class TestSpatialRatesResultClassify:
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """SpatialRatesResult should have a detect_cell_types() method."""
+        """SpatialRatesResult should have a classify() method."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2011,16 +2012,20 @@ class TestSpatialRatesResultClassify:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        assert hasattr(result, "detect_cell_types")
-        assert callable(result.detect_cell_types)
+        assert hasattr(result, "classify")
+        assert callable(result.classify)
 
-    def test_spatialrates_detect_cell_types_renamed(
+    def test_spatialrates_label_cell_types_multiclass(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """detect_cell_types() replaces classify(); .classify is gone."""
+        """label_cell_types() is the multi-class string labeler.
+
+        Distinct from classify() (a boolean place predicate), label_cell_types
+        returns the place/grid/border/unclassified string labels.
+        """
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2031,22 +2036,24 @@ class TestSpatialRatesResultClassify:
             bandwidth=5.0,
         )
 
-        labels = result.detect_cell_types()
+        labels = result.label_cell_types()
         assert isinstance(labels, np.ndarray)
         assert labels.shape == (firing_rates_batch.shape[0],)
         valid = {"place", "grid", "border", "unclassified"}
         assert set(labels.tolist()).issubset(valid)
 
-        # The old name no longer exists.
-        assert not hasattr(result, "classify")
+        # classify() is now a SEPARATE boolean predicate (not the labeler).
+        is_place = result.classify()
+        assert is_place.dtype == bool
+        assert is_place.shape == (firing_rates_batch.shape[0],)
 
-    def test_classify_returns_string_array(
+    def test_label_cell_types_returns_string_array(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """classify() should return an ndarray of strings."""
+        """label_cell_types() should return an ndarray of strings."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2056,7 +2063,7 @@ class TestSpatialRatesResultClassify:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        labels = result.detect_cell_types()
+        labels = result.label_cell_types()
         assert isinstance(labels, np.ndarray)
         assert labels.dtype.kind in ("U", "S", "O")  # Unicode, byte string, or object
 
@@ -2076,7 +2083,7 @@ class TestSpatialRatesResultClassify:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        labels = result.detect_cell_types()
+        labels = result.label_cell_types()
         n_neurons = firing_rates_batch.shape[0]
         assert labels.shape == (n_neurons,)
 
@@ -2097,7 +2104,7 @@ class TestSpatialRatesResultClassify:
             bandwidth=5.0,
         )
         # Should not raise with custom thresholds
-        labels = result.detect_cell_types(
+        labels = result.label_cell_types(
             min_spatial_info=0.3,
             min_grid_score=0.5,
             min_border_score=0.4,
@@ -2120,7 +2127,7 @@ class TestSpatialRatesResultClassify:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        labels = result.detect_cell_types()
+        labels = result.label_cell_types()
         valid_labels = {"place", "grid", "border", "unclassified"}
         for label in labels:
             assert label in valid_labels, f"Unexpected label: {label}"
@@ -2146,7 +2153,7 @@ class TestSpatialRatesResultClassify:
         )
 
         # With high spatial info and no grid/border preference, should be place cells
-        labels = result.detect_cell_types(
+        labels = result.label_cell_types(
             min_spatial_info=0.1, min_grid_score=2.0, min_border_score=2.0
         )
         # All should be labeled as place cells (high spatial info, no grid/border)
@@ -2173,7 +2180,7 @@ class TestSpatialRatesResultClassify:
         )
 
         # Use unreachable thresholds for grid and border to test spatial info threshold
-        labels = result.detect_cell_types(
+        labels = result.label_cell_types(
             min_spatial_info=0.5,
             min_grid_score=2.0,  # Unreachable (max is ~2.0)
             min_border_score=2.0,  # Unreachable (max is 1.0)
@@ -2210,7 +2217,7 @@ class TestSpatialRatesResultClassify:
         border_score = result.border_scores()[0]
         if not np.isnan(border_score) and border_score > 0.0:
             # Set threshold just below the actual score
-            labels = result.detect_cell_types(
+            labels = result.label_cell_types(
                 min_spatial_info=0.0,  # Don't require spatial info
                 min_grid_score=2.0,  # Effectively disable grid classification
                 min_border_score=border_score - 0.1,  # Just below actual score
@@ -2239,7 +2246,7 @@ class TestSpatialRatesResultClassify:
         )
 
         # With only spatial info criterion met, should be place cell
-        labels = result.detect_cell_types(
+        labels = result.label_cell_types(
             min_spatial_info=0.0,  # Low threshold
             min_grid_score=2.0,  # Unreachable threshold
             min_border_score=2.0,  # Unreachable threshold
@@ -2248,20 +2255,20 @@ class TestSpatialRatesResultClassify:
 
 
 # ==============================================================================
-# Test SpatialRatesResult.to_dataframe() (Task 2.6)
+# Test SpatialRatesResult.summary_table() (Task 2.6)
 # ==============================================================================
 
 
-class TestSpatialRatesResultToDataframe:
-    """Tests for SpatialRatesResult.to_dataframe() method (Task 2.6)."""
+class TestSpatialRatesResultSummaryTable:
+    """Tests for SpatialRatesResult.summary_table() method (Task 1.3)."""
 
-    def test_has_to_dataframe_method(
+    def test_has_summary_table_method(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """SpatialRatesResult should have a to_dataframe() method."""
+        """SpatialRatesResult should have a summary_table() method."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2271,16 +2278,16 @@ class TestSpatialRatesResultToDataframe:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        assert hasattr(result, "to_dataframe")
-        assert callable(result.to_dataframe)
+        assert hasattr(result, "summary_table")
+        assert callable(result.summary_table)
 
-    def test_to_dataframe_returns_dataframe(
+    def test_summary_table_returns_dataframe(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """to_dataframe() should return a pandas DataFrame."""
+        """summary_table() should return a pandas DataFrame."""
         import pandas as pd
 
         from neurospatial.encoding.spatial import SpatialRatesResult
@@ -2292,16 +2299,16 @@ class TestSpatialRatesResultToDataframe:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert isinstance(df, pd.DataFrame)
 
-    def test_to_dataframe_has_correct_row_count(
+    def test_summary_table_has_correct_row_count(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """to_dataframe() should have one row per neuron."""
+        """summary_table() should have one row per unit."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2311,16 +2318,16 @@ class TestSpatialRatesResultToDataframe:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert len(df) == len(result)
 
-    def test_to_dataframe_has_neuron_id_column(
+    def test_summary_table_indexed_by_unit_id(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """to_dataframe() should have a neuron_id column."""
+        """summary_table() should be indexed by unit_id."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2330,16 +2337,16 @@ class TestSpatialRatesResultToDataframe:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        df = result.to_dataframe()
-        assert "neuron_id" in df.columns
+        df = result.summary_table()
+        assert df.index.name == "unit_id"
 
-    def test_to_dataframe_has_peak_x_column(
+    def test_summary_table_has_peak_x_column(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """to_dataframe() should have a peak_x column."""
+        """summary_table() should have a peak_x column."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2349,16 +2356,16 @@ class TestSpatialRatesResultToDataframe:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "peak_x" in df.columns
 
-    def test_to_dataframe_has_peak_y_column(
+    def test_summary_table_has_peak_y_column(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """to_dataframe() should have a peak_y column."""
+        """summary_table() should have a peak_y column."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2368,16 +2375,16 @@ class TestSpatialRatesResultToDataframe:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "peak_y" in df.columns
 
-    def test_to_dataframe_has_peak_rate_column(
+    def test_summary_table_has_peak_rate_column(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """to_dataframe() should have a peak_rate column."""
+        """summary_table() should have a peak_rate column."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2387,16 +2394,16 @@ class TestSpatialRatesResultToDataframe:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "peak_rate" in df.columns
 
-    def test_to_dataframe_has_spatial_info_column(
+    def test_summary_table_has_spatial_info_column(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """to_dataframe() should have a spatial_info column."""
+        """summary_table() should have a spatial_info column."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2406,16 +2413,16 @@ class TestSpatialRatesResultToDataframe:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "spatial_info" in df.columns
 
-    def test_to_dataframe_has_sparsity_column(
+    def test_summary_table_has_sparsity_column(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """to_dataframe() should have a sparsity column."""
+        """summary_table() should have a sparsity column."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2425,16 +2432,16 @@ class TestSpatialRatesResultToDataframe:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "sparsity" in df.columns
 
-    def test_to_dataframe_has_grid_score_column(
+    def test_summary_table_has_grid_score_column(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """to_dataframe() should have a grid_score column."""
+        """summary_table() should have a grid_score column."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2444,16 +2451,16 @@ class TestSpatialRatesResultToDataframe:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "grid_score" in df.columns
 
-    def test_to_dataframe_has_border_score_column(
+    def test_summary_table_has_border_score_column(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """to_dataframe() should have a border_score column."""
+        """summary_table() should have a border_score column."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2463,16 +2470,16 @@ class TestSpatialRatesResultToDataframe:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "border_score" in df.columns
 
-    def test_to_dataframe_has_cell_type_column_by_default(
+    def test_summary_table_has_cell_type_column_by_default(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """to_dataframe() should include cell_type column by default."""
+        """summary_table() should include cell_type column by default."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2482,16 +2489,16 @@ class TestSpatialRatesResultToDataframe:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "cell_type" in df.columns
 
-    def test_to_dataframe_excludes_cell_type_when_disabled(
+    def test_summary_table_excludes_cell_type_when_disabled(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """to_dataframe(include_classification=False) should exclude cell_type."""
+        """summary_table(include_classification=False) should exclude cell_type."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2501,16 +2508,16 @@ class TestSpatialRatesResultToDataframe:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        df = result.to_dataframe(include_classification=False)
+        df = result.summary_table(include_classification=False)
         assert "cell_type" not in df.columns
 
-    def test_to_dataframe_uses_integer_neuron_ids_by_default(
+    def test_summary_table_uses_integer_unit_ids_by_default(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """to_dataframe() should use integer indices for neuron_id by default."""
+        """summary_table() should use integer unit_ids for the index by default."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2520,17 +2527,17 @@ class TestSpatialRatesResultToDataframe:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        df = result.to_dataframe()
+        df = result.summary_table()
         expected_ids = list(range(len(result)))
-        assert list(df["neuron_id"]) == expected_ids
+        assert list(df.index) == expected_ids
 
-    def test_to_dataframe_uses_custom_neuron_ids(
+    def test_summary_table_uses_custom_unit_ids(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """to_dataframe(neuron_ids=...) should use custom identifiers."""
+        """summary_table(unit_ids=...) should use custom identifiers."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2541,16 +2548,16 @@ class TestSpatialRatesResultToDataframe:
             bandwidth=5.0,
         )
         custom_ids = [f"unit_{i}" for i in range(len(result))]
-        df = result.to_dataframe(neuron_ids=custom_ids)
-        assert list(df["neuron_id"]) == custom_ids
+        df = result.summary_table(unit_ids=custom_ids)
+        assert list(df.index) == custom_ids
 
-    def test_to_dataframe_peak_rate_matches_peak_firing_rate(
+    def test_summary_table_peak_rate_matches_peak_firing_rate(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """to_dataframe() peak_rate should match peak_firing_rate() method."""
+        """summary_table() peak_rate should match peak_firing_rate() method."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2560,17 +2567,17 @@ class TestSpatialRatesResultToDataframe:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        df = result.to_dataframe()
+        df = result.summary_table()
         expected_rates = result.peak_firing_rate()
         np.testing.assert_array_almost_equal(df["peak_rate"].values, expected_rates)
 
-    def test_to_dataframe_spatial_info_matches_spatial_information(
+    def test_summary_table_spatial_info_matches_spatial_information(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """to_dataframe() spatial_info should match spatial_information() method."""
+        """summary_table() spatial_info should match spatial_information() method."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2580,17 +2587,17 @@ class TestSpatialRatesResultToDataframe:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        df = result.to_dataframe()
+        df = result.summary_table()
         expected_info = result.spatial_information()
         np.testing.assert_array_almost_equal(df["spatial_info"].values, expected_info)
 
-    def test_to_dataframe_sparsity_matches_sparsity_method(
+    def test_summary_table_sparsity_matches_sparsity_method(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """to_dataframe() sparsity should match sparsity() method."""
+        """summary_table() sparsity should match sparsity() method."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2600,17 +2607,17 @@ class TestSpatialRatesResultToDataframe:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        df = result.to_dataframe()
+        df = result.summary_table()
         expected_sparsity = result.sparsity()
         np.testing.assert_array_almost_equal(df["sparsity"].values, expected_sparsity)
 
-    def test_to_dataframe_grid_score_matches_grid_scores_method(
+    def test_summary_table_grid_score_matches_grid_scores_method(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """to_dataframe() grid_score should match grid_scores() method."""
+        """summary_table() grid_score should match grid_scores() method."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2620,7 +2627,7 @@ class TestSpatialRatesResultToDataframe:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        df = result.to_dataframe()
+        df = result.summary_table()
         expected_scores = result.grid_scores()
         # Use allclose with nan handling
         assert np.allclose(
@@ -2629,13 +2636,13 @@ class TestSpatialRatesResultToDataframe:
             np.isnan(df["grid_score"].values), np.isnan(expected_scores)
         )
 
-    def test_to_dataframe_border_score_matches_border_scores_method(
+    def test_summary_table_border_score_matches_border_scores_method(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """to_dataframe() border_score should match border_scores() method."""
+        """summary_table() border_score should match border_scores() method."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2645,7 +2652,7 @@ class TestSpatialRatesResultToDataframe:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        df = result.to_dataframe()
+        df = result.summary_table()
         expected_scores = result.border_scores()
         # Use allclose with nan handling
         assert np.allclose(
@@ -2654,13 +2661,13 @@ class TestSpatialRatesResultToDataframe:
             np.isnan(df["border_score"].values), np.isnan(expected_scores)
         )
 
-    def test_to_dataframe_cell_type_matches_classify_method(
+    def test_summary_table_cell_type_matches_label_cell_types_method(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """to_dataframe() cell_type should match classify() method."""
+        """summary_table() cell_type should match label_cell_types() method."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2670,17 +2677,17 @@ class TestSpatialRatesResultToDataframe:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        df = result.to_dataframe()
-        expected_labels = result.detect_cell_types()
+        df = result.summary_table()
+        expected_labels = result.label_cell_types()
         assert list(df["cell_type"]) == list(expected_labels)
 
-    def test_to_dataframe_peak_locations_match_peak_locations_method(
+    def test_summary_table_peak_locations_match_peak_locations_method(
         self,
         simple_env: Environment,
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """to_dataframe() peak_x, peak_y should match peak_location() method."""
+        """summary_table() peak_x, peak_y should match peak_location() method."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
@@ -2690,13 +2697,13 @@ class TestSpatialRatesResultToDataframe:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        df = result.to_dataframe()
+        df = result.summary_table()
         expected_locs = result.peak_location()
         np.testing.assert_array_almost_equal(df["peak_x"].values, expected_locs[:, 0])
         np.testing.assert_array_almost_equal(df["peak_y"].values, expected_locs[:, 1])
 
-    def test_to_dataframe_1d_environment_peak_y_is_nan(self) -> None:
-        """to_dataframe() should set peak_y to NaN for 1D environments."""
+    def test_summary_table_1d_environment_peak_y_is_nan(self) -> None:
+        """summary_table() should set peak_y to NaN for 1D environments."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         # Create a 1D-like environment (narrow 2D with 1 column effectively)
@@ -2718,18 +2725,18 @@ class TestSpatialRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         # For 2D environments with shape (n_neurons, n_dims), peak_y should exist
         # The specification says peak_y is NaN for 1D, but we created a 2D env
         # So peak_y should be valid for this case
         assert "peak_y" in df.columns
 
-    def test_to_dataframe_single_neuron(
+    def test_summary_table_single_neuron(
         self,
         simple_env: Environment,
         occupancy: NDArray[np.float64],
     ) -> None:
-        """to_dataframe() should work correctly with a single neuron."""
+        """summary_table() should work correctly with a single neuron."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         n_bins = simple_env.n_bins
@@ -2742,9 +2749,239 @@ class TestSpatialRatesResultToDataframe:
             smoothing_method="diffusion_kde",
             bandwidth=5.0,
         )
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert len(df) == 1
-        assert df["neuron_id"].iloc[0] == 0
+        assert df.index[0] == 0
+
+
+# ==============================================================================
+# Test summary_table() / label_cell_types() double-recompute avoidance (Task 2.3)
+# ==============================================================================
+
+
+class TestSummaryTableScoreRecompute:
+    """summary_table() must compute grid/border scores exactly once.
+
+    Regression: before the Task 2.3 fix, summary_table() computed grid and
+    border scores TWICE per call (once for the score columns, once inside
+    label_cell_types()). These tests pin the call count to exactly 1.
+    """
+
+    def test_summary_table_computes_grid_score_once(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """batch_grid_scores runs exactly once per summary_table() (was 2)."""
+        from unittest.mock import patch
+
+        import neurospatial.encoding._metrics as _metrics
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        with patch.object(
+            _metrics,
+            "batch_grid_scores",
+            wraps=_metrics.batch_grid_scores,
+        ) as mock_grid:
+            result.summary_table()
+
+        assert mock_grid.call_count == 1, (
+            f"batch_grid_scores called {mock_grid.call_count} times, "
+            "expected exactly 1 (regression: was 2 before Task 2.3 fix)"
+        )
+
+    def test_summary_table_computes_border_score_once(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """batch_border_scores runs exactly once per summary_table() (was 2)."""
+        from unittest.mock import patch
+
+        import neurospatial.encoding._metrics as _metrics
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        with patch.object(
+            _metrics,
+            "batch_border_scores",
+            wraps=_metrics.batch_border_scores,
+        ) as mock_border:
+            result.summary_table()
+
+        assert mock_border.call_count == 1, (
+            f"batch_border_scores called {mock_border.call_count} times, "
+            "expected exactly 1 (regression: was 2 before Task 2.3 fix)"
+        )
+
+
+class TestLabelCellTypesPrecomputedScores:
+    """label_cell_types() accepts precomputed grid/border score arrays."""
+
+    def test_precomputed_scores_match_recompute(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """Passing precomputed scores yields identical labels to recompute."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        gs = result.grid_scores().scores
+        bs = result.border_scores().scores
+
+        labels_recompute = result.label_cell_types()
+        labels_precomputed = result.label_cell_types(grid_scores=gs, border_scores=bs)
+
+        np.testing.assert_array_equal(labels_recompute, labels_precomputed)
+
+    def test_precomputed_scores_match_with_custom_thresholds(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """Precomputed scores compose with non-default thresholds."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+
+        gs = result.grid_scores().scores
+        bs = result.border_scores().scores
+
+        labels_recompute = result.label_cell_types(
+            min_spatial_info=0.3, min_grid_score=0.5, min_border_score=0.4
+        )
+        labels_precomputed = result.label_cell_types(
+            min_spatial_info=0.3,
+            min_grid_score=0.5,
+            min_border_score=0.4,
+            grid_scores=gs,
+            border_scores=bs,
+        )
+
+        np.testing.assert_array_equal(labels_recompute, labels_precomputed)
+
+    def test_wrong_length_grid_scores_raises(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """Wrong-length grid_scores raises an informative ValueError."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        n_neurons = firing_rates_batch.shape[0]
+        bad = np.zeros(n_neurons + 1, dtype=np.float64)
+
+        with pytest.raises(ValueError, match="grid_scores"):
+            result.label_cell_types(grid_scores=bad)
+
+    def test_wrong_length_border_scores_raises(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """Wrong-length border_scores raises an informative ValueError."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        n_neurons = firing_rates_batch.shape[0]
+        bad = np.zeros(n_neurons + 1, dtype=np.float64)
+
+        with pytest.raises(ValueError, match="border_scores"):
+            result.label_cell_types(border_scores=bad)
+
+    def test_2d_grid_scores_raises(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """Non-1-D grid_scores raises an informative ValueError."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        n_neurons = firing_rates_batch.shape[0]
+        bad = np.zeros((n_neurons, 1), dtype=np.float64)
+
+        with pytest.raises(ValueError, match="grid_scores"):
+            result.label_cell_types(grid_scores=bad)
+
+    def test_integer_dtype_scores_coerced(
+        self,
+        simple_env: Environment,
+        firing_rates_batch: NDArray[np.float64],
+        occupancy: NDArray[np.float64],
+    ) -> None:
+        """Integer-dtype precomputed scores are coerced to float, not raised on."""
+        from neurospatial.encoding.spatial import SpatialRatesResult
+
+        result = SpatialRatesResult(
+            firing_rates=firing_rates_batch,
+            occupancy=occupancy,
+            env=simple_env,
+            smoothing_method="diffusion_kde",
+            bandwidth=5.0,
+        )
+        n_neurons = firing_rates_batch.shape[0]
+        gs = np.zeros(n_neurons, dtype=np.int64)
+        bs = np.zeros(n_neurons, dtype=np.int64)
+
+        # Should not raise a TypeError from np.isnan on integer dtype.
+        labels = result.label_cell_types(grid_scores=gs, border_scores=bs)
+        assert labels.shape == (n_neurons,)
 
 
 # ==============================================================================
@@ -3619,7 +3856,7 @@ class TestComputeSpatialRatesFunction:
         trajectory_times: NDArray[np.float64],
         trajectory_positions: NDArray[np.float64],
     ) -> None:
-        """len(result) should return number of neurons."""
+        """len(result) should return number of units."""
         from neurospatial.encoding.spatial import compute_spatial_rates
 
         result = compute_spatial_rates(
@@ -4204,6 +4441,37 @@ class TestComputeSpatialRatesResultMethods:
         assert info.shape == (len(multiple_place_cell_spikes),)
         assert np.all(info >= 0)
 
+    def test_result_has_peak_locations_batch_method(
+        self,
+        trajectory_env: Environment,
+        multiple_place_cell_spikes: list[NDArray[np.float64]],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """peak_locations() should return (n_units, n_dims) matching per-unit peaks."""
+        from neurospatial.encoding.spatial import compute_spatial_rates
+
+        result = compute_spatial_rates(
+            trajectory_env,
+            multiple_place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+        )
+        n_units = len(multiple_place_cell_spikes)
+        n_dims = trajectory_env.bin_centers.shape[1]
+
+        # Plural batch accessor exists and has the right shape.
+        assert hasattr(result, "peak_locations")
+        peaks = result.peak_locations()
+        assert peaks.shape == (n_units, n_dims)
+
+        # Parity with the (batch) peak_location() it delegates to.
+        np.testing.assert_array_equal(peaks, result.peak_location())
+
+        # Parity with per-unit peak_location() on each single-neuron result.
+        per_unit = np.asarray([r.peak_location() for r in result])
+        np.testing.assert_array_equal(peaks, per_unit)
+
     def test_result_has_sparsity_method(
         self,
         trajectory_env: Environment,
@@ -4262,14 +4530,14 @@ class TestComputeSpatialRatesResultMethods:
         scores = result.border_scores()
         assert scores.shape == (len(multiple_place_cell_spikes),)
 
-    def test_result_has_classify_method(
+    def test_result_has_label_cell_types_method(
         self,
         trajectory_env: Environment,
         multiple_place_cell_spikes: list[NDArray[np.float64]],
         trajectory_times: NDArray[np.float64],
         trajectory_positions: NDArray[np.float64],
     ) -> None:
-        """Result should have classify() returning (n_neurons,) string labels."""
+        """Result should have label_cell_types() returning (n_neurons,) string labels."""
         from neurospatial.encoding.spatial import compute_spatial_rates
 
         result = compute_spatial_rates(
@@ -4278,18 +4546,18 @@ class TestComputeSpatialRatesResultMethods:
             trajectory_times,
             trajectory_positions,
         )
-        labels = result.detect_cell_types()
+        labels = result.label_cell_types()
         assert labels.shape == (len(multiple_place_cell_spikes),)
         assert labels.dtype.kind == "U"  # String dtype
 
-    def test_result_has_to_dataframe_method(
+    def test_result_has_summary_table_method(
         self,
         trajectory_env: Environment,
         multiple_place_cell_spikes: list[NDArray[np.float64]],
         trajectory_times: NDArray[np.float64],
         trajectory_positions: NDArray[np.float64],
     ) -> None:
-        """Result should have to_dataframe() returning DataFrame."""
+        """Result should have summary_table() returning one row per unit."""
         import pandas as pd
 
         from neurospatial.encoding.spatial import compute_spatial_rates
@@ -4300,10 +4568,16 @@ class TestComputeSpatialRatesResultMethods:
             trajectory_times,
             trajectory_positions,
         )
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert isinstance(df, pd.DataFrame)
         assert len(df) == len(multiple_place_cell_spikes)
+        assert df.index.name == "unit_id"
         assert "spatial_info" in df.columns
+
+        # Dense per-bin frame carries unit_id and is one row per (unit, bin)
+        dense = result.to_dataframe()
+        assert {"unit_id", "bin", "firing_rate"} <= set(dense.columns)
+        assert len(dense) == len(multiple_place_cell_spikes) * trajectory_env.n_bins
 
 
 class TestSpatialRateRecovery:
@@ -4454,3 +4728,347 @@ class TestSpatialRateNaNPositionHandling:
         clean_peak = float(np.nanmax(clean.firing_rate))
         nan_peak = float(np.nanmax(nan_run.firing_rate))
         assert np.isclose(nan_peak, clean_peak, rtol=0.25)
+
+
+# ==============================================================================
+# Test compute_spatial_rates() float32 dtype option (Task 2.5)
+# ==============================================================================
+
+
+def _compare_finite(
+    a: NDArray[np.float64],
+    b: NDArray[np.float64],
+    *,
+    rtol: float = 1e-5,
+    atol: float = 1e-6,
+) -> None:
+    """Assert two rate-map arrays match on finite bins and share NaN masks."""
+    a = np.asarray(a, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+    nan_a = np.isnan(a)
+    nan_b = np.isnan(b)
+    np.testing.assert_array_equal(nan_a, nan_b)
+    finite = ~nan_a
+    np.testing.assert_allclose(a[finite], b[finite], rtol=rtol, atol=atol)
+
+
+class TestComputeSpatialRatesDtype:
+    """Tests for the ``dtype`` (float32) option on ``compute_spatial_rates``."""
+
+    def test_default_dtype_is_float64(
+        self,
+        trajectory_env: Environment,
+        multiple_place_cell_spikes: list[NDArray[np.float64]],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """No dtype argument keeps the float64 default."""
+        from neurospatial.encoding.spatial import compute_spatial_rates
+
+        result = compute_spatial_rates(
+            trajectory_env,
+            multiple_place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+        )
+        assert result.firing_rates.dtype == np.float64
+
+    def test_float32_halves_rate_map_footprint(
+        self,
+        trajectory_env: Environment,
+        multiple_place_cell_spikes: list[NDArray[np.float64]],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """float32 halves the stored (n_units, n_bins) rate-map footprint.
+
+        Deterministic, non-timing assertion pinning the §2.5 memory contract:
+        on identical inputs, the float32 rate-map array occupies exactly half
+        the bytes of the float64 default (and is genuinely float32).
+        """
+        from neurospatial.encoding.spatial import compute_spatial_rates
+
+        r64 = compute_spatial_rates(
+            trajectory_env,
+            multiple_place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+            dtype=np.float64,
+        )
+        r32 = compute_spatial_rates(
+            trajectory_env,
+            multiple_place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+            dtype=np.float32,
+        )
+        # Same logical shape, half the storage.
+        assert r32.firing_rates.shape == r64.firing_rates.shape
+        assert r32.firing_rates.dtype == np.float32
+        assert r64.firing_rates.dtype == np.float64
+        assert r32.firing_rates.nbytes == r64.firing_rates.nbytes // 2
+
+    @pytest.mark.parametrize("method", ["diffusion_kde", "gaussian_kde", "binned"])
+    def test_dtype_float32_honored(
+        self,
+        trajectory_env: Environment,
+        multiple_place_cell_spikes: list[NDArray[np.float64]],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+        method: str,
+    ) -> None:
+        """``dtype=np.float32`` yields a float32 rate-map array for every method."""
+        from neurospatial.encoding.spatial import compute_spatial_rates
+
+        result = compute_spatial_rates(
+            trajectory_env,
+            multiple_place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+            smoothing_method=method,
+            dtype=np.float32,
+        )
+        assert result.firing_rates.dtype == np.float32
+
+    def test_empty_neurons_float32(
+        self,
+        trajectory_env: Environment,
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """Empty-neuron path with dtype=float32 returns (0, n_bins) float32."""
+        from neurospatial.encoding.spatial import compute_spatial_rates
+
+        result = compute_spatial_rates(
+            trajectory_env,
+            [],
+            trajectory_times,
+            trajectory_positions,
+            dtype=np.float32,
+        )
+        assert result.firing_rates.shape == (0, trajectory_env.n_bins)
+        assert result.firing_rates.dtype == np.float32
+
+    @pytest.mark.parametrize("method", ["diffusion_kde", "gaussian_kde", "binned"])
+    def test_float32_matches_float64_within_tol(
+        self,
+        trajectory_env: Environment,
+        multiple_place_cell_spikes: list[NDArray[np.float64]],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+        method: str,
+    ) -> None:
+        """float32 rate maps match float64 within float32 tolerance."""
+        from neurospatial.encoding.spatial import compute_spatial_rates
+
+        kwargs = {
+            "smoothing_method": method,
+            "min_occupancy": 0.1,
+        }
+        r64 = compute_spatial_rates(
+            trajectory_env,
+            multiple_place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+            dtype=np.float64,
+            **kwargs,
+        )
+        r32 = compute_spatial_rates(
+            trajectory_env,
+            multiple_place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+            dtype=np.float32,
+            **kwargs,
+        )
+        assert r32.firing_rates.dtype == np.float32
+        _compare_finite(r32.firing_rates, r64.firing_rates)
+
+    def test_fill_value_float32_path(
+        self,
+        trajectory_env: Environment,
+        multiple_place_cell_spikes: list[NDArray[np.float64]],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """dtype=float32 with fill_value=0.0 gives float32, no NaN, matches f64."""
+        from neurospatial.encoding.spatial import compute_spatial_rates
+
+        r32 = compute_spatial_rates(
+            trajectory_env,
+            multiple_place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+            min_occupancy=0.1,
+            fill_value=0.0,
+            dtype=np.float32,
+        )
+        r64 = compute_spatial_rates(
+            trajectory_env,
+            multiple_place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+            min_occupancy=0.1,
+            fill_value=0.0,
+            dtype=np.float64,
+        )
+        assert r32.firing_rates.dtype == np.float32
+        assert not np.isnan(np.asarray(r32.firing_rates)).any()
+        np.testing.assert_allclose(
+            np.asarray(r32.firing_rates, dtype=np.float64),
+            np.asarray(r64.firing_rates, dtype=np.float64),
+            rtol=1e-5,
+            atol=1e-6,
+        )
+
+    @pytest.mark.parametrize("bad_dtype", [np.int32, np.float16, "bogus"])
+    def test_invalid_dtype_raises(
+        self,
+        trajectory_env: Environment,
+        multiple_place_cell_spikes: list[NDArray[np.float64]],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+        bad_dtype: object,
+    ) -> None:
+        """An unsupported or unparseable dtype raises ValueError naming the param.
+
+        ``"bogus"`` is the unparseable-string case: without the wrapped
+        ``np.dtype(dtype)`` parse it leaked a raw
+        ``TypeError: data type 'bogus' not understood``.
+        """
+        from neurospatial.encoding.spatial import compute_spatial_rates
+
+        with pytest.raises(ValueError, match="dtype"):
+            compute_spatial_rates(
+                trajectory_env,
+                multiple_place_cell_spikes,
+                trajectory_times,
+                trajectory_positions,
+                dtype=bad_dtype,
+            )
+
+
+# ==============================================================================
+# Batch throughput contract (deterministic, CI-enforced; NON-timing)
+# ==============================================================================
+
+
+def _make_batch_inputs(
+    n_neurons: int, *, seed: int = 0
+) -> tuple[
+    Environment, NDArray[np.float64], NDArray[np.float64], list[NDArray[np.float64]]
+]:
+    """Build a tiny fitted env + trajectory + spike trains for ``n_neurons``.
+
+    Returns a fresh environment each call (so the per-env diffusion-kernel cache
+    starts cold) on a small grid with few bins, keeping the test fast. The same
+    trajectory/env layout is used regardless of ``n_neurons`` so that any change
+    in shared-work call counts is attributable to the neuron count alone.
+    """
+    rng = np.random.default_rng(seed)
+    n_samples = 400
+    positions = np.column_stack(
+        [
+            50 + np.cumsum(rng.normal(0, 1, n_samples)),
+            50 + np.cumsum(rng.normal(0, 1, n_samples)),
+        ]
+    )
+    positions = np.clip(positions, 0, 100)
+    env = Environment.from_samples(positions, bin_size=20.0)  # few bins -> fast
+    times = np.arange(n_samples) * 0.02
+    spike_times = [
+        np.sort(rng.uniform(0.0, float(times[-1]), 20)) for _ in range(n_neurons)
+    ]
+    return env, times, positions, spike_times
+
+
+class TestComputeSpatialRatesThroughputContract:
+    """Deterministic throughput contract for the Phase 2 batch encode path.
+
+    ``compute_spatial_rates`` MUST share the expensive per-population work
+    (occupancy computation + diffusion smoothing kernel build) across all
+    neurons, computing each ONCE per call rather than once per neuron. A
+    regression to per-neuron work is the throughput cliff that Phase 2 removed.
+
+    These tests assert *call counts*, not wall-clock time, so they are fully
+    deterministic and cannot flake. The load-bearing property is that the call
+    count does NOT scale with the number of neurons: it is the SAME small
+    constant for 1 neuron and for 25 neurons. Had the implementation regressed
+    to recomputing occupancy/kernel inside the per-neuron loop, the n=25 count
+    would be 25x the n=1 count and these assertions would fail.
+    """
+
+    def test_occupancy_computed_once_regardless_of_neuron_count(self) -> None:
+        """compute_occupancy fires exactly once per call, for n=1 and n=25."""
+        import neurospatial.encoding._binning as binning_mod
+        from neurospatial.encoding.spatial import compute_spatial_rates
+
+        def run(n_neurons: int) -> int:
+            env, times, positions, spikes = _make_batch_inputs(n_neurons)
+            # Patch at the module where compute_spatial_rates looks it up
+            # (function-local `from ..._binning import ... compute_occupancy`
+            # resolves the name on the _binning module at call time), wrapping
+            # the real function so behavior is preserved.
+            with patch.object(
+                binning_mod,
+                "compute_occupancy",
+                wraps=binning_mod.compute_occupancy,
+            ) as occ_spy:
+                compute_spatial_rates(
+                    env,
+                    spikes,
+                    times,
+                    positions,
+                    smoothing_method="diffusion_kde",
+                    bandwidth=20.0,
+                )
+            return occ_spy.call_count
+
+        calls_n1 = run(1)
+        calls_n25 = run(25)
+
+        # Spy actually fired (guards against a no-op test where the patch
+        # target is wrong and call_count stays 0).
+        assert calls_n1 > 0
+        # Occupancy is shared population work: exactly ONE computation per call.
+        assert calls_n1 == 1
+        # The load-bearing assertion: call count does NOT scale with n_neurons.
+        # A per-neuron regression would make this 25, not 1.
+        assert calls_n25 == calls_n1 == 1
+
+    def test_diffusion_kernel_built_once_regardless_of_neuron_count(self) -> None:
+        """compute_diffusion_kernels fires exactly once per call, n=1 and n=25."""
+        import neurospatial.ops.smoothing as smoothing_mod
+        from neurospatial.encoding.spatial import compute_spatial_rates
+
+        def run(n_neurons: int) -> int:
+            # Fresh env per call => cold kernel cache => any build is counted.
+            env, times, positions, spikes = _make_batch_inputs(n_neurons)
+            # env.compute_kernel() does a function-local
+            # `from neurospatial.ops.smoothing import compute_diffusion_kernels`,
+            # so patch the expensive build at its definition module.
+            with patch.object(
+                smoothing_mod,
+                "compute_diffusion_kernels",
+                wraps=smoothing_mod.compute_diffusion_kernels,
+            ) as kernel_spy:
+                compute_spatial_rates(
+                    env,
+                    spikes,
+                    times,
+                    positions,
+                    smoothing_method="diffusion_kde",
+                    bandwidth=20.0,
+                )
+            return kernel_spy.call_count
+
+        calls_n1 = run(1)
+        calls_n25 = run(25)
+
+        # Spy actually fired (not a no-op test).
+        assert calls_n1 > 0
+        # The smoothing kernel is shared population work: built ONCE per call.
+        assert calls_n1 == 1
+        # The load-bearing assertion: call count does NOT scale with n_neurons.
+        # A per-neuron regression would make this 25, not 1.
+        assert calls_n25 == calls_n1 == 1

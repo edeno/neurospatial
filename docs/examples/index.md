@@ -1,11 +1,14 @@
 # Examples
 
 Real-world examples demonstrating neurospatial's capabilities through
-interactive Jupyter notebooks. Notebooks are paired with `.py`
-(jupytext, percent format) and `.ipynb` files; either can be edited
-and the pair syncs via `docs/sync_notebooks.py`.
+interactive Jupyter notebooks. In the `examples/` directory each notebook
+is a jupytext pair — a `.py` (percent format) and a `.ipynb` — so editing
+either keeps the pair in sync via jupytext. A separate step,
+`docs/sync_notebooks.py`, then copies `examples/` → `docs/examples/` to
+produce the committed docs mirror shown here.
 
-This index mirrors `examples/README.md` in the repo.
+This page lists the example notebooks; see `examples/README.md` in the repo
+for the full catalog and details.
 
 ## Goal → Notebook
 
@@ -32,6 +35,7 @@ relevant notebook.
 | Animate fields (napari / video / HTML / widget) | [16](16_field_animation.ipynb), [17](17_animation_with_overlays.ipynb) |
 | Composite raw video with spatial fields | [18](18_video_overlay.ipynb) |
 | Simulate trajectories and spike trains | [15](15_simulation_workflows.ipynb) |
+| Path progression along a linearized track | [23](23_path_progression.ipynb) |
 | Differential operators, signal processing on graphs | [09](09_differential_operators.ipynb), [10](10_signal_processing_primitives.ipynb) |
 | Multi-room / composite environments | [06](06_composite_environments.ipynb), [07](07_advanced_operations.ipynb) |
 | Real-data end-to-end pipeline | [19](19_real_data_bandit_task.ipynb) |
@@ -245,14 +249,19 @@ files.
 ---
 
 !!! note "Editing notebooks"
-    The notebooks displayed here are automatically synced from the
-    `examples/` directory.
+    The notebooks displayed here are mirrored from the `examples/`
+    directory and the mirror is committed to the repository.
 
     **To update notebooks in the documentation:**
 
     1. Edit notebooks in the `examples/` directory (repository root)
-    2. Run `uv run python docs/sync_notebooks.py` before building docs
-    3. The GitHub Actions workflow automatically syncs notebooks on deployment
+    2. Run `uv run python docs/sync_notebooks.py` to regenerate the
+       mirror under `docs/examples/`
+    3. Commit the regenerated `docs/examples/` files alongside your
+       `examples/` changes. CI **verifies** the committed mirror is in
+       sync (a `git diff --exit-code docs/examples` guard in
+       `.github/workflows/docs.yml`) and **fails the build** if it is
+       out of date — it does not auto-sync or commit for you.
 
-    **Do not** edit generated files directly in `docs/examples/` - they
-    will be overwritten.
+    **Do not** edit the generated `.ipynb` / `.py` files in
+    `docs/examples/` directly - they are overwritten by the sync script.

@@ -17,6 +17,7 @@ phase_precession : Theta phase precession analysis
 population : Population-level metrics
 """
 
+# Spike-time normalization (public helper used by decode_session and internal callers)
 # Border/boundary cell analysis
 # Field metrics (from _field_metrics and _metrics modules)
 from neurospatial.encoding._field_metrics import (
@@ -37,6 +38,7 @@ from neurospatial.encoding._metrics import (
     spatial_coverage_single_cell,
     spatial_information,
 )
+from neurospatial.encoding._spikes import as_spike_trains, as_spike_trains_with_ids
 from neurospatial.encoding.border import (
     border_score,
     compute_region_coverage,
@@ -103,7 +105,9 @@ from neurospatial.encoding.spatial import (
     compute_spatial_rate,
     compute_spatial_rates,
     detect_place_fields,
+    is_place_cell,
 )
+from neurospatial.encoding.spike_trains import SpikeTrains
 
 # View rate (spatial view cells)
 from neurospatial.encoding.view import (
@@ -115,6 +119,11 @@ from neurospatial.encoding.view import (
 )
 
 __all__ = [  # noqa: RUF022 - organized by category
+    # Spike-time normalization
+    "as_spike_trains",
+    "as_spike_trains_with_ids",
+    # Ragged-spike-train container
+    "SpikeTrains",
     # Border/boundary cell analysis
     "border_score",
     "compute_region_coverage",
@@ -166,6 +175,7 @@ __all__ = [  # noqa: RUF022 - organized by category
     "compute_directional_place_fields",
     "compute_field_emd",
     "detect_place_fields",
+    "is_place_cell",
     "rate_map_centroid",
     "field_shape_metrics",
     "field_shift_distance",

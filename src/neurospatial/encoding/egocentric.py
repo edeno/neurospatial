@@ -71,8 +71,9 @@ neurospatial.ops.egocentric : Egocentric coordinate transforms
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
@@ -146,6 +147,10 @@ class EgocentricRateResult(SpatialResultMixin):
         Number of distance bins.
     n_direction_bins : int
         Number of direction bins.
+    unit_id : int or str or None
+        Identifier for this unit. Set automatically when indexing/iterating a
+        population result (``rates[i].unit_id == rates.unit_ids[i]``); ``None``
+        for a standalone single-unit computation.
 
     Notes
     -----
@@ -190,6 +195,7 @@ class EgocentricRateResult(SpatialResultMixin):
     distance_range: tuple[float, float]
     n_distance_bins: int
     n_direction_bins: int
+    unit_id: int | str | None = None
 
     @property
     def _bin_centers(self) -> NDArray[np.float64]:
@@ -539,6 +545,14 @@ class EgocentricRatesResult(SpatialResultMixin):
         Number of distance bins.
     n_direction_bins : int
         Number of direction bins.
+    unit_ids : NDArray, shape (n_units,)
+        Identifier for each unit (row), e.g. from ``read_units`` or passed via
+        ``unit_ids=``. Defaults to ``np.arange(n_units)``. Carried into
+        indexed/iterated single-unit results and into xarray exports.
+    unit_table : pandas.DataFrame or None
+        Optional per-unit metadata aligned to ``unit_ids`` (e.g. region,
+        quality, depth, inclusion flags), one row per unit; ``None`` when not
+        provided. Rides alongside the rates for downstream filtering/grouping.
 
     Notes
     -----
@@ -595,6 +609,19 @@ class EgocentricRatesResult(SpatialResultMixin):
     distance_range: tuple[float, float]
     n_distance_bins: int
     n_direction_bins: int
+    unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
+    unit_table: pd.DataFrame | None = field(default=None, compare=False)
+
+    def __post_init__(self) -> None:
+        from neurospatial._results import resolve_unit_ids, validate_unit_table
+
+        n_units = int(np.asarray(self.firing_rates).shape[0])
+        object.__setattr__(
+            self,
+            "unit_ids",
+            resolve_unit_ids(self.unit_ids, n_units),
+        )
+        validate_unit_table(self.unit_table, n_units, context="EgocentricRatesResult")
 
     @property
     def _bin_centers(self) -> NDArray[np.float64]:
@@ -603,8 +630,58 @@ class EgocentricRatesResult(SpatialResultMixin):
         bin_centers: NDArray[np.float64] = self.env.bin_centers
         return bin_centers
 
+    def to_xarray(self) -> Any:
+        """Convert the egocentric fields to a labeled :class:`xarray.Dataset`.
+
+        Wraps the ``(n_units, n_bins)`` egocentric firing-rate matrix in a
+        labeled :class:`xarray.Dataset` with dims ``("unit_id", "bin")``. The
+        ``unit_id`` index coordinate holds the real per-unit identity labels
+        (:attr:`unit_ids`). Because the environment is an
+        :class:`~neurospatial.environment.polar.EgocentricPolarEnvironment`
+        (``bin_centers[:, 0]`` is distance, ``bin_centers[:, 1]`` is angle in
+        radians), the ``bin`` dimension carries ``bin_center_distance`` and
+        ``bin_center_angle`` non-index coordinates (not ``x`` / ``y``).
+
+        Returns
+        -------
+        xarray.Dataset
+            Dataset with data var ``firing_rate`` (Hz, dims
+            ``("unit_id", "bin")``), data var ``occupancy`` (seconds, dims
+            ``("bin",)``), index coord ``unit_id`` = :attr:`unit_ids`,
+            ``bin_center_distance`` / ``bin_center_angle`` coords on ``bin``,
+            and ``attrs`` carrying ``units``, ``env`` fingerprint, and
+            ``software_version``.
+
+        Raises
+        ------
+        ValueError
+            If :attr:`unit_ids` contains duplicate labels.
+        ImportError
+            If ``xarray`` is not installed (optional dependency).
+        """
+        from neurospatial._results import (
+            build_population_dataset,
+            env_fingerprint,
+            software_version,
+            units_attr,
+        )
+
+        rates: NDArray[np.float64] = np.asarray(self.firing_rates)
+        attrs: dict[str, Any] = {
+            **units_attr(self.env),
+            "env": env_fingerprint(self.env),
+            "software_version": software_version(),
+        }
+        return build_population_dataset(
+            rates,
+            np.asarray(self.unit_ids),
+            env=self.env,
+            occupancy=np.asarray(self.occupancy, dtype=np.float64),
+            attrs=attrs,
+        )
+
     def __len__(self) -> int:
-        """Return the number of neurons.
+        """Return the number of units.
 
         Returns
         -------
@@ -673,6 +750,7 @@ class EgocentricRatesResult(SpatialResultMixin):
             distance_range=self.distance_range,
             n_distance_bins=self.n_distance_bins,
             n_direction_bins=self.n_direction_bins,
+            unit_id=np.asarray(self.unit_ids)[idx].item(),
         )
 
     def __iter__(self) -> Iterator[EgocentricRateResult]:
@@ -917,7 +995,7 @@ class EgocentricRatesResult(SpatialResultMixin):
         See Also
         --------
         EgocentricRateResult.egocentric_spatial_information : Single-neuron version
-        detect_ovcs : Classify neurons based on this metric
+        classify : Classify neurons based on this metric
         """
         from neurospatial.encoding._metrics import batch_spatial_information
 
@@ -925,11 +1003,12 @@ class EgocentricRatesResult(SpatialResultMixin):
             _to_numpy(self.firing_rates), _to_numpy(self.occupancy)
         )
 
-    def detect_ovcs(self, min_info: float = 0.3) -> NDArray[np.bool_]:
+    def classify(self, *, min_info: float = 0.3) -> NDArray[np.bool_]:
         """Classify neurons as object-vector cells.
 
         A neuron is classified as an object-vector cell (OVC) if its egocentric
-        spatial information exceeds the minimum threshold.
+        spatial information exceeds the minimum threshold. This is the
+        single-type boolean predicate ("is this an OVC") for the batch result.
 
         Parameters
         ----------
@@ -965,12 +1044,12 @@ class EgocentricRatesResult(SpatialResultMixin):
         >>> result = compute_egocentric_rates(
         ...     None, spike_times, times, positions, headings, object_positions
         ... )
-        >>> is_object_vector_cell = result.detect_ovcs()
+        >>> is_object_vector_cell = result.classify()
         >>> print(f"Found {is_object_vector_cell.sum()} OVCs")
         Found 3 OVCs
 
         >>> # Use stricter threshold
-        >>> is_object_vector_cell = result.detect_ovcs(min_info=0.5)
+        >>> is_object_vector_cell = result.classify(min_info=0.5)
 
         See Also
         --------
@@ -980,27 +1059,52 @@ class EgocentricRatesResult(SpatialResultMixin):
         info = self.egocentric_spatial_information()
         return info > min_info
 
-    def to_dataframe(
-        self,
-        neuron_ids: Sequence[str | int] | None = None,
-    ) -> pd.DataFrame:
-        """Export metrics to DataFrame for exploratory analysis.
+    def detect_ovcs(self, min_info: float = 0.3) -> NDArray[np.bool_]:
+        """Deprecated alias for :meth:`classify`.
 
-        Computes all egocentric metrics and exports them to a pandas DataFrame
-        for easy filtering, sorting, and analysis.
+        .. deprecated:: 0.6
+            ``detect_ovcs`` is deprecated since 0.6; use
+            :meth:`classify` instead. Removed in 0.7.
 
         Parameters
         ----------
-        neuron_ids : sequence of str or int, optional
-            Identifiers for each neuron. If None, uses integer indices
-            (0, 1, 2, ..., n_neurons-1).
+        min_info : float, default=0.3
+            Minimum egocentric spatial information threshold in bits/spike.
+
+        Returns
+        -------
+        ndarray, shape (n_neurons,)
+            Boolean array where True indicates an object-vector cell.
+        """
+        warnings.warn(
+            "detect_ovcs is deprecated since 0.6, use classify; removed in 0.7",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.classify(min_info=min_info)
+
+    def summary_table(
+        self,
+        unit_ids: Sequence[str | int] | None = None,
+    ) -> pd.DataFrame:
+        """Per-unit scalar summary: one row per unit, ``unit_id``-indexed.
+
+        Computes all egocentric metrics and returns one row per unit, indexed
+        by ``unit_id``, with scalar metric columns. This is the per-unit
+        summary for filtering, sorting, and population tables. For the dense
+        per-bin frame (one row per ``(unit, bin)``) use :meth:`to_dataframe`.
+
+        Parameters
+        ----------
+        unit_ids : sequence of str or int, optional
+            Identity labels for the index, one per unit. If ``None``, the
+            result's own :attr:`unit_ids` are used.
 
         Returns
         -------
         pd.DataFrame
-            DataFrame with columns:
+            One row per unit, indexed by ``unit_id``, with columns:
 
-            - neuron_id: identifier for each neuron
             - preferred_distance: preferred distance to object (cm)
             - preferred_direction: preferred direction to object (radians, 0=ahead)
             - preferred_direction_deg: preferred direction (degrees)
@@ -1010,13 +1114,13 @@ class EgocentricRatesResult(SpatialResultMixin):
         Raises
         ------
         ValueError
-            If neuron_ids has a different length than the number of neurons.
+            If unit_ids has a different length than the number of units.
 
         Notes
         -----
         This method computes all metrics at once, which may be slow for
         large populations. For selective metric computation, use the
-        individual methods (``preferred_distances()``, ``detect_ovcs()``, etc.).
+        individual methods (``preferred_distances()``, ``classify()``, etc.).
 
         **Common pandas workflows**:
 
@@ -1041,11 +1145,13 @@ class EgocentricRatesResult(SpatialResultMixin):
         >>> result = compute_egocentric_rates(
         ...     None, spike_times, times, positions, headings, object_positions
         ... )
-        >>> df = result.to_dataframe()
+        >>> df = result.summary_table()
         >>> list(df.columns)
-        ['neuron_id', 'preferred_distance', 'preferred_direction', 'preferred_direction_deg', 'peak_rate', 'is_object_vector_cell']
+        ['preferred_distance', 'preferred_direction', 'preferred_direction_deg', 'peak_rate', 'is_object_vector_cell']
         >>> len(df)
         3
+        >>> df.index.name
+        'unit_id'
 
         >>> # Filter for OVCs only
         >>> ovcs = df[df["is_object_vector_cell"]]
@@ -1053,14 +1159,15 @@ class EgocentricRatesResult(SpatialResultMixin):
         >>> # Sort by preferred distance
         >>> sorted_df = df.sort_values("preferred_distance")
 
-        >>> # Custom neuron identifiers
-        >>> df = result.to_dataframe(neuron_ids=["unit_0", "unit_1", "unit_2"])
-        >>> list(df["neuron_id"])
+        >>> # Custom unit identifiers
+        >>> df = result.summary_table(unit_ids=["unit_0", "unit_1", "unit_2"])
+        >>> list(df.index)
         ['unit_0', 'unit_1', 'unit_2']
 
         See Also
         --------
-        detect_ovcs : OVC classification
+        to_dataframe : Dense per-bin frame (one row per (unit, bin)).
+        classify : OVC classification
         preferred_distances : Batch preferred distance computation
         preferred_directions : Batch preferred direction computation
         """
@@ -1068,26 +1175,24 @@ class EgocentricRatesResult(SpatialResultMixin):
 
         n_neurons = len(self)
 
-        # Validate and convert neuron_ids
-        if neuron_ids is None:
-            neuron_ids_list: list[str | int] = list(range(n_neurons))
+        if unit_ids is None:
+            index_ids: list[str | int] = list(np.asarray(self.unit_ids))
         else:
-            neuron_ids_list = list(neuron_ids)
-            if len(neuron_ids_list) != n_neurons:
+            index_ids = list(unit_ids)
+            if len(index_ids) != n_neurons:
                 raise ValueError(
-                    f"neuron_ids has {len(neuron_ids_list)} elements but "
-                    f"result contains {n_neurons} neurons"
+                    f"unit_ids has {len(index_ids)} elements but "
+                    f"result contains {n_neurons} units"
                 )
 
         # Compute all metrics
         pref_dists = self.preferred_distances()
         pref_dirs = self.preferred_directions()
         peak_rates = self.peak_firing_rate()
-        is_object_vector_cell = self.detect_ovcs()
+        is_object_vector_cell = self.classify()
 
         # Build DataFrame
         data: dict[str, Any] = {
-            "neuron_id": neuron_ids_list,
             "preferred_distance": pref_dists,
             "preferred_direction": pref_dirs,
             "preferred_direction_deg": np.degrees(pref_dirs),
@@ -1095,7 +1200,7 @@ class EgocentricRatesResult(SpatialResultMixin):
             "is_object_vector_cell": is_object_vector_cell,
         }
 
-        return pd.DataFrame(data)
+        return pd.DataFrame(data, index=pd.Index(index_ids, name="unit_id"))
 
 
 def _raw_polar_rate(
@@ -1186,7 +1291,8 @@ def _egocentric_firing_rate(
         if backend == "jax" and is_jax_available():
             import jax.numpy as jnp
 
-            return jnp.asarray(rate, dtype=jnp.float64)
+            jax_rate: ArrayLike = jnp.asarray(rate, dtype=jnp.float64)
+            return jax_rate
         return rate
 
     from neurospatial.encoding._smoothing import smooth_rate_map
@@ -1477,7 +1583,7 @@ def compute_egocentric_rate(
     if resolved_backend == "jax" and is_jax_available():
         import jax.numpy as jnp
 
-        occupancy = jnp.asarray(occupancy, dtype=jnp.float64)  # type: ignore[assignment]
+        occupancy = jnp.asarray(occupancy, dtype=jnp.float64)
 
     # Return result
     return EgocentricRateResult(
@@ -1507,6 +1613,7 @@ def compute_egocentric_rates(
     min_occupancy: float = 0.0,
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
+    unit_ids: NDArray[Any] | Sequence[Any] | None = None,
 ) -> EgocentricRatesResult:
     """Compute egocentric firing rates for multiple neurons.
 
@@ -1528,7 +1635,7 @@ def compute_egocentric_rates(
         - 2D array with NaN padding: shape ``(n_neurons, max_spikes)``
         - 1D array (single neuron): wrapped in list automatically
 
-        All formats are normalized via ``normalize_spike_times()``.
+        All formats are coerced to per-neuron spike trains via ``as_spike_trains()``.
     times : ndarray, shape (n_samples,)
         Timestamps of trajectory samples in seconds.
     positions : ndarray, shape (n_samples, 2)
@@ -1583,6 +1690,12 @@ def compute_egocentric_rates(
         - 'numpy': Use NumPy (always available)
         - 'jax': Use JAX for rate computation (requires JAX installation)
         - 'auto': Use JAX if available, otherwise NumPy
+    unit_ids : ndarray or sequence, optional
+        Per-unit identity labels (integers or strings), one per neuron in
+        the same order as ``spike_times``. Stored on the result's
+        ``unit_ids`` field and stamped onto each child's ``unit_id`` when
+        indexing/iterating. Defaults to ``np.arange(n_neurons)``. A
+        wrong-length value raises ``ValueError``.
 
     Returns
     -------
@@ -1678,10 +1791,14 @@ def compute_egocentric_rates(
     Neuron 1: 7.5 cm at 45 deg
     Neuron 2: 42.5 cm at -75 deg
 
-    >>> # Get metrics for all neurons
-    >>> df = result.to_dataframe()
-    >>> len(df)
+    >>> # Per-unit scalar summary (one row per unit)
+    >>> summary = result.summary_table()
+    >>> len(summary)
     3
+    >>> # Dense per-bin frame (one row per (unit, bin))
+    >>> df = result.to_dataframe()
+    >>> len(df) == 3 * result.env.n_bins
+    True
 
     >>> # Use 2D array with NaN padding
     >>> spike_times_2d = np.array(
@@ -1714,7 +1831,7 @@ def compute_egocentric_rates(
         _validate_smoothing_parameters,
         smooth_rate_maps_batch,
     )
-    from neurospatial.encoding._spikes import normalize_spike_times
+    from neurospatial.encoding._spikes import as_spike_trains
     from neurospatial.encoding._validation import (
         validate_env_fitted,
         validate_spike_times,
@@ -1754,8 +1871,15 @@ def compute_egocentric_rates(
         )
 
     # Normalize spike times to canonical list-of-arrays format
-    spike_times_list = normalize_spike_times(spike_times)
+    spike_times_list = as_spike_trains(spike_times)
     n_neurons = len(spike_times_list)
+
+    # Resolve and validate per-unit identity labels (defaults to arange).
+    from neurospatial._results import resolve_unit_ids
+
+    resolved_unit_ids = resolve_unit_ids(
+        unit_ids, n_neurons, context="compute_egocentric_rates"
+    )
 
     # Convert inputs to arrays (1D required for times/headings)
     times = np.asarray(times, dtype=np.float64)
@@ -1801,7 +1925,7 @@ def compute_egocentric_rates(
             import jax.numpy as jnp
 
             firing_rates_result = jnp.asarray(firing_rates_result)
-            occupancy = jnp.asarray(occupancy, dtype=jnp.float64)  # type: ignore[assignment]
+            occupancy = jnp.asarray(occupancy, dtype=jnp.float64)
         return EgocentricRatesResult(
             firing_rates=firing_rates_result,
             occupancy=occupancy,
@@ -1809,6 +1933,7 @@ def compute_egocentric_rates(
             distance_range=distance_range,
             n_distance_bins=n_distance_bins,
             n_direction_bins=n_direction_bins,
+            unit_ids=resolved_unit_ids,
         )
 
     # Bin spike trains by egocentric coordinates and compute occupancy.
@@ -1860,7 +1985,7 @@ def compute_egocentric_rates(
     if resolved_backend == "jax" and is_jax_available():
         import jax.numpy as jnp
 
-        occupancy = jnp.asarray(occupancy, dtype=jnp.float64)  # type: ignore[assignment]
+        occupancy = jnp.asarray(occupancy, dtype=jnp.float64)
 
     # Return result
     return EgocentricRatesResult(
@@ -1870,6 +1995,7 @@ def compute_egocentric_rates(
         distance_range=distance_range,
         n_distance_bins=n_distance_bins,
         n_direction_bins=n_direction_bins,
+        unit_ids=resolved_unit_ids,
     )
 
 

@@ -862,13 +862,22 @@ env_very_coarse = env_fine.rebin(factor=4)
 Since `rebin()` doesn't aggregate field values, here's how to do it manually:
 
 ```python
+# Fixture: replace these with your real spike/trajectory data
+spike_times = ...  # your neuron's spike times in seconds, e.g. np.array([0.1, 0.5, 1.2, ...])
+times = ...       # trajectory timestamps in seconds, shape (n_samples,)
+positions = ...   # 2-D positions, shape (n_samples, 2), in the same units as env_fine
+
 # Get bin correspondence between fine and coarse
 fine_bins = np.arange(env_fine.n_bins)
 fine_centers = env_fine.bin_centers
 coarse_bins = env_coarse.bin_at(fine_centers)
 
 # Aggregate field values to coarse grid
-firing_rate_fine = compute_firing_rate(env_fine, spikes, positions)
+from neurospatial.encoding import compute_spatial_rate
+firing_rate_fine = compute_spatial_rate(
+    env_fine, spike_times, times, positions,
+    smoothing_method="diffusion_kde", bandwidth=5.0, min_occupancy=0.5,
+).firing_rate
 firing_rate_coarse = np.zeros(env_coarse.n_bins)
 
 for coarse_bin in range(env_coarse.n_bins):

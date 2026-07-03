@@ -47,8 +47,9 @@ neurospatial.stats.circular : Circular statistics utilities
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
@@ -172,6 +173,10 @@ class DirectionalRateResult(SpatialResultMixin):
     spike_counts : ArrayLike or None
         Raw (unsmoothed) spike count per angular bin, shape (n_bins,), or
         None if the result was built without counts.
+    unit_id : int or str or None
+        Identifier for this unit. Set automatically when indexing/iterating a
+        population result (``rates[i].unit_id == rates.unit_ids[i]``); ``None``
+        for a standalone single-unit computation.
 
     Notes
     -----
@@ -221,12 +226,18 @@ class DirectionalRateResult(SpatialResultMixin):
     bin_size: float
     bandwidth: float | None
     spike_counts: ArrayLike | None = None
+    unit_id: int | str | None = None
 
     @property
     def _bin_centers(self) -> NDArray[np.float64]:
         # Override SpatialResultMixin: directional results store bin centers
         # directly on the dataclass (no Environment).
         return np.asarray(self.bin_centers, dtype=np.float64)
+
+    def _bin_center_columns(self) -> dict[str, NDArray[np.float64]]:
+        # Directional results have no Environment; the bin center is the
+        # angular center (radians). Emit it under the shared vocabulary name.
+        return {"bin_center_angle": np.asarray(self.bin_centers, dtype=np.float64)}
 
     def plot(
         self,
@@ -987,6 +998,14 @@ class DirectionalRatesResult(SpatialResultMixin):
     spike_counts : ArrayLike or None
         Raw (unsmoothed) spike counts per angular bin, shape
         (n_neurons, n_bins), or None.
+    unit_ids : NDArray, shape (n_units,)
+        Identifier for each unit (row), e.g. from ``read_units`` or passed via
+        ``unit_ids=``. Defaults to ``np.arange(n_units)``. Carried into
+        indexed/iterated single-unit results and into xarray exports.
+    unit_table : pandas.DataFrame or None
+        Optional per-unit metadata aligned to ``unit_ids`` (e.g. region,
+        quality, depth, inclusion flags), one row per unit; ``None`` when not
+        provided. Rides alongside the rates for downstream filtering/grouping.
 
     Notes
     -----
@@ -1050,6 +1069,19 @@ class DirectionalRatesResult(SpatialResultMixin):
     bin_size: float
     bandwidth: float | None
     spike_counts: ArrayLike | None = None  # shape (n_neurons, n_bins)
+    unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
+    unit_table: pd.DataFrame | None = field(default=None, compare=False)
+
+    def __post_init__(self) -> None:
+        from neurospatial._results import resolve_unit_ids, validate_unit_table
+
+        n_units = int(np.asarray(self.firing_rates).shape[0])
+        object.__setattr__(
+            self,
+            "unit_ids",
+            resolve_unit_ids(self.unit_ids, n_units),
+        )
+        validate_unit_table(self.unit_table, n_units, context="DirectionalRatesResult")
 
     @property
     def _bin_centers(self) -> NDArray[np.float64]:
@@ -1057,8 +1089,60 @@ class DirectionalRatesResult(SpatialResultMixin):
         # directly on the dataclass (no Environment).
         return np.asarray(self.bin_centers, dtype=np.float64)
 
+    def _bin_center_columns(self) -> dict[str, NDArray[np.float64]]:
+        # Directional results have no Environment; the bin center is the
+        # angular center (radians). Emit it under the shared vocabulary name.
+        return {"bin_center_angle": np.asarray(self.bin_centers, dtype=np.float64)}
+
+    def to_xarray(self) -> Any:
+        """Convert the tuning curves to a labeled :class:`xarray.Dataset`.
+
+        Wraps the ``(n_units, n_bins)`` directional tuning-curve matrix in a
+        labeled :class:`xarray.Dataset` with dims ``("unit_id", "bin")``. The
+        ``unit_id`` index coordinate holds the real per-unit identity labels
+        (:attr:`unit_ids`). Directional results have no spatial environment;
+        the ``bin`` dimension indexes angular bins and carries a
+        ``bin_center_angle`` non-index coordinate (radians, from
+        :attr:`bin_centers`).
+
+        Returns
+        -------
+        xarray.Dataset
+            Dataset with data var ``firing_rate`` (Hz, dims
+            ``("unit_id", "bin")``), data var ``occupancy`` (seconds, dims
+            ``("bin",)``), index coord ``unit_id`` = :attr:`unit_ids`,
+            ``bin_center_angle`` coord (radians) on ``bin``, and ``attrs``
+            carrying ``units`` (``"radians"``), ``bandwidth``, and
+            ``software_version``.
+
+        Raises
+        ------
+        ValueError
+            If :attr:`unit_ids` contains duplicate labels.
+        ImportError
+            If ``xarray`` is not installed (optional dependency).
+        """
+        from neurospatial._results import (
+            build_population_dataset,
+            software_version,
+        )
+
+        rates: NDArray[np.float64] = np.asarray(self.firing_rates)
+        attrs: dict[str, Any] = {
+            "units": "radians",
+            "bandwidth": self.bandwidth,
+            "software_version": software_version(),
+        }
+        return build_population_dataset(
+            rates,
+            np.asarray(self.unit_ids),
+            bin_centers=np.asarray(self.bin_centers, dtype=np.float64),
+            occupancy=np.asarray(self.occupancy, dtype=np.float64),
+            attrs=attrs,
+        )
+
     def __len__(self) -> int:
-        """Return number of neurons.
+        """Return number of units.
 
         Returns
         -------
@@ -1109,6 +1193,7 @@ class DirectionalRatesResult(SpatialResultMixin):
             bin_size=self.bin_size,
             bandwidth=self.bandwidth,
             spike_counts=(None if counts is None else np.asarray(counts)[idx]),
+            unit_id=np.asarray(self.unit_ids)[idx].item(),
         )
 
     def __iter__(self) -> Iterator[DirectionalRateResult]:
@@ -1333,8 +1418,8 @@ class DirectionalRatesResult(SpatialResultMixin):
 
         return widths
 
-    def detect_hd_cells(
-        self, min_mvl: float = 0.4, alpha: float = 0.05
+    def classify(
+        self, *, min_mvl: float = 0.4, alpha: float = 0.05
     ) -> NDArray[np.bool_]:
         """Classify neurons as head direction cells.
 
@@ -1343,6 +1428,9 @@ class DirectionalRatesResult(SpatialResultMixin):
 
         1. Mean vector length (MVL) > min_mvl (default 0.4)
         2. Rayleigh test p-value < alpha (default 0.05)
+
+        This is the single-type boolean predicate ("is this an HD cell") for
+        the batch result.
 
         Parameters
         ----------
@@ -1371,7 +1459,7 @@ class DirectionalRatesResult(SpatialResultMixin):
         ...     bin_size=np.pi / 30,
         ...     bandwidth=None,
         ... )
-        >>> is_hd = result.detect_hd_cells()
+        >>> is_hd = result.classify()
         >>> is_hd.shape
         (3,)
         >>> n_hd_cells = int(np.sum(is_hd))
@@ -1388,27 +1476,56 @@ class DirectionalRatesResult(SpatialResultMixin):
 
         return is_hd
 
-    def to_dataframe(
-        self,
-        neuron_ids: Sequence[str | int] | None = None,
-    ) -> pd.DataFrame:
-        """Export metrics to DataFrame for exploratory analysis.
+    def detect_hd_cells(
+        self, min_mvl: float = 0.4, alpha: float = 0.05
+    ) -> NDArray[np.bool_]:
+        """Deprecated alias for :meth:`classify`.
 
-        Computes all directional metrics and exports them to a pandas DataFrame
-        for easy filtering, sorting, and analysis.
+        .. deprecated:: 0.6
+            ``detect_hd_cells`` is deprecated since 0.6; use
+            :meth:`classify` instead. Removed in 0.7.
 
         Parameters
         ----------
-        neuron_ids : sequence of str or int, optional
-            Identifiers for each neuron. If None, uses integer indices
-            (0, 1, 2, ..., n_neurons-1).
+        min_mvl : float, default=0.4
+            Minimum mean vector length threshold.
+        alpha : float, default=0.05
+            Significance level for Rayleigh test.
+
+        Returns
+        -------
+        numpy.ndarray
+            Boolean array of shape (n_neurons,). True indicates an HD cell.
+        """
+        warnings.warn(
+            "detect_hd_cells is deprecated since 0.6, use classify; removed in 0.7",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.classify(min_mvl=min_mvl, alpha=alpha)
+
+    def summary_table(
+        self,
+        unit_ids: Sequence[str | int] | None = None,
+    ) -> pd.DataFrame:
+        """Per-unit scalar summary: one row per unit, ``unit_id``-indexed.
+
+        Computes all directional metrics and returns one row per unit, indexed
+        by ``unit_id``, with scalar metric columns. This is the per-unit
+        summary for filtering, sorting, and population tables. For the dense
+        per-bin frame (one row per ``(unit, bin)``) use :meth:`to_dataframe`.
+
+        Parameters
+        ----------
+        unit_ids : sequence of str or int, optional
+            Identity labels for the index, one per unit. If ``None``, the
+            result's own :attr:`unit_ids` are used.
 
         Returns
         -------
         pd.DataFrame
-            DataFrame with columns:
+            One row per unit, indexed by ``unit_id``, with columns:
 
-            - neuron_id: identifier for each neuron
             - preferred_direction: preferred direction in radians [-π, π]
             - preferred_direction_deg: preferred direction in degrees [-180, 180]
             - mean_vector_length: mean vector length [0, 1]
@@ -1420,7 +1537,7 @@ class DirectionalRatesResult(SpatialResultMixin):
         Raises
         ------
         ValueError
-            If neuron_ids has a different length than the number of neurons.
+            If unit_ids has a different length than the number of units.
 
         Notes
         -----
@@ -1448,11 +1565,13 @@ class DirectionalRatesResult(SpatialResultMixin):
         ...     bin_size=np.pi / 30,
         ...     bandwidth=None,
         ... )
-        >>> df = result.to_dataframe()
+        >>> df = result.summary_table()
         >>> len(df)
         3
         >>> "is_head_direction_cell" in df.columns
         True
+        >>> df.index.name
+        'unit_id'
 
         >>> # Filter for HD cells
         >>> hd_cells = df[df["is_head_direction_cell"]]
@@ -1460,14 +1579,15 @@ class DirectionalRatesResult(SpatialResultMixin):
         >>> # Sort by mean vector length
         >>> top_cells = df.sort_values("mean_vector_length", ascending=False)
 
-        >>> # Custom neuron identifiers
-        >>> df = result.to_dataframe(neuron_ids=["unit_0", "unit_1", "unit_2"])
-        >>> list(df["neuron_id"])
+        >>> # Custom unit identifiers
+        >>> df = result.summary_table(unit_ids=["unit_0", "unit_1", "unit_2"])
+        >>> list(df.index)
         ['unit_0', 'unit_1', 'unit_2']
 
         See Also
         --------
-        detect_hd_cells : HD cell classification
+        to_dataframe : Dense per-bin frame (one row per (unit, bin)).
+        classify : HD cell classification
         preferred_directions : Batch preferred direction computation
         mean_vector_lengths : Batch mean vector length computation
         """
@@ -1475,15 +1595,14 @@ class DirectionalRatesResult(SpatialResultMixin):
 
         n_neurons = len(self)
 
-        # Use integer indices if no neuron_ids provided
-        if neuron_ids is None:
-            neuron_ids_list: list[str | int] = list(range(n_neurons))
+        if unit_ids is None:
+            index_ids: list[str | int] = list(np.asarray(self.unit_ids))
         else:
-            neuron_ids_list = list(neuron_ids)
-            if len(neuron_ids_list) != n_neurons:
+            index_ids = list(unit_ids)
+            if len(index_ids) != n_neurons:
                 raise ValueError(
-                    f"neuron_ids has {len(neuron_ids_list)} elements but "
-                    f"result contains {n_neurons} neurons"
+                    f"unit_ids has {len(index_ids)} elements but "
+                    f"result contains {n_neurons} units"
                 )
 
         # Compute all metrics
@@ -1491,11 +1610,10 @@ class DirectionalRatesResult(SpatialResultMixin):
         mvls = self.mean_vector_lengths()
         widths = self.tuning_widths()
         peaks = self.peak_firing_rate()
-        is_hd = self.detect_hd_cells()
+        is_hd = self.classify()
 
         # Build data dictionary
         data: dict[str, Any] = {
-            "neuron_id": neuron_ids_list,
             "preferred_direction": pref_dirs,
             "preferred_direction_deg": np.degrees(pref_dirs),
             "mean_vector_length": mvls,
@@ -1505,7 +1623,7 @@ class DirectionalRatesResult(SpatialResultMixin):
             "is_head_direction_cell": is_hd,
         }
 
-        return pd.DataFrame(data)
+        return pd.DataFrame(data, index=pd.Index(index_ids, name="unit_id"))
 
 
 def compute_directional_rate(
@@ -1730,8 +1848,8 @@ def compute_directional_rate(
         import jax.numpy as jnp
 
         firing_rate = jnp.asarray(firing_rate)
-        occupancy = jnp.asarray(occupancy)  # type: ignore[assignment]
-        bin_centers = jnp.asarray(bin_centers)  # type: ignore[assignment]
+        occupancy = jnp.asarray(occupancy)
+        bin_centers = jnp.asarray(bin_centers)
 
     return DirectionalRateResult(
         firing_rate=firing_rate,
@@ -1753,6 +1871,7 @@ def compute_directional_rates(
     angle_unit: Literal["rad", "deg"] = "rad",
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
+    unit_ids: NDArray[Any] | Sequence[Any] | None = None,
 ) -> DirectionalRatesResult:
     """Compute directional firing rates for multiple neurons.
 
@@ -1782,7 +1901,7 @@ def compute_directional_rates(
         - 2D array with NaN padding: shape ``(n_neurons, max_spikes)``
         - 1D array (single neuron): wrapped in list automatically
 
-        All formats are normalized via ``normalize_spike_times()``.
+        All formats are coerced to per-neuron spike trains via ``as_spike_trains()``.
     times : ndarray, shape (n_samples,)
         Timestamps of head direction samples in seconds.
     headings : ndarray, shape (n_samples,)
@@ -1820,6 +1939,12 @@ def compute_directional_rates(
         - 'numpy': Use NumPy (always available)
         - 'jax': Use JAX for output arrays (smoothing uses NumPy/SciPy)
         - 'auto': Use JAX if available, otherwise NumPy
+    unit_ids : ndarray or sequence, optional
+        Per-unit identity labels (integers or strings), one per neuron in
+        the same order as ``spike_times``. Stored on the result's
+        ``unit_ids`` field and stamped onto each child's ``unit_id`` when
+        indexing/iterating. Defaults to ``np.arange(n_neurons)``. A
+        wrong-length value raises ``ValueError``.
 
     Returns
     -------
@@ -1892,7 +2017,7 @@ def compute_directional_rates(
         bin_directional_spike_train,
         compute_directional_occupancy,
     )
-    from neurospatial.encoding._spikes import normalize_spike_times
+    from neurospatial.encoding._spikes import as_spike_trains
     from neurospatial.encoding._validation import (
         validate_spike_times,
         validate_trajectory,
@@ -1914,8 +2039,15 @@ def compute_directional_rates(
         raise ValueError(f"angle_unit must be 'rad' or 'deg', got '{angle_unit}'")
 
     # Normalize spike times to canonical format
-    spike_times_list: list[NDArray[np.float64]] = normalize_spike_times(spike_times)
+    spike_times_list: list[NDArray[np.float64]] = as_spike_trains(spike_times)
     n_neurons = len(spike_times_list)
+
+    # Resolve and validate per-unit identity labels (defaults to arange).
+    from neurospatial._results import resolve_unit_ids
+
+    resolved_unit_ids = resolve_unit_ids(
+        unit_ids, n_neurons, context="compute_directional_rates"
+    )
 
     # Convert inputs to arrays (1D required; validated below)
     times = np.asarray(times, dtype=np.float64)
@@ -1961,8 +2093,8 @@ def compute_directional_rates(
             import jax.numpy as jnp
 
             empty_rates = jnp.asarray(empty_rates)
-            occupancy = jnp.asarray(occupancy)  # type: ignore[assignment]
-            bin_centers = jnp.asarray(bin_centers)  # type: ignore[assignment]
+            occupancy = jnp.asarray(occupancy)
+            bin_centers = jnp.asarray(bin_centers)
         return DirectionalRatesResult(
             firing_rates=empty_rates,
             occupancy=occupancy,
@@ -1970,6 +2102,7 @@ def compute_directional_rates(
             bin_size=actual_bin_size_rad,
             bandwidth=bandwidth_rad,
             spike_counts=empty_counts,
+            unit_ids=resolved_unit_ids,
         )
 
     # Helper function to process a single neuron's spike train
@@ -2021,9 +2154,9 @@ def compute_directional_rates(
     if resolved_backend == "jax" and is_jax_available():
         import jax.numpy as jnp
 
-        firing_rates = jnp.asarray(firing_rates)  # type: ignore[assignment]
-        occupancy = jnp.asarray(occupancy)  # type: ignore[assignment]
-        bin_centers = jnp.asarray(bin_centers)  # type: ignore[assignment]
+        firing_rates = jnp.asarray(firing_rates)
+        occupancy = jnp.asarray(occupancy)
+        bin_centers = jnp.asarray(bin_centers)
 
     return DirectionalRatesResult(
         firing_rates=firing_rates,
@@ -2032,6 +2165,7 @@ def compute_directional_rates(
         bin_size=actual_bin_size_rad,
         bandwidth=bandwidth_rad,
         spike_counts=spike_counts_all,
+        unit_ids=resolved_unit_ids,
     )
 
 

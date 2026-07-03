@@ -97,7 +97,7 @@ _here = (
 )
 if _here not in sys.path:
     sys.path.insert(0, _here)
-from _style import apply_style  # noqa: E402
+from _style import apply_style
 
 apply_style(figsize=(10, 8))
 

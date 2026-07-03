@@ -15,6 +15,7 @@ This document provides detailed explanations and solutions for common errors in 
 | [E1003](#e1003-dimension-mismatch) | Dimension mismatch | Critical | [Environment Compatibility](#environment-compatibility-errors) |
 | [E1004](#e1004-environment-not-fitted) | Environment not fitted | Critical | [Usage Errors](#usage-errors) |
 | [E1005](#e1005-path-traversal-detected) | Path traversal detected | Security | [I/O Errors](#io-errors) |
+| [E1006](#e1006-environment-constructed-directly) | Environment constructed directly | Critical | [Environment Creation](#environment-creation-errors) |
 
 ---
 
@@ -184,6 +185,22 @@ env = Environment.from_samples(
 **See Also:**
 - [Environment.from_samples() documentation](api/neurospatial/environment/factories.md#neurospatial.environment.factories.EnvironmentFactories.from_samples)
 - [Layout validation module](api/neurospatial/layout/validation.md#neurospatial.layout.validation)
+
+---
+
+### E1006: Environment constructed directly
+
+**Error Message:**
+```
+ValueError: [E1006] Environment cannot be constructed directly — use a factory method.
+```
+**Cause:** `Environment()` was called directly. `Environment` is always built through a factory that constructs the underlying layout/connectivity.
+
+**Solution:** Use the factory matching your data:
+```python
+env = Environment.from_samples(positions, bin_size=2.0)   # position samples
+# or from_polygon / from_graph / from_grid_mask / from_pixel_mask
+```
 
 ---
 

@@ -332,7 +332,7 @@ class TestViewRatesResultIteration:
         single_occupancy: np.ndarray,
         n_neurons: int,
     ) -> None:
-        """len(result) should return the number of neurons."""
+        """len(result) should return the number of units."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -567,16 +567,16 @@ class TestViewRateResultPlot:
         plt.close()
 
 
-class TestViewRateResultPeakViewLocation:
-    """Test ViewRateResult.peak_view_location() method."""
+class TestViewRateResultPeakLocation:
+    """Test ViewRateResult.peak_location() method."""
 
-    def test_peak_view_location_shape(
+    def test_peak_location_shape(
         self,
         simple_env: Environment,
         single_firing_rate: np.ndarray,
         single_occupancy: np.ndarray,
     ) -> None:
-        """peak_view_location() should return (n_dims,) array."""
+        """peak_location() should return (n_dims,) array."""
         from neurospatial.encoding.view import ViewRateResult
 
         result = ViewRateResult(
@@ -589,16 +589,16 @@ class TestViewRateResultPeakViewLocation:
             bandwidth=5.0,
         )
 
-        peak = result.peak_view_location()
+        peak = result.peak_location()
         # 2D environment should have 2 dimensions
         assert peak.shape == (2,)
 
-    def test_peak_view_location_at_max_firing(
+    def test_peak_location_at_max_firing(
         self,
         simple_env: Environment,
         single_occupancy: np.ndarray,
     ) -> None:
-        """peak_view_location() should return location of maximum firing rate."""
+        """peak_location() should return location of maximum firing rate."""
         from neurospatial.encoding.view import ViewRateResult
 
         # Create firing rate with known peak at a specific bin
@@ -617,16 +617,16 @@ class TestViewRateResultPeakViewLocation:
             bandwidth=5.0,
         )
 
-        peak = result.peak_view_location()
+        peak = result.peak_location()
         expected = simple_env.bin_centers[peak_bin]
         assert_array_equal(peak, expected)
 
-    def test_peak_view_location_handles_nan(
+    def test_peak_location_handles_nan(
         self,
         simple_env: Environment,
         single_occupancy: np.ndarray,
     ) -> None:
-        """peak_view_location() should handle NaN values correctly."""
+        """peak_location() should handle NaN values correctly."""
         from neurospatial.encoding.view import ViewRateResult
 
         n_bins = simple_env.n_bins
@@ -644,7 +644,7 @@ class TestViewRateResultPeakViewLocation:
             bandwidth=5.0,
         )
 
-        peak = result.peak_view_location()
+        peak = result.peak_location()
         expected = simple_env.bin_centers[peak_bin]
         assert_array_equal(peak, expected)
 
@@ -1015,17 +1015,17 @@ class TestViewRatesResultPlot:
         plt.close()
 
 
-class TestViewRatesResultPeakViewLocations:
-    """Test ViewRatesResult.peak_view_location() method."""
+class TestViewRatesResultPeakLocations:
+    """Test ViewRatesResult.peak_locations() method."""
 
-    def test_peak_view_location_shape(
+    def test_peak_locations_shape(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         n_neurons: int,
     ) -> None:
-        """peak_view_location() should return (n_neurons, n_dims) array."""
+        """peak_locations() should return (n_neurons, n_dims) array."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1038,18 +1038,18 @@ class TestViewRatesResultPeakViewLocations:
             bandwidth=5.0,
         )
 
-        peaks = result.peak_view_location()
+        peaks = result.peak_locations()
         # 2D environment with n_neurons neurons
         assert peaks.shape == (n_neurons, 2)
 
-    def test_peak_view_location_matches_single_neuron(
+    def test_peak_locations_matches_single_neuron(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         n_neurons: int,
     ) -> None:
-        """peak_view_location() should match single-neuron peak_view_location()."""
+        """peak_locations() should match single-neuron peak_location()."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1062,20 +1062,20 @@ class TestViewRatesResultPeakViewLocations:
             bandwidth=5.0,
         )
 
-        batch_peaks = result.peak_view_location()
+        batch_peaks = result.peak_locations()
 
         # Verify each neuron's peak matches single-neuron result
         for i in range(n_neurons):
             single = result[i]
-            single_peak = single.peak_view_location()
+            single_peak = single.peak_location()
             assert_array_equal(batch_peaks[i], single_peak)
 
-    def test_peak_view_location_handles_nan(
+    def test_peak_locations_handles_nan(
         self,
         simple_env: Environment,
         single_occupancy: np.ndarray,
     ) -> None:
-        """peak_view_location() should handle NaN values correctly."""
+        """peak_locations() should handle NaN values correctly."""
         from neurospatial.encoding.view import ViewRatesResult
 
         n_bins = simple_env.n_bins
@@ -1094,17 +1094,17 @@ class TestViewRatesResultPeakViewLocations:
             bandwidth=5.0,
         )
 
-        peaks = result.peak_view_location()
+        peaks = result.peak_locations()
         assert peaks.shape == (2, 2)
         assert_array_equal(peaks[0], simple_env.bin_centers[3])
         assert_array_equal(peaks[1], simple_env.bin_centers[7])
 
-    def test_peak_view_location_all_nan(
+    def test_peak_locations_all_nan(
         self,
         simple_env: Environment,
         single_occupancy: np.ndarray,
     ) -> None:
-        """peak_view_location() should return NaN for neurons with all-NaN rates."""
+        """peak_locations() should return NaN for neurons with all-NaN rates."""
         from neurospatial.encoding.view import ViewRatesResult
 
         n_bins = simple_env.n_bins
@@ -1122,7 +1122,7 @@ class TestViewRatesResultPeakViewLocations:
             bandwidth=5.0,
         )
 
-        peaks = result.peak_view_location()
+        peaks = result.peak_locations()
         assert peaks.shape == (2, 2)
         # First neuron: all NaN -> NaN coordinates
         assert np.all(np.isnan(peaks[0]))
@@ -1254,16 +1254,16 @@ class TestViewRatesResultViewSpatialInformation:
         assert np.all(np.abs(info) < 1e-10)
 
 
-class TestViewRatesResultDetectViewCells:
-    """Test ViewRatesResult.detect_view_cells() method."""
+class TestViewRatesResultClassify:
+    """Test ViewRatesResult.classify() method."""
 
-    def test_detect_view_cells_returns_ndarray(
+    def test_classify_returns_ndarray(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
     ) -> None:
-        """detect_view_cells() should return ndarray."""
+        """classify() should return ndarray."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1276,17 +1276,17 @@ class TestViewRatesResultDetectViewCells:
             bandwidth=5.0,
         )
 
-        classification = result.detect_view_cells()
+        classification = result.classify()
         assert isinstance(classification, np.ndarray)
 
-    def test_detect_view_cells_shape(
+    def test_classify_shape(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         n_neurons: int,
     ) -> None:
-        """detect_view_cells() should return (n_neurons,) bool array."""
+        """classify() should return (n_neurons,) bool array."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1299,18 +1299,18 @@ class TestViewRatesResultDetectViewCells:
             bandwidth=5.0,
         )
 
-        classification = result.detect_view_cells()
+        classification = result.classify()
         assert classification.shape == (n_neurons,)
         assert classification.dtype == np.bool_
 
-    def test_detect_view_cells_matches_single_neuron(
+    def test_classify_matches_single_neuron(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         n_neurons: int,
     ) -> None:
-        """detect_view_cells() should match single-neuron is_spatial_view_cell()."""
+        """classify() should match single-neuron is_spatial_view_cell()."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1324,7 +1324,7 @@ class TestViewRatesResultDetectViewCells:
         )
 
         min_info = 0.1  # Use a consistent threshold
-        batch_classification = result.detect_view_cells(min_info=min_info)
+        batch_classification = result.classify(min_info=min_info)
 
         # Verify each neuron's classification matches single-neuron result
         for i in range(n_neurons):
@@ -1332,12 +1332,12 @@ class TestViewRatesResultDetectViewCells:
             single_classification = single.is_spatial_view_cell(min_info=min_info)
             assert batch_classification[i] == single_classification
 
-    def test_detect_view_cells_respects_min_info(
+    def test_classify_respects_min_info(
         self,
         simple_env: Environment,
         single_occupancy: np.ndarray,
     ) -> None:
-        """detect_view_cells() should respect min_info parameter."""
+        """classify() should respect min_info parameter."""
         from neurospatial.encoding.view import ViewRatesResult
 
         n_bins = simple_env.n_bins
@@ -1363,21 +1363,21 @@ class TestViewRatesResultDetectViewCells:
         )
 
         # With very low threshold, most should pass
-        low_thresh = result.detect_view_cells(min_info=0.0)
+        low_thresh = result.classify(min_info=0.0)
         # At least the peaked neurons should be True
         assert low_thresh[1] or low_thresh[2]
 
         # With high threshold, uniform should definitely fail
-        high_thresh = result.detect_view_cells(min_info=10.0)
+        high_thresh = result.classify(min_info=10.0)
         assert high_thresh[0] is np.False_
 
-    def test_detect_view_cells_default_threshold(
+    def test_classify_default_threshold(
         self,
         simple_env: Environment,
         single_occupancy: np.ndarray,
         n_neurons: int,
     ) -> None:
-        """detect_view_cells() should use default min_info=0.5."""
+        """classify() should use default min_info=0.5."""
         from neurospatial.encoding.view import ViewRatesResult
 
         # Uniform firing - should all be False with default threshold
@@ -1393,26 +1393,26 @@ class TestViewRatesResultDetectViewCells:
             bandwidth=5.0,
         )
 
-        classification = result.detect_view_cells()
+        classification = result.classify()
         # Uniform firing has zero info, should all be False
         assert not np.any(classification)
 
 
 # ==============================================================================
-# ViewRatesResult.to_dataframe() Tests - Task 4.5
+# ViewRatesResult.summary_table() Tests - Task 4.5
 # ==============================================================================
 
 
-class TestViewRatesResultToDataframe:
-    """Test ViewRatesResult.to_dataframe() method."""
+class TestViewRatesResultSummaryTable:
+    """Test ViewRatesResult.summary_table() method."""
 
-    def test_to_dataframe_returns_dataframe(
+    def test_summary_table_returns_dataframe(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() should return a pandas DataFrame."""
+        """summary_table() should return a pandas DataFrame."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1427,17 +1427,17 @@ class TestViewRatesResultToDataframe:
 
         import pandas as pd
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert isinstance(df, pd.DataFrame)
 
-    def test_to_dataframe_row_count(
+    def test_summary_table_row_count(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         n_neurons: int,
     ) -> None:
-        """to_dataframe() should have one row per neuron."""
+        """summary_table() should have one row per unit."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1450,16 +1450,16 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert len(df) == n_neurons
 
-    def test_to_dataframe_has_neuron_id_column(
+    def test_summary_table_has_unit_id_column(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() should have neuron_id column."""
+        """summary_table() should be indexed by unit_id."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1472,16 +1472,16 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
-        assert "neuron_id" in df.columns
+        df = result.summary_table()
+        assert df.index.name == "unit_id"
 
-    def test_to_dataframe_has_peak_view_x_column(
+    def test_summary_table_has_peak_x_column(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() should have peak_view_x column."""
+        """summary_table() should have peak_x column."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1494,16 +1494,16 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
-        assert "peak_view_x" in df.columns
+        df = result.summary_table()
+        assert "peak_x" in df.columns
 
-    def test_to_dataframe_has_peak_view_y_column(
+    def test_summary_table_has_peak_y_column(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() should have peak_view_y column."""
+        """summary_table() should have peak_y column."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1516,16 +1516,16 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
-        assert "peak_view_y" in df.columns
+        df = result.summary_table()
+        assert "peak_y" in df.columns
 
-    def test_to_dataframe_has_peak_rate_column(
+    def test_summary_table_has_peak_rate_column(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() should have peak_rate column."""
+        """summary_table() should have peak_rate column."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1538,16 +1538,16 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "peak_rate" in df.columns
 
-    def test_to_dataframe_has_view_spatial_info_column(
+    def test_summary_table_has_view_spatial_info_column(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() should have view_spatial_info column."""
+        """summary_table() should have view_spatial_info column."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1560,16 +1560,16 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "view_spatial_info" in df.columns
 
-    def test_to_dataframe_has_is_view_cell_column(
+    def test_summary_table_has_is_view_cell_column(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() should have is_spatial_view_cell column."""
+        """summary_table() should have is_spatial_view_cell column."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1582,17 +1582,17 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert "is_spatial_view_cell" in df.columns
 
-    def test_to_dataframe_default_neuron_ids(
+    def test_summary_table_default_unit_ids(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         n_neurons: int,
     ) -> None:
-        """to_dataframe() should use integer indices by default for neuron_id."""
+        """summary_table() should use integer unit_id index labels by default."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1605,18 +1605,18 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         expected_ids = list(range(n_neurons))
-        assert list(df["neuron_id"]) == expected_ids
+        assert list(df.index) == expected_ids
 
-    def test_to_dataframe_custom_neuron_ids(
+    def test_summary_table_custom_unit_ids(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         n_neurons: int,
     ) -> None:
-        """to_dataframe() should accept custom neuron_ids."""
+        """summary_table() should accept custom unit_ids."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1630,16 +1630,16 @@ class TestViewRatesResultToDataframe:
         )
 
         custom_ids = [f"unit_{i}" for i in range(n_neurons)]
-        df = result.to_dataframe(neuron_ids=custom_ids)
-        assert list(df["neuron_id"]) == custom_ids
+        df = result.summary_table(unit_ids=custom_ids)
+        assert list(df.index) == custom_ids
 
-    def test_to_dataframe_neuron_ids_length_mismatch(
+    def test_summary_table_unit_ids_length_mismatch(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() should raise ValueError for wrong neuron_ids length."""
+        """summary_table() should raise ValueError for wrong unit_ids length."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1654,16 +1654,16 @@ class TestViewRatesResultToDataframe:
 
         # Wrong number of ids
         with pytest.raises(ValueError):
-            result.to_dataframe(neuron_ids=["a", "b"])  # Only 2, but 5 neurons
+            result.summary_table(unit_ids=["a", "b"])  # Only 2, but 5 neurons
 
-    def test_to_dataframe_peak_view_x_matches_batch_method(
+    def test_summary_table_peak_x_matches_batch_method(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         n_neurons: int,
     ) -> None:
-        """to_dataframe() peak_view_x should match peak_view_location()[:, 0]."""
+        """summary_table() peak_x should match peak_locations()[:, 0]."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1676,18 +1676,18 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
-        expected = result.peak_view_location()[:, 0]
-        np.testing.assert_array_almost_equal(df["peak_view_x"].values, expected)
+        df = result.summary_table()
+        expected = result.peak_locations()[:, 0]
+        np.testing.assert_array_almost_equal(df["peak_x"].values, expected)
 
-    def test_to_dataframe_peak_view_y_matches_batch_method(
+    def test_summary_table_peak_y_matches_batch_method(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
         n_neurons: int,
     ) -> None:
-        """to_dataframe() peak_view_y should match peak_view_location()[:, 1]."""
+        """summary_table() peak_y should match peak_locations()[:, 1]."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1700,17 +1700,17 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
-        expected = result.peak_view_location()[:, 1]
-        np.testing.assert_array_almost_equal(df["peak_view_y"].values, expected)
+        df = result.summary_table()
+        expected = result.peak_locations()[:, 1]
+        np.testing.assert_array_almost_equal(df["peak_y"].values, expected)
 
-    def test_to_dataframe_peak_rate_matches_batch_method(
+    def test_summary_table_peak_rate_matches_batch_method(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() peak_rate should match np.nanmax(firing_rates, axis=1)."""
+        """summary_table() peak_rate should match np.nanmax(firing_rates, axis=1)."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1723,17 +1723,17 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         expected = np.nanmax(batch_firing_rates, axis=1)
         np.testing.assert_array_almost_equal(df["peak_rate"].values, expected)
 
-    def test_to_dataframe_view_spatial_info_matches_batch_method(
+    def test_summary_table_view_spatial_info_matches_batch_method(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() view_spatial_info should match view_spatial_information()."""
+        """summary_table() view_spatial_info should match view_spatial_information()."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1746,17 +1746,17 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         expected = result.view_spatial_information()
         np.testing.assert_array_almost_equal(df["view_spatial_info"].values, expected)
 
-    def test_to_dataframe_is_view_cell_matches_batch_method(
+    def test_summary_table_is_view_cell_matches_batch_method(
         self,
         simple_env: Environment,
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() is_spatial_view_cell should match detect_view_cells()."""
+        """summary_table() is_spatial_view_cell should match classify()."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -1769,16 +1769,16 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
-        expected = result.detect_view_cells()
+        df = result.summary_table()
+        expected = result.classify()
         np.testing.assert_array_equal(df["is_spatial_view_cell"].values, expected)
 
-    def test_to_dataframe_empty_result(
+    def test_summary_table_empty_result(
         self,
         simple_env: Environment,
         single_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() should handle empty result (zero neurons)."""
+        """summary_table() should handle empty result (zero neurons)."""
         import pandas as pd
 
         from neurospatial.encoding.view import ViewRatesResult
@@ -1795,27 +1795,26 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 0
         # Should still have all columns
         expected_columns = {
-            "neuron_id",
-            "peak_view_x",
-            "peak_view_y",
+            "peak_x",
+            "peak_y",
             "peak_rate",
             "view_spatial_info",
             "is_spatial_view_cell",
         }
         assert expected_columns.issubset(set(df.columns))
 
-    def test_to_dataframe_single_neuron(
+    def test_summary_table_single_neuron(
         self,
         simple_env: Environment,
         single_firing_rate: np.ndarray,
         single_occupancy: np.ndarray,
     ) -> None:
-        """to_dataframe() should work with a single neuron."""
+        """summary_table() should work with a single neuron."""
         import pandas as pd
 
         from neurospatial.encoding.view import ViewRatesResult
@@ -1833,10 +1832,10 @@ class TestViewRatesResultToDataframe:
             bandwidth=5.0,
         )
 
-        df = result.to_dataframe()
+        df = result.summary_table()
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 1
-        assert df["neuron_id"].iloc[0] == 0
+        assert df.index[0] == 0
 
 
 # ==============================================================================

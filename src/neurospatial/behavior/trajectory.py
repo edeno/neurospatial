@@ -128,6 +128,16 @@ def compute_turn_angles(
            PNAS, 85(14), 5287-5290.
     .. [3] Traja documentation: https://traja.readthedocs.io/
     """
+    # Coerce array-likes (e.g. Python lists) before any .ndim access.
+    try:
+        positions = np.asarray(positions, dtype=float)
+    except (TypeError, ValueError) as e:
+        actual_type = type(positions).__name__
+        raise TypeError(
+            f"positions must be a numeric array-like object (e.g., numpy array, "
+            f"list of lists, pandas DataFrame). Got {actual_type}: {positions!r}"
+        ) from e
+
     # Input validation
     if positions.ndim != 2:
         raise ValueError(
@@ -285,6 +295,16 @@ def compute_step_lengths(
            on life and planet." Science, 348(6240), aaa2478.
     .. [2] Traja documentation: https://traja.readthedocs.io/
     """
+    # Coerce array-likes (e.g. Python lists) before any .ndim access.
+    try:
+        positions = np.asarray(positions, dtype=float)
+    except (TypeError, ValueError) as e:
+        actual_type = type(positions).__name__
+        raise TypeError(
+            f"positions must be a numeric array-like object (e.g., numpy array, "
+            f"list of lists, pandas DataFrame). Got {actual_type}: {positions!r}"
+        ) from e
+
     # Input validation
     if positions.ndim != 2:
         raise ValueError(
@@ -587,6 +607,26 @@ def mean_square_displacement(
            Physical Review E, 87(5), 052713.
     .. [4] Traja documentation: https://traja.readthedocs.io/
     """
+    # Coerce array-likes (e.g. Python lists) before any .ndim access.
+    try:
+        positions = np.asarray(positions, dtype=float)
+    except (TypeError, ValueError) as e:
+        actual_type = type(positions).__name__
+        raise TypeError(
+            f"positions must be a numeric array-like object (e.g., numpy array, "
+            f"list of lists, pandas DataFrame). Got {actual_type}: {positions!r}"
+        ) from e
+
+    # Coerce times array-like before any indexing or arithmetic.
+    try:
+        times = np.asarray(times, dtype=float)
+    except (TypeError, ValueError) as e:
+        actual_type = type(times).__name__
+        raise TypeError(
+            f"times must be a numeric array-like object (e.g., numpy array, "
+            f"list of floats). Got {actual_type}: {times!r}"
+        ) from e
+
     # Input validation
     if positions.ndim != 2:
         raise ValueError(

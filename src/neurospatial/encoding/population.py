@@ -150,8 +150,9 @@ def population_coverage(
     min_size: int | None = None,
     max_mean_rate: float = 10.0,
     detect_subfields: bool = True,
+    n_jobs: int = 1,
 ) -> PopulationCoverageResult:
-    """Compute spatial coverage of a place cell population.
+    r"""Compute spatial coverage of a place cell population.
 
     Detects place fields for each neuron, then computes comprehensive
     coverage statistics including gap locations.
@@ -175,6 +176,15 @@ def population_coverage(
     detect_subfields : bool, default=True
         If True, recursively detect subfields within large fields.
         Passed to `detect_place_fields()`.
+    n_jobs : int, default=1
+        Number of parallel jobs for per-neuron place-field detection. Use
+        ``-1`` for all CPUs. ``1`` means sequential processing (no joblib
+        overhead). Results are byte-for-byte identical regardless of
+        ``n_jobs`` (joblib preserves submission order). Note: per-neuron
+        interneuron-exclusion ``UserWarning``\s from ``detect_place_fields``
+        are not surfaced when ``n_jobs != 1`` (joblib worker warnings are
+        commonly swallowed); inspect ``result.place_fields[i].excluded_reason``
+        instead.
 
     Returns
     -------
@@ -202,7 +212,7 @@ def population_coverage(
     --------
     >>> import numpy as np  # doctest: +SKIP
     >>> from neurospatial import Environment  # doctest: +SKIP
-    >>> from neurospatial.encoding import compute_spatial_rate  # doctest: +SKIP
+    >>> from neurospatial.encoding import compute_spatial_rates  # doctest: +SKIP
     >>> from neurospatial.encoding.population import (
     ...     population_coverage,
     ...     plot_population_coverage,
@@ -213,19 +223,16 @@ def population_coverage(
     >>> times = np.arange(1000) * 0.033  # 30 Hz timestamps  # doctest: +SKIP
     >>> env = Environment.from_samples(positions, bin_size=5.0)  # doctest: +SKIP
     >>>
-    >>> # 2. Compute firing rates for each neuron from spike data
+    >>> # 2. Compute firing rates for all neurons at once (shares occupancy/kernel work)
     >>> spike_times = [
     ...     ...
     ... ]  # List of spike time arrays, one per neuron  # doctest: +SKIP
-    >>> firing_rates = np.array(  # doctest: +SKIP
-    ...     [
-    ...         compute_spatial_rate(env, spikes, times, positions).firing_rate
-    ...         for spikes in spike_times
-    ...     ]
-    ... )  # Shape: (n_neurons, n_bins)
+    >>> firing_rates = compute_spatial_rates(  # doctest: +SKIP
+    ...     env, spike_times, times, positions
+    ... ).firing_rates  # Shape: (n_neurons, n_bins)
     >>>
     >>> # 3. Analyze coverage
-    >>> result = population_coverage(firing_rates, env)  # doctest: +SKIP
+    >>> result = population_coverage(env, firing_rates)  # doctest: +SKIP
     >>> print(f"Coverage: {result.coverage_fraction:.1%}")  # doctest: +SKIP
     >>> print(
     ...     f"Place cells: {result.n_place_cells}/{result.n_neurons}"
@@ -260,10 +267,9 @@ def population_coverage(
             f"This usually happens when:\n"
             f"  - Firing rates were computed for a different environment\n"
             f"  - The environment was modified after computing firing rates\n\n"
-            f"To fix: Recompute firing rates for each neuron:\n"
-            f"  from neurospatial.encoding import compute_spatial_rate\n"
-            f"  firing_rate = compute_spatial_rate(env, spike_times, times, positions).firing_rate\n"
-            f"  firing_rates = np.stack([rate1, rate2, ...])"
+            f"To fix: Recompute firing rates for this environment with the batch function:\n"
+            f"  from neurospatial.encoding import compute_spatial_rates\n"
+            f"  firing_rates = compute_spatial_rates(env, spike_times, times, positions).firing_rates"
         )
 
     # Validate detection parameters
@@ -283,17 +289,37 @@ def population_coverage(
     # a PlaceFieldsResult that is iterable and sized like a
     # list[NDArray]; the existing len/iter/concatenate calls below work
     # on it without explicit `.fields` reach-in.
-    all_fields: list[PlaceFieldsResult] = []
-    for neuron_idx in range(n_neurons):
-        fields = detect_place_fields(
-            env,
-            firing_rates[neuron_idx],
-            threshold=threshold,
-            min_size=min_size,
-            max_mean_rate=max_mean_rate,
-            detect_subfields=detect_subfields,
+    if n_jobs == 1:
+        all_fields: list[PlaceFieldsResult] = []
+        for neuron_idx in range(n_neurons):
+            fields = detect_place_fields(
+                env,
+                firing_rates[neuron_idx],
+                threshold=threshold,
+                min_size=min_size,
+                max_mean_rate=max_mean_rate,
+                detect_subfields=detect_subfields,
+            )
+            all_fields.append(fields)
+    else:
+        from joblib import Parallel, delayed
+
+        # joblib preserves submission order, so all_fields is in neuron order
+        # and the downstream aggregation is byte-for-byte identical to the
+        # sequential path.
+        all_fields = list(
+            Parallel(n_jobs=n_jobs)(
+                delayed(detect_place_fields)(
+                    env,
+                    firing_rates[neuron_idx],
+                    threshold=threshold,
+                    min_size=min_size,
+                    max_mean_rate=max_mean_rate,
+                    detect_subfields=detect_subfields,
+                )
+                for neuron_idx in range(n_neurons)
+            )
         )
-        all_fields.append(fields)
 
     # Count fields and compute coverage
     field_count = np.zeros(n_bins, dtype=np.int64)
