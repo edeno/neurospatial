@@ -400,6 +400,16 @@ warn_unused_ignores = false
 module = "neurospatial.annotation._napari_widget"
 warn_unused_ignores = false
 
+# backend selection: Disable warn_unreachable due to platform-conditional code.
+# `is_jax_available()` early-returns on `sys.platform == "win32"` (JAX has no
+# official Windows support), so under Windows analysis mypy correctly sees the
+# subsequent JAX-import path as unreachable. That is expected on Windows but a
+# false positive on the CI matrix's Windows legs; an inline `# type: ignore`
+# would instead be an unused-ignore error on Linux/macOS.
+[[tool.mypy.overrides]]
+module = "neurospatial.encoding._backend"
+warn_unreachable = false
+
 # Test files can be less strict
 # Note: Type errors in tests are often false positives from the Protocol/TypeVar
 # mixin pattern. Tests verify correctness at runtime.
