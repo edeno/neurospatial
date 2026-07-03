@@ -1148,7 +1148,14 @@ class TestDecodeSessionSummaryStreaming:
         chunked = decode_session_summary(
             env, spike_times, times, positions, dt=dt, time_chunk=37
         )
-        self._assert_summary_equal(chunked, default)
+        # exact=False: a different `time_chunk` changes the likelihood matmul's
+        # block shape, so the continuous reductions (mean_position / entropy /
+        # peak_prob) can differ by a few ULPs across BLAS implementations
+        # (byte-identical on some platforms, ~1e-15 off on others). The decoded
+        # MAP (map_bin / map_position) is still asserted exactly. `time_chunk`
+        # trades memory for the SAME per-time-bin decode; it does not promise
+        # byte-for-byte identity with the single-block default across platforms.
+        self._assert_summary_equal(chunked, default, exact=False)
 
     def test_parity_with_precomputed_encoding_models(self) -> None:
         """encoding_models passthrough also streams correctly."""
