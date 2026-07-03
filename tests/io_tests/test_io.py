@@ -7,7 +7,6 @@ from pathlib import Path
 import networkx as nx
 import numpy as np
 import pytest
-import tomllib
 
 import neurospatial
 from neurospatial import Environment
@@ -23,14 +22,22 @@ def test_source_install_hints_reference_real_extras() -> None:
     extra exists) and ``trajectory`` (scikit-image is a core dependency, not an
     extra).
     """
+    # tomllib is stdlib only on 3.11+; this check is Python-version-independent,
+    # so skipping on 3.10 loses no coverage (it still runs on 3.11-3.13 + local).
+    tomllib = pytest.importorskip("tomllib")
+
     root = Path(neurospatial.__file__).resolve().parents[2]
-    pyproject = tomllib.loads((root / "pyproject.toml").read_text())
+    pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     defined = set(pyproject["project"]["optional-dependencies"])
 
     pkg_dir = Path(neurospatial.__file__).resolve().parent
     referenced: dict[str, str] = {}
     for source in pkg_dir.rglob("*.py"):
-        for extra in re.findall(r"neurospatial\[([a-z0-9-]+)\]", source.read_text()):
+        # encoding="utf-8" is required: src files carry non-ASCII (π, ≥, arrows
+        # in docstrings) that Path.read_text()'s default (cp1252 on Windows)
+        # cannot decode.
+        text = source.read_text(encoding="utf-8")
+        for extra in re.findall(r"neurospatial\[([a-z0-9-]+)\]", text):
             referenced.setdefault(extra, str(source.relative_to(pkg_dir)))
 
     assert referenced, "expected the package to document at least one install extra"
