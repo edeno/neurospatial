@@ -83,7 +83,7 @@ from neurospatial import Environment
 
 # Load your tracking data
 times = np.arange(0, 600, 0.033)  # 30 Hz for 10 minutes
-positions = load_position_data()  # shape: (n_samples, 2)
+positions = ...  # your (n_samples, 2) tracking array, e.g. np.load("positions.npy")
 
 # Create environment
 env = Environment.from_samples(positions, bin_size=2.5)

@@ -1,5 +1,7 @@
 # UX v0.6 Phase 1 Review - Identity And Consistency
 
+> **Status: superseded / resolved (2026-07-03).** Historical v0.6 review artifact — its findings were remediated and verified against `main`; retained for provenance. Do not treat its API references as current.
+
 Reviewed: `.claude/docs/plans/ux-v0.6/phase-1-identity-and-consistency.md`
 Date: 2026-06-04
 Reviewer: Codex, with independent agents Russell, Noether, and Epicurus

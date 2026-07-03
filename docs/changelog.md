@@ -7,8 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-This section documents changes planned for v0.6.0. Until the release is cut,
-the published package may still report v0.5.x.
+## [0.6.0] - 2026-07-03
 
 ### Breaking Changes
 
@@ -166,5 +165,6 @@ the published package may still report v0.5.x.
 - Visualization with matplotlib
 - Morphological operations (dilation, closing, hole filling)
 
-[Unreleased]: https://github.com/edeno/neurospatial/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/edeno/neurospatial/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/edeno/neurospatial/compare/v0.5.0...v0.6.0
 [0.1.0]: https://github.com/edeno/neurospatial/releases/tag/v0.1.0
