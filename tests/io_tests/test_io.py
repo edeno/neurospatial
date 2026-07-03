@@ -14,26 +14,30 @@ from neurospatial import Environment
 from neurospatial.io import from_dict, from_file, to_dict, to_file
 
 
-def test_nwb_docstring_only_references_real_extras() -> None:
-    """The io.nwb install hint must name extras that actually exist.
+def test_nwb_sources_only_reference_real_extras() -> None:
+    """Every ``neurospatial[...]`` install hint in io.nwb must name a real extra.
 
-    Regression: the docstring advertised ``neurospatial[nwb-full]``, but only an
-    ``nwb`` extra is defined -- following that hint gives a bad-extra error.
+    Scans all io/nwb source files, so it covers module docstrings AND the
+    ImportError messages in the ndx-pose / ndx-events require-helpers -- not just
+    the package docstring. Regression: hints pointed at undefined ``nwb-full`` /
+    ``nwb-pose`` / ``nwb-events`` extras (only the combined ``nwb`` extra exists).
     """
-    import neurospatial.io.nwb as nwb_module
+    import neurospatial.io.nwb as nwb_pkg
 
     root = Path(neurospatial.__file__).resolve().parents[2]
     pyproject = tomllib.loads((root / "pyproject.toml").read_text())
     defined = set(pyproject["project"]["optional-dependencies"])
 
-    referenced = set(
-        re.findall(r"neurospatial\[([a-z0-9-]+)\]", nwb_module.__doc__ or "")
-    )
-    assert referenced, "expected the io.nwb docstring to document an install extra"
-    assert referenced <= defined, (
-        f"io.nwb docstring references undefined extra(s): "
-        f"{sorted(referenced - defined)}"
-    )
+    nwb_dir = Path(nwb_pkg.__file__).resolve().parent
+    referenced: set[str] = set()
+    for source in nwb_dir.glob("*.py"):
+        referenced |= set(
+            re.findall(r"neurospatial\[([a-z0-9-]+)\]", source.read_text())
+        )
+
+    assert referenced, "expected io.nwb sources to document an install extra"
+    undefined = sorted(referenced - defined)
+    assert not undefined, f"io.nwb references undefined extra(s): {undefined}"
 
 
 class TestSerialization:

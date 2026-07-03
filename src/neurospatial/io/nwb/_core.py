@@ -112,7 +112,7 @@ def _require_ndx_pose() -> Any:
     except ImportError as e:
         raise ImportError(
             "ndx-pose is required for pose data. "
-            "Install with: pip install neurospatial[nwb-pose]"
+            "Install with: pip install neurospatial[nwb]"
         ) from e
 
 
@@ -137,7 +137,7 @@ def _require_ndx_events() -> Any:
     except ImportError as e:
         raise ImportError(
             "ndx-events is required for event data. "
-            "Install with: pip install neurospatial[nwb-events]"
+            "Install with: pip install neurospatial[nwb]"
         ) from e
 
 
