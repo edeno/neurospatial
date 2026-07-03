@@ -263,6 +263,11 @@ class EnvironmentFactories:
     ) -> Environment:
         """Create an Environment by binning (discretizing) `positions` into a layout grid.
 
+        The common path (`positions` + `bin_size`) needs none of the advanced /
+        cleanup knobs listed under *Other Parameters*; reach for those (e.g.
+        ``dilate``, ``fill_holes``, ``close_gaps``) only when sparse or noisy
+        sampling leaves holes, gaps, or a ragged boundary in the active-bin mask.
+
         Parameters
         ----------
         positions : array, shape (n_samples, n_dims)
@@ -287,11 +292,6 @@ class EnvironmentFactories:
 
         Other Parameters
         ----------------
-        These are *advanced / cleanup* knobs for tidying the inferred active
-        region. The common path (`positions` + `bin_size`) needs none of them;
-        reach for these only when sparse or noisy sampling leaves holes, gaps,
-        or a ragged boundary in the active-bin mask.
-
         bin_count_threshold : int, default 0
             Minimum number of data points required for a bin to be considered "active."
         dilate : bool, default False

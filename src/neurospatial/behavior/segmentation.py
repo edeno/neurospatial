@@ -334,12 +334,16 @@ def detect_region_crossings(
     Useful for analyzing exploration patterns, region preference, and behavioral
     transitions.
 
+    The :class:`~neurospatial.Environment` holding the region definition is
+    passed positionally as the third argument in the new (0.6+) call form.
+
     .. note::
         The argument order changed in 0.6 to follow the behavioral-segmentation
-        convention ``(position_bins, times, env, *, region_name, ...)``. The old
-        positional order ``(position_bins, times, region_name, env, ...)`` is
-        still accepted for one release with a :class:`DeprecationWarning` and
-        will be removed in 0.7.
+        convention ``(position_bins, times, env, *, region_name, ...)``, where
+        ``env`` is the environment containing the region. The old positional
+        order ``(position_bins, times, region_name, env, ...)`` is still
+        accepted for one release with a :class:`DeprecationWarning` and will be
+        removed in 0.7.
 
     Parameters
     ----------
@@ -347,9 +351,6 @@ def detect_region_crossings(
         Sequence of bin indices representing the trajectory.
     times : NDArray[np.float64], shape (n_samples,)
         Time stamps corresponding to position bins (seconds).
-    env : Environment
-        Environment containing the region definition. Pass positionally as the
-        third argument.
     region_name : str
         Name of region to detect crossings for. Must exist in env.regions.
         Keyword-only in the new (0.6+) call form.
