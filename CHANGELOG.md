@@ -9,6 +9,8 @@ these are called out under a dedicated **Breaking changes** heading.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-03
+
 ### Changed
 
 - The internal `_build_encoding_model` (shared by `decode_session` /
@@ -1267,7 +1269,8 @@ names that were renamed during the M2 consolidation pass (see
 - Ruff and mypy checks passing
 - Test coverage: 78%
 
-[Unreleased]: https://github.com/edeno/neurospatial/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/edeno/neurospatial/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/edeno/neurospatial/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/edeno/neurospatial/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/edeno/neurospatial/compare/v0.2.0...v0.4.0
 [0.2.0]: https://github.com/edeno/neurospatial/compare/v0.1.0...v0.2.0

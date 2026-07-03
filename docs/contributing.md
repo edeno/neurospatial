@@ -230,7 +230,10 @@ Documentation is at [https://edeno.github.io/neurospatial/](https://edeno.github
 
 - **New features**: Update relevant user guide pages
 - **API changes**: Docstrings are auto-generated
-- **Examples**: Add Jupyter notebooks to `examples/`
+- **Examples**: add a notebook to `examples/` as a jupytext `.py`/`.ipynb` pair
+  (editing either keeps the pair in sync via jupytext), then run
+  `uv run python docs/sync_notebooks.py` to refresh the committed
+  `docs/examples/` mirror. CI verifies both are in sync.
 
 ## Release Process
 

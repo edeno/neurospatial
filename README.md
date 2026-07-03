@@ -82,7 +82,7 @@ pip install -e ".[dev]"
 
 ### Tested Dependency Versions
 
-neurospatial v0.5.0 has been tested with the following dependency versions:
+neurospatial v0.6.0 has been tested with the following dependency versions:
 
 | Package | Tested Version |
 |---------|---------------|
@@ -423,7 +423,7 @@ env = Environment.from_samples(arena_data, bin_size=2.0)
 env.units = "cm"  # Required for trajectory simulation
 
 # Generate realistic trajectory using Ornstein-Uhlenbeck process.
-# speed_units must match env.units exactly (no auto-conversion in v0.4).
+# speed_units must match env.units exactly (no auto-conversion).
 positions, times = simulate_trajectory_ou(
     env,
     duration=120.0,  # seconds
@@ -663,7 +663,7 @@ If you use neurospatial in your research, please cite:
   title = {neurospatial: Spatial environment discretization for neuroscience},
   year = {2026},
   url = {https://github.com/edeno/neurospatial},
-  version = {0.5.0}
+  version = {0.6.0}
 }
 ```
 
