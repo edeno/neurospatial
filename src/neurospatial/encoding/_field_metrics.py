@@ -1027,8 +1027,12 @@ def compute_field_emd(
     >>> field1 = np.exp(-0.1 * np.linalg.norm(env.bin_centers - [0, 0], axis=1) ** 2)
     >>> field2 = np.exp(-0.1 * np.linalg.norm(env.bin_centers - [5, 0], axis=1) ** 2)
     >>>
-    >>> # Compute EMD with Euclidean distance
-    >>> emd_euclidean = compute_field_emd(env, field1, field2, metric="euclidean")
+    >>> # Compute EMD with Euclidean distance (skipped in the doctest run: the
+    >>> # optimal-transport solve is O(n^3) in the bin count and can take minutes
+    >>> # / exhaust memory on a full environment -- see "Computational complexity")
+    >>> emd_euclidean = compute_field_emd(  # doctest: +SKIP
+    ...     env, field1, field2, metric="euclidean"
+    ... )
     >>> print(f"Euclidean EMD: {emd_euclidean:.3f}")  # doctest: +SKIP
     """
     from scipy.optimize import linprog
