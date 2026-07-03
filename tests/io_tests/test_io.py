@@ -14,30 +14,28 @@ from neurospatial import Environment
 from neurospatial.io import from_dict, from_file, to_dict, to_file
 
 
-def test_nwb_sources_only_reference_real_extras() -> None:
-    """Every ``neurospatial[...]`` install hint in io.nwb must name a real extra.
+def test_source_install_hints_reference_real_extras() -> None:
+    """Every ``neurospatial[...]`` install hint in the package must name a real extra.
 
-    Scans all io/nwb source files, so it covers module docstrings AND the
-    ImportError messages in the ndx-pose / ndx-events require-helpers -- not just
-    the package docstring. Regression: hints pointed at undefined ``nwb-full`` /
-    ``nwb-pose`` / ``nwb-events`` extras (only the combined ``nwb`` extra exists).
+    Scans ALL of ``src/neurospatial`` (docstrings AND ImportError messages), so a
+    hint pointing at an undefined extra fails loudly wherever it lives. Regressions
+    fixed: ``nwb-full`` / ``nwb-pose`` / ``nwb-events`` (only the combined ``nwb``
+    extra exists) and ``trajectory`` (scikit-image is a core dependency, not an
+    extra).
     """
-    import neurospatial.io.nwb as nwb_pkg
-
     root = Path(neurospatial.__file__).resolve().parents[2]
     pyproject = tomllib.loads((root / "pyproject.toml").read_text())
     defined = set(pyproject["project"]["optional-dependencies"])
 
-    nwb_dir = Path(nwb_pkg.__file__).resolve().parent
-    referenced: set[str] = set()
-    for source in nwb_dir.glob("*.py"):
-        referenced |= set(
-            re.findall(r"neurospatial\[([a-z0-9-]+)\]", source.read_text())
-        )
+    pkg_dir = Path(neurospatial.__file__).resolve().parent
+    referenced: dict[str, str] = {}
+    for source in pkg_dir.rglob("*.py"):
+        for extra in re.findall(r"neurospatial\[([a-z0-9-]+)\]", source.read_text()):
+            referenced.setdefault(extra, str(source.relative_to(pkg_dir)))
 
-    assert referenced, "expected io.nwb sources to document an install extra"
-    undefined = sorted(referenced - defined)
-    assert not undefined, f"io.nwb references undefined extra(s): {undefined}"
+    assert referenced, "expected the package to document at least one install extra"
+    undefined = {e: loc for e, loc in referenced.items() if e not in defined}
+    assert not undefined, f"install hints reference undefined extra(s): {undefined}"
 
 
 class TestSerialization:

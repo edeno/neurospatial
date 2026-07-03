@@ -195,9 +195,8 @@ class RadonDetectionResult:
 
     Notes
     -----
-    The Radon transform requires the optional dependency `scikit-image`.
-    Install with: ``pip install scikit-image`` or
-    ``pip install neurospatial[trajectory]``
+    The Radon transform uses ``scikit-image``, which ships as a core
+    neurospatial dependency (always installed).
 
     Examples
     --------
@@ -624,8 +623,8 @@ def detect_trajectory_radon(
     Raises
     ------
     ImportError
-        If scikit-image is not installed. Install with:
-        ``pip install scikit-image`` or ``pip install neurospatial[trajectory]``
+        If ``scikit-image`` is unavailable. It ships as a core dependency, so
+        this indicates a broken install; repair with ``pip install scikit-image``.
 
     See Also
     --------
@@ -674,9 +673,8 @@ def detect_trajectory_radon(
     if not _SKIMAGE_AVAILABLE:
         raise ImportError(
             "scikit-image is required for Radon transform trajectory detection. "
-            "Install with: pip install scikit-image\n"
-            "Or install neurospatial with trajectory extras: "
-            "pip install neurospatial[trajectory]"
+            "It ships as a core neurospatial dependency, so this usually means a "
+            "broken install; repair with: pip install scikit-image"
         )
 
     # Generate angle array
