@@ -74,4 +74,3 @@ The factory presets are a good example of the right amount of radical change: `o
 - Reproduced `build_population_dataset(..., unit_ids=np.asarray([1, "a", 1], dtype=object))` failing with raw `TypeError`.
 - Reproduced `detect_region_crossings(position_bins, times, env, "goal")` failing with misleading deprecation warning plus `AttributeError`.
 - Reproduced docs-style `detect_region_crossings(..., region_name="goal", env=env)` failing with unexpected keyword `env`.
-
