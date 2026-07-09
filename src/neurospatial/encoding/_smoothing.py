@@ -150,8 +150,8 @@ def _get_gaussian_kernel(
             f"entry > 0), so it requires an {n_bins} x {n_bins} float64 matrix "
             f"(~{estimated_gb:.1f} GB) -- O(n^2) memory. Proceeding anyway; this "
             f"may be slow and memory-intensive. To reduce the cost, increase "
-            f"bin_size (fewer bins) or use smoothing_method='binned' (it builds "
-            f"no dense kernel).",
+            f"bin_size (fewer bins). (smoothing_method='binned' also builds a "
+            f"dense kernel, so it is not a memory mitigation.)",
             UserWarning,
             stacklevel=2,
         )
@@ -300,27 +300,26 @@ def smooth_rate_map(
     +--------------+----------------+-----------------------+--------------+
     | gaussian_kde | Ignores        | O(n_bins²) per neuron | Wall bleed   |
     +--------------+----------------+-----------------------+--------------+
-    | binned       | Respects*      | O(n_bins) per neuron  | Discretization|
+    | binned       | Respects*      | O(n_bins²) per neuron | Discretization|
     +--------------+----------------+-----------------------+--------------+
 
-    *binned uses graph smoothing but applies it after normalization.
+    *binned computes the rate first, then smooths it (bin-then-smooth); the
+    other methods smooth the counts, then normalize (smooth-then-normalize).
 
     The ``diffusion_kde`` kernel is dense ``(n_bins, n_bins)`` and built once
     per ``(env, bandwidth)`` via a matrix exponential (a one-time O(n_bins³)
     build); the per-neuron smoothing is then the dense O(n_bins²) matmul
-    ``kernel @ counts``. Both ``diffusion_kde`` and ``gaussian_kde`` emit a loud
-    memory ``UserWarning`` (with a GB estimate) above ``_LARGE_KERNEL_THRESHOLD``
-    bins and then proceed (no hard limit); ``binned`` builds no dense kernel and
-    is the low-memory option.
+    ``kernel @ counts``. **All three methods build a dense
+    ``(n_bins, n_bins)`` kernel** — ``binned`` smooths its rate map through the
+    same diffusion kernel (via ``env.smooth``), so it has no memory advantage —
+    and each emits a loud memory ``UserWarning`` (with a GB estimate) above
+    ``_LARGE_KERNEL_THRESHOLD`` bins, then proceeds (no hard limit).
 
     **Performance recommendation**: For most analyses use ``diffusion_kde``
-    (default) -- it is boundary-aware. Both ``diffusion_kde`` and
-    ``gaussian_kde`` build a dense ``(n_bins, n_bins)`` kernel (cached per
-    ``(env, bandwidth)`` and reused across neurons), so both cost O(n_bins²)
-    memory and warn (with a GB estimate) above ``_LARGE_KERNEL_THRESHOLD`` bins
-    before proceeding. For environments too large for a dense kernel, use
-    ``binned`` (no dense kernel) or increase ``bin_size`` to reduce the bin
-    count.
+    (default) -- it is boundary-aware. All three methods build a dense
+    ``(n_bins, n_bins)`` kernel (cached per ``(env, bandwidth)`` and reused
+    across neurons), so all cost O(n_bins²) memory. For environments too large
+    for a dense kernel, increase ``bin_size`` to reduce the bin count.
 
     **Backend behavior**: When ``backend="jax"``, the kernel smoothing and
     rate computation use JAX operations. The kernel itself is computed from

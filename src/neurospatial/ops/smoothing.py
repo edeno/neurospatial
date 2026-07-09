@@ -154,11 +154,10 @@ def compute_diffusion_kernels(
 
     **Mitigations for large environments:**
 
-    - Use ``smoothing_method="binned"`` in higher-level encoding functions
-      (e.g. :func:`~neurospatial.encoding.spatial.compute_spatial_rate`) to
-      avoid building the dense kernel entirely.
     - Reduce the number of bins by increasing ``bin_size`` when constructing
-      the environment.
+      the environment. (Every ``smoothing_method`` -- ``diffusion_kde``,
+      ``gaussian_kde``, and ``binned`` -- builds a dense kernel, so switching
+      method is not a memory mitigation.)
     - For population decoding at scale, the memory-safe paths this release are
       float32 rate maps and the summary decode
       (:func:`~neurospatial.decoding.posterior.decode_position_summary`), which
@@ -214,8 +213,9 @@ def compute_diffusion_kernels(
             f"(~{estimated_gb:.1f} GB) -- O(n^2) memory (and O(n^3) time for the "
             f"matrix exponential). Proceeding anyway; this may be slow and "
             f"memory-intensive. To reduce the cost, increase bin_size (fewer "
-            f"bins) or use smoothing_method='binned' in the higher-level "
-            f"encoding function (it builds no dense kernel).",
+            f"bins). Every smoothing_method (diffusion_kde, gaussian_kde, "
+            f"binned) builds a dense kernel, so switching method does not avoid "
+            f"this cost.",
             UserWarning,
             stacklevel=2,
         )

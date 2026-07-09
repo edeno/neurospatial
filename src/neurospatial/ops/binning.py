@@ -623,7 +623,11 @@ def resample_field(
         Resampling method. Default is "nearest".
 
         - "nearest": KD-tree nearest-neighbor lookup (fast, preserves values)
-        - "diffuse": Nearest-neighbor followed by Gaussian smoothing (regularized)
+        - "diffuse": nearest-neighbor pullback followed by a boundary-aware,
+          valid-bin-normalized diffusion **average** of the pulled-back field.
+          For **intensive** fields only (rate maps / probability densities); it
+          does not conserve mass, so do not use it for spike counts, occupancy,
+          or any extensive/mass quantity.
     bandwidth : float, optional
         Smoothing bandwidth for diffuse method (in spatial units).
         Required when method="diffuse", ignored for method="nearest".
@@ -676,9 +680,14 @@ def resample_field(
     destination bin center. Fast and preserves exact field values from source.
     No interpolation or smoothing is applied.
 
-    **Diffuse method**: Applies nearest-neighbor mapping followed by Gaussian
-    smoothing with bandwidth parameter. This regularizes the resampled field
-    and can reduce aliasing artifacts when downsampling.
+    **Diffuse method**: Applies nearest-neighbor mapping, then a masked
+    (valid-bin-normalized) diffusion average — Nadaraya-Watson with the
+    row-stochastic heat operator ``H`` on ``dst_env``: ``smooth(value * valid) /
+    smooth(valid)``. Only bins covered by the source contribute weight, so
+    covered bins adjacent to an uncovered region are **not** biased toward zero,
+    and a ``NaN`` in the source field is interpolated from valid neighbours
+    (within the bandwidth) rather than propagating. Bins outside the source, and
+    bins with no valid neighbour within the bandwidth, are ``NaN``.
 
     **Dimension requirements**: Both environments must have the same number
     of dimensions (e.g., both 2D).
@@ -689,9 +698,11 @@ def resample_field(
       Total integrated mass (sum(field * bin_sizes)) changes if bin sizes differ
       between source and destination—this is expected and correct.
 
-    - **Diffuse method**: Applies smoothing after resampling, so values are
-      interpolated and mass is approximate. Use nearest method if exact value
-      preservation is critical.
+    - **Diffuse method**: Averages an **intensive** field (rate map /
+      probability density) after resampling — it is volume-unbiased but does
+      **not** conserve mass, so it must not be used for spike counts, occupancy,
+      or any extensive quantity. Use nearest if exact value preservation is
+      critical, or smooth an extensive field with ``env.smooth(mode="transition")``.
 
     **Use cases**:
 

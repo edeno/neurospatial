@@ -121,9 +121,11 @@ class EnvironmentFields:
         exponential is also O(n³) in time, so large environments are slow as
         well as memory-hungry.
 
-        For large environments, prefer ``smoothing_method="binned"`` in the
-        higher-level encoding functions, or reduce the number of bins by
-        increasing ``bin_size`` when constructing the environment.
+        For large environments, reduce the number of bins by increasing
+        ``bin_size`` when constructing the environment. (Every
+        ``smoothing_method`` in the higher-level encoding functions -- including
+        ``"binned"`` -- builds this dense kernel, so switching method is not a
+        memory mitigation.)
 
         The physical-σ guarantee assumes uniform bin spacing per axis (the
         standard grid, hex, polar-sector, graph, and mesh layouts). A custom
