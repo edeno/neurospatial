@@ -74,6 +74,11 @@ from numpy.typing import ArrayLike, NDArray
 # warn at the same bin count -- one threshold, not a divergent copy. Neither
 # path imposes a hard limit; above the threshold each warns (with a GB
 # estimate) and proceeds.
+from neurospatial.ops.diffusion import (
+    _DIFFUSE_DENOM_EPS,
+    component_support_mask,
+    diffusion_component_labels,
+)
 from neurospatial.ops.smoothing import _LARGE_KERNEL_THRESHOLD
 
 if TYPE_CHECKING:
@@ -222,7 +227,6 @@ def smooth_rate_map(
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
-    kernel: NDArray[np.float64] | None = None,
     backend: Literal["numpy", "jax"] = "numpy",
 ) -> ArrayLike:
     """Compute smoothed firing rate map from spike counts and occupancy.
@@ -265,14 +269,10 @@ def smooth_rate_map(
         smoothed denominator above the threshold reports a finite rate. For
         ``binned`` the denominator is the raw per-bin occupancy, so the raw
         occupancy is thresholded.
-    kernel : ndarray, shape (n_bins, n_bins), optional
-        Precomputed diffusion kernel for efficiency when processing multiple
-        neurons. Only used with method="diffusion_kde". If None, the kernel
-        is computed from the environment.
     backend : {"numpy", "jax"}, default="numpy"
-        Computation backend. When "jax", uses JAX array operations for the
-        core rate computation (smoothing/division). The kernel computation
-        from the Environment is always NumPy-based.
+        Computation backend. When "jax", the ``diffusion_kde`` smoothing runs
+        in JAX via ``env.diffuse(backend="jax")`` (the cached eigenbasis is cast
+        to ``jnp``), so ``jit`` / ``grad`` / GPU work through it.
 
     Returns
     -------
@@ -378,14 +378,14 @@ def smooth_rate_map(
     # Dispatch to JAX or NumPy implementation.
     if backend == "jax":
         return _smooth_rate_map_jax(  # type: ignore[no-any-return]
-            env, spike_counts, occupancy, method, bandwidth, min_occupancy, kernel
+            env, spike_counts, occupancy, method, bandwidth, min_occupancy
         )
 
     # Dispatch to appropriate NumPy method
     match method:
         case "diffusion_kde":
             return _diffusion_kde(
-                env, spike_counts, occupancy, bandwidth, min_occupancy, kernel
+                env, spike_counts, occupancy, bandwidth, min_occupancy
             )
         case "gaussian_kde":
             return _gaussian_kde(env, spike_counts, occupancy, bandwidth, min_occupancy)
@@ -404,7 +404,6 @@ def smooth_rate_maps_batch(
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
-    kernel: NDArray[np.float64] | None = None,
     backend: Literal["numpy", "jax"] = "numpy",
     dtype: type[np.float32] | type[np.float64] = np.float64,
 ) -> ArrayLike:
@@ -427,8 +426,6 @@ def smooth_rate_maps_batch(
         Smoothing bandwidth.
     min_occupancy : float, default=0.0
         Minimum occupancy threshold.
-    kernel : ndarray, shape (n_bins, n_bins), optional
-        Precomputed diffusion kernel.
     backend : {"numpy", "jax"}, default="numpy"
         Computation backend. When "jax", uses JAX array operations for the
         core rate computation (smoothing/division). See smooth_rate_map for
@@ -484,18 +481,13 @@ def smooth_rate_maps_batch(
             method,
             bandwidth,
             min_occupancy,
-            kernel,
             dtype=dtype,
         )
 
     # Dispatch to NumPy vectorized implementations
     if method == "diffusion_kde":
-        if kernel is None:
-            kernel = cast("EnvironmentProtocol", env).compute_kernel(
-                bandwidth, mode="density", cache=True
-            )
         return _diffusion_kde_batch(
-            spike_counts, occupancy, bandwidth, min_occupancy, kernel, dtype=dtype
+            env, spike_counts, occupancy, bandwidth, min_occupancy, dtype=dtype
         )
     elif method == "gaussian_kde":
         return _gaussian_kde_batch(
@@ -571,52 +563,54 @@ def _diffusion_kde(
     occupancy: NDArray[np.float64],
     bandwidth: float,
     min_occupancy: float,
-    kernel: NDArray[np.float64] | None,
 ) -> NDArray[np.float64]:
-    """Apply diffusion KDE smoothing.
+    """Apply diffusion KDE smoothing via the matrix-free apply-path.
 
     Algorithm (correct KDE order):
-    1. Spread spike counts using diffusion kernel
-    2. Spread occupancy using diffusion kernel
-    3. Normalize: spike_density / occupancy_density
+    1. Spread spike counts and occupancy with ``env.diffuse(mode="density")``
+       (one matrix-free pass, no ``(n_bins, n_bins)`` kernel).
+    2. Normalize: spike_density / occupancy_density.
 
     Notes
     -----
-    The firing-rate denominator is the *smoothed* occupancy density
-    (``kernel @ occupancy``), not the raw occupancy. The ``min_occupancy``
-    threshold is therefore applied to that same smoothed occupancy density:
-    a bin is NaN when its smoothed denominator is below ``min_occupancy``.
-    Thresholding the raw occupancy instead would spuriously NaN-out bins
-    that were never directly traversed yet have a well-defined denominator
-    from neighboring occupancy (a discontinuity between the masking quantity
-    and the division quantity).
+    The firing-rate denominator is the *smoothed* occupancy density, not the raw
+    occupancy, so the ``min_occupancy`` threshold is applied to it: a bin is NaN
+    when its smoothed denominator is below ``min_occupancy``. Thresholding the raw
+    occupancy would spuriously NaN-out bins never directly traversed yet with a
+    well-defined denominator from neighboring occupancy.
+
+    ``env.diffuse`` is a pure linear operator (unlike the shipped clipped dense
+    kernel), so under truncation the smoothed occupancy density can carry a
+    tolerance-level negative lobe; the **magnitude gate** floors it
+    (``max(occupancy_density, 0)``) before the ``> threshold`` comparison, and the
+    output rate is clipped ``>= 0`` (decode nonnegativity, as the shipped
+    clipped-kernel path guaranteed).
     """
     spike_counts = np.asarray(spike_counts, dtype=np.float64)
     occupancy = np.asarray(occupancy, dtype=np.float64)
 
-    # Get or compute kernel
-    if kernel is None:
-        kernel = cast("EnvironmentProtocol", env).compute_kernel(
-            bandwidth, mode="density", cache=True
-        )
+    # Smooth counts and occupancy in one matrix-free density-mode pass.
+    stacked = np.column_stack([spike_counts, occupancy])  # (n_bins, 2)
+    smoothed = np.asarray(
+        cast("EnvironmentProtocol", env).diffuse(stacked, bandwidth, mode="density")
+    )
+    spike_density = smoothed[:, 0]
+    occupancy_density = smoothed[:, 1]
 
-    # Spread spike counts using kernel (kernel @ counts)
-    spike_density = kernel @ spike_counts
-
-    # Spread occupancy using kernel
-    occupancy_density = kernel @ occupancy
-
-    # Compute firing rate with safe division, thresholding the smoothed
-    # occupancy density (the denominator) at min_occupancy.
+    # Magnitude gate: floor the (possibly tolerance-negative) denominator before
+    # comparing to the threshold; divide by the unfloored density where it holds
+    # (there the floor is a no-op, so it equals the dense denominator).
     occupancy_threshold = max(min_occupancy, 0.0)
+    occ_floor = np.maximum(occupancy_density, 0.0)
     with np.errstate(divide="ignore", invalid="ignore"):
         firing_rate = np.where(
-            occupancy_density > occupancy_threshold,
+            occ_floor > occupancy_threshold,
             spike_density / occupancy_density,
             np.nan,
         )
 
-    return firing_rate.astype(np.float64)
+    # Clip the output rate >= 0 (np.clip preserves NaN).
+    return np.clip(firing_rate, 0.0, None).astype(np.float64)
 
 
 def _gaussian_kde(
@@ -672,7 +666,7 @@ def _binned(
 
     Algorithm (bin-then-smooth order):
     1. Compute raw rate: spike_counts / occupancy
-    2. Apply diffusion smoothing to the rate
+    2. Apply the masked diffusion average to the rate (see :func:`_binned_gate`).
 
     This order can introduce discretization artifacts.
     """
@@ -688,74 +682,101 @@ def _binned(
         raw_rate = np.where(occupancy >= min_occupancy, raw_rate, np.nan)
 
     # Step 2: Smooth the rate map (if bandwidth > 0)
-    if bandwidth <= 0:
+    if bandwidth <= 0 or np.all(np.isnan(raw_rate)):
         return raw_rate.astype(np.float64)
 
-    # Handle NaN values by smoothing with weight normalization
+    return _binned_gate(env, raw_rate, bandwidth).astype(np.float64)
+
+
+def _binned_gate(
+    env: _BaseEnvironment,
+    raw_rate: NDArray[np.float64],
+    bandwidth: float,
+) -> NDArray[np.float64]:
+    """Masked diffusion average of a (possibly NaN) intensive rate.
+
+    Nadaraya-Watson with the row-stochastic average operator on the input's
+    valid (finite) bins: ``diffuse(rate * valid) / diffuse(valid)``, so uncovered
+    / NaN bins contribute no weight (they do not pull covered neighbours toward
+    zero) and an interior NaN is interpolated rather than propagating. Both the
+    filled rate and the validity mask are smoothed in one matrix-free
+    ``env.diffuse(mode="average")`` pass.
+
+    The final ``> 0`` support is derived from the **W-component structure**, NOT
+    the smoothed weight's sign: within a connected component the average operator
+    is entrywise positive, so a bin is supported iff its component holds a valid
+    input bin. This is exact and truncation-proof (a ``max(den, 0)`` floor would
+    still fail ``> 0`` where truncation flipped a tiny-positive dense denominator,
+    spuriously emitting NaN). Where support holds we divide by
+    ``max(den, eps)``; a bin whose dense denominator is itself truncation-tiny is
+    kept finite but not value-equal to the dense path (part of the approximation
+    contract).
+
+    Handles a 1-D ``(n_bins,)`` rate and a 2-D ``(n_neurons, n_bins)`` batch.
+    """
     nan_mask = np.isnan(raw_rate)
+    valid = ~nan_mask
+    rate_filled = np.where(nan_mask, 0.0, raw_rate)
+    weights = valid.astype(np.float64)
 
-    if np.all(nan_mask):
-        # All NaN, nothing to smooth
-        return raw_rate.astype(np.float64)
-
-    # Fill NaN with 0 for smoothing
-    rate_filled = raw_rate.copy()
-    rate_filled[nan_mask] = 0.0
-
-    # Create weights (1 where valid, 0 where NaN)
-    weights = np.ones_like(raw_rate)
-    weights[nan_mask] = 0.0
-
-    # Smooth both rate and weights with the row-stochastic average kernel: this
-    # is a masked (valid-bin-normalized) average of an intensive rate, so it is
-    # volume-unbiased on non-uniform M. (On uniform M the per-cell volume factor
-    # cancels in the rate/weights ratio, so the result is unchanged there.)
-    rate_smoothed = cast("EnvironmentProtocol", env).smooth(
-        rate_filled, bandwidth=bandwidth, mode="average"
+    # Smooth [rate_filled | weights] together (columns of an (n_bins, 2*k) batch).
+    if raw_rate.ndim == 1:
+        stacked = np.column_stack([rate_filled, weights])  # (n_bins, 2)
+    else:
+        stacked = np.concatenate([rate_filled.T, weights.T], axis=1)
+    smoothed = np.asarray(
+        cast("EnvironmentProtocol", env).diffuse(stacked, bandwidth, mode="average")
     )
-    weights_smoothed = cast("EnvironmentProtocol", env).smooth(
-        weights, bandwidth=bandwidth, mode="average"
-    )
+    if raw_rate.ndim == 1:
+        rate_smoothed = smoothed[:, 0]
+        weights_smoothed = smoothed[:, 1]
+    else:
+        n_neurons = raw_rate.shape[0]
+        rate_smoothed = smoothed[:, :n_neurons].T
+        weights_smoothed = smoothed[:, n_neurons:].T
 
-    # Normalize by smoothed weights
+    n_components, labels = diffusion_component_labels(cast("EnvironmentProtocol", env))
+    support = component_support_mask(labels, n_components, valid)
+    den = np.maximum(weights_smoothed, _DIFFUSE_DENOM_EPS)
     with np.errstate(divide="ignore", invalid="ignore"):
-        firing_rate = np.where(
-            weights_smoothed > 0,
-            rate_smoothed / weights_smoothed,
-            np.nan,
-        )
-
-    return firing_rate.astype(np.float64)
+        return np.where(support, rate_smoothed / den, np.nan)
 
 
 def _diffusion_kde_batch(
+    env: _BaseEnvironment,
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     bandwidth: float,
     min_occupancy: float,
-    kernel: NDArray[np.float64],
     *,
     dtype: type[np.float32] | type[np.float64] = np.float64,
 ) -> NDArray[np.floating[Any]]:
-    """Apply diffusion KDE smoothing for multiple neurons."""
+    """Apply diffusion KDE smoothing for multiple neurons (matrix-free)."""
     spike_counts = np.asarray(spike_counts, dtype=np.float64)
     occupancy = np.asarray(occupancy, dtype=np.float64)
-    kernel = np.asarray(kernel, dtype=np.float64)
+    n_neurons = spike_counts.shape[0]
 
-    spike_density = (kernel @ spike_counts.T).T
-    occupancy_density = kernel @ occupancy
+    # env.diffuse takes (n_bins, n_fields): stack every neuron's counts (as
+    # columns, spike_counts.T) plus the shared occupancy as one extra column, so
+    # all neurons + occupancy diffuse in a single matrix-free density-mode pass.
+    cols = np.column_stack([spike_counts.T, occupancy])  # (n_bins, n_neurons + 1)
+    smoothed = np.asarray(
+        cast("EnvironmentProtocol", env).diffuse(cols, bandwidth, mode="density")
+    )
+    spike_density = smoothed[:, :n_neurons].T  # (n_neurons, n_bins)
+    occupancy_density = smoothed[:, n_neurons]  # (n_bins,)
 
-    # Threshold the smoothed occupancy density (the denominator), shared
-    # across neurons. See _diffusion_kde notes for the rationale.
+    # Magnitude gate + nonneg clip, shared across neurons (see _diffusion_kde).
     occupancy_threshold = max(min_occupancy, 0.0)
+    occ_floor = np.maximum(occupancy_density, 0.0)
     with np.errstate(divide="ignore", invalid="ignore"):
         firing_rates = np.where(
-            occupancy_density > occupancy_threshold,
+            occ_floor > occupancy_threshold,
             spike_density / occupancy_density,
             np.nan,
         )
 
-    return firing_rates.astype(dtype)
+    return np.clip(firing_rates, 0.0, None).astype(dtype)
 
 
 def _gaussian_kde_batch(
@@ -797,7 +818,7 @@ def _binned_batch(
     *,
     dtype: type[np.float32] | type[np.float64] = np.float64,
 ) -> NDArray[np.floating[Any]]:
-    """Apply binned smoothing for multiple neurons."""
+    """Apply binned smoothing for multiple neurons (single batched pass)."""
     spike_counts = np.asarray(spike_counts, dtype=np.float64)
     occupancy = np.asarray(occupancy, dtype=np.float64)
 
@@ -810,39 +831,9 @@ def _binned_batch(
     if bandwidth <= 0:
         return raw_rates.astype(dtype)
 
-    n_neurons = raw_rates.shape[0]
-    result = np.empty_like(raw_rates, dtype=np.float64)
-    env_protocol = cast("EnvironmentProtocol", env)
-
-    for i in range(n_neurons):
-        raw_rate = raw_rates[i]
-        nan_mask = np.isnan(raw_rate)
-
-        if np.all(nan_mask):
-            result[i] = raw_rate
-            continue
-
-        rate_filled = raw_rate.copy()
-        rate_filled[nan_mask] = 0.0
-
-        weights = np.ones_like(raw_rate)
-        weights[nan_mask] = 0.0
-
-        rate_smoothed = env_protocol.smooth(
-            rate_filled, bandwidth=bandwidth, mode="average"
-        )
-        weights_smoothed = env_protocol.smooth(
-            weights, bandwidth=bandwidth, mode="average"
-        )
-
-        with np.errstate(divide="ignore", invalid="ignore"):
-            result[i] = np.where(
-                weights_smoothed > 0,
-                rate_smoothed / weights_smoothed,
-                np.nan,
-            )
-
-    return result.astype(dtype)
+    # One matrix-free pass over all neurons (a fully-NaN neuron has no valid bins,
+    # so the W-component support gate yields an all-NaN row, matching the raw input).
+    return _binned_gate(env, raw_rates, bandwidth).astype(dtype)
 
 
 # =============================================================================
@@ -857,12 +848,13 @@ def _smooth_rate_map_jax(
     method: Literal["diffusion_kde", "gaussian_kde", "binned"],
     bandwidth: float,
     min_occupancy: float,
-    kernel: NDArray[np.float64] | None,
 ) -> Any:
     """JAX implementation of smooth_rate_map.
 
-    Uses JAX array operations for the core computation while keeping
-    kernel computation on NumPy (from Environment).
+    ``diffusion_kde`` smoothing runs IN JAX via ``env.diffuse(backend="jax")``
+    (the cached eigenbasis is cast to ``jnp``), so ``jit`` / ``grad`` / GPU work
+    through it. ``binned`` keeps the documented NumPy round-trip (its masked
+    average is not a matrix multiply).
     """
     import jax.numpy as jnp
 
@@ -873,72 +865,51 @@ def _smooth_rate_map_jax(
     occupancy_j = jnp.asarray(occupancy, dtype=jnp.float64)
 
     if method == "binned":
-        # Binned: compute rate first, then smooth
-        # Rate computation uses JAX
+        # Binned: compute rate first, then smooth (NumPy round-trip; the masked
+        # average + W-component support gate live in _binned_gate).
         firing_rate = compute_firing_rate_single(
             spike_counts_j, occupancy_j, min_occupancy=min_occupancy
         )
-
         if bandwidth <= 0:
             return firing_rate
-
-        # Smoothing still uses NumPy (Environment.smooth)
-        # Convert back to NumPy for smoothing, then back to JAX
         firing_rate_np = np.asarray(firing_rate)
-        nan_mask = np.isnan(firing_rate_np)
-
-        if np.all(nan_mask):
+        if np.all(np.isnan(firing_rate_np)):
             return firing_rate  # All NaN, return as-is
+        gated = _binned_gate(env, firing_rate_np, bandwidth)
+        return jnp.asarray(gated, dtype=jnp.float64)
 
-        rate_filled = firing_rate_np.copy()
-        rate_filled[nan_mask] = 0.0
-        weights = np.ones_like(firing_rate_np)
-        weights[nan_mask] = 0.0
-
-        env_protocol = cast("EnvironmentProtocol", env)
-        rate_smoothed = env_protocol.smooth(
-            rate_filled, bandwidth=bandwidth, mode="average"
-        )
-        weights_smoothed = env_protocol.smooth(
-            weights, bandwidth=bandwidth, mode="average"
-        )
-
-        with np.errstate(divide="ignore", invalid="ignore"):
-            result_np = np.where(
-                weights_smoothed > 0,
-                rate_smoothed / weights_smoothed,
-                np.nan,
-            )
-        return jnp.asarray(result_np, dtype=jnp.float64)
-
-    # For diffusion_kde and gaussian_kde: smooth then normalize
-    # Get kernel (computed by Environment, so NumPy)
+    # For diffusion_kde and gaussian_kde: smooth then normalize.
     if method == "diffusion_kde":
-        if kernel is None:
-            kernel = cast("EnvironmentProtocol", env).compute_kernel(
-                bandwidth, mode="density", cache=True
+        # Run the smoothing IN JAX via env.diffuse(backend="jax"): counts and
+        # occupancy diffuse together in one density-mode pass, no (n, n) kernel.
+        stacked = jnp.stack([spike_counts_j, occupancy_j], axis=1)  # (n_bins, 2)
+        smoothed = jnp.asarray(
+            cast("EnvironmentProtocol", env).diffuse(
+                stacked, bandwidth, mode="density", backend="jax"
             )
-        kernel_j = jnp.asarray(kernel, dtype=jnp.float64)
+        )
+        spike_density = smoothed[:, 0]
+        occupancy_density = smoothed[:, 1]
+        # Magnitude gate + nonneg clip (see _diffusion_kde).
+        occupancy_threshold = max(min_occupancy, 0.0)
+        occ_floor = jnp.maximum(occupancy_density, 0.0)
+        firing_rate = jnp.where(
+            occ_floor > occupancy_threshold,
+            spike_density / occupancy_density,
+            jnp.nan,
+        )
+        return jnp.clip(firing_rate, 0.0, None)
 
-        # JAX matrix operations for smoothing
-        spike_density = kernel_j @ spike_counts_j
-        occupancy_density = kernel_j @ occupancy_j
-
-    else:  # gaussian_kde
-        kernel_j = jnp.asarray(_get_gaussian_kernel(env, bandwidth), dtype=jnp.float64)
-        spike_density = kernel_j @ spike_counts_j
-        occupancy_density = kernel_j @ occupancy_j
-
-    # Compute firing rate using JAX, thresholding the smoothed occupancy
-    # density (the denominator) at min_occupancy. See _diffusion_kde notes.
+    # gaussian_kde: dense Gaussian weight matrix (nonneg), unchanged.
+    kernel_j = jnp.asarray(_get_gaussian_kernel(env, bandwidth), dtype=jnp.float64)
+    spike_density = kernel_j @ spike_counts_j
+    occupancy_density = kernel_j @ occupancy_j
     occupancy_threshold = max(min_occupancy, 0.0)
-    firing_rate = jnp.where(
+    return jnp.where(
         occupancy_density > occupancy_threshold,
         spike_density / occupancy_density,
         jnp.nan,
     )
-
-    return firing_rate
 
 
 def _smooth_rate_maps_batch_jax(
@@ -948,18 +919,16 @@ def _smooth_rate_maps_batch_jax(
     method: Literal["diffusion_kde", "gaussian_kde", "binned"],
     bandwidth: float,
     min_occupancy: float,
-    kernel: NDArray[np.float64] | None,
     *,
     dtype: type[np.float32] | type[np.float64] = np.float64,
 ) -> Any:
     """JAX implementation of smooth_rate_maps_batch.
 
-    Uses JAX array operations for the core computation while keeping
-    kernel computation on NumPy (from Environment). The core matmul/division
-    runs in float64; only the returned array is cast to ``dtype``. When JAX
-    x64 is disabled, the float64 request is naturally narrowed by JAX; the
-    final defensive cast in ``compute_spatial_rates`` guarantees the requested
-    dtype regardless.
+    ``diffusion_kde`` smoothing runs IN JAX via ``env.diffuse(backend="jax")``.
+    The core matmul/division runs in float64; only the returned array is cast to
+    ``dtype``. When JAX x64 is disabled the float64 request is naturally narrowed
+    by JAX; the final defensive cast in ``compute_spatial_rates`` guarantees the
+    requested dtype regardless. ``binned`` keeps the documented NumPy round-trip.
     """
     import jax.numpy as jnp
 
@@ -973,78 +942,51 @@ def _smooth_rate_maps_batch_jax(
     occupancy_j = jnp.asarray(occupancy, dtype=jnp.float64)
 
     if method == "binned":
-        # Binned: compute rate first, then smooth
-        # Rate computation uses JAX
+        # Binned: compute rate first, then masked-average (NumPy round-trip; the
+        # W-component support gate is in _binned_gate, handled in one batched pass).
         firing_rates = compute_firing_rates_batch(
             spike_counts_j, occupancy_j, min_occupancy=min_occupancy
         )
-
         if bandwidth <= 0:
             return jnp.asarray(firing_rates, dtype=jnp_dtype)
+        gated = _binned_gate(env, np.asarray(firing_rates), bandwidth)
+        return jnp.asarray(gated, dtype=jnp_dtype)
 
-        # Smoothing uses NumPy (Environment.smooth) - per-neuron loop
-        # This method is not optimized for JAX
-        firing_rates_np = np.asarray(firing_rates)
-        n_neurons = firing_rates_np.shape[0]
-        result = np.empty_like(firing_rates_np, dtype=np.float64)
-        env_protocol = cast("EnvironmentProtocol", env)
-
-        for i in range(n_neurons):
-            raw_rate = firing_rates_np[i]
-            nan_mask = np.isnan(raw_rate)
-
-            if np.all(nan_mask):
-                result[i] = raw_rate
-                continue
-
-            rate_filled = raw_rate.copy()
-            rate_filled[nan_mask] = 0.0
-            weights = np.ones_like(raw_rate)
-            weights[nan_mask] = 0.0
-
-            rate_smoothed = env_protocol.smooth(
-                rate_filled, bandwidth=bandwidth, mode="average"
-            )
-            weights_smoothed = env_protocol.smooth(
-                weights, bandwidth=bandwidth, mode="average"
-            )
-
-            with np.errstate(divide="ignore", invalid="ignore"):
-                result[i] = np.where(
-                    weights_smoothed > 0,
-                    rate_smoothed / weights_smoothed,
-                    np.nan,
-                )
-
-        return jnp.asarray(result, dtype=jnp_dtype)
-
-    # For diffusion_kde and gaussian_kde: smooth then normalize
-    # Get kernel (computed by Environment, so NumPy)
+    # For diffusion_kde and gaussian_kde: smooth then normalize.
     if method == "diffusion_kde":
-        if kernel is None:
-            kernel = cast("EnvironmentProtocol", env).compute_kernel(
-                bandwidth, mode="density", cache=True
+        # Run the batch smoothing IN JAX via env.diffuse(backend="jax"): every
+        # neuron's counts (columns of spike_counts.T) plus the shared occupancy
+        # diffuse together in one density-mode pass, no (n, n) kernel.
+        n_neurons = spike_counts_j.shape[0]
+        cols = jnp.concatenate(
+            [spike_counts_j.T, occupancy_j[:, None]], axis=1
+        )  # (n_bins, n_neurons + 1)
+        smoothed = jnp.asarray(
+            cast("EnvironmentProtocol", env).diffuse(
+                cols, bandwidth, mode="density", backend="jax"
             )
-        kernel_j = jnp.asarray(kernel, dtype=jnp.float64)
+        )
+        spike_density = smoothed[:, :n_neurons].T
+        occupancy_density = smoothed[:, n_neurons]
+        # Magnitude gate + nonneg clip (see _diffusion_kde).
+        occupancy_threshold = max(min_occupancy, 0.0)
+        occ_floor = jnp.maximum(occupancy_density, 0.0)
+        firing_rates = jnp.where(
+            occ_floor > occupancy_threshold,
+            spike_density / occupancy_density,
+            jnp.nan,
+        )
+        firing_rates = jnp.clip(firing_rates, 0.0, None)
+        return jnp.asarray(firing_rates, dtype=jnp_dtype)
 
-        # JAX matrix operations for batch smoothing
-        # (kernel @ spike_counts.T).T = spike_counts @ kernel.T
-        spike_density = (kernel_j @ spike_counts_j.T).T
-        occupancy_density = kernel_j @ occupancy_j
-
-    else:  # gaussian_kde
-        kernel_j = jnp.asarray(_get_gaussian_kernel(env, bandwidth), dtype=jnp.float64)
-        spike_density = spike_counts_j @ kernel_j.T
-        occupancy_density = kernel_j @ occupancy_j
-
-    # Compute firing rates using JAX (broadcasting over neurons), thresholding
-    # the smoothed occupancy density (the denominator) at min_occupancy.
-    # See _diffusion_kde notes.
+    # gaussian_kde: dense Gaussian weight matrix (nonneg), unchanged.
+    kernel_j = jnp.asarray(_get_gaussian_kernel(env, bandwidth), dtype=jnp.float64)
+    spike_density = spike_counts_j @ kernel_j.T
+    occupancy_density = kernel_j @ occupancy_j
     occupancy_threshold = max(min_occupancy, 0.0)
     firing_rates = jnp.where(
         occupancy_density > occupancy_threshold,
         spike_density / occupancy_density,
         jnp.nan,
     )
-
     return jnp.asarray(firing_rates, dtype=jnp_dtype)

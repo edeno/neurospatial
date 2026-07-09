@@ -354,7 +354,7 @@ class EnvironmentFields:
     @check_fitted
     def diffuse(
         self: SelfEnv,
-        fields: NDArray[np.float64],
+        fields: Any,
         bandwidth: float,
         *,
         mode: Literal["transition", "density", "average"] = "density",

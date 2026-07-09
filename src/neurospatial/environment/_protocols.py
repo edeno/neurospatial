@@ -364,7 +364,7 @@ class EnvironmentProtocol(Protocol):
 
     def diffuse(
         self,
-        fields: NDArray[np.float64],
+        fields: Any,
         bandwidth: float,
         *,
         mode: Literal["transition", "density", "average"] = "density",
