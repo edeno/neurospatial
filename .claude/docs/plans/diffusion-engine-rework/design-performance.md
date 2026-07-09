@@ -82,7 +82,11 @@ M-conjugation (NLD's Laplacian is mass-free; ours needs `S`):
   so we evict on replace. One entry, grown by replacement, bounds cache memory at
   `O(n·max_rank_seen)`. `versioned_cached_property` keys only on `_state_version`
   ([decorators.py:282](../../../src/neurospatial/environment/decorators.py)), so the property
-  **owns this single-entry cache** and drops it wholesale on any geometry change.
+  **owns this single-entry cache** and drops it wholesale on any geometry change. This is the
+  **truncated apply-path cache only**, capped below the dense-fallback threshold
+  (`dense_fraction·n`); the **full-rank basis `compute_kernel` needs (§6) lives in a separate
+  slot (or is uncached)** so one `compute_kernel` call can **never** grow the `env.diffuse`
+  cache to a full `(n,n)` eigenvector matrix and defeat the memory goal.
 
 ## 5. Per-mode application — LINEAR, no positivity projection
 
@@ -152,7 +156,9 @@ tested as `≥ -tol·max(|field|)`. Callers needing a strict 0-floor clip the re
   (`rtol≈1e-8`), *not* merely within the truncation `tol=1e-6`. A huge-grid caller who
   explicitly asks for the matrix pays `O(n²)`/`O(n³)` (same as today; their choice, same
   large-matrix warning). **No public API break, no accuracy change.** Truncation is used
-  **only** by the fast `env.diffuse` apply-path.
+  **only** by the fast `env.diffuse` apply-path. This full-rank basis is held **separately from
+  (never replaces)** the truncated apply cache (§4), so calling `compute_kernel` does not
+  poison later `env.diffuse` calls with an `(n,n)` basis.
 - **New matrix-free method `env.diffuse(fields, bandwidth, *, mode)`** — the apply-path (§3, §5),
   batched over `fields`. Route the hot paths through it: `env.smooth`
   ([fields.py:150-299](../../../src/neurospatial/environment/fields.py)), `_diffusion_kde`
@@ -179,8 +185,9 @@ PR2 is an optimization, so the gate is **output equivalence to the shipped dense
 | `test_env_smooth_nonneg_within_tol` | `env.smooth` on a nonnegative field returns `≥ -tol·max(\|field\|)` (approximation contract); stays linear on signed fields |
 | `test_grid_independence_preserved` | measured σ == `bandwidth` still holds (regression from Phase 1) |
 | `test_no_leakage_truncated` | point source beside a wall: 0 mass across it **under truncation** (component-local modes) |
-| `test_cache_grows_with_smaller_sigma` | a large-σ call then a small-σ call: the small-σ call is **not under-ranked** (rank-keyed cache grows), result within tol of dense |
-| `test_eigenbasis_cached_and_invalidated` | rank-keyed dict reused/sliced across σ/mode; dropped wholesale after a geometry change (`_state_version` bump) |
+| `test_cache_grows_with_smaller_sigma` | a large-σ call then a small-σ call: the small-σ call is **not under-ranked** — the single cached basis is recomputed+**replaced** at the larger rank (the smaller one evicted); result within tol of dense |
+| `test_eigenbasis_single_basis_and_invalidated` | one max-rank basis reused/sliced across σ/mode (not an accumulating dict); replaced on growth; dropped wholesale after a geometry change (`_state_version` bump) |
+| `test_compute_kernel_does_not_poison_apply_cache` | a `compute_kernel` (full-rank) call does **not** grow the truncated `env.diffuse` cache to `(n,n)`; a subsequent `env.diffuse` still uses the bounded truncated basis |
 | `test_perf_large_grid` (slow) | baseline-capture the old dense `expm` time/peak-mem on a ~10k-bin grid, then assert the apply-path's reduction |
 
 ## 8. Risks / open items
