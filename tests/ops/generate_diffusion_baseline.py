@@ -99,7 +99,7 @@ def capture_baseline(*, reuse_perf: bool = False) -> dict:
             "version": _pkg_version("neurospatial"),
             "git_sha": _git_sha(),
             "note": (
-                "Dense diffusion-operator baseline captured pre-PR2. Perf grid is "
+                "Dense diffusion-operator baseline captured pre-refactor. Perf grid is "
                 "3600 bins (dense expm ~O(n^3): a true 10k-bin dense capture is "
                 "~25 min / multi-GB, so the apply-path is separately shown to scale "
                 "to 10k bins in test_perf_large_grid)."

@@ -68,8 +68,9 @@ _HEAT_KERNEL_RANK_START = 32
 
 # Tiny floor for masked/support-gated denominators in the consumers (the raw
 # linear apply can leave a truncation-noise-tiny value where the dense
-# denominator was tiny-positive; the W-component support gate keeps the bin,
-# and this floor keeps the division finite -- see design-performance.md Section 5).
+# denominator was tiny-positive; the W-component support gate keeps the bin, and
+# this floor keeps the division finite -- a near-boundary bin stays finite but is
+# not value-equal to the dense path, which is part of the truncation contract).
 _DIFFUSE_DENOM_EPS = 1e-12
 
 # Non-orthogonality skew guard for triangle-centroid meshes: two-point flux is
@@ -749,7 +750,7 @@ def diffusion_component_labels(
     Reads the Environment's cached finite-volume geometry so the smoothing
     consumers can derive **W-component support** for their strict ``> 0`` gates
     (support that is exact and truncation-proof, unlike the smoothed
-    denominator's sign). See design-performance.md Section 5.
+    denominator's sign; see :func:`component_support_mask`).
     """
     _W, _volumes, n_components, labels = cast("Any", env)._diffusion_geometry
     return int(n_components), labels

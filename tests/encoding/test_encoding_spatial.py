@@ -5046,9 +5046,9 @@ class TestComputeSpatialRatesThroughputContract:
 
         The matrix-free ``diffusion_kde`` path (env.diffuse) resolves the cached
         truncated eigenbasis once per population smoothing call and reuses it for
-        every neuron -- the throughput contract that PR2 preserves. A regression
-        to per-neuron smoothing (one env.diffuse per neuron) would resolve the
-        basis 25 times, not once.
+        every neuron -- the population-throughput contract. A regression to
+        per-neuron smoothing (one env.diffuse per neuron) would resolve the basis
+        25 times, not once.
         """
         import neurospatial.ops.diffusion as diffusion_mod
         from neurospatial.encoding.spatial import compute_spatial_rates

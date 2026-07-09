@@ -129,7 +129,7 @@ def test_apply_matches_dense_truncated(geom, mode, cases_by_key):
         assert rel < _TRUNC_MNORM_TOL, f"{geom}/{mode}/{name}: M-norm {rel:.2e}"
 
 
-def test_env_diffuse_is_linear(cases_by_key):
+def test_env_diffuse_is_linear():
     """diffuse(a*F1 + b*F2) == a*diffuse(F1) + b*diffuse(F2) on SIGNED fields.
 
     Guards the linearity contract: no positivity projection anywhere in the
@@ -157,7 +157,7 @@ def test_env_diffuse_is_linear(cases_by_key):
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("geom", list(GEOMETRIES))
 def test_compute_kernel_unchanged(geom, cases_by_key):
-    """compute_kernel's ACTION matches the frozen pre-PR2 dense baseline.
+    """compute_kernel's ACTION matches the frozen pre-refactor dense baseline.
 
     compute_kernel is left on its dense-expm path; its action on the field set
     (a linear operator is determined by its action; the set includes a full
@@ -225,7 +225,7 @@ def test_null_mode_retained(geom):
 
 def test_grid_independence_preserved():
     """Measured physical sigma == bandwidth still holds via env.diffuse
-    (Phase 1 regression: the apply-path must not reintroduce grid dependence)."""
+    (regression: the apply-path must not reintroduce grid dependence)."""
     bandwidth = 5.0
     for h in (1.0, 2.0, 4.0):
         n = round(60 / h)

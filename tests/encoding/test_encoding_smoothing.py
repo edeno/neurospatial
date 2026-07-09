@@ -702,8 +702,8 @@ class TestMinOccupancy:
 class TestEigenbasisCacheReuse:
     """Cross-neuron reuse is now automatic via the cached eigenbasis.
 
-    PR2 removed the ``kernel=`` parameter on ``smooth_rate_map`` /
-    ``smooth_rate_maps_batch`` (an intentional public break): the matrix-free
+    The ``kernel=`` parameter on ``smooth_rate_map`` / ``smooth_rate_maps_batch``
+    has been removed (an intentional public break): the matrix-free
     ``env.diffuse`` apply-path caches the eigenbasis on the environment, so the
     cross-neuron reuse the parameter used to provide happens transparently.
     """
@@ -731,7 +731,7 @@ class TestEigenbasisCacheReuse:
     def test_kernel_parameter_is_removed(
         self, simple_env, spike_counts_center, uniform_occupancy
     ):
-        """The obsolete ``kernel=`` parameter no longer exists (PR2 break)."""
+        """The obsolete ``kernel=`` parameter no longer exists (intentional break)."""
         with pytest.raises(TypeError):
             smooth_rate_map(
                 simple_env,
