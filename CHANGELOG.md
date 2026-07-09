@@ -1,5 +1,52 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed — diffusion smoothing bandwidth is now the true physical σ (breaking, correctness)
+
+The `diffusion_kde` / diffusion-kernel `bandwidth` is now the **true physical
+standard deviation (σ)** on every environment layout, independent of bin size or
+resolution. Previously the effective smoothing width scaled with bin size (2D
+place fields at `bin_size=1` oversmoothed by ~70% for the same `bandwidth`), so
+place-field widths and spatial information were not comparable across
+resolutions or with other tools. This is a **behavior-changing correctness fix**:
+smoothed values change even on uniform grids — that difference *is* the
+correction.
+
+- **New finite-volume operator.** The kernel is now the finite-volume heat
+  operator `H = exp(-t L)`, `t = σ²/2`, `L = M⁻¹(D − W)` with
+  `W[i, j] = A[i, j] / d[i, j]` (`A` = shared-face measure, `d` = center
+  distance) and `M` = per-bin cell volumes. On any K-orthogonal layout this has
+  the continuum limit `−∇²`, so a point source smooths to physical σ exactly.
+- **Impact on existing results.** For the same `bandwidth`, **2D place fields
+  now smooth ~1.5–1.7× less**. To approximate the *old* amount of smoothing,
+  scale `bandwidth` by roughly `√(bin_size)` (rough, mode-dependent — prefer
+  re-choosing `bandwidth` as a physical σ in your units).
+- **Correct orientation per consumer.** `compute_kernel(mode="transition")`
+  returns `Hᵀ` (column-stochastic, mass-conserving smoothing of extensive
+  quantities); `mode="density"` returns `H·M⁻¹` (count → density, integrates
+  to 1 under bin volumes); `transitions(method="diffusion")` now returns the
+  **row-stochastic** `H` via transpose (correct on non-uniform bin volumes —
+  polar, mesh — where it no longer assumes symmetry).
+- **Breaking: public `neurospatial.ops.compute_diffusion_kernels` signature.**
+  The old Gaussian-weight form
+  `compute_diffusion_kernels(graph, bandwidth_sigma, bin_sizes=..., mode=...)`
+  is **replaced** by
+  `compute_diffusion_kernels(graph, *, volumes, sigma, mode)`. The face measure
+  is read from a per-edge `"A"` attribute (single source of truth, like
+  `"distance"`); a missing `"A"` on an edge raises, and `A == 0` means no
+  diffusion across that edge. `mode` now also accepts `"average"` (row-stochastic
+  `H`) at the low level.
+- **`min_occupancy` caveat.** `min_occupancy` is documented in seconds, but the
+  KDE paths compare it to `occupancy_density = K @ occupancy`, which under the
+  new density kernel is seconds-per-cell-volume on non-uniform grids — a
+  pre-existing unit mismatch that this change neither fixes nor worsens for
+  uniform grids, and that lies **outside** the grid-invariance guarantee.
+  Tracked as a follow-up.
+- **Out of scope (unchanged):** nonuniform-Cartesian custom `grid_edges` inherit
+  the uniform-cell approximation and are excluded from the physical-σ guarantee;
+  performance (dense `expm`) is unchanged.
+
 ## [v0.6.0] - 2026-07-03
 
 ## What's Changed

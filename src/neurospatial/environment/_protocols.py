@@ -94,12 +94,18 @@ class EnvironmentProtocol(Protocol):
     @property
     def bin_sizes(self) -> NDArray[np.float64]:
         """
-        Size of bins along each dimension.
+        Per-bin cell volume (area in 2D, length in 1D, volume in 3D+).
+
+        This is the canonical mass ``M`` used by the diffusion operator, the
+        density normalization, and the ``apply_kernel`` adjoint. It returns the
+        physically correct cell measure for every layout (annular-sector area
+        for polar, hexagon area for hex, triangle area for mesh, bin length for
+        graph), not bin widths per dimension.
 
         Returns
         -------
-        ndarray of shape (n_dims,)
-            Bin width in each spatial dimension.
+        ndarray of shape (n_bins,)
+            Cell volume of each active bin.
         """
         ...
 

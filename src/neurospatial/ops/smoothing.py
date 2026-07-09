@@ -1,10 +1,19 @@
 """Smoothing operations for spatial fields.
 
-This module provides diffusion-based kernel computation and application
-for smoothing spatial fields on graphs. The main functions are:
+This module provides the low-level diffusion-kernel primitive and kernel
+application for smoothing spatial fields on graphs. The main functions are:
 
-- ``compute_diffusion_kernels``: Compute diffusion kernel from graph structure
-- ``apply_kernel``: Apply kernel in forward or adjoint mode
+- ``compute_diffusion_kernels``: assemble a finite-volume diffusion kernel from
+  a working graph carrying ``"A"`` (shared-face measure) and ``"distance"``
+  (center-to-center) on each edge, plus a node-ordered ``volumes`` array.
+- ``apply_kernel``: apply a kernel in forward or adjoint mode.
+
+The operator itself (``H = exp(-t L)``, ``L = M^-1 (D - W)``,
+``W[i, j] = A[i, j] / d[i, j]``) lives in
+:mod:`neurospatial.ops.diffusion`; the per-geometry face measures and the
+``Environment``-level dispatch live there too. This module is the graph-level
+seam: given ``"A"`` already on the edges, it builds ``W`` and normalizes the
+kernel to the requested ``mode``.
 
 Examples
 --------
@@ -12,12 +21,16 @@ Examples
 >>> import numpy as np
 >>> from neurospatial.ops.smoothing import compute_diffusion_kernels, apply_kernel
 
-Create a simple graph and compute kernel:
+Create a simple graph (unit face measure, unit spacing) and compute a kernel:
 
 >>> graph = nx.path_graph(5)
 >>> for u, v in graph.edges():
 ...     graph.edges[u, v]["distance"] = 1.0
->>> kernel = compute_diffusion_kernels(graph, bandwidth_sigma=1.0, mode="transition")
+...     graph.edges[u, v]["A"] = 1.0
+>>> volumes = np.ones(5)
+>>> kernel = compute_diffusion_kernels(
+...     graph, volumes=volumes, sigma=1.0, mode="transition"
+... )
 >>> kernel.shape
 (5, 5)
 
@@ -40,6 +53,8 @@ import scipy.sparse
 import scipy.sparse.linalg
 from numpy.typing import NDArray
 
+from neurospatial.ops.diffusion import heat_kernel_from_W
+
 __all__ = [
     "apply_kernel",
     "compute_diffusion_kernels",
@@ -52,59 +67,65 @@ __all__ = [
 _LARGE_KERNEL_THRESHOLD = 3000
 
 
-def _assign_gaussian_weights_from_distance(
-    graph: nx.Graph,
-    bandwidth_sigma: float,
-) -> None:
-    """
-    Overwrites each edge's "weight" attribute with
-        w_uv = exp( - (distance_uv)^2 / (2 * sigma^2) ).
-    Assumes each edge already has "distance" = Euclidean length.
-    """
-    two_sigma2 = 2.0 * (bandwidth_sigma**2)
-    for u, v, data in graph.edges(data=True):
-        d = data.get("distance", None)
-        if d is None:
-            raise KeyError(f"Edge ({u},{v}) has no 'distance' attribute.")
-        data["weight"] = float(np.exp(-(d * d) / two_sigma2))
-
-
 def compute_diffusion_kernels(
     graph: nx.Graph,
-    bandwidth_sigma: float,
     *,
-    bin_sizes: NDArray | None = None,
-    mode: Literal["transition", "density"] = "transition",
+    volumes: NDArray[np.float64],
+    sigma: float,
+    mode: Literal["transition", "density", "average"],
 ) -> NDArray[np.float64]:
-    """
-    Computes a diffusion-based kernel for all bins (nodes) of `graph` via
-    matrix-exponential of a (possibly volume-corrected) graph-Laplacian.
+    """Assemble a finite-volume diffusion kernel from a face-measure graph.
+
+    Builds the finite-volume weight matrix ``W[i, j] = A[i, j] / d[i, j]`` from
+    the graph's edge attributes and returns the requested normalized view of the
+    heat operator ``H = exp(-t L)``, ``L = M^-1 (D - W)``, ``t = sigma^2 / 2``.
+    ``bandwidth`` is thereby the true physical standard deviation (sigma) of the
+    smoothing on any K-orthogonal layout, independent of bin size.
+
+    This is the low-level primitive. Most callers should use
+    :meth:`Environment.compute_kernel` / :meth:`Environment.smooth`, which
+    resolve the per-geometry face measures via
+    :func:`neurospatial.ops.diffusion.diffusion_kernel`.
 
     Parameters
     ----------
     graph : nx.Graph
-        Nodes = bins.  Each edge must have a "distance" attribute (Euclidean length).
-    bandwidth_sigma : float
-        The Gaussian-bandwidth (σ), must be > 0.  We exponentiate with t = σ^2 / 2.
-    bin_sizes : ndarray of shape (n_bins,), dtype float64, optional
-        If provided, bin_sizes[i] is the physical "area/volume" of node i.
-        If not provided, we treat all bins as unit-mass.
-    mode : {"transition", "density"}, default="transition"
-        - "transition":  Return a purely discrete transition-matrix P so that ∑_i P[i,j] = 1.
-                         (You do *not* need `bin_sizes` in this mode; if you pass it,
-                         it will only be used in the exponent step to form L_vol = M^{-1} L,
-                         but the final column-normalization is "sum→1".)
-        - "density":     Return a continuous-KDE kernel so that ∑_i [K[i,j] * bin_sizes[i]] = 1.
-                         Requires `bin_sizes` ≢ None.  (You exponentiate M^{-1} L, then rescale
-                         each column so that its weighted-sum by bin_areas is 1.)
+        Nodes are bins and MUST be contiguous integer labels ``0..n-1`` (they
+        are used directly as sparse-matrix indices). Each edge MUST carry:
+
+        - ``"distance"``: center-to-center distance ``d`` (finite, > 0).
+        - ``"A"``: measure of the face shared by the two bins (finite, >= 0).
+          An explicit ``A == 0`` means no diffusion across that edge (e.g.
+          corner-touching Cartesian bins); a **missing** ``"A"`` raises.
+    volumes : NDArray[np.float64], shape (n_bins,)
+        Per-bin cell volumes ``M``, node-ordered ``0..n-1``. Every entry must be
+        finite and strictly positive (the operator divides by ``volumes``).
+    sigma : float
+        Physical smoothing standard deviation. Must be finite and > 0 (it feeds
+        ``sigma**2`` into the matrix exponential).
+    mode : {"transition", "density", "average"}
+        Normalized view of the operator:
+
+        - ``"transition"``: ``Hᵀ`` column-stochastic (``sum_i K[i, j] = 1``);
+          mass-conserving smoothing of an extensive field (``K @ counts``).
+        - ``"density"``: ``H·M⁻¹`` (``sum_i M_i K[i, j] = 1``); count -> density.
+        - ``"average"``: ``H`` row-stochastic (``sum_j K[i, j] = 1``); averages
+          an intensive field (``K @ rate``).
 
     Returns
     -------
-    kernel : ndarray of shape (n_bins, n_bins), dtype float64
-        Diffusion kernel matrix. Column normalization depends on mode:
-        - mode="transition": each column j sums to 1 (∑_i K[i,j] = 1)
-        - mode="density": each column j integrates to 1 over area
-                         (∑_i K[i,j] * bin_sizes[i] = 1)
+    kernel : NDArray[np.float64], shape (n_bins, n_bins)
+        Dense diffusion kernel, normalized per ``mode``.
+
+    Raises
+    ------
+    ValueError
+        If ``sigma`` is non-finite or ``<= 0``; if ``volumes`` has the wrong
+        shape or any non-finite / non-positive entry; if node labels are not
+        contiguous integers ``0..n-1`` (float or bool labels are rejected); if
+        any edge is missing ``"A"`` or ``"distance"``, or has a non-finite /
+        negative ``"A"`` or a non-finite / non-positive ``"distance"``; or if
+        ``mode`` is invalid.
 
     Notes
     -----
@@ -146,13 +167,42 @@ def compute_diffusion_kernels(
     A faster, lower-peak ``expm_multiply`` / Chebyshev rewrite of this kernel is
     a deferred stretch goal and is **not** implemented in this release.
     """
-    # 1) Validate bandwidth is positive
-    if bandwidth_sigma <= 0:
-        raise ValueError(f"bandwidth_sigma must be positive (got {bandwidth_sigma}).")
+    # 1) Validate mode and sigma up front, before any O(n^2)/O(n^3) work (the
+    #    high-bin warning, W assembly, or the dense matrix exponential): a typo
+    #    on a large graph must fail fast, not after building the kernel.
+    if mode not in ("transition", "density", "average"):
+        raise ValueError(
+            f"Invalid mode {mode!r}. Choose 'transition', 'density', or 'average'."
+        )
+    if not (np.isfinite(sigma) and sigma > 0.0):
+        raise ValueError(f"sigma must be finite and > 0, got {sigma}.")
 
     n_bins = graph.number_of_nodes()
 
-    # 2) Warn (never raise) for large environments. The dense heat kernel
+    # 2) Validate node labels: contiguous integers 0..n-1 (used directly as
+    #    sparse-matrix indices). bool subclasses int and 0.0 == 0, so require
+    #    true integer labels AND the full contiguous 0..n-1 set.
+    nodes = list(graph.nodes)
+    if not all(
+        isinstance(x, (int, np.integer)) and not isinstance(x, bool) for x in nodes
+    ) or {int(x) for x in nodes} != set(range(n_bins)):
+        raise ValueError(
+            "graph nodes must be contiguous integer labels 0..n-1 (no float/bool)."
+        )
+
+    # 3) Validate volumes: correct shape, finite and strictly positive (the
+    #    operator divides by volumes, so a zero/negative/NaN must fail loudly).
+    volumes = np.asarray(volumes, dtype=np.float64)
+    if volumes.shape != (n_bins,):
+        raise ValueError(
+            f"volumes must have shape ({n_bins},), but got {volumes.shape}."
+        )
+    if not np.all(np.isfinite(volumes)) or np.any(volumes <= 0.0):
+        raise ValueError(
+            "volumes must be finite and strictly positive (per-bin cell volume)."
+        )
+
+    # 4) Warn (never raise) for large environments. The dense heat kernel
     #    exp(-tL) costs n_bins**2 * 8 bytes of float64 memory; we estimate that
     #    and proceed. There is no hard limit -- the call always returns a kernel.
     if n_bins > _LARGE_KERNEL_THRESHOLD:
@@ -170,68 +220,35 @@ def compute_diffusion_kernels(
             stacklevel=2,
         )
 
-    # 3) Re-compute edge "weight" = exp( - dist^2/(2σ^2) )
-    #    Operate on a copy so the caller's graph (and any "weight" attributes it
-    #    relies on) is never mutated as a side effect.
-    working_graph = graph.copy()
-    _assign_gaussian_weights_from_distance(working_graph, bandwidth_sigma)
-
-    # 4) Build unnormalized Laplacian L = D - W
-    laplacian = nx.laplacian_matrix(
-        working_graph, nodelist=range(n_bins), weight="weight"
+    # 5) Build the finite-volume weight matrix W[i, j] = A[i, j] / d[i, j].
+    #    "A" and "distance" are both edge-contract fields; a missing or invalid
+    #    value raises rather than silently degrading the kernel.
+    rows: list[int] = []
+    cols: list[int] = []
+    vals: list[float] = []
+    for u, v, data in graph.edges(data=True):
+        if "A" not in data or "distance" not in data:
+            raise ValueError(
+                f"edge ({u},{v}) is missing 'A' and/or 'distance' attribute."
+            )
+        A = float(data["A"])
+        d = float(data["distance"])
+        if not (np.isfinite(A) and A >= 0.0):
+            raise ValueError(f"edge ({u},{v}) has invalid face measure A={A}.")
+        if not (np.isfinite(d) and d > 0.0):
+            raise ValueError(f"edge ({u},{v}) has invalid distance d={d}.")
+        if A == 0.0:
+            continue  # explicit A == 0 => no diffusion across this edge
+        w = A / d
+        rows += [int(u), int(v)]
+        cols += [int(v), int(u)]
+        vals += [w, w]
+    W = scipy.sparse.csr_matrix(
+        (vals, (rows, cols)), shape=(n_bins, n_bins), dtype=np.float64
     )
 
-    # 5) If bin_sizes is given, form M⁻¹ = diag(1/bin_sizes),
-    #    then replace L ← M⁻¹ @ L (so we solve du/dt = - M⁻¹ L u).
-    #    IMPORTANT: Use sparse diagonal matrix to avoid O(n²) dense matrix creation
-    if bin_sizes is not None:
-        if bin_sizes.shape != (n_bins,):
-            raise ValueError(
-                f"bin_sizes must have shape ({n_bins},), but got {bin_sizes.shape}."
-            )
-        # Use scipy.sparse.diags for O(n) memory instead of np.diag's O(n²)
-        mass_inv = scipy.sparse.diags(1.0 / bin_sizes, format="csr")
-        laplacian = mass_inv @ laplacian  # Sparse @ Sparse = Sparse
-
-    # 6) Exponentiate: kernel = exp( - (σ^2 / 2) * L )
-    t = bandwidth_sigma**2 / 2.0
-    # expm returns a dense numpy array
-    kernel = scipy.sparse.linalg.expm(-t * laplacian)
-
-    # Convert to dense array if it's somehow still sparse
-    if hasattr(kernel, "toarray"):
-        kernel = kernel.toarray()
-
-    # 7) Clip tiny negative noise to zero
-    kernel = np.clip(kernel, a_min=0.0, a_max=None)
-
-    # 8) Final normalization:
-    #   - If mode="transition":  ∑_i K[i,j] = 1  (pure discrete)
-    #   - If mode="density":     ∑_i [K[i,j] * areas[i]] = 1  (continuous KDE)
-    match mode:
-        case "transition":
-            # Just normalize each column so it sums to 1
-            mass_out = kernel.sum(axis=0)  # shape = (n_bins,)
-            # scale = 1 / mass_out[j]  (so that ∑_i K[i,j] = 1)
-        case "density":
-            if bin_sizes is None:
-                raise ValueError("bin_sizes is required when mode='density'.")
-            # Compute mass_out[j] = ∑_i [kernel[i,j] * areas[i]]
-            # shape = (n_bins,)
-            mass_out = (kernel * bin_sizes[:, None]).sum(axis=0)
-            # scale[j] = 1 / mass_out[j]  (so that ∑_i [K[i,j]*areas[i]] = 1)
-        case _:
-            raise ValueError(
-                f"Invalid mode '{mode}'. Choose 'transition' or 'density'."
-            )
-
-    # Avoid division by zero
-    scale = np.where(mass_out == 0.0, 0.0, 1.0 / mass_out)
-    kernel_normalized: NDArray[np.float64] = (
-        kernel * scale[None, :]
-    )  # Broadcast scale across rows
-
-    return kernel_normalized
+    # 6) Assemble and normalize the heat operator for the requested mode.
+    return heat_kernel_from_W(W, volumes, sigma, mode=mode)
 
 
 def apply_kernel(
@@ -329,8 +346,11 @@ def apply_kernel(
       <K x, y>_M = <x, K^* y>_M
       where K^* = M^{-1} K^T M is the mass-weighted adjoint
 
-    - Mass conservation (density forward):
-      sum((K @ field) * bin_sizes) = sum(field * bin_sizes)
+    - Count-to-density conservation (density forward): a density kernel maps an
+      extensive input (counts) to a density whose integral under bin volumes
+      equals the input total,
+      sum((K @ field) * bin_sizes) = sum(field)
+      (each column integrates to 1 under bin volumes: sum_i K[i, j] * M_i = 1).
 
     Examples
     --------
