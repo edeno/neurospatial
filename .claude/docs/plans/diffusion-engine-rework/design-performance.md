@@ -5,7 +5,8 @@
 **Depends on:** the shipped correctness operator (v0.7.0, [design-correctness.md](design-correctness.md);
 `src/neurospatial/ops/diffusion.py`).
 **Sibling (future):** `design-mrf-gam.md` (the (c) estimator).
-**Target release:** 0.8.0 (minor — adds one public method `env.diffuse`; otherwise behavior-preserving).
+**Target release:** 0.8.0 (minor — adds `env.diffuse`, removes the smoothing `kernel=` param
+(§2); **numerically** behavior-preserving, not API-frozen).
 
 ---
 
@@ -215,7 +216,9 @@ PR2 is an optimization, so the gate is **output equivalence to the shipped dense
 | `test_no_leakage_truncated` | point source beside a wall: 0 mass across it **under truncation** (component-local modes) |
 | `test_cache_grows_with_smaller_sigma` | a large-σ call then a small-σ call: the small-σ call is **not under-ranked** — the single cached basis is recomputed+**replaced** at the larger rank (the smaller one evicted); result within tol of dense |
 | `test_eigenbasis_single_basis_and_invalidated` | one max-rank basis reused/sliced across σ/mode (not an accumulating dict); replaced on growth; dropped wholesale after a geometry change (`_state_version` bump) |
-| `test_compute_kernel_does_not_poison_apply_cache` | a `compute_kernel` (full-rank) call does **not** grow the truncated `env.diffuse` cache to `(n,n)`; a subsequent `env.diffuse` still uses the bounded truncated basis |
+| `test_compute_kernel_does_not_poison_apply_cache` | a `compute_kernel` call does **not** create or mutate the apply eigenbasis cache (it stays on its dense-`expm` path); a subsequent `env.diffuse` still uses the bounded truncated basis |
+| `test_near_full_rank_diffuse_no_poison` | a **near-full-rank `env.diffuse`** (rank `≥ dense_fraction·n`) uses a **transient** dense `eigh` (applied, dropped), does **not** cache an `(n,n)` basis or grow the truncated cache; a later normal `env.diffuse` still uses the bounded truncated basis |
+| `test_jax_backend_return_type_and_grad` | `backend="jax"` smoothing returns a `jax.Array` with the requested dtype; the apply runs **in JAX** (`env.diffuse(backend="jax")`), so `jit`/`grad` through the diffusion smoothing still work |
 | `test_perf_large_grid` (slow) | baseline-capture the old dense `expm` time/peak-mem on a ~10k-bin grid, then assert the apply-path's reduction |
 
 ## 8. Risks / open items
