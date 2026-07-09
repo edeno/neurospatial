@@ -250,6 +250,9 @@ ignore = [
 "src/neurospatial/ops/smoothing.py" = [
     "N806",  # Allow A (face measure), W (weight matrix) - finite-volume notation
 ]
+"scripts/diffusion_grid_bandwidth_check.py" = [
+    "N806",  # Allow W, L, K (operator matrices) - standard math notation
+]
 "src/neurospatial/transforms.py" = [
     "N806",  # Allow T (transformation matrix) - standard linear algebra notation
 ]

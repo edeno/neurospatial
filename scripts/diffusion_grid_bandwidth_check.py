@@ -54,7 +54,6 @@ def nld_style_kernel(env, bandwidth, *, face_adjacent_only=True):
     g = env.connectivity
     centers = env.bin_centers
     n = env.n_bins
-    node_list = list(range(n))
     rows, cols, vals = [], [], []
     for u, v, data in g.edges(data=True):
         if u >= n or v >= n:
