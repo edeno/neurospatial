@@ -31,6 +31,12 @@ is a **pure linear operator** equivalent to the shipped dense operator within to
 `env.smooth` on signed fields is preserved, and positivity is a per-consumer concern (§5), not
 baked into the smoother.
 
+"Behavior-preserving" here means **numerical results within tolerance**, not *API-frozen*: PR2
+makes one intentional public change — it **adds** `env.diffuse` and **removes** the now-obsolete
+`kernel=` parameter on `smooth_rate_map`/`smooth_rate_maps_batch` (the eigenbasis cache subsumes
+its cross-neuron-reuse purpose) — carried by the **0.8.0** minor bump (no backward-compat shim,
+per the project default).
+
 **Non-goals:** any change to the *operator* or its results (correctness is shipped); the MRF-GAM
 estimator; nonuniform-Cartesian `bin_sizes`. No change to mode semantics or the three-mode
 orientation contract.
@@ -174,9 +180,14 @@ needing a strict 0-floor clip the result themselves (as the density consumers do
   `compute_kernel` stays **byte-identical** (strongest behavior-preservation), is memory-safe,
   and — because it never touches the truncated eigenbasis cache (§4) — **cannot poison it**.
   Truncation and the eigenbasis are used **only** by the new `env.diffuse` apply-path;
-  `compute_kernel` is not a new/eigenbasis surface. **No public API break, no accuracy change.**
+  `compute_kernel` is not a new/eigenbasis surface. **`compute_kernel` itself has no API break
+  and no accuracy change** (the one PR2 API change is elsewhere — the removed `kernel=` param
+  on `smooth_rate_map`/`_batch`, §2).
 - **New matrix-free method `env.diffuse(fields, bandwidth, *, mode)`** — the apply-path (§3, §5),
-  batched over `fields`. Route the hot paths through it: `env.smooth`
+  batched over `fields`. The apply is **backend-parametric** (NumPy default; runs **in JAX** for
+  `backend="jax"` by casting the cached NumPy eigenbasis to `jnp`), so the JAX consumers keep the
+  documented GPU + `jit`/`grad` compatibility — the eigenbasis is a constant, exactly as the dense
+  kernel is today. Route the hot paths through it: `env.smooth`
   ([fields.py:150-299](../../../src/neurospatial/environment/fields.py)), `_diffusion_kde`
   (+ batch + JAX, [encoding/_smoothing.py:569,729,847,934](../../../src/neurospatial/encoding/_smoothing.py)),
   and `resample_field(method="diffuse")` ([ops/binning.py:790-815](../../../src/neurospatial/ops/binning.py))

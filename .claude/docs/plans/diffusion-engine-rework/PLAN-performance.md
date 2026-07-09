@@ -6,8 +6,12 @@
 (`env.smooth`, `_diffusion_kde`, `binned`, `resample`) with a cached, per-component,
 bandwidth-aware truncated symmetric eigenbasis plus a new matrix-free **linear** apply-path
 `env.diffuse`, so smoothing scales to large/fine grids without materializing an `(n,n)` kernel
-— behavior-preserving to within a stated truncation tolerance. (`compute_kernel` and
-`transitions(method="diffusion")`, which return an actual matrix, keep the dense `expm` path.)
+— **numerically** behavior-preserving to within a stated truncation tolerance. (`compute_kernel`
+and `transitions(method="diffusion")`, which return an actual matrix, keep the dense `expm` path.)
+PR2 makes **one intentional public API change** — it removes the now-obsolete `kernel=` parameter
+on `smooth_rate_map`/`smooth_rate_maps_batch` and adds `env.diffuse` — carried by the 0.8.0 minor
+bump (see T7). So "behavior-preserving" means *numerical results within tolerance*, not
+*API-frozen*.
 
 **Architecture:** Eigendecompose the symmetric conjugate `S = M^{-1/2}(D−W)M^{-1/2}`
 per `W`-component, cache it on the Environment (geometry-only, `_state_version`-invalidated),
@@ -29,7 +33,7 @@ cache. Full rationale + the M-norm/denominator/cache contracts: **[design-perfor
 ## Inputs to read first
 
 - [design-performance.md](design-performance.md) — the design (§3 architecture, §4 eigensolver/truncation, §5 linear apply + denominator policy, §6 routing, §7 tests, §8 risks).
-- [ops/diffusion.py:65-101](../../../src/neurospatial/ops/diffusion.py) — `_raw_heat_operator` (the dense `expm` seam being replaced); [104-173](../../../src/neurospatial/ops/diffusion.py) `heat_kernel_from_W` (clip+per-mode normalize; extract `_normalize_modes` from here); [176-197](../../../src/neurospatial/ops/diffusion.py) `_components_from_W`; [203-244](../../../src/neurospatial/ops/diffusion.py) `diffusion_kernel` (geometry dispatch to reuse).
+- [ops/diffusion.py:65-101](../../../src/neurospatial/ops/diffusion.py) — `_raw_heat_operator` (the dense `expm` seam being replaced); [104-173](../../../src/neurospatial/ops/diffusion.py) `heat_kernel_from_W` (clip + per-mode normalize; `compute_kernel` keeps using it — unchanged); [176-197](../../../src/neurospatial/ops/diffusion.py) `_components_from_W`; [203-244](../../../src/neurospatial/ops/diffusion.py) `diffusion_kernel` (geometry dispatch to reuse).
 - [fields.py:46-178](../../../src/neurospatial/environment/fields.py) — `compute_kernel` (+ `_kernel_cache`, `valid_modes` at :148); [181-352](../../../src/neurospatial/environment/fields.py) — `smooth` (`kernel @ field` at :351, `valid_modes` at :338) — reroute to `env.diffuse`.
 - [encoding/_smoothing.py:568-630](../../../src/neurospatial/encoding/_smoothing.py) `_diffusion_kde` (`kernel @ spike_counts`/`kernel @ occupancy` at :604/:607, gate `occupancy_density > occupancy_threshold` at :614), [731-786](../../../src/neurospatial/encoding/_smoothing.py) `_diffusion_kde_batch`, JAX at [:494](../../../src/neurospatial/encoding/_smoothing.py)/[:918](../../../src/neurospatial/encoding/_smoothing.py); [664-729](../../../src/neurospatial/encoding/_smoothing.py) `_binned` (`weights_smoothed > 0` at :723), `_binned_batch` [791-](../../../src/neurospatial/encoding/_smoothing.py).
 - [ops/binning.py:600-830](../../../src/neurospatial/ops/binning.py) — `resample_field`; diffuse branch (`valid` at :820, `den > 0` at :825).
@@ -112,11 +116,17 @@ mixin): validate `bandwidth`/`mode`; **coerce a 1-D `fields` to `(n, 1)`** and s
 result back on return (so callers like `env.smooth` can pass a 1-D field); resolve geometry via
 the existing `_finite_volume_geometry` ([ops/diffusion.py:247](../../../src/neurospatial/ops/diffusion.py));
 get/grow the cached `(Q, Λ)` at `rank_σ`; apply, batched over columns. **No output clip.**
-Docstring states the linearity + approximation contract. **Also declare `diffuse` on
-`EnvironmentProtocol`** ([_protocols.py:309](../../../src/neurospatial/environment/_protocols.py),
-next to `compute_kernel`/`smooth`) so the protocol-cast consumers in T6 type-check.
+**Backend-parametric apply:** accept a `backend` (default `"numpy"`); the *apply*
+(`apply_heat_operator`'s array ops) runs in the requested backend — cast the cached NumPy
+eigenbasis `(Q, Λ)` to `jnp` for `backend="jax"` — so the JAX consumers keep GPU acceleration and
+`jit`/`grad` through the smoothing (the eigenbasis is a constant, exactly as the dense kernel is
+today, [_smoothing.py:324-329](../../../src/neurospatial/encoding/_smoothing.py)). The eigenbasis
+**build** stays NumPy (`scipy` `eigsh`/`eigh`). Docstring states the linearity + approximation
+contract. **Also declare `diffuse` on `EnvironmentProtocol`**
+([_protocols.py:309](../../../src/neurospatial/environment/_protocols.py), next to
+`compute_kernel`/`smooth`) so the protocol-cast consumers in T6 type-check.
 
-**T5 — Leave `compute_kernel` UNCHANGED (deviation from spec §6, reconcile the spec).** Keep
+**T5 — Leave `compute_kernel` UNCHANGED (matches spec §6).** Keep
 `compute_kernel` on its existing dense-`expm` path — `_raw_heat_operator`, `heat_kernel_from_W`,
 `_kernel_cache` ([ops/diffusion.py:65-173](../../../src/neurospatial/ops/diffusion.py)). Do
 **not** route it through the eigenbasis. Rationale (surfaced in review): materializing
@@ -125,10 +135,10 @@ the cached `(n,n)` kernel — **doubling** persistent O(n²) memory vs today —
 from a *transient* full basis has no benefit over the existing `expm` (both O(n³) per new σ,
 both cache only the kernel) while introducing ~`1e-10` numerical drift. So `compute_kernel` stays
 **byte-identical**, is memory-safe, and — because it never touches the truncated eigenbasis cache
-(T3) — cannot poison it. No `_normalize_modes` extraction is needed. **Update spec §6** to state
-`compute_kernel` is unchanged (the `env.diffuse` apply-path is the sole new/eigenbasis surface).
-`_raw_heat_operator` is retained (compute_kernel uses it, and it is the equivalence oracle for
-`env.diffuse` in tests) — no dead parallel path.
+(T3) — cannot poison it. **No `_normalize_modes` extraction** — the existing `heat_kernel_from_W`
+is used as-is. (Spec §6 already states `compute_kernel` is unchanged; the `env.diffuse` apply-path
+is the sole new/eigenbasis surface.) `_raw_heat_operator` is retained — `compute_kernel` uses it,
+and it is the equivalence oracle for `env.diffuse` in tests — so there is no dead parallel path.
 
 **T6 — Route the smoothing consumers to `env.diffuse` + apply the denominator policy (§5).**
 
@@ -152,10 +162,12 @@ both cache only the kernel) while introducing ~`1e-10` numerical drift. So `comp
   own dense weight matrix — unchanged; `binned` is the next bullet.) Then the **magnitude gate** — floor
   `max(occupancy_density, 0)` before `> occupancy_threshold`
   ([:614](../../../src/neurospatial/encoding/_smoothing.py)); clip the output density/rate `≥ 0`
-  (decode nonnegativity). **JAX boundary:** `env.diffuse` returns a **NumPy** array (float64
-  eigenbasis), so the `backend="jax"` paths must wrap its output in `jnp.asarray(..., dtype=…)`
-  to keep the promised `jax.Array` return-type/dtype
-  ([_smoothing.py:279,446](../../../src/neurospatial/encoding/_smoothing.py)).
+  (decode nonnegativity). **JAX backend:** the `backend="jax"` KDE paths call
+  `env.diffuse(..., backend="jax")`, which runs the apply **in JAX** and returns a `jax.Array`
+  with the requested dtype ([_smoothing.py:279,446](../../../src/neurospatial/encoding/_smoothing.py))
+  — **no NumPy round-trip**, preserving the documented GPU + `jit`/`grad` compatibility
+  ([:324-329](../../../src/neurospatial/encoding/_smoothing.py)). Keep the backend docstrings
+  accurate (they still hold: JAX smoothing runs in JAX).
 - `_binned` (+ batch + JAX): replace the two `env.smooth` calls with `env.diffuse(mode="average")`;
   **strict support gate** — derive `weights_smoothed > 0` support from `_components_from_W` +
   the input valid mask (not the smoothed sign, [:723](../../../src/neurospatial/encoding/_smoothing.py)).
@@ -197,7 +209,7 @@ Version 0.7.0 → **0.8.0** (`pyproject.toml`). Note the `compute_kernel` result
 | `test_eigenbasis_single_basis_and_invalidated` | one max-rank truncated basis reused/sliced; replaced on growth; dropped on `_state_version` bump |
 | `test_compute_kernel_does_not_poison_apply_cache` | a `compute_kernel` (dense-`expm`) call does **not** grow the truncated `env.diffuse` cache to `(n,n)`; later `env.diffuse` still bounded |
 | `test_near_full_rank_diffuse_no_poison` | a **near-full-rank `env.diffuse`** (rank `≥ dense_fraction·n`) uses a **transient** dense `eigh` (applied, dropped) and does **not** cache an `(n,n)` basis or grow the truncated cache; a later normal `env.diffuse` still uses the bounded truncated basis |
-| `test_jax_backend_return_type` | `smooth_rate_map(s)(..., backend="jax")` returns a `jax.Array` with the requested `dtype` (the NumPy `env.diffuse` output is wrapped at the boundary) |
+| `test_jax_backend_return_type_and_grad` | `smooth_rate_map(s)(..., backend="jax")` returns a `jax.Array` with the requested `dtype`; the apply runs **in JAX** (`env.diffuse(backend="jax")`), so `jit` and `grad` through the diffusion smoothing still work (documented JAX contract preserved) |
 | `test_null_mode_retained` | resolved rank `≥ n_components`; `H_trunc @ 1 == 1` and `Σ_i M_i H_trunc[i,j] == M_j` exactly under truncation |
 | `test_perf_large_grid` (slow) | baseline-capture (T1) dense-`expm` time/peak-mem on ~10k bins vs the apply-path; assert the reduction |
 
