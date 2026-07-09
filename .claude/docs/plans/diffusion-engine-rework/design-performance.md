@@ -20,7 +20,8 @@ large/fine grids. This retires the deferred `expm_multiply`/spectral-engine goal
 Key fact: the eigenbasis of the operator depends only on **geometry** `(W, volumes)`, not on
 `sigma` or `mode`. Caching it amortizes **one** eigensolve across every neuron, bandwidth,
 and mode; bandwidth-aware truncation then makes both time and memory `O(n·rank)` with
-`rank ~ area/sigma²` (independent of `n_bins`).
+`rank ~ measure(domain)/σ^d` (`d` = domain dimension: `length/σ` in 1D, `area/σ²` in 2D),
+independent of `n_bins`.
 
 ## 2. Goal / non-goals
 
@@ -62,7 +63,8 @@ M-conjugation (NLD's Laplacian is mass-free; ours needs `S`):
   [ops/diffusion.py:176](../../../src/neurospatial/ops/diffusion.py)), so every eigenvector is
   component-local and **truncation cannot leak mass across a wall/hole by construction**.
 - **Bandwidth-aware rank.** Keep modes with `e^{-tλ} ≥ tol` (default `tol=1e-6`); rank tracks
-  `~area/σ²`, not `n_bins`. Resolve adaptively (Weyl's law probe) via truncated
+  `~measure(domain)/σ^d` (`length/σ` in 1D, `area/σ²` in 2D), not `n_bins`. Resolve adaptively
+  (Weyl's law probe) via truncated
   `scipy.sparse.linalg.eigsh`; the constant (λ=0) null mode per component is **always kept**
   (mass conservation).
 - **Dense fallback + memory guard.** When the resolved rank ≥ `dense_fraction·n` (default
@@ -99,7 +101,9 @@ so a positivity projection would change its result.
 `Σ_i M_i H_trunc[i,j] = M_j` **exactly** (dropping high-frequency modes never touches the null
 mode; `H_trunc` stays M-self-adjoint via the symmetric `exp(-tS_trunc)`). So there is **no
 output clip and no mass renormalization** in the apply-path — the only deviation from the dense
-operator is the near-lossless truncation (dropped modes contribute ≤ `tol·‖F‖`). This is where
+operator is the near-lossless truncation (dropped modes contribute ≤ `tol·‖F‖_M` in the
+**M-weighted norm** — clean in the eigenbasis; **raw per-bin error carries a volume-conditioning
+factor** `κ(M) = sqrt(max vol / min vol)`, worst on polar `r→0` / skewed mesh). This is where
 we **diverge from NLD's `diffuse`**, which clips because it diffuses nonnegative densities; ours
 must stay linear.
 
@@ -116,18 +120,23 @@ All reduce to `H`/`Hᵀ` applied to `F` and to `{1, M}` — no `(n,n)`. This rep
 **Positivity is the consumer's job — the denominator policy.** The shipped dense kernel is
 entrywise-clipped ([ops/diffusion.py:161](../../../src/neurospatial/ops/diffusion.py)), so
 `kernel @ nonneg ≥ 0`; the un-clipped linear apply-path can leave ≤`tol` negative lobes under
-truncation. **Denominator floor (the shared policy).** Every consumer that **divides by a smoothed
-nonnegative quantity** floors *that denominator* `≥ 0` after `env.diffuse`, **before** its
-`> threshold` / `> 0` guard, so a truncation lobe cannot flip a tiny-positive dense denominator
-negative and spuriously emit a `NaN` (or unstable ratio) the dense path never produced:
+truncation. **A `max(den, 0)` floor does NOT rescue a strict `den > 0` guard** — a tiny-positive
+dense denominator flipped negative by a lobe still floors to `0` and fails `> 0`, spuriously
+emitting a `NaN`. Two gate types:
 
-- `_diffusion_kde` (+ `_diffusion_kde_batch` + the JAX path): floor the smoothed **occupancy
-  density** before the `occupancy_density > occupancy_threshold` gate
-  ([_smoothing.py:611](../../../src/neurospatial/encoding/_smoothing.py)).
-- `binned` / diffuse-`resample_field`: floor the smoothed **validity weight / `den`** before
-  the `weights_smoothed > 0` / `den > 0` gate
-  ([_smoothing.py:716](../../../src/neurospatial/encoding/_smoothing.py),
+- **Strict support gates** (`binned`'s `weights_smoothed > 0`, resample's `den > 0`): derive
+  support from the **`W`-component structure**, NOT the smoothed denominator's sign. Within a
+  connected `W`-component the heat kernel is entrywise positive, so the dense `den[i] > 0`
+  **iff** `i`'s component contains any valid input mass — a boolean that is **exact and
+  truncation-proof**. Gate on that (`_components_from_W` labels + the input valid mask), and
+  where support holds divide by `max(den, ε)` (`ε` tiny) only to avoid dividing by truncation
+  noise. Reproduces the dense support exactly ([_smoothing.py:716](../../../src/neurospatial/encoding/_smoothing.py),
   [binning.py:823](../../../src/neurospatial/ops/binning.py)).
+- **Magnitude gates** (`_diffusion_kde`'s `occupancy_density > occupancy_threshold`, threshold
+  possibly `> 0`; NumPy + batch + JAX): floor `max(occupancy_density, 0)` and compare to the
+  threshold. Robust **away from** the threshold; bins **within ~`tol` of the threshold may
+  flip** — part of the stated approximation contract, so the test asserts agreement only for
+  comfortably-above/below-threshold bins ([_smoothing.py:611](../../../src/neurospatial/encoding/_smoothing.py)).
 
 The **numerator is NOT floored** — diffuse resampling can carry a **signed** intensive field,
 so clipping the numerator would be a behavior change; only the inherently-nonnegative
@@ -139,10 +148,12 @@ smoother) clips nothing.
 **Approximation contract (`env.smooth`).** `env.smooth` stays a pure linear operator, so on
 nonnegative inputs (counts, occupancy, probability mass —
 [fields.py:207](../../../src/neurospatial/environment/fields.py)) it may return
-tolerance-level negatives (`≥ -tol·‖field‖`) instead of the dense kernel's exact 0-floor. This
-is the **stated PR2 approximation**: documented in the `env.smooth` docstring + CHANGELOG and
-tested as `≥ -tol·max(|field|)`. Callers needing a strict 0-floor clip the result themselves
-(as the density consumers do).
+tolerance-level negatives — bounded by `tol·‖field‖_M` in the **M-weighted norm** (raw per-bin
+floor can be `~ -tol·κ(M)·max(|field|)` under volume conditioning) — instead of the dense
+kernel's exact 0-floor. This is the **stated PR2 approximation**: documented in the `env.smooth`
+docstring + CHANGELOG and tested **relative to the dense output** (which absorbs `κ(M)`),
+verified on polar/mesh where `κ(M)` is worst — not against a raw `-tol·max` bound. Callers
+needing a strict 0-floor clip the result themselves (as the density consumers do).
 
 ## 6. Consumer routing + `compute_kernel` fate
 
@@ -181,8 +192,8 @@ PR2 is an optimization, so the gate is **output equivalence to the shipped dense
 | `test_apply_matches_dense_truncated` | truncated apply == full-rank apply within the truncation tol (~`1e-6`); mass conserved **exactly** per component (null mode kept) |
 | `test_compute_kernel_full_rank_exact` | `compute_kernel` (now **full-rank** eigenbasis-materialized) matches the pre-PR2 dense kernel within `rtol=1e-8`; **all existing Phase 1/2 diffusion tests pass unchanged** |
 | `test_diffusion_kde_nonnegative` | the density consumer clips its own output ≥ 0 after `env.diffuse`; smoothed rate matches the shipped KDE within tol and is nonnegative |
-| `test_denominator_floor_no_spurious_nan` | on a non-uniform-`M` geometry under truncation, the smoothed **denominator** is floored ≥ 0 before the guard in **`_diffusion_kde` (NumPy + batch + JAX), `binned`, and diffuse-`resample`** — **no spurious `NaN`** vs the dense path, ratio within tol; the **numerator is not floored** (signed-safe for resample) |
-| `test_env_smooth_nonneg_within_tol` | `env.smooth` on a nonnegative field returns `≥ -tol·max(\|field\|)` (approximation contract); stays linear on signed fields |
+| `test_denominator_support_no_spurious_nan` | under truncation: **strict** support gates (`binned`, diffuse-`resample`) use **`W`-component support** — exact vs dense, **no spurious `NaN`** even where the dense `den` was tiny-positive (a `max(den,0)` floor would still fail `>0`); the **magnitude** gate (`_diffusion_kde` NumPy+batch+JAX) agrees with dense for bins comfortably above/below `occupancy_threshold`; **numerator not floored** (signed-safe for resample) |
+| `test_env_smooth_nonneg_within_tol` | `env.smooth` on a nonnegative field: negatives bounded **relative to the dense output** (M-weighted `tol`), verified on **polar/mesh** where `κ(M)` is worst — not a raw `-tol·max` bound; stays linear on signed fields |
 | `test_grid_independence_preserved` | measured σ == `bandwidth` still holds (regression from Phase 1) |
 | `test_no_leakage_truncated` | point source beside a wall: 0 mass across it **under truncation** (component-local modes) |
 | `test_cache_grows_with_smaller_sigma` | a large-σ call then a small-σ call: the small-σ call is **not under-ranked** — the single cached basis is recomputed+**replaced** at the larger rank (the smaller one evicted); result within tol of dense |
