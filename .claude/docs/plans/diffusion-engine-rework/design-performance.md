@@ -107,20 +107,37 @@ M-weighted column sums — each a fixed vector, so every mode is **linear in F**
 All reduce to `H`/`Hᵀ` applied to `F` and to `{1, M}` — no `(n,n)`. This reproduces
 `heat_kernel_from_W`'s three-mode contract ([ops/diffusion.py:104-173](../../../src/neurospatial/ops/diffusion.py)).
 
-**Positivity is the consumer's job.** The shipped dense kernel is entrywise-clipped
-([ops/diffusion.py:161](../../../src/neurospatial/ops/diffusion.py)), so `kernel @ nonneg` is
-nonnegative; the un-clipped linear apply-path can leave ≤`tol` negative lobes under truncation.
-Consumers that require nonnegative output — `_diffusion_kde` (smoothed spike/occupancy
-densities) — **clip their own result ≥ 0** after `env.diffuse`, a targeted projection at the
-density boundary. `env.smooth` (signed fields) does **not** clip. The masked `H`-average for
-`binned`/`resample` (Phase 2) is a ratio of two linear `average` calls — the consumer's
-Nadaraya-Watson estimator, unchanged.
+**Positivity is the consumer's job — the denominator policy.** The shipped dense kernel is
+entrywise-clipped ([ops/diffusion.py:161](../../../src/neurospatial/ops/diffusion.py)), so
+`kernel @ nonneg ≥ 0`; the un-clipped linear apply-path can leave ≤`tol` negative lobes under
+truncation. **Every consumer that treats a smoothed quantity as nonnegative clips it `≥ 0`
+after `env.diffuse`, before using it:**
+
+- `_diffusion_kde`: clip smoothed spike/occupancy densities `≥ 0`.
+- `binned` and `resample_field(method="diffuse")`: clip **both** the smoothed value **and the
+  smoothed validity weight / denominator** `≥ 0` *before* the `weights_smoothed > 0` /
+  `den > 0` guard ([_smoothing.py:716](../../../src/neurospatial/encoding/_smoothing.py),
+  [binning.py:823](../../../src/neurospatial/ops/binning.py)) — otherwise a tiny positive dense
+  denominator can flip negative under a truncation lobe and spuriously emit a `NaN` or an
+  unstable ratio the dense path never produced. (The masked average stays a ratio of two linear
+  `average` calls; only the denominator gets a floor.)
+
+**Approximation contract (`env.smooth`).** `env.smooth` stays a pure linear operator, so on
+nonnegative inputs (counts, occupancy, probability mass —
+[fields.py:207](../../../src/neurospatial/environment/fields.py)) it may return
+tolerance-level negatives (`≥ -tol·‖field‖`) instead of the dense kernel's exact 0-floor. This
+is the **stated PR2 approximation**: documented in the `env.smooth` docstring + CHANGELOG and
+tested as `≥ -tol·max(|field|)`. Callers needing a strict 0-floor clip the result themselves
+(as the density consumers do).
 
 ## 6. Consumer routing + `compute_kernel` fate
 
 - **Keep `env.compute_kernel`** (dense-matrix return) for power users / backward-compat — it
   materializes from the **full-rank** eigenbasis (all modes for the geometry: `Q (e^{-tΛ}) Qᵀ`
-  with the M-powers, then the existing `heat_kernel_from_W` clip+normalize). **Full rank, not
+  with the M-powers), then normalizes via a **`_normalize_modes(H, volumes, mode)` helper
+  extracted from `heat_kernel_from_W`** — splitting its clip + per-mode normalization from its
+  internal `_raw_heat_operator` `expm` build ([ops/diffusion.py:159](../../../src/neurospatial/ops/diffusion.py)),
+  so the materialized `H` is normalized **without recomputing `expm`**. **Full rank, not
   the truncated basis** — so it equals the shipped dense operator within eigensolve precision
   (`rtol≈1e-8`), *not* merely within the truncation `tol=1e-6`. A huge-grid caller who
   explicitly asks for the matrix pays `O(n²)`/`O(n³)` (same as today; their choice, same
@@ -146,6 +163,8 @@ PR2 is an optimization, so the gate is **output equivalence to the shipped dense
 | `test_apply_matches_dense_truncated` | truncated apply == full-rank apply within the truncation tol (~`1e-6`); mass conserved **exactly** per component (null mode kept) |
 | `test_compute_kernel_full_rank_exact` | `compute_kernel` (now **full-rank** eigenbasis-materialized) matches the pre-PR2 dense kernel within `rtol=1e-8`; **all existing Phase 1/2 diffusion tests pass unchanged** |
 | `test_diffusion_kde_nonnegative` | the density consumer clips its own output ≥ 0 after `env.diffuse`; smoothed rate matches the shipped KDE within tol and is nonnegative |
+| `test_masked_average_denominator_floor` | on a non-uniform-`M` geometry under truncation, `binned` + diffuse-`resample` clip the smoothed **denominator** ≥ 0 before the `>0` guard — **no spurious NaN** vs the dense path, ratio within tol |
+| `test_env_smooth_nonneg_within_tol` | `env.smooth` on a nonnegative field returns `≥ -tol·max(\|field\|)` (approximation contract); stays linear on signed fields |
 | `test_grid_independence_preserved` | measured σ == `bandwidth` still holds (regression from Phase 1) |
 | `test_no_leakage_truncated` | point source beside a wall: 0 mass across it **under truncation** (component-local modes) |
 | `test_cache_grows_with_smaller_sigma` | a large-σ call then a small-σ call: the small-σ call is **not under-ranked** (rank-keyed cache grows), result within tol of dense |
