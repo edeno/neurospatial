@@ -17,8 +17,11 @@ Algorithmic detail too large for the phase task blocks. Phases reference these b
 
 ## D0. Module layout & operator assembly
 
-New module `src/neurospatial/ops/diffusion.py`. Public entry `diffusion_kernel(env, sigma,
-*, mode)`; it (1) dispatches geometry (C3) to a builder that returns a **working graph**
+New module `src/neurospatial/ops/diffusion.py`. Module entry `diffusion_kernel(env, sigma,
+*, mode)` — **internal**; the *public* surface is `env.compute_kernel`/`env.smooth`. Direct
+module calls accept `mode="average"` from Phase 1 (C6/D4), but `env.compute_kernel` exposes
+`"average"` publicly only from Phase 2. It (1) dispatches geometry (C3) to a builder that
+returns a **working graph**
 carrying the `"A"` edge attribute plus a node-ordered `volumes` array, then (2) calls the
 low-level `compute_diffusion_kernels`.
 
@@ -59,6 +62,8 @@ Low-level `compute_diffusion_kernels(graph, *, volumes, sigma, mode)` (rewrite o
 ```python
 def compute_diffusion_kernels(graph, *, volumes, sigma, mode):
     n = graph.number_of_nodes()
+    if not (np.isfinite(sigma) and sigma > 0.0):  # C6: sigma finite, > 0 (feeds sigma**2 to expm)
+        raise ValueError(f"sigma must be finite and > 0, got {sigma}")
     if set(graph.nodes) != set(range(n)):         # C6: node IDs used directly as matrix indices
         raise ValueError("graph nodes must be contiguous integers 0..n-1")
     rows, cols, vals = [], [], []
@@ -214,20 +219,25 @@ missing bins must contribute **no weight** (not a real 0). Nadaraya-Watson with 
 
 ```python
 # H = compute_kernel(..., mode="average")   (row-stochastic)
+# `valid` (zero weight for invalid inputs) is DISTINCT from `force_nan` (bins forced back to
+# NaN). Invalid-but-reachable bins are interpolated from valid neighbours; only structurally
+# missing bins are re-NaN'd.
 num = H @ (value * valid)      # valid in {0,1}; value 0-filled where invalid
 den = H @ valid
-out = np.where(den > 0, num / den, np.nan)
-out[outside_or_invalid] = np.nan               # re-impose missingness
+out = np.where(den > 0, num / den, np.nan)     # den==0 (no valid neighbour) => NaN
+out[force_nan] = np.nan                          # force_nan ⊆ structurally-missing set only
 ```
 
 - **binned** ([_smoothing.py:665](../../../src/neurospatial/encoding/_smoothing.py), plus
   `_binned_batch`:789 and the JAX paths :847/:934): already smooths `rate_filled` and a
   `{0,1}` weight mask, then divides — switch both `env.smooth(...)` calls from the default
   `density` to `mode="average"`. Semantics preserved (valid-bin-normalized), volume bias on
-  non-uniform `M` removed.
+  non-uniform `M` removed. `force_nan = ∅` here — an isolated bin is NaN'd only via the
+  `den == 0` branch (all neighbours invalid), so gaps with valid neighbours are filled.
 - **resample** ([binning.py:790-813](../../../src/neurospatial/ops/binning.py)): currently
   zero-fills then single-smooths with `mode="transition"`. Replace with the masked average
   above using `mode="average"`, with `valid = (~outside_source) & np.isfinite(resampled)` and
   the value array **zero-filled where `~valid`** (a source `NaN` must contribute *no weight*,
   not propagate — `H @ (v·valid)` with an un-zeroed `NaN` still poisons every reachable bin).
-  Re-impose `NaN` on `outside_source` (and where `den == 0`) at the end.
+  `force_nan = outside_source` (the `den == 0` case is already NaN'd by the `where`); an
+  interior source-`NaN` bin with valid neighbours is thus interpolated, not forced back to `NaN`.

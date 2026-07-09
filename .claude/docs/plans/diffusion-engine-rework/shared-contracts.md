@@ -125,7 +125,8 @@ lobes). Components: `scipy.sparse.csgraph.connected_components(W, directed=False
   the C1 invariants); only `A >= 0` finite is accepted.
 - `volumes`: node-ordered `(n_bins,)` array aligned to nodes `0..n−1`.
 - **Input validation (preserve + extend today's `bandwidth <= 0` check at
-  [smoothing.py:149](../../../src/neurospatial/ops/smoothing.py)):** raise on `sigma <= 0`;
+  [smoothing.py:149](../../../src/neurospatial/ops/smoothing.py)):** raise on non-finite
+  `sigma` or `sigma <= 0` (it feeds `sigma**2` into `expm`);
   on `volumes.shape != (n_bins,)`; on any non-finite or non-positive `volumes` entry (D4
   divides by `volumes`, so a zero/negative/NaN volume must fail loudly, not produce
   `inf`/`nan`); on **node IDs not contiguous `0..n−1`** (they are used directly as sparse-
