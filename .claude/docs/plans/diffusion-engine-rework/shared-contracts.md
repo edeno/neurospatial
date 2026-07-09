@@ -125,10 +125,13 @@ lobes). Components: `scipy.sparse.csgraph.connected_components(W, directed=False
   the C1 invariants); only `A >= 0` finite is accepted.
 - `volumes`: node-ordered `(n_bins,)` array aligned to nodes `0..n−1`.
 - **Input validation (preserve + extend today's `bandwidth <= 0` check at
-  [smoothing.py:149](../../../src/neurospatial/ops/smoothing.py)):** raise on `sigma <= 0`,
-  on `volumes.shape != (n_bins,)`, and on any non-finite or non-positive `volumes` entry
-  (D4 divides by `volumes`, so a zero/negative/NaN volume must fail loudly, not produce
-  `inf`/`nan`). Also raise on non-positive edge `"distance"`.
+  [smoothing.py:149](../../../src/neurospatial/ops/smoothing.py)):** raise on `sigma <= 0`;
+  on `volumes.shape != (n_bins,)`; on any non-finite or non-positive `volumes` entry (D4
+  divides by `volumes`, so a zero/negative/NaN volume must fail loudly, not produce
+  `inf`/`nan`); on **node IDs not contiguous `0..n−1`** (they are used directly as sparse-
+  matrix indices — a non-integer or gappy label set must fail clearly, not cryptically); and
+  on any edge **missing `"distance"`** or with a non-finite / non-positive `"distance"`
+  (mirrors the `"A"` handling — `NaN` **and** `inf` rejected).
 - `mode ∈ {"transition","density","average"}` (C2). Returns the dense `(n_bins, n_bins)`
   kernel. **All three are implemented at the low level in Phase 1** (D4 returns the `H`
   view for `"average"`); the **public** `mode="average"` on `env.smooth`/`compute_kernel`

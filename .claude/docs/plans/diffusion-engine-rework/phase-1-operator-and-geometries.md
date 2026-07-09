@@ -87,7 +87,7 @@ paths and the public `mode="average"` are **Phase 2**.
 | `test_density_integrates_to_one` | `mode="density"`: `Σ_i M_i K[i,j] = 1` |
 | `test_low_level_average_row_stochastic` | `compute_diffusion_kernels(..., mode="average")` returns row-stochastic `H` (rows sum to 1) — the low-level view Phase 2 depends on (C6) |
 | `test_raw_heat_operator_m_self_adjoint` | `_raw_heat_operator` (pre-clip/normalize): `H·1 = 1` and `M_i H_ij ≈ M_j H_ji` on a non-uniform-`M` (polar) env — C1's raw invariants (D4 seam) |
-| `test_compute_diffusion_kernels_rejects_bad_inputs` | `sigma <= 0`, wrong-shape `volumes`, non-finite/non-positive `volumes`, non-positive `"distance"`, and negative/NaN/inf `"A"` each raise (C6); `A == 0` does not raise |
+| `test_compute_diffusion_kernels_rejects_bad_inputs` | `sigma <= 0`; wrong-shape / non-finite / non-positive `volumes`; non-contiguous or non-integer node labels; missing / NaN / inf / non-positive `"distance"`; negative / NaN / inf `"A"` — each raises (C6); `A == 0` does not raise |
 | `test_apply_kernel_adjoint_nonuniform_M` | `apply_kernel(mode="adjoint", bin_sizes=M)` on the `density` kernel obeys the M-weighted inner-product contract on a non-uniform-`M` env (spec §4; regression, no live caller today) |
 | `test_components_from_W_corner_split` | corner-only 8-connected pair → 2 `W`-components; no mass crosses the corner |
 | `test_no_leakage_across_masked_wall` | point source beside a masked wall → ~0 mass across it |

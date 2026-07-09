@@ -59,15 +59,17 @@ Low-level `compute_diffusion_kernels(graph, *, volumes, sigma, mode)` (rewrite o
 ```python
 def compute_diffusion_kernels(graph, *, volumes, sigma, mode):
     n = graph.number_of_nodes()
+    if set(graph.nodes) != set(range(n)):         # C6: node IDs used directly as matrix indices
+        raise ValueError("graph nodes must be contiguous integers 0..n-1")
     rows, cols, vals = [], [], []
     for u, v, data in graph.edges(data=True):
-        if "A" not in data:                       # C6: missing A raises
-            raise ValueError(f"edge ({u},{v}) has no 'A' (face measure) attribute")
+        if "A" not in data or "distance" not in data:   # C6: both are edge-contract fields
+            raise ValueError(f"edge ({u},{v}) missing 'A' and/or 'distance'")
         A = data["A"]; d = data["distance"]
-        if not (np.isfinite(A) and A >= 0.0):     # C6: A must be finite and >= 0
+        if not (np.isfinite(A) and A >= 0.0):     # C6: A finite, >= 0
             raise ValueError(f"edge ({u},{v}) has invalid face measure A={A}")
-        if not d > 0:
-            raise ValueError(f"edge ({u},{v}) has non-positive distance {d}")
+        if not (np.isfinite(d) and d > 0.0):      # C6: distance finite, > 0 (rejects NaN AND inf)
+            raise ValueError(f"edge ({u},{v}) has invalid distance d={d}")
         if A == 0.0:                              # C6: explicit A=0 => no diffusion edge
             continue
         w = A / d                                 # finite-volume flux weight (see note)
