@@ -46,11 +46,15 @@ MODES: tuple[str, ...] = ("transition", "density", "average")
 # ---------------------------------------------------------------------------
 # Deterministic environment builders. Each returns (env, source_coordinate).
 # ---------------------------------------------------------------------------
-def build_grid_1d(h: float = 2.0, domain=(0.0, 60.0)) -> tuple[Environment, list[float]]:
+def build_grid_1d(
+    h: float = 2.0, domain=(0.0, 60.0)
+) -> tuple[Environment, list[float]]:
     """Full 1D regular grid over ``domain`` at spacing ``h``."""
     n = round((domain[1] - domain[0]) / h)
     edges = np.linspace(domain[0], domain[1], n + 1)
-    env = Environment.from_grid_mask(active_mask=np.ones(n, dtype=bool), grid_edges=(edges,))
+    env = Environment.from_grid_mask(
+        active_mask=np.ones(n, dtype=bool), grid_edges=(edges,)
+    )
     return env, [30.0]
 
 
@@ -77,7 +81,9 @@ def build_track_1d(bin_size: float = 2.0) -> tuple[Environment, None]:
     return env, None  # source chosen by index in the field builder
 
 
-def build_grid_2d(h: float = 2.0, domain=(0.0, 40.0)) -> tuple[Environment, list[float]]:
+def build_grid_2d(
+    h: float = 2.0, domain=(0.0, 40.0)
+) -> tuple[Environment, list[float]]:
     """Full 2D open-field regular grid (large enough that sigma_large truncates)."""
     n = round((domain[1] - domain[0]) / h)
     edges = np.linspace(domain[0], domain[1], n + 1)
@@ -89,7 +95,9 @@ def build_grid_2d(h: float = 2.0, domain=(0.0, 40.0)) -> tuple[Environment, list
     return env, [20.0, 20.0]
 
 
-def build_grid_2d_masked(h: float = 2.0, domain=(0.0, 40.0)) -> tuple[Environment, list[float]]:
+def build_grid_2d_masked(
+    h: float = 2.0, domain=(0.0, 40.0)
+) -> tuple[Environment, list[float]]:
     """2D grid with a corner hole (still one connected component)."""
     n = round((domain[1] - domain[0]) / h)
     edges = np.linspace(domain[0], domain[1], n + 1)
@@ -102,7 +110,9 @@ def build_grid_2d_masked(h: float = 2.0, domain=(0.0, 40.0)) -> tuple[Environmen
     return env, [32.0, 32.0]
 
 
-def build_grid_2d_split(h: float = 2.0, domain=(0.0, 40.0)) -> tuple[Environment, list[float]]:
+def build_grid_2d_split(
+    h: float = 2.0, domain=(0.0, 40.0)
+) -> tuple[Environment, list[float]]:
     """2D grid with a full-height wall (inactive column) splitting it into TWO
     disconnected components (left / right). Exercises per-component null modes
     and the no-leakage-across-a-wall property under truncation."""
