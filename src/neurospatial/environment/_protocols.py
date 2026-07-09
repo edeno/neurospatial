@@ -49,6 +49,10 @@ class EnvironmentProtocol(Protocol):
     _kernel_cache: dict[
         tuple[float, Literal["transition", "density", "average"]], NDArray[np.float64]
     ]
+    # Finite-volume geometry + growable truncated-eigenbasis caches for
+    # env.diffuse (both versioned_cached_property, dropped on _state_version).
+    _diffusion_geometry: tuple[Any, NDArray[np.float64], int, NDArray[np.int_]]
+    _diffusion_eigenbasis: dict[str, Any]
     _layout_type_used: str | None
     _layout_params_used: dict[str, Any]
     _is_linearized_track_env: bool
@@ -355,6 +359,35 @@ class EnvironmentProtocol(Protocol):
         -------
         ndarray of shape (n_bins,)
             Smoothed field values.
+        """
+        ...
+
+    def diffuse(
+        self,
+        fields: NDArray[np.float64],
+        bandwidth: float,
+        *,
+        mode: Literal["transition", "density", "average"] = "density",
+        backend: Literal["numpy", "jax"] = "numpy",
+    ) -> NDArray[np.float64]:
+        """
+        Matrix-free diffusion smoothing (no dense ``(n_bins, n_bins)`` kernel).
+
+        Parameters
+        ----------
+        fields : ndarray of shape (n_bins,) or (n_bins, n_fields)
+            Field(s) to smooth.
+        bandwidth : float
+            Smoothing bandwidth in spatial units.
+        mode : {'transition', 'density', 'average'}, default='density'
+            Kernel normalization mode.
+        backend : {'numpy', 'jax'}, default='numpy'
+            Where the apply runs.
+
+        Returns
+        -------
+        ndarray of shape matching ``fields``
+            Smoothed field(s).
         """
         ...
 

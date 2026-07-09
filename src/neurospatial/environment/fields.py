@@ -23,13 +23,13 @@ To avoid circular imports, we import Environment only for type checking.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.environment._protocols import EnvironmentProtocol, SelfEnv
-from neurospatial.environment.decorators import check_fitted
+from neurospatial.environment.decorators import check_fitted, versioned_cached_property
 
 if TYPE_CHECKING:
     pass
@@ -344,13 +344,184 @@ class EnvironmentFields:
                 "volume-unbiased averaging of an intensive field."
             )
 
-        # Compute kernel (uses cache automatically)
-        kernel = self.compute_kernel(bandwidth, mode=mode, cache=True)
+        # Apply the diffusion smoothing via the matrix-free apply-path
+        # (env.diffuse). This is a PURE LINEAR operator -- no clip / renorm --
+        # so smoothing a SIGNED field is preserved. It reproduces the dense
+        # kernel to within the truncation tolerance (see the "Approximation"
+        # note below); positivity, where needed, is the caller's job.
+        return self.diffuse(field, bandwidth, mode=mode)
 
-        # Apply smoothing
-        smoothed: NDArray[np.float64] = kernel @ field
+    @check_fitted
+    def diffuse(
+        self: SelfEnv,
+        fields: NDArray[np.float64],
+        bandwidth: float,
+        *,
+        mode: Literal["transition", "density", "average"] = "density",
+        backend: Literal["numpy", "jax"] = "numpy",
+    ) -> NDArray[np.float64]:
+        """Matrix-free finite-volume diffusion smoothing (no ``(n, n)`` kernel).
 
-        return smoothed
+        Applies the finite-volume heat operator ``H = exp(-t L)``, ``t = σ²/2``,
+        ``L = M⁻¹(D − W)``, to one or more fields **without ever materializing
+        the dense ``(n_bins, n_bins)`` kernel**. It uses a cached, per-component,
+        bandwidth-aware **truncated symmetric eigenbasis** of
+        ``S = M^{-1/2}(D − W) M^{-1/2}``, so both time and memory scale with
+        ``n_bins × rank`` (``rank ~ measure(domain)/σ^d``), not ``n_bins²``. The
+        eigenbasis depends only on geometry, so it is built once and reused across
+        every bandwidth, mode, and neuron (auto-invalidated when the environment
+        is mutated).
+
+        ``diffuse`` is a **pure linear operator**: it applies **no output clip
+        and no renormalization**. The always-retained per-component null mode
+        makes mass conservation exact under truncation (``mode="transition"``
+        preserves ``sum``; a constant field is preserved by ``mode="average"``),
+        so smoothing a **signed** field is preserved. Where the result must be
+        non-negative (a density, a rate), the **caller** clips it (as the KDE
+        encoders do); ``diffuse`` itself never does.
+
+        Parameters
+        ----------
+        fields : NDArray[np.float64], shape (n_bins,) or (n_bins, n_fields)
+            Field(s) to smooth, indexed by bin. A 1-D field is smoothed and
+            returned 1-D; a 2-D batch smooths every column in one pass. NaN/Inf
+            are not validated (``diffuse`` is a raw linear operator: NaN in →
+            NaN out); callers needing validation use :meth:`smooth`.
+        bandwidth : float
+            Physical smoothing standard deviation σ (> 0), independent of bin
+            size on any supported layout.
+        mode : {'transition', 'density', 'average'}, default='density'
+            Kernel orientation, matching :meth:`compute_kernel` / :meth:`smooth`
+            (``'transition'`` = ``Hᵀ`` mass-conserving extensive smoothing;
+            ``'density'`` = ``H·M⁻¹`` count→density; ``'average'`` = ``H``
+            row-stochastic intensive averaging).
+        backend : {'numpy', 'jax'}, default='numpy'
+            Where the apply runs. ``'jax'`` casts the cached NumPy eigenbasis to
+            ``jax.numpy`` and runs the apply on device, so ``jit`` / ``grad`` /
+            GPU work through the smoothing; the returned array is a ``jax.Array``.
+            The eigenbasis **build** always uses NumPy/SciPy.
+
+        Returns
+        -------
+        smoothed : NDArray[np.float64], shape matching ``fields``
+            The diffused field(s). ``numpy.ndarray`` for ``backend='numpy'``,
+            ``jax.Array`` for ``backend='jax'``.
+
+        Raises
+        ------
+        RuntimeError
+            If called before the environment is fitted.
+        ValueError
+            If ``bandwidth`` is not positive, ``mode`` is invalid, ``backend`` is
+            invalid, or ``fields`` is not 1-D/2-D with leading dim ``n_bins``.
+
+        See Also
+        --------
+        smooth : 1-D smoothing with input validation (delegates here).
+        compute_kernel : Build the DENSE kernel matrix (kept for callers that
+            genuinely need the ``(n, n)`` matrix; uses the dense ``expm`` path).
+
+        Notes
+        -----
+        **Approximation contract.** ``diffuse`` reproduces the dense operator to
+        within a near-lossless truncation tolerance: dropped modes contribute at
+        most ``tol`` (default ``1e-6``) in the **M-weighted norm** (per-bin error
+        carries a volume-conditioning factor ``κ(M) = sqrt(max vol / min vol)``,
+        worst on polar ``r→0`` / skewed mesh). On a **non-negative** input the
+        linear apply can therefore leave tolerance-level negatives (bounded
+        relative to the dense output in the M-norm) instead of the dense kernel's
+        exact 0-floor — clip the result yourself if you need a strict floor.
+
+        A light bandwidth on a large grid needs most modes; there the eigenbasis
+        cannot beat the dense kernel, so ``diffuse`` builds a **transient** dense
+        basis (applied then dropped, never cached) with the same large-matrix
+        ``UserWarning`` as :meth:`compute_kernel`.
+        """
+        from neurospatial.ops.diffusion import diffusion_apply
+
+        if mode not in ("transition", "density", "average"):
+            raise ValueError(
+                f"mode must be one of {{'transition', 'density', 'average'}} "
+                f"(got '{mode}')."
+            )
+        if backend not in ("numpy", "jax"):
+            raise ValueError(f"backend must be 'numpy' or 'jax' (got '{backend}').")
+        if not bandwidth > 0:
+            raise ValueError(
+                f"bandwidth must be positive (got {bandwidth}). "
+                "Bandwidth controls the spatial scale of smoothing."
+            )
+
+        # Coerce to 2-D (n_bins, n_fields); a 1-D field is squeezed back on
+        # return. np.ndim / np.shape avoid forcing a JAX array to NumPy.
+        if backend == "numpy":
+            fields = np.asarray(fields, dtype=np.float64)
+        ndim = int(np.ndim(fields))
+        if ndim not in (1, 2):
+            raise ValueError(
+                f"fields must be 1-D (n_bins,) or 2-D (n_bins, n_fields), got "
+                f"{ndim}-D array."
+            )
+        shape = np.shape(fields)
+        if shape[0] != self.n_bins:
+            raise ValueError(
+                f"fields leading dimension {shape[0]} must match n_bins={self.n_bins}."
+            )
+        was_1d = ndim == 1
+        fields_2d = fields.reshape(-1, 1) if was_1d else fields
+
+        W, volumes, n_components, labels = self._diffusion_geometry
+        holder = self._diffusion_eigenbasis
+        result = diffusion_apply(
+            holder,
+            W,
+            volumes,
+            n_components,
+            labels,
+            fields_2d,
+            float(bandwidth),
+            mode,
+            backend=backend,
+        )
+        # numpy backend -> ndarray; jax backend -> jax.Array (documented above).
+        # The NDArray annotation is the numpy-path type; cast covers both.
+        return cast("NDArray[np.float64]", result[:, 0] if was_1d else result)
+
+    @versioned_cached_property
+    def _diffusion_geometry(
+        self,
+    ) -> tuple[Any, NDArray[np.float64], int, NDArray[np.int_]]:
+        """Cached finite-volume geometry ``(W, volumes, n_components, labels)``.
+
+        Geometry-only, so it is built once and dropped wholesale on any
+        ``_state_version`` bump (like every ``versioned_cached_property``). Shared
+        by :meth:`diffuse`'s eigenbasis build and the W-component support gates
+        the smoothing consumers use.
+        """
+        from neurospatial.ops.diffusion import (
+            _assemble_W,
+            _components_from_W,
+            _finite_volume_geometry,
+        )
+
+        graph, volumes = _finite_volume_geometry(cast("EnvironmentProtocol", self))
+        volumes = np.asarray(volumes, dtype=np.float64)
+        W = _assemble_W(graph, int(volumes.shape[0]))
+        n_components, labels = _components_from_W(W)
+        return W, volumes, n_components, labels
+
+    @versioned_cached_property
+    def _diffusion_eigenbasis(self) -> dict[str, Any]:
+        """Growable single-entry truncated-eigenbasis cache for :meth:`diffuse`.
+
+        Returns a small mutable holder (the max-rank truncated basis, grown by
+        replace, plus a per-``(sigma, tol)`` resolved-rank memo) that
+        :func:`neurospatial.ops.diffusion.diffusion_apply` mutates in place. The
+        ``versioned_cached_property`` owns it, so it is dropped wholesale on any
+        ``_state_version`` bump / ``clear_cache``, and it holds only a single
+        basis strictly below ``dense_fraction·n`` — never a persistent ``(n, n)``.
+        """
+        return {}
 
     def interpolate(
         self: SelfEnv,

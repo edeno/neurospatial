@@ -49,11 +49,9 @@ from typing import Literal
 
 import networkx as nx
 import numpy as np
-import scipy.sparse
-import scipy.sparse.linalg
 from numpy.typing import NDArray
 
-from neurospatial.ops.diffusion import heat_kernel_from_W
+from neurospatial.ops.diffusion import _assemble_W, heat_kernel_from_W
 
 __all__ = [
     "apply_kernel",
@@ -221,31 +219,9 @@ def compute_diffusion_kernels(
         )
 
     # 5) Build the finite-volume weight matrix W[i, j] = A[i, j] / d[i, j].
-    #    "A" and "distance" are both edge-contract fields; a missing or invalid
-    #    value raises rather than silently degrading the kernel.
-    rows: list[int] = []
-    cols: list[int] = []
-    vals: list[float] = []
-    for u, v, data in graph.edges(data=True):
-        if "A" not in data or "distance" not in data:
-            raise ValueError(
-                f"edge ({u},{v}) is missing 'A' and/or 'distance' attribute."
-            )
-        A = float(data["A"])
-        d = float(data["distance"])
-        if not (np.isfinite(A) and A >= 0.0):
-            raise ValueError(f"edge ({u},{v}) has invalid face measure A={A}.")
-        if not (np.isfinite(d) and d > 0.0):
-            raise ValueError(f"edge ({u},{v}) has invalid distance d={d}.")
-        if A == 0.0:
-            continue  # explicit A == 0 => no diffusion across this edge
-        w = A / d
-        rows += [int(u), int(v)]
-        cols += [int(v), int(u)]
-        vals += [w, w]
-    W = scipy.sparse.csr_matrix(
-        (vals, (rows, cols)), shape=(n_bins, n_bins), dtype=np.float64
-    )
+    #    Shared with the env.diffuse eigenbasis path so both operate on an
+    #    identical W (a missing/invalid "A"/"distance" raises there too).
+    W = _assemble_W(graph, n_bins)
 
     # 6) Assemble and normalize the heat operator for the requested mode.
     return heat_kernel_from_W(W, volumes, sigma, mode=mode)
