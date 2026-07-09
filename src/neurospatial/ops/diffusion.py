@@ -25,8 +25,7 @@ Three views of the same operator serve the three consumers (see
 - ``mode="density"`` returns ``H·M⁻¹`` (M-weighted columns integrate to 1) for
   count→density KDE.
 - ``mode="average"`` returns ``H`` (row-stochastic) for averaging an
-  **intensive** field (rate maps). This low-level view exists here but is not
-  yet exposed publicly on ``Environment.smooth`` / ``Environment.compute_kernel``.
+  **intensive** field (rate maps), volume-unbiased on non-uniform ``M``.
 
 Public entry points are ``Environment.compute_kernel`` / ``Environment.smooth``;
 :func:`diffusion_kernel` is the internal dispatcher they route through.
@@ -221,9 +220,8 @@ def diffusion_kernel(
     sigma : float
         Physical smoothing standard deviation (finite, > 0).
     mode : {"transition", "density", "average"}, default="density"
-        Kernel orientation (see :func:`heat_kernel_from_W`). ``"average"`` is a
-        valid low-level request but is not yet exposed publicly on
-        ``Environment.compute_kernel`` / ``Environment.smooth``.
+        Kernel orientation (see :func:`heat_kernel_from_W`). ``"average"`` is
+        the row-stochastic intensive-field smoother.
 
     Returns
     -------

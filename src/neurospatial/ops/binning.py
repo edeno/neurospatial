@@ -731,14 +731,12 @@ def resample_field(
     >>> resampled.shape == (dst_env.n_bins,)
     True
 
-    Diffuse method with smoothing:
+    Diffuse method (intensive fields only — e.g. a rate map or density):
 
-    >>> # Create spike field
-    >>> field_spike = np.zeros(src_env.n_bins)
-    >>> field_spike[src_env.n_bins // 2] = 1.0
-    >>> # Resample with smoothing
+    >>> # An intensive field (rate map). Do NOT diffuse spike counts / mass.
+    >>> rate_map = np.random.rand(src_env.n_bins)
     >>> resampled_smooth = resample_field(
-    ...     field_spike, src_env, dst_env, method="diffuse", bandwidth=2.0
+    ...     rate_map, src_env, dst_env, method="diffuse", bandwidth=2.0
     ... )
     >>> resampled_smooth.shape == (dst_env.n_bins,)
     True

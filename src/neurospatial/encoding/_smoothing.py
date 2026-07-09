@@ -44,13 +44,13 @@ O(n_bins²) matmul. Its advantage over ``gaussian_kde`` is boundary-awareness
 (it diffuses over the environment graph and so respects walls), not lower
 asymptotic cost.
 
-Because **both** ``diffusion_kde`` and ``gaussian_kde`` materialize a dense
-``(n_bins, n_bins)`` kernel, both emit a loud memory ``UserWarning`` (with a GB
-estimate) for very large environments — above ``_LARGE_KERNEL_THRESHOLD`` bins
-each warns and then proceeds. There is **no** hard limit. For environments that
-would not fit in RAM, use ``binned`` (it smooths the already-normalized rate
-map over the environment graph and builds **no** dense kernel), or reduce the
-bin count (increase ``bin_size``).
+**All three methods materialize a dense ``(n_bins, n_bins)`` kernel** —
+``binned`` smooths its normalized rate map through the same diffusion kernel
+(via ``env.smooth``), so it has no memory advantage — and each emits a loud
+memory ``UserWarning`` (with a GB estimate) for very large environments, above
+``_LARGE_KERNEL_THRESHOLD`` bins, then proceeds. There is **no** hard limit.
+For environments that would not fit in RAM, reduce the bin count (increase
+``bin_size``).
 
 References
 ----------

@@ -146,8 +146,8 @@ def compute_diffusion_kernels(
     ``UserWarning`` estimating the GB cost is issued when
     ``n_bins > _LARGE_KERNEL_THRESHOLD`` (3,000 bins); the kernel is then built
     regardless of size. The warning names ``n_bins``, the GB estimate, the
-    dense O(n²) reason, and the mitigations (reduce bins / use
-    ``smoothing_method="binned"``). It is the sole high-bin guard.
+    dense O(n²) reason, and the mitigation (reduce bins by increasing
+    ``bin_size``). It is the sole high-bin guard.
 
     Performance: the matrix exponential is also O(n³) in time, so large
     environments are slow as well as memory-hungry.
