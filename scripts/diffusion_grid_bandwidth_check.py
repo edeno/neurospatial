@@ -97,7 +97,9 @@ def center_bin(env, target):
 
 
 def run(dim, bandwidths, bin_sizes):
-    print(f"\n{'='*78}\n{dim}-D point-source smoothing: measured physical std vs bin size")
+    print(
+        f"\n{'=' * 78}\n{dim}-D point-source smoothing: measured physical std vs bin size"
+    )
     print("(grid-INDEPENDENT kernel => 'measured std' == bandwidth at every bin size)")
     print("=" * 78)
     for bw in bandwidths:
@@ -137,6 +139,8 @@ def run(dim, bandwidths, bin_sizes):
 if __name__ == "__main__":
     import warnings
 
-    warnings.filterwarnings("ignore")  # silence large-kernel GB warnings for readability
+    warnings.filterwarnings(
+        "ignore"
+    )  # silence large-kernel GB warnings for readability
     run(dim=1, bandwidths=[5.0, 10.0], bin_sizes=[0.5, 1.0, 2.0, 4.0])
     run(dim=2, bandwidths=[5.0], bin_sizes=[1.0, 2.0, 3.0, 5.0])
