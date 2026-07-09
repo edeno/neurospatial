@@ -318,10 +318,11 @@ def smooth_rate_map(
     the smoothing. ``binned`` keeps a NumPy round-trip for its masked average.
 
     **JAX backend limitation with binned method**: When using ``backend="jax"``
-    with ``smoothing_method="binned"``, the smoothing step requires a round-trip
-    to NumPy (Environment.smooth uses NumPy). This may be slower than pure NumPy
-    for this method. For optimal JAX performance, use ``diffusion_kde`` or
-    ``gaussian_kde`` which keep the rate computation entirely in JAX.
+    with ``smoothing_method="binned"``, the masked-average smoothing step
+    (``_binned_gate``) runs on NumPy, so it requires a round-trip out of JAX.
+    This may be slower than pure NumPy for this method. For optimal JAX
+    performance, use ``diffusion_kde`` (which runs the smoothing in JAX via
+    ``env.diffuse(backend="jax")``) or ``gaussian_kde``.
 
     **Algorithm Details**:
 
