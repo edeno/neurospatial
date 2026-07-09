@@ -294,7 +294,8 @@ class _BaseEnvironment(
 
     # Kernel cache for smoothing operations (keyed by (bandwidth, mode))
     _kernel_cache: dict[
-        tuple[float, Literal["transition", "density"]], NDArray[np.float64]
+        tuple[float, Literal["transition", "density", "average"]],
+        NDArray[np.float64],
     ] = field(init=False, default_factory=dict, repr=False)
 
     # For introspection and serialization

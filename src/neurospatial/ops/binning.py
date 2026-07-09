@@ -789,26 +789,34 @@ def resample_field(
 
     # Step 3: Optionally apply smoothing for diffuse method
     if method == "diffuse":
-        # Import here to avoid circular dependency
-        from neurospatial.ops.smoothing import apply_kernel
-
         # Type narrowing: bandwidth is guaranteed to be float at this point
         assert bandwidth is not None  # Already validated above
 
-        # Compute diffusion kernel on destination environment
+        # A pullback field is *intensive* (a rate map / probability density
+        # sampled onto dst_env), so smooth it with the row-stochastic average
+        # kernel (masked Nadaraya-Watson), not the mass-conserving transition
+        # kernel. This removes the volume bias on non-uniform M and, crucially,
+        # avoids the down-bias of the old zero-fill-then-single-smooth: uncovered
+        # / NaN bins contribute *no weight* (rather than a real 0 that pulls
+        # covered neighbours toward zero).
         kernel = cast("EnvironmentProtocol", dst_env).compute_kernel(
-            bandwidth=bandwidth, mode="transition"
+            bandwidth=bandwidth, mode="average"
         )
 
-        # The pullback marked out-of-source destination bins as NaN (Step 2).
-        # apply_kernel is a forward diffusion (a row-stochastic matmul), so a
-        # single NaN would propagate to every reachable bin and wipe out the
-        # whole field. An un-covered source bin should contribute *no mass* to
-        # the smoothing, which is exactly a zero — so zero-fill the NaNs before
-        # smoothing, then re-impose NaN on the genuinely-outside bins afterward
-        # so the un-covered region stays marked as missing (not a smoothed zero).
-        to_smooth = np.where(outside_source, 0.0, resampled)
-        smoothed = apply_kernel(to_smooth, kernel, mode="forward")
+        # `valid` bins are covered by the source AND finite; only those
+        # contribute. The value is zero-filled where invalid so an un-zeroed
+        # NaN cannot poison every reachable bin through the matmul.
+        valid = (~outside_source) & np.isfinite(resampled)
+        values = np.where(valid, resampled, 0.0)
+        num = kernel @ values
+        den = kernel @ valid.astype(np.float64)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            smoothed = np.where(den > 0.0, num / den, np.nan)
+
+        # Re-impose NaN only on structurally out-of-source bins. An interior
+        # source-NaN bin with valid neighbours within the bandwidth is thereby
+        # interpolated (like the binned gap-fill); a bin with no valid neighbour
+        # (den == 0) is already NaN from the `where` above.
         smoothed[outside_source] = np.nan
         resampled = smoothed
 

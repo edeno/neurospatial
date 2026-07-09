@@ -707,12 +707,15 @@ def _binned(
     weights = np.ones_like(raw_rate)
     weights[nan_mask] = 0.0
 
-    # Smooth both rate and weights
+    # Smooth both rate and weights with the row-stochastic average kernel: this
+    # is a masked (valid-bin-normalized) average of an intensive rate, so it is
+    # volume-unbiased on non-uniform M. (On uniform M the per-cell volume factor
+    # cancels in the rate/weights ratio, so the result is unchanged there.)
     rate_smoothed = cast("EnvironmentProtocol", env).smooth(
-        rate_filled, bandwidth=bandwidth
+        rate_filled, bandwidth=bandwidth, mode="average"
     )
     weights_smoothed = cast("EnvironmentProtocol", env).smooth(
-        weights, bandwidth=bandwidth
+        weights, bandwidth=bandwidth, mode="average"
     )
 
     # Normalize by smoothed weights
@@ -826,8 +829,12 @@ def _binned_batch(
         weights = np.ones_like(raw_rate)
         weights[nan_mask] = 0.0
 
-        rate_smoothed = env_protocol.smooth(rate_filled, bandwidth=bandwidth)
-        weights_smoothed = env_protocol.smooth(weights, bandwidth=bandwidth)
+        rate_smoothed = env_protocol.smooth(
+            rate_filled, bandwidth=bandwidth, mode="average"
+        )
+        weights_smoothed = env_protocol.smooth(
+            weights, bandwidth=bandwidth, mode="average"
+        )
 
         with np.errstate(divide="ignore", invalid="ignore"):
             result[i] = np.where(
@@ -890,8 +897,12 @@ def _smooth_rate_map_jax(
         weights[nan_mask] = 0.0
 
         env_protocol = cast("EnvironmentProtocol", env)
-        rate_smoothed = env_protocol.smooth(rate_filled, bandwidth=bandwidth)
-        weights_smoothed = env_protocol.smooth(weights, bandwidth=bandwidth)
+        rate_smoothed = env_protocol.smooth(
+            rate_filled, bandwidth=bandwidth, mode="average"
+        )
+        weights_smoothed = env_protocol.smooth(
+            weights, bandwidth=bandwidth, mode="average"
+        )
 
         with np.errstate(divide="ignore", invalid="ignore"):
             result_np = np.where(
@@ -992,8 +1003,12 @@ def _smooth_rate_maps_batch_jax(
             weights = np.ones_like(raw_rate)
             weights[nan_mask] = 0.0
 
-            rate_smoothed = env_protocol.smooth(rate_filled, bandwidth=bandwidth)
-            weights_smoothed = env_protocol.smooth(weights, bandwidth=bandwidth)
+            rate_smoothed = env_protocol.smooth(
+                rate_filled, bandwidth=bandwidth, mode="average"
+            )
+            weights_smoothed = env_protocol.smooth(
+                weights, bandwidth=bandwidth, mode="average"
+            )
 
             with np.errstate(divide="ignore", invalid="ignore"):
                 result[i] = np.where(

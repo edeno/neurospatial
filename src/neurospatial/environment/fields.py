@@ -47,7 +47,7 @@ class EnvironmentFields:
         self: SelfEnv,
         bandwidth: float,
         *,
-        mode: Literal["transition", "density"] = "density",
+        mode: Literal["transition", "density", "average"] = "density",
         cache: bool = True,
     ) -> NDArray[np.float64]:
         """Compute the finite-volume diffusion kernel for smoothing operations.
@@ -64,17 +64,21 @@ class EnvironmentFields:
             the diffusion), must be > 0. This is the true physical σ: a
             point source smoothed by this kernel has physical standard
             deviation ``bandwidth`` regardless of bin size.
-        mode : {'transition', 'density'}, default='density'
-            Kernel orientation:
+        mode : {'transition', 'density', 'average'}, default='density'
+            Kernel orientation, distinguished by the input field type:
 
             - 'transition': ``Hᵀ`` — column-stochastic (``sum_i K[i, j] = 1``).
               ``K @ field`` conserves ``sum(field)``; use for **extensive**
-              quantities (occupancy, spike counts).
+              quantities (occupancy, spike counts, discrete probability *mass*).
             - 'density': ``H·M⁻¹`` — M-weighted columns integrate to 1
               (``sum_i M_i K[i, j] = 1``). Takes an **extensive** input (counts)
               and returns a **density** (KDE). Do NOT apply to an already
               intensive field (a rate map): on non-uniform bin volumes that
               divides by cell volume twice.
+            - 'average': ``H`` — row-stochastic (``sum_j K[i, j] = 1``).
+              ``K @ field`` averages an **intensive** field (a rate map or
+              probability *density*), volume-unbiased on non-uniform ``M``. Not
+              for discrete probability *mass* (use 'transition').
         cache : bool, default=True
             If True, cache the computed kernel for reuse. Subsequent calls
             with the same (bandwidth, mode) will return the cached result.
@@ -90,7 +94,7 @@ class EnvironmentFields:
             If called before the environment is fitted.
         ValueError
             If bandwidth is not positive, or ``mode`` is not one of
-            ``{'transition', 'density'}``.
+            ``{'transition', 'density', 'average'}``.
 
         See Also
         --------
@@ -138,14 +142,14 @@ class EnvironmentFields:
         """
         from neurospatial.ops.diffusion import diffusion_kernel
 
-        # Validate mode. 'average' (intensive-field averaging) is a valid
-        # low-level mode but is not yet exposed on the public smoothing API.
-        valid_modes = {"transition", "density"}
+        # Validate mode.
+        valid_modes = {"transition", "density", "average"}
         if mode not in valid_modes:
             raise ValueError(
                 f"mode must be one of {valid_modes} (got '{mode}'). "
                 "Use 'transition' for mass-conserving smoothing of extensive "
-                "quantities or 'density' for count-to-density (KDE)."
+                "quantities, 'density' for count-to-density (KDE), or 'average' "
+                "for volume-unbiased averaging of an intensive field (rate map)."
             )
 
         # Initialize cache if it doesn't exist
@@ -177,7 +181,7 @@ class EnvironmentFields:
         field: NDArray[np.float64],
         bandwidth: float,
         *,
-        mode: Literal["transition", "density"] = "density",
+        mode: Literal["transition", "density", "average"] = "density",
     ) -> NDArray[np.float64]:
         """Apply diffusion kernel smoothing to a field.
 
@@ -193,8 +197,10 @@ class EnvironmentFields:
         bandwidth : float
             Smoothing bandwidth in physical units (σ). Controls the scale
             of spatial smoothing. Must be positive.
-        mode : {'transition', 'density'}, default='density'
-            Smoothing mode, distinguished by the **input type**:
+        mode : {'transition', 'density', 'average'}, default='density'
+            Smoothing mode, distinguished by the **input type**. The default
+            stays ``'density'`` for backward compatibility; ``'average'`` is the
+            correct choice for an intensive rate map.
 
             - 'transition': Mass-conserving smoothing of an **extensive**
               quantity (a total per bin). Total sum is preserved:
@@ -207,8 +213,12 @@ class EnvironmentFields:
               == sum(field)`` (each kernel column integrates to 1 under bin
               volumes). Do **not** apply to an already **intensive** field (a
               rate map or probability *density*): on non-uniform bin volumes
-              that divides by cell volume twice. (An intensive-field averager
-              will be exposed as ``mode='average'`` in a future release.)
+              that divides by cell volume twice.
+            - 'average': Volume-unbiased averaging of an **intensive** field (a
+              rate map or probability *density*). Row-stochastic ``H``, so a
+              constant field is preserved and there is no cell-volume bias on
+              non-uniform ``M``. Not for discrete probability *mass* (use
+              'transition').
 
         Returns
         -------
@@ -247,6 +257,10 @@ class EnvironmentFields:
         density whose integral under bin volumes equals the input total
         (``sum(smoothed * bin_sizes) == sum(field)``); it must not be applied to
         an already-intensive field (see the ``mode`` parameter).
+
+        For mode='average', the kernel is row-stochastic, so a constant field is
+        preserved and an intensive field (rate map) is averaged without the
+        cell-volume bias that ``density`` would introduce on non-uniform ``M``.
 
         ``bandwidth`` is the true physical standard deviation (σ) of the
         smoothing on any supported layout, independent of bin size.
@@ -319,12 +333,13 @@ class EnvironmentFields:
             )
 
         # Validate mode
-        valid_modes = {"transition", "density"}
+        valid_modes = {"transition", "density", "average"}
         if mode not in valid_modes:
             raise ValueError(
                 f"mode must be one of {valid_modes} (got '{mode}'). "
-                "Use 'transition' for mass-conserving smoothing or 'density' "
-                "for volume-corrected smoothing."
+                "Use 'transition' for mass-conserving smoothing of extensive "
+                "data, 'density' for count-to-density, or 'average' for "
+                "volume-unbiased averaging of an intensive field."
             )
 
         # Compute kernel (uses cache automatically)

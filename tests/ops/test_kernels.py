@@ -293,7 +293,7 @@ class TestEnvironmentComputeKernel:
         rng = np.random.default_rng(0)
         env = Environment.from_samples(rng.uniform(0, 10, (50, 2)), bin_size=1.0)
         with pytest.raises(ValueError, match=r"mode must be one of"):
-            env.compute_kernel(bandwidth=1.0, mode="average")
+            env.compute_kernel(bandwidth=1.0, mode="bogus")
 
     def test_compute_kernel_high_bin_warns_and_returns(self, monkeypatch):
         from neurospatial.ops import smoothing
