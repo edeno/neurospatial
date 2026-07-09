@@ -86,13 +86,12 @@ M-conjugation (NLD's Laplacian is mass-free; ours needs `S`):
   ([decorators.py:282](../../../src/neurospatial/environment/decorators.py)), so the property
   **owns this single-entry cache** and drops it wholesale on any geometry change. This is the
   **truncated apply-path cache only**, holding ranks strictly **below** `dense_fraction·n`.
-- **Dense/full-rank basis is a separate slot — never poisons the truncated cache.** Any request
-  resolving rank `≥ dense_fraction·n` — whether a **near-full-rank `env.diffuse`** (small σ on a
-  large grid, per the dense fallback above) **or** a **`compute_kernel`** call (§6, always full
-  rank) — uses the dense `eigh` basis stored in a **separate full-basis slot** (or recomputed
-  uncached), with the large-matrix warning. It **never replaces** the bounded truncated cache.
-  So neither a near-full-rank `env.diffuse` nor a `compute_kernel` call can leave later
-  truncated applies holding an `(n,n)` basis — the memory goal holds for every truncated call.
+- **Dense fallback is transient — never poisons the truncated cache.** A **near-full-rank
+  `env.diffuse`** (small σ on a large grid, rank `≥ dense_fraction·n`) uses a dense `eigh` basis
+  that is **built, applied, and dropped** — not cached — with the large-matrix warning; it
+  **never replaces** the bounded truncated cache. (`compute_kernel` is a non-issue: it is
+  unchanged (§6), on its own dense-`expm` path, and never touches the eigenbasis cache at all.)
+  So the memory goal — no persistent `(n,n)` eigenvector matrix — holds for every truncated call.
 
 ## 5. Per-mode application — LINEAR, no positivity projection
 

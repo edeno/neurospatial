@@ -12,9 +12,9 @@ per `W`-component, cache it on the Environment (geometry-only, `_state_version`-
 and apply `H = M^{-1/2} Q e^{-tΛ} Qᵀ M^{1/2}` to field batches directly. `env.diffuse` is a
 **pure linear operator** (no clip/renorm; the always-kept null mode conserves mass exactly
 under truncation), so `env.smooth` on signed fields is preserved; positivity is enforced by
-the consumers that need it. `compute_kernel` is kept and materializes the exact dense matrix
-from a **full-rank** basis in a **separate** cache slot (never poisons the truncated apply
-cache). Full rationale + the M-norm/denominator/cache contracts: **[design-performance.md](design-performance.md)**
+the consumers that need it. `compute_kernel` is **left unchanged** (its existing dense-`expm`
+path), so it stays byte-identical, is memory-safe, and never touches the truncated eigenbasis
+cache. Full rationale + the M-norm/denominator/cache contracts: **[design-performance.md](design-performance.md)**
 (source of truth, §3–§8).
 
 **Tech stack:** `numpy`, `scipy.sparse` / `scipy.sparse.linalg.eigsh` / `scipy.linalg.eigh`,
@@ -98,7 +98,8 @@ def apply_heat_operator(Q, Lam, volumes, sigma, F, *, mode, transpose=False):
         return (Q @ (coeff[:, None] * (Q.T @ (sqrt_m * F)))) / sqrt_m
     return sqrt_m * (Q @ (coeff[:, None] * (Q.T @ (F / sqrt_m))))  # Hᵀ @ F
 
-# per-mode (r = H@1, m = Hᵀ@M computed once per σ; each mode LINEAR in F):
+# per-mode (r = H@1, m = Hᵀ@M computed once per σ, each a COLUMN vector (n,1) that
+# broadcasts over the n_fields axis; each mode LINEAR in F):
 #   average(F)    = apply(H, F) / r
 #   transition(F) = apply(Hᵀ, F / r)
 #   density(c)    = apply(H, c / m)
@@ -141,9 +142,12 @@ both cache only the kernel) while introducing ~`1e-10` numerical drift. So `comp
   `smooth_rate_map`/`smooth_rate_maps_batch`/`_diffusion_kde*` (the eigenbasis cache now provides
   the cross-neuron reuse the arg gave), and replace `kernel @ spike_counts` / `kernel @ occupancy`
   ([:604,607](../../../src/neurospatial/encoding/_smoothing.py)) with
-  `env.diffuse(counts, bandwidth, mode="density")` (batched over the neuron axis) — otherwise
-  batch/JAX silently keep materializing `(n,n)`. (`gaussian_kde` keeps its own dense weight
-  matrix — unchanged; `binned` is the next bullet.) Then the **magnitude gate** — floor
+  `env.diffuse(..., mode="density")` — otherwise batch/JAX silently keep materializing `(n,n)`.
+  **Mind the axis:** `env.diffuse` takes `(n_bins, n_fields)`, but the batch `spike_counts` is
+  `(n_neurons, n_bins)` ([:401](../../../src/neurospatial/encoding/_smoothing.py); today it does
+  `(kernel @ spike_counts.T).T`), so pass `spike_counts.T` and **transpose the result back** to
+  `(n_neurons, n_bins)`; `occupancy` is `(n_bins,)` → `(n_bins, 1)`. (`gaussian_kde` keeps its
+  own dense weight matrix — unchanged; `binned` is the next bullet.) Then the **magnitude gate** — floor
   `max(occupancy_density, 0)` before `> occupancy_threshold`
   ([:614](../../../src/neurospatial/encoding/_smoothing.py)); clip the output density/rate `≥ 0`
   (decode nonnegativity).
@@ -156,9 +160,11 @@ both cache only the kernel) while introducing ~`1e-10` numerical drift. So `comp
 
 **T7 — Migration + docs (ship with the PR).** CHANGELOG: `env.diffuse` added; the cached
 eigenbasis + bandwidth-aware truncation (large-grid speed/memory); the `env.smooth`
-approximation contract (linear, `≥ -tol` relative to dense). Docstrings: `env.smooth`,
-`env.diffuse`. Version 0.7.0 → **0.8.0** (`pyproject.toml`). Note the `compute_kernel` result is
-unchanged.
+approximation contract (linear, `≥ -tol` relative to dense); **the removed `kernel=` parameter
+on `smooth_rate_map` / `smooth_rate_maps_batch`** — an intentional break (no backward-compat
+shim per the project default; the eigenbasis cache now handles cross-neuron reuse), called out
+explicitly so callers passing `kernel=` update. Docstrings: `env.smooth`, `env.diffuse`.
+Version 0.7.0 → **0.8.0** (`pyproject.toml`). Note the `compute_kernel` result is unchanged.
 
 ## Deliberately not in this plan
 
@@ -200,7 +206,7 @@ is synthesized, marked `slow`.
 Before opening the PR, dispatch `code-reviewer` against the diff. Confirm:
 - Every task implemented; "Deliberately not in this plan" honored (no operator/result change, no MRF).
 - `env.diffuse` is **linear** (no clip/renorm); positivity only in the named consumers; the null-mode `rank ≥ n_components` assertion is present.
-- The truncated apply cache is never grown to `(n,n)` by `compute_kernel` or a near-full-rank `env.diffuse` (separate `full` slot).
+- The truncated apply cache is never grown to `(n,n)`: `compute_kernel` doesn't touch it (unchanged dense-`expm`), and a near-full-rank `env.diffuse` uses a **transient** dense `eigh` (applied then dropped, not cached).
 - Validation slice passes; `test_perf_large_grid` marked slow; equivalence tests compare against the T1 baseline, not tautologies.
 - Docstrings / test names / module names don't reference this plan or "PR2/phase".
 - CHANGELOG + version bump + `env.smooth`/`env.diffuse` docstrings shipped in this PR.
