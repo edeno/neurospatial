@@ -47,13 +47,13 @@ from numpy.typing import NDArray
 if TYPE_CHECKING:
     from neurospatial.environment._protocols import EnvironmentProtocol
 
+# Public entry points. The eigenbasis/apply-path functions below
+# (apply_heat_operator, diffusion_apply, heat_kernel_rank,
+# diffusion_component_labels, component_support_mask, _assemble_W) are internal
+# machinery imported explicitly by the smoothing consumers, not `import *` API.
 __all__ = [
-    "apply_heat_operator",
-    "diffusion_apply",
-    "diffusion_component_labels",
     "diffusion_kernel",
     "heat_kernel_from_W",
-    "heat_kernel_rank",
 ]
 
 # Defaults for the truncated eigenbasis apply-path (``env.diffuse`` only; the
@@ -82,7 +82,8 @@ _MESH_SKEW_FRACTION = 0.05
 
 
 # ---------------------------------------------------------------------------
-# Core operator (W -> H) -- the seam a future spectral engine will replace.
+# Core operator (W -> H) for the DENSE path (compute_kernel). The matrix-free
+# spectral apply-path (env.diffuse) is a separate surface further below.
 # ---------------------------------------------------------------------------
 def _raw_heat_operator(
     W: scipy.sparse.spmatrix,
@@ -95,7 +96,8 @@ def _raw_heat_operator(
     ``M_i H_ij == M_j H_ji``) hold to numerical tolerance at full rank. It is
     exposed as a seam so those invariants stay directly testable (the mode
     outputs of :func:`heat_kernel_from_W` are normalized and no longer expose
-    them), and so a future spectral engine can replace only this function.
+    them). It backs the dense ``compute_kernel`` path and is the equivalence
+    oracle for the matrix-free ``env.diffuse`` apply-path.
 
     Parameters
     ----------
@@ -179,7 +181,7 @@ def heat_kernel_from_W(
         )
 
     # Clip round-off negatives (real cross-block lobes only appear under the
-    # future truncated engine, not at full rank).
+    # truncated env.diffuse apply-path, not on this full-rank dense path).
     H = np.clip(_raw_heat_operator(W, volumes, sigma), 0.0, None)
 
     kernel: NDArray[np.float64]
@@ -200,8 +202,9 @@ def _components_from_W(W: scipy.sparse.spmatrix) -> tuple[int, NDArray[np.int_]]
 
     Component structure for any component-aware step is derived from ``W``, NOT
     ``env.connectivity``: corner-touching 8-connected bins have ``A = 0`` and so
-    are separate diffusion components. Used by tests and load-bearing under the
-    future truncated engine.
+    are separate diffusion components. Load-bearing for the truncated
+    ``env.diffuse`` apply-path (component-local eigenvectors + the W-component
+    support gates).
 
     Parameters
     ----------
@@ -498,13 +501,43 @@ def apply_heat_operator(
     ``H = M^{-1/2} Q diag(exp(-t*Lambda)) Q^T M^{1/2}``, ``t = sigma**2 / 2``,
     computed as ``M^{-1/2} Q (coeff ⊙ (Q^T (M^{1/2} F)))``; ``H^T`` swaps the
     ``M^{±1/2}`` powers. There is **no clip and no renormalization** -- positivity
-    is a per-consumer concern. ``F`` MUST be 2-D ``(n_bins, n_fields)`` (a 1-D
-    ``F`` would make ``sqrt_m * F`` broadcast to ``(n, n)``).
+    is a per-consumer concern.
 
-    ``xp`` is the array module (``numpy`` default, or ``jax.numpy`` to run the
-    apply on-device); ``Q``, ``Lam``, ``volumes``, ``F`` must already be that
-    module's arrays.
+    Parameters
+    ----------
+    Q : array, shape (n_bins, rank)
+        Component-local eigenvectors of ``S`` (columns).
+    Lam : array, shape (rank,)
+        Corresponding eigenvalues.
+    volumes : array, shape (n_bins,)
+        Per-bin cell volumes ``M`` (strictly positive).
+    sigma : float
+        Physical smoothing standard deviation (``t = sigma**2 / 2``).
+    F : array, shape (n_bins, n_fields)
+        Field batch. MUST be 2-D -- a 1-D ``F`` would make ``sqrt_m * F``
+        (``sqrt_m`` of shape ``(n, 1)``) broadcast to ``(n, n)`` -- so this is
+        checked and raises rather than silently returning a wrong ``(n, n)``.
+    transpose : bool, default=False
+        Apply ``H^T`` instead of ``H``.
+    xp : module, default=numpy
+        Array module (``numpy`` or ``jax.numpy`` to run the apply on-device);
+        ``Q``, ``Lam``, ``volumes``, ``F`` must already be that module's arrays.
+
+    Returns
+    -------
+    array, shape (n_bins, n_fields)
+        ``H @ F`` (or ``H^T @ F``), in ``xp``'s array type.
+
+    Raises
+    ------
+    ValueError
+        If ``F`` is not 2-D.
     """
+    if F.ndim != 2:
+        raise ValueError(
+            f"F must be 2-D (n_bins, n_fields), got {F.ndim}-D. A 1-D field "
+            "would silently broadcast to (n, n); reshape to (n_bins, 1)."
+        )
     t = sigma**2 / 2.0
     coeff = xp.exp(-t * Lam)  # (rank,)
     sqrt_m = xp.sqrt(volumes).reshape(-1, 1)  # (n, 1)
@@ -587,7 +620,6 @@ def _resolve_basis(
     W: scipy.sparse.spmatrix,
     volumes: NDArray[np.float64],
     n_components: int,
-    labels: NDArray[np.int_],
     sigma: float,
     *,
     tol: float,
@@ -607,7 +639,11 @@ def _resolve_basis(
     never stored -- so it can never grow the cache to ``(n, n)``.
     """
     n = int(volumes.shape[0])
-    resolved: dict[tuple[float, float], int | str] = holder.setdefault("resolved", {})
+    # Memo of the resolved rank per (sigma, tol): an int rank, or the sentinel
+    # "dense" for a near-full-rank bandwidth (transient basis, never cached).
+    resolved: dict[tuple[float, float], int | Literal["dense"]] = holder.setdefault(
+        "resolved", {}
+    )
     key = (float(sigma), float(tol))
     t = sigma**2 / 2.0
 
@@ -618,17 +654,19 @@ def _resolve_basis(
             # No re-warn here: the large-matrix warning fired once when this
             # bandwidth first resolved to "dense" (the probe path below).
             return _transient_dense_basis(W, volumes)
-        Q, Lam, _lab = holder["basis"]
+        Q, Lam = holder["basis"]
         return Q[:, :r], Lam[:r]
 
     # If the cached basis already brackets this bandwidth's cutoff (its largest
     # retained mode is negligible), slice it -- no new eigensolve.
     cached = holder.get("basis")
     if cached is not None:
-        Qc, Lamc, _lab = cached
+        Qc, Lamc = cached
         if float(np.exp(-t * Lamc[-1])) < tol:
-            r = min(
-                max(heat_kernel_rank(Lamc, sigma, tol), n_components), Lamc.shape[0]
+            r = int(
+                min(
+                    max(heat_kernel_rank(Lamc, sigma, tol), n_components), Lamc.shape[0]
+                )
             )
             resolved[key] = r
             return Qc[:, :r], Lamc[:r]
@@ -645,12 +683,13 @@ def _resolve_basis(
         return vecs_full, vals_full  # transient, NOT cached
     assert eigvals is not None and eigvecs is not None  # narrowed by rank is not None
     resolved[key] = rank
+    # The single cached basis grows by replace (it never shrinks), so a request
+    # needing more modes than are cached recomputes and replaces it.
     cached_rank = holder["basis"][1].shape[0] if "basis" in holder else 0
     if rank >= cached_rank:
-        holder["basis"] = (eigvecs, eigvals, labels)
-        holder["rank"] = rank
+        holder["basis"] = (eigvecs, eigvals)
         return eigvecs, eigvals
-    Qc, Lamc, _lab = holder["basis"]
+    Qc, Lamc = holder["basis"]
     return Qc[:, :rank], Lamc[:rank]
 
 
@@ -674,7 +713,6 @@ def diffusion_apply(
     W: scipy.sparse.spmatrix,
     volumes: NDArray[np.float64],
     n_components: int,
-    labels: NDArray[np.int_],
     fields: NDArray[np.float64],
     sigma: float,
     mode: Literal["transition", "density", "average"],
@@ -695,8 +733,12 @@ def diffusion_apply(
     ----------
     holder : dict
         The per-geometry eigenbasis cache (from the Environment).
-    W, volumes, n_components, labels
-        The finite-volume geometry (from the Environment).
+    W : scipy.sparse matrix, shape (n_bins, n_bins)
+        Finite-volume weight matrix (from the Environment geometry).
+    volumes : NDArray[np.float64], shape (n_bins,)
+        Per-bin cell volumes ``M``.
+    n_components : int
+        Number of ``W``-connected components (rank floor for the null modes).
     fields : NDArray, shape (n_bins, n_fields)
         Field batch (must be 2-D; ``env.diffuse`` coerces a 1-D field).
     sigma : float
@@ -719,7 +761,6 @@ def diffusion_apply(
         W,
         volumes,
         n_components,
-        labels,
         sigma,
         tol=tol,
         dense_fraction=dense_fraction,
@@ -754,6 +795,18 @@ def diffusion_component_labels(
     consumers can derive **W-component support** for their strict ``> 0`` gates
     (support that is exact and truncation-proof, unlike the smoothed
     denominator's sign; see :func:`component_support_mask`).
+
+    Parameters
+    ----------
+    env : Environment
+        A fitted environment.
+
+    Returns
+    -------
+    n_components : int
+        Number of connected ``W``-components.
+    labels : NDArray[np.int_], shape (n_bins,)
+        Per-bin component id (``0..n_components-1``).
     """
     _W, _volumes, n_components, labels = cast("Any", env)._diffusion_geometry
     return int(n_components), labels

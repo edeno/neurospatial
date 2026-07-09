@@ -1926,9 +1926,11 @@ def compute_spatial_rate(
         - **binned**: Bin-then-smooth method. Computes raw rate first, then
           smooths. Can introduce discretization artifacts.
 
-        Note: the default ``diffusion_kde`` builds a dense O(n²) diffusion
-        kernel (memory ``n_bins**2 * 8`` bytes). For very large environments
-        prefer ``binned`` or reduce the number of bins (larger ``bin_size``).
+        Note: ``diffusion_kde`` and ``binned`` smooth matrix-free via
+        ``env.diffuse`` (a cached truncated eigenbasis), scaling as
+        O(n_bins·rank) — they never build a dense kernel and scale to large/fine
+        grids. Only ``gaussian_kde`` builds a dense O(n²) matrix; for very large
+        environments prefer ``diffusion_kde`` or increase ``bin_size``.
 
     bandwidth : float, default=5.0
         Smoothing bandwidth in the same units as bin_size. Larger values
@@ -2266,8 +2268,9 @@ def compute_spatial_rates(
         ``times`` is a ``PositionLike`` object carrying the positions.
     smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Smoothing method to use. See ``compute_spatial_rate()`` for details.
-        Note: the default ``diffusion_kde`` builds a dense O(n²) diffusion
-        kernel; for very large environments prefer ``binned`` or fewer bins.
+        Note: ``diffusion_kde`` and ``binned`` smooth matrix-free
+        (O(n_bins·rank)); only ``gaussian_kde`` builds a dense O(n²) kernel. For
+        very large environments prefer ``diffusion_kde`` or increase ``bin_size``.
     bandwidth : float, default=5.0
         Smoothing bandwidth in the same units as bin_size.
     min_occupancy : float, default=0.0

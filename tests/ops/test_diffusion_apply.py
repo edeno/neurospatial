@@ -284,9 +284,10 @@ def test_denominator_support_no_spurious_nan():
     # so with any valid bin, EVERY bin is supported -> no NaN at all.
     rate = fields["masked"].copy()  # some NaN
     valid = np.isfinite(rate)
+    assert n_components == 1  # grid_2d is a single component
     gated = _binned_gate(env, rate, bandwidth=6.0)
     support = component_support_mask(labels, n_components, valid)
-    # No spurious NaN: finite exactly on the supported bins.
+    # No spurious NaN: finite exactly on the supported bins (all of them here).
     assert np.all(np.isfinite(gated[support]))
     assert np.all(np.isnan(gated[~support]))
 
@@ -310,6 +311,90 @@ def test_denominator_support_no_spurious_nan():
     signed_masked[~valid] = np.nan
     gated_signed = _binned_gate(env, signed_masked, bandwidth=6.0)
     assert np.any(gated_signed[support] < 0.0), "signed numerator must not be floored"
+
+
+def test_support_gate_nans_component_with_no_valid_input():
+    """The GENUINE-NaN direction: on a DISCONNECTED env, a component whose input
+    is entirely NaN is NaN'd, while the other component (with valid input) is
+    finite -- both 1-D and batched (a fully-NaN neuron row)."""
+    from neurospatial.encoding._smoothing import _binned_gate
+
+    env, _ = build_grid_2d_split()
+    W, _volumes = _geometry(env)
+    n_components, labels = _components_from_W(W)
+    assert n_components == 2
+    comp0 = labels == 0
+    comp1 = labels == 1
+
+    # Valid input ONLY in component 0; component 1's input is entirely NaN.
+    rate = np.full(env.n_bins, np.nan)
+    rate[comp0] = 3.0
+    gated = _binned_gate(env, rate, bandwidth=6.0)
+    assert np.all(np.isfinite(gated[comp0])), "supported component must be finite"
+    assert np.all(np.isnan(gated[comp1])), "unsupported component must be NaN"
+
+    # Batch: neuron 0 valid only in comp0, neuron 1 valid only in comp1, neuron 2
+    # entirely NaN -> its whole row NaN (the _binned_batch fully-NaN contract).
+    rates = np.full((3, env.n_bins), np.nan)
+    rates[0, comp0] = 3.0
+    rates[1, comp1] = 5.0
+    gated_batch = _binned_gate(env, rates, bandwidth=6.0)
+    assert np.all(np.isfinite(gated_batch[0, comp0])) and np.all(
+        np.isnan(gated_batch[0, comp1])
+    )
+    assert np.all(np.isfinite(gated_batch[1, comp1])) and np.all(
+        np.isnan(gated_batch[1, comp0])
+    )
+    assert np.all(np.isnan(gated_batch[2])), "fully-NaN neuron -> all-NaN row"
+
+
+def test_resample_diffuse_numerator_not_floored_signed():
+    """resample_field(method='diffuse') carries a SIGNED intensive field: its
+    numerator is not floored, so negative lobes survive on covered bins (a
+    separate code copy from _binned_gate -- must be covered independently)."""
+    from neurospatial.ops.binning import resample_field
+
+    src_env, _ = build_grid_2d_split()
+    dst_env, _ = build_grid_2d_split()
+    # A signed field (z-scored-like) defined on the source.
+    rng = np.random.default_rng(7)
+    field = rng.standard_normal(src_env.n_bins)
+    field -= field.mean()
+    resampled = resample_field(field, src_env, dst_env, method="diffuse", bandwidth=4.0)
+    finite = np.isfinite(resampled)
+    assert np.any(resampled[finite] < 0.0), "signed resample must keep negatives"
+    assert np.any(resampled[finite] > 0.0)
+
+
+def test_env_diffuse_validation_raises():
+    """env.diffuse validates bandwidth, mode, backend, and field shape."""
+    env, _ = _build_env("grid_2d")
+    good = np.ones(env.n_bins)
+    with pytest.raises(ValueError, match="bandwidth"):
+        env.diffuse(good, 0.0)
+    with pytest.raises(ValueError, match="bandwidth"):
+        env.diffuse(good, -1.0)
+    with pytest.raises(ValueError, match="mode"):
+        env.diffuse(good, 5.0, mode="bogus")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="backend"):
+        env.diffuse(good, 5.0, backend="gpu")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match=r"1-D|2-D"):
+        env.diffuse(np.ones((env.n_bins, 2, 1)), 5.0)  # 3-D
+    with pytest.raises(ValueError, match="n_bins"):
+        env.diffuse(np.ones(env.n_bins + 1), 5.0)  # wrong leading dim
+
+
+def test_symmetric_eigenbasis_rank_below_n_components_raises():
+    """The null-mode guard: a rank below n_components raises (dropping it would
+    break mass conservation). Defense-in-depth -- unreachable via the public path,
+    which clamps keep >= n_components, so exercise it directly."""
+    from neurospatial.ops.diffusion import _symmetric_eigenbasis
+
+    env, _ = build_grid_2d_split()  # 2 components
+    W, volumes = _geometry(env)
+    S = _symmetric_conjugate(W, volumes)
+    with pytest.raises(ValueError, match="n_components"):
+        _symmetric_eigenbasis(S, rank=1)  # rank 1 < 2 components
 
 
 def test_diffusion_kde_nonnegative():
@@ -338,6 +423,46 @@ def test_diffusion_kde_nonnegative():
         kernel = env.compute_kernel(8.0, mode="density", cache=False)
     dense_rate = np.clip((kernel @ spike_counts) / (kernel @ occupancy), 0.0, None)
     np.testing.assert_allclose(rate[finite], dense_rate[finite], rtol=1e-4, atol=1e-4)
+
+
+def test_binned_nonnegative():
+    """The binned method returns a NON-NEGATIVE firing rate (single + batch).
+
+    The shipped dense-kernel binned path was structurally >= 0; the linear
+    apply-path can leave tolerance-level negatives at unvisited bins, so the
+    wrappers clip >= 0. Regression guard for that clip: an animal covering only
+    part of the arena leaves far bins that would otherwise go slightly negative.
+    """
+    from neurospatial.encoding._smoothing import smooth_rate_map, smooth_rate_maps_batch
+
+    env, _ = _build_env("grid_2d")
+    rng = np.random.default_rng(11)
+    # Occupancy only in the left half -> far (right) bins are the risky ones.
+    occ = np.zeros(env.n_bins)
+    left = env.bin_centers[:, 0] < 20.0
+    occ[left] = rng.random(int(left.sum())) + 0.5
+    spikes = rng.poisson(2, env.n_bins).astype(float)
+
+    single = np.asarray(
+        smooth_rate_map(
+            env, spikes, occ, method="binned", bandwidth=4.0, min_occupancy=0.01
+        )
+    )
+    fin = np.isfinite(single)
+    assert np.all(single[fin] >= 0.0), "binned single output must be nonnegative"
+
+    batch = np.asarray(
+        smooth_rate_maps_batch(
+            env,
+            np.stack([spikes, spikes * 2.0]),
+            occ,
+            method="binned",
+            bandwidth=4.0,
+            min_occupancy=0.01,
+        )
+    )
+    finb = np.isfinite(batch)
+    assert np.all(batch[finb] >= 0.0), "binned batch output must be nonnegative"
 
 
 def test_env_smooth_nonneg_within_tol():
@@ -379,9 +504,9 @@ def test_cache_grows_with_smaller_sigma():
     fields = make_fields(env, src)
     holder = env._diffusion_eigenbasis
     env.diffuse(fields["nonneg"], 10.0, mode="density")
-    rank_large_sigma = holder["rank"]
+    rank_large_sigma = holder["basis"][1].shape[0]
     env.diffuse(fields["nonneg"], 8.0, mode="density")  # smaller sigma -> more modes
-    rank_small_sigma = holder["rank"]
+    rank_small_sigma = holder["basis"][1].shape[0]
     assert rank_small_sigma > rank_large_sigma, "smaller sigma must grow the basis"
     # A single basis (grown by replace), still equivalent to dense at the small sigma.
     assert isinstance(holder["basis"], tuple)
@@ -403,8 +528,9 @@ def test_eigenbasis_single_basis_and_invalidated():
     env.diffuse(fields["nonneg"], 10.0, mode="density")
     env.diffuse(fields["nonneg"], 10.0, mode="average")  # same sigma, different mode
     env.diffuse(fields["nonneg"], 12.0, mode="transition")  # larger sigma -> slice
-    # Exactly one persistent basis (a tuple), not a {rank -> basis} dict.
-    assert isinstance(holder["basis"], tuple) and len(holder["basis"]) == 3
+    # Exactly one persistent basis -- a single (Q, Lam) tuple, not a
+    # {rank -> basis} accumulating dict.
+    assert isinstance(holder["basis"], tuple) and len(holder["basis"]) == 2
     basis_id = id(holder["basis"][0])
 
     # A geometry change (state bump) drops the holder wholesale.
@@ -453,6 +579,14 @@ def test_near_full_rank_diffuse_no_poison():
     # The transient dense basis is NOT cached.
     assert "basis" not in holder
     assert holder["resolved"][(0.8, _HEAT_KERNEL_RANK_TOL)] == "dense"
+
+    # A SECOND call at the same near-full-rank bandwidth takes the memoized
+    # "dense" fast path (still transient, still not cached) and matches the first.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        out2 = np.asarray(env.diffuse(fields["nonneg"], 0.8, mode="density"))
+    np.testing.assert_allclose(out, out2, rtol=1e-10)
+    assert "basis" not in holder
 
     # A subsequent truncated call caches a bounded (< n) basis.
     env.diffuse(fields["nonneg"], 10.0, mode="density")

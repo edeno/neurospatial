@@ -679,7 +679,14 @@ def _binned(
     if bandwidth <= 0 or np.all(np.isnan(raw_rate)):
         return raw_rate.astype(np.float64)
 
-    return _binned_gate(env, raw_rate, bandwidth).astype(np.float64)
+    # A firing rate is non-negative. The shipped dense-kernel binned path was
+    # structurally >= 0 (clipped kernel times non-negative raw rate); the linear
+    # apply-path can leave tolerance-level negatives at far/unvisited bins, so
+    # clip here (as _diffusion_kde does). _binned_gate itself stays sign-
+    # preserving -- resample uses the same masked-average pattern on signed
+    # fields -- so the clip lives in this rate wrapper, not the helper.
+    smoothed = _binned_gate(env, raw_rate, bandwidth)
+    return np.clip(smoothed, 0.0, None).astype(np.float64)
 
 
 def _binned_gate(
@@ -701,10 +708,23 @@ def _binned_gate(
     is entrywise positive, so a bin is supported iff its component holds a valid
     input bin. This is exact and truncation-proof (a ``max(den, 0)`` floor would
     still fail ``> 0`` where truncation flipped a tiny-positive dense denominator,
-    spuriously emitting NaN). Where support holds we divide by
-    ``max(den, eps)``; a bin whose dense denominator is itself truncation-tiny is
-    kept finite but not value-equal to the dense path (part of the approximation
-    contract).
+    spuriously emitting NaN). Where support holds we divide by ``max(den, eps)``.
+
+    This helper is **sign-preserving** (the numerator is not floored), so it is
+    also the pattern ``resample_field`` uses for signed intensive fields; callers
+    that need a non-negative result (the ``binned`` firing-rate wrappers) clip
+    the output themselves.
+
+    **Far-field caveat.** Value-equality with the dense masked average holds only
+    where the dense denominator is comfortably above the truncation floor (well
+    within a bandwidth of valid input). For a bin **deep inside a supported
+    component but many bandwidths from any valid bin** (sparse coverage), both
+    ``num`` and ``den`` are truncation-noise-dominated, so the ratio can deviate
+    from the dense value by well more than ``tol`` (the dense operator extends the
+    matched-ratio constant across the whole component; the truncated one decays
+    toward zero). Such bins are finite and supported but should be treated as
+    extrapolation, not interpolation. Realistic dense coverage with scattered gaps
+    is unaffected (matches the dense average to ~1e-13).
 
     Handles a 1-D ``(n_bins,)`` rate and a 2-D ``(n_neurons, n_bins)`` batch.
     """
@@ -826,8 +846,10 @@ def _binned_batch(
         return raw_rates.astype(dtype)
 
     # One matrix-free pass over all neurons (a fully-NaN neuron has no valid bins,
-    # so the W-component support gate yields an all-NaN row, matching the raw input).
-    return _binned_gate(env, raw_rates, bandwidth).astype(dtype)
+    # so the W-component support gate yields an all-NaN row, matching the raw
+    # input). Clip >= 0 (firing rate; see _binned).
+    smoothed = _binned_gate(env, raw_rates, bandwidth)
+    return np.clip(smoothed, 0.0, None).astype(dtype)
 
 
 # =============================================================================
@@ -869,7 +891,7 @@ def _smooth_rate_map_jax(
         firing_rate_np = np.asarray(firing_rate)
         if np.all(np.isnan(firing_rate_np)):
             return firing_rate  # All NaN, return as-is
-        gated = _binned_gate(env, firing_rate_np, bandwidth)
+        gated = np.clip(_binned_gate(env, firing_rate_np, bandwidth), 0.0, None)
         return jnp.asarray(gated, dtype=jnp.float64)
 
     # For diffusion_kde and gaussian_kde: smooth then normalize.
@@ -943,7 +965,9 @@ def _smooth_rate_maps_batch_jax(
         )
         if bandwidth <= 0:
             return jnp.asarray(firing_rates, dtype=jnp_dtype)
-        gated = _binned_gate(env, np.asarray(firing_rates), bandwidth)
+        gated = np.clip(
+            _binned_gate(env, np.asarray(firing_rates), bandwidth), 0.0, None
+        )
         return jnp.asarray(gated, dtype=jnp_dtype)
 
     # For diffusion_kde and gaussian_kde: smooth then normalize.

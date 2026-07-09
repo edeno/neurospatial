@@ -248,8 +248,10 @@ class EnvironmentFields:
         .. math::
             \\text{smoothed} = K \\cdot \\text{field}
 
-        where :math:`K` is the diffusion kernel computed via matrix exponential
-        of the graph Laplacian.
+        where :math:`K` is the finite-volume heat operator
+        :math:`\\exp(-tL)`, :math:`t = \\sigma^2/2`, :math:`L = M^{-1}(D - W)`.
+        It is applied **matrix-free** (see Implementation below), not formed
+        explicitly.
 
         For mode='transition', mass is conserved:
 
@@ -487,14 +489,13 @@ class EnvironmentFields:
         was_1d = ndim == 1
         fields_2d = fields.reshape(-1, 1) if was_1d else fields
 
-        W, volumes, n_components, labels = self._diffusion_geometry
+        W, volumes, n_components, _labels = self._diffusion_geometry
         holder = self._diffusion_eigenbasis
         result = diffusion_apply(
             holder,
             W,
             volumes,
             n_components,
-            labels,
             fields_2d,
             float(bandwidth),
             mode,
