@@ -44,13 +44,13 @@ O(n_bins²) matmul. Its advantage over ``gaussian_kde`` is boundary-awareness
 (it diffuses over the environment graph and so respects walls), not lower
 asymptotic cost.
 
-Because **both** ``diffusion_kde`` and ``gaussian_kde`` materialize a dense
-``(n_bins, n_bins)`` kernel, both emit a loud memory ``UserWarning`` (with a GB
-estimate) for very large environments — above ``_LARGE_KERNEL_THRESHOLD`` bins
-each warns and then proceeds. There is **no** hard limit. For environments that
-would not fit in RAM, use ``binned`` (it smooths the already-normalized rate
-map over the environment graph and builds **no** dense kernel), or reduce the
-bin count (increase ``bin_size``).
+**All three methods materialize a dense ``(n_bins, n_bins)`` kernel** —
+``binned`` smooths its normalized rate map through the same diffusion kernel
+(via ``env.smooth``), so it has no memory advantage — and each emits a loud
+memory ``UserWarning`` (with a GB estimate) for very large environments, above
+``_LARGE_KERNEL_THRESHOLD`` bins, then proceeds. There is **no** hard limit.
+For environments that would not fit in RAM, reduce the bin count (increase
+``bin_size``).
 
 References
 ----------
@@ -150,8 +150,8 @@ def _get_gaussian_kernel(
             f"entry > 0), so it requires an {n_bins} x {n_bins} float64 matrix "
             f"(~{estimated_gb:.1f} GB) -- O(n^2) memory. Proceeding anyway; this "
             f"may be slow and memory-intensive. To reduce the cost, increase "
-            f"bin_size (fewer bins) or use smoothing_method='binned' (it builds "
-            f"no dense kernel).",
+            f"bin_size (fewer bins). (smoothing_method='binned' also builds a "
+            f"dense kernel, so it is not a memory mitigation.)",
             UserWarning,
             stacklevel=2,
         )
@@ -300,27 +300,26 @@ def smooth_rate_map(
     +--------------+----------------+-----------------------+--------------+
     | gaussian_kde | Ignores        | O(n_bins²) per neuron | Wall bleed   |
     +--------------+----------------+-----------------------+--------------+
-    | binned       | Respects*      | O(n_bins) per neuron  | Discretization|
+    | binned       | Respects*      | O(n_bins²) per neuron | Discretization|
     +--------------+----------------+-----------------------+--------------+
 
-    *binned uses graph smoothing but applies it after normalization.
+    *binned computes the rate first, then smooths it (bin-then-smooth); the
+    other methods smooth the counts, then normalize (smooth-then-normalize).
 
     The ``diffusion_kde`` kernel is dense ``(n_bins, n_bins)`` and built once
     per ``(env, bandwidth)`` via a matrix exponential (a one-time O(n_bins³)
     build); the per-neuron smoothing is then the dense O(n_bins²) matmul
-    ``kernel @ counts``. Both ``diffusion_kde`` and ``gaussian_kde`` emit a loud
-    memory ``UserWarning`` (with a GB estimate) above ``_LARGE_KERNEL_THRESHOLD``
-    bins and then proceed (no hard limit); ``binned`` builds no dense kernel and
-    is the low-memory option.
+    ``kernel @ counts``. **All three methods build a dense
+    ``(n_bins, n_bins)`` kernel** — ``binned`` smooths its rate map through the
+    same diffusion kernel (via ``env.smooth``), so it has no memory advantage —
+    and each emits a loud memory ``UserWarning`` (with a GB estimate) above
+    ``_LARGE_KERNEL_THRESHOLD`` bins, then proceeds (no hard limit).
 
     **Performance recommendation**: For most analyses use ``diffusion_kde``
-    (default) -- it is boundary-aware. Both ``diffusion_kde`` and
-    ``gaussian_kde`` build a dense ``(n_bins, n_bins)`` kernel (cached per
-    ``(env, bandwidth)`` and reused across neurons), so both cost O(n_bins²)
-    memory and warn (with a GB estimate) above ``_LARGE_KERNEL_THRESHOLD`` bins
-    before proceeding. For environments too large for a dense kernel, use
-    ``binned`` (no dense kernel) or increase ``bin_size`` to reduce the bin
-    count.
+    (default) -- it is boundary-aware. All three methods build a dense
+    ``(n_bins, n_bins)`` kernel (cached per ``(env, bandwidth)`` and reused
+    across neurons), so all cost O(n_bins²) memory. For environments too large
+    for a dense kernel, increase ``bin_size`` to reduce the bin count.
 
     **Backend behavior**: When ``backend="jax"``, the kernel smoothing and
     rate computation use JAX operations. The kernel itself is computed from
@@ -707,12 +706,15 @@ def _binned(
     weights = np.ones_like(raw_rate)
     weights[nan_mask] = 0.0
 
-    # Smooth both rate and weights
+    # Smooth both rate and weights with the row-stochastic average kernel: this
+    # is a masked (valid-bin-normalized) average of an intensive rate, so it is
+    # volume-unbiased on non-uniform M. (On uniform M the per-cell volume factor
+    # cancels in the rate/weights ratio, so the result is unchanged there.)
     rate_smoothed = cast("EnvironmentProtocol", env).smooth(
-        rate_filled, bandwidth=bandwidth
+        rate_filled, bandwidth=bandwidth, mode="average"
     )
     weights_smoothed = cast("EnvironmentProtocol", env).smooth(
-        weights, bandwidth=bandwidth
+        weights, bandwidth=bandwidth, mode="average"
     )
 
     # Normalize by smoothed weights
@@ -826,8 +828,12 @@ def _binned_batch(
         weights = np.ones_like(raw_rate)
         weights[nan_mask] = 0.0
 
-        rate_smoothed = env_protocol.smooth(rate_filled, bandwidth=bandwidth)
-        weights_smoothed = env_protocol.smooth(weights, bandwidth=bandwidth)
+        rate_smoothed = env_protocol.smooth(
+            rate_filled, bandwidth=bandwidth, mode="average"
+        )
+        weights_smoothed = env_protocol.smooth(
+            weights, bandwidth=bandwidth, mode="average"
+        )
 
         with np.errstate(divide="ignore", invalid="ignore"):
             result[i] = np.where(
@@ -890,8 +896,12 @@ def _smooth_rate_map_jax(
         weights[nan_mask] = 0.0
 
         env_protocol = cast("EnvironmentProtocol", env)
-        rate_smoothed = env_protocol.smooth(rate_filled, bandwidth=bandwidth)
-        weights_smoothed = env_protocol.smooth(weights, bandwidth=bandwidth)
+        rate_smoothed = env_protocol.smooth(
+            rate_filled, bandwidth=bandwidth, mode="average"
+        )
+        weights_smoothed = env_protocol.smooth(
+            weights, bandwidth=bandwidth, mode="average"
+        )
 
         with np.errstate(divide="ignore", invalid="ignore"):
             result_np = np.where(
@@ -992,8 +1002,12 @@ def _smooth_rate_maps_batch_jax(
             weights = np.ones_like(raw_rate)
             weights[nan_mask] = 0.0
 
-            rate_smoothed = env_protocol.smooth(rate_filled, bandwidth=bandwidth)
-            weights_smoothed = env_protocol.smooth(weights, bandwidth=bandwidth)
+            rate_smoothed = env_protocol.smooth(
+                rate_filled, bandwidth=bandwidth, mode="average"
+            )
+            weights_smoothed = env_protocol.smooth(
+                weights, bandwidth=bandwidth, mode="average"
+            )
 
             with np.errstate(divide="ignore", invalid="ignore"):
                 result[i] = np.where(

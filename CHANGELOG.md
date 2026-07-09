@@ -47,6 +47,34 @@ correction.
   the uniform-cell approximation and are excluded from the physical-σ guarantee;
   performance (dense `expm`) is unchanged.
 
+### Added — `mode="average"` intensive-field smoother
+
+- **New public `mode="average"`** on `Environment.compute_kernel` and
+  `Environment.smooth` (and the low-level `compute_diffusion_kernels`): the
+  row-stochastic heat operator `H` that **averages an intensive field** (a rate
+  map or probability *density*). Unlike `density` (`H·M⁻¹`), it carries no
+  cell-volume bias on non-uniform bin volumes (polar, mesh), and unlike
+  `transition` it is the correct choice for a rate map rather than a total.
+  Discrete probability *mass* (a posterior summing to 1) still uses `transition`.
+  `env.smooth`'s **default stays `density`** (unchanged behavior for existing
+  mode-less calls); `average` is recommended for intensive rate maps.
+- **`smooth_rate_map(method="binned")`** and **`resample_field(method="diffuse")`**
+  now smooth their intensive fields through the row-stochastic average
+  (masked / valid-bin-normalized), removing the volume bias on non-uniform `M`.
+  For `resample_field`, this also fixes a down-bias where covered bins adjacent
+  to an uncovered region were pulled toward zero, and makes a source `NaN`
+  interpolate from valid neighbours instead of propagating. Uniform-grid results
+  are unchanged (the per-cell volume factor cancels in the rate/weight ratio).
+
+### Corrected guidance
+
+- **`smoothing_method="binned"` is not a dense-kernel memory mitigation.**
+  Earlier notes (through v0.6.0) recommended `binned` to avoid the dense
+  `(n_bins, n_bins)` kernel, but `binned` smooths its rate map through the same
+  diffusion kernel (via `env.smooth`), so **all** smoothing methods build a dense
+  kernel. The only memory mitigation is reducing the bin count (a larger
+  `bin_size`). Docstrings and the high-bin warnings are corrected accordingly.
+
 ## [v0.6.0] - 2026-07-03
 
 ## What's Changed

@@ -47,7 +47,7 @@ class EnvironmentProtocol(Protocol):
 
     # Internal/cache attributes that mixins access
     _kernel_cache: dict[
-        tuple[float, Literal["transition", "density"]], NDArray[np.float64]
+        tuple[float, Literal["transition", "density", "average"]], NDArray[np.float64]
     ]
     _layout_type_used: str | None
     _layout_params_used: dict[str, Any]
@@ -310,7 +310,7 @@ class EnvironmentProtocol(Protocol):
         self,
         bandwidth: float,
         *,
-        mode: Literal["transition", "density"] = "density",
+        mode: Literal["transition", "density", "average"] = "density",
         cache: bool = True,
     ) -> NDArray[np.float64]:
         """
@@ -320,7 +320,7 @@ class EnvironmentProtocol(Protocol):
         ----------
         bandwidth : float
             Smoothing bandwidth in spatial units.
-        mode : {'transition', 'density'}, default='density'
+        mode : {'transition', 'density', 'average'}, default='density'
             Kernel normalization mode.
         cache : bool, default=True
             Whether to cache the computed kernel.
@@ -337,7 +337,7 @@ class EnvironmentProtocol(Protocol):
         field: NDArray[np.float64],
         bandwidth: float,
         *,
-        mode: Literal["transition", "density"] = "density",
+        mode: Literal["transition", "density", "average"] = "density",
     ) -> NDArray[np.float64]:
         """
         Apply graph-based smoothing to a spatial field.
@@ -348,7 +348,7 @@ class EnvironmentProtocol(Protocol):
             Spatial field values to smooth.
         bandwidth : float
             Smoothing bandwidth in spatial units.
-        mode : {'transition', 'density'}, default='density'
+        mode : {'transition', 'density', 'average'}, default='density'
             Kernel normalization mode.
 
         Returns

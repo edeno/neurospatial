@@ -455,22 +455,20 @@ def test_apply_kernel_adjoint_nonuniform_M(polar_env):
 
 
 # ===========================================================================
-# Public-mode guard: no public "average" in this phase
+# Public mode surface
 # ===========================================================================
-def test_env_compute_kernel_rejects_average_until_phase2():
-    """env.compute_kernel / env.smooth reject mode='average'; the low-level
-    compute_diffusion_kernels still returns H for mode='average'."""
+def test_env_compute_kernel_rejects_unknown_mode():
+    """env.compute_kernel / env.smooth reject an unknown mode; the three valid
+    modes (transition, density, average) are accepted."""
     env = build_grid_2d(4.0)
     with pytest.raises(ValueError, match=r"mode must be one of"):
-        env.compute_kernel(bandwidth=5.0, mode="average")
+        env.compute_kernel(bandwidth=5.0, mode="bogus")
     with pytest.raises(ValueError, match=r"mode must be one of"):
-        env.smooth(np.ones(env.n_bins), bandwidth=5.0, mode="average")
+        env.smooth(np.ones(env.n_bins), bandwidth=5.0, mode="bogus")
 
-    graph_fv, volumes = _finite_volume_geometry(env)
-    kernel = compute_diffusion_kernels(
-        graph_fv, volumes=volumes, sigma=5.0, mode="average"
-    )
-    np.testing.assert_allclose(kernel.sum(axis=1), 1.0, atol=1e-9)
+    for mode in ("transition", "density", "average"):
+        kernel = env.compute_kernel(bandwidth=5.0, mode=mode)
+        assert kernel.shape == (env.n_bins, env.n_bins)
 
 
 # ===========================================================================
