@@ -28,10 +28,14 @@ D      = diag(W · 1)
 M      = diag(volumes)       # per-bin cell volume, == env.bin_sizes (see C4)
 ```
 
-Invariants (tested):
+Properties of the **raw** heat kernel (pre-clip / pre-normalization) — the reason the three
+mode kernels stay mutually consistent. Verified on the raw operator to numerical tolerance at
+full rank; they are **not** re-asserted on the per-mode-normalized returned kernels (those are
+checked against their own C2 contracts — see the finding on normalization below):
 
-- `L · 1 = 0` ⇒ `H · 1 = 1` (`H` row-stochastic).
-- M-self-adjoint: `M[i]·H[i,j] = M[j]·H[j,i]` ⇒ `Σ_i M[i]·H[i,j] = M[j]`.
+- `L · 1 = 0` ⇒ `H · 1 = 1` (row-stochastic).
+- M-self-adjoint: `M[i]·H[i,j] = M[j]·H[j,i]` ⇒ `Σ_i M[i]·H[i,j] = M[j]` (⇒ `density`
+  integrates to 1 at full rank).
 - Symmetric conjugate `S = M^(−1/2)(D−W)M^(−1/2)` has a real spectrum;
   `H = M^(−1/2) exp(−tS) M^(1/2)`. **PR2 (out of scope here) eigendecomposes `S`; keep this
   factorization reachable** — Phase 1's `heat_kernel` must take `(L or its S-conjugate, M)`
@@ -70,13 +74,13 @@ Each layout supplies `(A per edge, volumes per node)`; formulas + code in
 [designs.md#per-geometry-finite-volume-builders](designs.md#d1-per-geometry-finite-volume-builders).
 Dispatch key:
 
-| geometry | layouts (engine class) | dispatch |
+| geometry | layout engine class (verified) | dispatch |
 | --- | --- | --- |
-| cartesian | `RegularGrid`, `MaskedGrid`, `ImageMask`, `ShapelyPolygon` | engine type |
-| hex | `Hexagonal` | engine type |
-| graph | `Graph` (linear track) | engine type |
-| mesh | `TriangularMesh` | engine type |
-| polar | `EgocentricPolarEnvironment` (built on `MaskedGrid`) | **env type / `_POLAR`**, NOT engine |
+| cartesian | `RegularGridLayout`, `MaskedGridLayout`, `ImageMaskLayout`, `ShapelyPolygonLayout` (all subclass `_GridMixin`) | engine type / `isinstance(_GridMixin)` |
+| hex | `HexagonalLayout` | engine type |
+| graph | `GraphLayout` (linear track) | engine type |
+| mesh | `TriangularMeshLayout` | engine type |
+| polar | `EgocentricPolarEnvironment` (built on `MaskedGridLayout`) | **env type / `_POLAR`**, NOT engine |
 
 Polar MUST dispatch on the environment (`_POLAR` flag / `EgocentricPolarEnvironment`), or it
 is misclassified cartesian ([polar.py:191](../../../src/neurospatial/environment/polar.py)).

@@ -85,6 +85,8 @@ paths and the public `mode="average"` are **Phase 2**.
 | `test_transition_is_column_stochastic_polar` | `compute_kernel(mode="transition")` columns sum to 1; `kernel @ counts` conserves `Σ` on non-uniform `M` |
 | `test_transitions_row_stochastic_polar` | `transitions(method="diffusion")` rows sum to 1 on polar |
 | `test_density_integrates_to_one` | `mode="density"`: `Σ_i M_i K[i,j] = 1` |
+| `test_low_level_average_row_stochastic` | `compute_diffusion_kernels(..., mode="average")` returns row-stochastic `H` (rows sum to 1) — the low-level view Phase 2 depends on (C6) |
+| `test_apply_kernel_adjoint_nonuniform_M` | `apply_kernel(mode="adjoint", bin_sizes=M)` on the `density` kernel obeys the M-weighted inner-product contract on a non-uniform-`M` env (spec §4; regression, no live caller today) |
 | `test_components_from_W_corner_split` | corner-only 8-connected pair → 2 `W`-components; no mass crosses the corner |
 | `test_no_leakage_across_masked_wall` | point source beside a masked wall → ~0 mass across it |
 | `test_compute_diffusion_kernels_missing_A_raises` | edge without `"A"` → `ValueError` |
@@ -107,7 +109,9 @@ a well-shaped flat triangular mesh and a deliberately-skewed one. A shared point
 Before opening the PR, dispatch `code-reviewer` against the diff. Confirm:
 - Every task implemented as specified; C1–C6 upheld (esp. `mode="transition"` returns `Hᵀ`,
   components from `W`).
-- "Deliberately not in this phase" honored — no `"average"`, no `binned`/`resample` changes.
+- "Deliberately not in this phase" honored — no **public** `"average"` (no `Literal` /
+  `valid_modes` exposure), no `binned`/`resample` reroute. (The **low-level** `H`/`"average"`
+  view in `heat_kernel`/`compute_diffusion_kernels` **is** required this phase — C6/D4.)
 - Validation slice passes; slow mesh tests marked.
 - Tests exercise behavior (measured σ, stochasticity, component counts), not tautologies;
   shared setup in fixtures.

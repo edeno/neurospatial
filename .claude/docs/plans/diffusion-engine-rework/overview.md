@@ -18,7 +18,9 @@ decomposition.
 ## Current codebase integration points
 
 - `src/neurospatial/ops/diffusion.py` — **new** module: the finite-volume operator + dispatch (Phase 1).
-- [ops/smoothing.py:52-234](../../../src/neurospatial/ops/smoothing.py) — `compute_diffusion_kernels` **rewritten** (new signature, edge-`"A"`); `_assign_gaussian_weights_from_distance` **deleted**. `apply_kernel` (:237+) untouched.
+- [ops/smoothing.py:52-234](../../../src/neurospatial/ops/smoothing.py) — `compute_diffusion_kernels` **rewritten** (new signature, edge-`"A"`); `_assign_gaussian_weights_from_distance` **deleted**. `apply_kernel` (:237+) **code**
+  untouched, but its **adjoint** under the new (non-symmetric on non-uniform `M`) density
+  kernel is **regression-tested** in Phase 1 (spec §4) — "untouched code" ≠ "unverified behavior".
 - [ops/__init__.py:99,188](../../../src/neurospatial/ops/__init__.py) — public export of `compute_diffusion_kernels` (signature break; CHANGELOG).
 - [fields.py:124-142](../../../src/neurospatial/environment/fields.py) — `compute_kernel` re-routed to `ops/diffusion.py`; [fields.py:48,155,285](../../../src/neurospatial/environment/fields.py) — mode Literals/`valid_modes` gain `"average"` (Phase 2). `smooth`/`compute_kernel` docstrings updated.
 - [trajectory.py:495](../../../src/neurospatial/environment/trajectory.py) — `occupancy(bandwidth=)`: unchanged (`mode="transition"` = `Hᵀ`, still mass-conserving). [trajectory.py:820-870](../../../src/neurospatial/environment/trajectory.py) — `transitions(method="diffusion")`: returns row-stochastic `H` via transpose (Phase 1).
