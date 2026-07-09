@@ -90,6 +90,6 @@ migration note; users approximating the old amount of smoothing scale `bandwidth
 ## Estimated Effort
 
 Phase 1: ~500–800 LOC (new `ops/diffusion.py` ~300–400, `compute_diffusion_kernels` rewrite,
-5 geometry builders, junction contraction, migration, ~14 tests + fixtures). Phase 2:
+5 geometry builders, junction contraction, migration, ~18 tests + fixtures). Phase 2:
 ~150–250 LOC (mode threading, 2 caller reroutes, ~5 tests). Golden-value recompute count TBD
 at Phase 1 (grep tests pinning smoothed numbers).

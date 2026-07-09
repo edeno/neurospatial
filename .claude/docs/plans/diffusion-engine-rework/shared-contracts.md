@@ -121,7 +121,8 @@ lobes). Components: `scipy.sparse.csgraph.connected_components(W, directed=False
   truth, exactly like `"distance"`. No `face_measures` argument.
 - **Explicit `A == 0`** ⇒ no diffusion across that edge. **Missing `A`** on an existing edge
   ⇒ **raise** (a broken geometry builder must not silently degrade to an identity-ish
-  kernel).
+  kernel). A **negative, NaN, or infinite `A`** ⇒ **raise** (it would corrupt `W = A/d` and
+  the C1 invariants); only `A >= 0` finite is accepted.
 - `volumes`: node-ordered `(n_bins,)` array aligned to nodes `0..n−1`.
 - **Input validation (preserve + extend today's `bandwidth <= 0` check at
   [smoothing.py:149](../../../src/neurospatial/ops/smoothing.py)):** raise on `sigma <= 0`,

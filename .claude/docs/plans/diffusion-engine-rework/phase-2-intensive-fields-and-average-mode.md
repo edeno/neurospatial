@@ -41,7 +41,9 @@ volume/zero-fill bias on non-uniform `M`. Depends only on Phase 1's `H` operator
   with `num = H@(v·valid); den = H@valid; out = where(den>0, num/den, nan)` using
   `dst_env.compute_kernel(mode="average")`, `valid = (~outside_source) & np.isfinite(resampled)`,
   and `v` **zero-filled where `~valid`** (an un-zeroed source `NaN` poisons every reachable
-  bin). Re-impose `NaN` on `outside_source` (and where `den == 0`).
+  bin). Re-impose `NaN` on `outside_source` (and where `den == 0`) — so a source-`NaN`
+  interior bin with valid neighbours is **intentionally interpolated** (matches `binned`
+  gap-filling), and only truly isolated bins stay `NaN`.
 - **Docs (ship with this phase):** `fields.py::smooth`/`compute_kernel` docstrings —
   document the three modes' input types (transition = extensive/mass-conserving, density =
   extensive→density, average = intensive averaging) and that `env.smooth`'s **default stays
@@ -62,7 +64,7 @@ volume/zero-fill bias on non-uniform `M`. Depends only on Phase 1's `H` operator
 | `test_average_differs_from_density_nonuniform` | on polar, `average` kernel ≠ `density` kernel |
 | `test_binned_unbiased_on_nonuniform_M` | `binned` on polar: smoothed rate is the valid-bin-normalized `H` average (matches `H@(r·mask)/H@mask`), **not** volume-biased (`≠` the `density`-path result); uniform grid unchanged |
 | `test_resample_diffuse_masked_not_biased_down` | covered bins adjacent to uncovered region are **not** pulled toward 0 (vs. the old zero-fill single-smooth); `outside_source` stays `NaN` |
-| `test_resample_diffuse_source_nan_no_propagation` | a `NaN` in the source field does **not** propagate across reachable bins (masked out via `isfinite` + zero-fill); only the originating bin stays `NaN` |
+| `test_resample_diffuse_source_nan_no_propagation` | a `NaN` in the source field does **not** propagate across reachable bins (masked out via `isfinite` + zero-fill); a source-`NaN` bin **with** valid neighbours within bandwidth is interpolated/filled (consistent with `binned`), and a bin with **no** valid neighbours (`den == 0`) stays `NaN` |
 | `test_average_smooths_intensive_field` | a flat rate map smooths to itself under `average` (row-stochastic ⇒ constant preserved) on non-uniform `M` |
 
 ## Fixtures

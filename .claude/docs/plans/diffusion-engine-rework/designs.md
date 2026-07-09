@@ -64,6 +64,8 @@ def compute_diffusion_kernels(graph, *, volumes, sigma, mode):
         if "A" not in data:                       # C6: missing A raises
             raise ValueError(f"edge ({u},{v}) has no 'A' (face measure) attribute")
         A = data["A"]; d = data["distance"]
+        if not (np.isfinite(A) and A >= 0.0):     # C6: A must be finite and >= 0
+            raise ValueError(f"edge ({u},{v}) has invalid face measure A={A}")
         if not d > 0:
             raise ValueError(f"edge ({u},{v}) has non-positive distance {d}")
         if A == 0.0:                              # C6: explicit A=0 => no diffusion edge
