@@ -194,8 +194,14 @@ def region_reward_field(
         # Create indicator field (1 inside region, 0 outside)
         indicator = np.where(region_mask, 1.0, 0.0)
 
-        # Smooth the indicator field
-        smoothed = cast("EnvironmentProtocol", env).smooth(indicator, bandwidth)
+        # Smooth the indicator field. env.smooth is a linear operator, so under
+        # truncation it can leave tolerance-level negatives at far bins; a reward
+        # field is non-negative, so floor it (the dense clipped kernel did this
+        # implicitly). Positivity is the consumer's job for the linear smoother.
+        smoothed = np.maximum(
+            np.asarray(cast("EnvironmentProtocol", env).smooth(indicator, bandwidth)),
+            0.0,
+        )
 
         # CRITICAL FIX: Scale by max IN REGION (not global max)
         # This ensures the peak reward within the actual region equals reward_value

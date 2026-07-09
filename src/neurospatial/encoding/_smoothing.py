@@ -19,12 +19,12 @@ The key difference between methods is the order of operations:
 **Backend Support**:
 
 The smoothing functions support both NumPy and JAX backends via the ``backend``
-parameter. When ``backend="jax"``, the core rate computation (spike_counts /
-occupancy) is performed using JAX array operations from ``_core_jax.py``.
-
-Note that the diffusion kernel computation uses Environment methods which are
-NumPy-based, so the kernel is computed on CPU and then transferred to JAX.
-The rate computation itself uses JAX operations.
+parameter. When ``backend="jax"``, the ``diffusion_kde`` smoothing runs entirely
+in JAX via ``env.diffuse(backend="jax")`` (the cached NumPy eigenbasis is cast to
+``jnp``, so the eigenbasis *build* stays on CPU but the *apply* runs on device),
+and the rate computation uses JAX array operations. This keeps ``jit`` / ``grad``
+/ GPU working through the smoothing. (``binned`` keeps a NumPy round-trip for its
+masked average.)
 
 **Performance**:
 
@@ -147,9 +147,9 @@ def _get_gaussian_kernel(
             f"weight matrix exp(-d^2/2sigma^2) is dense by construction (every "
             f"entry > 0), so it requires an {n_bins} x {n_bins} float64 matrix "
             f"(~{estimated_gb:.1f} GB) -- O(n^2) memory. Proceeding anyway; this "
-            f"may be slow and memory-intensive. To reduce the cost, increase "
-            f"bin_size (fewer bins). (smoothing_method='binned' also builds a "
-            f"dense kernel, so it is not a memory mitigation.)",
+            f"may be slow and memory-intensive. To avoid a dense kernel, use "
+            f"smoothing_method='diffusion_kde' (matrix-free, boundary-aware, "
+            f"O(n * rank)) or increase bin_size (fewer bins).",
             UserWarning,
             stacklevel=2,
         )
@@ -441,24 +441,26 @@ def smooth_rate_maps_batch(
         If spike_counts.shape[1] != occupancy.shape[0].
         If spike_counts.shape[1] != env.n_bins.
     """
-    # Validate batch-specific requirements
-    spike_counts = np.asarray(spike_counts)
-    occupancy = np.asarray(occupancy)
+    # Validate batch-specific requirements. Use np.shape/np.ndim (which read
+    # .shape/.ndim) rather than np.asarray, so a traced JAX array passes through
+    # untouched: coercing it here would raise TracerArrayConversionError and
+    # break jit/grad on the backend="jax" path. The NumPy impls re-coerce.
+    sc_shape = np.shape(spike_counts)
+    occ_shape = np.shape(occupancy)
 
-    if spike_counts.ndim != 2:
+    if len(sc_shape) != 2:
         raise ValueError(
-            f"spike_counts must be 2D (n_neurons, n_bins), got shape {spike_counts.shape}"
+            f"spike_counts must be 2D (n_neurons, n_bins), got shape {sc_shape}"
         )
 
-    if spike_counts.shape[1] != occupancy.shape[0]:
+    if sc_shape[1] != occ_shape[0]:
         raise ValueError(
-            f"spike_counts has {spike_counts.shape[1]} bins but "
-            f"occupancy has {occupancy.shape[0]} bins"
+            f"spike_counts has {sc_shape[1]} bins but occupancy has {occ_shape[0]} bins"
         )
 
-    if spike_counts.shape[1] != env.n_bins:
+    if sc_shape[1] != env.n_bins:
         raise ValueError(
-            f"spike_counts has {spike_counts.shape[1]} bins but "
+            f"spike_counts has {sc_shape[1]} bins but "
             f"env has {env.n_bins} bins (n_bins mismatch)"
         )
 
@@ -506,21 +508,22 @@ def _validate_smoothing_inputs(
     """Validate inputs for smoothing functions."""
     _validate_smoothing_parameters(method, bandwidth)
 
-    # Convert to arrays
-    spike_counts = np.asarray(spike_counts)
-    occupancy = np.asarray(occupancy)
+    # Read shapes via np.shape (not np.asarray), so a traced JAX array passes
+    # through untouched -- coercing it here would raise TracerArrayConversionError
+    # and break jit/grad on the backend="jax" path.
+    sc_shape = np.shape(spike_counts)
+    occ_shape = np.shape(occupancy)
 
     # Check shapes match
-    if spike_counts.shape != occupancy.shape:
+    if sc_shape != occ_shape:
         raise ValueError(
-            f"spike_counts shape {spike_counts.shape} does not match "
-            f"occupancy shape {occupancy.shape}"
+            f"spike_counts shape {sc_shape} does not match occupancy shape {occ_shape}"
         )
 
     # Check matches environment
-    if spike_counts.shape[0] != env.n_bins:
+    if sc_shape[0] != env.n_bins:
         raise ValueError(
-            f"spike_counts has {spike_counts.shape[0]} elements but "
+            f"spike_counts has {sc_shape[0]} elements but "
             f"env has {env.n_bins} bins (n_bins mismatch)"
         )
 

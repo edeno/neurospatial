@@ -502,6 +502,23 @@ def test_jax_backend_return_type_and_grad():
     )
     assert isinstance(rate, jax.Array)
 
+    # jit + grad through the PUBLIC wrapper (not just env.diffuse): the public
+    # validation must not coerce a traced array to NumPy, or tracing would raise.
+    occ = jnp.ones(env.n_bins)
+
+    def rate_loss(x):
+        return jnp.sum(
+            smooth_rate_map(
+                env, x, occ, method="diffusion_kde", bandwidth=8.0, backend="jax"
+            )
+            ** 2
+        )
+
+    assert bool(jnp.isfinite(jax.jit(rate_loss)(field)))
+    wrapper_grad = jax.grad(rate_loss)(field)
+    assert wrapper_grad.shape == field.shape
+    assert bool(jnp.all(jnp.isfinite(wrapper_grad)))
+
 
 # ---------------------------------------------------------------------------
 # Performance: apply-path vs the captured dense baseline

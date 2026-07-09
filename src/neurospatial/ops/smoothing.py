@@ -152,17 +152,18 @@ def compute_diffusion_kernels(
 
     **Mitigations for large environments:**
 
-    - Reduce the number of bins by increasing ``bin_size`` when constructing
-      the environment. (Every ``smoothing_method`` -- ``diffusion_kde``,
-      ``gaussian_kde``, and ``binned`` -- builds a dense kernel, so switching
-      method is not a memory mitigation.)
+    - Smooth **matrix-free** via :meth:`Environment.diffuse` (or
+      :meth:`Environment.smooth`), which apply the same operator through a cached
+      truncated eigenbasis in ``O(n_bins * rank)`` memory and never build this
+      dense kernel; the ``"diffusion_kde"`` / ``"binned"`` encoding methods route
+      through it. Only this function, ``compute_kernel``, and the ``"gaussian_kde"``
+      method build a dense kernel.
+    - Reduce the number of bins by increasing ``bin_size`` when constructing the
+      environment.
     - For population decoding at scale, the memory-safe paths this release are
       float32 rate maps and the summary decode
       (:func:`~neurospatial.decoding.posterior.decode_position_summary`), which
       avoid materializing a full dense posterior.
-
-    A faster, lower-peak ``expm_multiply`` / Chebyshev rewrite of this kernel is
-    a deferred stretch goal and is **not** implemented in this release.
     """
     # 1) Validate mode and sigma up front, before any O(n^2)/O(n^3) work (the
     #    high-bin warning, W assembly, or the dense matrix exponential): a typo
@@ -210,10 +211,12 @@ def compute_diffusion_kernels(
             f"requires an {n_bins} x {n_bins} float64 matrix "
             f"(~{estimated_gb:.1f} GB) -- O(n^2) memory (and O(n^3) time for the "
             f"matrix exponential). Proceeding anyway; this may be slow and "
-            f"memory-intensive. To reduce the cost, increase bin_size (fewer "
-            f"bins). Every smoothing_method (diffusion_kde, gaussian_kde, "
-            f"binned) builds a dense kernel, so switching method does not avoid "
-            f"this cost.",
+            f"memory-intensive. To avoid this dense kernel entirely, smooth "
+            f"matrix-free via env.diffuse (or the 'diffusion_kde' / 'binned' "
+            f"encoding methods, which route through it) -- both scale as "
+            f"O(n * rank), not O(n^2). Only compute_kernel (this call) and the "
+            f"'gaussian_kde' method build a dense kernel. You can also increase "
+            f"bin_size to reduce the bin count.",
             UserWarning,
             stacklevel=2,
         )

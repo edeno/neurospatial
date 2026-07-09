@@ -973,7 +973,9 @@ class TestGaussianKernelMemoryWarning:
         msg = str(record[0].message)
         assert str(simple_env.n_bins) in msg
         assert "GB" in msg
-        assert "binned" in msg
+        # Points to the matrix-free alternative (diffusion_kde), not the stale
+        # claim that every method builds a dense kernel.
+        assert "diffusion_kde" in msg
         # Must have actually built and returned the kernel (no raise).
         assert kernel.shape == (simple_env.n_bins, simple_env.n_bins)
 

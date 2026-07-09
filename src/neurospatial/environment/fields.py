@@ -121,11 +121,12 @@ class EnvironmentFields:
         exponential is also O(n³) in time, so large environments are slow as
         well as memory-hungry.
 
-        For large environments, reduce the number of bins by increasing
-        ``bin_size`` when constructing the environment. (Every
-        ``smoothing_method`` in the higher-level encoding functions -- including
-        ``"binned"`` -- builds this dense kernel, so switching method is not a
-        memory mitigation.)
+        **To avoid this dense matrix entirely, use** :meth:`diffuse` (or
+        :meth:`smooth`), which apply the same operator **matrix-free** via a
+        cached truncated eigenbasis in ``O(n_bins * rank)`` memory — and the
+        higher-level ``"diffusion_kde"`` / ``"binned"`` encoding methods route
+        through it. ``compute_kernel`` is for callers that genuinely need the
+        explicit ``(n, n)`` matrix. For a smaller matrix, increase ``bin_size``.
 
         The physical-σ guarantee assumes uniform bin spacing per axis (the
         standard grid, hex, polar-sector, graph, and mesh layouts). A custom

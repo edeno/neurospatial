@@ -615,7 +615,9 @@ def _resolve_basis(
     if key in resolved:
         r = resolved[key]
         if isinstance(r, str):  # "dense": transient full basis, never cached
-            return _transient_dense_basis(W, volumes, n)
+            # No re-warn here: the large-matrix warning fired once when this
+            # bandwidth first resolved to "dense" (the probe path below).
+            return _transient_dense_basis(W, volumes)
         Q, Lam, _lab = holder["basis"]
         return Q[:, :r], Lam[:r]
 
@@ -653,15 +655,16 @@ def _resolve_basis(
 
 
 def _transient_dense_basis(
-    W: scipy.sparse.spmatrix, volumes: NDArray[np.float64], n: int
+    W: scipy.sparse.spmatrix, volumes: NDArray[np.float64]
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Build a full dense eigenbasis of ``S`` transiently (never cached).
 
-    Returns ``(Q, Lam)`` -- eigenvectors first -- matching :func:`_resolve_basis`
-    (``_symmetric_eigenbasis`` returns ``(eigvals, eigvecs)``, so swap).
+    Does NOT warn (the caller warns once, when the bandwidth first resolves to
+    "dense"). Returns ``(Q, Lam)`` -- eigenvectors first -- matching
+    :func:`_resolve_basis` (``_symmetric_eigenbasis`` returns ``(eigvals,
+    eigvecs)``, so swap).
     """
     S = _symmetric_conjugate(W, volumes)
-    _warn_large_dense_basis(n)
     eigvals, eigvecs = _symmetric_eigenbasis(S, rank=None)
     return eigvecs, eigvals
 
