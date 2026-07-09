@@ -150,6 +150,13 @@ def heat_kernel_from_W(
     normalization is inherently within-component; no explicit component loop is
     needed here.
     """
+    # Validate mode before the dense matrix exponential so a direct caller with
+    # a bad mode fails fast rather than after paying the O(n^3) expm cost.
+    if mode not in ("transition", "density", "average"):
+        raise ValueError(
+            f"Invalid mode {mode!r}. Choose 'transition', 'density', or 'average'."
+        )
+
     # Clip round-off negatives (real cross-block lobes only appear under the
     # future truncated engine, not at full rank).
     H = np.clip(_raw_heat_operator(W, volumes, sigma), 0.0, None)
@@ -158,18 +165,13 @@ def heat_kernel_from_W(
     if mode == "average":
         row_sums = H.sum(axis=1, keepdims=True)
         kernel = H / np.where(row_sums > 0.0, row_sums, 1.0)
-        return kernel
-    if mode == "transition":
+    elif mode == "transition":
         row_sums = H.sum(axis=1, keepdims=True)
         kernel = (H / np.where(row_sums > 0.0, row_sums, 1.0)).T
-        return kernel
-    if mode == "density":
+    else:  # mode == "density"
         col_mass = volumes @ H  # col_mass[j] = sum_i M_i H[i, j]
         kernel = H / np.where(col_mass > 0.0, col_mass, 1.0)[np.newaxis, :]
-        return kernel
-    raise ValueError(
-        f"Invalid mode {mode!r}. Choose 'transition', 'density', or 'average'."
-    )
+    return kernel
 
 
 def _components_from_W(W: scipy.sparse.spmatrix) -> tuple[int, NDArray[np.int_]]:

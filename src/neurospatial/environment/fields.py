@@ -244,8 +244,9 @@ class EnvironmentFields:
             \\sum_i \\text{smoothed}_i = \\sum_i \\text{field}_i
 
         For mode='density', the kernel maps an extensive input (counts) to a
-        density that integrates to 1 under bin volumes; it must not be applied
-        to an already-intensive field (see the ``mode`` parameter).
+        density whose integral under bin volumes equals the input total
+        (``sum(smoothed * bin_sizes) == sum(field)``); it must not be applied to
+        an already-intensive field (see the ``mode`` parameter).
 
         ``bandwidth`` is the true physical standard deviation (σ) of the
         smoothing on any supported layout, independent of bin size.
