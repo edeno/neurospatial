@@ -267,11 +267,27 @@ class EnvironmentFields:
         ``bandwidth`` is the true physical standard deviation (σ) of the
         smoothing on any supported layout, independent of bin size.
 
-        The kernel is cached automatically, so repeated smoothing operations
-        with the same bandwidth and mode are efficient.
+        **Implementation.** Smoothing is applied matrix-free via
+        :meth:`diffuse` (a cached truncated eigenbasis), so it never materializes
+        the dense ``(n_bins, n_bins)`` kernel and scales to large/fine grids. The
+        eigenbasis is cached on the environment and reused across bandwidths,
+        modes, and calls.
+
+        **Approximation contract.** ``smooth`` is a pure linear operator (signed
+        fields are preserved) that reproduces the dense kernel to within a
+        near-lossless truncation tolerance: the deviation is ≤ ``tol`` (default
+        ``1e-6``) in the **M-weighted norm** relative to the dense output (the raw
+        per-bin error carries a volume-conditioning factor ``κ(M)``, worst on
+        polar ``r→0`` / skewed mesh). On a **non-negative** input this can leave
+        tolerance-level negatives instead of the dense kernel's exact 0-floor —
+        clip the result yourself if you need a strict floor. Mass conservation
+        (``mode='transition'``) and constant-field preservation
+        (``mode='average'``) hold **exactly** under truncation (the per-component
+        null mode is always retained).
 
         Edge preservation: Smoothing respects graph connectivity. Mass does
-        not leak between disconnected components.
+        not leak between disconnected components (even under truncation, because
+        the eigenbasis modes are component-local).
 
         Examples
         --------

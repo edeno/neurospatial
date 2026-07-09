@@ -26,31 +26,24 @@ Note that the diffusion kernel computation uses Environment methods which are
 NumPy-based, so the kernel is computed on CPU and then transferred to JAX.
 The rate computation itself uses JAX operations.
 
-**Performance Warning**:
+**Performance**:
 
-``gaussian_kde`` builds a dense ``(n_bins, n_bins)`` Gaussian weight matrix,
-costing O(n_bins²) memory and O(n_bins²) time to materialize. This matrix is
-cached per ``(environment, bandwidth)`` (see ``_get_gaussian_kernel``), so a
-batch call computes it once and reuses it across all neurons; the per-neuron
-cost is then a single O(n_bins²) matmul, i.e. O(n_neurons × n_bins²) for the
-matmuls but only one weight-matrix build.
+``diffusion_kde`` and ``binned`` smooth **matrix-free** via ``env.diffuse``: a
+cached, bandwidth-aware truncated eigenbasis of the finite-volume operator is
+applied without ever materializing the dense ``(n_bins, n_bins)`` heat kernel.
+Time and memory scale with ``n_bins × rank`` (``rank ~ measure(domain)/σ^d``),
+not ``n_bins²``, so these methods scale to large/fine grids. The eigenbasis is
+geometry-only, so it is built once per environment and reused across every
+bandwidth, mode, and neuron. (A near-full-rank request — a light bandwidth on a
+large grid — genuinely needs most modes, so ``env.diffuse`` falls back to a
+transient dense basis there, with the same large-matrix ``UserWarning`` as
+``compute_kernel``.)
 
-``diffusion_kde`` is **not** sparse: the diffusion heat kernel ``exp(-tL)`` is
-dense by construction (every entry is positive), so it too is a dense
-``(n_bins, n_bins)`` matrix costing O(n_bins²) memory. It is built once via a
-matrix exponential (a one-time O(n_bins³) cost) and cached per
-``(environment, bandwidth)``; the per-neuron smoothing is then a dense
-O(n_bins²) matmul. Its advantage over ``gaussian_kde`` is boundary-awareness
-(it diffuses over the environment graph and so respects walls), not lower
-asymptotic cost.
-
-**All three methods materialize a dense ``(n_bins, n_bins)`` kernel** —
-``binned`` smooths its normalized rate map through the same diffusion kernel
-(via ``env.smooth``), so it has no memory advantage — and each emits a loud
-memory ``UserWarning`` (with a GB estimate) for very large environments, above
-``_LARGE_KERNEL_THRESHOLD`` bins, then proceeds. There is **no** hard limit.
-For environments that would not fit in RAM, reduce the bin count (increase
-``bin_size``).
+``gaussian_kde`` still builds a dense ``(n_bins, n_bins)`` Gaussian weight matrix
+(Euclidean, boundary-ignoring), costing O(n_bins²) memory and time; it is cached
+per ``(environment, bandwidth)`` (see ``_get_gaussian_kernel``) and reused across
+neurons, and warns above ``_LARGE_KERNEL_THRESHOLD`` bins. For very large
+environments prefer ``diffusion_kde`` (matrix-free and boundary-aware).
 
 References
 ----------
@@ -293,39 +286,36 @@ def smooth_rate_map(
     -----
     **Method Comparison**:
 
-    +--------------+----------------+-----------------------+--------------+
-    | Method       | Boundaries     | Complexity            | Artifacts    |
-    +==============+================+=======================+==============+
-    | diffusion_kde| Respects       | O(n_bins²) per neuron | None         |
-    +--------------+----------------+-----------------------+--------------+
-    | gaussian_kde | Ignores        | O(n_bins²) per neuron | Wall bleed   |
-    +--------------+----------------+-----------------------+--------------+
-    | binned       | Respects*      | O(n_bins²) per neuron | Discretization|
-    +--------------+----------------+-----------------------+--------------+
+    +--------------+----------------+------------------------+--------------+
+    | Method       | Boundaries     | Complexity             | Artifacts    |
+    +==============+================+========================+==============+
+    | diffusion_kde| Respects       | O(n_bins·rank) / neuron| None         |
+    +--------------+----------------+------------------------+--------------+
+    | gaussian_kde | Ignores        | O(n_bins²) per neuron  | Wall bleed   |
+    +--------------+----------------+------------------------+--------------+
+    | binned       | Respects*      | O(n_bins·rank) / neuron| Discretization|
+    +--------------+----------------+------------------------+--------------+
 
     *binned computes the rate first, then smooths it (bin-then-smooth); the
     other methods smooth the counts, then normalize (smooth-then-normalize).
 
-    The ``diffusion_kde`` kernel is dense ``(n_bins, n_bins)`` and built once
-    per ``(env, bandwidth)`` via a matrix exponential (a one-time O(n_bins³)
-    build); the per-neuron smoothing is then the dense O(n_bins²) matmul
-    ``kernel @ counts``. **All three methods build a dense
-    ``(n_bins, n_bins)`` kernel** — ``binned`` smooths its rate map through the
-    same diffusion kernel (via ``env.smooth``), so it has no memory advantage —
-    and each emits a loud memory ``UserWarning`` (with a GB estimate) above
-    ``_LARGE_KERNEL_THRESHOLD`` bins, then proceeds (no hard limit).
+    ``diffusion_kde`` and ``binned`` smooth **matrix-free** via ``env.diffuse``
+    (a cached bandwidth-aware truncated eigenbasis), so they never build the
+    dense ``(n_bins, n_bins)`` heat kernel: time and memory scale with
+    ``n_bins × rank`` (``rank ~ measure(domain)/σ^d``), not ``n_bins²``. The
+    eigenbasis is geometry-only, so it is built once per environment and reused
+    across bandwidths, modes, and neurons. ``gaussian_kde`` still builds a dense
+    ``(n_bins, n_bins)`` Gaussian matrix (O(n_bins²), warns above
+    ``_LARGE_KERNEL_THRESHOLD`` bins).
 
     **Performance recommendation**: For most analyses use ``diffusion_kde``
-    (default) -- it is boundary-aware. All three methods build a dense
-    ``(n_bins, n_bins)`` kernel (cached per ``(env, bandwidth)`` and reused
-    across neurons), so all cost O(n_bins²) memory. For environments too large
-    for a dense kernel, increase ``bin_size`` to reduce the bin count.
+    (default) -- it is boundary-aware and matrix-free, so it scales to large/fine
+    grids where the dense ``gaussian_kde`` kernel would not fit in RAM.
 
-    **Backend behavior**: When ``backend="jax"``, the kernel smoothing and
-    rate computation use JAX operations. The kernel itself is computed from
-    the Environment using NumPy and converted to JAX. This enables GPU
-    acceleration for the matrix operations and compatibility with JAX
-    transformations like ``jit`` and ``grad``.
+    **Backend behavior**: When ``backend="jax"``, ``diffusion_kde`` runs the
+    smoothing **in JAX** via ``env.diffuse(backend="jax")`` (the cached eigenbasis
+    is cast to ``jnp``), enabling GPU acceleration and ``jit`` / ``grad`` through
+    the smoothing. ``binned`` keeps a NumPy round-trip for its masked average.
 
     **JAX backend limitation with binned method**: When using ``backend="jax"``
     with ``smoothing_method="binned"``, the smoothing step requires a round-trip
