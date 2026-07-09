@@ -28,7 +28,8 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.environment._protocols import SelfEnv
+from neurospatial.environment._protocols import EnvironmentProtocol, SelfEnv
+from neurospatial.environment.decorators import check_fitted
 
 if TYPE_CHECKING:
     pass
@@ -41,6 +42,7 @@ class EnvironmentFields:
     Provides methods for processing fields over spatial environments.
     """
 
+    @check_fitted
     def compute_kernel(
         self: SelfEnv,
         bandwidth: float,
@@ -48,22 +50,31 @@ class EnvironmentFields:
         mode: Literal["transition", "density"] = "density",
         cache: bool = True,
     ) -> NDArray[np.float64]:
-        """Compute diffusion kernel for smoothing operations.
+        """Compute the finite-volume diffusion kernel for smoothing operations.
 
-        Convenience wrapper for kernels.compute_diffusion_kernels() that
-        automatically uses this environment's connectivity graph and bin sizes.
+        Wrapper around :func:`neurospatial.ops.diffusion.diffusion_kernel` that
+        resolves this environment's layout geometry and cell volumes, so
+        ``bandwidth`` is the true physical standard deviation (σ) of the
+        smoothing on any supported layout, independent of bin size.
 
         Parameters
         ----------
         bandwidth : float
-            Smoothing bandwidth in physical units (σ in the Gaussian kernel),
-            must be > 0. Controls the scale of diffusion.
+            Smoothing bandwidth in physical units (the standard deviation σ of
+            the diffusion), must be > 0. This is the true physical σ: a
+            point source smoothed by this kernel has physical standard
+            deviation ``bandwidth`` regardless of bin size.
         mode : {'transition', 'density'}, default='density'
-            Normalization mode:
+            Kernel orientation:
 
-            - 'transition': Each column sums to 1 (discrete probability).
-            - 'density': Each column integrates to 1 over bin volumes
-              (continuous density).
+            - 'transition': ``Hᵀ`` — column-stochastic (``sum_i K[i, j] = 1``).
+              ``K @ field`` conserves ``sum(field)``; use for **extensive**
+              quantities (occupancy, spike counts).
+            - 'density': ``H·M⁻¹`` — M-weighted columns integrate to 1
+              (``sum_i M_i K[i, j] = 1``). Takes an **extensive** input (counts)
+              and returns a **density** (KDE). Do NOT apply to an already
+              intensive field (a rate map): on non-uniform bin volumes that
+              divides by cell volume twice.
         cache : bool, default=True
             If True, cache the computed kernel for reuse. Subsequent calls
             with the same (bandwidth, mode) will return the cached result.
@@ -71,32 +82,30 @@ class EnvironmentFields:
         Returns
         -------
         kernel : NDArray[np.float64], shape (n_bins, n_bins)
-            Diffusion kernel matrix where kernel[:, j] represents the smoothed
-            distribution resulting from a unit mass at bin j.
+            Diffusion kernel matrix.
 
         Raises
         ------
         RuntimeError
             If called before the environment is fitted.
         ValueError
-            If bandwidth is not positive.
+            If bandwidth is not positive, or ``mode`` is not one of
+            ``{'transition', 'density'}``.
 
         See Also
         --------
-        neurospatial.kernels.compute_diffusion_kernels :
-            Lower-level function with more control.
+        neurospatial.ops.diffusion.diffusion_kernel :
+            Lower-level function operating directly on an environment.
+        neurospatial.ops.smoothing.compute_diffusion_kernels :
+            Graph-level primitive with explicit face measures.
 
         Notes
         -----
-        The kernel is computed via matrix exponential of the graph Laplacian:
-
-        .. math::
-            K = \\exp(-t L)
-
-        where :math:`t = \\sigma^2 / 2` and :math:`L` is the graph Laplacian.
-
-        For mode='density', the Laplacian is volume-corrected to properly
-        handle bins of varying sizes.
+        The kernel is the finite-volume heat operator ``H = exp(-t L)`` with
+        ``t = σ² / 2`` and ``L = M⁻¹ (D − W)``, ``W[i, j] = A[i, j] / d[i, j]``
+        (``A`` the shared-face measure, ``d`` the center distance, ``M`` the
+        per-bin cell volumes). On any K-orthogonal layout ``L`` has the
+        continuum limit ``−∇²``, so the smoothing width equals ``σ``.
 
         **Memory cost is O(n²).** The diffusion heat kernel ``exp(-t L)`` of a
         connected graph is *dense by construction* (every entry > 0), so the
@@ -112,6 +121,12 @@ class EnvironmentFields:
         higher-level encoding functions, or reduce the number of bins by
         increasing ``bin_size`` when constructing the environment.
 
+        The physical-σ guarantee assumes uniform bin spacing per axis (the
+        standard grid, hex, polar-sector, graph, and mesh layouts). A custom
+        *nonuniform* Cartesian ``grid_edges`` inherits a uniform-cell
+        approximation for both the face measure and the cell volume, so it is
+        outside this guarantee (a tracked follow-up).
+
         Examples
         --------
         >>> env = Environment.from_samples(data, bin_size=2.0)  # doctest: +SKIP
@@ -121,7 +136,17 @@ class EnvironmentFields:
         >>> smoothed_field = kernel @ field  # doctest: +SKIP
 
         """
-        from neurospatial.ops.smoothing import compute_diffusion_kernels
+        from neurospatial.ops.diffusion import diffusion_kernel
+
+        # Validate mode. 'average' (intensive-field averaging) is a valid
+        # low-level mode but is not yet exposed on the public smoothing API.
+        valid_modes = {"transition", "density"}
+        if mode not in valid_modes:
+            raise ValueError(
+                f"mode must be one of {valid_modes} (got '{mode}'). "
+                "Use 'transition' for mass-conserving smoothing of extensive "
+                "quantities or 'density' for count-to-density (KDE)."
+            )
 
         # Initialize cache if it doesn't exist
         # (for backward compatibility with environments deserialized from older versions)
@@ -133,12 +158,12 @@ class EnvironmentFields:
         if cache and cache_key in self._kernel_cache:
             return self._kernel_cache[cache_key]
 
-        # Compute kernel
-        kernel = compute_diffusion_kernels(
-            graph=self.connectivity,
-            bandwidth_sigma=bandwidth,
-            bin_sizes=self.bin_sizes if mode == "density" else None,
-            mode=mode,
+        # Compute kernel. diffusion_kernel reads env.bin_sizes internally as the
+        # canonical cell-volume mass matrix M (used by every mode).
+        from typing import cast
+
+        kernel = diffusion_kernel(
+            cast("EnvironmentProtocol", self), bandwidth, mode=mode
         )
 
         # Store in cache if enabled
@@ -169,14 +194,21 @@ class EnvironmentFields:
             Smoothing bandwidth in physical units (σ). Controls the scale
             of spatial smoothing. Must be positive.
         mode : {'transition', 'density'}, default='density'
-            Smoothing mode that controls normalization:
+            Smoothing mode, distinguished by the **input type**:
 
-            - 'transition': Mass-conserving smoothing. Total sum is preserved:
-              smoothed.sum() = field.sum(). Use for count data (occupancy,
-              spike counts).
-            - 'density': Volume-corrected smoothing. Accounts for varying bin
-              sizes. Use for continuous density fields (rate maps,
-              probability distributions).
+            - 'transition': Mass-conserving smoothing of an **extensive**
+              quantity (a total per bin). Total sum is preserved:
+              ``smoothed.sum() == field.sum()``. Use for occupancy, spike
+              counts, and discrete probability *mass* (a posterior summing to 1
+              stays summing to 1).
+            - 'density': Count → density (KDE). Takes an **extensive** input
+              (counts / occupancy) and returns a density whose integral under
+              bin volumes equals the input total: ``sum(smoothed * bin_sizes)
+              == sum(field)`` (each kernel column integrates to 1 under bin
+              volumes). Do **not** apply to an already **intensive** field (a
+              rate map or probability *density*): on non-uniform bin volumes
+              that divides by cell volume twice. (An intensive-field averager
+              will be exposed as ``mode='average'`` in a future release.)
 
         Returns
         -------
@@ -211,8 +243,13 @@ class EnvironmentFields:
         .. math::
             \\sum_i \\text{smoothed}_i = \\sum_i \\text{field}_i
 
-        For mode='density', the kernel accounts for bin volumes, making it
-        appropriate for continuous density fields.
+        For mode='density', the kernel maps an extensive input (counts) to a
+        density whose integral under bin volumes equals the input total
+        (``sum(smoothed * bin_sizes) == sum(field)``); it must not be applied to
+        an already-intensive field (see the ``mode`` parameter).
+
+        ``bandwidth`` is the true physical standard deviation (σ) of the
+        smoothing on any supported layout, independent of bin size.
 
         The kernel is cached automatically, so repeated smoothing operations
         with the same bandwidth and mode are efficient.
@@ -231,12 +268,12 @@ class EnvironmentFields:
         ...     smoothed_counts.sum(), spike_counts.sum()
         ... )  # doctest: +SKIP
 
-        >>> # Smooth a rate map (volume-corrected)
-        >>> smoothed_rates = env.smooth(
-        ...     rate_map, bandwidth=3.0, mode="density"
+        >>> # Turn spike counts into a smoothed density (KDE)
+        >>> spike_density = env.smooth(
+        ...     spike_counts, bandwidth=3.0, mode="density"
         ... )  # doctest: +SKIP
 
-        >>> # Smooth a probability distribution
+        >>> # Smooth a discrete probability distribution (mass, sums to 1)
         >>> smoothed_prob = env.smooth(
         ...     posterior, bandwidth=2.0, mode="transition"
         ... )  # doctest: +SKIP

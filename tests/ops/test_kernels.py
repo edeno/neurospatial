@@ -1,8 +1,10 @@
-"""
-Tests for diffusion kernel computation.
+"""Tests for the low-level diffusion-kernel primitive ``compute_diffusion_kernels``.
 
-This module tests the kernel infrastructure that provides the foundation for
-all smoothing operations in neurospatial.
+These exercise the graph-level seam: given ``"A"`` (shared-face measure) and
+``"distance"`` on each edge plus a node-ordered ``volumes`` array, it assembles
+the finite-volume weight matrix ``W[i, j] = A / d`` and returns the requested
+normalized mode. The finite-volume operator + per-geometry face measures + the
+grid-independence / sigma-recovery guarantees are covered in ``test_diffusion.py``.
 """
 
 import networkx as nx
@@ -13,541 +15,348 @@ from neurospatial import Environment
 from neurospatial.ops.smoothing import compute_diffusion_kernels
 
 
+def _line_graph(n, *, distance=1.0, A=1.0):
+    """1D chain of ``n`` nodes with uniform ``distance`` and face measure ``A``."""
+    graph = nx.Graph()
+    for i in range(n):
+        graph.add_node(i, pos=(float(i),))
+    for i in range(n - 1):
+        graph.add_edge(i, i + 1, distance=distance, A=A)
+    return graph
+
+
+def _grid_graph_with_A(side=3):
+    """``side x side`` orthogonal grid with unit distance and face measure."""
+    graph = nx.grid_2d_graph(side, side)
+    mapping = {node: i for i, node in enumerate(graph.nodes())}
+    graph = nx.relabel_nodes(graph, mapping)
+    for i in range(side * side):
+        row, col = divmod(i, side)
+        graph.nodes[i]["pos"] = (float(col), float(row))
+    for u, v in graph.edges():
+        pos_u = np.array(graph.nodes[u]["pos"])
+        pos_v = np.array(graph.nodes[v]["pos"])
+        graph.edges[u, v]["distance"] = float(np.linalg.norm(pos_v - pos_u))
+        graph.edges[u, v]["A"] = 1.0
+    return graph
+
+
 class TestComputeDiffusionKernels:
-    """Tests for compute_diffusion_kernels function."""
+    """Structural / invariant tests for the primitive on the new signature."""
 
     def test_kernel_shape(self):
-        """Test that kernel has correct shape (n_bins x n_bins)."""
-        # Create simple 1D chain graph
-        graph = nx.Graph()
-        graph.add_node(0, pos=(0.0,))
-        graph.add_node(1, pos=(1.0,))
-        graph.add_node(2, pos=(2.0,))
-        graph.add_edge(0, 1, distance=1.0)
-        graph.add_edge(1, 2, distance=1.0)
-
+        """Kernel has shape (n_bins, n_bins) and dtype float64."""
+        graph = _line_graph(3)
         kernel = compute_diffusion_kernels(
-            graph, bandwidth_sigma=1.0, mode="transition"
+            graph, volumes=np.ones(3), sigma=1.0, mode="transition"
         )
-
-        assert kernel.shape == (3, 3), "Kernel should be n_bins x n_bins"
-        assert kernel.dtype == np.float64, "Kernel should be float64"
+        assert kernel.shape == (3, 3)
+        assert kernel.dtype == np.float64
 
     def test_kernel_symmetry_uniform_grid(self):
-        """Test that kernel is symmetric for uniform regular grid."""
-        # Create uniform 2D grid graph (3x3)
-        graph = nx.grid_2d_graph(3, 3)
-
-        # Relabel nodes to integers and add required attributes
-        mapping = {node: i for i, node in enumerate(graph.nodes())}
-        graph = nx.relabel_nodes(graph, mapping)
-
-        # Add pos and distance attributes
-        for i, node in enumerate(sorted(mapping.values())):
-            row, col = divmod(i, 3)
-            graph.nodes[node]["pos"] = (float(col), float(row))
-
-        for u, v in graph.edges():
-            pos_u = np.array(graph.nodes[u]["pos"])
-            pos_v = np.array(graph.nodes[v]["pos"])
-            graph.edges[u, v]["distance"] = float(np.linalg.norm(pos_v - pos_u))
-
+        """On a uniform grid (uniform M) the transition kernel is symmetric."""
+        graph = _grid_graph_with_A(3)
         kernel = compute_diffusion_kernels(
-            graph, bandwidth_sigma=1.0, mode="transition"
+            graph, volumes=np.ones(9), sigma=1.0, mode="transition"
         )
+        assert np.allclose(kernel, kernel.T, atol=1e-10)
 
-        # For uniform grid with equal edge lengths, kernel should be symmetric
-        assert np.allclose(kernel, kernel.T, atol=1e-10), (
-            "Kernel should be symmetric for uniform grid"
-        )
-
-    def test_kernel_normalization_transition_mode(self):
-        """Test that column sums equal 1 in transition mode."""
-        # Create simple graph
-        graph = nx.Graph()
-        for i in range(4):
-            graph.add_node(i, pos=(float(i),))
-        for i in range(3):
-            graph.add_edge(i, i + 1, distance=1.0)
-
+    def test_transition_column_stochastic(self):
+        """transition mode: each column sums to 1."""
+        graph = _line_graph(4)
         kernel = compute_diffusion_kernels(
-            graph, bandwidth_sigma=0.5, mode="transition"
+            graph, volumes=np.ones(4), sigma=0.5, mode="transition"
         )
+        np.testing.assert_allclose(kernel.sum(axis=0), 1.0, atol=1e-10)
 
-        # Each column should sum to 1 (discrete probability)
-        column_sums = kernel.sum(axis=0)
-        assert np.allclose(column_sums, 1.0, atol=1e-10), (
-            "Column sums should equal 1 in transition mode"
-        )
-
-    def test_kernel_normalization_density_mode(self):
-        """Test that weighted column sums equal 1 in density mode."""
-        # Create simple graph with varying bin sizes
+    def test_density_weighted_columns_integrate_to_one(self):
+        """density mode: sum_i M_i K[i, j] = 1 with non-uniform volumes."""
         graph = nx.Graph()
         graph.add_node(0, pos=(0.0,))
         graph.add_node(1, pos=(1.0,))
-        graph.add_node(2, pos=(3.0,))  # Non-uniform spacing
-        graph.add_edge(0, 1, distance=1.0)
-        graph.add_edge(1, 2, distance=2.0)
-
-        bin_sizes = np.array([1.0, 1.5, 2.0])  # Different volumes
+        graph.add_node(2, pos=(3.0,))
+        graph.add_edge(0, 1, distance=1.0, A=1.0)
+        graph.add_edge(1, 2, distance=2.0, A=1.0)
+        volumes = np.array([1.0, 1.5, 2.0])
 
         kernel = compute_diffusion_kernels(
-            graph, bandwidth_sigma=1.0, bin_sizes=bin_sizes, mode="density"
+            graph, volumes=volumes, sigma=1.0, mode="density"
         )
+        weighted = volumes @ kernel
+        np.testing.assert_allclose(weighted, 1.0, atol=1e-10)
 
-        # Weighted column sums: sum(kernel[:, j] * bin_sizes) should equal 1
-        for j in range(3):
-            weighted_sum = np.sum(kernel[:, j] * bin_sizes)
-            assert np.isclose(weighted_sum, 1.0, atol=1e-10), (
-                f"Column {j}: weighted sum should equal 1 in density mode"
-            )
+    def test_average_row_stochastic(self):
+        """average mode: each row sums to 1."""
+        graph = _line_graph(4)
+        kernel = compute_diffusion_kernels(
+            graph, volumes=np.array([1.0, 2.0, 1.5, 1.0]), sigma=0.7, mode="average"
+        )
+        np.testing.assert_allclose(kernel.sum(axis=1), 1.0, atol=1e-10)
 
     def test_mass_conservation(self):
-        """Test that kernel conserves mass when applied to a field."""
-        # Create 1D chain
-        graph = nx.Graph()
-        for i in range(5):
-            graph.add_node(i, pos=(float(i),))
-        for i in range(4):
-            graph.add_edge(i, i + 1, distance=1.0)
-
+        """transition mode conserves total mass under kernel @ field."""
+        graph = _line_graph(5)
         kernel = compute_diffusion_kernels(
-            graph, bandwidth_sigma=1.0, mode="transition"
+            graph, volumes=np.ones(5), sigma=1.0, mode="transition"
         )
-
-        # Create arbitrary field
         field = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
-
-        # Apply kernel
         smoothed = kernel @ field
-
-        # Total mass should be conserved
-        assert np.isclose(smoothed.sum(), field.sum(), atol=1e-10), (
-            "Mass should be conserved after smoothing"
-        )
+        np.testing.assert_allclose(smoothed.sum(), field.sum(), atol=1e-10)
 
     def test_impulse_spreading(self):
-        """Test that impulse at one bin spreads to neighbors."""
-        # Create 1D chain
-        graph = nx.Graph()
-        for i in range(5):
-            graph.add_node(i, pos=(float(i),))
-        for i in range(4):
-            graph.add_edge(i, i + 1, distance=1.0)
-
+        """An impulse spreads to neighbors, decaying with distance."""
+        graph = _line_graph(5)
         kernel = compute_diffusion_kernels(
-            graph, bandwidth_sigma=1.0, mode="transition"
+            graph, volumes=np.ones(5), sigma=1.0, mode="transition"
         )
-
-        # Impulse at center bin
         field = np.zeros(5)
         field[2] = 1.0
-
         smoothed = kernel @ field
+        assert smoothed[2] > smoothed[1] > smoothed[0] > 0
 
-        # Check that value spread to neighbors
-        assert smoothed[2] > 0, "Center should have non-zero value"
-        assert smoothed[1] > 0, "Left neighbor should have non-zero value"
-        assert smoothed[3] > 0, "Right neighbor should have non-zero value"
-        # Further neighbors should have smaller values
-        assert smoothed[2] > smoothed[1], (
-            "Center should have larger value than neighbor"
-        )
-        assert smoothed[1] > smoothed[0], "Closer bins should have larger values"
-
-    def test_edge_no_distance_attribute_raises_error(self):
-        """Test that missing distance attribute raises KeyError."""
+    def test_disconnected_components_no_leak(self):
+        """Smoothing does not leak mass between disconnected components."""
         graph = nx.Graph()
         graph.add_node(0, pos=(0.0,))
         graph.add_node(1, pos=(1.0,))
-        graph.add_edge(0, 1)  # Missing distance attribute
-
-        with pytest.raises(KeyError, match="distance"):
-            compute_diffusion_kernels(graph, bandwidth_sigma=1.0, mode="transition")
-
-    def test_density_mode_without_bin_sizes_raises_error(self):
-        """Test that density mode without bin_sizes raises ValueError."""
-        graph = nx.Graph()
-        graph.add_node(0, pos=(0.0,))
-        graph.add_node(1, pos=(1.0,))
-        graph.add_edge(0, 1, distance=1.0)
-
-        with pytest.raises(ValueError, match=r"bin_sizes.*required.*density"):
-            compute_diffusion_kernels(
-                graph, bandwidth_sigma=1.0, bin_sizes=None, mode="density"
-            )
-
-    def test_invalid_bin_sizes_shape_raises_error(self):
-        """Test that bin_sizes with wrong shape raises ValueError."""
-        graph = nx.Graph()
-        graph.add_node(0, pos=(0.0,))
-        graph.add_node(1, pos=(1.0,))
-        graph.add_edge(0, 1, distance=1.0)
-
-        wrong_size = np.array([1.0, 2.0, 3.0])  # Should be length 2
-
-        with pytest.raises(ValueError, match=r"bin_sizes.*shape"):
-            compute_diffusion_kernels(
-                graph, bandwidth_sigma=1.0, bin_sizes=wrong_size, mode="density"
-            )
-
-    def test_positive_bandwidth_required(self):
-        """Test that bandwidth must be positive."""
-        graph = nx.Graph()
-        graph.add_node(0, pos=(0.0,))
-        graph.add_node(1, pos=(1.0,))
-        graph.add_edge(0, 1, distance=1.0)
-
-        with pytest.raises(ValueError, match=r"bandwidth.*positive"):
-            compute_diffusion_kernels(graph, bandwidth_sigma=-1.0, mode="transition")
-
-        with pytest.raises(ValueError, match=r"bandwidth.*positive"):
-            compute_diffusion_kernels(graph, bandwidth_sigma=0.0, mode="transition")
-
-    def test_disconnected_graph_components(self):
-        """Test kernel behavior on disconnected graph."""
-        # Create graph with two disconnected components
-        graph = nx.Graph()
-        # Component 1
-        graph.add_node(0, pos=(0.0,))
-        graph.add_node(1, pos=(1.0,))
-        graph.add_edge(0, 1, distance=1.0)
-        # Component 2 (disconnected)
+        graph.add_edge(0, 1, distance=1.0, A=1.0)
         graph.add_node(2, pos=(10.0,))
         graph.add_node(3, pos=(11.0,))
-        graph.add_edge(2, 3, distance=1.0)
+        graph.add_edge(2, 3, distance=1.0, A=1.0)
 
         kernel = compute_diffusion_kernels(
-            graph, bandwidth_sigma=1.0, mode="transition"
+            graph, volumes=np.ones(4), sigma=1.0, mode="transition"
         )
-
-        # Smoothing should not leak between components
         field = np.array([1.0, 0.0, 0.0, 0.0])
         smoothed = kernel @ field
+        assert smoothed[0] + smoothed[1] == pytest.approx(1.0, abs=1e-12)
+        assert smoothed[2] + smoothed[3] == pytest.approx(0.0, abs=1e-12)
 
-        # Mass should stay in component 1 (bins 0, 1)
-        assert smoothed[0] + smoothed[1] > 0.99, "Mass should stay in component 1"
-        assert smoothed[2] + smoothed[3] < 0.01, "Mass should not leak to component 2"
-
-    def test_different_bandwidths(self):
-        """Test that larger bandwidth produces more diffusion."""
-        graph = nx.Graph()
-        for i in range(5):
-            graph.add_node(i, pos=(float(i),))
-        for i in range(4):
-            graph.add_edge(i, i + 1, distance=1.0)
-
-        # Impulse at center
+    def test_larger_bandwidth_spreads_more(self):
+        """A larger sigma keeps less mass at the source and spreads farther."""
+        graph = _line_graph(5)
         field = np.zeros(5)
         field[2] = 1.0
-
-        # Small bandwidth
-        kernel_small = compute_diffusion_kernels(
-            graph, bandwidth_sigma=0.3, mode="transition"
+        small = (
+            compute_diffusion_kernels(
+                graph, volumes=np.ones(5), sigma=0.3, mode="transition"
+            )
+            @ field
         )
-        smoothed_small = kernel_small @ field
-
-        # Large bandwidth
-        kernel_large = compute_diffusion_kernels(
-            graph, bandwidth_sigma=2.0, mode="transition"
+        large = (
+            compute_diffusion_kernels(
+                graph, volumes=np.ones(5), sigma=2.0, mode="transition"
+            )
+            @ field
         )
-        smoothed_large = kernel_large @ field
+        assert small[2] > large[2]
+        assert large[0] > small[0]
 
-        # Larger bandwidth should spread mass more
-        assert smoothed_small[2] > smoothed_large[2], (
-            "Small bandwidth should keep more mass at center"
+    def test_does_not_mutate_input_graph(self):
+        """The primitive reads edges but must not add attributes to the caller's graph."""
+        graph = _grid_graph_with_A(3)
+        before = {(u, v): dict(d) for u, v, d in graph.edges(data=True)}
+        compute_diffusion_kernels(
+            graph, volumes=np.ones(9), sigma=1.0, mode="transition"
         )
-        assert smoothed_large[0] > smoothed_small[0], (
-            "Large bandwidth should spread more to edges"
-        )
+        after = {(u, v): dict(d) for u, v, d in graph.edges(data=True)}
+        assert before == after, "input graph edges must be unchanged"
 
-    @staticmethod
-    def _build_grid_graph_with_distances():
-        """Build a 3x3 grid graph with 'distance' edge attributes."""
-        graph = nx.grid_2d_graph(3, 3)
-        mapping = {node: i for i, node in enumerate(graph.nodes())}
-        graph = nx.relabel_nodes(graph, mapping)
-        for i, node in enumerate(sorted(mapping.values())):
-            row, col = divmod(i, 3)
-            graph.nodes[node]["pos"] = (float(col), float(row))
-        for u, v in graph.edges():
-            pos_u = np.array(graph.nodes[u]["pos"])
-            pos_v = np.array(graph.nodes[v]["pos"])
-            graph.edges[u, v]["distance"] = float(np.linalg.norm(pos_v - pos_u))
-        return graph
 
-    def test_does_not_mutate_input_graph_weights(self):
-        """compute_diffusion_kernels must not write 'weight' onto the caller's graph.
+class TestComputeDiffusionKernelsValidation:
+    """Parameter validation (C6) at the primitive level."""
 
-        Previously the function called an in-place helper that overwrote each
-        edge's 'weight' attribute, corrupting graphs reused by the caller.
-        """
-        graph = self._build_grid_graph_with_distances()
-
-        # Seed a known 'weight' attribute the caller might depend on.
-        sentinel_weights = {}
-        for u, v in graph.edges():
-            graph.edges[u, v]["weight"] = 42.0
-            sentinel_weights[(u, v)] = 42.0
-
-        compute_diffusion_kernels(graph, bandwidth_sigma=1.0, mode="transition")
-
-        for (u, v), expected in sentinel_weights.items():
-            assert graph.edges[u, v]["weight"] == expected, (
-                "Input graph edge 'weight' must be unchanged after the call"
+    def test_missing_A_raises(self):
+        graph = _line_graph(2)
+        del graph.edges[0, 1]["A"]
+        with pytest.raises(ValueError, match=r"missing 'A'"):
+            compute_diffusion_kernels(
+                graph, volumes=np.ones(2), sigma=1.0, mode="transition"
             )
 
-    def test_kernel_values_unchanged_by_no_mutate_fix(self):
-        """Kernel values must be identical whether or not the caller graph has weights."""
-        graph_a = self._build_grid_graph_with_distances()
-        graph_b = self._build_grid_graph_with_distances()
-        # graph_b carries a stale 'weight' that the old code would have used as
-        # the starting point; the function must recompute weights internally so
-        # both graphs yield identical kernels.
-        for u, v in graph_b.edges():
-            graph_b.edges[u, v]["weight"] = 0.123
+    def test_missing_distance_raises(self):
+        graph = _line_graph(2)
+        del graph.edges[0, 1]["distance"]
+        with pytest.raises(ValueError, match=r"missing 'A' and/or 'distance'"):
+            compute_diffusion_kernels(
+                graph, volumes=np.ones(2), sigma=1.0, mode="transition"
+            )
 
-        kernel_a = compute_diffusion_kernels(
-            graph_a, bandwidth_sigma=1.0, mode="transition"
-        )
-        kernel_b = compute_diffusion_kernels(
-            graph_b, bandwidth_sigma=1.0, mode="transition"
-        )
+    def test_bad_volumes_shape_raises(self):
+        graph = _line_graph(2)
+        with pytest.raises(ValueError, match=r"volumes must have shape"):
+            compute_diffusion_kernels(
+                graph, volumes=np.ones(3), sigma=1.0, mode="transition"
+            )
 
-        assert np.allclose(kernel_a, kernel_b, atol=1e-12)
+    def test_nonpositive_volumes_raise(self):
+        graph = _line_graph(2)
+        with pytest.raises(ValueError, match=r"volumes must be finite"):
+            compute_diffusion_kernels(
+                graph, volumes=np.array([1.0, 0.0]), sigma=1.0, mode="transition"
+            )
+
+    def test_nonpositive_sigma_raises(self):
+        graph = _line_graph(2)
+        for bad in (0.0, -1.0):
+            with pytest.raises(ValueError, match=r"sigma must be finite and > 0"):
+                compute_diffusion_kernels(
+                    graph, volumes=np.ones(2), sigma=bad, mode="transition"
+                )
+
+    def test_invalid_mode_raises(self):
+        graph = _line_graph(2)
+        with pytest.raises(ValueError, match=r"Invalid mode"):
+            compute_diffusion_kernels(
+                graph, volumes=np.ones(2), sigma=1.0, mode="invalid"
+            )
+
+
+class TestKernelEdgeCases:
+    """Edge cases in kernel computation."""
+
+    def test_single_node_graph(self):
+        graph = nx.Graph()
+        graph.add_node(0, pos=(0.0,))
+        kernel = compute_diffusion_kernels(
+            graph, volumes=np.ones(1), sigma=1.0, mode="transition"
+        )
+        assert kernel.shape == (1, 1)
+        assert np.isclose(kernel[0, 0], 1.0)
+
+    def test_two_node_graph(self):
+        graph = _line_graph(2)
+        kernel = compute_diffusion_kernels(
+            graph, volumes=np.ones(2), sigma=1.0, mode="transition"
+        )
+        assert kernel.shape == (2, 2)
+        np.testing.assert_allclose(kernel.sum(axis=0), 1.0)
+        assert np.allclose(kernel, kernel.T, atol=1e-10)
+
+    def test_very_small_bandwidth_localizes(self):
+        graph = _line_graph(5)
+        kernel = compute_diffusion_kernels(
+            graph, volumes=np.ones(5), sigma=0.01, mode="transition"
+        )
+        assert np.diag(kernel).sum() > 0.95
+
+    def test_very_large_bandwidth_spreads(self):
+        graph = _line_graph(5)
+        kernel = compute_diffusion_kernels(
+            graph, volumes=np.ones(5), sigma=100.0, mode="transition"
+        )
+        for col in range(5):
+            assert np.std(kernel[:, col]) < 0.3
 
 
 class TestEnvironmentComputeKernel:
     """Tests for Environment.compute_kernel() wrapper method."""
 
     def test_compute_kernel_basic(self):
-        """Test basic kernel computation via Environment method."""
-        # Create simple 2D grid environment
         data = np.array(
-            [
-                [0.0, 0.0],
-                [1.0, 0.0],
-                [2.0, 0.0],
-                [0.0, 1.0],
-                [1.0, 1.0],
-                [2.0, 1.0],
-            ]
+            [[0.0, 0.0], [1.0, 0.0], [2.0, 0.0], [0.0, 1.0], [1.0, 1.0], [2.0, 1.0]]
         )
         env = Environment.from_samples(data, bin_size=1.0)
-
         kernel = env.compute_kernel(bandwidth=1.0, mode="transition")
-
         assert kernel.shape == (env.n_bins, env.n_bins)
         assert kernel.dtype == np.float64
 
-    def test_compute_kernel_uses_layout_bin_sizes(self):
-        """Test that compute_kernel automatically uses layout bin sizes."""
+    def test_compute_kernel_density_uses_layout_volumes(self):
         rng = np.random.default_rng(42)
         data = rng.uniform(0, 10, (100, 2))
         env = Environment.from_samples(data, bin_size=1.0)
-
-        # Should not raise error even though we don't pass bin_sizes
         kernel = env.compute_kernel(bandwidth=1.0, mode="density")
-
         assert kernel.shape == (env.n_bins, env.n_bins)
 
     def test_compute_kernel_cache_behavior(self):
-        """Test that kernel is cached properly."""
         rng = np.random.default_rng(42)
         data = rng.uniform(0, 10, (50, 2))
         env = Environment.from_samples(data, bin_size=1.0)
-
-        # First call
         kernel1 = env.compute_kernel(bandwidth=1.0, mode="transition", cache=True)
-
-        # Second call with same parameters should return cached result
         kernel2 = env.compute_kernel(bandwidth=1.0, mode="transition", cache=True)
-
-        # Should be the same array (identity)
-        assert kernel1 is kernel2, "Should return cached kernel"
-
-        # Different bandwidth should compute new kernel
+        assert kernel1 is kernel2
         kernel3 = env.compute_kernel(bandwidth=2.0, mode="transition", cache=True)
-        assert kernel3 is not kernel1, "Different bandwidth should compute new kernel"
-
-        # Different mode should compute new kernel
+        assert kernel3 is not kernel1
         kernel4 = env.compute_kernel(bandwidth=1.0, mode="density", cache=True)
-        assert kernel4 is not kernel1, "Different mode should compute new kernel"
+        assert kernel4 is not kernel1
 
     def test_compute_kernel_cache_disabled(self):
-        """Test that cache can be disabled."""
         rng = np.random.default_rng(42)
         data = rng.uniform(0, 10, (50, 2))
         env = Environment.from_samples(data, bin_size=1.0)
-
-        # Call with cache disabled
         kernel1 = env.compute_kernel(bandwidth=1.0, mode="transition", cache=False)
         kernel2 = env.compute_kernel(bandwidth=1.0, mode="transition", cache=False)
-
-        # Should not be the same object (different computations)
-        assert kernel1 is not kernel2, "Should recompute when cache disabled"
-        # But should have same values
+        assert kernel1 is not kernel2
         assert np.allclose(kernel1, kernel2)
 
+    def test_compute_kernel_rejects_invalid_mode(self):
+        rng = np.random.default_rng(0)
+        env = Environment.from_samples(rng.uniform(0, 10, (50, 2)), bin_size=1.0)
+        with pytest.raises(ValueError, match=r"mode must be one of"):
+            env.compute_kernel(bandwidth=1.0, mode="average")
+
     def test_compute_kernel_high_bin_warns_and_returns(self, monkeypatch):
-        """env.compute_kernel warns above the threshold and still returns a kernel."""
         from neurospatial.ops import smoothing
 
-        # Build a small env that exceeds a monkeypatched tiny warn threshold.
         rng = np.random.default_rng(0)
         data = rng.uniform(0, 10, (50, 2))
         env = Environment.from_samples(data, bin_size=1.0)
-        assert env.n_bins > 1, "Fixture must exceed the patched threshold"
-
+        assert env.n_bins > 1
         monkeypatch.setattr(smoothing, "_LARGE_KERNEL_THRESHOLD", 1)
-
-        # Warns (with a GB estimate) and proceeds -- never raises.
         with pytest.warns(UserWarning, match="GB"):
             kernel = env.compute_kernel(bandwidth=1.0, mode="transition", cache=False)
         assert kernel.shape == (env.n_bins, env.n_bins)
 
     def test_compute_kernel_requires_fitted(self):
-        """Test that compute_kernel requires fitted environment."""
-        # Create an environment but don't fit it by using __init__ directly
-        # with minimal setup (this is testing the @check_fitted decorator)
         from neurospatial.layout.engines.regular_grid import RegularGridLayout
 
         layout = RegularGridLayout()
-        # Don't call build(), so layout is not fitted
         env = Environment(name="test", layout=layout)
-        # Verify it's not fitted
         assert not env._is_fitted
-
         with pytest.raises(RuntimeError, match="fully initialized"):
             env.compute_kernel(bandwidth=1.0)
 
 
-class TestKernelPerformanceWarnings:
-    """Tests for performance warnings in kernel computation."""
-
-    def test_large_graph_warning(self):
-        """Test that warning is issued for large graphs."""
-        # Create graph with many nodes (e.g., 1000+ bins)
-        # This test verifies the warning exists in docstring
-        # Actual warning emission should be tested if implemented
-        from neurospatial.ops.smoothing import compute_diffusion_kernels
-
-        # Check docstring mentions performance/complexity
-        assert (
-            "complexity" in compute_diffusion_kernels.__doc__.lower()
-            or "performance" in compute_diffusion_kernels.__doc__.lower()
-        ), "Docstring should mention performance considerations"
-
-    def test_large_graph_emits_warning(self):
-        """Test that UserWarning is emitted for large graphs (> 3000 bins)."""
-        from neurospatial.ops.smoothing import (
-            _LARGE_KERNEL_THRESHOLD,
-            compute_diffusion_kernels,
-        )
-
-        # Create a graph just over the threshold
-        n_bins = _LARGE_KERNEL_THRESHOLD + 1
-        graph = nx.path_graph(n_bins)  # Simple path graph
-
-        # Add required distance attributes
-        for u, v in graph.edges():
-            graph.edges[u, v]["distance"] = 1.0
-
-        # Should emit UserWarning about performance
-        with pytest.warns(UserWarning, match=r"diffusion kernel"):
-            # Use a small bandwidth to make computation faster
-            # (kernel won't be useful but we just need to test warning)
-            compute_diffusion_kernels(graph, bandwidth_sigma=0.01, mode="transition")
-
-    def test_small_graph_no_warning(self):
-        """Test that no warning is emitted for small graphs."""
-        from neurospatial.ops.smoothing import compute_diffusion_kernels
-
-        # Create small graph (well under threshold)
-        graph = nx.path_graph(10)
-        for u, v in graph.edges():
-            graph.edges[u, v]["distance"] = 1.0
-
-        # Should not emit any warnings
-        import warnings
-
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            compute_diffusion_kernels(graph, bandwidth_sigma=1.0, mode="transition")
-            # Filter for our specific warning
-            kernel_warnings = [
-                warning for warning in w if "diffusion kernel" in str(warning.message)
-            ]
-            assert len(kernel_warnings) == 0, "Small graphs should not emit warnings"
-
-
 class TestKernelHighBinWarning:
-    """Tests for the high-bin memory WARNING on compute_diffusion_kernels.
-
-    There is no hard limit: above the warn threshold the call emits a loud
-    ``UserWarning`` (with a GB estimate) and always proceeds, returning a kernel.
-    """
-
-    @staticmethod
-    def _path_graph_with_distances(n_bins):
-        graph = nx.path_graph(n_bins)
-        for u, v in graph.edges():
-            graph.edges[u, v]["distance"] = 1.0
-        return graph
+    """The high-bin memory WARNING (there is no hard limit)."""
 
     def test_high_bin_warns_and_returns(self, monkeypatch):
-        """Above the (patched) threshold: warn (naming GB) and still return."""
         from neurospatial.ops import smoothing
 
-        # Lower the warn threshold so a tiny graph trips it.
         monkeypatch.setattr(smoothing, "_LARGE_KERNEL_THRESHOLD", 5)
-
-        graph = self._path_graph_with_distances(6)  # 6 > 5
-
+        graph = _line_graph(6)
         with pytest.warns(UserWarning) as record:
             kernel = smoothing.compute_diffusion_kernels(
-                graph, bandwidth_sigma=1.0, mode="transition"
+                graph, volumes=np.ones(6), sigma=1.0, mode="transition"
             )
-
         message = str(record[0].message)
-        # Names the size, the estimated GB, the dense reason, and a mitigation.
-        assert "6" in message, "Warning should name n_bins"
-        assert "GB" in message, "Warning should state the estimated dense size in GB"
-        assert "binned" in message, "Warning should mention the binned mitigation"
-        # Must have actually built and returned the kernel (no raise).
+        assert "6" in message
+        assert "GB" in message
+        assert "binned" in message
         assert kernel.shape == (6, 6)
-        assert kernel.dtype == np.float64
 
     def test_does_not_raise(self, monkeypatch):
-        """A high-bin request must never raise -- warn-and-proceed only."""
         from neurospatial.ops import smoothing
 
         monkeypatch.setattr(smoothing, "_LARGE_KERNEL_THRESHOLD", 2)
-
-        graph = self._path_graph_with_distances(8)  # 2 < 8
-
+        graph = _line_graph(8)
         with pytest.warns(UserWarning, match="GB"):
             kernel = smoothing.compute_diffusion_kernels(
-                graph, bandwidth_sigma=0.5, mode="transition"
+                graph, volumes=np.ones(8), sigma=0.5, mode="transition"
             )
-
         assert kernel.shape == (8, 8)
 
     def test_under_threshold_no_warn(self, monkeypatch):
-        """At or below the threshold, no warning is emitted."""
         import warnings as _warnings
 
         from neurospatial.ops import smoothing
 
         monkeypatch.setattr(smoothing, "_LARGE_KERNEL_THRESHOLD", 5)
-
-        graph = self._path_graph_with_distances(5)  # 5 is NOT > 5
-
+        graph = _line_graph(5)  # 5 is NOT > 5
         with _warnings.catch_warnings(record=True) as w:
             _warnings.simplefilter("always")
             kernel = smoothing.compute_diffusion_kernels(
-                graph, bandwidth_sigma=1.0, mode="transition"
+                graph, volumes=np.ones(5), sigma=1.0, mode="transition"
             )
             kernel_warnings = [
                 warning for warning in w if "diffusion kernel" in str(warning.message)
@@ -555,134 +364,13 @@ class TestKernelHighBinWarning:
             assert len(kernel_warnings) == 0
         assert kernel.shape == (5, 5)
 
-    def test_docstring_mentions_memory(self):
-        """Docstring must prominently document the O(n²) memory cost."""
+    def test_docstring_mentions_memory_and_performance(self):
         from neurospatial.ops.smoothing import compute_diffusion_kernels
 
         doc = compute_diffusion_kernels.__doc__.lower()
-        assert "memory" in doc, "Docstring should mention memory"
-        assert "gb" in doc, "Docstring should give a GB example figure"
-
-
-class TestSparseMatrixOptimization:
-    """Tests for sparse matrix optimization in kernel computation."""
-
-    def test_sparse_mass_matrix_same_result(self):
-        """Test that sparse mass matrix produces same results as dense would.
-
-        This verifies the optimization in kernels.py:113 (scipy.sparse.diags
-        instead of np.diag) produces identical results.
-        """
-        # Create graph with non-uniform bin sizes
-        graph = nx.Graph()
-        for i in range(5):
-            graph.add_node(i, pos=(float(i),))
-        for i in range(4):
-            graph.add_edge(i, i + 1, distance=1.0)
-
-        bin_sizes = np.array([1.0, 1.5, 2.0, 1.5, 1.0])  # Varying sizes
-
-        kernel = compute_diffusion_kernels(
-            graph, bandwidth_sigma=1.0, bin_sizes=bin_sizes, mode="density"
-        )
-
-        # Verify normalization (weighted column sums = 1)
-        for j in range(5):
-            weighted_sum = np.sum(kernel[:, j] * bin_sizes)
-            assert np.isclose(weighted_sum, 1.0, atol=1e-10), (
-                f"Column {j}: weighted sum {weighted_sum} should be 1.0"
-            )
-
-        # Verify kernel properties: non-negative, spreads mass
-        assert np.all(kernel >= 0), "Kernel should be non-negative"
-
-        # Impulse at center should spread to neighbors
-        field = np.zeros(5)
-        field[2] = 1.0
-        smoothed = kernel @ field
-        assert smoothed[1] > 0, "Mass should spread to left neighbor"
-        assert smoothed[3] > 0, "Mass should spread to right neighbor"
-
-
-class TestKernelEdgeCases:
-    """Tests for edge cases in kernel computation."""
-
-    def test_single_node_graph(self):
-        """Test kernel computation for graph with single node."""
-        graph = nx.Graph()
-        graph.add_node(0, pos=(0.0,))
-
-        kernel = compute_diffusion_kernels(
-            graph, bandwidth_sigma=1.0, mode="transition"
-        )
-
-        assert kernel.shape == (1, 1)
-        assert np.isclose(kernel[0, 0], 1.0), "Single node kernel should be [[1.0]]"
-
-    def test_two_node_graph(self):
-        """Test kernel computation for minimal connected graph."""
-        graph = nx.Graph()
-        graph.add_node(0, pos=(0.0,))
-        graph.add_node(1, pos=(1.0,))
-        graph.add_edge(0, 1, distance=1.0)
-
-        kernel = compute_diffusion_kernels(
-            graph, bandwidth_sigma=1.0, mode="transition"
-        )
-
-        assert kernel.shape == (2, 2)
-        # Columns should sum to 1
-        assert np.allclose(kernel.sum(axis=0), 1.0)
-        # Should be symmetric for uniform case
-        assert np.allclose(kernel, kernel.T, atol=1e-10)
-
-    def test_very_small_bandwidth(self):
-        """Test that very small bandwidth keeps mass localized."""
-        graph = nx.Graph()
-        for i in range(5):
-            graph.add_node(i, pos=(float(i),))
-        for i in range(4):
-            graph.add_edge(i, i + 1, distance=1.0)
-
-        kernel = compute_diffusion_kernels(
-            graph, bandwidth_sigma=0.01, mode="transition"
-        )
-
-        # Should be nearly diagonal (minimal diffusion)
-        diagonal_mass = np.diag(kernel).sum()
-        assert diagonal_mass > 0.95, "Very small bandwidth should keep mass localized"
-
-    def test_very_large_bandwidth(self):
-        """Test that very large bandwidth spreads mass uniformly."""
-        graph = nx.Graph()
-        for i in range(5):
-            graph.add_node(i, pos=(float(i),))
-        for i in range(4):
-            graph.add_edge(i, i + 1, distance=1.0)
-
-        kernel = compute_diffusion_kernels(
-            graph, bandwidth_sigma=100.0, mode="transition"
-        )
-
-        # Should spread mass more uniformly
-        # Each column should have similar values across rows
-        for col in range(5):
-            column_std = np.std(kernel[:, col])
-            assert column_std < 0.3, "Large bandwidth should spread mass uniformly"
-
-
-class TestComputeDiffusionKernelsValidation:
-    """Test parameter validation for compute_diffusion_kernels."""
-
-    def test_invalid_mode_raises_error(self):
-        """Test that invalid mode raises ValueError."""
-        graph = nx.Graph()
-        graph.add_node(0, pos=(0.0,))
-        graph.add_node(1, pos=(1.0,))
-        graph.add_edge(0, 1, distance=1.0)
-
-        with pytest.raises(ValueError, match="Invalid mode"):
-            compute_diffusion_kernels(graph, bandwidth_sigma=1.0, mode="invalid")
+        assert "memory" in doc
+        assert "gb" in doc
+        assert "performance" in doc
 
 
 class TestApplyKernel:
@@ -690,160 +378,106 @@ class TestApplyKernel:
 
     @pytest.fixture
     def simple_kernel(self):
-        """Create a simple 3x3 kernel for testing."""
-        # Simple normalized kernel
-        kernel = np.array(
+        return np.array(
             [[0.5, 0.2, 0.1], [0.3, 0.6, 0.2], [0.2, 0.2, 0.7]], dtype=np.float64
         )
-        return kernel
 
     @pytest.fixture
     def simple_field(self):
-        """Create a simple test field."""
         return np.array([1.0, 0.0, 0.0], dtype=np.float64)
 
     @pytest.fixture
     def bin_sizes_3(self):
-        """Create simple bin sizes for 3 bins."""
         return np.array([1.0, 2.0, 1.0], dtype=np.float64)
 
     def test_forward_mode_basic(self, simple_kernel, simple_field):
-        """Test basic forward mode application."""
         from neurospatial.ops.smoothing import apply_kernel
 
         result = apply_kernel(simple_field, simple_kernel, mode="forward")
-
-        # Should compute kernel @ field
-        expected = simple_kernel @ simple_field
-        np.testing.assert_allclose(result, expected, rtol=1e-10)
+        np.testing.assert_allclose(result, simple_kernel @ simple_field, rtol=1e-10)
 
     def test_adjoint_mode_no_bin_sizes(self, simple_kernel, simple_field):
-        """Test adjoint mode without bin_sizes (simple transpose)."""
         from neurospatial.ops.smoothing import apply_kernel
 
         result = apply_kernel(simple_field, simple_kernel, mode="adjoint")
-
-        # Should compute kernel.T @ field
-        expected = simple_kernel.T @ simple_field
-        np.testing.assert_allclose(result, expected, rtol=1e-10)
+        np.testing.assert_allclose(result, simple_kernel.T @ simple_field, rtol=1e-10)
 
     def test_adjoint_mode_with_bin_sizes(
         self, simple_kernel, simple_field, bin_sizes_3
     ):
-        """Test adjoint mode with bin_sizes (mass-weighted)."""
         from neurospatial.ops.smoothing import apply_kernel
 
         result = apply_kernel(
             simple_field, simple_kernel, mode="adjoint", bin_sizes=bin_sizes_3
         )
-
-        # Should compute M^{-1} K.T M @ field
-        # where M = diag(bin_sizes)
         m_field = bin_sizes_3 * simple_field
-        kt_m_field = simple_kernel.T @ m_field
-        expected = kt_m_field / bin_sizes_3
-
+        expected = (simple_kernel.T @ m_field) / bin_sizes_3
         np.testing.assert_allclose(result, expected, rtol=1e-10)
 
     def test_invalid_mode_raises(self, simple_kernel, simple_field):
-        """Test that invalid mode raises ValueError."""
         from neurospatial.ops.smoothing import apply_kernel
 
         with pytest.raises(ValueError, match="mode must be"):
             apply_kernel(simple_field, simple_kernel, mode="invalid")
 
     def test_non_square_kernel_raises(self, simple_field):
-        """Test that non-square kernel raises ValueError."""
         from neurospatial.ops.smoothing import apply_kernel
 
-        # Create non-square kernel
         bad_kernel = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=np.float64)
-
         with pytest.raises(ValueError, match="Kernel must be square"):
             apply_kernel(simple_field, bad_kernel, mode="forward")
 
     def test_field_size_mismatch_raises(self, simple_kernel):
-        """Test that field size mismatch raises ValueError."""
         from neurospatial.ops.smoothing import apply_kernel
 
-        # Field has wrong size
         bad_field = np.array([1.0, 2.0], dtype=np.float64)
-
         with pytest.raises(ValueError, match=r"Field size.*does not match"):
             apply_kernel(bad_field, simple_kernel, mode="forward")
 
     def test_bin_sizes_mismatch_raises(self, simple_kernel, simple_field):
-        """Test that bin_sizes size mismatch raises ValueError."""
         from neurospatial.ops.smoothing import apply_kernel
 
-        # bin_sizes has wrong size
         bad_bin_sizes = np.array([1.0, 2.0], dtype=np.float64)
-
         with pytest.raises(ValueError, match=r"bin_sizes size.*does not match"):
             apply_kernel(
                 simple_field, simple_kernel, mode="adjoint", bin_sizes=bad_bin_sizes
             )
 
     def test_non_positive_bin_sizes_raises(self, simple_kernel, simple_field):
-        """Test that non-positive bin_sizes raises ValueError in adjoint mode."""
         from neurospatial.ops.smoothing import apply_kernel
 
-        # bin_sizes with zero/negative values
         bad_bin_sizes = np.array([1.0, 0.0, -1.0], dtype=np.float64)
-
         with pytest.raises(ValueError, match="bin_sizes must have strictly positive"):
             apply_kernel(
                 simple_field, simple_kernel, mode="adjoint", bin_sizes=bad_bin_sizes
             )
 
     def test_forward_adjoint_duality_no_bin_sizes(self, simple_kernel):
-        """Test that forward and adjoint are dual without bin_sizes."""
         from neurospatial.ops.smoothing import apply_kernel
 
-        # Create two random fields
         u = np.array([1.0, 2.0, 3.0], dtype=np.float64)
         v = np.array([0.5, 1.5, 0.8], dtype=np.float64)
-
-        # Compute <K u, v> and <u, K^T v>
         ku = apply_kernel(u, simple_kernel, mode="forward")
         ktv = apply_kernel(v, simple_kernel, mode="adjoint")
-
-        inner1 = np.dot(ku, v)
-        inner2 = np.dot(u, ktv)
-
-        # Should be equal (within numerical precision)
-        np.testing.assert_allclose(inner1, inner2, rtol=1e-10)
+        np.testing.assert_allclose(np.dot(ku, v), np.dot(u, ktv), rtol=1e-10)
 
     def test_forward_adjoint_duality_with_bin_sizes(self, simple_kernel, bin_sizes_3):
-        """Test that forward and adjoint are dual with bin_sizes."""
         from neurospatial.ops.smoothing import apply_kernel
 
-        # Create two random fields
         u = np.array([1.0, 2.0, 3.0], dtype=np.float64)
         v = np.array([0.5, 1.5, 0.8], dtype=np.float64)
-
-        # Compute weighted inner products <K u, v>_M and <u, K^* v>_M
         ku = apply_kernel(u, simple_kernel, mode="forward")
         kstar_v = apply_kernel(v, simple_kernel, mode="adjoint", bin_sizes=bin_sizes_3)
-
-        # Weighted inner product: <x, y>_M = sum(x * M * y)
-        inner1 = np.dot(ku * bin_sizes_3, v)
-        inner2 = np.dot(u * bin_sizes_3, kstar_v)
-
-        # Should be equal (within numerical precision)
-        np.testing.assert_allclose(inner1, inner2, rtol=1e-10)
+        np.testing.assert_allclose(
+            np.dot(ku * bin_sizes_3, v), np.dot(u * bin_sizes_3, kstar_v), rtol=1e-10
+        )
 
     def test_bin_sizes_allowed_in_forward_mode(
         self, simple_kernel, simple_field, bin_sizes_3
     ):
-        """Test that bin_sizes is allowed but ignored in forward mode."""
         from neurospatial.ops.smoothing import apply_kernel
 
-        # Should not raise error
         result = apply_kernel(
             simple_field, simple_kernel, mode="forward", bin_sizes=bin_sizes_3
         )
-
-        # Result should be same as without bin_sizes
-        expected = simple_kernel @ simple_field
-        np.testing.assert_allclose(result, expected, rtol=1e-10)
+        np.testing.assert_allclose(result, simple_kernel @ simple_field, rtol=1e-10)

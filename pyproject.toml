@@ -1,6 +1,6 @@
 [project]
 name = "neurospatial"
-version = "0.6.0"
+version = "0.7.0"
 description = "Discretize continuous N-dimensional spatial environments into bins/nodes with connectivity graphs"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -241,6 +241,17 @@ ignore = [
 "src/neurospatial/ops/distance.py" = [
     "N803",  # Allow G (graph) as argument name - standard NetworkX convention
     "N806",  # Allow G (graph), L (Laplacian) as variables - standard math notation
+]
+"src/neurospatial/ops/diffusion.py" = [
+    "N802",  # Allow heat_kernel_from_W / _components_from_W (operator symbol W)
+    "N803",  # Allow W (weight matrix) as argument name - finite-volume notation
+    "N806",  # Allow W, H, L, D (operator matrices) as variables - standard math notation
+]
+"src/neurospatial/ops/smoothing.py" = [
+    "N806",  # Allow A (face measure), W (weight matrix) - finite-volume notation
+]
+"scripts/diffusion_grid_bandwidth_check.py" = [
+    "N806",  # Allow W, L, K (operator matrices) - standard math notation
 ]
 "src/neurospatial/transforms.py" = [
     "N806",  # Allow T (transformation matrix) - standard linear algebra notation

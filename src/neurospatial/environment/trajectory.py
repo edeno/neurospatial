@@ -1213,16 +1213,15 @@ class EnvironmentTrajectory:
 
         Internal helper for transitions(method='diffusion'). Uses the heat
         kernel to model continuous-time diffusion on the graph.
+
+        Returns the **row-stochastic** heat operator ``H`` (``sum_j T[i, j] = 1``,
+        ``T[i, j] = P(next=j | current=i)``). ``compute_kernel(mode="transition")``
+        returns the mass-conserving smoothing kernel ``Hᵀ`` (column-stochastic),
+        so the row-stochastic transition matrix is its transpose. On a
+        non-uniform mass matrix ``M`` (polar, mesh) ``Hᵀ != H``, so this must
+        transpose rather than assume symmetry.
         """
         import scipy.sparse
-
-        # Use existing compute_kernel infrastructure
-        kernel = self.compute_kernel(bandwidth=bandwidth, mode="transition")
-
-        # kernel is already row-stochastic from compute_kernel
-        # Convert to sparse if needed
-        if not scipy.sparse.issparse(kernel):
-            kernel = scipy.sparse.csr_matrix(kernel)
 
         if not normalize:
             raise ValueError(
@@ -1230,6 +1229,14 @@ class EnvironmentTrajectory:
                 "Heat kernel transitions are inherently normalized (row-stochastic). "
                 "Set normalize=True or use method='random_walk'."
             )
+
+        # compute_kernel(mode="transition") is Hᵀ (column-stochastic); the
+        # row-stochastic transition matrix H is its transpose.
+        kernel = self.compute_kernel(bandwidth=bandwidth, mode="transition").T
+
+        # Convert to sparse if needed
+        if not scipy.sparse.issparse(kernel):
+            kernel = scipy.sparse.csr_matrix(kernel)
 
         return kernel
 
