@@ -2,10 +2,12 @@
 
 **Status:** Not started.
 
-**Goal:** Replace the per-call dense `scipy.expm` in the diffusion operator with a cached,
-per-component, bandwidth-aware truncated symmetric eigenbasis plus a new matrix-free **linear**
-apply-path `env.diffuse`, so smoothing scales to large/fine grids without materializing an
-`(n,n)` kernel — behavior-preserving to within a stated truncation tolerance.
+**Goal:** Replace the per-call dense `scipy.expm` **on the hot smoothing/apply consumers**
+(`env.smooth`, `_diffusion_kde`, `binned`, `resample`) with a cached, per-component,
+bandwidth-aware truncated symmetric eigenbasis plus a new matrix-free **linear** apply-path
+`env.diffuse`, so smoothing scales to large/fine grids without materializing an `(n,n)` kernel
+— behavior-preserving to within a stated truncation tolerance. (`compute_kernel` and
+`transitions(method="diffusion")`, which return an actual matrix, keep the dense `expm` path.)
 
 **Architecture:** Eigendecompose the symmetric conjugate `S = M^{-1/2}(D−W)M^{-1/2}`
 per `W`-component, cache it on the Environment (geometry-only, `_state_version`-invalidated),
@@ -150,7 +152,10 @@ both cache only the kernel) while introducing ~`1e-10` numerical drift. So `comp
   own dense weight matrix — unchanged; `binned` is the next bullet.) Then the **magnitude gate** — floor
   `max(occupancy_density, 0)` before `> occupancy_threshold`
   ([:614](../../../src/neurospatial/encoding/_smoothing.py)); clip the output density/rate `≥ 0`
-  (decode nonnegativity).
+  (decode nonnegativity). **JAX boundary:** `env.diffuse` returns a **NumPy** array (float64
+  eigenbasis), so the `backend="jax"` paths must wrap its output in `jnp.asarray(..., dtype=…)`
+  to keep the promised `jax.Array` return-type/dtype
+  ([_smoothing.py:279,446](../../../src/neurospatial/encoding/_smoothing.py)).
 - `_binned` (+ batch + JAX): replace the two `env.smooth` calls with `env.diffuse(mode="average")`;
   **strict support gate** — derive `weights_smoothed > 0` support from `_components_from_W` +
   the input valid mask (not the smoothed sign, [:723](../../../src/neurospatial/encoding/_smoothing.py)).
@@ -190,7 +195,9 @@ Version 0.7.0 → **0.8.0** (`pyproject.toml`). Note the `compute_kernel` result
 | `test_no_leakage_truncated` | point source beside a wall → 0 mass across it **under truncation** (component-local modes) |
 | `test_cache_grows_with_smaller_sigma` | large-σ then small-σ: small-σ recomputes+**replaces** the single truncated basis (not under-ranked); within tol |
 | `test_eigenbasis_single_basis_and_invalidated` | one max-rank truncated basis reused/sliced; replaced on growth; dropped on `_state_version` bump |
-| `test_compute_kernel_does_not_poison_apply_cache` | a `compute_kernel` (full-rank) call does **not** grow the truncated `env.diffuse` cache to `(n,n)`; later `env.diffuse` still bounded |
+| `test_compute_kernel_does_not_poison_apply_cache` | a `compute_kernel` (dense-`expm`) call does **not** grow the truncated `env.diffuse` cache to `(n,n)`; later `env.diffuse` still bounded |
+| `test_near_full_rank_diffuse_no_poison` | a **near-full-rank `env.diffuse`** (rank `≥ dense_fraction·n`) uses a **transient** dense `eigh` (applied, dropped) and does **not** cache an `(n,n)` basis or grow the truncated cache; a later normal `env.diffuse` still uses the bounded truncated basis |
+| `test_jax_backend_return_type` | `smooth_rate_map(s)(..., backend="jax")` returns a `jax.Array` with the requested `dtype` (the NumPy `env.diffuse` output is wrapped at the boundary) |
 | `test_null_mode_retained` | resolved rank `≥ n_components`; `H_trunc @ 1 == 1` and `Σ_i M_i H_trunc[i,j] == M_j` exactly under truncation |
 | `test_perf_large_grid` (slow) | baseline-capture (T1) dense-`expm` time/peak-mem on ~10k bins vs the apply-path; assert the reduction |
 
