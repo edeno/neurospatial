@@ -166,14 +166,18 @@ self-reporting, never silent.
 ## D4. heat_kernel + per-component renormalization
 
 ```python
-def heat_kernel_from_W(W, volumes, sigma, *, mode):
-    n = W.shape[0]
+def _raw_heat_operator(W, volumes, sigma):
+    """Dense exp(-t L), L = M^-1(D-W). The M-self-adjoint operator of C1, PRE clip/normalize.
+    Exposed as a seam so C1's raw invariants (H·1=1; M_i H_ij == M_j H_ji) are directly
+    testable — the mode outputs are normalized and no longer expose them."""
     degree = np.asarray(W.sum(axis=1)).ravel()
     L = scipy.sparse.diags(1.0 / volumes) @ (scipy.sparse.diags(degree) - W)  # M^-1 (D-W)
-    t = sigma**2 / 2.0
-    H = scipy.sparse.linalg.expm(-t * L)
-    H = np.asarray(H.todense()) if hasattr(H, "todense") else np.asarray(H)
-    H = np.clip(H, 0.0, None)                       # round-off (full rank); real lobes under PR2
+    H = scipy.sparse.linalg.expm(-(sigma**2 / 2.0) * L)
+    return np.asarray(H.todense()) if hasattr(H, "todense") else np.asarray(H)
+
+
+def heat_kernel_from_W(W, volumes, sigma, *, mode):
+    H = np.clip(_raw_heat_operator(W, volumes, sigma), 0.0, None)  # round-off; real lobes under PR2
     # Normalize EACH mode to ITS OWN contract (C1/C2). Do NOT row-normalize once and reuse:
     # row-normalization preserves row sums but not the M-weighted column sum, so `density`
     # would not integrate to 1 after clipping. Each branch below enforces its exact invariant.
@@ -219,5 +223,7 @@ out[outside_or_invalid] = np.nan               # re-impose missingness
   non-uniform `M` removed.
 - **resample** ([binning.py:790-813](../../../src/neurospatial/ops/binning.py)): currently
   zero-fills then single-smooths with `mode="transition"`. Replace with the masked average
-  above using `mode="average"` and `valid = ~outside_source`, then re-impose
-  `NaN` on `outside_source`.
+  above using `mode="average"`, with `valid = (~outside_source) & np.isfinite(resampled)` and
+  the value array **zero-filled where `~valid`** (a source `NaN` must contribute *no weight*,
+  not propagate — `H @ (v·valid)` with an un-zeroed `NaN` still poisons every reachable bin).
+  Re-impose `NaN` on `outside_source` (and where `den == 0`) at the end.

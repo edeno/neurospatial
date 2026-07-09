@@ -11,8 +11,9 @@ effort = **Phase 1 + Phase 2** (two PRs). Spec **"PR2"** = performance (eigenbas
 truncation), a separate plan; spec **"(c)"** = MRF-GAM, a separate plan. So where the spec
 says `mode="average"` "ships in PR1, nothing deferred," that means **Phase 2 here** — within
 the correctness effort, not pushed out to the performance/MRF work. The spec and this plan
-are **both committed** on branch `fix/diffusion-grid-bandwidth` (spec `0de7d6a`, plan
-`a5a14f5`); treat the spec as the frozen source of truth and the plan as its executable
+are **both committed** on branch `fix/diffusion-grid-bandwidth` (spec `0de7d6a`, stable; the
+plan's own commit hash advances with each fix so it is not pinned here); treat the spec as
+the frozen source of truth and the plan as its executable
 decomposition.
 
 ## Current codebase integration points
