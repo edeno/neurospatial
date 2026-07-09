@@ -85,10 +85,14 @@ M-conjugation (NLD's Laplacian is mass-free; ours needs `S`):
   `O(n·max_rank_seen)`. `versioned_cached_property` keys only on `_state_version`
   ([decorators.py:282](../../../src/neurospatial/environment/decorators.py)), so the property
   **owns this single-entry cache** and drops it wholesale on any geometry change. This is the
-  **truncated apply-path cache only**, capped below the dense-fallback threshold
-  (`dense_fraction·n`); the **full-rank basis `compute_kernel` needs (§6) lives in a separate
-  slot (or is uncached)** so one `compute_kernel` call can **never** grow the `env.diffuse`
-  cache to a full `(n,n)` eigenvector matrix and defeat the memory goal.
+  **truncated apply-path cache only**, holding ranks strictly **below** `dense_fraction·n`.
+- **Dense/full-rank basis is a separate slot — never poisons the truncated cache.** Any request
+  resolving rank `≥ dense_fraction·n` — whether a **near-full-rank `env.diffuse`** (small σ on a
+  large grid, per the dense fallback above) **or** a **`compute_kernel`** call (§6, always full
+  rank) — uses the dense `eigh` basis stored in a **separate full-basis slot** (or recomputed
+  uncached), with the large-matrix warning. It **never replaces** the bounded truncated cache.
+  So neither a near-full-rank `env.diffuse` nor a `compute_kernel` call can leave later
+  truncated applies holding an `(n,n)` basis — the memory goal holds for every truncated call.
 
 ## 5. Per-mode application — LINEAR, no positivity projection
 
@@ -129,8 +133,13 @@ emitting a `NaN`. Two gate types:
   connected `W`-component the heat kernel is entrywise positive, so the dense `den[i] > 0`
   **iff** `i`'s component contains any valid input mass — a boolean that is **exact and
   truncation-proof**. Gate on that (`_components_from_W` labels + the input valid mask), and
-  where support holds divide by `max(den, ε)` (`ε` tiny) only to avoid dividing by truncation
-  noise. Reproduces the dense support exactly ([_smoothing.py:716](../../../src/neurospatial/encoding/_smoothing.py),
+  where support holds divide by `max(den, ε)` (`ε` tiny). This makes the result **finite and
+  matches the dense support exactly**, but where the dense `den` is itself tiny (a bin near the
+  support boundary, where truncation noise `~tol` dominates `den`) the **value is ill-conditioned
+  in both dense and truncated** paths — so **value-equivalence is asserted only where dense
+  `den` is comfortably above the truncation floor** (`den ≫ tol·‖weights‖`); near-boundary bins
+  are guaranteed finite, not value-equal (part of the approximation contract)
+  ([_smoothing.py:716](../../../src/neurospatial/encoding/_smoothing.py),
   [binning.py:823](../../../src/neurospatial/ops/binning.py)).
 - **Magnitude gates** (`_diffusion_kde`'s `occupancy_density > occupancy_threshold`, threshold
   possibly `> 0`; NumPy + batch + JAX): floor `max(occupancy_density, 0)` and compare to the
@@ -176,7 +185,8 @@ needing a strict 0-floor clip the result themselves (as the density consumers do
   (+ batch + JAX, [encoding/_smoothing.py:569,729,847,934](../../../src/neurospatial/encoding/_smoothing.py)),
   and `resample_field(method="diffuse")` ([ops/binning.py:790-815](../../../src/neurospatial/ops/binning.py))
   call `env.diffuse` instead of `compute_kernel(...) @ field`. **Same within truncation
-  tolerance** (§5 approximation contract; ≤`tol` deviation, ≤`tol` negatives before the
+  tolerance** (§5 approximation contract; ≤`tol` deviation in the **M-weighted norm**
+  (dense-relative per bin), ≤`tol` negatives before the
   consumers' floors), no `(n,n)`.
 - `transitions(method="diffusion")` still needs the row-stochastic matrix — it materializes via
   `compute_kernel` (it is inherently a matrix, not an apply); unchanged.
@@ -189,10 +199,10 @@ PR2 is an optimization, so the gate is **output equivalence to the shipped dense
 | --- | --- |
 | `test_apply_matches_dense_full_rank` | `env.diffuse(F)` == `compute_kernel-materialized @ F` within `rtol=1e-8` at full rank, all modes, on **signed** `F` |
 | `test_env_diffuse_is_linear` | `diffuse(a·F1 + b·F2) == a·diffuse(F1) + b·diffuse(F2)` on signed fields — **no positivity projection** (guards the linearity contract) |
-| `test_apply_matches_dense_truncated` | truncated apply == full-rank apply within the truncation tol (~`1e-6`); mass conserved **exactly** per component (null mode kept) |
+| `test_apply_matches_dense_truncated` | truncated apply == full-rank apply within the truncation tol (~`1e-6`) in the **M-weighted / dense-relative norm** (not raw per-bin; verified on polar/mesh); mass conserved **exactly** per component (null mode kept) |
 | `test_compute_kernel_full_rank_exact` | `compute_kernel` (now **full-rank** eigenbasis-materialized) matches the pre-PR2 dense kernel within `rtol=1e-8`; **all existing Phase 1/2 diffusion tests pass unchanged** |
 | `test_diffusion_kde_nonnegative` | the density consumer clips its own output ≥ 0 after `env.diffuse`; smoothed rate matches the shipped KDE within tol and is nonnegative |
-| `test_denominator_support_no_spurious_nan` | under truncation: **strict** support gates (`binned`, diffuse-`resample`) use **`W`-component support** — exact vs dense, **no spurious `NaN`** even where the dense `den` was tiny-positive (a `max(den,0)` floor would still fail `>0`); the **magnitude** gate (`_diffusion_kde` NumPy+batch+JAX) agrees with dense for bins comfortably above/below `occupancy_threshold`; **numerator not floored** (signed-safe for resample) |
+| `test_denominator_support_no_spurious_nan` | under truncation: **strict** support gates (`binned`, diffuse-`resample`) use **`W`-component support** — exact support vs dense, **no spurious `NaN`** even where the dense `den` was tiny-positive (a `max(den,0)` floor would still fail `>0`); **value** matches dense only where `den ≫ tol` (near-boundary bins finite but not value-asserted); the **magnitude** gate (`_diffusion_kde` NumPy+batch+JAX) agrees with dense for bins comfortably above/below `occupancy_threshold`; **numerator not floored** (signed-safe for resample) |
 | `test_env_smooth_nonneg_within_tol` | `env.smooth` on a nonnegative field: negatives bounded **relative to the dense output** (M-weighted `tol`), verified on **polar/mesh** where `κ(M)` is worst — not a raw `-tol·max` bound; stays linear on signed fields |
 | `test_grid_independence_preserved` | measured σ == `bandwidth` still holds (regression from Phase 1) |
 | `test_no_leakage_truncated` | point source beside a wall: 0 mass across it **under truncation** (component-local modes) |
