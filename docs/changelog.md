@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Corrected
+
+- **`smoothing_method="binned"` is not a dense-kernel memory mitigation.**
+  Earlier notes (through 0.6.0) recommended `binned` to avoid the dense
+  `(n_bins, n_bins)` kernel, but `binned` smooths its rate map through the same
+  diffusion kernel (via `env.smooth`), so all smoothing methods build a dense
+  kernel. The only memory mitigation is fewer bins (a larger `bin_size`).
+
 ## [0.6.0] - 2026-07-03
 
 ### Breaking Changes

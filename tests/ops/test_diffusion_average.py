@@ -170,8 +170,8 @@ def test_resample_diffuse_masked_not_biased_down():
 
 def test_resample_diffuse_source_nan_no_propagation():
     """A NaN in the source field does not propagate across reachable bins; a
-    source-NaN bin with valid neighbours within the bandwidth is interpolated, and
-    a bin with no valid neighbour (den == 0) stays NaN."""
+    source-NaN bin in a component with valid bins is interpolated, and a bin in a
+    component with no valid bin at all (den == 0) stays NaN."""
     src, dst, _idx, outside = _partial_coverage_pair()
 
     field = np.full(src.n_bins, 5.0)
@@ -189,6 +189,5 @@ def test_resample_diffuse_source_nan_no_propagation():
     # Covered bins stay at the constant value (the NaN bin is interpolated to ~5).
     np.testing.assert_allclose(out[covered], 5.0, atol=1e-6)
 
-    # A destination fully isolated from any valid bin (no valid neighbour within
-    # bandwidth) stays NaN — here, the structurally-outside band.
+    # Structurally out-of-source bins stay NaN (re-imposed after the average).
     assert np.all(np.isnan(out[outside]))

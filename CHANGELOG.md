@@ -66,6 +66,15 @@ correction.
   interpolate from valid neighbours instead of propagating. Uniform-grid results
   are unchanged (the per-cell volume factor cancels in the rate/weight ratio).
 
+### Corrected guidance
+
+- **`smoothing_method="binned"` is not a dense-kernel memory mitigation.**
+  Earlier notes (through v0.6.0) recommended `binned` to avoid the dense
+  `(n_bins, n_bins)` kernel, but `binned` smooths its rate map through the same
+  diffusion kernel (via `env.smooth`), so **all** smoothing methods build a dense
+  kernel. The only memory mitigation is reducing the bin count (a larger
+  `bin_size`). Docstrings and the high-bin warnings are corrected accordingly.
+
 ## [v0.6.0] - 2026-07-03
 
 ## What's Changed

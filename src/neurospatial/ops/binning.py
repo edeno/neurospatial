@@ -685,9 +685,11 @@ def resample_field(
     row-stochastic heat operator ``H`` on ``dst_env``: ``smooth(value * valid) /
     smooth(valid)``. Only bins covered by the source contribute weight, so
     covered bins adjacent to an uncovered region are **not** biased toward zero,
-    and a ``NaN`` in the source field is interpolated from valid neighbours
-    (within the bandwidth) rather than propagating. Bins outside the source, and
-    bins with no valid neighbour within the bandwidth, are ``NaN``.
+    and a ``NaN`` in the source field is interpolated rather than propagating.
+    The heat kernel has full support across each connected diffusion component,
+    so any bin in a component that contains at least one valid bin is filled
+    (weighted by distance — near valid bins dominate). A bin is left ``NaN`` only
+    if it is outside the source or lies in a component with no valid bin at all.
 
     **Dimension requirements**: Both environments must have the same number
     of dimensions (e.g., both 2D).
@@ -822,10 +824,12 @@ def resample_field(
         with np.errstate(divide="ignore", invalid="ignore"):
             smoothed = np.where(den > 0.0, num / den, np.nan)
 
-        # Re-impose NaN only on structurally out-of-source bins. An interior
-        # source-NaN bin with valid neighbours within the bandwidth is thereby
-        # interpolated (like the binned gap-fill); a bin with no valid neighbour
-        # (den == 0) is already NaN from the `where` above.
+        # Re-impose NaN only on structurally out-of-source bins. The heat kernel
+        # has full support across each connected component, so `den > 0` for any
+        # bin in a component that holds at least one valid bin: an interior
+        # source-NaN bin is interpolated (distance-weighted, like the binned
+        # gap-fill). Only a bin in a component with no valid bin at all keeps
+        # `den == 0` and is already NaN from the `where` above.
         smoothed[outside_source] = np.nan
         resampled = smoothed
 
