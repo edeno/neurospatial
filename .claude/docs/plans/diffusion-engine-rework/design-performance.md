@@ -166,19 +166,16 @@ needing a strict 0-floor clip the result themselves (as the density consumers do
 
 ## 6. Consumer routing + `compute_kernel` fate
 
-- **Keep `env.compute_kernel`** (dense-matrix return) for power users / backward-compat — it
-  materializes from the **full-rank** eigenbasis (all modes for the geometry: `Q (e^{-tΛ}) Qᵀ`
-  with the M-powers), then normalizes via a **`_normalize_modes(H, volumes, mode)` helper
-  extracted from `heat_kernel_from_W`** — splitting its clip + per-mode normalization from its
-  internal `_raw_heat_operator` `expm` build ([ops/diffusion.py:159](../../../src/neurospatial/ops/diffusion.py)),
-  so the materialized `H` is normalized **without recomputing `expm`**. **Full rank, not
-  the truncated basis** — so it equals the shipped dense operator within eigensolve precision
-  (`rtol≈1e-8`), *not* merely within the truncation `tol=1e-6`. A huge-grid caller who
-  explicitly asks for the matrix pays `O(n²)`/`O(n³)` (same as today; their choice, same
-  large-matrix warning). **No public API break, no accuracy change.** Truncation is used
-  **only** by the fast `env.diffuse` apply-path. This full-rank basis is held **separately from
-  (never replaces)** the truncated apply cache (§4), so calling `compute_kernel` does not
-  poison later `env.diffuse` calls with an `(n,n)` basis.
+- **`env.compute_kernel` is UNCHANGED** (dense-matrix return, existing dense-`expm` path +
+  `_kernel_cache`, [ops/diffusion.py:65-173](../../../src/neurospatial/ops/diffusion.py)).
+  Rationale (settled at planning): routing it through the eigenbasis has no upside and two
+  downsides — a *cached* full-rank basis holds `(n,n)` eigenvectors **and** the cached `(n,n)`
+  kernel (**doubling** persistent O(n²) memory vs today), while a *transient* full basis costs
+  the same O(n³) as the existing `expm` per new σ yet adds ~`1e-10` numerical drift. So
+  `compute_kernel` stays **byte-identical** (strongest behavior-preservation), is memory-safe,
+  and — because it never touches the truncated eigenbasis cache (§4) — **cannot poison it**.
+  Truncation and the eigenbasis are used **only** by the new `env.diffuse` apply-path;
+  `compute_kernel` is not a new/eigenbasis surface. **No public API break, no accuracy change.**
 - **New matrix-free method `env.diffuse(fields, bandwidth, *, mode)`** — the apply-path (§3, §5),
   batched over `fields`. Route the hot paths through it: `env.smooth`
   ([fields.py:150-299](../../../src/neurospatial/environment/fields.py)), `_diffusion_kde`
@@ -200,7 +197,7 @@ PR2 is an optimization, so the gate is **output equivalence to the shipped dense
 | `test_apply_matches_dense_full_rank` | `env.diffuse(F)` == `compute_kernel-materialized @ F` within `rtol=1e-8` at full rank, all modes, on **signed** `F` |
 | `test_env_diffuse_is_linear` | `diffuse(a·F1 + b·F2) == a·diffuse(F1) + b·diffuse(F2)` on signed fields — **no positivity projection** (guards the linearity contract) |
 | `test_apply_matches_dense_truncated` | truncated apply == full-rank apply within the truncation tol (~`1e-6`) in the **M-weighted / dense-relative norm** (not raw per-bin; verified on polar/mesh); mass conserved **exactly** per component (null mode kept) |
-| `test_compute_kernel_full_rank_exact` | `compute_kernel` (now **full-rank** eigenbasis-materialized) matches the pre-PR2 dense kernel within `rtol=1e-8`; **all existing Phase 1/2 diffusion tests pass unchanged** |
+| `test_compute_kernel_unchanged` | `compute_kernel` is **byte-identical** to pre-PR2 (unchanged dense-`expm` path, §6); **all existing Phase 1/2 diffusion tests pass unchanged** |
 | `test_diffusion_kde_nonnegative` | the density consumer clips its own output ≥ 0 after `env.diffuse`; smoothed rate matches the shipped KDE within tol and is nonnegative |
 | `test_denominator_support_no_spurious_nan` | under truncation: **strict** support gates (`binned`, diffuse-`resample`) use **`W`-component support** — exact support vs dense, **no spurious `NaN`** even where the dense `den` was tiny-positive (a `max(den,0)` floor would still fail `>0`); **value** matches dense only where `den ≫ tol` (near-boundary bins finite but not value-asserted); the **magnitude** gate (`_diffusion_kde` NumPy+batch+JAX) agrees with dense for bins comfortably above/below `occupancy_threshold`; **numerator not floored** (signed-safe for resample) |
 | `test_env_smooth_nonneg_within_tol` | `env.smooth` on a nonnegative field: negatives bounded **relative to the dense output** (M-weighted `tol`), verified on **polar/mesh** where `κ(M)` is worst — not a raw `-tol·max` bound; stays linear on signed fields |
