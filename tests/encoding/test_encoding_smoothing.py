@@ -559,11 +559,16 @@ class TestSmoothRateMapsBatch:
                 method="diffusion_kde",
                 bandwidth=2.0,
             )
-            # NaN positions should match
+            # Batch and single agree to floating-point tolerance. The matrix-free
+            # apply-path sums a wider matmul in the batch case, so BLAS orders the
+            # reductions differently than the single call -- a benign ~1e-9
+            # relative divergence (far below the diffusion truncation contract of
+            # ~1e-6), not a behavioral difference.
             assert_allclose(
                 batch_result[i],
                 single_result,
-                rtol=1e-10,
+                rtol=1e-8,
+                atol=1e-10,
                 equal_nan=True,
             )
 
@@ -694,52 +699,48 @@ class TestMinOccupancy:
 # =============================================================================
 
 
-class TestKernelCaching:
-    """Tests for kernel caching behavior."""
+class TestEigenbasisCacheReuse:
+    """Cross-neuron reuse is now automatic via the cached eigenbasis.
 
-    def test_accepts_precomputed_kernel(
+    The ``kernel=`` parameter on ``smooth_rate_map`` / ``smooth_rate_maps_batch``
+    has been removed (an intentional public break): the matrix-free
+    ``env.diffuse`` apply-path caches the eigenbasis on the environment, so the
+    cross-neuron reuse the parameter used to provide happens transparently.
+    """
+
+    def test_repeated_calls_are_consistent(
         self, simple_env, spike_counts_center, uniform_occupancy
     ):
-        """Should accept precomputed kernel for efficiency."""
-        kernel = simple_env.compute_kernel(2.0, mode="density", cache=True)
-
-        result = smooth_rate_map(
+        """Repeated calls at the same bandwidth reuse the cache, same result."""
+        first = smooth_rate_map(
             simple_env,
             spike_counts_center,
             uniform_occupancy,
             method="diffusion_kde",
             bandwidth=2.0,
-            kernel=kernel,
         )
+        second = smooth_rate_map(
+            simple_env,
+            spike_counts_center,
+            uniform_occupancy,
+            method="diffusion_kde",
+            bandwidth=2.0,
+        )
+        assert np.array_equal(first, second, equal_nan=True)
 
-        # Should produce valid result
-        assert result.shape == spike_counts_center.shape
-        assert np.any(np.isfinite(result))
-
-    def test_precomputed_kernel_matches_computed(
+    def test_kernel_parameter_is_removed(
         self, simple_env, spike_counts_center, uniform_occupancy
     ):
-        """Result with precomputed kernel should match computed."""
-        kernel = simple_env.compute_kernel(2.0, mode="density", cache=True)
-
-        result_with_kernel = smooth_rate_map(
-            simple_env,
-            spike_counts_center,
-            uniform_occupancy,
-            method="diffusion_kde",
-            bandwidth=2.0,
-            kernel=kernel,
-        )
-
-        result_without_kernel = smooth_rate_map(
-            simple_env,
-            spike_counts_center,
-            uniform_occupancy,
-            method="diffusion_kde",
-            bandwidth=2.0,
-        )
-
-        assert_allclose(result_with_kernel, result_without_kernel, rtol=1e-10)
+        """The obsolete ``kernel=`` parameter no longer exists (intentional break)."""
+        with pytest.raises(TypeError):
+            smooth_rate_map(
+                simple_env,
+                spike_counts_center,
+                uniform_occupancy,
+                method="diffusion_kde",
+                bandwidth=2.0,
+                kernel=simple_env.compute_kernel(2.0, mode="density"),
+            )
 
 
 # =============================================================================
@@ -972,7 +973,9 @@ class TestGaussianKernelMemoryWarning:
         msg = str(record[0].message)
         assert str(simple_env.n_bins) in msg
         assert "GB" in msg
-        assert "binned" in msg
+        # Points to the matrix-free alternative (diffusion_kde), not the stale
+        # claim that every method builds a dense kernel.
+        assert "diffusion_kde" in msg
         # Must have actually built and returned the kernel (no raise).
         assert kernel.shape == (simple_env.n_bins, simple_env.n_bins)
 

@@ -1,6 +1,6 @@
 [project]
 name = "neurospatial"
-version = "0.7.0"
+version = "0.8.0"
 description = "Discretize continuous N-dimensional spatial environments into bins/nodes with connectivity graphs"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -264,6 +264,9 @@ ignore = [
 ]
 "src/neurospatial/environment.py" = [
     "N806",  # Allow G (graph) - standard NetworkX convention
+]
+"src/neurospatial/environment/fields.py" = [
+    "N806",  # Allow W (finite-volume weight matrix) - diffusion apply-path
 ]
 
 # Package init files: Allow unused imports (re-exports)

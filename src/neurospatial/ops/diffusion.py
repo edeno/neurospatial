@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 import networkx as nx
 import numpy as np
+import scipy.linalg
 import scipy.sparse
 import scipy.sparse.csgraph
 import scipy.sparse.linalg
@@ -46,10 +47,31 @@ from numpy.typing import NDArray
 if TYPE_CHECKING:
     from neurospatial.environment._protocols import EnvironmentProtocol
 
+# Public entry points. The eigenbasis/apply-path functions below
+# (apply_heat_operator, diffusion_apply, heat_kernel_rank,
+# diffusion_component_labels, component_support_mask, _assemble_W) are internal
+# machinery imported explicitly by the smoothing consumers, not `import *` API.
 __all__ = [
     "diffusion_kernel",
     "heat_kernel_from_W",
 ]
+
+# Defaults for the truncated eigenbasis apply-path (``env.diffuse`` only; the
+# dense ``compute_kernel`` path is untouched). Drop heat-kernel modes whose
+# weight ``exp(-t*lambda)`` is below ``_HEAT_KERNEL_RANK_TOL``; once the resolved
+# rank would exceed ``_HEAT_KERNEL_DENSE_FRACTION * n_bins`` a truncated ``eigsh``
+# no longer beats a dense ``eigh``, so fall back to a transient dense basis.
+# ``_HEAT_KERNEL_RANK_START`` is the first probe size for the adaptive search.
+_HEAT_KERNEL_RANK_TOL = 1e-6
+_HEAT_KERNEL_DENSE_FRACTION = 0.5
+_HEAT_KERNEL_RANK_START = 32
+
+# Tiny floor for masked/support-gated denominators in the consumers (the raw
+# linear apply can leave a truncation-noise-tiny value where the dense
+# denominator was tiny-positive; the W-component support gate keeps the bin, and
+# this floor keeps the division finite -- a near-boundary bin stays finite but is
+# not value-equal to the dense path, which is part of the truncation contract).
+_DIFFUSE_DENOM_EPS = 1e-12
 
 # Non-orthogonality skew guard for triangle-centroid meshes: two-point flux is
 # exact only as the dual approaches K-orthogonality. If more than this fraction
@@ -60,7 +82,8 @@ _MESH_SKEW_FRACTION = 0.05
 
 
 # ---------------------------------------------------------------------------
-# Core operator (W -> H) -- the seam a future spectral engine will replace.
+# Core operator (W -> H) for the DENSE path (compute_kernel). The matrix-free
+# spectral apply-path (env.diffuse) is a separate surface further below.
 # ---------------------------------------------------------------------------
 def _raw_heat_operator(
     W: scipy.sparse.spmatrix,
@@ -73,7 +96,8 @@ def _raw_heat_operator(
     ``M_i H_ij == M_j H_ji``) hold to numerical tolerance at full rank. It is
     exposed as a seam so those invariants stay directly testable (the mode
     outputs of :func:`heat_kernel_from_W` are normalized and no longer expose
-    them), and so a future spectral engine can replace only this function.
+    them). It backs the dense ``compute_kernel`` path and is the equivalence
+    oracle for the matrix-free ``env.diffuse`` apply-path.
 
     Parameters
     ----------
@@ -157,7 +181,7 @@ def heat_kernel_from_W(
         )
 
     # Clip round-off negatives (real cross-block lobes only appear under the
-    # future truncated engine, not at full rank).
+    # truncated env.diffuse apply-path, not on this full-rank dense path).
     H = np.clip(_raw_heat_operator(W, volumes, sigma), 0.0, None)
 
     kernel: NDArray[np.float64]
@@ -178,8 +202,9 @@ def _components_from_W(W: scipy.sparse.spmatrix) -> tuple[int, NDArray[np.int_]]
 
     Component structure for any component-aware step is derived from ``W``, NOT
     ``env.connectivity``: corner-touching 8-connected bins have ``A = 0`` and so
-    are separate diffusion components. Used by tests and load-bearing under the
-    future truncated engine.
+    are separate diffusion components. Load-bearing for the truncated
+    ``env.diffuse`` apply-path (component-local eigenvectors + the W-component
+    support gates).
 
     Parameters
     ----------
@@ -195,6 +220,632 @@ def _components_from_W(W: scipy.sparse.spmatrix) -> tuple[int, NDArray[np.int_]]
     """
     n_components, labels = scipy.sparse.csgraph.connected_components(W, directed=False)
     return int(n_components), labels
+
+
+# ---------------------------------------------------------------------------
+# Matrix-free apply-path: cached truncated symmetric eigenbasis (env.diffuse).
+#
+# This is the SOLE eigenbasis surface. It replaces the dense ``expm`` on the hot
+# smoothing/apply consumers with a cached, per-component, bandwidth-aware
+# truncated eigenbasis of the symmetric conjugate S = M^{-1/2}(D-W)M^{-1/2}, and
+# a matrix-free application of H = M^{-1/2} exp(-tS) M^{1/2} that never
+# materializes an (n, n) kernel. ``compute_kernel`` (which returns an actual
+# matrix) keeps the dense ``expm`` path above and does NOT touch this cache.
+# ---------------------------------------------------------------------------
+def _assemble_W(graph: nx.Graph, n_bins: int) -> scipy.sparse.csr_matrix:
+    """Finite-volume weight matrix ``W[i, j] = A[i, j] / d[i, j]`` from a graph.
+
+    ``A`` (shared-face measure) and ``distance`` (center-to-center) are per-edge
+    contract fields; a missing or invalid value raises rather than silently
+    degrading the operator. An explicit ``A == 0`` means no diffusion across that
+    edge (e.g. corner-touching Cartesian bins) and is skipped. This is the single
+    W-assembly used by both the dense ``compute_diffusion_kernels`` path and the
+    ``env.diffuse`` eigenbasis, so the two operate on an identical ``W``.
+
+    Parameters
+    ----------
+    graph : nx.Graph
+        Nodes are contiguous integers ``0..n_bins-1``; each edge carries ``"A"``
+        (finite, >= 0) and ``"distance"`` (finite, > 0).
+    n_bins : int
+        Number of nodes (matrix dimension).
+
+    Returns
+    -------
+    W : scipy.sparse.csr_matrix, shape (n_bins, n_bins)
+        Symmetric finite-volume weight matrix.
+
+    Raises
+    ------
+    ValueError
+        If an edge is missing ``"A"``/``"distance"`` or carries a non-finite /
+        negative ``"A"`` or a non-finite / non-positive ``"distance"``.
+    """
+    rows: list[int] = []
+    cols: list[int] = []
+    vals: list[float] = []
+    for u, v, data in graph.edges(data=True):
+        if "A" not in data or "distance" not in data:
+            raise ValueError(
+                f"edge ({u},{v}) is missing 'A' and/or 'distance' attribute."
+            )
+        A = float(data["A"])
+        d = float(data["distance"])
+        if not (np.isfinite(A) and A >= 0.0):
+            raise ValueError(f"edge ({u},{v}) has invalid face measure A={A}.")
+        if not (np.isfinite(d) and d > 0.0):
+            raise ValueError(f"edge ({u},{v}) has invalid distance d={d}.")
+        if A == 0.0:
+            continue  # explicit A == 0 => no diffusion across this edge
+        w = A / d
+        rows += [int(u), int(v)]
+        cols += [int(v), int(u)]
+        vals += [w, w]
+    return scipy.sparse.csr_matrix(
+        (vals, (rows, cols)), shape=(n_bins, n_bins), dtype=np.float64
+    )
+
+
+def _symmetric_conjugate(
+    W: scipy.sparse.spmatrix, volumes: NDArray[np.float64]
+) -> scipy.sparse.csr_matrix:
+    """Symmetric conjugate ``S = M^{-1/2}(D - W)M^{-1/2}`` (symmetric PSD, sparse).
+
+    ``L = M^{-1}(D - W)`` is non-symmetric on non-uniform ``M``; conjugating by
+    ``M^{1/2}`` gives the symmetric ``S`` with the same (real, non-negative)
+    spectrum, so ``H = exp(-tL) = M^{-1/2} exp(-tS) M^{1/2}``. Its connected
+    components equal ``W``'s, and its constant (``lambda = 0``) null mode per
+    component is ``M^{1/2} 1`` -- always retained under truncation for exact mass
+    conservation.
+    """
+    d = np.asarray(W.sum(axis=1)).ravel()
+    inv_sqrt_m = scipy.sparse.diags(1.0 / np.sqrt(volumes))
+    return (inv_sqrt_m @ (scipy.sparse.diags(d) - W) @ inv_sqrt_m).tocsr()
+
+
+def heat_kernel_rank(
+    eigvals_ascending: NDArray[np.float64], sigma: float, tol: float
+) -> int:
+    """Smallest rank keeping every heat-kernel mode with ``exp(-t*lambda) >= tol``.
+
+    ``diffuse`` weights mode ``k`` by ``exp(-t*lambda_k)``, ``t = sigma**2 / 2``,
+    so a mode below ``tol`` changes the smoothed field by at most ``tol`` in the
+    M-weighted norm. With ``eigvals_ascending`` sorted ascending, the weights are
+    descending, so the count of retained modes is a single ``searchsorted``. The
+    ``lambda = 0`` null mode always survives (``exp(0) = 1 >= tol``), so a
+    per-component call keeps at least that component's null mode.
+
+    Parameters
+    ----------
+    eigvals_ascending : NDArray[np.float64], shape (m,)
+        Eigenvalues of ``S`` in ascending order.
+    sigma : float
+        Smoothing bandwidth (physical sigma), > 0.
+    tol : float
+        Heat-kernel weight cutoff, in ``(0, 1)``.
+
+    Returns
+    -------
+    rank : int
+        Number of modes with weight ``>= tol`` (at least 1).
+    """
+    t = sigma**2 / 2.0
+    keep = int(np.searchsorted(-np.exp(-t * eigvals_ascending), -tol, side="right"))
+    return max(keep, 1)
+
+
+def _block_eigenbasis(
+    block: scipy.sparse.spmatrix, rank: int | None
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Eigendecomposition of a single **connected** block of ``S``.
+
+    ``rank is None`` (or ``rank >= n``) uses dense ``scipy.linalg.eigh``; a
+    smaller ``rank`` uses truncated ``scipy.sparse.linalg.eigsh`` with a small
+    negative shift-invert, falling back to the no-shift-invert ``which="SM"``
+    solver (with a ``UserWarning``) if the factorization fails. Eigenvalues are
+    returned ascending and clipped to be non-negative (``S`` is PSD).
+    """
+    n = block.shape[0]
+    if rank is None or rank >= n:
+        eigvals, eigvecs = scipy.linalg.eigh(block.toarray())
+        return np.clip(eigvals, 0.0, None), eigvecs
+
+    # Deterministic ARPACK start vector so the truncated basis is reproducible
+    # (eigsh otherwise draws a random v0, rotating eigenvectors within
+    # near-degenerate eigenspaces run-to-run; the diffusion operator is invariant
+    # to that rotation, but a fixed v0 makes the cached basis reproducible). A
+    # generic direction avoids stagnating on v0 == the constant null mode.
+    v0 = np.random.default_rng(0).standard_normal(n)
+    try:
+        eigvals, eigvecs = scipy.sparse.linalg.eigsh(
+            block, k=rank, sigma=-1e-8, which="LM", v0=v0
+        )
+    except RuntimeError:
+        # Shift-invert can fail on the near-singular S in some builds (a plain
+        # RuntimeError from the sparse LU, or an ArpackError -- itself a
+        # RuntimeError subclass). Fall back to the no-shift-invert solver, which
+        # is less reliable, so warn.
+        warnings.warn(
+            "Shift-invert eigsh failed on the diffusion operator; falling back "
+            "to the no-shift-invert which='SM' solver, which may return a "
+            "lower-quality eigenbasis. Consider a larger bandwidth.",
+            UserWarning,
+            stacklevel=2,
+        )
+        eigvals, eigvecs = scipy.sparse.linalg.eigsh(block, k=rank, which="SM", v0=v0)
+
+    order = np.argsort(eigvals)
+    return np.clip(eigvals[order], 0.0, None), eigvecs[:, order]
+
+
+def _symmetric_eigenbasis(
+    S: scipy.sparse.spmatrix, rank: int | None
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Per-component eigenbasis of ``S = Q Lambda Q^T`` (component-local modes).
+
+    Each ``W``-connected component's block is decomposed separately, so every
+    eigenvector is localized to a single component (zero elsewhere). This makes
+    truncation (and slicing a cached larger basis) **leak-free by construction**:
+    a single global ``eigsh`` could rotate eigenvectors *across* components within
+    a degenerate eigenspace, and cutting through it would smear a point source
+    across a wall. The globally smallest ``rank`` modes are then kept -- and since
+    each component's null mode (``lambda = 0``) is the smallest, all
+    ``n_components`` null modes are retained (mass conservation).
+
+    Parameters
+    ----------
+    S : scipy.sparse.spmatrix, shape (n_bins, n_bins)
+        Symmetric conjugate from :func:`_symmetric_conjugate`.
+    rank : int or None
+        Number of smallest modes to return; ``None`` returns the full basis.
+
+    Returns
+    -------
+    eigvals : NDArray[np.float64], shape (m,)
+        Eigenvalues ascending, non-negative. ``m == rank`` (truncated) or
+        ``n_bins`` (full).
+    eigvecs : NDArray[np.float64], shape (n_bins, m)
+        Component-local orthonormal eigenvectors as columns.
+
+    Raises
+    ------
+    ValueError
+        If ``rank`` is below the number of connected components (which would drop
+        a component's null mode and break mass conservation / linearity).
+    """
+    n_bins = S.shape[0]
+    n_components, labels = scipy.sparse.csgraph.connected_components(S, directed=False)
+    if rank is not None and rank < n_components:
+        raise ValueError(
+            f"rank={rank} is below n_components={n_components}: a truncation this "
+            "small would drop a connected component's null mode and break "
+            "mass conservation. Raise the bandwidth or the rank."
+        )
+
+    if n_components == 1:
+        return _block_eigenbasis(S, rank)
+
+    S = S.tocsr()
+    per_component_rank = n_bins if rank is None else rank
+    eigval_parts: list[NDArray[np.float64]] = []
+    eigvec_parts: list[NDArray[np.float64]] = []
+    for component in range(n_components):
+        idx = np.flatnonzero(labels == component)
+        block = S[idx][:, idx]
+        block_rank = None if per_component_rank >= idx.size else per_component_rank
+        block_vals, block_vecs = _block_eigenbasis(block, block_rank)
+        padded = np.zeros((n_bins, block_vecs.shape[1]))
+        padded[idx] = block_vecs
+        eigval_parts.append(block_vals)
+        eigvec_parts.append(padded)
+
+    all_eigvals = np.concatenate(eigval_parts)
+    all_eigvecs = np.concatenate(eigvec_parts, axis=1)
+    keep = all_eigvals.size if rank is None else rank
+    order = np.argsort(all_eigvals, kind="stable")[:keep]
+    return all_eigvals[order], all_eigvecs[:, order]
+
+
+def _adaptive_symmetric_basis(
+    S: scipy.sparse.spmatrix,
+    sigma: float,
+    *,
+    tol: float,
+    dense_fraction: float,
+    n_components: int,
+) -> tuple[int | None, NDArray[np.float64] | None, NDArray[np.float64] | None]:
+    """Resolve the truncation rank for ``sigma`` and return the basis at that rank.
+
+    Grows a probe ``k`` (Weyl's law: the eigenvalue-counting function is ~linear
+    in 2D, so jump toward the estimated cutoff index) until the largest computed
+    eigenvalue brackets the heat-kernel cutoff ``lambda_cut = -ln(tol) / t``, then
+    keeps every mode at or below it (``>= n_components``, so no null mode drops).
+    Returns ``(None, None, None)`` when the resolved rank would exceed
+    ``dense_fraction * n_bins`` -- signalling the caller to use a **transient**
+    dense full basis (a light bandwidth on a large grid genuinely needs most
+    modes; a truncated ``eigsh`` no longer beats a dense ``eigh`` there).
+    """
+    n = S.shape[0]
+    t = sigma**2 / 2.0
+    lambda_cut = -np.log(tol) / t
+    max_trunc = int(dense_fraction * n)
+    if max_trunc <= n_components:
+        return None, None, None
+
+    k = min(max(n_components + 1, _HEAT_KERNEL_RANK_START), max_trunc)
+    while True:
+        eigvals, eigvecs = _symmetric_eigenbasis(S, rank=k)
+        if eigvals[-1] >= lambda_cut:
+            keep = max(heat_kernel_rank(eigvals, sigma, tol), n_components)
+            return keep, eigvals[:keep], eigvecs[:, :keep]
+        if k >= max_trunc:
+            return None, None, None  # cutoff not reached below the dense threshold
+        estimated = int(np.ceil(1.1 * k * lambda_cut / max(float(eigvals[-1]), 1e-30)))
+        if estimated > max_trunc:
+            return None, None, None
+        k = min(max(estimated, 2 * k), max_trunc)
+
+
+def apply_heat_operator(
+    Q: Any,
+    Lam: Any,
+    volumes: Any,
+    sigma: float,
+    F: Any,
+    *,
+    transpose: bool = False,
+    xp: Any = np,
+) -> Any:
+    """Apply ``H @ F`` (or ``H^T @ F``) via the eigenbasis -- PURE LINEAR.
+
+    ``H = M^{-1/2} Q diag(exp(-t*Lambda)) Q^T M^{1/2}``, ``t = sigma**2 / 2``,
+    computed as ``M^{-1/2} Q (coeff ⊙ (Q^T (M^{1/2} F)))``; ``H^T`` swaps the
+    ``M^{±1/2}`` powers. There is **no clip and no renormalization** -- positivity
+    is a per-consumer concern.
+
+    Parameters
+    ----------
+    Q : array, shape (n_bins, rank)
+        Component-local eigenvectors of ``S`` (columns).
+    Lam : array, shape (rank,)
+        Corresponding eigenvalues.
+    volumes : array, shape (n_bins,)
+        Per-bin cell volumes ``M`` (strictly positive).
+    sigma : float
+        Physical smoothing standard deviation (``t = sigma**2 / 2``).
+    F : array, shape (n_bins, n_fields)
+        Field batch. MUST be 2-D -- a 1-D ``F`` would make ``sqrt_m * F``
+        (``sqrt_m`` of shape ``(n, 1)``) broadcast to ``(n, n)`` -- so this is
+        checked and raises rather than silently returning a wrong ``(n, n)``.
+    transpose : bool, default=False
+        Apply ``H^T`` instead of ``H``.
+    xp : module, default=numpy
+        Array module (``numpy`` or ``jax.numpy`` to run the apply on-device);
+        ``Q``, ``Lam``, ``volumes``, ``F`` must already be that module's arrays.
+
+    Returns
+    -------
+    array, shape (n_bins, n_fields)
+        ``H @ F`` (or ``H^T @ F``), in ``xp``'s array type.
+
+    Raises
+    ------
+    ValueError
+        If ``F`` is not 2-D.
+    """
+    if F.ndim != 2:
+        raise ValueError(
+            f"F must be 2-D (n_bins, n_fields), got {F.ndim}-D. A 1-D field "
+            "would silently broadcast to (n, n); reshape to (n_bins, 1)."
+        )
+    t = sigma**2 / 2.0
+    coeff = xp.exp(-t * Lam)  # (rank,)
+    sqrt_m = xp.sqrt(volumes).reshape(-1, 1)  # (n, 1)
+    if not transpose:  # H @ F
+        return (Q @ (coeff[:, None] * (Q.T @ (sqrt_m * F)))) / sqrt_m
+    return sqrt_m * (Q @ (coeff[:, None] * (Q.T @ (F / sqrt_m))))  # H^T @ F
+
+
+def _apply_modes(
+    Q: Any,
+    Lam: Any,
+    volumes: Any,
+    sigma: float,
+    F: Any,
+    mode: Literal["transition", "density", "average"],
+    xp: Any,
+) -> Any:
+    """Apply one of the three mode operators to a 2-D field batch ``F``.
+
+    Reproduces :func:`heat_kernel_from_W`'s three-mode contract via the row-sum
+    vector ``r = H @ 1`` and the M-weighted column-mass ``m = H^T @ M`` (each
+    computed once per ``sigma`` and a fixed vector, so every mode stays **linear
+    in F**): ``average = (H @ F) / r``, ``transition = H^T @ (F / r)``,
+    ``density = H @ (F / m)``. All reduce to ``H`` / ``H^T`` applied to ``F`` and
+    to ``{1, M}`` -- no ``(n, n)``.
+    """
+
+    def _h(x: Any) -> Any:
+        return apply_heat_operator(Q, Lam, volumes, sigma, x, transpose=False, xp=xp)
+
+    def _ht(x: Any) -> Any:
+        return apply_heat_operator(Q, Lam, volumes, sigma, x, transpose=True, xp=xp)
+
+    if mode == "average":
+        r = _safe_denominator(_h(xp.ones_like(F[:, :1])), xp)
+        return _h(F) / r
+    if mode == "transition":
+        r = _safe_denominator(_h(xp.ones_like(F[:, :1])), xp)
+        return _ht(F / r)
+    if mode == "density":
+        m = _safe_denominator(_ht(volumes.reshape(-1, 1)), xp)
+        return _h(F / m)
+    raise ValueError(
+        f"Invalid mode {mode!r}. Choose 'transition', 'density', or 'average'."
+    )
+
+
+def _safe_denominator(d: Any, xp: Any) -> Any:
+    """Replace non-positive entries by 1.0 (mirrors the dense kernel's guard).
+
+    ``r`` and ``m`` are ``H @ 1`` / ``H^T @ M`` -- entrywise ~1 and ~volumes
+    respectively because the null mode is retained -- so this only guards a
+    degenerate all-zero row, matching :func:`heat_kernel_from_W`.
+    """
+    return xp.where(d > 0.0, d, 1.0)
+
+
+def _warn_large_dense_basis(n: int) -> None:
+    """Warn (never raise) before a near-full-rank ``env.diffuse`` builds a dense
+    ``(n, n)`` eigenvector basis -- the inherent cost of a light bandwidth on a
+    large grid. Mirrors the dense ``compute_kernel`` GB-estimate warning."""
+    from neurospatial.ops.smoothing import _LARGE_KERNEL_THRESHOLD
+
+    if n > _LARGE_KERNEL_THRESHOLD:
+        estimated_gb = n * n * 8 / 1e9
+        warnings.warn(
+            f"env.diffuse resolved a near-full-rank basis for {n} bins (a light "
+            f"bandwidth on a large grid needs most modes), so a dense {n} x {n} "
+            f"float64 eigenvector matrix (~{estimated_gb:.1f} GB) is built "
+            f"transiently, applied, and dropped (never cached). Proceeding; this "
+            f"may be slow and memory-intensive. To reduce the cost, increase the "
+            f"bandwidth or the bin_size (fewer bins).",
+            UserWarning,
+            stacklevel=2,
+        )
+
+
+def _resolve_basis(
+    holder: dict[str, Any],
+    W: scipy.sparse.spmatrix,
+    volumes: NDArray[np.float64],
+    n_components: int,
+    sigma: float,
+    *,
+    tol: float,
+    dense_fraction: float,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Return ``(Q, Lam)`` for ``sigma`` from the growable single-basis cache.
+
+    ``holder`` is a per-geometry mutable dict (owned by a
+    ``versioned_cached_property`` on the Environment, so it is dropped wholesale
+    on any geometry change). It holds ONE truncated basis -- the max rank
+    requested so far, strictly below ``dense_fraction * n`` -- grown by
+    **replace**, plus a memo of the resolved rank per ``(sigma, tol)`` so repeat
+    calls at a bandwidth (every neuron) skip the adaptive probe.
+
+    A request whose rank would reach ``dense_fraction * n`` (a near-full-rank
+    ``env.diffuse``) builds a **transient** dense basis -- applied then dropped,
+    never stored -- so it can never grow the cache to ``(n, n)``.
+    """
+    n = int(volumes.shape[0])
+    # Memo of the resolved rank per (sigma, tol): an int rank, or the sentinel
+    # "dense" for a near-full-rank bandwidth (transient basis, never cached).
+    resolved: dict[tuple[float, float], int | Literal["dense"]] = holder.setdefault(
+        "resolved", {}
+    )
+    key = (float(sigma), float(tol))
+    t = sigma**2 / 2.0
+
+    # Fast path: rank already resolved for this bandwidth.
+    if key in resolved:
+        r = resolved[key]
+        if isinstance(r, str):  # "dense": transient full basis, never cached
+            # No re-warn here: the large-matrix warning fired once when this
+            # bandwidth first resolved to "dense" (the probe path below).
+            return _transient_dense_basis(W, volumes)
+        Q, Lam = holder["basis"]
+        return Q[:, :r], Lam[:r]
+
+    # If the cached basis already brackets this bandwidth's cutoff (its largest
+    # retained mode is negligible), slice it -- no new eigensolve.
+    cached = holder.get("basis")
+    if cached is not None:
+        Qc, Lamc = cached
+        if float(np.exp(-t * Lamc[-1])) < tol:
+            r = int(
+                min(
+                    max(heat_kernel_rank(Lamc, sigma, tol), n_components), Lamc.shape[0]
+                )
+            )
+            resolved[key] = r
+            return Qc[:, :r], Lamc[:r]
+
+    # Otherwise probe (and possibly grow the single cached basis).
+    S = _symmetric_conjugate(W, volumes)
+    rank, eigvals, eigvecs = _adaptive_symmetric_basis(
+        S, sigma, tol=tol, dense_fraction=dense_fraction, n_components=n_components
+    )
+    if rank is None:
+        resolved[key] = "dense"
+        _warn_large_dense_basis(n)
+        vals_full, vecs_full = _symmetric_eigenbasis(S, rank=None)
+        return vecs_full, vals_full  # transient, NOT cached
+    assert eigvals is not None and eigvecs is not None  # narrowed by rank is not None
+    resolved[key] = rank
+    # The single cached basis grows by replace (it never shrinks), so a request
+    # needing more modes than are cached recomputes and replaces it.
+    cached_rank = holder["basis"][1].shape[0] if "basis" in holder else 0
+    if rank >= cached_rank:
+        holder["basis"] = (eigvecs, eigvals)
+        return eigvecs, eigvals
+    Qc, Lamc = holder["basis"]
+    return Qc[:, :rank], Lamc[:rank]
+
+
+def _transient_dense_basis(
+    W: scipy.sparse.spmatrix, volumes: NDArray[np.float64]
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Build a full dense eigenbasis of ``S`` transiently (never cached).
+
+    Does NOT warn (the caller warns once, when the bandwidth first resolves to
+    "dense"). Returns ``(Q, Lam)`` -- eigenvectors first -- matching
+    :func:`_resolve_basis` (``_symmetric_eigenbasis`` returns ``(eigvals,
+    eigvecs)``, so swap).
+    """
+    S = _symmetric_conjugate(W, volumes)
+    eigvals, eigvecs = _symmetric_eigenbasis(S, rank=None)
+    return eigvecs, eigvals
+
+
+def diffusion_apply(
+    holder: dict[str, Any],
+    W: scipy.sparse.spmatrix,
+    volumes: NDArray[np.float64],
+    n_components: int,
+    fields: NDArray[np.float64],
+    sigma: float,
+    mode: Literal["transition", "density", "average"],
+    *,
+    backend: Literal["numpy", "jax"] = "numpy",
+    tol: float = _HEAT_KERNEL_RANK_TOL,
+    dense_fraction: float = _HEAT_KERNEL_DENSE_FRACTION,
+) -> Any:
+    """Matrix-free application of the mode operator to a 2-D field batch.
+
+    Resolves ``(Q, Lam)`` from the growable cache (:func:`_resolve_basis`) and
+    applies the requested ``mode`` (:func:`_apply_modes`), never materializing an
+    ``(n, n)`` kernel. For ``backend="jax"`` the apply runs in ``jax.numpy`` (the
+    cached NumPy eigenbasis is cast to ``jnp``), so ``jit`` / ``grad`` / GPU still
+    work; the eigenbasis **build** stays NumPy (``scipy``).
+
+    Parameters
+    ----------
+    holder : dict
+        The per-geometry eigenbasis cache (from the Environment).
+    W : scipy.sparse matrix, shape (n_bins, n_bins)
+        Finite-volume weight matrix (from the Environment geometry).
+    volumes : NDArray[np.float64], shape (n_bins,)
+        Per-bin cell volumes ``M``.
+    n_components : int
+        Number of ``W``-connected components (rank floor for the null modes).
+    fields : NDArray, shape (n_bins, n_fields)
+        Field batch (must be 2-D; ``env.diffuse`` coerces a 1-D field).
+    sigma : float
+        Bandwidth (physical sigma), > 0.
+    mode : {"transition", "density", "average"}
+        Kernel orientation.
+    backend : {"numpy", "jax"}, default="numpy"
+        Where the apply runs.
+    tol, dense_fraction : float
+        Truncation controls (see :func:`_adaptive_symmetric_basis`).
+
+    Returns
+    -------
+    smoothed : NDArray, shape (n_bins, n_fields)
+        ``numpy.ndarray`` for ``backend="numpy"``, ``jax.Array`` for
+        ``backend="jax"``.
+    """
+    Q, Lam = _resolve_basis(
+        holder,
+        W,
+        volumes,
+        n_components,
+        sigma,
+        tol=tol,
+        dense_fraction=dense_fraction,
+    )
+    if backend == "jax":
+        import jax.numpy as jnp
+
+        # Cast the cached NumPy eigenbasis to the JAX default float (float64 when
+        # x64 is enabled, else float32 -- JAX narrows silently at the boundary, so
+        # no explicit dtype is requested here). The apply then runs entirely in
+        # jax.numpy, preserving jit / grad / GPU.
+        return _apply_modes(
+            jnp.asarray(Q),
+            jnp.asarray(Lam),
+            jnp.asarray(volumes),
+            sigma,
+            jnp.asarray(fields),
+            mode,
+            jnp,
+        )
+    return _apply_modes(
+        Q, Lam, volumes, sigma, np.asarray(fields, dtype=np.float64), mode, np
+    )
+
+
+def diffusion_component_labels(
+    env: EnvironmentProtocol,
+) -> tuple[int, NDArray[np.int_]]:
+    """``(n_components, labels)`` of the finite-volume ``W`` for ``env``.
+
+    Reads the Environment's cached finite-volume geometry so the smoothing
+    consumers can derive **W-component support** for their strict ``> 0`` gates
+    (support that is exact and truncation-proof, unlike the smoothed
+    denominator's sign; see :func:`component_support_mask`).
+
+    Parameters
+    ----------
+    env : Environment
+        A fitted environment.
+
+    Returns
+    -------
+    n_components : int
+        Number of connected ``W``-components.
+    labels : NDArray[np.int_], shape (n_bins,)
+        Per-bin component id (``0..n_components-1``).
+    """
+    _W, _volumes, n_components, labels = cast("Any", env)._diffusion_geometry
+    return int(n_components), labels
+
+
+def component_support_mask(
+    labels: NDArray[np.int_], n_components: int, valid: NDArray[np.bool_]
+) -> NDArray[np.bool_]:
+    """Bins whose ``W``-component contains at least one valid input bin.
+
+    Within a connected ``W``-component the heat kernel is entrywise positive, so
+    the dense denominator ``den[i] > 0`` **iff** ``i``'s component holds any valid
+    input mass -- a boolean that is exact and truncation-proof. This reproduces
+    that support without relying on the (truncation-noisy) smoothed sign.
+
+    Parameters
+    ----------
+    labels : NDArray[np.int_], shape (n_bins,)
+        Per-bin ``W``-component id.
+    n_components : int
+        Number of components.
+    valid : NDArray[np.bool_], shape (..., n_bins)
+        Valid-input mask; a leading batch axis (e.g. neurons) is supported.
+
+    Returns
+    -------
+    support : NDArray[np.bool_], shape (..., n_bins)
+        True where the bin's component contains a valid bin.
+    """
+    valid = np.asarray(valid, dtype=bool)
+    lead = valid.shape[:-1]
+    flat = valid.reshape(-1, valid.shape[-1])  # (B, n_bins)
+    n_batch = flat.shape[0]
+    comp_has_valid = np.zeros((n_batch, n_components), dtype=bool)
+    rows = np.broadcast_to(np.arange(n_batch)[:, None], flat.shape)
+    cols = np.broadcast_to(labels[None, :], flat.shape)
+    np.logical_or.at(comp_has_valid, (rows, cols), flat)
+    support = comp_has_valid[:, labels]  # (B, n_bins)
+    return support.reshape(*lead, valid.shape[-1])
 
 
 # ---------------------------------------------------------------------------

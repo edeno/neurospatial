@@ -49,11 +49,9 @@ from typing import Literal
 
 import networkx as nx
 import numpy as np
-import scipy.sparse
-import scipy.sparse.linalg
 from numpy.typing import NDArray
 
-from neurospatial.ops.diffusion import heat_kernel_from_W
+from neurospatial.ops.diffusion import _assemble_W, heat_kernel_from_W
 
 __all__ = [
     "apply_kernel",
@@ -154,17 +152,18 @@ def compute_diffusion_kernels(
 
     **Mitigations for large environments:**
 
-    - Reduce the number of bins by increasing ``bin_size`` when constructing
-      the environment. (Every ``smoothing_method`` -- ``diffusion_kde``,
-      ``gaussian_kde``, and ``binned`` -- builds a dense kernel, so switching
-      method is not a memory mitigation.)
+    - Smooth **matrix-free** via :meth:`Environment.diffuse` (or
+      :meth:`Environment.smooth`), which apply the same operator through a cached
+      truncated eigenbasis in ``O(n_bins * rank)`` memory and never build this
+      dense kernel; the ``"diffusion_kde"`` / ``"binned"`` encoding methods route
+      through it. Only this function, ``compute_kernel``, and the ``"gaussian_kde"``
+      method build a dense kernel.
+    - Reduce the number of bins by increasing ``bin_size`` when constructing the
+      environment.
     - For population decoding at scale, the memory-safe paths this release are
       float32 rate maps and the summary decode
       (:func:`~neurospatial.decoding.posterior.decode_position_summary`), which
       avoid materializing a full dense posterior.
-
-    A faster, lower-peak ``expm_multiply`` / Chebyshev rewrite of this kernel is
-    a deferred stretch goal and is **not** implemented in this release.
     """
     # 1) Validate mode and sigma up front, before any O(n^2)/O(n^3) work (the
     #    high-bin warning, W assembly, or the dense matrix exponential): a typo
@@ -212,40 +211,20 @@ def compute_diffusion_kernels(
             f"requires an {n_bins} x {n_bins} float64 matrix "
             f"(~{estimated_gb:.1f} GB) -- O(n^2) memory (and O(n^3) time for the "
             f"matrix exponential). Proceeding anyway; this may be slow and "
-            f"memory-intensive. To reduce the cost, increase bin_size (fewer "
-            f"bins). Every smoothing_method (diffusion_kde, gaussian_kde, "
-            f"binned) builds a dense kernel, so switching method does not avoid "
-            f"this cost.",
+            f"memory-intensive. To avoid this dense kernel entirely, smooth "
+            f"matrix-free via env.diffuse (or the 'diffusion_kde' / 'binned' "
+            f"encoding methods, which route through it) -- both scale as "
+            f"O(n * rank), not O(n^2). Only compute_kernel (this call) and the "
+            f"'gaussian_kde' method build a dense kernel. You can also increase "
+            f"bin_size to reduce the bin count.",
             UserWarning,
             stacklevel=2,
         )
 
     # 5) Build the finite-volume weight matrix W[i, j] = A[i, j] / d[i, j].
-    #    "A" and "distance" are both edge-contract fields; a missing or invalid
-    #    value raises rather than silently degrading the kernel.
-    rows: list[int] = []
-    cols: list[int] = []
-    vals: list[float] = []
-    for u, v, data in graph.edges(data=True):
-        if "A" not in data or "distance" not in data:
-            raise ValueError(
-                f"edge ({u},{v}) is missing 'A' and/or 'distance' attribute."
-            )
-        A = float(data["A"])
-        d = float(data["distance"])
-        if not (np.isfinite(A) and A >= 0.0):
-            raise ValueError(f"edge ({u},{v}) has invalid face measure A={A}.")
-        if not (np.isfinite(d) and d > 0.0):
-            raise ValueError(f"edge ({u},{v}) has invalid distance d={d}.")
-        if A == 0.0:
-            continue  # explicit A == 0 => no diffusion across this edge
-        w = A / d
-        rows += [int(u), int(v)]
-        cols += [int(v), int(u)]
-        vals += [w, w]
-    W = scipy.sparse.csr_matrix(
-        (vals, (rows, cols)), shape=(n_bins, n_bins), dtype=np.float64
-    )
+    #    Shared with the env.diffuse eigenbasis path so both operate on an
+    #    identical W (a missing/invalid "A"/"distance" raises there too).
+    W = _assemble_W(graph, n_bins)
 
     # 6) Assemble and normalize the heat operator for the requested mode.
     return heat_kernel_from_W(W, volumes, sigma, mode=mode)

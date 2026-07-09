@@ -2,6 +2,56 @@
 
 ## [Unreleased]
 
+### Added — `env.diffuse`: matrix-free diffusion smoothing (0.8.0, performance)
+
+Smoothing no longer materializes the dense `(n_bins, n_bins)` diffusion kernel on
+its hot paths. A new method
+
+```python
+env.diffuse(fields, bandwidth, *, mode="density", backend="numpy")
+```
+
+applies the finite-volume heat operator `H = exp(-t L)` **without building an
+`(n, n)` matrix**, using a cached, per-component, bandwidth-aware **truncated
+symmetric eigenbasis** of `S = M^{-1/2}(D − W) M^{-1/2}`. Time and memory scale
+with `n_bins × rank` (`rank ~ measure(domain)/σ^d`), not `n_bins²`, so smoothing
+now scales to large/fine grids. The eigenbasis depends only on geometry, so it is
+built once and reused across every bandwidth, mode, and neuron (auto-invalidated
+when the environment is mutated). `fields` may be 1-D `(n_bins,)` or a 2-D batch
+`(n_bins, n_fields)`.
+
+- **`env.diffuse` is a pure linear operator** — no output clip, no
+  renormalization. The always-retained per-component null mode makes mass
+  conservation exact under truncation (`mode="transition"` preserves `sum`;
+  `mode="average"` preserves a constant field), so smoothing a **signed** field
+  is preserved. Positivity, where required, is the consumer's job.
+- **`env.smooth` now routes through `env.diffuse`** and gains a documented
+  **approximation contract**: it reproduces the dense kernel to within a
+  near-lossless truncation tolerance (dropped modes contribute ≤ `tol` (default
+  `1e-6`) in the **M-weighted norm**; the raw per-bin error carries a
+  volume-conditioning factor `κ(M) = sqrt(max vol / min vol)`, worst on polar
+  `r→0` / skewed mesh). On a non-negative input the linear apply may leave
+  tolerance-level negatives (bounded relative to the dense output) instead of the
+  dense kernel's exact 0-floor — clip the result yourself if you need a strict
+  floor.
+- **`backend="jax"`** runs the apply **in JAX** (the cached NumPy eigenbasis is
+  cast to `jnp`), so `jit` / `grad` / GPU work through the smoothing. The JAX
+  `diffusion_kde` encoders no longer round-trip through NumPy.
+- The `diffusion_kde`, `binned`, and diffuse-`resample_field` consumers route
+  through `env.diffuse`; strict `> 0` support gates (`binned`, resample) derive
+  their support from the **W-component structure** (exact, truncation-proof), not
+  the smoothed denominator's sign, so truncation cannot emit a spurious `NaN`.
+  `diffusion_kde` clips its own output `≥ 0` (decode nonnegativity).
+
+**Breaking:** the `kernel=` parameter is **removed** from
+`neurospatial.encoding._smoothing.smooth_rate_map` and `smooth_rate_maps_batch`.
+Passing a precomputed dense kernel is obsolete — the cached eigenbasis now
+provides the cross-neuron reuse the parameter existed for. There is no
+backward-compat shim (per the project default); callers passing `kernel=` should
+simply drop it. `env.compute_kernel` is **unchanged** (it still returns the dense
+`(n, n)` matrix via the `expm` path, byte-identical, for callers that genuinely
+need the matrix), as is `transitions(method="diffusion")`.
+
 ### Changed — diffusion smoothing bandwidth is now the true physical σ (breaking, correctness)
 
 The `diffusion_kde` / diffusion-kernel `bandwidth` is now the **true physical
