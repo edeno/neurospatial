@@ -64,8 +64,11 @@ def compute_diffusion_kernels(graph, *, volumes, sigma, mode):
     n = graph.number_of_nodes()
     if not (np.isfinite(sigma) and sigma > 0.0):  # C6: sigma finite, > 0 (feeds sigma**2 to expm)
         raise ValueError(f"sigma must be finite and > 0, got {sigma}")
-    if set(graph.nodes) != set(range(n)):         # C6: node IDs used directly as matrix indices
-        raise ValueError("graph nodes must be contiguous integers 0..n-1")
+    nodes = list(graph.nodes)                     # C6: node IDs used directly as matrix indices
+    if not all(isinstance(x, (int, np.integer)) and not isinstance(x, bool) for x in nodes) \
+            or set(map(int, nodes)) != set(range(n)):
+        # bool subclasses int and 0.0 == 0, so require true integer labels AND contiguous 0..n-1
+        raise ValueError("graph nodes must be contiguous integer labels 0..n-1 (no float/bool)")
     rows, cols, vals = [], [], []
     for u, v, data in graph.edges(data=True):
         if "A" not in data or "distance" not in data:   # C6: both are edge-contract fields

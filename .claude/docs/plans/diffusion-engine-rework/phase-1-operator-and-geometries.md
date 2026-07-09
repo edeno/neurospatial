@@ -43,9 +43,13 @@ paths and the public `mode="average"` are **Phase 2**.
 - **Mesh skew guard** in `_mesh_fv` (D3): warn when `>5%` of interior edges exceed `30°`
   non-orthogonality.
 - **Route `env.compute_kernel`** ([fields.py:124-142](../../../src/neurospatial/environment/fields.py))
-  to `diffusion_kernel(env, sigma, mode=mode)`; modes `{"transition","density"}` this phase.
-  The new path reads `env.bin_sizes` internally (C4) — drop the old `bin_sizes if
-  mode=="density"` branch.
+  to `diffusion_kernel(env, sigma, mode=mode)`. The new path reads `env.bin_sizes` internally
+  (C4) — drop the old `bin_sizes if mode=="density"` branch. **Add a `valid_modes =
+  {"transition","density"}` guard to `compute_kernel`** — it currently has **none** (only
+  `smooth` guards, [fields.py:285](../../../src/neurospatial/environment/fields.py)), so
+  without it `env.compute_kernel(mode="average")` would leak the Phase-2 public mode straight
+  through to the (average-capable) low level. `smooth`'s guard stays `{"transition","density"}`
+  too. Phase 2 extends both guards to include `"average"`.
 - **`transitions(method="diffusion")`** ([trajectory.py:820-870](../../../src/neurospatial/environment/trajectory.py)):
   return the **row-stochastic** matrix as `compute_kernel(mode="transition").T` (`= H`), not
   the raw transition kernel — it must be row-stochastic on non-uniform `M`, not rely on
@@ -87,7 +91,8 @@ paths and the public `mode="average"` are **Phase 2**.
 | `test_density_integrates_to_one` | `mode="density"`: `Σ_i M_i K[i,j] = 1` |
 | `test_low_level_average_row_stochastic` | `compute_diffusion_kernels(..., mode="average")` returns row-stochastic `H` (rows sum to 1) — the low-level view Phase 2 depends on (C6) |
 | `test_raw_heat_operator_m_self_adjoint` | `_raw_heat_operator` (pre-clip/normalize): `H·1 = 1` and `M_i H_ij ≈ M_j H_ji` on a non-uniform-`M` (polar) env — C1's raw invariants (D4 seam) |
-| `test_compute_diffusion_kernels_rejects_bad_inputs` | non-finite or `sigma <= 0`; wrong-shape / non-finite / non-positive `volumes`; non-contiguous or non-integer node labels; missing / NaN / inf / non-positive `"distance"`; negative / NaN / inf `"A"` — each raises (C6); `A == 0` does not raise |
+| `test_compute_diffusion_kernels_rejects_bad_inputs` | non-finite or `sigma <= 0`; wrong-shape / non-finite / non-positive `volumes`; non-contiguous, **float, or bool** node labels; missing / NaN / inf / non-positive `"distance"`; negative / NaN / inf `"A"` — each raises (C6); `A == 0` does not raise |
+| `test_env_compute_kernel_rejects_average_until_phase2` | `env.compute_kernel(mode="average")` and `env.smooth(mode="average")` raise in Phase 1 (public modes are `{"transition","density"}`), while low-level `compute_diffusion_kernels(mode="average")` still returns `H` |
 | `test_apply_kernel_adjoint_nonuniform_M` | `apply_kernel(mode="adjoint", bin_sizes=M)` on the `density` kernel obeys the M-weighted inner-product contract on a non-uniform-`M` env (spec §4; regression, no live caller today) |
 | `test_components_from_W_corner_split` | corner-only 8-connected pair → 2 `W`-components; no mass crosses the corner |
 | `test_no_leakage_across_masked_wall` | point source beside a masked wall → ~0 mass across it |

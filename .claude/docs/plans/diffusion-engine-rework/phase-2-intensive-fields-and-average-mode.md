@@ -24,11 +24,11 @@ volume/zero-fill bias on non-uniform `M`. Depends only on Phase 1's `H` operator
 
 - **Expose `mode="average"`** end to end: add `"average"` to the `Literal[...]` types
   ([fields.py:48,155](../../../src/neurospatial/environment/fields.py),
-  [_protocols.py:307](../../../src/neurospatial/environment/_protocols.py)), the `valid_modes`
-  set ([fields.py:285](../../../src/neurospatial/environment/fields.py)), the `(bandwidth,
-  mode)` cache-key type ([_protocols.py:50](../../../src/neurospatial/environment/_protocols.py)),
-  and `compute_kernel`'s dispatch (already routes to `diffusion_kernel`, which handles
-  `"average"`). Confirm the low-level `compute_diffusion_kernels(..., mode="average")` returns
+  [_protocols.py:307](../../../src/neurospatial/environment/_protocols.py)), **both** mode
+  guards (`smooth`'s `valid_modes` [fields.py:285](../../../src/neurospatial/environment/fields.py)
+  **and** the `compute_kernel` guard added in Phase 1), the `(bandwidth, mode)` cache-key type
+  ([_protocols.py:50](../../../src/neurospatial/environment/_protocols.py)), and
+  `compute_kernel`'s dispatch (already routes to `diffusion_kernel`, which handles `"average"`). Confirm the low-level `compute_diffusion_kernels(..., mode="average")` returns
   `H` (Phase 1 D4 already implements it).
 - **Route `binned` through `H`** (D5): switch the two `env.smooth(...)` calls in `_binned`
   ([_smoothing.py:711,714](../../../src/neurospatial/encoding/_smoothing.py)), `_binned_batch`
