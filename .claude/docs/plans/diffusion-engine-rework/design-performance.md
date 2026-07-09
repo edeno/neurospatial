@@ -25,8 +25,10 @@ and mode; bandwidth-aware truncation then makes both time and memory `O(n·rank)
 ## 2. Goal / non-goals
 
 **Goal:** replace the dense `expm` with a cached, per-component, bandwidth-aware **truncated
-eigenbasis** and a **matrix-free apply-path** that never materializes `(n,n)`. Output must be
-**equivalent to the shipped dense operator within tolerance** (§7).
+eigenbasis** and a **matrix-free apply-path** that never materializes `(n,n)`. The apply-path
+is a **pure linear operator** equivalent to the shipped dense operator within tolerance (§7);
+`env.smooth` on signed fields is preserved, and positivity is a per-consumer concern (§5), not
+baked into the smoother.
 
 **Non-goals:** any change to the *operator* or its results (correctness is shipped); the MRF-GAM
 estimator; nonuniform-Cartesian `bin_sizes`. No change to mode semantics or the three-mode
@@ -45,7 +47,9 @@ Two pieces replace `_raw_heat_operator`'s dense `expm`:
   ([core.py:909](../../../src/neurospatial/environment/core.py)).
 - **Matrix-free apply-path.** `H @ F = M^{-1/2} · Q · (e^{-tΛ} ⊙ (Qᵀ · (M^{1/2} · F)))`,
   `t = σ²/2`, for a batch `F` of shape `(n_bins, n_fields)`. `O(n·rank·n_fields)` time,
-  `O(n·rank)` memory. `Hᵀ @ F` is the same with the `M^{±1/2}` powers swapped.
+  `O(n·rank)` memory. `Hᵀ @ F` is the same with the `M^{±1/2}` powers swapped. It is a **pure
+  linear operator** — no positivity projection (§5) — so `env.smooth` on signed fields is
+  preserved exactly (within truncation tolerance).
 
 ## 4. Eigensolver + truncation
 
@@ -61,38 +65,67 @@ M-conjugation (NLD's Laplacian is mass-free; ours needs `S`):
   `~area/σ²`, not `n_bins`. Resolve adaptively (Weyl's law probe) via truncated
   `scipy.sparse.linalg.eigsh`; the constant (λ=0) null mode per component is **always kept**
   (mass conservation).
-- **Dense fallback.** When the resolved rank ≥ `dense_fraction·n` (default `0.5`), use dense
-  `scipy.linalg.eigh` on the block (truncation stops paying off). Small grids therefore just
-  do one cached dense `eigh` — already a large win over per-call `expm`.
-- **Caching detail.** The eigenbasis is built at the geometry's max useful rank and **sliced
-  per σ** at apply time (rank resolved from `sigma, tol`), so one cached basis serves all
-  bandwidths. Cache key: geometry (via `_state_version`) + `(tol, dense_fraction)`.
+- **Dense fallback + memory guard.** When the resolved rank ≥ `dense_fraction·n` (default
+  `0.5`), use dense `scipy.linalg.eigh` on the block — which **does** materialize an `(n,n)`
+  eigenvector matrix (the inherent cost of near-full-rank smoothing: a light bandwidth on a
+  large grid genuinely needs most modes). This is guarded by the **same large-matrix
+  `UserWarning`** as `compute_kernel` (GB estimate) and then proceeds — never a *silent*
+  `(n,n)` allocation. Small components hit this cheaply; a huge near-full-rank request is the
+  caller's explicit choice, not a hidden regression of the "no `(n,n)`" goal.
+- **Rank-keyed, growable cache (resolves the under-ranking + keying gaps).** A first large-σ
+  call needs FEW modes; a later small-σ call needs MORE — so a single fixed basis would
+  under-rank the later call. The cache is therefore a **rank-keyed dict**
+  `{rank → (Q, Λ, labels)}` (NLD's `cached_eigenbasis` pattern): a call resolves `rank_σ` from
+  `(σ, tol)`, reuses any cached basis with `≥ rank_σ` modes by **slicing** (modes are
+  ascending), else computes `rank_σ` and caches; it grows monotonically. `versioned_cached_property`
+  keys only on `_state_version` ([decorators.py:282](../../../src/neurospatial/environment/decorators.py)),
+  so the property **owns the dict** (a small `_state_version`-invalidated keyed cache), not a
+  single value — the whole dict is dropped on any geometry change.
 
-## 5. Per-mode normalization under truncation
+## 5. Per-mode application — LINEAR, no positivity projection
 
-Truncation makes clipping **load-bearing** (real negative lobes, not round-off) and we do not
-materialize the matrix, so — exactly like NLD's `diffuse` + `to_density` — we clip and
-renormalize the **output field** (`n`-vector per column), never the kernel:
+`env.diffuse` is a **pure linear operator** — required, because `env.smooth` accepts **signed**
+fields via a linear `kernel @ field` ([fields.py:347](../../../src/neurospatial/environment/fields.py)),
+so a positivity projection would change its result.
 
-1. apply `H` → **clip result `≥ 0`** → **renormalize mass per `W`-component** (component-local
-   modes make this leak-free; the constant mode conserves each component's mass).
-2. per-mode, via normalization vectors computed **once per σ** (`r = H@1` row sums,
-   `m = Hᵀ@M` M-weighted column sums):
-   - `average(F)   = (H @ F) ⊘ r`            (row-stochastic; intensive)
-   - `transition(F) = Hᵀ @ (F ⊘ r)`          (column-stochastic; extensive, conserves Σ)
-   - `density(c)   = H @ (c ⊘ m)`            (M-weighted columns integrate to 1)
+**Mass is conserved without clipping or renormalization.** Because the null (λ=0) mode is
+**always kept per component** (§4), the truncated operator satisfies `H_trunc @ 1 = 1` and
+`Σ_i M_i H_trunc[i,j] = M_j` **exactly** (dropping high-frequency modes never touches the null
+mode; `H_trunc` stays M-self-adjoint via the symmetric `exp(-tS_trunc)`). So there is **no
+output clip and no mass renormalization** in the apply-path — the only deviation from the dense
+operator is the near-lossless truncation (dropped modes contribute ≤ `tol·‖F‖`). This is where
+we **diverge from NLD's `diffuse`**, which clips because it diffuses nonnegative densities; ours
+must stay linear.
 
-All three reduce to `H`/`Hᵀ` applications to `F` and to the vectors `{1, M}`. This reproduces
-`heat_kernel_from_W`'s three-mode contract ([ops/diffusion.py:104-173](../../../src/neurospatial/ops/diffusion.py))
-without `(n,n)`. The masked `H`-average for `binned`/`resample` (Phase 2, `smooth(v·valid)/
-smooth(valid)`) composes on top by calling `average` twice.
+Per-mode, via normalization vectors computed once per σ (`r = H@1` row sums, `m = Hᵀ@M`
+M-weighted column sums — each a fixed vector, so every mode is **linear in F**):
+
+- `average(F)   = (H @ F) ⊘ r`      (row-stochastic; intensive)
+- `transition(F) = Hᵀ @ (F ⊘ r)`    (column-stochastic; extensive, conserves Σ)
+- `density(c)   = H @ (c ⊘ m)`      (M-weighted columns integrate to 1)
+
+All reduce to `H`/`Hᵀ` applied to `F` and to `{1, M}` — no `(n,n)`. This reproduces
+`heat_kernel_from_W`'s three-mode contract ([ops/diffusion.py:104-173](../../../src/neurospatial/ops/diffusion.py)).
+
+**Positivity is the consumer's job.** The shipped dense kernel is entrywise-clipped
+([ops/diffusion.py:161](../../../src/neurospatial/ops/diffusion.py)), so `kernel @ nonneg` is
+nonnegative; the un-clipped linear apply-path can leave ≤`tol` negative lobes under truncation.
+Consumers that require nonnegative output — `_diffusion_kde` (smoothed spike/occupancy
+densities) — **clip their own result ≥ 0** after `env.diffuse`, a targeted projection at the
+density boundary. `env.smooth` (signed fields) does **not** clip. The masked `H`-average for
+`binned`/`resample` (Phase 2) is a ratio of two linear `average` calls — the consumer's
+Nadaraya-Watson estimator, unchanged.
 
 ## 6. Consumer routing + `compute_kernel` fate
 
 - **Keep `env.compute_kernel`** (dense-matrix return) for power users / backward-compat — it
-  **materializes** from the cached eigenbasis on demand (`Q (e^{-tΛ} …) Qᵀ` with the M-powers,
-  then the existing `heat_kernel_from_W` clip+normalize). Same result; a huge-grid caller who
-  explicitly asks for the matrix still pays `O(n²)` (their choice). **No public API break.**
+  materializes from the **full-rank** eigenbasis (all modes for the geometry: `Q (e^{-tΛ}) Qᵀ`
+  with the M-powers, then the existing `heat_kernel_from_W` clip+normalize). **Full rank, not
+  the truncated basis** — so it equals the shipped dense operator within eigensolve precision
+  (`rtol≈1e-8`), *not* merely within the truncation `tol=1e-6`. A huge-grid caller who
+  explicitly asks for the matrix pays `O(n²)`/`O(n³)` (same as today; their choice, same
+  large-matrix warning). **No public API break, no accuracy change.** Truncation is used
+  **only** by the fast `env.diffuse` apply-path.
 - **New matrix-free method `env.diffuse(fields, bandwidth, *, mode)`** — the apply-path (§3, §5),
   batched over `fields`. Route the hot paths through it: `env.smooth`
   ([fields.py:150-299](../../../src/neurospatial/environment/fields.py)), `_diffusion_kde`
@@ -108,16 +141,22 @@ PR2 is an optimization, so the gate is **output equivalence to the shipped dense
 
 | Test | Asserts |
 | --- | --- |
-| `test_apply_matches_dense_full_rank` | `env.diffuse` == `_raw_heat_operator` dense path within `rtol=1e-8` at full rank (all modes) |
-| `test_apply_matches_dense_truncated` | truncated apply == full-rank apply within the truncation tol (~`1e-6`) |
-| `test_compute_kernel_unchanged` | `compute_kernel` (now eigenbasis-materialized) matches the pre-PR2 dense kernel within `rtol=1e-8`; **all existing Phase 1/2 diffusion tests pass unchanged** |
+| `test_apply_matches_dense_full_rank` | `env.diffuse(F)` == `compute_kernel-materialized @ F` within `rtol=1e-8` at full rank, all modes, on **signed** `F` |
+| `test_env_diffuse_is_linear` | `diffuse(a·F1 + b·F2) == a·diffuse(F1) + b·diffuse(F2)` on signed fields — **no positivity projection** (guards the linearity contract) |
+| `test_apply_matches_dense_truncated` | truncated apply == full-rank apply within the truncation tol (~`1e-6`); mass conserved **exactly** per component (null mode kept) |
+| `test_compute_kernel_full_rank_exact` | `compute_kernel` (now **full-rank** eigenbasis-materialized) matches the pre-PR2 dense kernel within `rtol=1e-8`; **all existing Phase 1/2 diffusion tests pass unchanged** |
+| `test_diffusion_kde_nonnegative` | the density consumer clips its own output ≥ 0 after `env.diffuse`; smoothed rate matches the shipped KDE within tol and is nonnegative |
 | `test_grid_independence_preserved` | measured σ == `bandwidth` still holds (regression from Phase 1) |
 | `test_no_leakage_truncated` | point source beside a wall: 0 mass across it **under truncation** (component-local modes) |
-| `test_eigenbasis_cached_and_invalidated` | basis built once, reused across σ/mode; rebuilt after a geometry change (`_state_version` bump) |
-| `test_perf_large_grid` (slow) | baseline-capture the old dense `expm` time/mem on a ~10k-bin grid, then assert the apply-path's reduction (time and peak memory) |
+| `test_cache_grows_with_smaller_sigma` | a large-σ call then a small-σ call: the small-σ call is **not under-ranked** (rank-keyed cache grows), result within tol of dense |
+| `test_eigenbasis_cached_and_invalidated` | rank-keyed dict reused/sliced across σ/mode; dropped wholesale after a geometry change (`_state_version` bump) |
+| `test_perf_large_grid` (slow) | baseline-capture the old dense `expm` time/peak-mem on a ~10k-bin grid, then assert the apply-path's reduction |
 
 ## 8. Risks / open items
 
+- **Null-mode retention is load-bearing** — exact mass conservation *and* linearity without a
+  renorm (§5) both depend on the λ=0 mode being kept in **every** component under truncation.
+  The rank resolver must assert `rank ≥ n_components` (as NLD does) and never drop a null mode.
 - **`eigsh` fragility** — shift-invert on the near-singular `S` can fail; adopt NLD's
   deterministic-`v0` + no-shift-invert fallback and a warning.
 - **M-conjugation precision** — `M^{±1/2}` scaling on ill-conditioned `volumes` (tiny sectors
