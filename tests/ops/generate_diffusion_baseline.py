@@ -26,9 +26,9 @@ import sys
 import time
 import tracemalloc
 import warnings
+from importlib.metadata import version as _pkg_version
 
 import numpy as np
-
 from diffusion_fixtures import (
     BASELINE_PATH,
     GEOMETRIES,
@@ -38,8 +38,6 @@ from diffusion_fixtures import (
     make_fields,
     source_bin,
 )
-
-from importlib.metadata import version as _pkg_version
 
 # Fields whose smooths are stored as the equivalence oracle (finite only).
 _ORACLE_FIELDS = ("point", "nonneg", "signed")
@@ -135,7 +133,7 @@ def _capture_perf() -> dict:
 
 def _reuse_existing_perf() -> dict:
     """Load the perf entry from the existing pickle (avoids the slow recapture)."""
-    with open(BASELINE_PATH, "rb") as f:
+    with BASELINE_PATH.open("rb") as f:
         return pickle.load(f)["perf"]
 
 
@@ -143,7 +141,7 @@ def main() -> None:
     reuse_perf = "--reuse-perf" in sys.argv
     BASELINE_PATH.parent.mkdir(parents=True, exist_ok=True)
     baseline = capture_baseline(reuse_perf=reuse_perf)
-    with open(BASELINE_PATH, "wb") as f:
+    with BASELINE_PATH.open("wb") as f:
         pickle.dump(baseline, f, protocol=pickle.HIGHEST_PROTOCOL)
     perf = baseline["perf"]
     print(f"Wrote baseline -> {BASELINE_PATH}")

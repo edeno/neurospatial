@@ -21,8 +21,8 @@ and therefore the dense operator -- is reproducible run to run.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import networkx as nx
 import numpy as np

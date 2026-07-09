@@ -723,12 +723,16 @@ def diffusion_apply(
     if backend == "jax":
         import jax.numpy as jnp
 
+        # Cast the cached NumPy eigenbasis to the JAX default float (float64 when
+        # x64 is enabled, else float32 -- JAX narrows silently at the boundary, so
+        # no explicit dtype is requested here). The apply then runs entirely in
+        # jax.numpy, preserving jit / grad / GPU.
         return _apply_modes(
-            jnp.asarray(Q, dtype=jnp.float64),
-            jnp.asarray(Lam, dtype=jnp.float64),
-            jnp.asarray(volumes, dtype=jnp.float64),
+            jnp.asarray(Q),
+            jnp.asarray(Lam),
+            jnp.asarray(volumes),
             sigma,
-            jnp.asarray(fields, dtype=jnp.float64),
+            jnp.asarray(fields),
             mode,
             jnp,
         )
