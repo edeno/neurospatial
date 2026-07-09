@@ -72,15 +72,17 @@ M-conjugation (NLD's Laplacian is mass-free; ours needs `S`):
   `UserWarning`** as `compute_kernel` (GB estimate) and then proceeds — never a *silent*
   `(n,n)` allocation. Small components hit this cheaply; a huge near-full-rank request is the
   caller's explicit choice, not a hidden regression of the "no `(n,n)`" goal.
-- **Rank-keyed, growable cache (resolves the under-ranking + keying gaps).** A first large-σ
-  call needs FEW modes; a later small-σ call needs MORE — so a single fixed basis would
-  under-rank the later call. The cache is therefore a **rank-keyed dict**
-  `{rank → (Q, Λ, labels)}` (NLD's `cached_eigenbasis` pattern): a call resolves `rank_σ` from
-  `(σ, tol)`, reuses any cached basis with `≥ rank_σ` modes by **slicing** (modes are
-  ascending), else computes `rank_σ` and caches; it grows monotonically. `versioned_cached_property`
-  keys only on `_state_version` ([decorators.py:282](../../../src/neurospatial/environment/decorators.py)),
-  so the property **owns the dict** (a small `_state_version`-invalidated keyed cache), not a
-  single value — the whole dict is dropped on any geometry change.
+- **Growable single-basis cache (resolves under-ranking without unbounded memory).** A first
+  large-σ call needs FEW modes; a later small-σ call needs MORE — so a fixed basis would
+  under-rank the later call. The cache holds **one basis per geometry: the max rank requested
+  so far.** A call resolves `rank_σ` from `(σ, tol)`; if the cached basis has `≥ rank_σ` modes
+  it **slices** (modes ascending), else it recomputes at `rank_σ` and **replaces** the cached
+  basis. Keeping every rank (a `{rank → basis}` dict) would make memory `O(n·Σ ranks)`, not the
+  promised `O(n·rank)`, since a smaller basis is fully dominated (sliceable) by a larger one —
+  so we evict on replace. One entry, grown by replacement, bounds cache memory at
+  `O(n·max_rank_seen)`. `versioned_cached_property` keys only on `_state_version`
+  ([decorators.py:282](../../../src/neurospatial/environment/decorators.py)), so the property
+  **owns this single-entry cache** and drops it wholesale on any geometry change.
 
 ## 5. Per-mode application — LINEAR, no positivity projection
 
@@ -110,17 +112,25 @@ All reduce to `H`/`Hᵀ` applied to `F` and to `{1, M}` — no `(n,n)`. This rep
 **Positivity is the consumer's job — the denominator policy.** The shipped dense kernel is
 entrywise-clipped ([ops/diffusion.py:161](../../../src/neurospatial/ops/diffusion.py)), so
 `kernel @ nonneg ≥ 0`; the un-clipped linear apply-path can leave ≤`tol` negative lobes under
-truncation. **Every consumer that treats a smoothed quantity as nonnegative clips it `≥ 0`
-after `env.diffuse`, before using it:**
+truncation. **Denominator floor (the shared policy).** Every consumer that **divides by a smoothed
+nonnegative quantity** floors *that denominator* `≥ 0` after `env.diffuse`, **before** its
+`> threshold` / `> 0` guard, so a truncation lobe cannot flip a tiny-positive dense denominator
+negative and spuriously emit a `NaN` (or unstable ratio) the dense path never produced:
 
-- `_diffusion_kde`: clip smoothed spike/occupancy densities `≥ 0`.
-- `binned` and `resample_field(method="diffuse")`: clip **both** the smoothed value **and the
-  smoothed validity weight / denominator** `≥ 0` *before* the `weights_smoothed > 0` /
-  `den > 0` guard ([_smoothing.py:716](../../../src/neurospatial/encoding/_smoothing.py),
-  [binning.py:823](../../../src/neurospatial/ops/binning.py)) — otherwise a tiny positive dense
-  denominator can flip negative under a truncation lobe and spuriously emit a `NaN` or an
-  unstable ratio the dense path never produced. (The masked average stays a ratio of two linear
-  `average` calls; only the denominator gets a floor.)
+- `_diffusion_kde` (+ `_diffusion_kde_batch` + the JAX path): floor the smoothed **occupancy
+  density** before the `occupancy_density > occupancy_threshold` gate
+  ([_smoothing.py:611](../../../src/neurospatial/encoding/_smoothing.py)).
+- `binned` / diffuse-`resample_field`: floor the smoothed **validity weight / `den`** before
+  the `weights_smoothed > 0` / `den > 0` gate
+  ([_smoothing.py:716](../../../src/neurospatial/encoding/_smoothing.py),
+  [binning.py:823](../../../src/neurospatial/ops/binning.py)).
+
+The **numerator is NOT floored** — diffuse resampling can carry a **signed** intensive field,
+so clipping the numerator would be a behavior change; only the inherently-nonnegative
+denominator gets a floor. Separately, where the *result itself* is semantically nonnegative,
+the consumer clips it: `_diffusion_kde` clips its smoothed density/rate `≥ 0` (the shipped
+clipped-kernel path did, so decode still sees nonnegative rates). `env.smooth` (general linear
+smoother) clips nothing.
 
 **Approximation contract (`env.smooth`).** `env.smooth` stays a pure linear operator, so on
 nonnegative inputs (counts, occupancy, probability mass —
@@ -148,7 +158,9 @@ tested as `≥ -tol·max(|field|)`. Callers needing a strict 0-floor clip the re
   ([fields.py:150-299](../../../src/neurospatial/environment/fields.py)), `_diffusion_kde`
   (+ batch + JAX, [encoding/_smoothing.py:569,729,847,934](../../../src/neurospatial/encoding/_smoothing.py)),
   and `resample_field(method="diffuse")` ([ops/binning.py:790-815](../../../src/neurospatial/ops/binning.py))
-  call `env.diffuse` instead of `compute_kernel(...) @ field`. Same numbers, no `(n,n)`.
+  call `env.diffuse` instead of `compute_kernel(...) @ field`. **Same within truncation
+  tolerance** (§5 approximation contract; ≤`tol` deviation, ≤`tol` negatives before the
+  consumers' floors), no `(n,n)`.
 - `transitions(method="diffusion")` still needs the row-stochastic matrix — it materializes via
   `compute_kernel` (it is inherently a matrix, not an apply); unchanged.
 
@@ -163,7 +175,7 @@ PR2 is an optimization, so the gate is **output equivalence to the shipped dense
 | `test_apply_matches_dense_truncated` | truncated apply == full-rank apply within the truncation tol (~`1e-6`); mass conserved **exactly** per component (null mode kept) |
 | `test_compute_kernel_full_rank_exact` | `compute_kernel` (now **full-rank** eigenbasis-materialized) matches the pre-PR2 dense kernel within `rtol=1e-8`; **all existing Phase 1/2 diffusion tests pass unchanged** |
 | `test_diffusion_kde_nonnegative` | the density consumer clips its own output ≥ 0 after `env.diffuse`; smoothed rate matches the shipped KDE within tol and is nonnegative |
-| `test_masked_average_denominator_floor` | on a non-uniform-`M` geometry under truncation, `binned` + diffuse-`resample` clip the smoothed **denominator** ≥ 0 before the `>0` guard — **no spurious NaN** vs the dense path, ratio within tol |
+| `test_denominator_floor_no_spurious_nan` | on a non-uniform-`M` geometry under truncation, the smoothed **denominator** is floored ≥ 0 before the guard in **`_diffusion_kde` (NumPy + batch + JAX), `binned`, and diffuse-`resample`** — **no spurious `NaN`** vs the dense path, ratio within tol; the **numerator is not floored** (signed-safe for resample) |
 | `test_env_smooth_nonneg_within_tol` | `env.smooth` on a nonnegative field returns `≥ -tol·max(\|field\|)` (approximation contract); stays linear on signed fields |
 | `test_grid_independence_preserved` | measured σ == `bandwidth` still holds (regression from Phase 1) |
 | `test_no_leakage_truncated` | point source beside a wall: 0 mass across it **under truncation** (component-local modes) |
