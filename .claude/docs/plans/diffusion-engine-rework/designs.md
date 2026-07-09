@@ -35,18 +35,23 @@ env's graph) and stamps `"A"` on every edge. Dispatch:
 def _finite_volume_geometry(env):
     if getattr(env, "_POLAR", False):          # env-level, NOT engine (C3)
         return _polar_fv(env)
-    engine = type(env.layout).__name__
-    return {
-        "RegularGrid": _cartesian_fv, "MaskedGrid": _cartesian_fv,
+    engine = type(env.layout).__name__          # ACTUAL class names (verified):
+    builders = {
+        "RegularGridLayout": _cartesian_fv, "MaskedGridLayout": _cartesian_fv,
         "ImageMaskLayout": _cartesian_fv, "ShapelyPolygonLayout": _cartesian_fv,
         "HexagonalLayout": _hex_fv, "GraphLayout": _graph_fv,
         "TriangularMeshLayout": _mesh_fv,
-    }[engine](env)   # KeyError → unsupported layout; raise a clear NotImplementedError
+    }
+    try:
+        return builders[engine](env)
+    except KeyError:
+        raise NotImplementedError(f"diffusion kernel unsupported for layout {engine!r}")
 ```
 
-(Confirm the exact engine class names against `src/neurospatial/layout/engines/` when
-implementing — dispatch on the class, or add a `_diffusion_geometry` class attribute if
-preferred. Both are acceptable; the class-name map is the least invasive.)
+The four `*GridLayout`/`ImageMaskLayout`/`ShapelyPolygonLayout` classes all subclass
+`_GridMixin`, so `isinstance(env.layout, _GridMixin) → _cartesian_fv` is an equally valid
+(and more future-proof) cartesian test. Use exact class names or the `_GridMixin` isinstance
+check — do not paraphrase the names.
 
 Low-level `compute_diffusion_kernels(graph, *, volumes, sigma, mode)` (rewrite of
 `ops/smoothing.py`) assembles `L` and calls [D4](#d4-heat_kernel--per-component-renormalization):
@@ -116,12 +121,16 @@ def _polar_fv(env):
     g = env.connectivity.copy()
     r = env.bin_centers[:, 0]; theta = env.bin_centers[:, 1]
     for u, v, data in g.edges(data=True):
-        if abs(r[u] - r[v]) > 1e-9:               # radial neighbour: face = arc at boundary r
+        dr = abs(r[u] - r[v]) > 1e-9
+        # Angular delta must account for the ±π seam (wrap) before deciding pure-angular.
+        dth = _angular_delta(theta[u], theta[v], env) > 1e-9
+        if dr and not dth:                         # PURE radial: face = arc at boundary r
             r_face = 0.5 * (r[u] + r[v])
-            dtheta = _angular_bin_width(env)       # realized Δθ (see polar.py seam handling)
-            data["A"] = float(r_face * dtheta)
-        else:                                      # angular / seam neighbour: face = radial seg
+            data["A"] = float(r_face * _angular_bin_width(env))
+        elif dth and not dr:                       # PURE angular / seam: face = radial segment
             data["A"] = float(_radial_bin_width(env, u))   # Δr of that ring
+        else:                                      # DIAGONAL (both differ): corner touch, no face
+            data["A"] = 0.0                        # mirror Cartesian diagonals — do NOT leak
     return g, env.bin_sizes
 ```
 
@@ -164,26 +173,31 @@ def heat_kernel_from_W(W, volumes, sigma, *, mode):
     t = sigma**2 / 2.0
     H = scipy.sparse.linalg.expm(-t * L)
     H = np.asarray(H.todense()) if hasattr(H, "todense") else np.asarray(H)
-    H = np.clip(H, 0.0, None)
-    # Per-W-component renormalization (C5): each row of H must sum to 1 within its component.
-    labels = _components_from_W(W)                 # scipy.sparse.csgraph.connected_components
-    for c in np.unique(labels):
-        idx = np.flatnonzero(labels == c)
-        row_sums = H[np.ix_(idx, idx)].sum(axis=1, keepdims=True)
-        H[np.ix_(idx, idx)] /= np.where(row_sums > 0, row_sums, 1.0)
-    if mode == "average":                          # H, row-stochastic (intensive average)
-        return H
-    if mode == "transition":                       # H^T, column-stochastic (extensive)
-        return H.T
-    if mode == "density":                          # H · M^-1, integrates to 1 under M
-        return H / volumes[np.newaxis, :]
+    H = np.clip(H, 0.0, None)                       # round-off (full rank); real lobes under PR2
+    # Normalize EACH mode to ITS OWN contract (C1/C2). Do NOT row-normalize once and reuse:
+    # row-normalization preserves row sums but not the M-weighted column sum, so `density`
+    # would not integrate to 1 after clipping. Each branch below enforces its exact invariant.
+    if mode == "average":                          # row-stochastic: kernel @ intensive rate
+        s = H.sum(axis=1, keepdims=True)
+        return H / np.where(s > 0, s, 1.0)
+    if mode == "transition":                        # column-stochastic: (row-normalized H).T
+        s = H.sum(axis=1, keepdims=True)
+        return (H / np.where(s > 0, s, 1.0)).T
+    if mode == "density":                           # M-weighted columns integrate to 1
+        col_mass = volumes @ H                       # (n,): col_mass[j] = Σ_i M_i H[i,j]
+        return H / np.where(col_mass > 0, col_mass, 1.0)[np.newaxis, :]
     raise ValueError(f"unknown mode {mode!r}")
 ```
 
-`_components_from_W` uses `scipy.sparse.csgraph.connected_components(W, directed=False)` —
-**not** `env.connectivity` (C5). PR2 replaces the `expm` line with the cached truncated
-eigenbasis of `S = M^(−1/2)(D−W)M^(−1/2)`; keep `H`'s three views (`H`, `H.T`, `H/vol`) as
-the only mode-facing surface so that swap is internal.
+**Components (C5) at full rank are automatic:** a disconnected `W` (masked wall, corner-only
+`A=0`) makes `expm(−tL)` **block-diagonal**, and clipping adds no cross-block entries, so the
+per-mode normalization is inherently within-component — no explicit component loop needed in
+Phase 1. `_components_from_W` (`scipy.sparse.csgraph.connected_components(W, directed=False)`,
+**not** `env.connectivity`) is used by the corner-split test and becomes load-bearing only
+under **PR2** truncation, where clipping removes real lobes and can leak across blocks. PR2
+replaces the `expm` line with the cached truncated eigenbasis of
+`S = M^(−1/2)(D−W)M^(−1/2)`; keep the three mode outputs as the only mode-facing surface so
+that swap stays internal.
 
 ## D5. Masked H-average (binned + resample)
 

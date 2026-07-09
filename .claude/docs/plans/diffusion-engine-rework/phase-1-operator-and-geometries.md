@@ -28,8 +28,9 @@ paths and the public `mode="average"` are **Phase 2**.
 ## Tasks
 
 - **New `src/neurospatial/ops/diffusion.py`** (D0/D4): `heat_kernel_from_W(W, volumes,
-  sigma, *, mode)` (dense `expm`, clip, per-`W`-component renorm, return `Hᵀ`/`H·M⁻¹`),
-  `_components_from_W`, `diffusion_kernel(env, sigma, *, mode)`, `_finite_volume_geometry`
+  sigma, *, mode)` (dense `expm`, clip, **per-mode normalization**, returns `Hᵀ`/`H·M⁻¹`/`H`
+  — **all three low-level modes incl. `"average"`** per C6/D4; only public exposure is
+  Phase 2), `_components_from_W`, `diffusion_kernel(env, sigma, *, mode)`, `_finite_volume_geometry`
   dispatch, and the five per-geometry builders `_cartesian_fv`/`_hex_fv`/`_polar_fv`/
   `_graph_fv`/`_mesh_fv` (D1). Unsupported layout → clear `NotImplementedError`.
 - **Rewrite `ops/smoothing.py::compute_diffusion_kernels`** to `(graph, *, volumes, sigma,
@@ -61,10 +62,12 @@ paths and the public `mode="average"` are **Phase 2**.
 
 ## Deliberately not in this phase
 
-- **`mode="average"` and the intensive-field routing of `binned`/`resample_field`** →
-  [Phase 2](phase-2-intensive-fields-and-average-mode.md). They keep `mode="density"` here
-  (no worse than today's pre-existing intensive bias; documented). Don't add `"average"` to
-  the Literals/`valid_modes` yet.
+- **PUBLIC `mode="average"` and the intensive-field routing of `binned`/`resample_field`** →
+  [Phase 2](phase-2-intensive-fields-and-average-mode.md). The low-level `H`/`"average"` view
+  **is** built in Phase 1 (`heat_kernel`/`compute_diffusion_kernels`, C6/D4) — what's deferred
+  is exposing `mode="average"` on `env.smooth`/`compute_kernel` (its `Literal`/`valid_modes`)
+  and rerouting `binned`/`resample`. Those keep `mode="density"` here (no worse than today's
+  pre-existing intensive bias; documented).
 - **Performance (cached eigenbasis / spectral truncation)** → PR2, separate plan. Keep the
   `heat_kernel`/`W`/`S`-conjugate seam (C1) so PR2 swaps internals only.
 - **Nonuniform-Cartesian `grid_edges`** — excluded (C4); do not touch `_GridMixin.bin_sizes`.

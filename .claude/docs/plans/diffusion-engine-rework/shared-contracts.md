@@ -38,7 +38,10 @@ Invariants (tested):
   so PR2 swaps only its internals.
 
 Phase 1 implements `H` via dense `scipy.sparse.linalg.expm(−t·L)` (same cost class as today;
-PR2 replaces it). Clip round-off negatives to 0, then renormalize per component (C5).
+PR2 replaces it). Clip round-off negatives, then **normalize each mode to its own contract**
+(average → row-stochastic; transition → column-stochastic; density → M-weighted columns
+integrate to 1). Row-normalizing once and reusing would break density's integrate-to-1 after
+clipping — normalize per mode ([D4](designs.md#d4-heat_kernel--per-component-renormalization)).
 
 ## C2. Kernel modes & orientation
 
@@ -49,7 +52,10 @@ They coincide **only** when `M` is uniform. One operator, three public kernels:
 | --- | --- | --- | --- | --- |
 | `"transition"` | `Hᵀ` | column (`Σ_i K[i,j]=1`) | `kernel @ field` mass-conserving smoothing of **extensive** data (occupancy, counts); `env.smooth`, `apply_kernel(forward)` | 1 |
 | `"density"` | `H·M⁻¹` | `Σ_i M[i]·K[i,j]=1` | count→**density** (`ρ = K @ counts`); KDE `spike_density/occupancy_density` | 1 |
-| `"average"` | `H` | row (`Σ_j K[i,j]=1`) | `kernel @ rate` average of an **intensive** field (rate maps, probability *densities*); NOT discrete probability *mass* (use `transition`) | 2 |
+| `"average"` | `H` | row (`Σ_j K[i,j]=1`) | `kernel @ rate` average of an **intensive** field (rate maps, probability *densities*); NOT discrete probability *mass* (use `transition`) | 2† |
+
+† *phase* = when the mode is **publicly** exposed on `env.smooth`/`compute_kernel`; the
+low-level `H` view exists from Phase 1 (C6, D4).
 
 - `transitions(method="diffusion")` returns the **row-stochastic `H`** = `Hᵀ.T` (Phase 1
   updates it to transpose, not assume symmetry).
@@ -91,11 +97,15 @@ same `bin_sizes`).
 
 ## C5. Component structure from `W`
 
-Per-component mass renormalization uses connected components of the **`W` matrix** (nonzero
-`A`), NOT `env.connectivity`. Corner-touching 8-connected bins have `A=0` ⇒ separate
-diffusion components; using `env.connectivity` would shift mass between decoupled regions
-after clipping. A region joined only by corner contact does not diffuse across the corner
-(zero-flux, physically correct).
+Connected components for any component-aware step use the **`W` matrix** (nonzero `A`),
+NOT `env.connectivity`. Corner-touching 8-connected bins have `A=0` ⇒ separate diffusion
+components; using `env.connectivity` would shift mass between decoupled regions. A region
+joined only by corner contact does not diffuse across the corner (zero-flux, physically
+correct). **At full rank (Phase 1) the heat kernel is block-diagonal across `W`-components,
+so the per-mode normalization (C1) is within-component automatically — no explicit component
+loop is needed.** The `W`-component structure is asserted by the corner-split test and
+becomes load-bearing under **PR2** truncation (where clipping removes real cross-block
+lobes). Components: `scipy.sparse.csgraph.connected_components(W, directed=False)`.
 
 ## C6. Low-level `compute_diffusion_kernels` API
 
@@ -108,7 +118,10 @@ after clipping. A region joined only by corner contact does not diffuse across t
   kernel).
 - `volumes`: node-ordered `(n_bins,)` array aligned to nodes `0..n−1`.
 - `mode ∈ {"transition","density","average"}` (C2). Returns the dense `(n_bins, n_bins)`
-  kernel.
+  kernel. **All three are implemented at the low level in Phase 1** (D4 returns the `H`
+  view for `"average"`); the **public** `mode="average"` on `env.smooth`/`compute_kernel`
+  and the `binned`/`resample` rerouting are **Phase 2**. So C6 is fully satisfied by Phase 1
+  even though Phase 1 exposes only `transition`/`density` publicly.
 - **Public API break**: replaces the old `(graph, bandwidth_sigma, bin_sizes, mode)`
   Gaussian-weight signature. Exported from `neurospatial.ops`
   ([ops/__init__.py:188](../../../src/neurospatial/ops/__init__.py)) — call out in CHANGELOG.
