@@ -28,12 +28,14 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.environment._protocols import EnvironmentProtocol, SelfEnv
+from neurospatial.environment._protocols import (
+    DiffusionGeometry,
+    EnvironmentProtocol,
+    SelfEnv,
+)
 from neurospatial.environment.decorators import check_fitted, versioned_cached_property
 
 if TYPE_CHECKING:
-    from scipy import sparse
-
     from neurospatial import Environment
     from neurospatial.ops._types import KernelMode
 
@@ -510,7 +512,7 @@ class EnvironmentFields:
     @versioned_cached_property
     def _diffusion_geometry(
         self,
-    ) -> tuple[sparse.csr_matrix, NDArray[np.float64], int, NDArray[np.int_]]:
+    ) -> DiffusionGeometry:
         """Cached finite-volume geometry ``(W, volumes, n_components, labels)``.
 
         Geometry-only, so it is built once and dropped wholesale on any
@@ -528,7 +530,7 @@ class EnvironmentFields:
         volumes = np.asarray(volumes, dtype=np.float64)
         W = _assemble_W(graph, int(volumes.shape[0]))
         n_components, labels = _components_from_W(W)
-        return W, volumes, n_components, labels
+        return DiffusionGeometry(W, volumes, n_components, labels)
 
     @versioned_cached_property
     def _diffusion_eigenbasis(self) -> dict[str, Any]:

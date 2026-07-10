@@ -25,7 +25,7 @@ See: https://mypy.readthedocs.io/en/latest/more_types.html#mixin-classes
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple, Protocol, TypeVar
 
 import networkx as nx
 import numpy as np
@@ -41,6 +41,20 @@ if TYPE_CHECKING:
     from neurospatial.layout.base import LayoutEngine
     from neurospatial.ops._types import KernelMode
     from neurospatial.regions import Region, Regions
+
+
+class DiffusionGeometry(NamedTuple):
+    """Finite-volume geometry cached by ``_diffusion_geometry``.
+
+    Built once and dropped wholesale on any ``_state_version`` bump; shared by
+    ``diffuse``'s eigenbasis build and the smoothing consumers' W-component
+    support gates.
+    """
+
+    W: sparse.csr_matrix
+    volumes: NDArray[np.float64]
+    n_components: int
+    labels: NDArray[np.int_]
 
 
 class EnvironmentProtocol(Protocol):
@@ -69,9 +83,7 @@ class EnvironmentProtocol(Protocol):
     _kernel_cache: dict[tuple[float, KernelMode], NDArray[np.float64]]
     # Finite-volume geometry + growable truncated-eigenbasis caches for
     # env.diffuse (both versioned_cached_property, dropped on _state_version).
-    _diffusion_geometry: tuple[
-        sparse.csr_matrix, NDArray[np.float64], int, NDArray[np.int_]
-    ]
+    _diffusion_geometry: DiffusionGeometry
     _diffusion_eigenbasis: dict[str, Any]
     _layout_type_used: str | None
     _layout_params_used: dict[str, Any]
