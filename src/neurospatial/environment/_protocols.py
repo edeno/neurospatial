@@ -9,6 +9,16 @@ return documentation lives on the concrete ``Environment`` (and sibling)
 methods that users actually read; keeping this typing-only file to bare
 signatures avoids the docstring drift that duplication invites.
 
+Index-dtype convention: point/region *index* arrays (``bin_at``,
+``bins_in_region``, ``boundary_bins``, ``point_to_bin_index``,
+``_allocate_time_linear``) are ``np.intp`` -- pointer-sized (64-bit on every
+platform, including Windows where ``np.int_`` is 32-bit) and the dtype NumPy
+fancy-indexing returns. Trajectory *sequence* arrays (``bin_sequence``,
+``BinSequenceWithRuns.bins``) stay compact ``np.int32`` on purpose, and the
+``run_starts`` / ``run_lengths`` offsets are ``np.int64``. The split is
+intentional -- portability for indices, memory for long sequences -- so do not
+collapse them to one dtype.
+
 See: https://mypy.readthedocs.io/en/latest/more_types.html#mixin-classes
 """
 
@@ -181,10 +191,11 @@ class EnvironmentProtocol(Protocol):
 
     def diffuse(
         self,
-        # ``Any`` is load-bearing: diffuse accepts a NumPy ``NDArray``, a JAX
-        # ``Array`` (backend="jax"), or a sequence of fields. jax is an optional
-        # dependency, so its array type is not importable here; ``Any`` keeps the
-        # backend-polymorphic surface without breaking jax-absent type checks.
+        # ``Any`` is load-bearing: on ``backend="jax"`` diffuse accepts (and
+        # returns) a JAX ``Array``, and jax is an optional dependency whose array
+        # type is not importable here -- so ``NDArray | jax.Array`` cannot be
+        # spelled. ``Any`` keeps the backend-polymorphic surface without breaking
+        # jax-absent type checks.
         fields: Any,
         bandwidth: float,
         *,

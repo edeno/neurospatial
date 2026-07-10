@@ -96,7 +96,7 @@ class EnvironmentQueries:
 
         Returns
         -------
-        NDArray[np.int_], shape (n_points,)
+        NDArray[np.intp], shape (n_points,)
             An array of active bin indices (0 to `n_active_bins - 1`).
             A value of -1 indicates that the corresponding point did not map
             to any active bin (e.g., it's outside the environment).
@@ -140,8 +140,8 @@ class EnvironmentQueries:
         [12 -1]  # Second point outside environment
 
         """
-        # Normalize divergent layout index dtypes (some layouts return int32) to
-        # the portable ``np.intp`` index dtype at the Environment boundary.
+        # Normalize to the portable ``np.intp`` index dtype at the Environment
+        # boundary, regardless of what an arbitrary ``LayoutEngine`` returns.
         return self.layout.point_to_bin_index(points_nd).astype(np.intp, copy=False)
 
     @check_fitted

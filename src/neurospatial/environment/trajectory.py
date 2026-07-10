@@ -1265,7 +1265,7 @@ class EnvironmentTrajectory:
             Time intervals between consecutive samples.
         valid_mask : NDArray[np.bool_], shape (n_samples-1,)
             Boolean mask indicating which intervals are valid (pass filtering).
-        bin_indices : NDArray[np.int64], shape (n_samples,)
+        bin_indices : NDArray[np.intp], shape (n_samples,)
             Bin indices for each position (-1 if outside environment).
         return_seconds : bool
             If True, return time in seconds. If False, return sample counts.
