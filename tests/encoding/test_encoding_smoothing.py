@@ -225,13 +225,11 @@ class TestSmoothRateMapDiffusionKDE:
     def test_handles_zero_occupancy_bins(self, simple_env, spike_counts_center):
         """Bins with zero raw occupancy get rate from smoothed neighbors.
 
-        Note: With diffusion_kde, occupancy is smoothed, so even bins with
-        zero raw occupancy can have non-zero smoothed occupancy. The
-        ``min_occupancy`` threshold is applied to the smoothed occupancy
-        density (the firing-rate denominator), so a bin with zero raw
-        occupancy but a smoothed denominator above the threshold reports a
-        finite rate; only bins whose smoothed denominator is below the
-        threshold are NaN-ed.
+        Note: With diffusion_kde, occupancy is smoothed, so even a bin with
+        zero raw occupancy has a non-zero smoothed denominator from its
+        neighbors and reports a finite rate when ``min_occupancy=0`` (the
+        default, no occupancy masking). The ``min_occupancy`` cut is a separate
+        threshold on the *raw* occupancy in seconds.
         """
         n_bins = simple_env.n_bins
         occupancy = np.ones(n_bins, dtype=np.float64)
@@ -245,34 +243,36 @@ class TestSmoothRateMapDiffusionKDE:
             bandwidth=2.0,
         )
 
-        # With smoothing, even zero-occupancy bins get valid rates
-        # (smoothed occupancy can be non-zero from neighbors)
-        assert np.isfinite(result[0]) or np.isnan(result[0])
+        # With smoothing and no occupancy mask (min_occupancy=0), even the
+        # zero-occupancy corner gets a finite rate from its neighbors.
+        assert np.isfinite(result[0])
 
-        # The corner bin has zero raw occupancy but a non-zero smoothed
-        # occupancy density from its neighbors. A small positive threshold
-        # below that smoothed density leaves it finite -- the threshold is
-        # applied to the smoothed denominator, not the raw occupancy.
+        # Any positive min_occupancy masks the corner: its RAW occupancy is 0,
+        # which is below the threshold (the cut is on raw seconds, not the
+        # smoothed denominator).
         result_with_threshold = smooth_rate_map(
             simple_env,
             spike_counts_center,
             occupancy,
             method="diffusion_kde",
             bandwidth=2.0,
-            min_occupancy=0.05,  # below the corner bin's smoothed density
+            min_occupancy=0.05,  # corner raw occupancy (0 s) is below this
         )
-        assert np.isfinite(result_with_threshold[0])
+        assert np.isnan(result_with_threshold[0])
+        # The well-occupied bins (1.0 s each) stay finite.
+        assert np.isfinite(result_with_threshold).sum() == n_bins - 1
 
-        # A threshold above every bin's smoothed occupancy density NaN-s all
-        # bins (the denominator never clears it).
-        result_all_nan = smooth_rate_map(
-            simple_env,
-            spike_counts_center,
-            occupancy,
-            method="diffusion_kde",
-            bandwidth=2.0,
-            min_occupancy=100.0,  # Above any smoothed density here
-        )
+        # A threshold above every bin's raw occupancy (max 1.0 s) NaN-s all
+        # bins and warns that the map is empty.
+        with pytest.warns(UserWarning, match="masks ALL"):
+            result_all_nan = smooth_rate_map(
+                simple_env,
+                spike_counts_center,
+                occupancy,
+                method="diffusion_kde",
+                bandwidth=2.0,
+                min_occupancy=100.0,  # above every bin's raw occupancy (seconds)
+            )
         assert np.all(np.isnan(result_all_nan))
 
 
@@ -659,38 +659,204 @@ class TestMinOccupancy:
         # All bins should be finite
         assert np.all(np.isfinite(result))
 
-    def test_kde_min_occupancy_thresholds_smoothed_denominator(
+    def test_min_occupancy_is_raw_seconds_across_all_methods(
         self, simple_env, spike_counts_center
     ):
-        """For KDE methods, min_occupancy thresholds the smoothed denominator.
+        """min_occupancy thresholds RAW occupancy (seconds) in every method.
 
-        A bin that was never directly traversed (raw occupancy == 0) but that
-        receives substantial smoothed occupancy from neighbors has a valid,
-        well-defined firing-rate denominator. It must NOT be spuriously
-        NaN-ed: the threshold is applied to the same quantity used as the
-        denominator (the smoothed occupancy density), not the raw occupancy.
+        Regression for the silent all-zero place field: ``diffusion_kde``
+        thresholded the M-normalized smoothed *density* (raw occupancy divided
+        by the bin volume), not the raw occupancy the docstring documents. At
+        bin_size=2 the density is ``occupancy / 4``, so bins with a full 1.0 s
+        of occupancy (well above ``min_occupancy=0.5``) were masked and the
+        documented golden-path rate map came back all-NaN -> all-zero with no
+        error. ``min_occupancy`` must mean seconds identically across methods,
+        matching the public ``compute_spatial_rate`` contract
+        (``result.occupancy < min_occupancy`` recovers the masked bins).
         """
         n_bins = simple_env.n_bins
-        # Single un-traversed bin in the interior; all others traversed for 1 s.
+        occupancy = np.ones(n_bins, dtype=np.float64)  # 1.0 s in every bin
+        min_occ = 0.5  # every bin's raw occupancy (1.0 s) clears this
+
+        for method in ("diffusion_kde", "gaussian_kde", "binned"):
+            result = np.asarray(
+                smooth_rate_map(
+                    simple_env,
+                    spike_counts_center,
+                    occupancy,
+                    method=method,
+                    bandwidth=5.0,
+                    min_occupancy=min_occ,
+                )
+            )
+            # No bin is below 0.5 s, so none may be masked, and the place
+            # field must survive (peak > 0), not collapse to all-zero.
+            assert np.isfinite(result).all(), (
+                f"{method}: bins with 1.0 s raw occupancy were masked by "
+                f"min_occupancy=0.5 s -- min_occupancy is thresholding a "
+                f"non-seconds quantity."
+            )
+            assert result.max() > 0.0, f"{method}: place field collapsed to zero"
+
+    def test_min_occupancy_masks_exactly_low_raw_bins_all_methods(
+        self, simple_env, spike_counts_center
+    ):
+        """A bin below min_occupancy (raw seconds) is NaN in every method.
+
+        The masked set is exactly ``occupancy < min_occupancy`` regardless of
+        smoothing method or whether the bin picks up smoothed mass from
+        neighbors -- so ``result.occupancy < min_occupancy`` reliably recovers
+        the masked bins (the documented contract).
+        """
+        n_bins = simple_env.n_bins
+        occupancy = np.ones(n_bins, dtype=np.float64)
+        low_idx = 0
+        occupancy[low_idx] = 0.1  # below threshold in raw seconds
+
+        for method in ("diffusion_kde", "gaussian_kde", "binned"):
+            result = np.asarray(
+                smooth_rate_map(
+                    simple_env,
+                    spike_counts_center,
+                    occupancy,
+                    method=method,
+                    bandwidth=5.0,
+                    min_occupancy=0.5,
+                )
+            )
+            assert np.isnan(result[low_idx]), (
+                f"{method}: bin with 0.1 s raw occupancy (< 0.5 s) must be "
+                "masked even if smoothing would fill it."
+            )
+            # Every well-occupied bin (1.0 s) stays finite.
+            assert np.isfinite(result).sum() == n_bins - 1, (
+                f"{method}: only the single sub-threshold bin may be masked."
+            )
+
+    def test_kde_min_occupancy_masks_untraversed_interior_bin(
+        self, simple_env, spike_counts_center
+    ):
+        """An untraversed interior bin (raw occupancy 0) is masked when set.
+
+        Prior behavior kept such a bin finite because the KDE denominator was
+        the smoothed density (nonzero from neighbors). The consistent
+        raw-seconds contract instead masks it: raw occupancy 0 < min_occupancy,
+        so it is NaN -- but ``min_occupancy=0`` (the default) still leaves it
+        finite from the smoothed denominator (no masking, no behavior change).
+        """
+        n_bins = simple_env.n_bins
         occupancy = np.ones(n_bins, dtype=np.float64)
         gap_idx = n_bins // 2 + 1  # interior bin next to the spiking center
         occupancy[gap_idx] = 0.0
 
         for method in ("diffusion_kde", "gaussian_kde"):
-            result = smooth_rate_map(
-                simple_env,
-                spike_counts_center,
-                occupancy,
-                method=method,
-                bandwidth=2.0,
-                min_occupancy=0.1,  # above 0 but below the gap bin's density
+            # min_occupancy > 0 masks the untraversed bin (raw occ 0 < 0.1).
+            masked = np.asarray(
+                smooth_rate_map(
+                    simple_env,
+                    spike_counts_center,
+                    occupancy,
+                    method=method,
+                    bandwidth=2.0,
+                    min_occupancy=0.1,
+                )
             )
-            # Sanity: the smoothed occupancy density at the gap bin clears
-            # the threshold (surrounded by 1 s/bin neighbors), so the bin
-            # must report a finite rate rather than NaN.
-            assert np.isfinite(result[gap_idx]), (
-                f"{method}: interior gap bin with valid smoothed denominator "
-                "was spuriously NaN-ed by raw-occupancy thresholding."
+            assert np.isnan(masked[gap_idx]), (
+                f"{method}: untraversed bin (raw occ 0) must be masked when "
+                "min_occupancy > 0."
+            )
+            # Default min_occupancy=0 does NOT mask it (unchanged behavior):
+            # it reports a finite rate from the smoothed denominator.
+            unmasked = np.asarray(
+                smooth_rate_map(
+                    simple_env,
+                    spike_counts_center,
+                    occupancy,
+                    method=method,
+                    bandwidth=2.0,
+                    min_occupancy=0.0,
+                )
+            )
+            assert np.isfinite(unmasked[gap_idx]), (
+                f"{method}: with min_occupancy=0 the untraversed interior bin "
+                "keeps its smoothed-denominator rate (no masking)."
+            )
+
+    def test_min_occupancy_is_raw_seconds_batch_all_methods(
+        self, simple_env, spike_counts_center
+    ):
+        """The batch path masks on raw seconds too (duplicated-code guard).
+
+        ``smooth_rate_maps_batch`` routes through the separately-implemented
+        ``_diffusion_kde_batch`` / ``_gaussian_kde_batch`` / ``_binned_batch``,
+        which each received the same raw-seconds ``min_occupancy`` fix as
+        duplicated code. Pin the contract on the batch path so a future edit to
+        any one batch function (e.g. reverting it to threshold the smoothed
+        density, or mis-broadcasting the neuron axis) is caught. A 2-neuron
+        batch makes a neuron-axis mis-broadcast of the ``(n_bins,)`` occupancy
+        fail loudly.
+        """
+        n_bins = simple_env.n_bins
+        occupancy = np.ones(n_bins, dtype=np.float64)  # 1.0 s in every bin
+        batch = np.stack([spike_counts_center, spike_counts_center * 2.0])
+
+        for method in ("diffusion_kde", "gaussian_kde", "binned"):
+            result = np.asarray(
+                smooth_rate_maps_batch(
+                    simple_env,
+                    batch,
+                    occupancy,
+                    method=method,
+                    bandwidth=5.0,
+                    min_occupancy=0.5,
+                )
+            )
+            assert result.shape == batch.shape
+            # No bin is below 0.5 s, so none may be masked and both fields
+            # survive (peak > 0), not collapse to all-zero.
+            assert np.isfinite(result).all(), (
+                f"{method} (batch): bins with 1.0 s raw occupancy were masked "
+                "by min_occupancy=0.5 s."
+            )
+            assert result.max(axis=1).min() > 0.0, (
+                f"{method} (batch): a place field collapsed to zero."
+            )
+
+    def test_min_occupancy_masks_exactly_low_raw_bins_batch(
+        self, simple_env, spike_counts_center
+    ):
+        """The batch masked set is exactly ``occupancy < min_occupancy``.
+
+        The same sub-threshold bin is masked for every neuron in the batch and
+        only that bin -- matching the single-neuron contract and the
+        ``result.occupancy < min_occupancy`` recovery guarantee.
+        """
+        n_bins = simple_env.n_bins
+        occupancy = np.ones(n_bins, dtype=np.float64)
+        low_idx = 0
+        occupancy[low_idx] = 0.1  # below threshold in raw seconds
+        batch = np.stack([spike_counts_center, spike_counts_center * 2.0])
+
+        for method in ("diffusion_kde", "gaussian_kde", "binned"):
+            result = np.asarray(
+                smooth_rate_maps_batch(
+                    simple_env,
+                    batch,
+                    occupancy,
+                    method=method,
+                    bandwidth=5.0,
+                    min_occupancy=0.5,
+                )
+            )
+            # The sub-threshold bin is NaN for BOTH neurons, nothing else is.
+            assert np.isnan(result[:, low_idx]).all(), (
+                f"{method} (batch): bin with 0.1 s raw occupancy must be masked "
+                "for every neuron."
+            )
+            finite_per_neuron = np.isfinite(result).sum(axis=1)
+            assert np.all(finite_per_neuron == n_bins - 1), (
+                f"{method} (batch): only the single sub-threshold bin may be "
+                "masked, identically across neurons."
             )
 
 

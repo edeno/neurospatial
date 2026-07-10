@@ -66,13 +66,15 @@ Brandon, M. P., Bogaard, A. R., Libby, C. P., Connerney, M. A., Guber, K., &
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 from scipy import fft, ndimage, stats
 from scipy.signal import find_peaks
+
+from neurospatial._results import ResultMixin
 
 if TYPE_CHECKING:
     from neurospatial import Environment
@@ -95,8 +97,8 @@ __all__ = [
 _AXIS_FLIP_THRESHOLD_DEG = 15.0
 
 
-@dataclass
-class GridProperties:
+@dataclass(repr=False)
+class GridProperties(ResultMixin):
     """
     Container for grid cell metrics extracted from autocorrelogram.
 
@@ -157,6 +159,16 @@ class GridProperties:
     orientation_std: float
     peak_coords: NDArray[np.float64]
     n_peaks: int
+
+    def summary(self) -> dict[str, Any]:
+        """Flat dict of scalar headline metrics for this result."""
+        return {
+            "score": self.score,
+            "scale": self.scale,
+            "orientation": self.orientation,
+            "orientation_std": self.orientation_std,
+            "n_peaks": self.n_peaks,
+        }
 
 
 def spatial_autocorrelation(

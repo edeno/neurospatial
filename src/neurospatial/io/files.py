@@ -224,7 +224,7 @@ def _validate_path_safety(path: PathLike) -> Path:
             f"Use absolute paths or paths without '..' components. "
             f"This restriction helps prevent security vulnerabilities.\n\n"
             f"For more information, see: "
-            f"https://neurospatial.readthedocs.io/errors/#e1005"
+            f"https://edeno.github.io/neurospatial/errors/#e1005-path-traversal-detected"
         )
 
     # Now resolve to absolute path
@@ -233,7 +233,7 @@ def _validate_path_safety(path: PathLike) -> Path:
     return path_obj
 
 
-def to_file(env: Environment, path: PathLike) -> None:
+def to_file(env: Environment, path: PathLike, *, overwrite: bool = False) -> None:
     """Save Environment to a versioned JSON + npz file pair.
 
     Creates two files:
@@ -252,11 +252,18 @@ def to_file(env: Environment, path: PathLike) -> None:
         Will create `{path}.json` and `{path}.npz`.
         Paths containing '..' components are rejected to prevent
         directory traversal attacks.
+    overwrite : bool, default=False
+        If ``False`` (the default), raise :class:`FileExistsError` when either
+        ``{path}.json`` or ``{path}.npz`` already exists, so an accidental
+        re-run cannot silently clobber a saved environment. Pass ``True`` to
+        replace existing files.
 
     Raises
     ------
     ValueError
         If path contains parent directory traversal ('..' components).
+    FileExistsError
+        If ``overwrite`` is ``False`` and a target file already exists.
 
     Examples
     --------
@@ -280,6 +287,20 @@ def to_file(env: Environment, path: PathLike) -> None:
     path_obj = _validate_path_safety(path)
     json_path = path_obj.with_suffix(".json")
     npz_path = path_obj.with_suffix(".npz")
+
+    # Refuse to clobber an existing environment unless explicitly allowed. The
+    # atomic .tmp + replace write below protects against a partial save, not
+    # against overwriting the wrong target -- without this guard a single
+    # accidental re-run silently destroys a saved env (and any hand-placed
+    # regions), with no way to recover it.
+    if not overwrite:
+        existing = [str(p) for p in (json_path, npz_path) if p.exists()]
+        if existing:
+            raise FileExistsError(
+                f"Refusing to overwrite existing environment file(s): "
+                f"{', '.join(existing)}. Pass overwrite=True to replace them, "
+                "or choose a different path."
+            )
 
     # Ensure parent directory exists
     json_path.parent.mkdir(parents=True, exist_ok=True)

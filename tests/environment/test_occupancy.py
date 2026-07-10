@@ -319,6 +319,41 @@ class TestOccupancyValidation:
         with pytest.raises(ValueError, match=r".*dimension.*"):
             env.occupancy(times, positions)
 
+    def test_occupancy_swapped_args_gives_shape_error_not_monotonic(
+        self, minimal_2d_grid_env
+    ):
+        """A swapped occupancy(positions, times) reports a shape error, not a
+        misleading 'times must be monotonically increasing'.
+
+        Regression: the monotonicity check ran before the shape check, so a
+        swapped call ran np.diff on the 2-D positions array and raised
+        'times must be monotonically increasing', actively pointing the user at
+        their (fine) timestamps instead of the real argument-order mistake.
+        """
+        env = minimal_2d_grid_env
+        times = np.array([0.0, 1.0, 2.0])
+        # Columns chosen so np.diff (within-row) is negative -> on the old code
+        # the monotonicity check on the 2-D array fired before the shape check.
+        positions = np.array([[5.0, 1.0], [6.0, 2.0], [7.0, 3.0]])
+
+        # The correct order works.
+        env.occupancy(times, positions)
+
+        # Swapped: positions passed as `times` -> must be a 1-D shape error, and
+        # must NOT be the monotonicity message.
+        with pytest.raises(ValueError, match=r"1-dimensional") as exc:
+            env.occupancy(positions, times)
+        assert "monotonic" not in str(exc.value).lower()
+
+    def test_occupancy_still_rejects_non_monotonic_times(self, minimal_2d_grid_env):
+        """Genuinely non-monotonic 1-D times still raise the monotonicity error."""
+        env = minimal_2d_grid_env
+        times = np.array([0.0, 2.0, 1.0])  # decreasing at index 1
+        positions = np.array([[5.0, 5.0], [6.0, 6.0], [7.0, 7.0]])
+
+        with pytest.raises(ValueError, match=r"monotonically increasing"):
+            env.occupancy(times, positions)
+
 
 class TestOccupancyMassConservation:
     """Property tests for mass conservation."""

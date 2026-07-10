@@ -4,7 +4,6 @@ This module tests error handling and edge cases that were previously untested,
 particularly for methods like path_between() and bins_in_region().
 """
 
-import networkx as nx
 import numpy as np
 import pytest
 
@@ -50,7 +49,7 @@ class TestPathBetweenErrorPaths:
         invalid_source = env.n_bins + 100  # Way out of range
         valid_target = 0
 
-        with pytest.raises(nx.NodeNotFound, match=r"Source.*not in"):
+        with pytest.raises(IndexError, match=r"out of range"):
             env.path_between(invalid_source, valid_target)
 
     def test_shortest_path_invalid_target_node(self):
@@ -60,7 +59,7 @@ class TestPathBetweenErrorPaths:
         valid_source = 0
         invalid_target = -999  # Negative index
 
-        with pytest.raises(nx.NodeNotFound, match=r"Target.*not in"):
+        with pytest.raises(IndexError, match=r"out of range"):
             env.path_between(valid_source, invalid_target)
 
     def test_shortest_path_both_nodes_invalid(self):
@@ -70,7 +69,7 @@ class TestPathBetweenErrorPaths:
         invalid_source = env.n_bins + 50
         invalid_target = env.n_bins + 100
 
-        with pytest.raises(nx.NodeNotFound):
+        with pytest.raises(IndexError):
             env.path_between(invalid_source, invalid_target)
 
     def test_shortest_path_same_node(self):
@@ -254,14 +253,14 @@ class TestNeighborsErrorPaths:
 
         invalid_idx = env.n_bins + 100
 
-        with pytest.raises(nx.NetworkXError):
+        with pytest.raises(IndexError, match=r"out of range"):
             env.neighbors(invalid_idx)
 
     def test_neighbors_negative_index(self):
         """Test neighbors with negative bin index."""
         env = Environment.from_samples(SAMPLE_DATA_2D, bin_size=2.0)
 
-        with pytest.raises(nx.NetworkXError):
+        with pytest.raises(IndexError, match=r"out of range"):
             env.neighbors(-1)
 
     def test_neighbors_valid_isolated_node(self):
@@ -276,6 +275,54 @@ class TestNeighborsErrorPaths:
 
         assert isinstance(neighbors, list)
         # For regular grids, nodes typically have neighbors
+
+
+class TestGraphQueriesAcceptCoordinates:
+    """neighbors/path_between/reachable_from accept a point OR a bin index.
+
+    Resolves the coordinate-vs-index footgun: these graph queries now accept a
+    coordinate array (mapped via bin_at) just like the geometric methods, while
+    still accepting integer bin indices. A point outside the environment raises.
+    """
+
+    def test_coordinate_and_index_agree(self):
+        env = Environment.from_samples(SAMPLE_DATA_2D, bin_size=2.0)
+        # Use a CONNECTED pair so path_between returns a non-empty path -- an
+        # equivalence over two empty lists (disconnected bins) would be vacuous
+        # and prove nothing about coordinate resolution.
+        idx_a = 3
+        idx_b = env.neighbors(idx_a)[0]  # a bin directly connected to idx_a
+        coord_a = env.bin_centers[idx_a]
+        coord_b = env.bin_centers[idx_b]
+
+        assert sorted(env.neighbors(coord_a)) == sorted(env.neighbors(idx_a))
+
+        path_from_coords = env.path_between(coord_a, coord_b)
+        assert path_from_coords == env.path_between(idx_a, idx_b)
+        assert len(path_from_coords) >= 2  # a real path, not vacuous [] == []
+
+        assert np.array_equal(
+            env.reachable_from(coord_a, radius=2),
+            env.reachable_from(idx_a, radius=2),
+        )
+
+    def test_point_outside_environment_raises(self):
+        env = Environment.from_samples(SAMPLE_DATA_2D, bin_size=2.0)
+        far = np.array([1e6, 1e6])
+        with pytest.raises(ValueError, match=r"not inside any active bin"):
+            env.neighbors(far)
+
+    def test_batch_of_coordinates_raises(self):
+        """A multi-point coordinate array is rejected, not silently truncated.
+
+        Regression: ``_resolve_point_or_index`` resolved the whole batch via
+        ``bin_at`` but kept only the first bin, so ``neighbors(bin_centers[[0,
+        3]])`` silently returned bin 0's neighbors. A batch must fail loud.
+        """
+        env = Environment.from_samples(SAMPLE_DATA_2D, bin_size=2.0)
+        batch = env.bin_centers[[0, 3]]  # two points -> shape (2, n_dims)
+        with pytest.raises(ValueError, match=r"single coordinate point"):
+            env.neighbors(batch)
 
 
 class TestDistanceBetweenErrorPaths:
@@ -306,6 +353,26 @@ class TestBinAtErrorPaths:
 
         with pytest.raises(ValueError, match="Dimensionality mismatch"):
             env.bin_at(points_1d)
+
+    def test_bin_at_linearized_positions_on_graph_env_raises(self):
+        """bin_at on a graph/track env raises on 1-D linearized positions.
+
+        Regression: a linearized-track environment routes bin_at through the
+        KDTree path, which swallowed a dimension mismatch to a warning and
+        returned -1 for every point -- so feeding ``to_linear()`` output (1-D)
+        back in silently produced an empty/all-zero field. It must fail loud,
+        like the grid path, and point at the real fix.
+        """
+        env = Environment.linear_track(
+            endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=5.0
+        )
+        assert env.is_linearized_track and env.n_dims == 2
+
+        positions_2d = np.column_stack([np.linspace(0, 100, 50), np.zeros(50)])
+        linear = np.asarray(env.to_linear(positions_2d)).reshape(-1, 1)  # (50, 1)
+
+        with pytest.raises(ValueError, match=r"(?i)dimension|to_linear"):
+            env.bin_at(linear)
 
     def test_bin_at_empty_array(self):
         """Test bin_at with empty point array."""

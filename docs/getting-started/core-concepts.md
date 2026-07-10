@@ -90,41 +90,21 @@ Every environment includes a **connectivity graph** (NetworkX `Graph`) that defi
 - **Attributes**: Store spatial metadata
 
 ```python
-# Access the connectivity graph
+# Access the connectivity graph (a NetworkX Graph)
 G = env.connectivity
 
-print(f"Number of nodes: {G.number_of_nodes()}")
-print(f"Number of edges: {G.number_of_edges()}")
+print(f"Number of nodes (bins): {G.number_of_nodes()}")
+print(f"Number of edges (neighbor links): {G.number_of_edges()}")
 
-# Node attributes (mandatory)
-node_0_attrs = G.nodes[0]
-print(f"Node 0 position: {node_0_attrs['pos']}")
-print(f"Node 0 grid index: {node_0_attrs['original_grid_nd_index']}")
-
-# Edge attributes (mandatory)
-edge_attrs = G.edges[0, 1]
-print(f"Edge (0,1) distance: {edge_attrs['distance']}")
-print(f"Edge (0,1) vector: {edge_attrs['vector']}")
+# Neighboring bins of a given bin
+print(f"Neighbors of bin 0: {env.neighbors(0)}")
 ```
 
-### Mandatory Graph Metadata
-
-neurospatial enforces **mandatory attributes** for correctness:
-
-**Node attributes:**
-
-- `'pos'`: Tuple of N-D coordinates
-- `'source_grid_flat_index'`: Flat index in original grid
-- `'original_grid_nd_index'`: N-D grid index tuple
-
-**Edge attributes:**
-
-- `'distance'`: Euclidean distance between bin centers
-- `'vector'`: Displacement vector (as tuple)
-- `'edge_id'`: Unique integer edge identifier
-- `'angle_2d'`: Angle in 2D (optional, for 2D layouts)
-
-These attributes enable spatial queries like shortest paths, distance calculations, and neighbor finding.
+Nodes and edges also carry metadata — bin positions, inter-bin distances, and
+displacement vectors — that power shortest paths and geodesic distances. Those
+mandatory attributes are documented in
+[Architecture & Internals](../advanced/architecture.md#mandatory-graph-metadata),
+which you only need when reading the graph directly or writing a custom layout.
 
 ### Why Graphs?
 
@@ -176,27 +156,10 @@ env_1d = Environment.from_graph(
 )
 ```
 
-### Protocol-Based Design
-
-Layout engines implement a **protocol** (not inheritance):
-
-```python
-# Layout engines must provide:
-# - bin_centers: NDArray of shape (n_bins, n_dims)
-# - connectivity: nx.Graph with mandatory attributes
-# - dimension_ranges: List of (min, max) tuples
-# - is_linearized_track: bool (True for linearized layouts)
-# - build(): Method to construct the layout
-# - point_to_bin_index(): Map points to bins
-# - bin_sizes(): Compute bin sizes
-# - plot(): Visualize the layout
-```
-
-This design allows:
-
-- Custom layout engines without modifying core code
-- Type checking with protocols
-- Maximum flexibility
+Layout engines are wired into `Environment` through a **protocol** (structural
+typing), so you can add a custom discretization strategy without subclassing.
+That extension point, and the raw graph metadata each engine must produce, are
+covered in [Architecture & Internals](../advanced/architecture.md).
 
 ## 1D vs N-D Environments
 
@@ -349,6 +312,12 @@ Key takeaways:
 5. **1D vs N-D**: Different query methods for linearized vs grid environments
 6. **Regions**: Named, immutable ROIs within environments
 7. **Factory methods**: Always use these, not bare constructor
+
+## See Also
+
+- **[Architecture & Internals](../advanced/architecture.md)**: Mandatory graph
+  metadata and the layout-engine protocol — for reading the graph directly or
+  writing a custom layout engine.
 
 ## Next Steps
 

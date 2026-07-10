@@ -297,7 +297,7 @@ Example (correct usage):
 Avoid:
     env = Environment()  # This will not work!
 
-For more information, see: https://neurospatial.readthedocs.io/errors/#e1004
+For more information, see: https://edeno.github.io/neurospatial/errors/#e1004
 ```
 
 **What This Means:**
@@ -387,7 +387,7 @@ ValueError: [E1005] Path traversal detected in path: ../../../etc/passwd.
 Use absolute paths or paths without '..' components.
 This restriction helps prevent security vulnerabilities.
 
-For more information, see: https://neurospatial.readthedocs.io/errors/#e1005
+For more information, see: https://edeno.github.io/neurospatial/errors/#e1005
 ```
 
 **What This Means:**
@@ -460,7 +460,7 @@ This restriction is intentional and cannot be disabled. If you have a legitimate
 
 1. **Check the full error message** - Modern errors include diagnostic information
 2. **Search the documentation** - Use the search bar at the top
-3. **Check GitHub Issues** - Someone may have encountered this before: [neurospatial/issues](https://github.com/yourusername/neurospatial/issues)
+3. **Check GitHub Issues** - Someone may have encountered this before: [neurospatial/issues](https://github.com/edeno/neurospatial/issues)
 4. **Ask for help** - Create a new issue with:
    - Full error message
    - Minimal code to reproduce
@@ -498,7 +498,7 @@ When adding new error codes to the codebase:
        f"[E1001] Brief error description.\n\n"
        f"Diagnostic information here...\n\n"
        f"For more information, see: "
-       f"https://neurospatial.readthedocs.io/errors/#e1001"
+       f"https://edeno.github.io/neurospatial/errors/#e1001"
    )
    ```
 
@@ -520,4 +520,4 @@ When adding new error codes to the codebase:
 
 **Last Updated**: 2025-11-14
 **Version**: 1.0
-**Feedback**: [GitHub Issues](https://github.com/yourusername/neurospatial/issues)
+**Feedback**: [GitHub Issues](https://github.com/edeno/neurospatial/issues)

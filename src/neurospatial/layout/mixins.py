@@ -143,8 +143,16 @@ class _KDTreeMixin:
         Returns
         -------
         NDArray[np.int_], shape (n_query_points,)
-            Array of active bin indices (0 to `n_active_bins - 1`).
-            Returns -1 for all points if the KD-tree is not built or is empty.
+            Array of active bin indices (0 to `n_active_bins - 1`). A point
+            whose coordinates are non-finite (NaN/inf) maps to the ``-1``
+            "outside" sentinel, matching the grid layouts. Returns -1 for all
+            points if the KD-tree is not built or is empty.
+
+        Raises
+        ------
+        ValueError
+            If the query points' dimensionality does not match the environment
+            (e.g. feeding 1-D ``to_linear()`` output into a 2-D track env).
 
         """
         query_points = np.atleast_2d(points)
@@ -158,10 +166,39 @@ class _KDTreeMixin:
             # This means no valid points were used to build the KD-tree.
             return np.full(n_query_points, -1, dtype=np.int32)
 
+        # A dimension mismatch is a caller error, not a recoverable "no match":
+        # fail loud instead of swallowing it to a warning and returning -1 for
+        # every point (which reads downstream as a silent empty/all-zero field).
+        # The classic trigger is feeding 1-D ``to_linear()`` output / linearized
+        # positions into a graph/2-D track environment, whose bins are indexed by
+        # their original N-D coordinates.
+        expected_dims = int(self._kdtree.data.shape[1])
+        if query_points.shape[1] != expected_dims:
+            raise ValueError(
+                f"Query points have {query_points.shape[1]} dimension(s) but this "
+                f"environment bins in {expected_dims}-D; pass points of shape "
+                f"(n_points, {expected_dims}). Note: ``to_linear()`` output and "
+                f"other 1-D linearized positions are NOT bin coordinates -- bin "
+                f"with the original {expected_dims}-D positions instead."
+            )
+
+        # Non-finite rows cannot be queried: scipy's KDTree.query raises if ANY
+        # row is non-finite, which previously got swallowed below and collapsed
+        # EVERY point (including the finite ones) to -1 -- a silent empty/all-
+        # zero field. NaN/inf samples are routine in tracking data (dropped
+        # frames, occluded / low-confidence points), so map only the non-finite
+        # rows to the -1 "outside" sentinel -- matching the grid layouts -- and
+        # query just the finite subset.
+        final_bin_indices = np.full(n_query_points, -1, dtype=np.int32)
+        finite_rows = np.all(np.isfinite(query_points), axis=1)
+        if not np.any(finite_rows):
+            return np.asarray(final_bin_indices, dtype=np.int32)
+
         try:
-            _, kdtree_internal_indices = self._kdtree.query(query_points)
+            _, kdtree_internal_indices = self._kdtree.query(query_points[finite_rows])
         except Exception as e:
-            # Catch errors if query points have wrong dimension etc.
+            # Catch genuinely unexpected query failures (dimension mismatch and
+            # non-finite coordinates are handled above).
             warnings.warn(
                 f"KDTree query failed: {e}. Returning -1 for all points.",
                 RuntimeWarning,
@@ -169,24 +206,18 @@ class _KDTreeMixin:
             )
             return np.full(n_query_points, -1, dtype=np.int32)
 
-        # kdtree_internal_indices are indices into the array used to build the KDTree
-        # (i.e., final_points_for_kdtree_construction in _build_kdtree).
-        # We need to ensure these indices are valid for accessing _kdtree_nodes_to_bin_indices_map.
-        # The size of _kdtree.data is len(final_points_for_kdtree_construction).
+        # kdtree_internal_indices index into the array used to build the KDTree
+        # (final_points_for_kdtree_construction in _build_kdtree). Clip into its
+        # valid range (guards an empty/single-point tree returning an out-of-
+        # bounds index), then map back to the original bin indices (0 to N-1,
+        # rows of self.bin_centers) and scatter into the finite rows.
         max_valid_kdtree_idx = int(self._kdtree.data.shape[0] - 1)
-
-        # Clip indices to be within the valid range of the KD-tree's internal point list
-        # This handles cases where KDTree might return an out-of-bounds index if empty or single point.
         kdtree_internal_indices = np.clip(
             kdtree_internal_indices,
             0,
             max_valid_kdtree_idx,
         )
-
-        # Map these internal KD-tree indices back to the original bin indices
-        # (which are 0 to N-1, corresponding to rows in self.bin_centers)
-        # using the map created in _build_kdtree.
-        final_bin_indices = self._kdtree_nodes_to_bin_indices_map[
+        final_bin_indices[finite_rows] = self._kdtree_nodes_to_bin_indices_map[
             kdtree_internal_indices
         ]
 

@@ -84,7 +84,7 @@ class EnvironmentSerialization:
 
     """
 
-    def to_file(self: SelfEnv, path: str | Path) -> None:
+    def to_file(self: SelfEnv, path: str | Path, *, overwrite: bool = False) -> None:
         """Save Environment to versioned JSON + npz files.
 
         This method provides stable, reproducible serialization compatible
@@ -96,11 +96,22 @@ class EnvironmentSerialization:
         path : str or Path
             Base path for output files (without extension).
             Will create `{path}.json` and `{path}.npz`.
+        overwrite : bool, default=False
+            If ``False`` (the default), raise :class:`FileExistsError` rather
+            than overwrite an existing ``{path}.json`` / ``{path}.npz``, so an
+            accidental re-run cannot silently destroy a saved environment. Pass
+            ``True`` to replace existing files.
+
+        Raises
+        ------
+        FileExistsError
+            If ``overwrite`` is ``False`` and a target file already exists.
 
         Examples
         --------
         >>> env = Environment.from_samples(data, bin_size=2.0)  # doctest: +SKIP
         >>> env.to_file("my_environment")  # doctest: +SKIP
+        >>> env.to_file("my_environment", overwrite=True)  # replace  # doctest: +SKIP
 
         See Also
         --------
@@ -116,7 +127,7 @@ class EnvironmentSerialization:
         """
         from neurospatial.io import to_file as _to_file
 
-        _to_file(cast("Environment", self), path)
+        _to_file(cast("Environment", self), path, overwrite=overwrite)
 
     @classmethod
     def from_file(cls: type[EnvironmentProtocol], path: str | Path) -> Environment:

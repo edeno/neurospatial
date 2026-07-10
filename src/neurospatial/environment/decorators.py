@@ -104,7 +104,7 @@ class EnvironmentNotFittedError(RuntimeError):
             "Avoid:\n"
             "    env = Environment()  # This will not work!\n\n"
             "For more information, see: "
-            f"https://neurospatial.readthedocs.io/errors/#{error_code.lower()}"
+            f"https://edeno.github.io/neurospatial/errors/#{error_code.lower()}"
         )
         super().__init__(message)
         self.class_name = class_name

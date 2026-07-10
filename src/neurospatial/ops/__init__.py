@@ -145,6 +145,17 @@ def __getattr__(name: str):
     raise AttributeError(msg)
 
 
+def __dir__() -> list[str]:
+    """List module attributes, including lazily-exported names, for autocomplete.
+
+    Merges the eagerly-imported module globals with everything in ``__all__``
+    (which includes the lazily-loaded visibility exports) so interactive tools
+    and ``dir()`` surface the full public surface, not just the already-imported
+    names.
+    """
+    return sorted(set(globals()) | set(__all__))
+
+
 # ruff: noqa: RUF022  - Intentionally organized into groups with comments
 __all__ = [
     # Alignment

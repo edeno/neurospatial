@@ -2,6 +2,7 @@
 Tests for the Environment class using a plus maze example.
 """
 
+import warnings
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -38,6 +39,31 @@ class TestEnvironmentFromGraph:
         assert graph_env.connectivity.number_of_nodes() == 16
         assert graph_env.active_mask is not None
         assert np.all(graph_env.active_mask)
+
+    def test_from_graph_missing_edge_distance_raises_clear_error(self):
+        """A track graph whose edges lack 'distance' raises an actionable error.
+
+        Regression: from_graph on an external graph (e.g. from
+        track_linearization or hand-built) without the required 'distance' edge
+        attribute bottomed out in a bare ``KeyError: 'distance'`` deep in an
+        internal helper, naming neither the offending edge nor how to add it.
+        """
+        g = nx.Graph()
+        g.add_node(0, pos=(0.0, 0.0))
+        g.add_node(1, pos=(10.0, 0.0))
+        g.add_edge(0, 1)  # deliberately no 'distance' attribute
+
+        with pytest.raises(ValueError, match=r"(?i)distance"):
+            Environment.from_graph(
+                g, edge_order=[(0, 1)], edge_spacing=0.0, bin_size=2.0
+            )
+
+        # With a numeric distance on the edge, construction succeeds.
+        g.edges[0, 1]["distance"] = 10.0
+        env = Environment.from_graph(
+            g, edge_order=[(0, 1)], edge_spacing=0.0, bin_size=2.0
+        )
+        assert env.is_linearized_track
 
     def test_bin_at(self, graph_env: Environment):
         """Test mapping points to bin indices."""
@@ -125,7 +151,7 @@ class TestEnvironmentFromGraph:
         path_to_self = graph_env.path_between(bin_idx_west, bin_idx_west)
         assert path_to_self == [bin_idx_west]
 
-        with pytest.raises(nx.NodeNotFound):
+        with pytest.raises(IndexError, match=r"out of range"):
             graph_env.path_between(0, 100)
 
     def test_linearized_coordinates(self, graph_env: Environment):
@@ -231,6 +257,79 @@ class TestEnvironmentFromDataSamplesGrid:
             grid_env_from_samples.active_mask
         )
 
+    def test_from_samples_warns_on_transposed_positions(self):
+        """A likely-transposed ``positions`` array WARNS but still builds.
+
+        ``np.array([x, y])`` (shape ``(2, N)``) is 2-D and slips past the ndim
+        check, read as 2 samples in N-D space. When the column (dimension) count
+        exceeds the sample count and is implausibly high, ``from_samples`` warns
+        that positions is likely transposed and names ``.T`` -- but it does NOT
+        reject, because the identical shape can be a genuine low-sample N-D env
+        (``from_samples`` supports N dimensions). A truly catastrophic transpose
+        is caught downstream by the int64 bin-count guard.
+        """
+        rng = np.random.default_rng(1)
+        transposed = rng.uniform(0.0, 1.0, size=(5, 12))  # 5 "samples", 12 "dims"
+        with pytest.warns(UserWarning, match=r"(?i)transpos|positions\.T"):
+            env = Environment.from_samples(transposed, bin_size=0.5)
+        assert env.n_dims == 12  # built anyway -- no false rejection
+
+        # The correctly-oriented array builds a 2-D env with no transpose warning.
+        x = np.linspace(0.0, 100.0, 50)
+        y = np.linspace(0.0, 100.0, 50)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            env2 = Environment.from_samples(np.column_stack([x, y]), bin_size=5.0)
+        assert env2.n_dims == 2
+        assert not any("transpos" in str(w.message).lower() for w in caught)
+
+    def test_from_samples_accepts_genuine_high_dimensional_env(self):
+        """Genuine N-D environments are never rejected, even with few samples.
+
+        Regression: the transpose check is a heuristic (more dims than samples),
+        so it can only warn -- ``from_samples`` supports N-dimensional
+        environments. A ``(30, 9)`` array (samples >> dims) builds with no
+        warning; borderline ``(8, 9)`` and ``(1, 9)`` arrays build too (with a
+        heads-up warning), not a hard rejection.
+        """
+        rng = np.random.default_rng(0)
+
+        # Samples >> dims: no transpose warning, builds a 9-D env.
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            env = Environment.from_samples(
+                rng.uniform(0.0, 1.0, size=(30, 9)), bin_size=0.5
+            )
+        assert env.n_dims == 9
+        assert not any("transpos" in str(w.message).lower() for w in caught)
+
+        # Fewer samples than dims: warns but STILL builds (no false rejection).
+        for n_samples in (8, 1):
+            data = rng.uniform(0.0, 1.0, size=(n_samples, 9))
+            with pytest.warns(UserWarning, match=r"(?i)transpos|positions\.T"):
+                env_hd = Environment.from_samples(data, bin_size=0.5)
+            assert env_hd.n_dims == 9
+
+    def test_from_samples_catastrophic_grid_raises_before_allocation(self):
+        """A transposed high-D array raises fast instead of OOMing on the grid.
+
+        Regression: warning-and-continuing on a likely transpose is only safe if
+        the downstream grid build refuses catastrophic sizes. The per-axis int64
+        check validates each dimension independently, but ``np.histogramdd`` /
+        ``np.meshgrid`` allocate the Cartesian PRODUCT of the per-axis bin
+        counts, which is astronomically large for a transposed ``(2, N)``
+        trajectory read as N dimensions. The product is preflighted and raises an
+        actionable error BEFORE any allocation, so a normal transposed trajectory
+        cannot OOM.
+        """
+        # (2, 100): 2 "samples" x 100 "dims", each dim spanning [0, 10] -> 10
+        # bins/dim -> 10**100 total bins (which must never be allocated).
+        transposed = np.array([np.zeros(100), np.full(100, 10.0)])
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")  # silence the "likely transposed" warning
+            with pytest.raises(ValueError, match=r"(?i)total bins|GiB|histogramdd"):
+                Environment.from_samples(transposed, bin_size=1.0)
+
     def test_bin_at_grid(
         self,
         grid_env_from_samples: Environment,
@@ -298,6 +397,30 @@ class TestEnvironmentSerialization:
             loaded_env.connectivity.number_of_edges()
             == env.connectivity.number_of_edges()
         )
+
+    def test_to_file_refuses_overwrite_by_default(
+        self, grid_env_from_samples: Environment, tmp_path: Path
+    ):
+        """``to_file`` refuses to clobber an existing env unless ``overwrite``.
+
+        Regression: a second ``to_file`` to the same base path silently
+        overwrote the first environment (verified data loss). It must now
+        raise ``FileExistsError`` naming the existing file, and replace the
+        files only when ``overwrite=True`` is passed explicitly.
+        """
+        env = grid_env_from_samples
+        base = tmp_path / "existing_env"
+        env.to_file(str(base))
+        assert base.with_suffix(".json").exists()
+
+        # Default (overwrite=False): a second save to the same path must refuse.
+        with pytest.raises(FileExistsError, match="existing_env"):
+            env.to_file(str(base))
+
+        # overwrite=True proceeds and replaces the files.
+        env.to_file(str(base), overwrite=True)
+        assert base.with_suffix(".json").exists()
+        assert base.with_suffix(".npz").exists()
 
 
 # --- Test Other Factory Methods (Basic Checks) ---

@@ -38,9 +38,10 @@ theme:
         icon: material/brightness-4
         name: Switch to light mode
   features:
+    # Goal-based top-level tabs; sections collapse by default in the sidebar.
+    # (No navigation.expand: nested sections stay collapsed until opened, so the
+    # nav is no longer one always-expanded wall of entries.)
     - navigation.tabs
-    - navigation.sections
-    - navigation.expand
     - navigation.top
     - navigation.tracking
     - navigation.indexes
@@ -158,14 +159,20 @@ nav:
       - Installation: getting-started/installation.md
       - Quickstart: getting-started/quickstart.md
       - Core Concepts: getting-started/core-concepts.md
-  - User Guide:
+  - Guides:
       - user-guide/index.md
-      - Environments: user-guide/environments.md
-      - Layout Engines: user-guide/layout-engines.md
-      - Regions: user-guide/regions.md
-      - Video Annotation: user-guide/video-annotation.md
-      - Composite Environments: user-guide/composite-environments.md
-      - Alignment & Transforms: user-guide/alignment.md
+      - Environments & Layouts:
+          - Environments: user-guide/environments.md
+          - Layout Engines: user-guide/layout-engines.md
+          - Regions: user-guide/regions.md
+          - Composite Environments: user-guide/composite-environments.md
+          - Dimensionality Support: dimensionality_support.md
+          - Alignment & Transforms: user-guide/alignment.md
+      - Workflows & Interoperability:
+          - Complete Workflows: user-guide/workflows.md
+          - Interoperability: user-guide/interoperability.md
+          - Performance: user-guide/performance.md
+  - Neural Analysis:
       - Spatial Analysis: user-guide/spatial-analysis.md
       - Spike-Field Primitives: user-guide/spike-field-primitives.md
       - Signal Processing Primitives: user-guide/signal-processing-primitives.md
@@ -173,18 +180,10 @@ nav:
       - Neuroscience Metrics: user-guide/neuroscience-metrics.md
       - Trajectory & Behavioral Analysis: user-guide/trajectory-and-behavioral-analysis.md
       - RL Primitives: user-guide/rl-primitives.md
+  - Visualization:
       - Field Animation: user-guide/animation.md
       - Animation Overlays: animation_overlays.md
-      - Dimensionality Support: dimensionality_support.md
-      - Complete Workflows: user-guide/workflows.md
-      - Interoperability: user-guide/interoperability.md
-      - Performance: user-guide/performance.md
-  - Reference:
-      - Errors: errors.md
-      - Glossary: glossary.md
-      - Migrating to v0.6: migration/v0.6.md
-  - API Reference:
-      - api/index.md
+      - Video Annotation: user-guide/video-annotation.md
   - Examples:
       - examples/index.md
       - Introduction & Basics: examples/01_introduction_basics.ipynb
@@ -214,5 +213,13 @@ nav:
       - Head-Direction Tuning: examples/25_head_direction_tuning.ipynb
       - Peri-Event PSTH: examples/26_peri_event_psth.ipynb
       - Loading from NWB: examples/27_loading_from_nwb.ipynb
-  - Contributing: contributing.md
-  - Changelog: changelog.md
+  - Advanced:
+      - Architecture & Internals: advanced/architecture.md
+      - Errors: errors.md
+      - Glossary: glossary.md
+      - Migrating to v0.6: migration/v0.6.md
+  - API Reference:
+      - api/index.md
+  - About:
+      - Contributing: contributing.md
+      - Changelog: changelog.md

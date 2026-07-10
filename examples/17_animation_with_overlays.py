@@ -28,7 +28,7 @@
 #
 # **Estimated time**: 20-25 minutes
 #
-# **Prerequisites**: [16_field_animation.ipynb](16_field_animation.ipynb)
+# **Prerequisites**: [16_field_animation.ipynb](../16_field_animation/)
 #
 # ## Learning Objectives
 #

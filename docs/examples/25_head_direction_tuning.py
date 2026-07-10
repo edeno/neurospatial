@@ -45,7 +45,7 @@
 #
 # **Estimated time**: 15-20 minutes
 #
-# **Prerequisites**: [08_spike_field_basics.ipynb](08_spike_field_basics.ipynb)
+# **Prerequisites**: [08_spike_field_basics.ipynb](../08_spike_field_basics/)
 
 # %% [markdown]
 # ## Setup
@@ -340,7 +340,7 @@ plt.show()
 # ### Next Steps
 # - Compute HD tuning across multiple cells with
 #   ``compute_directional_rates`` (batch version)
-# - Combine with [object-vector cells](24_object_vector_cells.ipynb) to
+# - Combine with [object-vector cells](../24_object_vector_cells/) to
 #   model conjunctive (HD x location) coding
 # - For an analysis that crosses HD with allocentric position, see the
 #   ``encoding.directional`` module

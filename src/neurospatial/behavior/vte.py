@@ -69,7 +69,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -78,6 +78,7 @@ if TYPE_CHECKING:
     from neurospatial.behavior.segmentation import Trial
     from neurospatial.environment import Environment
 
+from neurospatial._results import ResultMixin
 from neurospatial.stats.circular import wrap_angle
 
 __all__ = [
@@ -101,8 +102,8 @@ __all__ = [
 # =============================================================================
 
 
-@dataclass(frozen=True)
-class VTETrialResult:
+@dataclass(frozen=True, repr=False)
+class VTETrialResult(ResultMixin):
     """VTE metrics for a single trial.
 
     Attributes
@@ -154,14 +155,25 @@ class VTETrialResult:
         """Alias for z_head_sweep (zIdPhi terminology)."""
         return self.z_head_sweep
 
-    def summary(self) -> str:
-        """Human-readable summary.
+    def summary(self) -> dict[str, Any]:
+        """Flat dict of scalar VTE metrics for this trial.
 
-        Returns
-        -------
-        str
-            Formatted string with trial VTE metrics.
+        Follows the result-object convention (scalar dict, tabulatable). For a
+        human-readable one-line string use ``str(result)``.
         """
+        return {
+            "window_start": self.window_start,
+            "window_end": self.window_end,
+            "head_sweep_magnitude": self.head_sweep_magnitude,
+            "z_head_sweep": self.z_head_sweep,
+            "mean_speed": self.mean_speed,
+            "min_speed": self.min_speed,
+            "z_speed_inverse": self.z_speed_inverse,
+            "vte_index": self.vte_index,
+            "is_vte": self.is_vte,
+        }
+
+    def __str__(self) -> str:
         vte_str = (
             "VTE"
             if self.is_vte
@@ -176,8 +188,8 @@ class VTETrialResult:
         )
 
 
-@dataclass(frozen=True)
-class VTESessionResult:
+@dataclass(frozen=True, repr=False)
+class VTESessionResult(ResultMixin):
     """VTE analysis for an entire session.
 
     Attributes
@@ -217,14 +229,22 @@ class VTESessionResult:
         """Alias for std_head_sweep (IdPhi terminology)."""
         return self.std_head_sweep
 
-    def summary(self) -> str:
-        """Human-readable summary.
+    def summary(self) -> dict[str, Any]:
+        """Flat dict of scalar session-level VTE metrics.
 
-        Returns
-        -------
-        str
-            Formatted string with session VTE summary.
+        For a human-readable multi-line string use ``str(result)``.
         """
+        return {
+            "n_trials": len(self.trial_results),
+            "n_vte_trials": self.n_vte_trials,
+            "vte_fraction": self.vte_fraction,
+            "mean_head_sweep": self.mean_head_sweep,
+            "std_head_sweep": self.std_head_sweep,
+            "mean_speed": self.mean_speed,
+            "std_speed": self.std_speed,
+        }
+
+    def __str__(self) -> str:
         return (
             f"VTE session: {self.n_vte_trials}/{len(self.trial_results)} "
             f"VTE trials ({self.vte_fraction:.1%})\n"
@@ -339,8 +359,12 @@ def head_sweep_from_positions(
     # Use median dt to handle irregular sampling
     dt = float(np.median(np.diff(times)))
 
-    # Get headings
-    headings = heading_from_velocity(positions, dt, min_speed=min_speed)
+    # Get headings. allow_all_nan: a VTE window is often a slow head-sweeping
+    # pause, so an all-below-min_speed (all-NaN) heading is expected here, not an
+    # error; head_sweep_magnitude handles the NaN.
+    headings = heading_from_velocity(
+        positions, dt, min_speed=min_speed, allow_all_nan=True
+    )
 
     return head_sweep_magnitude(headings)
 

@@ -658,6 +658,7 @@ def heading_from_velocity(
     *,
     min_speed: float = 0.0,
     bandwidth: float = 0.0,
+    allow_all_nan: bool = False,
 ) -> NDArray[np.float64]:
     """Compute heading from position timeseries using velocity direction.
 
@@ -675,6 +676,12 @@ def heading_from_velocity(
     bandwidth : float, default 0.0
         Gaussian smoothing sigma in samples. Applied to velocity before
         computing heading. Set to 0 to disable smoothing.
+    allow_all_nan : bool, default False
+        Controls the degenerate case where **every** sample is below
+        ``min_speed`` (heading undefined everywhere). ``False`` (the default)
+        raises ``ValueError`` so the failure is loud; ``True`` returns an
+        all-NaN array with a ``UserWarning`` instead, for batch pipelines that
+        handle NaN explicitly.
 
     Returns
     -------
@@ -682,19 +689,21 @@ def heading_from_velocity(
         Heading in radians at each timepoint, in the **allocentric
         world-frame convention** (0 = East, π/2 = North, π = West,
         -π/2 = South), wrapped to ``[-π, π]`` per ``numpy.arctan2``
-        (so westward motion returns +π, not -π). If all speeds are
-        below threshold, returns a NaN array.
+        (so westward motion returns +π, not -π). Samples below ``min_speed``
+        are circularly interpolated from surrounding valid samples.
 
     Raises
     ------
     ValueError
         If positions has fewer than 2 samples, contains non-finite values,
-        or if dt is not a positive finite number.
+        if dt is not a positive finite number, or if **every** sample is
+        below ``min_speed`` and ``allow_all_nan`` is ``False`` (the default).
 
     Warns
     -----
     UserWarning
-        If all speeds are below min_speed threshold.
+        If every sample is below ``min_speed`` and ``allow_all_nan=True``
+        (an all-NaN heading array is returned).
 
     Notes
     -----
@@ -776,9 +785,26 @@ def heading_from_velocity(
     low_speed_mask = speed < min_speed
 
     if np.all(low_speed_mask):
+        if not allow_all_nan:
+            raise ValueError(
+                f"Cannot compute heading: every sample's speed is below "
+                f"min_speed={min_speed} (the fastest is {speed.max():.4g}, in the "
+                f"same units/second as positions). Velocity direction is "
+                f"undefined for a too-slow/stationary trajectory, so the heading "
+                f"would be all-NaN -- which then flows silently into egocentric / "
+                f"object-vector analyses as a false negative (e.g. "
+                f"is_object_vector_cell -> False).\n\n"
+                f"HOW to fix:\n"
+                f"1. Lower min_speed (e.g. min_speed={speed.max() * 0.5:.4g}) or "
+                f"pass min_speed=0.0 to use every sample\n"
+                f"2. Check units: min_speed is in position-units per second\n"
+                f"3. Pass allow_all_nan=True to opt into the all-NaN array in "
+                f"batch pipelines that handle NaN explicitly"
+            )
         warnings.warn(
-            f"All speeds ({speed.max():.4f}) are below min_speed threshold "
-            f"({min_speed}). Returning NaN array.",
+            f"All speeds (max {speed.max():.4g}) are below min_speed threshold "
+            f"({min_speed}); returning an all-NaN heading array because "
+            f"allow_all_nan=True.",
             UserWarning,
             stacklevel=2,
         )

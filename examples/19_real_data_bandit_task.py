@@ -26,7 +26,7 @@
 #
 # **Estimated time**: 20-25 minutes
 #
-# **Prerequisites**: [05_track_linearization.ipynb](05_track_linearization.ipynb), [11_place_field_analysis.ipynb](11_place_field_analysis.ipynb), [13_trajectory_analysis.ipynb](13_trajectory_analysis.ipynb)
+# **Prerequisites**: [05_track_linearization.ipynb](../05_track_linearization/), [11_place_field_analysis.ipynb](../11_place_field_analysis/), [13_trajectory_analysis.ipynb](../13_trajectory_analysis/)
 #
 # ## Learning Objectives
 #

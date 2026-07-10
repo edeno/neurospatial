@@ -21,7 +21,7 @@
 #
 # **Estimated time**: 20-25 minutes
 #
-# **Prerequisites**: [11_place_field_analysis.ipynb](11_place_field_analysis.ipynb)
+# **Prerequisites**: [11_place_field_analysis.ipynb](../11_place_field_analysis/)
 #
 # ## Learning Objectives
 #

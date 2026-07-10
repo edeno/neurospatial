@@ -19,19 +19,20 @@ References
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._results import ResultMixin
 from neurospatial._validation import validate_finite
 
 if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
 
 
-@dataclass(frozen=True)
-class MSDResult:
+@dataclass(frozen=True, repr=False)
+class MSDResult(ResultMixin):
     """Mean square displacement curve returned by ``mean_square_displacement``.
 
     Attributes
@@ -46,6 +47,14 @@ class MSDResult:
 
     lags: NDArray[np.float64]
     msd: NDArray[np.float64]
+
+    def summary(self) -> dict[str, Any]:
+        """Flat dict of scalar headline metrics for this result."""
+        return {
+            "n_lags": int(self.lags.size),
+            "max_lag": float(self.lags.max()) if self.lags.size else float("nan"),
+            "final_msd": float(self.msd[-1]) if self.msd.size else float("nan"),
+        }
 
 
 def compute_turn_angles(

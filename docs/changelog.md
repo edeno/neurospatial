@@ -15,6 +15,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   diffusion kernel (via `env.smooth`), so all smoothing methods build a dense
   kernel. The only memory mitigation is fewer bins (a larger `bin_size`).
 
+### UX hardening — fail-loud errors, one count convention, docs & viewer polish (0.8.0)
+
+A broad usability pass: silent failures now raise or warn with actionable
+messages, a few APIs were made consistent, and the docs/viewers were polished.
+
+#### Breaking Changes
+
+- **`add_positions` is now `add_positions(events, *, times, positions)`** —
+  reordered to the canonical `(data, times, positions)` order and made
+  **keyword-only** (a bare 1-D trajectory made a positional swap
+  shape-indistinguishable). *Migration:*
+  `add_positions(events, times=times, positions=positions)`.
+- **Assembly functions take `(n_time_bins, n_neurons)`** — `detect_assemblies`,
+  `assembly_activation`, `pairwise_correlations`, `reactivation_strength` now
+  match `decode_position` / `bin_spikes_in_time`. *Migration:* feed the default
+  `bin_spikes_in_time(...)` output as-is, or transpose an old
+  `(n_neurons, n_time_bins)` matrix.
+- **Behavior result `summary()` returns a `dict`** (was a formatted string).
+  *Migration:* use `str(result)` for the human-readable form.
+- **Fail-loud instead of silent sentinels** — `bin_at` raises on wrong-dimension
+  points on a graph/track env; `heading_from_velocity` raises when every sample
+  is below `min_speed` (opt out with `allow_all_nan=True`); graph queries reject
+  a multi-point coordinate batch.
+
+#### Added
+
+- **`units=` / `frame=` keyword args** on `from_samples`, `open_field`,
+  `linear_track`, and `maze` set the metadata at construction.
+- **Graph queries accept coordinates** (not just bin indices) — `neighbors`,
+  `path_between`, `reachable_from` map a coordinate via `bin_at`.
+- **`ResultMixin` on every result class** — concise repr/HTML and a scalar
+  `summary()` dict.
+- `dir(neurospatial.ops)` surfaces the lazily-exported ops (autocomplete).
+
+#### Fixed
+
+- **`min_occupancy` thresholds raw occupancy seconds, not smoothed density** —
+  fixes silent all-zero place fields; consistent across all smoothing methods
+  (single and batch); `min_occupancy=0.0` unchanged.
+- **Grid allocation is preflighted** — a transposed `(2, N)` trajectory raises
+  fast instead of OOMing; a likely-transposed array warns rather than
+  false-rejecting a valid low-sample N-D environment.
+- Non-finite query rows map to the `-1` sentinel per row (one NaN no longer
+  empties the whole map).
+- `to_file` no-overwrite default; `occupancy()` shape-before-monotonicity;
+  `from_graph` edge-`distance` validation.
+- `SpatialRateResult.plot()` colorbar docs corrected + "Firing Rate (Hz)" label;
+  actionable batch `plot()` error.
+- **Interactive-viewer accessibility** — HTML player keyboard-focus guard,
+  `:focus-visible`, aria-live toggled off during autoplay; napari region dock and
+  track-builder layout/labels.
+
+#### Documentation
+
+- Version bumped to 0.8.0; dead links and fork-clone fixed; value-first runnable
+  quickstart; grouped/collapsible nav; new advanced architecture page; `viridis`
+  defaults; example-notebook links normalized + internal link-check in docs CI.
+
 ## [0.6.0] - 2026-07-03
 
 ### Breaking Changes

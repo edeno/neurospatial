@@ -49,11 +49,12 @@ Kempter, R. et al. (2012). Quantifying circular-linear associations.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._results import ResultMixin
 from neurospatial.stats.circular import (
     _mean_resultant_length,
     _to_radians,
@@ -211,8 +212,8 @@ def theta_phase(
     return phase
 
 
-@dataclass
-class PhasePrecessionResult:
+@dataclass(repr=False)
+class PhasePrecessionResult(ResultMixin):
     """
     Results from phase precession analysis.
 
@@ -243,6 +244,17 @@ class PhasePrecessionResult:
     correlation: float
     pval: float
     mean_resultant_length: float
+
+    def summary(self) -> dict[str, Any]:
+        """Flat dict of scalar headline metrics for this result."""
+        return {
+            "slope": self.slope,
+            "slope_units": self.slope_units,
+            "offset": self.offset,
+            "correlation": self.correlation,
+            "pval": self.pval,
+            "mean_resultant_length": self.mean_resultant_length,
+        }
 
     def is_significant(self, alpha: float = 0.05) -> bool:
         """Check if phase precession is statistically significant.

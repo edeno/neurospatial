@@ -808,11 +808,24 @@ class TrackGraphWidget:
         layout.addWidget(edge_group)
 
         # Edge Order group (collapsible - advanced feature)
+        # A checkable QGroupBox only *disables* its children when unchecked; to
+        # get a real collapse we hold all advanced controls in a container widget
+        # whose visibility we toggle, so unchecking hides them rather than
+        # leaving them visible-but-greyed-out.
         edge_order_group = QGroupBox("Edge Order (Advanced)")
         edge_order_group.setCheckable(True)
         edge_order_group.setChecked(False)  # Collapsed by default
+        edge_order_group.setToolTip(
+            "Advanced: reorder edges and set spacing for 1D linearization",
+        )
+        edge_order_group_layout = QVBoxLayout()
+        edge_order_group.setLayout(edge_order_group_layout)
+
+        edge_order_content = QWidget()
         edge_order_layout = QVBoxLayout()
-        edge_order_group.setLayout(edge_order_layout)
+        edge_order_layout.setContentsMargins(0, 0, 0, 0)
+        edge_order_content.setLayout(edge_order_layout)
+        edge_order_group_layout.addWidget(edge_order_content)
 
         # Edge order list widget
         self._edge_order_list = QListWidget()
@@ -824,11 +837,17 @@ class TrackGraphWidget:
 
         self._move_up_btn = QPushButton("▲")
         self._move_up_btn.setMaximumWidth(40)
+        # Icon-only button: expose an accessible name and tooltip so the
+        # control is identifiable to screen readers and on hover.
+        self._move_up_btn.setToolTip("Move the selected edge earlier in the order")
+        self._move_up_btn.setAccessibleName("Move edge up")
         self._move_up_btn.clicked.connect(self._on_move_up)
         move_btn_layout.addWidget(self._move_up_btn)
 
         self._move_down_btn = QPushButton("▼")
         self._move_down_btn.setMaximumWidth(40)
+        self._move_down_btn.setToolTip("Move the selected edge later in the order")
+        self._move_down_btn.setAccessibleName("Move edge down")
         self._move_down_btn.clicked.connect(self._on_move_down)
         move_btn_layout.addWidget(self._move_down_btn)
 
@@ -856,6 +875,11 @@ class TrackGraphWidget:
         spacing_layout.addWidget(self._apply_spacing_btn)
 
         edge_order_layout.addLayout(spacing_layout)
+
+        # Real collapse: hide/show the advanced controls with the group's
+        # checkbox instead of leaving them visible-but-disabled when unchecked.
+        edge_order_content.setVisible(edge_order_group.isChecked())
+        edge_order_group.toggled.connect(edge_order_content.setVisible)
 
         layout.addWidget(edge_order_group)
 

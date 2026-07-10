@@ -40,11 +40,12 @@ from typing import TYPE_CHECKING, Any, cast
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial._results import ResultMixin
 from neurospatial.encoding._base import _is_jax_array
 
 
-@dataclass(frozen=True)
-class BatchScoresResult:
+@dataclass(frozen=True, repr=False)
+class BatchScoresResult(ResultMixin):
     """Container for per-neuron batch metric scores plus a per-neuron failure mask.
 
     Returned by :func:`batch_grid_scores` and :func:`batch_border_scores` so a
@@ -75,6 +76,16 @@ class BatchScoresResult:
 
     scores: NDArray[np.float64]
     failures: NDArray[np.bool_]
+
+    def summary(self) -> dict[str, Any]:
+        """Flat dict of scalar headline metrics for this result."""
+        return {
+            "n_scores": int(self.scores.size),
+            "n_failures": int(np.count_nonzero(self.failures)),
+            "mean_score": (
+                float(np.nanmean(self.scores)) if self.scores.size else float("nan")
+            ),
+        }
 
     def __len__(self) -> int:
         return int(self.scores.shape[0])

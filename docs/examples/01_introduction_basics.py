@@ -469,7 +469,7 @@ print("Always use factory methods like from_samples()!")
 #
 # ## Next Steps
 #
-# In the next notebook ([02_layout_engines.ipynb](02_layout_engines.ipynb)), you'll learn about:
+# In the next notebook ([02_layout_engines.ipynb](../02_layout_engines/)), you'll learn about:
 # - Different layout engines (hexagonal, polygon-bounded, etc.)
 # - When to use each layout type
 # - Comparing connectivity patterns

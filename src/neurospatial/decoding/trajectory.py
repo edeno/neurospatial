@@ -51,6 +51,8 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
+from neurospatial._results import ResultMixin
+
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
@@ -67,8 +69,8 @@ except ImportError:
     radon = None
 
 
-@dataclass(frozen=True)
-class IsotonicFitResult:
+@dataclass(frozen=True, repr=False)
+class IsotonicFitResult(ResultMixin):
     """Container for isotonic regression trajectory fit results.
 
     Isotonic regression fits a monotonic (either strictly increasing or
@@ -113,9 +115,13 @@ class IsotonicFitResult:
     direction: Literal["increasing", "decreasing"]
     residuals: NDArray[np.float64]
 
+    def summary(self) -> dict[str, Any]:
+        """Flat dict of scalar headline metrics for this result."""
+        return {"r_squared": self.r_squared, "direction": self.direction}
 
-@dataclass(frozen=True)
-class LinearFitResult:
+
+@dataclass(frozen=True, repr=False)
+class LinearFitResult(ResultMixin):
     """Container for linear trajectory fit results.
 
     Linear regression fits a straight line to the decoded position sequence.
@@ -161,9 +167,18 @@ class LinearFitResult:
     r_squared: float
     slope_std: float | None
 
+    def summary(self) -> dict[str, Any]:
+        """Flat dict of scalar headline metrics for this result."""
+        return {
+            "slope": self.slope,
+            "intercept": self.intercept,
+            "r_squared": self.r_squared,
+            "slope_std": self.slope_std,
+        }
 
-@dataclass(frozen=True)
-class RadonDetectionResult:
+
+@dataclass(frozen=True, repr=False)
+class RadonDetectionResult(ResultMixin):
     """Container for Radon transform trajectory detection results.
 
     The Radon transform treats the posterior as a 2D image (time × position)
@@ -210,6 +225,14 @@ class RadonDetectionResult:
     score: float
     offset: float
     sinogram: NDArray[np.float64]
+
+    def summary(self) -> dict[str, Any]:
+        """Flat dict of scalar headline metrics for this result."""
+        return {
+            "angle_degrees": self.angle_degrees,
+            "score": self.score,
+            "offset": self.offset,
+        }
 
 
 def fit_isotonic_trajectory(

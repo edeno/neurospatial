@@ -45,7 +45,7 @@
 #
 # **Estimated time**: 20-25 minutes
 #
-# **Prerequisites**: [11_place_field_analysis.ipynb](11_place_field_analysis.ipynb)
+# **Prerequisites**: [11_place_field_analysis.ipynb](../11_place_field_analysis/)
 
 # %% [markdown]
 # ## Setup
@@ -554,7 +554,7 @@ print(f"  Place cell -> {pc_passes}")
 # - Apply to real recordings with tracked head direction and known
 #   object positions
 # - Try ``metric="geodesic"`` for environments with obstacles
-# - Combine with [spatial view cells](22_spatial_view_cells.ipynb) for a
+# - Combine with [spatial view cells](../22_spatial_view_cells/) for a
 #   fuller picture of egocentric coding
 #
 # ### References

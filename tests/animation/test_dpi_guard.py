@@ -213,6 +213,21 @@ class TestDryRunEstimates:
             "Should show file size estimate"
         )
 
+    def test_dry_run_estimate_visible_on_stderr(self, simple_env, capsys):
+        """The dry-run estimate is visible by default (stderr), not just in logs.
+
+        Regression: the estimate went only through logger.info, so with no
+        logging configured (a plain notebook or script) dry_run=True printed
+        nothing at all -- the pre-flight time/size estimate was silently useless.
+        """
+        from neurospatial.animation.backends.video_backend import render_video
+
+        fields = [np.random.default_rng(0).random(simple_env.n_bins) for _ in range(5)]
+        render_video(env=simple_env, fields=fields, save_path="test.mp4", dry_run=True)
+        err = capsys.readouterr().err
+        assert "Dry Run Estimate" in err
+        assert "Frames" in err
+
     def test_dry_run_returns_none(self, simple_env):
         """Verify dry run returns None."""
         from neurospatial.animation.backends.video_backend import render_video

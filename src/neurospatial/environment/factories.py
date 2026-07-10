@@ -191,6 +191,13 @@ def _assemble_maze_graph(
     return graph, edge_order
 
 
+# A spatial environment has very few dimensions (1-D linear tracks, 2-D open
+# fields, occasionally 3-D). A column count above this, *combined with* more
+# columns than rows, signals a transposed `positions` array rather than a
+# genuine high-D environment (see `from_samples`).
+_MAX_PLAUSIBLE_SPATIAL_DIMS = 8
+
+
 class EnvironmentFactories:
     """Factory methods mixin for creating Environment instances.
 
@@ -251,6 +258,8 @@ class EnvironmentFactories:
         bin_size: float | Sequence[float],
         *,
         name: str = "",
+        units: str | None = None,
+        frame: str | None = None,
         layout: LayoutType | str = LayoutType.REGULAR_GRID,
         infer_active_bins: bool = True,
         bin_count_threshold: int = 0,
@@ -279,6 +288,13 @@ class EnvironmentFactories:
             If your data is in centimeters, bin_size=5.0 creates 5cm bins.
         name : str, default ""
             Optional name for the resulting Environment.
+        units : str or None, default None
+            Spatial units for the environment coordinates (e.g. ``"cm"``,
+            ``"m"``). If provided, sets ``env.units`` on the returned
+            Environment.
+        frame : str or None, default None
+            Coordinate frame identifier for the environment (e.g. a session
+            label). If provided, sets ``env.frame`` on the returned Environment.
         layout : LayoutType | str, default LayoutType.REGULAR_GRID
             Layout engine type to use. Can be a LayoutType enum member (recommended
             for IDE autocomplete) or a case-insensitive string. For RegularGrid and
@@ -408,6 +424,31 @@ class EnvironmentFactories:
                 f"got shape {positions.shape}.",
             )
 
+        # Warn on a likely-transposed positions array before building the grid.
+        # The classic footgun is np.array([x, y]) -- shape (n_dims, n_samples) --
+        # instead of column-stacking, so `positions` is transposed and silently
+        # builds a nonsensical high-D env. Two signals together flag it: (1) more
+        # columns (apparent dims) than rows (apparent samples) -- real position
+        # data has many more samples than dims; and (2) an implausibly high
+        # dimension count for a spatial environment. This is only a *heuristic*
+        # (a genuine low-sample high-D env, e.g. shape (1, 9), trips it too), so
+        # it warns rather than rejects -- from_samples supports N-dimensional
+        # environments. A truly catastrophic transpose (huge n_dims) is still
+        # caught downstream by the int64 bin-count guard in
+        # layout.helpers.utils, so nothing silently OOMs.
+        n_samples, n_dims = positions.shape
+        if n_dims > n_samples and n_dims > _MAX_PLAUSIBLE_SPATIAL_DIMS:
+            warnings.warn(
+                f"positions has {n_dims} columns (spatial dimensions) but only "
+                f"{n_samples} rows (samples) -- fewer samples than dimensions "
+                f"(shape {positions.shape}). If this is a genuine "
+                f"{n_dims}-D environment, ignore this; otherwise positions is "
+                f"likely transposed (it must be (n_samples, n_dims), one row per "
+                f"sample) -- pass positions.T.",
+                UserWarning,
+                stacklevel=2,
+            )
+
         # Validate bin_size early to provide helpful error messages
         if not isinstance(bin_size, (int, float, list, tuple, np.ndarray)):
             actual_type = type(bin_size).__name__
@@ -460,7 +501,12 @@ class EnvironmentFactories:
             **layout_specific_kwargs,
         }
 
-        return cls.from_layout(kind=layout_str, layout_params=layout_params, name=name)
+        env = cls.from_layout(kind=layout_str, layout_params=layout_params, name=name)
+        if units is not None:
+            env.units = units
+        if frame is not None:
+            env.frame = frame
+        return env
 
     # ------------------------------------------------------------------
     # Experiment-shaped presets
@@ -479,6 +525,8 @@ class EnvironmentFactories:
         bin_size: float | Sequence[float],
         *,
         name: str = "",
+        units: str | None = None,
+        frame: str | None = None,
         layout: LayoutType | str = LayoutType.REGULAR_GRID,
         infer_active_bins: bool = True,
         bin_count_threshold: int = 0,
@@ -505,6 +553,12 @@ class EnvironmentFactories:
             Size of each bin in the same units as `positions` coordinates.
         name : str, default ""
             Optional name for the resulting Environment.
+        units : str or None, default None
+            Spatial units for the environment coordinates (e.g. ``"cm"``).
+            Forwarded to :meth:`from_samples`, which sets ``env.units``.
+        frame : str or None, default None
+            Coordinate frame identifier. Forwarded to :meth:`from_samples`,
+            which sets ``env.frame``.
         layout : LayoutType | str, default LayoutType.REGULAR_GRID
             Layout engine type to use. See :meth:`from_samples`.
         infer_active_bins : bool, default True
@@ -553,6 +607,8 @@ class EnvironmentFactories:
             positions,
             bin_size,
             name=name,
+            units=units,
+            frame=frame,
             layout=layout,
             infer_active_bins=infer_active_bins,
             bin_count_threshold=bin_count_threshold,
@@ -573,6 +629,8 @@ class EnvironmentFactories:
         bin_size: float,
         edge_spacing: float | Sequence[float] = 0.0,
         name: str = "",
+        units: str | None = None,
+        frame: str | None = None,
     ) -> Environment:
         """Create a 1D linearized track Environment from an explicit topology.
 
@@ -601,6 +659,12 @@ class EnvironmentFactories:
             For a single contiguous track this is typically 0.0.
         name : str, default ""
             Optional name for the resulting Environment.
+        units : str or None, default None
+            Spatial units for the environment coordinates (e.g. ``"cm"``). If
+            provided, sets ``env.units`` on the returned Environment.
+        frame : str or None, default None
+            Coordinate frame identifier. If provided, sets ``env.frame`` on the
+            returned Environment.
 
         Returns
         -------
@@ -685,13 +749,18 @@ class EnvironmentFactories:
                 f"{points}."
             )
 
-        return cls.from_graph(
+        env = cls.from_graph(
             graph=graph,
             edge_order=edge_order,
             edge_spacing=edge_spacing,
             bin_size=bin_size,
             name=name,
         )
+        if units is not None:
+            env.units = units
+        if frame is not None:
+            env.frame = frame
+        return env
 
     @classmethod
     def maze(
@@ -703,6 +772,8 @@ class EnvironmentFactories:
         bin_size: float,
         edge_spacing: float | Sequence[float] = 0.0,
         name: str = "",
+        units: str | None = None,
+        frame: str | None = None,
     ) -> Environment:
         """Create a 1D linearized W / plus / T maze Environment.
 
@@ -777,6 +848,12 @@ class EnvironmentFactories:
             Spacing inserted between consecutive edges during linearization.
         name : str, default ""
             Optional name for the resulting Environment.
+        units : str or None, default None
+            Spatial units for the environment coordinates (e.g. ``"cm"``). If
+            provided, sets ``env.units`` on the returned Environment.
+        frame : str or None, default None
+            Coordinate frame identifier. If provided, sets ``env.frame`` on the
+            returned Environment.
 
         Returns
         -------
@@ -875,13 +952,18 @@ class EnvironmentFactories:
                 f"Got node positions: {node_pos}."
             )
 
-        return cls.from_graph(
+        env = cls.from_graph(
             graph=graph,
             edge_order=edge_order,
             edge_spacing=edge_spacing,
             bin_size=bin_size,
             name=name,
         )
+        if units is not None:
+            env.units = units
+        if frame is not None:
+            env.frame = frame
+        return env
 
     @classmethod
     def from_graph(

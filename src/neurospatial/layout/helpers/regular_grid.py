@@ -22,6 +22,7 @@ data samples, which might be shared with or used by other utility modules.
 from __future__ import annotations
 
 import itertools
+import math
 import warnings
 from collections.abc import Sequence
 
@@ -31,6 +32,17 @@ from numpy.typing import NDArray
 from scipy import ndimage
 
 from neurospatial.layout.helpers.utils import get_centers, get_n_bins
+
+# Hard ceiling on the full (dense) grid's bin-center array, allocated in
+# ``_build_grid_structure`` by ``np.histogramdd`` / ``np.meshgrid`` BEFORE any
+# active-bin filtering. The Cartesian product of the per-axis bin counts can be
+# astronomically large even when every axis is modest -- e.g. a transposed
+# ``(2, N)`` trajectory read as N dimensions -- so a per-axis check (as in
+# ``get_n_bins``) is not enough; the product must be preflighted or the
+# allocation OOMs. 8 GiB is far above any realistic dense spatial grid (whose
+# connectivity graph would itself be infeasible well below this) while still
+# catching the catastrophic transpose. Raised as ``float`` bytes for comparison.
+_MAX_GRID_CENTERS_BYTES = 8 * 1024**3
 
 
 def _create_regular_grid_connectivity_graph(
@@ -492,6 +504,36 @@ def _build_grid_structure(
     # Convert bin_sizes to list to match get_n_bins signature
     bin_sizes_list: list[float] = bin_sizes.tolist()
     n_bins = get_n_bins(data_for_bins, bin_sizes_list, ranges)  # ensures at least 1
+
+    # 4a) Preflight the FULL grid size before allocating anything. get_n_bins
+    #     validates each AXIS against the int64 limit, but np.histogramdd and
+    #     np.meshgrid below allocate the Cartesian PRODUCT of the per-axis
+    #     counts, which can be astronomically large even when every axis is
+    #     modest (e.g. a transposed (2, N) trajectory read as N dimensions).
+    #     Use exact Python-int arithmetic (math.prod on int()s) so the product
+    #     itself cannot overflow, then fail loud instead of OOMing.
+    total_bins = math.prod(int(b) for b in n_bins)
+    centers_bytes = total_bins * n_dims * 8
+    if centers_bytes > _MAX_GRID_CENTERS_BYTES:
+        bins_str = (
+            f"{total_bins:,}"
+            if total_bins < 10**12
+            else f"~10^{len(str(total_bins)) - 1}"
+        )
+        mem_str = (
+            f"~{centers_bytes / 1024**3:,.1f} GiB"
+            if centers_bytes < 10**15
+            else f"~10^{len(str(centers_bytes)) - 1} bytes"
+        )
+        raise ValueError(
+            f"Requested regular grid spans {n_dims} dimension(s) with {bins_str} "
+            f"total bins, whose full bin-center array needs {mem_str} -- past the "
+            f"{_MAX_GRID_CENTERS_BYTES // 1024**3} GiB safety ceiling -- and would "
+            f"exhaust memory in np.histogramdd / np.meshgrid before any active-bin "
+            f"filtering. This almost always means positions is transposed (many "
+            f"dimensions) or bin_size is far too small: ensure positions is "
+            f"(n_samples, n_dims) and/or increase bin_size."
+        )
 
     # 5) Generate core edges via np.histogramdd
     #    Use data_for_bins which is either samples or a dummy point at the center

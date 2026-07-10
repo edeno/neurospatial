@@ -35,7 +35,7 @@ def rng() -> np.random.Generator:
 def spike_counts_with_assemblies(rng: np.random.Generator) -> np.ndarray:
     """Spike counts with 3 embedded assemblies.
 
-    Shape: (50 neurons, 2000 time bins)
+    Shape: (2000 time bins, 50 neurons)  -- time-first, matching decode_position.
     Assemblies:
     - Neurons 0-4: co-activate together
     - Neurons 10-14: co-activate together
@@ -43,7 +43,7 @@ def spike_counts_with_assemblies(rng: np.random.Generator) -> np.ndarray:
     """
     n_neurons, n_time = 50, 2000
 
-    # Baseline Poisson activity
+    # Baseline Poisson activity (built neuron-first, returned time-first).
     spike_counts = rng.poisson(5, (n_neurons, n_time)).astype(np.float64)
 
     # Add correlated activity for each assembly
@@ -59,25 +59,25 @@ def spike_counts_with_assemblies(rng: np.random.Generator) -> np.ndarray:
         for n in neurons:
             spike_counts[n] += shared
 
-    return spike_counts
+    return spike_counts.T  # (n_time_bins, n_neurons)
 
 
 @pytest.fixture
 def random_spike_counts(rng: np.random.Generator) -> np.ndarray:
     """Random spike counts with no assembly structure.
 
-    Shape: (30 neurons, 3000 time bins)
+    Shape: (3000 time bins, 30 neurons).
     """
-    return rng.poisson(5, (30, 3000)).astype(np.float64)
+    return rng.poisson(5, (3000, 30)).astype(np.float64)
 
 
 @pytest.fixture
 def small_spike_counts(rng: np.random.Generator) -> np.ndarray:
     """Small spike counts for basic tests.
 
-    Shape: (10 neurons, 100 time bins)
+    Shape: (100 time bins, 10 neurons).
     """
-    return rng.poisson(3, (10, 100)).astype(np.float64)
+    return rng.poisson(3, (100, 10)).astype(np.float64)
 
 
 # =============================================================================
@@ -135,6 +135,26 @@ class TestDetectAssemblies:
         assert result.n_significant >= 2
         assert result.n_significant <= 5
 
+        # The detected members are the INJECTED neurons, not just the right
+        # count -- this is what pins the (n_time_bins, n_neurons) orientation's
+        # scientific correctness (a wrong axis would recover garbage neuron ids).
+        # The fixture co-activates neurons {0-4}, {10-14}, {20-24}; each injected
+        # assembly should be recovered by some detected pattern whose members
+        # cover a majority (>= 3 of 5) of that set. Require >= 2 of the 3 to be
+        # recovered (robust to the weakest being dropped under the MP threshold).
+        injected = [set(range(0, 5)), set(range(10, 15)), set(range(20, 25))]
+        detected_members = [
+            {int(m) for m in pattern.member_indices} for pattern in result.patterns
+        ]
+        recovered = sum(
+            any(len(members & inj) >= 3 for members in detected_members)
+            for inj in injected
+        )
+        assert recovered >= 2, (
+            f"injected assemblies not recovered by neuron id; detected members: "
+            f"{[sorted(m) for m in detected_members]}"
+        )
+
     def test_random_data_few_assemblies(self, random_spike_counts: np.ndarray) -> None:
         """Random data should yield few significant assemblies."""
         result = detect_assemblies(random_spike_counts, rng=42)
@@ -166,7 +186,7 @@ class TestDetectAssemblies:
 
     def test_patterns_have_correct_shape(self, small_spike_counts: np.ndarray) -> None:
         """Pattern weights should have n_neurons elements."""
-        n_neurons = small_spike_counts.shape[0]
+        n_neurons = small_spike_counts.shape[1]  # (n_time_bins, n_neurons)
         result = detect_assemblies(small_spike_counts, rng=42)
 
         for pattern in result.patterns:
@@ -176,7 +196,7 @@ class TestDetectAssemblies:
         self, small_spike_counts: np.ndarray
     ) -> None:
         """Activations should have shape (n_assemblies, n_time_bins)."""
-        n_time = small_spike_counts.shape[1]
+        n_time = small_spike_counts.shape[0]  # (n_time_bins, n_neurons)
         result = detect_assemblies(small_spike_counts, rng=42)
 
         assert result.activations.shape == (len(result.patterns), n_time)
@@ -244,7 +264,7 @@ class TestDetectAssemblies:
 
     def test_too_few_neurons(self, rng: np.random.Generator) -> None:
         """Should raise ValueError for fewer than 3 neurons."""
-        spike_counts = rng.poisson(5, (2, 100)).astype(np.float64)
+        spike_counts = rng.poisson(5, (100, 2)).astype(np.float64)  # 2 neurons
         with pytest.raises(ValueError, match="at least 3 neurons"):
             detect_assemblies(spike_counts)
 
@@ -262,16 +282,24 @@ class TestDetectAssemblies:
             detect_assemblies(small_spike_counts, n_components=100)
 
     def test_warns_short_recording(self, rng: np.random.Generator) -> None:
-        """Should warn when n_time_bins < n_neurons."""
-        spike_counts = rng.poisson(5, (20, 10)).astype(np.float64)
-        with pytest.warns(UserWarning, match="n_time_bins.*n_neurons"):
+        """Warn when n_time_bins < n_neurons, and point at the likely transpose.
+
+        spike_counts is (n_time_bins, n_neurons) -- time-first, matching
+        decode_position. Fewer time bins than neurons usually means the matrix is
+        transposed, so the warning must name that so users can distinguish it
+        from a genuinely short recording.
+        """
+        spike_counts = rng.poisson(5, (10, 20)).astype(np.float64)  # 10 t, 20 n
+        with pytest.warns(UserWarning, match="n_time_bins.*n_neurons") as record:
             detect_assemblies(spike_counts, rng=42)
+        msg = str(record[0].message).lower()
+        assert "transpos" in msg or "time-first" in msg
 
     def test_handles_zero_variance_neurons(self, rng: np.random.Generator) -> None:
         """Should handle neurons with constant firing."""
-        spike_counts = rng.poisson(5, (10, 100)).astype(np.float64)
-        # Make one neuron constant
-        spike_counts[0, :] = 5.0
+        spike_counts = rng.poisson(5, (100, 10)).astype(np.float64)  # t, n
+        # Make one neuron (column) constant
+        spike_counts[:, 0] = 5.0
 
         with pytest.warns(UserWarning, match="zero variance"):
             result = detect_assemblies(spike_counts, rng=42)
@@ -297,7 +325,7 @@ class TestAssemblyActivation:
 
         activation = assembly_activation(spike_counts_with_assemblies, pattern)
 
-        assert activation.shape == (spike_counts_with_assemblies.shape[1],)
+        assert activation.shape == (spike_counts_with_assemblies.shape[0],)
 
     def test_returns_zscored_activation(
         self, spike_counts_with_assemblies: np.ndarray
@@ -361,7 +389,7 @@ class TestPairwiseCorrelations:
 
     def test_returns_correct_length(self, small_spike_counts: np.ndarray) -> None:
         """Should return n*(n-1)/2 correlation values."""
-        n_neurons = small_spike_counts.shape[0]
+        n_neurons = small_spike_counts.shape[1]  # (n_time_bins, n_neurons)
         expected_n_pairs = n_neurons * (n_neurons - 1) // 2
 
         corr = pairwise_correlations(small_spike_counts)
@@ -377,7 +405,7 @@ class TestPairwiseCorrelations:
 
     def test_self_correlation_excluded(self, small_spike_counts: np.ndarray) -> None:
         """Diagonal (self-correlations) should not be included."""
-        n_neurons = small_spike_counts.shape[0]
+        n_neurons = small_spike_counts.shape[1]  # (n_time_bins, n_neurons)
         corr = pairwise_correlations(small_spike_counts)
 
         # Length should be n*(n-1)/2, not n*n
@@ -413,9 +441,9 @@ class TestReactivationStrength:
         result = detect_assemblies(spike_counts_with_assemblies, rng=42)
         pattern = result.patterns[0]
 
-        n_time = spike_counts_with_assemblies.shape[1]
-        template = spike_counts_with_assemblies[:, : n_time // 2]
-        match = spike_counts_with_assemblies[:, n_time // 2 :]
+        n_time = spike_counts_with_assemblies.shape[0]  # (n_time_bins, n_neurons)
+        template = spike_counts_with_assemblies[: n_time // 2, :]
+        match = spike_counts_with_assemblies[n_time // 2 :, :]
 
         strength = reactivation_strength(template, match, pattern)
 
@@ -561,10 +589,10 @@ class TestAssemblyWorkflow:
 
     def test_full_workflow(self, spike_counts_with_assemblies: np.ndarray) -> None:
         """Test complete detection -> activation -> reactivation workflow."""
-        # Split data into "behavior" and "rest" periods
-        n_time = spike_counts_with_assemblies.shape[1]
-        counts_behavior = spike_counts_with_assemblies[:, : n_time // 2]
-        counts_rest = spike_counts_with_assemblies[:, n_time // 2 :]
+        # Split data into "behavior" and "rest" periods (by time = axis 0)
+        n_time = spike_counts_with_assemblies.shape[0]  # (n_time_bins, n_neurons)
+        counts_behavior = spike_counts_with_assemblies[: n_time // 2, :]
+        counts_rest = spike_counts_with_assemblies[n_time // 2 :, :]
 
         # Detect assemblies during behavior
         result = detect_assemblies(counts_behavior, rng=42)
@@ -614,7 +642,7 @@ class TestEdgeCases:
 
     def test_minimum_neurons(self, rng: np.random.Generator) -> None:
         """Should work with minimum 3 neurons."""
-        spike_counts = rng.poisson(5, (3, 500)).astype(np.float64)
+        spike_counts = rng.poisson(5, (500, 3)).astype(np.float64)  # 3 neurons
 
         result = detect_assemblies(spike_counts, rng=42)
 
@@ -627,8 +655,8 @@ class TestEdgeCases:
         result = detect_assemblies(spike_counts_with_assemblies, rng=42)
         pattern = result.patterns[0]
 
-        # Create single time bin data
-        single_bin = rng.poisson(5, (50, 10)).astype(np.float64)
+        # Few time bins, matching the pattern's 50 neurons: (n_time_bins, n_neurons)
+        single_bin = rng.poisson(5, (10, 50)).astype(np.float64)
 
         activation = assembly_activation(single_bin, pattern)
         assert len(activation) == 10
@@ -741,7 +769,8 @@ class TestReactivationStrengthMagnitude:
         reports much weaker match-period activation.
         """
         rng = np.random.default_rng(3)
-        baseline = template_counts.mean(axis=1, keepdims=True)
+        # Per-neuron baseline over time (axis 0 = time in (n_time_bins, n_neurons)).
+        baseline = template_counts.mean(axis=0, keepdims=True)
         match_counts = np.broadcast_to(baseline, template_counts.shape).copy()
         match_counts += 0.05 * rng.standard_normal(template_counts.shape)
 
@@ -758,8 +787,8 @@ class TestDetectAssembliesShortRecording:
         self, rng: np.random.Generator, algorithm: str
     ) -> None:
         """n_time_bins < n_components <= n_neurons must clamp, not IndexError."""
-        # 8 neurons, 3 time bins, request 5 components.
-        spike_counts = rng.poisson(5, (8, 3)).astype(np.float64)
+        # 8 neurons, 3 time bins, request 5 components: (n_time_bins, n_neurons).
+        spike_counts = rng.poisson(5, (3, 8)).astype(np.float64)
         with pytest.warns(UserWarning, match="achievable rank"):
             result = detect_assemblies(
                 spike_counts,
@@ -770,3 +799,29 @@ class TestDetectAssembliesShortRecording:
         # Clamped to min(n_neurons, n_time_bins) == 3 patterns; no crash.
         assert len(result.patterns) <= 3
         assert result.activations.shape[1] == 3  # n_time_bins preserved
+
+
+class TestOneCountConvention:
+    """bin_spikes_in_time's default (time, neuron) output feeds both consumers.
+
+    Regression: assemblies used to expect (neuron, time) while decode used
+    (time, neuron), so the decode-oriented output silently produced garbage
+    assemblies. Both now consume the one time-first convention -- the default
+    bin_spikes_in_time output drops straight into detect_assemblies, no
+    transpose.
+    """
+
+    def test_default_bin_output_feeds_detect_assemblies(self) -> None:
+        from neurospatial.decoding import bin_spikes_in_time
+
+        rng = np.random.default_rng(0)
+        n_neurons = 6
+        spike_trains = [np.sort(rng.uniform(0.0, 100.0, 500)) for _ in range(n_neurons)]
+        counts, _centers = bin_spikes_in_time(spike_trains, dt=0.5)  # default orient
+        # default orient='time_x_neuron' -> (n_time_bins, n_neurons)
+        assert counts.shape[1] == n_neurons
+
+        result = detect_assemblies(counts.astype(np.float64), rng=0)
+        # Orientation consumed correctly: weights are sized by neuron count.
+        for pattern in result.patterns:
+            assert len(pattern.weights) == n_neurons

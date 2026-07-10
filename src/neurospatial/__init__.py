@@ -182,7 +182,7 @@ This package uses graph-based representations to handle arbitrary spatial
 topologies including regular grids, hexagonal tessellations, 1D tracks,
 polygon-bounded regions, and custom connectivity patterns.
 
-For detailed documentation, see https://neurospatial.readthedocs.io
+For detailed documentation, see https://edeno.github.io/neurospatial
 
 Examples
 --------

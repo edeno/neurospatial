@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 # --- Result Dataclasses ---
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class PeriEventResult(ResultMixin):
     """
     Result from peri-event histogram analysis.
@@ -204,7 +204,7 @@ class PeriEventResult(ResultMixin):
         return plot_peri_event_histogram(self, ax=ax, **kwargs)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class PopulationPeriEventResult(ResultMixin):
     """
     Result from population peri-event histogram analysis.
@@ -706,7 +706,7 @@ def validate_spatial_columns(
         raise ValueError(
             "Events DataFrame missing spatial columns ('x', 'y').\n"
             f"  WHY: {context_str} requires event positions.\n"
-            "  HOW: Use add_positions(events, positions, times)"
+            "  HOW: Use add_positions(events, times=times, positions=positions)"
         )
 
     return has_positions

@@ -62,6 +62,34 @@ def test_point_off_graph_returns_negative_one(simple_y_maze_graph):
     assert far[0] >= 0
 
 
+def test_point_to_bin_maps_nonfinite_rows_to_sentinel(simple_y_maze_graph):
+    """A NaN/inf query row maps to -1 without collapsing the finite rows.
+
+    Regression: scipy's ``KDTree.query`` raises if ANY row is non-finite, and
+    the previous broad ``except`` swallowed that to a warning and returned -1
+    for EVERY point -- so a single dropped-frame NaN in a trajectory silently
+    emptied the whole occupancy / rate map on graph/linearized environments.
+    Only the non-finite rows should become the -1 sentinel; the finite rows
+    must still map to their nearest bin (matching the grid layouts).
+    """
+    layout = _build_graph_layout(simple_y_maze_graph)
+
+    query = np.array(
+        [
+            [0.0, 0.0],  # node 0 -> bin 0
+            [np.nan, np.nan],  # dropped frame -> -1
+            [1000.0, 1000.0],  # far but finite -> snaps to some valid bin
+            [np.inf, 0.0],  # partially non-finite -> -1
+        ]
+    )
+    result = layout.point_to_bin_index(query)
+
+    assert result[0] == 0
+    assert result[1] == -1
+    assert result[2] >= 0  # finite rows are NOT collapsed to -1
+    assert result[3] == -1
+
+
 def test_is_linearized_track_true(simple_y_maze_graph):
     """A graph layout reports itself as a linearized 1D track."""
     layout = _build_graph_layout(simple_y_maze_graph)

@@ -12,6 +12,7 @@ from magicgui.widgets import (
     PushButton,
     RadioButtons,
     Select,
+    Widget,
 )
 from numpy.typing import NDArray
 
@@ -71,28 +72,61 @@ def create_annotation_widget(
             return None
 
     # --- Widget Components ---
+    # Compact three-step hint (always visible). The verbose workflow and the
+    # full shortcut list live in a collapsible section below so they do not
+    # consume vertical space by default and the main controls stay above the
+    # fold at a normal (~390 px) dock width.
     instructions = Label(
         value=(
-            "─── WORKFLOW ───\n"
-            "1. Draw environment boundary (cyan)\n"
-            "2. Press M → add holes (red) if needed\n"
-            "3. Press M → draw named regions (yellow)\n"
-            "4. Save and Close when finished\n"
+            "Quick start:\n"
+            "1. Type a name in 'Next Shape Name' (applies to the next shape)\n"
+            "2. Draw the shape (click points, ENTER to finish)\n"
+            "3. Click 'Save and Close' when done\n"
+            "Rename later: select a shape, edit the name, press Enter."
+        ),
+    )
+    instructions.native.setWordWrap(True)
+
+    # Collapsible details: full workflow + keyboard shortcuts, hidden by default.
+    # Use "and" (not "&") -- Qt treats "&" as a mnemonic and would underline the
+    # next character, rendering the label as "Workflow shortcuts".
+    shortcuts_toggle = PushButton(text="▸ Workflow and shortcuts")
+    shortcuts_toggle.native.setStyleSheet("text-align: left;")
+    shortcuts_toggle.tooltip = "Show or hide the full workflow and keyboard shortcuts"
+
+    shortcuts = Label(
+        value=(
+            "Workflow\n"
+            "• Draw environment boundary (cyan)\n"
+            "• Press M → add holes (red) if needed\n"
+            "• Press M → draw named regions (yellow)\n"
+            "• Save and Close when finished\n"
             "\n"
-            "─── DRAWING ───\n"
+            "Drawing\n"
             "• Click points to draw polygon, ENTER to finish\n"
             "• Name your polygon in the input field below\n"
             "\n"
-            "─── SHORTCUTS ───\n"
+            "Shortcuts\n"
             "• M = cycle modes (environment → hole → region)\n"
             "• E = environment mode\n"
             "• R = region mode\n"
             "• 3 = move shape\n"
             "• 4 = edit vertices\n"
-            "• Delete = remove shape\n\n"
-            "Note: Holes are subtracted from the environment boundary.\n"
+            "• Delete = remove shape\n"
+            "\n"
+            "Note: Holes are subtracted from the environment boundary."
         ),
+        visible=False,
     )
+    shortcuts.native.setWordWrap(True)
+
+    @shortcuts_toggle.clicked.connect
+    def _toggle_shortcuts() -> None:
+        """Expand or collapse the detailed workflow/shortcuts section."""
+        shortcuts.visible = not shortcuts.visible
+        shortcuts_toggle.text = (
+            "▾ Workflow & shortcuts" if shortcuts.visible else "▸ Workflow & shortcuts"
+        )
 
     # Determine initial state based on mode
     start_in_region_mode = initial_mode == "region"
@@ -107,8 +141,8 @@ def create_annotation_widget(
     else:
         mode_indicator = Label(value="Drawing: ENVIRONMENT BOUNDARY")
 
-    # Annotation count status
-    annotation_status = Label(value="Annotations: 0 environment, 0 regions")
+    # Annotation count status (matches AnnotationModeState.status_text format)
+    annotation_status = Label(value="Annotations: 0 environment, 0 holes, 0 regions")
 
     # Radio buttons for mode selection (more visible than dropdown)
     # Use simple string values - display enhancement via labels
@@ -176,11 +210,11 @@ def create_annotation_widget(
 
         # Include naming hint in the indicator - UX: visibility of system status
         if region_type == "environment":
-            mode_indicator.value = "Drawing: ENVIRONMENT (name above)"
+            mode_indicator.value = "Drawing: ENVIRONMENT (name below)"
         elif region_type == "hole":
-            mode_indicator.value = "Drawing: HOLE (name above)"
+            mode_indicator.value = "Drawing: HOLE (name below)"
         else:
-            mode_indicator.value = "Drawing: REGION (name above)"
+            mode_indicator.value = "Drawing: REGION (name below)"
 
         # Set background color to match shape color for visual association
         # Use dark text for light backgrounds, white for red
@@ -641,19 +675,25 @@ def create_annotation_widget(
     update_mode_indicator(initial_mode)
 
     # --- Build Container ---
+    # Explicit element type: the widgets are a heterogeneous mix of magicgui
+    # value widgets whose invariant generic parameters otherwise make mypy widen
+    # the inferred list element type to ``object``.
+    container_widgets: list[Widget] = [
+        instructions,
+        shortcuts_toggle,
+        shortcuts,
+        mode_indicator,
+        annotation_status,
+        role_selector,
+        name_input,
+        shapes_list,
+        apply_btn,
+        delete_btn,
+        save_btn,
+    ]
     widget = Container(
-        widgets=[
-            instructions,
-            mode_indicator,
-            annotation_status,
-            role_selector,
-            name_input,
-            shapes_list,
-            apply_btn,
-            delete_btn,
-            save_btn,
-        ],
-        labels=False,
+        widgets=container_widgets,
+        labels=True,
     )
 
     return widget

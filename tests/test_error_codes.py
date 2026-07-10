@@ -238,6 +238,30 @@ class TestErrorCodeDocumentation:
             f"found {solution_count}"
         )
 
+    def test_error_links_point_to_live_docs_domain(self, grid_env_from_samples):
+        """Error "learn more" links use the live docs site, not a dead domain.
+
+        Regression: the E1004 (not-fitted) and E1005 messages linked to
+        ``neurospatial.readthedocs.io`` -- a domain with no readthedocs config
+        (the docs are published to ``edeno.github.io/neurospatial`` per
+        ``mkdocs.yml``), so the most-common errors' links 404'd.
+        """
+        from neurospatial.environment.decorators import EnvironmentNotFittedError
+        from neurospatial.io import to_file
+
+        # E1004: EnvironmentNotFittedError message (constructed directly; a bare
+        # Environment() raises E1006 before any @check_fitted method is reached).
+        msg_e1004 = str(EnvironmentNotFittedError("Environment", method_name="bin_at"))
+        assert "edeno.github.io/neurospatial/errors/" in msg_e1004
+        assert "readthedocs.io" not in msg_e1004
+
+        # E1005: path traversal on to_file.
+        with pytest.raises(ValueError) as e1005:
+            to_file(grid_env_from_samples, Path("..") / ".." / "x")
+        msg_e1005 = str(e1005.value)
+        assert "edeno.github.io/neurospatial/errors/" in msg_e1005
+        assert "readthedocs.io" not in msg_e1005
+
 
 class TestErrorCodeConstants:
     """Tests for error code constants in source modules."""

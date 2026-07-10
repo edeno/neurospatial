@@ -86,7 +86,8 @@ class TestNavigationFunctionality:
             metric="geodesic",
         )
 
-        summary = result.summary()
+        assert isinstance(result.summary(), dict)  # scalar-metric contract
+        summary = str(result)  # human-readable form
         assert "45.2" in summary
         assert "32.1" in summary
         assert "71" in summary
@@ -106,7 +107,8 @@ class TestNavigationFunctionality:
             metric="euclidean",
         )
 
-        summary = result.summary()
+        assert isinstance(result.summary(), dict)  # scalar-metric contract
+        summary = str(result)  # human-readable form
         assert "0.65" in summary
         assert "-8.5" in summary
 

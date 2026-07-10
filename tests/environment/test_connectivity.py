@@ -335,11 +335,11 @@ class TestReachableFromEdgeCases:
         env = Environment.from_samples(data, bin_size=1.5)
 
         # Test negative bin index
-        with pytest.raises(ValueError, match=r"source_bin must be.*\[0, n_bins\)"):
+        with pytest.raises(IndexError, match=r"out of range \[0, "):
             env.reachable_from(-1)
 
         # Test bin index >= n_bins
-        with pytest.raises(ValueError, match=r"source_bin must be.*\[0, n_bins\)"):
+        with pytest.raises(IndexError, match=r"out of range \[0, "):
             env.reachable_from(env.n_bins)
 
     def test_reachable_from_negative_radius(self):

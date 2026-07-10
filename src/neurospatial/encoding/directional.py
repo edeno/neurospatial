@@ -130,7 +130,7 @@ def _half_max_halfwidth(
     return float(np.nan)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class DirectionalRateResult(SpatialResultMixin):
     """Result of directional rate computation for a single neuron.
 
@@ -955,7 +955,7 @@ class DirectionalRateResult(SpatialResultMixin):
         return "\n".join(lines)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class DirectionalRatesResult(SpatialResultMixin):
     """Result of directional rate computation for multiple neurons.
 

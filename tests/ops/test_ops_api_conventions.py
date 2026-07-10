@@ -67,3 +67,18 @@ def test_basis_rng_keyword_deterministic(simple_2d_env):
     # The removed keyword raises TypeError.
     with pytest.raises(TypeError):
         select_basis_centers(simple_2d_env, 8, random_state=0)
+
+
+def test_dir_surfaces_lazily_exported_names():
+    """dir(neurospatial.ops) includes lazily-exported names for autocomplete.
+
+    Regression: the package uses module-level __getattr__ lazy loading, so
+    lazily-exported ops (e.g. visibility) were absent from dir() -- weakening
+    tab-completion -- until a __dir__ unioning the globals with __all__ was
+    added.
+    """
+    import neurospatial.ops as ops
+
+    names = set(dir(ops))
+    assert len(ops.__all__) > 0
+    assert set(ops.__all__).issubset(names)

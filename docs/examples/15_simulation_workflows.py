@@ -20,7 +20,7 @@
 #
 # **Estimated time**: 30-40 minutes
 #
-# **Prerequisites**: [11_place_field_analysis.ipynb](11_place_field_analysis.ipynb)
+# **Prerequisites**: [11_place_field_analysis.ipynb](../11_place_field_analysis/)
 #
 # ## Learning Objectives
 #
@@ -37,13 +37,13 @@
 #
 # **Contents:**
 #
-# 1. [Introduction](#1-Introduction)
-# 2. [Quick Start with Pre-Configured Sessions](#2-Quick-Start-with-Pre-Configured-Sessions)
-# 3. [Low-Level API: Building Blocks](#3-Low-Level-API-Building-Blocks)
-# 4. [All Pre-Configured Examples](#4-All-Pre-Configured-Examples)
-# 5. [Validation Workflow](#5-Validation-Workflow)
-# 6. [Customization Examples](#6-Customization-Examples)
-# 7. [Performance Tips](#7-Performance-Tips)
+# 1. [Introduction](#1-introduction)
+# 2. [Quick Start with Pre-Configured Sessions](#2-quick-start-with-pre-configured-sessions)
+# 3. [Low-Level API: Building Blocks](#3-low-level-api-building-blocks)
+# 4. [All Pre-Configured Examples](#4-all-pre-configured-examples)
+# 5. [Validation Workflow](#5-validation-workflow)
+# 6. [Customization Examples](#6-customization-examples)
+# 7. [Performance Tips](#7-performance-tips)
 
 # %% [markdown]
 # ## 1. Introduction

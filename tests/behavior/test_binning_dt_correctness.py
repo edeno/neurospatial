@@ -545,8 +545,9 @@ class TestPathEfficiencyCorrectness:
 
         assert np.isinf(result.shortest_length)
         assert np.isnan(result.efficiency)
-        # summary must not raise on inf/nan.
-        assert isinstance(result.summary(), str)
+        # summary()/str() must not raise on inf/nan.
+        assert isinstance(result.summary(), dict)
+        assert isinstance(str(result), str)
 
     def test_compute_path_efficiency_time_efficiency_is_geodesic(self):
         # L-shaped environment: geodesic optimal distance >> Euclidean straight

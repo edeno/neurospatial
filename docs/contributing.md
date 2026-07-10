@@ -7,7 +7,8 @@ Thank you for your interest in contributing to neurospatial! This guide will hel
 ### Development Setup
 
 1. Fork the repository on GitHub
-2. Clone your fork locally:
+2. Clone **your fork** locally (replace `YOUR_USERNAME`, or use
+   `gh repo fork edeno/neurospatial --clone` to fork and clone in one step):
 
 ```bash
 git clone https://github.com/YOUR_USERNAME/neurospatial.git

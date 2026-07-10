@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from neurospatial.environment import Environment
 
 
-@dataclass
+@dataclass(repr=False)
 class DecodingResult(ResultMixin):
     """Container for Bayesian decoding results.
 
@@ -257,7 +257,7 @@ class DecodingResult(ResultMixin):
         ... )  # doctest: +SKIP
         >>> ax = result.plot()  # doctest: +SKIP
         >>> ax = result.plot(colorbar=True, show_map=True)  # doctest: +SKIP
-        >>> ax = result.plot(cmap="hot", vmin=0, vmax=0.5)  # doctest: +SKIP
+        >>> ax = result.plot(cmap="viridis", vmin=0, vmax=0.5)  # doctest: +SKIP
 
         Notes
         -----
@@ -730,7 +730,7 @@ class DecodingResult(ResultMixin):
         return errors
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class DecodingSummary(ResultMixin):
     """Per-time decode reductions, without the full posterior.
 

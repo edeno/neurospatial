@@ -20,7 +20,7 @@ Overlay Rendering Layer Order (zorder):
 from __future__ import annotations
 
 import itertools
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -1549,17 +1549,28 @@ def parallel_render_frames(
         )
 
     if n_workers == 1:
-        _render_worker_frames(worker_tasks[0])
+        # Serial: drive a per-frame bar in-process (this path previously showed
+        # no progress at all). The callback fires once per saved PNG.
+        with tqdm(total=n_frames, desc="Rendering frames", unit="frame") as pbar:
+            worker_tasks[0]["progress_callback"] = lambda: pbar.update(1)
+            _render_worker_frames(worker_tasks[0])
     else:
-        # Render in parallel
+        # Parallel: advance the bar by each worker's frame count as that worker
+        # completes, so the total reflects FRAMES (reaching 100%) rather than the
+        # worker count (which jumped 0 -> 1/n_workers -> ... and mislabeled the
+        # unit). Progress is per completed worker-chunk: true per-frame progress
+        # across processes would need a shared multiprocessing counter.
         with ProcessPoolExecutor(max_workers=n_workers) as executor:
-            list(
-                tqdm(
-                    executor.map(_render_worker_frames, worker_tasks),
-                    total=n_workers,
-                    desc="Workers",
+            future_to_frames = {
+                executor.submit(_render_worker_frames, task): len(
+                    cast("list[Any]", task["fields"])
                 )
-            )
+                for task in worker_tasks
+            }
+            with tqdm(total=n_frames, desc="Rendering frames", unit="frame") as pbar:
+                for future in as_completed(future_to_frames):
+                    future.result()  # surface any worker exception
+                    pbar.update(future_to_frames[future])
 
     # Return ffmpeg pattern (0-indexed for compatibility)
     # ffmpeg expects: frame_00000.png, frame_00001.png, etc.
@@ -1658,6 +1669,10 @@ def _render_worker_frames(task: dict) -> None:
     scale_bar = task.get("scale_bar", False)
     # Time series parameters
     frame_times = task.get("frame_times")
+    # Optional per-frame progress callback, invoked once per saved PNG. Only the
+    # in-process serial path (n_workers==1) sets it; the parallel path never does,
+    # because a callback cannot be pickled to / fired from a worker process.
+    progress_cb = task.get("progress_callback")
 
     # Lean rcParams for bulk rasterization
     matplotlib.rcParams.update(
@@ -1750,6 +1765,8 @@ def _render_worker_frames(task: dict) -> None:
         filename = f"frame_{frame_number:0{digits}d}.png"
         filepath = Path(output_dir) / filename
         fig.savefig(filepath)
+        if progress_cb is not None:
+            progress_cb()
 
         if reuse_artists:
             # Fast path: update the field artist's data only.
@@ -1786,6 +1803,8 @@ def _render_worker_frames(task: dict) -> None:
                 filename = f"frame_{frame_number:0{digits}d}.png"
                 filepath = Path(output_dir) / filename
                 fig.savefig(filepath)
+                if progress_cb is not None:
+                    progress_cb()
         else:
             # Fallback: redraw per frame (original behavior)
             for local_idx in range(1, len(fields)):
@@ -1818,6 +1837,8 @@ def _render_worker_frames(task: dict) -> None:
                 filename = f"frame_{frame_number:0{digits}d}.png"
                 filepath = Path(output_dir) / filename
                 fig.savefig(filepath)
+                if progress_cb is not None:
+                    progress_cb()
     finally:
         # Clean up figure (prevent memory leaks)
         plt.close(fig)

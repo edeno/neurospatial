@@ -14,6 +14,7 @@ References
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 import matplotlib.axes
 import matplotlib.pyplot as plt
@@ -21,13 +22,14 @@ import numpy as np
 from matplotlib.colors import ListedColormap
 from numpy.typing import NDArray
 
+from neurospatial._results import ResultMixin
 from neurospatial.encoding.spatial import PlaceFieldsResult, detect_place_fields
 from neurospatial.environment import Environment
 from neurospatial.environment.decorators import EnvironmentNotFittedError
 
 
-@dataclass(frozen=True, slots=True)
-class PopulationCoverageResult:
+@dataclass(frozen=True, slots=True, repr=False)
+class PopulationCoverageResult(ResultMixin):
     """Results from population coverage analysis.
 
     Attributes
@@ -77,6 +79,17 @@ class PopulationCoverageResult:
     # excluded_reason / n_excluded for population-level interneuron
     # accounting.
     place_fields: list[PlaceFieldsResult]
+
+    def summary(self) -> dict[str, Any]:
+        """Flat dict of scalar headline metrics for this result."""
+        return {
+            "coverage_fraction": self.coverage_fraction,
+            "n_covered": int(self.covered_bins.size),
+            "n_uncovered": int(self.uncovered_bins.size),
+            "n_neurons": self.n_neurons,
+            "n_place_cells": self.n_place_cells,
+            "n_fields": self.n_fields,
+        }
 
     @property
     def place_cell_fraction(self) -> float:

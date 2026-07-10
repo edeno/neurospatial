@@ -772,7 +772,7 @@ print("✓ Use test points with known expected results")
 #
 # ## Next Steps
 #
-# In the final notebook ([08_spike_field_basics.ipynb](08_spike_field_basics.ipynb)), you'll see:
+# In the final notebook ([08_spike_field_basics.ipynb](../08_spike_field_basics/)), you'll see:
 # - Complete end-to-end neuroscience analysis pipeline
 # - Raw tracking data → place fields → occupancy normalization
 # - Multi-region analysis and comparisons

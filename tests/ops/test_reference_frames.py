@@ -584,16 +584,27 @@ class TestHeadingFromVelocity:
         diff = np.minimum(diff, 2 * np.pi - diff)
         assert np.all(diff < 0.5)  # No large jumps
 
-    def test_all_speeds_low_warning_and_nan(self):
-        """Warning when all speeds below threshold, returns NaN."""
+    def test_all_speeds_low_raises_by_default(self):
+        """Every sample below min_speed raises (fail loud), not silent all-NaN.
+
+        Regression: returning an all-NaN heading array flowed silently into
+        egocentric / object-vector analyses as a false negative (e.g. a slow
+        recording -> is_object_vector_cell False). The all-below case must fail
+        loud by default and only return NaN when allow_all_nan is opted into.
+        """
         from neurospatial.ops.egocentric import heading_from_velocity
 
-        # Barely moving trajectory
+        # Barely moving trajectory -> every speed below the threshold.
         positions = np.random.RandomState(42).randn(100, 2) * 0.001
 
-        with pytest.warns(UserWarning, match="speed"):
-            headings = heading_from_velocity(positions, dt=0.1, min_speed=10.0)
+        with pytest.raises(ValueError, match=r"(?i)min_speed|speed"):
+            heading_from_velocity(positions, dt=0.1, min_speed=10.0)
 
+        # Opt-in escape hatch: warns and returns the all-NaN array.
+        with pytest.warns(UserWarning, match="speed"):
+            headings = heading_from_velocity(
+                positions, dt=0.1, min_speed=10.0, allow_all_nan=True
+            )
         assert np.all(np.isnan(headings))
 
     def test_n_time_less_than_2_raises(self):

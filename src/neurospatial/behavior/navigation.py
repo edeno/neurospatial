@@ -57,7 +57,7 @@ Typical Workflows
 **Path efficiency analysis**:
     1. Compute efficiency: ``result = compute_path_efficiency(env, positions, times, goal)``
     2. Check efficiency: ``if result.is_efficient(threshold=0.8): ...``
-    3. Print summary: ``print(result.summary())``
+    3. Print summary: ``print(result)``
 
 **Goal-directed analysis**:
     1. Compute metrics: ``result = compute_goal_directed_metrics(env, positions, times, goal)``
@@ -92,7 +92,7 @@ Complete analysis pipeline for a spatial navigation task::
 
     # 3. Compute efficiency
     result = compute_path_efficiency(env, positions, times, goal)
-    print(result.summary())
+    print(result)
 
     # 4. Compute goal-directed metrics
     gd_result = compute_goal_directed_metrics(env, positions, times, goal)
@@ -110,11 +110,12 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._results import ResultMixin
 from neurospatial._validation import validate_finite
 from neurospatial.behavior.segmentation import _positive_dt
 
@@ -158,8 +159,8 @@ __all__ = [  # noqa: RUF022
 # =============================================================================
 
 
-@dataclass(frozen=True)
-class PathEfficiencyResult:
+@dataclass(frozen=True, repr=False)
+class PathEfficiencyResult(ResultMixin):
     """Path efficiency metrics for a trajectory segment.
 
     Attributes
@@ -215,14 +216,18 @@ class PathEfficiencyResult:
             return False
         return self.efficiency > threshold
 
-    def summary(self) -> str:
-        """Human-readable summary for printing.
+    def summary(self) -> dict[str, Any]:
+        """Flat dict of scalar path-efficiency metrics.
 
-        Returns
-        -------
-        str
-            Formatted string with path lengths and efficiency percentage.
+        For a human-readable string use ``str(result)``.
         """
+        return {
+            "traveled_length": self.traveled_length,
+            "shortest_length": self.shortest_length,
+            "efficiency": self.efficiency,
+        }
+
+    def __str__(self) -> str:
         if np.isnan(self.efficiency):
             return (
                 f"Path: {self.traveled_length:.1f} traveled, "
@@ -235,8 +240,8 @@ class PathEfficiencyResult:
         )
 
 
-@dataclass(frozen=True)
-class SubgoalEfficiencyResult:
+@dataclass(frozen=True, repr=False)
+class SubgoalEfficiencyResult(ResultMixin):
     """Path efficiency with subgoal decomposition.
 
     Use subgoal decomposition when:
@@ -267,8 +272,18 @@ class SubgoalEfficiencyResult:
     weighted_efficiency: float
     subgoal_positions: NDArray[np.float64]
 
-    def summary(self) -> str:
-        """Human-readable summary for printing."""
+    def summary(self) -> dict[str, Any]:
+        """Flat dict of scalar subgoal-efficiency metrics.
+
+        For a human-readable per-segment string use ``str(result)``.
+        """
+        return {
+            "n_segments": len(self.segment_results),
+            "mean_efficiency": self.mean_efficiency,
+            "weighted_efficiency": self.weighted_efficiency,
+        }
+
+    def __str__(self) -> str:
         lines = [f"Subgoal path efficiency ({len(self.segment_results)} segments):"]
         for i, seg in enumerate(self.segment_results):
             lines.append(f"  Segment {i + 1}: {seg.efficiency:.1%}")
@@ -282,8 +297,8 @@ class SubgoalEfficiencyResult:
 # =============================================================================
 
 
-@dataclass(frozen=True)
-class GoalDirectedMetrics:
+@dataclass(frozen=True, repr=False)
+class GoalDirectedMetrics(ResultMixin):
     """Goal-directed navigation metrics for a trajectory.
 
     Attributes
@@ -336,14 +351,21 @@ class GoalDirectedMetrics:
         """
         return self.goal_bias > threshold
 
-    def summary(self) -> str:
-        """Human-readable summary for printing.
+    def summary(self) -> dict[str, Any]:
+        """Flat dict of scalar goal-directed metrics.
 
-        Returns
-        -------
-        str
-            Formatted string with goal-directed metrics.
+        For a human-readable multi-line string use ``str(result)``.
         """
+        return {
+            "goal_bias": self.goal_bias,
+            "mean_approach_rate": self.mean_approach_rate,
+            "goal_distance_at_start": self.goal_distance_at_start,
+            "goal_distance_at_end": self.goal_distance_at_end,
+            "min_distance_to_goal": self.min_distance_to_goal,
+            "time_to_goal": self.time_to_goal,
+        }
+
+    def __str__(self) -> str:
         lines = [
             "Goal-directed metrics:",
             f"  Goal bias: {self.goal_bias:.2f} (range [-1, 1])",
@@ -1582,7 +1604,7 @@ def compute_path_efficiency(
     Examples
     --------
     >>> result = compute_path_efficiency(env, positions, times, goal)  # doctest: +SKIP
-    >>> print(result.summary())  # doctest: +SKIP
+    >>> print(result)  # doctest: +SKIP
     """
     if len(positions) != len(times):
         raise ValueError(
@@ -1753,7 +1775,11 @@ def instantaneous_goal_alignment(
 
     dt = float(np.median(np.diff(times)))
 
-    velocity_heading = heading_from_velocity(positions, dt, min_speed=min_speed)
+    # allow_all_nan: a fully-stationary window has undefined goal alignment; the
+    # NaN propagates to `alignment` rather than raising (goal_bias handles it).
+    velocity_heading = heading_from_velocity(
+        positions, dt, min_speed=min_speed, allow_all_nan=True
+    )
     goal_heading = goal_direction(positions, goal)
 
     angle_diff = velocity_heading - goal_heading
@@ -1948,7 +1974,7 @@ def compute_goal_directed_metrics(
     >>> result = compute_goal_directed_metrics(
     ...     env, positions, times, goal
     ... )  # doctest: +SKIP
-    >>> print(result.summary())  # doctest: +SKIP
+    >>> print(result)  # doctest: +SKIP
     """
     positions = np.asarray(positions)
     times = np.asarray(times)

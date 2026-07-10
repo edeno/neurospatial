@@ -689,7 +689,7 @@ Traj: {metadata.get("trajectory_method", "ou")}
                         rate_map_2d.T,
                         origin="lower",
                         aspect="equal",
-                        cmap="hot",
+                        cmap="viridis",
                         interpolation="nearest",
                     )
                     ax.set_title(f"Cell {cell_id}", fontsize=10)
@@ -702,7 +702,7 @@ Traj: {metadata.get("trajectory_method", "ou")}
                         env.bin_centers[:, 0],
                         env.bin_centers[:, 1],
                         c=rate_map,
-                        cmap="hot",
+                        cmap="viridis",
                         s=10,
                     )
                     ax.set_title(f"Cell {cell_id}", fontsize=10)

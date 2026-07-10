@@ -982,6 +982,18 @@ def _generate_html_player(
             border-radius: 3px;
             outline: none;
         }}
+        /* Restore a visible keyboard-focus indicator (the slider clears the
+           default outline above; buttons/select have border:none). */
+        #slider:focus-visible {{
+            outline: 2px solid #0056b3;
+            outline-offset: 2px;
+            box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.35);
+        }}
+        button:focus-visible,
+        .speed-control select:focus-visible {{
+            outline: 2px solid #0056b3;
+            outline-offset: 2px;
+        }}
         #slider::-webkit-slider-thumb {{
             -webkit-appearance: none;
             appearance: none;
@@ -1243,6 +1255,15 @@ def _generate_html_player(
             }}
         }}
 
+        // Toggle screen-reader announcements for frame changes. Disabled during
+        // autoplay so every frame is not announced (screen-reader spam);
+        // enabled while paused so manual navigation (step/seek) is announced.
+        function setAnnouncements(enabled) {{
+            const politeness = enabled ? 'polite' : 'off';
+            labelSpan.setAttribute('aria-live', politeness);
+            counterSpan.setAttribute('aria-live', politeness);
+        }}
+
         // Initialize
         function init() {{
             updateFrame(0);
@@ -1294,6 +1315,7 @@ def _generate_html_player(
         function play() {{
             if (playing) return;
             playing = true;
+            setAnnouncements(false);  // silence per-frame announcements while playing
             updateControls();
             lastTime = performance.now();
             accumulator = 0;
@@ -1303,6 +1325,7 @@ def _generate_html_player(
         function pause() {{
             if (!playing) return;
             playing = false;
+            setAnnouncements(true);  // re-enable announcements for manual navigation
             updateControls();
             if (animationId) {{
                 cancelAnimationFrame(animationId);
@@ -1338,6 +1361,12 @@ def _generate_html_player(
 
         // Keyboard shortcuts
         document.onkeydown = (e) => {{
+            // If an interactive control has focus, let it handle the key
+            // (e.g. Space activates the focused button, arrows move the slider
+            // or change the speed select) instead of hijacking playback.
+            if (e.target.closest('button, input, select, textarea, [tabindex]')) {{
+                return;
+            }}
             if (e.key === ' ') {{
                 e.preventDefault();
                 playing ? pause() : play();
@@ -1506,6 +1535,18 @@ def _generate_non_embedded_html_player(
             background: #ddd;
             border-radius: 3px;
             outline: none;
+        }}
+        /* Restore a visible keyboard-focus indicator (the slider clears the
+           default outline above; buttons/select have border:none). */
+        #slider:focus-visible {{
+            outline: 2px solid #0056b3;
+            outline-offset: 2px;
+            box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.35);
+        }}
+        button:focus-visible,
+        .speed-control select:focus-visible {{
+            outline: 2px solid #0056b3;
+            outline-offset: 2px;
         }}
         #slider::-webkit-slider-thumb {{
             -webkit-appearance: none;
@@ -1775,6 +1816,15 @@ def _generate_non_embedded_html_player(
             }}
         }}
 
+        // Toggle screen-reader announcements for frame changes. Disabled during
+        // autoplay so every frame is not announced (screen-reader spam);
+        // enabled while paused so manual navigation (step/seek) is announced.
+        function setAnnouncements(enabled) {{
+            const politeness = enabled ? 'polite' : 'off';
+            labelSpan.setAttribute('aria-live', politeness);
+            counterSpan.setAttribute('aria-live', politeness);
+        }}
+
         // Initialize
         function init() {{
             updateFrame(0);
@@ -1826,6 +1876,7 @@ def _generate_non_embedded_html_player(
         function play() {{
             if (playing) return;
             playing = true;
+            setAnnouncements(false);  // silence per-frame announcements while playing
             updateControls();
             lastTime = performance.now();
             accumulator = 0;
@@ -1835,6 +1886,7 @@ def _generate_non_embedded_html_player(
         function pause() {{
             if (!playing) return;
             playing = false;
+            setAnnouncements(true);  // re-enable announcements for manual navigation
             updateControls();
             if (animationId) {{
                 cancelAnimationFrame(animationId);
@@ -1870,6 +1922,12 @@ def _generate_non_embedded_html_player(
 
         // Keyboard shortcuts
         document.onkeydown = (e) => {{
+            // If an interactive control has focus, let it handle the key
+            // (e.g. Space activates the focused button, arrows move the slider
+            // or change the speed select) instead of hijacking playback.
+            if (e.target.closest('button, input, select, textarea, [tabindex]')) {{
+                return;
+            }}
             if (e.key === ' ') {{
                 e.preventDefault();
                 playing ? pause() : play();

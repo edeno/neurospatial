@@ -5,11 +5,12 @@ sequence of per-neuron spike-time arrays into a regular time grid of spike
 counts. It owns the time-grid construction (left edges plus ``dt / 2`` bin
 centers) so the spike -> time-bin -> decode seam has a single, explicit home.
 
-The ``orient`` argument makes the count-matrix axis order explicit, defusing
-the silent transpose footgun between :func:`neurospatial.decoding.decode_position`
-(which expects ``(n_time_bins, n_neurons)``) and the assembly functions in
-:mod:`neurospatial.decoding.assemblies` (which expect
-``(n_neurons, n_time_bins)``).
+The default ``orient="time_x_neuron"`` -- ``(n_time_bins, n_neurons)`` -- is the
+one convention used across the library: both
+:func:`neurospatial.decoding.decode_position` and the assembly functions in
+:mod:`neurospatial.decoding.assemblies` consume it directly, so the default
+output feeds either with no transpose. ``orient="neuron_x_time"`` is offered only
+as a convenience for code that wants the transposed layout.
 """
 
 from __future__ import annotations
@@ -96,11 +97,12 @@ def bin_spikes_in_time(
         explicitly, must be strictly greater than ``t_start``.
     orient : {"time_x_neuron", "neuron_x_time"}, optional
         Axis order of the returned ``counts`` matrix. ``"time_x_neuron"``
-        (default) returns shape ``(n_time_bins, n_neurons)`` — the shape
-        :func:`neurospatial.decoding.decode_position` expects.
-        ``"neuron_x_time"`` returns shape ``(n_neurons, n_time_bins)`` — the
-        shape the assembly functions in
-        :mod:`neurospatial.decoding.assemblies` expect.
+        (default) returns shape ``(n_time_bins, n_neurons)`` — the one convention
+        used across the library, consumed directly by both
+        :func:`neurospatial.decoding.decode_position` and the assembly functions
+        in :mod:`neurospatial.decoding.assemblies`. ``"neuron_x_time"`` returns
+        the transposed ``(n_neurons, n_time_bins)`` as a convenience for code
+        that wants that layout.
 
     Returns
     -------

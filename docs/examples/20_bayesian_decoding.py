@@ -18,7 +18,7 @@
 #
 # **Estimated time**: 35-45 minutes
 #
-# **Prerequisites**: [11_place_field_analysis.ipynb](11_place_field_analysis.ipynb), [15_simulation_workflows.ipynb](15_simulation_workflows.ipynb)
+# **Prerequisites**: [11_place_field_analysis.ipynb](../11_place_field_analysis/), [15_simulation_workflows.ipynb](../15_simulation_workflows/)
 #
 # ## Learning Objectives
 #

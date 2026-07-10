@@ -179,3 +179,90 @@ def test_result_mixin_base_raises_for_unimplemented() -> None:
         empty.summary()
     with pytest.raises(NotImplementedError):
         empty.plot()
+
+
+class TestResultRepr:
+    """Concise ``__repr__`` / ``_repr_html_`` from ``summary()`` (not arrays).
+
+    Regression: result dataclasses used the default dataclass repr, which
+    embedded the full firing-rate/occupancy arrays -- a ~2700-char wall of
+    floats on a 121-bin grid when a user simply typed the result at a REPL.
+    """
+
+    def test_repr_is_concise_summary_not_arrays(self, spatial_result) -> None:
+        r = repr(spatial_result)
+        assert type(spatial_result).__name__ in r
+        assert "peak_firing_rate" in r  # a summary() metric is surfaced
+        assert "array(" not in r  # the arrays are NOT dumped
+        assert len(r) < 300  # concise (was thousands of chars)
+
+    def test_repr_html_renders_metric_table(self, spatial_result) -> None:
+        html_repr = spatial_result._repr_html_()
+        assert "<table" in html_repr
+        assert type(spatial_result).__name__ in html_repr
+        assert "peak_firing_rate" in html_repr
+
+    def test_repr_never_raises_on_summary_failure(self) -> None:
+        """__repr__/_repr_html_ degrade safely if summary() is unavailable."""
+
+        class Broken(ResultMixin):
+            def summary(self) -> dict:
+                raise NotImplementedError
+
+        assert repr(Broken()) == "Broken(...)"
+        assert "Broken" in Broken()._repr_html_()
+
+
+class TestRetrofittedResultSummaries:
+    """The retrofitted result dataclasses return a scalar summary() dict.
+
+    Regression: these classes inherited ResultMixin (concise repr) but left
+    summary() at the NotImplementedError default, so headline scalars (e.g.
+    PopulationCoverageResult.coverage_fraction) stayed buried. Each now returns
+    a dict, which also drives the informative __repr__.
+    """
+
+    def _cases(self):
+        from neurospatial.behavior.trajectory import MSDResult
+        from neurospatial.decoding.assemblies import AssemblyPattern
+        from neurospatial.decoding.trajectory import LinearFitResult
+        from neurospatial.encoding.grid import GridProperties
+
+        return [
+            (
+                GridProperties(
+                    score=0.42,
+                    scale=30.0,
+                    orientation=0.3,
+                    orientation_std=0.05,
+                    peak_coords=np.zeros((6, 2)),
+                    n_peaks=6,
+                ),
+                {"score", "scale", "orientation", "n_peaks"},
+            ),
+            (
+                AssemblyPattern(
+                    weights=np.zeros(430),
+                    member_indices=np.array([1, 2, 3]),
+                    explained_variance_ratio=0.12,
+                ),
+                {"n_members", "explained_variance_ratio"},
+            ),
+            (
+                LinearFitResult(
+                    slope=1.5, intercept=0.2, r_squared=0.9, slope_std=0.1
+                ),
+                {"slope", "intercept", "r_squared"},
+            ),
+            (MSDResult(lags=np.arange(5.0), msd=np.arange(5.0) ** 2), {"n_lags"}),
+        ]
+
+    def test_summary_is_scalar_dict_and_drives_repr(self) -> None:
+        for result, expected_keys in self._cases():
+            summary = result.summary()
+            assert isinstance(summary, dict)
+            assert expected_keys <= set(summary)
+            r = repr(result)
+            assert type(result).__name__ in r
+            assert "array(" not in r  # arrays not dumped
+            assert len(r) < 300

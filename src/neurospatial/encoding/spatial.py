@@ -84,7 +84,7 @@ __all__ = [
 ]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class PlaceFieldsResult(ResultMixin):
     """Result of ``detect_place_fields()``: detected fields plus exclusion metadata.
 
@@ -207,7 +207,7 @@ class PlaceFieldsResult(ResultMixin):
         )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class SpatialRateResult(SpatialResultMixin):
     """Result of spatial rate computation for a single neuron.
 
@@ -316,7 +316,8 @@ class SpatialRateResult(SpatialResultMixin):
             Common options include:
             - cmap : str or Colormap, default="viridis"
             - vmin, vmax : float, colorbar limits
-            - add_colorbar : bool, default=True
+            - colorbar : bool, default=True
+            - colorbar_label : str, default="Firing Rate (Hz)"
 
         Returns
         -------
@@ -342,6 +343,7 @@ class SpatialRateResult(SpatialResultMixin):
         >>> type(ax).__name__
         'Axes'
         """
+        kwargs.setdefault("colorbar_label", "Firing Rate (Hz)")
         return self.env.plot_field(_to_numpy(self.firing_rate), ax=ax, **kwargs)
 
     def spatial_information(self) -> float | Any:
@@ -837,7 +839,7 @@ class SpatialRateResult(SpatialResultMixin):
         return len(fields) > 0
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class SpatialRatesResult(SpatialResultMixin):
     """Result of spatial rate computation for multiple neurons.
 
@@ -1084,7 +1086,9 @@ class SpatialRatesResult(SpatialResultMixin):
         """
         return self.peak_location()
 
-    def plot(self, idx: int, ax: Axes | None = None, **kwargs: Any) -> Axes:
+    def plot(
+        self, idx: int | None = None, ax: Axes | None = None, **kwargs: Any
+    ) -> Axes:
         """Plot the spatial rate map for a specific neuron.
 
         Delegates to the environment's plot_field method for consistent
@@ -1093,7 +1097,10 @@ class SpatialRatesResult(SpatialResultMixin):
         Parameters
         ----------
         idx : int
-            Index of the neuron to plot (0-indexed).
+            Index of the neuron to plot (0-indexed). Required: this batch result
+            holds N units, so there is no single map to plot without a choice of
+            unit. Passing ``None`` raises a ``ValueError`` explaining how to pick
+            one.
         ax : matplotlib.axes.Axes, optional
             Axes to plot on. If None, creates a new figure and axes.
         **kwargs
@@ -1101,12 +1108,19 @@ class SpatialRatesResult(SpatialResultMixin):
             Common options include:
             - cmap : str or Colormap, default="viridis"
             - vmin, vmax : float, colorbar limits
-            - add_colorbar : bool, default=True
+            - colorbar : bool, default=True
+            - colorbar_label : str, default="Firing Rate (Hz)"
 
         Returns
         -------
         matplotlib.axes.Axes
             The axes containing the plot.
+
+        Raises
+        ------
+        ValueError
+            If `idx` is None. A batch result holds N units, so a unit index is
+            required (e.g. ``result.plot(0)`` or iterate ``result[i].plot()``).
 
         Examples
         --------
@@ -1127,7 +1141,16 @@ class SpatialRatesResult(SpatialResultMixin):
         >>> type(ax).__name__
         'Axes'
         """
+        if idx is None:
+            n_units = np.asarray(self.firing_rates).shape[0]
+            raise ValueError(
+                f"plot() requires a unit index: this batch result holds "
+                f"{n_units} units, so there is no single rate map to plot. "
+                f"Pass a unit index, e.g. result.plot(0), or iterate the units "
+                f"with `for r in result: r.plot()` / `result[i].plot()`."
+            )
         rates: NDArray[np.float64] = np.asarray(self.firing_rates)
+        kwargs.setdefault("colorbar_label", "Firing Rate (Hz)")
         return self.env.plot_field(_to_numpy(rates[idx]), ax=ax, **kwargs)
 
     def to_xarray(self) -> Any:
@@ -2674,7 +2697,7 @@ def compute_spatial_rates(
 # ==============================================================================
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class DirectionalPlaceFields(ResultMixin):
     """Container for direction-conditioned place field results.
 

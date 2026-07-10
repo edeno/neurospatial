@@ -377,6 +377,21 @@ def _project_1d_to_2d(
         raise ValueError("linear_position must be a 1D array.")
     n_edges = len(edge_order)
 
+    # Every edge must carry a numeric 'distance' (segment length). An external
+    # track graph (built by track_linearization, or by hand) may omit it; without
+    # this check the comprehension below raises a bare ``KeyError: 'distance'``
+    # deep in an internal helper, naming neither the offending edge nor how to
+    # fix it.
+    missing = [e for e in edge_order if "distance" not in graph.edges[e]]
+    if missing:
+        raise ValueError(
+            f"{len(missing)} of {n_edges} track-graph edge(s) are missing the "
+            f"required 'distance' edge attribute (segment length); the first is "
+            f"edge {missing[0]}. Give every edge a numeric 'distance', e.g. "
+            f"nx.set_edge_attributes(graph, {{{missing[0]!r}: <length>}}, "
+            f"name='distance'), or pass distance=<length> when adding each edge."
+        )
+
     # --- edge lengths & spacing ------------------------------------------------
     edge_lengths = np.array(
         [graph.edges[e]["distance"] for e in edge_order],

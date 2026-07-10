@@ -26,7 +26,7 @@ class TestAddPositions:
             [[0.0, 0.0], [2.0, 2.0], [4.0, 4.0], [6.0, 6.0], [8.0, 8.0], [10.0, 10.0]]
         )
 
-        result = add_positions(events, positions, times)
+        result = add_positions(events, times=times, positions=positions)
 
         # Check x, y columns added
         assert "x" in result.columns
@@ -51,7 +51,7 @@ class TestAddPositions:
         times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
         positions = np.array([[0.0], [10.0], [20.0], [30.0], [40.0]])
 
-        result = add_positions(events, positions, times)
+        result = add_positions(events, times=times, positions=positions)
 
         # Only x column for 1D
         assert "x" in result.columns
@@ -69,7 +69,7 @@ class TestAddPositions:
         times = np.array([0.0, 1.0])
         positions = np.array([[0.0, 0.0, 0.0], [10.0, 20.0, 30.0]])
 
-        result = add_positions(events, positions, times)
+        result = add_positions(events, times=times, positions=positions)
 
         # x, y, z columns for 3D
         assert "x" in result.columns
@@ -89,7 +89,7 @@ class TestAddPositions:
         times = np.array([0.0, 1.0, 2.0, 3.0])
         positions = np.array([[0.0, 0.0], [1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
 
-        result = add_positions(events, positions, times)
+        result = add_positions(events, times=times, positions=positions)
 
         # Should get exact position at t=2.0
         assert_allclose(result["x"].values, [3.0])
@@ -105,7 +105,7 @@ class TestAddPositions:
         times = np.array([0.0, 1.0, 2.0, 3.0])
         positions = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])
 
-        result = add_positions(events, positions, times)
+        result = add_positions(events, times=times, positions=positions)
 
         # Original should be unchanged
         assert list(events.columns) == original_columns
@@ -124,7 +124,7 @@ class TestAddPositions:
         times = np.array([0.0, 1.0, 2.0])
         positions = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
 
-        result = add_positions(events, positions, times)
+        result = add_positions(events, times=times, positions=positions)
 
         assert len(result) == 0
         assert "x" in result.columns
@@ -139,7 +139,7 @@ class TestAddPositions:
         times = np.array([0.0, 2.0])
         positions = np.array([[0.0, 0.0], [4.0, 8.0]])
 
-        result = add_positions(events, positions, times)
+        result = add_positions(events, times=times, positions=positions)
 
         assert len(result) == 1
         assert_allclose(result["x"].values, [2.0])
@@ -154,7 +154,9 @@ class TestAddPositions:
         times = np.array([0.0, 1.0, 2.0, 3.0])
         positions = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])
 
-        result = add_positions(events, positions, times, timestamp_column="event_time")
+        result = add_positions(
+            events, times=times, positions=positions, timestamp_column="event_time"
+        )
 
         assert_allclose(result["x"].values, [1.5])
         assert_allclose(result["y"].values, [1.5])
@@ -168,7 +170,7 @@ class TestAddPositions:
         times = np.array([0.0, 1.0, 2.0, 3.0])
         positions = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])
 
-        result = add_positions(events, positions, times)
+        result = add_positions(events, times=times, positions=positions)
 
         assert list(result.index) == ["event_a", "event_b"]
 
@@ -181,7 +183,7 @@ class TestAddPositions:
         times = np.array([0.0, 1.0, 2.0])
         positions = np.array([[0.0, 0.0], [1.0, 2.0], [2.0, 4.0]])
 
-        result = add_positions(events, positions, times)
+        result = add_positions(events, times=times, positions=positions)
 
         # Linear extrapolation: at t=-1, x=-1, y=-2
         assert_allclose(result["x"].values, [-1.0])
@@ -196,7 +198,7 @@ class TestAddPositions:
         times = np.array([0.0, 1.0, 2.0])
         positions = np.array([[0.0, 0.0], [1.0, 2.0], [2.0, 4.0]])
 
-        result = add_positions(events, positions, times)
+        result = add_positions(events, times=times, positions=positions)
 
         # Linear extrapolation: at t=3, x=3, y=6
         assert_allclose(result["x"].values, [3.0])
@@ -212,7 +214,7 @@ class TestAddPositions:
         positions = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
 
         with pytest.raises(ValueError, match=r"timestamp.*column"):
-            add_positions(events, positions, times)
+            add_positions(events, times=times, positions=positions)
 
     def test_non_dataframe_raises(self):
         """Test that non-DataFrame events raises TypeError."""
@@ -224,7 +226,7 @@ class TestAddPositions:
         positions = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
 
         with pytest.raises(TypeError, match=r"DataFrame"):
-            add_positions(events, positions, times)
+            add_positions(events, times=times, positions=positions)
 
     def test_mismatched_times_positions_raises(self):
         """Test that mismatched times and positions raises ValueError."""
@@ -236,7 +238,41 @@ class TestAddPositions:
         positions = np.array([[0.0, 0.0], [1.0, 1.0]])  # 2 samples
 
         with pytest.raises(ValueError, match=r"times.*positions"):
+            add_positions(events, times=times, positions=positions)
+
+    def test_swapped_positions_times_raises_clear_error(self):
+        """Swapping times/positions fails loud, not silently -- even in 1-D.
+
+        ``times`` and ``positions`` are keyword-only, so the old positional order
+        ``add_positions(events, positions, times)`` raises ``TypeError`` instead
+        of silently mis-interpolating. This matters most for a bare 1-D
+        trajectory, where both arrays are 1-D and a positional swap would be
+        shape-indistinguishable (the length + shape guards cannot catch it). A
+        mislabeled 2-D array handed to ``times=`` is still caught by the shape
+        guard.
+        """
+        from neurospatial.events.detection import add_positions
+
+        events = pd.DataFrame({"timestamp": [1.0]})
+        times = np.array([0.0, 1.0, 2.0])
+        positions = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
+
+        # Correct (keyword) call works.
+        add_positions(events, times=times, positions=positions)
+
+        # Old positional order is now a loud TypeError, not a wrong result.
+        with pytest.raises(TypeError):
             add_positions(events, positions, times)
+
+        # The dangerous 1-D case: both arrays 1-D, so a positional swap would be
+        # shape-indistinguishable -- keyword-only makes it a TypeError too.
+        positions_1d = np.array([15.0, 20.0, 25.0])
+        with pytest.raises(TypeError):
+            add_positions(events, positions_1d, times)
+
+        # A mislabeled 2-D array passed to times= is caught by the shape guard.
+        with pytest.raises(ValueError, match=r"(?i)1-D|swap"):
+            add_positions(events, times=positions, positions=times)
 
     def test_nan_in_event_timestamps_handled(self):
         """Test NaN timestamps in events are propagated to positions."""
@@ -247,7 +283,7 @@ class TestAddPositions:
         times = np.array([0.0, 1.0, 2.0, 3.0])
         positions = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])
 
-        result = add_positions(events, positions, times)
+        result = add_positions(events, times=times, positions=positions)
 
         # First and third should be valid
         assert_allclose(result["x"].values[0], 1.0)
@@ -267,7 +303,7 @@ class TestAddPositions:
         times = np.array([2.0, 0.0, 1.0, 3.0])
         positions = np.array([[4.0, 4.0], [0.0, 0.0], [2.0, 2.0], [6.0, 6.0]])
 
-        result = add_positions(events, positions, times)
+        result = add_positions(events, times=times, positions=positions)
 
         # Should interpolate correctly after internal sorting
         # t=1.5 is between t=1 (pos 2,2) and t=2 (pos 4,4) -> (3,3)
@@ -295,7 +331,7 @@ class TestAddPositions:
             [50 + 30 * np.cos(times * 0.1), 50 + 30 * np.sin(times * 0.1)]
         )
 
-        result = add_positions(rewards, positions, times)
+        result = add_positions(rewards, times=times, positions=positions)
 
         # All rewards should have positions
         assert len(result) == 4
@@ -325,7 +361,7 @@ class TestAddPositionsDegenerateTrajectory:
         positions = np.array([[0.0, 0.0]])
 
         with pytest.raises(ValueError, match=r"2 .*sample|at least 2"):
-            add_positions(events, positions, times)
+            add_positions(events, times=times, positions=positions)
 
     def test_add_positions_identical_times_raises(self):
         """All-identical trajectory times leave the interpolant undefined."""
@@ -336,7 +372,7 @@ class TestAddPositionsDegenerateTrajectory:
         positions = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
 
         with pytest.raises(ValueError, match=r"identical|non-zero"):
-            add_positions(events, positions, times)
+            add_positions(events, times=times, positions=positions)
 
     def test_add_positions_nan_trajectory_time_raises(self):
         """A NaN trajectory timestamp must raise, naming the argument."""
@@ -347,7 +383,7 @@ class TestAddPositionsDegenerateTrajectory:
         positions = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
 
         with pytest.raises(ValueError, match="times"):
-            add_positions(events, positions, times)
+            add_positions(events, times=times, positions=positions)
 
     def test_add_positions_nan_event_timestamp_still_nan(self):
         """An event with a NaN timestamp still yields NaN x/y positions.
@@ -363,7 +399,7 @@ class TestAddPositionsDegenerateTrajectory:
             [[0.0, 0.0], [2.0, 2.0], [4.0, 4.0], [6.0, 6.0], [8.0, 8.0]]
         )
 
-        result = add_positions(events, positions, times)
+        result = add_positions(events, times=times, positions=positions)
 
         # Finite events interpolate correctly.
         assert result["x"].iloc[0] == pytest.approx(2.0)
@@ -388,7 +424,7 @@ class TestAddPositionsDegenerateTrajectory:
         times = np.array([0.0])
         positions = np.array([[0.0, 0.0]])
 
-        result = add_positions(events, positions, times)
+        result = add_positions(events, times=times, positions=positions)
 
         assert len(result) == 0
         assert "x" in result.columns
@@ -402,6 +438,6 @@ class TestAddPositionsDegenerateTrajectory:
         times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
         positions = np.array([[0, 0], [2, 2], [4, 4], [6, 6], [8, 8]], dtype=np.float64)
 
-        result = add_positions(rewards, positions, times)
+        result = add_positions(rewards, times=times, positions=positions)
 
         assert_allclose(result[["x", "y"]].values, [[3.0, 3.0], [7.0, 7.0]])

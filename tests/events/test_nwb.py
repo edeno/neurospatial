@@ -333,7 +333,7 @@ class TestIntegrationWithEventsModule:
         # Add positions
         positions = np.array([[0.0, 0.0], [10.0, 10.0], [20.0, 20.0], [30.0, 30.0]])
         times = np.array([0.0, 1.0, 2.0, 3.0])
-        events_with_pos = add_positions(events, positions, times)
+        events_with_pos = add_positions(events, times=times, positions=positions)
 
         # Write to NWB
         write_events(nwbfile, events_with_pos, name="positioned_events")

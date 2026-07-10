@@ -20,7 +20,7 @@
 #
 # **Estimated time**: 15-20 minutes
 #
-# **Prerequisites**: [02_layout_engines.ipynb](02_layout_engines.ipynb)
+# **Prerequisites**: [02_layout_engines.ipynb](../02_layout_engines/)
 #
 # ## Learning Objectives
 #

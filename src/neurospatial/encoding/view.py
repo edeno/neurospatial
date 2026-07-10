@@ -105,7 +105,7 @@ __all__ = [
 ]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class ViewRateResult(SpatialResultMixin):
     """Result of view rate computation for a single neuron.
 
@@ -252,7 +252,7 @@ class ViewRateResult(SpatialResultMixin):
         >>> plt.show()  # doctest: +SKIP
 
         >>> fig, ax = plt.subplots()  # doctest: +SKIP
-        >>> result.plot(ax=ax, cmap="hot", vmax=20.0)  # doctest: +SKIP
+        >>> result.plot(ax=ax, cmap="viridis", vmax=20.0)  # doctest: +SKIP
 
         See Also
         --------
@@ -433,7 +433,7 @@ class ViewRateResult(SpatialResultMixin):
         return self.view_spatial_information() > min_info
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class ViewRatesResult(SpatialResultMixin):
     """Result of view rate computation for multiple neurons.
 
@@ -743,7 +743,7 @@ class ViewRatesResult(SpatialResultMixin):
 
         >>> # Plot neuron 5 with custom colormap
         >>> fig, ax = plt.subplots()  # doctest: +SKIP
-        >>> result.plot(idx=5, ax=ax, cmap="hot", vmax=20.0)  # doctest: +SKIP
+        >>> result.plot(idx=5, ax=ax, cmap="viridis", vmax=20.0)  # doctest: +SKIP
 
         See Also
         --------

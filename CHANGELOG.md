@@ -125,6 +125,76 @@ correction.
   kernel. The only memory mitigation is reducing the bin count (a larger
   `bin_size`). Docstrings and the high-bin warnings are corrected accordingly.
 
+### UX hardening — fail-loud errors, one count convention, docs & viewer polish (0.8.0)
+
+A broad usability pass: silent failures now raise or warn with actionable
+messages, a few APIs were made consistent, and the docs/viewers were polished.
+
+#### Breaking changes
+
+- **`add_positions` is now `add_positions(events, *, times, positions)`** —
+  reordered to the canonical `(data, times, positions)` order and made
+  **keyword-only**. A bare 1-D trajectory makes both arrays 1-D, so a positional
+  swap was shape-indistinguishable and silently mis-interpolated; keyword-only
+  removes the ambiguity. *Migration:*
+  `add_positions(events, times=times, positions=positions)`.
+- **Assembly functions take `(n_time_bins, n_neurons)`** — `detect_assemblies`,
+  `assembly_activation`, `pairwise_correlations`, and `reactivation_strength`
+  now use the same time-first count convention as `decode_position` and
+  `bin_spikes_in_time`, so a binned count matrix feeds them directly.
+  *Migration:* pass the default `bin_spikes_in_time(...)` output as-is, or
+  transpose an existing `(n_neurons, n_time_bins)` matrix.
+- **Behavior result `summary()` returns a `dict`** of scalar metrics (was a
+  formatted string) on every `behavior` result class. *Migration:* use
+  `str(result)` for the human-readable form.
+- **Fail-loud instead of silent sentinels.** `bin_at` on a graph/track
+  environment raises on wrong-dimension points (was all `-1`);
+  `heading_from_velocity` raises when every sample is below `min_speed` (opt out
+  with `allow_all_nan=True`); graph queries reject a multi-point coordinate batch.
+
+#### Added
+
+- **`units=` and `frame=` keyword args** on the factory methods (`from_samples`,
+  `open_field`, `linear_track`, `maze`) set the metadata at construction:
+  `Environment.from_samples(pos, bin_size=2.0, units="cm")`.
+- **Graph queries accept coordinates**, not just bin indices — `neighbors`,
+  `path_between`, and `reachable_from` map a coordinate via `bin_at` (integers
+  are still treated as indices).
+- **`ResultMixin` on every result class** — concise `__repr__`/`_repr_html_`
+  (summary metrics, not array dumps) and a scalar `summary()` dict.
+- `dir(neurospatial.ops)` now surfaces the lazily-exported ops (autocomplete).
+
+#### Fixed
+
+- **`min_occupancy` thresholds raw occupancy seconds, not smoothed density** —
+  fixes silent all-zero place fields on the documented golden path; applied
+  identically across `diffusion_kde` / `gaussian_kde` / `binned` (single and
+  batch). `min_occupancy=0.0` (the default) is unchanged.
+- **Grid allocation is preflighted** — a transposed `(2, N)` trajectory (read as
+  N dimensions) raises in ~1 ms instead of OOMing in `histogramdd`/`meshgrid`; a
+  likely-transposed array now *warns* rather than false-rejecting a valid
+  low-sample N-D environment.
+- Non-finite query rows map to the `-1` "outside" sentinel **per row** (one NaN
+  no longer collapses the whole occupancy/rate map on graph/masked envs).
+- `to_file` refuses to overwrite by default (`overwrite=True` to allow);
+  `occupancy()` checks shape before monotonicity (clear swapped-argument error);
+  `from_graph` validates the edge `distance` attribute.
+- `SpatialRateResult.plot()` documents the real `colorbar`/`colorbar_label`
+  kwargs and labels the colorbar "Firing Rate (Hz)"; batch `plot()` raises an
+  actionable error when no unit index is given.
+- **Interactive-viewer accessibility** — the standalone HTML player ignores
+  global keyboard shortcuts when an interactive control has focus, adds
+  `:focus-visible` styles, and stops announcing every autoplay frame to screen
+  readers; the napari region dock and track builder gain a compact layout,
+  visible labels, and accessible controls.
+
+#### Documentation
+
+- Docs version bumped to 0.8.0; dead links and the fork-clone step fixed; a
+  value-first, runnable quickstart; grouped/collapsible nav; a new advanced
+  architecture page; colorblind-safe `viridis` in examples; example-notebook
+  links normalized with an internal link-check step in docs CI.
+
 ## [v0.6.0] - 2026-07-03
 
 ## What's Changed

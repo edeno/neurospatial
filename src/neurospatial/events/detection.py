@@ -8,8 +8,6 @@ This module provides functions to detect events from trajectories and signals:
 
 Spatial utilities:
 - add_positions: Add x, y columns to events by interpolation
-- events_in_region: Filter events to those within a region
-- spatial_event_rate: Compute spatial rate map of events
 """
 
 from __future__ import annotations
@@ -21,9 +19,9 @@ from numpy.typing import NDArray
 
 def add_positions(
     events: pd.DataFrame,
-    positions: NDArray[np.float64],
-    times: NDArray[np.float64],
     *,
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
     timestamp_column: str = "timestamp",
 ) -> pd.DataFrame:
     """
@@ -37,11 +35,14 @@ def add_positions(
     ----------
     events : pd.DataFrame
         Events DataFrame with a timestamp column.
-    positions : NDArray[np.float64], shape (n_samples, n_dims)
-        Position trajectory. Shape is (n_samples, 1) for 1D, (n_samples, 2)
-        for 2D, or (n_samples, 3) for 3D trajectories.
-    times : NDArray[np.float64], shape (n_samples,)
+    times : NDArray[np.float64], shape (n_samples,), keyword-only
         Timestamps corresponding to each position sample.
+    positions : NDArray[np.float64], shape (n_samples, n_dims), keyword-only
+        Position trajectory. Shape is (n_samples, 1) for 1D, (n_samples, 2)
+        for 2D, or (n_samples, 3) for 3D trajectories. ``times`` and
+        ``positions`` are keyword-only because a bare 1-D trajectory makes both
+        1-D and a positional swap would be shape-indistinguishable and silently
+        mis-interpolate.
     timestamp_column : str, default="timestamp"
         Name of the column in events containing timestamps.
 
@@ -67,8 +68,9 @@ def add_positions(
     Notes
     -----
     This function only adds coordinate columns (x, y, z). It does not add
-    derived columns like ``bin_index`` or ``region``. Use ``events_in_region()``
-    or ``spatial_event_rate()`` for spatial analysis after adding positions.
+    derived columns like ``bin_index`` or ``region``; map the added coordinates
+    to bins yourself with ``env.bin_at(events[["x", "y"]].to_numpy())`` for
+    spatial analysis.
 
     Interpolation uses linear interpolation between trajectory samples.
     Events before or after the trajectory will be extrapolated.
@@ -88,7 +90,7 @@ def add_positions(
     >>> rewards = pd.DataFrame({"timestamp": [1.5, 3.5], "size": [1, 2]})
     >>> times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
     >>> positions = np.array([[0, 0], [2, 2], [4, 4], [6, 6], [8, 8]])
-    >>> result = add_positions(rewards, positions, times)
+    >>> result = add_positions(rewards, times=times, positions=positions)
     >>> result[["x", "y"]].values
     array([[3., 3.],
            [7., 7.]])
@@ -113,6 +115,23 @@ def add_positions(
     # Convert to numpy arrays
     positions = np.asarray(positions, dtype=np.float64)
     times = np.asarray(times, dtype=np.float64)
+
+    # times and positions are keyword-only (see the signature): a bare 1-D
+    # trajectory makes both arrays 1-D, so a positional swap would be shape-
+    # indistinguishable and silently mis-interpolate. Keyword-only removes that
+    # ambiguity. This remaining guard catches a mislabeled 2-D array handed to
+    # `times=` (still a swap, just via keywords) before the length check, which a
+    # swap passes since both arrays share n_samples.
+    if times.ndim != 1:
+        raise ValueError(
+            f"times must be a 1-D array of timestamps, got shape {times.shape}. "
+            "Did you swap the `times=` and `positions=` arguments?"
+        )
+    if positions.ndim > 2:
+        raise ValueError(
+            f"positions must be 1-D (n_samples,) or 2-D (n_samples, n_dims), got "
+            f"shape {positions.shape}."
+        )
 
     # Validate matching lengths
     if len(times) != len(positions):

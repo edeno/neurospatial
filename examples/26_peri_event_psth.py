@@ -36,7 +36,7 @@
 #
 # **Estimated time**: 20-25 minutes
 #
-# **Prerequisites**: [11_place_field_analysis.ipynb](11_place_field_analysis.ipynb)
+# **Prerequisites**: [11_place_field_analysis.ipynb](../11_place_field_analysis/)
 
 # %% [markdown]
 # ## Setup
@@ -308,4 +308,4 @@ plt.show()
 #   units
 # - Combine event regressors with spatial regressors in a GLM
 #   (see ``encoding`` and ``ops.basis`` for spatial basis functions)
-# - For lap-aligned PSTHs, see [14_behavioral_segmentation.ipynb](14_behavioral_segmentation.ipynb)
+# - For lap-aligned PSTHs, see [14_behavioral_segmentation.ipynb](../14_behavioral_segmentation/)

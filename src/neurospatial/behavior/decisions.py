@@ -67,11 +67,12 @@ References
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._results import ResultMixin
 from neurospatial.behavior.segmentation import _safe_gather
 
 if TYPE_CHECKING:
@@ -164,8 +165,8 @@ class PreDecisionMetrics:
         )
 
 
-@dataclass(frozen=True)
-class DecisionBoundaryMetrics:
+@dataclass(frozen=True, repr=False)
+class DecisionBoundaryMetrics(ResultMixin):
     """Metrics related to decision boundaries between goals.
 
     Decision boundaries are the geodesic Voronoi edges between goal regions.
@@ -208,8 +209,17 @@ class DecisionBoundaryMetrics:
         """Number of decision boundary crossings."""
         return len(self.crossing_times)
 
-    def summary(self) -> str:
-        """Human-readable summary."""
+    def summary(self) -> dict[str, Any]:
+        """Flat dict of scalar decision-boundary metrics.
+
+        For a human-readable string use ``str(result)``.
+        """
+        return {
+            "n_crossings": self.n_crossings,
+            "mean_distance_to_boundary": float(np.nanmean(self.distance_to_boundary)),
+        }
+
+    def __str__(self) -> str:
         return (
             f"Decision boundary: {self.n_crossings} crossing"
             f"{'s' if self.n_crossings != 1 else ''}, "
@@ -217,8 +227,8 @@ class DecisionBoundaryMetrics:
         )
 
 
-@dataclass(frozen=True)
-class DecisionAnalysisResult:
+@dataclass(frozen=True, repr=False)
+class DecisionAnalysisResult(ResultMixin):
     """Complete decision analysis for a trial.
 
     Attributes
@@ -238,8 +248,24 @@ class DecisionAnalysisResult:
     boundary: DecisionBoundaryMetrics | None
     chosen_goal: int | None
 
-    def summary(self) -> str:
-        """Human-readable summary."""
+    def summary(self) -> dict[str, Any]:
+        """Flat dict of scalar decision-analysis metrics.
+
+        For a human-readable multi-line string use ``str(result)``.
+        """
+        return {
+            "entry_time": self.entry_time,
+            "pre_decision_mean_speed": self.pre_decision.mean_speed,
+            "pre_decision_heading_variance": (
+                self.pre_decision.heading_circular_variance
+            ),
+            "n_boundary_crossings": (
+                self.boundary.n_crossings if self.boundary is not None else None
+            ),
+            "chosen_goal": self.chosen_goal,
+        }
+
+    def __str__(self) -> str:
         lines = [
             "Decision analysis:",
             f"  Entry time: {self.entry_time:.2f} s",
@@ -247,7 +273,7 @@ class DecisionAnalysisResult:
             f"heading_var={self.pre_decision.heading_circular_variance:.2f}",
         ]
         if self.boundary is not None:
-            lines.append(f"  {self.boundary.summary()}")
+            lines.append(f"  {self.boundary}")
         if self.chosen_goal is not None:
             lines.append(f"  Chosen goal: {self.chosen_goal}")
         else:
@@ -433,8 +459,11 @@ def pre_decision_heading_stats(
     # Use median dt to handle irregular sampling
     dt = float(np.median(np.diff(times)))
 
-    # Get headings
-    headings = heading_from_velocity(positions, dt, min_speed=min_speed)
+    # Get headings. allow_all_nan: a fully-stationary window is handled below as
+    # "undefined direction, max variance", so an all-NaN heading is expected here.
+    headings = heading_from_velocity(
+        positions, dt, min_speed=min_speed, allow_all_nan=True
+    )
 
     # Filter out NaN (stationary periods)
     valid_headings = headings[~np.isnan(headings)]
@@ -847,7 +876,7 @@ def compute_decision_analysis(
     ...     decision_region="center",
     ...     goal_regions=["left", "right"],
     ... )  # doctest: +SKIP
-    >>> print(result.summary())  # doctest: +SKIP
+    >>> print(result)  # doctest: +SKIP
     """
     positions = np.asarray(positions)
     times = np.asarray(times)

@@ -104,7 +104,7 @@ __all__ = [
 ]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class EgocentricRateResult(SpatialResultMixin):
     """Result of egocentric rate computation for a single neuron.
 
@@ -238,7 +238,7 @@ class EgocentricRateResult(SpatialResultMixin):
         >>> plt.show()  # doctest: +SKIP
 
         >>> fig, ax = plt.subplots()  # doctest: +SKIP
-        >>> result.plot(ax=ax, cmap="hot", vmax=20.0)  # doctest: +SKIP
+        >>> result.plot(ax=ax, cmap="viridis", vmax=20.0)  # doctest: +SKIP
 
         See Also
         --------
@@ -504,7 +504,7 @@ class EgocentricRateResult(SpatialResultMixin):
         return self.egocentric_spatial_information() > min_info
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class EgocentricRatesResult(SpatialResultMixin):
     """Result of egocentric rate computation for multiple neurons.
 
@@ -822,7 +822,7 @@ class EgocentricRatesResult(SpatialResultMixin):
 
         >>> # Plot neuron 3 with custom colormap
         >>> fig, ax = plt.subplots()  # doctest: +SKIP
-        >>> result.plot(idx=3, ax=ax, cmap="hot", vmax=20.0)  # doctest: +SKIP
+        >>> result.plot(idx=3, ax=ax, cmap="viridis", vmax=20.0)  # doctest: +SKIP
 
         See Also
         --------

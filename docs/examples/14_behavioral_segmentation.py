@@ -20,7 +20,7 @@
 #
 # **Estimated time**: 15-20 minutes
 #
-# **Prerequisites**: [04_regions_of_interest.ipynb](04_regions_of_interest.ipynb), [13_trajectory_analysis.ipynb](13_trajectory_analysis.ipynb)
+# **Prerequisites**: [04_regions_of_interest.ipynb](../04_regions_of_interest/), [13_trajectory_analysis.ipynb](../13_trajectory_analysis/)
 #
 # ## Learning Objectives
 #

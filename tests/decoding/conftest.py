@@ -35,10 +35,11 @@ def assembly_pattern() -> AssemblyPattern:
 
 @pytest.fixture
 def template_counts() -> np.ndarray:
-    """Deterministic template-period spike counts, shape (6 neurons, 300 bins).
+    """Deterministic template-period spike counts, shape (300 bins, 6 neurons).
 
-    The assembly members (neurons 0-2) carry structured co-activation so
-    the projection onto the pattern has non-trivial magnitude.
+    Time-first (n_time_bins, n_neurons), matching decode_position and the
+    assembly functions. The assembly members (neurons 0-2) carry structured
+    co-activation so the projection onto the pattern has non-trivial magnitude.
     """
     rng = np.random.default_rng(0)
     n_neurons, n_bins = 6, 300
@@ -46,7 +47,7 @@ def template_counts() -> np.ndarray:
     # Inject co-activation in the member neurons.
     drive = rng.poisson(3.0, n_bins).astype(np.float64)
     counts[:3] += drive
-    return counts
+    return counts.T  # (n_time_bins, n_neurons)
 
 
 @pytest.fixture

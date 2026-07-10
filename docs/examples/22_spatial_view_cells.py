@@ -40,7 +40,7 @@
 #
 # **Estimated time**: 15-20 minutes
 #
-# **Prerequisites**: [11_place_field_analysis.ipynb](11_place_field_analysis.ipynb)
+# **Prerequisites**: [11_place_field_analysis.ipynb](../11_place_field_analysis/)
 
 # %% [markdown]
 # ## Setup

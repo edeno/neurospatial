@@ -401,3 +401,29 @@ class TestMaze:
         g.add_edge("b", "c")
         with pytest.warns(UserWarning, match="kind.*not consulted"):
             Environment.maze("t", track_graph=g, bin_size=5.0)
+
+
+class TestFactoryMetadataKwargs:
+    """units=/frame= keyword args set Environment metadata at construction.
+
+    Regression: ``Environment.from_samples(..., units='cm')`` used to fall into
+    ``**layout_specific_kwargs`` and fail with a confusing ``RegularGrid.build()``
+    error. ``units``/``frame`` are now explicit keyword-only factory args.
+    """
+
+    def test_from_samples_sets_units_and_frame(self):
+        rng = np.random.default_rng(0)
+        pts = rng.uniform(0, 50, (200, 2))
+        default_units = Environment.from_samples(pts, bin_size=5.0).units
+        env = Environment.from_samples(pts, bin_size=5.0, units="cm", frame="s1")
+        assert env.units == "cm"
+        assert env.frame == "s1"
+        # Not passing them leaves the default untouched.
+        assert default_units != "cm"
+
+    def test_open_field_forwards_units_and_frame(self):
+        rng = np.random.default_rng(0)
+        pts = rng.uniform(0, 50, (200, 2))
+        env = Environment.open_field(pts, bin_size=5.0, units="cm", frame="s1")
+        assert env.units == "cm"
+        assert env.frame == "s1"

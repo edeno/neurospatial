@@ -3454,6 +3454,55 @@ class TestComputeSpatialRateMinOccupancy:
         if np.any(low_occ_mask):
             assert np.all(np.isnan(result.firing_rate[low_occ_mask]))
 
+    def test_well_occupied_field_survives_min_occupancy(
+        self,
+        trajectory_env: Environment,
+        place_cell_spikes: NDArray[np.float64],
+        trajectory_times: NDArray[np.float64],
+        trajectory_positions: NDArray[np.float64],
+    ) -> None:
+        """A well-sampled place field survives a reasonable min_occupancy.
+
+        Regression for the public golden-path symptom: when min_occupancy
+        thresholded a per-bin *density* instead of raw seconds, the documented
+        ``compute_spatial_rate(...)`` path came back all-NaN -> all-zero with no
+        error. At the public API level a well-occupied field must survive -- bins
+        at or above the threshold stay finite, the peak rate is positive -- and
+        the masked set must be exactly ``occupancy < min_occupancy`` (the
+        documented recovery contract). The pre-existing test above only checks
+        one direction (low bins -> NaN) and passed under the old density behavior
+        too; this pins the survival direction the bug actually broke.
+        """
+        from neurospatial.encoding.spatial import compute_spatial_rate
+
+        min_occ = 0.1  # seconds -- modest; well-traversed bins clear it
+        result = compute_spatial_rate(
+            trajectory_env,
+            place_cell_spikes,
+            trajectory_times,
+            trajectory_positions,
+            min_occupancy=min_occ,
+        )
+        firing_rate = np.asarray(result.firing_rate)
+        occupancy = np.asarray(result.occupancy)
+
+        # Sanity: the trajectory produces genuinely well-occupied bins, so the
+        # survival assertion below is non-vacuous.
+        assert np.any(occupancy >= min_occ)
+
+        # The field is not wiped out: some bins are finite and the peak is > 0.
+        finite = np.isfinite(firing_rate)
+        assert finite.any(), "the whole rate map came back NaN"
+        assert np.nanmax(firing_rate) > 0.0, "the place field collapsed to zero"
+
+        # Masked set is EXACTLY occupancy < min_occupancy (recovery contract):
+        # every well-occupied bin stays finite, every under-occupied bin is NaN.
+        assert np.all(finite[occupancy >= min_occ]), (
+            "a well-occupied bin was masked -- min_occupancy is thresholding a "
+            "non-seconds quantity."
+        )
+        assert np.all(np.isnan(firing_rate[occupancy < min_occ]))
+
 
 class TestComputeSpatialRateBackendParameter:
     """Tests for compute_spatial_rate backend parameter."""
@@ -5081,3 +5130,25 @@ class TestComputeSpatialRatesThroughputContract:
         # The load-bearing assertion: call count does NOT scale with n_neurons.
         # A per-neuron regression would make this 25, not 1.
         assert calls_n25 == calls_n1 == 1
+
+
+def test_batch_plot_without_idx_raises_actionable_error(simple_env, occupancy):
+    """Batch SpatialRatesResult.plot() with no unit index fails with guidance.
+
+    Regression: plot() required a positional idx, so calling it bare gave only a
+    bare ``TypeError: plot() missing 1 required positional argument``. It now
+    raises an actionable error naming the unit count and how to select one.
+    """
+    from neurospatial.encoding.spatial import SpatialRatesResult
+
+    firing_rates = np.zeros((3, simple_env.n_bins), dtype=np.float64)
+    firing_rates[:, 0] = [10.0, 20.0, 30.0]
+    result = SpatialRatesResult(
+        firing_rates=firing_rates,
+        occupancy=occupancy,
+        env=simple_env,
+        smoothing_method="diffusion_kde",
+        bandwidth=5.0,
+    )
+    with pytest.raises((TypeError, ValueError), match=r"(?i)idx|unit|plot\(0\)"):
+        result.plot()

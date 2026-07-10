@@ -352,7 +352,7 @@ import numpy as np
 # Compute heading from trajectory
 positions = np.column_stack([x, y])  # Shape: (n_time, 2)
 dt = times[1] - times[0]
-headings = heading_from_velocity(positions, dt, min_speed=2.0, bandwidth=3.0)
+headings = heading_from_velocity(positions, dt, min_speed=5.0, bandwidth=3.0)  # cm/s
 
 # Or from pose tracking keypoints
 headings = heading_from_body_orientation(nose_positions, tail_positions)
@@ -955,7 +955,7 @@ events = pd.DataFrame({
 })
 
 # Add x, y columns by interpolation from trajectory
-events_with_pos = add_positions(events, trajectory, trajectory_times)
+events_with_pos = add_positions(events, trajectory_times, trajectory)
 print(events_with_pos.columns)  # ['timestamp', 'label', 'x', 'y']
 ```
 

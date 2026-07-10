@@ -337,25 +337,15 @@ class EnvironmentTrajectory:
         times = np.asarray(times, dtype=np.float64)
         positions = np.asarray(positions, dtype=np.float64)
 
-        # Reject non-finite timestamps up front. Without this, a NaN makes
-        # every np.diff comparison False, so the monotonicity check below
-        # would raise the self-contradictory "0 decreasing interval(s)".
-        times = validate_finite(times, name="times")
-
-        # Validate monotonicity of timestamps
-        if len(times) > 1 and not np.all(np.diff(times) >= 0):
-            decreasing_indices = np.where(np.diff(times) < 0)[0]
-            raise ValueError(
-                "times must be monotonically increasing (non-decreasing). "
-                f"Found {len(decreasing_indices)} decreasing interval(s) at "
-                f"indices: {decreasing_indices.tolist()[:5]}"  # Show first 5
-                + (" ..." if len(decreasing_indices) > 5 else "")
-            )
-
-        # Check array shapes
+        # Check array shapes FIRST. A swapped occupancy(positions, times) call
+        # would otherwise run np.diff on the 2-D positions array and raise the
+        # misleading "times must be monotonically increasing", pointing the user
+        # at their (fine) timestamps instead of the real argument-order mistake.
         if times.ndim != 1:
             raise ValueError(
-                f"times must be 1-dimensional array, got shape {times.shape}"
+                f"times must be a 1-dimensional array, got shape {times.shape}. "
+                "The argument order is occupancy(times, positions) -- did you "
+                "pass positions first?"
             )
 
         if positions.ndim != 2:
@@ -368,6 +358,22 @@ class EnvironmentTrajectory:
             raise ValueError(
                 f"times and positions must have same length. "
                 f"Got times: {len(times)}, positions: {len(positions)}"
+            )
+
+        # Reject non-finite timestamps before the monotonicity check. Without
+        # this, a NaN makes every np.diff comparison False, so the monotonicity
+        # check below would raise the self-contradictory "0 decreasing
+        # interval(s)".
+        times = validate_finite(times, name="times")
+
+        # Validate monotonicity of timestamps
+        if len(times) > 1 and not np.all(np.diff(times) >= 0):
+            decreasing_indices = np.where(np.diff(times) < 0)[0]
+            raise ValueError(
+                "times must be monotonically increasing (non-decreasing). "
+                f"Found {len(decreasing_indices)} decreasing interval(s) at "
+                f"indices: {decreasing_indices.tolist()[:5]}"  # Show first 5
+                + (" ..." if len(decreasing_indices) > 5 else "")
             )
 
         # Validate positions dimensionality

@@ -21,7 +21,7 @@
 #
 # **Estimated time**: 15-20 minutes
 #
-# **Prerequisites**: [09_differential_operators.ipynb](09_differential_operators.ipynb)
+# **Prerequisites**: [09_differential_operators.ipynb](../09_differential_operators/)
 #
 # ## Learning Objectives
 #

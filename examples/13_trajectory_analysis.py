@@ -20,7 +20,7 @@
 #
 # **Estimated time**: 10-15 minutes
 #
-# **Prerequisites**: [01_introduction_basics.ipynb](01_introduction_basics.ipynb)
+# **Prerequisites**: [01_introduction_basics.ipynb](../01_introduction_basics/)
 #
 # ## Learning Objectives
 #

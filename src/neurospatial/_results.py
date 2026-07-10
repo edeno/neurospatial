@@ -451,6 +451,19 @@ def build_population_dataset(
     )
 
 
+def _format_summary_value(value: Any) -> str:
+    """Format a scalar ``summary()`` value compactly for repr/HTML.
+
+    Floats (including NumPy floats, which subclass ``float``) are rounded to 4
+    significant figures so a headline metric reads as ``peak_firing_rate=18.48``
+    rather than ``18.480991614424113``; everything else is passed through
+    ``str``. ``.4g`` renders ``nan``/``inf`` correctly.
+    """
+    if isinstance(value, float):
+        return f"{value:.4g}"
+    return str(value)
+
+
 class ResultMixin:
     """Uniform result-object surface: ``to_dataframe``, ``summary``, ``plot``.
 
@@ -482,6 +495,56 @@ class ResultMixin:
     ...     print("not implemented")
     not implemented
     """
+
+    def __repr__(self) -> str:
+        """Concise one-line repr built from :meth:`summary` scalar metrics.
+
+        Result classes carry large arrays (firing rates, occupancy, posteriors),
+        which the default dataclass repr dumps in full -- a wall of numbers when
+        a user simply types the result at a REPL. This shows the class name and
+        the headline scalars instead (e.g.
+        ``SpatialRateResult(n_bins=121, peak_firing_rate=18.48, ...)``). A
+        ``__repr__`` must never raise, so any failure in ``summary()`` (including
+        ``NotImplementedError``) degrades to ``ClassName(...)``.
+        """
+        name = type(self).__name__
+        try:
+            summary = self.summary()
+        except Exception:
+            return f"{name}(...)"
+        if not summary:
+            return f"{name}(...)"
+        parts = ", ".join(
+            f"{k}={_format_summary_value(v)}" for k, v in summary.items()
+        )
+        return f"{name}({parts})"
+
+    def _repr_html_(self) -> str:
+        """Rich HTML table of :meth:`summary` metrics for Jupyter.
+
+        Jupyter renders this instead of ``__repr__`` when a result is a cell's
+        last expression, giving a scannable metric table rather than a wall of
+        array values. Falls back to the plain repr when ``summary()`` is
+        unavailable.
+        """
+        import html
+
+        name = type(self).__name__
+        try:
+            summary = self.summary()
+        except Exception:
+            summary = {}
+        if not summary:
+            return f"<pre>{html.escape(repr(self))}</pre>"
+        rows = "".join(
+            f"<tr><th style='text-align:right'>{html.escape(str(k))}</th>"
+            f"<td style='text-align:left'>{html.escape(_format_summary_value(v))}</td></tr>"
+            for k, v in summary.items()
+        )
+        return (
+            f"<table><caption style='text-align:left'><b>{html.escape(name)}</b>"
+            f"</caption>{rows}</table>"
+        )
 
     def to_dataframe(self) -> pd.DataFrame:
         """Return a tidy/long-form :class:`pandas.DataFrame` of this result.

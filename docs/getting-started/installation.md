@@ -98,7 +98,7 @@ print(f"Created environment with {env.n_bins} bins")
 
 ## Tested Dependency Versions
 
-neurospatial v0.6.0 has been tested with:
+neurospatial v0.8.0 has been tested with:
 
 | Package | Tested Version |
 |---------|---------------|

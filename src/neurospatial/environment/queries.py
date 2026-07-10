@@ -21,10 +21,50 @@ from typing import Literal
 
 import networkx as nx
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
-from neurospatial.environment._protocols import SelfEnv
+from neurospatial.environment._protocols import EnvironmentProtocol, SelfEnv
 from neurospatial.environment.decorators import check_fitted
+
+
+def _resolve_point_or_index(
+    env: EnvironmentProtocol, point_or_index: int | ArrayLike
+) -> int:
+    """Resolve a coordinate point OR a bin index to an active-bin index.
+
+    Integers (Python ``int`` / NumPy integer) are treated as bin indices;
+    anything else (a coordinate array, list, or float) is treated as a point in
+    the environment's coordinate space and mapped to its bin via ``bin_at``. This
+    lets the graph-query methods accept either form -- like the geometric methods
+    -- instead of silently conflating a coordinate with a bin index.
+
+    Raises
+    ------
+    IndexError
+        If an integer index is outside ``[0, n_bins)``.
+    ValueError
+        If a coordinate point falls outside every active bin.
+    """
+    if isinstance(point_or_index, (int, np.integer)):
+        idx = int(point_or_index)
+        if not 0 <= idx < env.n_bins:
+            raise IndexError(f"bin index {idx} is out of range [0, {env.n_bins}).")
+        return idx
+    point = np.asarray(point_or_index, dtype=float)
+    resolved = np.asarray(env.bin_at(np.atleast_2d(point))).reshape(-1)
+    if resolved.size != 1:
+        raise ValueError(
+            f"expected a single coordinate point of shape (n_dims,), but got "
+            f"{resolved.size} points (input shape {point.shape}); pass one "
+            "point or a single bin index (int)."
+        )
+    idx = int(resolved[0])
+    if idx < 0:
+        raise ValueError(
+            f"Point {point.tolist()} is not inside any active bin; pass a point "
+            "within the environment, or a bin index (int)."
+        )
+    return idx
 
 
 class EnvironmentQueries:
@@ -192,17 +232,19 @@ class EnvironmentQueries:
         )
 
     @check_fitted
-    def neighbors(self: SelfEnv, bin_index: int) -> list[int]:
-        """Find indices of neighboring active bins for a given active bin index.
+    def neighbors(self: SelfEnv, bin_index: int | ArrayLike) -> list[int]:
+        """Find indices of neighboring active bins for a bin or point.
 
         This method delegates to the `neighbors` method of the
         underlying `LayoutEngine`, which typically uses the `connectivity`.
 
         Parameters
         ----------
-        bin_index : int
-            The index (0 to `n_active_bins - 1`) of the active bin for which
-            to find neighbors.
+        bin_index : int or array-like
+            An active bin index (``0`` to ``n_active_bins - 1``), OR a
+            coordinate point (array-like of length ``n_dims``), which is mapped
+            to its active bin via :meth:`bin_at`. Integers are treated as
+            indices; coordinate arrays/floats are treated as points.
 
         Returns
         -------
@@ -214,6 +256,10 @@ class EnvironmentQueries:
         ------
         RuntimeError
             If called before the environment is fitted.
+        IndexError
+            If bin_index is an integer index outside [0, n_bins).
+        ValueError
+            If bin_index is a coordinate point outside every active bin.
 
         Examples
         --------
@@ -226,6 +272,7 @@ class EnvironmentQueries:
         4  # Number of neighbors varies by layout
 
         """
+        bin_index = _resolve_point_or_index(self, bin_index)
         return list(self.connectivity.neighbors(bin_index))
 
     # Note: Decorator order matters - @cached_property must be on top
@@ -352,10 +399,10 @@ class EnvironmentQueries:
     @check_fitted
     def path_between(
         self: SelfEnv,
-        source_active_bin_idx: int,
-        target_active_bin_idx: int,
+        source_active_bin_idx: int | ArrayLike,
+        target_active_bin_idx: int | ArrayLike,
     ) -> list[int]:
-        """Find the shortest path between two active bins.
+        """Find the shortest path between two active bins (or points).
 
         The path is a sequence of active bin indices (0 to n_active_bins - 1)
         connecting the source to the target. Path calculation uses the
@@ -364,26 +411,30 @@ class EnvironmentQueries:
 
         Parameters
         ----------
-        source_active_bin_idx : int
-            The active bin index (0 to n_active_bins - 1) for the start of the path.
-        target_active_bin_idx : int
-            The active bin index (0 to n_active_bins - 1) for the end of the path.
+        source_active_bin_idx : int or array-like
+            The active bin index (0 to n_active_bins - 1) for the start of the
+            path, OR a coordinate point (mapped to its bin via :meth:`bin_at`).
+        target_active_bin_idx : int or array-like
+            The active bin index (0 to n_active_bins - 1) for the end of the
+            path, OR a coordinate point (mapped to its bin via :meth:`bin_at`).
 
         Returns
         -------
         list[int]
             A list of active bin indices representing the shortest path from
-            source to target. The list includes both the source and target indices.
-            Returns an empty list if the source and target are the same, or if
-            no path exists, or if nodes are not found.
+            source to target. The list includes both the source and target
+            indices. Returns a single-element list ``[source]`` when source and
+            target resolve to the same bin, and an empty list when no path
+            exists (disconnected components).
 
         Raises
         ------
         RuntimeError
             If called before the environment is fitted.
-        nx.NodeNotFound
-            If `source_active_bin_idx` or `target_active_bin_idx` is not
-            a node in the `connectivity`.
+        IndexError
+            If source/target is an integer index outside [0, n_bins).
+        ValueError
+            If source/target is a coordinate point outside every active bin.
 
         Examples
         --------
@@ -398,21 +449,23 @@ class EnvironmentQueries:
         """
         graph = self.connectivity
 
-        if source_active_bin_idx == target_active_bin_idx:
-            return [source_active_bin_idx]
+        source_idx = _resolve_point_or_index(self, source_active_bin_idx)
+        target_idx = _resolve_point_or_index(self, target_active_bin_idx)
+
+        if source_idx == target_idx:
+            return [source_idx]
 
         try:
             path = nx.shortest_path(
                 graph,
-                source=source_active_bin_idx,
-                target=target_active_bin_idx,
+                source=source_idx,
+                target=target_idx,
                 weight="distance",
             )
             return list(path)
         except nx.NetworkXNoPath:
             warnings.warn(
-                f"No path found between active bin {source_active_bin_idx} "
-                f"and {target_active_bin_idx}.",
+                f"No path found between active bin {source_idx} and {target_idx}.",
                 category=UserWarning,
                 stacklevel=2,
             )
@@ -604,7 +657,7 @@ class EnvironmentQueries:
     @check_fitted
     def reachable_from(
         self: SelfEnv,
-        source_bin: int,
+        source_bin: int | ArrayLike,
         *,
         radius: int | float | None = None,
         metric: Literal["hops", "geodesic"] = "hops",
@@ -620,8 +673,10 @@ class EnvironmentQueries:
 
         Parameters
         ----------
-        source_bin : int
-            Starting bin index. Must be in range [0, n_bins).
+        source_bin : int or array-like
+            An active bin index (0 to n_bins - 1), OR a coordinate point
+            (mapped to its bin via :meth:`bin_at`). Integers are treated as
+            indices; coordinate arrays/floats are treated as points.
         radius : int, float, or None, optional
             Maximum distance/hops. If None, find all reachable bins in the
             same connected component.
@@ -637,12 +692,14 @@ class EnvironmentQueries:
         -------
         reachable : NDArray[np.bool_], shape (n_bins,)
             Boolean mask where True indicates reachable bins.
-            The source bin is always reachable (reachable[source_bin] = True).
+            The resolved source bin is always reachable.
 
         Raises
         ------
+        IndexError
+            If source_bin is an integer index outside [0, n_bins).
         ValueError
-            If source_bin is not in valid range [0, n_bins).
+            If source_bin is a coordinate point outside every active bin.
             If radius is negative.
             If metric is not 'hops' or 'geodesic'.
 
@@ -685,17 +742,8 @@ class EnvironmentQueries:
         Component size: 1000 bins  # doctest: +SKIP
 
         """
-        # Input validation
-        if not isinstance(source_bin, (int, np.integer)):
-            raise TypeError(
-                f"source_bin must be an integer, got {type(source_bin).__name__}"
-            )
-
-        if not 0 <= source_bin < self.n_bins:
-            raise ValueError(
-                f"source_bin must be in range [0, n_bins) where n_bins={self.n_bins}. "
-                f"Got source_bin={source_bin}"
-            )
+        # Resolve a bin index or a coordinate point to an active-bin index.
+        source_bin = _resolve_point_or_index(self, source_bin)
 
         if radius is not None and radius < 0:
             raise ValueError(

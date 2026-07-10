@@ -620,7 +620,7 @@ class TestReachableFrom:
 
     def test_reachable_from_invalid_source_raises(self, small_2d_env):
         """Test that invalid source bin raises ValueError."""
-        with pytest.raises(ValueError, match="source_bin must be in range"):
+        with pytest.raises(IndexError, match="out of range"):
             small_2d_env.reachable_from(small_2d_env.n_bins + 10, radius=None)
 
     def test_reachable_from_negative_radius_raises(self, small_2d_env):

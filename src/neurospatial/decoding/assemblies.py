@@ -30,11 +30,11 @@ Typical Workflows
 -----------------
 **Assembly Detection**:
 
-1. Prepare spike count matrix (n_neurons, n_time_bins):
+1. Prepare spike count matrix (n_time_bins, n_neurons):
 
    >>> import numpy as np
    >>> # Example: 50 neurons, 2000 time bins (25ms bins = 50s recording)
-   >>> spike_counts = np.random.poisson(5, (50, 2000)).astype(np.float64)
+   >>> spike_counts = np.random.poisson(5, (2000, 50)).astype(np.float64)
 
 2. Detect assemblies:
 
@@ -92,11 +92,13 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 from scipy import linalg, stats
+
+from neurospatial._results import ResultMixin
 
 __all__ = [
     "AssemblyDetectionResult",
@@ -116,8 +118,8 @@ __all__ = [
 # =============================================================================
 
 
-@dataclass(frozen=True)
-class AssemblyPattern:
+@dataclass(frozen=True, repr=False)
+class AssemblyPattern(ResultMixin):
     """
     A detected cell assembly pattern.
 
@@ -162,9 +164,16 @@ class AssemblyPattern:
     member_indices: NDArray[np.int64]
     explained_variance_ratio: float
 
+    def summary(self) -> dict[str, Any]:
+        """Flat dict of scalar headline metrics for this result."""
+        return {
+            "n_members": int(self.member_indices.size),
+            "explained_variance_ratio": self.explained_variance_ratio,
+        }
 
-@dataclass(frozen=True)
-class AssemblyDetectionResult:
+
+@dataclass(frozen=True, repr=False)
+class AssemblyDetectionResult(ResultMixin):
     """
     Results from cell assembly detection.
 
@@ -219,9 +228,18 @@ class AssemblyDetectionResult:
     eigenvalues: NDArray[np.float64]
     threshold: float
 
+    def summary(self) -> dict[str, Any]:
+        """Flat dict of scalar headline metrics for this result."""
+        return {
+            "n_assemblies": len(self.patterns),
+            "n_significant": self.n_significant,
+            "method": self.method,
+            "threshold": self.threshold,
+        }
 
-@dataclass(frozen=True)
-class ExplainedVarianceResult:
+
+@dataclass(frozen=True, repr=False)
+class ExplainedVarianceResult(ResultMixin):
     """
     Results from explained variance reactivation analysis.
 
@@ -267,6 +285,15 @@ class ExplainedVarianceResult:
     partial_correlation: float
     n_pairs: int
 
+    def summary(self) -> dict[str, Any]:
+        """Flat dict of scalar headline metrics for this result."""
+        return {
+            "explained_variance": self.explained_variance,
+            "reversed_ev": self.reversed_ev,
+            "partial_correlation": self.partial_correlation,
+            "n_pairs": self.n_pairs,
+        }
+
 
 # =============================================================================
 # Marchenko-Pastur Threshold
@@ -286,9 +313,11 @@ def marchenko_pastur_threshold(
     Parameters
     ----------
     n_neurons : int
-        Number of neurons (rows in spike count matrix).
+        Number of neurons (columns in the (n_time_bins, n_neurons) spike-count
+        matrix).
     n_time_bins : int
-        Number of time bins (columns in spike count matrix).
+        Number of time bins (rows in the (n_time_bins, n_neurons) spike-count
+        matrix).
 
     Returns
     -------
@@ -326,8 +355,11 @@ def marchenko_pastur_threshold(
     >>> print(f"Threshold: {threshold:.3f}")
     Threshold: 1.732
 
-    >>> # Compare with eigenvalues
-    >>> eigenvalues = np.linalg.eigvalsh(np.corrcoef(spike_counts))  # doctest: +SKIP
+    >>> # Compare with eigenvalues. spike_counts is (n_time_bins, n_neurons),
+    >>> # so rowvar=False makes neurons the variables (an n_neurons x n_neurons
+    >>> # correlation matrix); the default would correlate time bins instead.
+    >>> corr = np.corrcoef(spike_counts, rowvar=False)  # doctest: +SKIP
+    >>> eigenvalues = np.linalg.eigvalsh(corr)  # doctest: +SKIP
     >>> n_significant = np.sum(eigenvalues > threshold)  # doctest: +SKIP
 
     References
@@ -381,7 +413,7 @@ def detect_assemblies(
 
     Parameters
     ----------
-    spike_counts : NDArray[np.float64], shape (n_neurons, n_time_bins)
+    spike_counts : NDArray[np.float64], shape (n_time_bins, n_neurons)
         Binned spike counts for population. Will be z-scored internally.
         Typical bin size: 25-100ms for assembly detection.
     algorithm : {'ica', 'pca', 'nmf'}, default='ica'
@@ -483,11 +515,11 @@ def detect_assemblies(
 
     if spike_counts.ndim != 2:
         raise ValueError(
-            f"spike_counts must be 2D (n_neurons, n_time_bins), "
+            f"spike_counts must be 2D (n_time_bins, n_neurons), "
             f"got shape {spike_counts.shape}"
         )
 
-    n_neurons, n_time_bins = spike_counts.shape
+    n_time_bins, n_neurons = spike_counts.shape
 
     if n_neurons < 3:
         raise ValueError(
@@ -496,11 +528,20 @@ def detect_assemblies(
 
     if n_time_bins < n_neurons:
         warnings.warn(
-            f"n_time_bins ({n_time_bins}) < n_neurons ({n_neurons}). "
-            "Results may be unreliable. Consider using longer recordings.",
+            f"spike_counts has n_time_bins ({n_time_bins}) < n_neurons "
+            f"({n_neurons}). spike_counts is expected as (n_time_bins, n_neurons) "
+            "-- time-first, matching bin_spikes_in_time's default and "
+            "decode_position. Fewer time bins than neurons usually means the "
+            "matrix is TRANSPOSED (n_neurons, n_time_bins); otherwise the "
+            "recording is simply short and results may be unreliable.",
             UserWarning,
             stacklevel=2,
         )
+
+    # Work internally in (n_neurons, n_time_bins): the assembly structure is a
+    # correlation over neurons, so z-score each neuron over time and correlate
+    # neuron-wise.
+    spike_counts = spike_counts.T
 
     # Z-score each neuron's activity
     spike_counts_z = stats.zscore(spike_counts, axis=1)
@@ -780,7 +821,7 @@ def assembly_activation(
 
     Parameters
     ----------
-    spike_counts : NDArray[np.float64], shape (n_neurons, n_time_bins)
+    spike_counts : NDArray[np.float64], shape (n_time_bins, n_neurons)
         Population activity. Must have same neurons as pattern.
     pattern : AssemblyPattern
         Assembly pattern with neuron weights.
@@ -838,17 +879,20 @@ def assembly_activation(
 
     if spike_counts.ndim != 2:
         raise ValueError(
-            f"spike_counts must be 2D (n_neurons, n_time_bins), "
+            f"spike_counts must be 2D (n_time_bins, n_neurons), "
             f"got shape {spike_counts.shape}"
         )
 
-    n_neurons, _n_time_bins = spike_counts.shape
+    _n_time_bins, n_neurons = spike_counts.shape
 
     if n_neurons != len(pattern.weights):
         raise ValueError(
             f"spike_counts has {n_neurons} neurons but pattern has "
             f"{len(pattern.weights)} weights. Must match."
         )
+
+    # Work internally in (n_neurons, n_time_bins).
+    spike_counts = spike_counts.T
 
     # Z-score if requested
     if z_score_input:
@@ -883,7 +927,7 @@ def pairwise_correlations(
 
     Parameters
     ----------
-    spike_counts : NDArray[np.float64], shape (n_neurons, n_time_bins)
+    spike_counts : NDArray[np.float64], shape (n_time_bins, n_neurons)
         Binned spike counts.
     z_score_input : bool, default=True
         If True, z-score spike counts before computing correlations.
@@ -902,15 +946,20 @@ def pairwise_correlations(
     Examples
     --------
     >>> corr = pairwise_correlations(spike_counts)  # doctest: +SKIP
-    >>> n_neurons = spike_counts.shape[0]  # doctest: +SKIP
+    >>> n_neurons = spike_counts.shape[1]  # doctest: +SKIP
     >>> n_pairs = n_neurons * (n_neurons - 1) // 2  # doctest: +SKIP
     >>> assert len(corr) == n_pairs  # doctest: +SKIP
     """
     spike_counts = np.asarray(spike_counts, dtype=np.float64)
 
     if spike_counts.ndim != 2:
-        raise ValueError(f"spike_counts must be 2D, got shape {spike_counts.shape}")
+        raise ValueError(
+            f"spike_counts must be 2D (n_time_bins, n_neurons), "
+            f"got shape {spike_counts.shape}"
+        )
 
+    # Work internally in (n_neurons, n_time_bins).
+    spike_counts = spike_counts.T
     n_neurons = spike_counts.shape[0]
 
     if z_score_input:
@@ -944,9 +993,9 @@ def reactivation_strength(
 
     Parameters
     ----------
-    template_counts : NDArray[np.float64], shape (n_neurons, n_template_bins)
+    template_counts : NDArray[np.float64], shape (n_template_bins, n_neurons)
         Spike counts during template period (e.g., behavior).
-    match_counts : NDArray[np.float64], shape (n_neurons, n_match_bins)
+    match_counts : NDArray[np.float64], shape (n_match_bins, n_neurons)
         Spike counts during match period (e.g., sleep).
     pattern : AssemblyPattern
         Assembly pattern to measure.
@@ -995,8 +1044,9 @@ def reactivation_strength(
     # activity is). Instead normalize both periods against a *single*
     # baseline (the template mean/std) and project directly onto the
     # pattern, so a larger match-period projection produces strength > 1.
-    template_counts = np.asarray(template_counts, dtype=np.float64)
-    match_counts = np.asarray(match_counts, dtype=np.float64)
+    # Inputs are (n_time_bins, n_neurons); work internally in (n_neurons, n_time).
+    template_counts = np.asarray(template_counts, dtype=np.float64).T
+    match_counts = np.asarray(match_counts, dtype=np.float64).T
 
     n_template_neurons = template_counts.shape[0]
     n_match_neurons = match_counts.shape[0]

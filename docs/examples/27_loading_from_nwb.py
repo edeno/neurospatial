@@ -31,7 +31,7 @@
 #
 # We use a synthetic in-memory NWB file so the notebook runs without
 # downloading anything. The same API works on real DANDI datasets - see
-# the [io.nwb API reference](../api/neurospatial/io/nwb/index.md) for
+# the [io.nwb API reference](../../api/neurospatial/io/nwb/) for
 # the full surface.
 #
 # ## Learning Objectives
@@ -47,8 +47,8 @@
 # **Estimated time**: 20-25 minutes
 #
 # **Prerequisites**:
-# [01_introduction_basics.ipynb](01_introduction_basics.ipynb),
-# [11_place_field_analysis.ipynb](11_place_field_analysis.ipynb).
+# [01_introduction_basics.ipynb](../01_introduction_basics/),
+# [11_place_field_analysis.ipynb](../11_place_field_analysis/).
 # Requires the optional ``pynwb`` dependency
 # (``uv add pynwb`` or install ``neurospatial[nwb]``).
 
@@ -316,7 +316,7 @@ print(f"units match:       {env.units == env_back.units}")
 # - For real DANDI data, point ``NWBHDF5IO`` at a downloaded ``.nwb``
 #   file and the same API applies
 # - For an end-to-end real-data example, see
-#   [19_real_data_bandit_task.ipynb](19_real_data_bandit_task.ipynb)
+#   [19_real_data_bandit_task.ipynb](../19_real_data_bandit_task/)
 #
 # ### References
 # - [NWB website](https://www.nwb.org/)

@@ -416,7 +416,7 @@ class EnvironmentVisualization:
         ... ).firing_rate  # doctest: +SKIP
         >>> ax = env.plot_field(  # doctest: +SKIP
         ...     firing_rate,
-        ...     cmap="hot",
+        ...     cmap="viridis",
         ...     colorbar_label="Firing Rate (Hz)",
         ...     vmin=0,  # doctest: +SKIP
         ... )  # doctest: +SKIP
@@ -819,7 +819,7 @@ class EnvironmentVisualization:
         ...     save_path="place_field_learning.mp4",
         ...     speed=0.5,  # Half-speed playback
         ...     frame_labels=[f"Trial {i + 1}" for i in range(20)],
-        ...     cmap="hot",
+        ...     cmap="viridis",
         ... )  # doctest: +SKIP
 
         Shareable HTML with instant scrubbing:

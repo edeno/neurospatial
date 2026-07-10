@@ -221,6 +221,41 @@ class TestFrameNamingIntegration:
         actual_names = [f.name for f in png_files]
         assert actual_names == expected_names
 
+    @pytest.mark.parametrize("reuse_artists", [True, False])
+    def test_worker_invokes_progress_callback_per_frame(
+        self, simple_env, tmp_path, reuse_artists
+    ):
+        """The optional per-frame progress_callback fires once per saved PNG.
+
+        This is the mechanism driving the serial (n_workers==1) render progress
+        bar, which previously showed no progress at all. Covered on both the
+        artist-reuse and per-frame-redraw render paths.
+        """
+        from neurospatial.animation._parallel import _render_worker_frames
+
+        rng = np.random.default_rng(0)
+        fields = [rng.random(simple_env.n_bins) for _ in range(4)]
+        calls: list[int] = []
+        task = {
+            "env": simple_env,
+            "fields": fields,
+            "start_frame_idx": 0,
+            "output_dir": str(tmp_path),
+            "cmap": "viridis",
+            "vmin": 0.0,
+            "vmax": 1.0,
+            "frame_labels": None,
+            "dpi": 50,
+            "digits": 5,
+            "reuse_artists": reuse_artists,
+            "progress_callback": lambda: calls.append(1),
+        }
+
+        _render_worker_frames(task)
+
+        assert len(calls) == 4  # once per frame
+        assert len(sorted(tmp_path.glob("frame_*.png"))) == 4
+
     def test_digits_parameter_propagates_to_workers(self, simple_env, tmp_path):
         """Verify digits parameter is correctly passed to workers."""
         from neurospatial.animation._parallel import _render_worker_frames

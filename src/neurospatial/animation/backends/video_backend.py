@@ -10,6 +10,7 @@ import logging
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import warnings
@@ -23,6 +24,18 @@ if TYPE_CHECKING:
     from neurospatial.environment.core import Environment
 
 logger = logging.getLogger(__name__)
+
+
+def _emit_status(message: str) -> None:
+    """Emit a user-facing status/progress message.
+
+    Written to ``stderr`` so it is visible by default -- ``logger.info`` output
+    is silent unless the application configured logging, which silently hid the
+    dry-run estimate and render/encode progress in a plain notebook or script.
+    Also logged at INFO for callers that consume the module logger.
+    """
+    print(message, file=sys.stderr, flush=True)
+    logger.info(message)
 
 
 def check_ffmpeg_available() -> bool:
@@ -281,7 +294,7 @@ def render_video(
 
     # Dry run: estimate time and file size
     if dry_run:
-        logger.info("Running dry run estimation...")
+        _emit_status("Running dry run estimation...")
 
         # Render one test frame to measure timing
         start = time.time()
@@ -325,14 +338,12 @@ def render_video(
                 "=" * 60,
             ]
         )
-        logger.info(report)
+        _emit_status(report)
         return None
 
-    logger.info(
-        "Rendering %d frames using %d workers (est. ~%d s)",
-        len(fields),
-        n_workers,
-        len(fields) * 0.5 / n_workers,
+    _emit_status(
+        f"Rendering {len(fields)} frame(s) using {n_workers} worker(s) "
+        f"(est. ~{len(fields) * 0.5 / n_workers:.0f} s)..."
     )
 
     # Create temporary directory for frames
@@ -358,7 +369,7 @@ def render_video(
         )
 
         # Encode video with ffmpeg
-        logger.info("Encoding video...")
+        _emit_status("Encoding video...")
         output_path = Path(save_path)
 
         # Select codec
