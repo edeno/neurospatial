@@ -62,7 +62,9 @@ class EnvironmentProtocol(Protocol):
     _kernel_cache: dict[tuple[float, KernelMode], NDArray[np.float64]]
     # Finite-volume geometry + growable truncated-eigenbasis caches for
     # env.diffuse (both versioned_cached_property, dropped on _state_version).
-    _diffusion_geometry: tuple[Any, NDArray[np.float64], int, NDArray[np.int_]]
+    _diffusion_geometry: tuple[
+        sparse.csr_matrix, NDArray[np.float64], int, NDArray[np.int_]
+    ]
     _diffusion_eigenbasis: dict[str, Any]
     _layout_type_used: str | None
     _layout_params_used: dict[str, Any]

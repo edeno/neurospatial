@@ -32,7 +32,8 @@ from neurospatial.environment._protocols import EnvironmentProtocol, SelfEnv
 from neurospatial.environment.decorators import check_fitted, versioned_cached_property
 
 if TYPE_CHECKING:
-    pass
+    from scipy import sparse
+
     from neurospatial import Environment
 
 
@@ -508,7 +509,7 @@ class EnvironmentFields:
     @versioned_cached_property
     def _diffusion_geometry(
         self,
-    ) -> tuple[Any, NDArray[np.float64], int, NDArray[np.int_]]:
+    ) -> tuple[sparse.csr_matrix, NDArray[np.float64], int, NDArray[np.int_]]:
         """Cached finite-volume geometry ``(W, volumes, n_components, labels)``.
 
         Geometry-only, so it is built once and dropped wholesale on any
