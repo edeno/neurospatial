@@ -39,11 +39,8 @@ if TYPE_CHECKING:
     from neurospatial.animation.overlays import OverlayProtocol
     from neurospatial.environment.trajectory import BinSequenceWithRuns
     from neurospatial.layout.base import LayoutEngine
+    from neurospatial.ops._types import KernelMode
     from neurospatial.regions import Region, Regions
-
-# Kernel normalization modes, shared by the kernel cache, ``compute_kernel``,
-# ``smooth``, and ``diffuse``. One alias so the accepted set cannot drift apart.
-KernelMode = Literal["transition", "density", "average"]
 
 
 class EnvironmentProtocol(Protocol):

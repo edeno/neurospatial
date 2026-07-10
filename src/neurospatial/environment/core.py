@@ -25,7 +25,7 @@ import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, ClassVar, Literal
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import networkx as nx
 import numpy as np
@@ -55,6 +55,7 @@ if TYPE_CHECKING:
     from scipy.spatial import cKDTree
 
     from neurospatial.environment.polar import EgocentricPolarEnvironment
+    from neurospatial.ops._types import KernelMode
 
 logger = logging.getLogger(__name__)
 
@@ -296,7 +297,7 @@ class _BaseEnvironment(
 
     # Kernel cache for smoothing operations (keyed by (bandwidth, mode))
     _kernel_cache: dict[
-        tuple[float, Literal["transition", "density", "average"]],
+        tuple[float, KernelMode],
         NDArray[np.float64],
     ] = field(init=False, default_factory=dict, repr=False)
 

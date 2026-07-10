@@ -51,6 +51,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.ops._types import KernelMode
 from neurospatial.ops.diffusion import _assemble_W, heat_kernel_from_W
 
 __all__ = [
@@ -70,7 +71,7 @@ def compute_diffusion_kernels(
     *,
     volumes: NDArray[np.float64],
     sigma: float,
-    mode: Literal["transition", "density", "average"],
+    mode: KernelMode,
 ) -> NDArray[np.float64]:
     """Assemble a finite-volume diffusion kernel from a face-measure graph.
 

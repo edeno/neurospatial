@@ -46,6 +46,7 @@ from numpy.typing import NDArray
 
 if TYPE_CHECKING:
     from neurospatial.environment._protocols import EnvironmentProtocol
+    from neurospatial.ops._types import KernelMode
 
 # Public entry points. The eigenbasis/apply-path functions below
 # (apply_heat_operator, diffusion_apply, heat_kernel_rank,
@@ -130,7 +131,7 @@ def heat_kernel_from_W(
     volumes: NDArray[np.float64],
     sigma: float,
     *,
-    mode: Literal["transition", "density", "average"],
+    mode: KernelMode,
 ) -> NDArray[np.float64]:
     """Normalize the raw heat operator into one of the three mode kernels.
 
@@ -552,7 +553,7 @@ def _apply_modes(
     volumes: Any,
     sigma: float,
     F: Any,
-    mode: Literal["transition", "density", "average"],
+    mode: KernelMode,
     xp: Any,
 ) -> Any:
     """Apply one of the three mode operators to a 2-D field batch ``F``.
@@ -715,7 +716,7 @@ def diffusion_apply(
     n_components: int,
     fields: NDArray[np.float64],
     sigma: float,
-    mode: Literal["transition", "density", "average"],
+    mode: KernelMode,
     *,
     backend: Literal["numpy", "jax"] = "numpy",
     tol: float = _HEAT_KERNEL_RANK_TOL,
@@ -855,7 +856,7 @@ def diffusion_kernel(
     env: EnvironmentProtocol,
     sigma: float,
     *,
-    mode: Literal["transition", "density", "average"] = "density",
+    mode: KernelMode = "density",
 ) -> NDArray[np.float64]:
     """Finite-volume diffusion kernel for an environment.
 

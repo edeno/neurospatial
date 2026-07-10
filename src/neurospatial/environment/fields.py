@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from scipy import sparse
 
     from neurospatial import Environment
+    from neurospatial.ops._types import KernelMode
 
 
 class EnvironmentFields:
@@ -48,7 +49,7 @@ class EnvironmentFields:
         self: SelfEnv,
         bandwidth: float,
         *,
-        mode: Literal["transition", "density", "average"] = "density",
+        mode: KernelMode = "density",
         cache: bool = True,
     ) -> NDArray[np.float64]:
         """Compute the finite-volume diffusion kernel for smoothing operations.
@@ -185,7 +186,7 @@ class EnvironmentFields:
         field: NDArray[np.float64],
         bandwidth: float,
         *,
-        mode: Literal["transition", "density", "average"] = "density",
+        mode: KernelMode = "density",
     ) -> NDArray[np.float64]:
         """Apply diffusion kernel smoothing to a field.
 
@@ -377,7 +378,7 @@ class EnvironmentFields:
         fields: Any,
         bandwidth: float,
         *,
-        mode: Literal["transition", "density", "average"] = "density",
+        mode: KernelMode = "density",
         backend: Literal["numpy", "jax"] = "numpy",
     ) -> NDArray[np.float64]:
         """Matrix-free finite-volume diffusion smoothing (no ``(n, n)`` kernel).
