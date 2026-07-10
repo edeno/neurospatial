@@ -514,9 +514,7 @@ class ResultMixin:
             return f"{name}(...)"
         if not summary:
             return f"{name}(...)"
-        parts = ", ".join(
-            f"{k}={_format_summary_value(v)}" for k, v in summary.items()
-        )
+        parts = ", ".join(f"{k}={_format_summary_value(v)}" for k, v in summary.items())
         return f"{name}({parts})"
 
     def _repr_html_(self) -> str:
