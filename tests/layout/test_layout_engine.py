@@ -471,3 +471,58 @@ def test_normalize_layout_name_consistency():
             f"_normalize_layout_name={_normalize_layout_name(name)}, "
             f"_normalize_name={_normalize_name(name)}"
         )
+
+
+def test_point_to_bin_index_dtype_is_intp():
+    """Layout index arrays are ``np.intp`` (portable), never int32/int_.
+
+    Tripwire for the index-dtype convention documented in
+    ``neurospatial.environment._protocols``: point/region *index* arrays are
+    ``np.intp``, while trajectory *sequence* arrays (``bin_sequence`` /
+    ``BinSequenceWithRuns``) deliberately stay ``int32`` (pinned in
+    ``tests/environment/test_bin_sequence.py``). On 64-bit ``np.intp`` equals
+    ``int64``, so this catches a regression to the narrower ``int32`` and
+    records intent; a true ``int_`` vs ``intp`` divergence is only observable
+    on a Windows test runner (where ``np.int_`` is 32-bit).
+    """
+    rng = np.random.default_rng(0)
+    data = rng.random((200, 2)) * 10
+    points = np.array([[1.0, 1.0], [5.0, 5.0], [1e6, 1e6]])
+
+    # _GridMixin (RegularGrid) and the Hexagonal path.
+    for name, kwargs in [
+        ("RegularGrid", {"bin_size": 2.0, "add_boundary_bins": False}),
+        ("Hexagonal", {"hexagon_width": 2.0}),
+    ]:
+        layout = create_layout(name, positions=data, infer_active_bins=True, **kwargs)
+        assert layout.point_to_bin_index(points).dtype == np.intp, name
+
+    # RegularGrid uses geometric containment: the outside point maps to the -1
+    # sentinel -- confirm it survives under the intp dtype.
+    grid = create_layout(
+        "RegularGrid",
+        positions=data,
+        infer_active_bins=True,
+        bin_size=2.0,
+        add_boundary_bins=False,
+    )
+    assert grid.point_to_bin_index(points)[-1] == -1
+
+    # GraphLayout is the _KDTreeMixin path (the historical int32 source).
+    track = Environment.linear_track(endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=5.0)
+    assert track.layout.point_to_bin_index(np.array([[10.0, 0.0]])).dtype == np.intp
+
+
+def test_environment_index_surface_dtype_is_intp():
+    """The public index surface (``bin_at`` / ``boundary_bins``) is ``np.intp``.
+
+    ``bin_at`` normalizes whatever an arbitrary ``LayoutEngine`` returns to
+    ``np.intp`` at the Environment boundary, pinning the user-facing contract
+    independent of the layout.
+    """
+    rng = np.random.default_rng(0)
+    env = Environment.open_field(rng.random((300, 2)) * 40, bin_size=4.0)
+    pts = np.array([[10.0, 10.0], [1e6, 1e6]])
+    assert env.bin_at(pts).dtype == np.intp
+    assert env.bin_at(pts)[-1] == -1  # geometric grid: outside -> -1 sentinel
+    assert env.boundary_bins.dtype == np.intp
