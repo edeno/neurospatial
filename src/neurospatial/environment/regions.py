@@ -16,7 +16,7 @@ from numpy.typing import NDArray
 
 from neurospatial.environment._protocols import SelfEnv
 from neurospatial.environment.decorators import check_fitted
-from neurospatial.regions import Regions
+from neurospatial.regions import Region, Regions
 
 _HAS_SHAPELY = importlib.util.find_spec("shapely") is not None
 
@@ -330,7 +330,7 @@ class EnvironmentRegions:
     @check_fitted
     def region_mask(
         self: SelfEnv,
-        regions: str | list[str] | object,  # Will be Region | Regions after import
+        regions: str | list[str] | Region | Regions,
         *,
         include_boundary: bool = True,
     ) -> NDArray[np.bool_]:

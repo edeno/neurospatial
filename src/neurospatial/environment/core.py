@@ -52,6 +52,8 @@ from neurospatial.ops.calculus import compute_differential_operator
 from neurospatial.regions import Regions
 
 if TYPE_CHECKING:
+    from scipy.spatial import cKDTree
+
     from neurospatial.environment.polar import EgocentricPolarEnvironment
 
 logger = logging.getLogger(__name__)
@@ -290,7 +292,7 @@ class _BaseEnvironment(
     _state_version: int = field(init=False, default=0)
 
     # KD-tree cache for spatial queries (populated lazily by map_points_to_bins)
-    _kdtree_cache: Any = field(init=False, default=None, repr=False)
+    _kdtree_cache: cKDTree | None = field(init=False, default=None, repr=False)
 
     # Kernel cache for smoothing operations (keyed by (bandwidth, mode))
     _kernel_cache: dict[

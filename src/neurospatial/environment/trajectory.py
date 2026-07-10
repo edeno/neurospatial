@@ -24,6 +24,7 @@ To avoid circular imports, we import Environment only for type checking.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from operator import itemgetter
 from typing import TYPE_CHECKING, Literal, cast
@@ -1370,7 +1371,7 @@ class EnvironmentTrajectory:
         self: SelfEnv,
         start_pos: NDArray[np.float64],
         end_pos: NDArray[np.float64],
-        grid_edges: list[NDArray[np.float64]],
+        grid_edges: Sequence[NDArray[np.float64]],
         grid_shape: tuple[int, ...],
         total_time: float,
     ) -> list[tuple[int, float]]:
@@ -1471,7 +1472,7 @@ class EnvironmentTrajectory:
     def _position_to_flat_index(
         self: SelfEnv,
         pos: NDArray[np.float64],
-        grid_edges: list[NDArray[np.float64]],
+        grid_edges: Sequence[NDArray[np.float64]],
         grid_shape: tuple[int, ...],
     ) -> int:
         """Convert N-D position to flat bin index (helper for ray intersection).
