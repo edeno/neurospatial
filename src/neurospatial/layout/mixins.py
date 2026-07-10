@@ -129,7 +129,7 @@ class _KDTreeMixin:
             self._kdtree = None
             self._kdtree_nodes_to_bin_indices_map = np.array([], dtype=np.int32)
 
-    def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.int_]:
+    def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
         """Map N-D points to active bin indices using nearest-neighbor search.
 
         Finds the nearest active bin center in `self.bin_centers` (on which
@@ -142,7 +142,7 @@ class _KDTreeMixin:
 
         Returns
         -------
-        NDArray[np.int_], shape (n_query_points,)
+        NDArray[np.intp], shape (n_query_points,)
             Array of active bin indices (0 to `n_active_bins - 1`). A point
             whose coordinates are non-finite (NaN/inf) maps to the ``-1``
             "outside" sentinel, matching the grid layouts. Returns -1 for all
@@ -164,7 +164,7 @@ class _KDTreeMixin:
             or self._kdtree_nodes_to_bin_indices_map.size == 0
         ):
             # This means no valid points were used to build the KD-tree.
-            return np.full(n_query_points, -1, dtype=np.int32)
+            return np.full(n_query_points, -1, dtype=np.intp)
 
         # A dimension mismatch is a caller error, not a recoverable "no match":
         # fail loud instead of swallowing it to a warning and returning -1 for
@@ -189,10 +189,10 @@ class _KDTreeMixin:
         # frames, occluded / low-confidence points), so map only the non-finite
         # rows to the -1 "outside" sentinel -- matching the grid layouts -- and
         # query just the finite subset.
-        final_bin_indices = np.full(n_query_points, -1, dtype=np.int32)
+        final_bin_indices = np.full(n_query_points, -1, dtype=np.intp)
         finite_rows = np.all(np.isfinite(query_points), axis=1)
         if not np.any(finite_rows):
-            return np.asarray(final_bin_indices, dtype=np.int32)
+            return np.asarray(final_bin_indices, dtype=np.intp)
 
         try:
             _, kdtree_internal_indices = self._kdtree.query(query_points[finite_rows])
@@ -204,7 +204,7 @@ class _KDTreeMixin:
                 RuntimeWarning,
                 stacklevel=2,
             )
-            return np.full(n_query_points, -1, dtype=np.int32)
+            return np.full(n_query_points, -1, dtype=np.intp)
 
         # kdtree_internal_indices index into the array used to build the KDTree
         # (final_points_for_kdtree_construction in _build_kdtree). Clip into its
@@ -221,7 +221,7 @@ class _KDTreeMixin:
             kdtree_internal_indices
         ]
 
-        return np.asarray(final_bin_indices, dtype=np.int32)
+        return np.asarray(final_bin_indices, dtype=np.intp)
 
 
 class _GridMixin:
@@ -267,7 +267,7 @@ class _GridMixin:
 
         return self._active_mask_inverse_map
 
-    def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.int_]:
+    def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
         """Map N-D points to active bin indices based on grid structure.
 
         Uses the grid's `grid_edges`, `grid_shape`, and `active_mask`
@@ -280,7 +280,7 @@ class _GridMixin:
 
         Returns
         -------
-        NDArray[np.int_], shape (n_points,)
+        NDArray[np.intp], shape (n_points,)
             Active bin indices (0 to N-1). -1 for points outside active areas.
 
         Raises
@@ -298,7 +298,7 @@ class _GridMixin:
             grid_shape=self.grid_shape,
             active_mask=self.active_mask,
             inverse_map=self.active_mask_inverse_map,
-        )
+        ).astype(np.intp, copy=False)
 
     def plot(
         self,

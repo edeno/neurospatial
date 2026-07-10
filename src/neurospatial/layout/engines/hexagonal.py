@@ -292,7 +292,7 @@ class HexagonalLayout:
             ax.set_aspect("equal", adjustable="box")
         return ax
 
-    def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.int_]:
+    def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
         """Map 2D points to active hexagonal bin indices.
 
         Uses specialized logic to determine which hexagon each point falls into,
@@ -305,7 +305,7 @@ class HexagonalLayout:
 
         Returns
         -------
-        NDArray[np.int_], shape (n_points,)
+        NDArray[np.intp], shape (n_points,)
             Active bin indices (0 to N-1). -1 for points not in an active hexagon.
 
         """
@@ -323,7 +323,7 @@ class HexagonalLayout:
                 RuntimeWarning,
                 stacklevel=2,
             )
-            return np.full(points.shape[0], -1, dtype=int)
+            return np.full(points.shape[0], -1, dtype=np.intp)
 
         # grid_shape is guaranteed to be tuple[int, int] for hexagonal layouts
         assert self.grid_shape is not None and len(self.grid_shape) == 2
@@ -341,7 +341,7 @@ class HexagonalLayout:
                 self._source_flat_to_active_id_map.get(idx, -1)
                 for idx in original_flat_indices
             ],
-            dtype=int,
+            dtype=np.intp,
         )
 
     def bin_sizes(self) -> NDArray[np.float64]:

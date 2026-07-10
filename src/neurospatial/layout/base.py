@@ -205,7 +205,7 @@ class LayoutEngine(Protocol):
         """
         ...
 
-    def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.int_]:
+    def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
         """Map continuous N-D points to discrete active bin indices.
 
         The returned indices range from `0` to `n_active_bins - 1`.
@@ -219,7 +219,7 @@ class LayoutEngine(Protocol):
 
         Returns
         -------
-        NDArray[np.int_], shape (n_points,)
+        NDArray[np.intp], shape (n_points,)
             An array of active bin indices corresponding to the input points.
             -1 for points outside the layout's active bins.
 

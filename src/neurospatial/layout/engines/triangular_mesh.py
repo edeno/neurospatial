@@ -183,7 +183,7 @@ class TriangularMeshLayout:
         self.active_mask[active_original_indices] = True
         # self.grid_edges remains an empty tuple as it's not a rectilinear grid.
 
-    def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.int_]:
+    def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
         """Map each 2D point to an active triangle index, or -1 if outside.
 
         Uses Delaunay.find_simplex() → original-simplex index → active-triangle index via
@@ -197,7 +197,7 @@ class TriangularMeshLayout:
 
         Returns
         -------
-        NDArray[np.int_]
+        NDArray[np.intp]
             Each entry is in [0..n_active-1] or -1 if outside.
 
         """
@@ -243,7 +243,7 @@ class TriangularMeshLayout:
                     if not keep:
                         active_triangle_idxs[idxs[local_i]] = -1
 
-        return active_triangle_idxs
+        return active_triangle_idxs.astype(np.intp, copy=False)
 
     @property
     def is_linearized_track(self) -> bool:

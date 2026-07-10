@@ -1555,13 +1555,13 @@ def apply_transform_to_environment(
         def build(self) -> None:
             pass  # Already built
 
-        def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.int64]:
+        def point_to_bin_index(self, points: NDArray[np.float64]) -> NDArray[np.intp]:
             # Use KD-tree on transformed centers
             from scipy.spatial import cKDTree
 
             kdtree = cKDTree(self.bin_centers)
             _, indices = kdtree.query(points)
-            return np.asarray(indices, dtype=np.int64)
+            return np.asarray(indices, dtype=np.intp)
 
         def bin_sizes(self) -> NDArray[np.float64]:
             """Approximate per-bin area/volume of the transformed layout.
