@@ -690,7 +690,7 @@ class EnvironmentTransforms:
 
             def point_to_bin_index(
                 self, points: NDArray[np.float64]
-            ) -> NDArray[np.int_]:
+            ) -> NDArray[np.intp]:
                 """Find the nearest bin index for each query point.
 
                 Matches the standard layout contract: accepts a batch of
@@ -726,10 +726,10 @@ class EnvironmentTransforms:
                 # (10x) here because SubsetLayout has no notion of an
                 # active mask -- only a graph -- and tightening would
                 # spuriously reject points near sparse regions.
-                indices = indices.astype(np.int64)
+                indices = indices.astype(np.intp)
                 if self._oof_threshold is not None:
                     indices[distances > self._oof_threshold] = -1
-                return cast("NDArray[np.int_]", indices)
+                return cast("NDArray[np.intp]", indices)
 
             def bin_sizes(self) -> NDArray[np.float64]:
                 """
