@@ -85,7 +85,7 @@ class EnvironmentMetrics:
 
     @cached_property
     @check_fitted  # Check only on first access, then value is cached
-    def boundary_bins(self: SelfEnv) -> NDArray[np.int_]:
+    def boundary_bins(self: SelfEnv) -> NDArray[np.intp]:
         """
         Identify boundary bins (bins on the edge of the active region).
 
@@ -95,7 +95,7 @@ class EnvironmentMetrics:
 
         Returns
         -------
-        NDArray[np.int_], shape (n_boundary_bins,)
+        NDArray[np.intp], shape (n_boundary_bins,)
             Array of bin IDs that are on the boundary.
 
         Notes
@@ -124,7 +124,7 @@ class EnvironmentMetrics:
             grid_shape=self.grid_shape,
             active_mask=self.active_mask,
             layout_kind=self._layout_type_used,
-        )
+        ).astype(np.intp, copy=False)
 
     @cached_property
     @check_fitted  # Check only on first access, then value is cached

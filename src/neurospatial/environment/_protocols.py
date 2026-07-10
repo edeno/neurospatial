@@ -105,12 +105,12 @@ class EnvironmentProtocol(Protocol):
         ...
 
     @property
-    def boundary_bins(self) -> NDArray[np.int_]:
+    def boundary_bins(self) -> NDArray[np.intp]:
         """Integer indices of bins at the environment boundary."""
         ...
 
     # Methods that mixins call
-    def bin_at(self, points_nd: NDArray[np.float64]) -> NDArray[np.int_]:
+    def bin_at(self, points_nd: NDArray[np.float64]) -> NDArray[np.intp]:
         """Find bin indices for given points (-1 for points outside)."""
         ...
 
@@ -135,7 +135,7 @@ class EnvironmentProtocol(Protocol):
         """Convert a trajectory to a bin sequence plus per-run boundaries."""
         ...
 
-    def bins_in_region(self, region_name: str) -> NDArray[np.int_]:
+    def bins_in_region(self, region_name: str) -> NDArray[np.intp]:
         """Get integer bin indices within a named region."""
         ...
 
@@ -239,7 +239,7 @@ class EnvironmentProtocol(Protocol):
         positions: NDArray[np.float64],
         dt: NDArray[np.float64],
         valid_mask: NDArray[np.bool_],
-        bin_indices: NDArray[np.int64],
+        bin_indices: NDArray[np.intp],
         return_seconds: bool,
     ) -> NDArray[np.float64]:
         """Allocate time linearly across trajectory segments."""

@@ -94,7 +94,7 @@ def interval_valid_mask(
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
-    start_bin: NDArray[np.int64] | None = None,
+    start_bin: NDArray[np.intp] | None = None,
 ) -> NDArray[np.bool_]:
     """Compute the per-interval validity mask shared by spikes and occupancy.
 
@@ -139,7 +139,7 @@ def interval_valid_mask(
         Maximum time gap in seconds. Intervals with ``dt > max_gap`` are
         dropped. Default 0.5; ``None`` disables gap gating on BOTH sides
         (spikes and occupancy) so they stay aligned.
-    start_bin : ndarray of int64, shape (n_samples,), or None
+    start_bin : ndarray of intp, shape (n_samples,), or None
         Optional precomputed ``env.bin_at(positions)`` result. When provided,
         it is used directly for the out-of-bounds-start gate instead of
         recomputing ``env.bin_at`` internally — letting callers that have
@@ -180,7 +180,7 @@ def interval_valid_mask(
     # Reuse a caller-supplied bin_at result when available (e.g. env.occupancy
     # already computes bin_at(positions)); otherwise compute it here.
     if start_bin is None:
-        start_bin = cast("NDArray[np.int64]", env.bin_at(positions).astype(np.int64))
+        start_bin = env.bin_at(positions)
     valid_mask &= start_bin[:-1] >= 0
 
     return valid_mask
@@ -437,10 +437,7 @@ class EnvironmentTrajectory:
         # bind to the nearest edge bin, so a tracking-error overshoot
         # inflated occupancy at the boundary while bin_sequence
         # correctly flagged the same sample as -1.
-        bin_indices = cast(
-            "NDArray[np.int64]",
-            self.bin_at(positions).astype(np.int64),
-        )
+        bin_indices = self.bin_at(positions)
 
         # Compute time intervals
         dt = np.diff(times)
@@ -1251,7 +1248,7 @@ class EnvironmentTrajectory:
         positions: NDArray[np.float64],
         dt: NDArray[np.float64],
         valid_mask: NDArray[np.bool_],
-        bin_indices: NDArray[np.int64],
+        bin_indices: NDArray[np.intp],
         return_seconds: bool,
     ) -> NDArray[np.float64]:
         """Allocate time intervals linearly across traversed bins (helper for occupancy).

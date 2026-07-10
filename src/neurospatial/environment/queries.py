@@ -79,7 +79,7 @@ class EnvironmentQueries:
     """
 
     @check_fitted
-    def bin_at(self: SelfEnv, points_nd: NDArray[np.float64]) -> NDArray[np.int_]:
+    def bin_at(self: SelfEnv, points_nd: NDArray[np.float64]) -> NDArray[np.intp]:
         """Map N-dimensional points to bins using geometric containment.
 
         This method uses the layout-specific geometric logic to determine which
@@ -140,7 +140,9 @@ class EnvironmentQueries:
         [12 -1]  # Second point outside environment
 
         """
-        return self.layout.point_to_bin_index(points_nd)
+        # Normalize divergent layout index dtypes (some layouts return int32) to
+        # the portable ``np.intp`` index dtype at the Environment boundary.
+        return self.layout.point_to_bin_index(points_nd).astype(np.intp, copy=False)
 
     @check_fitted
     def contains(self: SelfEnv, points_nd: NDArray[np.float64]) -> NDArray[np.bool_]:

@@ -53,7 +53,7 @@ class EnvironmentRegions:
     """
 
     @check_fitted
-    def bins_in_region(self: SelfEnv, region_name: str) -> NDArray[np.int_]:
+    def bins_in_region(self: SelfEnv, region_name: str) -> NDArray[np.intp]:
         """Get active bin indices that fall within a specified named region.
 
         This method identifies all active bins whose centers fall within the
@@ -68,7 +68,7 @@ class EnvironmentRegions:
 
         Returns
         -------
-        NDArray[np.int_]
+        NDArray[np.intp]
             Array of active bin indices (0 to n_active_bins - 1)
             that are part of the region. Returns empty array if no bins
             fall within the region.
@@ -128,7 +128,7 @@ class EnvironmentRegions:
                     f"does not match environment dimension {self.n_dims}.",
                 )
             bin_idx = self.bin_at(point_nd)
-            return np.asarray(bin_idx[bin_idx != -1], dtype=int)
+            return np.asarray(bin_idx[bin_idx != -1], dtype=np.intp)
 
         if region.kind == "polygon":
             # Check shapely availability from parent module for test compatibility
