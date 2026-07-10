@@ -1342,7 +1342,7 @@ class EnvironmentTrajectory:
 
             # Compute ray-grid intersections. These return FULL-GRID indices.
             bin_times = self._compute_ray_grid_intersections(
-                start_pos, end_pos, list(grid_edges), grid_shape, interval_time
+                start_pos, end_pos, grid_edges, grid_shape, interval_time
             )
 
             # Translate full-grid indices to active-bin ids and accumulate.
@@ -1416,7 +1416,7 @@ class EnvironmentTrajectory:
         if total_distance < EPSILON:
             # No movement - allocate all time to starting bin
             start_bin_idx = self._position_to_flat_index(
-                start_pos, list(grid_edges), grid_shape
+                start_pos, grid_edges, grid_shape
             )
             if start_bin_idx >= 0:
                 return [(start_bin_idx, total_time)]
@@ -1457,9 +1457,7 @@ class EnvironmentTrajectory:
             mid_pos = start_pos + t_mid * ray_dir
 
             # Get bin index at midpoint
-            bin_idx = self._position_to_flat_index(
-                mid_pos, list(grid_edges), grid_shape
-            )
+            bin_idx = self._position_to_flat_index(mid_pos, grid_edges, grid_shape)
 
             if bin_idx >= 0:
                 # Compute time in this segment
