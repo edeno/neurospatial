@@ -97,7 +97,7 @@ def decode_session(
     *,
     dt: float = 0.025,
     bandwidth: float = 5.0,
-    smoothing_method: str = "diffusion_kde",
+    method: str = "diffusion_kde",
     min_occupancy: float = 0.0,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
@@ -143,7 +143,7 @@ def decode_session(
     bandwidth : float, optional
         Smoothing bandwidth (same units as positions) for the KDE encoding
         step.  Ignored when ``encoding_models`` is provided.  Default 5.0.
-    smoothing_method : str, optional
+    method : str, optional
         KDE method passed to :func:`~neurospatial.encoding.compute_spatial_rates`.
         Options: ``"diffusion_kde"`` (default), ``"gaussian_kde"``,
         ``"binned"``.  Ignored when ``encoding_models`` is provided.
@@ -177,7 +177,7 @@ def decode_session(
         encoding step (``compute_spatial_rates``) is skipped entirely and
         this array is passed directly to the decoder.  Useful for re-using
         models across multiple decoding passes or for injecting custom
-        encoding models.  ``bandwidth``, ``smoothing_method``, and
+        encoding models.  ``bandwidth``, ``method``, and
         ``min_occupancy`` are ignored when this is set.
     warn_on_drop : bool, optional
         If ``True`` (the default), emit a single ``UserWarning`` when a large
@@ -320,7 +320,7 @@ def decode_session(
         positions,
         dt=dt,
         bandwidth=bandwidth,
-        smoothing_method=smoothing_method,
+        method=method,
         min_occupancy=min_occupancy,
         speed=speed,
         min_speed=min_speed,
@@ -353,7 +353,7 @@ def _build_encoding_model(
     *,
     dt: float,
     bandwidth: float,
-    smoothing_method: str,
+    method: str,
     min_occupancy: float,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
@@ -504,7 +504,7 @@ def _build_encoding_model(
     # surfaces it (never both, so no duplicate warning):
     if encoding_models is None:
         _method = cast(
-            "Literal['diffusion_kde', 'gaussian_kde', 'binned']", smoothing_method
+            "Literal['diffusion_kde', 'gaussian_kde', 'binned']", method
         )
         # The encoder runs over the same [t_start, t_stop] window and already
         # emits the spike-drop warning (and additionally an inactive-bin /
@@ -516,7 +516,7 @@ def _build_encoding_model(
             times_arr,
             positions,
             bandwidth=bandwidth,
-            smoothing_method=_method,
+            method=_method,
             min_occupancy=min_occupancy,
             fill_value=0.0,
             speed=speed,
@@ -571,7 +571,7 @@ def _encode_and_bin(
     *,
     dt: float,
     bandwidth: float,
-    smoothing_method: str,
+    method: str,
     min_occupancy: float,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
@@ -606,7 +606,7 @@ def _encode_and_bin(
         positions,
         dt=dt,
         bandwidth=bandwidth,
-        smoothing_method=smoothing_method,
+        method=method,
         min_occupancy=min_occupancy,
         speed=speed,
         min_speed=min_speed,
@@ -636,7 +636,7 @@ def decode_session_summary(
     *,
     dt: float = 0.025,
     bandwidth: float = 5.0,
-    smoothing_method: str = "diffusion_kde",
+    method: str = "diffusion_kde",
     min_occupancy: float = 0.0,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
@@ -670,7 +670,7 @@ def decode_session_summary(
 
     Parameters
     ----------
-    env, spike_times, times, positions, dt, bandwidth, smoothing_method, \
+    env, spike_times, times, positions, dt, bandwidth, method, \
 min_occupancy, speed, min_speed, max_gap, encoding_models, warn_on_drop, dtype
         Same as :func:`decode_session` (``max_gap`` forwards to
         :func:`~neurospatial.encoding.compute_spatial_rates`). ``dtype``
@@ -752,7 +752,7 @@ min_occupancy, speed, min_speed, max_gap, encoding_models, warn_on_drop, dtype
         positions,
         dt=dt,
         bandwidth=bandwidth,
-        smoothing_method=smoothing_method,
+        method=method,
         min_occupancy=min_occupancy,
         speed=speed,
         min_speed=min_speed,

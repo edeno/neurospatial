@@ -66,7 +66,7 @@ class BayesianDecoder:
         Decoding time-bin width in seconds.
     bandwidth : float, default=5.0
         KDE smoothing bandwidth (position units) for the encoding step.
-    smoothing_method : str, default="diffusion_kde"
+    method : str, default="diffusion_kde"
         KDE method for the encoding step. One of ``"diffusion_kde"``,
         ``"gaussian_kde"``, ``"binned"``.
     min_occupancy : float, default=0.0
@@ -103,7 +103,7 @@ class BayesianDecoder:
 
     Attributes
     ----------
-    env, dt, bandwidth, smoothing_method, min_occupancy, max_gap, dtype, \
+    env, dt, bandwidth, method, min_occupancy, max_gap, dtype, \
 warn_on_drop
         The configuration passed at construction (immutable).
     encoding_models : NDArray[np.float64] or None
@@ -149,7 +149,7 @@ warn_on_drop
     env: Environment
     dt: float = 0.025
     bandwidth: float = 5.0
-    smoothing_method: str = "diffusion_kde"
+    method: str = "diffusion_kde"
     min_occupancy: float = 0.0
     max_gap: float | None = 0.5
     dtype: type[np.float32] | type[np.float64] = np.float64
@@ -165,7 +165,7 @@ warn_on_drop
         (so :meth:`fit`'s returned decoder is validated too). The dataclass is
         frozen, so this only raises -- it never assigns fields. Reuses the core
         :func:`~neurospatial.decoding._binning.validate_dt` so ``dt`` semantics
-        cannot drift from the decode entry points; ``smoothing_method`` is left
+        cannot drift from the decode entry points; ``method`` is left
         to :meth:`fit` / ``compute_spatial_rates`` (no duplicate allow-set).
         """
         from neurospatial.decoding._binning import validate_dt
@@ -349,7 +349,7 @@ warn_on_drop
             positions,
             dt=self.dt,
             bandwidth=self.bandwidth,
-            smoothing_method=self.smoothing_method,
+            method=self.method,
             min_occupancy=self.min_occupancy,
             speed=speed,
             min_speed=min_speed,
