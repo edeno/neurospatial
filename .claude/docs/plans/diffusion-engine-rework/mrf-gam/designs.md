@@ -116,15 +116,19 @@ def select_live_basis(Q, Lam, mode_comp, volumes, labels, occupancy, *, rank) ->
         return MRFBasis(np.zeros((0, 0)), np.zeros((0,)), live_bins, 0)
     R = _DEFAULT_MAX_RANK if rank is None else int(rank)
     r_eff = max(n_live_components, min(live_bins.size, R))
-    # modes belonging to live components, in ascending-eigenvalue order (Q already sorted)
-    live_modes = np.flatnonzero(np.isin(mode_comp, live_comp))
-    keep = live_modes[:r_eff]                                        # requires len(live_modes) >= r_eff
-    inv_sqrt_vol = 1.0 / np.sqrt(volumes)                            # M^{-1/2}; B = M^{-1/2}Q (spec §3)
-    B = (inv_sqrt_vol[:, None] * Q[:, keep])[live_bins, :]           # (n_live_bins, r_eff)
+    live_modes = np.flatnonzero(np.isin(mode_comp, live_comp))      # live-component modes, λ-sorted
+    # (1) reserve EXACTLY ONE null per live component FIRST — its smallest-λ mode (Finding 1).
+    #     A pure global "first r_eff" would drop a whole component when a small positive mode of
+    #     component A sorts before component B's (numerically-positive) null, esp. at r_eff==n_live.
+    null_idx = np.array([np.flatnonzero(mode_comp == c)[0] for c in live_comp])  # one per live comp
+    # (2) fill the remaining r_eff - n_live_components slots globally by smallest λ.
+    remaining = live_modes[~np.isin(live_modes, null_idx)]          # still λ-sorted
+    fill_idx = remaining[: r_eff - n_live_components]
+    keep = np.concatenate([null_idx, fill_idx])                    # nulls first, then fills
+    inv_sqrt_vol = 1.0 / np.sqrt(volumes)                          # M^{-1/2}; B = M^{-1/2}Q (spec §3)
+    B = (inv_sqrt_vol[:, None] * Q[:, keep])[live_bins, :]          # (n_live_bins, r_eff)
     d = Lam[keep].copy()
-    # zero exactly one null per live component: the first (smallest-λ) kept mode of each component
-    _, first_idx = np.unique(mode_comp[keep], return_index=True)
-    d[first_idx] = 0.0
+    d[:n_live_components] = 0.0                                     # the reserved nulls (intercepts)
     return MRFBasis(B, d, live_bins, n_live_components)
 ```
 
@@ -144,7 +148,8 @@ def _mrf_basis(self, occupancy, *, rank):
     while True:                                          # iterative grow: dead modes may crowd out live
         Q, Lam, mode_comp = _ensure_global_modes(holder, S, labels, G)   # may be transient (dense)
         n_live_modes = int(np.isin(mode_comp, live).sum())
-        if n_live_modes >= r_eff or Q.shape[1] >= S.shape[0]:            # enough live modes, or full rank
+        covered = bool(np.isin(live, mode_comp).all())   # EVERY live component has ≥1 mode (Finding 1)
+        if (n_live_modes >= r_eff and covered) or Q.shape[1] >= S.shape[0]:
             break
         G = min(2 * Q.shape[1], S.shape[0])              # double, capped at full rank
     return select_live_basis(Q, Lam, mode_comp, volumes, labels, occupancy, rank=rank)
@@ -287,7 +292,7 @@ Spec §7 table. Handle before/around the fit so outputs stay model-consistent:
 | --- | --- | --- |
 | no neurons | `counts.shape[1] == 0` | `coefficients (r_eff, 0)`, `firing_rate (0, n_bins)`, `deviance (0,)`, `penalty/reml None`, `converged True`. Skip fit. |
 | zero total occupancy | `MRFBasis.live_bins.size == 0` | `coefficients (0, n_units)`, `firing_rate` all `_RATE_FLOOR`, `deviance` zeros, `penalty/reml None`, `converged True`, warn. Skip fit. |
-| **all-zero-spike population** | `counts.sum() == 0` (no unit has a spike) | **λ is unidentified** (every intercept → −∞, the `r·logλ`/logdet terms cancel — Finding 3). **Skip REML** (`penalty=None`, `reml_objective=None`), run the **unpenalized** fit (`penalty_diag=zeros`) so all fields floor to `_RATE_FLOOR`; `deviance` finite (≈0), warn. This is the shared home for both `pooled=True` and `pooled=False` when no unit is informative. |
+| **all-zero-spike population** | `counts.sum() == 0` (no unit has a spike) | **λ is unidentified**, so **skip REML *selection*** — but respect the fixed-penalty contract (Finding 2): `reml_objective=None` always; **`penalty` = the supplied fixed float if given, else `None`** (auto). Fit with `penalty_diag = (fixed_penalty or 0)·d`; fields floor to `_RATE_FLOOR` either way; `deviance` finite (≈0), warn. Shared home for `pooled=True` and `pooled=False`-with-no-informative-unit. |
 | dead component | `n_live_components < n_components` | fit on live bins; dead bins → `_RATE_FLOOR`; warn. |
 | zero-spike neuron (population has ≥1 informative unit) | `counts[:, k].sum() == 0` | fit normally (low intercept); rate floors near `_RATE_FLOOR`. Shared-λ: no special path. Per-unit (`pooled=False`): pooled-λ fallback ([phase-6](phase-6-per-neuron-lambda.md)). |
 | `penalty=0` rank-deficient | `np.linalg.matrix_rank(B[exposed_live_bins]) < r_eff` | warn (identifiability). Fit still runs. |

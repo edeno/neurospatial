@@ -310,7 +310,7 @@ there. Per case (all warn, none raise):
 | --- | --- | --- | --- | --- | --- |
 | **no neurons** (`n_units==0`) | `(r_eff, 0)` | `(0, n_bins)` | `(0,)` | `None` / `None` | `True` |
 | **zero total occupancy** (no live comp) | **empty** `(0, n_units)` — no live basis, so **no coefficients**; all bins are the floor fallback | `_RATE_FLOOR` everywhere | `(n_units,)` zeros | `None` / `None` | `True` |
-| **all-zero-spike population** (`Σn==0` over all units) | fitted unpenalized (`penalty_diag=0`) → low intercept | `_RATE_FLOOR` everywhere | `≈0` | `None` / `None` (λ unidentified — skip REML) | fitted |
+| **all-zero-spike population** (`Σn==0` over all units) | fitted (`penalty_diag=(fixed λ or 0)·d`) → low intercept | `_RATE_FLOOR` everywhere | `≈0` | **fixed float if supplied, else `None`** / `None` (REML *selection* skipped; fixed-penalty contract respected — §5) | fitted |
 | **dead component** (`Σo_comp==0`) | live modes only (§6.1) | `_RATE_FLOOR` on that comp; `exp(Bγ)`-fitted elsewhere | fitted, exposed bins | fitted / fitted | fitted |
 | **zero-spike neuron** (`Σn_k==0`, population has ≥1 informative unit) | fitted (low intercept) | `exp(η)` floored → near-floor | finite | shared (or pooled-λ fallback if `pooled=False`, §5) | shared |
 

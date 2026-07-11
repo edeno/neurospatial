@@ -22,7 +22,7 @@ changes.
 every unit; only the counts differ.** So `r == 0` is a **population-level** property (not per-unit),
 and per-unit λ is meaningful only for **informative** units (`Σ n_k > 0`).
 
-- Add `pooled: bool = True` to `compute_spatial_rate` / `compute_spatial_rates` (glm-only; a `ValueError` if set `False` with a ratio method, same validation family as [method-param](shared-contracts.md#method-param)).
+- Add `pooled: bool = True` to `compute_spatial_rate` / `compute_spatial_rates` with **strict validation** (Finding 3): reject non-`bool` (`isinstance(pooled, bool)` — rejects strings, ints incl. `0`/`1`, arrays, `None`) with a clear `ValueError`; and reject `pooled=False` with a **ratio method** (`pooled` is glm-only), same validation family as [method-param](shared-contracts.md#method-param). `pooled=True` with a ratio method is a harmless no-op default (don't error on the default).
 - **Fixed penalty takes precedence over `pooled` (Finding 6).** If `penalty=<float>` is supplied, REML is skipped entirely and the result records that **scalar** λ — identical to `pooled=True`. `pooled` only affects the automatic-REML (`penalty=None`) path. Document + test.
 - In `_glm.py`, per-neuron REML branch to `fit_mrf_gam` for `pooled=False, penalty is None, penalty_rank > 0`: **partition units into informative (`Σ n_k > 0`) and zero-spike**.
   - **No informative unit at all** → this is the **all-zero-spike population** degenerate case ([designs.md#degenerate](designs.md#degenerate), Finding 3): **do not run pooled REML** (it is equally unidentified); take the shared degenerate path — scalar `penalty=None`, `reml_objective=None`, floor fields. `pooled=False` reuses that behavior, does not special-case it.
@@ -32,7 +32,7 @@ and per-unit λ is meaningful only for **informative** units (`Σ n_k > 0`).
 - **`penalty_rank == 0` behaves exactly as `pooled=True`** — skip REML population-wide, scalar `penalty=None`, `penalty_diag=zeros`. Reuse the shared-λ Newton fit per distinct λ_k; do not fork it.
 - **Aggregate batch diagnostics when per-unit fits are looped (Finding 6):** `converged = all(per_unit_converged)`, `n_iter = max(per_unit_n_iter)`, and **one** `UserWarning` naming the non-converged unit ids (not one per unit). These stay batch scalars ([MRFFit](shared-contracts.md#mrffit)).
 - **Result plumbing** ([shared-contracts.md#mrffit](shared-contracts.md#mrffit)): `penalty` / `reml_objective` become `(n_units,)` float arrays when `pooled=False, penalty is None, r > 0` **and ≥1 informative unit** (informative units their λ_k, zero-spike units the fallback λ with `reml_objective=nan`); **scalar** otherwise (`pooled=True`, fixed penalty, `r==0`→`None`, or all-zero-spike→`None`). `summary_table` reports per-unit λ + `penalty_selected_by_reml` when vector; `rates[i].penalty` slices `penalty[i]`. Extend `SpatialRatesResult.__getitem__` accordingly.
-- **NWB** (extends phase-4): when `penalty`/`reml_objective` are vectors, persist them **and `penalty_selected_by_reml`** as **per-unit table columns**; the reader keys on the stored `pooled` flag / scalar-vs-vector to place them ([spec §8](../design-mrf-gam.md)). Add a `pooled` scalar to the metadata. Round-trip preserves scalar-vs-vector and the mask.
+- **NWB — schema migration (Finding 4).** This adds new persisted fields, so **bump the encoding-model schema version again** (beyond phase-4's bump). Writer: add a **`pooled` scalar** to the metadata; when `penalty`/`reml_objective` are vectors, persist them **and `penalty_selected_by_reml`** as **per-unit table columns** ([spec §8](../design-mrf-gam.md)). Reader **backward-compat**: a **phase-4-era file with no `pooled` key reads as `pooled=True`** (the only behavior that existed then); missing vector columns / missing mask → scalar `penalty`/`reml_objective` and `penalty_selected_by_reml=None`. The reader keys on `pooled` (or scalar-vs-vector) to place the fields. Round-trip preserves scalar-vs-vector and the mask. The pre-0.9 legacy `"smoothing_method"`-key fallback (phase-0) still holds.
 - Docs: `compute_spatial_rate` docstring + CHANGELOG — `pooled=False` for per-neuron smoothing; note the cost (REML per unit), the fixed-penalty precedence, the zero-spike fallback (λ not data-driven), and the shared-basis `r==0` behavior.
 
 ## Deliberately not in this phase
@@ -52,12 +52,15 @@ and per-unit λ is meaningful only for **informative** units (`Σ n_k > 0`).
 | `test_pooled_false_all_zero_spike` | a `pooled=False` population with **no** informative unit reuses the all-zero-spike degenerate path — scalar `penalty is None`, `reml_objective is None`, floor fields (**no pooled REML run** — Finding 3). |
 | `test_fixed_penalty_precedence` | `pooled=False, penalty=2.5` → REML skipped, `result.penalty == 2.5` **scalar** (not a vector), `reml_objective is None` — fixed penalty beats `pooled` (Finding 6). |
 | `test_aggregate_diagnostics` | with a looped per-unit fit where one unit fails to converge: `converged is False`, `n_iter == max` per-unit, and **one** `UserWarning` names the failed unit id(s) (not one per unit) (Finding 6). |
-| `test_pooled_validation` | `pooled=False` with `method="binned"` raises; with `method="glm"` accepted. |
+| `test_pooled_validation` | `pooled=False` with `method="binned"` raises; with `method="glm"` accepted; `pooled=True` with a ratio method is a no-op (no raise). |
+| `test_pooled_type_strict` | `pooled` rejects `"true"`, `1`, `0`, `np.array([True])`, `None` with `ValueError` (only real `bool` accepted; Finding 3). |
 | `test_pooled_false_nwb_roundtrip` | a `pooled=False` (vector-penalty) result round-trips through NWB with `penalty`/`reml_objective`/**`penalty_selected_by_reml`** as per-unit columns; a `pooled=True` / fixed-penalty result keeps `penalty`/`reml_objective` as metadata scalars and `penalty_selected_by_reml` absent/`None`. |
+| `test_nwb_phase4_era_file_reads` | a **phase-4-era file with no `pooled` key** (no vector columns, no mask) reads back as `pooled=True`, scalar `penalty`/`reml_objective`, `penalty_selected_by_reml is None` — the schema bump is backward-readable (Finding 4). Back it with a checked-in tiny file written at the phase-4 schema version. |
 
 ## Fixtures
 
 - Reuse `simulate_place_fields`; add a variant with per-unit smoothness (some units sharp, some broad, fixed seed) so distinct `λ_k` is recoverable, and the two-3-node-paths `r==0` env for the scalar-`None` test.
+- A **checked-in tiny phase-4-era NWB file** (written at the phase-4 schema version, no `pooled` key / vector columns / mask) to back `test_nwb_phase4_era_file_reads` — the same way phase-0's legacy-key file backs its read test.
 
 ## Review
 
@@ -65,7 +68,8 @@ Before opening the PR, dispatch `code-reviewer` against the diff. Confirm:
 - `pooled=True` default is shape- and value-identical to before (no regression); `pooled=False` is additive.
 - `r==0` is population-level (scalar `None`), **not** per-unit; a **fixed penalty stays a scalar** regardless of `pooled`; no `None`/`nan` inside the per-unit vector.
 - **Zero-spike units use the pooled-λ fallback, not the optimizer's arbitrary point** (Finding 5); aggregate `converged`/`n_iter` follow the all/max rule with a single failed-unit warning (Finding 6).
-- The Newton fit is reused per λ, not forked; NWB places scalar-vs-vector correctly.
+- The Newton fit is reused per λ, not forked; NWB **bumps the schema version** and reads phase-4-era files (missing `pooled` → `True`) — a backward-read test exists (Finding 4).
+- `pooled` is **strictly boolean-validated** (rejects `"true"`/`1`/`0`/arrays/`None`) and glm-only (Finding 3).
 - "Deliberately not in this phase" honored — default unchanged, no speculative JAX fork.
 - Tests recover distinct per-unit λ and assert the scalar-vs-vector shape rules (not tautologies); fixtures shared, seed fixed.
 - No plan references in code/tests; docstring + CHANGELOG updated.
