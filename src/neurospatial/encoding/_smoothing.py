@@ -631,8 +631,7 @@ def validate_spatial_method_params(
 ) -> tuple[float | None, int | None]:
     """Validate the method-specific params of ``compute_spatial_rate(s)``.
 
-    Applies, in order (spec §6.2 /
-    ``shared-contracts.md#method-param``):
+    Applies, in order:
 
     1. **Method validity** -- ``method`` must be one of the four spatial methods
        (``diffusion_kde`` / ``gaussian_kde`` / ``binned`` / ``glm``).

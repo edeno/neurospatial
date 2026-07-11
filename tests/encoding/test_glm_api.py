@@ -114,7 +114,9 @@ def test_glm_finite_where_ratio_nans(open_field_env: Environment) -> None:
 
     masked = occ < threshold
     assert masked.any(), "test needs at least one low-occupancy bin"
-    assert np.isnan(ratio_rate[masked]).any(), "diffusion_kde should NaN low-occ bins"
+    # diffusion_kde masks EVERY sub-threshold bin, so .all() is the true contract
+    # (a regression that masked only some bins would slip past .any()).
+    assert np.isnan(ratio_rate[masked]).all(), "diffusion_kde should NaN low-occ bins"
     assert np.all(np.isfinite(glm_rate)), "glm must be finite everywhere"
 
 
@@ -175,7 +177,9 @@ def test_glm_result_fields(open_field_env: Environment) -> None:
     assert np.asarray(result.penalty_weights).shape == (rank,)
     assert np.asarray(result.deviance).shape == (n_units,)
     assert np.isscalar(result.penalty) or result.penalty is None
-    assert isinstance(bool(result.converged), bool)
+    # A well-sampled population fit genuinely converges (guards against the field
+    # being stamped None/False -- bool(None) would pass an isinstance-bool check).
+    assert result.converged is True
     assert np.isscalar(result.n_iter)
     assert result.reml_objective is None or np.isscalar(result.reml_objective)
     # REML ran on a well-sampled multi-unit population (r > 0, spikes present).
@@ -375,14 +379,17 @@ def _jax_available() -> bool:
 def test_glm_backend_jax_return(open_field_env: Environment) -> None:
     """glm backend='jax' returns the SAME array-type as diffusion_kde backend='jax'.
 
-    Phase-3 fixes the public return contract (NumPy core + convert output to a
-    JAX array when the resolved backend is 'jax') before phase-5 accelerates the
-    fit. Values match the backend='numpy' glm result.
+    The glm fit runs the NumPy core and the assembled rate array is converted to a
+    JAX array when the resolved backend is 'jax', matching the ratio path's return
+    contract. Values match the backend='numpy' glm result. Both the plural
+    (``compute_spatial_rates``) and singular (``compute_spatial_rate``) entry
+    points have their own conversion branch, so both are checked.
     """
     env = open_field_env
     centers = [(4.0, 4.0), (12.0, 12.0)]
     times, positions, spike_times = _grid_session(env, centers, seed=10)
 
+    # --- plural ---
     ratio_jax = compute_spatial_rates(
         env, spike_times, times, positions, method="diffusion_kde", backend="jax"
     )
@@ -392,12 +399,30 @@ def test_glm_backend_jax_return(open_field_env: Environment) -> None:
     glm_numpy = compute_spatial_rates(
         env, spike_times, times, positions, method="glm", backend="numpy"
     )
-    assert type(np.asarray(glm_jax.firing_rates)) is np.ndarray  # coercible
-    # Same array type as the ratio path returns for backend="jax".
+    # Same array type as the ratio path returns for backend="jax" (deleting glm's
+    # conversion branch, which returns NumPy, would fail this since ratio is JAX).
     assert type(glm_jax.firing_rates) is type(ratio_jax.firing_rates)
     np.testing.assert_allclose(
         np.asarray(glm_jax.firing_rates),
         np.asarray(glm_numpy.firing_rates),
+        rtol=1e-4,
+        atol=1e-5,
+    )
+
+    # --- singular (its own separate conversion branch) ---
+    ratio_single_jax = compute_spatial_rate(
+        env, spike_times[0], times, positions, method="diffusion_kde", backend="jax"
+    )
+    glm_single_jax = compute_spatial_rate(
+        env, spike_times[0], times, positions, method="glm", backend="jax"
+    )
+    glm_single_numpy = compute_spatial_rate(
+        env, spike_times[0], times, positions, method="glm", backend="numpy"
+    )
+    assert type(glm_single_jax.firing_rate) is type(ratio_single_jax.firing_rate)
+    np.testing.assert_allclose(
+        np.asarray(glm_single_jax.firing_rate),
+        np.asarray(glm_single_numpy.firing_rate),
         rtol=1e-4,
         atol=1e-5,
     )
@@ -555,8 +580,11 @@ def test_degenerate_zero_spike_neuron(open_field_env: Environment) -> None:
             dtype=np.float64,
         )
     rates = np.asarray(rates)
-    # zero-spike unit floors low everywhere; informative unit peaks near (8, 8)
-    assert rates[1].max() < 1.0
+    # The zero-spike unit floors to _RATE_FLOOR EVERYWHERE (its intercept is driven
+    # to the eta clip); pin that exactly rather than a loose upper bound.
+    assert np.allclose(rates[1], _floor())
+    # The informative unit is a real field, not floored.
+    assert rates[0].max() > 1.0
     assert np.all(np.isfinite(rates))
 
 
@@ -645,13 +673,39 @@ def test_all_layouts_smoke(
     polar_env,
     simulate_place_fields,
 ) -> None:
-    """glm assembly runs on grid / masked-multi-component / 1D / polar layouts."""
+    """glm assembly runs on grid / masked-multi-component / 1D / hex / polar / mesh.
+
+    Each layout exercises a distinct connectivity + bin-volume geometry that the
+    ``_mrf_basis`` -> ``live_bins`` scatter runs over.
+    """
+    import importlib.util
+
+    hex_env = Environment.from_layout(
+        kind="hexagonal",
+        layout_params={
+            "hexagon_width": 6.0,
+            "dimension_ranges": ((0.0, 24.0), (0.0, 24.0)),
+        },
+    )
     envs = {
         "open_field": open_field_env,
         "two_component": two_component_env,
         "four_component_1d": four_component_env,
+        "hexagonal": hex_env,
         "polar": polar_env,
     }
+    # Triangular mesh needs shapely for the boundary polygon; skip that entry if
+    # shapely is absent rather than the whole test.
+    if importlib.util.find_spec("shapely") is not None:
+        from shapely.geometry import Polygon
+
+        envs["triangular_mesh"] = Environment.from_layout(
+            kind="TriangularMesh",
+            layout_params={
+                "boundary_polygon": Polygon([(0, 0), (24, 0), (24, 24), (0, 24)]),
+                "point_spacing": 8.0,
+            },
+        )
     for name, env in envs.items():
         centers = [tuple(np.asarray(env.bin_centers)[0])]
         counts, occ = simulate_place_fields(env, centers, sigma=3.0)

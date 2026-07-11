@@ -912,7 +912,8 @@ class SpatialRatesResult(SpatialResultMixin):
         Per-unit unpenalized Poisson deviance, shape ``(n_units,)`` (``None`` for
         ratio methods).
     converged : bool or None
-        Batch-level convergence flag (``None`` for ratio methods). ``False`` for
+        Batch-level convergence flag (``None`` for ratio methods). ``False`` on
+        nonconvergence -- a line-search failure, the Newton iteration cap, or
         out-of-domain data (empirical rate above ``exp(30)``).
     n_iter : int or None
         Batch-level Newton iteration count (``None`` for ratio methods).
@@ -1308,10 +1309,12 @@ class SpatialRatesResult(SpatialResultMixin):
             "env": env_fingerprint(self.env),
             "software_version": software_version(),
         }
-        # ``bandwidth`` is ``None`` for ``method="glm"``. NetCDF attributes cannot
-        # hold ``None`` (``Dataset.to_netcdf()`` would raise ``TypeError``), so
-        # include it only when set -- the same "omit-when-unset" rule ``units_attr``
-        # uses. Ratio results always carry their float bandwidth.
+        # Guard on the value, not on ``method``: NetCDF attributes cannot hold
+        # ``None`` (``Dataset.to_netcdf()`` would raise ``TypeError``), and
+        # ``bandwidth`` is ``None`` for ``method="glm"``. Keying on
+        # ``bandwidth is not None`` guards exactly that serialization precondition
+        # -- the same "omit-when-unset" rule ``units_attr`` uses -- so it stays
+        # correct even if a ratio result ever carried a ``None`` bandwidth.
         if self.bandwidth is not None:
             attrs["bandwidth"] = self.bandwidth
         return build_population_dataset(
@@ -1943,10 +1946,11 @@ class SpatialRatesResult(SpatialResultMixin):
 
         data["method"] = self.method
 
-        # GAM (``method="glm"``) scalar columns, only when present. ``deviance``
-        # is per-unit; the remaining GAM diagnostics are batch-level scalars that
-        # broadcast to every row.
-        if self.coefficients is not None:
+        # GAM scalar columns, only for ``method="glm"``. ``deviance`` is per-unit;
+        # the remaining GAM diagnostics are batch-level scalars that broadcast to
+        # every row. Keyed on ``method`` (the single "is this glm?" discriminant,
+        # matching the NWB writer), not on a GAM field's None-ness.
+        if self.method == "glm":
             data["penalty"] = self.penalty
             data["rank"] = self.rank
             data["deviance"] = np.asarray(self.deviance)
@@ -2004,10 +2008,10 @@ def _compute_glm_spatial_rates(
 ) -> tuple[ArrayLike, Any]:
     """Fit ``method="glm"`` and assemble the full active-bin firing-rate array.
 
-    This is the phase-3 orchestrator that owns the **unit-major <-> bin-major**
-    boundary, the float64 core / dtype-at-the-boundary split, and the two-concern
-    backend handling. It consumes the phase-1 basis
-    (:meth:`Environment._mrf_basis`) and the phase-2 fit
+    Orchestrates the ``method="glm"`` estimator: it owns the **unit-major <->
+    bin-major** boundary, the float64 core / dtype-at-the-boundary split, and the
+    two-concern backend handling. It composes the reduced-rank penalty basis
+    (:meth:`Environment._mrf_basis`) and the penalized-Poisson fit
     (:func:`neurospatial.encoding._glm.fit_mrf_gam`) without modifying either.
 
     The encoding side is **unit-major** ``(n_units, n_bins)``; the fit is
@@ -2032,9 +2036,9 @@ def _compute_glm_spatial_rates(
         effective rank is reported via ``MRFFit.rank`` after clamping.
     resolved_backend : {"numpy", "jax"}, keyword-only
         The already-resolved backend (via ``get_backend_name``). The fit always
-        runs the NumPy float64 core (``backend`` is forwarded for phase-5); the
-        returned rate array is converted to a JAX array when this is ``"jax"``,
-        matching the ratio path's return contract.
+        runs the NumPy float64 core (``backend`` is forwarded to ``fit_mrf_gam``
+        but currently unused there); the returned rate array is converted to a JAX
+        array when this is ``"jax"``, matching the ratio path's return contract.
     dtype : {np.float32, np.float64}, keyword-only
         Storage dtype of the returned rate array (applied at the boundary; the
         glm core stays float64).
@@ -2055,25 +2059,28 @@ def _compute_glm_spatial_rates(
     occupancy = np.asarray(occupancy, dtype=np.float64)  # (n_bins,)
     n_units, n_bins = spike_counts.shape
 
-    # Phase-1: reduced-rank penalty basis from occupancy (live-bin order).
-    # Cast to the protocol for the ``self: SelfEnv`` bound (same pattern as
-    # ``env.diffuse`` in ``_smoothing.py``).
+    # Reduced-rank penalty basis from occupancy (live-bin order). Cast to the
+    # protocol for the ``self: SelfEnv`` bound (same pattern as ``env.diffuse`` in
+    # ``_smoothing.py``).
     basis = cast("EnvironmentProtocol", env)._mrf_basis(occupancy, rank=rank)
     live_bins = np.asarray(basis.live_bins, dtype=np.intp)
 
-    # Dead-component warning is phase-3's: it needs env's TOTAL component count,
-    # which the basis (live-only) does not carry. Only warn when there is at least
-    # one live component but fewer than the total -- the fully-dead (zero
-    # occupancy) case is already covered by ``fit_mrf_gam``'s own warning.
+    # Dead-component warning is owned here (not by ``fit_mrf_gam``): it needs env's
+    # TOTAL component count, which the basis (live-only) does not carry. Warn only
+    # when there ARE units and there is at least one live component but fewer than
+    # the total: the fully-dead (zero total occupancy) case is already covered by
+    # ``fit_mrf_gam``'s own warning, and a no-neuron call has no rates to floor.
     n_components = int(env._diffusion_geometry.n_components)
-    if 0 < basis.n_live_components < n_components:
+    if n_units and 0 < basis.n_live_components < n_components:
         n_dead = n_components - basis.n_live_components
         warnings.warn(
             f"MRF-GAM fit: {n_dead} of {n_components} environment components were "
             f"never occupied (dead); their bins are set to _RATE_FLOOR "
             f"({_RATE_FLOOR:.0e} Hz). Fit runs on the live bins only.",
             UserWarning,
-            stacklevel=2,
+            # 3 frames out: warn -> _compute_glm_spatial_rates -> the public
+            # compute_spatial_rate(s), so it points at the caller's line.
+            stacklevel=3,
         )
 
     # Boundary in: unit-major (n_units, n_bins) -> bin-major (n_live_bins,
@@ -2081,9 +2088,10 @@ def _compute_glm_spatial_rates(
     counts_fit = spike_counts.T[live_bins, :]  # (n_live_bins, n_units)
     occ_fit = occupancy[live_bins]  # (n_live_bins,)
 
-    # Phase-2 fit. pooled stays True (phase-6 adds the public param); the resolved
-    # backend is forwarded unchanged (phase-5 accelerates the fit; the NumPy core
-    # runs until then). MRFFit arrays come back NumPy.
+    # Fit at the chosen penalty. ``pooled`` stays the default ``True`` (a single
+    # shared lambda; per-unit lambda is not a public param). ``backend`` is
+    # forwarded but currently unused (the NumPy core always runs). MRFFit arrays
+    # come back NumPy.
     fit = fit_mrf_gam(
         basis, counts_fit, occ_fit, penalty=penalty, backend=resolved_backend
     )
@@ -2207,8 +2215,10 @@ default="diffusion_kde"
         Mutually exclusive with ``method="glm"`` (glm rates are already finite).
     penalty : float | None, default=None
         (``method="glm"`` only.) Fixed smoothness penalty ``λ`` (≥ 0; ``0`` = no
-        penalty). ``None`` (the default) selects ``λ`` by REML. Mutually exclusive
-        with the ratio methods.
+        penalty). ``None`` (the default) selects ``λ`` by REML; on pathologically
+        under-sampled data where no ``λ`` yields a converged, positive-definite
+        fit, REML raises ``ValueError`` (supply a fixed ``penalty``, coarsen the
+        grid, or reduce ``rank``). Mutually exclusive with the ratio methods.
     rank : int | None, default=None
         (``method="glm"`` only.) Requested rank of the reduced-rank penalty basis
         (≥ 1). ``None`` uses the module default cap. An out-of-range value is
@@ -2611,8 +2621,10 @@ default="diffusion_kde"
         to the three ratio methods, ``method="glm"`` fits a penalized-Poisson GAM
         (occupancy as a log-offset, ``λ`` by REML) and returns finite rates
         everywhere; it is tuned with ``penalty`` / ``rank`` (mutually exclusive
-        with ``bandwidth`` / ``min_occupancy`` / ``fill_value``). This is the
-        batched entry the decoder uses. ``diffusion_kde`` and ``binned`` are
+        with ``bandwidth`` / ``min_occupancy`` / ``fill_value``). This function is
+        the batched entry point the decoder consumes for the ratio methods;
+        decoding *from* glm rates is a later release (``write_spatial_rates``
+        currently rejects a glm result). ``diffusion_kde`` and ``binned`` are
         matrix-free (O(n_bins·rank) per neuron); ``glm`` also avoids a dense
         O(n_bins²) kernel but its penalized-Poisson fit is **not** linear in
         ``rank`` — each Newton step builds and solves a per-unit (r, r) Hessian
@@ -2639,7 +2651,9 @@ default="diffusion_kde"
         exclusive with ``method="glm"`` (glm rates are already finite).
     penalty : float | None, default=None
         (``method="glm"`` only.) Fixed smoothness penalty ``λ`` (≥ 0). ``None``
-        selects ``λ`` by REML. Mutually exclusive with the ratio methods.
+        selects ``λ`` by REML, which raises ``ValueError`` on pathologically
+        under-sampled data where no ``λ`` yields a converged fit (see
+        ``compute_spatial_rate``). Mutually exclusive with the ratio methods.
     rank : int | None, default=None
         (``method="glm"`` only.) Requested rank of the reduced-rank penalty basis
         (≥ 1). ``None`` uses the module default cap; an out-of-range value is
