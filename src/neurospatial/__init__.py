@@ -152,7 +152,7 @@ Compute a spatial firing-rate map from spikes::
     >>> spike_times = np.array([1.2, 2.5, 3.7, 5.1])  # doctest: +SKIP
     >>> result = compute_spatial_rate(  # doctest: +SKIP
     ...     env, spike_times, times, trajectory,
-    ...     smoothing_method='diffusion_kde', bandwidth=5.0
+    ...     method='diffusion_kde', bandwidth=5.0
     ... )
     >>> firing_rate = result.firing_rate  # doctest: +SKIP
 

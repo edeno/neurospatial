@@ -24,7 +24,7 @@ def validate_simulation(
     times: NDArray[np.float64] | None = None,
     ground_truth: dict[str, Any] | None = None,
     cell_indices: list[int] | None = None,
-    smoothing_method: Literal[
+    method: Literal[
         "diffusion_kde", "gaussian_kde", "binned"
     ] = "diffusion_kde",
     max_center_error: float | None = None,
@@ -54,7 +54,7 @@ def validate_simulation(
         Ground truth parameters for each cell (required if session not provided).
     cell_indices : list[int] | None, optional
         Indices of cells to validate. If None, validates all cells.
-    smoothing_method : {'diffusion_kde', 'gaussian_kde', 'binned'}, optional
+    method : {'diffusion_kde', 'gaussian_kde', 'binned'}, optional
         Smoothing method for computing place fields (default: 'diffusion_kde').
     max_center_error : float | None, optional
         Maximum acceptable center error in environment units. If None, uses
@@ -245,7 +245,7 @@ def validate_simulation(
                 spike_times,
                 times,
                 positions,
-                smoothing_method=smoothing_method,
+                method=method,
                 **kwargs,
             ).firing_rate,
             dtype=np.float64,
@@ -671,7 +671,7 @@ Traj: {metadata.get("trajectory_method", "ou")}
                     spike_times,
                     times,
                     positions,
-                    smoothing_method="diffusion_kde",
+                    method="diffusion_kde",
                 ).firing_rate,
                 dtype=np.float64,
             )
