@@ -121,6 +121,43 @@ def test_glm_finite_where_ratio_nans(open_field_env: Environment) -> None:
 # ---------------------------------------------------------------------------
 # Result fields.
 # ---------------------------------------------------------------------------
+def test_glm_to_xarray_netcdf_roundtrip(open_field_env: Environment, tmp_path) -> None:
+    """A glm result's to_xarray() must be NetCDF-serializable.
+
+    ``bandwidth`` is ``None`` for glm; NetCDF attrs cannot hold ``None``, so it
+    must be omitted from the dataset attrs (not stored as null). Ratio results
+    keep their float ``bandwidth`` attr.
+    """
+    import importlib.util
+
+    xr = pytest.importorskip("xarray")
+    # to_netcdf needs a backend engine; skip if none is installed.
+    if not any(
+        importlib.util.find_spec(eng) for eng in ("netCDF4", "h5netcdf", "scipy")
+    ):
+        pytest.skip("no NetCDF engine available")
+
+    env = open_field_env
+    times, positions, spike_times = _grid_session(env, [(4.0, 4.0), (12.0, 12.0)])
+    glm = compute_spatial_rates(env, spike_times, times, positions, method="glm")
+
+    ds = glm.to_xarray()
+    assert "bandwidth" not in ds.attrs  # omitted (None is not NetCDF-serializable)
+    assert ds.attrs["method"] == "glm"
+
+    path = tmp_path / "glm_rates.nc"
+    ds.to_netcdf(path)  # must not raise
+    with xr.open_dataset(path) as reopened:
+        assert reopened.attrs["method"] == "glm"
+        assert "bandwidth" not in reopened.attrs
+
+    # Ratio results still carry a float bandwidth attr (unchanged).
+    ratio = compute_spatial_rates(
+        env, spike_times, times, positions, method="diffusion_kde"
+    )
+    assert float(ratio.to_xarray().attrs["bandwidth"]) == 5.0
+
+
 def test_glm_result_fields(open_field_env: Environment) -> None:
     env = open_field_env
     times, positions, spike_times = _grid_session(

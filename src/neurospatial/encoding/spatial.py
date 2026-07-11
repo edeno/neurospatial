@@ -1252,8 +1252,10 @@ class SpatialRatesResult(SpatialResultMixin):
             - index coord ``unit_id`` = :attr:`unit_ids`.
             - non-index coords ``bin_center_x`` / ``bin_center_y`` /
               ``bin_center_z`` on ``bin`` (per env dimensionality).
-            - ``attrs``: ``units``, ``bandwidth``, ``env`` fingerprint, and
-              ``software_version``.
+            - ``attrs``: ``method``, ``env`` fingerprint, ``software_version``,
+              ``units`` (when set), and ``bandwidth`` (only for the ratio methods;
+              omitted for ``method="glm"``, whose ``bandwidth`` is ``None`` and is
+              not NetCDF-serializable).
 
         Raises
         ------
@@ -1303,10 +1305,15 @@ class SpatialRatesResult(SpatialResultMixin):
         attrs: dict[str, Any] = {
             **units_attr(self.env),
             "method": self.method,
-            "bandwidth": self.bandwidth,
             "env": env_fingerprint(self.env),
             "software_version": software_version(),
         }
+        # ``bandwidth`` is ``None`` for ``method="glm"``. NetCDF attributes cannot
+        # hold ``None`` (``Dataset.to_netcdf()`` would raise ``TypeError``), so
+        # include it only when set -- the same "omit-when-unset" rule ``units_attr``
+        # uses. Ratio results always carry their float bandwidth.
+        if self.bandwidth is not None:
+            attrs["bandwidth"] = self.bandwidth
         return build_population_dataset(
             rates,
             np.asarray(self.unit_ids),
