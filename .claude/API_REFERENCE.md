@@ -22,7 +22,7 @@ Use these standardized names consistently across all modules:
 | Target locations | `targets` | `target_positions`, `objects` | For egocentric operations |
 | Object locations | `object_positions` | `objects`, `landmarks` | For encoding functions |
 | Smoothing kernel size | `bandwidth` | `sigma`, `smoothing` | In physical units (e.g., cm) |
-| Estimation algorithm | `smoothing_method` | `method`, `estimator` | For place field computation |
+| Estimation algorithm | `method` | `smoothing_method`, `estimator` | For place field computation |
 | Distance algorithm | `metric` | `distance_metric`, `distance_type`, `use_geodesic` | "euclidean" or "geodesic" |
 
 ### Canonical Argument Order by Function Type
@@ -38,7 +38,7 @@ func(
     headings,               # 5. Head direction (which way facing) - if egocentric
     object_positions,       # 6. External targets - if relevant
     *,                      # 7. Keyword-only separator
-    smoothing_method=...,   # 8. Algorithm parameters
+    method=...,             # 8. Algorithm parameters
     bandwidth=...,
     min_occupancy=...,
 )
@@ -46,7 +46,7 @@ func(
 
 **Examples:**
 
-- `compute_spatial_rate(env, spike_times, times, positions, *, smoothing_method=...)`
+- `compute_spatial_rate(env, spike_times, times, positions, *, method=...)`
 - `compute_egocentric_rate(env, spike_times, times, positions, headings, object_positions, *, ...)`
 - `compute_view_rate(env, spike_times, times, positions, headings, *, ...)`
 - `compute_directional_rate(spike_times, times, headings, *, ...)`
@@ -142,7 +142,7 @@ Use `*` to force keyword-only arguments when:
 
 1. Function has more than 3-4 positional arguments
 2. Optional parameters follow required ones
-3. Parameters control algorithm behavior (smoothing_method, bandwidth)
+3. Parameters control algorithm behavior (method, bandwidth)
 4. Parameters specify thresholds or ranges
 
 **Good:**
@@ -151,7 +151,7 @@ Use `*` to force keyword-only arguments when:
 def compute_spatial_rate(
     env, spike_times, times, positions,
     *,  # Force keyword-only after core data
-    smoothing_method="diffusion_kde",
+    method="diffusion_kde",
     bandwidth=5.0,
 ): ...
 ```
@@ -161,7 +161,7 @@ def compute_spatial_rate(
 ```python
 def compute_spatial_rate(
     env, spike_times, times, positions,
-    smoothing_method="diffusion_kde",  # Can be passed positionally - error-prone
+    method="diffusion_kde",  # Can be passed positionally - error-prone
     bandwidth=5.0,
 ): ...
 ```

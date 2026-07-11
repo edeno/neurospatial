@@ -51,7 +51,7 @@ func(
     headings,               # 5. Head direction (which way facing) - if egocentric
     object_positions,       # 6. External targets - if relevant
     *,                      # 7. Keyword-only separator
-    method_params,          # 8. Algorithm parameters (bandwidth, smoothing_method, etc.)
+    method_params,          # 8. Algorithm parameters (bandwidth, method, etc.)
 )
 
 # Egocentric operations (bearing, distance to targets)
@@ -259,7 +259,7 @@ from neurospatial.encoding import compute_spatial_rate
 # Compute place field for one neuron (returns SpatialRateResult)
 result = compute_spatial_rate(
     env, spike_times, times, positions,
-    smoothing_method="diffusion_kde",  # Default: graph-based boundary-aware KDE
+    method="diffusion_kde",  # Default: graph-based boundary-aware KDE
     bandwidth=5.0,  # Smoothing bandwidth (cm)
     fill_value=0.0,  # Replace any NaN bins with 0 Hz for the decoding golden path
 )
@@ -419,7 +419,7 @@ result = compute_view_rate(
     env, spike_times, times, positions, headings,
     gaze_model="fixed_distance",  # or "ray_cast", "boundary"
     view_distance=20.0,  # cm ahead
-    smoothing_method="diffusion_kde",
+    method="diffusion_kde",
     bandwidth=5.0,
 )
 # result.firing_rate: firing rate at each spatial bin (indexed by where animal looked)

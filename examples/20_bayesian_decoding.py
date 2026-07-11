@@ -193,7 +193,7 @@ for idx, ax in enumerate(axes):
         spike_times_list[cell_idx],
         times,
         positions,
-        smoothing_method="diffusion_kde",
+        method="diffusion_kde",
         bandwidth=5.0,
     )
     field = result_cell.firing_rate
@@ -314,7 +314,7 @@ batch_result = compute_spatial_rates(
     spike_times_list,
     times,
     positions,
-    smoothing_method="diffusion_kde",
+    method="diffusion_kde",
     bandwidth=5.0,
     min_occupancy=0.5,
     fill_value=0.0,

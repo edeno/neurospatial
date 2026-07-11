@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### Changed — BREAKING: `smoothing_method` renamed to `method` (estimator axis)
+
+The smoothing/estimator keyword is now uniformly named `method` across every
+smoothing encoder, result class, the decoder, and NWB metadata — one name, one
+meaning. This is a **hard rename with no alias** (per project policy); callers
+that named `smoothing_method=` or read `.smoothing_method` must update. Callers
+that never touched it see identical behavior — the default stays
+`"diffusion_kde"` (and `"binned"` for the egocentric encoders), and no numerics
+change.
+
+- **Renamed keyword `smoothing_method` → `method`** on `compute_spatial_rate`,
+  `compute_spatial_rates`, `compute_view_rate`, `compute_view_rates`,
+  `compute_egocentric_rate`, `compute_egocentric_rates`, `is_place_cell`,
+  `compute_directional_place_fields`, `decode_session`,
+  `decode_session_summary`, `BayesianDecoder`, and
+  `simulation.validate_simulation`. Each encoder keeps its existing method value
+  set and default.
+- **Renamed field `smoothing_method` → `method`** on `SpatialRateResult`,
+  `SpatialRatesResult`, `ViewRateResult`, and `ViewRatesResult`.
+- **NWB:** `write_spatial_rates` now stores the estimator under the metadata key
+  `"method"` (was `"smoothing_method"`); the spatial-rates schema version bumps
+  to `2.0`. This is a clean break with no back-compatibility shim — spatial-rates
+  tables written by earlier versions (schema `1.x`) no longer read.
+- **`decode_session_summary`:** because `method` now names the smoothing
+  estimator, it is no longer accepted as a per-block decode kwarg. The Poisson
+  observation model (the only supported likelihood) is applied unconditionally.
+- `method="glm"` (a penalized-Poisson GAM estimator, `compute_spatial_rate(s)`
+  only) is planned for a later release; this change only renames the axis.
+
 ### Added — `env.diffuse`: matrix-free diffusion smoothing (0.8.0, performance)
 
 Smoothing no longer materializes the dense `(n_bins, n_bins)` diffusion kernel on

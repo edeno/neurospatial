@@ -73,7 +73,7 @@ result = compute_spatial_rate(
     spike_times,
     times,
     positions,
-    smoothing_method="diffusion_kde",  # boundary-aware graph-based KDE
+    method="diffusion_kde",  # boundary-aware graph-based KDE
     bandwidth=5.0,                     # smoothing bandwidth in cm
     # min_occupancy threshold is applied to the *smoothed* occupancy density,
     # not raw seconds. Low-coverage bins are excluded by bin_count_threshold
@@ -123,7 +123,7 @@ print(f"Spatial information: {result.spatial_information():.3f} bits/spike")
   denominator), not raw seconds — leave it at the default `0.0` unless you have
   a specific density threshold in mind. Low-coverage bins are already excluded
   at environment creation via `bin_count_threshold`.
-- Only the legacy `smoothing_method="binned"` thresholds raw per-bin occupancy
+- Only the legacy `method="binned"` thresholds raw per-bin occupancy
   in seconds.
 - Bins below the threshold are set to `NaN` in `result.firing_rate`.
 
@@ -370,7 +370,7 @@ env1 = Environment.from_samples(
 )
 firing_rate1 = compute_spatial_rate(
     env1, session1_spikes, session1_times, session1_position,
-    smoothing_method="diffusion_kde", bandwidth=5.0, min_occupancy=0.5,
+    method="diffusion_kde", bandwidth=5.0, min_occupancy=0.5,
 ).firing_rate
 
 # Session 2 (may have slight camera shift or animal positioning differences)
@@ -381,7 +381,7 @@ env2 = Environment.from_samples(
 )
 firing_rate2 = compute_spatial_rate(
     env2, session2_spikes, session2_times, session2_position,
-    smoothing_method="diffusion_kde", bandwidth=5.0, min_occupancy=0.5,
+    method="diffusion_kde", bandwidth=5.0, min_occupancy=0.5,
 ).firing_rate
 
 # Align session 2 to session 1 coordinate frame

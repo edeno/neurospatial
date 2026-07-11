@@ -206,7 +206,7 @@ result = compute_spatial_rate(
     spike_times,
     times_nwb,
     positions_nwb,
-    smoothing_method="diffusion_kde",
+    method="diffusion_kde",
     bandwidth=5.0,
 )
 print(f"Place field peak: {np.nanmax(result.firing_rate):.2f} Hz")

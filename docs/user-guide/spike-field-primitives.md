@@ -58,7 +58,7 @@ result = compute_spatial_rate(
     spike_times,
     times,
     positions,
-    smoothing_method="binned",
+    method="binned",
     min_occupancy=0.5,  # Exclude bins with < 0.5 seconds occupancy
 )
 firing_rate = result.firing_rate
@@ -89,13 +89,13 @@ result = compute_spatial_rate(
     times,
     positions,
     min_occupancy=0.5,
-    smoothing_method="gaussian_kde",
+    method="gaussian_kde",
     bandwidth=5.0,  # Gaussian kernel bandwidth (cm)
 )
 place_field = result.firing_rate
 ```
 
-Use `smoothing_method="binned"` when you want the unsmoothed occupancy-normalized rate map.
+Use `method="binned"` when you want the unsmoothed occupancy-normalized rate map.
 
 ## Parameter Order: Environment First
 
@@ -232,7 +232,7 @@ firing_rate = compute_spatial_rate(
     spike_times,
     times,
     positions,
-    smoothing_method="binned",
+    method="binned",
     min_occupancy=0.5,
 ).firing_rate
 
@@ -260,7 +260,7 @@ firing_rate = compute_spatial_rate(
     spike_times,
     times,
     positions,
-    smoothing_method="binned",
+    method="binned",
     min_occupancy=0.5,
 ).firing_rate
 place_field = compute_spatial_rate(
@@ -269,7 +269,7 @@ place_field = compute_spatial_rate(
     times,
     positions,
     min_occupancy=0.5,
-    smoothing_method="gaussian_kde",
+    method="gaussian_kde",
     bandwidth=5.0,
 ).firing_rate
 
@@ -328,7 +328,7 @@ result = compute_spatial_rate(
     times,
     positions,
     min_occupancy=0.5,
-    smoothing_method="gaussian_kde",
+    method="gaussian_kde",
     bandwidth=5.0,
 )
 place_field = result.firing_rate

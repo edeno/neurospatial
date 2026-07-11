@@ -179,7 +179,7 @@ result = compute_spatial_rate(
     spike_times,
     times,
     positions,
-    smoothing_method="diffusion_kde",  # Default: boundary-aware graph-based KDE
+    method="diffusion_kde",  # Default: boundary-aware graph-based KDE
     bandwidth=5.0,  # Spatial smoothing bandwidth (cm)
 )
 firing_rate = result.firing_rate

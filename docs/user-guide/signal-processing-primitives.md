@@ -343,7 +343,7 @@ import matplotlib.pyplot as plt
 # Compute smoothed firing rate
 firing_rate = compute_spatial_rate(
     env, spike_times, times, positions,
-    smoothing_method="gaussian_kde",
+    method="gaussian_kde",
     bandwidth=5.0,
 ).firing_rate
 

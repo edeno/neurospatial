@@ -237,14 +237,14 @@ svc_view_result = compute_view_rate(
     positions,
     headings,
     view_distance=15.0,
-    smoothing_method="diffusion_kde",
+    method="diffusion_kde",
     bandwidth=8.0,
 )
 svc_view_field = svc_view_result.firing_rate
 
 # Place field: binned by POSITION
 svc_place_result = compute_spatial_rate(
-    env, svc_spikes, times, positions, smoothing_method="diffusion_kde", bandwidth=8.0
+    env, svc_spikes, times, positions, method="diffusion_kde", bandwidth=8.0
 )
 svc_place_field = svc_place_result.firing_rate
 
@@ -261,13 +261,13 @@ pc_view_result = compute_view_rate(
     positions,
     headings,
     view_distance=15.0,
-    smoothing_method="diffusion_kde",
+    method="diffusion_kde",
     bandwidth=8.0,
 )
 pc_view_field = pc_view_result.firing_rate
 
 pc_place_result = compute_spatial_rate(
-    env, pc_spikes, times, positions, smoothing_method="diffusion_kde", bandwidth=8.0
+    env, pc_spikes, times, positions, method="diffusion_kde", bandwidth=8.0
 )
 pc_place_field = pc_place_result.firing_rate
 

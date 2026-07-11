@@ -115,7 +115,7 @@ from neurospatial.encoding import compute_spatial_rate
 # Compute place field for one neuron (returns SpatialRateResult)
 result = compute_spatial_rate(
     env, spike_times, times, positions,
-    smoothing_method="diffusion_kde",  # Default: graph-based boundary-aware KDE
+    method="diffusion_kde",  # Default: graph-based boundary-aware KDE
     bandwidth=5.0,  # Smoothing bandwidth (cm)
     min_occupancy=0.5,  # Minimum seconds in bin (default: 0.0)
     fill_value=0.0,  # Replace low-occupancy NaN bins with 0 Hz (decoding golden path)
@@ -143,7 +143,7 @@ from neurospatial.encoding import compute_spatial_rates
 spike_times_list = [neuron1_spikes, neuron2_spikes, neuron3_spikes]
 result = compute_spatial_rates(
     env, spike_times_list, times, positions,
-    smoothing_method="diffusion_kde",
+    method="diffusion_kde",
     bandwidth=5.0,
     n_jobs=4,  # Parallelize over neurons
 )
@@ -562,7 +562,7 @@ result = compute_view_rate(
     headings=headings,
     view_distance=15.0,      # Fixed viewing distance
     gaze_model="fixed_distance",  # or "ray_cast", "boundary"
-    smoothing_method="diffusion_kde",  # or "binned", "gaussian_kde"
+    method="diffusion_kde",  # or "binned", "gaussian_kde"
 )
 
 # Access results

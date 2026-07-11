@@ -295,7 +295,7 @@ result = compute_spatial_rate(
     spike_times,
     times,
     positions,
-    smoothing_method="diffusion_kde",  # Boundary-aware smoothing (recommended)
+    method="diffusion_kde",  # Boundary-aware smoothing (recommended)
     bandwidth=8.0,  # Smoothing bandwidth in cm
     min_occupancy=0.5,  # Exclude bins with <0.5s occupancy
 )
@@ -360,7 +360,7 @@ print(
 #
 # ### Binned Approach (Bin-Then-Smooth)
 #
-# For understanding raw binning behavior, use `smoothing_method="binned"`:
+# For understanding raw binning behavior, use `method="binned"`:
 
 # %%
 # Binned approach: compute firing rate field with minimal smoothing
@@ -369,7 +369,7 @@ result_raw = compute_spatial_rate(
     spike_times,
     times,
     positions,
-    smoothing_method="binned",
+    method="binned",
     bandwidth=0.1,  # Minimal smoothing to see raw binned structure
     min_occupancy=0.0,  # Include all bins
 )
@@ -380,7 +380,7 @@ result_filtered = compute_spatial_rate(
     spike_times,
     times,
     positions,
-    smoothing_method="binned",
+    method="binned",
     bandwidth=0.1,
     min_occupancy=0.5,  # Standard threshold
 )

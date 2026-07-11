@@ -212,7 +212,7 @@ spike_times = generate_population_spikes(
 # 5. Recover the place field from spikes + trajectory.
 result = compute_spatial_rate(
     env, spike_times, times, positions_t,
-    smoothing_method="diffusion_kde", bandwidth=5.0,
+    method="diffusion_kde", bandwidth=5.0,
 )
 
 # 6. Plot.

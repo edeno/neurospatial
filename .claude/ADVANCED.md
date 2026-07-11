@@ -553,7 +553,7 @@ result = compute_view_rate(
     env, spike_times, times, positions, headings,
     view_distance=15.0,
     gaze_model="fixed_distance",  # or "ray_cast", "boundary"
-    smoothing_method="diffusion_kde",
+    method="diffusion_kde",
 )
 
 # Key insight: view field differs from place field for true SVCs

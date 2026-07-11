@@ -7,9 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING: `smoothing_method` renamed to `method`.** The smoothing/estimator
+  keyword is now uniformly named `method` across every smoothing encoder
+  (`compute_spatial_rate(s)`, `compute_view_rate(s)`,
+  `compute_egocentric_rate(s)`, `is_place_cell`,
+  `compute_directional_place_fields`), the four rate result classes
+  (`SpatialRateResult`/`SpatialRatesResult`, `ViewRateResult`/`ViewRatesResult`),
+  the decoder (`decode_session`, `decode_session_summary`, `BayesianDecoder`),
+  and `simulation.validate_simulation`. This is a hard rename with no alias;
+  defaults and numerics are unchanged (`"diffusion_kde"`, or `"binned"` for the
+  egocentric encoders). NWB `write_spatial_rates` stores the estimator under the
+  key `"method"` (schema bumped to `2.0`); this is a clean break with no
+  back-compatibility shim, so spatial-rates tables written by earlier versions
+  (schema `1.x`) no longer read. On
+  `decode_session_summary`, `method` now names the smoothing estimator, so it is
+  no longer accepted as a per-block decode kwarg (Poisson is the only likelihood
+  and is applied unconditionally).
+
 ### Corrected
 
-- **`smoothing_method="binned"` is not a dense-kernel memory mitigation.**
+- **`method="binned"` is not a dense-kernel memory mitigation.**
   Earlier notes (through 0.6.0) recommended `binned` to avoid the dense
   `(n_bins, n_bins)` kernel, but `binned` smooths its rate map through the same
   diffusion kernel (via `env.smooth`), so all smoothing methods build a dense

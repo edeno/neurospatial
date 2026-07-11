@@ -234,7 +234,7 @@ ovc_result = compute_egocentric_rate(
     distance_range=(0.0, 50.0),
     n_distance_bins=10,
     n_direction_bins=12,
-    smoothing_method="gaussian_kde",
+    method="gaussian_kde",
     bandwidth=1.0,
     min_occupancy=1.0,
 )
@@ -260,7 +260,7 @@ pc_result = compute_egocentric_rate(
     distance_range=(0.0, 50.0),
     n_distance_bins=10,
     n_direction_bins=12,
-    smoothing_method="gaussian_kde",
+    method="gaussian_kde",
     bandwidth=1.0,
     min_occupancy=1.0,
 )
@@ -279,7 +279,7 @@ ovc_place_result = compute_spatial_rate(
     ovc_spikes,
     times,
     positions,
-    smoothing_method="diffusion_kde",
+    method="diffusion_kde",
     bandwidth=8.0,
 )
 pc_place_result = compute_spatial_rate(
@@ -287,7 +287,7 @@ pc_place_result = compute_spatial_rate(
     pc_spikes,
     times,
     positions,
-    smoothing_method="diffusion_kde",
+    method="diffusion_kde",
     bandwidth=8.0,
 )
 

@@ -876,7 +876,7 @@ coarse_bins = env_coarse.bin_at(fine_centers)
 from neurospatial.encoding import compute_spatial_rate
 firing_rate_fine = compute_spatial_rate(
     env_fine, spike_times, times, positions,
-    smoothing_method="diffusion_kde", bandwidth=5.0, min_occupancy=0.5,
+    method="diffusion_kde", bandwidth=5.0, min_occupancy=0.5,
 ).firing_rate
 firing_rate_coarse = np.zeros(env_coarse.n_bins)
 
