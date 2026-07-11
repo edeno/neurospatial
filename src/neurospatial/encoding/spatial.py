@@ -207,6 +207,83 @@ class PlaceFieldsResult(ResultMixin):
         )
 
 
+#: Required GAM diagnostics -- non-``None`` for ``method="glm"``, ``None`` for
+#: the ratio methods. ``penalty`` / ``reml_objective`` are excluded because they
+#: are legitimately ``None`` even for glm (fixed penalty, REML-skip, or no data).
+_GAM_REQUIRED_FIELDS = (
+    "coefficients",
+    "penalty_weights",
+    "rank",
+    "deviance",
+    "converged",
+    "n_iter",
+)
+
+
+def _check_gam_result_invariant(kind: str, fields: dict[str, Any]) -> None:
+    """Enforce the ``None``-iff-glm invariant on a spatial-rate result.
+
+    The GAM diagnostics travel together: they are all populated for
+    ``method="glm"`` and all ``None`` for the ratio methods, and ``bandwidth`` is
+    ``None`` exactly for glm. This makes the illegal states the type cannot
+    express -- a ratio result carrying a stray GAM array, or a glm result missing
+    a diagnostic -- unrepresentable at construction (the classes are frozen and
+    public, so this closes the gap the type alone leaves open).
+
+    Parameters
+    ----------
+    kind : str
+        Class name, for error messages.
+    fields : dict
+        The result's ``method``, ``bandwidth``, and the eight GAM fields.
+
+    Raises
+    ------
+    ValueError
+        If the GAM fields / ``bandwidth`` are inconsistent with ``method``.
+    """
+    is_glm = fields["method"] == "glm"
+    required = {name: fields[name] for name in _GAM_REQUIRED_FIELDS}
+    optional = {
+        "penalty": fields["penalty"],
+        "reml_objective": fields["reml_objective"],
+    }
+    if is_glm:
+        missing = [name for name, value in required.items() if value is None]
+        if missing:
+            raise ValueError(
+                f"{kind} with method='glm' is missing required GAM field(s): "
+                f"{missing}. glm results carry all of {list(_GAM_REQUIRED_FIELDS)}."
+            )
+        if fields["bandwidth"] is not None:
+            raise ValueError(
+                f"{kind} with method='glm' must have bandwidth=None (glm has no "
+                f"bandwidth); got {fields['bandwidth']!r}."
+            )
+        n_coef_rows = int(np.shape(fields["coefficients"])[0])
+        if n_coef_rows != int(fields["rank"]):
+            raise ValueError(
+                f"{kind} GAM coefficients have {n_coef_rows} basis rows but "
+                f"rank={fields['rank']}; they must match."
+            )
+    else:
+        stray = [
+            name
+            for name, value in {**required, **optional}.items()
+            if value is not None
+        ]
+        if stray:
+            raise ValueError(
+                f"{kind} with ratio method={fields['method']!r} must not carry GAM "
+                f"field(s): {stray}. GAM diagnostics belong only to method='glm'."
+            )
+        if fields["bandwidth"] is None:
+            raise ValueError(
+                f"{kind} with ratio method={fields['method']!r} must have a float "
+                "bandwidth; got None (bandwidth=None is reserved for method='glm')."
+            )
+
+
 @dataclass(frozen=True, repr=False)
 class SpatialRateResult(SpatialResultMixin):
     """Result of spatial rate computation for a single neuron.
@@ -319,6 +396,25 @@ reml_objective
     converged: bool | None = None
     n_iter: int | None = None
     reml_objective: float | None = None
+
+    def __post_init__(self) -> None:
+        # Enforce the None-iff-glm invariant: the GAM diagnostics are all present
+        # for method="glm" (and bandwidth=None) or all absent for a ratio method.
+        _check_gam_result_invariant(
+            "SpatialRateResult",
+            {
+                "method": self.method,
+                "bandwidth": self.bandwidth,
+                "coefficients": self.coefficients,
+                "penalty": self.penalty,
+                "penalty_weights": self.penalty_weights,
+                "rank": self.rank,
+                "deviance": self.deviance,
+                "converged": self.converged,
+                "n_iter": self.n_iter,
+                "reml_objective": self.reml_objective,
+            },
+        )
 
     def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the spatial rate map.
@@ -1024,6 +1120,24 @@ class SpatialRatesResult(SpatialResultMixin):
 
     def __post_init__(self) -> None:
         from neurospatial._results import resolve_unit_ids, validate_unit_table
+
+        # Enforce the None-iff-glm invariant (GAM diagnostics travel together):
+        # populated for method="glm" (bandwidth=None), all absent for a ratio method.
+        _check_gam_result_invariant(
+            "SpatialRatesResult",
+            {
+                "method": self.method,
+                "bandwidth": self.bandwidth,
+                "coefficients": self.coefficients,
+                "penalty": self.penalty,
+                "penalty_weights": self.penalty_weights,
+                "rank": self.rank,
+                "deviance": self.deviance,
+                "converged": self.converged,
+                "n_iter": self.n_iter,
+                "reml_objective": self.reml_objective,
+            },
+        )
 
         n_units = int(np.asarray(self.firing_rates).shape[0])
         object.__setattr__(

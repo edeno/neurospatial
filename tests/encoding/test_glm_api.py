@@ -160,6 +160,98 @@ def test_glm_to_xarray_netcdf_roundtrip(open_field_env: Environment, tmp_path) -
     assert float(ratio.to_xarray().attrs["bandwidth"]) == 5.0
 
 
+def test_result_invariant_enforced(open_field_env: Environment) -> None:
+    """The None-iff-glm invariant is enforced at construction on both classes.
+
+    A ratio result carrying a stray GAM field, a glm result missing a required
+    GAM field, and a rank/coefficients shape mismatch each raise ValueError; the
+    two legitimate shapes (populated glm, all-None ratio) construct fine.
+    """
+    from neurospatial.encoding.spatial import SpatialRateResult, SpatialRatesResult
+
+    env = open_field_env
+    n = env.n_bins
+    occ = np.zeros(n)
+    rates1 = np.zeros(n)
+    ratesN = np.zeros((2, n))
+
+    # Legitimate ratio construction (all GAM None, float bandwidth): no raise.
+    SpatialRateResult(
+        firing_rate=rates1, occupancy=occ, env=env, method="binned", bandwidth=5.0
+    )
+    SpatialRatesResult(
+        firing_rates=ratesN, occupancy=occ, env=env, method="binned", bandwidth=5.0
+    )
+
+    # Ratio result with a stray GAM field -> raise.
+    with pytest.raises(ValueError, match="GAM"):
+        SpatialRatesResult(
+            firing_rates=ratesN,
+            occupancy=occ,
+            env=env,
+            method="binned",
+            bandwidth=5.0,
+            coefficients=np.zeros((3, 2)),
+        )
+    with pytest.raises(ValueError, match="GAM"):
+        SpatialRateResult(
+            firing_rate=rates1,
+            occupancy=occ,
+            env=env,
+            method="binned",
+            bandwidth=5.0,
+            rank=3,
+        )
+
+    # glm result missing a required GAM field -> raise.
+    with pytest.raises(ValueError, match="glm"):
+        SpatialRatesResult(
+            firing_rates=ratesN,
+            occupancy=occ,
+            env=env,
+            method="glm",
+            bandwidth=None,
+            coefficients=np.zeros((3, 2)),  # rank/etc missing
+        )
+    # glm result with a non-None bandwidth -> raise.
+    with pytest.raises(ValueError, match="bandwidth"):
+        SpatialRatesResult(
+            firing_rates=ratesN,
+            occupancy=occ,
+            env=env,
+            method="glm",
+            bandwidth=5.0,
+            coefficients=np.zeros((3, 2)),
+            penalty_weights=np.zeros(3),
+            rank=3,
+            deviance=np.zeros(2),
+            converged=True,
+            n_iter=1,
+        )
+    # glm result whose coefficients rows != rank -> raise.
+    with pytest.raises(ValueError, match="rank"):
+        SpatialRatesResult(
+            firing_rates=ratesN,
+            occupancy=occ,
+            env=env,
+            method="glm",
+            bandwidth=None,
+            coefficients=np.zeros((3, 2)),
+            penalty_weights=np.zeros(4),
+            rank=4,
+            deviance=np.zeros(2),
+            converged=True,
+            n_iter=1,
+        )
+
+    # A real glm result from the compute path constructs cleanly (guard passes).
+    times, positions, spike_times = _grid_session(env, [(8.0, 8.0)], seed=99)
+    glm = compute_spatial_rates(env, spike_times, times, positions, method="glm")
+    assert glm.method == "glm"
+    # ...and its per-unit slice re-validates through the singular guard.
+    _ = glm[0]
+
+
 def test_glm_result_fields(open_field_env: Environment) -> None:
     env = open_field_env
     times, positions, spike_times = _grid_session(
