@@ -230,6 +230,57 @@ def polar_env() -> Any:
 
 
 # ---------------------------------------------------------------------------
+# Penalized-Poisson GAM fit fixtures
+#
+# Synthetic Poisson spike counts drawn from known per-neuron Gaussian place
+# fields over an env's active bins. The fit is pure statistics on these counts,
+# so no trajectory is needed -- counts and occupancy are built directly in
+# active-bin order and the caller restricts them to ``basis.live_bins``.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def simulate_place_fields() -> Callable[..., tuple[np.ndarray, np.ndarray]]:
+    """Factory drawing Poisson counts from known Gaussian place fields.
+
+    Returns
+    -------
+    callable
+        ``make(env, centers, *, occupancy=None, peak_rate=25.0, sigma=3.0,
+        seed=0) -> (counts, occupancy)`` where ``counts`` is
+        ``(n_bins, n_units)`` int64 Poisson draws with mean
+        ``peak_rate * exp(-||bin_center - center||^2 / (2 sigma^2)) *
+        occupancy`` and ``occupancy`` is ``(n_bins,)`` float64 dwell time per
+        active bin (uniform 3 s/bin when not supplied). Both are in active-bin
+        order; restrict them to ``basis.live_bins`` before the fit.
+    """
+
+    def make(
+        env: Environment,
+        centers: list[tuple[float, ...]],
+        *,
+        occupancy: np.ndarray | None = None,
+        peak_rate: float = 25.0,
+        sigma: float = 3.0,
+        seed: int = 0,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        rng = np.random.default_rng(seed)
+        bin_centers = np.asarray(env.bin_centers, dtype=np.float64)
+        n_bins = env.n_bins
+        if occupancy is None:
+            occupancy = np.full(n_bins, 3.0)
+        occupancy = np.asarray(occupancy, dtype=np.float64)
+        counts = np.empty((n_bins, len(centers)), dtype=np.int64)
+        for u, center in enumerate(centers):
+            dist2 = np.sum((bin_centers - np.asarray(center)) ** 2, axis=1)
+            rate = peak_rate * np.exp(-dist2 / (2.0 * sigma**2))  # (n_bins,)
+            counts[:, u] = rng.poisson(rate * occupancy)
+        return counts, occupancy
+
+    return make
+
+
+# ---------------------------------------------------------------------------
 # Directional / head-direction fixtures
 # ---------------------------------------------------------------------------
 

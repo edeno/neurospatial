@@ -268,6 +268,13 @@ ignore = [
 "src/neurospatial/environment/fields.py" = [
     "N806",  # Allow W (finite-volume weight matrix) - diffusion apply-path
 ]
+"src/neurospatial/encoding/_glm.py" = [
+    "N806",  # Allow B (penalty basis matrix) - GAM design-matrix notation
+]
+"src/neurospatial/encoding/_glm_numpy.py" = [
+    "N803",  # Allow B (penalty basis matrix) as argument - GAM notation
+    "N806",  # Allow B, H (basis / Hessian matrices) - standard math notation
+]
 
 # Package init files: Allow unused imports (re-exports)
 "__init__.py" = [
