@@ -168,11 +168,18 @@ objective exists in the interval).
   differ. Consequences:
   - **`r == 0` is a population-level property** (shared basis), so REML is skipped for the whole
     population regardless of `pooled`; `penalty` stays a scalar `None` (not a per-unit vector).
-  - When `r > 0`, `penalty` and `reml_objective` become finite `(n_units,)` vectors (one λ_k /
-    score per unit); a zero-spike unit still fits (its likelihood is flat toward the rate floor,
-    `minimize_scalar` still returns a finite in-bounds λ_k — no per-unit `None`/`nan`).
+  - **A fixed `penalty=<float>` takes precedence over `pooled`**: REML is skipped entirely and the
+    result records that **scalar** λ (the model fitted), exactly as `pooled=True`. `pooled` only
+    affects the automatic-REML path.
+  - When `r > 0` and REML runs, `penalty`/`reml_objective` become finite `(n_units,)` vectors, but
+    **only for informative units** (`Σ n_k > 0`). **A zero-spike unit is statistically unidentified
+    for per-unit λ** — its intercept → −∞, non-null coeffs → 0, and the `r·log λ` terms cancel, so
+    the bounded optimizer's point is driven by clipping/jitter/bounds, **not data**. So those units
+    get a **documented fallback: the pooled λ computed over the informative units** (not the
+    optimizer's arbitrary point), and the field still floors to `_RATE_FLOOR`. If **no** unit is
+    informative, fall back to the whole-population pooled λ (or `None` at `r==0`).
   - Shapes: shared-λ (`pooled=True`) keeps scalar `penalty`/`reml_objective` exactly as today;
-    only `pooled=False` widens them to vectors (§6.3, §8).
+    only `pooled=False` with automatic REML widens them to vectors (§6.3, §8).
 
 ## 6. Eigenbasis access + API
 

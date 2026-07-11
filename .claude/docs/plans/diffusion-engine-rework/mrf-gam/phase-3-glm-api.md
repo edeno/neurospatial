@@ -30,6 +30,7 @@ encoding functions (decoder/persistence follow in phase-4).
   - call `basis = env._mrf_basis(occupancy, rank=R)`, `fit = fit_mrf_gam(basis, counts_fit, occ_fit, penalty=penalty, rank=R)`.
   - **rates out:** allocate `firing_rates = np.full((n_units, n_bins), _RATE_FLOOR)`; scatter `max(exp(fit.log_rate), _RATE_FLOOR).T` (`(n_units, n_live_bins)`) into columns `basis.live_bins`. Singular path builds `(n_bins,)`.
   - **dtype:** cast the assembled `firing_rates` to the requested `dtype` (`{np.float32, np.float64}`) at the result boundary, like the ratio path; the glm core stays float64.
+  - **backend (define the contract NOW — Finding 4):** resolve with `get_backend_name(backend)` ([_backend.py:165](../../../src/neurospatial/encoding/_backend.py)) — **not** a raw `backend != "numpy"` check. In phase-3 the glm fit always runs the **NumPy core**; if the resolved backend is `"jax"`, **convert the assembled `firing_rates` (and occupancy) to JAX arrays at the return boundary**, exactly matching what the ratio path returns for `backend="jax"`. This fixes the public return contract before phase-5 exists, so phase-5 can accelerate the fit internally without changing it.
   - Ratio methods keep their current path untouched. See [designs.md → Boundary orientation](designs.md#module-layout).
 - **Degenerate dispatch** ([designs.md#degenerate](designs.md#degenerate)): no-neurons, zero-total-occupancy, dead-component (warn), zero-spike, and the `penalty=0` rank-deficiency warning (`matrix_rank(B[exposed_live_bins]) < r_eff`). Each warns, none raise.
 - **Result classes:** add the GAM fields ([contract](shared-contracts.md#result-fields)) to `SpatialRateResult` / `SpatialRatesResult` (all `None`/defaults for ratio results); widen `bandwidth` to `float | None`; set `bandwidth=None` for glm. Indexing a plural result stamps `unit_id` and slices `coefficients[:, i]`/`deviance[i]` (extend `__getitem__` at `spatial.py:982`). `summary_table` (`:1724`) gains the GAM scalar columns when present; `to_dataframe`/`summary`/`to_xarray` unchanged in shape.
@@ -38,7 +39,7 @@ encoding functions (decoder/persistence follow in phase-4).
 ## Deliberately not in this phase
 
 - **Decoder + NWB glm support** — phase-4. This phase makes `compute_spatial_rate(s)` produce glm results; persisting them / decoding with them is phase-4. (glm results simply aren't NWB-saved in this phase's tests.)
-- **JAX** — phase-5; the NumPy `fit_mrf_gam` from phase-2 is used.
+- **JAX-accelerated *fit*** — phase-5; the NumPy `fit_mrf_gam` from phase-2 is used here even when `backend="jax"` (this phase only defines the JAX **return contract** by converting the NumPy output, per the backend task above; phase-5 swaps the compute without changing that contract).
 - **Per-neuron λ** — phase-6.
 
 ## Validation slice
@@ -56,6 +57,7 @@ encoding functions (decoder/persistence follow in phase-4).
 | `test_agreement_with_ratio` | on a well-sampled arena glm and the ratio estimator agree qualitatively (peak co-location, correlation above a threshold). |
 | `test_glm_orientation` | glm `firing_rates` is `(n_units, n_bins)` (unit-major, matching the ratio result); per-unit peak bins land where each simulated unit's field is — i.e. the transpose is correct, not swapped. Singular `firing_rate` is `(n_bins,)`. |
 | `test_glm_dtype` | `dtype=np.float32` → `firing_rates.dtype == float32`; `np.float64` → float64; values agree within float32 tol. |
+| `test_glm_backend_jax_return` | `method="glm", backend="jax"` returns the **same array-type** as `method="diffusion_kde", backend="jax"` (both JAX arrays, or both NumPy — whatever the ratio path does), resolved via `get_backend_name`; values match the `backend="numpy"` glm result. Defines the contract before phase-5. Skip-guard on the JAX extra. |
 | `test_default_method_unchanged` | omitting `method` → `"diffusion_kde"`, byte-identical to the pre-phase result. |
 | `test_all_layouts_smoke` | glm runs on 1D track, 2D open+masked, hex, polar, mesh (finite output). Mark `slow` if the mesh/polar builds are heavy. |
 

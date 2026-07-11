@@ -23,7 +23,7 @@ New files under `src/neurospatial/encoding/`:
 | file | phase | contents |
 | --- | --- | --- |
 | `_glm.py` | 2 | module constants ([shared-contracts](shared-contracts.md#constants)); `MRFFit`; the orchestrator `fit_mrf_gam(basis, counts, occupancy, *, penalty, rank) -> MRFFit`; degenerate-case dispatch; deviance. Pure NumPy/SciPy. |
-| `_glm_numpy.py` | 2 | `_newton_fit_numpy(counts, occupancy, B, penalty_diag, *, max_iter, tol) -> (coeffs, eta, mu, n_iter, max_step, converged)`; `_reml_objective_numpy(...)`. The float64 core. |
+| `_glm_numpy.py` | 2 | `_newton_fit_numpy(counts, occupancy, B, penalty_diag, max_iter, tol) -> (coeffs, eta, mu, n_iter, max_step, converged)` (**all positional** so REML's `minimize_scalar(args=…)` can call it — Finding 2); `_reml_objective_numpy(...)`. The float64 core. |
 | `_glm_jax.py` | 5 | float32 JAX mirror of `_glm_numpy` (`jit`, batched); selected via `encoding/_backend.py`. |
 
 The resolver lives on `Environment` (`environment/fields.py`) + a helper in `ops/diffusion.py`
@@ -49,10 +49,12 @@ orchestrator must transpose at **both** boundaries:
   **core stays float64** (correctness); cast the assembled `firing_rates` (and stored
   coefficients/diagnostics as appropriate) to the requested `dtype` at the result boundary, matching
   the ratio path.
-- **backend:** `compute_spatial_rates` has `backend: {"numpy","jax","auto"}`. `backend != "numpy"`
-  routes the fit to `_glm_jax` (phase-5). The return-type contract **follows the existing smoothing
-  paths** — see [JAX mirror](#jax) for the decision (return backend-native arrays vs. always-NumPy),
-  which phase-5 must make consistent with `diffuse`/`smooth`.
+- **backend:** `compute_spatial_rates` has `backend: {"numpy","jax","auto"}`. Resolve with
+  `get_backend_name(backend)` ([_backend.py:165](../../../src/neurospatial/encoding/_backend.py)),
+  **not** a raw `backend != "numpy"` check. **Phase-3 fixes the public return contract**: it runs
+  the NumPy core and, when the resolved backend is `"jax"`, converts the assembled `firing_rates`
+  (+ occupancy) to JAX arrays to match the ratio path. **Phase-5 only accelerates the fit compute**
+  behind that contract — it does not change the return type.
 
 ---
 
@@ -62,68 +64,87 @@ Spec §6.1. Reuses `env._diffusion_geometry` (`fields.py:512` → `W, volumes, n
 labels`) and `_symmetric_conjugate` / `_symmetric_eigenbasis` (`diffusion.py:290,382`). Does
 **not** modify the operator or the eigensolver.
 
-```python
-# ops/diffusion.py — pure helper (no env dependency; unit-testable on arrays)
-def live_component_eigenbasis(
-    W, volumes, labels, n_components, occupancy, *, rank, dense_fraction=...,
-) -> MRFBasis:
-    """Reduced-rank basis restricted to live (visited) components, nulls zeroed.
+**Clean split (Finding 3):** a **cached global resolver** (geometry-only, owns the eigensolve +
+growth) and a **pure selector** (occupancy-only, no eigensolve). `_mrf_basis` calls the first
+then the second — the selector never re-solves, so the cache is never bypassed.
 
-    occupancy : (n_bins,) seconds, active-bin order.  rank : requested cap R.
-    """
-    # 1. live components: those with total occupancy > 0
+### (a) Cached global resolver — owns the eigensolve
+
+`Environment._mrf_eigenbasis` is a `versioned_cached_property` returning a **mutable holder**
+`{"Q": (n_bins, G), "Lam": (G,), "mode_comp": (G,), "G": int}`: the `G` globally-smallest modes of
+`S = _symmetric_conjugate(W, volumes)`, each mode's **source W-component**, and the built rank `G`.
+Grow-by-replace, same pattern as `_diffusion_eigenbasis` (`fields.py:535`); dropped on any
+`_state_version` bump; **keyed by geometry only** (no `(sigma, tol)` — the MRF penalty basis is
+bandwidth-independent).
+
+```python
+def _ensure_global_modes(holder, S, labels, needed_G):
+    """Grow the cached global basis to >= needed_G modes; recover per-mode component."""
+    if holder["G"] >= needed_G:
+        return holder                                   # cache hit — NO eigensolve
+    G = min(needed_G, S.shape[0])                       # cap at full rank
+    Lam, Q = _symmetric_eigenbasis(S, None if G >= dense_fraction * S.shape[0] else G)
+    # Each column of Q is component-local (nonzero on exactly one W-component, exact 0 elsewhere),
+    # so the source component is the label of any nonzero row (recovers the mode→component map
+    # WITHOUT modifying _symmetric_eigenbasis — Finding 3, replaces the undefined `labels_of_modes`).
+    mode_comp = np.array([labels[np.flatnonzero(col)[0]] for col in Q.T])
+    holder.update(Q=Q, Lam=Lam, mode_comp=mode_comp, G=Q.shape[1])
+    return holder
+```
+
+### (b) Pure selector — occupancy-only, no eigensolve
+
+```python
+# ops/diffusion.py — pure, array-only, unit-testable
+def select_live_basis(Q, Lam, mode_comp, volumes, labels, occupancy, *, rank) -> MRFBasis:
+    n_components = int(labels.max()) + 1
     comp_occ = np.bincount(labels, weights=occupancy, minlength=n_components)
-    live_comp = np.flatnonzero(comp_occ > 0.0)
+    live_comp = np.flatnonzero(comp_occ > 0.0)                       # live = Σ occupancy > 0
     n_live_components = int(live_comp.size)
     live_bins = np.flatnonzero(np.isin(labels, live_comp)).astype(np.intp)
-    n_live_bins = int(live_bins.size)
-    if n_live_bins == 0:                       # zero total occupancy (spec §7)
+    if live_bins.size == 0:                                          # zero total occupancy (spec §7)
         return MRFBasis(np.zeros((0, 0)), np.zeros((0,)), live_bins, 0)
-
-    # 2. effective rank on the LIVE basis
     R = _DEFAULT_MAX_RANK if rank is None else int(rank)
-    r_eff = max(n_live_components, min(n_live_bins, R))
-
-    # 3. build S once, request per-component eigenpairs, keep only live-component modes,
-    #    over-request until r_eff live modes are retained (reuse _symmetric_eigenbasis
-    #    per live component OR globally then filter — see spec §6.1 + §11 perf caveat).
-    S = _symmetric_conjugate(W, volumes)       # M^{-1/2}(D−W)M^{-1/2}
-    eigvals, eigvecs = _live_modes(S, volumes, labels, live_comp, r_eff)  # (r_eff,), (n_bins, r_eff)
-
-    # 4. apply M^{-1/2} to eigenvectors, then restrict to live bins.
-    #    _symmetric_eigenbasis returns Q (eigenvectors of S = M^{-1/2}(D-W)M^{-1/2}),
-    #    NOT M^{-1/2}Q. The penalty basis is B = M^{-1/2}Q — this matters on
-    #    nonuniform-volume polar/mesh layouts (spec §3). Scale rows by 1/sqrt(volume).
-    inv_sqrt_vol = 1.0 / np.sqrt(volumes)                  # M^{-1/2} diagonal, (n_bins,)
-    B = (inv_sqrt_vol[:, None] * eigvecs)[live_bins, :]    # (n_live_bins, r_eff)
-    d = eigvals.copy()
-    d[_designated_nulls(eigvals, labels_of_modes)] = 0.0   # one null per live component, exactly 0.0
+    r_eff = max(n_live_components, min(live_bins.size, R))
+    # modes belonging to live components, in ascending-eigenvalue order (Q already sorted)
+    live_modes = np.flatnonzero(np.isin(mode_comp, live_comp))
+    keep = live_modes[:r_eff]                                        # requires len(live_modes) >= r_eff
+    inv_sqrt_vol = 1.0 / np.sqrt(volumes)                            # M^{-1/2}; B = M^{-1/2}Q (spec §3)
+    B = (inv_sqrt_vol[:, None] * Q[:, keep])[live_bins, :]           # (n_live_bins, r_eff)
+    d = Lam[keep].copy()
+    # zero exactly one null per live component: the first (smallest-λ) kept mode of each component
+    _, first_idx = np.unique(mode_comp[keep], return_index=True)
+    d[first_idx] = 0.0
     return MRFBasis(B, d, live_bins, n_live_components)
 ```
 
-**`_live_modes` / null designation.** Per live component, the smallest eigenvalue is that
-component's constant (null) mode. Track which component each retained mode came from so exactly
-`n_live_components` nulls are zeroed. The baseline reuses the global `_symmetric_eigenbasis`
-(`diffusion.py:382`, per-component blocks + global sort at `:444-448`) restricted to live
-components; the perf fallback (spec §11) computes per-live-component `eigsh`. Either way the
-return contract ([MRFBasis](shared-contracts.md#mrfbasis)) is identical.
+### (c) `Environment._mrf_basis(occupancy, *, rank)` — glue + iterative growth
 
-**Env entry + caching (Finding 6).** `Environment._mrf_basis(occupancy, *, rank)` (`fields.py`)
-splits into a **cached geometry eigenbasis** and a **per-call live selection**:
+Because dead components also contribute low modes, **the global `G` needed to expose `r_eff` live
+modes is not knowable up front** (Finding 3) — grow iteratively until enough live modes appear:
 
-- Add `_mrf_eigenbasis` as a `versioned_cached_property` returning a **mutable holder**
-  `{"eigvals": …, "eigvecs": …, "rank": R_built}` — same grow-by-replace pattern as the existing
-  `_diffusion_eigenbasis` (`fields.py:535`). The holder is dropped wholesale on any `_state_version`
-  bump; keyed only by geometry (no `(sigma, tol)` — the MRF penalty basis is bandwidth-independent).
-- `_mrf_basis` computes the **global** over-request size needed to yield `r_eff` live modes
-  (bounded by `n_bins`), then: if the holder's `rank ≥ needed`, **slice** it (no eigensolve);
-  else call `_symmetric_eigenbasis(S, needed)` (or dense `eigh` past `dense_fraction·n`) and
-  **replace** the holder at the larger rank. Then apply `M^{-1/2}`, do the occupancy-dependent live
-  selection + null-zeroing, and return `MRFBasis`.
-- The live selection is **not** cached (it varies with per-call occupancy support); only the
-  eigensolve is. So a repeated `_mrf_basis` call at the same-or-smaller rank does **not** re-run the
-  eigensolver — the phase-1 test asserts this (spy on `_symmetric_eigenbasis` / holder `rank`
-  unchanged), distinct from the `_diffusion_geometry`-reuse assertion.
+```python
+def _mrf_basis(self, occupancy, *, rank):
+    W, volumes, n_components, labels = self._diffusion_geometry
+    S = _symmetric_conjugate(W, volumes)                 # cheap; eigensolve is the cost
+    holder = self._mrf_eigenbasis                        # cached mutable holder (a)
+    r_eff = _target_live_rank(labels, occupancy, rank)   # max(n_live_comp, min(n_live_bins, R))
+    G = max(holder["G"], r_eff)
+    while True:                                          # iterative grow: dead modes may crowd out live
+        _ensure_global_modes(holder, S, labels, G)
+        n_live_modes = int(np.isin(holder["mode_comp"], _live_comp(labels, occupancy)).sum())
+        if n_live_modes >= r_eff or holder["G"] >= S.shape[0]:
+            break
+        G = min(2 * holder["G"], S.shape[0])             # double, capped at full rank
+    return select_live_basis(holder["Q"], holder["Lam"], holder["mode_comp"],
+                             volumes, labels, occupancy, rank=rank)
+```
+
+Only `_ensure_global_modes` eigensolves, and only when growth is needed; the selector is pure
+masking. A repeated `_mrf_basis` at the same-or-smaller rank / same live support is a full cache
+hit (no eigensolve) — the phase-1 test asserts this by spying on `_symmetric_eigenbasis` and the
+holder `G`, distinct from the `_diffusion_geometry`-reuse assertion. `_target_live_rank` /
+`_live_comp` are small pure helpers shared with the selector.
 
 ---
 
@@ -134,7 +155,7 @@ Spec §4. Batched over the neuron axis (shared `B`, `o`; per-neuron `n_k`, `γ_k
 forever). `penalty_diag = penalty * d` (length `r_eff`).
 
 ```python
-def _newton_fit_numpy(counts, occupancy, B, penalty_diag, *, max_iter, tol):
+def _newton_fit_numpy(counts, occupancy, B, penalty_diag, max_iter, tol):  # ALL positional
     # counts (n_live_bins, n_units); occupancy (n_live_bins,); B (n_live_bins, r_eff)
     n_bins, r = B.shape
     n_units = counts.shape[1]
@@ -148,9 +169,11 @@ def _newton_fit_numpy(counts, occupancy, B, penalty_diag, *, max_iter, tol):
         eta = np.clip(B @ coeffs, -_ETA_CLIP, _ETA_CLIP)    # (n_bins, n_units)
         mu = occupancy[:, None] * np.exp(eta)
         grad = B.T @ (counts - mu) - penalty_diag[:, None] * coeffs           # (r, n_units)
-        # Hessian per unit: Bᵀ diag(mu_k) B + diag(penalty_diag) + jitter I
-        H = np.einsum("ik,ij,il->kjl", B, mu, B, optimize=True)  # (n_units, r, r) — or loop
-        H += (penalty_diag + _HESSIAN_JITTER) * np.eye(r)[None]
+        # Hessian per unit: Bᵀ diag(mu_k) B + diag(penalty_diag) + jitter I.
+        # Index carefully: i=bins, k=unit, r/s=basis modes → output (n_units, r, r).
+        # ("ik,ij,il->kjl" would give (r, n_units, r) — WRONG for the diag-add + solve.)
+        H = np.einsum("ir,ik,is->krs", B, mu, B, optimize=True)  # (n_units, r, r)
+        H += (penalty_diag + _HESSIAN_JITTER) * np.eye(r)[None]  # broadcast add to each unit's block
         newton_step = np.linalg.solve(H, grad.T[..., None])[..., 0].T   # (r, n_units)
         # step-halving returns the ACCEPTED (possibly halved) step + new coeffs + new objective
         coeffs, accepted_step, obj = _step_halve(
@@ -272,10 +295,9 @@ Spec §7 table. Handle before/around the fit so outputs stay model-consistent:
 - Parity target: rate error `~1e-6` vs the float64 NumPy core; the parity test also asserts the
   float32 path **converges** (`converged is True`, `n_iter < _MAX_ITER`) — proving the floor is
   applied (spec §10).
-- **Return-type contract (Finding 5).** Match the existing smoothing backend semantics: check what
-  `Environment.diffuse` / `smooth` / the ratio `compute_spatial_rates(backend="jax")` path return
-  today (JAX arrays vs. NumPy-converted) and mirror it exactly, so glm doesn't introduce a
-  divergent contract. Whatever the diagnostics (`coefficients`, etc.) end up as, `firing_rates` on
-  the result honors `dtype` and the same backend-array convention as the ratio path. Confirm the
-  choice against `encoding/_backend.py` before implementing; the parity test asserts values match
-  regardless of array type (`np.asarray(...)` both sides).
+- **Return-type contract is owned by phase-3, not this phase (Finding 4).** Phase-3 already fixes
+  what `compute_spatial_rates(method="glm", backend="jax")` returns (NumPy core + convert output
+  to JAX arrays to match the ratio path, resolved via `get_backend_name`). Phase-5 accelerates the
+  **fit compute only** and must keep that contract — the phase-3 `test_glm_backend_jax_return`
+  stays green. The parity test asserts values match regardless of array type (`np.asarray(...)`
+  both sides).

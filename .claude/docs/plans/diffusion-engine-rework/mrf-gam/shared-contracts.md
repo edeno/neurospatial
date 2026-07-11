@@ -135,8 +135,10 @@ to `live_bins`) and rates out (`log_rate (n_live_bins, n_units) →` result `fir
 (n_units, n_bins)`). See [designs.md → Boundary orientation](designs.md#module-layout).
 
 **`pooled=False` (phase-6) widens `penalty`/`reml_objective`** to `float | NDArray[(n_units,)] |
-None` (per-unit λ_k / score; still scalar `None` when `r==0`, which is population-level). Every
-other field keeps its shared-λ shape. The default `pooled=True` is unchanged.
+None` — a `(n_units,)` vector **only** on the automatic-REML path (`penalty is None`, `r > 0`;
+informative units get their λ_k, zero-spike units the pooled-λ fallback). It stays a **scalar**
+when `pooled=True`, when a **fixed `penalty=<float>` is supplied** (fixed penalty beats `pooled`),
+or `None` at `r==0` (population-level). Every other field keeps its shared-λ shape.
 
 ---
 
