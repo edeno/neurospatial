@@ -33,8 +33,12 @@ install) + optional JAX accel.
 - **Per-neuron λ (`pooled=False`)** — **deferred**; the core is single-shared-λ only, and
   `pooled` is **not exposed** until the stretch. (No `pooled` param this PR — see §5.)
 - Clusterless/mark-space; changing the operator/eigenbasis.
-- Renaming `smoothing_method → method` on the *other* encoders (`compute_directional_rate`,
-  `compute_view_rate`, …) — they don't gain `glm`; tracked follow-up, flagged in the CHANGELOG.
+- **Adding `glm` to the *other* encoders** (`compute_view_rate`, `compute_egocentric_rate`, …) —
+  only `compute_spatial_rate(s)` gain the estimator. **NOTE (supersedes the earlier deferral):
+  the `smoothing_method → method` rename is applied to ALL smoothing encoders now** (spatial,
+  view, egocentric + their result classes), so the `method` name is uniform across the API and no
+  cross-result-class inconsistency is left behind — see the plan's phase-0. Only *glm support* is
+  spatial-only.
 
 ## 3. Model
 
@@ -313,7 +317,8 @@ The `smoothing_method → method` rename touches persistence and the decoder:
   `min_occupancy` nullable, add the same **method-specific validation** as §6.2, and forward the
   glm params through both `decode_session` and `decode_session_summary`. So `"glm"` works via the
   functional *and* the class decoder.
-- CHANGELOG: the hard rename (breaking), the nullable `bandwidth`, the sibling-encoder follow-up.
+- CHANGELOG: the hard rename (breaking, **all smoothing encoders** — spatial/view/egocentric),
+  the nullable `bandwidth`, and that `glm` is spatial-only.
 
 ## 9. Layouts & composition
 
@@ -392,9 +397,9 @@ Occupancy is the existing `compute_occupancy` exposure. `firing_rate` composes w
   `min(R, n_comp_bins)`), which holds the `R` bound regardless of dead mass but needs a
   per-component eigenbasis cache. Baseline is acceptable when the dead fraction is small; revisit
   under the perf-benchmark task.
-- **Hard rename** breaks callers passing `smoothing_method=` and reading `.smoothing_method`;
-  documented. Old NWB files still *read* (defensive fallback); sibling encoders keep the old
-  name (follow-up).
+- **Hard rename** breaks callers passing `smoothing_method=` and reading `.smoothing_method`
+  across **all** smoothing encoders (spatial/view/egocentric) and their result classes;
+  documented in the CHANGELOG. Old NWB files still *read* (defensive fallback).
 - **float32 JAX vs float64 NumPy** — parity within `~1e-6`; core stays float64.
 - **In-flight `min-occupancy-seconds` work** (not on this repo's main; see git note) — if it
   lands first, re-verify the `method` validation's ratio-param semantics and the result-class
