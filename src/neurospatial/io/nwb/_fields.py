@@ -3,6 +3,13 @@ Spatial fields writing to NWB analysis containers.
 
 This module provides functions for writing spatial analysis results
 (place fields, occupancy maps) to NWB analysis/ containers.
+
+Schema note
+-----------
+As of ``SPATIAL_RATES_SCHEMA_VERSION`` ``"2.0"`` the estimator is stored under
+the metadata key ``"method"`` (renamed from the legacy ``"smoothing_method"``).
+:func:`read_place_field` falls back to the old key so files written by earlier
+versions (schema ``1.x``) still read.
 """
 
 from __future__ import annotations
@@ -39,8 +46,10 @@ DEFAULT_OCCUPANCY_NAME: str = "occupancy"
 # Default name for the population spatial-rates container (unit axis)
 DEFAULT_SPATIAL_RATES_NAME: str = "spatial_rates"
 
-# Schema version for the spatial-rates DynamicTable metadata blob
-SPATIAL_RATES_SCHEMA_VERSION: str = "1.0"
+# Schema version for the spatial-rates DynamicTable metadata blob.
+# 2.0: estimator key renamed "smoothing_method" -> "method" (read-compatible
+# with 1.x via a fallback in read_place_field).
+SPATIAL_RATES_SCHEMA_VERSION: str = "2.0"
 
 # Column names within the spatial-rates DynamicTable
 COL_UNIT_ID: str = "unit_id"
@@ -448,7 +457,7 @@ def write_spatial_rates(
     The container is a :class:`~hdmf.common.DynamicTable` (one row per unit) in
     the ``analysis`` processing module, with a ``unit_id`` column, a 2-D
     ``firing_rate`` column of shape ``(n_units, n_bins)`` on the bin axis, and
-    one column per ``unit_table`` field. ``smoothing_method``, ``bandwidth``,
+    one column per ``unit_table`` field. ``method``, ``bandwidth``,
     ``n_bins``, ``n_units`` and the ``unit_table`` column names are stored as a
     JSON blob in the table description. Occupancy is stored once (it is shared
     across units) as a companion ``TimeSeries`` named ``f"{name}_occupancy"``,
@@ -477,7 +486,7 @@ def write_spatial_rates(
     result : SpatialRatesResult
         Population spatial-rate result to serialize. Its ``env``,
         ``firing_rates`` ``(n_units, n_bins)``, ``occupancy`` ``(n_bins,)``,
-        ``unit_ids``, ``unit_table``, ``smoothing_method`` and ``bandwidth`` are
+        ``unit_ids``, ``unit_table``, ``method`` and ``bandwidth`` are
         all preserved.
     name : str, default "spatial_rates"
         Name for the spatial-rates DynamicTable in ``analysis/``.
@@ -613,7 +622,7 @@ def write_spatial_rates(
     description = json.dumps(
         {
             "schema_version": SPATIAL_RATES_SCHEMA_VERSION,
-            "smoothing_method": str(result.smoothing_method),
+            "method": str(result.method),
             "bandwidth": float(result.bandwidth),
             "n_bins": int(env.n_bins),
             "n_units": n_units,
@@ -705,7 +714,7 @@ def read_place_field(
 
     The inverse of :func:`write_spatial_rates`. Reconstructs the per-unit
     firing-rate maps, shared occupancy, ``unit_ids``, optional ``unit_table``,
-    ``smoothing_method`` and ``bandwidth``.
+    ``method`` and ``bandwidth``.
 
     Parameters
     ----------
@@ -780,16 +789,17 @@ def read_place_field(
         ) from exc
     if (
         not isinstance(meta, dict)
-        or "smoothing_method" not in meta
+        or ("method" not in meta and "smoothing_method" not in meta)
         or "n_bins" not in meta
     ):
         raise ValueError(
             f"'{name}' is not a spatial-rates table: its description JSON is "
-            f"missing the expected spatial-rates metadata "
-            f"('smoothing_method', 'n_bins')."
+            f"missing the expected spatial-rates metadata ('method', 'n_bins')."
         )
 
-    smoothing_method = meta["smoothing_method"]
+    # Read the estimator under the current "method" key (schema >= 2.0), falling
+    # back to the legacy "smoothing_method" key so pre-rename files still load.
+    method = meta.get("method", meta.get("smoothing_method"))
     bandwidth = meta["bandwidth"]
     unit_table_columns = meta.get("unit_table_columns", [])
     occupancy_name = meta.get("occupancy_name", f"{name}_occupancy")
@@ -859,7 +869,7 @@ def read_place_field(
         firing_rates=firing_rates,
         occupancy=occupancy,
         env=env,
-        smoothing_method=smoothing_method,
+        method=method,
         bandwidth=bandwidth,
         unit_ids=unit_ids,
         unit_table=unit_table,
