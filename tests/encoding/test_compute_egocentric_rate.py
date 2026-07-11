@@ -487,9 +487,7 @@ class TestComputeEgocentricRateDistanceMetric:
 class TestComputeEgocentricRateSmoothing:
     """Test smoothing parameters."""
 
-    @pytest.mark.parametrize(
-        "method", ["diffusion_kde", "gaussian_kde", "binned"]
-    )
+    @pytest.mark.parametrize("method", ["diffusion_kde", "gaussian_kde", "binned"])
     def test_accepts_valid_methods(
         self,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],

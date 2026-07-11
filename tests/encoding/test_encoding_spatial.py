@@ -4686,9 +4686,7 @@ class TestSpatialRateRecovery:
         return env, spike_times, times, positions
 
     @pytest.mark.slow
-    @pytest.mark.parametrize(
-        "method", ["binned", "gaussian_kde", "diffusion_kde"]
-    )
+    @pytest.mark.parametrize("method", ["binned", "gaussian_kde", "diffusion_kde"])
     def test_recovers_field_location(self, place_cell_session, method):
         from neurospatial.encoding.spatial import compute_spatial_rate
 

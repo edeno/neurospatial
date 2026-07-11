@@ -503,9 +503,7 @@ def _build_encoding_model(
     # plausible-but-wrong posterior. Exactly one of the two branches below
     # surfaces it (never both, so no duplicate warning):
     if encoding_models is None:
-        _method = cast(
-            "Literal['diffusion_kde', 'gaussian_kde', 'binned']", method
-        )
+        _method = cast("Literal['diffusion_kde', 'gaussian_kde', 'binned']", method)
         # The encoder runs over the same [t_start, t_stop] window and already
         # emits the spike-drop warning (and additionally an inactive-bin /
         # wrong-coordinate-frame warning the decode-time check cannot), so we

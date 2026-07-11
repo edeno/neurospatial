@@ -1897,9 +1897,7 @@ def compute_spatial_rate(
     times: NDArray[np.float64] | PositionLike,
     positions: NDArray[np.float64] | None = None,
     *,
-    method: Literal[
-        "diffusion_kde", "gaussian_kde", "binned"
-    ] = "diffusion_kde",
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
     fill_value: float | None = None,
@@ -2240,9 +2238,7 @@ def compute_spatial_rates(
     times: NDArray[np.float64] | PositionLike,
     positions: NDArray[np.float64] | None = None,
     *,
-    method: Literal[
-        "diffusion_kde", "gaussian_kde", "binned"
-    ] = "diffusion_kde",
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
     fill_value: float | None = None,
@@ -3170,9 +3166,7 @@ def compute_directional_place_fields(
     positions: NDArray[np.float64],
     direction_labels: NDArray[np.object_],
     *,
-    method: Literal[
-        "diffusion_kde", "gaussian_kde", "binned"
-    ] = "diffusion_kde",
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
 ) -> DirectionalPlaceFields:
@@ -3510,9 +3504,7 @@ def is_place_cell(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
-    method: Literal[
-        "diffusion_kde", "gaussian_kde", "binned"
-    ] = "diffusion_kde",
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float = 5.0,
     threshold: float = 0.2,
     min_size: int | None = None,

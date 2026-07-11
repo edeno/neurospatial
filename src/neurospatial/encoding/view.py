@@ -1102,9 +1102,7 @@ def compute_view_rate(
     gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
     view_distance: float = 10.0,
     gaze_offsets: NDArray[np.float64] | None = None,
-    method: Literal[
-        "diffusion_kde", "gaussian_kde", "binned"
-    ] = "diffusion_kde",
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
@@ -1379,9 +1377,7 @@ def compute_view_rates(
     gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
     view_distance: float = 10.0,
     gaze_offsets: NDArray[np.float64] | None = None,
-    method: Literal[
-        "diffusion_kde", "gaussian_kde", "binned"
-    ] = "diffusion_kde",
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
     n_jobs: int = 1,
@@ -1740,9 +1736,7 @@ def is_spatial_view_cell(
     *,
     gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
     view_distance: float = 10.0,
-    method: Literal[
-        "diffusion_kde", "gaussian_kde", "binned"
-    ] = "diffusion_kde",
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_info: float = 0.5,
 ) -> bool:

@@ -24,9 +24,7 @@ def validate_simulation(
     times: NDArray[np.float64] | None = None,
     ground_truth: dict[str, Any] | None = None,
     cell_indices: list[int] | None = None,
-    method: Literal[
-        "diffusion_kde", "gaussian_kde", "binned"
-    ] = "diffusion_kde",
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     max_center_error: float | None = None,
     min_correlation: float | None = None,
     show_plots: bool = False,

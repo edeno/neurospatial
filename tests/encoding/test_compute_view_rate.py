@@ -304,9 +304,7 @@ class TestComputeViewRateViewDistance:
 class TestComputeViewRateSmoothing:
     """Test smoothing parameters."""
 
-    @pytest.mark.parametrize(
-        "method", ["diffusion_kde", "gaussian_kde", "binned"]
-    )
+    @pytest.mark.parametrize("method", ["diffusion_kde", "gaussian_kde", "binned"])
     def test_accepts_valid_methods(
         self,
         simple_env: Environment,
