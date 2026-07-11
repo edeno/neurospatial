@@ -191,7 +191,7 @@ def run_single_benchmark(
     backend: Backend,
     n_iterations: int = 3,
     warmup: bool = True,
-    smoothing_method: SmoothingMethod = "binned",
+    method: SmoothingMethod = "binned",
     bandwidth: float = 5.0,
 ) -> EncodingBenchmarkResult:
     """Run a single benchmark.
@@ -208,7 +208,7 @@ def run_single_benchmark(
         Number of iterations to average over.
     warmup : bool, default=True
         Whether to run a warmup iteration first.
-    smoothing_method : str, default="binned"
+    method : str, default="binned"
         Smoothing method to use ("binned", "diffusion_kde", "gaussian_kde").
     bandwidth : float, default=5.0
         Bandwidth for smoothing methods (not used for "binned").
@@ -235,7 +235,7 @@ def run_single_benchmark(
                 spike_times_list,
                 times,
                 positions,
-                smoothing_method=smoothing_method,
+                method=method,
                 bandwidth=bandwidth,
                 backend=backend,
             )
@@ -276,7 +276,7 @@ def run_encoding_benchmark(
     functions: Sequence[str] = ("compute_spatial_rates",),
     n_iterations: int = 3,
     seed: int = 42,
-    smoothing_method: SmoothingMethod = "binned",
+    method: SmoothingMethod = "binned",
     bandwidth: float = 5.0,
 ) -> list[EncodingBenchmarkResult]:
     """Run full encoding benchmark suite.
@@ -293,7 +293,7 @@ def run_encoding_benchmark(
         Number of iterations per benchmark.
     seed : int, default=42
         Random seed for reproducibility.
-    smoothing_method : str, default="binned"
+    method : str, default="binned"
         Smoothing method to use ("binned", "diffusion_kde", "gaussian_kde").
     bandwidth : float, default=5.0
         Bandwidth for smoothing methods (not used for "binned").
@@ -306,7 +306,7 @@ def run_encoding_benchmark(
     results = []
 
     for function_name in functions:
-        print(f"\nBenchmarking {function_name} (smoothing={smoothing_method})...")
+        print(f"\nBenchmarking {function_name} (smoothing={method})...")
 
         for n_neurons in n_neurons_list:
             print(f"  n_neurons={n_neurons}")
@@ -325,7 +325,7 @@ def run_encoding_benchmark(
                         function_name=function_name,
                         backend=backend,
                         n_iterations=n_iterations,
-                        smoothing_method=smoothing_method,
+                        method=method,
                         bandwidth=bandwidth,
                     )
                     results.append(result)
@@ -520,7 +520,7 @@ Examples:
         backends=backends,
         n_iterations=args.iterations,
         seed=args.seed,
-        smoothing_method=args.smoothing,
+        method=args.smoothing,
         bandwidth=args.bandwidth,
     )
 
