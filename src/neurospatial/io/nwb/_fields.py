@@ -6,10 +6,9 @@ This module provides functions for writing spatial analysis results
 
 Schema note
 -----------
-As of ``SPATIAL_RATES_SCHEMA_VERSION`` ``"2.0"`` the estimator is stored under
-the metadata key ``"method"`` (renamed from the legacy ``"smoothing_method"``).
-:func:`read_place_field` falls back to the old key so files written by earlier
-versions (schema ``1.x``) still read.
+The estimator is stored under the metadata key ``"method"``
+(``SPATIAL_RATES_SCHEMA_VERSION`` ``"2.0"``). This is a clean break with no
+back-compatibility shim: tables written by earlier schema versions do not read.
 """
 
 from __future__ import annotations
@@ -47,8 +46,8 @@ DEFAULT_OCCUPANCY_NAME: str = "occupancy"
 DEFAULT_SPATIAL_RATES_NAME: str = "spatial_rates"
 
 # Schema version for the spatial-rates DynamicTable metadata blob.
-# 2.0: estimator key renamed "smoothing_method" -> "method" (read-compatible
-# with 1.x via a fallback in read_place_field).
+# 2.0: estimator stored under the key "method"; a clean break -- older tables
+# (which keyed the estimator differently) do not read.
 SPATIAL_RATES_SCHEMA_VERSION: str = "2.0"
 
 # Column names within the spatial-rates DynamicTable
@@ -787,19 +786,13 @@ def read_place_field(
             f"'{name}' is not a spatial-rates table: its description is not the "
             f"JSON metadata written by write_spatial_rates."
         ) from exc
-    if (
-        not isinstance(meta, dict)
-        or ("method" not in meta and "smoothing_method" not in meta)
-        or "n_bins" not in meta
-    ):
+    if not isinstance(meta, dict) or "method" not in meta or "n_bins" not in meta:
         raise ValueError(
             f"'{name}' is not a spatial-rates table: its description JSON is "
             f"missing the expected spatial-rates metadata ('method', 'n_bins')."
         )
 
-    # Read the estimator under the current "method" key (schema >= 2.0), falling
-    # back to the legacy "smoothing_method" key so pre-rename files still load.
-    method = meta.get("method", meta.get("smoothing_method"))
+    method = meta["method"]
     bandwidth = meta["bandwidth"]
     unit_table_columns = meta.get("unit_table_columns", [])
     occupancy_name = meta.get("occupancy_name", f"{name}_occupancy")

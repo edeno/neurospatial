@@ -1,9 +1,9 @@
-"""NWB backward-compat: the estimator key rename reads legacy files.
+"""NWB estimator-key contract: current ``"method"`` key, no legacy fallback.
 
 ``write_spatial_rates`` stores the estimator under the metadata key ``"method"``
-(schema >= 2.0). Files written by earlier versions used ``"smoothing_method"``
-(schema 1.x); ``read_place_field`` must still read those via a defensive
-fallback on the old key.
+(schema ``2.0``). The rename is a clean break with no back-compatibility shim:
+tables carrying only the old ``"smoothing_method"`` key (schema ``1.x``) are
+rejected, not silently read.
 """
 
 from __future__ import annotations
@@ -35,31 +35,30 @@ def _make_rates_result(env):
     )
 
 
-def test_nwb_reads_legacy_key(empty_nwb, sample_environment):
-    """A table carrying the legacy ``"smoothing_method"`` key still reads."""
+def test_nwb_legacy_key_rejected(empty_nwb, sample_environment):
+    """A table carrying only the legacy ``"smoothing_method"`` key does not read.
+
+    No silent fall-through: an old-schema table is rejected with a clear error
+    rather than reconstructed.
+    """
     from neurospatial.io.nwb import read_place_field, write_spatial_rates
 
     env = sample_environment
     result = _make_rates_result(env)
 
     # Write with the current writer (stores key "method"), then rewrite the
-    # table's description JSON to the legacy schema-1.x form to simulate an old
-    # file: rename the key back to "smoothing_method" and drop schema_version to
-    # "1.0". (fields[...] override bypasses hdmf's read-only description.)
+    # table's description JSON to the legacy schema-1.x form (rename the key back
+    # to "smoothing_method", drop schema_version). fields[...] override bypasses
+    # hdmf's read-only description.
     write_spatial_rates(empty_nwb, result)
     table = empty_nwb.processing[DEFAULT_ANALYSIS_MODULE][DEFAULT_SPATIAL_RATES_NAME]
     meta = json.loads(table.description)
-    assert meta["method"] == "diffusion_kde"  # writer used the new key
     meta["smoothing_method"] = meta.pop("method")
     meta["schema_version"] = "1.0"
     table.fields["description"] = json.dumps(meta)
 
-    # The fallback path reconstructs the estimator from the legacy key.
-    back = read_place_field(empty_nwb, env=env)
-    assert back.method == "diffusion_kde"
-    np.testing.assert_array_equal(
-        np.asarray(back.firing_rates), np.asarray(result.firing_rates)
-    )
+    with pytest.raises(ValueError, match="method"):
+        read_place_field(empty_nwb, env=env)
 
 
 def test_nwb_writes_new_key_and_roundtrips(empty_nwb, sample_environment):
