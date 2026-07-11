@@ -103,21 +103,23 @@ def _mrf_basis(self, occupancy: NDArray[np.float64], *, rank: int) -> MRFBasis: 
 
 ## <a id="mrffit"></a>Fit return: `MRFFit`
 
-Produced by the phase-2 batched Newton + REML; consumed by phase-3 to populate the result.
-`NamedTuple`, arrays float64:
+Produced by `fit_mrf_gam(basis, counts, occupancy, *, penalty)` — **no `rank` arg** (the basis is
+the single source of truth for rank — Finding 5); `counts`/`occupancy` **arrive already restricted
+to `basis.live_bins`** and are validated, never re-sliced (Finding 1). `NamedTuple`, arrays float64:
 
 ```python
 class MRFFit(NamedTuple):
     coefficients: NDArray[np.float64]   # (r_eff, n_units) — γ on the live basis
     log_rate: NDArray[np.float64]       # (n_live_bins, n_units) — η = B γ (unclipped store is exp-of-clip)
-    penalty: float | None               # λ applied: supplied float, REML-selected, or None (r==0 / no-data)
+    penalty: float | NDArray | None     # λ applied; scalar shared/fixed, (n_units,) per-unit (pooled=False), or None
     penalty_weights: NDArray[np.float64] # (r_eff,) — d (echoed for the result)
-    rank: int                           # r_eff
+    rank: int                           # r_eff, DERIVED from basis.B.shape[1] (Finding 5)
     penalty_rank: int                   # r = r_eff − n_live_components
     deviance: NDArray[np.float64]        # (n_units,) — unpenalized Poisson deviance (spec §6.3)
-    converged: bool                     # batch-level scalar
-    n_iter: int                         # batch-level scalar
-    reml_objective: float | None        # None whenever REML did not run
+    converged: bool                     # batch-level scalar (all(per-unit) when looped)
+    n_iter: int                         # batch-level scalar (max(per-unit) when looped)
+    reml_objective: float | NDArray | None  # None if REML didn't run; (n_units,) per-unit (nan for fallback units)
+    penalty_selected_by_reml: NDArray | None # (n_units,) bool — pooled=False only; False = pooled-λ fallback unit
 ```
 
 **Invariants:** `converged`/`n_iter` are **batch scalars** (one shared stopping criterion, spec
@@ -153,13 +155,14 @@ widens to `float | None` (`None` for glm).
 | `method` | `str` | `str` |
 | `bandwidth` | `float \| None` | `float \| None` |
 | `coefficients` | `(rank, n_units)` | `[:, i]` → `(rank,)` |
-| `penalty` | scalar or `None` | same scalar |
+| `penalty` | scalar, `(n_units,)` (pooled=False), or `None` | scalar or `[i]` |
 | `penalty_weights` | `(rank,)` | same |
 | `rank` | `int` (effective `r_eff`) | same |
 | `deviance` | `(n_units,)` | `[i]` |
 | `converged` | scalar `bool` | same |
 | `n_iter` | scalar `int` | same |
-| `reml_objective` | scalar or `None` | same |
+| `reml_objective` | scalar, `(n_units,)` (pooled=False; `nan` for fallback units), or `None` | scalar or `[i]` |
+| `penalty_selected_by_reml` | `(n_units,)` bool (pooled=False only) or `None` | `[i]` or `None` |
 
 `firing_rate` (existing field) for glm is `max(exp(η), _RATE_FLOOR)` in **active-bin order,
 shape `(n_bins,)`** — dead/non-live bins are `_RATE_FLOOR`. Terminal verbs (`to_dataframe`,

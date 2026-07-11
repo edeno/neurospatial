@@ -171,15 +171,21 @@ objective exists in the interval).
   - **A fixed `penalty=<float>` takes precedence over `pooled`**: REML is skipped entirely and the
     result records that **scalar** λ (the model fitted), exactly as `pooled=True`. `pooled` only
     affects the automatic-REML path.
-  - When `r > 0` and REML runs, `penalty`/`reml_objective` become finite `(n_units,)` vectors, but
-    **only for informative units** (`Σ n_k > 0`). **A zero-spike unit is statistically unidentified
-    for per-unit λ** — its intercept → −∞, non-null coeffs → 0, and the `r·log λ` terms cancel, so
-    the bounded optimizer's point is driven by clipping/jitter/bounds, **not data**. So those units
-    get a **documented fallback: the pooled λ computed over the informative units** (not the
-    optimizer's arbitrary point), and the field still floors to `_RATE_FLOOR`. If **no** unit is
-    informative, fall back to the whole-population pooled λ (or `None` at `r==0`).
+  - When `r > 0` and REML runs, `penalty`/`reml_objective` become `(n_units,)` vectors, but
+    per-unit λ is meaningful **only for informative units** (`Σ n_k > 0`). **A zero-spike unit is
+    statistically unidentified for per-unit λ** — its intercept → −∞, non-null coeffs → 0, and the
+    `r·log λ` terms cancel, so the bounded optimizer's point is driven by clipping/jitter/bounds,
+    **not data**. So those units get a **documented fallback: the pooled λ over the informative
+    units** (not the optimizer's point), `reml_objective[k] = nan` (sentinel), the field floors,
+    and a per-unit boolean **`penalty_selected_by_reml`** marks them (`False`) so a persisted λ is
+    never mistaken for a unit estimate (§6.3, §8).
+  - **If NO unit is informative** (all-zero-spike population), the pooled objective is *equally*
+    unidentified — so `pooled=False` **does not run pooled REML**; it takes the shared
+    **all-zero-spike degenerate path** (§7): scalar `penalty=None`, `reml_objective=None`, floor
+    fields. (`r==0` likewise → scalar `None`.)
   - Shapes: shared-λ (`pooled=True`) keeps scalar `penalty`/`reml_objective` exactly as today;
-    only `pooled=False` with automatic REML widens them to vectors (§6.3, §8).
+    only `pooled=False` with automatic REML **and ≥1 informative unit** widens them to vectors
+    (§6.3, §8).
 
 ## 6. Eigenbasis access + API
 
@@ -304,8 +310,9 @@ there. Per case (all warn, none raise):
 | --- | --- | --- | --- | --- | --- |
 | **no neurons** (`n_units==0`) | `(r_eff, 0)` | `(0, n_bins)` | `(0,)` | `None` / `None` | `True` |
 | **zero total occupancy** (no live comp) | **empty** `(0, n_units)` — no live basis, so **no coefficients**; all bins are the floor fallback | `_RATE_FLOOR` everywhere | `(n_units,)` zeros | `None` / `None` | `True` |
+| **all-zero-spike population** (`Σn==0` over all units) | fitted unpenalized (`penalty_diag=0`) → low intercept | `_RATE_FLOOR` everywhere | `≈0` | `None` / `None` (λ unidentified — skip REML) | fitted |
 | **dead component** (`Σo_comp==0`) | live modes only (§6.1) | `_RATE_FLOOR` on that comp; `exp(Bγ)`-fitted elsewhere | fitted, exposed bins | fitted / fitted | fitted |
-| **zero-spike neuron** (`Σn_k==0`) | fitted (low intercept) | `exp(η)` floored → near-floor | finite | shared | shared |
+| **zero-spike neuron** (`Σn_k==0`, population has ≥1 informative unit) | fitted (low intercept) | `exp(η)` floored → near-floor | finite | shared (or pooled-λ fallback if `pooled=False`, §5) | shared |
 
 - **`penalty` / `reml_objective` when REML did not run** — `reml_objective` is always `None`
   here. `penalty` records the value **actually applied**: for a **fixed `penalty=<float>`** the
@@ -337,7 +344,8 @@ The `smoothing_method → method` rename touches persistence and the decoder:
     vector) to place them.
   - **Per-unit table columns**: `deviance` (`(n_units,)`), `coefficients` as a **fixed-length
     `(rank,)` per-unit vector** column, and (when `pooled=False`) per-unit `penalty` /
-    `reml_objective`.
+    `reml_objective` / **`penalty_selected_by_reml`** (the fallback mask — so a persisted λ is never
+    read back as a unit estimate when it was the pooled-λ fallback).
   - Round-trip preserves shapes; a ratio-method result persists these as absent/`None`.
 - **Decoder — functional + class paths.** `decode_session` / `decode_session_summary`
   ([decoding/session.py:100,180](../../../src/neurospatial/decoding/session.py)): rename the

@@ -22,7 +22,7 @@ New files under `src/neurospatial/encoding/`:
 
 | file | phase | contents |
 | --- | --- | --- |
-| `_glm.py` | 2 | module constants ([shared-contracts](shared-contracts.md#constants)); `MRFFit`; the orchestrator `fit_mrf_gam(basis, counts, occupancy, *, penalty, rank) -> MRFFit`; degenerate-case dispatch; deviance. Pure NumPy/SciPy. |
+| `_glm.py` | 2 | module constants ([shared-contracts](shared-contracts.md#constants)); `MRFFit`; the orchestrator `fit_mrf_gam(basis, counts, occupancy, *, penalty) -> MRFFit` (**no `rank` arg — Finding 5**: effective rank is `basis.B.shape[1]`, the single source of truth; `MRFFit.rank` is derived from it); degenerate-case dispatch; deviance. `counts`/`occupancy` arrive **already restricted to `basis.live_bins`** (phase-3 owns the restriction — Finding 1); `fit_mrf_gam` validates `counts.shape[0] == basis.B.shape[0]` and does **not** re-slice. Pure NumPy/SciPy. |
 | `_glm_numpy.py` | 2 | `_newton_fit_numpy(counts, occupancy, B, penalty_diag, max_iter, tol) -> (coeffs, eta, mu, n_iter, max_step, converged)` (**all positional** so REML's `minimize_scalar(args=…)` can call it — Finding 2); `_reml_objective_numpy(...)`. The float64 core. |
 | `_glm_jax.py` | 5 | float32 JAX mirror of `_glm_numpy` (`jit`, batched); selected via `encoding/_backend.py`. |
 
@@ -73,23 +73,33 @@ then the second — the selector never re-solves, so the cache is never bypassed
 `Environment._mrf_eigenbasis` is a `versioned_cached_property` returning a **mutable holder**
 `{"Q": (n_bins, G), "Lam": (G,), "mode_comp": (G,), "G": int}`: the `G` globally-smallest modes of
 `S = _symmetric_conjugate(W, volumes)`, each mode's **source W-component**, and the built rank `G`.
-Grow-by-replace, same pattern as `_diffusion_eigenbasis` (`fields.py:535`); dropped on any
-`_state_version` bump; **keyed by geometry only** (no `(sigma, tol)` — the MRF penalty basis is
+**Initial (empty) state: `{"Q": zeros((n_bins, 0)), "Lam": zeros(0), "mode_comp": zeros(0, intp),
+"G": 0}`.** Grow-by-replace, same pattern as `_diffusion_eigenbasis` (`fields.py:535`); dropped on
+any `_state_version` bump; **keyed by geometry only** (no `(sigma, tol)` — the MRF penalty basis is
 bandwidth-independent).
+
+**Transient-dense policy (Finding 2):** the dense (`rank=None`) eigenbasis is an `n×n` float64
+matrix — the design forbids persisting it ([design §11 / dense-fraction policy](../design-mrf-gam.md)).
+So `_ensure_global_modes` **returns** `(Q, Lam, mode_comp)` and **only updates the holder in the
+truncated (sparse) regime**; past `dense_fraction·n` it computes a **call-local** dense basis and
+leaves the holder at its last sparse `G`:
 
 ```python
 def _ensure_global_modes(holder, S, labels, needed_G):
-    """Grow the cached global basis to >= needed_G modes; recover per-mode component."""
-    if holder["G"] >= needed_G:
-        return holder                                   # cache hit — NO eigensolve
-    G = min(needed_G, S.shape[0])                       # cap at full rank
-    Lam, Q = _symmetric_eigenbasis(S, None if G >= dense_fraction * S.shape[0] else G)
+    """Return (Q, Lam, mode_comp) with >= needed_G modes. Persist ONLY sparse bases."""
+    n = S.shape[0]
+    if holder["G"] >= needed_G:                          # cache hit — NO eigensolve
+        return holder["Q"], holder["Lam"], holder["mode_comp"]
+    G = min(needed_G, n)
+    dense = G >= dense_fraction * n
+    Lam, Q = _symmetric_eigenbasis(S, None if dense else G)
     # Each column of Q is component-local (nonzero on exactly one W-component, exact 0 elsewhere),
     # so the source component is the label of any nonzero row (recovers the mode→component map
-    # WITHOUT modifying _symmetric_eigenbasis — Finding 3, replaces the undefined `labels_of_modes`).
-    mode_comp = np.array([labels[np.flatnonzero(col)[0]] for col in Q.T])
-    holder.update(Q=Q, Lam=Lam, mode_comp=mode_comp, G=Q.shape[1])
-    return holder
+    # WITHOUT modifying _symmetric_eigenbasis — replaces the undefined `labels_of_modes`).
+    mode_comp = np.array([labels[np.flatnonzero(col)[0]] for col in Q.T], dtype=np.intp)
+    if not dense:                                        # persist truncated bases only (transient-dense)
+        holder.update(Q=Q, Lam=Lam, mode_comp=mode_comp, G=Q.shape[1])
+    return Q, Lam, mode_comp
 ```
 
 ### (b) Pure selector — occupancy-only, no eigensolve
@@ -128,21 +138,23 @@ def _mrf_basis(self, occupancy, *, rank):
     W, volumes, n_components, labels = self._diffusion_geometry
     S = _symmetric_conjugate(W, volumes)                 # cheap; eigensolve is the cost
     holder = self._mrf_eigenbasis                        # cached mutable holder (a)
+    live = _live_comp(labels, occupancy)
     r_eff = _target_live_rank(labels, occupancy, rank)   # max(n_live_comp, min(n_live_bins, R))
     G = max(holder["G"], r_eff)
     while True:                                          # iterative grow: dead modes may crowd out live
-        _ensure_global_modes(holder, S, labels, G)
-        n_live_modes = int(np.isin(holder["mode_comp"], _live_comp(labels, occupancy)).sum())
-        if n_live_modes >= r_eff or holder["G"] >= S.shape[0]:
+        Q, Lam, mode_comp = _ensure_global_modes(holder, S, labels, G)   # may be transient (dense)
+        n_live_modes = int(np.isin(mode_comp, live).sum())
+        if n_live_modes >= r_eff or Q.shape[1] >= S.shape[0]:            # enough live modes, or full rank
             break
-        G = min(2 * holder["G"], S.shape[0])             # double, capped at full rank
-    return select_live_basis(holder["Q"], holder["Lam"], holder["mode_comp"],
-                             volumes, labels, occupancy, rank=rank)
+        G = min(2 * Q.shape[1], S.shape[0])              # double, capped at full rank
+    return select_live_basis(Q, Lam, mode_comp, volumes, labels, occupancy, rank=rank)
 ```
 
-Only `_ensure_global_modes` eigensolves, and only when growth is needed; the selector is pure
-masking. A repeated `_mrf_basis` at the same-or-smaller rank / same live support is a full cache
-hit (no eigensolve) — the phase-1 test asserts this by spying on `_symmetric_eigenbasis` and the
+Only `_ensure_global_modes` eigensolves, and only when growth is needed; it consumes/returns the
+`(Q, Lam, mode_comp)` triple (never persisting a dense basis — Finding 2), and the selector is pure
+masking on that triple. A repeated `_mrf_basis` at the same-or-smaller rank / same live support that
+stayed in the sparse regime is a full cache hit (no eigensolve) — the phase-1 test asserts this by
+spying on `_symmetric_eigenbasis` and the
 holder `G`, distinct from the `_diffusion_geometry`-reuse assertion. `_target_live_rank` /
 `_live_comp` are small pure helpers shared with the selector.
 
@@ -275,8 +287,9 @@ Spec §7 table. Handle before/around the fit so outputs stay model-consistent:
 | --- | --- | --- |
 | no neurons | `counts.shape[1] == 0` | `coefficients (r_eff, 0)`, `firing_rate (0, n_bins)`, `deviance (0,)`, `penalty/reml None`, `converged True`. Skip fit. |
 | zero total occupancy | `MRFBasis.live_bins.size == 0` | `coefficients (0, n_units)`, `firing_rate` all `_RATE_FLOOR`, `deviance` zeros, `penalty/reml None`, `converged True`, warn. Skip fit. |
+| **all-zero-spike population** | `counts.sum() == 0` (no unit has a spike) | **λ is unidentified** (every intercept → −∞, the `r·logλ`/logdet terms cancel — Finding 3). **Skip REML** (`penalty=None`, `reml_objective=None`), run the **unpenalized** fit (`penalty_diag=zeros`) so all fields floor to `_RATE_FLOOR`; `deviance` finite (≈0), warn. This is the shared home for both `pooled=True` and `pooled=False` when no unit is informative. |
 | dead component | `n_live_components < n_components` | fit on live bins; dead bins → `_RATE_FLOOR`; warn. |
-| zero-spike neuron | `counts[:, k].sum() == 0` | fit normally (low intercept); rate floors near `_RATE_FLOOR`. No special path. |
+| zero-spike neuron (population has ≥1 informative unit) | `counts[:, k].sum() == 0` | fit normally (low intercept); rate floors near `_RATE_FLOOR`. Shared-λ: no special path. Per-unit (`pooled=False`): pooled-λ fallback ([phase-6](phase-6-per-neuron-lambda.md)). |
 | `penalty=0` rank-deficient | `np.linalg.matrix_rank(B[exposed_live_bins]) < r_eff` | warn (identifiability). Fit still runs. |
 
 `firing_rate` is assembled into the **full active-bin array** `(n_bins,)` / `(n_bins, n_units)`:
