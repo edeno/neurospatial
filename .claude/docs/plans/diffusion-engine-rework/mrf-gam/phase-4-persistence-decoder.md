@@ -42,7 +42,7 @@ round-trip.
 | --- | --- |
 | `test_nwb_glm_roundtrip` | a glm `SpatialRatesResult` (with all GAM diagnostics, `bandwidth=None`) writes and reads back equal — field-by-field, shapes preserved. |
 | `test_nwb_ratio_roundtrip_unchanged` | a `diffusion_kde` result round-trips with GAM fields absent/`None` (no regression from phase-0). |
-| `test_nwb_reads_legacy_key` (carried from phase-0) | still green — old `"smoothing_method"` files read. |
+| `test_nwb_legacy_key_rejected` (carried from phase-0) | still green — legacy `"smoothing_method"` tables remain rejected (clean break, no fallback). |
 | `test_decode_session_glm` | `decode_session(..., method="glm", penalty=None)` runs end-to-end and produces a valid `DecodingResult`. |
 | `test_decode_session_summary_glm` | `decode_session_summary(..., method="glm", penalty=None)` runs end-to-end and produces a valid `DecodingSummary` (the streamed sibling — Finding 8); its encoding model matches `decode_session`'s. |
 | `test_bayesian_decoder_glm` | `BayesianDecoder(method="glm", rank=100).fit(...).predict(...)` runs; `bandwidth`/`min_occupancy` nullable; method-specific validation rejects `bandwidth=5.0` + `method="glm"`. |
@@ -51,12 +51,12 @@ round-trip.
 ## Fixtures
 
 - Reuse the phase-3 simulated glm result + the decoding fixtures (`tests/decoding/conftest.py`).
-- A checked-in tiny NWB file with the legacy `"smoothing_method"` key (from phase-0) continues to back the legacy-read test. glm round-trip writes to a temp NWB in-test.
+- The phase-0 legacy-key **rejection** test still holds (a `"smoothing_method"`-keyed table does not read — clean break). glm round-trip writes to a temp NWB in-test.
 
 ## Review
 
 Before opening the PR, dispatch `code-reviewer` against the diff. Confirm:
-- glm round-trips through NWB field-for-field; ratio round-trip unchanged; legacy read still works.
+- glm round-trips through NWB field-for-field; ratio round-trip unchanged; legacy (pre-0.9 `"smoothing_method"`-key) tables remain rejected (clean break).
 - Both decoder entry points (`decode_session`/`decode_session_summary` and `BayesianDecoder`) accept + forward glm params; validation mirrors the encoder.
 - "Deliberately not in this phase" honored — no JAX, no `pooled`, ratio path untouched.
 - Tests assert field-level round-trip equality and end-to-end decode, not smoke-only; fixtures shared.

@@ -337,8 +337,8 @@ The `smoothing_method → method` rename touches persistence and the decoder:
 
 - **NWB** ([io/nwb/_fields.py:616,792](../../../src/neurospatial/io/nwb/_fields.py)): write the
   metadata key `"method"` (was `"smoothing_method"`); **bump the encoding-model schema version**.
-  Reader reads `"method"`, with a **defensive fallback to the old `"smoothing_method"` key** so
-  previously-saved models still load (read-side only — no API alias). Write `bandwidth` as
+  Reader reads `"method"` **only** — **no** fallback to the old `"smoothing_method"` key (clean
+  break, no back-compat shim; pre-0.9 tables are rejected with a clear error). Write `bandwidth` as
   nullable (`None` for glm). **GAM diagnostics round-trip**, with concrete placement:
   - **Metadata scalars** (batch-level): `rank`, `n_iter`, `converged`, and the `(rank,)`
     `penalty_weights` vector. `penalty` λ and `reml_objective` are metadata scalars **under
@@ -419,7 +419,7 @@ Occupancy is the existing `compute_occupancy` exposure. `firing_rate` composes w
   (`decode_session` / `decode_session_summary`) **and** the `BayesianDecoder` class (renamed
   `method` field, `penalty`/`rank` forwarded, nullable `bandwidth`/`min_occupancy`).
 - **NWB round-trip**: glm result (with GAM diagnostics + `bandwidth=None`) writes and reads back;
-  old `"smoothing_method"` files still read.
+  pre-0.9 `"smoothing_method"`-key tables remain rejected (clean break).
 - **All layouts** smoke-tested (1D track, 2D open+masked, hex, polar, mesh).
 - **`pooled=False`** recovers **distinct** per-neuron λ_k on a population with unit-varying
   smoothness (variance across λ_k > 0); `pooled=True` (default) is scalar-λ and byte-identical to
@@ -444,7 +444,7 @@ Occupancy is the existing `compute_occupancy` exposure. `firing_rate` composes w
   under the perf-benchmark task.
 - **Hard rename** breaks callers passing `smoothing_method=` and reading `.smoothing_method`
   across **all** smoothing encoders (spatial/view/egocentric) and their result classes;
-  documented in the CHANGELOG. Old NWB files still *read* (defensive fallback).
+  documented in the CHANGELOG. Pre-0.9 NWB tables do **not** read (clean break, no defensive fallback).
 - **float32 JAX vs float64 NumPy** — parity within `~1e-6`; core stays float64.
 - **In-flight `min-occupancy-seconds` work** (not on this repo's main; see git note) — if it
   lands first, re-verify the `method` validation's ratio-param semantics and the result-class

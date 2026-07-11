@@ -5,7 +5,8 @@
 Rename `smoothing_method → method` on **every** smoothing encoder, result class, and downstream
 consumer, so the estimator axis has one uniform name before glm is added. No new estimator, no
 numerical change. This is a breaking API rename (no alias, per project policy) plus an NWB
-metadata-key change that still reads old files.
+metadata-key change. Both are a **clean break**: there is no back-compat shim, so tables written
+by earlier versions do **not** read (superseding the earlier defensive-fallback plan).
 
 **Inputs to read first:**
 
@@ -27,14 +28,14 @@ metadata-key change that still reads old files.
   - `SpatialRateResult` (`spatial.py:300`), `SpatialRatesResult` (`:955`), `ViewRateResult` (`view.py:216`), `ViewRatesResult` (`:544`), `EgocentricRateResult` (`egocentric.py:108`), `EgocentricRatesResult` (`:508`). Update the constructor call sites that pass `smoothing_method=` (e.g. `spatial.py:1018,2232,2689`).
 - **NWB** (`src/neurospatial/io/nwb/_fields.py`):
   - `write_spatial_rates` (`:434`): write metadata key `"method"` instead of `"smoothing_method"` (`:616`); read `result.method`.
-  - `read_place_field` (`:697`): read `"method"` with a **defensive fallback** to `"smoothing_method"` (`:782-792`) so old files still load; construct `SpatialRatesResult(method=...)`.
-  - **Bump the encoding-model schema version** (find the version constant this module writes; increment it). Document the key rename + fallback in the module docstring.
+  - `read_place_field` (`:697`): read `"method"` **only** — **no** fallback to the old `"smoothing_method"` key (clean break, per project policy). A legacy schema-1.x table (keyed `"smoothing_method"`) is rejected with a clear `ValueError`; construct `SpatialRatesResult(method=...)`.
+  - **Bump the encoding-model schema version** (find the version constant this module writes; increment it — `1.0 → 2.0`). Document the key rename + clean break in the module docstring.
 - **Decoder** (`src/neurospatial/decoding/`):
   - `session.py`: `decode_session` param (`:100`), **`decode_session_summary` param (`:640`)** (its own signature — the streamed sibling), `_build_encoding_model` param (`:356`), `_encode_and_bin` param (`:574`), and the `compute_spatial_rates(smoothing_method=…)` forwards at `:323,:519,:609`. Update the `cast("Literal[...]", smoothing_method)` at `:507` to the renamed local.
   - `estimator.py`: `BayesianDecoder.smoothing_method` field (`:152`) → `method`; the `compute_spatial_rates(smoothing_method=self.smoothing_method)` forward (`:352`); docstring (`:69`) and the `__post_init__` validation note (`:168`).
 - **Incidental:** `src/neurospatial/simulation/validation.py` (param `:27`, forwards `:248,:674`); `src/neurospatial/__init__.py` doctest (`:155`).
 - **Tests:** update every `smoothing_method=` / `.smoothing_method` in `tests/` (grep-complete; `test_encoding_spatial.py`, `test_encoding_view.py`, `test_compute_egocentric_rate(s).py`, `test_decode_session.py`, `test_estimator.py`, `test_fields_roundtrip.py`, `test_fields.py`, the jax/backend dispatch tests, etc.) to `method=` / `.method`.
-- **Docs:** CHANGELOG entry — the hard rename across all smoothing encoders + result classes (breaking), the NWB key change with read-fallback, and a note that `glm` (spatial-only) lands in a later phase. Update `CLAUDE.md` / QUICKSTART snippets that show `smoothing_method=` (grep `.claude/` and `README`/docs for the old kwarg).
+- **Docs:** CHANGELOG entry — the hard rename across all smoothing encoders + result classes (breaking), the NWB key change as a clean break (old files do not read), and a note that `glm` (spatial-only) lands in a later phase. Update `CLAUDE.md` / QUICKSTART snippets that show `smoothing_method=` (grep `.claude/` and `README`/docs for the old kwarg).
 
 ## Deliberately not in this phase
 
@@ -50,18 +51,18 @@ metadata-key change that still reads old files.
 | `test_method_kwarg_each_encoder` | `compute_spatial_rate/rates`, `compute_view_rate/rates`, `compute_egocentric_rate/rates`, `detect_place_fields`, `is_place_cell` accept `method=` and produce identical output to the pre-rename baseline (parametrized). |
 | `test_old_kwarg_rejected` | passing `smoothing_method=` to any renamed encoder raises `TypeError` (unexpected keyword) — the alias is gone. |
 | `test_result_field_renamed` | each result class exposes `.method`, not `.smoothing_method`; `to_dataframe`/`summary_table` carry the `method` value. |
-| `test_nwb_reads_legacy_key` | an NWB file written with the old `"smoothing_method"` metadata key still reads (fallback path); a freshly written file uses `"method"` and round-trips. |
+| `test_nwb_legacy_key_rejected` | a table carrying only the old `"smoothing_method"` metadata key is **rejected** with a `ValueError` (no fallback); a freshly written table uses `"method"` and round-trips. |
 | `test_egocentric_default_preserved` | `compute_egocentric_rate` default `method` is `"binned"` (not `"diffusion_kde"`). |
 
 ## Fixtures
 
 - Reuse existing encoding/decoding fixtures (`conftest.py`); only kwarg names change.
-- **Baseline capture** for `test_method_kwarg_each_encoder`: since this is a behavior-preserving rename, capture each encoder's output on a small fixture on `main` (pre-rename) and assert equality after — or assert the two methods agree within exact tolerance in-test by constructing the same inputs. A checked-in NWB file with the legacy key (tiny, synthesized once) backs `test_nwb_reads_legacy_key`.
+- **Baseline capture** for `test_method_kwarg_each_encoder`: since this is a behavior-preserving rename, capture each encoder's output on a small fixture on `main` (pre-rename) and assert equality after — or assert the two methods agree within exact tolerance in-test by constructing the same inputs. The legacy-key rejection is exercised by writing a normal table then rewriting its description JSON to the old key in-test (no checked-in binary needed).
 
 ## Review
 
 Before opening the PR for this phase, dispatch `code-reviewer` against the diff. Confirm:
-- Every task in this phase is implemented as specified; the grep for `smoothing_method` across `src/` returns **only** the NWB read-fallback string literal.
+- Every task in this phase is implemented as specified; the grep for `smoothing_method` across `src/` returns **nothing** (the clean break leaves no fallback literal).
 - The "Deliberately not in this phase" list is honored — no `"glm"`, no `penalty`/`rank`, no field widening.
 - Validation slice tests pass; no numerical output changed vs baseline.
 - Tests aren't trivial — the rename tests assert output equality / kwarg rejection, not just attribute presence. Shared setup is in fixtures.

@@ -81,7 +81,7 @@ No new required dependencies. JAX stays an **optional extra** (`_core_jax` patte
 
 ## Rollout Strategy
 
-Ships all-at-once as **0.9.0** — no feature flag, no deprecation window (per project policy: hard rename, no back-compat shim). The `method` param default stays `"diffusion_kde"`, so callers who never touched `smoothing_method` and never pass `method="glm"` see identical behavior; only callers *naming* `smoothing_method=` or reading `.smoothing_method` break, and the CHANGELOG documents the rename. Old NWB files still **read** (defensive fallback on the old key). The release is cut after the feature phases land, not per-phase.
+Ships all-at-once as **0.9.0** — no feature flag, no deprecation window (per project policy: hard rename, no back-compat shim). The `method` param default stays `"diffusion_kde"`, so callers who never touched `smoothing_method` and never pass `method="glm"` see identical behavior; only callers *naming* `smoothing_method=` or reading `.smoothing_method` break, and the CHANGELOG documents the rename. The NWB estimator-key rename is a **clean break** too: spatial-rates tables written by earlier versions do **not** read (no defensive fallback, per the no-back-compat policy). The release is cut after the feature phases land, not per-phase.
 
 ## Open Questions
 
