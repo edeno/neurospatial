@@ -681,7 +681,7 @@ min_occupancy, speed, min_speed, max_gap, encoding_models, warn_on_drop, dtype
     **decode_kwargs
         Forwarded to the per-block decode (same semantics as
         :func:`~neurospatial.decoding.decode_position_summary`): ``prior``,
-        ``method``, ``validate``, and ``time_chunk`` (the streaming
+        ``validate``, and ``time_chunk`` (the streaming
         block size; a positive integer, defaults to 1024 — ``None`` is rejected
         because it would materialize the full posterior; use
         :func:`decode_session` for the full posterior). ``dtype`` is the
@@ -717,15 +717,18 @@ min_occupancy, speed, min_speed, max_gap, encoding_models, warn_on_drop, dtype
     # Split out the decode-time knobs from decode_kwargs; everything else is an
     # unknown kwarg and must error rather than be silently dropped.
     prior = decode_kwargs.pop("prior", None)
-    method = decode_kwargs.pop("method", "poisson")
     validate = decode_kwargs.pop("validate", True)
     time_chunk = decode_kwargs.pop("time_chunk", _SUMMARY_DEFAULT_TIME_CHUNK)
     if decode_kwargs:
         raise TypeError(
             f"decode_session_summary got unexpected keyword argument(s): "
             f"{sorted(decode_kwargs)}. Supported decode kwargs are prior, "
-            f"method, validate, time_chunk (dtype is an explicit parameter)."
+            f"validate, time_chunk (dtype is an explicit parameter)."
         )
+    # The Poisson observation model is the only supported likelihood. It is fixed
+    # here rather than read from decode_kwargs because ``method`` now names the
+    # smoothing estimator (the explicit parameter forwarded to the encoder).
+    likelihood_method = "poisson"
 
     if time_chunk is None:
         raise ValueError(
@@ -781,7 +784,7 @@ min_occupancy, speed, min_speed, max_gap, encoding_models, warn_on_drop, dtype
         _dummy_counts,
         firing_rates,
         prior=prior,
-        method=method,
+        method=likelihood_method,
         validate=validate,
         context="decode_session_summary",
     )
