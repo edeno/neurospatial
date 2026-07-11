@@ -897,7 +897,10 @@ class SpatialRatesResult(SpatialResultMixin):
         Smoothing bandwidth (``None`` for ``method="glm"``).
     coefficients : NDArray or None
         (``method="glm"`` only; ``None`` for ratio methods.) Fitted GAM
-        coefficients ``gamma`` on the live basis, shape ``(rank, n_units)``.
+        coefficients ``gamma`` on the live basis, shape ``(rank, n_units)``. Like
+        every GLM diagnostic here, this is the ``float64`` fit result -- the
+        ``dtype`` argument governs only the ``firing_rates`` storage, not the
+        diagnostics.
     penalty : float or None
         Smoothness penalty ``lambda`` actually applied (scalar for the shared-λ
         fit; ``None`` for the REML-skip and no-data cases, or for ratio methods).
@@ -2990,11 +2993,15 @@ default="diffusion_kde"
             method=method,
             bandwidth=None,
             unit_ids=resolved_unit_ids,
-            coefficients=np.asarray(fit.coefficients, dtype=dtype),
+            # dtype governs the (n_units, n_bins) rate-map storage only. The GLM
+            # diagnostics are the float64 fit result and are kept float64 -- so
+            # they do not lose precision (deviance/coefficients) and rates[i]
+            # matches compute_spatial_rate, whose diagnostics are always float64.
+            coefficients=fit.coefficients,
             penalty=fit.penalty,
-            penalty_weights=np.asarray(fit.penalty_weights, dtype=dtype),
+            penalty_weights=fit.penalty_weights,
             rank=fit.rank,
-            deviance=np.asarray(fit.deviance, dtype=dtype),
+            deviance=fit.deviance,
             converged=fit.converged,
             n_iter=fit.n_iter,
             reml_objective=fit.reml_objective,

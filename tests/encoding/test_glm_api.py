@@ -303,6 +303,7 @@ def test_glm_dtype(open_field_env: Environment) -> None:
     r32 = compute_spatial_rates(
         env, spike_times, times, positions, method="glm", dtype=np.float32
     )
+    # dtype governs the (n_units, n_bins) rate-map STORAGE only.
     assert np.asarray(r64.firing_rates).dtype == np.float64
     assert np.asarray(r32.firing_rates).dtype == np.float32
     np.testing.assert_allclose(
@@ -310,6 +311,20 @@ def test_glm_dtype(open_field_env: Environment) -> None:
         np.asarray(r64.firing_rates),
         rtol=1e-4,
         atol=1e-4,
+    )
+
+    # The GLM diagnostics are the float64 fit result -- they are NOT downcast by
+    # dtype (that would lose precision on deviance/coefficients for negligible
+    # memory, and make rates[i] inconsistent with compute_spatial_rate, whose
+    # diagnostics are always float64). They stay float64 for BOTH dtypes.
+    for r in (r32, r64):
+        assert np.asarray(r.coefficients).dtype == np.float64
+        assert np.asarray(r.penalty_weights).dtype == np.float64
+        assert np.asarray(r.deviance).dtype == np.float64
+    # And the per-unit slice matches the singular estimator's float64 diagnostics.
+    single = compute_spatial_rate(env, spike_times[0], times, positions, method="glm")
+    assert (
+        np.asarray(r32[0].coefficients).dtype == np.asarray(single.coefficients).dtype
     )
 
 
