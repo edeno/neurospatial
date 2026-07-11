@@ -148,7 +148,7 @@ def _get_gaussian_kernel(
             f"entry > 0), so it requires an {n_bins} x {n_bins} float64 matrix "
             f"(~{estimated_gb:.1f} GB) -- O(n^2) memory. Proceeding anyway; this "
             f"may be slow and memory-intensive. To avoid a dense kernel, use "
-            f"smoothing_method='diffusion_kde' (matrix-free, boundary-aware, "
+            f"method='diffusion_kde' (matrix-free, boundary-aware, "
             f"O(n * rank)) or increase bin_size (fewer bins).",
             UserWarning,
             stacklevel=2,
@@ -318,7 +318,7 @@ def smooth_rate_map(
     the smoothing. ``binned`` keeps a NumPy round-trip for its masked average.
 
     **JAX backend limitation with binned method**: When using ``backend="jax"``
-    with ``smoothing_method="binned"``, the masked-average smoothing step
+    with ``method="binned"``, the masked-average smoothing step
     (``_binned_gate``) runs on NumPy, so it requires a round-trip out of JAX.
     This may be slower than pure NumPy for this method. For optimal JAX
     performance, use ``diffusion_kde`` (which runs the smoothing in JAX via

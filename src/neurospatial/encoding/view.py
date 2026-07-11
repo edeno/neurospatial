@@ -134,7 +134,7 @@ class ViewRateResult(SpatialResultMixin):
         - "boundary": Nearest boundary point in gaze direction
     view_distance : float
         Distance parameter for the gaze model (relevant for "fixed_distance").
-    smoothing_method : str
+    method : str
         Smoothing method used: "diffusion_kde", "gaussian_kde", or "binned".
     bandwidth : float
         Smoothing bandwidth in the same units as the environment's bin_size.
@@ -151,7 +151,7 @@ class ViewRateResult(SpatialResultMixin):
         Gaze model used.
     view_distance : float
         Distance parameter for gaze model.
-    smoothing_method : str
+    method : str
         Smoothing method used.
     bandwidth : float
         Smoothing bandwidth.
@@ -213,7 +213,7 @@ class ViewRateResult(SpatialResultMixin):
     env: Environment
     gaze_model: str
     view_distance: float
-    smoothing_method: str
+    method: str
     bandwidth: float
     unit_id: int | str | None = None
 
@@ -457,7 +457,7 @@ class ViewRatesResult(SpatialResultMixin):
         Gaze model used for computing viewed location.
     view_distance : float
         Distance parameter for the gaze model.
-    smoothing_method : str
+    method : str
         Smoothing method used: "diffusion_kde", "gaussian_kde", or "binned".
     bandwidth : float
         Smoothing bandwidth in the same units as the environment's bin_size.
@@ -474,7 +474,7 @@ class ViewRatesResult(SpatialResultMixin):
         Gaze model used.
     view_distance : float
         Distance parameter for gaze model.
-    smoothing_method : str
+    method : str
         Smoothing method used.
     bandwidth : float
         Smoothing bandwidth.
@@ -541,7 +541,7 @@ class ViewRatesResult(SpatialResultMixin):
     env: Environment
     gaze_model: str
     view_distance: float
-    smoothing_method: str
+    method: str
     bandwidth: float
     unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
@@ -670,7 +670,7 @@ class ViewRatesResult(SpatialResultMixin):
             env=self.env,
             gaze_model=self.gaze_model,
             view_distance=self.view_distance,
-            smoothing_method=self.smoothing_method,
+            method=self.method,
             bandwidth=self.bandwidth,
             unit_id=np.asarray(self.unit_ids)[idx].item(),
         )
@@ -1102,7 +1102,7 @@ def compute_view_rate(
     gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
     view_distance: float = 10.0,
     gaze_offsets: NDArray[np.float64] | None = None,
-    smoothing_method: Literal[
+    method: Literal[
         "diffusion_kde", "gaussian_kde", "binned"
     ] = "diffusion_kde",
     bandwidth: float = 5.0,
@@ -1153,7 +1153,7 @@ def compute_view_rate(
         If None (default), gaze is aligned with head direction.
         Use this for eye-tracking data in primate spatial view cell studies
         where gaze direction differs from head direction.
-    smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
+    method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Smoothing method to use:
 
         - **diffusion_kde** (recommended): Graph-based boundary-aware KDE.
@@ -1184,7 +1184,7 @@ def compute_view_rate(
         - ``env``: The environment used
         - ``gaze_model``: Gaze model used
         - ``view_distance``: View distance parameter
-        - ``smoothing_method``: Method used for smoothing
+        - ``method``: Method used for smoothing
         - ``bandwidth``: Bandwidth used for smoothing
 
     Raises
@@ -1300,7 +1300,7 @@ def compute_view_rate(
             f"Must be one of {sorted(valid_gaze_models)}"
         )
 
-    _validate_smoothing_parameters(smoothing_method, bandwidth)
+    _validate_smoothing_parameters(method, bandwidth)
 
     # Convert inputs to arrays
     spike_times = np.asarray(spike_times, dtype=np.float64)
@@ -1344,7 +1344,7 @@ def compute_view_rate(
         env,
         spike_counts,
         occupancy,
-        method=smoothing_method,
+        method=method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
         backend=resolved_backend,
@@ -1364,7 +1364,7 @@ def compute_view_rate(
         env=env,
         gaze_model=gaze_model,
         view_distance=view_distance,
-        smoothing_method=smoothing_method,
+        method=method,
         bandwidth=bandwidth,
     )
 
@@ -1379,7 +1379,7 @@ def compute_view_rates(
     gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
     view_distance: float = 10.0,
     gaze_offsets: NDArray[np.float64] | None = None,
-    smoothing_method: Literal[
+    method: Literal[
         "diffusion_kde", "gaussian_kde", "binned"
     ] = "diffusion_kde",
     bandwidth: float = 5.0,
@@ -1439,7 +1439,7 @@ def compute_view_rates(
         If None (default), gaze is aligned with head direction.
         Use this for eye-tracking data in primate spatial view cell studies
         where gaze direction differs from head direction.
-    smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
+    method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Smoothing method to use. See ``compute_view_rate()`` for details.
     bandwidth : float, default=5.0
         Smoothing bandwidth in the same units as bin_size.
@@ -1471,7 +1471,7 @@ def compute_view_rates(
         - ``env``: The environment used
         - ``gaze_model``: Gaze model used
         - ``view_distance``: View distance parameter
-        - ``smoothing_method``: Method used for smoothing
+        - ``method``: Method used for smoothing
         - ``bandwidth``: Bandwidth used for smoothing
 
         The result supports iteration: ``for single in result: ...``
@@ -1607,7 +1607,7 @@ def compute_view_rates(
     # This raises ImportError if backend="jax" and JAX is unavailable
     resolved_backend = get_backend_name(backend)
 
-    _validate_smoothing_parameters(smoothing_method, bandwidth)
+    _validate_smoothing_parameters(method, bandwidth)
 
     # Validate gaze_model
     valid_gaze_models = {"fixed_distance", "ray_cast", "boundary"}
@@ -1675,7 +1675,7 @@ def compute_view_rates(
             env=env,
             gaze_model=gaze_model,
             view_distance=view_distance,
-            smoothing_method=smoothing_method,
+            method=method,
             bandwidth=bandwidth,
             unit_ids=resolved_unit_ids,
         )
@@ -1700,7 +1700,7 @@ def compute_view_rates(
         env,
         spike_counts,
         occupancy,
-        method=smoothing_method,
+        method=method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
         backend=resolved_backend,
@@ -1720,7 +1720,7 @@ def compute_view_rates(
         env=env,
         gaze_model=gaze_model,
         view_distance=view_distance,
-        smoothing_method=smoothing_method,
+        method=method,
         bandwidth=bandwidth,
         unit_ids=resolved_unit_ids,
     )
@@ -1740,7 +1740,7 @@ def is_spatial_view_cell(
     *,
     gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
     view_distance: float = 10.0,
-    smoothing_method: Literal[
+    method: Literal[
         "diffusion_kde", "gaussian_kde", "binned"
     ] = "diffusion_kde",
     bandwidth: float = 5.0,
@@ -1773,7 +1773,7 @@ def is_spatial_view_cell(
         Method for computing viewed location.
     view_distance : float, default=10.0
         Distance for fixed_distance gaze model.
-    smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
+    method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Rate map smoothing method.
     bandwidth : float, default=5.0
         Smoothing bandwidth in environment units.
@@ -1813,7 +1813,7 @@ def is_spatial_view_cell(
             headings,
             view_distance=view_distance,
             gaze_model=gaze_model,
-            smoothing_method=smoothing_method,
+            method=method,
             bandwidth=bandwidth,
         )
         return result.is_spatial_view_cell(min_info=min_info)

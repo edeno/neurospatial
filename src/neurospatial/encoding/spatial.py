@@ -227,7 +227,7 @@ class SpatialRateResult(SpatialResultMixin):
     env : Environment
         The spatial environment used for the computation. Provides bin
         centers, connectivity, and plotting methods.
-    smoothing_method : str
+    method : str
         Smoothing method used: "diffusion_kde", "gaussian_kde", or "binned".
     bandwidth : float
         Smoothing bandwidth in the same units as the environment's bin_size.
@@ -240,7 +240,7 @@ class SpatialRateResult(SpatialResultMixin):
         Time spent in each bin in seconds. Shape is (n_bins,).
     env : Environment
         The spatial environment.
-    smoothing_method : str
+    method : str
         Smoothing method used.
     bandwidth : float
         Smoothing bandwidth.
@@ -280,7 +280,7 @@ class SpatialRateResult(SpatialResultMixin):
     >>> # Access fields
     >>> result.firing_rate.shape == (env.n_bins,)
     True
-    >>> result.smoothing_method
+    >>> result.method
     'diffusion_kde'
 
     >>> # Use mixin methods
@@ -297,7 +297,7 @@ class SpatialRateResult(SpatialResultMixin):
     firing_rate: ArrayLike
     occupancy: ArrayLike
     env: Environment
-    smoothing_method: str
+    method: str
     bandwidth: float
     unit_id: int | str | None = None
 
@@ -858,7 +858,7 @@ class SpatialRatesResult(SpatialResultMixin):
         across all neurons.
     env : Environment
         The spatial environment used for the computation.
-    smoothing_method : str
+    method : str
         Smoothing method used: "diffusion_kde", "gaussian_kde", or "binned".
     bandwidth : float
         Smoothing bandwidth in the same units as the environment's bin_size.
@@ -871,7 +871,7 @@ class SpatialRatesResult(SpatialResultMixin):
         Time spent in each bin in seconds. Shape is (n_bins,).
     env : Environment
         The spatial environment.
-    smoothing_method : str
+    method : str
         Smoothing method used.
     bandwidth : float
         Smoothing bandwidth.
@@ -952,7 +952,7 @@ class SpatialRatesResult(SpatialResultMixin):
     firing_rates: ArrayLike
     occupancy: ArrayLike
     env: Environment
-    smoothing_method: str
+    method: str
     bandwidth: float
     unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
@@ -1015,7 +1015,7 @@ class SpatialRatesResult(SpatialResultMixin):
             firing_rate=rates[idx],
             occupancy=self.occupancy,
             env=self.env,
-            smoothing_method=self.smoothing_method,
+            method=self.method,
             bandwidth=self.bandwidth,
             unit_id=np.asarray(self.unit_ids)[idx].item(),
         )
@@ -1897,7 +1897,7 @@ def compute_spatial_rate(
     times: NDArray[np.float64] | PositionLike,
     positions: NDArray[np.float64] | None = None,
     *,
-    smoothing_method: Literal[
+    method: Literal[
         "diffusion_kde", "gaussian_kde", "binned"
     ] = "diffusion_kde",
     bandwidth: float = 5.0,
@@ -1937,7 +1937,7 @@ def compute_spatial_rate(
         missing data and excluded from occupancy and firing-rate computation;
         callers do not need to pre-filter tracking dropouts. Omit only when
         ``times`` is a ``PositionLike`` object carrying the positions.
-    smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
+    method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Smoothing method to use:
 
         - **diffusion_kde** (recommended): Graph-based boundary-aware KDE.
@@ -2042,7 +2042,7 @@ def compute_spatial_rate(
         - ``firing_rate``: Firing rate map in Hz, shape (n_bins,)
         - ``occupancy``: Time in each bin in seconds, shape (n_bins,)
         - ``env``: The environment used
-        - ``smoothing_method``: Method used for smoothing
+        - ``method``: Method used for smoothing
         - ``bandwidth``: Bandwidth used for smoothing
 
     See Also
@@ -2085,7 +2085,7 @@ def compute_spatial_rate(
     ...     spike_times,
     ...     times,
     ...     positions,
-    ...     smoothing_method="diffusion_kde",
+    ...     method="diffusion_kde",
     ...     bandwidth=10.0,
     ... )
 
@@ -2132,7 +2132,7 @@ def compute_spatial_rate(
     # This raises ImportError if backend="jax" and JAX is unavailable
     resolved_backend = get_backend_name(backend)
 
-    _validate_smoothing_parameters(smoothing_method, bandwidth)
+    _validate_smoothing_parameters(method, bandwidth)
 
     # Boundary adapter: accept EITHER a PositionLike (e.g. a pynapple
     # Tsd/TsdFrame exposing .t/.values) OR explicit (times, positions) arrays,
@@ -2206,7 +2206,7 @@ def compute_spatial_rate(
         env,
         spike_counts,
         occupancy,
-        method=smoothing_method,
+        method=method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
         backend=resolved_backend,
@@ -2229,7 +2229,7 @@ def compute_spatial_rate(
         firing_rate=firing_rate,
         occupancy=occupancy,
         env=env,
-        smoothing_method=smoothing_method,
+        method=method,
         bandwidth=bandwidth,
     )
 
@@ -2240,7 +2240,7 @@ def compute_spatial_rates(
     times: NDArray[np.float64] | PositionLike,
     positions: NDArray[np.float64] | None = None,
     *,
-    smoothing_method: Literal[
+    method: Literal[
         "diffusion_kde", "gaussian_kde", "binned"
     ] = "diffusion_kde",
     bandwidth: float = 5.0,
@@ -2289,7 +2289,7 @@ def compute_spatial_rates(
         missing data and excluded from occupancy and firing-rate computation;
         callers do not need to pre-filter tracking dropouts. Omit only when
         ``times`` is a ``PositionLike`` object carrying the positions.
-    smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
+    method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Smoothing method to use. See ``compute_spatial_rate()`` for details.
         Note: ``diffusion_kde`` and ``binned`` smooth matrix-free
         (O(n_bins·rank)); only ``gaussian_kde`` builds a dense O(n²) kernel. For
@@ -2385,7 +2385,7 @@ def compute_spatial_rates(
         - ``firing_rates``: Firing rate maps, shape ``(n_neurons, n_bins)``
         - ``occupancy``: Time in each bin in seconds, shape ``(n_bins,)``
         - ``env``: The environment used
-        - ``smoothing_method``: Method used for smoothing
+        - ``method``: Method used for smoothing
         - ``bandwidth``: Bandwidth used for smoothing
 
         The result supports iteration: ``for single in result: ...``
@@ -2450,7 +2450,7 @@ def compute_spatial_rates(
     ...     spike_times,
     ...     times,
     ...     positions,
-    ...     smoothing_method="diffusion_kde",
+    ...     method="diffusion_kde",
     ...     bandwidth=10.0,
     ... )
 
@@ -2539,7 +2539,7 @@ def compute_spatial_rates(
     # Normalize to the canonical numpy scalar type for downstream casts.
     dtype = np.float32 if _resolved_dtype == np.dtype(np.float32) else np.float64
 
-    _validate_smoothing_parameters(smoothing_method, bandwidth)
+    _validate_smoothing_parameters(method, bandwidth)
 
     # Normalize spike times to canonical list-of-arrays format, surfacing any
     # unit ids the spikes object carries (a SpikeTrainsLike group, e.g. a
@@ -2626,7 +2626,7 @@ def compute_spatial_rates(
             firing_rates=firing_rates_result,
             occupancy=occupancy,
             env=env,
-            smoothing_method=smoothing_method,
+            method=method,
             bandwidth=bandwidth,
             unit_ids=resolved_unit_ids,
         )
@@ -2651,7 +2651,7 @@ def compute_spatial_rates(
         env,
         spike_counts,
         occupancy,
-        method=smoothing_method,
+        method=method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
         backend=resolved_backend,
@@ -2686,7 +2686,7 @@ def compute_spatial_rates(
         firing_rates=firing_rates,
         occupancy=occupancy,
         env=env,
-        smoothing_method=smoothing_method,
+        method=method,
         bandwidth=bandwidth,
         unit_ids=resolved_unit_ids,
     )
@@ -3170,7 +3170,7 @@ def compute_directional_place_fields(
     positions: NDArray[np.float64],
     direction_labels: NDArray[np.object_],
     *,
-    smoothing_method: Literal[
+    method: Literal[
         "diffusion_kde", "gaussian_kde", "binned"
     ] = "diffusion_kde",
     bandwidth: float = 5.0,
@@ -3197,7 +3197,7 @@ def compute_directional_place_fields(
         Direction label for each timepoint. Each label is a hashable string
         (e.g., "A→B", "forward", "CW"). The special label "other" is excluded
         from results, allowing unlabeled periods to be ignored.
-    smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
+    method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Estimation method passed through to the place-field helper.
     bandwidth : float, default=5.0
         Smoothing bandwidth in environment units (e.g., cm).
@@ -3297,7 +3297,7 @@ def compute_directional_place_fields(
             spike_times_sub,
             times_sub,
             positions_sub,
-            smoothing_method=smoothing_method,
+            method=method,
             bandwidth=bandwidth,
             min_occupancy=min_occupancy,
         )
@@ -3510,7 +3510,7 @@ def is_place_cell(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
-    smoothing_method: Literal[
+    method: Literal[
         "diffusion_kde", "gaussian_kde", "binned"
     ] = "diffusion_kde",
     bandwidth: float = 5.0,
@@ -3539,7 +3539,7 @@ def is_place_cell(
         Timestamps for each behavioral sample.
     positions : NDArray[np.float64], shape (n_time, n_dims)
         Animal positions.
-    smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
+    method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Rate map smoothing method.
     bandwidth : float, default=5.0
         Smoothing bandwidth in environment units.
@@ -3585,7 +3585,7 @@ def is_place_cell(
             spike_times,
             times,
             positions,
-            smoothing_method=smoothing_method,
+            method=method,
             bandwidth=bandwidth,
         )
     except (ValueError, RuntimeError):

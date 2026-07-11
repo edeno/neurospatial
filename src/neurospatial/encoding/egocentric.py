@@ -1254,7 +1254,7 @@ def _egocentric_firing_rate(
     spike_counts: NDArray[np.float64],
     occupancy: NDArray[np.float64],
     *,
-    smoothing_method: Literal["diffusion_kde", "gaussian_kde", "binned"],
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"],
     bandwidth: float,
     min_occupancy: float,
     backend: Literal["numpy", "jax"],
@@ -1269,7 +1269,7 @@ def _egocentric_firing_rate(
         Spike counts per polar bin.
     occupancy : ndarray of shape (n_bins,), dtype float64
         Time spent in each polar bin, in seconds.
-    smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}
+    method : {"diffusion_kde", "gaussian_kde", "binned"}
         ``"binned"`` returns the raw bin rate (see ``_raw_polar_rate``); the
         kernel methods smooth via ``smooth_rate_map``.
     bandwidth : float
@@ -1286,7 +1286,7 @@ def _egocentric_firing_rate(
     """
     from neurospatial.encoding._backend import is_jax_available
 
-    if smoothing_method == "binned":
+    if method == "binned":
         rate = _raw_polar_rate(spike_counts, occupancy, min_occupancy)
         if backend == "jax" and is_jax_available():
             import jax.numpy as jnp
@@ -1301,7 +1301,7 @@ def _egocentric_firing_rate(
         polar_env,
         spike_counts,
         occupancy,
-        method=smoothing_method,
+        method=method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
         backend=backend,
@@ -1320,7 +1320,7 @@ def compute_egocentric_rate(
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
     metric: Literal["euclidean", "geodesic"] = "euclidean",
-    smoothing_method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
@@ -1370,7 +1370,7 @@ def compute_egocentric_rate(
         - **geodesic**: Path distance respecting environment boundaries.
           Requires ``env`` parameter.
 
-    smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
+    method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
         Smoothing method to use:
 
         - **binned** (default): Raw rate computation without smoothing.
@@ -1532,7 +1532,7 @@ def compute_egocentric_rate(
             "Pass the allocentric environment to compute geodesic distances."
         )
 
-    _validate_smoothing_parameters(smoothing_method, bandwidth)
+    _validate_smoothing_parameters(method, bandwidth)
 
     # Convert inputs to arrays (1D required for spike_times/times/headings)
     spike_times = np.asarray(spike_times, dtype=np.float64)
@@ -1572,7 +1572,7 @@ def compute_egocentric_rate(
         polar_env,
         spike_counts,
         occupancy,
-        smoothing_method=smoothing_method,
+        method=method,
         bandwidth=bandwidth,
         min_occupancy=min_occupancy,
         backend=resolved_backend,
@@ -1608,7 +1608,7 @@ def compute_egocentric_rates(
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
     metric: Literal["euclidean", "geodesic"] = "euclidean",
-    smoothing_method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
+    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
     n_jobs: int = 1,
@@ -1667,7 +1667,7 @@ def compute_egocentric_rates(
         - **geodesic**: Path distance respecting environment boundaries.
           Requires ``env`` parameter.
 
-    smoothing_method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
+    method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
         Smoothing method to use:
 
         - **binned** (default): Raw rate computation without smoothing.
@@ -1854,7 +1854,7 @@ def compute_egocentric_rates(
     # This raises ImportError if backend="jax" and JAX is unavailable
     resolved_backend = get_backend_name(backend)
 
-    _validate_smoothing_parameters(smoothing_method, bandwidth)
+    _validate_smoothing_parameters(method, bandwidth)
 
     # Validate metric
     valid_metrics = {"euclidean", "geodesic"}
@@ -1957,7 +1957,7 @@ def compute_egocentric_rates(
     # smoothing): diffusion over the polar env bleeds rate across distance rings
     # and erases distance tuning (see _raw_polar_rate). Other methods smooth.
     firing_rates: ArrayLike
-    if smoothing_method == "binned":
+    if method == "binned":
         firing_rates = np.stack(
             [
                 _raw_polar_rate(counts, occupancy, min_occupancy)
@@ -1974,7 +1974,7 @@ def compute_egocentric_rates(
             polar_env,
             spike_counts,
             occupancy,
-            method=smoothing_method,
+            method=method,
             bandwidth=bandwidth,
             min_occupancy=min_occupancy,
             backend=resolved_backend,
