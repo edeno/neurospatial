@@ -2168,11 +2168,17 @@ default="diffusion_kde"
           with ``penalty`` and ``rank`` (not ``bandwidth`` / ``min_occupancy`` /
           ``fill_value``, which are mutually exclusive with ``method="glm"``).
 
-        Note: ``diffusion_kde``, ``binned``, and ``glm`` are matrix-free via the
-        cached finite-volume eigenbasis, scaling as O(n_bins·rank) — they never
-        build a dense kernel and scale to large/fine grids. Only ``gaussian_kde``
-        builds a dense O(n²) matrix; for very large environments prefer
-        ``diffusion_kde`` or ``glm``, or increase ``bin_size``.
+        Note: ``diffusion_kde`` and ``binned`` smooth matrix-free via the cached
+        finite-volume eigenbasis (O(n_bins·rank) per neuron) — they never build a
+        dense kernel and scale to large/fine grids. ``glm`` also avoids a dense
+        O(n_bins²) kernel (it fits on the rank-``r`` basis), but its
+        penalized-Poisson fit is heavier and **not** linear in ``rank``: each
+        Newton step builds a per-unit (r, r) Hessian ``Bᵀ diag(μ) B`` (≈
+        O(n_units·n_bins·rank²)) and solves it (≈ O(n_units·rank³)), and this is
+        repeated across Newton iterations and REML λ candidates. Keep ``rank``
+        modest for large populations. Only ``gaussian_kde`` builds a dense
+        O(n_bins²) matrix; for very large grids prefer ``diffusion_kde``, or
+        increase ``bin_size``.
 
     bandwidth : float | None, default=None
         (Ratio methods only.) Smoothing bandwidth in the same units as bin_size;
@@ -2599,9 +2605,14 @@ default="diffusion_kde"
         (occupancy as a log-offset, ``λ`` by REML) and returns finite rates
         everywhere; it is tuned with ``penalty`` / ``rank`` (mutually exclusive
         with ``bandwidth`` / ``min_occupancy`` / ``fill_value``). This is the
-        batched entry the decoder uses. ``diffusion_kde``, ``binned``, and ``glm``
-        are matrix-free (O(n_bins·rank)); only ``gaussian_kde`` builds a dense
-        O(n²) kernel.
+        batched entry the decoder uses. ``diffusion_kde`` and ``binned`` are
+        matrix-free (O(n_bins·rank) per neuron); ``glm`` also avoids a dense
+        O(n_bins²) kernel but its penalized-Poisson fit is **not** linear in
+        ``rank`` — each Newton step builds and solves a per-unit (r, r) Hessian
+        (≈ O(n_units·n_bins·rank²) + O(n_units·rank³)), repeated across Newton
+        iterations and REML λ candidates, so keep ``rank`` modest for large
+        populations (see ``compute_spatial_rate`` for details). Only
+        ``gaussian_kde`` builds a dense O(n_bins²) kernel.
     bandwidth : float | None, default=None
         (Ratio methods only.) Smoothing bandwidth in the same units as bin_size;
         ``None`` resolves to ``5.0``. Mutually exclusive with ``method="glm"``.
