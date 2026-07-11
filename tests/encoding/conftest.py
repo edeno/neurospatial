@@ -68,6 +68,168 @@ def restore_backend_availability_cache() -> Generator[None, None, None]:
 
 
 # ---------------------------------------------------------------------------
+# MRF eigenbasis-resolver fixtures
+#
+# Deterministic finite-volume geometries for the live-component eigenbasis
+# resolver. Occupancy vectors are built directly in active-bin order by the
+# tests, so no neural data is needed -- the resolver is pure geometry.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def open_field_env() -> Environment:
+    """2D open field: single W-component, uniform bin volumes."""
+    from neurospatial import Environment
+
+    edges = np.linspace(0.0, 16.0, 9)
+    return Environment.from_grid_mask(
+        active_mask=np.ones((8, 8), dtype=bool),
+        grid_edges=(edges, edges),
+        connect_diagonal_neighbors=True,
+    )
+
+
+@pytest.fixture
+def sparse_regime_env() -> Environment:
+    """Larger single-component grid so a modest ``rank`` stays truncated.
+
+    400 bins with a rank well below ``dense_fraction * n`` (0.5 * 400 = 200)
+    keeps the resolver in the sparse (persisted) eigenbasis regime, so
+    eigensolve-reuse across calls is observable.
+    """
+    from neurospatial import Environment
+
+    edges = np.linspace(0.0, 40.0, 21)
+    return Environment.from_grid_mask(
+        active_mask=np.ones((20, 20), dtype=bool),
+        grid_edges=(edges, edges),
+        connect_diagonal_neighbors=True,
+    )
+
+
+@pytest.fixture
+def two_component_env() -> Environment:
+    """Masked 2D grid split into two disconnected W-components by a wall."""
+    from neurospatial import Environment
+
+    mask = np.ones((6, 6), dtype=bool)
+    mask[:, 3] = False  # vertical wall -> left (18 bins) / right (12 bins)
+    return Environment.from_grid_mask(
+        active_mask=mask,
+        grid_edges=(np.linspace(0.0, 12.0, 7), np.linspace(0.0, 12.0, 7)),
+        connect_diagonal_neighbors=False,
+    )
+
+
+@pytest.fixture
+def two_path_env() -> Environment:
+    """Two disjoint 3-node linear tracks (2 W-components) via ``from_graph``."""
+    import networkx as nx
+
+    from neurospatial import Environment
+
+    graph = nx.Graph()
+    for node, pos in [
+        (0, (0.0, 0.0)),
+        (1, (6.0, 0.0)),
+        (2, (12.0, 0.0)),
+        (3, (100.0, 0.0)),
+        (4, (106.0, 0.0)),
+        (5, (112.0, 0.0)),
+    ]:
+        graph.add_node(node, pos=pos)
+    graph.add_edge(0, 1, distance=6.0)
+    graph.add_edge(1, 2, distance=6.0)
+    graph.add_edge(3, 4, distance=6.0)
+    graph.add_edge(4, 5, distance=6.0)
+    return Environment.from_graph(
+        graph,
+        edge_order=[(0, 1), (1, 2), (3, 4), (4, 5)],
+        edge_spacing=50.0,
+        bin_size=6.0,
+    )
+
+
+@pytest.fixture
+def four_component_env() -> Environment:
+    """1D grid broken into four disconnected segments by three gaps.
+
+    The first segment (2 bins) is small enough that a live-only ``r_eff`` can
+    fall below ``n_components == 4`` -- exercising the first-solve ``G`` floor.
+    """
+    from neurospatial import Environment
+
+    # Four segments (sizes 2, 5, 5, 5) separated by single-bin gaps.
+    mask = np.concatenate(
+        [
+            np.ones(2, dtype=bool),
+            np.zeros(1, dtype=bool),
+            np.ones(5, dtype=bool),
+            np.zeros(1, dtype=bool),
+            np.ones(5, dtype=bool),
+            np.zeros(1, dtype=bool),
+            np.ones(5, dtype=bool),
+        ]
+    )
+    return Environment.from_grid_mask(
+        active_mask=mask, grid_edges=(np.arange(mask.size + 1, dtype=float),)
+    )
+
+
+@pytest.fixture
+def asymmetric_two_component_env() -> Environment:
+    """A thin strip (weak chain) + a compact block (tight), two W-components.
+
+    The strip's Fiedler eigenvalue is much smaller than the block's, so the
+    globally smallest positive modes are spread across both components -- a
+    faithful test of positivity-based fill selection.
+    """
+    from neurospatial import Environment
+
+    mask = np.zeros((8, 10), dtype=bool)
+    mask[:, 0] = True  # thin 8x1 strip (weak chain)
+    mask[0:4, 5:9] = True  # compact 4x4 block (tight)
+    return Environment.from_grid_mask(
+        active_mask=mask,
+        grid_edges=(np.linspace(0.0, 8.0, 9), np.linspace(0.0, 10.0, 11)),
+        connect_diagonal_neighbors=False,
+    )
+
+
+@pytest.fixture
+def dead_dominant_env() -> Environment:
+    """A large dead strip + a small live block (2 W-components).
+
+    The dead strip's many low modes crowd the bottom of the global spectrum
+    below the live block's Fiedler, so the resolver must grow ``G`` past those
+    dead modes before enough live fill modes appear.
+    """
+    from neurospatial import Environment
+
+    mask = np.zeros((6, 30), dtype=bool)
+    mask[0, 0:24] = True  # long 1x24 dead strip (dense low spectrum)
+    mask[0:3, 27:30] = True  # small 3x3 live block
+    return Environment.from_grid_mask(
+        active_mask=mask,
+        grid_edges=(np.linspace(0.0, 6.0, 7), np.linspace(0.0, 30.0, 31)),
+        connect_diagonal_neighbors=False,
+    )
+
+
+@pytest.fixture
+def polar_env() -> Any:
+    """Egocentric polar env: strongly non-uniform bin volumes, one component."""
+    from neurospatial.environment.polar import EgocentricPolarEnvironment
+
+    return EgocentricPolarEnvironment.create(
+        distance_range=(0.0, 20.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=5.0,
+        angle_bin_size=np.pi / 4,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Directional / head-direction fixtures
 # ---------------------------------------------------------------------------
 

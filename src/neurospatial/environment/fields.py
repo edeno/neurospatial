@@ -38,6 +38,7 @@ from neurospatial.environment.decorators import check_fitted, versioned_cached_p
 if TYPE_CHECKING:
     from neurospatial import Environment
     from neurospatial.ops._types import KernelMode
+    from neurospatial.ops.diffusion import MRFBasis
 
 
 class EnvironmentFields:
@@ -544,6 +545,102 @@ class EnvironmentFields:
         basis strictly below ``dense_fraction·n`` — never a persistent ``(n, n)``.
         """
         return {}
+
+    @versioned_cached_property
+    def _mrf_eigenbasis(self) -> dict[str, Any]:
+        """Growable global eigenbasis holder for the MRF penalty-basis resolver.
+
+        A mutable ``{"Q": (n_bins, G), "Lam": (G,), "mode_comp": (G,), "G": int}``
+        holding the ``G`` globally-smallest modes of the symmetric conjugate
+        ``S`` and each mode's source W-component, grown by replace by
+        :func:`neurospatial.ops.diffusion._ensure_global_modes`. Geometry-only
+        (no ``(sigma, tol)`` key — the MRF penalty basis is bandwidth-independent)
+        and dropped wholesale on any ``_state_version`` bump, like every
+        ``versioned_cached_property``. Starts empty (``G == 0``) and never stores
+        a dense ``(n, n)`` basis (dense solves stay call-local). Distinct from
+        :meth:`_diffusion_eigenbasis`, which is bandwidth-keyed for ``diffuse``.
+        """
+        n = cast("EnvironmentProtocol", self).n_bins
+        return {
+            "Q": np.zeros((n, 0)),
+            "Lam": np.zeros(0),
+            "mode_comp": np.zeros(0, dtype=np.intp),
+            "G": 0,
+        }
+
+    def _mrf_basis(
+        self: SelfEnv,
+        occupancy: NDArray[np.float64],
+        *,
+        rank: int | None,
+    ) -> MRFBasis:
+        """Reduced-rank MRF penalty basis for the penalized-Poisson GAM.
+
+        Reuses the cached finite-volume geometry (:meth:`_diffusion_geometry`)
+        and the symmetric eigensolver, growing the cached global eigenbasis
+        (:meth:`_mrf_eigenbasis`) only as far as needed, then masking it by
+        occupancy through the pure
+        :func:`neurospatial.ops.diffusion.select_live_basis`.
+
+        Because dead components also contribute low modes, the global ``G``
+        needed to expose ``r_eff`` *live* modes is not knowable up front, so
+        ``G`` is grown iteratively until enough strictly-positive live modes
+        appear (or the basis reaches full rank). Only this method eigensolves;
+        the selector is pure masking, so a repeat call at the same-or-smaller
+        rank / same live support (still in the sparse regime) is a cache hit.
+
+        Parameters
+        ----------
+        occupancy : NDArray[np.float64], shape (n_bins,)
+            Time (or samples) spent per active bin, active-bin order.
+        rank : int or None
+            Requested rank cap ``R``; ``None`` resolves to the module default.
+
+        Returns
+        -------
+        MRFBasis
+            The reduced-rank penalty basis in live-bin order. See
+            :class:`neurospatial.ops.diffusion.MRFBasis` for its invariants.
+        """
+        from neurospatial.ops.diffusion import (
+            _ensure_global_modes,
+            _live_components,
+            _null_mode_indices,
+            _symmetric_conjugate,
+            _target_live_rank,
+            _validate_occupancy,
+            select_live_basis,
+        )
+
+        _validate_occupancy(occupancy)  # fail fast, before the eigensolve
+        _W, volumes, n_components, labels = self._diffusion_geometry
+        S = _symmetric_conjugate(_W, volumes)  # cheap; the eigensolve is the cost
+        holder = self._mrf_eigenbasis
+        live = _live_components(labels, occupancy)
+        n_live_components = int(live.size)
+        r_eff = _target_live_rank(labels, occupancy, rank)
+        n_fill = r_eff - n_live_components
+        # ``_symmetric_eigenbasis`` raises on rank < n_components (total geometry
+        # components), but ``r_eff`` counts only LIVE components -- so 1 live +
+        # several dead would start ``G`` too small and raise on the first solve.
+        # Floor ``G`` at ``n_components`` to keep the first solve legal.
+        G = max(holder["G"], r_eff, n_components)
+        while True:  # grow until every live null is present AND enough fills
+            Q, Lam, mode_comp = _ensure_global_modes(holder, S, labels, G)
+            # Verify the structural null the selector requires is actually present
+            # for every live component (its numerical null can sort AFTER one of
+            # its positive modes when both are near machine-epsilon), and count
+            # the non-null fill-eligible live modes -- using the same overlap
+            # criterion select_live_basis uses, so the two never disagree.
+            is_null, missing = _null_mode_indices(Q, mode_comp, volumes, labels, live)
+            n_fill_available = int((np.isin(mode_comp, live) & ~is_null).sum())
+            covered = missing.size == 0
+            if (covered and n_fill_available >= n_fill) or Q.shape[1] >= S.shape[0]:
+                break
+            G = min(2 * Q.shape[1], S.shape[0])  # double, capped at full rank
+        return select_live_basis(
+            Q, Lam, mode_comp, volumes, labels, occupancy, rank=rank
+        )
 
     def interpolate(
         self: SelfEnv,

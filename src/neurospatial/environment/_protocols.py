@@ -85,6 +85,9 @@ class EnvironmentProtocol(Protocol):
     # env.diffuse (both versioned_cached_property, dropped on _state_version).
     _diffusion_geometry: DiffusionGeometry
     _diffusion_eigenbasis: dict[str, Any]
+    # Growable global eigenbasis holder for the MRF penalty-basis resolver
+    # (versioned_cached_property; geometry-keyed, dropped on _state_version).
+    _mrf_eigenbasis: dict[str, Any]
     _layout_type_used: str | None
     _layout_params_used: dict[str, Any]
     _is_linearized_track_env: bool

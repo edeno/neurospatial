@@ -96,7 +96,7 @@ def _ensure_global_modes(holder, S, labels, needed_G):
         return holder["Q"], holder["Lam"], holder["mode_comp"]
     G = min(needed_G, n)
     dense = G >= dense_fraction * n
-    Lam, Q = _symmetric_eigenbasis(S, None if dense else G)
+    Lam, Q = _symmetric_eigenbasis(S, None if dense else G)   # Lam ascending, clipped ≥ 0
     # Each column of Q is component-local (nonzero on exactly one W-component, exact 0 elsewhere),
     # so the source component is the label of any nonzero row (recovers the mode→component map
     # WITHOUT modifying _symmetric_eigenbasis — replaces the undefined `labels_of_modes`).
@@ -111,9 +111,8 @@ def _ensure_global_modes(holder, S, labels, needed_G):
 ```python
 # ops/diffusion.py — pure, array-only, unit-testable
 def select_live_basis(Q, Lam, mode_comp, volumes, labels, occupancy, *, rank) -> MRFBasis:
-    n_components = int(labels.max()) + 1
-    comp_occ = np.bincount(labels, weights=occupancy, minlength=n_components)
-    live_comp = np.flatnonzero(comp_occ > 0.0)                       # live = Σ occupancy > 0
+    _validate_occupancy(occupancy)                                  # finite + non-negative (else raise)
+    live_comp = _live_components(labels, occupancy)                 # live = Σ occupancy > 0
     n_live_components = int(live_comp.size)
     live_bins = np.flatnonzero(np.isin(labels, live_comp)).astype(np.intp)
     if live_bins.size == 0:                                          # zero total occupancy (spec §7)
@@ -123,35 +122,44 @@ def select_live_basis(Q, Lam, mode_comp, volumes, labels, occupancy, *, rank) ->
     n_fill = r_eff - n_live_components
     inv_sqrt_vol = 1.0 / np.sqrt(volumes)                          # M^{-1/2}; B = M^{-1/2}Q (spec §3)
 
-    # (1) INTERCEPTS — the EXACT MASS-NORMALIZED constant per live component (Finding 3). The null
-    #     of S is q0_c = sqrt(vol)·1_c / sqrt(Σ_c vol), so the documented B = M^{-1/2}Q null column
-    #     is B0_c = M^{-1/2} q0_c = 1_c / sqrt(Σ_c vol) — a constant on component c. (NOT 1_c/‖1_c‖₂,
+    # (1) INTERCEPTS — the EXACT MASS-NORMALIZED constant per live component. The null of S is
+    #     q0_c = sqrt(vol)·1_c / sqrt(Σ_c vol), so the documented B = M^{-1/2}Q null column is
+    #     B0_c = M^{-1/2} q0_c = 1_c / sqrt(Σ_c vol) — a constant on component c. (NOT 1_c/‖1_c‖₂,
     #     which would only match on uniform volumes and fail the M^{-1/2}Q basis test.) d = 0.
     B_int = np.zeros((live_bins.size, n_live_components))
     lbl_live = labels[live_bins]
     for j, c in enumerate(live_comp):
         B_int[lbl_live == c, j] = 1.0 / np.sqrt(volumes[labels == c].sum())
 
-    # (2) FILL — exactly n_fill smallest-λ live modes with STRICTLY POSITIVE weight (λ > _NULL_TOL).
-    #     Selecting fills BY POSITIVITY (Findings 1, 2) — not by discarding "the first mode per
-    #     component" — means a mis-ordered / clipped near-null can never leak in as a penalized
-    #     near-constant duplicate, and guarantees penalty_rank = n_fill exactly (all fills > 0). The
-    #     eigensolver clips negatives to 0 (diffusion.py:379), so nulls sit at 0..~1e-15 < _NULL_TOL
-    #     while Fiedler-and-up are above it. There are always ≥ n_fill such modes
-    #     (total positive live modes = n_live_bins − n_live_components ≥ n_fill, since r_eff ≤ n_live_bins).
-    positive_live = np.flatnonzero(np.isin(mode_comp, live_comp) & (Lam > _NULL_TOL))  # λ-sorted
-    fill_idx = positive_live[:n_fill]
+    # (2) FILL — the n_fill smallest-λ live modes that are NOT a component's constant null. The null
+    #     is excluded STRUCTURALLY: _null_mode_mask marks, per live component, the mode with maximal
+    #     overlap against that component's mass-weighted constant sqrt(vol)·1_c (overlap ~1 for the
+    #     constant, ~0 for every orthogonal smoothness mode). This is SCALE-INVARIANT — an absolute
+    #     λ cutoff would misread a genuine smoothness mode whose Laplacian eigenvalue is physically
+    #     tiny (eigenvalues carry units 1/length²) as a null and drop it. It also can't admit a
+    #     near-constant duplicate of the intercept. There are always ≥ n_fill non-null live modes
+    #     (n_live_bins − n_live_components ≥ n_fill, since r_eff ≤ n_live_bins) once Q is full-grown;
+    #     select_live_basis RAISES if fewer are present rather than returning a narrow B.
+    is_null = _null_mode_mask(Q, mode_comp, volumes, labels, live_comp)  # raises if a null is absent
+    fill_idx = np.flatnonzero(np.isin(mode_comp, live_comp) & ~is_null)[:n_fill]  # λ-sorted
+    if fill_idx.size != n_fill:
+        raise ValueError(...)                                      # grow the eigenbasis to full rank
+    d_fill = Lam[fill_idx]                                         # eigenvalues, clipped ≥ 0 by the eigensolver
+    if d_fill.size and np.any(d_fill <= 0.0):
+        raise ValueError(...)   # a non-null fill with ≤0 weight = numerically (near-)disconnected component
     B_fill = (inv_sqrt_vol[:, None] * Q[:, fill_idx])[live_bins, :]
 
     B = np.concatenate([B_int, B_fill], axis=1)                    # (n_live_bins, r_eff); intercepts first
-    d = np.concatenate([np.zeros(n_live_components), Lam[fill_idx]])  # nulls exactly 0; fills strictly > 0
+    d = np.concatenate([np.zeros(n_live_components), d_fill])      # nulls exactly 0; fills strictly > 0
     return MRFBasis(B, d, live_bins, n_live_components)
 ```
 
 `B[:, :n_live_components]` are the constructed **mass-normalized** intercepts — each exactly
-constant on its live component (unit-tested) — and `B[:, n_live_components:]` are strictly-positive
-(`d > _NULL_TOL`) smoothness modes, so `penalty_rank = n_fill = r_eff − n_live_components` is exact
-by construction, independent of any eigenvalue-ordering fragility.
+constant on its live component (unit-tested) — and `B[:, n_live_components:]` are the fill
+(smoothness) modes with exactly one constant null excluded per live component. Because that
+exclusion is **structural** (overlap, not an eigenvalue cutoff), `penalty_rank = n_fill = r_eff −
+n_live_components` is exact by construction, independent of the physical coordinate scale and of any
+eigenvalue-ordering fragility.
 
 ### (c) `Environment._mrf_basis(occupancy, *, rank)` — glue + iterative growth
 
@@ -160,10 +168,11 @@ modes is not knowable up front** (Finding 3) — grow iteratively until enough l
 
 ```python
 def _mrf_basis(self, occupancy, *, rank):
+    _validate_occupancy(occupancy)                       # fail fast, before the eigensolve
     W, volumes, n_components, labels = self._diffusion_geometry
     S = _symmetric_conjugate(W, volumes)                 # cheap; eigensolve is the cost
     holder = self._mrf_eigenbasis                        # cached mutable holder (a)
-    live = _live_comp(labels, occupancy)
+    live = _live_components(labels, occupancy)
     n_live_components = int(live.size)
     r_eff = _target_live_rank(labels, occupancy, rank)   # max(n_live_comp, min(n_live_bins, R))
     n_fill = r_eff - n_live_components
@@ -171,12 +180,15 @@ def _mrf_basis(self, occupancy, *, rank):
     # components, diffusion.py:419). r_eff counts only LIVE components, so 1 live + several dead
     # would start G < n_components and raise on the first solve (Finding 1).
     G = max(holder["G"], r_eff, n_components)
-    while True:                                          # grow until enough STRICTLY-POSITIVE live modes
+    while True:                                          # grow until every live null present + enough fills
         Q, Lam, mode_comp = _ensure_global_modes(holder, S, labels, G)   # may be transient (dense)
-        # count SURVIVING NONCONSTANT (positive) live modes — the fill-eligible ones (Finding 1),
-        # not all live modes (which include the nulls the intercepts already cover structurally).
-        n_pos_live = int((np.isin(mode_comp, live) & (Lam > _NULL_TOL)).sum())
-        if n_pos_live >= n_fill or Q.shape[1] >= S.shape[0]:
+        # VERIFY the null the selector requires is present for every live component (a component's
+        # numerical null can sort AFTER one of its positive modes when both are ~machine-ε), and count
+        # the non-null fill-eligible live modes — using the SAME overlap criterion select_live_basis
+        # uses, so the loop's stop condition and the selector never disagree.
+        is_null, missing = _null_mode_indices(Q, mode_comp, volumes, labels, live)
+        n_fill_available = int((np.isin(mode_comp, live) & ~is_null).sum())
+        if (missing.size == 0 and n_fill_available >= n_fill) or Q.shape[1] >= S.shape[0]:
             break
         G = min(2 * Q.shape[1], S.shape[0])              # double, capped at full rank
     return select_live_basis(Q, Lam, mode_comp, volumes, labels, occupancy, rank=rank)

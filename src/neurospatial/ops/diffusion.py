@@ -34,7 +34,7 @@ Public entry points are ``Environment.compute_kernel`` / ``Environment.smooth``;
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, cast
 
 import networkx as nx
 import numpy as np
@@ -66,6 +66,50 @@ __all__ = [
 _HEAT_KERNEL_RANK_TOL = 1e-6
 _HEAT_KERNEL_DENSE_FRACTION = 0.5
 _HEAT_KERNEL_RANK_START = 32
+
+# MRF penalty-basis resolver constant (consumed by ``select_live_basis`` and the
+# ``Environment._mrf_basis`` glue). ``_DEFAULT_MAX_RANK`` is the requested-rank
+# cap ``R`` used when ``rank is None``. It lives here (not in the encoding tier)
+# because the pure selector below returns ``MRFBasis`` and must not import from a
+# higher tier; the encoding-tier fit re-imports it rather than redefining it. The
+# null-vs-fill split is STRUCTURAL (see :func:`_null_mode_mask`), never an
+# absolute eigenvalue cutoff, so no null-tolerance constant is needed.
+_DEFAULT_MAX_RANK = 250
+
+
+class MRFBasis(NamedTuple):
+    """Reduced-rank penalty basis for the penalized-Poisson GAM.
+
+    Produced by :func:`select_live_basis` (and ``Environment._mrf_basis``);
+    consumed by the penalized-Poisson fit. ``B`` and ``d`` are float64 in
+    **live-bin order**; ``live_bins`` (np.intp) maps that order back to
+    ``env.n_bins`` order. The column layout is fixed: ``B[:, :n_live_components]``
+    are the mass-normalized per-component **intercepts** (each an exact constant
+    on its live component, weight ``d == 0`` bit-exact), and
+    ``B[:, n_live_components:]`` are the **fill** smoothness modes (``M^{-1/2}Q``)
+    -- the ``n_fill`` smallest-eigenvalue modes that are not a component's
+    constant null. The structural penalty rank ``r_eff - n_live_components`` is
+    exact by construction: exactly one constant null is excluded per live
+    component (identified structurally, see :func:`_null_mode_mask`), never by an
+    absolute eigenvalue cutoff.
+
+    Fields
+    ------
+    B : NDArray[np.float64], shape (n_live_bins, r_eff)
+        ``[ intercepts | M^{-1/2}Q fill ]`` restricted to live bins.
+    d : NDArray[np.float64], shape (r_eff,)
+        ``[ n_live_components zeros | fill-mode eigenvalues ]``.
+    live_bins : NDArray[np.intp], shape (n_live_bins,)
+        Indices into the active-bin array (``env.n_bins`` order).
+    n_live_components : int
+        Count of W-components with ``sum(occupancy) > 0``.
+    """
+
+    B: NDArray[np.float64]
+    d: NDArray[np.float64]
+    live_bins: NDArray[np.intp]
+    n_live_components: int
+
 
 # Tiny floor for masked/support-gated denominators in the consumers (the raw
 # linear apply can leave a truncation-noise-tiny value where the dense
@@ -445,6 +489,312 @@ def _symmetric_eigenbasis(
     keep = all_eigvals.size if rank is None else rank
     order = np.argsort(all_eigvals, kind="stable")[:keep]
     return all_eigvals[order], all_eigvecs[:, order]
+
+
+# ---------------------------------------------------------------------------
+# MRF penalty-basis resolver. Reuses the symmetric eigensolver above
+# without modifying it. A cached GLOBAL resolver (``_ensure_global_modes`` +
+# ``Environment._mrf_eigenbasis``) owns the eigensolve and grows on demand; a
+# PURE selector (``select_live_basis``) consumes the cached modes and only masks
+# by occupancy. The split keeps the eigensolve behind the cache so a repeat call
+# at the same-or-smaller rank / same live support never re-solves *while it stays
+# in the sparse (persisted) regime* (a near-full-rank dense solve is transient).
+# ---------------------------------------------------------------------------
+def _ensure_global_modes(
+    holder: dict[str, Any],
+    S: scipy.sparse.spmatrix,
+    labels: NDArray[np.int_],
+    needed_G: int,
+    *,
+    dense_fraction: float = _HEAT_KERNEL_DENSE_FRACTION,
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.intp]]:
+    """Return ``(Q, Lam, mode_comp)`` with at least ``needed_G`` global modes.
+
+    ``Q`` are the ``G`` globally-smallest modes of ``S = M^{-1/2}(D - W)M^{-1/2}``
+    and ``mode_comp`` each mode's **source W-component**. As a side effect, in
+    the truncated regime the ``holder`` is grown in place (never returned); it
+    grows only when it is short. Each eigenvector is component-local -- nonzero on
+    exactly one W-component, bit-exact 0 elsewhere (see
+    :func:`_symmetric_eigenbasis`) -- so a mode's source component is the label of
+    any nonzero row, recovering the mode -> component map WITHOUT touching the
+    eigensolver.
+
+    Past ``dense_fraction * n`` the resolved basis is an ``n x n`` matrix; the
+    design forbids persisting it (it would pin GBs on the env), so a dense solve
+    is **call-local**: it is returned but the holder is left at its last sparse
+    ``G``.
+
+    Parameters
+    ----------
+    holder : dict
+        Mutable resolver cache ``{"Q", "Lam", "mode_comp", "G"}`` (owned by
+        ``Environment._mrf_eigenbasis``). Grown by replace in the sparse regime.
+    S : scipy.sparse.spmatrix, shape (n, n)
+        Symmetric conjugate from :func:`_symmetric_conjugate`.
+    labels : NDArray[np.int_], shape (n,)
+        W-component label per bin.
+    needed_G : int
+        Minimum number of global modes required.
+    dense_fraction : float, optional
+        Fraction of ``n`` at or above which a dense (transient) solve is used.
+
+    Returns
+    -------
+    Q : NDArray[np.float64], shape (n, G)
+        Component-local eigenvectors as columns (ascending eigenvalue).
+    Lam : NDArray[np.float64], shape (G,)
+        Eigenvalues ascending, non-negative.
+    mode_comp : NDArray[np.intp], shape (G,)
+        Source W-component of each mode.
+    """
+    n = S.shape[0]
+    if holder["G"] >= needed_G:  # cache hit -- no eigensolve
+        return holder["Q"], holder["Lam"], holder["mode_comp"]
+    G = min(needed_G, n)
+    dense = dense_fraction * n <= G
+    Lam, Q = _symmetric_eigenbasis(S, None if dense else G)
+    # Each eigenvector is nonzero on exactly one W-component (bit-exact 0
+    # elsewhere from _symmetric_eigenbasis's per-component solve + zero padding),
+    # so the label of any nonzero row is the mode's source component. This relies
+    # on that per-component solve -- a refactor to a single global eigsh would
+    # leak cross-component entries and silently corrupt this map.
+    mode_comp = np.array([labels[np.flatnonzero(col)[0]] for col in Q.T], dtype=np.intp)
+    if not dense:  # persist truncated bases only (transient-dense policy)
+        holder.update(Q=Q, Lam=Lam, mode_comp=mode_comp, G=Q.shape[1])
+    return Q, Lam, mode_comp
+
+
+def _validate_occupancy(occupancy: NDArray[np.float64]) -> None:
+    """Reject non-finite or negative occupancy before the live/dead split.
+
+    Occupancy is time (or samples) per active bin, so it must be finite and
+    ``>= 0``. A non-finite bin would make its whole W-component's summed
+    occupancy non-finite (and ``NaN > 0`` is ``False``), silently dropping the
+    component as dead -- or, if it were the only live component, returning the
+    empty basis, indistinguishable from genuine zero occupancy. A negative entry
+    could likewise cancel a visited component's occupancy below zero. Both are
+    caller errors, so fail loudly rather than emit a plausible-but-wrong basis.
+    """
+    occ = np.asarray(occupancy)
+    if not np.all(np.isfinite(occ)):
+        bad = np.flatnonzero(~np.isfinite(occ))
+        shown = bad[:10].tolist()
+        raise ValueError(
+            f"occupancy must be finite; {bad.size} non-finite bin(s) at "
+            f"indices {shown}{'...' if bad.size > 10 else ''}."
+        )
+    if np.any(occ < 0.0):
+        bad = np.flatnonzero(occ < 0.0)
+        shown = bad[:10].tolist()
+        raise ValueError(
+            f"occupancy must be non-negative (time/samples per bin); "
+            f"{bad.size} negative bin(s) at indices "
+            f"{shown}{'...' if bad.size > 10 else ''}."
+        )
+
+
+def _live_components(
+    labels: NDArray[np.int_], occupancy: NDArray[np.float64]
+) -> NDArray[np.intp]:
+    """W-components with strictly-positive total occupancy (``sum(o) > 0``)."""
+    n_components = int(labels.max()) + 1
+    comp_occ = np.bincount(labels, weights=occupancy, minlength=n_components)
+    return np.flatnonzero(comp_occ > 0.0).astype(np.intp)
+
+
+def _target_live_rank(
+    labels: NDArray[np.int_], occupancy: NDArray[np.float64], rank: int | None
+) -> int:
+    """Effective rank ``r_eff = max(n_live_components, min(n_live_bins, R))``."""
+    live = _live_components(labels, occupancy)
+    n_live_components = int(live.size)
+    n_live_bins = int(np.isin(labels, live).sum())
+    R = _DEFAULT_MAX_RANK if rank is None else int(rank)
+    return max(n_live_components, min(n_live_bins, R))
+
+
+def _null_mode_indices(
+    Q: NDArray[np.float64],
+    mode_comp: NDArray[np.intp],
+    volumes: NDArray[np.float64],
+    labels: NDArray[np.int_],
+    live_comp: NDArray[np.intp],
+) -> tuple[NDArray[np.bool_], NDArray[np.intp]]:
+    """Locate each live component's structural null; report any that are absent.
+
+    For each live component the constant mode ``q0_c`` proportional to
+    ``sqrt(vol) . 1_c`` is the exact null of ``S``; the eigensolver returns it as
+    one of that component's modes. It is identified by **maximal overlap** with
+    the component's mass-weighted constant (overlap ~1 for the constant, ~0 for
+    every orthogonal smoothness mode). This is invariant to the physical
+    coordinate scale -- unlike an absolute eigenvalue cutoff, which would
+    misclassify a genuine smoothness mode whose Laplacian eigenvalue is
+    physically tiny (eigenvalues carry units of 1/length**2).
+
+    Non-raising: a max overlap ``< 0.5`` (or a component with no modes in ``Q``)
+    means that component's null is not present in this truncated eigenbasis --
+    reported in ``missing`` so the caller (growth loop) can grow, or (selector)
+    raise.
+
+    Parameters
+    ----------
+    Q : NDArray[np.float64], shape (n_bins, G)
+        Component-local eigenvectors as columns.
+    mode_comp : NDArray[np.intp], shape (G,)
+        Source W-component of each mode.
+    volumes : NDArray[np.float64], shape (n_bins,)
+        Finite-volume cell volumes ``M``.
+    labels : NDArray[np.int_], shape (n_bins,)
+        W-component label per bin.
+    live_comp : NDArray[np.intp]
+        Indices of the live components.
+
+    Returns
+    -------
+    is_null : NDArray[np.bool_], shape (G,)
+        ``True`` at the one null mode of each live component found in ``Q``.
+    missing : NDArray[np.intp]
+        Live components whose null is absent from ``Q``.
+    """
+    sqrt_vol = np.sqrt(volumes)
+    is_null = np.zeros(mode_comp.shape[0], dtype=bool)
+    missing: list[int] = []
+    for c in live_comp:
+        comp_modes = np.flatnonzero(mode_comp == c)
+        if comp_modes.size == 0:
+            missing.append(int(c))
+            continue
+        q0 = np.where(labels == c, sqrt_vol, 0.0)
+        q0 /= np.linalg.norm(q0)
+        overlaps = np.abs(q0 @ Q[:, comp_modes])
+        best = int(np.argmax(overlaps))
+        if overlaps[best] < 0.5:  # the component's null is not in this basis
+            missing.append(int(c))
+            continue
+        is_null[comp_modes[best]] = True
+    return is_null, np.asarray(missing, dtype=np.intp)
+
+
+def _null_mode_mask(
+    Q: NDArray[np.float64],
+    mode_comp: NDArray[np.intp],
+    volumes: NDArray[np.float64],
+    labels: NDArray[np.int_],
+    live_comp: NDArray[np.intp],
+) -> NDArray[np.bool_]:
+    """Mark each live component's structural null; raise if any is absent.
+
+    Thin raising wrapper over :func:`_null_mode_indices` for the selector, which
+    (unlike the growth loop) has no opportunity to grow the eigenbasis.
+    """
+    is_null, missing = _null_mode_indices(Q, mode_comp, volumes, labels, live_comp)
+    if missing.size:
+        raise ValueError(
+            f"component(s) {missing.tolist()}: constant null mode not present in "
+            "the supplied eigenbasis; grow it to include every component null "
+            "before selecting."
+        )
+    return is_null
+
+
+def select_live_basis(
+    Q: NDArray[np.float64],
+    Lam: NDArray[np.float64],
+    mode_comp: NDArray[np.intp],
+    volumes: NDArray[np.float64],
+    labels: NDArray[np.int_],
+    occupancy: NDArray[np.float64],
+    *,
+    rank: int | None,
+) -> MRFBasis:
+    """Mask cached global modes into an :class:`MRFBasis` (pure; no eigensolve).
+
+    Live components are those with ``sum(occupancy) > 0``; dead components
+    contribute no rows and no modes. Intercepts are the **exact mass-normalized
+    constant** per live component (``1/sqrt(sum_c volumes)`` on component ``c``,
+    ``= M^{-1/2}`` of the S-null ``sqrt(vol) . 1_c``), constructed structurally
+    with weight ``d == 0``. Fills are the ``n_fill`` smallest-``Lam`` live modes
+    that are **not** a component's constant null, carrying ``B = M^{-1/2}Q``. The
+    null is excluded **structurally** (:func:`_null_mode_mask`), so
+    ``penalty_rank = n_fill`` is exact and no mis-ordered / clipped near-null can
+    leak in as a penalized near-constant duplicate. Raises if the supplied
+    eigenbasis has fewer than ``n_fill`` non-null live modes (the caller must
+    grow it to full rank first).
+
+    Parameters
+    ----------
+    Q : NDArray[np.float64], shape (n_bins, G)
+        Component-local eigenvectors (from :func:`_ensure_global_modes`).
+    Lam : NDArray[np.float64], shape (G,)
+        Eigenvalues ascending, non-negative.
+    mode_comp : NDArray[np.intp], shape (G,)
+        Source W-component of each mode.
+    volumes : NDArray[np.float64], shape (n_bins,)
+        Finite-volume cell volumes ``M``.
+    labels : NDArray[np.int_], shape (n_bins,)
+        W-component label per bin.
+    occupancy : NDArray[np.float64], shape (n_bins,)
+        Time (or samples) spent per active bin, active-bin order.
+    rank : int or None
+        Requested rank cap ``R``; ``None`` resolves to ``_DEFAULT_MAX_RANK``.
+
+    Returns
+    -------
+    MRFBasis
+        The reduced-rank penalty basis in live-bin order.
+    """
+    _validate_occupancy(occupancy)
+    live_comp = _live_components(labels, occupancy)  # live = sum(occupancy) > 0
+    n_live_components = int(live_comp.size)
+    live_bins = np.flatnonzero(np.isin(labels, live_comp)).astype(np.intp)
+    if live_bins.size == 0:  # zero total occupancy -> the empty basis
+        return MRFBasis(np.zeros((0, 0)), np.zeros((0,)), live_bins, 0)
+
+    R = _DEFAULT_MAX_RANK if rank is None else int(rank)
+    r_eff = max(n_live_components, min(live_bins.size, R))
+    n_fill = r_eff - n_live_components
+    inv_sqrt_vol = 1.0 / np.sqrt(volumes)  # M^{-1/2}; fills are B = M^{-1/2}Q
+
+    # (1) Intercepts: the exact mass-normalized constant per live component.
+    #     B0_c = M^{-1/2} q0_c = 1_c / sqrt(sum_c vol) -- constant on component c,
+    #     NOT 1_c/||1_c||_2 (which only matches on uniform volumes). d = 0.
+    B_int = np.zeros((live_bins.size, n_live_components))
+    lbl_live = labels[live_bins]
+    for j, c in enumerate(live_comp):
+        B_int[lbl_live == c, j] = 1.0 / np.sqrt(volumes[labels == c].sum())
+
+    # (2) Fill: the n_fill smallest-Lam live modes that are NOT a component's
+    #     constant null. The null is identified STRUCTURALLY (overlap with the
+    #     mass-weighted constant), not by an absolute eigenvalue cutoff -- a
+    #     cutoff would misread a genuine smoothness mode with a physically-tiny
+    #     eigenvalue as a null (scale-dependent). Lam is ascending, so the
+    #     surviving live modes stay Lam-sorted; the first n_fill are the smallest.
+    is_null = _null_mode_mask(Q, mode_comp, volumes, labels, live_comp)
+    fill_idx = np.flatnonzero(np.isin(mode_comp, live_comp) & ~is_null)[:n_fill]
+    if fill_idx.size != n_fill:
+        raise ValueError(
+            f"select_live_basis needs {n_fill} fill mode(s) but only "
+            f"{fill_idx.size} non-null live mode(s) are present in the "
+            f"{Q.shape[1]}-mode eigenbasis. Grow the eigenbasis to full rank "
+            "before selecting (Environment._mrf_basis does this)."
+        )
+    d_fill = Lam[fill_idx]
+    # A structurally non-null fill must carry a positive penalty weight. A
+    # nonpositive weight means the mode's eigenvalue was clipped to <= 0 (a
+    # numerically (near-)disconnected component) -- it would be an unpenalized
+    # nonconstant direction contradicting the reported penalty_rank. Fail loudly.
+    if d_fill.size and np.any(d_fill <= 0.0):
+        raise ValueError(
+            "a selected non-null fill mode has nonpositive penalty weight "
+            f"(min {float(d_fill.min()):.3e}); its eigenvalue was clipped to "
+            "<= 0, i.e. a numerically (near-)disconnected component. Check the "
+            "environment connectivity / bin resolution."
+        )
+    B_fill = (inv_sqrt_vol[:, None] * Q[:, fill_idx])[live_bins, :]
+
+    B = np.concatenate([B_int, B_fill], axis=1)  # (n_live_bins, r_eff)
+    d = np.concatenate([np.zeros(n_live_components), d_fill])
+    return MRFBasis(B, d, live_bins, n_live_components)
 
 
 def _adaptive_symmetric_basis(

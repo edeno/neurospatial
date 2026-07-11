@@ -49,13 +49,11 @@ rank: int | None = None,               # glm; None → 250 (requested cap R)
 
 ## <a id="constants"></a>Module constants
 
-Named module-level constants (spec §4, §7). Home: `encoding/_glm.py`. **Fixed, not public
-params** — the glm API surface is only `penalty`/`rank`.
+Named module-level constants (spec §4, §7). Home: `encoding/_glm.py` for the **fit** constants
+below. **Fixed, not public params** — the glm API surface is only `penalty`/`rank`.
 
 ```python
 _RATE_FLOOR = 1e-10          # matches decoding min_rate (likelihood.py:47)
-_DEFAULT_MAX_RANK = 250      # requested-rank cap R when rank=None
-_NULL_TOL = 1e-12            # a symmetric eigenvalue at/below this is a (clipped) null, not a fill
 _MAX_ITER = 100              # Newton iterations
 _FIT_TOL = 1e-10             # float64 relative penalized-objective decrease
 _FIT_TOL_FLOOR = 1e-6        # float32 floor: max(tol, this) on the JAX path
@@ -66,6 +64,16 @@ _HESSIAN_JITTER = 1e-10      # ridge on the Hessian diagonal
 _LOG_PENALTY_BOUNDS = (-8.0, 20.0)   # REML search bounds in log λ
 _REML_XATOL = 1e-3           # scipy.optimize.minimize_scalar xatol
 ```
+
+**Resolver constant — canonical home is `ops/diffusion.py`, not `_glm.py`.** `_DEFAULT_MAX_RANK
+= 250` (the requested-rank cap `R` when `rank=None`) lives in `ops/diffusion.py` because the
+pure `select_live_basis` there returns `MRFBasis` and must not import from the higher encoding
+tier. Phase 2/3 **import** it from `ops.diffusion` rather than redefining it, so there is one
+source of truth. There is **no `_NULL_TOL`**: the null-vs-fill split is done **structurally**
+(each live component's constant null is excluded by overlap with its mass-weighted constant, see
+`_null_mode_mask`), never by an absolute eigenvalue cutoff — a cutoff would be coordinate-scale-
+dependent (Laplacian eigenvalues carry units of `1/length²`, so a genuine smoothness mode can be
+positive yet below any fixed tolerance).
 
 The float64 NumPy core uses `_FIT_TOL`; the float32 JAX path uses `max(_FIT_TOL, _FIT_TOL_FLOOR)`
 and `_DESCENT_TOL` (spec §4 — `1e-10` is below float32 objective noise `~1e-7`).
@@ -80,17 +88,21 @@ project's `DiffusionGeometry`), all arrays float64, **live-bin order**:
 ```python
 class MRFBasis(NamedTuple):
     B: NDArray[np.float64]          # (n_live_bins, r_eff) — [ intercepts | M^{-1/2}Q fill ][live_bins]
-    d: NDArray[np.float64]          # (r_eff,) — [ n_live_components zeros | strictly-positive fill weights ]
+    d: NDArray[np.float64]          # (r_eff,) — [ n_live_components zeros | fill-mode eigenvalues ]
     live_bins: NDArray[np.intp]     # (n_live_bins,) — indices into the active-bin array (env.n_bins order)
     n_live_components: int          # count of W-components with Σ occupancy > 0
 ```
 
+`B` and `d` are float64 in live-bin order; `live_bins` (np.intp) maps that order back to
+`env.n_bins` order.
+
 **Invariants (do not weaken):**
 
-- **Column layout is fixed:** `B[:, :n_live_components]` are the **intercepts**, `B[:, n_live_components:]` the **fill** (smoothness) modes; `d[:n_live_components] == 0.0` exactly, `d[n_live_components:] > _NULL_TOL` **strictly** (no extra zeros — the eigensolver clips negatives to 0, so fills are selected by `Λ > _NULL_TOL`, guaranteeing strict positivity).
+- **Column layout is fixed:** `B[:, :n_live_components]` are the **intercepts**, `B[:, n_live_components:]` the **fill** (smoothness) modes; `d[:n_live_components] == 0.0` **exactly** (bit-exact, not thresholded), and `d[n_live_components:]` are the fill modes' **strictly-positive** eigenvalues (the eigensolver's values, clipped to ≥ 0; a genuine nonconstant mode's eigenvalue is accurately positive, well above the ~ε·‖S‖ error floor). Exactly one constant null is excluded **per live component**, identified **structurally** — by overlap with that component's mass-weighted constant, `_null_mode_mask` — **not** by an absolute eigenvalue cutoff (which would be coordinate-scale-dependent). `select_live_basis` **raises** if the supplied eigenbasis lacks `n_fill` non-null live modes, if a live component's null is absent, or if a selected fill weight is ≤ 0 (its eigenvalue clipped to 0 — a numerically (near-)disconnected component) — never silently returning a narrow or under-penalized `B`. `_mrf_basis`'s growth loop **verifies null coverage** (the numerical null can sort after a positive mode) and keeps growing until every live null is present.
 - **Each intercept column is the exact MASS-NORMALIZED constant** on its live component: `B[bins_of_c, j] = 1/sqrt(Σ_c volumes)`, 0 elsewhere (= `M^{-1/2}` of the S-null `q0_c ∝ sqrt(vol)·1_c`). Constructed structurally, **not** read off the spectrum.
 - `r_eff == B.shape[1] == d.shape[0] == max(n_live_components, min(n_live_bins, R))`.
-- Structural penalty rank `r = r_eff − n_live_components` (spec §5) — **exact by construction** (exactly `n_live_components` zeros + all-positive fills), **not** a relative-threshold recount.
+- Structural penalty rank `r = r_eff − n_live_components` (spec §5) — **exact by construction** (exactly `n_live_components` structural-null columns excluded, `n_fill` fill columns kept), **not** a relative-threshold recount.
+- **Occupancy is validated** at the resolver boundary: non-finite or negative occupancy **raises** `ValueError` (a NaN would otherwise silently drop a whole component; a negative could cancel one live). Occupancy is time/samples per bin.
 - Dead (unvisited, `Σo == 0`) components contribute **no** rows to `B` and **no** modes — their bins are absent from `live_bins`.
 - Degenerate: zero total occupancy → `B` is `(0, 0)`, `live_bins` empty, `n_live_components == 0` (spec §7 "zero total occupancy" row).
 
