@@ -361,7 +361,7 @@ class SpatialResultMixin(ResultMixin):
         ... )
         >>> s = result.summary()
         >>> sorted(s)
-        ['n_bins', 'peak_firing_rate', 'total_occupancy']
+        ['method', 'n_bins', 'peak_firing_rate', 'total_occupancy']
         """
         rates = _to_numpy(self._get_rates())
         occupancy = _to_numpy(self.occupancy)  # type: ignore[attr-defined]
@@ -382,6 +382,11 @@ class SpatialResultMixin(ResultMixin):
         }
         if rates.ndim > 1:
             out["n_neurons"] = int(rates.shape[0])
+        # Carry the estimator on result classes that record it (the spatial/view
+        # rate results); egocentric/directional/place-field results have no
+        # `method` field and are left unchanged.
+        if hasattr(self, "method"):
+            out["method"] = self.method
         return out
 
     def to_dataframe(self) -> pd.DataFrame:
@@ -450,6 +455,10 @@ class SpatialResultMixin(ResultMixin):
         # Occupancy is shared across neurons for batch spatial results.
         occ = np.asarray(occupancy).reshape(-1)
         data["occupancy"] = np.tile(occ, n_neurons)
+        # Carry the estimator (spatial/view rate results only); broadcasts to
+        # every row. Absent on results with no `method` field.
+        if hasattr(self, "method"):
+            data["method"] = self.method
 
         return pd.DataFrame(data)
 
@@ -491,6 +500,10 @@ class SpatialResultMixin(ResultMixin):
                 col = f"peak_coord_{d}"
             data[col] = peaks[:, d]
         data["peak_rate"] = peak_rates
+        # Carry the estimator (spatial/view rate results only), one value per
+        # unit. Absent on results with no `method` field.
+        if hasattr(self, "method"):
+            data["method"] = self.method
 
         df = pd.DataFrame(data, index=pd.Index(row_unit_ids, name="unit_id"))
         return df

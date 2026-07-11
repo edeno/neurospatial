@@ -224,3 +224,52 @@ def test_egocentric_default_preserved(ovc_session):
     )
     np.testing.assert_array_equal(default, binned)
     assert not np.array_equal(default, diffusion)
+
+
+# --- method carried into the terminal-verb projections (acceptance criterion) --
+# The rate results must surface the estimator in every projection, not just as a
+# field, so downstream tables/datasets record which estimator produced them.
+def test_method_in_projections(ovc_session):
+    """Plural rate results carry `method` in summary / to_dataframe / summary_table."""
+    env, st, t, pos, hd, _obj = ovc_session
+    cases = [
+        compute_spatial_rates(env, [st, st], t, pos, method="binned"),
+        compute_view_rates(env, [st, st], t, pos, hd, method="binned"),
+    ]
+    for result in cases:
+        assert result.summary()["method"] == "binned"
+        df = result.to_dataframe()
+        assert "method" in df.columns and (df["method"] == "binned").all()
+        table = result.summary_table()
+        assert "method" in table.columns and (table["method"] == "binned").all()
+
+
+def test_method_in_xarray_attrs(ovc_session):
+    """Plural rate results carry `method` in to_xarray() dataset attrs."""
+    pytest.importorskip("xarray")
+    env, st, t, pos, hd, _obj = ovc_session
+    for result in (
+        compute_spatial_rates(env, [st, st], t, pos, method="binned"),
+        compute_view_rates(env, [st, st], t, pos, hd, method="binned"),
+    ):
+        assert result.to_xarray().attrs["method"] == "binned"
+
+
+def test_method_in_singular_projections(ovc_session):
+    """Single-unit rate results carry `method` in summary / to_dataframe."""
+    env, st, t, pos, hd, _obj = ovc_session
+    for result in (
+        compute_spatial_rate(env, st, t, pos, method="binned"),
+        compute_view_rate(env, st, t, pos, hd, method="binned"),
+    ):
+        assert result.summary()["method"] == "binned"
+        df = result.to_dataframe()
+        assert "method" in df.columns and (df["method"] == "binned").all()
+
+
+def test_method_absent_from_non_method_result_projection(ovc_session):
+    """Results with no estimator field (egocentric) get no spurious `method`."""
+    env, st, t, pos, hd, obj = ovc_session
+    result = compute_egocentric_rate(env, st, t, pos, hd, obj)
+    assert "method" not in result.summary()
+    assert "method" not in result.to_dataframe().columns

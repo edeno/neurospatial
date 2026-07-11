@@ -1223,6 +1223,7 @@ class SpatialRatesResult(SpatialResultMixin):
         rates: NDArray[np.float64] = np.asarray(self.firing_rates)
         attrs: dict[str, Any] = {
             **units_attr(self.env),
+            "method": self.method,
             "bandwidth": self.bandwidth,
             "env": env_fingerprint(self.env),
             "software_version": software_version(),
@@ -1759,6 +1760,7 @@ class SpatialRatesResult(SpatialResultMixin):
             - grid_score: grid score (hexagonal periodicity)
             - border_score: border score (boundary proximity tuning)
             - cell_type: classification label (if include_classification=True)
+            - method: estimator used to compute the rate map
 
         Notes
         -----
@@ -1852,6 +1854,8 @@ class SpatialRatesResult(SpatialResultMixin):
                 grid_scores=grid_scores_arr,
                 border_scores=border_scores_arr,
             )
+
+        data["method"] = self.method
 
         return pd.DataFrame(data, index=pd.Index(index_ids, name="unit_id"))
 

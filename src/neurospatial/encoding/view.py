@@ -594,6 +594,7 @@ class ViewRatesResult(SpatialResultMixin):
         rates: NDArray[np.float64] = np.asarray(self.firing_rates)
         attrs: dict[str, Any] = {
             **units_attr(self.env),
+            "method": self.method,
             "bandwidth": self.bandwidth,
             "env": env_fingerprint(self.env),
             "software_version": software_version(),
@@ -1033,7 +1034,7 @@ class ViewRatesResult(SpatialResultMixin):
         ... )
         >>> df = result.summary_table()
         >>> list(df.columns)
-        ['peak_x', 'peak_y', 'peak_rate', 'view_spatial_info', 'is_spatial_view_cell']
+        ['peak_x', 'peak_y', 'peak_rate', 'view_spatial_info', 'is_spatial_view_cell', 'method']
         >>> df.index.name
         'unit_id'
 
@@ -1082,6 +1083,7 @@ class ViewRatesResult(SpatialResultMixin):
             "peak_rate": peak_rates,
             "view_spatial_info": view_info,
             "is_spatial_view_cell": is_spatial_view_cell,
+            "method": self.method,
         }
 
         return pd.DataFrame(data, index=pd.Index(index_ids, name="unit_id"))
@@ -1551,7 +1553,7 @@ def compute_view_rates(
     >>> # Per-unit scalar summary (one row per unit)
     >>> summary = result.summary_table()
     >>> summary.shape
-    (3, 5)
+    (3, 6)
     >>> # Dense per-bin frame (one row per (unit, bin))
     >>> df = result.to_dataframe()
     >>> len(df) == 3 * env.n_bins
