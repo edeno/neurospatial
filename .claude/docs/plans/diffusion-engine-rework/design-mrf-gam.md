@@ -145,12 +145,14 @@ objective exists in the interval).
     basis** `max(d)` is itself noise (`eigh` on a 3-node path gives a null of `~4e-17`), so
     two such components at `rank=2` count as `r=2` — bypassing the `r==0` REML-skip and returning
     an arbitrary λ. The structural identity gives `r = 2 − 2 = 0` correctly.
-  - **Defensive check (structural, no relative threshold).** Assert only: the designated
-    per-component null entries are **exactly `0.0`**; the remaining weights are **finite and
-    `≥ 0`**; the number of designated nulls **equals `n_live_components`**. A relative
-    `count(d > 1e-12·max(d)) == r` check is **deliberately avoided** — a genuinely positive
-    low-frequency mode can fall below `1e-12·max(d)` on a graph with a severe bottleneck / large
-    spectral range, which would false-fail a valid spectrum. The structural count is authoritative.
+  - **Structural guarantee (by construction, not a recount).** The basis is built as
+    `[n_live_components intercepts (d=0) | n_fill smoothness modes]`, where the fills are the
+    smallest-`Λ` live modes **selected by strict positivity** `Λ > _NULL_TOL` (the eigensolver
+    clips negatives to 0, so nulls sit at `0..~1e-15 < _NULL_TOL`). Hence `d` has **exactly
+    `n_live_components` zeros and all remaining entries strictly `> 0`** — never an extra zero — so
+    `r = r_eff − n_live_components` equals the true penalty rank and the REML df term is exact. A
+    relative `count(d > 1e-12·max(d)) == r` check is **deliberately avoided** (it false-fails a
+    genuine low-frequency mode on a bottlenecked graph); positivity-selection is authoritative.
 - **No penalized modes (`r == 0`)**: when `r_eff == n_live_components` (only null modes, e.g. a
   tiny/fragmented live basis), every `d` is a null weight, λ has **no effect**, and the REML
   objective is flat in λ — bounded minimization would return an arbitrary penalty. **Skip REML,

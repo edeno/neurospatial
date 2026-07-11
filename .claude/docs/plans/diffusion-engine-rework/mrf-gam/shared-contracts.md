@@ -55,6 +55,7 @@ params** — the glm API surface is only `penalty`/`rank`.
 ```python
 _RATE_FLOOR = 1e-10          # matches decoding min_rate (likelihood.py:47)
 _DEFAULT_MAX_RANK = 250      # requested-rank cap R when rank=None
+_NULL_TOL = 1e-12            # a symmetric eigenvalue at/below this is a (clipped) null, not a fill
 _MAX_ITER = 100              # Newton iterations
 _FIT_TOL = 1e-10             # float64 relative penalized-objective decrease
 _FIT_TOL_FLOOR = 1e-6        # float32 floor: max(tol, this) on the JAX path
@@ -78,17 +79,18 @@ project's `DiffusionGeometry`), all arrays float64, **live-bin order**:
 
 ```python
 class MRFBasis(NamedTuple):
-    B: NDArray[np.float64]          # (n_live_bins, r_eff) — (M^{-1/2}Q)[live_bins, live_modes]
-    d: NDArray[np.float64]          # (r_eff,) — penalty weights Λ[live_modes], per-component nulls == 0.0 exactly
+    B: NDArray[np.float64]          # (n_live_bins, r_eff) — [ intercepts | M^{-1/2}Q fill ][live_bins]
+    d: NDArray[np.float64]          # (r_eff,) — [ n_live_components zeros | strictly-positive fill weights ]
     live_bins: NDArray[np.intp]     # (n_live_bins,) — indices into the active-bin array (env.n_bins order)
     n_live_components: int          # count of W-components with Σ occupancy > 0
 ```
 
 **Invariants (do not weaken):**
 
-- Exactly `n_live_components` entries of `d` are **exactly `0.0`** (the per-component constant/intercept modes), and there is exactly one such null per live component.
+- **Column layout is fixed:** `B[:, :n_live_components]` are the **intercepts**, `B[:, n_live_components:]` the **fill** (smoothness) modes; `d[:n_live_components] == 0.0` exactly, `d[n_live_components:] > _NULL_TOL` **strictly** (no extra zeros — the eigensolver clips negatives to 0, so fills are selected by `Λ > _NULL_TOL`, guaranteeing strict positivity).
+- **Each intercept column is the exact MASS-NORMALIZED constant** on its live component: `B[bins_of_c, j] = 1/sqrt(Σ_c volumes)`, 0 elsewhere (= `M^{-1/2}` of the S-null `q0_c ∝ sqrt(vol)·1_c`). Constructed structurally, **not** read off the spectrum.
 - `r_eff == B.shape[1] == d.shape[0] == max(n_live_components, min(n_live_bins, R))`.
-- Structural penalty rank `r = r_eff − n_live_components` (spec §5); **do not** recompute it from a relative `count(d > 1e-12·max(d))` threshold.
+- Structural penalty rank `r = r_eff − n_live_components` (spec §5) — **exact by construction** (exactly `n_live_components` zeros + all-positive fills), **not** a relative-threshold recount.
 - Dead (unvisited, `Σo == 0`) components contribute **no** rows to `B` and **no** modes — their bins are absent from `live_bins`.
 - Degenerate: zero total occupancy → `B` is `(0, 0)`, `live_bins` empty, `n_live_components == 0` (spec §7 "zero total occupancy" row).
 
@@ -176,9 +178,11 @@ widens to `float | None` (`None` for glm).
 
 **Phasing of the fields.** Most GAM fields are added in **phase-3**. **`pooled` and
 `penalty_selected_by_reml` are added in phase-6** (with the `pooled` param): phase-3/phase-4 glm
-results are implicitly shared-λ and carry neither; phase-6 adds them and their NWB persistence
-(reader defaults a missing `pooled` → `True`, so phase-4-era files read correctly). The vector
-shapes of `penalty`/`reml_objective` likewise appear only in phase-6.
+results are implicitly shared-λ and carry neither; phase-6 adds them and their NWB persistence. The
+reader defaults a **missing `pooled` key method-conditionally** — `True` for `method=="glm"`
+(matches pre-phase-6 glm behavior), **`None` for ratio methods** (where `pooled` is meaningless) —
+so both phase-4-era glm and legacy ratio files read correctly. The vector shapes of
+`penalty`/`reml_objective` likewise appear only in phase-6.
 
 `firing_rate` (existing field) for glm is `max(exp(η), _RATE_FLOOR)` in **active-bin order,
 shape `(n_bins,)`** — dead/non-live bins are `_RATE_FLOOR`. Terminal verbs (`to_dataframe`,
