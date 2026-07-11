@@ -97,7 +97,7 @@ class TestComputeSpatialRateJaxBackend:
             spike_times,
             times,
             positions,
-            smoothing_method="binned",  # Simple case
+            method="binned",  # Simple case
             backend="jax",
         )
 
@@ -124,7 +124,7 @@ class TestComputeSpatialRateJaxBackend:
             spike_times,
             times,
             positions,
-            smoothing_method="binned",
+            method="binned",
             backend="numpy",
         )
 
@@ -134,7 +134,7 @@ class TestComputeSpatialRateJaxBackend:
             spike_times,
             times,
             positions,
-            smoothing_method="binned",
+            method="binned",
             backend="jax",
         )
 
@@ -169,7 +169,7 @@ class TestComputeSpatialRateJaxBackend:
             spike_times,
             times,
             positions,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
             backend="numpy",
         )
@@ -180,7 +180,7 @@ class TestComputeSpatialRateJaxBackend:
             spike_times,
             times,
             positions,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
             backend="jax",
         )
@@ -218,7 +218,7 @@ class TestComputeSpatialRatesJaxBackend:
             spike_times_batch,
             times,
             positions,
-            smoothing_method="binned",
+            method="binned",
             backend="jax",
         )
 
@@ -245,7 +245,7 @@ class TestComputeSpatialRatesJaxBackend:
             spike_times_batch,
             times,
             positions,
-            smoothing_method="binned",
+            method="binned",
             backend="numpy",
         )
 
@@ -255,7 +255,7 @@ class TestComputeSpatialRatesJaxBackend:
             spike_times_batch,
             times,
             positions,
-            smoothing_method="binned",
+            method="binned",
             backend="jax",
         )
 
@@ -294,7 +294,7 @@ class TestAutoBackendBehavior:
             spike_times,
             times,
             positions,
-            smoothing_method="binned",
+            method="binned",
             backend="auto",
         )
 
@@ -304,7 +304,7 @@ class TestAutoBackendBehavior:
             spike_times,
             times,
             positions,
-            smoothing_method="binned",
+            method="binned",
             backend="jax",
         )
 
@@ -342,7 +342,7 @@ class TestMetricsWithJaxBackend:
             spike_times,
             times,
             positions,
-            smoothing_method="binned",
+            method="binned",
             backend="numpy",
         )
 
@@ -351,7 +351,7 @@ class TestMetricsWithJaxBackend:
             spike_times,
             times,
             positions,
-            smoothing_method="binned",
+            method="binned",
             backend="jax",
         )
 
@@ -377,7 +377,7 @@ class TestMetricsWithJaxBackend:
             spike_times,
             times,
             positions,
-            smoothing_method="binned",
+            method="binned",
             backend="numpy",
         )
 
@@ -386,7 +386,7 @@ class TestMetricsWithJaxBackend:
             spike_times,
             times,
             positions,
-            smoothing_method="binned",
+            method="binned",
             backend="jax",
         )
 
@@ -432,7 +432,7 @@ class TestComputeViewRateJaxBackend:
             headings,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="binned",
+            method="binned",
             backend="jax",
         )
 
@@ -463,7 +463,7 @@ class TestComputeViewRateJaxBackend:
             headings,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="binned",
+            method="binned",
             backend="numpy",
         )
 
@@ -476,7 +476,7 @@ class TestComputeViewRateJaxBackend:
             headings,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="binned",
+            method="binned",
             backend="jax",
         )
 
@@ -515,7 +515,7 @@ class TestComputeViewRateJaxBackend:
             headings,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
             backend="numpy",
         )
@@ -529,7 +529,7 @@ class TestComputeViewRateJaxBackend:
             headings,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
             backend="jax",
         )
@@ -571,7 +571,7 @@ class TestComputeViewRatesJaxBackend:
             headings,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="binned",
+            method="binned",
             backend="jax",
         )
 
@@ -602,7 +602,7 @@ class TestComputeViewRatesJaxBackend:
             headings,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="binned",
+            method="binned",
             backend="numpy",
         )
 
@@ -615,7 +615,7 @@ class TestComputeViewRatesJaxBackend:
             headings,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="binned",
+            method="binned",
             backend="jax",
         )
 
@@ -664,7 +664,7 @@ class TestComputeEgocentricRateJaxBackend:
             distance_range=(0.0, 100.0),
             n_distance_bins=5,
             n_direction_bins=8,
-            smoothing_method="binned",
+            method="binned",
             backend="jax",
         )
 
@@ -697,7 +697,7 @@ class TestComputeEgocentricRateJaxBackend:
             distance_range=(0.0, 100.0),
             n_distance_bins=5,
             n_direction_bins=8,
-            smoothing_method="binned",
+            method="binned",
             backend="numpy",
         )
 
@@ -712,7 +712,7 @@ class TestComputeEgocentricRateJaxBackend:
             distance_range=(0.0, 100.0),
             n_distance_bins=5,
             n_direction_bins=8,
-            smoothing_method="binned",
+            method="binned",
             backend="jax",
         )
 
@@ -761,7 +761,7 @@ class TestComputeEgocentricRatesJaxBackend:
             distance_range=(0.0, 100.0),
             n_distance_bins=5,
             n_direction_bins=8,
-            smoothing_method="binned",
+            method="binned",
             backend="jax",
         )
 
@@ -797,7 +797,7 @@ class TestComputeEgocentricRatesJaxBackend:
             distance_range=(0.0, 100.0),
             n_distance_bins=5,
             n_direction_bins=8,
-            smoothing_method="binned",
+            method="binned",
             backend="numpy",
         )
 
@@ -812,7 +812,7 @@ class TestComputeEgocentricRatesJaxBackend:
             distance_range=(0.0, 100.0),
             n_distance_bins=5,
             n_direction_bins=8,
-            smoothing_method="binned",
+            method="binned",
             backend="jax",
         )
 

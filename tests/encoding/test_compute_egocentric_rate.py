@@ -488,14 +488,14 @@ class TestComputeEgocentricRateSmoothing:
     """Test smoothing parameters."""
 
     @pytest.mark.parametrize(
-        "smoothing_method", ["diffusion_kde", "gaussian_kde", "binned"]
+        "method", ["diffusion_kde", "gaussian_kde", "binned"]
     )
-    def test_accepts_valid_smoothing_methods(
+    def test_accepts_valid_methods(
         self,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
         object_positions: np.ndarray,
         spike_times: np.ndarray,
-        smoothing_method: Literal["diffusion_kde", "gaussian_kde", "binned"],
+        method: Literal["diffusion_kde", "gaussian_kde", "binned"],
     ) -> None:
         """compute_egocentric_rate should accept all valid smoothing methods."""
         from neurospatial.encoding.egocentric import compute_egocentric_rate
@@ -508,17 +508,17 @@ class TestComputeEgocentricRateSmoothing:
             positions,
             headings,
             object_positions,
-            smoothing_method=smoothing_method,
+            method=method,
         )
         assert np.asarray(result.firing_rate).shape[0] > 0
 
-    def test_default_smoothing_method(
+    def test_default_method(
         self,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
         object_positions: np.ndarray,
         spike_times: np.ndarray,
     ) -> None:
-        """Default smoothing_method should be 'binned'."""
+        """Default method should be 'binned'."""
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
         times, positions, headings = trajectory_data
@@ -537,7 +537,7 @@ class TestComputeEgocentricRateSmoothing:
             positions,
             headings,
             object_positions,
-            smoothing_method="binned",
+            method="binned",
         )
 
         np.testing.assert_allclose(
@@ -575,7 +575,7 @@ class TestComputeEgocentricRateSmoothing:
             positions,
             headings,
             object_positions,
-            smoothing_method="gaussian_kde",
+            method="gaussian_kde",
             bandwidth=10.0,
         )
         assert np.asarray(result.firing_rate).shape[0] > 0
@@ -1039,7 +1039,7 @@ class TestComputeEgocentricRateSignature:
             "n_distance_bins",
             "n_direction_bins",
             "metric",
-            "smoothing_method",
+            "method",
             "bandwidth",
             "min_occupancy",
         ]

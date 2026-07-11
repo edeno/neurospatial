@@ -191,7 +191,7 @@ def test_default_unit_ids_when_constructed_directly(trajectory, spike_trains):
         firing_rates=np.asarray(result.firing_rates),
         occupancy=np.asarray(result.occupancy),
         env=env,
-        smoothing_method=result.smoothing_method,
+        method=result.method,
         bandwidth=result.bandwidth,
     )
     np.testing.assert_array_equal(rebuilt.unit_ids, np.arange(len(spike_trains)))
@@ -211,7 +211,7 @@ def test_unit_table_wrong_length_raises(trajectory, spike_trains):
             firing_rates=np.asarray(result.firing_rates),
             occupancy=np.asarray(result.occupancy),
             env=env,
-            smoothing_method=result.smoothing_method,
+            method=result.method,
             bandwidth=result.bandwidth,
             unit_table=bad_table,
         )
@@ -229,7 +229,7 @@ def test_unit_table_correct_length_accepted(trajectory, spike_trains):
         firing_rates=np.asarray(result.firing_rates),
         occupancy=np.asarray(result.occupancy),
         env=env,
-        smoothing_method=result.smoothing_method,
+        method=result.method,
         bandwidth=result.bandwidth,
         unit_table=good_table,
     )
@@ -246,7 +246,7 @@ def test_all_nan_unit_summary_table_and_peaks_no_crash(trajectory, spike_trains)
         firing_rates=rates,
         occupancy=np.asarray(result.occupancy),
         env=env,
-        smoothing_method=result.smoothing_method,
+        method=result.method,
         bandwidth=result.bandwidth,
     )
     peaks = dead.peak_locations()

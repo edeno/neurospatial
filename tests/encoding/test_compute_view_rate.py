@@ -305,14 +305,14 @@ class TestComputeViewRateSmoothing:
     """Test smoothing parameters."""
 
     @pytest.mark.parametrize(
-        "smoothing_method", ["diffusion_kde", "gaussian_kde", "binned"]
+        "method", ["diffusion_kde", "gaussian_kde", "binned"]
     )
-    def test_accepts_valid_smoothing_methods(
+    def test_accepts_valid_methods(
         self,
         simple_env: Environment,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
         spike_times: np.ndarray,
-        smoothing_method: Literal["diffusion_kde", "gaussian_kde", "binned"],
+        method: Literal["diffusion_kde", "gaussian_kde", "binned"],
     ) -> None:
         """compute_view_rate should accept all valid smoothing methods."""
         from neurospatial.encoding.view import compute_view_rate
@@ -324,17 +324,17 @@ class TestComputeViewRateSmoothing:
             times,
             positions,
             headings,
-            smoothing_method=smoothing_method,
+            method=method,
         )
-        assert result.smoothing_method == smoothing_method
+        assert result.method == method
 
-    def test_default_smoothing_method_is_diffusion_kde(
+    def test_default_method_is_diffusion_kde(
         self,
         simple_env: Environment,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
         spike_times: np.ndarray,
     ) -> None:
-        """Default smoothing_method should be 'diffusion_kde'."""
+        """Default method should be 'diffusion_kde'."""
         from neurospatial.encoding.view import compute_view_rate
 
         times, positions, headings = trajectory_data
@@ -345,7 +345,7 @@ class TestComputeViewRateSmoothing:
             positions,
             headings,
         )
-        assert result.smoothing_method == "diffusion_kde"
+        assert result.method == "diffusion_kde"
 
     def test_stores_bandwidth_in_result(
         self,
@@ -749,7 +749,7 @@ class TestComputeViewRateSignature:
         assert result is not None
 
     def test_keyword_only_parameters(self) -> None:
-        """gaze_model, view_distance, smoothing_method, etc. should be keyword-only."""
+        """gaze_model, view_distance, method, etc. should be keyword-only."""
         import inspect
 
         from neurospatial.encoding.view import compute_view_rate
@@ -761,7 +761,7 @@ class TestComputeViewRateSignature:
         keyword_only_params = {
             "gaze_model",
             "view_distance",
-            "smoothing_method",
+            "method",
             "bandwidth",
             "min_occupancy",
         }
@@ -951,12 +951,12 @@ class TestComputeViewRatesParameters:
 
         assert result.view_distance == 20.0
 
-    def test_smoothing_method_parameter(
+    def test_method_parameter(
         self,
         simple_env: Environment,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
     ) -> None:
-        """smoothing_method parameter should be stored in result."""
+        """method parameter should be stored in result."""
         from neurospatial.encoding.view import compute_view_rates
 
         times, positions, headings = trajectory_data
@@ -968,10 +968,10 @@ class TestComputeViewRatesParameters:
             times,
             positions,
             headings,
-            smoothing_method="gaussian_kde",
+            method="gaussian_kde",
         )
 
-        assert result.smoothing_method == "gaussian_kde"
+        assert result.method == "gaussian_kde"
 
     def test_bandwidth_parameter(
         self,
@@ -1116,7 +1116,7 @@ class TestComputeViewRatesEdgeCases:
         assert len(result) == 0
         assert result.firing_rates.shape == (0, simple_env.n_bins)
 
-    def test_empty_spike_times_list_validates_smoothing_method(
+    def test_empty_spike_times_list_validates_method(
         self,
         simple_env: Environment,
         trajectory_data: tuple[np.ndarray, np.ndarray, np.ndarray],
@@ -1133,7 +1133,7 @@ class TestComputeViewRatesEdgeCases:
                 times,
                 positions,
                 headings,
-                smoothing_method="invalid",  # type: ignore[arg-type]
+                method="invalid",  # type: ignore[arg-type]
             )
 
     def test_single_neuron(
@@ -1313,7 +1313,7 @@ class TestComputeViewRatesSignature:
         keyword_only_params = {
             "gaze_model",
             "view_distance",
-            "smoothing_method",
+            "method",
             "bandwidth",
             "min_occupancy",
             "n_jobs",
@@ -1535,7 +1535,7 @@ class TestComputeViewRatePrecomputation:
             positions,
             headings,
             gaze_model="ray_cast",
-            smoothing_method="binned",
+            method="binned",
         )
 
         assert call_count == 1
@@ -1771,7 +1771,7 @@ class TestComputeViewRateNaNHandling:
             headings_in,
             view_distance=10.0,
             gaze_model="fixed_distance",
-            smoothing_method="binned",
+            method="binned",
         )
 
         # Did not raise; produced a usable (not all-NaN) map with a finite peak.

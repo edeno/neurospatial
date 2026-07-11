@@ -36,7 +36,7 @@ def rates_result() -> SpatialRatesResult:
         firing_rates=firing_rates,
         occupancy=occupancy,
         env=env,
-        smoothing_method="binned",
+        method="binned",
         bandwidth=5.0,
     )
 
@@ -122,7 +122,7 @@ def test_spatial_rates_duplicate_unit_ids_raise(rates_result):
         firing_rates=rates,
         occupancy=rates_result.occupancy,
         env=rates_result.env,
-        smoothing_method="binned",
+        method="binned",
         bandwidth=5.0,
         unit_ids=np.array([7, 7, 9]),
     )
@@ -139,7 +139,7 @@ def test_spatial_rates_mixed_type_duplicate_unit_ids_raise_value_error(rates_res
         firing_rates=rates,
         occupancy=rates_result.occupancy,
         env=rates_result.env,
-        smoothing_method="binned",
+        method="binned",
         bandwidth=5.0,
         unit_ids=np.asarray([1, "a", 1], dtype=object),
     )
@@ -156,7 +156,7 @@ def test_spatial_rates_string_unit_ids_select_by_label(rates_result):
         firing_rates=rates,
         occupancy=rates_result.occupancy,
         env=rates_result.env,
-        smoothing_method="binned",
+        method="binned",
         bandwidth=5.0,
         unit_ids=np.array(["a", "b", "c"]),
     )
@@ -201,7 +201,7 @@ def test_view_rates_to_xarray():
         env=env,
         gaze_model="fixed_distance",
         view_distance=20.0,
-        smoothing_method="binned",
+        method="binned",
         bandwidth=5.0,
     )
     ds = result.to_xarray()
@@ -261,7 +261,7 @@ def test_spatial_rates_occupancy_length_mismatch_raises(rates_result):
         # occupancy present but one element too short
         occupancy=np.ones(n_bins - 1),
         env=rates_result.env,
-        smoothing_method="binned",
+        method="binned",
         bandwidth=5.0,
     )
     with pytest.raises(ValueError, match="occupancy length does not match"):
@@ -313,7 +313,7 @@ def test_spatial_rates_units_none_omits_none_string():
         firing_rates=rng.uniform(0, 10, (3, env.n_bins)),
         occupancy=rng.uniform(0.5, 2.0, env.n_bins),
         env=env,
-        smoothing_method="binned",
+        method="binned",
         bandwidth=5.0,
     )
     ds = result.to_xarray()

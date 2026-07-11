@@ -818,7 +818,7 @@ def _spatial_rate_result():
     spike_times = np.sort(rng.uniform(0, times[-1], 300))
     # "binned" smoothing keeps the map cheap to compute for a fast disk test.
     result = compute_spatial_rate(
-        env, spike_times, times, positions, smoothing_method="binned", bandwidth=5.0
+        env, spike_times, times, positions, method="binned", bandwidth=5.0
     )
     return env, result
 

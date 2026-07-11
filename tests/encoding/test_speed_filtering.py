@@ -100,7 +100,7 @@ def test_single_default_unchanged(method: str, env_1d, two_speed_trajectory) -> 
     spike_times = np.array([0.5, 2.5, 4.0, 5.5, 6.5])
 
     baseline = compute_spatial_rate(
-        env_1d, spike_times, times, positions, smoothing_method=method
+        env_1d, spike_times, times, positions, method=method
     )
     # Explicitly default min_speed=None should match (and also the new param
     # path with speed=None, min_speed=None).
@@ -109,7 +109,7 @@ def test_single_default_unchanged(method: str, env_1d, two_speed_trajectory) -> 
         spike_times,
         times,
         positions,
-        smoothing_method=method,
+        method=method,
         speed=None,
         min_speed=None,
     )
@@ -129,14 +129,14 @@ def test_batch_default_unchanged(method: str, env_1d, two_speed_trajectory) -> N
     ]
 
     baseline = compute_spatial_rates(
-        env_1d, spike_times, times, positions, smoothing_method=method
+        env_1d, spike_times, times, positions, method=method
     )
     with_param = compute_spatial_rates(
         env_1d,
         spike_times,
         times,
         positions,
-        smoothing_method=method,
+        method=method,
         speed=None,
         min_speed=None,
     )

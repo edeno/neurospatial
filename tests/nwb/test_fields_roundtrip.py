@@ -37,7 +37,7 @@ def _make_rates_result(env, *, unit_ids=None, unit_table=None, n_units=3, seed=0
         firing_rates=firing_rates,
         occupancy=occupancy,
         env=env,
-        smoothing_method="diffusion_kde",
+        method="diffusion_kde",
         bandwidth=5.0,
         unit_ids=unit_ids,
         unit_table=unit_table,
@@ -73,7 +73,7 @@ class TestSpatialRatesRoundTrip:
             np.asarray(back.unit_ids), np.asarray(result.unit_ids)
         )
         pd.testing.assert_frame_equal(back.unit_table, result.unit_table)
-        assert back.smoothing_method == result.smoothing_method
+        assert back.method == result.method
         assert back.bandwidth == result.bandwidth
         assert back.env.n_bins == env.n_bins
 
@@ -343,7 +343,7 @@ class TestSpatialRatesRoundTrip:
             firing_rates=rng.uniform(0, 10, (3, env.n_bins + 1)),
             occupancy=rng.uniform(0, 5, env.n_bins),
             env=env,
-            smoothing_method="binned",
+            method="binned",
             bandwidth=5.0,
         )
         with pytest.raises(ValueError, match="firing_rates"):
@@ -360,7 +360,7 @@ class TestSpatialRatesRoundTrip:
             firing_rates=rng.uniform(0, 10, (3, env.n_bins)),
             occupancy=rng.uniform(0, 5, env.n_bins + 1),
             env=env,
-            smoothing_method="binned",
+            method="binned",
             bandwidth=5.0,
         )
         with pytest.raises(ValueError, match="occupancy"):

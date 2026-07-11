@@ -336,7 +336,7 @@ class TestComputeDirectionalPlaceFields:
             times,
             positions,
             labels,
-            smoothing_method="binned",
+            method="binned",
             bandwidth=10.0,
         )
 
@@ -346,7 +346,7 @@ class TestComputeDirectionalPlaceFields:
             spike_times,
             times,
             positions,
-            smoothing_method="binned",
+            method="binned",
             bandwidth=10.0,
         ).firing_rate
 
@@ -374,7 +374,7 @@ class TestComputeDirectionalPlaceFields:
             times,
             positions,
             labels,
-            smoothing_method="binned",
+            method="binned",
             bandwidth=10.0,
         )
 
@@ -405,7 +405,7 @@ class TestComputeDirectionalPlaceFields:
             times,
             positions,
             labels,
-            smoothing_method="binned",
+            method="binned",
             bandwidth=10.0,
         )
 
@@ -431,7 +431,7 @@ class TestComputeDirectionalPlaceFields:
             times,
             positions,
             labels,
-            smoothing_method="binned",
+            method="binned",
             bandwidth=10.0,
         )
 
@@ -455,7 +455,7 @@ class TestComputeDirectionalPlaceFields:
             times,
             positions,
             labels,
-            smoothing_method="binned",
+            method="binned",
             bandwidth=10.0,
         )
 
@@ -489,7 +489,7 @@ class TestComputeDirectionalPlaceFields:
                 times,
                 positions,
                 wrong_labels,
-                smoothing_method="binned",
+                method="binned",
                 bandwidth=10.0,
             )
 
@@ -508,7 +508,7 @@ class TestComputeDirectionalPlaceFields:
             times,
             positions,
             labels,
-            smoothing_method="binned",
+            method="binned",
             bandwidth=10.0,
         )
 

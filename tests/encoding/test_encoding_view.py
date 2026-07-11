@@ -96,7 +96,7 @@ class TestViewRateResultCreation:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -106,7 +106,7 @@ class TestViewRateResultCreation:
         assert result.env is simple_env
         assert result.gaze_model == "fixed_distance"
         assert result.view_distance == 10.0
-        assert result.smoothing_method == "diffusion_kde"
+        assert result.method == "diffusion_kde"
         assert result.bandwidth == 5.0
 
     def test_is_frozen_dataclass(
@@ -124,7 +124,7 @@ class TestViewRateResultCreation:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -151,7 +151,7 @@ class TestViewRateResultFields:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -172,7 +172,7 @@ class TestViewRateResultFields:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -191,7 +191,7 @@ class TestViewRateResultFields:
             "env",
             "gaze_model",
             "view_distance",
-            "smoothing_method",
+            "method",
             "bandwidth",
         }
         assert expected_fields.issubset(field_names)
@@ -220,7 +220,7 @@ class TestViewRatesResultCreation:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -230,7 +230,7 @@ class TestViewRatesResultCreation:
         assert result.env is simple_env
         assert result.gaze_model == "fixed_distance"
         assert result.view_distance == 10.0
-        assert result.smoothing_method == "diffusion_kde"
+        assert result.method == "diffusion_kde"
         assert result.bandwidth == 5.0
 
     def test_is_frozen_dataclass(
@@ -248,7 +248,7 @@ class TestViewRatesResultCreation:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -276,7 +276,7 @@ class TestViewRatesResultFields:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -297,7 +297,7 @@ class TestViewRatesResultFields:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -316,7 +316,7 @@ class TestViewRatesResultFields:
             "env",
             "gaze_model",
             "view_distance",
-            "smoothing_method",
+            "method",
             "bandwidth",
         }
         assert expected_fields.issubset(field_names)
@@ -341,7 +341,7 @@ class TestViewRatesResultIteration:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -362,7 +362,7 @@ class TestViewRatesResultIteration:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -384,7 +384,7 @@ class TestViewRatesResultIteration:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -407,7 +407,7 @@ class TestViewRatesResultIteration:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -415,7 +415,7 @@ class TestViewRatesResultIteration:
         assert single.env is result.env
         assert single.gaze_model == result.gaze_model
         assert single.view_distance == result.view_distance
-        assert single.smoothing_method == result.smoothing_method
+        assert single.method == result.method
         assert single.bandwidth == result.bandwidth
         assert_array_equal(single.occupancy, result.occupancy)
 
@@ -435,7 +435,7 @@ class TestViewRatesResultIteration:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -459,7 +459,7 @@ class TestViewRatesResultIteration:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -488,7 +488,7 @@ class TestViewRatesResultEdgeCases:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -513,7 +513,7 @@ class TestViewRatesResultEdgeCases:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -552,7 +552,7 @@ class TestViewRateResultPlot:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -585,7 +585,7 @@ class TestViewRateResultPeakLocation:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -613,7 +613,7 @@ class TestViewRateResultPeakLocation:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -640,7 +640,7 @@ class TestViewRateResultPeakLocation:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -667,7 +667,7 @@ class TestViewRateResultViewSpatialInformation:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -689,7 +689,7 @@ class TestViewRateResultViewSpatialInformation:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -719,7 +719,7 @@ class TestViewRateResultViewSpatialInformation:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -744,7 +744,7 @@ class TestViewRateResultViewSpatialInformation:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -771,7 +771,7 @@ class TestViewRateResultViewSpatialInformation:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -802,7 +802,7 @@ class TestViewRateResultIsViewCell:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -828,7 +828,7 @@ class TestViewRateResultIsViewCell:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -853,7 +853,7 @@ class TestViewRateResultIsViewCell:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -879,7 +879,7 @@ class TestViewRateResultIsViewCell:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -908,7 +908,7 @@ class TestViewRateResultIsViewCell:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -936,7 +936,7 @@ class TestViewRateResultIsViewCell:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -978,7 +978,7 @@ class TestViewRatesResultPlot:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1000,7 +1000,7 @@ class TestViewRatesResultPlot:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1034,7 +1034,7 @@ class TestViewRatesResultPeakLocations:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1058,7 +1058,7 @@ class TestViewRatesResultPeakLocations:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1090,7 +1090,7 @@ class TestViewRatesResultPeakLocations:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1118,7 +1118,7 @@ class TestViewRatesResultPeakLocations:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1148,7 +1148,7 @@ class TestViewRatesResultViewSpatialInformation:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1171,7 +1171,7 @@ class TestViewRatesResultViewSpatialInformation:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1194,7 +1194,7 @@ class TestViewRatesResultViewSpatialInformation:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1221,7 +1221,7 @@ class TestViewRatesResultViewSpatialInformation:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1246,7 +1246,7 @@ class TestViewRatesResultViewSpatialInformation:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1272,7 +1272,7 @@ class TestViewRatesResultClassify:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1295,7 +1295,7 @@ class TestViewRatesResultClassify:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1319,7 +1319,7 @@ class TestViewRatesResultClassify:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1358,7 +1358,7 @@ class TestViewRatesResultClassify:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1389,7 +1389,7 @@ class TestViewRatesResultClassify:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1421,7 +1421,7 @@ class TestViewRatesResultSummaryTable:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1446,7 +1446,7 @@ class TestViewRatesResultSummaryTable:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1468,7 +1468,7 @@ class TestViewRatesResultSummaryTable:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1490,7 +1490,7 @@ class TestViewRatesResultSummaryTable:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1512,7 +1512,7 @@ class TestViewRatesResultSummaryTable:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1534,7 +1534,7 @@ class TestViewRatesResultSummaryTable:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1556,7 +1556,7 @@ class TestViewRatesResultSummaryTable:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1578,7 +1578,7 @@ class TestViewRatesResultSummaryTable:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1601,7 +1601,7 @@ class TestViewRatesResultSummaryTable:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1625,7 +1625,7 @@ class TestViewRatesResultSummaryTable:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1648,7 +1648,7 @@ class TestViewRatesResultSummaryTable:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1672,7 +1672,7 @@ class TestViewRatesResultSummaryTable:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1696,7 +1696,7 @@ class TestViewRatesResultSummaryTable:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1719,7 +1719,7 @@ class TestViewRatesResultSummaryTable:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1742,7 +1742,7 @@ class TestViewRatesResultSummaryTable:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1765,7 +1765,7 @@ class TestViewRatesResultSummaryTable:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1791,7 +1791,7 @@ class TestViewRatesResultSummaryTable:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1828,7 +1828,7 @@ class TestViewRatesResultSummaryTable:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 

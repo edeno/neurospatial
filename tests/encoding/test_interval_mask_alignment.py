@@ -218,7 +218,7 @@ def test_max_gap_rate_not_inflated(env_1d, gap_trajectory) -> None:
         spike_times,
         times,
         positions,
-        smoothing_method="binned",
+        method="binned",
         bandwidth=1.0,
         warn_on_drop=False,
     )
@@ -227,7 +227,7 @@ def test_max_gap_rate_not_inflated(env_1d, gap_trajectory) -> None:
         spike_times,
         times,
         positions,
-        smoothing_method="binned",
+        method="binned",
         bandwidth=1.0,
         max_gap=None,
         warn_on_drop=False,
@@ -464,14 +464,14 @@ def test_clean_data_default_unchanged_single(env_1d, method: str) -> None:
     spike_times = np.array([0.5, 2.5, 4.0, 5.5, 6.5])
 
     res_default = compute_spatial_rate(
-        env_1d, spike_times, times, positions, smoothing_method=method
+        env_1d, spike_times, times, positions, method=method
     )
     res_no_gap = compute_spatial_rate(
         env_1d,
         spike_times,
         times,
         positions,
-        smoothing_method=method,
+        method=method,
         max_gap=None,
     )
     nan_a = np.isnan(res_default.firing_rate)
@@ -496,14 +496,14 @@ def test_clean_data_default_unchanged_batch(env_1d, method: str) -> None:
     ]
 
     res_default = compute_spatial_rates(
-        env_1d, spike_times, times, positions, smoothing_method=method
+        env_1d, spike_times, times, positions, method=method
     )
     res_no_gap = compute_spatial_rates(
         env_1d,
         spike_times,
         times,
         positions,
-        smoothing_method=method,
+        method=method,
         max_gap=None,
     )
     nan_a = np.isnan(res_default.firing_rates)

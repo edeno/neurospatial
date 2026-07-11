@@ -255,7 +255,7 @@ class TestDecodeSessionEquivalence:
             times_arr,
             positions,
             bandwidth=5.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             min_occupancy=0.0,
             fill_value=0.0,
         )
@@ -284,7 +284,7 @@ class TestDecodeSessionEquivalence:
             positions,
             dt=dt,
             bandwidth=5.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             min_occupancy=0.0,
         )
 
@@ -317,7 +317,7 @@ class TestDecodeSessionEquivalence:
             times_arr,
             positions,
             bandwidth=5.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             min_occupancy=0.0,
             fill_value=0.0,
         )
@@ -337,7 +337,7 @@ class TestDecodeSessionEquivalence:
             positions,
             dt=dt,
             bandwidth=5.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             min_occupancy=0.0,
         )
 
@@ -369,7 +369,7 @@ class TestDecodeSessionEncodingModelsPassthrough:
             times_arr,
             positions,
             bandwidth=5.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             min_occupancy=0.0,
             fill_value=0.0,
         )
@@ -393,7 +393,7 @@ class TestDecodeSessionEncodingModelsPassthrough:
             positions,
             dt=dt,
             bandwidth=5.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             min_occupancy=0.0,
         )
 
@@ -420,7 +420,7 @@ class TestDecodeSessionEncodingModelsPassthrough:
             times_arr,
             positions,
             bandwidth=5.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             min_occupancy=0.0,
             fill_value=0.0,
         ).firing_rates
@@ -517,7 +517,7 @@ class TestDecodeSessionOutOfWindowWarning:
             times_arr,
             positions,
             bandwidth=5.0,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             min_occupancy=0.0,
             fill_value=0.0,
         ).firing_rates
@@ -869,7 +869,7 @@ class TestDecodeSessionDtype:
 
         kwargs = {
             "bandwidth": 5.0,
-            "smoothing_method": "diffusion_kde",
+            "method": "diffusion_kde",
             "min_occupancy": 0.0,
             "fill_value": 0.0,
         }
@@ -1021,7 +1021,7 @@ def _summary_reference(env, spike_times, times, positions, *, dt, time_chunk, **
         times_arr,
         positions,
         bandwidth=5.0,
-        smoothing_method="diffusion_kde",
+        method="diffusion_kde",
         min_occupancy=0.0,
         fill_value=0.0,
     ).firing_rates

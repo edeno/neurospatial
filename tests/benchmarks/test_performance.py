@@ -153,7 +153,7 @@ class TestSpatialRateComputationPerformance:
             spike_times,
             times,
             positions,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -172,7 +172,7 @@ class TestSpatialRateComputationPerformance:
             spike_times,
             times,
             positions,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -191,7 +191,7 @@ class TestSpatialRateComputationPerformance:
             spike_times,
             times,
             positions,
-            smoothing_method="binned",
+            method="binned",
         )
 
         assert result.shape == (small_env.n_bins,)

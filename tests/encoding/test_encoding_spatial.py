@@ -93,7 +93,7 @@ class TestSpatialRateResultDefinition:
             firing_rate=firing_rate_single,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         # Attempting to modify should raise FrozenInstanceError
@@ -119,7 +119,7 @@ class TestSpatialRateResultMixinMethods:
             firing_rate=firing_rate,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         peak = result.peak_location()
@@ -143,7 +143,7 @@ class TestSpatialRatesResultDefinition:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         with pytest.raises(FrozenInstanceError):
@@ -170,7 +170,7 @@ class TestSpatialRatesResultMixinMethods:
             firing_rates=firing_rates,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         peaks = result.peak_location()
@@ -191,7 +191,7 @@ class TestSpatialRatesResultMixinMethods:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         peak_rates = result.peak_firing_rate()
@@ -212,7 +212,7 @@ class TestSpatialRatesResultMixinMethods:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         peak_rates = result.peak_firing_rate()
@@ -241,7 +241,7 @@ class TestSpatialRatesResultIteration:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         assert len(result) == firing_rates_batch.shape[0]
@@ -259,7 +259,7 @@ class TestSpatialRatesResultIteration:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         single = result[0]
@@ -271,19 +271,19 @@ class TestSpatialRatesResultIteration:
         firing_rates_batch: NDArray[np.float64],
         occupancy: NDArray[np.float64],
     ) -> None:
-        """__getitem__ should preserve env, smoothing_method, bandwidth."""
+        """__getitem__ should preserve env, method, bandwidth."""
         from neurospatial.encoding.spatial import SpatialRatesResult
 
         result = SpatialRatesResult(
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="gaussian_kde",
+            method="gaussian_kde",
             bandwidth=7.5,
         )
         single = result[2]
         assert single.env is simple_env
-        assert single.smoothing_method == "gaussian_kde"
+        assert single.method == "gaussian_kde"
         assert single.bandwidth == 7.5
         np.testing.assert_array_equal(single.occupancy, occupancy)
 
@@ -300,7 +300,7 @@ class TestSpatialRatesResultIteration:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         for idx in range(len(result)):
@@ -320,7 +320,7 @@ class TestSpatialRatesResultIteration:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         items = list(result)
@@ -372,7 +372,7 @@ class TestSpatialRateResultPlot:
             firing_rate=firing_rate_single,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         assert hasattr(result, "plot")
@@ -396,7 +396,7 @@ class TestSpatialRateResultPlot:
             firing_rate=firing_rate_single,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         ax = result.plot()
@@ -421,7 +421,7 @@ class TestSpatialRateResultPlot:
             firing_rate=firing_rate_single,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         _fig, ax = plt.subplots()
@@ -449,7 +449,7 @@ class TestSpatialRateResultPeakLocation:
             firing_rate=firing_rate_single,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         assert hasattr(result, "peak_location")
@@ -468,7 +468,7 @@ class TestSpatialRateResultPeakLocation:
             firing_rate=firing_rate_single,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         peak = result.peak_location()
@@ -492,7 +492,7 @@ class TestSpatialRateResultSpatialInformation:
             firing_rate=firing_rate_single,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         assert hasattr(result, "spatial_information")
@@ -511,7 +511,7 @@ class TestSpatialRateResultSpatialInformation:
             firing_rate=firing_rate_single,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         info = result.spatial_information()
@@ -533,7 +533,7 @@ class TestSpatialRateResultSpatialInformation:
             firing_rate=firing_rate,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         # Compare with direct call to _metrics
@@ -553,7 +553,7 @@ class TestSpatialRateResultSpatialInformation:
             firing_rate=firing_rate_single,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         info = result.spatial_information()
@@ -573,7 +573,7 @@ class TestSpatialRateResultSpatialInformation:
             firing_rate=firing_rate,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         info = result.spatial_information()
@@ -596,7 +596,7 @@ class TestSpatialRateResultSparsity:
             firing_rate=firing_rate_single,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         assert hasattr(result, "sparsity")
@@ -615,7 +615,7 @@ class TestSpatialRateResultSparsity:
             firing_rate=firing_rate_single,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         spars = result.sparsity()
@@ -637,7 +637,7 @@ class TestSpatialRateResultSparsity:
             firing_rate=firing_rate,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         # Compare with direct call to _metrics
@@ -657,7 +657,7 @@ class TestSpatialRateResultSparsity:
             firing_rate=firing_rate_single,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         spars = result.sparsity()
@@ -675,7 +675,7 @@ class TestSpatialRateResultSparsity:
             firing_rate=firing_rate,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         spars = result.sparsity()
@@ -694,7 +694,7 @@ class TestSpatialRateResultSparsity:
             firing_rate=firing_rate,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         spars = result.sparsity()
@@ -784,7 +784,7 @@ class TestSpatialRateResultGridScore:
             firing_rate=grid_cell_firing_rate,
             occupancy=occ,
             env=regular_grid_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         assert hasattr(result, "grid_score")
@@ -803,7 +803,7 @@ class TestSpatialRateResultGridScore:
             firing_rate=grid_cell_firing_rate,
             occupancy=occ,
             env=regular_grid_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         score = result.grid_score()
@@ -824,7 +824,7 @@ class TestSpatialRateResultGridScore:
             firing_rate=grid_cell_firing_rate,
             occupancy=occ,
             env=regular_grid_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -848,7 +848,7 @@ class TestSpatialRateResultGridScore:
             firing_rate=grid_cell_firing_rate,
             occupancy=occ,
             env=regular_grid_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         score = result.grid_score()
@@ -872,7 +872,7 @@ class TestSpatialRateResultGridProperties:
             firing_rate=grid_cell_firing_rate,
             occupancy=occ,
             env=regular_grid_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         assert hasattr(result, "grid_properties")
@@ -892,7 +892,7 @@ class TestSpatialRateResultGridProperties:
             firing_rate=grid_cell_firing_rate,
             occupancy=occ,
             env=regular_grid_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         props = result.grid_properties()
@@ -911,7 +911,7 @@ class TestSpatialRateResultGridProperties:
             firing_rate=grid_cell_firing_rate,
             occupancy=occ,
             env=regular_grid_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         props = result.grid_properties()
@@ -937,7 +937,7 @@ class TestSpatialRateResultGridProperties:
             firing_rate=grid_cell_firing_rate,
             occupancy=occ,
             env=regular_grid_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -966,7 +966,7 @@ class TestSpatialRateResultBorderScore:
             firing_rate=border_cell_firing_rate,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         assert hasattr(result, "border_score")
@@ -985,7 +985,7 @@ class TestSpatialRateResultBorderScore:
             firing_rate=border_cell_firing_rate,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         score = result.border_score()
@@ -1004,7 +1004,7 @@ class TestSpatialRateResultBorderScore:
             firing_rate=border_cell_firing_rate,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         # Should not raise
@@ -1024,7 +1024,7 @@ class TestSpatialRateResultBorderScore:
             firing_rate=border_cell_firing_rate,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         # Should not raise with either metric
@@ -1046,7 +1046,7 @@ class TestSpatialRateResultBorderScore:
             firing_rate=border_cell_firing_rate,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         # Should not raise with min_area parameter
@@ -1072,7 +1072,7 @@ class TestSpatialRateResultBorderScore:
             firing_rate=firing_rate,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         score = result.border_score()
@@ -1092,7 +1092,7 @@ class TestSpatialRateResultBorderScore:
             firing_rate=border_cell_firing_rate,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1118,7 +1118,7 @@ class TestSpatialRateResultBorderScore:
             firing_rate=border_cell_firing_rate,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         score = result.border_score()
@@ -1154,7 +1154,7 @@ class TestSpatialRateResultRegionCoverage:
             firing_rate=firing_rate_single,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         assert hasattr(result, "region_coverage")
@@ -1177,7 +1177,7 @@ class TestSpatialRateResultRegionCoverage:
             firing_rate=firing_rate,
             occupancy=occ,
             env=env_with_regions,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         coverage = result.region_coverage()
@@ -1198,7 +1198,7 @@ class TestSpatialRateResultRegionCoverage:
             firing_rate=firing_rate,
             occupancy=occ,
             env=env_with_regions,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         # Should not raise with different thresholds
@@ -1222,7 +1222,7 @@ class TestSpatialRateResultRegionCoverage:
             firing_rate=firing_rate,
             occupancy=occ,
             env=env_with_regions,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         # Should only return coverage for specified regions
@@ -1246,7 +1246,7 @@ class TestSpatialRateResultRegionCoverage:
             firing_rate=firing_rate,
             occupancy=occ,
             env=env_with_regions,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         coverage = result.region_coverage()
@@ -1271,7 +1271,7 @@ class TestSpatialRateResultRegionCoverage:
             firing_rate=firing_rate,
             occupancy=occ,
             env=env_with_regions,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1308,7 +1308,7 @@ class TestSpatialRatesResultPlot:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         assert hasattr(result, "plot")
@@ -1332,7 +1332,7 @@ class TestSpatialRatesResultPlot:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         # Should work with idx
@@ -1358,7 +1358,7 @@ class TestSpatialRatesResultPlot:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         ax = result.plot(idx=2)
@@ -1383,7 +1383,7 @@ class TestSpatialRatesResultPlot:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         _fig, ax = plt.subplots()
@@ -1412,7 +1412,7 @@ class TestSpatialRatesResultPlot:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         # Should not raise for any valid index
@@ -1438,7 +1438,7 @@ class TestSpatialRatesResultSpatialInformation:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         assert hasattr(result, "spatial_information")
@@ -1457,7 +1457,7 @@ class TestSpatialRatesResultSpatialInformation:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         info = result.spatial_information()
@@ -1476,7 +1476,7 @@ class TestSpatialRatesResultSpatialInformation:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         info = result.spatial_information()
@@ -1497,7 +1497,7 @@ class TestSpatialRatesResultSpatialInformation:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         expected = batch_spatial_information(firing_rates_batch, occupancy)
@@ -1517,7 +1517,7 @@ class TestSpatialRatesResultSpatialInformation:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         info = result.spatial_information()
@@ -1538,7 +1538,7 @@ class TestSpatialRatesResultSpatialInformation:
             firing_rates=firing_rates,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         info = result.spatial_information()
@@ -1561,7 +1561,7 @@ class TestSpatialRatesResultSparsity:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         assert hasattr(result, "sparsity")
@@ -1580,7 +1580,7 @@ class TestSpatialRatesResultSparsity:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         spars = result.sparsity()
@@ -1599,7 +1599,7 @@ class TestSpatialRatesResultSparsity:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         spars = result.sparsity()
@@ -1620,7 +1620,7 @@ class TestSpatialRatesResultSparsity:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         expected = batch_sparsity(firing_rates_batch, occupancy)
@@ -1640,7 +1640,7 @@ class TestSpatialRatesResultSparsity:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         spars = result.sparsity()
@@ -1660,7 +1660,7 @@ class TestSpatialRatesResultSparsity:
             firing_rates=firing_rates,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         spars = result.sparsity()
@@ -1682,7 +1682,7 @@ class TestSpatialRatesResultSparsity:
             firing_rates=firing_rates,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         spars = result.sparsity()
@@ -1712,7 +1712,7 @@ class TestSpatialRatesResultGridScores:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         assert hasattr(result, "grid_scores")
@@ -1734,7 +1734,7 @@ class TestSpatialRatesResultGridScores:
             firing_rates=firing_rates,
             occupancy=occupancy,
             env=regular_grid_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         scores = result.grid_scores()
@@ -1756,7 +1756,7 @@ class TestSpatialRatesResultGridScores:
             firing_rates=firing_rates,
             occupancy=occupancy,
             env=regular_grid_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         scores = result.grid_scores()
@@ -1780,7 +1780,7 @@ class TestSpatialRatesResultGridScores:
             firing_rates=firing_rates,
             occupancy=occupancy,
             env=regular_grid_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1811,7 +1811,7 @@ class TestSpatialRatesResultGridScores:
             firing_rates=firing_rates,
             occupancy=occupancy,
             env=regular_grid_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         scores = result.grid_scores()
@@ -1836,7 +1836,7 @@ class TestSpatialRatesResultBorderScores:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         assert hasattr(result, "border_scores")
@@ -1855,7 +1855,7 @@ class TestSpatialRatesResultBorderScores:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         scores = result.border_scores()
@@ -1874,7 +1874,7 @@ class TestSpatialRatesResultBorderScores:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         scores = result.border_scores()
@@ -1894,7 +1894,7 @@ class TestSpatialRatesResultBorderScores:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         # Should not raise
@@ -1914,7 +1914,7 @@ class TestSpatialRatesResultBorderScores:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         # Should not raise with either metric
@@ -1936,7 +1936,7 @@ class TestSpatialRatesResultBorderScores:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         # Should not raise with min_area parameter
@@ -1957,7 +1957,7 @@ class TestSpatialRatesResultBorderScores:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -1984,7 +1984,7 @@ class TestSpatialRatesResultBorderScores:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         scores = result.border_scores()
@@ -2009,7 +2009,7 @@ class TestSpatialRatesResultClassify:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         assert hasattr(result, "classify")
@@ -2032,7 +2032,7 @@ class TestSpatialRatesResultClassify:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -2060,7 +2060,7 @@ class TestSpatialRatesResultClassify:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         labels = result.label_cell_types()
@@ -2080,7 +2080,7 @@ class TestSpatialRatesResultClassify:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         labels = result.label_cell_types()
@@ -2100,7 +2100,7 @@ class TestSpatialRatesResultClassify:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         # Should not raise with custom thresholds
@@ -2124,7 +2124,7 @@ class TestSpatialRatesResultClassify:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         labels = result.label_cell_types()
@@ -2148,7 +2148,7 @@ class TestSpatialRatesResultClassify:
             firing_rates=firing_rates,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -2175,7 +2175,7 @@ class TestSpatialRatesResultClassify:
             firing_rates=firing_rates,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -2209,7 +2209,7 @@ class TestSpatialRatesResultClassify:
             firing_rates=firing_rates,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -2241,7 +2241,7 @@ class TestSpatialRatesResultClassify:
             firing_rates=firing_rates,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -2275,7 +2275,7 @@ class TestSpatialRatesResultSummaryTable:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         assert hasattr(result, "summary_table")
@@ -2296,7 +2296,7 @@ class TestSpatialRatesResultSummaryTable:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         df = result.summary_table()
@@ -2315,7 +2315,7 @@ class TestSpatialRatesResultSummaryTable:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         df = result.summary_table()
@@ -2334,7 +2334,7 @@ class TestSpatialRatesResultSummaryTable:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         df = result.summary_table()
@@ -2353,7 +2353,7 @@ class TestSpatialRatesResultSummaryTable:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         df = result.summary_table()
@@ -2372,7 +2372,7 @@ class TestSpatialRatesResultSummaryTable:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         df = result.summary_table()
@@ -2391,7 +2391,7 @@ class TestSpatialRatesResultSummaryTable:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         df = result.summary_table()
@@ -2410,7 +2410,7 @@ class TestSpatialRatesResultSummaryTable:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         df = result.summary_table()
@@ -2429,7 +2429,7 @@ class TestSpatialRatesResultSummaryTable:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         df = result.summary_table()
@@ -2448,7 +2448,7 @@ class TestSpatialRatesResultSummaryTable:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         df = result.summary_table()
@@ -2467,7 +2467,7 @@ class TestSpatialRatesResultSummaryTable:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         df = result.summary_table()
@@ -2486,7 +2486,7 @@ class TestSpatialRatesResultSummaryTable:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         df = result.summary_table()
@@ -2505,7 +2505,7 @@ class TestSpatialRatesResultSummaryTable:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         df = result.summary_table(include_classification=False)
@@ -2524,7 +2524,7 @@ class TestSpatialRatesResultSummaryTable:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         df = result.summary_table()
@@ -2544,7 +2544,7 @@ class TestSpatialRatesResultSummaryTable:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         custom_ids = [f"unit_{i}" for i in range(len(result))]
@@ -2564,7 +2564,7 @@ class TestSpatialRatesResultSummaryTable:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         df = result.summary_table()
@@ -2584,7 +2584,7 @@ class TestSpatialRatesResultSummaryTable:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         df = result.summary_table()
@@ -2604,7 +2604,7 @@ class TestSpatialRatesResultSummaryTable:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         df = result.summary_table()
@@ -2624,7 +2624,7 @@ class TestSpatialRatesResultSummaryTable:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         df = result.summary_table()
@@ -2649,7 +2649,7 @@ class TestSpatialRatesResultSummaryTable:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         df = result.summary_table()
@@ -2674,7 +2674,7 @@ class TestSpatialRatesResultSummaryTable:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         df = result.summary_table()
@@ -2694,7 +2694,7 @@ class TestSpatialRatesResultSummaryTable:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         df = result.summary_table()
@@ -2721,7 +2721,7 @@ class TestSpatialRatesResultSummaryTable:
             firing_rates=firing_rates,
             occupancy=np.ones(n_bins),
             env=env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -2746,7 +2746,7 @@ class TestSpatialRatesResultSummaryTable:
             firing_rates=firing_rates,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         df = result.summary_table()
@@ -2783,7 +2783,7 @@ class TestSummaryTableScoreRecompute:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -2815,7 +2815,7 @@ class TestSummaryTableScoreRecompute:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -2848,7 +2848,7 @@ class TestLabelCellTypesPrecomputedScores:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -2873,7 +2873,7 @@ class TestLabelCellTypesPrecomputedScores:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -2906,7 +2906,7 @@ class TestLabelCellTypesPrecomputedScores:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         n_neurons = firing_rates_batch.shape[0]
@@ -2928,7 +2928,7 @@ class TestLabelCellTypesPrecomputedScores:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         n_neurons = firing_rates_batch.shape[0]
@@ -2950,7 +2950,7 @@ class TestLabelCellTypesPrecomputedScores:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         n_neurons = firing_rates_batch.shape[0]
@@ -2972,7 +2972,7 @@ class TestLabelCellTypesPrecomputedScores:
             firing_rates=firing_rates_batch,
             occupancy=occupancy,
             env=simple_env,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
         n_neurons = firing_rates_batch.shape[0]
@@ -3157,7 +3157,7 @@ class TestComputeSpatialRateFunction:
         )
         assert result.env is trajectory_env
 
-    def test_result_stores_smoothing_method(
+    def test_result_stores_method(
         self,
         trajectory_env: Environment,
         place_cell_spikes: NDArray[np.float64],
@@ -3172,9 +3172,9 @@ class TestComputeSpatialRateFunction:
             place_cell_spikes,
             trajectory_times,
             trajectory_positions,
-            smoothing_method="gaussian_kde",
+            method="gaussian_kde",
         )
-        assert result.smoothing_method == "gaussian_kde"
+        assert result.method == "gaussian_kde"
 
     def test_result_stores_bandwidth(
         self,
@@ -3195,7 +3195,7 @@ class TestComputeSpatialRateFunction:
         )
         assert result.bandwidth == 10.0
 
-    def test_default_smoothing_method(
+    def test_default_method(
         self,
         trajectory_env: Environment,
         place_cell_spikes: NDArray[np.float64],
@@ -3211,7 +3211,7 @@ class TestComputeSpatialRateFunction:
             trajectory_times,
             trajectory_positions,
         )
-        assert result.smoothing_method == "diffusion_kde"
+        assert result.method == "diffusion_kde"
 
     def test_default_bandwidth(
         self,
@@ -3329,9 +3329,9 @@ class TestComputeSpatialRateSmoothingMethods:
             place_cell_spikes,
             trajectory_times,
             trajectory_positions,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
         )
-        assert result.smoothing_method == "diffusion_kde"
+        assert result.method == "diffusion_kde"
         assert result.firing_rate.shape == (trajectory_env.n_bins,)
 
     def test_gaussian_kde_method(
@@ -3349,9 +3349,9 @@ class TestComputeSpatialRateSmoothingMethods:
             place_cell_spikes,
             trajectory_times,
             trajectory_positions,
-            smoothing_method="gaussian_kde",
+            method="gaussian_kde",
         )
-        assert result.smoothing_method == "gaussian_kde"
+        assert result.method == "gaussian_kde"
         assert result.firing_rate.shape == (trajectory_env.n_bins,)
 
     def test_binned_method(
@@ -3369,9 +3369,9 @@ class TestComputeSpatialRateSmoothingMethods:
             place_cell_spikes,
             trajectory_times,
             trajectory_positions,
-            smoothing_method="binned",
+            method="binned",
         )
-        assert result.smoothing_method == "binned"
+        assert result.method == "binned"
         assert result.firing_rate.shape == (trajectory_env.n_bins,)
 
     def test_different_methods_produce_different_results(
@@ -3389,14 +3389,14 @@ class TestComputeSpatialRateSmoothingMethods:
             place_cell_spikes,
             trajectory_times,
             trajectory_positions,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
         )
         result_gaussian = compute_spatial_rate(
             trajectory_env,
             place_cell_spikes,
             trajectory_times,
             trajectory_positions,
-            smoothing_method="gaussian_kde",
+            method="gaussian_kde",
         )
 
         # Results should be different (though the peak location should be similar)
@@ -3786,7 +3786,7 @@ class TestComputeSpatialRatesFunction:
         )
         assert result.env is trajectory_env
 
-    def test_result_stores_smoothing_method(
+    def test_result_stores_method(
         self,
         trajectory_env: Environment,
         multiple_place_cell_spikes: list[NDArray[np.float64]],
@@ -3801,9 +3801,9 @@ class TestComputeSpatialRatesFunction:
             multiple_place_cell_spikes,
             trajectory_times,
             trajectory_positions,
-            smoothing_method="gaussian_kde",
+            method="gaussian_kde",
         )
-        assert result.smoothing_method == "gaussian_kde"
+        assert result.method == "gaussian_kde"
 
     def test_result_stores_bandwidth(
         self,
@@ -3824,7 +3824,7 @@ class TestComputeSpatialRatesFunction:
         )
         assert result.bandwidth == 10.0
 
-    def test_default_smoothing_method(
+    def test_default_method(
         self,
         trajectory_env: Environment,
         multiple_place_cell_spikes: list[NDArray[np.float64]],
@@ -3840,7 +3840,7 @@ class TestComputeSpatialRatesFunction:
             trajectory_times,
             trajectory_positions,
         )
-        assert result.smoothing_method == "diffusion_kde"
+        assert result.method == "diffusion_kde"
 
     def test_default_bandwidth(
         self,
@@ -4094,9 +4094,9 @@ class TestComputeSpatialRatesSmoothingMethods:
             multiple_place_cell_spikes,
             trajectory_times,
             trajectory_positions,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
         )
-        assert result.smoothing_method == "diffusion_kde"
+        assert result.method == "diffusion_kde"
         n_neurons = len(multiple_place_cell_spikes)
         assert result.firing_rates.shape == (n_neurons, trajectory_env.n_bins)
 
@@ -4115,9 +4115,9 @@ class TestComputeSpatialRatesSmoothingMethods:
             multiple_place_cell_spikes,
             trajectory_times,
             trajectory_positions,
-            smoothing_method="gaussian_kde",
+            method="gaussian_kde",
         )
-        assert result.smoothing_method == "gaussian_kde"
+        assert result.method == "gaussian_kde"
         n_neurons = len(multiple_place_cell_spikes)
         assert result.firing_rates.shape == (n_neurons, trajectory_env.n_bins)
 
@@ -4136,9 +4136,9 @@ class TestComputeSpatialRatesSmoothingMethods:
             multiple_place_cell_spikes,
             trajectory_times,
             trajectory_positions,
-            smoothing_method="binned",
+            method="binned",
         )
-        assert result.smoothing_method == "binned"
+        assert result.method == "binned"
         n_neurons = len(multiple_place_cell_spikes)
         assert result.firing_rates.shape == (n_neurons, trajectory_env.n_bins)
 
@@ -4277,7 +4277,7 @@ class TestComputeSpatialRatesConsistency:
             multiple_place_cell_spikes,
             trajectory_times,
             trajectory_positions,
-            smoothing_method="diffusion_kde",
+            method="diffusion_kde",
             bandwidth=5.0,
         )
 
@@ -4288,7 +4288,7 @@ class TestComputeSpatialRatesConsistency:
                 spike_times,
                 trajectory_times,
                 trajectory_positions,
-                smoothing_method="diffusion_kde",
+                method="diffusion_kde",
                 bandwidth=5.0,
             )
             # Compare firing rates. The matrix-free apply-path sums a wider
@@ -4420,7 +4420,7 @@ class TestComputeSpatialRatesEdgeCases:
         assert len(result) == 0
         assert result.firing_rates.shape == (0, trajectory_env.n_bins)
 
-    def test_empty_neurons_list_validates_smoothing_method(
+    def test_empty_neurons_list_validates_method(
         self,
         trajectory_env: Environment,
         trajectory_times: NDArray[np.float64],
@@ -4435,7 +4435,7 @@ class TestComputeSpatialRatesEdgeCases:
                 [],
                 trajectory_times,
                 trajectory_positions,
-                smoothing_method="invalid",  # type: ignore[arg-type]
+                method="invalid",  # type: ignore[arg-type]
             )
 
     def test_empty_neurons_list_has_valid_occupancy(
@@ -4687,9 +4687,9 @@ class TestSpatialRateRecovery:
 
     @pytest.mark.slow
     @pytest.mark.parametrize(
-        "smoothing_method", ["binned", "gaussian_kde", "diffusion_kde"]
+        "method", ["binned", "gaussian_kde", "diffusion_kde"]
     )
-    def test_recovers_field_location(self, place_cell_session, smoothing_method):
+    def test_recovers_field_location(self, place_cell_session, method):
         from neurospatial.encoding.spatial import compute_spatial_rate
 
         env, spike_times, times, positions = place_cell_session
@@ -4698,7 +4698,7 @@ class TestSpatialRateRecovery:
             spike_times,
             times,
             positions,
-            smoothing_method=smoothing_method,
+            method=method,
             bandwidth=self.BANDWIDTH,
         )
 
@@ -4754,7 +4754,7 @@ class TestSpatialRateNaNPositionHandling:
         )
 
         clean = compute_spatial_rate(
-            env, spike_times, times, positions, smoothing_method="binned", bandwidth=3.0
+            env, spike_times, times, positions, method="binned", bandwidth=3.0
         )
 
         # Inject NaN into 10% of positions (a tracking dropout).
@@ -4769,7 +4769,7 @@ class TestSpatialRateNaNPositionHandling:
             spike_times,
             times,
             positions_nan,
-            smoothing_method="binned",
+            method="binned",
             bandwidth=3.0,
         )
 
@@ -4879,7 +4879,7 @@ class TestComputeSpatialRatesDtype:
             multiple_place_cell_spikes,
             trajectory_times,
             trajectory_positions,
-            smoothing_method=method,
+            method=method,
             dtype=np.float32,
         )
         assert result.firing_rates.dtype == np.float32
@@ -4916,7 +4916,7 @@ class TestComputeSpatialRatesDtype:
         from neurospatial.encoding.spatial import compute_spatial_rates
 
         kwargs = {
-            "smoothing_method": method,
+            "method": method,
             "min_occupancy": 0.1,
         }
         r64 = compute_spatial_rates(
@@ -5073,7 +5073,7 @@ class TestComputeSpatialRatesThroughputContract:
                     spikes,
                     times,
                     positions,
-                    smoothing_method="diffusion_kde",
+                    method="diffusion_kde",
                     bandwidth=20.0,
                 )
             return occ_spy.call_count
@@ -5115,7 +5115,7 @@ class TestComputeSpatialRatesThroughputContract:
                     spikes,
                     times,
                     positions,
-                    smoothing_method="diffusion_kde",
+                    method="diffusion_kde",
                     bandwidth=20.0,
                 )
             return resolve_spy.call_count
@@ -5147,7 +5147,7 @@ def test_batch_plot_without_idx_raises_actionable_error(simple_env, occupancy):
         firing_rates=firing_rates,
         occupancy=occupancy,
         env=simple_env,
-        smoothing_method="diffusion_kde",
+        method="diffusion_kde",
         bandwidth=5.0,
     )
     with pytest.raises((TypeError, ValueError), match=r"(?i)idx|unit|plot\(0\)"):

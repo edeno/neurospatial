@@ -345,7 +345,7 @@ class TestComputeEgocentricRatesParameters:
 
         assert result is not None
 
-    def test_smoothing_method_options(self, trajectory_data, spike_times_list):
+    def test_method_options(self, trajectory_data, spike_times_list):
         """Test that all smoothing methods work."""
         from neurospatial.encoding.egocentric import compute_egocentric_rates
 
@@ -357,7 +357,7 @@ class TestComputeEgocentricRatesParameters:
                 trajectory_data["positions"],
                 trajectory_data["headings"],
                 trajectory_data["object_positions"],
-                smoothing_method=method,
+                method=method,
             )
             assert result is not None
 
@@ -514,7 +514,7 @@ class TestComputeEgocentricRatesEdgeCases:
 class TestComputeEgocentricRatesInputValidation:
     """Tests for input validation."""
 
-    def test_empty_spike_times_list_validates_smoothing_method(self, trajectory_data):
+    def test_empty_spike_times_list_validates_method(self, trajectory_data):
         """Empty list should still reject invalid smoothing methods."""
         from neurospatial.encoding.egocentric import compute_egocentric_rates
 
@@ -526,7 +526,7 @@ class TestComputeEgocentricRatesInputValidation:
                 trajectory_data["positions"],
                 trajectory_data["headings"],
                 trajectory_data["object_positions"],
-                smoothing_method="invalid",  # type: ignore[arg-type]
+                method="invalid",  # type: ignore[arg-type]
             )
 
     def test_invalid_metric_raises(self, trajectory_data, spike_times_list):
@@ -623,7 +623,7 @@ class TestComputeEgocentricRatesConsistencyWithSingle:
             distance_range=(0.0, 50.0),
             n_distance_bins=10,
             n_direction_bins=12,
-            smoothing_method="binned",
+            method="binned",
         )
 
         # Compute with batch function
@@ -637,7 +637,7 @@ class TestComputeEgocentricRatesConsistencyWithSingle:
             distance_range=(0.0, 50.0),
             n_distance_bins=10,
             n_direction_bins=12,
-            smoothing_method="binned",
+            method="binned",
         )
 
         # Compare results
@@ -670,7 +670,7 @@ class TestComputeEgocentricRatesConsistencyWithSingle:
             distance_range=(0.0, 50.0),
             n_distance_bins=10,
             n_direction_bins=12,
-            smoothing_method="binned",
+            method="binned",
         )
 
         # Compute each neuron individually
@@ -685,7 +685,7 @@ class TestComputeEgocentricRatesConsistencyWithSingle:
                 distance_range=(0.0, 50.0),
                 n_distance_bins=10,
                 n_direction_bins=12,
-                smoothing_method="binned",
+                method="binned",
             )
 
             assert_allclose(
@@ -734,7 +734,7 @@ class TestComputeEgocentricRatesSignature:
             "n_distance_bins",
             "n_direction_bins",
             "metric",
-            "smoothing_method",
+            "method",
             "bandwidth",
             "min_occupancy",
             "n_jobs",

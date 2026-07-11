@@ -156,7 +156,7 @@ def test_place_field_pipeline(medium_2d_env):
     # Compute place field
     firing_rate = compute_spatial_rate(
         medium_2d_env, spike_times, times, positions,
-        smoothing_method="diffusion_kde", bandwidth=5.0
+        method="diffusion_kde", bandwidth=5.0
     ).firing_rate
 
     # Detect place fields

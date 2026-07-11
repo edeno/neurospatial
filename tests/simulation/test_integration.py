@@ -264,7 +264,7 @@ class TestPlaceFieldDetectionAccuracy:
             if len(spike_times) > 5:
                 # Compute spatial firing-rate map
                 rate_map = compute_spatial_rate(
-                    env, spike_times, times, positions, smoothing_method="diffusion_kde"
+                    env, spike_times, times, positions, method="diffusion_kde"
                 ).firing_rate
 
                 # Find peak (detected center)
@@ -348,7 +348,7 @@ class TestPlaceFieldDetectionAccuracy:
                 spikes_short,
                 times_short,
                 positions_short,
-                smoothing_method="diffusion_kde",
+                method="diffusion_kde",
             ).firing_rate
             detected_short = env.bin_centers[np.argmax(rate_map_short)]
             error_short = np.linalg.norm(center - detected_short)
@@ -361,7 +361,7 @@ class TestPlaceFieldDetectionAccuracy:
                 spikes_long,
                 times_long,
                 positions_long,
-                smoothing_method="diffusion_kde",
+                method="diffusion_kde",
             ).firing_rate
             detected_long = env.bin_centers[np.argmax(rate_map_long)]
             error_long = np.linalg.norm(center - detected_long)

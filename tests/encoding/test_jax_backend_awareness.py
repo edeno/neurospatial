@@ -265,7 +265,7 @@ class TestSpatialRateResultWithJax:
             firing_rate=firing_rate_jax,  # type: ignore[arg-type]
             occupancy=occupancy_jax,  # type: ignore[arg-type]
             env=simple_env,
-            smoothing_method="binned",
+            method="binned",
             bandwidth=5.0,
         )
 
@@ -290,7 +290,7 @@ class TestSpatialRateResultWithJax:
             firing_rate=firing_rate_jax,  # type: ignore[arg-type]
             occupancy=occupancy_jax,  # type: ignore[arg-type]
             env=simple_env,
-            smoothing_method="binned",
+            method="binned",
             bandwidth=5.0,
         )
 
@@ -316,7 +316,7 @@ class TestSpatialRateResultWithJax:
             firing_rate=firing_rate_jax,  # type: ignore[arg-type]
             occupancy=occupancy_jax,  # type: ignore[arg-type]
             env=simple_env,
-            smoothing_method="binned",
+            method="binned",
             bandwidth=5.0,
         )
 
@@ -349,7 +349,7 @@ class TestSpatialRatesResultWithJax:
             firing_rates=firing_rates_jax,  # type: ignore[arg-type]
             occupancy=occupancy_jax,  # type: ignore[arg-type]
             env=simple_env,
-            smoothing_method="binned",
+            method="binned",
             bandwidth=5.0,
         )
 
@@ -374,7 +374,7 @@ class TestSpatialRatesResultWithJax:
             firing_rates=firing_rates_jax,  # type: ignore[arg-type]
             occupancy=occupancy_jax,  # type: ignore[arg-type]
             env=simple_env,
-            smoothing_method="binned",
+            method="binned",
             bandwidth=5.0,
         )
 
@@ -398,7 +398,7 @@ class TestSpatialRatesResultWithJax:
             firing_rates=firing_rates_jax,  # type: ignore[arg-type]
             occupancy=occupancy_jax,  # type: ignore[arg-type]
             env=simple_env,
-            smoothing_method="binned",
+            method="binned",
             bandwidth=5.0,
         )
 
@@ -519,7 +519,7 @@ class TestViewRateResultWithJax:
             env=simple_env,
             gaze_model="fixed_distance",
             view_distance=10.0,
-            smoothing_method="binned",
+            method="binned",
             bandwidth=5.0,
         )
 
@@ -641,7 +641,7 @@ class TestNumpyJaxConsistency:
             firing_rate=firing_rate_np,
             occupancy=occupancy_np,
             env=simple_env,
-            smoothing_method="binned",
+            method="binned",
             bandwidth=5.0,
         )
         info_np = result_np.spatial_information()
@@ -651,7 +651,7 @@ class TestNumpyJaxConsistency:
             firing_rate=jnp.array(firing_rate_np),  # type: ignore[arg-type]
             occupancy=jnp.array(occupancy_np),  # type: ignore[arg-type]
             env=simple_env,
-            smoothing_method="binned",
+            method="binned",
             bandwidth=5.0,
         )
         info_jax = result_jax.spatial_information()
@@ -676,7 +676,7 @@ class TestNumpyJaxConsistency:
             firing_rate=firing_rate_np,
             occupancy=occupancy_np,
             env=simple_env,
-            smoothing_method="binned",
+            method="binned",
             bandwidth=5.0,
         )
         peak_np = result_np.peak_location()
@@ -686,7 +686,7 @@ class TestNumpyJaxConsistency:
             firing_rate=jnp.array(firing_rate_np),  # type: ignore[arg-type]
             occupancy=jnp.array(occupancy_np),  # type: ignore[arg-type]
             env=simple_env,
-            smoothing_method="binned",
+            method="binned",
             bandwidth=5.0,
         )
         peak_jax = result_jax.peak_location()
@@ -728,7 +728,7 @@ class TestJaxArrayPreservation:
             firing_rate=firing_rate_jax,  # type: ignore[arg-type]
             occupancy=occupancy_jax,  # type: ignore[arg-type]
             env=simple_env,
-            smoothing_method="binned",
+            method="binned",
             bandwidth=5.0,
         )
 
@@ -754,7 +754,7 @@ class TestJaxArrayPreservation:
             firing_rate=firing_rate_jax,  # type: ignore[arg-type]
             occupancy=occupancy_jax,  # type: ignore[arg-type]
             env=simple_env,
-            smoothing_method="binned",
+            method="binned",
             bandwidth=5.0,
         )
 
@@ -786,7 +786,7 @@ class TestJaxArrayPreservation:
             firing_rates=firing_rates_jax,  # type: ignore[arg-type]
             occupancy=occupancy_jax,  # type: ignore[arg-type]
             env=simple_env,
-            smoothing_method="binned",
+            method="binned",
             bandwidth=5.0,
         )
 
@@ -817,7 +817,7 @@ class TestJaxArrayPreservation:
             firing_rates=firing_rates_jax,  # type: ignore[arg-type]
             occupancy=occupancy_jax,  # type: ignore[arg-type]
             env=simple_env,
-            smoothing_method="binned",
+            method="binned",
             bandwidth=5.0,
         )
 
