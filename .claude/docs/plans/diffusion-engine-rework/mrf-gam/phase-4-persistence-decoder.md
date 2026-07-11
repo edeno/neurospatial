@@ -26,7 +26,7 @@ round-trip.
     - Metadata scalars: `penalty`, `rank`, `n_iter`, `converged`, `reml_objective`, and the `(rank,)` `penalty_weights` vector.
     - Per-unit table columns: `deviance` `(n_units,)`, and `coefficients` as a fixed-length `(rank,)` per-unit vector column.
   - `read_place_field`: reconstruct the GAM fields (absent → `None`); preserve shapes. **Bump the encoding-model schema version again** (glm-diagnostics addition) — or extend phase-0's bump if phases ship together; document which.
-- **Decoder — functional path** (`decoding/session.py`): thread `penalty`/`rank` through `decode_session`, `_build_encoding_model`, `_encode_and_bin` into `compute_spatial_rates(method=..., penalty=..., rank=...)`. Update the `Literal` cast at the encode step to include `"glm"`.
+- **Decoder — functional path** (`decoding/session.py`): thread `penalty`/`rank` through **both** `decode_session` (`:92`) **and `decode_session_summary` (`:631`)** — they have separate signatures but share the encode step (`_build_encoding_model` `:348` / `_encode_and_bin` `:566`) — into `compute_spatial_rates(method=..., penalty=..., rank=...)`. Make `bandwidth`/`min_occupancy` nullable on both and add the same method-specific validation as phase-3. Update the `Literal` cast at the encode step (`:507`) to include `"glm"`.
 - **Decoder — class** (`decoding/estimator.py`): add `penalty: float | None = None`, `rank: int | None = None` fields to `BayesianDecoder`; make `bandwidth`/`min_occupancy` nullable; add the same method-specific validation as phase-3 in `__post_init__`; forward the glm params in `fit` (`:351-353`). Update the class docstring.
 - **Docs:** CHANGELOG — glm usable through NWB + both decoder paths; nullable `bandwidth` in `BayesianDecoder`. Update any decoding QUICKSTART/docstring example that fixes `bandwidth`.
 
@@ -44,6 +44,7 @@ round-trip.
 | `test_nwb_ratio_roundtrip_unchanged` | a `diffusion_kde` result round-trips with GAM fields absent/`None` (no regression from phase-0). |
 | `test_nwb_reads_legacy_key` (carried from phase-0) | still green — old `"smoothing_method"` files read. |
 | `test_decode_session_glm` | `decode_session(..., method="glm", penalty=None)` runs end-to-end and produces a valid `DecodingResult`. |
+| `test_decode_session_summary_glm` | `decode_session_summary(..., method="glm", penalty=None)` runs end-to-end and produces a valid `DecodingSummary` (the streamed sibling — Finding 8); its encoding model matches `decode_session`'s. |
 | `test_bayesian_decoder_glm` | `BayesianDecoder(method="glm", rank=100).fit(...).predict(...)` runs; `bandwidth`/`min_occupancy` nullable; method-specific validation rejects `bandwidth=5.0` + `method="glm"`. |
 | `test_decoder_validation_mirrors_encoder` | the decoder's mutual-exclusivity/value-domain errors match `compute_spatial_rate`'s (same messages/branches). |
 

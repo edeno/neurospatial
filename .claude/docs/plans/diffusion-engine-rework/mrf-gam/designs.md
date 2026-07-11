@@ -33,6 +33,27 @@ to `fit_mrf_gam` is wired in `spatial.py` (phase-3).
 `MRFBasis` / `MRFFit` NamedTuples: define `MRFBasis` next to `DiffusionGeometry`
 (`ops/diffusion.py` or `environment/_types`); `MRFFit` in `_glm.py`.
 
+### Boundary orientation, dtype, backend (phase-3 wiring — Finding 5)
+
+The statistical core is **bin-major**; the encoding API is **unit-major**. The phase-3
+orchestrator must transpose at **both** boundaries:
+
+- **Counts in:** the per-unit binned counts on the encoding side are `(n_units, n_bins)` (as
+  `SpatialRatesResult.firing_rates` and the spike-binning helpers use). The fit needs
+  `(n_live_bins, n_units)` → `counts.T[live_bins, :]`. Occupancy is `(n_bins,)` → `[live_bins]`.
+- **Rates out:** `MRFFit.log_rate` is `(n_live_bins, n_units)` bin-major. Build the full
+  `firing_rates` `(n_units, n_bins)` = `_RATE_FLOOR`-filled, then scatter
+  `max(exp(η), _RATE_FLOOR).T` into columns `live_bins` → i.e. rows are units. The **singular**
+  `SpatialRateResult.firing_rate` is `(n_bins,)`.
+- **dtype:** `compute_spatial_rates` has `dtype: {np.float32, np.float64} = np.float64`. The glm
+  **core stays float64** (correctness); cast the assembled `firing_rates` (and stored
+  coefficients/diagnostics as appropriate) to the requested `dtype` at the result boundary, matching
+  the ratio path.
+- **backend:** `compute_spatial_rates` has `backend: {"numpy","jax","auto"}`. `backend != "numpy"`
+  routes the fit to `_glm_jax` (phase-5). The return-type contract **follows the existing smoothing
+  paths** — see [JAX mirror](#jax) for the decision (return backend-native arrays vs. always-NumPy),
+  which phase-5 must make consistent with `diffuse`/`smooth`.
+
 ---
 
 ## <a id="resolver"></a>Resolver: live-component eigenbasis (phase-1)
@@ -69,10 +90,14 @@ def live_component_eigenbasis(
     S = _symmetric_conjugate(W, volumes)       # M^{-1/2}(D−W)M^{-1/2}
     eigvals, eigvecs = _live_modes(S, volumes, labels, live_comp, r_eff)  # (r_eff,), (n_bins, r_eff)
 
-    # 4. restrict to live bins; zero the designated per-component null weights EXACTLY
-    B = eigvecs[live_bins, :]                   # (n_live_bins, r_eff)
+    # 4. apply M^{-1/2} to eigenvectors, then restrict to live bins.
+    #    _symmetric_eigenbasis returns Q (eigenvectors of S = M^{-1/2}(D-W)M^{-1/2}),
+    #    NOT M^{-1/2}Q. The penalty basis is B = M^{-1/2}Q — this matters on
+    #    nonuniform-volume polar/mesh layouts (spec §3). Scale rows by 1/sqrt(volume).
+    inv_sqrt_vol = 1.0 / np.sqrt(volumes)                  # M^{-1/2} diagonal, (n_bins,)
+    B = (inv_sqrt_vol[:, None] * eigvecs)[live_bins, :]    # (n_live_bins, r_eff)
     d = eigvals.copy()
-    d[_designated_nulls(eigvals, labels_of_modes)] = 0.0   # one null per live component
+    d[_designated_nulls(eigvals, labels_of_modes)] = 0.0   # one null per live component, exactly 0.0
     return MRFBasis(B, d, live_bins, n_live_components)
 ```
 
@@ -83,10 +108,22 @@ component's constant (null) mode. Track which component each retained mode came 
 components; the perf fallback (spec §11) computes per-live-component `eigsh`. Either way the
 return contract ([MRFBasis](shared-contracts.md#mrfbasis)) is identical.
 
-**Env entry + caching.** `Environment._mrf_basis(occupancy, *, rank)` (`fields.py`) builds/reuses
-the geometry eigenbasis via the existing `versioned_cached_property` machinery and does the
-occupancy-dependent live selection per call (cheap masking). Geometry (S, eigenpairs) is cached;
-the live-bin selection is not (it depends on per-call occupancy support).
+**Env entry + caching (Finding 6).** `Environment._mrf_basis(occupancy, *, rank)` (`fields.py`)
+splits into a **cached geometry eigenbasis** and a **per-call live selection**:
+
+- Add `_mrf_eigenbasis` as a `versioned_cached_property` returning a **mutable holder**
+  `{"eigvals": …, "eigvecs": …, "rank": R_built}` — same grow-by-replace pattern as the existing
+  `_diffusion_eigenbasis` (`fields.py:535`). The holder is dropped wholesale on any `_state_version`
+  bump; keyed only by geometry (no `(sigma, tol)` — the MRF penalty basis is bandwidth-independent).
+- `_mrf_basis` computes the **global** over-request size needed to yield `r_eff` live modes
+  (bounded by `n_bins`), then: if the holder's `rank ≥ needed`, **slice** it (no eigensolve);
+  else call `_symmetric_eigenbasis(S, needed)` (or dense `eigh` past `dense_fraction·n`) and
+  **replace** the holder at the larger rank. Then apply `M^{-1/2}`, do the occupancy-dependent live
+  selection + null-zeroing, and return `MRFBasis`.
+- The live selection is **not** cached (it varies with per-call occupancy support); only the
+  eigensolve is. So a repeated `_mrf_basis` call at the same-or-smaller rank does **not** re-run the
+  eigensolver — the phase-1 test asserts this (spy on `_symmetric_eigenbasis` / holder `rank`
+  unchanged), distinct from the `_diffusion_geometry`-reuse assertion.
 
 ---
 
@@ -104,28 +141,40 @@ def _newton_fit_numpy(counts, occupancy, B, penalty_diag, *, max_iter, tol):
     # warm start: constant log-rate per unit (project onto the basis)
     rate0 = np.clip(counts.sum(0) / max(occupancy.sum(), 1e-9), 1e-6, None)  # (n_units,)
     coeffs = _lstsq_constant(B, np.log(rate0))              # (r, n_units)
-    prev_obj = None
+    prev_obj = _penalized_obj(coeffs, B, counts, occupancy, penalty_diag)  # warm-start objective
     converged = False
+    max_accepted_step = 0.0
     for it in range(1, max_iter + 1):
-        eta = B @ coeffs                                    # (n_bins, n_units)
-        mu = occupancy[:, None] * np.exp(np.clip(eta, -_ETA_CLIP, _ETA_CLIP))
+        eta = np.clip(B @ coeffs, -_ETA_CLIP, _ETA_CLIP)    # (n_bins, n_units)
+        mu = occupancy[:, None] * np.exp(eta)
         grad = B.T @ (counts - mu) - penalty_diag[:, None] * coeffs           # (r, n_units)
         # Hessian per unit: Bᵀ diag(mu_k) B + diag(penalty_diag) + jitter I
         H = np.einsum("ik,ij,il->kjl", B, mu, B, optimize=True)  # (n_units, r, r) — or loop
         H += (penalty_diag + _HESSIAN_JITTER) * np.eye(r)[None]
-        step = np.linalg.solve(H, grad.T[..., None])[..., 0].T   # (r, n_units)
-        coeffs, obj = _step_halve(coeffs, step, B, counts, occupancy, penalty_diag)
-        if prev_obj is not None and _rel_decrease(prev_obj, obj) < tol:
+        newton_step = np.linalg.solve(H, grad.T[..., None])[..., 0].T   # (r, n_units)
+        # step-halving returns the ACCEPTED (possibly halved) step + new coeffs + new objective
+        coeffs, accepted_step, obj = _step_halve(
+            coeffs, newton_step, B, counts, occupancy, penalty_diag
+        )
+        max_accepted_step = float(np.max(np.abs(accepted_step)))
+        if _rel_decrease(prev_obj, obj) < tol:              # relative penalized-objective decrease
             converged = True
             break
         prev_obj = obj
-    return coeffs, eta, mu, it, _max_coeff_step(step), converged
+    # Recompute final eta/mu from the UPDATED coeffs so REML/deviance see a consistent
+    # (coeffs, eta, mu) triple — never the pre-update arrays (Finding 3).
+    eta = np.clip(B @ coeffs, -_ETA_CLIP, _ETA_CLIP)
+    mu = occupancy[:, None] * np.exp(eta)
+    return coeffs, eta, mu, it, max_accepted_step, converged
 ```
 
-- **`_step_halve`**: up to `_MAX_STEP_HALVINGS` halvings; accept the first that decreases the
-  penalized objective (float32 uses `_DESCENT_TOL` slack — phase-5). Penalized objective per unit:
-  `−Σ(n·η − μ) + ½·Σ(penalty_diag·γ²)`; the batch stopping criterion is the **max** relative
-  decrease across units (matches the reference; batch scalar).
+- **`_step_halve(coeffs, newton_step, …) -> (new_coeffs, accepted_step, obj)`**: up to
+  `_MAX_STEP_HALVINGS` halvings; accept the first `α·newton_step` (α = 1, ½, ¼, …) that decreases
+  the penalized objective (float32 uses `_DESCENT_TOL` slack — phase-5). **Returns the accepted
+  step `α·newton_step`** (so the caller reports the real convergence diagnostic, not the unhalved
+  Newton step) and the new objective. Penalized objective per unit: `−Σ(n·η − μ) +
+  ½·Σ(penalty_diag·γ²)`; the batch stopping criterion is the **max** relative decrease across units
+  (matches the reference; batch scalar).
 - **`_lstsq_constant`**: solve `B γ ≈ log_rate0·1` per unit (`np.linalg.lstsq(B, ones)` scaled) so
   the warm start is a constant field in the basis.
 - The `einsum` Hessian is O(n·r²·n_units); for large `r` loop over units instead. Correctness
@@ -138,13 +187,14 @@ def _newton_fit_numpy(counts, occupancy, B, penalty_diag, *, max_iter, tol):
 Spec §5. Pooled objective over `log λ`, minimized by `scipy.optimize.minimize_scalar`:
 
 ```python
-def _reml_objective_numpy(log_penalty, counts, occupancy, B, d, penalty_rank, *, max_iter, tol):
+def _reml_objective_numpy(log_penalty, counts, occupancy, B, d, penalty_rank, max_iter, tol):
+    # ALL args positional — minimize_scalar supplies extras via positional `args=` (Finding 4).
     penalty = np.exp(log_penalty)
-    coeffs, eta, mu, *_ = _newton_fit_numpy(counts, occupancy, B, penalty * d, max_iter=max_iter, tol=tol)
+    coeffs, eta, mu, *_ = _newton_fit_numpy(counts, occupancy, B, penalty * d, max_iter, tol)
     loglik = np.sum(counts * eta - mu, axis=0)                    # (n_units,)
     pen = 0.5 * penalty * np.sum(d[:, None] * coeffs**2, axis=0)  # (n_units,)
     # log|H_k| via Cholesky; +inf if any H_k not PD (reject that λ)
-    logdet = _batched_chol_logdet(B, mu, penalty * d)            # (n_units,) or raises→inf
+    logdet = _batched_chol_logdet(B, mu, penalty * d)            # (n_units,); non-PD → inf
     reml = -loglik + pen - 0.5 * penalty_rank * log_penalty + 0.5 * logdet
     return float(np.sum(reml)) if np.all(np.isfinite(logdet)) else np.inf
 
@@ -153,12 +203,23 @@ def select_penalty_by_reml(counts, occupancy, B, d, penalty_rank, *, max_iter, t
         return None, None                        # (penalty, reml_objective)
     res = scipy.optimize.minimize_scalar(
         _reml_objective_numpy, bounds=_LOG_PENALTY_BOUNDS, method="bounded",
-        args=(counts, occupancy, B, d, penalty_rank), options={"xatol": _REML_XATOL},
+        args=(counts, occupancy, B, d, penalty_rank, max_iter, tol),   # positional args
+        options={"xatol": _REML_XATOL},
     )
     if not np.isfinite(res.fun):
         raise ValueError("REML found no finite objective in the log-penalty interval ...")
     return float(np.exp(res.x)), float(res.fun)
 ```
+
+**`_newton_fit_numpy` takes `max_iter`/`tol` positionally** (or bind them with
+`functools.partial` at the `minimize_scalar` call). Keyword-only controls cannot be filled
+through `minimize_scalar`'s positional `args=` — that raises `TypeError` (Finding 4).
+
+**Final-fit `penalty_diag` when `penalty is None`.** REML-skip (`r==0`) and the no-data cases
+return `penalty=None`, but the final `_newton_fit_numpy` still needs a numeric `penalty_diag`.
+Use `penalty_diag = np.zeros_like(d)` (an unpenalized fit — correct, since `r==0` means every
+weight is a structural null anyway), while **`MRFFit.penalty` stays `None`**. Never pass `None`
+into the fit.
 
 Note the `−½ · penalty_rank · log λ` term uses `penalty_rank = r_eff − n_live_components`
 summed over units ⇒ the `n_units` factor is implicit in `np.sum(reml)` (spec §5). Cholesky:
@@ -211,3 +272,10 @@ Spec §7 table. Handle before/around the fit so outputs stay model-consistent:
 - Parity target: rate error `~1e-6` vs the float64 NumPy core; the parity test also asserts the
   float32 path **converges** (`converged is True`, `n_iter < _MAX_ITER`) — proving the floor is
   applied (spec §10).
+- **Return-type contract (Finding 5).** Match the existing smoothing backend semantics: check what
+  `Environment.diffuse` / `smooth` / the ratio `compute_spatial_rates(backend="jax")` path return
+  today (JAX arrays vs. NumPy-converted) and mirror it exactly, so glm doesn't introduce a
+  divergent contract. Whatever the diagnostics (`coefficients`, etc.) end up as, `firing_rates` on
+  the result honors `dtype` and the same backend-array convention as the ratio path. Confirm the
+  choice against `encoding/_backend.py` before implementing; the parity test asserts values match
+  regardless of array type (`np.asarray(...)` both sides).

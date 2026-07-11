@@ -124,6 +124,20 @@ class MRFFit(NamedTuple):
 §6.3), never per-unit. `penalty` records the value **actually applied** (a supplied fixed
 `penalty` is echoed, not discarded); `reml_objective is None` ⟺ REML did not run.
 
+**`penalty is None` vs. the fit's `penalty_diag`.** `MRFFit.penalty` is `None` for REML-skip
+(`r==0`) and no-data cases, but the final Newton fit **never** receives `None` — it uses
+`penalty_diag = np.zeros_like(d)` (unpenalized; correct because `r==0` means every weight is a
+structural null). The `None` lives only on the returned `MRFFit`, not inside the solver.
+
+**Boundary orientation** (the fit is **bin-major**, the encoding API **unit-major**): the
+phase-3 orchestrator transposes counts in (`(n_units, n_bins) → (n_live_bins, n_units)` restricted
+to `live_bins`) and rates out (`log_rate (n_live_bins, n_units) →` result `firing_rates
+(n_units, n_bins)`). See [designs.md → Boundary orientation](designs.md#module-layout).
+
+**`pooled=False` (phase-6) widens `penalty`/`reml_objective`** to `float | NDArray[(n_units,)] |
+None` (per-unit λ_k / score; still scalar `None` when `r==0`, which is population-level). Every
+other field keeps its shared-λ shape. The default `pooled=True` is unchanged.
+
 ---
 
 ## <a id="result-fields"></a>Result-class GAM fields

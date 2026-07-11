@@ -24,7 +24,8 @@ float32.
 
 - **Baseline capture (before the JAX path):** run the phase-2 NumPy fit on the representative simulated population fixture and pickle `coefficients`, `firing_rate`, `penalty`, `deviance`, plus wall-clock/peak-memory (to the scratchpad or a test-local artifact). This is the parity + speedup reference.
 - Create `encoding/_glm_jax.py`: mirror `_newton_fit_numpy` / `_reml_objective_numpy` with `jnp`, `jax.jit` (static `max_iter`), batched over units, `_FIT_DTYPE = jnp.float32`. Apply `tol = max(tol, _FIT_TOL_FLOOR)` and the `_DESCENT_TOL` step-halving slack. Cast inputs to float32 at entry, results back to float64 at exit.
-- Dispatch: `fit_mrf_gam` selects NumPy vs JAX via `encoding/_backend.py` (same awareness the other encoders use) — JAX only when the extra is installed and the backend is active; otherwise the NumPy core.
+- Dispatch: `fit_mrf_gam` selects NumPy vs JAX via `encoding/_backend.py` (same awareness the other encoders use) — JAX only when the extra is installed and `backend != "numpy"`; otherwise the NumPy core.
+- **Decide + match the return-type contract (Finding 5):** inspect what the ratio `compute_spatial_rates(backend="jax")` / `Environment.diffuse` return today (backend-native JAX arrays vs. NumPy-converted) and make the glm path **identical**, so `method="glm"` doesn't introduce a divergent backend contract. `firing_rates` honors the `dtype` param regardless. Document the chosen convention in the `compute_spatial_rates` docstring.
 - **Comparison (after):** re-run on the identical fixture; assert `coefficients`/`firing_rate`/`deviance` match the pickled NumPy baseline within `~1e-6` (rate) and report the wall-clock/memory delta.
 - Docs: note in the `compute_spatial_rate` docstring / CHANGELOG that glm accelerates with the optional JAX extra (float32; parity `~1e-6`).
 
@@ -41,6 +42,7 @@ float32.
 | `test_jax_numpy_parity` | on the simulated population: JAX `firing_rate`/`coefficients`/`deviance` match the NumPy core within `~1e-6`; `penalty`/`rank`/`penalty_rank` identical. Mark `slow` if JAX warm-up dominates. |
 | `test_jax_converges_float32` | the float32 JAX fit reports `converged is True` and `n_iter < _MAX_ITER` — proving `_FIT_TOL_FLOOR` is applied; a variant passing raw `tol=1e-10` (no floor) runs to `_MAX_ITER` (guards the floor). |
 | `test_jax_absent_uses_numpy` | with the JAX extra unavailable/backend off, `fit_mrf_gam` uses the NumPy core and still produces a valid `MRFFit` (no import error). |
+| `test_backend_return_matches_ratio` | `compute_spatial_rates(method="glm", backend="jax")` returns the **same array-type convention** as `method="diffusion_kde", backend="jax"` (both JAX arrays, or both NumPy — whichever the ratio path does); `firing_rates.dtype` honors `dtype` (Finding 5). |
 | `test_reml_parity` | REML-selected λ agrees between paths within `_REML_XATOL`-consistent tolerance. |
 
 ## Fixtures

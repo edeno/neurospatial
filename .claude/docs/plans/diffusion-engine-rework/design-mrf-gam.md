@@ -9,7 +9,8 @@ functions, ported from `non_local_detector`'s `sorted_spikes_mrf`.
 main (v0.8.0) 2026-07-10.
 **Reference:** `~/Documents/GitHub/non_local_detector/.../likelihoods/sorted_spikes_mrf.py`;
 memory [[nld-diffusion-mrf-learnings]].
-**Target release:** 0.9.0 (adds `method="glm"`; **hard-renames** `smoothing_method → method`).
+**Target release:** 0.9.0 (adds `method="glm"` + `pooled` on `compute_spatial_rate(s)`;
+**hard-renames** `smoothing_method → method` across **all** smoothing encoders).
 
 ---
 
@@ -26,19 +27,22 @@ penalty **is** the diffusion energy, so it reuses PR2's cached eigenbasis.
 `compute_spatial_rates` (plural — the batched population entry the decoder uses), fitting a
 penalized-Poisson GAM place field: occupancy is a **log-offset (exposure), never a
 denominator**; `λ` chosen by **REML**; proper likelihood (deviance). NumPy/SciPy core (base
-install) + optional JAX accel.
+install) + optional JAX accel. **`λ` is shared across the population by default (`pooled=True`);
+a per-neuron `λ_k` option (`pooled=False`) is the final in-scope capability** (§5 — implemented
+last so the shared-λ core lands and is reviewed first).
+
+**Scope note (supersedes earlier deferrals).** Two items this design earlier deferred are now
+**in scope**, per project direction: (a) the `smoothing_method → method` rename is applied to
+**ALL** smoothing encoders (spatial, view, egocentric + their result classes), so `method` is
+uniform across the API with no cross-result-class inconsistency; (b) **per-neuron λ
+(`pooled=False`)** ships as the final phase, not a post-release follow-up.
 
 **Non-goals (this PR):**
 - Replacing the ratio estimators (default stays `method="diffusion_kde"`).
-- **Per-neuron λ (`pooled=False`)** — **deferred**; the core is single-shared-λ only, and
-  `pooled` is **not exposed** until the stretch. (No `pooled` param this PR — see §5.)
-- Clusterless/mark-space; changing the operator/eigenbasis.
 - **Adding `glm` to the *other* encoders** (`compute_view_rate`, `compute_egocentric_rate`, …) —
-  only `compute_spatial_rate(s)` gain the estimator. **NOTE (supersedes the earlier deferral):
-  the `smoothing_method → method` rename is applied to ALL smoothing encoders now** (spatial,
-  view, egocentric + their result classes), so the `method` name is uniform across the API and no
-  cross-result-class inconsistency is left behind — see the plan's phase-0. Only *glm support* is
-  spatial-only.
+  only `compute_spatial_rate(s)` gain the estimator; the others are renamed for uniformity but
+  keep their ratio-only `Literal`.
+- Clusterless/mark-space; changing the operator/eigenbasis.
 
 ## 3. Model
 
@@ -113,7 +117,7 @@ step_k    = solve(hessian_k, grad_k)                 # np.linalg.solve batches o
   nonconvergence at a chosen λ.)
 - **Degenerate data** — see §7.
 
-## 5. λ selection — REML (single shared λ; per-neuron deferred)
+## 5. λ selection — REML (single shared λ default; per-neuron `pooled=False` option)
 
 Default: one shared `λ` by **REML** (negative Laplace-approximate restricted marginal
 likelihood, Wood 2011). The df term is **per-neuron**, so the pooled objective is
@@ -156,8 +160,19 @@ objective exists in the interval).
   identifiability warning, §7). The result **records the supplied `penalty`** (the model actually
   fitted) and sets only `reml_objective=None`. `penalty=None` in the result is reserved for
   automatic-REML-skipped (`r==0`) and no-data cases (§7).
-- **Per-neuron λ is deferred** (§2): no `pooled` param this PR. The stretch adds
-  `pooled=False` (per-neuron REML) later; the core is shared-λ only.
+- **Per-neuron λ (`pooled=False`) — the final in-scope capability**, added last (§2). Default
+  stays `pooled=True` (one shared λ, everything above). `pooled=False` selects an independent
+  `λ_k` per unit by minimizing **each unit's** REML score (drop the `Σ_k` — the pooled objective
+  is already a per-unit sum), then a per-unit final fit at each `λ_k`. **The basis `B`, weights
+  `d`, and penalty rank `r` are shared geometry — identical for every unit**; only the counts
+  differ. Consequences:
+  - **`r == 0` is a population-level property** (shared basis), so REML is skipped for the whole
+    population regardless of `pooled`; `penalty` stays a scalar `None` (not a per-unit vector).
+  - When `r > 0`, `penalty` and `reml_objective` become finite `(n_units,)` vectors (one λ_k /
+    score per unit); a zero-spike unit still fits (its likelihood is flat toward the rate floor,
+    `minimize_scalar` still returns a finite in-bounds λ_k — no per-unit `None`/`nan`).
+  - Shapes: shared-λ (`pooled=True`) keeps scalar `penalty`/`reml_objective` exactly as today;
+    only `pooled=False` widens them to vectors (§6.3, §8).
 
 ## 6. Eigenbasis access + API
 
@@ -244,6 +259,11 @@ shared stopping criterion (the `max` relative-objective decrease across neurons,
 reference), so there is a single convergence flag and iteration count. (Per-unit convergence
 would require a redesign that freezes converged units while others continue — out of scope.)
 
+**`pooled=False` (§5) widens two fields only:** `penalty` and `reml_objective` become `(n_units,)`
+vectors (per-unit λ_k / score) — but still scalar `None` when `r == 0` (population-level skip).
+`converged`/`n_iter` stay batch scalars; all other fields keep their shared-λ shapes. Under the
+default `pooled=True` nothing changes.
+
 **`deviance` is the unpenalized Poisson deviance per unit** — the *model-fit* quantity, distinct
 from the penalized-deviance *convergence* objective: `D_k = 2·Σ_i [n_ik·log(n_ik/μ_ik) − (n_ik −
 μ_ik)]`, where **`μ_ik = o_i · firing_rate_ik`** (the **stored** rate map, so deviance describes
@@ -303,10 +323,14 @@ The `smoothing_method → method` rename touches persistence and the decoder:
   Reader reads `"method"`, with a **defensive fallback to the old `"smoothing_method"` key** so
   previously-saved models still load (read-side only — no API alias). Write `bandwidth` as
   nullable (`None` for glm). **GAM diagnostics round-trip**, with concrete placement:
-  - **Metadata scalars** (batch-level): `penalty` λ, `rank`, `n_iter`, `converged`,
-    `reml_objective`, and the `(rank,)` `penalty_weights` vector.
-  - **Per-unit table columns**: `deviance` (`(n_units,)`), and `coefficients` as a
-    **fixed-length `(rank,)` per-unit vector** column (one row per unit).
+  - **Metadata scalars** (batch-level): `rank`, `n_iter`, `converged`, and the `(rank,)`
+    `penalty_weights` vector. `penalty` λ and `reml_objective` are metadata scalars **under
+    `pooled=True`**; **under `pooled=False` they move to per-unit table columns** (each is
+    `(n_units,)`). A reader keys on the stored `pooled` flag (or on whether the value is scalar vs
+    vector) to place them.
+  - **Per-unit table columns**: `deviance` (`(n_units,)`), `coefficients` as a **fixed-length
+    `(rank,)` per-unit vector** column, and (when `pooled=False`) per-unit `penalty` /
+    `reml_objective`.
   - Round-trip preserves shapes; a ratio-method result persists these as absent/`None`.
 - **Decoder — functional + class paths.** `decode_session` / `decode_session_summary`
   ([decoding/session.py:100,180](../../../src/neurospatial/decoding/session.py)): rename the
@@ -379,7 +403,10 @@ Occupancy is the existing `compute_occupancy` exposure. `firing_rate` composes w
 - **NWB round-trip**: glm result (with GAM diagnostics + `bandwidth=None`) writes and reads back;
   old `"smoothing_method"` files still read.
 - **All layouts** smoke-tested (1D track, 2D open+masked, hex, polar, mesh).
-- **(stretch)** `pooled=False` recovers per-neuron λ — only when the stretch lands.
+- **`pooled=False`** recovers **distinct** per-neuron λ_k on a population with unit-varying
+  smoothness (variance across λ_k > 0); `pooled=True` (default) is scalar-λ and byte-identical to
+  the shared-λ result; `r==0` under `pooled=False` still skips REML population-wide (scalar
+  `penalty=None`).
 
 ## 11. Risks / open items
 

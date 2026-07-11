@@ -25,7 +25,12 @@ encoding functions (decoder/persistence follow in phase-4).
 
 - **Params:** on `compute_spatial_rate` and `compute_spatial_rates`, add `"glm"` to the `method` `Literal`; convert `bandwidth`/`min_occupancy`/`fill_value` to sentinel `None` defaults and add `penalty: float | None = None`, `rank: int | None = None` ([contract](shared-contracts.md#method-param)). Resolve ratio defaults (`bandwidth→5.0`, `min_occupancy→0.0`) after validation so existing ratio behavior is unchanged.
 - **Validation:** implement the mutual-exclusivity + value-domain checks ([contract](shared-contracts.md#method-param)); house the glm value-domain validators alongside `_validate_smoothing_parameters` in `encoding/_smoothing.py` (or `_glm.py`). Order: mutual-exclusivity → value domains → resolve defaults.
-- **Dispatch:** when `method == "glm"`, compute occupancy (existing `compute_occupancy`) + pixellated counts, call `env._mrf_basis(occupancy, rank=R)` then `fit_mrf_gam(basis, counts, occupancy, penalty=penalty, rank=R)`; assemble the full active-bin `firing_rate` `(n_bins[, n_units])` = `_RATE_FLOOR` scattered with `max(exp(η), _RATE_FLOOR)` on `live_bins` ([designs.md#degenerate](designs.md#degenerate)). Ratio methods keep their current path untouched.
+- **Dispatch (with explicit orientation + dtype — Finding 5):** when `method == "glm"`, compute occupancy (`compute_occupancy`, `(n_bins,)`) + the per-unit binned counts. The encoding side is **unit-major** `(n_units, n_bins)`; the fit is **bin-major**. So:
+  - **counts in:** `counts_fit = counts.T[live_bins, :]` → `(n_live_bins, n_units)`; `occ_fit = occupancy[live_bins]`.
+  - call `basis = env._mrf_basis(occupancy, rank=R)`, `fit = fit_mrf_gam(basis, counts_fit, occ_fit, penalty=penalty, rank=R)`.
+  - **rates out:** allocate `firing_rates = np.full((n_units, n_bins), _RATE_FLOOR)`; scatter `max(exp(fit.log_rate), _RATE_FLOOR).T` (`(n_units, n_live_bins)`) into columns `basis.live_bins`. Singular path builds `(n_bins,)`.
+  - **dtype:** cast the assembled `firing_rates` to the requested `dtype` (`{np.float32, np.float64}`) at the result boundary, like the ratio path; the glm core stays float64.
+  - Ratio methods keep their current path untouched. See [designs.md → Boundary orientation](designs.md#module-layout).
 - **Degenerate dispatch** ([designs.md#degenerate](designs.md#degenerate)): no-neurons, zero-total-occupancy, dead-component (warn), zero-spike, and the `penalty=0` rank-deficiency warning (`matrix_rank(B[exposed_live_bins]) < r_eff`). Each warns, none raise.
 - **Result classes:** add the GAM fields ([contract](shared-contracts.md#result-fields)) to `SpatialRateResult` / `SpatialRatesResult` (all `None`/defaults for ratio results); widen `bandwidth` to `float | None`; set `bandwidth=None` for glm. Indexing a plural result stamps `unit_id` and slices `coefficients[:, i]`/`deviance[i]` (extend `__getitem__` at `spatial.py:982`). `summary_table` (`:1724`) gains the GAM scalar columns when present; `to_dataframe`/`summary`/`to_xarray` unchanged in shape.
 - **Docs:** QUICKSTART + `compute_spatial_rate` docstring — a `method="glm"` example (occupancy-as-offset, `penalty=None` REML default, finite where ratio NaNs); CHANGELOG — the new estimator (spatial-only).
@@ -49,6 +54,8 @@ encoding functions (decoder/persistence follow in phase-4).
 | `test_degenerate_cases` | no-neurons / zero-occupancy / dead-component / zero-spike each produce the [designs.md#degenerate](designs.md#degenerate) row and warn (none raise). |
 | `test_penalty0_identifiability` | `penalty=0` warns **iff** `matrix_rank(B[exposed_live_bins]) < r_eff`. |
 | `test_agreement_with_ratio` | on a well-sampled arena glm and the ratio estimator agree qualitatively (peak co-location, correlation above a threshold). |
+| `test_glm_orientation` | glm `firing_rates` is `(n_units, n_bins)` (unit-major, matching the ratio result); per-unit peak bins land where each simulated unit's field is — i.e. the transpose is correct, not swapped. Singular `firing_rate` is `(n_bins,)`. |
+| `test_glm_dtype` | `dtype=np.float32` → `firing_rates.dtype == float32`; `np.float64` → float64; values agree within float32 tol. |
 | `test_default_method_unchanged` | omitting `method` → `"diffusion_kde"`, byte-identical to the pre-phase result. |
 | `test_all_layouts_smoke` | glm runs on 1D track, 2D open+masked, hex, polar, mesh (finite output). Mark `slow` if the mesh/polar builds are heavy. |
 
