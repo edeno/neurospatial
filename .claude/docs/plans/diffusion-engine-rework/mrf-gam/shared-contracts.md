@@ -103,9 +103,12 @@ def _mrf_basis(self, occupancy: NDArray[np.float64], *, rank: int) -> MRFBasis: 
 
 ## <a id="mrffit"></a>Fit return: `MRFFit`
 
-Produced by `fit_mrf_gam(basis, counts, occupancy, *, penalty)` — **no `rank` arg** (the basis is
-the single source of truth for rank — Finding 5); `counts`/`occupancy` **arrive already restricted
-to `basis.live_bins`** and are validated, never re-sliced (Finding 1). `NamedTuple`, arrays float64:
+Produced by `fit_mrf_gam(basis, counts, occupancy, *, penalty, pooled=True, backend="numpy")` —
+**no `rank` arg** (the basis is the single source of truth for rank); `pooled` is wired in phase-6,
+`backend` in phase-5 (both in the signature from phase-2 so phase-3 forwards them unchanged);
+`counts`/`occupancy` **arrive already restricted to `basis.live_bins`** and are validated, never
+re-sliced. `MRFFit` arrays are **always NumPy** (public return-type conversion is phase-3's job).
+`NamedTuple`:
 
 ```python
 class MRFFit(NamedTuple):
@@ -120,7 +123,13 @@ class MRFFit(NamedTuple):
     n_iter: int                         # batch-level scalar (max(per-unit) when looped)
     reml_objective: float | NDArray | None  # None if REML didn't run; (n_units,) per-unit (nan for fallback units)
     penalty_selected_by_reml: NDArray | None # (n_units,) bool — pooled=False only; False = pooled-λ fallback unit
+    pooled: bool                        # the input pooled flag — the ONLY reliable source for NWB (Finding 3)
 ```
+
+**`pooled` is a stored field, not inferable (Finding 3).** For fixed-penalty / `r==0` / all-zero
+cases the scalar outputs are identical under `pooled=True` and `pooled=False`, so NWB cannot
+reconstruct the flag from the values — it must be carried on `MRFFit` and the result, and persisted
+explicitly.
 
 **Invariants:** `converged`/`n_iter` are **batch scalars** (one shared stopping criterion, spec
 §6.3), never per-unit. `penalty` records the value **actually applied** (a supplied fixed
@@ -163,6 +172,13 @@ widens to `float | None` (`None` for glm).
 | `n_iter` | scalar `int` | same |
 | `reml_objective` | scalar, `(n_units,)` (pooled=False; `nan` for fallback units), or `None` | scalar or `[i]` |
 | `penalty_selected_by_reml` | `(n_units,)` bool (pooled=False only) or `None` | `[i]` or `None` |
+| `pooled` | `bool` (glm) or `None` (ratio) — persisted; the only reliable NWB source | same |
+
+**Phasing of the fields.** Most GAM fields are added in **phase-3**. **`pooled` and
+`penalty_selected_by_reml` are added in phase-6** (with the `pooled` param): phase-3/phase-4 glm
+results are implicitly shared-λ and carry neither; phase-6 adds them and their NWB persistence
+(reader defaults a missing `pooled` → `True`, so phase-4-era files read correctly). The vector
+shapes of `penalty`/`reml_objective` likewise appear only in phase-6.
 
 `firing_rate` (existing field) for glm is `max(exp(η), _RATE_FLOOR)` in **active-bin order,
 shape `(n_bins,)`** — dead/non-live bins are `_RATE_FLOOR`. Terminal verbs (`to_dataframe`,

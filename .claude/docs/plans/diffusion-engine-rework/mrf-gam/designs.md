@@ -22,7 +22,7 @@ New files under `src/neurospatial/encoding/`:
 
 | file | phase | contents |
 | --- | --- | --- |
-| `_glm.py` | 2 | module constants ([shared-contracts](shared-contracts.md#constants)); `MRFFit`; the orchestrator `fit_mrf_gam(basis, counts, occupancy, *, penalty) -> MRFFit` (**no `rank` arg — Finding 5**: effective rank is `basis.B.shape[1]`, the single source of truth; `MRFFit.rank` is derived from it); degenerate-case dispatch; deviance. `counts`/`occupancy` arrive **already restricted to `basis.live_bins`** (phase-3 owns the restriction — Finding 1); `fit_mrf_gam` validates `counts.shape[0] == basis.B.shape[0]` and does **not** re-slice. Pure NumPy/SciPy. |
+| `_glm.py` | 2 | module constants ([shared-contracts](shared-contracts.md#constants)); `MRFFit`; the orchestrator **`fit_mrf_gam(basis, counts, occupancy, *, penalty, pooled=True, backend="numpy") -> MRFFit`** (**phased final signature — Finding 2**: `pooled` is wired in phase-6, `backend` in phase-5; both exist from phase-2 so phase-3 forwards them unchanged). **No `rank` arg** — effective rank is `basis.B.shape[1]`, the single source of truth; `MRFFit.rank` is derived from it. Includes degenerate-case dispatch + deviance. `counts`/`occupancy` arrive **already restricted to `basis.live_bins`** (phase-3 owns the restriction); `fit_mrf_gam` validates `counts.shape[0] == basis.B.shape[0]`, never re-slices. `MRFFit` arrays are **always NumPy** (the public return-type conversion is phase-3's job). Pure NumPy/SciPy core. |
 | `_glm_numpy.py` | 2 | `_newton_fit_numpy(counts, occupancy, B, penalty_diag, max_iter, tol) -> (coeffs, eta, mu, n_iter, max_step, converged)` (**all positional** so REML's `minimize_scalar(args=…)` can call it — Finding 2); `_reml_objective_numpy(...)`. The float64 core. |
 | `_glm_jax.py` | 5 | float32 JAX mirror of `_glm_numpy` (`jit`, batched); selected via `encoding/_backend.py`. |
 
@@ -49,12 +49,16 @@ orchestrator must transpose at **both** boundaries:
   **core stays float64** (correctness); cast the assembled `firing_rates` (and stored
   coefficients/diagnostics as appropriate) to the requested `dtype` at the result boundary, matching
   the ratio path.
-- **backend:** `compute_spatial_rates` has `backend: {"numpy","jax","auto"}`. Resolve with
-  `get_backend_name(backend)` ([_backend.py:165](../../../src/neurospatial/encoding/_backend.py)),
-  **not** a raw `backend != "numpy"` check. **Phase-3 fixes the public return contract**: it runs
-  the NumPy core and, when the resolved backend is `"jax"`, converts the assembled `firing_rates`
-  (+ occupancy) to JAX arrays to match the ratio path. **Phase-5 only accelerates the fit compute**
-  behind that contract — it does not change the return type.
+- **backend — two separable concerns (Finding 2):**
+  1. **Compute backend** (which fit runs): `fit_mrf_gam(..., backend=)` selects the fit engine —
+     NumPy float64 (phase-2) vs JAX float32 (phase-5). **Until phase-5 lands, `backend="jax"` falls
+     back to the NumPy compute** (documented), so phase-3 can forward the resolved backend
+     unconditionally. `MRFFit` arrays are **always cast back to NumPy** at the fit boundary.
+  2. **Return-array type** (public `firing_rates`): phase-3 resolves `get_backend_name(backend)`
+     ([_backend.py:165](../../../src/neurospatial/encoding/_backend.py)) — **not** a raw
+     `backend != "numpy"` check — and, when the resolved backend is `"jax"`, converts the assembled
+     `firing_rates` to a JAX array to match the ratio path. This fixes the public return contract in
+     phase-3; phase-5 changes only concern (1), never the return type.
 
 ---
 
@@ -117,20 +121,35 @@ def select_live_basis(Q, Lam, mode_comp, volumes, labels, occupancy, *, rank) ->
     R = _DEFAULT_MAX_RANK if rank is None else int(rank)
     r_eff = max(n_live_components, min(live_bins.size, R))
     live_modes = np.flatnonzero(np.isin(mode_comp, live_comp))      # live-component modes, λ-sorted
-    # (1) reserve EXACTLY ONE null per live component FIRST — its smallest-λ mode (Finding 1).
-    #     A pure global "first r_eff" would drop a whole component when a small positive mode of
-    #     component A sorts before component B's (numerically-positive) null, esp. at r_eff==n_live.
-    null_idx = np.array([np.flatnonzero(mode_comp == c)[0] for c in live_comp])  # one per live comp
-    # (2) fill the remaining r_eff - n_live_components slots globally by smallest λ.
-    remaining = live_modes[~np.isin(live_modes, null_idx)]          # still λ-sorted
-    fill_idx = remaining[: r_eff - n_live_components]
-    keep = np.concatenate([null_idx, fill_idx])                    # nulls first, then fills
     inv_sqrt_vol = 1.0 / np.sqrt(volumes)                          # M^{-1/2}; B = M^{-1/2}Q (spec §3)
-    B = (inv_sqrt_vol[:, None] * Q[:, keep])[live_bins, :]          # (n_live_bins, r_eff)
-    d = Lam[keep].copy()
-    d[:n_live_components] = 0.0                                     # the reserved nulls (intercepts)
+
+    # (1) INTERCEPT per live component — CONSTRUCTED STRUCTURALLY, not read off the spectrum
+    #     (Finding 5). The null of (D−W)v = λMv is v = 1 (constant per component), so the intercept
+    #     basis column in η-space is the constant indicator on that component. Reading "the smallest-λ
+    #     mode" is fragile: a tiny positive mode can precede the numerically-resolved null within a
+    #     component. Building the exact constant makes B[:, intercept_c] provably constant per comp.
+    intercept_cols = []                                            # each constant on its comp, 0 elsewhere
+    for c in live_comp:
+        e = (labels == c).astype(np.float64)                       # indicator 1_c
+        intercept_cols.append(e / np.linalg.norm(e))               # unit-norm constant (η-space; d=0)
+    B_int = np.column_stack(intercept_cols)[live_bins, :]          # (n_live_bins, n_live_components)
+
+    # (2) FILL with the smallest-λ NON-constant live modes — exclude each component's spectral null
+    #     (its smallest mode) so the constant direction isn't double-counted.
+    comp_null = np.array([np.flatnonzero(mode_comp == c)[0] for c in live_comp])
+    fill_pool = live_modes[~np.isin(live_modes, comp_null)]        # non-constant live modes, λ-sorted
+    fill_idx = fill_pool[: r_eff - n_live_components]
+    B_fill = (inv_sqrt_vol[:, None] * Q[:, fill_idx])[live_bins, :]
+
+    B = np.concatenate([B_int, B_fill], axis=1)                    # (n_live_bins, r_eff); intercepts first
+    d = np.concatenate([np.zeros(n_live_components), Lam[fill_idx]])  # intercepts unpenalized (exactly 0)
     return MRFBasis(B, d, live_bins, n_live_components)
 ```
+
+`B[:, :n_live_components]` are the constructed intercepts — each **exactly constant** on its live
+component (unit-tested), so the null structure no longer depends on eigenvalue ordering. The
+growth loop still guarantees every live component is represented (needed for the non-constant
+fill and for `comp_null`).
 
 ### (c) `Environment._mrf_basis(occupancy, *, rank)` — glue + iterative growth
 
@@ -144,7 +163,10 @@ def _mrf_basis(self, occupancy, *, rank):
     holder = self._mrf_eigenbasis                        # cached mutable holder (a)
     live = _live_comp(labels, occupancy)
     r_eff = _target_live_rank(labels, occupancy, rank)   # max(n_live_comp, min(n_live_bins, R))
-    G = max(holder["G"], r_eff)
+    # G must be >= n_components: _symmetric_eigenbasis RAISES on rank < n_components (total geometry
+    # components, diffusion.py:419). r_eff counts only LIVE components, so 1 live + several dead
+    # would start G < n_components and raise on the first solve (Finding 1).
+    G = max(holder["G"], r_eff, n_components)
     while True:                                          # iterative grow: dead modes may crowd out live
         Q, Lam, mode_comp = _ensure_global_modes(holder, S, labels, G)   # may be transient (dense)
         n_live_modes = int(np.isin(mode_comp, live).sum())

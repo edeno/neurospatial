@@ -266,6 +266,7 @@ params default `None` (sentinel)** so validation can distinguish omitted from ex
 | `converged` | **scalar** bool | same scalar |
 | `n_iter` | **scalar** int | same scalar |
 | `reml_objective` | scalar, or `None` whenever REML did not run (fixed λ, `r==0`, no-data) | same |
+| `pooled` | `bool` — the input `pooled` flag; **persisted** as the only reliable NWB source (§8, cannot be inferred from scalar outputs) | same |
 
 `converged` and `n_iter` are **batch-level scalars**, not per-unit: the batched Newton uses one
 shared stopping criterion (the `max` relative-objective decrease across neurons, matching the
