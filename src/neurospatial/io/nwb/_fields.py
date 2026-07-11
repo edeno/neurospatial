@@ -504,6 +504,10 @@ def write_spatial_rates(
         ``(env.n_bins,)``; if a ``unit_table`` column is named ``unit_id`` or
         ``firing_rate`` (reserved); or if a companion add fails after a partial
         write (the partial objects are rolled back first).
+    NotImplementedError
+        If ``result.method == "glm"`` -- the GAM diagnostics are not yet
+        persisted, so writing a glm result would silently drop them. NWB
+        persistence of the GAM fields is a later release.
     ImportError
         If pynwb is not installed.
 
@@ -533,6 +537,20 @@ def write_spatial_rates(
     from pynwb import TimeSeries
 
     from neurospatial.io.nwb._environment import write_environment
+
+    # Reject glm results: this writer persists only the ratio-method metadata
+    # (method + bandwidth), not the GAM diagnostics (coefficients, penalty, rank,
+    # deviance, converged, n_iter, reml_objective). Writing a glm result here
+    # would silently drop all of that. Fail loudly until GAM-field persistence
+    # lands, rather than round-tripping a lossy record.
+    if result.method == "glm":
+        raise NotImplementedError(
+            "write_spatial_rates does not yet support method='glm' results: the "
+            "GAM diagnostics (coefficients, penalty, rank, deviance, converged, "
+            "n_iter, reml_objective) are not persisted, so writing would silently "
+            "drop them. NWB persistence of the GAM fields is a later release; for "
+            "now, recompute glm rates after loading rather than saving them."
+        )
 
     env = result.env
     # L1: defensively COPY the arrays (np.array, not a no-copy np.asarray) so the
@@ -622,7 +640,13 @@ def write_spatial_rates(
         {
             "schema_version": SPATIAL_RATES_SCHEMA_VERSION,
             "method": str(result.method),
-            "bandwidth": float(result.bandwidth),
+            # Ratio results always carry a float bandwidth (glm -- the only method
+            # with ``bandwidth=None`` -- is rejected at preflight above). The
+            # None-guard keeps the writer type-safe and defensive without ever
+            # emitting a null for a legitimately-writable result.
+            "bandwidth": (
+                None if result.bandwidth is None else float(result.bandwidth)
+            ),
             "n_bins": int(env.n_bins),
             "n_units": n_units,
             "unit_table_columns": unit_table_columns,

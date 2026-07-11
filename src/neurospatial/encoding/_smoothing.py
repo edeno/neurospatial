@@ -541,6 +541,170 @@ def _validate_smoothing_inputs(
         )
 
 
+_SPATIAL_METHODS: tuple[str, ...] = (
+    "diffusion_kde",
+    "gaussian_kde",
+    "binned",
+    "glm",
+)
+_RATIO_METHOD_PARAMS: tuple[str, ...] = ("bandwidth", "min_occupancy", "fill_value")
+
+
+def _validate_glm_penalty(penalty: Any) -> float:
+    """Validate a glm ``penalty`` value: reject ``bool`` first, then finite & >= 0.
+
+    ``bool`` is checked BEFORE any numeric coercion because ``True`` / ``False``
+    are ``int`` in Python (``float(True) == 1.0``), so a bare numeric check would
+    silently accept them as ``lambda`` values.
+    """
+    if isinstance(penalty, bool):
+        raise ValueError(
+            f"penalty must be a real number (a smoothing weight lambda), not bool; "
+            f"got {penalty!r}."
+        )
+    try:
+        value = float(penalty)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"penalty must be a real number (a smoothing weight lambda); got "
+            f"{penalty!r}."
+        ) from exc
+    except OverflowError as exc:
+        # A Python int too large to represent as a finite float (e.g. 10**1000):
+        # penalty is NOT clamped, so an unrepresentable value is rejected cleanly
+        # rather than leaking a raw OverflowError.
+        raise ValueError(
+            f"penalty must be finite and >= 0 (a smoothing weight lambda); got "
+            f"{penalty!r}, which is too large to represent as a finite float."
+        ) from exc
+    if not np.isfinite(value) or value < 0.0:
+        raise ValueError(
+            f"penalty must be finite and >= 0 (a smoothing weight lambda; 0 = no "
+            f"penalty, None = choose by REML); got {value}."
+        )
+    return value
+
+
+def _validate_glm_rank(rank: Any) -> int:
+    """Validate a glm ``rank`` value: reject ``bool`` first, then integral & >= 1.
+
+    Magnitude is NOT rejected here -- an out-of-range ``rank`` is clamped to the
+    effective rank ``r_eff = max(n_live_components, min(n_live_bins, rank))`` when
+    the basis is built, and the clamp is reported via ``result.rank``.
+    """
+    if isinstance(rank, bool):
+        raise ValueError(
+            f"rank must be an integer (the requested basis rank), not bool; got "
+            f"{rank!r}."
+        )
+    # Any integral value is accepted WITHOUT a float round-trip: magnitude is
+    # clamped (never rejected) to the effective rank when the basis is built, and
+    # a huge Python int (e.g. 10**1000) overflows float64 -- coercing it would
+    # leak an OverflowError and wrongly reject a value the clamp handles.
+    if isinstance(rank, (int, np.integer)):
+        value = int(rank)
+    else:
+        try:
+            as_float = float(rank)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(
+                f"rank must be an integer (the requested basis rank); got {rank!r}."
+            ) from exc
+        if not np.isfinite(as_float) or as_float != int(as_float):
+            raise ValueError(
+                f"rank must be an integer (the requested basis rank); got {rank!r}."
+            )
+        value = int(as_float)
+    if value < 1:
+        raise ValueError(f"rank must be >= 1 (the requested basis rank); got {value}.")
+    return value
+
+
+def validate_spatial_method_params(
+    method: str,
+    *,
+    bandwidth: float | None,
+    min_occupancy: float | None,
+    fill_value: float | None,
+    penalty: float | None,
+    rank: int | None,
+) -> tuple[float | None, int | None]:
+    """Validate the method-specific params of ``compute_spatial_rate(s)``.
+
+    Applies, in order (spec §6.2 /
+    ``shared-contracts.md#method-param``):
+
+    1. **Method validity** -- ``method`` must be one of the four spatial methods
+       (``diffusion_kde`` / ``gaussian_kde`` / ``binned`` / ``glm``).
+    2. **Mutual exclusivity** -- an *explicitly set* (``not None``) ratio param
+       (``bandwidth`` / ``min_occupancy`` / ``fill_value``) with ``method="glm"``,
+       or ``penalty`` / ``rank`` with a ratio method, raises ``ValueError`` naming
+       which param belongs to which method. Keyed on ``is None`` (the sentinel
+       default), so bare ``method="glm"`` does not false-trip on a resolved
+       ``bandwidth``.
+    3. **Value domains** (only when set) -- ``penalty`` and ``rank`` are validated
+       and returned (``bool`` rejected before numeric coercion). ``rank`` magnitude
+       is clamped, not rejected, when the basis is built.
+
+    Ratio-default resolution (``bandwidth -> 5.0``, ``min_occupancy -> 0.0``) is
+    the caller's job, done *after* this returns.
+
+    Parameters
+    ----------
+    method : str
+        The requested estimator.
+    bandwidth, min_occupancy, fill_value : float or None
+        Ratio-method params (``None`` = "not set").
+    penalty : float or None
+        glm penalty (``None`` = choose by REML).
+    rank : int or None
+        glm requested rank (``None`` = default cap).
+
+    Returns
+    -------
+    penalty : float or None
+        The validated penalty (``None`` if not set).
+    rank : int or None
+        The validated rank (``None`` if not set); magnitude clamping is deferred.
+
+    Raises
+    ------
+    ValueError
+        On an unknown method, a mutual-exclusivity violation, or an out-of-domain
+        ``penalty`` / ``rank``.
+    """
+    if method not in _SPATIAL_METHODS:
+        raise ValueError(
+            f"method must be one of {set(_SPATIAL_METHODS)}, got {method!r}"
+        )
+
+    if method == "glm":
+        ratio_values = {
+            "bandwidth": bandwidth,
+            "min_occupancy": min_occupancy,
+            "fill_value": fill_value,
+        }
+        for name, value in ratio_values.items():
+            if value is not None:
+                raise ValueError(
+                    f"{name} is a ratio-method (diffusion_kde/gaussian_kde/binned) "
+                    f"parameter and cannot be combined with method='glm'. The glm "
+                    f"estimator is configured with penalty= and rank=."
+                )
+    else:
+        for name, value in {"penalty": penalty, "rank": rank}.items():
+            if value is not None:
+                raise ValueError(
+                    f"{name} is a method='glm' parameter and cannot be combined with "
+                    f"method={method!r}. Ratio methods use bandwidth=, "
+                    f"min_occupancy=, and fill_value=."
+                )
+
+    validated_penalty = None if penalty is None else _validate_glm_penalty(penalty)
+    validated_rank = None if rank is None else _validate_glm_rank(rank)
+    return validated_penalty, validated_rank
+
+
 def _validate_smoothing_parameters(method: str, bandwidth: float) -> None:
     """Validate smoothing method and bandwidth without requiring count arrays."""
     valid_methods = {"diffusion_kde", "gaussian_kde", "binned"}

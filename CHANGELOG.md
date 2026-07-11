@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+### Added — `method="glm"`: penalized-Poisson GAM estimator (spatial only)
+
+`compute_spatial_rate` and `compute_spatial_rates` gain a fourth estimator,
+`method="glm"`: a batched penalized-Poisson generalized additive model that uses
+the cached finite-volume eigenbasis as its smoothness-penalty basis. Occupancy
+enters as a **log-offset** (never a denominator) and the smoothness penalty `λ`
+is chosen by REML, so the fit returns **finite firing rates everywhere** —
+including the low-occupancy and unvisited bins where the ratio estimators
+(`diffusion_kde` / `gaussian_kde` / `binned`) produce `NaN`.
+
+- **New keyword-only params** on `compute_spatial_rate(s)`: `penalty`
+  (fixed `λ ≥ 0`; `None` → choose by REML) and `rank` (requested basis rank;
+  out-of-range values are clamped, not rejected, to the effective rank reported
+  via `result.rank`). These are **mutually exclusive** with the ratio-method
+  params `bandwidth` / `min_occupancy` / `fill_value`, which now default to
+  `None` (resolving to their historical `5.0` / `0.0` / preserve-`NaN`
+  behavior). Combining a param with the wrong `method` raises `ValueError`.
+- **New result fields** on `SpatialRateResult` / `SpatialRatesResult`:
+  `coefficients`, `penalty`, `penalty_weights`, `rank`, `deviance`, `converged`,
+  `n_iter`, `reml_objective` (all `None` for the ratio methods). `bandwidth` is
+  `None` for glm. `summary_table()` gains the GAM scalar columns for glm results.
+- **Spatial only.** `compute_view_rate(s)`, `compute_egocentric_rate(s)`, and the
+  directional encoders keep their ratio-only `method` set (no `"glm"`). NWB
+  persistence of the GAM fields and glm decoding land in a later release; until
+  then `write_spatial_rates` **rejects** a glm result (raises `NotImplementedError`)
+  rather than persist a lossy record with the GAM diagnostics dropped.
+- The default `method="diffusion_kde"` path is unchanged (byte-for-byte).
+
 ### Changed — BREAKING: `smoothing_method` renamed to `method` (estimator axis)
 
 The smoothing/estimator keyword is now uniformly named `method` across every
@@ -29,7 +57,8 @@ change.
   estimator, it is no longer accepted as a per-block decode kwarg. The Poisson
   observation model (the only supported likelihood) is applied unconditionally.
 - `method="glm"` (a penalized-Poisson GAM estimator, `compute_spatial_rate(s)`
-  only) is planned for a later release; this change only renames the axis.
+  only) lands on this renamed axis — see the "Added — `method="glm"`" entry
+  above.
 
 ### Added — `env.diffuse`: matrix-free diffusion smoothing (0.8.0, performance)
 

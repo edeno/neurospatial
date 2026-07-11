@@ -167,6 +167,34 @@ for i, single_result in enumerate(result):
     single_result.plot()  # Plot individual place field
 ```
 
+**Penalized-Poisson GAM (`method="glm"`):**
+
+```python
+from neurospatial.encoding import compute_spatial_rates
+
+# Occupancy enters as a log-OFFSET (never a denominator), and the smoothness
+# penalty lambda is chosen by REML -- so the rate map is FINITE everywhere,
+# including low-occupancy and unvisited bins where the ratio estimators NaN.
+result = compute_spatial_rates(
+    env, spike_times_list, times, positions,
+    method="glm",
+    penalty=None,  # None -> choose lambda by REML; or pass a fixed lambda >= 0
+    rank=None,     # None -> default basis-rank cap (out-of-range values are clamped)
+)
+firing_rates = result.firing_rates  # (n_neurons, n_bins), all finite
+
+# glm has NO bandwidth / min_occupancy / fill_value (they raise if combined with
+# method="glm"); those ratio-only knobs are replaced by penalty / rank.
+assert result.bandwidth is None
+
+# GAM diagnostics live on the result (None for the ratio methods):
+result.coefficients   # (rank, n_neurons) fitted coefficients on the live basis
+result.penalty        # lambda actually applied (None if REML was skipped)
+result.deviance       # (n_neurons,) per-unit Poisson deviance
+result.converged, result.n_iter, result.reml_objective
+df = result.summary_table()  # gains penalty/rank/deviance/... columns for glm
+```
+
 **Bayesian decoding:**
 
 ```python

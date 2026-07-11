@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from neurospatial.environment.trajectory import BinSequenceWithRuns
     from neurospatial.layout.base import LayoutEngine
     from neurospatial.ops._types import KernelMode
+    from neurospatial.ops.diffusion import MRFBasis
     from neurospatial.regions import Region, Regions
 
 
@@ -215,6 +216,15 @@ class EnvironmentProtocol(Protocol):
         backend: Literal["numpy", "jax"] = "numpy",
     ) -> NDArray[np.float64]:
         """Matrix-free diffusion smoothing (no dense ``(n_bins, n_bins)`` kernel)."""
+        ...
+
+    def _mrf_basis(
+        self,
+        occupancy: NDArray[np.float64],
+        *,
+        rank: int | None,
+    ) -> MRFBasis:
+        """Reduced-rank MRF penalty basis for the penalized-Poisson GAM."""
         ...
 
     def occupancy(

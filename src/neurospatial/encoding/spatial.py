@@ -228,9 +228,10 @@ class SpatialRateResult(SpatialResultMixin):
         The spatial environment used for the computation. Provides bin
         centers, connectivity, and plotting methods.
     method : str
-        Smoothing method used: "diffusion_kde", "gaussian_kde", or "binned".
-    bandwidth : float
-        Smoothing bandwidth in the same units as the environment's bin_size.
+        Estimator used: "diffusion_kde", "gaussian_kde", "binned", or "glm".
+    bandwidth : float or None
+        Smoothing bandwidth in the same units as the environment's bin_size, or
+        ``None`` for ``method="glm"`` (which has no bandwidth).
 
     Attributes
     ----------
@@ -241,13 +242,20 @@ class SpatialRateResult(SpatialResultMixin):
     env : Environment
         The spatial environment.
     method : str
-        Smoothing method used.
-    bandwidth : float
-        Smoothing bandwidth.
+        Estimator used.
+    bandwidth : float or None
+        Smoothing bandwidth (``None`` for ``method="glm"``).
     unit_id : int or str or None
         Identifier for this unit. Set automatically when indexing/iterating a
         population result (``rates[i].unit_id == rates.unit_ids[i]``); ``None``
         for a standalone single-unit computation.
+    coefficients, penalty, penalty_weights, rank, deviance, converged, n_iter, \
+reml_objective
+        GAM diagnostics for ``method="glm"`` (all ``None`` for the ratio
+        methods): the per-unit slice of a population fit -- ``coefficients``
+        ``(rank,)``, scalar ``deviance``, and the shared/batch-scalar
+        ``penalty`` / ``penalty_weights`` ``(rank,)`` / ``rank`` / ``converged``
+        / ``n_iter`` / ``reml_objective``. See :class:`SpatialRatesResult`.
 
     Notes
     -----
@@ -298,8 +306,19 @@ class SpatialRateResult(SpatialResultMixin):
     occupancy: ArrayLike
     env: Environment
     method: str
-    bandwidth: float
+    bandwidth: float | None
     unit_id: int | str | None = None
+    # GAM (``method="glm"``) fields -- all ``None`` for the ratio methods. See
+    # ``SpatialRatesResult`` for the population-level shapes; the singular fields
+    # are the per-unit slices stamped when indexing a population result.
+    coefficients: NDArray[np.float64] | None = None
+    penalty: float | NDArray[np.float64] | None = None
+    penalty_weights: NDArray[np.float64] | None = None
+    rank: int | None = None
+    deviance: float | NDArray[np.float64] | None = None
+    converged: bool | None = None
+    n_iter: int | None = None
+    reml_objective: float | None = None
 
     def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the spatial rate map.
@@ -859,9 +878,10 @@ class SpatialRatesResult(SpatialResultMixin):
     env : Environment
         The spatial environment used for the computation.
     method : str
-        Smoothing method used: "diffusion_kde", "gaussian_kde", or "binned".
-    bandwidth : float
-        Smoothing bandwidth in the same units as the environment's bin_size.
+        Estimator used: "diffusion_kde", "gaussian_kde", "binned", or "glm".
+    bandwidth : float or None
+        Smoothing bandwidth in the same units as the environment's bin_size, or
+        ``None`` for ``method="glm"`` (which has no bandwidth).
 
     Attributes
     ----------
@@ -872,9 +892,31 @@ class SpatialRatesResult(SpatialResultMixin):
     env : Environment
         The spatial environment.
     method : str
-        Smoothing method used.
-    bandwidth : float
-        Smoothing bandwidth.
+        Estimator used.
+    bandwidth : float or None
+        Smoothing bandwidth (``None`` for ``method="glm"``).
+    coefficients : NDArray or None
+        (``method="glm"`` only; ``None`` for ratio methods.) Fitted GAM
+        coefficients ``gamma`` on the live basis, shape ``(rank, n_units)``.
+    penalty : float or None
+        Smoothness penalty ``lambda`` actually applied (scalar for the shared-λ
+        fit; ``None`` for the REML-skip and no-data cases, or for ratio methods).
+    penalty_weights : NDArray or None
+        Basis penalty weights ``d``, shape ``(rank,)`` (``None`` for ratio).
+    rank : int or None
+        Effective basis rank ``r_eff`` (``None`` for ratio methods).
+    deviance : NDArray or None
+        Per-unit unpenalized Poisson deviance, shape ``(n_units,)`` (``None`` for
+        ratio methods).
+    converged : bool or None
+        Batch-level convergence flag (``None`` for ratio methods). ``False`` for
+        out-of-domain data (empirical rate above ``exp(30)``).
+    n_iter : int or None
+        Batch-level Newton iteration count (``None`` for ratio methods).
+    reml_objective : float or None
+        Minimized REML objective, or ``None`` when REML did not run (a fixed
+        ``penalty`` was supplied, the basis has no penalized modes, or the data
+        was all-zero) -- and ``None`` for ratio methods.
     unit_ids : NDArray, shape (n_units,)
         Identifier for each unit (row), e.g. from ``read_units`` or passed via
         ``unit_ids=``. Defaults to ``np.arange(n_units)``. Carried into
@@ -953,9 +995,28 @@ class SpatialRatesResult(SpatialResultMixin):
     occupancy: ArrayLike
     env: Environment
     method: str
-    bandwidth: float
+    bandwidth: float | None
     unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
+    # GAM (``method="glm"``) fields -- all ``None`` for the ratio methods,
+    # populated for ``method="glm"``. Shapes (``rank == r_eff`` effective basis
+    # rank, ``n_units`` neurons):
+    #   coefficients      (rank, n_units)   gamma on the live basis
+    #   penalty           scalar or None    lambda actually applied (None = REML skip / no data)
+    #   penalty_weights   (rank,)           basis penalty weights d
+    #   rank              int               effective rank r_eff
+    #   deviance          (n_units,)        per-unit Poisson deviance
+    #   converged         bool              batch-level convergence flag
+    #   n_iter            int               batch-level Newton iterations
+    #   reml_objective    scalar or None    minimized REML objective (None if REML did not run)
+    coefficients: NDArray[np.float64] | None = None
+    penalty: float | NDArray[np.float64] | None = None
+    penalty_weights: NDArray[np.float64] | None = None
+    rank: int | None = None
+    deviance: NDArray[np.float64] | None = None
+    converged: bool | None = None
+    n_iter: int | None = None
+    reml_objective: float | None = None
 
     def __post_init__(self) -> None:
         from neurospatial._results import resolve_unit_ids, validate_unit_table
@@ -1011,6 +1072,13 @@ class SpatialRatesResult(SpatialResultMixin):
         True
         """
         rates: NDArray[np.float64] = np.asarray(self.firing_rates)
+        # Slice the per-unit GAM fields; shared / batch-scalar fields carry
+        # through unchanged. All ``None`` for ratio results (the ``is not None``
+        # guards keep them ``None``).
+        coefficients = (
+            None if self.coefficients is None else np.asarray(self.coefficients)[:, idx]
+        )
+        deviance = None if self.deviance is None else np.asarray(self.deviance)[idx]
         return SpatialRateResult(
             firing_rate=rates[idx],
             occupancy=self.occupancy,
@@ -1018,6 +1086,14 @@ class SpatialRatesResult(SpatialResultMixin):
             method=self.method,
             bandwidth=self.bandwidth,
             unit_id=np.asarray(self.unit_ids)[idx].item(),
+            coefficients=coefficients,
+            penalty=self.penalty,
+            penalty_weights=self.penalty_weights,
+            rank=self.rank,
+            deviance=deviance,
+            converged=self.converged,
+            n_iter=self.n_iter,
+            reml_objective=self.reml_objective,
         )
 
     def __iter__(self) -> Iterator[SpatialRateResult]:
@@ -1857,6 +1933,17 @@ class SpatialRatesResult(SpatialResultMixin):
 
         data["method"] = self.method
 
+        # GAM (``method="glm"``) scalar columns, only when present. ``deviance``
+        # is per-unit; the remaining GAM diagnostics are batch-level scalars that
+        # broadcast to every row.
+        if self.coefficients is not None:
+            data["penalty"] = self.penalty
+            data["rank"] = self.rank
+            data["deviance"] = np.asarray(self.deviance)
+            data["converged"] = self.converged
+            data["n_iter"] = self.n_iter
+            data["reml_objective"] = self.reml_objective
+
         return pd.DataFrame(data, index=pd.Index(index_ids, name="unit_id"))
 
 
@@ -1895,16 +1982,136 @@ def _fill_nan(rates: ArrayLike, fill_value: float) -> ArrayLike:
     return cast("ArrayLike", jnp.where(jnp.isnan(rates_jax), fill_value, rates_jax))
 
 
+def _compute_glm_spatial_rates(
+    env: Environment,
+    spike_counts: NDArray[np.float64],
+    occupancy: NDArray[np.float64],
+    *,
+    penalty: float | None,
+    rank: int | None,
+    resolved_backend: Literal["numpy", "jax"],
+    dtype: type[np.float32] | type[np.float64],
+) -> tuple[ArrayLike, Any]:
+    """Fit ``method="glm"`` and assemble the full active-bin firing-rate array.
+
+    This is the phase-3 orchestrator that owns the **unit-major <-> bin-major**
+    boundary, the float64 core / dtype-at-the-boundary split, and the two-concern
+    backend handling. It consumes the phase-1 basis
+    (:meth:`Environment._mrf_basis`) and the phase-2 fit
+    (:func:`neurospatial.encoding._glm.fit_mrf_gam`) without modifying either.
+
+    The encoding side is **unit-major** ``(n_units, n_bins)``; the fit is
+    **bin-major** ``(n_live_bins, n_units)``. The transpose + the restriction to
+    ``basis.live_bins`` happen here (the only live-bin restriction; the fit never
+    re-slices), and the bin-major ``log_rate`` is scattered back into a
+    ``_RATE_FLOOR``-filled ``(n_units, n_bins)`` array whose rows are units.
+
+    Parameters
+    ----------
+    env : Environment
+        Fitted environment; supplies the diffusion geometry and the reduced-rank
+        MRF penalty basis.
+    spike_counts : NDArray[np.float64], shape (n_units, n_bins)
+        Per-unit binned spike counts in active-bin order (unit-major).
+    occupancy : NDArray[np.float64], shape (n_bins,)
+        Dwell time per active bin (seconds); the Poisson log-offset.
+    penalty : float or None, keyword-only
+        Fixed ``lambda`` (echoed on the fit) or ``None`` to select by REML.
+    rank : int or None, keyword-only
+        Requested basis rank cap; ``None`` resolves to the module default. The
+        effective rank is reported via ``MRFFit.rank`` after clamping.
+    resolved_backend : {"numpy", "jax"}, keyword-only
+        The already-resolved backend (via ``get_backend_name``). The fit always
+        runs the NumPy float64 core (``backend`` is forwarded for phase-5); the
+        returned rate array is converted to a JAX array when this is ``"jax"``,
+        matching the ratio path's return contract.
+    dtype : {np.float32, np.float64}, keyword-only
+        Storage dtype of the returned rate array (applied at the boundary; the
+        glm core stays float64).
+
+    Returns
+    -------
+    firing_rates : ArrayLike, shape (n_units, n_bins)
+        Assembled firing-rate map(s) (dtype-cast, JAX-converted when needed).
+        ``max(exp(eta), _RATE_FLOOR)`` on live bins, ``_RATE_FLOOR`` elsewhere.
+    fit : MRFFit
+        The raw (always-NumPy, float64) fit result; the caller reads the GAM
+        result fields off it.
+    """
+    from neurospatial.encoding._backend import is_jax_available
+    from neurospatial.encoding._glm import _RATE_FLOOR, fit_mrf_gam
+
+    spike_counts = np.asarray(spike_counts, dtype=np.float64)  # (n_units, n_bins)
+    occupancy = np.asarray(occupancy, dtype=np.float64)  # (n_bins,)
+    n_units, n_bins = spike_counts.shape
+
+    # Phase-1: reduced-rank penalty basis from occupancy (live-bin order).
+    # Cast to the protocol for the ``self: SelfEnv`` bound (same pattern as
+    # ``env.diffuse`` in ``_smoothing.py``).
+    basis = cast("EnvironmentProtocol", env)._mrf_basis(occupancy, rank=rank)
+    live_bins = np.asarray(basis.live_bins, dtype=np.intp)
+
+    # Dead-component warning is phase-3's: it needs env's TOTAL component count,
+    # which the basis (live-only) does not carry. Only warn when there is at least
+    # one live component but fewer than the total -- the fully-dead (zero
+    # occupancy) case is already covered by ``fit_mrf_gam``'s own warning.
+    n_components = int(env._diffusion_geometry.n_components)
+    if 0 < basis.n_live_components < n_components:
+        n_dead = n_components - basis.n_live_components
+        warnings.warn(
+            f"MRF-GAM fit: {n_dead} of {n_components} environment components were "
+            f"never occupied (dead); their bins are set to _RATE_FLOOR "
+            f"({_RATE_FLOOR:.0e} Hz). Fit runs on the live bins only.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    # Boundary in: unit-major (n_units, n_bins) -> bin-major (n_live_bins,
+    # n_units), restricted to live bins (the ONLY live-bin restriction).
+    counts_fit = spike_counts.T[live_bins, :]  # (n_live_bins, n_units)
+    occ_fit = occupancy[live_bins]  # (n_live_bins,)
+
+    # Phase-2 fit. pooled stays True (phase-6 adds the public param); the resolved
+    # backend is forwarded unchanged (phase-5 accelerates the fit; the NumPy core
+    # runs until then). MRFFit arrays come back NumPy.
+    fit = fit_mrf_gam(
+        basis, counts_fit, occ_fit, penalty=penalty, backend=resolved_backend
+    )
+
+    # Boundary out: floor-fill, then scatter max(exp(eta), _RATE_FLOOR).T into the
+    # live-bin columns so rows are units.
+    firing_rates = np.full((n_units, n_bins), _RATE_FLOOR, dtype=np.float64)
+    if live_bins.size and n_units:
+        rate_live = np.maximum(np.exp(np.asarray(fit.log_rate)), _RATE_FLOOR)
+        firing_rates[:, live_bins] = rate_live.T  # (n_units, n_live_bins)
+
+    # dtype at the result boundary (the core stayed float64), like the ratio path.
+    firing_rates_out: ArrayLike = firing_rates.astype(dtype, copy=False)
+
+    # Return-array-type contract: convert to a JAX array iff the resolved backend
+    # is "jax" (resolved via get_backend_name upstream -- NOT a raw backend check),
+    # matching what the ratio path returns for backend="jax".
+    if resolved_backend == "jax" and is_jax_available():
+        import jax.numpy as jnp
+
+        jnp_dtype = jnp.float32 if dtype is np.float32 else jnp.float64
+        firing_rates_out = jnp.asarray(firing_rates, dtype=jnp_dtype)
+
+    return firing_rates_out, fit
+
+
 def compute_spatial_rate(
     env: Environment,
     spike_times: NDArray[np.float64],
     times: NDArray[np.float64] | PositionLike,
     positions: NDArray[np.float64] | None = None,
     *,
-    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
-    bandwidth: float = 5.0,
-    min_occupancy: float = 0.0,
+    method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"] = "diffusion_kde",
+    bandwidth: float | None = None,
+    min_occupancy: float | None = None,
     fill_value: float | None = None,
+    penalty: float | None = None,
+    rank: int | None = None,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
@@ -1939,8 +2146,9 @@ def compute_spatial_rate(
         missing data and excluded from occupancy and firing-rate computation;
         callers do not need to pre-filter tracking dropouts. Omit only when
         ``times`` is a ``PositionLike`` object carrying the positions.
-    method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
-        Smoothing method to use:
+    method : {"diffusion_kde", "gaussian_kde", "binned", "glm"}, \
+default="diffusion_kde"
+        Estimator to use:
 
         - **diffusion_kde** (recommended): Graph-based boundary-aware KDE.
           Respects environment boundaries (walls, obstacles). Uses diffusion
@@ -1950,28 +2158,47 @@ def compute_spatial_rate(
           can "bleed through" walls).
         - **binned**: Bin-then-smooth method. Computes raw rate first, then
           smooths. Can introduce discretization artifacts.
+        - **glm**: Penalized-Poisson GAM. Occupancy enters as a **log-offset**
+          (never a denominator) and the smoothness penalty λ is chosen by REML,
+          so the fit returns **finite rates everywhere** -- including
+          low-occupancy and unvisited bins where the ratio estimators NaN. Tuned
+          with ``penalty`` and ``rank`` (not ``bandwidth`` / ``min_occupancy`` /
+          ``fill_value``, which are mutually exclusive with ``method="glm"``).
 
-        Note: ``diffusion_kde`` and ``binned`` smooth matrix-free via
-        ``env.diffuse`` (a cached truncated eigenbasis), scaling as
-        O(n_bins·rank) — they never build a dense kernel and scale to large/fine
-        grids. Only ``gaussian_kde`` builds a dense O(n²) matrix; for very large
-        environments prefer ``diffusion_kde`` or increase ``bin_size``.
+        Note: ``diffusion_kde``, ``binned``, and ``glm`` are matrix-free via the
+        cached finite-volume eigenbasis, scaling as O(n_bins·rank) — they never
+        build a dense kernel and scale to large/fine grids. Only ``gaussian_kde``
+        builds a dense O(n²) matrix; for very large environments prefer
+        ``diffusion_kde`` or ``glm``, or increase ``bin_size``.
 
-    bandwidth : float, default=5.0
-        Smoothing bandwidth in the same units as bin_size. Larger values
-        produce more smoothing.
-    min_occupancy : float, default=0.0
-        Minimum occupancy (seconds) for a bin to be included. Bins with
-        occupancy below this threshold are set to NaN.
+    bandwidth : float | None, default=None
+        (Ratio methods only.) Smoothing bandwidth in the same units as bin_size;
+        larger values produce more smoothing. ``None`` resolves to ``5.0``.
+        Mutually exclusive with ``method="glm"``.
+    min_occupancy : float | None, default=None
+        (Ratio methods only.) Minimum occupancy (seconds) for a bin to be
+        included; bins below the threshold are set to NaN. ``None`` resolves to
+        ``0.0`` (no masking). Mutually exclusive with ``method="glm"``.
     fill_value : float | None, default=None
-        Value used to replace NaN bins (masked/low-occupancy bins produced
-        by ``min_occupancy``). When ``None`` (the default), NaN is preserved
-        so existing callers see no behavior change. Pass ``fill_value=0.0``
-        for the recommended decoding golden path: a zero-rate map composes
-        directly with :func:`~neurospatial.decoding.posterior.decode_position`
-        without manual NaN scrubbing. ``occupancy`` is unaffected, so callers
-        can still recover which bins were masked via
-        ``result.occupancy < min_occupancy``.
+        (Ratio methods only.) Value used to replace NaN bins (masked/low-occupancy
+        bins produced by ``min_occupancy``). When ``None`` (the default), NaN is
+        preserved so existing callers see no behavior change. Pass
+        ``fill_value=0.0`` for the recommended decoding golden path: a zero-rate
+        map composes directly with
+        :func:`~neurospatial.decoding.posterior.decode_position` without manual
+        NaN scrubbing. ``occupancy`` is unaffected, so callers can still recover
+        which bins were masked via ``result.occupancy < min_occupancy``.
+        Mutually exclusive with ``method="glm"`` (glm rates are already finite).
+    penalty : float | None, default=None
+        (``method="glm"`` only.) Fixed smoothness penalty ``λ`` (≥ 0; ``0`` = no
+        penalty). ``None`` (the default) selects ``λ`` by REML. Mutually exclusive
+        with the ratio methods.
+    rank : int | None, default=None
+        (``method="glm"`` only.) Requested rank of the reduced-rank penalty basis
+        (≥ 1). ``None`` uses the module default cap. An out-of-range value is
+        **clamped** (never rejected) to the effective rank
+        ``max(n_live_components, min(n_live_bins, rank))``, reported via
+        ``result.rank``. Mutually exclusive with the ratio methods.
     speed : ndarray, shape (n_samples,), optional
         Precomputed instantaneous speed at each trajectory sample (physical
         units / second). Only used when ``min_speed`` is set. When
@@ -2098,6 +2325,14 @@ def compute_spatial_rate(
     True
     >>> result.peak_location().shape
     (2,)
+
+    >>> # Penalized-Poisson GAM: occupancy as a log-offset, lambda by REML.
+    >>> # Returns finite rates everywhere (no NaN in low-occupancy bins).
+    >>> glm = compute_spatial_rate(env, spike_times, times, positions, method="glm")
+    >>> bool(np.all(np.isfinite(glm.firing_rate)))
+    True
+    >>> glm.bandwidth is None  # ratio-only param; glm uses penalty/rank instead
+    True
     """
     from neurospatial.encoding._backend import (
         SUPPORTED_BACKENDS,
@@ -2134,7 +2369,27 @@ def compute_spatial_rate(
     # This raises ImportError if backend="jax" and JAX is unavailable
     resolved_backend = get_backend_name(backend)
 
-    _validate_smoothing_parameters(method, bandwidth)
+    # Method-specific validation (mutual exclusivity + value domains), in the
+    # contract order, then resolve the ratio defaults. For glm the ratio params
+    # stay unset (None); for ratio methods bandwidth/min_occupancy resolve to
+    # their historical defaults so existing behavior is byte-identical.
+    from neurospatial.encoding._smoothing import validate_spatial_method_params
+
+    penalty, rank = validate_spatial_method_params(
+        method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+        fill_value=fill_value,
+        penalty=penalty,
+        rank=rank,
+    )
+    # Resolve the ratio defaults. glm ignores bandwidth/min_occupancy (its branch
+    # returns before any smoothing and stamps bandwidth=None on the result); for
+    # ratio methods this restores the historical defaults byte-for-byte.
+    bandwidth = 5.0 if bandwidth is None else bandwidth
+    min_occupancy = 0.0 if min_occupancy is None else min_occupancy
+    if method != "glm":
+        _validate_smoothing_parameters(method, bandwidth)
 
     # Boundary adapter: accept EITHER a PositionLike (e.g. a pynapple
     # Tsd/TsdFrame exposing .t/.values) OR explicit (times, positions) arrays,
@@ -2202,6 +2457,49 @@ def compute_spatial_rate(
         context="compute_spatial_rate",
     )
 
+    # method="glm": fit the penalized-Poisson GAM (occupancy as a log-offset) and
+    # return finite rates everywhere -- no ratio smoothing / min_occupancy / NaN.
+    # The single-neuron counts (n_bins,) become a 1-unit unit-major batch.
+    if method == "glm":
+        glm_firing_rates, fit = _compute_glm_spatial_rates(
+            env,
+            spike_counts[np.newaxis, :],
+            occupancy,
+            penalty=penalty,
+            rank=rank,
+            resolved_backend=resolved_backend,
+            dtype=np.float64,
+        )
+        # ``glm_firing_rates`` already has the right array type from the helper
+        # (JAX for backend="jax", NumPy otherwise); slice row 0 once, preserving
+        # that type -- no redundant round-trip. Use dedicated ``ArrayLike`` output
+        # variables so the JAX branch does not reassign the NumPy-typed
+        # ``occupancy`` (which would not type-check under a JAX-present run).
+        single_firing_rate: ArrayLike
+        single_occupancy: ArrayLike = occupancy
+        if resolved_backend == "jax" and is_jax_available():
+            import jax.numpy as jnp
+
+            single_firing_rate = jnp.asarray(glm_firing_rates)[0]
+            single_occupancy = jnp.asarray(occupancy, dtype=jnp.float64)
+        else:
+            single_firing_rate = np.asarray(glm_firing_rates)[0]
+        return SpatialRateResult(
+            firing_rate=single_firing_rate,
+            occupancy=single_occupancy,
+            env=env,
+            method=method,
+            bandwidth=None,
+            coefficients=np.asarray(fit.coefficients)[:, 0],
+            penalty=fit.penalty,
+            penalty_weights=fit.penalty_weights,
+            rank=fit.rank,
+            deviance=fit.deviance[0],
+            converged=fit.converged,
+            n_iter=fit.n_iter,
+            reml_objective=fit.reml_objective,
+        )
+
     # Apply smoothing to compute firing rate
     # When backend="jax", uses JAX for the core rate computation
     firing_rate = smooth_rate_map(
@@ -2242,10 +2540,12 @@ def compute_spatial_rates(
     times: NDArray[np.float64] | PositionLike,
     positions: NDArray[np.float64] | None = None,
     *,
-    method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
-    bandwidth: float = 5.0,
-    min_occupancy: float = 0.0,
+    method: Literal["diffusion_kde", "gaussian_kde", "binned", "glm"] = "diffusion_kde",
+    bandwidth: float | None = None,
+    min_occupancy: float | None = None,
     fill_value: float | None = None,
+    penalty: float | None = None,
+    rank: int | None = None,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
@@ -2289,24 +2589,41 @@ def compute_spatial_rates(
         missing data and excluded from occupancy and firing-rate computation;
         callers do not need to pre-filter tracking dropouts. Omit only when
         ``times`` is a ``PositionLike`` object carrying the positions.
-    method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
-        Smoothing method to use. See ``compute_spatial_rate()`` for details.
-        Note: ``diffusion_kde`` and ``binned`` smooth matrix-free
-        (O(n_bins·rank)); only ``gaussian_kde`` builds a dense O(n²) kernel. For
-        very large environments prefer ``diffusion_kde`` or increase ``bin_size``.
-    bandwidth : float, default=5.0
-        Smoothing bandwidth in the same units as bin_size.
-    min_occupancy : float, default=0.0
-        Minimum occupancy (seconds) for a bin to be included.
+    method : {"diffusion_kde", "gaussian_kde", "binned", "glm"}, \
+default="diffusion_kde"
+        Estimator to use. See ``compute_spatial_rate()`` for details. In addition
+        to the three ratio methods, ``method="glm"`` fits a penalized-Poisson GAM
+        (occupancy as a log-offset, ``λ`` by REML) and returns finite rates
+        everywhere; it is tuned with ``penalty`` / ``rank`` (mutually exclusive
+        with ``bandwidth`` / ``min_occupancy`` / ``fill_value``). This is the
+        batched entry the decoder uses. ``diffusion_kde``, ``binned``, and ``glm``
+        are matrix-free (O(n_bins·rank)); only ``gaussian_kde`` builds a dense
+        O(n²) kernel.
+    bandwidth : float | None, default=None
+        (Ratio methods only.) Smoothing bandwidth in the same units as bin_size;
+        ``None`` resolves to ``5.0``. Mutually exclusive with ``method="glm"``.
+    min_occupancy : float | None, default=None
+        (Ratio methods only.) Minimum occupancy (seconds) for a bin to be
+        included; ``None`` resolves to ``0.0`` (no masking). Mutually exclusive
+        with ``method="glm"``.
     fill_value : float | None, default=None
-        Value used to replace NaN bins (masked/low-occupancy bins produced
-        by ``min_occupancy``). When ``None`` (the default), NaN is preserved
-        so existing callers see no behavior change. Pass ``fill_value=0.0``
-        for the recommended decoding golden path: zero-rate maps compose
-        directly with :func:`~neurospatial.decoding.posterior.decode_position`
-        without manual NaN scrubbing. ``occupancy`` is unaffected, so callers
-        can still recover which bins were masked via
-        ``result.occupancy < min_occupancy``.
+        (Ratio methods only.) Value used to replace NaN bins (masked/low-occupancy
+        bins produced by ``min_occupancy``). When ``None`` (the default), NaN is
+        preserved so existing callers see no behavior change. Pass
+        ``fill_value=0.0`` for the recommended decoding golden path: zero-rate maps
+        compose directly with
+        :func:`~neurospatial.decoding.posterior.decode_position` without manual NaN
+        scrubbing. ``occupancy`` is unaffected, so callers can still recover which
+        bins were masked via ``result.occupancy < min_occupancy``. Mutually
+        exclusive with ``method="glm"`` (glm rates are already finite).
+    penalty : float | None, default=None
+        (``method="glm"`` only.) Fixed smoothness penalty ``λ`` (≥ 0). ``None``
+        selects ``λ`` by REML. Mutually exclusive with the ratio methods.
+    rank : int | None, default=None
+        (``method="glm"`` only.) Requested rank of the reduced-rank penalty basis
+        (≥ 1). ``None`` uses the module default cap; an out-of-range value is
+        clamped (never rejected) to the effective rank reported via
+        ``result.rank``. Mutually exclusive with the ratio methods.
     speed : ndarray, shape (n_samples,), optional
         Precomputed instantaneous speed at each trajectory sample (physical
         units / second). Only used when ``min_speed`` is set; auto-derived from
@@ -2539,7 +2856,24 @@ def compute_spatial_rates(
     # Normalize to the canonical numpy scalar type for downstream casts.
     dtype = np.float32 if _resolved_dtype == np.dtype(np.float32) else np.float64
 
-    _validate_smoothing_parameters(method, bandwidth)
+    # Method-specific validation (mutual exclusivity + value domains), then
+    # resolve the ratio defaults. glm ignores bandwidth/min_occupancy (its branch
+    # below returns before any smoothing and stamps bandwidth=None on the result);
+    # for ratio methods this restores the historical defaults byte-for-byte.
+    from neurospatial.encoding._smoothing import validate_spatial_method_params
+
+    penalty, rank = validate_spatial_method_params(
+        method,
+        bandwidth=bandwidth,
+        min_occupancy=min_occupancy,
+        fill_value=fill_value,
+        penalty=penalty,
+        rank=rank,
+    )
+    bandwidth = 5.0 if bandwidth is None else bandwidth
+    min_occupancy = 0.0 if min_occupancy is None else min_occupancy
+    if method != "glm":
+        _validate_smoothing_parameters(method, bandwidth)
 
     # Normalize spike times to canonical list-of-arrays format, surfacing any
     # unit ids the spikes object carries (a SpikeTrainsLike group, e.g. a
@@ -2595,6 +2929,75 @@ def compute_spatial_rates(
         )
         _emit_all_excluded_intervals_warning(
             _interval_mask, max_gap=max_gap, min_speed=min_speed, stacklevel=2
+        )
+
+    # method="glm": fit the penalized-Poisson GAM (occupancy as a log-offset).
+    # Handles the no-neurons case too (fit_mrf_gam returns an (r_eff, 0) fit), so
+    # it sits before the ratio no-neurons short-circuit and returns early, leaving
+    # the ratio path below untouched.
+    if method == "glm":
+        from neurospatial.encoding._binning import (
+            bin_spike_trains as _bin_spike_trains,
+        )
+        from neurospatial.encoding._binning import (
+            compute_occupancy as _compute_occupancy,
+        )
+
+        if n_neurons == 0:
+            spike_counts = np.zeros((0, env.n_bins), dtype=np.float64)
+            occupancy = _compute_occupancy(
+                env,
+                times,
+                positions,
+                speed=resolved_speed,
+                min_speed=min_speed,
+                max_gap=max_gap,
+                context="compute_spatial_rates",
+            )
+        else:
+            spike_counts, occupancy = _bin_spike_trains(
+                env,
+                spike_times_list,
+                times,
+                positions,
+                speed=resolved_speed,
+                min_speed=min_speed,
+                max_gap=max_gap,
+                n_jobs=n_jobs,
+                warn_on_drop=warn_on_drop,
+            )
+
+        glm_firing_rates, fit = _compute_glm_spatial_rates(
+            env,
+            spike_counts,
+            occupancy,
+            penalty=penalty,
+            rank=rank,
+            resolved_backend=resolved_backend,
+            dtype=dtype,
+        )
+        # Dedicated ArrayLike output var so the JAX branch does not reassign the
+        # NumPy-typed ``occupancy`` (which would not type-check JAX-present).
+        batch_occupancy: ArrayLike = occupancy
+        if resolved_backend == "jax" and is_jax_available():
+            import jax.numpy as jnp
+
+            batch_occupancy = jnp.asarray(occupancy, dtype=jnp.float64)
+        return SpatialRatesResult(
+            firing_rates=glm_firing_rates,
+            occupancy=batch_occupancy,
+            env=env,
+            method=method,
+            bandwidth=None,
+            unit_ids=resolved_unit_ids,
+            coefficients=np.asarray(fit.coefficients, dtype=dtype),
+            penalty=fit.penalty,
+            penalty_weights=np.asarray(fit.penalty_weights, dtype=dtype),
+            rank=fit.rank,
+            deviance=np.asarray(fit.deviance, dtype=dtype),
+            converged=fit.converged,
+            n_iter=fit.n_iter,
+            reml_objective=fit.reml_objective,
         )
 
     # Handle edge case: no neurons
