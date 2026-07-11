@@ -147,7 +147,7 @@ correction.
 
 ### Corrected guidance
 
-- **`smoothing_method="binned"` is not a dense-kernel memory mitigation.**
+- **`method="binned"` is not a dense-kernel memory mitigation.**
   Earlier notes (through v0.6.0) recommended `binned` to avoid the dense
   `(n_bins, n_bins)` kernel, but `binned` smooths its rate map through the same
   diffusion kernel (via `env.smooth`), so **all** smoothing methods build a dense

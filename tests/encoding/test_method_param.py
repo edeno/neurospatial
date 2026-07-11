@@ -110,9 +110,11 @@ def test_method_kwarg_each_encoder(ovc_session, call, default_method):
     r_explicit = call(ovc_session, default_method)
     r_default = call(ovc_session, None)
 
-    # Passing the default value explicitly must reproduce the default path
-    # exactly -- proves the keyword is wired to the smoothing path, not just
-    # accepted-and-ignored.
+    # Passing the default value explicitly reproduces the default path exactly:
+    # the renamed keyword is a pure name change with no behavior shift. (That the
+    # keyword actually drives the estimator -- rather than being silently ignored
+    # -- is shown by test_egocentric_default_preserved, where the "binned" and
+    # "diffusion_kde" maps differ.)
     np.testing.assert_array_equal(_firing(r_explicit), _firing(r_default))
 
     # Where the result carries the estimator, it records the requested method.

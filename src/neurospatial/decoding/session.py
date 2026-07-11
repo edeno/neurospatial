@@ -209,8 +209,9 @@ def decode_session(
     **decode_kwargs
         Additional keyword arguments forwarded verbatim to
         :func:`~neurospatial.decoding.decode_position`.  Supported kwargs
-        include ``prior``, ``method``, and ``validate``.  (Pass ``dtype`` via
-        the explicit ``dtype`` parameter, not here.)
+        include ``prior`` and ``validate``.  (``method`` now names the smoothing
+        estimator above, not a decode kwarg; pass ``dtype`` via the explicit
+        ``dtype`` parameter, not here.)
 
     Returns
     -------
