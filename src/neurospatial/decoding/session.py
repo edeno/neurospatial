@@ -726,7 +726,7 @@ min_occupancy, speed, min_speed, max_gap, encoding_models, warn_on_drop, dtype
     # The Poisson observation model is the only supported likelihood. It is fixed
     # here rather than read from decode_kwargs because ``method`` now names the
     # smoothing estimator (the explicit parameter forwarded to the encoder).
-    likelihood_method = "poisson"
+    likelihood_method: Literal["poisson"] = "poisson"
 
     if time_chunk is None:
         raise ValueError(
