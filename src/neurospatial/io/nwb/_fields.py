@@ -11,8 +11,17 @@ The estimator is stored under the metadata key ``"method"``
 persists the ``method="glm"`` GAM diagnostics (``coefficients``, ``penalty``,
 ``penalty_weights``, ``rank``, ``deviance``, ``converged``, ``n_iter``,
 ``reml_objective``); ratio-method tables carry none of them and read back with
-those fields ``None``. This is a clean break with no back-compatibility shim:
-tables written by earlier schema versions do not read.
+those fields ``None``.
+
+``read_place_field`` enforces the schema **major** version: it reads only tables
+whose ``schema_version`` shares the current major (``2.x`` -- e.g. ``2.0`` and
+``2.1`` are mutually readable, since a minor bump only *adds* optional fields),
+and rejects any other (missing, ``1.x``, or an incompatible future major) with a
+clear ``ValueError``. This is the clean break with no back-compatibility shim:
+pre-0.9 tables (schema ``1.x``, which keyed the estimator as
+``"smoothing_method"``) do not read. Accepting the whole current major (not just
+the exact current version) is deliberate -- a later minor bump must still read
+tables written by this one.
 """
 
 from __future__ import annotations
@@ -56,6 +65,11 @@ DEFAULT_SPATIAL_RATES_NAME: str = "spatial_rates"
 #      metadata blob; deviance + coefficients as per-unit table columns). Ratio
 #      tables are byte-identical to 2.0 apart from the version string.
 SPATIAL_RATES_SCHEMA_VERSION: str = "2.1"
+
+# The reader accepts any table sharing this MAJOR version (minor bumps only add
+# optional fields, so 2.0/2.1/... are mutually readable); other majors (missing,
+# 1.x, or an incompatible future major) are rejected on read.
+SPATIAL_RATES_SCHEMA_MAJOR: str = SPATIAL_RATES_SCHEMA_VERSION.split(".")[0]
 
 # Column names within the spatial-rates DynamicTable
 COL_UNIT_ID: str = "unit_id"
@@ -607,11 +621,18 @@ def write_spatial_rates(
 
     # FIX 2 (atomic write): resolve ALL name collisions -- the table, its
     # companion occupancy AND the persisted environment -- BEFORE the first add.
-    # A duplicate without overwrite raises before any mutation; overwrite=True
-    # cleans every companion so a re-write starts clean.
+    # A duplicate without overwrite raises before any mutation.
+    #
+    # For overwrite=True we CAPTURE the existing objects but do NOT delete them
+    # here: deleting the originals before the replacements are built and added
+    # would destroy a valid record if a later build/add fails (the rollback then
+    # only removes the partial new objects, never restoring the old ones). The
+    # deletion is deferred into the try-block below, right before the adds, and
+    # the captured originals are restored if that block raises.
     existing = [n for n in (name, occupancy_name) if n in analysis.data_interfaces]
     if env_name in nwbfile.scratch:
         existing.append(env_name)
+    old_objects: list[tuple[str, str, object]] = []
     if existing:
         if not overwrite:
             raise ValueError(
@@ -620,9 +641,11 @@ def write_spatial_rates(
             )
         for obj_name in (name, occupancy_name):
             if obj_name in analysis.data_interfaces:
-                del analysis.data_interfaces[obj_name]
+                old_objects.append(
+                    ("analysis", obj_name, analysis.data_interfaces[obj_name])
+                )
         if env_name in nwbfile.scratch:
-            del nwbfile.scratch[env_name]
+            old_objects.append(("scratch", env_name, nwbfile.scratch[env_name]))
         logger.info("Overwriting existing spatial rates '%s' and its companions", name)
 
     # Shared bin_centers (deduplicated with place fields). Idempotent and shared
@@ -728,21 +751,31 @@ def write_spatial_rates(
         comments=f"Occupancy for spatial rates '{name}', n_bins={env.n_bins}.",
     )
 
-    # FIX 2 (atomic write): add the table, its companion occupancy, then persist
-    # the full environment (with connectivity + geometry). If any add after the
-    # first fails, best-effort roll back the already-added objects so the file is
-    # never left half-written, and surface a neurospatial-level ValueError.
+    # FIX 2 (atomic write): remove any originals (overwrite=True), then add the
+    # table, its companion occupancy, and persist the full environment (with
+    # connectivity + geometry). The originals are deleted HERE (not in preflight)
+    # so that if any step fails we can both roll back the newly-added objects AND
+    # restore the originals -- an overwrite that aborts leaves the pre-existing
+    # record intact rather than destroying it.
     added: list[tuple[str, str]] = []
+    removed: list[tuple[str, str, object]] = []
     try:
+        for namespace, obj_name, _obj in old_objects:
+            if namespace == "analysis":
+                del analysis.data_interfaces[obj_name]
+            else:
+                del nwbfile.scratch[obj_name]
+            removed.append((namespace, obj_name, _obj))
         analysis.add(table)
         added.append(("analysis", name))
         analysis.add(occupancy_ts)
         added.append(("analysis", occupancy_name))
-        # Collisions were resolved in preflight, so overwrite=True here just
+        # Originals were removed just above, so overwrite=True here just
         # guarantees no late collision raise inside the try-block.
         write_environment(nwbfile, env, name=env_name, overwrite=True)
         added.append(("scratch", env_name))
     except Exception as exc:
+        # Roll back the newly-added (partial) objects...
         for namespace, obj_name in reversed(added):
             try:
                 if namespace == "analysis":
@@ -755,10 +788,28 @@ def write_spatial_rates(
                     obj_name,
                     name,
                 )
+        # ...then restore the originals we removed, so a failed overwrite does not
+        # destroy the pre-existing record. Skip any name a partial write left
+        # behind (restore only what is actually missing).
+        for namespace, obj_name, obj in reversed(removed):
+            try:
+                if namespace == "analysis":
+                    if obj_name not in analysis.data_interfaces:
+                        analysis.add(obj)
+                elif obj_name not in nwbfile.scratch:
+                    nwbfile.add_scratch(obj)
+            except Exception:
+                logger.warning(
+                    "Restore of original '%s' failed while aborting spatial-rates "
+                    "overwrite '%s'; the pre-existing record may be lost.",
+                    obj_name,
+                    name,
+                )
         raise ValueError(
             f"Aborted writing spatial rates '{name}': a companion write failed "
-            f"after a partial write ({exc!r}). The already-added objects were "
-            f"rolled back, but the NWB file may still need inspection."
+            f"after a partial write ({exc!r}). The newly-added objects were rolled "
+            f"back and any pre-existing record restored, but the NWB file may still "
+            f"need inspection."
         ) from exc
 
     logger.debug(
@@ -857,6 +908,22 @@ def read_place_field(
         raise ValueError(
             f"'{name}' is not a spatial-rates table: its description JSON is "
             f"missing the expected spatial-rates metadata ('method', 'n_bins')."
+        )
+
+    # Enforce the schema MAJOR version. A minor bump only adds optional fields, so
+    # any 2.x table reads (2.0 and 2.1 are mutually readable); a missing version,
+    # a 1.x table (pre-0.9 "smoothing_method" layout), or an incompatible future
+    # major is rejected -- the clean break, no back-compat shim. Keyed on the
+    # major (not the exact version) so a later minor bump still reads this one.
+    schema_version = str(meta.get("schema_version", ""))
+    if schema_version.split(".")[0] != SPATIAL_RATES_SCHEMA_MAJOR:
+        raise ValueError(
+            f"Spatial rates '{name}' has schema_version={schema_version!r}, which "
+            f"this reader (schema {SPATIAL_RATES_SCHEMA_VERSION}) does not support. "
+            f"Only schema major {SPATIAL_RATES_SCHEMA_MAJOR}.x tables read; older "
+            f"layouts (e.g. the pre-0.9 'smoothing_method' schema) are a clean "
+            f"break with no back-compatibility shim. Recompute and re-write the "
+            f"spatial rates with this version."
         )
 
     method = meta["method"]

@@ -16,6 +16,9 @@ import pytest
 # Skip every test here when pynwb is absent (HAS_PYNWB gate).
 pytest.importorskip("pynwb")
 
+# Sentinel: "drop the schema_version key entirely" for the schema-guard tests.
+_MISSING = object()
+
 
 def _make_glm_rates_result(
     env,
@@ -229,3 +232,91 @@ class TestGlmRoundTrip:
         np.testing.assert_array_equal(
             np.asarray(back.firing_rates), np.asarray(result.firing_rates)
         )
+
+
+class TestOverwriteAtomicity:
+    """A failed overwrite must not destroy the pre-existing record."""
+
+    def test_overwrite_failure_preserves_original(
+        self, empty_nwb, sample_environment, monkeypatch
+    ):
+        """When the environment write fails mid-overwrite, the original survives.
+
+        The old table/occupancy/environment are removed only inside the write's
+        try-block and restored on failure, so an aborted overwrite leaves the
+        pre-existing record intact and readable rather than deleted.
+        """
+        from neurospatial.io.nwb import read_place_field, write_spatial_rates
+
+        env = sample_environment
+        original = _make_glm_rates_result(env, rank=5, seed=1)
+        write_spatial_rates(empty_nwb, original, name="rates")
+
+        # A replacement whose overwrite write fails at the environment step.
+        replacement = _make_glm_rates_result(env, rank=4, seed=2)
+        import neurospatial.io.nwb._environment as _envmod
+
+        def _boom(*_args, **_kwargs):
+            raise RuntimeError("injected environment write failure")
+
+        monkeypatch.setattr(_envmod, "write_environment", _boom)
+
+        with pytest.raises(ValueError, match="Aborted writing spatial rates"):
+            write_spatial_rates(empty_nwb, replacement, name="rates", overwrite=True)
+
+        # Restore the real writer, then confirm the ORIGINAL record survives:
+        # readable via the explicit env (table + occupancy restored) AND via the
+        # persisted env (env restored), field-for-field equal to the original.
+        monkeypatch.undo()
+        back = read_place_field(empty_nwb, name="rates", env=env)
+        assert back.rank == original.rank  # the original rank, not the replacement's
+        np.testing.assert_array_equal(
+            np.asarray(back.firing_rates), np.asarray(original.firing_rates)
+        )
+        np.testing.assert_allclose(
+            np.asarray(back.coefficients), np.asarray(original.coefficients)
+        )
+        # env restored too: read with env=None finds the persisted environment.
+        back_env_none = read_place_field(empty_nwb, name="rates")
+        assert back_env_none.env.n_bins == env.n_bins
+
+
+class TestSchemaVersionGuard:
+    """read_place_field enforces the schema MAJOR version."""
+
+    def _write_then_patch_schema(self, nwbfile, env, schema_value):
+        import json
+
+        from neurospatial.io.nwb import write_spatial_rates
+        from neurospatial.io.nwb._fields import (
+            DEFAULT_ANALYSIS_MODULE,
+            DEFAULT_SPATIAL_RATES_NAME,
+        )
+
+        write_spatial_rates(nwbfile, _make_ratio_rates_result(env))
+        table = nwbfile.processing[DEFAULT_ANALYSIS_MODULE][DEFAULT_SPATIAL_RATES_NAME]
+        meta = json.loads(table.description)
+        if schema_value is _MISSING:
+            meta.pop("schema_version", None)
+        else:
+            meta["schema_version"] = schema_value
+        table.fields["description"] = json.dumps(meta)
+
+    @pytest.mark.parametrize("bad", [_MISSING, "1.0", "3.0", "0.9"])
+    def test_incompatible_major_rejected(self, empty_nwb, sample_environment, bad):
+        """Missing / 1.x / a future-incompatible major all raise on read."""
+        from neurospatial.io.nwb import read_place_field
+
+        env = sample_environment
+        self._write_then_patch_schema(empty_nwb, env, bad)
+        with pytest.raises(ValueError, match="schema"):
+            read_place_field(empty_nwb, env=env)
+
+    def test_same_major_minor_reads(self, empty_nwb, sample_environment):
+        """A 2.0 table (same major, older minor) still reads under the 2.1 reader."""
+        from neurospatial.io.nwb import read_place_field
+
+        env = sample_environment
+        self._write_then_patch_schema(empty_nwb, env, "2.0")
+        back = read_place_field(empty_nwb, env=env)
+        assert back.method == "diffusion_kde"
