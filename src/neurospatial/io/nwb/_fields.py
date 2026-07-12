@@ -7,21 +7,27 @@ This module provides functions for writing spatial analysis results
 Schema note
 -----------
 The estimator is stored under the metadata key ``"method"``
-(``SPATIAL_RATES_SCHEMA_VERSION`` ``"2.1"``). Schema ``2.1`` additionally
-persists the ``method="glm"`` GAM diagnostics (``coefficients``, ``penalty``,
+(``SPATIAL_RATES_SCHEMA_VERSION`` ``"2.2"``). Schema ``2.1`` persists the
+``method="glm"`` GAM diagnostics (``coefficients``, ``penalty``,
 ``penalty_weights``, ``rank``, ``deviance``, ``converged``, ``n_iter``,
-``reml_objective``); ratio-method tables carry none of them and read back with
-those fields ``None``.
+``reml_objective``). Schema ``2.2`` adds the per-neuron-``lambda``
+(``pooled=False``) diagnostics: ``pooled`` and a scalar ``reml_at_boundary`` in
+the metadata blob, and -- when ``penalty`` / ``reml_objective`` /
+``reml_at_boundary`` are per-unit vectors -- those plus ``penalty_selected_by_reml``
+as extra per-unit table columns. Ratio-method tables carry none of the GAM
+fields and read back with them ``None``.
 
 ``read_place_field`` enforces the schema **major** version: it reads only tables
-whose ``schema_version`` shares the current major (``2.x`` -- e.g. ``2.0`` and
-``2.1`` are mutually readable, since a minor bump only *adds* optional fields),
-and rejects any other (missing, ``1.x``, or an incompatible future major) with a
-clear ``ValueError``. This is the clean break with no back-compatibility shim:
-pre-0.9 tables (schema ``1.x``, which keyed the estimator as
-``"smoothing_method"``) do not read. Accepting the whole current major (not just
-the exact current version) is deliberate -- a later minor bump must still read
-tables written by this one.
+whose ``schema_version`` shares the current major (``2.x`` -- e.g. ``2.0``,
+``2.1``, and ``2.2`` are mutually readable, since a minor bump only *adds*
+optional fields), and rejects any other (missing, ``1.x``, or an incompatible
+future major) with a clear ``ValueError``. A **schema-2.1** glm file carries no
+``pooled`` key; the reader defaults it **method-conditionally** -- ``pooled=True``
+for ``method="glm"`` (the only glm behavior that schema had) and ``pooled=None``
+for a ratio method (where ``pooled`` is meaningless) -- and a missing
+``reml_at_boundary`` / vector columns read back as ``None``. This is the
+clean break with no back-compatibility shim for the ``1.x`` layout: pre-0.9
+tables (which keyed the estimator as ``"smoothing_method"``) do not read.
 """
 
 from __future__ import annotations
@@ -64,7 +70,12 @@ DEFAULT_SPATIAL_RATES_NAME: str = "spatial_rates"
 # 2.1: adds the method="glm" GAM diagnostics (scalars + penalty_weights in the
 #      metadata blob; deviance + coefficients as per-unit table columns). Ratio
 #      tables are byte-identical to 2.0 apart from the version string.
-SPATIAL_RATES_SCHEMA_VERSION: str = "2.1"
+# 2.2: adds the per-neuron-lambda (pooled=False) diagnostics -- ``pooled`` and a
+#      scalar ``reml_at_boundary`` in the blob, plus ``penalty`` /
+#      ``reml_objective`` / ``reml_at_boundary`` / ``penalty_selected_by_reml``
+#      as per-unit columns when they are vectors. A 2.1 file (no ``pooled`` key)
+#      reads back method-conditionally (glm -> pooled=True, ratio -> None).
+SPATIAL_RATES_SCHEMA_VERSION: str = "2.2"
 
 # The reader accepts any table sharing this MAJOR version (minor bumps only add
 # optional fields, so 2.0/2.1/... are mutually readable); other majors (missing,
@@ -77,6 +88,12 @@ COL_FIRING_RATE: str = "firing_rate"
 # Per-unit GAM (method="glm") columns; absent for ratio methods.
 COL_DEVIANCE: str = "deviance"
 COL_COEFFICIENTS: str = "coefficients"
+# Per-unit-lambda (pooled=False) columns; present only when penalty/reml_objective
+# are per-unit vectors (schema 2.2).
+COL_PENALTY: str = "penalty"
+COL_REML_OBJECTIVE: str = "reml_objective"
+COL_REML_AT_BOUNDARY: str = "reml_at_boundary"
+COL_PENALTY_SELECTED: str = "penalty_selected_by_reml"
 
 # Default processing module for analysis results
 DEFAULT_ANALYSIS_MODULE: str = "analysis"
@@ -597,12 +614,21 @@ def write_spatial_rates(
 
     # L3: `unit_id` / `firing_rate` are reserved for the table's own columns; a
     # unit_table column with either name would collide inside the DynamicTable.
-    # For a glm result the per-unit GAM columns (`deviance` / `coefficients`) are
-    # reserved too, since they are written alongside. Raise a clear param-named
-    # error instead of a low-level hdmf error.
+    # For a glm result the per-unit GAM columns (`deviance` / `coefficients`, plus
+    # the per-unit-lambda `penalty` / `reml_objective` / `reml_at_boundary` /
+    # `penalty_selected_by_reml` columns written when pooled=False) are reserved
+    # too. Raise a clear param-named error instead of a low-level hdmf error.
     reserved_names: tuple[str, ...] = (COL_UNIT_ID, COL_FIRING_RATE)
     if is_glm:
-        reserved_names = (*reserved_names, COL_DEVIANCE, COL_COEFFICIENTS)
+        reserved_names = (
+            *reserved_names,
+            COL_DEVIANCE,
+            COL_COEFFICIENTS,
+            COL_PENALTY,
+            COL_REML_OBJECTIVE,
+            COL_REML_AT_BOUNDARY,
+            COL_PENALTY_SELECTED,
+        )
     unit_table = result.unit_table
     if unit_table is not None:
         reserved_clash = [
@@ -680,24 +706,40 @@ def write_spatial_rates(
 
     # GAM (method="glm") diagnostics: scalars + the (rank,) penalty_weights go
     # into the JSON blob; the per-unit deviance and coefficients become table
-    # columns. penalty / reml_objective serialize as JSON null when None.
+    # columns. Under pooled=False (per-unit lambda) the penalty / reml_objective /
+    # reml_at_boundary vectors and the penalty_selected_by_reml mask also become
+    # per-unit columns; the blob's scalar slots then carry JSON null. ``pooled``
+    # (the only reliable source -- scalar cases are value-identical either way)
+    # and ``per_unit`` (whether the vector columns are present) always ride along.
     gam_columns: list[VectorData] = []
     if is_glm:
         rank = int(result.rank)  # type: ignore[arg-type]
+        # The per-unit vector path is exactly when the provenance mask exists.
+        per_unit = result.penalty_selected_by_reml is not None
         penalty = result.penalty
         reml_objective = result.reml_objective
-        meta_dict["gam"] = {
-            "penalty": (None if penalty is None else float(penalty)),
+        reml_at_boundary = result.reml_at_boundary
+        gam_meta: dict[str, object] = {
             "rank": rank,
             "n_iter": int(result.n_iter),  # type: ignore[arg-type]
             "converged": bool(result.converged),
-            "reml_objective": (
-                None if reml_objective is None else float(reml_objective)
-            ),
             "penalty_weights": np.asarray(
                 result.penalty_weights, dtype=np.float64
             ).tolist(),
+            "pooled": bool(result.pooled),
+            "per_unit": per_unit,
         }
+        # Scalar slots: real values when scalar, JSON null when the value lives in
+        # a per-unit column instead (per_unit=True). A schema-2.1 reader will not
+        # find ``reml_at_boundary`` / ``pooled`` / ``per_unit`` and defaults them.
+        gam_meta["penalty"] = None if per_unit or penalty is None else float(penalty)
+        gam_meta["reml_objective"] = (
+            None if per_unit or reml_objective is None else float(reml_objective)
+        )
+        gam_meta["reml_at_boundary"] = (
+            None if per_unit or reml_at_boundary is None else bool(reml_at_boundary)
+        )
+        meta_dict["gam"] = gam_meta
         # coefficients (rank, n_units) -> per-unit rows (n_units, rank), matching
         # the firing_rate per-unit-row layout; deviance (n_units,) as-is.
         coefficients_rows = np.array(result.coefficients, dtype=np.float64).T
@@ -716,6 +758,41 @@ def write_spatial_rates(
                 data=coefficients_rows,
             ),
         ]
+        if per_unit:
+            # Per-unit-lambda vectors (pooled=False). reml_objective carries nan
+            # for zero-spike fallback units; the provenance mask distinguishes
+            # REML-selected (True) from fallback (False) units.
+            gam_columns += [
+                VectorData(
+                    name=COL_PENALTY,
+                    description="Per-unit smoothing penalty lambda (pooled=False).",
+                    data=np.asarray(result.penalty, dtype=np.float64),
+                ),
+                VectorData(
+                    name=COL_REML_OBJECTIVE,
+                    description=(
+                        "Per-unit minimized REML objective (nan for zero-spike "
+                        "fallback units; pooled=False)."
+                    ),
+                    data=np.asarray(result.reml_objective, dtype=np.float64),
+                ),
+                VectorData(
+                    name=COL_REML_AT_BOUNDARY,
+                    description=(
+                        "Per-unit REML boundary flag: lambda on a search bound "
+                        "(weakly identified; pooled=False)."
+                    ),
+                    data=np.asarray(result.reml_at_boundary, dtype=bool),
+                ),
+                VectorData(
+                    name=COL_PENALTY_SELECTED,
+                    description=(
+                        "Per-unit provenance: True = own REML lambda, False = "
+                        "pooled-lambda fallback (zero-spike unit; pooled=False)."
+                    ),
+                    data=np.asarray(result.penalty_selected_by_reml, dtype=bool),
+                ),
+            ]
 
     description = json.dumps(meta_dict)
 
@@ -993,11 +1070,12 @@ def read_place_field(
         )
 
     # GAM (method="glm") diagnostics: reconstruct from the JSON blob + the
-    # per-unit columns, preserving shapes. Absent (ratio methods) -> all None.
-    # coefficients is stored transposed as (n_units, rank); transpose back to
-    # (rank, n_units). The reconstructed fields must satisfy the SpatialRatesResult
-    # None-iff-glm invariant (checked at construction below) -- a wrong shape or a
-    # missing field raises there, so a corrupt glm record fails loudly.
+    # per-unit columns, preserving shapes. Absent (ratio methods) -> all None,
+    # including ``pooled`` (meaningless for a ratio result). coefficients is stored
+    # transposed as (n_units, rank); transpose back to (rank, n_units). The
+    # reconstructed fields must satisfy the SpatialRatesResult None-iff-glm
+    # invariant (checked at construction below) -- a wrong shape or a missing field
+    # raises there, so a corrupt glm record fails loudly.
     gam_fields: dict[str, object | None] = {
         "coefficients": None,
         "penalty": None,
@@ -1007,6 +1085,9 @@ def read_place_field(
         "converged": None,
         "n_iter": None,
         "reml_objective": None,
+        "reml_at_boundary": None,
+        "penalty_selected_by_reml": None,
+        "pooled": None,
     }
     if method == "glm":
         gam = meta.get("gam")
@@ -1015,20 +1096,43 @@ def read_place_field(
                 f"Spatial rates '{name}' has method='glm' but no GAM metadata "
                 f"blob; the file may be corrupt or written by an older schema."
             )
-        penalty = gam.get("penalty")
-        reml_objective = gam.get("reml_objective")
+        # Backward-compat (schema 2.1): a missing ``pooled`` key defaults to True
+        # for a glm file (the only glm behavior that schema had); ``per_unit`` and
+        # ``reml_at_boundary`` default to False / None.
+        per_unit = bool(gam.get("per_unit", False))
         gam_fields = {
             "coefficients": np.asarray(table[COL_COEFFICIENTS][:], dtype=np.float64).T,
-            "penalty": None if penalty is None else float(penalty),
             "penalty_weights": np.asarray(gam["penalty_weights"], dtype=np.float64),
             "rank": int(gam["rank"]),
             "deviance": np.asarray(table[COL_DEVIANCE][:], dtype=np.float64),
             "converged": bool(gam["converged"]),
             "n_iter": int(gam["n_iter"]),
-            "reml_objective": (
-                None if reml_objective is None else float(reml_objective)
-            ),
+            "pooled": bool(gam.get("pooled", True)),
         }
+        if per_unit:
+            # Per-unit-lambda vectors live in table columns (schema 2.2).
+            gam_fields["penalty"] = np.asarray(table[COL_PENALTY][:], dtype=np.float64)
+            gam_fields["reml_objective"] = np.asarray(
+                table[COL_REML_OBJECTIVE][:], dtype=np.float64
+            )
+            gam_fields["reml_at_boundary"] = np.asarray(
+                table[COL_REML_AT_BOUNDARY][:], dtype=bool
+            )
+            gam_fields["penalty_selected_by_reml"] = np.asarray(
+                table[COL_PENALTY_SELECTED][:], dtype=bool
+            )
+        else:
+            penalty = gam.get("penalty")
+            reml_objective = gam.get("reml_objective")
+            reml_at_boundary = gam.get("reml_at_boundary")
+            gam_fields["penalty"] = None if penalty is None else float(penalty)
+            gam_fields["reml_objective"] = (
+                None if reml_objective is None else float(reml_objective)
+            )
+            gam_fields["reml_at_boundary"] = (
+                None if reml_at_boundary is None else bool(reml_at_boundary)
+            )
+            gam_fields["penalty_selected_by_reml"] = None
 
     return SpatialRatesResult(
         firing_rates=firing_rates,

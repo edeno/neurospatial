@@ -387,6 +387,95 @@ def test_mutual_exclusivity(open_field_env: Environment) -> None:
     assert result.method == "glm"
 
 
+# ---------------------------------------------------------------------------
+# pooled=False (per-unit lambda) public surface
+# ---------------------------------------------------------------------------
+def test_pooled_validation(open_field_env: Environment) -> None:
+    """pooled is glm-only: pooled=False with a ratio method raises; with glm it
+    runs; pooled=True with a ratio method is the harmless no-op default."""
+    env = open_field_env
+    times, positions, spike_times = _grid_session(env, [(8.0, 8.0)], seed=5)
+    st = spike_times[0]
+
+    with pytest.raises(ValueError, match="pooled"):
+        compute_spatial_rate(env, st, times, positions, method="binned", pooled=False)
+    # glm accepts pooled=False.
+    r = compute_spatial_rate(env, st, times, positions, method="glm", pooled=False)
+    assert r.method == "glm" and r.pooled is False
+    # pooled=True with a ratio method is the default -> no raise.
+    ratio = compute_spatial_rate(
+        env, st, times, positions, method="binned", pooled=True
+    )
+    assert ratio.method == "binned"
+
+
+def test_pooled_type_strict(open_field_env: Environment) -> None:
+    """pooled rejects any non-bool: strings, ints (incl. 0/1), arrays, and None."""
+    env = open_field_env
+    times, positions, spike_times = _grid_session(env, [(8.0, 8.0)], seed=5)
+    st = spike_times[0]
+
+    for bad in ("true", 1, 0, np.array([True]), None):
+        with pytest.raises(ValueError, match="pooled"):
+            compute_spatial_rate(env, st, times, positions, method="glm", pooled=bad)
+
+
+def test_singular_pooled_false_equals_plural(open_field_env: Environment) -> None:
+    """compute_spatial_rate(spikes_k, pooled=False) equals
+    compute_spatial_rates([spikes_k], pooled=False)[0] field-for-field, with the
+    per-unit REML fields unwrapped to scalars."""
+    env = open_field_env
+    times, positions, spike_times = _grid_session(env, [(6.0, 6.0)], seed=9)
+    st = spike_times[0]
+
+    single = compute_spatial_rate(env, st, times, positions, method="glm", pooled=False)
+    plural0 = compute_spatial_rates(
+        env, [st], times, positions, method="glm", pooled=False
+    )[0]
+
+    np.testing.assert_array_equal(
+        np.asarray(single.firing_rate), np.asarray(plural0.firing_rate)
+    )
+    np.testing.assert_allclose(
+        np.asarray(single.coefficients), np.asarray(plural0.coefficients)
+    )
+    assert single.penalty == plural0.penalty
+    assert np.isscalar(single.penalty) or isinstance(single.penalty, float)
+    assert single.reml_objective == plural0.reml_objective
+    assert single.reml_at_boundary == plural0.reml_at_boundary
+    assert single.penalty_selected_by_reml == plural0.penalty_selected_by_reml
+    assert single.pooled is plural0.pooled is False
+    assert single.rank == plural0.rank
+    assert single.converged == plural0.converged
+    assert single.n_iter == plural0.n_iter
+    assert float(single.deviance) == pytest.approx(float(plural0.deviance))
+
+
+def test_result_carries_pooled(open_field_env: Environment) -> None:
+    """glm results expose .pooled True/False (and it survives indexing); ratio
+    results have .pooled is None."""
+    env = open_field_env
+    times, positions, spike_times = _grid_session(
+        env, [(5.0, 5.0), (11.0, 11.0)], seed=10
+    )
+
+    pooled_true = compute_spatial_rates(
+        env, spike_times, times, positions, method="glm"
+    )
+    assert pooled_true.pooled is True
+    assert pooled_true[0].pooled is True
+
+    pooled_false = compute_spatial_rates(
+        env, spike_times, times, positions, method="glm", pooled=False
+    )
+    assert pooled_false.pooled is False
+    assert pooled_false[1].pooled is False
+
+    ratio = compute_spatial_rates(env, spike_times, times, positions, method="binned")
+    assert ratio.pooled is None
+    assert ratio[0].pooled is None
+
+
 def test_value_domain(
     open_field_env: Environment, two_component_env: Environment
 ) -> None:

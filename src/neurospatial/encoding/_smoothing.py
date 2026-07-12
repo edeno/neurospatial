@@ -620,6 +620,48 @@ def _validate_glm_rank(rank: Any) -> int:
     return value
 
 
+def validate_pooled(pooled: Any, method: str) -> None:
+    """Validate the ``pooled`` flag of ``compute_spatial_rate(s)``.
+
+    ``pooled`` is a **strict** ``bool`` and **glm-only**:
+
+    - reject any non-``bool`` (``isinstance(pooled, bool)`` -- rejects strings,
+      ``int`` including ``0`` / ``1``, arrays, and ``None``), because ``True`` /
+      ``False`` are the only meaningful values and ``1`` / ``0`` would silently
+      pass a bare truthiness check;
+    - reject ``pooled=False`` with a **ratio method** (``pooled`` selects between
+      shared / per-unit ``lambda``, which only the glm estimator has).
+      ``pooled=True`` with a ratio method is the harmless default and does not
+      raise.
+
+    Parameters
+    ----------
+    pooled : Any
+        The value passed by the caller.
+    method : str
+        The requested estimator (already validated as a known method).
+
+    Raises
+    ------
+    ValueError
+        If ``pooled`` is not a real ``bool``, or ``pooled=False`` is combined
+        with a ratio method.
+    """
+    if not isinstance(pooled, bool):
+        raise ValueError(
+            "pooled must be a bool (True = one shared smoothing penalty lambda, "
+            "False = an independent per-unit lambda_k); got "
+            f"{pooled!r} of type {type(pooled).__name__}."
+        )
+    if method != "glm" and pooled is False:
+        raise ValueError(
+            "pooled is a method='glm' parameter (it selects shared vs per-unit "
+            f"lambda) and pooled=False cannot be combined with method={method!r}. "
+            "Ratio methods have no smoothing penalty; use method='glm' for "
+            "per-unit smoothing."
+        )
+
+
 def validate_spatial_method_params(
     method: str,
     *,

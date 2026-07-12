@@ -260,9 +260,14 @@ def _check_gam_result_invariant(
 
     is_glm = method == "glm"
     required = {name: fields[name] for name in _GAM_REQUIRED_FIELDS}
+    # ``penalty`` / ``reml_objective`` / ``reml_at_boundary`` /
+    # ``penalty_selected_by_reml`` are legitimately ``None`` even for glm (fixed
+    # penalty, REML-skip, no data, or pooled=True), so they are "optional".
     optional = {
         "penalty": fields["penalty"],
         "reml_objective": fields["reml_objective"],
+        "reml_at_boundary": fields["reml_at_boundary"],
+        "penalty_selected_by_reml": fields["penalty_selected_by_reml"],
     }
     if is_glm:
         missing = [name for name, value in required.items() if value is None]
@@ -302,12 +307,48 @@ def _check_gam_result_invariant(
                     + (f", n_units={n_units}" if n_units is not None else "")
                     + ")."
                 )
+        # Per-unit fields (pooled=False) are scalar on the singular slice and
+        # either scalar or a ``(n_units,)`` vector on the plural class; a stray
+        # extra axis is a construction bug (indexing / summary_table rely on it).
+        for name in (
+            "penalty",
+            "reml_objective",
+            "reml_at_boundary",
+            "penalty_selected_by_reml",
+        ):
+            value = fields[name]
+            if value is None:
+                continue
+            ndim = np.ndim(value)
+            if n_units is None:  # singular: must be a scalar
+                if ndim != 0:
+                    raise ValueError(
+                        f"{kind} (single-unit) glm field {name!r} must be a scalar; "
+                        f"got shape {tuple(np.shape(value))}."
+                    )
+            elif ndim not in (0, 1) or (
+                ndim == 1 and tuple(np.shape(value)) != (n_units,)
+            ):  # plural: scalar or (n_units,)
+                raise ValueError(
+                    f"{kind} glm field {name!r} must be a scalar or a ({n_units},) "
+                    f"vector; got shape {tuple(np.shape(value))}."
+                )
+        # ``pooled`` is a concrete bool for every glm result (the only reliable
+        # NWB source, since scalar cases are value-identical under both settings).
+        # Checked last so a more fundamental shape/required error surfaces first.
+        if not isinstance(fields["pooled"], bool):
+            raise ValueError(
+                f"{kind} with method='glm' must carry pooled=True/False; got "
+                f"{fields['pooled']!r}."
+            )
     else:
         stray = [
             name
             for name, value in {**required, **optional}.items()
             if value is not None
         ]
+        if fields["pooled"] is not None:
+            stray.append("pooled")
         if stray:
             raise ValueError(
                 f"{kind} with ratio method={fields['method']!r} must not carry GAM "
@@ -318,6 +359,22 @@ def _check_gam_result_invariant(
                 f"{kind} with ratio method={fields['method']!r} must have a float "
                 "bandwidth; got None (bandwidth=None is reserved for method='glm')."
             )
+
+
+def _index_per_unit(value: Any, idx: int) -> Any:
+    """Slice a possibly-per-unit GAM field to a single unit (for indexing).
+
+    ``None`` and shared **scalars** carry through unchanged (a shared ``lambda``
+    or ``None`` is the same for every unit); a per-unit ``(n_units,)`` vector
+    (``pooled=False``) is sliced to its ``idx`` element as a Python scalar. Keeps
+    ``rates[i]`` field-for-field equal to the singular ``compute_spatial_rate``.
+    """
+    if value is None:
+        return None
+    arr = np.asarray(value)
+    if arr.ndim == 0:  # shared scalar -> preserve the original Python value/type
+        return value
+    return arr[idx].item()
 
 
 @dataclass(frozen=True, repr=False)
@@ -363,12 +420,16 @@ class SpatialRateResult(SpatialResultMixin):
         population result (``rates[i].unit_id == rates.unit_ids[i]``); ``None``
         for a standalone single-unit computation.
     coefficients, penalty, penalty_weights, rank, deviance, converged, n_iter, \
-reml_objective
+reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         GAM diagnostics for ``method="glm"`` (all ``None`` for the ratio
         methods): the per-unit slice of a population fit -- ``coefficients``
         ``(rank,)``, scalar ``deviance``, and the shared/batch-scalar
         ``penalty`` / ``penalty_weights`` ``(rank,)`` / ``rank`` / ``converged``
-        / ``n_iter`` / ``reml_objective``. See :class:`SpatialRatesResult`.
+        / ``n_iter`` / ``reml_objective``. Under a per-unit fit (``pooled=False``)
+        ``penalty`` / ``reml_objective`` / ``reml_at_boundary`` are this unit's
+        own scalar values and ``penalty_selected_by_reml`` its provenance
+        (``False`` = pooled-``λ`` fallback zero-spike unit); ``pooled`` records
+        the flag (``None`` for ratio results). See :class:`SpatialRatesResult`.
 
     Notes
     -----
@@ -432,6 +493,12 @@ reml_objective
     converged: bool | None = None
     n_iter: int | None = None
     reml_objective: float | None = None
+    # Per-unit-lambda (``pooled=False``) diagnostics: the per-unit slice of the
+    # population fit (scalars here). ``None`` for ratio methods and for
+    # ``pooled=True`` glm results (where no per-unit vector was produced).
+    reml_at_boundary: bool | None = None
+    penalty_selected_by_reml: bool | None = None
+    pooled: bool | None = None
 
     def __post_init__(self) -> None:
         # Enforce the None-iff-glm invariant: the GAM diagnostics are all present
@@ -450,6 +517,9 @@ reml_objective
                 "converged": self.converged,
                 "n_iter": self.n_iter,
                 "reml_objective": self.reml_objective,
+                "reml_at_boundary": self.reml_at_boundary,
+                "penalty_selected_by_reml": self.penalty_selected_by_reml,
+                "pooled": self.pooled,
             },
             n_units=None,
         )
@@ -1051,10 +1121,28 @@ class SpatialRatesResult(SpatialResultMixin):
         out-of-domain data (empirical rate above ``exp(30)``).
     n_iter : int or None
         Batch-level Newton iteration count (``None`` for ratio methods).
-    reml_objective : float or None
+    reml_objective : float or NDArray or None
         Minimized REML objective, or ``None`` when REML did not run (a fixed
         ``penalty`` was supplied, the basis has no penalized modes, or the data
-        was all-zero) -- and ``None`` for ratio methods.
+        was all-zero) -- and ``None`` for ratio methods. Under a per-unit fit
+        (``pooled=False``) it is a ``(n_units,)`` vector, ``nan`` for a zero-spike
+        fallback unit.
+    reml_at_boundary : bool or NDArray or None
+        Whether the selected ``λ`` sits on a REML search bound (weakly identified
+        ``λ``, though the fitted field is stable). Scalar for the shared
+        (``pooled=True``) fit, a ``(n_units,)`` bool vector for the per-unit
+        (``pooled=False``) fit, and ``None`` when REML did not run or for ratio
+        methods.
+    penalty_selected_by_reml : NDArray or None
+        Per-unit provenance mask for ``pooled=False`` only: ``True`` where
+        ``λ_k`` is the unit's own REML minimum, ``False`` for a zero-spike unit
+        carrying the pooled-``λ`` fallback. ``None`` under ``pooled=True`` and for
+        ratio methods.
+    pooled : bool or None
+        The smoothing-pool flag actually applied: ``True`` (shared ``λ``) /
+        ``False`` (per-unit ``λ``) for glm, ``None`` for ratio methods. Persisted
+        because scalar-output cases are value-identical under both settings, so it
+        cannot be reconstructed from the values (the only reliable NWB source).
     unit_ids : NDArray, shape (n_units,)
         Identifier for each unit (row), e.g. from ``read_units`` or passed via
         ``unit_ids=``. Defaults to ``np.arange(n_units)``. Carried into
@@ -1146,7 +1234,10 @@ class SpatialRatesResult(SpatialResultMixin):
     #   deviance          (n_units,)        per-unit Poisson deviance
     #   converged         bool              batch-level convergence flag
     #   n_iter            int               batch-level Newton iterations
-    #   reml_objective    scalar or None    minimized REML objective (None if REML did not run)
+    #   reml_objective    scalar, (n_units,), or None   minimized REML objective
+    #   reml_at_boundary  scalar bool, (n_units,) bool, or None  weak-lambda flag
+    #   penalty_selected_by_reml  (n_units,) bool or None  pooled=False provenance
+    #   pooled            bool or None      shared vs per-unit lambda (None ratio)
     coefficients: NDArray[np.float64] | None = None
     penalty: float | NDArray[np.float64] | None = None
     penalty_weights: NDArray[np.float64] | None = None
@@ -1154,7 +1245,16 @@ class SpatialRatesResult(SpatialResultMixin):
     deviance: NDArray[np.float64] | None = None
     converged: bool | None = None
     n_iter: int | None = None
-    reml_objective: float | None = None
+    reml_objective: float | NDArray[np.float64] | None = None
+    # Per-unit-lambda (``pooled=False``) diagnostics. ``penalty`` /
+    # ``reml_objective`` / ``reml_at_boundary`` widen to ``(n_units,)`` vectors on
+    # the per-unit automatic-REML path (informative units their ``lambda_k``,
+    # zero-spike units the pooled fallback with ``reml_objective=nan``);
+    # ``penalty_selected_by_reml`` is the ``(n_units,)`` bool provenance mask
+    # (``True`` informative, ``False`` fallback), ``None`` otherwise.
+    reml_at_boundary: bool | NDArray[np.bool_] | None = None
+    penalty_selected_by_reml: NDArray[np.bool_] | None = None
+    pooled: bool | None = None
 
     def __post_init__(self) -> None:
         from neurospatial._results import resolve_unit_ids, validate_unit_table
@@ -1176,6 +1276,9 @@ class SpatialRatesResult(SpatialResultMixin):
                 "converged": self.converged,
                 "n_iter": self.n_iter,
                 "reml_objective": self.reml_objective,
+                "reml_at_boundary": self.reml_at_boundary,
+                "penalty_selected_by_reml": self.penalty_selected_by_reml,
+                "pooled": self.pooled,
             },
             n_units=n_units,
         )
@@ -1237,6 +1340,9 @@ class SpatialRatesResult(SpatialResultMixin):
             None if self.coefficients is None else np.asarray(self.coefficients)[:, idx]
         )
         deviance = None if self.deviance is None else np.asarray(self.deviance)[idx]
+        # ``penalty`` / ``reml_objective`` / ``reml_at_boundary`` /
+        # ``penalty_selected_by_reml`` slice per-unit when they are per-unit
+        # vectors (pooled=False); a shared scalar or ``None`` carries through.
         return SpatialRateResult(
             firing_rate=rates[idx],
             occupancy=self.occupancy,
@@ -1245,13 +1351,18 @@ class SpatialRatesResult(SpatialResultMixin):
             bandwidth=self.bandwidth,
             unit_id=np.asarray(self.unit_ids)[idx].item(),
             coefficients=coefficients,
-            penalty=self.penalty,
+            penalty=_index_per_unit(self.penalty, idx),
             penalty_weights=self.penalty_weights,
             rank=self.rank,
             deviance=deviance,
             converged=self.converged,
             n_iter=self.n_iter,
-            reml_objective=self.reml_objective,
+            reml_objective=_index_per_unit(self.reml_objective, idx),
+            reml_at_boundary=_index_per_unit(self.reml_at_boundary, idx),
+            penalty_selected_by_reml=_index_per_unit(
+                self.penalty_selected_by_reml, idx
+            ),
+            pooled=self.pooled,
         )
 
     def __iter__(self) -> Iterator[SpatialRateResult]:
@@ -2100,10 +2211,12 @@ class SpatialRatesResult(SpatialResultMixin):
 
         data["method"] = self.method
 
-        # GAM scalar columns, only for ``method="glm"``. ``deviance`` is per-unit;
-        # the remaining GAM diagnostics are batch-level scalars that broadcast to
-        # every row. Keyed on ``method`` (the single "is this glm?" discriminant,
-        # matching the NWB writer), not on a GAM field's None-ness.
+        # GAM columns, only for ``method="glm"``. ``deviance`` is per-unit; the
+        # batch-scalar diagnostics broadcast to every row. ``penalty`` /
+        # ``reml_objective`` / ``reml_at_boundary`` broadcast when scalar and
+        # become per-unit columns when they are ``(n_units,)`` vectors
+        # (``pooled=False``). Keyed on ``method`` (the single "is this glm?"
+        # discriminant, matching the NWB writer), not on a GAM field's None-ness.
         if self.method == "glm":
             data["penalty"] = self.penalty
             data["rank"] = self.rank
@@ -2111,6 +2224,14 @@ class SpatialRatesResult(SpatialResultMixin):
             data["converged"] = self.converged
             data["n_iter"] = self.n_iter
             data["reml_objective"] = self.reml_objective
+            data["reml_at_boundary"] = self.reml_at_boundary
+            data["pooled"] = self.pooled
+            # Per-unit provenance mask only exists for the per-unit (pooled=False)
+            # path; skip it (rather than write an all-None column) otherwise.
+            if self.penalty_selected_by_reml is not None:
+                data["penalty_selected_by_reml"] = np.asarray(
+                    self.penalty_selected_by_reml
+                )
 
         return pd.DataFrame(data, index=pd.Index(index_ids, name="unit_id"))
 
@@ -2157,6 +2278,7 @@ def _compute_glm_spatial_rates(
     *,
     penalty: float | None,
     rank: int | None,
+    pooled: bool = True,
     resolved_backend: Literal["numpy", "jax"],
     dtype: type[np.float32] | type[np.float64],
 ) -> tuple[ArrayLike, Any]:
@@ -2244,13 +2366,18 @@ def _compute_glm_spatial_rates(
     counts_fit = spike_counts.T[live_bins, :]  # (n_live_bins, n_units)
     occ_fit = occupancy[live_bins]  # (n_live_bins,)
 
-    # Fit at the chosen penalty. ``pooled`` stays the default ``True`` (a single
-    # shared lambda; per-unit lambda is not a public param). ``backend`` dispatches
-    # the fit compute in ``fit_mrf_gam`` (the float32 JAX mirror when resolved to
-    # ``"jax"`` and available, else the float64 core); MRFFit arrays come back
-    # NumPy float64 either way.
+    # Fit at the chosen penalty. ``pooled`` selects shared (``True``) vs per-unit
+    # (``False``) lambda; it is forwarded from the public estimator, validated
+    # there. ``backend`` dispatches the fit compute in ``fit_mrf_gam`` (the float32
+    # JAX mirror when resolved to ``"jax"`` and available, else the float64 core);
+    # MRFFit arrays come back NumPy float64 either way.
     fit = fit_mrf_gam(
-        basis, counts_fit, occ_fit, penalty=penalty, backend=resolved_backend
+        basis,
+        counts_fit,
+        occ_fit,
+        penalty=penalty,
+        pooled=pooled,
+        backend=resolved_backend,
     )
 
     # Boundary out: floor-fill, then scatter max(exp(eta), _RATE_FLOOR).T into the
@@ -2287,6 +2414,7 @@ def compute_spatial_rate(
     fill_value: float | None = None,
     penalty: float | None = None,
     rank: int | None = None,
+    pooled: bool = True,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
@@ -2382,6 +2510,22 @@ default="diffusion_kde"
         **clamped** (never rejected) to the effective rank
         ``max(n_live_components, min(n_live_bins, rank))``, reported via
         ``result.rank``. Mutually exclusive with the ratio methods.
+    pooled : bool, default=True
+        (``method="glm"`` only; strict ``bool``.) Whether REML selects **one
+        shared** smoothing penalty ``λ`` for the population (``True``, the
+        default) or an **independent per-unit** ``λ`` (``False``). ``pooled=False``
+        runs the REML search once per unit, so the fit costs roughly one REML per
+        neuron; ``result.penalty`` / ``reml_objective`` / ``reml_at_boundary``
+        then hold that unit's own value (a single-unit call unwraps them to
+        scalars). Zero-spike units (whose ``λ`` is unidentified) fall back to the
+        pooled ``λ`` over the informative units, flagged
+        ``penalty_selected_by_reml=False`` with ``reml_objective=nan``. A supplied
+        fixed ``penalty`` beats ``pooled`` (REML is skipped and one scalar ``λ``
+        is recorded); ``pooled`` is likewise a no-op at ``penalty_rank == 0`` (a
+        shared-basis property) or when no unit spikes. A boundary warning means
+        the selected ``λ`` sits on the search bound -- ``λ`` itself is weakly
+        identified even though the fitted field is stable. Passing
+        ``pooled=False`` with a ratio method raises ``ValueError``.
     speed : ndarray, shape (n_samples,), optional
         Precomputed instantaneous speed at each trajectory sample (physical
         units / second). Only used when ``min_speed`` is set. When
@@ -2564,7 +2708,10 @@ default="diffusion_kde"
     # contract order, then resolve the ratio defaults. For glm the ratio params
     # stay unset (None); for ratio methods bandwidth/min_occupancy resolve to
     # their historical defaults so existing behavior is byte-identical.
-    from neurospatial.encoding._smoothing import validate_spatial_method_params
+    from neurospatial.encoding._smoothing import (
+        validate_pooled,
+        validate_spatial_method_params,
+    )
 
     penalty, rank = validate_spatial_method_params(
         method,
@@ -2574,6 +2721,9 @@ default="diffusion_kde"
         penalty=penalty,
         rank=rank,
     )
+    # ``pooled`` (glm-only, strict bool): shared vs per-unit lambda. pooled=True
+    # with a ratio method is the harmless default; pooled=False with one raises.
+    validate_pooled(pooled, method)
     # Resolve the ratio defaults. glm ignores bandwidth/min_occupancy (its branch
     # returns before any smoothing and stamps bandwidth=None on the result); for
     # ratio methods this restores the historical defaults byte-for-byte.
@@ -2658,6 +2808,7 @@ default="diffusion_kde"
             occupancy,
             penalty=penalty,
             rank=rank,
+            pooled=pooled,
             resolved_backend=resolved_backend,
             dtype=np.float64,
         )
@@ -2675,6 +2826,10 @@ default="diffusion_kde"
             single_occupancy = jnp.asarray(occupancy, dtype=jnp.float64)
         else:
             single_firing_rate = np.asarray(glm_firing_rates)[0]
+        # Singular result: UNWRAP the one-element per-unit vectors (pooled=False)
+        # to scalars so ``compute_spatial_rate(pooled=False)`` equals
+        # ``compute_spatial_rates([spikes], pooled=False)[0]`` field-for-field.
+        # ``pooled=True`` fields are already scalars and pass through untouched.
         return SpatialRateResult(
             firing_rate=single_firing_rate,
             occupancy=single_occupancy,
@@ -2682,13 +2837,16 @@ default="diffusion_kde"
             method=method,
             bandwidth=None,
             coefficients=np.asarray(fit.coefficients)[:, 0],
-            penalty=fit.penalty,
+            penalty=_index_per_unit(fit.penalty, 0),
             penalty_weights=fit.penalty_weights,
             rank=fit.rank,
             deviance=fit.deviance[0],
             converged=fit.converged,
             n_iter=fit.n_iter,
-            reml_objective=fit.reml_objective,
+            reml_objective=_index_per_unit(fit.reml_objective, 0),
+            reml_at_boundary=_index_per_unit(fit.reml_at_boundary, 0),
+            penalty_selected_by_reml=_index_per_unit(fit.penalty_selected_by_reml, 0),
+            pooled=fit.pooled,
         )
 
     # Apply smoothing to compute firing rate
@@ -2737,6 +2895,7 @@ def compute_spatial_rates(
     fill_value: float | None = None,
     penalty: float | None = None,
     rank: int | None = None,
+    pooled: bool = True,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
@@ -2825,6 +2984,18 @@ default="diffusion_kde"
         (≥ 1). ``None`` uses the module default cap; an out-of-range value is
         clamped (never rejected) to the effective rank reported via
         ``result.rank``. Mutually exclusive with the ratio methods.
+    pooled : bool, default=True
+        (``method="glm"`` only; strict ``bool``.) One **shared** smoothing penalty
+        ``λ`` for the whole population (``True``, the default) or an **independent
+        per-unit** ``λ`` (``False``). Under ``pooled=False`` the REML search runs
+        once per informative unit (cost ~ one REML per neuron), so
+        ``result.penalty`` / ``reml_objective`` / ``reml_at_boundary`` become
+        ``(n_units,)`` vectors and ``penalty_selected_by_reml`` a per-unit mask;
+        zero-spike units fall back to the pooled ``λ`` over the informative units
+        (``penalty_selected_by_reml=False``, ``reml_objective=nan``). A fixed
+        ``penalty`` beats ``pooled`` (scalar ``λ``); ``pooled`` is a no-op at
+        ``penalty_rank == 0`` or when no unit spikes. ``pooled=False`` with a ratio
+        method raises ``ValueError``.
     speed : ndarray, shape (n_samples,), optional
         Precomputed instantaneous speed at each trajectory sample (physical
         units / second). Only used when ``min_speed`` is set; auto-derived from
@@ -3069,7 +3240,10 @@ default="diffusion_kde"
     # resolve the ratio defaults. glm ignores bandwidth/min_occupancy (its branch
     # below returns before any smoothing and stamps bandwidth=None on the result);
     # for ratio methods this restores the historical defaults byte-for-byte.
-    from neurospatial.encoding._smoothing import validate_spatial_method_params
+    from neurospatial.encoding._smoothing import (
+        validate_pooled,
+        validate_spatial_method_params,
+    )
 
     penalty, rank = validate_spatial_method_params(
         method,
@@ -3079,6 +3253,9 @@ default="diffusion_kde"
         penalty=penalty,
         rank=rank,
     )
+    # ``pooled`` (glm-only, strict bool): shared vs per-unit lambda. pooled=True
+    # with a ratio method is the harmless default; pooled=False with one raises.
+    validate_pooled(pooled, method)
     bandwidth = 5.0 if bandwidth is None else bandwidth
     min_occupancy = 0.0 if min_occupancy is None else min_occupancy
     if method != "glm":
@@ -3182,6 +3359,7 @@ default="diffusion_kde"
             occupancy,
             penalty=penalty,
             rank=rank,
+            pooled=pooled,
             resolved_backend=resolved_backend,
             dtype=dtype,
         )
@@ -3192,6 +3370,9 @@ default="diffusion_kde"
             import jax.numpy as jnp
 
             batch_occupancy = jnp.asarray(occupancy, dtype=jnp.float64)
+        # The per-unit lambda fields (``penalty`` / ``reml_objective`` /
+        # ``reml_at_boundary`` vectors, ``penalty_selected_by_reml`` mask) carry
+        # straight through from the fit; they are scalar/None under pooled=True.
         return SpatialRatesResult(
             firing_rates=glm_firing_rates,
             occupancy=batch_occupancy,
@@ -3211,6 +3392,9 @@ default="diffusion_kde"
             converged=fit.converged,
             n_iter=fit.n_iter,
             reml_objective=fit.reml_objective,
+            reml_at_boundary=fit.reml_at_boundary,
+            penalty_selected_by_reml=fit.penalty_selected_by_reml,
+            pooled=fit.pooled,
         )
 
     # Handle edge case: no neurons

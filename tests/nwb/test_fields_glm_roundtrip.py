@@ -53,6 +53,7 @@ def _make_glm_rates_result(
         converged=True,
         n_iter=7,
         reml_objective=reml_objective,
+        pooled=True,
     )
 
 
