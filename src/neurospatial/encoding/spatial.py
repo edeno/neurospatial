@@ -2189,10 +2189,12 @@ def _compute_glm_spatial_rates(
         Requested basis rank cap; ``None`` resolves to the module default. The
         effective rank is reported via ``MRFFit.rank`` after clamping.
     resolved_backend : {"numpy", "jax"}, keyword-only
-        The already-resolved backend (via ``get_backend_name``). The fit always
-        runs the NumPy float64 core (``backend`` is forwarded to ``fit_mrf_gam``
-        but currently unused there); the returned rate array is converted to a JAX
-        array when this is ``"jax"``, matching the ratio path's return contract.
+        The already-resolved backend (via ``get_backend_name``). Forwarded to
+        ``fit_mrf_gam``, which routes the fit compute to the float32 JAX mirror
+        when this is ``"jax"`` and JAX is installed (else the float64 core); either
+        way ``MRFFit`` arrays come back NumPy float64. The returned rate array is
+        converted to a JAX array when this is ``"jax"``, matching the ratio path's
+        return contract.
     dtype : {np.float32, np.float64}, keyword-only
         Storage dtype of the returned rate array (applied at the boundary; the
         glm core stays float64).
@@ -2243,9 +2245,10 @@ def _compute_glm_spatial_rates(
     occ_fit = occupancy[live_bins]  # (n_live_bins,)
 
     # Fit at the chosen penalty. ``pooled`` stays the default ``True`` (a single
-    # shared lambda; per-unit lambda is not a public param). ``backend`` is
-    # forwarded but currently unused (the NumPy core always runs). MRFFit arrays
-    # come back NumPy.
+    # shared lambda; per-unit lambda is not a public param). ``backend`` dispatches
+    # the fit compute in ``fit_mrf_gam`` (the float32 JAX mirror when resolved to
+    # ``"jax"`` and available, else the float64 core); MRFFit arrays come back
+    # NumPy float64 either way.
     fit = fit_mrf_gam(
         basis, counts_fit, occ_fit, penalty=penalty, backend=resolved_backend
     )

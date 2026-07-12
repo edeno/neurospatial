@@ -257,6 +257,41 @@ def fit_mrf_gam(
             pooled=pooled,
         )
 
+    # --- rank-deficiency float64 fallback (decided BEFORE lambda selection) ---
+    # A design that is rank-deficient on the exposed (visited) bins has a Hessian
+    # whose null directions are regularized only by ``penalty * d`` (0 on the
+    # intercept columns), so a small -- not only zero -- penalty leaves them
+    # (near-)singular. A float32 (JAX) solve of a (near-)singular system is
+    # unreliable: it can wander the null space to a physically-impossible
+    # saturated rate while still reporting convergence (observed up to ~1e12 Hz
+    # for penalties through ~1e-6), and float32 REML can select a wildly different
+    # lambda in the flat over-smoothed regime. So a rank-deficient fit runs
+    # ENTIRELY on the float64 core -- both the REML lambda search and the final
+    # fit -- regardless of backend. Full-rank designs (the norm) are
+    # well-conditioned at any penalty (including 0) and keep the fast JAX path;
+    # REML never selects a blow-up penalty. The (SVD) rank check runs only when it
+    # can change behavior: the JAX path (to decide the fallback) or an explicit
+    # penalty=0 (to warn) -- never on a NumPy fit at a nonzero penalty.
+    rank_deficient = (
+        penalty_rank > 0
+        and (using_jax or penalty == 0.0)
+        and bool(np.linalg.matrix_rank(B[occupancy > 0]) < r_eff)
+    )
+    if rank_deficient:
+        newton_fit = _newton_fit_numpy
+        select_penalty = select_penalty_by_reml
+    # penalty=0 on a rank-deficient design is additionally UNIDENTIFIABLE (the
+    # fill-mode coefficients are not pinned down at all) -- warn regardless of the
+    # numerically-stable float64 fallback.
+    if rank_deficient and penalty == 0.0:
+        warnings.warn(
+            "MRF-GAM fit: penalty=0 with a design rank-deficient on the "
+            "exposed (visited) bins; the fill-mode coefficients are not "
+            "identifiable. Increase penalty or reduce rank.",
+            UserWarning,
+            stacklevel=2,
+        )
+
     # --- lambda selection (all-zero-spike population handled first) ---
     applied_penalty: float | None
     reml_objective: float | None = None
@@ -283,37 +318,7 @@ def fit_mrf_gam(
     # means an UNPENALIZED fit: use penalty_diag = zeros_like(d), never None
     # (correct -- penalty_rank == 0 means every weight is a structural null).
     penalty_diag = np.zeros_like(d) if applied_penalty is None else applied_penalty * d
-
-    # A design that is rank-deficient on the exposed (visited) bins has a Hessian
-    # whose null directions are regularized only by ``penalty * d`` (0 on the
-    # intercept columns), so a small -- not only zero -- penalty leaves them
-    # (near-)singular. The float64 core stays bounded there, but a float32 (JAX)
-    # solve of a (near-)singular system is unreliable: it can wander the null space
-    # to a physically-impossible saturated rate while still reporting convergence
-    # (observed up to ~1e12 Hz for penalties through ~1e-6). So a rank-deficient
-    # fit runs on the float64 core regardless of backend. Full-rank designs are
-    # well-conditioned at any penalty (including 0), so they keep the fast JAX
-    # path; REML never selects a blow-up penalty. Compute the (SVD) rank check only
-    # when it can change behavior -- the JAX path (to decide the fallback) or a
-    # penalty=0 fit (to warn) -- never on the plain NumPy path.
-    rank_deficient = (
-        penalty_rank > 0
-        and (using_jax or applied_penalty == 0.0)
-        and bool(np.linalg.matrix_rank(B[occupancy > 0]) < r_eff)
-    )
-    # penalty=0 on a rank-deficient design is additionally UNIDENTIFIABLE (the
-    # fill-mode coefficients are not pinned down at all) -- warn regardless of the
-    # numerically-stable float64 fallback.
-    if rank_deficient and applied_penalty == 0.0:
-        warnings.warn(
-            "MRF-GAM fit: penalty=0 with a design rank-deficient on the "
-            "exposed (visited) bins; the fill-mode coefficients are not "
-            "identifiable. Increase penalty or reduce rank.",
-            UserWarning,
-            stacklevel=2,
-        )
-    final_newton_fit = _newton_fit_numpy if rank_deficient else newton_fit
-    coeffs, eta, _mu, n_iter, max_step, converged = final_newton_fit(
+    coeffs, eta, _mu, n_iter, max_step, converged = newton_fit(
         counts, occupancy, B, penalty_diag, _MAX_ITER, _FIT_TOL
     )
 

@@ -96,6 +96,13 @@ def test_jax_numpy_parity(open_field_env, simulate_place_fields):
     fit_np = fit_mrf_gam(basis, counts, occ, penalty=1.5, backend="numpy")
     fit_jax = fit_mrf_gam(basis, counts, occ, penalty=1.5, backend="jax")
 
+    # The JAX path was actually taken: float32 vs float64 must differ somewhere.
+    # (Guards against a silently mis-wired dispatch falling back to NumPy, which
+    # would make every tolerance below pass trivially at zero difference.)
+    assert not np.array_equal(
+        np.asarray(fit_jax.coefficients), np.asarray(fit_np.coefficients)
+    )
+
     # MRFFit arrays are always NumPy float64, even on the JAX path.
     assert isinstance(fit_jax, MRFFit)
     assert np.asarray(fit_jax.coefficients).dtype == np.float64
@@ -349,3 +356,80 @@ def test_jax_all_zero_spike_effectively_floors(open_field_env):
     assert np.all(rate >= _RATE_FLOOR)  # the contract: a floor (minimum), not a target
     assert np.all(rate < 1e-6)  # scientifically zero for a silent unit
     assert np.all(np.isfinite(fit.deviance))
+
+
+def test_jax_out_of_domain_not_converged():
+    """The float32 out-of-domain guard mirrors the NumPy core: an empirical rate
+    above ``exp(_ETA_CLIP)`` (physically impossible) reports ``converged=False``,
+    never a false convergence.
+
+    Mirrors ``test_out_of_domain_not_converged`` in ``test_glm_fit.py`` for the
+    JAX path (which the rank-deficient tests do not exercise -- rank-deficient
+    designs fall back to NumPy, so the JAX ``converged=False`` plumbing needs its
+    own test).
+    """
+    pytest.importorskip("jax")
+    from neurospatial.encoding._glm_jax import _newton_fit_jax
+
+    counts = np.array([[2e13]])  # (1 bin, 1 unit); rate 2e13 > exp(30) ~ 1.07e13
+    occupancy = np.array([1.0])
+    B = np.array([[1.0]])
+    penalty_diag = np.zeros(1)
+    *_, converged = _newton_fit_jax(
+        counts, occupancy, B, penalty_diag, _MAX_ITER, _FIT_TOL
+    )
+    assert converged is False
+
+
+def test_jax_rank_deficient_reml_matches_numpy(open_field_env):
+    """REML on a rank-deficient design routes ENTIRELY to the float64 core, so the
+    selected ``lambda`` and coefficients are bit-identical across backends.
+
+    Without routing REML (not just the final fit) to float64, float32 REML can
+    pick a ``lambda`` orders of magnitude off in the flat over-smoothed regime --
+    the reported ``penalty`` diagnostic would then disagree wildly between
+    backends even though the rate map is similar.
+    """
+    pytest.importorskip("jax")
+    env = open_field_env
+    n_bins = env.n_bins
+    rng = np.random.default_rng(2)
+    occ = np.zeros(n_bins)
+    occ[: n_bins // 2] = 3.0
+    counts = np.zeros((1, n_bins))
+    counts[0, : n_bins // 2] = rng.poisson(10.0, size=n_bins // 2)
+    basis = env._mrf_basis(occ, rank=n_bins)  # rank-deficient exposed design
+    c, o = _restrict(counts.T, occ, basis)
+
+    fit_jax = fit_mrf_gam(basis, c, o, penalty=None, backend="jax")
+    fit_np = fit_mrf_gam(basis, c, o, penalty=None, backend="numpy")
+    assert fit_jax.penalty == fit_np.penalty  # same lambda (both float64 REML)
+    np.testing.assert_array_equal(
+        np.asarray(fit_jax.coefficients), np.asarray(fit_np.coefficients)
+    )
+
+
+@pytest.mark.skipif(not _jax_available(), reason="JAX not available")
+def test_glm_backend_auto_routes_to_jax(open_field_env):
+    """``method="glm", backend="auto"`` resolves to the JAX path when JAX is
+    available -- matching ``backend="jax"`` (not silently the NumPy path).
+
+    ``fit_mrf_gam`` branches only on ``backend == "jax"``; the ``"auto" -> "jax"``
+    resolution happens in the estimator layer, so it needs its own check.
+    """
+    from neurospatial.encoding.spatial import compute_spatial_rates
+
+    from .test_glm_api import _grid_session
+
+    env = open_field_env
+    centers = [(4.0, 4.0), (12.0, 12.0)]
+    times, positions, spike_times = _grid_session(env, centers, seed=12)
+    auto = compute_spatial_rates(
+        env, spike_times, times, positions, method="glm", backend="auto"
+    )
+    jax = compute_spatial_rates(
+        env, spike_times, times, positions, method="glm", backend="jax"
+    )
+    np.testing.assert_array_equal(
+        np.asarray(auto.firing_rates), np.asarray(jax.firing_rates)
+    )

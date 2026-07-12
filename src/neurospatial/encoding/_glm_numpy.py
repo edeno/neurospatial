@@ -443,9 +443,10 @@ def _reml_objective_numpy(
     # A non-converged inner fit (line-search failure or iteration cap) gives an
     # unreliable score computed from partial coefficients; reject this lambda so
     # the search never selects it. Gating on convergence is safe here because the
-    # fit reports failure exactly (unlike the JAX reference, whose clamped
-    # converged flag is not a reliable failure signal, so it can only gate on the
-    # non-PD-Hessian path below).
+    # fit reports failure exactly (unlike the original ported non_local_detector
+    # reference, whose clamped converged flag was not a reliable failure signal;
+    # note the neurospatial float32 mirror in _glm_jax.py DOES report failure
+    # faithfully and its REML gates on converged too).
     if not converged:
         return float(np.inf)
     # Laplace-approx Hessian is the fit's Fisher information (standard Poisson);
