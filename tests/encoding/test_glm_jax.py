@@ -299,16 +299,49 @@ def test_reml_parity(open_field_env, simulate_place_fields):
     counts, occ = _restrict(counts_full, occ_full, basis)
     penalty_rank = basis.B.shape[1] - basis.n_live_components
 
-    lam_np, _ = select_penalty_by_reml(
+    lam_np, _, boundary_np = select_penalty_by_reml(
         counts, occ, basis.B, basis.d, penalty_rank, max_iter=_MAX_ITER, tol=_FIT_TOL
     )
-    lam_jax, _ = select_penalty_by_reml_jax(
+    lam_jax, _, boundary_jax = select_penalty_by_reml_jax(
         counts, occ, basis.B, basis.d, penalty_rank, max_iter=_MAX_ITER, tol=_FIT_TOL
     )
     assert lam_np is not None and lam_jax is not None
+    # Both selectors agree on the interior/boundary verdict too (drop-in dispatch).
+    assert boundary_np == boundary_jax
     # |d log lambda| ~ a few * _REML_XATOL (0.001); 0.02 is a robust bound on the
     # float32 flat-minimum wobble while still catching a gross disagreement.
     assert abs(np.log(lam_jax) - np.log(lam_np)) < 0.02
+
+
+def test_pooled_false_jax_parity(open_field_env, simulate_varied_smoothness):
+    """pooled=False composes with the JAX backend (per-unit REML looped): the
+    per-unit lambda vector matches the NumPy path within the float32 REML
+    tolerance, and the vector diagnostics have the same shapes/provenance."""
+    pytest.importorskip("jax")
+    from neurospatial.encoding._glm import fit_mrf_gam
+
+    env = open_field_env
+    centers = [(5.0, 5.0), (11.0, 11.0), (8.0, 8.0)]
+    sigmas = [1.5, 8.0, 4.0]
+    counts_full, occ_full = simulate_varied_smoothness(env, centers, sigmas, seed=3)
+    basis = env._mrf_basis(occ_full, rank=30)
+    counts, occ = _restrict(counts_full, occ_full, basis)
+
+    fj = fit_mrf_gam(basis, counts, occ, penalty=None, pooled=False, backend="jax")
+    fn = fit_mrf_gam(basis, counts, occ, penalty=None, pooled=False, backend="numpy")
+
+    assert fj.pooled is False
+    assert np.asarray(fj.penalty).shape == (3,)
+    assert np.all(np.asarray(fj.penalty_selected_by_reml))
+    np.testing.assert_array_equal(
+        np.asarray(fj.reml_at_boundary), np.asarray(fn.reml_at_boundary)
+    )
+    # Per-unit log-lambda within the same float32 flat-minimum bound as the pooled
+    # parity above.
+    assert (
+        np.max(np.abs(np.log(np.asarray(fj.penalty)) - np.log(np.asarray(fn.penalty))))
+        < 0.02
+    )
 
 
 # ---------------------------------------------------------------------------

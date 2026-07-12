@@ -176,10 +176,10 @@ def test_reml_pooled_scaling(open_field_env, simulate_place_fields):
         np.testing.assert_allclose(two, 2.0 * one, rtol=1e-8)
 
     # And the argmin (selected lambda) is invariant to duplication.
-    lam1, _ = select_penalty_by_reml(
+    lam1, _, _ = select_penalty_by_reml(
         counts, occ, basis.B, basis.d, penalty_rank, max_iter=_MAX_ITER, tol=_FIT_TOL
     )
-    lam2, _ = select_penalty_by_reml(
+    lam2, _, _ = select_penalty_by_reml(
         counts2, occ, basis.B, basis.d, penalty_rank, max_iter=_MAX_ITER, tol=_FIT_TOL
     )
     np.testing.assert_allclose(lam1, lam2, rtol=1e-2)
@@ -195,7 +195,7 @@ def test_reml_objective_callable(open_field_env, simulate_place_fields):
     penalty_rank = basis.d.size - basis.n_live_components
     constant_base = _structural_constant_base(basis.B, basis.n_live_components)
 
-    lam, obj = select_penalty_by_reml(
+    lam, obj, at_boundary = select_penalty_by_reml(
         counts,
         occ,
         basis.B,
@@ -207,6 +207,7 @@ def test_reml_objective_callable(open_field_env, simulate_place_fields):
     )
     assert np.isfinite(lam) and np.isfinite(obj)
     assert lam > 0.0
+    assert at_boundary is False  # an interior optimum is not at a search bound
 
 
 def test_reml_rejects_nonconverged_inner_fit(
@@ -810,23 +811,21 @@ def test_newton_failed_line_search_not_reported_converged(
 
 
 # ---------------------------------------------------------------------------
-# pooled=False (per-unit lambda) is not yet supported -- reject, don't mislabel
+# pooled flag is recorded on the fit (per-unit lambda covered in test_glm_pooled)
 # ---------------------------------------------------------------------------
-def test_pooled_false_rejected(open_field_env, simulate_place_fields):
-    """pooled=False requests per-unit lambda selection, which is not implemented:
-    the fit only ever selects a single shared lambda. Reject it loudly rather
-    than run pooled REML and mislabel the result pooled=False (per-unit)."""
+def test_pooled_flag_recorded(open_field_env, simulate_place_fields):
+    """The default (pooled=True) records pooled=True; pooled=False records False.
+
+    Per-unit lambda behavior is exercised in ``test_glm_pooled.py``; here we only
+    pin that the flag itself is echoed onto the fit (the only reliable NWB
+    source, since scalar cases are value-identical under both settings)."""
     env = open_field_env
     counts_full, occ_full = simulate_place_fields(env, [(8.0, 8.0)], seed=24)
     basis = env._mrf_basis(occ_full, rank=15)
     counts, occ = _restrict(counts_full, occ_full, basis)
 
-    with pytest.raises(NotImplementedError, match="pooled=False"):
-        fit_mrf_gam(basis, counts, occ, penalty=None, pooled=False)
-
-    # The default (pooled=True) is unaffected and records pooled=True.
-    fit = fit_mrf_gam(basis, counts, occ, penalty=None)
-    assert fit.pooled is True
+    assert fit_mrf_gam(basis, counts, occ, penalty=None).pooled is True
+    assert fit_mrf_gam(basis, counts, occ, penalty=None, pooled=False).pooled is False
 
 
 # ---------------------------------------------------------------------------

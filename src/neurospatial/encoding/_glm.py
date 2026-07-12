@@ -22,7 +22,7 @@ validates the bin count and never re-slices.
 from __future__ import annotations
 
 import warnings
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -45,6 +45,7 @@ _MAX_STEP_HALVINGS = 30  # per Newton iteration
 _HESSIAN_JITTER = 1e-10  # ridge on the Hessian diagonal
 _LOG_PENALTY_BOUNDS = (-8.0, 20.0)  # REML search bounds in log lambda
 _REML_XATOL = 1e-3  # scipy.optimize.minimize_scalar xatol
+_REML_BOUNDARY_TOL = 5 * _REML_XATOL  # within 5*xatol of either log-lambda bound
 
 
 class MRFFit(NamedTuple):
@@ -64,10 +65,13 @@ class MRFFit(NamedTuple):
         The (clipped) linear predictor ``eta = B gamma``; the reported rate is
         ``max(exp(log_rate), _RATE_FLOOR)``.
     penalty : float or NDArray or None
-        The ``lambda`` actually applied -- a scalar for shared / fixed
+        The ``lambda`` actually applied. A **scalar** for shared / fixed
         ``lambda``, or ``None`` for the REML-skip (``penalty_rank == 0``) and
-        no-data cases. A supplied fixed ``penalty`` is echoed, never discarded.
-        (Per-unit ``lambda`` vectors are not yet supported.)
+        no-data cases. Under ``pooled=False`` on the automatic-REML path
+        (``penalty is None``, ``penalty_rank > 0``, at least one informative
+        unit) it widens to a ``(n_units,)`` vector -- informative units carry
+        their own ``lambda_k``, zero-spike units the pooled-``lambda`` fallback.
+        A supplied fixed ``penalty`` is echoed (scalar), never discarded.
     penalty_weights : NDArray[np.float64], shape (r_eff,)
         The basis penalty weights ``d`` (``0`` on intercepts, ``> 0`` on fills).
     rank : int
@@ -77,16 +81,30 @@ class MRFFit(NamedTuple):
     deviance : NDArray[np.float64], shape (n_units,)
         Unpenalized per-unit Poisson deviance from the reported (floored) rate.
     converged : bool
-        Batch-level convergence flag (one shared stopping criterion), never per-unit.
+        Batch-level convergence flag (one shared stopping criterion), never
+        per-unit. For a looped per-unit (``pooled=False``) fit it is
+        ``all(per-unit converged)``.
     n_iter : int
-        Batch-level Newton iteration count, never per-unit.
+        Batch-level Newton iteration count, never per-unit. For a looped
+        per-unit fit it is ``max(per-unit n_iter)``.
     reml_objective : float or NDArray or None
-        The minimized REML objective, or ``None`` when REML did not run
-        (fixed penalty, REML-skip, or no data). (Per-unit REML objectives are
-        not yet supported.)
+        The minimized REML objective, or ``None`` when REML did not run (fixed
+        penalty, REML-skip, or no data). Under ``pooled=False`` it widens to a
+        ``(n_units,)`` vector on the automatic-REML path; a zero-spike fallback
+        unit stores ``np.nan`` (its ``lambda`` is not a per-unit REML minimum).
+    reml_at_boundary : bool or NDArray or None
+        Whether the selected ``log(lambda)`` lies within ``_REML_BOUNDARY_TOL``
+        of either fixed search bound: the applied ``lambda`` is finite and the
+        fit is valid, but ``lambda`` itself is weakly identified (the optimum may
+        lie beyond the interval). A diagnostic/warning, never an automatic
+        fallback. ``None`` when REML did not run; a scalar bool for shared
+        (``pooled=True``) REML; a ``(n_units,)`` bool vector for per-unit REML (a
+        zero-spike fallback unit inherits the pooled-informative search's flag).
     penalty_selected_by_reml : NDArray or None
-        Per-unit REML-selection flags -- for the per-unit (``pooled=False``)
-        path only, which is not yet supported; always ``None`` here.
+        Per-unit REML-selection provenance -- ``None`` unless ``pooled=False``
+        produced a per-unit vector, then ``(n_units,)`` bool: ``True`` for an
+        informative unit whose ``lambda_k`` is its own REML minimum, ``False``
+        for a zero-spike unit carrying the pooled-``lambda`` fallback.
     pooled : bool
         The input ``pooled`` flag. Stored because for fixed-penalty / ``r == 0``
         / no-data cases the scalar outputs are identical under ``pooled=True``
@@ -103,6 +121,7 @@ class MRFFit(NamedTuple):
     converged: bool
     n_iter: int
     reml_objective: float | NDArray[np.float64] | None
+    reml_at_boundary: bool | NDArray[np.bool_] | None
     penalty_selected_by_reml: NDArray[np.bool_] | None
     pooled: bool
 
@@ -181,6 +200,192 @@ def _is_rank_deficient_on_exposed(
     return bool(np.linalg.matrix_rank(B[occupancy > 0]) < r_eff)
 
 
+def _reml_boundary_side(penalty: float) -> str:
+    """Which fixed log-lambda bound a selected ``penalty`` sits against.
+
+    ``"lower"`` (under-smoothing) when ``log lambda`` is closer to the lower
+    bound, else ``"upper"`` (over-smoothing).
+    """
+    log_lam = float(np.log(penalty))
+    lower, upper = _LOG_PENALTY_BOUNDS
+    return "lower" if (log_lam - lower) <= (upper - log_lam) else "upper"
+
+
+def _warn_reml_boundary(side: str, who: str, *, stacklevel: int = 3) -> None:
+    """Emit the one weakly-identified-lambda warning for a boundary REML optimum.
+
+    ``side`` is ``"lower"`` / ``"upper"`` (or ``"lower/upper"`` when a per-unit
+    batch hits both); ``who`` names the affected fit (``"the pooled fit"`` or
+    ``"unit(s) [...]"``). The applied ``lambda`` remains the finite bound value;
+    the search interval is never expanded.
+    """
+    warnings.warn(
+        f"MRF-GAM REML: the selected smoothing penalty lambda is at the {side} "
+        f"search bound for {who}; lambda is weakly identified there (its optimum "
+        "may lie beyond the search interval) although the fitted field is stable. "
+        "The applied lambda is the finite bound value; the interval is not "
+        "expanded.",
+        UserWarning,
+        stacklevel=stacklevel,
+    )
+
+
+def _fit_mrf_gam_per_unit(
+    B: NDArray[np.float64],
+    d: NDArray[np.float64],
+    counts: NDArray[np.float64],
+    occupancy: NDArray[np.float64],
+    *,
+    r_eff: int,
+    n_live_bins: int,
+    penalty_rank: int,
+    constant_base: NDArray[np.float64],
+    newton_fit: Any,
+    select_penalty: Any,
+    pooled: bool,
+) -> MRFFit:
+    """Per-unit REML fit (``pooled=False``, automatic REML, ``penalty_rank > 0``,
+    at least one informative unit).
+
+    Runs the shared-lambda REML objective **once per informative unit** to get a
+    per-unit ``lambda_k``, assigns zero-spike units the pooled-``lambda`` fallback
+    over the informative subset (their ``lambda`` is statistically unidentified),
+    then runs the existing batched Newton fit once per distinct ``lambda`` value
+    (reused, not forked) and assembles the per-unit vectors. Convergence /
+    iteration diagnostics aggregate as ``all`` / ``max`` over the per-unit fits.
+
+    Parameters
+    ----------
+    B, d, counts, occupancy : NDArray
+        The shared basis, penalty weights, per-unit counts ``(n_live_bins,
+        n_units)``, and occupancy ``(n_live_bins,)`` (already restricted).
+    r_eff, n_live_bins, penalty_rank : int, keyword-only
+        Effective rank, live-bin count, and structural penalty rank.
+    constant_base : NDArray, keyword-only
+        The exact all-ones warm-start direction, reused by every fit.
+    newton_fit, select_penalty : callable, keyword-only
+        The backend-resolved Newton fit and REML selector (NumPy float64 or the
+        float32 JAX mirror), shared with the pooled path.
+    pooled : bool, keyword-only
+        Echoed onto the result (``False`` here).
+
+    Returns
+    -------
+    MRFFit
+        With ``penalty`` / ``reml_objective`` / ``reml_at_boundary`` as
+        ``(n_units,)`` vectors and ``penalty_selected_by_reml`` a ``(n_units,)``
+        bool mask (``True`` informative, ``False`` zero-spike fallback).
+    """
+    from ._glm_numpy import _poisson_deviance
+
+    n_units = int(counts.shape[1])
+    spike_totals = counts.sum(axis=0)
+    informative = spike_totals > 0  # (n_units,) bool
+    zero_spike = ~informative
+
+    lam_per_unit = np.empty(n_units, dtype=np.float64)
+    reml_obj_per_unit = np.full(n_units, np.nan, dtype=np.float64)
+    boundary_per_unit = np.zeros(n_units, dtype=bool)
+    # Provenance mask: informative units are REML-selected, zero-spike are fallback.
+    selected_by_reml = informative.copy()
+
+    # Per-unit REML over the informative units. penalty_rank > 0 by the guard, so
+    # every returned lambda is a real float (never the None REML-skip).
+    for k in np.flatnonzero(informative):
+        lam_k, obj_k, bnd_k = select_penalty(
+            counts[:, k : k + 1],
+            occupancy,
+            B,
+            d,
+            penalty_rank,
+            constant_base=constant_base,
+            max_iter=_MAX_ITER,
+            tol=_FIT_TOL,
+        )
+        lam_per_unit[k] = lam_k
+        reml_obj_per_unit[k] = obj_k
+        boundary_per_unit[k] = bool(bnd_k)
+
+    # Zero-spike units are statistically unidentified for a per-unit lambda: they
+    # take the pooled lambda over the informative subset (computed ONCE, not the
+    # optimizer's arbitrary per-unit point), keep reml_objective = nan (sentinel)
+    # and inherit that pooled search's boundary flag.
+    if zero_spike.any():
+        pooled_lam, _pooled_obj, pooled_bnd = select_penalty(
+            counts[:, informative],
+            occupancy,
+            B,
+            d,
+            penalty_rank,
+            constant_base=constant_base,
+            max_iter=_MAX_ITER,
+            tol=_FIT_TOL,
+        )
+        lam_per_unit[zero_spike] = pooled_lam
+        boundary_per_unit[zero_spike] = bool(pooled_bnd)
+
+    # Final fits: reuse the batched Newton fit once per DISTINCT lambda (zero-spike
+    # units share the fallback lambda, so they batch together). converged / n_iter
+    # aggregate as all / max over the per-unit fits.
+    coeffs = np.empty((r_eff, n_units), dtype=np.float64)
+    eta = np.empty((n_live_bins, n_units), dtype=np.float64)
+    per_unit_converged = np.empty(n_units, dtype=bool)
+    per_unit_n_iter = np.empty(n_units, dtype=np.int64)
+    for lam in np.unique(lam_per_unit):
+        cols = np.flatnonzero(lam_per_unit == lam)
+        c_g, e_g, _mu_g, n_iter_g, _max_step_g, conv_g = newton_fit(
+            counts[:, cols], occupancy, B, lam * d, constant_base, _MAX_ITER, _FIT_TOL
+        )
+        coeffs[:, cols] = c_g
+        eta[:, cols] = e_g
+        per_unit_converged[cols] = conv_g
+        per_unit_n_iter[cols] = n_iter_g
+
+    converged = bool(per_unit_converged.all())
+    n_iter = int(per_unit_n_iter.max())
+
+    firing_rate = np.maximum(np.exp(eta), _RATE_FLOOR)
+    deviance = _poisson_deviance(counts, occupancy, firing_rate)
+
+    # One aggregate nonconvergence warning naming the failed unit ids (batch-level,
+    # not one per unit).
+    if not converged:
+        failed_ids = np.flatnonzero(~per_unit_converged).tolist()
+        warnings.warn(
+            f"MRF-GAM per-unit fit did not converge for unit(s) {failed_ids} "
+            "(line-search failure, iteration cap, or out-of-domain data); consider "
+            "reducing rank or supplying a fixed penalty.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    # One boundary warning naming the affected unit ids + side(s). A boundary
+    # lambda stays the finite applied penalty (never expanded or replaced).
+    if boundary_per_unit.any():
+        at_ids = np.flatnonzero(boundary_per_unit)
+        log_lams = np.log(lam_per_unit[at_ids])
+        lower, upper = _LOG_PENALTY_BOUNDS
+        sides = np.where((log_lams - lower) <= (upper - log_lams), "lower", "upper")
+        side_desc = "/".join(sorted(set(sides.tolist())))
+        _warn_reml_boundary(side_desc, f"unit(s) {at_ids.tolist()}", stacklevel=2)
+
+    return MRFFit(
+        coefficients=coeffs,
+        log_rate=eta,
+        penalty=lam_per_unit,
+        penalty_weights=d,
+        rank=r_eff,
+        penalty_rank=penalty_rank,
+        deviance=deviance,
+        converged=converged,
+        n_iter=n_iter,
+        reml_objective=reml_obj_per_unit,
+        reml_at_boundary=boundary_per_unit,
+        penalty_selected_by_reml=selected_by_reml,
+        pooled=pooled,
+    )
+
+
 def fit_mrf_gam(
     basis: MRFBasis,
     counts: NDArray[np.float64],
@@ -210,8 +415,14 @@ def fit_mrf_gam(
     penalty : float or None, keyword-only
         Fixed ``lambda`` (echoed on the result), or ``None`` to select by REML.
     pooled : bool, keyword-only, default True
-        Stored on the result. Only ``pooled=True`` (a single shared lambda) is
-        supported; ``pooled=False`` (per-unit lambda) raises ``NotImplementedError``.
+        Stored on the result. ``pooled=True`` selects a single shared ``lambda``
+        by REML over the whole population. ``pooled=False`` selects an
+        independent ``lambda_k`` per informative unit (a per-unit REML search),
+        widening ``penalty`` / ``reml_objective`` / ``reml_at_boundary`` to
+        ``(n_units,)`` vectors on the automatic-REML path; zero-spike units take
+        the pooled-``lambda`` fallback over the informative units. It has no
+        effect when a fixed ``penalty`` is supplied, at ``penalty_rank == 0``, or
+        when no unit has any spikes (the scalar outputs are then identical).
     backend : str, keyword-only, default ``"numpy"``
         Compute backend. ``"jax"`` routes the fit compute (the batched Newton
         fit and REML ``lambda`` selection) to the optional float32 JAX mirror
@@ -229,8 +440,6 @@ def fit_mrf_gam(
     ValueError
         If ``counts`` is not 2-D or its bin count does not match the basis
         (i.e. it was not restricted to ``basis.live_bins``).
-    NotImplementedError
-        If ``pooled=False`` (per-unit lambda selection is not yet supported).
     """
     from ._backend import is_jax_available
     from ._glm_numpy import (
@@ -244,15 +453,6 @@ def fit_mrf_gam(
     # extra is installed. The kernel pair (Newton fit + REML) is selected once,
     # below, after the rank-deficiency check may veto JAX.
     using_jax = backend == "jax" and is_jax_available()
-
-    if not pooled:
-        # Per-unit lambda selection is not implemented: the fit only ever selects
-        # a single shared lambda. Reject rather than run pooled REML and mislabel
-        # the result pooled=False (per-unit).
-        raise NotImplementedError(
-            "pooled=False (per-unit lambda selection) is not yet supported; the "
-            "fit uses a single shared lambda. Pass pooled=True."
-        )
 
     B = np.asarray(basis.B, dtype=np.float64)
     d = np.asarray(basis.d, dtype=np.float64)
@@ -295,6 +495,7 @@ def fit_mrf_gam(
             converged=True,
             n_iter=0,
             reml_objective=None,
+            reml_at_boundary=None,
             penalty_selected_by_reml=None,
             pooled=pooled,
         )
@@ -318,6 +519,7 @@ def fit_mrf_gam(
             converged=True,
             n_iter=0,
             reml_objective=None,
+            reml_at_boundary=None,
             penalty_selected_by_reml=None,
             pooled=pooled,
         )
@@ -365,9 +567,31 @@ def fit_mrf_gam(
     # evaluation reuse it; no basis-wide least-squares factorization is needed.
     constant_base = _structural_constant_base(B, basis.n_live_components)
 
-    # --- lambda selection (all-zero-spike population handled first) ---
+    # --- per-unit lambda (pooled=False) branch --------------------------------
+    # A per-unit REML is meaningful only on the automatic-REML path with a
+    # penalized basis and at least one informative unit. Every other pooled=False
+    # case (fixed penalty, penalty_rank == 0, all-zero-spike population) has scalar
+    # outputs identical to pooled=True, so it falls through to the shared path and
+    # only the stored ``pooled`` flag differs.
+    if not pooled and penalty is None and penalty_rank > 0 and counts.sum() > 0:
+        return _fit_mrf_gam_per_unit(
+            B,
+            d,
+            counts,
+            occupancy,
+            r_eff=r_eff,
+            n_live_bins=n_live_bins,
+            penalty_rank=penalty_rank,
+            constant_base=constant_base,
+            newton_fit=newton_fit,
+            select_penalty=select_penalty,
+            pooled=pooled,
+        )
+
+    # --- shared / scalar lambda selection (all-zero-spike handled first) ------
     applied_penalty: float | None
     reml_objective: float | None = None
+    reml_at_boundary: bool | None = None
     if counts.sum() == 0:
         # No unit has a spike: lambda is unidentified, so skip REML *selection*.
         # Still respect the fixed-penalty contract -- echo a supplied fixed
@@ -380,7 +604,7 @@ def fit_mrf_gam(
         )
         applied_penalty = None if penalty is None else float(penalty)
     elif penalty is None:
-        applied_penalty, reml_objective = select_penalty(
+        applied_penalty, reml_objective, reml_at_boundary = select_penalty(
             counts,
             occupancy,
             B,
@@ -416,6 +640,10 @@ def fit_mrf_gam(
             stacklevel=2,
         )
 
+    # --- boundary diagnostic: the shared REML optimum sat on a search bound ---
+    if reml_at_boundary and applied_penalty is not None:
+        _warn_reml_boundary(_reml_boundary_side(applied_penalty), "the pooled fit")
+
     return MRFFit(
         coefficients=coeffs,
         log_rate=eta,
@@ -427,6 +655,7 @@ def fit_mrf_gam(
         converged=converged,
         n_iter=n_iter,
         reml_objective=reml_objective,
+        reml_at_boundary=reml_at_boundary,
         penalty_selected_by_reml=None,
         pooled=pooled,
     )

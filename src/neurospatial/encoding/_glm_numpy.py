@@ -27,6 +27,7 @@ from ._glm import (
     _HESSIAN_JITTER,
     _LOG_PENALTY_BOUNDS,
     _MAX_STEP_HALVINGS,
+    _REML_BOUNDARY_TOL,
     _REML_XATOL,
 )
 
@@ -488,13 +489,13 @@ def select_penalty_by_reml(
     constant_base: NDArray[np.float64] | None = None,
     max_iter: int,
     tol: float,
-) -> tuple[float | None, float | None]:
+) -> tuple[float | None, float | None, bool | None]:
     """Select ``lambda`` by minimizing the pooled REML objective over
     ``log lambda`` with a bounded scalar minimizer.
 
     At ``penalty_rank == 0`` (an all-null basis) the objective is flat in
-    ``lambda`` -- REML is **skipped** and ``(None, None)`` is returned. Raises
-    ``ValueError`` if no finite objective exists across the interval (no
+    ``lambda`` -- REML is **skipped** and ``(None, None, None)`` is returned.
+    Raises ``ValueError`` if no finite objective exists across the interval (no
     ``lambda`` yields a converged inner fit with a PD Hessian).
 
     Parameters
@@ -517,9 +518,13 @@ def select_penalty_by_reml(
         Selected ``lambda`` (``None`` when REML is skipped at ``penalty_rank == 0``).
     reml_objective : float or None
         Minimized objective (``None`` when skipped).
+    at_boundary : bool or None
+        Whether the selected ``log(lambda)`` is within ``_REML_BOUNDARY_TOL`` of
+        either fixed search bound (``lambda`` weakly identified); ``None`` when
+        REML is skipped.
     """
     if penalty_rank == 0:  # flat in lambda -- skip
-        return None, None
+        return None, None, None
     if constant_base is None:
         # Direct internal callers still use the exact structural start; the
         # orchestrator normally supplies this precomputed vector so both
@@ -550,7 +555,9 @@ def select_penalty_by_reml(
             "a positive-definite Hessian. Reduce the basis rank, improve "
             "occupancy coverage, or supply a fixed penalty."
         )
-    return float(np.exp(result.x)), float(result.fun)
+    lower, upper = _LOG_PENALTY_BOUNDS
+    at_boundary = bool(min(result.x - lower, upper - result.x) <= _REML_BOUNDARY_TOL)
+    return float(np.exp(result.x)), float(result.fun), at_boundary
 
 
 # ---------------------------------------------------------------------------

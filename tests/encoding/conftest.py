@@ -280,6 +280,92 @@ def simulate_place_fields() -> Callable[..., tuple[np.ndarray, np.ndarray]]:
     return make
 
 
+@pytest.fixture
+def simulate_varied_smoothness() -> Callable[..., tuple[np.ndarray, np.ndarray]]:
+    """Factory drawing Poisson counts from place fields of DIFFERENT widths.
+
+    Some units are sharp (small ``sigma``), others broad (large ``sigma``), so a
+    per-unit REML selects distinct ``lambda_k`` (a broad field tolerates more
+    smoothing than a sharp one). This is the fixture that makes distinct per-unit
+    ``lambda`` recoverable.
+
+    Returns
+    -------
+    callable
+        ``make(env, centers, sigmas, *, occupancy=None, peak_rate=25.0, seed=0)
+        -> (counts, occupancy)`` where ``sigmas`` is one field width per center
+        (same length as ``centers``); ``counts`` is ``(n_bins, n_units)`` int64
+        Poisson draws and ``occupancy`` is ``(n_bins,)`` dwell time, both in
+        active-bin order.
+    """
+
+    def make(
+        env: Environment,
+        centers: list[tuple[float, ...]],
+        sigmas: list[float],
+        *,
+        occupancy: np.ndarray | None = None,
+        peak_rate: float = 25.0,
+        seed: int = 0,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        if len(sigmas) != len(centers):
+            raise ValueError("sigmas must have one width per center.")
+        rng = np.random.default_rng(seed)
+        bin_centers = np.asarray(env.bin_centers, dtype=np.float64)
+        n_bins = env.n_bins
+        if occupancy is None:
+            occupancy = np.full(n_bins, 3.0)
+        occupancy = np.asarray(occupancy, dtype=np.float64)
+        counts = np.empty((n_bins, len(centers)), dtype=np.int64)
+        for u, (center, sigma) in enumerate(zip(centers, sigmas, strict=True)):
+            dist2 = np.sum((bin_centers - np.asarray(center)) ** 2, axis=1)
+            rate = peak_rate * np.exp(-dist2 / (2.0 * sigma**2))  # (n_bins,)
+            counts[:, u] = rng.poisson(rate * occupancy)
+        return counts, occupancy
+
+    return make
+
+
+@pytest.fixture
+def simulate_flat_weak_signal() -> Callable[..., tuple[np.ndarray, np.ndarray]]:
+    """Factory building a spatially FLAT (constant-rate) count field per unit.
+
+    Every bin carries the same expected rate, so no smoothness mode improves the
+    fit and REML monotonically prefers maximal smoothing -- driving ``lambda`` to
+    the upper log-penalty search bound reproducibly for every unit. The field is
+    deterministic (``round(mean_rate * occupancy)`` per bin), so the boundary
+    optimum is not a per-seed accident; ``seed`` is accepted for signature
+    parity but unused.
+
+    Returns
+    -------
+    callable
+        ``make(env, n_units, *, occupancy=None, mean_rate=2.0, seed=0)
+        -> (counts, occupancy)`` in active-bin order.
+    """
+
+    def make(
+        env: Environment,
+        n_units: int = 1,
+        *,
+        occupancy: np.ndarray | None = None,
+        mean_rate: float = 2.0,
+        seed: int = 0,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        del seed  # deterministic flat field; kept for signature parity
+        n_bins = env.n_bins
+        if occupancy is None:
+            occupancy = np.full(n_bins, 3.0)
+        occupancy = np.asarray(occupancy, dtype=np.float64)
+        # Spatially constant expected counts -> zero exploitable structure, so
+        # the REML surface decreases monotonically to the upper lambda bound.
+        per_bin = np.rint(mean_rate * occupancy).astype(np.int64)  # (n_bins,)
+        counts = np.repeat(per_bin[:, None], n_units, axis=1)  # (n_bins, n_units)
+        return counts, occupancy
+
+    return make
+
+
 # ---------------------------------------------------------------------------
 # Directional / head-direction fixtures
 # ---------------------------------------------------------------------------

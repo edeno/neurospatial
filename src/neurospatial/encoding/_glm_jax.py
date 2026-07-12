@@ -52,6 +52,7 @@ from ._glm import (  # noqa: E402
     _HESSIAN_JITTER,
     _LOG_PENALTY_BOUNDS,
     _MAX_STEP_HALVINGS,
+    _REML_BOUNDARY_TOL,
     _REML_XATOL,
 )
 
@@ -394,20 +395,22 @@ def select_penalty_by_reml_jax(
     constant_base: NDArray[np.float64] | None = None,
     max_iter: int,
     tol: float,
-) -> tuple[float | None, float | None]:
+) -> tuple[float | None, float | None, bool | None]:
     """Float32 JAX mirror of :func:`_glm_numpy.select_penalty_by_reml`.
 
     Minimizes the pooled float32 REML objective over ``log lambda`` with the same
     bounded scalar minimizer (``scipy.optimize.minimize_scalar``); ``lambda`` is
-    returned as a Python float. Skips REML at ``penalty_rank == 0`` and raises the
-    same ``ValueError`` when no finite objective exists across the interval. The
-    ``B`` name mirrors ``select_penalty_by_reml`` so the two are drop-in
-    interchangeable at the ``fit_mrf_gam`` dispatch. ``constant_base`` is
-    normally supplied by the orchestrator; direct internal callers may omit it
-    and let the selector derive it from the structural penalty rank.
+    returned as a Python float. Skips REML at ``penalty_rank == 0`` (returning
+    ``(None, None, None)``) and raises the same ``ValueError`` when no finite
+    objective exists across the interval. Mirror-identical return contract to
+    :func:`_glm_numpy.select_penalty_by_reml` -- ``(penalty, objective,
+    at_boundary)`` -- so the two are drop-in interchangeable at the
+    ``fit_mrf_gam`` dispatch. ``constant_base`` is normally supplied by the
+    orchestrator; direct internal callers may omit it and let the selector derive
+    it from the structural penalty rank.
     """
     if penalty_rank == 0:  # flat in lambda -- skip
-        return None, None
+        return None, None, None
     if constant_base is None:
         from ._glm import _structural_constant_base
 
@@ -453,4 +456,6 @@ def select_penalty_by_reml_jax(
             "a positive-definite Hessian. Reduce the basis rank, improve "
             "occupancy coverage, or supply a fixed penalty."
         )
-    return float(np.exp(result.x)), float(result.fun)
+    lower, upper = _LOG_PENALTY_BOUNDS
+    at_boundary = bool(min(result.x - lower, upper - result.x) <= _REML_BOUNDARY_TOL)
+    return float(np.exp(result.x)), float(result.fun), at_boundary
