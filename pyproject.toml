@@ -269,6 +269,7 @@ ignore = [
     "N806",  # Allow W (finite-volume weight matrix) - diffusion apply-path
 ]
 "src/neurospatial/encoding/_glm.py" = [
+    "N803",  # Allow B (penalty basis matrix) as argument - GAM notation
     "N806",  # Allow B (penalty basis matrix) - GAM design-matrix notation
 ]
 "src/neurospatial/encoding/_glm_numpy.py" = [

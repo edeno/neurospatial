@@ -33,6 +33,7 @@ import warnings
 import numpy as np
 import pytest
 
+from neurospatial.encoding._backend import is_jax_available
 from neurospatial.encoding._glm import (
     _FIT_TOL,
     _FIT_TOL_FLOOR,
@@ -73,6 +74,24 @@ def _max_rel_above(got, ref, threshold):
     if not mask.any():
         return 0.0
     return float(np.max(np.abs(got - ref)[mask] / ref[mask]))
+
+
+def _rank_deficient_case(env):
+    """A single-component design that is rank-deficient on the exposed bins.
+
+    Only half the bins are visited but the basis is full rank, so the exposed
+    design has fewer rows than ``r_eff`` -> the Hessian is rank-deficient. Returns
+    ``(basis, counts, occupancy)`` restricted to ``basis.live_bins``.
+    """
+    n_bins = env.n_bins
+    rng = np.random.default_rng(2)
+    occ = np.zeros(n_bins)
+    occ[: n_bins // 2] = 3.0
+    counts = np.zeros((1, n_bins))
+    counts[0, : n_bins // 2] = rng.poisson(10.0, size=n_bins // 2)
+    basis = env._mrf_basis(occ, rank=n_bins)  # full rank -> rank-deficient exposed
+    c, o = _restrict(counts.T, occ, basis)
+    return basis, c, o
 
 
 # ---------------------------------------------------------------------------
@@ -221,13 +240,7 @@ def test_jax_absent_uses_numpy(open_field_env, simulate_place_fields, monkeypatc
 # ---------------------------------------------------------------------------
 # Public return-contract: glm backend="jax" matches the ratio path's convention
 # ---------------------------------------------------------------------------
-def _jax_available() -> bool:
-    from neurospatial.encoding._backend import is_jax_available
-
-    return is_jax_available()
-
-
-@pytest.mark.skipif(not _jax_available(), reason="JAX not available")
+@pytest.mark.skipif(not is_jax_available(), reason="JAX not available")
 def test_backend_return_matches_ratio(open_field_env):
     """``compute_spatial_rates(method="glm", backend="jax")`` returns the same
     array-type convention as ``method="diffusion_kde", backend="jax"``, and
@@ -308,15 +321,7 @@ def test_jax_rank_deficient_falls_back_to_numpy(open_field_env):
     ``exp(_ETA_CLIP)``.
     """
     pytest.importorskip("jax")
-    env = open_field_env
-    n_bins = env.n_bins
-    rng = np.random.default_rng(2)
-    occ = np.zeros(n_bins)
-    occ[: n_bins // 2] = 3.0
-    counts = np.zeros((1, n_bins))
-    counts[0, : n_bins // 2] = rng.poisson(10.0, size=n_bins // 2)
-    basis = env._mrf_basis(occ, rank=n_bins)  # full rank -> rank-deficient exposed
-    c, o = _restrict(counts.T, occ, basis)
+    basis, c, o = _rank_deficient_case(open_field_env)
 
     for penalty in (0.0, 1e-12, 1e-9, 1e-6, 1e-3):
         with warnings.catch_warnings():
@@ -396,15 +401,7 @@ def test_jax_rank_deficient_reml_matches_numpy(open_field_env):
     backends even though the rate map is similar.
     """
     pytest.importorskip("jax")
-    env = open_field_env
-    n_bins = env.n_bins
-    rng = np.random.default_rng(2)
-    occ = np.zeros(n_bins)
-    occ[: n_bins // 2] = 3.0
-    counts = np.zeros((1, n_bins))
-    counts[0, : n_bins // 2] = rng.poisson(10.0, size=n_bins // 2)
-    basis = env._mrf_basis(occ, rank=n_bins)  # rank-deficient exposed design
-    c, o = _restrict(counts.T, occ, basis)
+    basis, c, o = _rank_deficient_case(open_field_env)
 
     fit_jax = fit_mrf_gam(basis, c, o, penalty=None, backend="jax")
     fit_np = fit_mrf_gam(basis, c, o, penalty=None, backend="numpy")
@@ -414,7 +411,7 @@ def test_jax_rank_deficient_reml_matches_numpy(open_field_env):
     )
 
 
-@pytest.mark.skipif(not _jax_available(), reason="JAX not available")
+@pytest.mark.skipif(not is_jax_available(), reason="JAX not available")
 def test_glm_backend_auto_routes_to_jax(open_field_env):
     """``method="glm", backend="auto"`` resolves to the JAX path when JAX is
     available -- matching ``backend="jax"`` (not silently the NumPy path).
