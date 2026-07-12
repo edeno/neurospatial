@@ -229,7 +229,7 @@ def test_result_invariant_enforced(open_field_env: Environment) -> None:
             n_iter=1,
         )
     # glm result whose coefficients rows != rank -> raise.
-    with pytest.raises(ValueError, match="rank"):
+    with pytest.raises(ValueError, match=r"rank|shape"):
         SpatialRatesResult(
             firing_rates=ratesN,
             occupancy=occ,
@@ -242,6 +242,41 @@ def test_result_invariant_enforced(open_field_env: Environment) -> None:
             deviance=np.zeros(2),
             converged=True,
             n_iter=1,
+        )
+
+    def _valid_glm_kwargs(rank: int, n_units: int) -> dict:
+        return {
+            "coefficients": np.zeros((rank, n_units)),
+            "penalty_weights": np.zeros(rank),
+            "rank": rank,
+            "deviance": np.zeros(n_units),
+            "converged": True,
+            "n_iter": 1,
+        }
+
+    # glm result whose per-unit shapes disagree with n_units (would IndexError on
+    # rates[1]) -> raise at construction. Each mis-shape independently rejected.
+    for bad in (
+        {"coefficients": np.zeros((3, 1))},  # (rank, 1) but 2 units
+        {"deviance": np.zeros(1)},  # (1,) but 2 units
+        {"penalty_weights": np.zeros(2)},  # (rank-1,)
+    ):
+        kwargs = _valid_glm_kwargs(3, 2)
+        kwargs.update(bad)
+        with pytest.raises(ValueError, match="shape"):
+            SpatialRatesResult(
+                firing_rates=ratesN,
+                occupancy=occ,
+                env=env,
+                method="glm",
+                bandwidth=None,
+                **kwargs,
+            )
+
+    # Unknown method must NOT be silently treated as a ratio method -> raise.
+    with pytest.raises(ValueError, match="method"):
+        SpatialRatesResult(
+            firing_rates=ratesN, occupancy=occ, env=env, method="glmm", bandwidth=5.0
         )
 
     # A real glm result from the compute path constructs cleanly (guard passes).

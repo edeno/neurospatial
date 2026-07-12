@@ -220,15 +220,17 @@ _GAM_REQUIRED_FIELDS = (
 )
 
 
-def _check_gam_result_invariant(kind: str, fields: dict[str, Any]) -> None:
+def _check_gam_result_invariant(
+    kind: str, fields: dict[str, Any], *, n_units: int | None
+) -> None:
     """Enforce the ``None``-iff-glm invariant on a spatial-rate result.
 
     The GAM diagnostics travel together: they are all populated for
     ``method="glm"`` and all ``None`` for the ratio methods, and ``bandwidth`` is
     ``None`` exactly for glm. This makes the illegal states the type cannot
     express -- a ratio result carrying a stray GAM array, or a glm result missing
-    a diagnostic -- unrepresentable at construction (the classes are frozen and
-    public, so this closes the gap the type alone leaves open).
+    or mis-shaping a diagnostic -- unrepresentable at construction (the classes
+    are frozen and public, so this closes the gap the type alone leaves open).
 
     Parameters
     ----------
@@ -236,13 +238,27 @@ def _check_gam_result_invariant(kind: str, fields: dict[str, Any]) -> None:
         Class name, for error messages.
     fields : dict
         The result's ``method``, ``bandwidth``, and the eight GAM fields.
+    n_units : int or None, keyword-only
+        Number of units (``firing_rates.shape[0]``) for the plural class, or
+        ``None`` for the singular class (whose GAM fields are a per-unit slice).
+        Selects the expected glm array shapes.
 
     Raises
     ------
     ValueError
-        If the GAM fields / ``bandwidth`` are inconsistent with ``method``.
+        If ``method`` is unknown, or the GAM fields / ``bandwidth`` are
+        inconsistent with ``method`` (presence, ``bandwidth``, or shape).
     """
-    is_glm = fields["method"] == "glm"
+    from neurospatial.encoding._smoothing import _SPATIAL_METHODS
+
+    method = fields["method"]
+    if method not in _SPATIAL_METHODS:
+        raise ValueError(
+            f"{kind} has method={method!r}, which is not a known estimator; "
+            f"expected one of {set(_SPATIAL_METHODS)}."
+        )
+
+    is_glm = method == "glm"
     required = {name: fields[name] for name in _GAM_REQUIRED_FIELDS}
     optional = {
         "penalty": fields["penalty"],
@@ -260,12 +276,32 @@ def _check_gam_result_invariant(kind: str, fields: dict[str, Any]) -> None:
                 f"{kind} with method='glm' must have bandwidth=None (glm has no "
                 f"bandwidth); got {fields['bandwidth']!r}."
             )
-        n_coef_rows = int(np.shape(fields["coefficients"])[0])
-        if n_coef_rows != int(fields["rank"]):
-            raise ValueError(
-                f"{kind} GAM coefficients have {n_coef_rows} basis rows but "
-                f"rank={fields['rank']}; they must match."
-            )
+        # Full shape coupling: a mis-shaped diagnostic (e.g. coefficients
+        # (rank, 1) on a 2-unit result) would construct and only IndexError when a
+        # unit is later indexed. Pin every GAM array shape here. The singular
+        # class holds a per-unit slice; the plural holds the population arrays.
+        rank = int(fields["rank"])
+        if n_units is None:  # singular: per-unit slice
+            expected = {
+                "coefficients": (rank,),
+                "penalty_weights": (rank,),
+                "deviance": (),  # scalar
+            }
+        else:  # plural: population arrays
+            expected = {
+                "coefficients": (rank, n_units),
+                "penalty_weights": (rank,),
+                "deviance": (n_units,),
+            }
+        for name, want in expected.items():
+            got = tuple(np.shape(fields[name]))
+            if got != want:
+                raise ValueError(
+                    f"{kind} glm field {name!r} has shape {got} but expected "
+                    f"{want} (rank={rank}"
+                    + (f", n_units={n_units}" if n_units is not None else "")
+                    + ")."
+                )
     else:
         stray = [
             name
@@ -399,7 +435,8 @@ reml_objective
 
     def __post_init__(self) -> None:
         # Enforce the None-iff-glm invariant: the GAM diagnostics are all present
-        # for method="glm" (and bandwidth=None) or all absent for a ratio method.
+        # (and correctly per-unit-shaped) for method="glm" with bandwidth=None, or
+        # all absent for a ratio method. n_units=None -> the singular per-unit slice.
         _check_gam_result_invariant(
             "SpatialRateResult",
             {
@@ -414,6 +451,7 @@ reml_objective
                 "n_iter": self.n_iter,
                 "reml_objective": self.reml_objective,
             },
+            n_units=None,
         )
 
     def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
@@ -1121,8 +1159,10 @@ class SpatialRatesResult(SpatialResultMixin):
     def __post_init__(self) -> None:
         from neurospatial._results import resolve_unit_ids, validate_unit_table
 
+        n_units = int(np.asarray(self.firing_rates).shape[0])
         # Enforce the None-iff-glm invariant (GAM diagnostics travel together):
-        # populated for method="glm" (bandwidth=None), all absent for a ratio method.
+        # populated and correctly (rank, n_units)/(rank,)/(n_units,)-shaped for
+        # method="glm" (bandwidth=None), all absent for a ratio method.
         _check_gam_result_invariant(
             "SpatialRatesResult",
             {
@@ -1137,9 +1177,9 @@ class SpatialRatesResult(SpatialResultMixin):
                 "n_iter": self.n_iter,
                 "reml_objective": self.reml_objective,
             },
+            n_units=n_units,
         )
 
-        n_units = int(np.asarray(self.firing_rates).shape[0])
         object.__setattr__(
             self,
             "unit_ids",
