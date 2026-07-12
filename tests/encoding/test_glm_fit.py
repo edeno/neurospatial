@@ -24,6 +24,7 @@ from neurospatial.encoding._glm import (
     _LOG_PENALTY_BOUNDS,
     _MAX_ITER,
     _RATE_FLOOR,
+    _structural_constant_base,
     fit_mrf_gam,
 )
 from neurospatial.encoding._glm_numpy import (
@@ -46,6 +47,22 @@ def _restrict(counts, occupancy, basis):
 def _firing_rate(fit):
     """The floored rate ``max(exp(log_rate), _RATE_FLOOR)`` the result reports."""
     return np.maximum(np.exp(fit.log_rate), _RATE_FLOOR)
+
+
+def test_structural_constant_base_uses_component_intercepts(two_path_env):
+    """The exact warm-start direction uses only structural intercept columns.
+
+    On two disconnected components it reconstructs one on every live bin while
+    every fill-mode coefficient stays exactly zero -- no least-squares solve or
+    numerical null-space discovery is involved.
+    """
+    occupancy = np.ones(two_path_env.n_bins)
+    basis = two_path_env._mrf_basis(occupancy, rank=5)
+
+    base = _structural_constant_base(basis.B, basis.n_live_components)
+
+    np.testing.assert_allclose(basis.B @ base, 1.0, rtol=0, atol=1e-14)
+    np.testing.assert_array_equal(base[basis.n_live_components :], 0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +144,7 @@ def test_reml_pooled_scaling(open_field_env, simulate_place_fields):
     basis = env._mrf_basis(occ_full, rank=20)
     counts, occ = _restrict(counts_full, occ_full, basis)
     penalty_rank = basis.d.size - basis.n_live_components
+    constant_base = _structural_constant_base(basis.B, basis.n_live_components)
 
     # Exact 2x scaling of the objective under population duplication proves the
     # df term (-0.5 * penalty_rank * log_lambda) is summed PER UNIT: if it were
@@ -134,7 +152,15 @@ def test_reml_pooled_scaling(open_field_env, simulate_place_fields):
     counts2 = np.concatenate([counts, counts], axis=1)
     for log_lambda in [-2.0, 0.0, 3.0, 8.0]:
         one = _reml_objective_numpy(
-            log_lambda, counts, occ, basis.B, basis.d, penalty_rank, _MAX_ITER, _FIT_TOL
+            log_lambda,
+            counts,
+            occ,
+            basis.B,
+            basis.d,
+            penalty_rank,
+            constant_base,
+            _MAX_ITER,
+            _FIT_TOL,
         )
         two = _reml_objective_numpy(
             log_lambda,
@@ -143,6 +169,7 @@ def test_reml_pooled_scaling(open_field_env, simulate_place_fields):
             basis.B,
             basis.d,
             penalty_rank,
+            constant_base,
             _MAX_ITER,
             _FIT_TOL,
         )
@@ -166,9 +193,17 @@ def test_reml_objective_callable(open_field_env, simulate_place_fields):
     basis = env._mrf_basis(occ_full, rank=15)
     counts, occ = _restrict(counts_full, occ_full, basis)
     penalty_rank = basis.d.size - basis.n_live_components
+    constant_base = _structural_constant_base(basis.B, basis.n_live_components)
 
     lam, obj = select_penalty_by_reml(
-        counts, occ, basis.B, basis.d, penalty_rank, max_iter=_MAX_ITER, tol=_FIT_TOL
+        counts,
+        occ,
+        basis.B,
+        basis.d,
+        penalty_rank,
+        constant_base=constant_base,
+        max_iter=_MAX_ITER,
+        tol=_FIT_TOL,
     )
     assert np.isfinite(lam) and np.isfinite(obj)
     assert lam > 0.0
@@ -187,6 +222,7 @@ def test_reml_rejects_nonconverged_inner_fit(
     basis = env._mrf_basis(occ_full, rank=12)
     counts, occ = _restrict(counts_full, occ_full, basis)
     penalty_rank = basis.d.size - basis.n_live_components
+    constant_base = _structural_constant_base(basis.B, basis.n_live_components)
 
     real_solve = np.linalg.solve
     # Force the inner line search to fail (ascent solve) -> inner converged=False.
@@ -195,7 +231,15 @@ def test_reml_rejects_nonconverged_inner_fit(
     )
 
     score = _reml_objective_numpy(
-        0.0, counts, occ, basis.B, basis.d, penalty_rank, _MAX_ITER, _FIT_TOL
+        0.0,
+        counts,
+        occ,
+        basis.B,
+        basis.d,
+        penalty_rank,
+        constant_base,
+        _MAX_ITER,
+        _FIT_TOL,
     )
     assert not np.isfinite(score)  # rejected, not a finite selectable score
 
@@ -271,7 +315,13 @@ def test_r0_final_fit_unpenalized(two_path_env):
     # An explicit unpenalized fit (penalty_diag == 0) must equal the fit the
     # orchestrator runs when penalty is None at r == 0.
     coeffs, eta, _mu, _n, _s, conv = _newton_fit_numpy(
-        counts, occ, basis.B, np.zeros_like(basis.d), _MAX_ITER, _FIT_TOL
+        counts,
+        occ,
+        basis.B,
+        np.zeros_like(basis.d),
+        _structural_constant_base(basis.B, basis.n_live_components),
+        _MAX_ITER,
+        _FIT_TOL,
     )
     fit = fit_mrf_gam(basis, counts, occ, penalty=None)
 
@@ -393,7 +443,13 @@ def test_convergence_on_deviance(open_field_env, simulate_place_fields):
     counts, occupancy = _restrict(counts_full, occ_full, basis)
 
     coeffs, _eta, _mu, n_iter, max_step, converged = _newton_fit_numpy(
-        counts, occupancy, basis.B, 1e-2 * basis.d, _MAX_ITER, _FIT_TOL
+        counts,
+        occupancy,
+        basis.B,
+        1e-2 * basis.d,
+        _structural_constant_base(basis.B, basis.n_live_components),
+        _MAX_ITER,
+        _FIT_TOL,
     )
 
     assert converged  # stopped on the objective
@@ -452,7 +508,13 @@ def test_fit_bounded_at_clip_no_overshoot():
     occ = np.array([1e-12])
 
     coeffs, eta, mu, _n_iter, _max_step, converged = _newton_fit_numpy(
-        counts, occ, B, np.zeros(1), _MAX_ITER, _FIT_TOL
+        counts,
+        occ,
+        B,
+        np.zeros(1),
+        _structural_constant_base(B, 1),
+        _MAX_ITER,
+        _FIT_TOL,
     )
 
     assert converged
@@ -476,7 +538,13 @@ def test_multibin_saturated_bin_recovers():
     occ = np.array([1e-12, 1.0])
 
     _coeffs, eta, mu, _n_iter, _max_step, converged = _newton_fit_numpy(
-        counts, occ, B, np.zeros(2), _MAX_ITER, _FIT_TOL
+        counts,
+        occ,
+        B,
+        np.zeros(2),
+        _structural_constant_base(B, 1),
+        _MAX_ITER,
+        _FIT_TOL,
     )
 
     assert converged
@@ -503,7 +571,13 @@ def test_fit_predictor_stays_in_box(open_field_env, simulate_place_fields):
     counts, occupancy = _restrict(counts_full, occ_full, basis)
 
     coeffs, _eta, _mu, _n, _s, _c = _newton_fit_numpy(
-        counts, occupancy, basis.B, 1.0 * basis.d, _MAX_ITER, _FIT_TOL
+        counts,
+        occupancy,
+        basis.B,
+        1.0 * basis.d,
+        _structural_constant_base(basis.B, basis.n_live_components),
+        _MAX_ITER,
+        _FIT_TOL,
     )
 
     assert np.all(np.abs(basis.B @ coeffs) <= _ETA_CLIP)  # predictor in the box
@@ -523,6 +597,7 @@ def test_out_of_domain_not_converged():
         np.array([1.0]),
         np.array([[1.0]]),
         np.zeros(1),
+        np.array([1.0]),
         _MAX_ITER,
         _FIT_TOL,
     )
@@ -535,6 +610,7 @@ def test_out_of_domain_not_converged():
         np.array([1.0, 1.0]),
         np.array([[1.0, 1.0], [1.0, -1.0]]),
         np.zeros(2),
+        np.array([1.0, 0.0]),
         _MAX_ITER,
         _FIT_TOL,
     )
@@ -556,7 +632,13 @@ def test_sparse_occupancy_in_domain_converges(open_field_env, simulate_place_fie
     counts, occupancy = _restrict(counts_full, occ_full, basis)
 
     _c, _eta, _mu, _n, _s, converged = _newton_fit_numpy(
-        counts, occupancy, basis.B, 1.0 * basis.d, _MAX_ITER, _FIT_TOL
+        counts,
+        occupancy,
+        basis.B,
+        1.0 * basis.d,
+        _structural_constant_base(basis.B, basis.n_live_components),
+        _MAX_ITER,
+        _FIT_TOL,
     )
 
     assert converged is True  # in-domain: rates << exp(clip)
@@ -576,7 +658,13 @@ def test_fit_returns_consistent_triple(open_field_env, simulate_place_fields):
     from neurospatial.encoding._glm import _ETA_CLIP
 
     coeffs, eta, mu, _n, _s, _c = _newton_fit_numpy(
-        counts, occ, basis.B, 1.0 * basis.d, _MAX_ITER, _FIT_TOL
+        counts,
+        occ,
+        basis.B,
+        1.0 * basis.d,
+        _structural_constant_base(basis.B, basis.n_live_components),
+        _MAX_ITER,
+        _FIT_TOL,
     )
 
     np.testing.assert_array_equal(eta, np.clip(basis.B @ coeffs, -_ETA_CLIP, _ETA_CLIP))
@@ -594,14 +682,13 @@ def test_step_halve_returns_accepted_step(open_field_env, simulate_place_fields)
     counts, occ = _restrict(counts_full, occ_full, basis)
     B, penalty_diag = basis.B, 1.0 * basis.d
 
-    from neurospatial.encoding._glm_numpy import (
-        _lstsq_constant,
-        _penalized_hessian,
-        _penalized_obj,
-    )
+    from neurospatial.encoding._glm_numpy import _penalized_hessian, _penalized_obj
 
     rate0 = np.clip(counts.sum(0) / max(occ.sum(), 1e-9), 1e-6, None)
-    coeffs = _lstsq_constant(B, np.log(rate0))
+    coeffs = (
+        _structural_constant_base(B, basis.n_live_components)[:, None]
+        * np.log(rate0)[None, :]
+    )
     prev = _penalized_obj(coeffs, B, counts, occ, penalty_diag)
     # The true Newton step (a descent direction), then inflate it 20x so alpha=1
     # overshoots the minimum and increases the objective, forcing step-halving.
@@ -637,10 +724,13 @@ def test_step_halve_rejects_failed_descent(open_field_env, simulate_place_fields
     counts, occ = _restrict(counts_full, occ_full, basis)
     B, penalty_diag = basis.B, 1.0 * basis.d
 
-    from neurospatial.encoding._glm_numpy import _lstsq_constant, _penalized_obj
+    from neurospatial.encoding._glm_numpy import _penalized_obj
 
     rate0 = np.clip(counts.sum(0) / max(occ.sum(), 1e-9), 1e-6, None)
-    coeffs = _lstsq_constant(B, np.log(rate0))
+    coeffs = (
+        _structural_constant_base(B, basis.n_live_components)[:, None]
+        * np.log(rate0)[None, :]
+    )
     prev = _penalized_obj(coeffs, B, counts, occ, penalty_diag)
     eta = np.clip(B @ coeffs, -30.0, 30.0)
     mu = occ[:, None] * np.exp(eta)
@@ -667,10 +757,11 @@ def test_step_halve_rejects_nonfinite_trial(open_field_env, simulate_place_field
     counts, occ = _restrict(counts_full, occ_full, basis)
     B, penalty_diag = basis.B, 1.0 * basis.d
 
-    from neurospatial.encoding._glm_numpy import _lstsq_constant
-
     rate0 = np.clip(counts.sum(0) / max(occ.sum(), 1e-9), 1e-6, None)
-    coeffs = _lstsq_constant(B, np.log(rate0))
+    coeffs = (
+        _structural_constant_base(B, basis.n_live_components)[:, None]
+        * np.log(rate0)[None, :]
+    )
 
     new_coeffs, _accepted_step, obj, ok = _step_halve(
         coeffs, np.full_like(coeffs, np.nan), B, counts, occ, penalty_diag, _FIT_TOL
@@ -705,7 +796,13 @@ def test_newton_failed_line_search_not_reported_converged(
     monkeypatch.setattr(glmnp.np.linalg, "solve", ascent_solve)
 
     coeffs, eta, _mu, _n_iter, _max_step, converged = _newton_fit_numpy(
-        counts, occ, basis.B, 1.0 * basis.d, _MAX_ITER, _FIT_TOL
+        counts,
+        occ,
+        basis.B,
+        1.0 * basis.d,
+        _structural_constant_base(basis.B, basis.n_live_components),
+        _MAX_ITER,
+        _FIT_TOL,
     )
 
     assert converged is False  # a failed line search is not convergence

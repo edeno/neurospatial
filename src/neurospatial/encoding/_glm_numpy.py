@@ -34,19 +34,24 @@ from ._glm import (
 # ---------------------------------------------------------------------------
 # Objective, warm start, Hessian
 # ---------------------------------------------------------------------------
-def _lstsq_constant(
-    B: NDArray[np.float64], log_rate0: NDArray[np.float64]
+def _constant_warm_start(
+    B: NDArray[np.float64],
+    constant_base: NDArray[np.float64],
+    log_rate0: NDArray[np.float64],
 ) -> NDArray[np.float64]:
     """Warm-start coefficients giving a constant log-rate per unit.
 
-    Solves ``B base ~= 1`` once (the mass-normalized intercept columns span the
-    constant exactly), then scales by each unit's constant log-rate so
-    ``B @ coeffs[:, k] ~= log_rate0[k]`` -- a flat field in the basis.
+    ``constant_base`` is constructed exactly from the leading component
+    intercepts by :func:`neurospatial.encoding._glm._structural_constant_base`.
+    Scaling it by each unit's log rate gives a flat field without a
+    least-squares factorization.
 
     Parameters
     ----------
     B : NDArray[np.float64], shape (n_bins, r)
         Reduced-rank penalty basis (live-bin order).
+    constant_base : NDArray[np.float64], shape (r,)
+        Exact coefficients for ``B @ constant_base == 1``.
     log_rate0 : NDArray[np.float64], shape (n_units,)
         Constant log-rate warm start per unit.
 
@@ -55,7 +60,11 @@ def _lstsq_constant(
     NDArray[np.float64], shape (r, n_units)
         Warm-start coefficients.
     """
-    base, *_ = np.linalg.lstsq(B, np.ones(B.shape[0]), rcond=None)  # (r,)
+    base = np.asarray(constant_base, dtype=np.float64)
+    if base.shape != (B.shape[1],):
+        raise ValueError(
+            f"constant_base must have shape ({B.shape[1]},); got {base.shape}."
+        )
     return base[:, None] * log_rate0[None, :]
 
 
@@ -253,6 +262,7 @@ def _newton_fit_numpy(
     occupancy: NDArray[np.float64],
     B: NDArray[np.float64],
     penalty_diag: NDArray[np.float64],
+    constant_base: NDArray[np.float64],
     max_iter: int,
     tol: float,
 ) -> tuple[
@@ -263,8 +273,8 @@ def _newton_fit_numpy(
     Positional-only so REML's ``minimize_scalar(args=...)`` can supply
     ``max_iter`` / ``tol`` -- keyword-only controls would raise ``TypeError``
     through the positional ``args=``. Warm-started from a constant log-rate
-    projected onto ``B``; ``eta`` is clipped before ``exp``; each iteration
-    step-halves for monotone descent. Convergence is the **relative
+    represented exactly by ``constant_base``; ``eta`` is clipped before
+    ``exp``; each iteration step-halves for monotone descent. Convergence is the **relative
     penalized-objective decrease** (batch-scalar), never the coefficient step.
     The final ``(eta, mu)`` is recomputed from the **updated** coefficients so
     the returned triple is consistent (never the pre-update arrays).
@@ -276,6 +286,9 @@ def _newton_fit_numpy(
     B : NDArray[np.float64], shape (n_bins, r)
     penalty_diag : NDArray[np.float64], shape (r,)
         ``penalty * d``.
+    constant_base : NDArray[np.float64], shape (r,)
+        Exact coefficients for ``B @ constant_base == 1``, constructed from the
+        structural component intercepts and shared across every fit.
     max_iter : int
     tol : float
         Relative penalized-objective decrease threshold.
@@ -301,10 +314,11 @@ def _newton_fit_numpy(
         1e-6,
         np.exp(_ETA_CLIP),
     )  # (n_units,)
-    coeffs = _lstsq_constant(B, np.log(rate0))  # (r, n_units)
-    # Scale each unit's warm start strictly inside the box: lstsq can reconstruct
-    # a clamped constant as _ETA_CLIP + a few ulp, and the line search requires a
-    # strictly feasible starting point (|eta| < _ETA_CLIP) to halve back toward.
+    coeffs = _constant_warm_start(B, constant_base, np.log(rate0))
+    # Scale each unit's warm start strictly inside the box: rate0 is clipped at
+    # exp(_ETA_CLIP), so log(rate0) can equal _ETA_CLIP exactly, putting eta0 on
+    # (or a few ulp past) the boundary; the line search requires a strictly
+    # feasible start (|eta| < _ETA_CLIP) to halve back toward.
     eta0 = B @ coeffs
     max_abs = np.max(np.abs(eta0), axis=0)  # (n_units,)
     limit = _ETA_CLIP - 1e-6
@@ -398,6 +412,7 @@ def _reml_objective_numpy(
     B: NDArray[np.float64],
     d: NDArray[np.float64],
     penalty_rank: int,
+    constant_base: NDArray[np.float64],
     max_iter: int,
     tol: float,
 ) -> float:
@@ -427,6 +442,8 @@ def _reml_objective_numpy(
         Penalty weights (``0`` on intercept columns, ``> 0`` on fills).
     penalty_rank : int
         ``r_eff - n_live_components``.
+    constant_base : NDArray[np.float64], shape (r,)
+        Exact all-ones predictor coefficients reused by the inner fit.
     max_iter : int
     tol : float
 
@@ -438,7 +455,7 @@ def _reml_objective_numpy(
     """
     penalty = float(np.exp(log_penalty))
     coeffs, eta, mu, _n_iter, _max_step, converged = _newton_fit_numpy(
-        counts, occupancy, B, penalty * d, max_iter, tol
+        counts, occupancy, B, penalty * d, constant_base, max_iter, tol
     )
     # A non-converged inner fit (line-search failure or iteration cap) gives an
     # unreliable score computed from partial coefficients; reject this lambda so
@@ -468,6 +485,7 @@ def select_penalty_by_reml(
     d: NDArray[np.float64],
     penalty_rank: int,
     *,
+    constant_base: NDArray[np.float64] | None = None,
     max_iter: int,
     tol: float,
 ) -> tuple[float | None, float | None]:
@@ -486,6 +504,10 @@ def select_penalty_by_reml(
     B : NDArray[np.float64], shape (n_bins, r)
     d : NDArray[np.float64], shape (r,)
     penalty_rank : int
+    constant_base : NDArray[np.float64] or None, keyword-only
+        Precomputed structural all-ones coefficients. Direct internal callers
+        may omit it; the selector derives it once from ``d`` and
+        ``penalty_rank``.
     max_iter : int, keyword-only
     tol : float, keyword-only
 
@@ -498,11 +520,27 @@ def select_penalty_by_reml(
     """
     if penalty_rank == 0:  # flat in lambda -- skip
         return None, None
+    if constant_base is None:
+        # Direct internal callers still use the exact structural start; the
+        # orchestrator normally supplies this precomputed vector so both
+        # backends share it.
+        from ._glm import _structural_constant_base
+
+        constant_base = _structural_constant_base(B, d.size - penalty_rank)
     result = scipy.optimize.minimize_scalar(
         _reml_objective_numpy,
         bounds=_LOG_PENALTY_BOUNDS,
         method="bounded",
-        args=(counts, occupancy, B, d, penalty_rank, max_iter, tol),
+        args=(
+            counts,
+            occupancy,
+            B,
+            d,
+            penalty_rank,
+            constant_base,
+            max_iter,
+            tol,
+        ),
         options={"xatol": _REML_XATOL},
     )
     if not np.isfinite(result.fun):

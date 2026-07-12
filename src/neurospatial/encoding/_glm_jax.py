@@ -186,25 +186,27 @@ def _step_halve_jax(
 # Batched Newton/IRLS loop (mirror _glm_numpy._newton_fit_numpy)
 # ---------------------------------------------------------------------------
 @jax.jit
-def _warm_start_jax(counts: Array, occupancy: Array, basis: Array) -> Array:
+def _warm_start_jax(
+    counts: Array, occupancy: Array, basis: Array, constant_base: Array
+) -> Array:
     """Constant-log-rate warm start ``(r, n_units)``, scaled strictly inside the
     box (mirrors the NumPy core's warm start).
 
     Independent of the penalty, so it is computed **once** and reused across a
-    REML lambda search -- otherwise its ``lstsq`` SVD would repeat on every
-    objective evaluation. Mirrors :func:`_glm_numpy._lstsq_constant` + the box
-    scaling in :func:`_glm_numpy._newton_fit_numpy`.
+    REML lambda search. ``constant_base`` comes from the exact structural
+    component intercepts, so no least-squares SVD appears in this kernel.
+    Mirrors :func:`_glm_numpy._constant_warm_start` + the box scaling in
+    :func:`_glm_numpy._newton_fit_numpy`.
     """
-    n_bins = basis.shape[0]
     dtype = basis.dtype
     total_occ = jnp.maximum(occupancy.sum(), jnp.asarray(1e-9, dtype))
     rate0 = jnp.clip(
         counts.sum(0) / total_occ, 1e-6, jnp.exp(jnp.asarray(_ETA_CLIP, dtype))
     )
-    base = jnp.linalg.lstsq(basis, jnp.ones(n_bins, dtype))[0]  # (r,)
-    coeffs = base[:, None] * jnp.log(rate0)[None, :]  # (r, n_units)
-    # lstsq can reconstruct a clamped constant as _ETA_CLIP + a few ulp; the line
-    # search needs a strictly feasible start to halve back toward.
+    constant_base = jnp.asarray(constant_base, dtype)
+    coeffs = constant_base[:, None] * jnp.log(rate0)[None, :]
+    # Keep a clamped constant strictly inside the box so the line search can
+    # always halve back toward a feasible start.
     max_abs = jnp.max(jnp.abs(basis @ coeffs), axis=0)  # (n_units,)
     limit = _ETA_CLIP - 1e-6
     scale = jnp.minimum(1.0, limit / jnp.maximum(max_abs, limit))
@@ -300,6 +302,7 @@ def _newton_fit_jax(
     occupancy: NDArray[np.float64],
     B: NDArray[np.float64],
     penalty_diag: NDArray[np.float64],
+    constant_base: NDArray[np.float64],
     max_iter: int,
     tol: float,
 ) -> tuple[
@@ -307,7 +310,8 @@ def _newton_fit_jax(
 ]:
     """Float32 JAX mirror of :func:`_glm_numpy._newton_fit_numpy` (same signature).
 
-    Casts inputs to float32, applies the float32 convergence-tolerance floor
+    Casts inputs and the structural ``constant_base`` warm-start direction to
+    float32, applies the float32 convergence-tolerance floor
     ``tol = max(tol, _FIT_TOL_FLOOR)``, runs the JIT-compiled loop, and casts
     every returned array back to float64 -- so the caller sees the same
     ``(coeffs, eta, mu, n_iter, max_step, converged)`` contract as the NumPy core
@@ -318,7 +322,9 @@ def _newton_fit_jax(
     counts_j = jnp.asarray(counts, _FIT_DTYPE)
     occ_j = jnp.asarray(occupancy, _FIT_DTYPE)
     basis_j = jnp.asarray(B, _FIT_DTYPE)
-    warm = _warm_start_jax(counts_j, occ_j, basis_j)
+    warm = _warm_start_jax(
+        counts_j, occ_j, basis_j, jnp.asarray(constant_base, _FIT_DTYPE)
+    )
     coeffs, eta, mu, n_iter, max_step, converged = _newton_loop_jax(
         counts_j,
         occ_j,
@@ -385,6 +391,7 @@ def select_penalty_by_reml_jax(
     d: NDArray[np.float64],
     penalty_rank: int,
     *,
+    constant_base: NDArray[np.float64] | None = None,
     max_iter: int,
     tol: float,
 ) -> tuple[float | None, float | None]:
@@ -395,18 +402,29 @@ def select_penalty_by_reml_jax(
     returned as a Python float. Skips REML at ``penalty_rank == 0`` and raises the
     same ``ValueError`` when no finite objective exists across the interval. The
     ``B`` name mirrors ``select_penalty_by_reml`` so the two are drop-in
-    interchangeable at the ``fit_mrf_gam`` dispatch.
+    interchangeable at the ``fit_mrf_gam`` dispatch. ``constant_base`` is
+    normally supplied by the orchestrator; direct internal callers may omit it
+    and let the selector derive it from the structural penalty rank.
     """
     if penalty_rank == 0:  # flat in lambda -- skip
         return None, None
+    if constant_base is None:
+        from ._glm import _structural_constant_base
+
+        constant_base = _structural_constant_base(B, d.size - penalty_rank)
     counts_j = jnp.asarray(counts, _FIT_DTYPE)
     occ_j = jnp.asarray(occupancy, _FIT_DTYPE)
     basis_j = jnp.asarray(B, _FIT_DTYPE)
     d_j = jnp.asarray(d, _FIT_DTYPE)
     tol_eff = jnp.asarray(max(float(tol), _FIT_TOL_FLOOR), _FIT_DTYPE)
-    # Penalty-independent -- compute the warm start (incl. its lstsq SVD) once,
-    # not on every one of the ~18 objective evaluations the search makes.
-    warm = _warm_start_jax(counts_j, occ_j, basis_j)
+    # Penalty-independent structural warm start: compute once, not on every one
+    # of the ~18 objective evaluations the search makes.
+    warm = _warm_start_jax(
+        counts_j,
+        occ_j,
+        basis_j,
+        jnp.asarray(constant_base, _FIT_DTYPE),
+    )
 
     def objective(log_penalty: float) -> float:
         value = _reml_score_jax(

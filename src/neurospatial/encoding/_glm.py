@@ -107,6 +107,42 @@ class MRFFit(NamedTuple):
     pooled: bool
 
 
+def _structural_constant_base(
+    B: NDArray[np.float64], n_live_components: int
+) -> NDArray[np.float64]:
+    """Return coefficients for the all-ones predictor from exact intercepts.
+
+    The leading ``n_live_components`` columns of an :class:`MRFBasis` are
+    disjoint, positive, component-wise constants.  Their levels therefore give
+    the all-ones coefficients directly; a full least-squares/SVD solve against
+    ``B`` is unnecessary.  Fill-mode coefficients remain exactly zero.
+    """
+    B = np.asarray(B, dtype=np.float64)
+    n_components = int(n_live_components)
+    if B.ndim != 2:
+        raise ValueError(f"B must be 2-D; got shape {B.shape}.")
+    if not 1 <= n_components <= B.shape[1]:
+        raise ValueError(
+            "n_live_components must be between 1 and the basis rank; got "
+            f"{n_components} for B shape {B.shape}."
+        )
+
+    intercepts = B[:, :n_components]
+    peak_rows = np.argmax(np.abs(intercepts), axis=0)
+    levels = intercepts[peak_rows, np.arange(n_components)]
+    if np.any(levels == 0.0):
+        raise ValueError("a structural component-intercept column is identically zero.")
+
+    base = np.zeros(B.shape[1], dtype=np.float64)
+    base[:n_components] = 1.0 / levels
+    if not np.allclose(B @ base, 1.0, rtol=1e-12, atol=1e-12):
+        raise ValueError(
+            "the leading component-intercept columns do not span the all-ones "
+            "predictor required by MRFBasis."
+        )
+    return base
+
+
 def _is_rank_deficient_on_exposed(
     B: NDArray[np.float64],
     occupancy: NDArray[np.float64],
@@ -324,6 +360,11 @@ def fit_mrf_gam(
             stacklevel=2,
         )
 
+    # Construct the all-ones warm-start direction exactly from the leading
+    # component intercepts once per population fit. Both backends and every REML
+    # evaluation reuse it; no basis-wide least-squares factorization is needed.
+    constant_base = _structural_constant_base(B, basis.n_live_components)
+
     # --- lambda selection (all-zero-spike population handled first) ---
     applied_penalty: float | None
     reml_objective: float | None = None
@@ -340,7 +381,14 @@ def fit_mrf_gam(
         applied_penalty = None if penalty is None else float(penalty)
     elif penalty is None:
         applied_penalty, reml_objective = select_penalty(
-            counts, occupancy, B, d, penalty_rank, max_iter=_MAX_ITER, tol=_FIT_TOL
+            counts,
+            occupancy,
+            B,
+            d,
+            penalty_rank,
+            constant_base=constant_base,
+            max_iter=_MAX_ITER,
+            tol=_FIT_TOL,
         )
     else:
         applied_penalty = float(penalty)
@@ -351,7 +399,7 @@ def fit_mrf_gam(
     # (correct -- penalty_rank == 0 means every weight is a structural null).
     penalty_diag = np.zeros_like(d) if applied_penalty is None else applied_penalty * d
     coeffs, eta, _mu, n_iter, max_step, converged = newton_fit(
-        counts, occupancy, B, penalty_diag, _MAX_ITER, _FIT_TOL
+        counts, occupancy, B, penalty_diag, constant_base, _MAX_ITER, _FIT_TOL
     )
 
     # Floored rate from the FINAL eta so the deviance describes what is reported.

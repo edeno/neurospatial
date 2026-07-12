@@ -40,6 +40,7 @@ from neurospatial.encoding._glm import (
     _MAX_ITER,
     _RATE_FLOOR,
     MRFFit,
+    _structural_constant_base,
     fit_mrf_gam,
 )
 
@@ -177,6 +178,7 @@ def test_jax_converges_float32(sparse_regime_env, simulate_place_fields):
     basis = env._mrf_basis(occ_full, rank=60)
     counts, occ = _restrict(counts_full, occ_full, basis)
     penalty_diag = 1.0 * basis.d
+    constant_base = _structural_constant_base(basis.B, basis.n_live_components)
 
     # Production path: the wrapper applies max(tol, _FIT_TOL_FLOOR).
     fit = fit_mrf_gam(basis, counts, occ, penalty=1.0, backend="jax")
@@ -185,10 +187,16 @@ def test_jax_converges_float32(sparse_regime_env, simulate_place_fields):
 
     # The floor is applied: a sub-floor tol is treated identically to the floor.
     coeffs_sub, *_rest_sub, n_sub, _s_sub, conv_sub = _newton_fit_jax(
-        counts, occ, basis.B, penalty_diag, _MAX_ITER, 1e-12
+        counts, occ, basis.B, penalty_diag, constant_base, _MAX_ITER, 1e-12
     )
     coeffs_at, *_rest_at, n_at, _s_at, conv_at = _newton_fit_jax(
-        counts, occ, basis.B, penalty_diag, _MAX_ITER, _FIT_TOL_FLOOR
+        counts,
+        occ,
+        basis.B,
+        penalty_diag,
+        constant_base,
+        _MAX_ITER,
+        _FIT_TOL_FLOOR,
     )
     assert n_sub == n_at
     assert conv_sub == conv_at is True
@@ -200,7 +208,7 @@ def test_jax_converges_float32(sparse_regime_env, simulate_place_fields):
     oj = jnp.asarray(occ, jnp.float32)
     bj = jnp.asarray(basis.B, jnp.float32)
     pj = jnp.asarray(penalty_diag, jnp.float32)
-    warm = _warm_start_jax(cj, oj, bj)
+    warm = _warm_start_jax(cj, oj, bj, jnp.asarray(constant_base, jnp.float32))
     *_raw, n_raw, _s_raw, _c_raw = _newton_loop_jax(
         cj, oj, bj, pj, _MAX_ITER, jnp.asarray(1e-10, jnp.float32), warm
     )
@@ -385,8 +393,9 @@ def test_jax_out_of_domain_not_converged():
     occupancy = np.array([1.0])
     B = np.array([[1.0]])
     penalty_diag = np.zeros(1)
+    constant_base = _structural_constant_base(B, 1)
     *_, converged = _newton_fit_jax(
-        counts, occupancy, B, penalty_diag, _MAX_ITER, _FIT_TOL
+        counts, occupancy, B, penalty_diag, constant_base, _MAX_ITER, _FIT_TOL
     )
     assert converged is False
 
