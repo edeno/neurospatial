@@ -64,15 +64,26 @@ class BayesianDecoder:
         Fitted spatial environment defining the bin layout and connectivity.
     dt : float, default=0.025
         Decoding time-bin width in seconds.
-    bandwidth : float, default=5.0
-        KDE smoothing bandwidth (position units) for the encoding step.
+    bandwidth : float or None, default=None
+        Smoothing bandwidth (position units) for the ratio-method encoding step.
+        ``None`` resolves to the encoder default (5.0); a ratio-only param, so it
+        must stay ``None`` when ``method="glm"`` (validated at construction).
     method : str, default="diffusion_kde"
-        KDE method for the encoding step. One of ``"diffusion_kde"``,
-        ``"gaussian_kde"``, ``"binned"``.
-    min_occupancy : float, default=0.0
-        Minimum occupancy (seconds) for a bin to enter the encoding model.
-        Low-occupancy bins are filled with ``0.0`` Hz (``fill_value=0.0``), never
-        ``NaN``.
+        Estimator for the encoding step. One of ``"diffusion_kde"``,
+        ``"gaussian_kde"``, ``"binned"``, or ``"glm"`` (penalized-Poisson GAM,
+        tuned with ``penalty`` / ``rank``).
+    min_occupancy : float or None, default=None
+        Minimum occupancy (seconds) for a bin to enter the ratio-method encoding
+        model. Low-occupancy bins are filled with ``0.0`` Hz (``fill_value=0.0``),
+        never ``NaN``. ``None`` resolves to the encoder default (0.0); a
+        ratio-only param, so it must stay ``None`` when ``method="glm"``.
+    penalty : float or None, default=None
+        ``method="glm"`` smoothness penalty ``lambda``; ``None`` chooses it by
+        REML. Mutually exclusive with the ratio params (``bandwidth`` /
+        ``min_occupancy``); validated at construction.
+    rank : int or None, default=None
+        ``method="glm"`` requested basis rank cap; ``None`` uses the encoder
+        default.
     max_gap : float or None, default=0.5
         Maximum trajectory time gap (seconds) forwarded to the encoding step.
         Intervals longer than ``max_gap`` are dropped from both the spike
@@ -103,7 +114,7 @@ class BayesianDecoder:
 
     Attributes
     ----------
-    env, dt, bandwidth, method, min_occupancy, max_gap, dtype, \
+    env, dt, bandwidth, method, min_occupancy, penalty, rank, max_gap, dtype, \
 warn_on_drop
         The configuration passed at construction (immutable).
     encoding_models : NDArray[np.float64] or None
@@ -118,7 +129,10 @@ warn_on_drop
     ------
     ValueError
         At construction, if ``dt`` is not a finite ``> 0`` number, if ``dtype``
-        is not ``np.float32`` / ``np.float64``, or (when ``encoding_models`` is
+        is not ``np.float32`` / ``np.float64``, if the method-specific params are
+        invalid (an unknown ``method``; a ratio param with ``method="glm"`` or a
+        glm param with a ratio method; an out-of-domain ``penalty`` / ``rank``) --
+        these mirror ``compute_spatial_rate`` -- or (when ``encoding_models`` is
         injected directly) if the fitted state is inconsistent (missing
         ``unit_ids``, wrong ndim, or a bin/unit-count mismatch against ``env``).
     RuntimeError
@@ -148,9 +162,11 @@ warn_on_drop
 
     env: Environment
     dt: float = 0.025
-    bandwidth: float = 5.0
+    bandwidth: float | None = None
     method: str = "diffusion_kde"
-    min_occupancy: float = 0.0
+    min_occupancy: float | None = None
+    penalty: float | None = None
+    rank: int | None = None
     max_gap: float | None = 0.5
     dtype: type[np.float32] | type[np.float64] = np.float64
     warn_on_drop: bool = True
@@ -165,10 +181,14 @@ warn_on_drop
         (so :meth:`fit`'s returned decoder is validated too). The dataclass is
         frozen, so this only raises -- it never assigns fields. Reuses the core
         :func:`~neurospatial.decoding._binning.validate_dt` so ``dt`` semantics
-        cannot drift from the decode entry points; ``method`` is left
-        to :meth:`fit` / ``compute_spatial_rates`` (no duplicate allow-set).
+        cannot drift from the decode entry points, and the encoder's
+        :func:`~neurospatial.encoding._smoothing.validate_spatial_method_params`
+        so ``method`` / ``bandwidth`` / ``min_occupancy`` / ``penalty`` / ``rank``
+        errors mirror ``compute_spatial_rate`` exactly (one validator, no
+        duplicate allow-set).
         """
         from neurospatial.decoding._binning import validate_dt
+        from neurospatial.encoding._smoothing import validate_spatial_method_params
 
         # Config domain: dt (shared core validator) and dtype.
         validate_dt(self.dt)
@@ -176,6 +196,18 @@ warn_on_drop
             raise ValueError(
                 f"dtype must be np.float32 or np.float64, got {self.dtype!r}."
             )
+
+        # Method-specific validation, reusing the encoder's validator so the
+        # mutual-exclusivity + value-domain errors are byte-identical to
+        # compute_spatial_rate's. fill_value is not a decoder param (pass None).
+        validate_spatial_method_params(
+            self.method,
+            bandwidth=self.bandwidth,
+            min_occupancy=self.min_occupancy,
+            fill_value=None,
+            penalty=self.penalty,
+            rank=self.rank,
+        )
 
         # Fitted-state coupling: only meaningful when encoding_models is set.
         # This closes the direct-injection backdoor
@@ -295,12 +327,14 @@ warn_on_drop
 
         Notes
         -----
-        The default ``min_occupancy=0.0`` (paired with the decode golden path's
-        ``fill_value=0.0``) means a small ``epoch`` or sparse training data can
-        build a **degenerate low-coverage** encoding model *without erroring* --
-        most bins fall back to ``0.0`` Hz, so the fit "succeeds" but decodes
-        poorly. For short epochs, raise ``min_occupancy`` or check the fitted
-        model's spatial coverage before trusting a decode.
+        The default ``min_occupancy=None`` (resolving to ``0.0``, paired with the
+        ratio decode golden path's ``fill_value=0.0``) means a small ``epoch`` or
+        sparse training data can build a **degenerate low-coverage** encoding
+        model *without erroring* -- most bins fall back to ``0.0`` Hz, so the fit
+        "succeeds" but decodes poorly. For short epochs, raise ``min_occupancy``
+        (ratio methods) or check the fitted model's spatial coverage before
+        trusting a decode. ``method="glm"`` has no such knob -- occupancy enters
+        as a log-offset, so every bin gets a finite rate.
 
         Examples
         --------
@@ -351,6 +385,8 @@ warn_on_drop
             bandwidth=self.bandwidth,
             method=self.method,
             min_occupancy=self.min_occupancy,
+            penalty=self.penalty,
+            rank=self.rank,
             speed=speed,
             min_speed=min_speed,
             max_gap=self.max_gap,

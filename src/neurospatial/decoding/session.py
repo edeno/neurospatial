@@ -96,9 +96,11 @@ def decode_session(
     positions: NDArray[np.float64] | None = None,
     *,
     dt: float = 0.025,
-    bandwidth: float = 5.0,
+    bandwidth: float | None = None,
     method: str = "diffusion_kde",
-    min_occupancy: float = 0.0,
+    min_occupancy: float | None = None,
+    penalty: float | None = None,
+    rank: int | None = None,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
@@ -140,18 +142,31 @@ def decode_session(
         is a ``PositionLike`` object carrying the positions.
     dt : float, optional
         Decoding time-bin width in seconds.  Default is 0.025 (25 ms).
-    bandwidth : float, optional
-        Smoothing bandwidth (same units as positions) for the KDE encoding
-        step.  Ignored when ``encoding_models`` is provided.  Default 5.0.
+    bandwidth : float or None, optional
+        Smoothing bandwidth (same units as positions) for the ratio-method
+        encoding step. ``None`` (default) resolves to the encoder's default
+        (5.0); a ratio-only param, so it must stay ``None`` when
+        ``method="glm"``. Ignored when ``encoding_models`` is provided.
     method : str, optional
-        KDE method passed to :func:`~neurospatial.encoding.compute_spatial_rates`.
-        Options: ``"diffusion_kde"`` (default), ``"gaussian_kde"``,
-        ``"binned"``.  Ignored when ``encoding_models`` is provided.
-    min_occupancy : float, optional
+        Estimator passed to :func:`~neurospatial.encoding.compute_spatial_rates`.
+        Options: ``"diffusion_kde"`` (default), ``"gaussian_kde"``, ``"binned"``,
+        and ``"glm"`` (penalized-Poisson GAM, tuned with ``penalty`` / ``rank``).
+        Ignored when ``encoding_models`` is provided.
+    min_occupancy : float or None, optional
         Minimum occupancy (seconds) for a spatial bin to be included in the
-        encoding model.  Bins below threshold are set to ``fill_value=0.0``
-        so the decoder never receives NaN rates.  Default is 0.0 (no
-        threshold).  Ignored when ``encoding_models`` is provided.
+        ratio-method encoding model. Bins below threshold are set to
+        ``fill_value=0.0`` so the decoder never receives NaN rates. ``None``
+        (default) resolves to the encoder's default (0.0, no threshold); a
+        ratio-only param, so it must stay ``None`` when ``method="glm"``. Ignored
+        when ``encoding_models`` is provided.
+    penalty : float or None, optional
+        ``method="glm"`` smoothness penalty ``lambda``. ``None`` (default)
+        chooses it by REML. Mutually exclusive with the ratio params
+        (``bandwidth`` / ``min_occupancy``). Ignored when ``encoding_models`` is
+        provided.
+    rank : int or None, optional
+        ``method="glm"`` requested basis rank cap. ``None`` (default) uses the
+        encoder default. Ignored when ``encoding_models`` is provided.
     speed : NDArray[np.float64], shape (n_frames,) or None
         Precomputed instantaneous speed at each trajectory sample, forwarded to
         :func:`~neurospatial.encoding.compute_spatial_rates`. Only used when
@@ -241,10 +256,12 @@ def decode_session(
     ``spike_counts`` argument.  No transposition is performed.
 
     **Encoding fill value**:
-    When ``encoding_models`` is not provided this function always passes
-    ``fill_value=0.0`` to the encoder so that low-occupancy bins produce
-    zero-rate predictions rather than NaN, keeping the posterior valid.
-    If you need NaN-masked bins in the encoding model, compute
+    When ``encoding_models`` is not provided and a ratio method is used, this
+    function passes ``fill_value=0.0`` to the encoder so that low-occupancy bins
+    produce zero-rate predictions rather than NaN, keeping the posterior valid.
+    ``method="glm"`` needs no fill (occupancy enters as a log-offset, so every
+    bin gets a finite rate), so no ``fill_value`` is passed there. If you need
+    NaN-masked bins in the encoding model, compute
     :func:`~neurospatial.encoding.compute_spatial_rates` separately and
     pass the result as ``encoding_models``.
 
@@ -323,6 +340,8 @@ def decode_session(
         bandwidth=bandwidth,
         method=method,
         min_occupancy=min_occupancy,
+        penalty=penalty,
+        rank=rank,
         speed=speed,
         min_speed=min_speed,
         max_gap=max_gap,
@@ -353,9 +372,11 @@ def _build_encoding_model(
     positions: NDArray[np.float64] | None,
     *,
     dt: float,
-    bandwidth: float,
+    bandwidth: float | None,
     method: str,
-    min_occupancy: float,
+    min_occupancy: float | None,
+    penalty: float | None = None,
+    rank: int | None = None,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
@@ -504,7 +525,29 @@ def _build_encoding_model(
     # plausible-but-wrong posterior. Exactly one of the two branches below
     # surfaces it (never both, so no duplicate warning):
     if encoding_models is None:
-        _method = cast("Literal['diffusion_kde', 'gaussian_kde', 'binned']", method)
+        # Mirror the encoder's method-specific validation (mutual exclusivity +
+        # value domains) at the decoder boundary, reusing the SAME validator so
+        # the errors are identical. fill_value is not a decoder-exposed param, so
+        # it is passed as None here (the golden-path 0.0 fill for ratio methods is
+        # applied in the compute_spatial_rates call below, never for glm).
+        from neurospatial.encoding._smoothing import validate_spatial_method_params
+
+        penalty, rank = validate_spatial_method_params(
+            method,
+            bandwidth=bandwidth,
+            min_occupancy=min_occupancy,
+            fill_value=None,
+            penalty=penalty,
+            rank=rank,
+        )
+        _method = cast(
+            "Literal['diffusion_kde', 'gaussian_kde', 'binned', 'glm']", method
+        )
+        # glm produces finite rates everywhere (occupancy is a log-offset), so it
+        # needs no NaN fill; passing fill_value to a glm result would be rejected
+        # as a ratio-only param. Ratio methods keep the golden-path 0.0 fill so
+        # low-occupancy bins decode as zero-rate, never NaN.
+        fill_value = None if method == "glm" else 0.0
         # The encoder runs over the same [t_start, t_stop] window and already
         # emits the spike-drop warning (and additionally an inactive-bin /
         # wrong-coordinate-frame warning the decode-time check cannot), so we
@@ -517,7 +560,9 @@ def _build_encoding_model(
             bandwidth=bandwidth,
             method=_method,
             min_occupancy=min_occupancy,
-            fill_value=0.0,
+            fill_value=fill_value,
+            penalty=penalty,
+            rank=rank,
             speed=speed,
             min_speed=min_speed,
             max_gap=max_gap,
@@ -569,9 +614,11 @@ def _encode_and_bin(
     positions: NDArray[np.float64] | None,
     *,
     dt: float,
-    bandwidth: float,
+    bandwidth: float | None,
     method: str,
-    min_occupancy: float,
+    min_occupancy: float | None,
+    penalty: float | None = None,
+    rank: int | None = None,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
@@ -607,6 +654,8 @@ def _encode_and_bin(
         bandwidth=bandwidth,
         method=method,
         min_occupancy=min_occupancy,
+        penalty=penalty,
+        rank=rank,
         speed=speed,
         min_speed=min_speed,
         max_gap=max_gap,
@@ -634,9 +683,11 @@ def decode_session_summary(
     positions: NDArray[np.float64] | None = None,
     *,
     dt: float = 0.025,
-    bandwidth: float = 5.0,
+    bandwidth: float | None = None,
     method: str = "diffusion_kde",
-    min_occupancy: float = 0.0,
+    min_occupancy: float | None = None,
+    penalty: float | None = None,
+    rank: int | None = None,
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
@@ -670,8 +721,11 @@ def decode_session_summary(
     Parameters
     ----------
     env, spike_times, times, positions, dt, bandwidth, method, \
-min_occupancy, speed, min_speed, max_gap, encoding_models, warn_on_drop, dtype
-        Same as :func:`decode_session` (``max_gap`` forwards to
+min_occupancy, penalty, rank, speed, min_speed, max_gap, encoding_models, \
+warn_on_drop, dtype
+        Same as :func:`decode_session` -- including ``method="glm"`` and its
+        ``penalty`` / ``rank`` knobs, and the nullable ``bandwidth`` /
+        ``min_occupancy`` (``max_gap`` forwards to
         :func:`~neurospatial.encoding.compute_spatial_rates`). ``dtype``
         ("decode in this dtype") controls BOTH the encoding-model working set
         AND the streamed per-block posterior: ``np.float32`` halves both;
@@ -756,6 +810,8 @@ min_occupancy, speed, min_speed, max_gap, encoding_models, warn_on_drop, dtype
         bandwidth=bandwidth,
         method=method,
         min_occupancy=min_occupancy,
+        penalty=penalty,
+        rank=rank,
         speed=speed,
         min_speed=min_speed,
         max_gap=max_gap,
