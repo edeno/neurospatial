@@ -583,6 +583,46 @@ def test_pooled_result_state_machine_invariant(open_field_env: Environment) -> N
     # flag (it predates the flag), so reml_at_boundary=None is allowed there.
     _make(penalty=2.5, reml_objective=-1.0, reml_at_boundary=None, pooled=True)
 
+    # --- semantic provenance coupling of the per-unit vectors -------------------
+    both = np.array([False, True])
+    # REML-selected unit (mask True) must carry a finite objective, not the nan
+    # sentinel; and a fallback unit (mask False) must carry nan, not a finite one.
+    with pytest.raises(ValueError, match=r"penalty_selected_by_reml"):
+        _make(
+            penalty=np.array([0.5, 1.5]),
+            reml_objective=np.array([-1.0, np.nan]),
+            reml_at_boundary=both,
+            penalty_selected_by_reml=np.array([True, True]),  # unit 1 True but nan
+            pooled=False,
+        )
+    with pytest.raises(ValueError, match=r"penalty_selected_by_reml"):
+        _make(
+            penalty=np.array([0.5, 1.5]),
+            reml_objective=np.array([-1.0, -2.0]),  # unit 1 finite but marked fallback
+            reml_at_boundary=both,
+            penalty_selected_by_reml=np.array([True, False]),
+            pooled=False,
+        )
+    # Per-unit penalties must be finite and positive.
+    for bad_penalty in (np.array([-0.5, 1.5]), np.array([np.nan, 1.5])):
+        with pytest.raises(ValueError, match=r"finite and > 0"):
+            _make(
+                penalty=bad_penalty,
+                reml_objective=np.array([-1.0, -2.0]),
+                reml_at_boundary=both,
+                penalty_selected_by_reml=np.array([True, True]),
+                pooled=False,
+            )
+    # The per-unit path requires >= 1 informative unit (all-False mask rejected).
+    with pytest.raises(ValueError, match=r"at least one informative"):
+        _make(
+            penalty=np.array([0.5, 1.5]),
+            reml_objective=np.array([np.nan, np.nan]),
+            reml_at_boundary=both,
+            penalty_selected_by_reml=np.array([False, False]),
+            pooled=False,
+        )
+
     # The two legitimate states construct cleanly.
     _make(penalty=1.0, reml_objective=-1.0, reml_at_boundary=True, pooled=True)
     _make(

@@ -371,6 +371,35 @@ def _check_gam_result_invariant(
                     "reml_objective, reml_at_boundary, and penalty_selected_by_reml "
                     "must all be per-unit when the provenance mask is present."
                 )
+            # Semantic coupling of the per-unit provenance (values, not just
+            # shapes), so a corrupt record cannot round-trip through NWB:
+            selected = np.asarray(mask, dtype=bool)
+            penalty_vals = np.asarray(fields["penalty"], dtype=np.float64)
+            reml_vals = np.asarray(fields["reml_objective"], dtype=np.float64)
+            # Every applied lambda is a finite, positive smoothing penalty.
+            if not np.all(np.isfinite(penalty_vals) & (penalty_vals > 0.0)):
+                raise ValueError(
+                    f"{kind} per-unit penalty must be finite and > 0 (an applied "
+                    f"smoothing lambda); got {penalty_vals}."
+                )
+            # A REML-selected unit carries a finite objective; a pooled-fallback
+            # unit carries the nan sentinel -- so ``selected`` is exactly the
+            # finite-objective mask.
+            if not np.array_equal(selected, np.isfinite(reml_vals)):
+                raise ValueError(
+                    f"{kind} penalty_selected_by_reml must mark exactly the units "
+                    "with a finite reml_objective (REML-selected); fallback units "
+                    f"carry nan. Got selected={selected}, reml_objective={reml_vals}."
+                )
+            # The per-unit vector path only exists with >= 1 informative unit
+            # (population level). A singular slice may legitimately be a lone
+            # fallback unit, so only pin this on the plural class.
+            if n_units is not None and not selected.any():
+                raise ValueError(
+                    f"{kind} is a per-unit result but penalty_selected_by_reml is "
+                    "all False; the per-unit lambda path requires at least one "
+                    "informative (REML-selected) unit."
+                )
         else:
             # Non-per-unit result: none of the three may be a per-unit vector
             # (this is exactly the state that crashes NWB writing).

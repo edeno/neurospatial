@@ -141,6 +141,30 @@ class TestBenchmarkRunner:
         assert result.elapsed_ms > 0
         assert result.n_neurons == 3
 
+    def test_run_single_benchmark_glm_per_unit(
+        self, benchmark_module: ModuleType
+    ) -> None:
+        """The backend benchmark forwards the per-unit REML workload
+        (``pooled=False`` with automatic REML), so a regression cannot silently
+        benchmark shared REML instead."""
+        data = benchmark_module.create_benchmark_data(
+            n_neurons=3, n_samples=500, seed=44
+        )
+        result = benchmark_module.run_single_benchmark(
+            data=data,
+            function_name="compute_spatial_rates",
+            backend="numpy",
+            n_iterations=1,
+            method="glm",
+            penalty=None,  # automatic REML -> pooled matters
+            rank=10,
+            pooled=False,
+        )
+
+        assert result.backend == "numpy"
+        assert result.elapsed_ms > 0
+        assert result.n_neurons == 3
+
     @pytest.mark.skipif(
         not is_jax_available(),
         reason="JAX is not available on this platform",

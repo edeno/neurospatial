@@ -290,6 +290,10 @@ def _fit_mrf_gam_per_unit(
         float32 JAX mirror), shared with the pooled path.
     pooled : bool, keyword-only
         Echoed onto the result (``False`` here).
+    unit_ids : sequence or None, keyword-only, default None
+        Per-unit identity labels (aligned with the unit axis) used **only** to
+        name the affected units in the convergence / boundary warnings; ``None``
+        falls back to the positional unit-axis index. Purely diagnostic.
 
     Returns
     -------
@@ -473,7 +477,9 @@ def fit_mrf_gam(
     ------
     ValueError
         If ``counts`` is not 2-D or its bin count does not match the basis
-        (i.e. it was not restricted to ``basis.live_bins``).
+        (i.e. it was not restricted to ``basis.live_bins``); or if ``unit_ids``
+        is supplied but is not a 1-D sequence aligned with the unit axis
+        (length ``n_units``).
     """
     from ._backend import is_jax_available
     from ._glm_numpy import (
