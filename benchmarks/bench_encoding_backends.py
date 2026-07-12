@@ -344,6 +344,10 @@ def run_encoding_benchmark(
         Fixed glm penalty; ``None`` benchmarks automatic REML.
     rank : int, default=60
         Requested glm basis rank.
+    pooled : bool, default=True
+        glm smoothing pool: ``True`` shares one REML ``lambda``, ``False`` selects
+        an independent per-unit ``lambda`` (a REML search per informative unit).
+        Only meaningful with ``method="glm"`` and ``penalty=None``.
 
     Returns
     -------

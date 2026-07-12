@@ -324,6 +324,35 @@ def test_reml_boundary_diagnostic_per_unit(open_field_env, simulate_flat_weak_si
     assert np.all(boundary)
 
 
+def test_per_unit_warning_names_unit_ids(open_field_env, simulate_flat_weak_signal):
+    """The per-unit boundary warning names the caller's unit_ids when supplied,
+    and falls back to positional 'unit index/indices' when they are not."""
+    env = open_field_env
+    counts_full, occ_full = simulate_flat_weak_signal(env, 2, seed=21)
+    basis = env._mrf_basis(occ_full, rank=20)
+    counts, occ = _restrict(counts_full, occ_full, basis)
+
+    # Labels supplied -> the warning carries them, not bare indices.
+    with pytest.warns(UserWarning) as rec:
+        fit_mrf_gam(
+            basis,
+            counts,
+            occ,
+            penalty=None,
+            pooled=False,
+            unit_ids=["cell-A", "cell-B"],
+        )
+    msg = "\n".join(str(w.message) for w in rec)
+    assert "cell-A" in msg and "cell-B" in msg
+    assert "unit index" not in msg  # labels replace the positional fallback
+
+    # No labels -> positional "unit indices".
+    with pytest.warns(UserWarning) as rec2:
+        fit_mrf_gam(basis, counts, occ, penalty=None, pooled=False)
+    msg2 = "\n".join(str(w.message) for w in rec2)
+    assert "unit indices" in msg2
+
+
 def test_reml_boundary_none_when_reml_skipped(
     open_field_env, two_path_env, simulate_place_fields
 ):

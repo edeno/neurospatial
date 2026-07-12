@@ -524,6 +524,23 @@ def test_pooled_result_state_machine_invariant(open_field_env: Environment) -> N
     with pytest.raises(ValueError, match=r"boolean|bool"):
         _make(penalty=1.0, reml_objective=-1.0, reml_at_boundary=0.5, pooled=True)
 
+    # a SCALAR provenance mask alongside vector slots -> reject (would crash the
+    # NWB writer at len() of the 0-d mask).
+    with pytest.raises(ValueError, match=r"per-unit"):
+        _make(
+            penalty=np.array([0.5, 1.5]),
+            reml_objective=np.array([-1.0, np.nan]),
+            reml_at_boundary=np.array([False, True]),
+            penalty_selected_by_reml=True,  # scalar, not (n_units,)
+            pooled=False,
+        )
+    # A boundary flag with no REML objective is inconsistent -> reject.
+    with pytest.raises(ValueError, match=r"boundary flag requires REML|reml_objective"):
+        _make(penalty=1.0, reml_objective=None, reml_at_boundary=False, pooled=True)
+    # The reverse is LEGAL: a schema-2.1 read has reml_objective but no boundary
+    # flag (it predates the flag), so reml_at_boundary=None is allowed there.
+    _make(penalty=2.5, reml_objective=-1.0, reml_at_boundary=None, pooled=True)
+
     # The two legitimate states construct cleanly.
     _make(penalty=1.0, reml_objective=-1.0, reml_at_boundary=True, pooled=True)
     _make(

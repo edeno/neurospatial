@@ -350,8 +350,9 @@ def _check_gam_result_invariant(
             return np.ndim(value) == (0 if n_units is None else 1)
 
         if mask is not None:
-            # Per-unit result: only under pooled=False, with all three per-unit
-            # slots populated and per-unit-shaped.
+            # Per-unit result: only under pooled=False, with the mask AND all
+            # three slots populated and per-unit-shaped (a scalar mask alongside
+            # vector slots is exactly what crashes the NWB writer at len()).
             if fields["pooled"] is not False:
                 raise ValueError(
                     f"{kind} carries penalty_selected_by_reml (a per-unit result) "
@@ -359,14 +360,16 @@ def _check_gam_result_invariant(
                     "produced under pooled=False."
                 )
             missing_vec = [
-                n for n in per_unit_slots if not _is_per_unit_shaped(fields[n])
+                n
+                for n in (*per_unit_slots, "penalty_selected_by_reml")
+                if not _is_per_unit_shaped(fields[n])
             ]
             if missing_vec:
                 raise ValueError(
                     f"{kind} carries penalty_selected_by_reml (a per-unit result) "
                     f"but {missing_vec} are not per-unit values; penalty, "
-                    "reml_objective, and reml_at_boundary must all be per-unit "
-                    "when the provenance mask is present."
+                    "reml_objective, reml_at_boundary, and penalty_selected_by_reml "
+                    "must all be per-unit when the provenance mask is present."
                 )
         else:
             # Non-per-unit result: none of the three may be a per-unit vector
@@ -383,6 +386,17 @@ def _check_gam_result_invariant(
                     "require the provenance mask (a per-unit pooled=False result). "
                     "For a shared/fixed lambda these must be scalar or None."
                 )
+        # A boundary flag only exists when REML produced an objective, so
+        # ``reml_at_boundary`` being set requires ``reml_objective`` set too. The
+        # reverse is NOT required: a schema-2.1 file records ``reml_objective`` but
+        # no ``reml_at_boundary`` (it predates the flag), and reads back with the
+        # objective set and the boundary flag ``None`` -- a legitimate state.
+        if fields["reml_at_boundary"] is not None and fields["reml_objective"] is None:
+            raise ValueError(
+                f"{kind} has reml_at_boundary={fields['reml_at_boundary']!r} but "
+                "reml_objective=None; a boundary flag requires REML to have run "
+                "(so reml_objective must be populated)."
+            )
         # The boolean diagnostics must be boolean (a float boundary flag or an
         # integer provenance mask would round-trip wrong through NWB).
         for name in ("reml_at_boundary", "penalty_selected_by_reml"):
@@ -1190,8 +1204,11 @@ class SpatialRatesResult(SpatialResultMixin):
         (``pooled=False``) it is a ``(n_units,)`` vector, ``nan`` for a zero-spike
         fallback unit.
     reml_at_boundary : bool or NDArray or None
-        Whether the selected ``λ`` sits on a REML search bound (weakly identified
-        ``λ``, though the fitted field is stable). Scalar for the shared
+        Whether the selected ``λ`` is **near** a REML search bound (within
+        ``5·xatol`` of it): ``λ`` is weakly identified there (its optimum may lie
+        at or beyond the bound). The fitted field remains finite, but its
+        sensitivity to ``λ`` is not measured -- treat this as a flag to check that
+        sensitivity, not a stability guarantee. Scalar for the shared
         (``pooled=True``) fit, a ``(n_units,)`` bool vector for the per-unit
         (``pooled=False``) fit, and ``None`` when REML did not run or for ratio
         methods.
@@ -2341,6 +2358,7 @@ def _compute_glm_spatial_rates(
     penalty: float | None,
     rank: int | None,
     pooled: bool = True,
+    unit_ids: Any = None,
     resolved_backend: Literal["numpy", "jax"],
     dtype: type[np.float32] | type[np.float64],
 ) -> tuple[ArrayLike, Any]:
@@ -2440,6 +2458,7 @@ def _compute_glm_spatial_rates(
         penalty=penalty,
         pooled=pooled,
         backend=resolved_backend,
+        unit_ids=unit_ids,
     )
 
     # Boundary out: floor-fill, then scatter max(exp(eta), _RATE_FLOOR).T into the
@@ -2584,10 +2603,11 @@ default="diffusion_kde"
         ``penalty_selected_by_reml=False`` with ``reml_objective=nan``. A supplied
         fixed ``penalty`` beats ``pooled`` (REML is skipped and one scalar ``λ``
         is recorded); ``pooled`` is likewise a no-op at ``penalty_rank == 0`` (a
-        shared-basis property) or when no unit spikes. A boundary warning means
-        the selected ``λ`` sits on the search bound -- ``λ`` itself is weakly
-        identified even though the fitted field is stable. Passing
-        ``pooled=False`` with a ratio method raises ``ValueError``.
+        shared-basis property) or when no unit spikes. A boundary warning (which
+        names the affected ``unit_ids``) means the selected ``λ`` is near a search
+        bound -- ``λ`` itself is weakly identified; the fitted field is finite but
+        its sensitivity to ``λ`` should be checked. Passing ``pooled=False`` with a
+        ratio method raises ``ValueError``.
     speed : ndarray, shape (n_samples,), optional
         Precomputed instantaneous speed at each trajectory sample (physical
         units / second). Only used when ``min_speed`` is set. When
@@ -3422,6 +3442,9 @@ default="diffusion_kde"
             penalty=penalty,
             rank=rank,
             pooled=pooled,
+            # Resolved labels flow in so a per-unit convergence / boundary warning
+            # names the caller's unit_ids, not bare unit-axis indices.
+            unit_ids=resolved_unit_ids,
             resolved_backend=resolved_backend,
             dtype=dtype,
         )

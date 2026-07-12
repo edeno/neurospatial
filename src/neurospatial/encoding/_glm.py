@@ -211,6 +211,22 @@ def _reml_boundary_side(penalty: float) -> str:
     return "lower" if (log_lam - lower) <= (upper - log_lam) else "upper"
 
 
+def _format_affected_units(indices: Any, unit_ids: Any) -> str:
+    """Name the affected units in a per-unit warning.
+
+    When the caller supplies ``unit_ids`` (the public estimator passes its
+    resolved labels), name them as ``"unit(s) [<labels>]"``. Otherwise -- a direct
+    low-level ``fit_mrf_gam`` call, which is unit-agnostic -- name the positions
+    along the unit axis as ``"unit index/indices [<i>]"``.
+    """
+    idx = list(indices)
+    if unit_ids is not None:
+        labels = np.asarray(unit_ids)[idx].tolist()
+        return f"unit(s) {labels}"
+    label = "index" if len(idx) == 1 else "indices"
+    return f"unit {label} {idx}"
+
+
 def _warn_reml_boundary(side: str, who: str, *, stacklevel: int = 3) -> None:
     """Emit the one weakly-identified-lambda warning for a boundary REML optimum.
 
@@ -248,6 +264,7 @@ def _fit_mrf_gam_per_unit(
     newton_fit: Any,
     select_penalty: Any,
     pooled: bool,
+    unit_ids: Any = None,
 ) -> MRFFit:
     """Per-unit REML fit (``pooled=False``, automatic REML, ``penalty_rank > 0``,
     at least one informative unit).
@@ -352,31 +369,31 @@ def _fit_mrf_gam_per_unit(
     firing_rate = np.maximum(np.exp(eta), _RATE_FLOOR)
     deviance = _poisson_deviance(counts, occupancy, firing_rate)
 
-    # One aggregate nonconvergence warning naming the failed unit INDICES
-    # (batch-level, not one per unit). The bin-major fit is unit-agnostic, so it
-    # reports positions along the unit axis; the caller maps them to its unit_ids
-    # via the label-aligned per-unit diagnostics on the result.
+    # One aggregate nonconvergence warning naming the affected units (batch-level,
+    # not one per unit). Names the caller's ``unit_ids`` when supplied, else the
+    # unit-axis indices (the fit itself is unit-agnostic).
     if not converged:
         failed_ids = np.flatnonzero(~per_unit_converged).tolist()
-        label = "index" if len(failed_ids) == 1 else "indices"
         warnings.warn(
-            f"MRF-GAM per-unit fit did not converge for unit {label} {failed_ids} "
-            "(line-search failure, iteration cap, or out-of-domain data); consider "
-            "reducing rank or supplying a fixed penalty.",
+            "MRF-GAM per-unit fit did not converge for "
+            f"{_format_affected_units(failed_ids, unit_ids)} (line-search failure, "
+            "iteration cap, or out-of-domain data); consider reducing rank or "
+            "supplying a fixed penalty.",
             UserWarning,
             stacklevel=2,
         )
 
-    # One boundary warning naming the affected unit INDICES + side(s). A boundary
-    # lambda stays the finite applied penalty (never expanded or replaced).
+    # One boundary warning naming the affected units + side(s). A boundary lambda
+    # stays the finite applied penalty (never expanded or replaced).
     if boundary_per_unit.any():
         at_ids = np.flatnonzero(boundary_per_unit)
         log_lams = np.log(lam_per_unit[at_ids])
         lower, upper = _LOG_PENALTY_BOUNDS
         sides = np.where((log_lams - lower) <= (upper - log_lams), "lower", "upper")
         side_desc = "/".join(sorted(set(sides.tolist())))
-        label = "index" if at_ids.size == 1 else "indices"
-        _warn_reml_boundary(side_desc, f"unit {label} {at_ids.tolist()}", stacklevel=2)
+        _warn_reml_boundary(
+            side_desc, _format_affected_units(at_ids.tolist(), unit_ids), stacklevel=2
+        )
 
     return MRFFit(
         coefficients=coeffs,
@@ -403,6 +420,7 @@ def fit_mrf_gam(
     penalty: float | None,
     pooled: bool = True,
     backend: str = "numpy",
+    unit_ids: Any = None,
 ) -> MRFFit:
     """Fit the batched penalized-Poisson GAM on a live-bin basis.
 
@@ -438,6 +456,13 @@ def fit_mrf_gam(
         when JAX is installed, else falls back to the NumPy float64 core;
         anything else runs the NumPy core. Either way the correctness reference
         is the float64 core and ``MRFFit`` arrays are always NumPy float64.
+    unit_ids : sequence, keyword-only, optional
+        Per-unit identity labels, aligned to the columns of ``counts``, used
+        **only** to name the affected units in the per-unit (``pooled=False``)
+        convergence / boundary warnings. Purely diagnostic -- it does not touch
+        the numerics. ``None`` (the default, and every direct low-level call)
+        names units by their unit-axis index instead; the public estimator passes
+        its resolved ``unit_ids`` so the warnings carry the caller's labels.
 
     Returns
     -------
@@ -595,6 +620,7 @@ def fit_mrf_gam(
             newton_fit=newton_fit,
             select_penalty=select_penalty,
             pooled=pooled,
+            unit_ids=unit_ids,
         )
 
     # --- shared / scalar lambda selection (all-zero-spike handled first) ------

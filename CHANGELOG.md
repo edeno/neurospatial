@@ -113,10 +113,12 @@ scalar diagnostic (`reml_at_boundary`).
   sentinel); their field floors to the rate floor.
 - **Boundary diagnostic.** The new `reml_at_boundary` field (scalar for
   `pooled=True`, `(n_units,)` for `pooled=False`, `None` when REML did not run)
-  flags a `λ` selected on a REML search bound: `λ` itself is weakly identified —
-  the optimum may lie beyond the interval — even though the fitted field is
-  stable. A single warning names the boundary side and the affected units; the
-  applied `λ` remains the finite bound value (the interval is never expanded).
+  flags a `λ` selected **near** a REML search bound (within `5·xatol`): `λ` itself
+  is weakly identified — its optimum may lie at or beyond the bound. The fitted
+  field remains finite, but its sensitivity to `λ` should be checked. A single
+  warning names the boundary side and the affected units (by their `unit_ids`);
+  the applied `λ` is the finite value returned near the bound (the interval is
+  never expanded).
 - **Validation.** `pooled` is a strict `bool` (rejects `"true"` / `1` / `0` /
   arrays / `None`) and **glm-only** (`pooled=False` with a ratio method raises;
   `pooled=True` with one is the harmless default).
