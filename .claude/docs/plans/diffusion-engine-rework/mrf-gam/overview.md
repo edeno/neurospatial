@@ -65,7 +65,10 @@ No new required dependencies. JAX stays an **optional extra** (`_core_jax` patte
 - **Correctness (headline):** on a synthetic arena with low-occupancy bins, `method="glm"` returns all-finite rates where `method="diffusion_kde"` yields NaN (spec §10).
 - **Statistical recovery:** population fit recovers distinct per-neuron place-field peaks near simulated centers; REML selects a sensible `λ`; fixed extreme `λ` → monotone smoothing.
 - **Reference fidelity:** deviance, penalty-rank, REML objective match an independent recomputation (not "a value exists").
-- **JAX parity:** float32 JAX vs float64 NumPy agree within `~1e-6`; the float32 path actually converges (proves the `_FIT_TOL_FLOOR` floor is applied).
+- **JAX parity:** at an identical fixed λ, float32 JAX vs float64 NumPy rates agree at
+  approximately `~1e-6`; automatic REML can differ by `~1e-3` because float32 moves slightly
+  along a broad objective minimum. The float32 path converges with the tolerance floor and its
+  warm execution is benchmarked separately from compilation.
 - **No regression:** default `method="diffusion_kde"` behavior byte-identical after phase-0 rename; full suite green at every phase boundary.
 
 ## Risks and Mitigations

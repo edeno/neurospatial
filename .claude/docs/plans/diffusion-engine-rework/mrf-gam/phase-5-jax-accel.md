@@ -26,12 +26,29 @@ float32.
 - Create `encoding/_glm_jax.py`: mirror `_newton_fit_numpy` / `_reml_objective_numpy` with `jnp`, `jax.jit` (static `max_iter`), batched over units, `_FIT_DTYPE = jnp.float32`. Apply `tol = max(tol, _FIT_TOL_FLOOR)` and the `_DESCENT_TOL` step-halving slack. Cast inputs to float32 at entry, results back to float64 at exit.
 - Dispatch: `fit_mrf_gam` **already takes `backend=` from phase-2** (phase-3 forwards the `get_backend_name(backend)`-resolved value). Phase-5 makes `backend="jax"` route the **fit compute** to `_glm_jax` (was a NumPy-compute fallback in phases 2–4) — JAX only when the extra is installed; else the NumPy core. **No signature or phase-3 change** — only the `backend="jax"` branch's body.
 - **The public return contract is already fixed by phase-3** (NumPy core + convert output arrays to JAX when the resolved backend is `"jax"`). Phase-5 **only accelerates the fit compute** — it must **not** change what `compute_spatial_rates(method="glm", backend=…)` returns. The phase-3 `test_glm_backend_jax_return` contract test must stay green.
-- **Comparison (after):** re-run on the identical fixture; assert `coefficients`/`firing_rate`/`deviance` match the pickled NumPy baseline within `~1e-6` (rate) and report the wall-clock/memory delta.
-- Docs: note in the `compute_spatial_rate` docstring / CHANGELOG that glm accelerates with the optional JAX extra (float32; parity `~1e-6`).
+- **Comparison (after):** re-run on the identical fixture. At an identical fixed λ, assert
+  `coefficients`/`firing_rate`/`deviance` match at the measured float32 tolerances; test automatic
+  REML separately because its broad minimum can move λ and rates by `~1e-3`. Report cold/warm
+  wall-clock and memory rather than mixing compilation into steady-state timing.
+- **Post-implementation performance closure:** construct the constant-field warm-start direction
+  exactly from `MRFBasis`'s leading component intercepts and share it across NumPy/JAX and every
+  REML evaluation (no basis-wide least-squares SVD). On JAX, solve the SPD Newton Hessian by
+  Cholesky + triangular solves rather than generic LU; verify the lowered IR contains no SVD in
+  warm start/Newton/REML and no LU in Newton.
+- Extend `benchmarks/bench_encoding_backends.py` with `--smoothing glm`, `--rank`, fixed
+  `--penalty`, and `--reml` so fixed/automatic, NumPy/JAX, population-size, and cold/warm runs are
+  reproducible outside timing-sensitive CI. Synchronize JAX result arrays inside the timed region
+  so asynchronous dispatch cannot produce artificially short measurements.
+- Docs: note in the `compute_spatial_rate` docstring / CHANGELOG that glm accelerates with the
+  optional JAX extra and distinguish fixed-λ parity (`~1e-6`) from automatic-REML parity
+  (`~1e-3`).
 
 ## Deliberately not in this phase
 
-- **Any change to the NumPy core's numerics** — the JAX path mirrors it; if they disagree, the NumPy core is truth and the JAX path is fixed, not the reverse.
+- **Any change to the NumPy core's statistical objective or stopping semantics** — the JAX path
+  mirrors it; the shared structural warm start is an exact replacement for projecting the same
+  all-ones field by least squares, not a model change. If backends disagree, the NumPy core is
+  truth and the JAX path is fixed, not the reverse.
 - **Per-neuron λ** — phase-6 (its JAX mirror, if any, rides along there).
 - **New public params** — dispatch is automatic (backend-driven), not a user flag.
 
@@ -39,16 +56,17 @@ float32.
 
 | Test | Asserts |
 | --- | --- |
-| `test_jax_numpy_parity` | on the simulated population: JAX `firing_rate`/`coefficients`/`deviance` match the NumPy core within `~1e-6`; `penalty`/`rank`/`penalty_rank` identical. Mark `slow` if JAX warm-up dominates. |
-| `test_jax_converges_float32` | the float32 JAX fit reports `converged is True` and `n_iter < _MAX_ITER` — proving `_FIT_TOL_FLOOR` is applied; a variant passing raw `tol=1e-10` (no floor) runs to `_MAX_ITER` (guards the floor). |
+| `test_jax_numpy_parity` | at an identical fixed λ, JAX rate relative-L2 / above-floor relative error and deviance match the measured float32 tolerances; `penalty`/`rank`/`penalty_rank` identical. Automatic REML is tested separately. |
+| `test_jax_converges_float32` | the float32 JAX fit reports `converged is True` and `n_iter < _MAX_ITER`; a sub-floor tolerance is identical to `_FIT_TOL_FLOOR`, while the raw loop at `1e-10` requires more iterations (it may still converge after its objective becomes bit-identical). |
+| `test_structural_constant_base` | on disconnected components, the leading structural intercepts reconstruct `B @ base == 1` and every fill coefficient is exactly zero. |
 | `test_jax_absent_uses_numpy` | with the JAX extra unavailable/backend off, `fit_mrf_gam` uses the NumPy core and still produces a valid `MRFFit` (no import error). |
 | `test_backend_return_matches_ratio` | `compute_spatial_rates(method="glm", backend="jax")` returns the **same array-type convention** as `method="diffusion_kde", backend="jax"` (both JAX arrays, or both NumPy — whichever the ratio path does); `firing_rates.dtype` honors `dtype` (Finding 5). |
 | `test_reml_parity` | REML-selected λ agrees between paths within `_REML_XATOL`-consistent tolerance. |
 
 ## Measured reality (post-implementation correction)
 
-The `~1e-6` parity and the "no-floor runs to `_MAX_ITER`" convergence claims above
-were pre-implementation estimates; measurement corrected them (metrics: relative
+The original `~1e-6` end-to-end automatic-REML parity and "no-floor runs to
+`_MAX_ITER`" convergence estimates were corrected by measurement (metrics: relative
 L2 + relative error above a rate threshold — raw relative error at near-zero
 floored rates is meaningless). The shipped code, docstring, CHANGELOG, and tests
 reflect the corrected reality:
@@ -73,6 +91,16 @@ reflect the corrected reality:
   `fit_mrf_gam` runs any rank-deficient fit on the float64 core regardless of
   backend. Full-rank designs (the norm) keep the fast JAX path; REML never
   selects a blow-up penalty.
+- **Kernel cleanup (added):** the all-ones warm-start direction is now built
+  exactly from the structural component intercepts, removing the invariant SVD
+  from both backends (and its repeated cost inside NumPy REML). The JAX Newton
+  solve uses the Hessian's SPD structure via Cholesky + triangular solves rather
+  than generic LU; rank-deficient exposed designs retain the whole-fit float64
+  fallback above.
+- **Structural warm-start measurement (local CPU, 400 bins / 30 units / rank 60):** the isolated
+  JAX warm-start kernel fell from about `0.389 ms` (SVD) to `0.029 ms`; the corresponding NumPy
+  construction fell from `0.413 ms` to `0.014 ms`. End-to-end gains depend on Newton iteration
+  count; use the benchmark script rather than treating these kernel numbers as whole-fit speedups.
 
 ## Fixtures
 
@@ -82,7 +110,9 @@ reflect the corrected reality:
 ## Review
 
 Before opening the PR, dispatch `code-reviewer` against the diff. Confirm:
-- The NumPy core is unchanged; the JAX path is a faithful mirror; parity + convergence tests pass with real numbers (the baseline/comparison pair exists, not a smoke test).
+- The NumPy objective/stopping semantics are unchanged; both backends share the exact structural
+  warm start; the JAX path is a faithful float32 mirror; parity + convergence tests pass with real
+  numbers (the baseline/comparison pair exists, not a smoke test).
 - Dispatch degrades gracefully without the extra; JAX tests are skip-guarded.
 - "Deliberately not in this phase" honored — no core numeric change, no `pooled`, no user flag.
 - Tests assert measured parity + convergence, not "it ran"; the speedup delta is reported.

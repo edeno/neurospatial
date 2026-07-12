@@ -23,7 +23,7 @@ New files under `src/neurospatial/encoding/`:
 | file | phase | contents |
 | --- | --- | --- |
 | `_glm.py` | 2 | module constants ([shared-contracts](shared-contracts.md#constants)); `MRFFit`; the orchestrator **`fit_mrf_gam(basis, counts, occupancy, *, penalty, pooled=True, backend="numpy") -> MRFFit`** (**phased final signature — Finding 2**: `pooled` is wired in phase-6, `backend` in phase-5; both exist from phase-2 so phase-3 forwards them unchanged). **No `rank` arg** — effective rank is `basis.B.shape[1]`, the single source of truth; `MRFFit.rank` is derived from it. Includes degenerate-case dispatch + deviance. `counts`/`occupancy` arrive **already restricted to `basis.live_bins`** (phase-3 owns the restriction); `fit_mrf_gam` validates `counts.shape[0] == basis.B.shape[0]`, never re-slices. `MRFFit` arrays are **always NumPy** (the public return-type conversion is phase-3's job). Pure NumPy/SciPy core. |
-| `_glm_numpy.py` | 2 | `_newton_fit_numpy(counts, occupancy, B, penalty_diag, max_iter, tol) -> (coeffs, eta, mu, n_iter, max_step, converged)` (**all positional** so REML's `minimize_scalar(args=…)` can call it — Finding 2); `_reml_objective_numpy(...)`. The float64 core. |
+| `_glm_numpy.py` | 2 | `_newton_fit_numpy(counts, occupancy, B, penalty_diag, constant_base, max_iter, tol) -> (coeffs, eta, mu, n_iter, max_step, converged)`; `constant_base` is the exact all-ones direction constructed once from `MRFBasis`'s leading component intercepts and reused throughout REML. `_reml_objective_numpy(...)` remains positional for `minimize_scalar(args=…)`. The float64 core. |
 | `_glm_jax.py` | 5 | float32 JAX mirror of `_glm_numpy` (`jit`, batched); selected via `encoding/_backend.py`. |
 
 The resolver lives on `Environment` (`environment/fields.py`) + a helper in `ops/diffusion.py`
@@ -211,13 +211,13 @@ Spec §4. Batched over the neuron axis (shared `B`, `o`; per-neuron `n_k`, `γ_k
 forever). `penalty_diag = penalty * d` (length `r_eff`).
 
 ```python
-def _newton_fit_numpy(counts, occupancy, B, penalty_diag, max_iter, tol):  # ALL positional
+def _newton_fit_numpy(counts, occupancy, B, penalty_diag, constant_base, max_iter, tol):
     # counts (n_live_bins, n_units); occupancy (n_live_bins,); B (n_live_bins, r_eff)
     n_bins, r = B.shape
     n_units = counts.shape[1]
-    # warm start: constant log-rate per unit (project onto the basis)
+    # warm start: constant log-rate per unit from exact structural intercepts
     rate0 = np.clip(counts.sum(0) / max(occupancy.sum(), 1e-9), 1e-6, None)  # (n_units,)
-    coeffs = _lstsq_constant(B, np.log(rate0))              # (r, n_units)
+    coeffs = constant_base[:, None] * np.log(rate0)[None, :] # (r, n_units); B @ constant_base == 1
     prev_obj = _penalized_obj(coeffs, B, counts, occupancy, penalty_diag)  # warm-start objective
     converged = False
     max_accepted_step = 0.0
@@ -254,8 +254,10 @@ def _newton_fit_numpy(counts, occupancy, B, penalty_diag, max_iter, tol):  # ALL
   Newton step) and the new objective. Penalized objective per unit: `−Σ(n·η − μ) +
   ½·Σ(penalty_diag·γ²)`; the batch stopping criterion is the **max** relative decrease across units
   (matches the reference; batch scalar).
-- **`_lstsq_constant`**: solve `B γ ≈ log_rate0·1` per unit (`np.linalg.lstsq(B, ones)` scaled) so
-  the warm start is a constant field in the basis.
+- **Structural constant warm start:** the first `n_live_components` columns are exact disjoint
+  intercepts, so construct `constant_base` with `B @ constant_base == 1` and zero fill
+  coefficients, then scale it by each unit's `log_rate0`. Compute once per population fit and
+  reuse throughout REML; no least-squares/SVD is needed.
 - The `einsum` Hessian is O(n·r²·n_units); for large `r` loop over units instead. Correctness
   first; phase-5 JAX handles scale.
 
@@ -266,7 +268,9 @@ def _newton_fit_numpy(counts, occupancy, B, penalty_diag, max_iter, tol):  # ALL
 Spec §5. Pooled objective over `log λ`, minimized by `scipy.optimize.minimize_scalar`:
 
 ```python
-def _reml_objective_numpy(log_penalty, counts, occupancy, B, d, penalty_rank, max_iter, tol):
+def _reml_objective_numpy(
+    log_penalty, counts, occupancy, B, d, penalty_rank, constant_base, max_iter, tol
+):
     # ALL args positional — minimize_scalar supplies extras via positional `args=` (Finding 4).
     penalty = np.exp(log_penalty)
     coeffs, eta, mu, *_ = _newton_fit_numpy(counts, occupancy, B, penalty * d, max_iter, tol)
@@ -349,9 +353,13 @@ Spec §7 table. Handle before/around the fit so outputs stay model-consistent:
 - `tol = max(tol, _FIT_TOL_FLOOR)` (float32 noise floor); step-halving uses `_DESCENT_TOL`.
 - Dispatched by the existing `encoding/_backend.py` awareness (same pattern as `_core_numpy` /
   `_core_jax` elsewhere in `encoding/`).
-- Parity target: rate error `~1e-6` vs the float64 NumPy core; the parity test also asserts the
-  float32 path **converges** (`converged is True`, `n_iter < _MAX_ITER`) — proving the floor is
-  applied (spec §10).
+- The invariant all-ones warm-start direction is constructed structurally once and passed into
+  both backends; no SVD occurs in the JAX warm start, Newton loop, or REML score. The SPD Newton
+  Hessian uses Cholesky + triangular solves on JAX rather than generic LU.
+- Measured parity: at an identical fixed λ, rate error is approximately `~1e-6` vs the float64
+  NumPy core; automatic REML is approximately `~1e-3` because float32 can select a slightly
+  different point along a broad minimum. The parity test also asserts the float32 path converges
+  (`converged is True`, `n_iter < _MAX_ITER`).
 - **Return-type contract is owned by phase-3, not this phase (Finding 4).** Phase-3 already fixes
   what `compute_spatial_rates(method="glm", backend="jax")` returns (NumPy core + convert output
   to JAX arrays to match the ratio path, resolved via `get_backend_name`). Phase-5 accelerates the

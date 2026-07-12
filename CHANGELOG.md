@@ -68,13 +68,18 @@ float64 and the public return contract is unchanged.
 - **Parity.** At a fixed `penalty` the float32 fit matches the float64 core to
   ~`1e-6` on the firing-rate map (relative L2 and relative error above a rate
   threshold). Under automatic REML it is a touch looser (float32 selects a
-  slightly different `λ` near the broad objective minimum), still scientifically
-  identical.
+  slightly different `λ` near the broad objective minimum), approximately
+  `~1e-3` in measured rate/λ comparisons and still scientifically identical.
 - **Speed.** Markedly faster on populations — on a 400-bin, 30-unit, rank-60
   problem the **warm** JAX REML fit is ~40–60× faster than the NumPy path on the
   CPU backend (fixed reference workload, fixed seed). The **first** call on an
   unseen shape pays JIT compilation, so a one-off fixed-penalty fit can be slower
   than NumPy; the win is on warm/repeated fits and grows on GPU.
+- **Kernel cleanup.** The constant-field warm start is constructed exactly from
+  the MRF basis's leading component intercepts and shared across both backends
+  and every REML evaluation, eliminating the basis-wide least-squares SVD
+  (including its repeated NumPy REML cost). The JAX Newton step uses the SPD
+  Hessian's Cholesky factorization and triangular solves rather than generic LU.
 - **No new API.** Dispatch is driven entirely by the existing `backend=` keyword
   (`"numpy"` / `"jax"` / `"auto"`); there is no new user flag. JAX stays an
   optional extra (Linux/macOS).

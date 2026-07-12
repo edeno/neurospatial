@@ -86,10 +86,13 @@ step_k    = solve(hessian_k, grad_k)                 # np.linalg.solve batches o
 - **Converge on the penalized deviance, NOT the coefficient step** — the unpenalized
   per-component null modes drift forever in undersampled arenas, so `max|Δγ|` never settles
   though `exp(η)` has (NLD's documented trap).
-- Warm-start from a constant log-rate; the linear predictor is **clipped to `±_ETA_CLIP` before
+- Warm-start from a constant log-rate. The all-ones basis direction is constructed exactly from
+  the leading per-component intercept columns once per population fit and reused across every
+  REML evaluation (no basis-wide least-squares SVD). The linear predictor is **clipped to `±_ETA_CLIP` before
   `exp`** to avoid IRLS overflow; float64 core. Optional JAX path (`_core_jax` pattern, `jit`,
-  batched) runs float32 (rate error `~1e-7` vs the float64 reference) and is verified to match
-  NumPy within tolerance.
+  batched) runs float32. At an identical fixed λ its rate error is approximately `~1e-6` vs the
+  float64 reference; automatic REML can differ by `~1e-3` because float32 selects a slightly
+  different point along a broad minimum. Both are verified with separate tolerances.
 - **Solver / REML controls are FIXED internal constants** (not public params — keep the `glm`
   API surface to `penalty`/`rank`), named module constants matching the reference so
   implementations and tests can't diverge:
@@ -188,6 +191,14 @@ objective exists in the interval).
   - Shapes: shared-λ (`pooled=True`) keeps scalar `penalty`/`reml_objective` exactly as today;
     only `pooled=False` with automatic REML **and ≥1 informative unit** widens them to vectors
     (§6.3, §8).
+- **REML boundary diagnostic.** A low-information fit can have a practically flat optimum at a
+  bounded-search edge even with nonzero spikes: its field may be stable while the reported λ is
+  not well identified. Automatic REML therefore also returns/persists
+  `reml_at_boundary`, defined on the log-λ scale as within
+  `_REML_BOUNDARY_TOL = 5 * _REML_XATOL` of either bound. It is scalar for pooled REML,
+  per-unit for `pooled=False`, and `None` when REML did not run. Boundary selection warns but
+  keeps the finite applied λ; it does not silently expand the interval, impose an arbitrary
+  low-spike cutoff, or replace an informative unit's estimate.
 
 ## 6. Eigenbasis access + API
 
@@ -268,6 +279,8 @@ params default `None` (sentinel)** so validation can distinguish omitted from ex
 | `converged` | **scalar** bool | same scalar |
 | `n_iter` | **scalar** int | same scalar |
 | `reml_objective` | scalar, or `None` whenever REML did not run (fixed λ, `r==0`, no-data) | same |
+| `reml_at_boundary` | scalar bool for pooled automatic REML; `None` when REML did not run | same |
+| `penalty_selected_by_reml` | `(n_units,)` bool for `pooled=False`, otherwise `None`; false marks pooled fallback | `[i]` or `None` |
 | `pooled` | `bool` — the input `pooled` flag; **persisted** as the only reliable NWB source (§8, cannot be inferred from scalar outputs) | same |
 
 `converged` and `n_iter` are **batch-level scalars**, not per-unit: the batched Newton uses one
@@ -275,8 +288,9 @@ shared stopping criterion (the `max` relative-objective decrease across neurons,
 reference), so there is a single convergence flag and iteration count. (Per-unit convergence
 would require a redesign that freezes converged units while others continue — out of scope.)
 
-**`pooled=False` (§5) widens two fields only:** `penalty` and `reml_objective` become `(n_units,)`
-vectors (per-unit λ_k / score) — but still scalar `None` when `r == 0` (population-level skip).
+**`pooled=False` (§5) widens three fields:** `penalty`, `reml_objective`, and
+`reml_at_boundary` become `(n_units,)` vectors (per-unit λ_k / score / boundary flag) — but the
+REML fields remain scalar `None` when `r == 0` (population-level skip).
 `converged`/`n_iter` stay batch scalars; all other fields keep their shared-λ shapes. Under the
 default `pooled=True` nothing changes.
 
@@ -341,14 +355,14 @@ The `smoothing_method → method` rename touches persistence and the decoder:
   break, no back-compat shim; pre-0.9 tables are rejected with a clear error). Write `bandwidth` as
   nullable (`None` for glm). **GAM diagnostics round-trip**, with concrete placement:
   - **Metadata scalars** (batch-level): `rank`, `n_iter`, `converged`, and the `(rank,)`
-    `penalty_weights` vector. `penalty` λ and `reml_objective` are metadata scalars **under
-    `pooled=True`**; **under `pooled=False` they move to per-unit table columns** (each is
-    `(n_units,)`). A reader keys on the stored `pooled` flag (or on whether the value is scalar vs
-    vector) to place them.
+    `penalty_weights` vector. `penalty` λ, `reml_objective`, and `reml_at_boundary` are metadata
+    scalars **under `pooled=True`**; **under `pooled=False` they move to per-unit table columns**
+    (each is `(n_units,)`). A reader keys on the stored `pooled` flag (or on whether the value is
+    scalar vs vector) to place them.
   - **Per-unit table columns**: `deviance` (`(n_units,)`), `coefficients` as a **fixed-length
     `(rank,)` per-unit vector** column, and (when `pooled=False`) per-unit `penalty` /
-    `reml_objective` / **`penalty_selected_by_reml`** (the fallback mask — so a persisted λ is never
-    read back as a unit estimate when it was the pooled-λ fallback).
+    `reml_objective` / `reml_at_boundary` / **`penalty_selected_by_reml`** (the fallback mask —
+    so a persisted λ is never read back as a unit estimate when it was the pooled-λ fallback).
   - Round-trip preserves shapes; a ratio-method result persists these as absent/`None`.
 - **Decoder — functional + class paths.** `decode_session` / `decode_session_summary`
   ([decoding/session.py:100,180](../../../src/neurospatial/decoding/session.py)): rename the
@@ -403,7 +417,8 @@ Occupancy is the existing `compute_occupancy` exposure. `firing_rate` composes w
 - **Agreement with the ratio estimator** on a well-sampled arena.
 - **NumPy vs JAX parity** (within float tol) — and the float32 path actually **converges**
   (`converged is True`, `n_iter < max_iter`), confirming the `_FIT_TOL_FLOOR=1e-6` floor is
-  applied; a `tol=1e-10` float32 fit *without* the floor would run to `max_iter` (regression guard).
+  applied. A sub-floor wrapper tolerance is identical to the floor; the raw loop at `1e-10`
+  requires more iterations but may still converge once the float32 objective becomes bit-identical.
 - **Nonconvergence warns** (§4) — a non-converged fit (**warn keyed on `not converged`, not
   `n_iter == max_iter`**) emits a `UserWarning` naming `n_iter` and recommending reduce-`rank` /
   increase-`penalty`; `converged=False` on the result; fields still returned (no raise). Distinct
@@ -445,7 +460,8 @@ Occupancy is the existing `compute_occupancy` exposure. `firing_rate` composes w
 - **Hard rename** breaks callers passing `smoothing_method=` and reading `.smoothing_method`
   across **all** smoothing encoders (spatial/view/egocentric) and their result classes;
   documented in the CHANGELOG. Pre-0.9 NWB tables do **not** read (clean break, no defensive fallback).
-- **float32 JAX vs float64 NumPy** — parity within `~1e-6`; core stays float64.
+- **float32 JAX vs float64 NumPy** — fixed-λ rate parity is approximately `~1e-6`; automatic
+  REML can differ by `~1e-3` along a broad minimum; core stays float64.
 - **In-flight `min-occupancy-seconds` work** (not on this repo's main; see git note) — if it
   lands first, re-verify the `method` validation's ratio-param semantics and the result-class
   field additions; glm is largely insulated (no `min_occupancy`; only adds fields).

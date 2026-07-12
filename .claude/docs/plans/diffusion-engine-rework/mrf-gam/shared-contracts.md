@@ -63,6 +63,7 @@ _MAX_STEP_HALVINGS = 30      # per Newton iteration
 _HESSIAN_JITTER = 1e-10      # ridge on the Hessian diagonal
 _LOG_PENALTY_BOUNDS = (-8.0, 20.0)   # REML search bounds in log λ
 _REML_XATOL = 1e-3           # scipy.optimize.minimize_scalar xatol
+_REML_BOUNDARY_TOL = 5e-3    # phase-6: within 5*xatol of either log-λ bound
 ```
 
 **Resolver constant — canonical home is `ops/diffusion.py`, not `_glm.py`.** `_DEFAULT_MAX_RANK
@@ -136,6 +137,7 @@ class MRFFit(NamedTuple):
     converged: bool                     # batch-level scalar (all(per-unit) when looped)
     n_iter: int                         # batch-level scalar (max(per-unit) when looped)
     reml_objective: float | NDArray | None  # None if REML didn't run; (n_units,) per-unit (nan for fallback units)
+    reml_at_boundary: bool | NDArray | None # auto-REML only; scalar shared or (n_units,) per-unit
     penalty_selected_by_reml: NDArray | None # (n_units,) bool — pooled=False only; False = pooled-λ fallback unit
     pooled: bool                        # the input pooled flag — the ONLY reliable source for NWB (Finding 3)
 ```
@@ -147,7 +149,11 @@ explicitly.
 
 **Invariants:** `converged`/`n_iter` are **batch scalars** (one shared stopping criterion, spec
 §6.3), never per-unit. `penalty` records the value **actually applied** (a supplied fixed
-`penalty` is echoed, not discarded); `reml_objective is None` ⟺ REML did not run.
+`penalty` is echoed, not discarded); `reml_objective is None` and
+`reml_at_boundary is None` ⟺ REML did not run. `reml_at_boundary=True` means the selected
+`log(lambda)` lies within `_REML_BOUNDARY_TOL` of either fixed search bound: the applied λ is
+finite and the fit is valid, but λ itself is weakly identified or the optimum may lie beyond the
+search interval. It is a diagnostic/warning, not an automatic fallback.
 
 **`penalty is None` vs. the fit's `penalty_diag`.** `MRFFit.penalty` is `None` for REML-skip
 (`r==0`) and no-data cases, but the final Newton fit **never** receives `None` — it uses
@@ -159,8 +165,10 @@ phase-3 orchestrator transposes counts in (`(n_units, n_bins) → (n_live_bins, 
 to `live_bins`) and rates out (`log_rate (n_live_bins, n_units) →` result `firing_rates
 (n_units, n_bins)`). See [designs.md → Boundary orientation](designs.md#module-layout).
 
-**`pooled=False` (phase-6) widens `penalty`/`reml_objective`** to `float | NDArray[(n_units,)] |
-None` — a `(n_units,)` vector **only** on the automatic-REML path (`penalty is None`, `r > 0`;
+**`pooled=False` (phase-6) widens `penalty`/`reml_objective` and `reml_at_boundary`** to their
+per-unit forms (`float | NDArray[(n_units,)] | None` for the numeric fields,
+`bool | NDArray[(n_units,)] | None` for the boundary flag) — a `(n_units,)` vector **only** on
+the automatic-REML path (`penalty is None`, `r > 0`;
 informative units get their λ_k, zero-spike units the pooled-λ fallback). It stays a **scalar**
 when `pooled=True`, when a **fixed `penalty=<float>` is supplied** (fixed penalty beats `pooled`),
 or `None` at `r==0` (population-level). Every other field keeps its shared-λ shape.
@@ -185,12 +193,15 @@ widens to `float | None` (`None` for glm).
 | `converged` | scalar `bool` | same |
 | `n_iter` | scalar `int` | same |
 | `reml_objective` | scalar, `(n_units,)` (pooled=False; `nan` for fallback units), or `None` | scalar or `[i]` |
+| `reml_at_boundary` | scalar bool, `(n_units,)` bool (pooled=False), or `None` when REML did not run | scalar or `[i]` |
 | `penalty_selected_by_reml` | `(n_units,)` bool (pooled=False only) or `None` | `[i]` or `None` |
 | `pooled` | `bool` (glm) or `None` (ratio) — persisted; the only reliable NWB source | same |
 
-**Phasing of the fields.** Most GAM fields are added in **phase-3**. **`pooled` and
-`penalty_selected_by_reml` are added in phase-6** (with the `pooled` param): phase-3/phase-4 glm
-results are implicitly shared-λ and carry neither; phase-6 adds them and their NWB persistence. The
+**Phasing of the fields.** Most GAM fields are added in **phase-3**. **`pooled`,
+`penalty_selected_by_reml`, and `reml_at_boundary` are added in phase-6** (with the `pooled`
+param): phase-3/phase-4 glm
+results are implicitly shared-λ and carry none of these phase-6 fields; phase-6 adds them and
+their NWB persistence. The
 reader defaults a **missing `pooled` key method-conditionally** — `True` for `method=="glm"`
 (matches pre-phase-6 glm behavior), **`None` for ratio methods** (where `pooled` is meaningless) —
 so both phase-4-era glm and legacy ratio files read correctly. The vector shapes of
