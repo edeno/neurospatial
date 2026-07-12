@@ -13,6 +13,9 @@ Usage:
     uv run python benchmarks/bench_encoding_backends.py
     uv run python benchmarks/bench_encoding_backends.py --n-neurons 10 100 1000
     uv run python benchmarks/bench_encoding_backends.py --no-jax
+    uv run python benchmarks/bench_encoding_backends.py --smoothing glm --rank 60
+    uv run python benchmarks/bench_encoding_backends.py --smoothing glm --rank 60 --reml
+    uv run python benchmarks/bench_encoding_backends.py --smoothing glm --rank 60 --cold
 
 Example output:
     ============================================================
@@ -56,7 +59,7 @@ if TYPE_CHECKING:
     from numpy.typing import NDArray
 
 # Type aliases for Literal types
-SmoothingMethod = Literal["diffusion_kde", "gaussian_kde", "binned"]
+SmoothingMethod = Literal["diffusion_kde", "gaussian_kde", "binned", "glm"]
 Backend = Literal["numpy", "jax", "auto"]
 
 
@@ -185,6 +188,16 @@ def _force_gc() -> None:
     gc.collect()
 
 
+def _synchronize_result(result: object) -> None:
+    """Wait for an asynchronously dispatched backend result, if necessary."""
+    firing_rates = getattr(result, "firing_rates", result)
+    arrays = firing_rates.values() if isinstance(firing_rates, dict) else (firing_rates,)
+    for array in arrays:
+        block_until_ready = getattr(array, "block_until_ready", None)
+        if block_until_ready is not None:
+            block_until_ready()
+
+
 def run_single_benchmark(
     data: dict,
     function_name: str,
@@ -193,6 +206,8 @@ def run_single_benchmark(
     warmup: bool = True,
     method: SmoothingMethod = "binned",
     bandwidth: float = 5.0,
+    penalty: float | None = 1.0,
+    rank: int = 60,
 ) -> EncodingBenchmarkResult:
     """Run a single benchmark.
 
@@ -209,9 +224,14 @@ def run_single_benchmark(
     warmup : bool, default=True
         Whether to run a warmup iteration first.
     method : str, default="binned"
-        Smoothing method to use ("binned", "diffusion_kde", "gaussian_kde").
+        Estimator to use ("binned", "diffusion_kde", "gaussian_kde", or "glm").
     bandwidth : float, default=5.0
-        Bandwidth for smoothing methods (not used for "binned").
+        Bandwidth for ratio smoothing methods; ignored by "binned" and "glm".
+    penalty : float or None, default=1.0
+        Fixed glm penalty; ``None`` benchmarks automatic REML. Ignored by ratio
+        methods.
+    rank : int, default=60
+        Requested glm basis rank. Ignored by ratio methods.
 
     Returns
     -------
@@ -230,14 +250,19 @@ def run_single_benchmark(
     if function_name == "compute_spatial_rates":
 
         def benchmark_fn():
+            estimator_kwargs = (
+                {"penalty": penalty, "rank": rank}
+                if method == "glm"
+                else {"bandwidth": bandwidth}
+            )
             return compute_spatial_rates(
                 env,
                 spike_times_list,
                 times,
                 positions,
                 method=method,
-                bandwidth=bandwidth,
                 backend=backend,
+                **estimator_kwargs,
             )
 
     else:
@@ -246,14 +271,16 @@ def run_single_benchmark(
     # Warmup run (excludes JIT compilation time for JAX)
     if warmup:
         _force_gc()
-        _ = benchmark_fn()
+        warmup_result = benchmark_fn()
+        _synchronize_result(warmup_result)
 
     # Timed runs
     _force_gc()
     timings = []
     for _ in range(n_iterations):
         start = time.perf_counter()
-        _ = benchmark_fn()
+        result = benchmark_fn()
+        _synchronize_result(result)
         end = time.perf_counter()
         timings.append((end - start) * 1000)  # Convert to ms
 
@@ -275,9 +302,12 @@ def run_encoding_benchmark(
     backends: Sequence[Backend] = ("numpy", "jax"),
     functions: Sequence[str] = ("compute_spatial_rates",),
     n_iterations: int = 3,
+    warmup: bool = True,
     seed: int = 42,
     method: SmoothingMethod = "binned",
     bandwidth: float = 5.0,
+    penalty: float | None = 1.0,
+    rank: int = 60,
 ) -> list[EncodingBenchmarkResult]:
     """Run full encoding benchmark suite.
 
@@ -291,12 +321,20 @@ def run_encoding_benchmark(
         Functions to benchmark.
     n_iterations : int, default=3
         Number of iterations per benchmark.
+    warmup : bool, default=True
+        Run one untimed warmup before measurement. Disable to include first-call
+        setup/JIT compilation in the timing.
     seed : int, default=42
         Random seed for reproducibility.
     method : str, default="binned"
-        Smoothing method to use ("binned", "diffusion_kde", "gaussian_kde").
+        Smoothing method to use ("binned", "diffusion_kde", "gaussian_kde",
+        or "glm").
     bandwidth : float, default=5.0
-        Bandwidth for smoothing methods (not used for "binned").
+        Bandwidth for ratio smoothing methods; ignored by "binned" and "glm".
+    penalty : float or None, default=1.0
+        Fixed glm penalty; ``None`` benchmarks automatic REML.
+    rank : int, default=60
+        Requested glm basis rank.
 
     Returns
     -------
@@ -325,8 +363,11 @@ def run_encoding_benchmark(
                         function_name=function_name,
                         backend=backend,
                         n_iterations=n_iterations,
+                        warmup=warmup,
                         method=method,
                         bandwidth=bandwidth,
+                        penalty=penalty,
+                        rank=rank,
                     )
                     results.append(result)
                     print(f"{result.elapsed_ms:.1f} ms")
@@ -461,6 +502,11 @@ Examples:
         help="Skip JAX backend benchmarks",
     )
     parser.add_argument(
+        "--cold",
+        action="store_true",
+        help="Skip warmup so timing includes first-call setup/JIT compilation",
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=42,
@@ -475,7 +521,7 @@ Examples:
     parser.add_argument(
         "--smoothing",
         type=str,
-        choices=["binned", "diffusion_kde", "gaussian_kde"],
+        choices=["binned", "diffusion_kde", "gaussian_kde", "glm"],
         default="binned",
         help="Smoothing method (default: binned)",
     )
@@ -484,6 +530,23 @@ Examples:
         type=float,
         default=5.0,
         help="Smoothing bandwidth in cm (default: 5.0)",
+    )
+    parser.add_argument(
+        "--penalty",
+        type=float,
+        default=1.0,
+        help="Fixed glm penalty (default: 1.0; ignored by ratio methods)",
+    )
+    parser.add_argument(
+        "--reml",
+        action="store_true",
+        help="Benchmark automatic glm REML instead of the fixed --penalty",
+    )
+    parser.add_argument(
+        "--rank",
+        type=int,
+        default=60,
+        help="Requested glm basis rank (default: 60)",
     )
 
     args = parser.parse_args()
@@ -497,9 +560,13 @@ Examples:
     print(f"JAX available: {is_jax_available()}")
     print(f"Population sizes: {args.n_neurons}")
     print(f"Iterations per benchmark: {args.iterations}")
+    print(f"Timing mode: {'cold/first call' if args.cold else 'warm/steady state'}")
     print(f"Smoothing method: {args.smoothing}")
-    if args.smoothing != "binned":
+    if args.smoothing in {"diffusion_kde", "gaussian_kde"}:
         print(f"Bandwidth: {args.bandwidth} cm")
+    elif args.smoothing == "glm":
+        print(f"Penalty: {'automatic REML' if args.reml else args.penalty}")
+        print(f"Rank: {args.rank}")
 
     # Determine backends to test
     backends: list[Backend] = ["numpy"]
@@ -519,9 +586,12 @@ Examples:
         n_neurons_list=args.n_neurons,
         backends=backends,
         n_iterations=args.iterations,
+        warmup=not args.cold,
         seed=args.seed,
         method=args.smoothing,
         bandwidth=args.bandwidth,
+        penalty=None if args.reml else args.penalty,
+        rank=args.rank,
     )
 
     # Print summary

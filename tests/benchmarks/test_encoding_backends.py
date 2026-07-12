@@ -122,6 +122,25 @@ class TestBenchmarkRunner:
         assert result.elapsed_ms > 0
         assert result.n_neurons == 5
 
+    def test_run_single_benchmark_glm_numpy(self, benchmark_module: ModuleType) -> None:
+        """The backend benchmark accepts fixed-penalty glm workloads."""
+        data = benchmark_module.create_benchmark_data(
+            n_neurons=3, n_samples=500, seed=43
+        )
+        result = benchmark_module.run_single_benchmark(
+            data=data,
+            function_name="compute_spatial_rates",
+            backend="numpy",
+            n_iterations=1,
+            method="glm",
+            penalty=1.0,
+            rank=10,
+        )
+
+        assert result.backend == "numpy"
+        assert result.elapsed_ms > 0
+        assert result.n_neurons == 3
+
     @pytest.mark.skipif(
         not is_jax_available(),
         reason="JAX is not available on this platform",
