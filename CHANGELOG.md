@@ -24,11 +24,35 @@ including the low-occupancy and unvisited bins where the ratio estimators
   `n_iter`, `reml_objective` (all `None` for the ratio methods). `bandwidth` is
   `None` for glm. `summary_table()` gains the GAM scalar columns for glm results.
 - **Spatial only.** `compute_view_rate(s)`, `compute_egocentric_rate(s)`, and the
-  directional encoders keep their ratio-only `method` set (no `"glm"`). NWB
-  persistence of the GAM fields and glm decoding land in a later release; until
-  then `write_spatial_rates` **rejects** a glm result (raises `NotImplementedError`)
-  rather than persist a lossy record with the GAM diagnostics dropped.
+  directional encoders keep their ratio-only `method` set (no `"glm"`).
 - The default `method="diffusion_kde"` path is unchanged (byte-for-byte).
+
+### Added — `method="glm"` through NWB persistence and the decoder
+
+`method="glm"` is now usable end-to-end (encode → persist → decode), not just as
+a standalone estimator.
+
+- **NWB round-trip.** `write_spatial_rates` / `read_place_field` now persist a
+  glm `SpatialRatesResult` **field-for-field**: the scalars `penalty` / `rank` /
+  `n_iter` / `converged` / `reml_objective` and the `(rank,)` `penalty_weights`
+  vector in the table's JSON metadata blob, and `deviance` `(n_units,)` plus
+  `coefficients` (stored `(n_units, rank)`, transposed back to `(rank, n_units)`
+  on read) as per-unit table columns. `bandwidth` is stored nullable (`None` for
+  glm). Ratio-method results round-trip unchanged, with the GAM fields `None`.
+  The spatial-rates schema version bumps `2.0 → 2.1` (glm-diagnostics addition);
+  ratio tables are byte-identical to `2.0` apart from the version string. This
+  **removes** the earlier `NotImplementedError` `write_spatial_rates` raised on a
+  glm result. The clean-break contract still holds: pre-`0.9`
+  `"smoothing_method"`-keyed tables do not read.
+- **Decoder.** `decode_session`, `decode_session_summary`, and `BayesianDecoder`
+  accept `method="glm"` and forward the glm knobs `penalty` / `rank` into the
+  encoding step. `bandwidth` and `min_occupancy` are now **nullable** on all
+  three (default `None`, resolving to the encoder defaults `5.0` / `0.0` for the
+  ratio methods) so they can stay unset for glm. All three validate the
+  method-specific params with the **same** validator the encoder uses, so a
+  ratio param combined with `method="glm"` (or a glm param with a ratio method,
+  or an out-of-domain `penalty` / `rank`) raises the identical `ValueError` at
+  the decoder boundary. The ratio decode path is unchanged.
 
 ### Changed — BREAKING: `smoothing_method` renamed to `method` (estimator axis)
 

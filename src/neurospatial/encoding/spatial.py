@@ -2776,9 +2776,10 @@ default="diffusion_kde"
         (occupancy as a log-offset, ``λ`` by REML) and returns finite rates
         everywhere; it is tuned with ``penalty`` / ``rank`` (mutually exclusive
         with ``bandwidth`` / ``min_occupancy`` / ``fill_value``). This function is
-        the batched entry point the decoder consumes for the ratio methods;
-        decoding *from* glm rates is a later release (``write_spatial_rates``
-        currently rejects a glm result). ``diffusion_kde`` and ``binned`` are
+        the batched entry point the decoder consumes; ``method="glm"`` flows
+        through both the decoder (``decode_session`` / ``BayesianDecoder``) and
+        NWB persistence (``write_spatial_rates`` round-trips the GAM diagnostics).
+        ``diffusion_kde`` and ``binned`` are
         matrix-free (O(n_bins·rank) per neuron); ``glm`` also avoids a dense
         O(n_bins²) kernel but its penalized-Poisson fit is **not** linear in
         ``rank`` — each Newton step builds and solves a per-unit (r, r) Hessian
