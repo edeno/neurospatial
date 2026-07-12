@@ -71,7 +71,10 @@ float64 and the public return contract is unchanged.
   slightly different `λ` near the broad objective minimum), still scientifically
   identical.
 - **Speed.** Markedly faster on populations — on a 400-bin, 30-unit, rank-60
-  problem the warm JAX REML fit is ~40–60× faster than the NumPy path.
+  problem the **warm** JAX REML fit is ~40–60× faster than the NumPy path on the
+  CPU backend (fixed reference workload, fixed seed). The **first** call on an
+  unseen shape pays JIT compilation, so a one-off fixed-penalty fit can be slower
+  than NumPy; the win is on warm/repeated fits and grows on GPU.
 - **No new API.** Dispatch is driven entirely by the existing `backend=` keyword
   (`"numpy"` / `"jax"` / `"auto"`); there is no new user flag. JAX stays an
   optional extra (Linux/macOS).

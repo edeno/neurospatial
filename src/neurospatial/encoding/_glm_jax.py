@@ -184,6 +184,32 @@ def _step_halve_jax(
 # ---------------------------------------------------------------------------
 # Batched Newton/IRLS loop (mirror _glm_numpy._newton_fit_numpy)
 # ---------------------------------------------------------------------------
+@jax.jit
+def _warm_start_jax(counts: Array, occupancy: Array, basis: Array) -> Array:
+    """Constant-log-rate warm start ``(r, n_units)``, scaled strictly inside the
+    box (mirrors the NumPy core's warm start).
+
+    Independent of the penalty, so it is computed **once** and reused across a
+    REML lambda search -- otherwise its ``lstsq`` SVD would repeat on every
+    objective evaluation. Mirrors :func:`_glm_numpy._lstsq_constant` + the box
+    scaling in :func:`_glm_numpy._newton_fit_numpy`.
+    """
+    n_bins = basis.shape[0]
+    dtype = basis.dtype
+    total_occ = jnp.maximum(occupancy.sum(), jnp.asarray(1e-9, dtype))
+    rate0 = jnp.clip(
+        counts.sum(0) / total_occ, 1e-6, jnp.exp(jnp.asarray(_ETA_CLIP, dtype))
+    )
+    base = jnp.linalg.lstsq(basis, jnp.ones(n_bins, dtype))[0]  # (r,)
+    coeffs = base[:, None] * jnp.log(rate0)[None, :]  # (r, n_units)
+    # lstsq can reconstruct a clamped constant as _ETA_CLIP + a few ulp; the line
+    # search needs a strictly feasible start to halve back toward.
+    max_abs = jnp.max(jnp.abs(basis @ coeffs), axis=0)  # (n_units,)
+    limit = _ETA_CLIP - 1e-6
+    scale = jnp.minimum(1.0, limit / jnp.maximum(max_abs, limit))
+    return coeffs * scale[None, :]
+
+
 @partial(jax.jit, static_argnums=(4,))
 def _newton_loop_jax(
     counts: Array,
@@ -192,38 +218,23 @@ def _newton_loop_jax(
     penalty_diag: Array,
     max_iter: int,
     tol: Array,
+    warm_coeffs: Array,
 ) -> tuple[Array, Array, Array, Array, Array, Array]:
     """JIT-compiled float32 Newton/IRLS loop (``max_iter`` static).
 
     The raw loop -- ``tol`` is applied as given (**no floor**); the floor lives
-    in :func:`_newton_fit_jax`. Warm-started from a constant log-rate projected
-    onto ``basis`` and scaled strictly inside the box; convergence is the
-    **relative penalized-objective decrease** (batch-scalar), gated on a
-    successful line search; the final ``(eta, mu)`` is recomputed from the
-    updated coefficients. Mirrors
+    in :func:`_newton_fit_jax`. Started from ``warm_coeffs`` (a penalty-independent
+    constant-log-rate warm start from :func:`_warm_start_jax`, passed in so a REML
+    search computes it once); convergence is the **relative penalized-objective
+    decrease** (batch-scalar), gated on a successful line search; the final
+    ``(eta, mu)`` is recomputed from the updated coefficients. Mirrors
     :func:`neurospatial.encoding._glm_numpy._newton_fit_numpy`.
 
     Returns ``(coeffs, eta, mu, n_iter, max_step, converged)`` (all float32 /
     JAX scalars).
     """
-    n_bins = basis.shape[0]
     dtype = basis.dtype
-
-    # Warm start a constant log-rate per unit, clipped like the NumPy core.
-    total_occ = jnp.maximum(occupancy.sum(), jnp.asarray(1e-9, dtype))
-    rate0 = jnp.clip(
-        counts.sum(0) / total_occ, 1e-6, jnp.exp(jnp.asarray(_ETA_CLIP, dtype))
-    )
-    base = jnp.linalg.lstsq(basis, jnp.ones(n_bins, dtype))[0]  # (r,)
-    coeffs = base[:, None] * jnp.log(rate0)[None, :]  # (r, n_units)
-    # Scale each unit's warm start strictly inside the box (lstsq can reconstruct
-    # a clamped constant as _ETA_CLIP + a few ulp; the line search needs a
-    # strictly feasible start to halve back toward).
-    max_abs = jnp.max(jnp.abs(basis @ coeffs), axis=0)  # (n_units,)
-    limit = _ETA_CLIP - 1e-6
-    scale = jnp.minimum(1.0, limit / jnp.maximum(max_abs, limit))
-    coeffs = coeffs * scale[None, :]
-
+    coeffs = warm_coeffs
     prev_obj = _penalized_obj_jax(coeffs, basis, counts, occupancy, penalty_diag)
 
     def cond(state):
@@ -296,13 +307,18 @@ def _newton_fit_jax(
     so the two are drop-in interchangeable at the ``fit_mrf_gam`` dispatch.
     """
     tol_eff = max(float(tol), _FIT_TOL_FLOOR)
+    counts_j = jnp.asarray(counts, _FIT_DTYPE)
+    occ_j = jnp.asarray(occupancy, _FIT_DTYPE)
+    basis_j = jnp.asarray(B, _FIT_DTYPE)
+    warm = _warm_start_jax(counts_j, occ_j, basis_j)
     coeffs, eta, mu, n_iter, max_step, converged = _newton_loop_jax(
-        jnp.asarray(counts, _FIT_DTYPE),
-        jnp.asarray(occupancy, _FIT_DTYPE),
-        jnp.asarray(B, _FIT_DTYPE),
+        counts_j,
+        occ_j,
+        basis_j,
         jnp.asarray(penalty_diag, _FIT_DTYPE),
         int(max_iter),
         jnp.asarray(tol_eff, _FIT_DTYPE),
+        warm,
     )
     return (
         np.asarray(coeffs, dtype=np.float64),
@@ -327,6 +343,7 @@ def _reml_score_jax(
     penalty_rank: int,
     max_iter: int,
     tol: Array,
+    warm_coeffs: Array,
 ) -> Array:
     """Pooled REML objective at ``log_penalty`` (float32, on-device scalar).
 
@@ -336,12 +353,13 @@ def _reml_score_jax(
     NaN Cholesky), so the search never selects it. Mirrors
     :func:`neurospatial.encoding._glm_numpy._reml_objective_numpy`; the JAX fit's
     ``converged`` flag is a faithful mirror of the NumPy core's, so gating on it
-    here matches the NumPy REML.
+    here matches the NumPy REML. ``warm_coeffs`` (penalty-independent) is passed in
+    so the search computes the warm start once rather than per lambda.
     """
     penalty = jnp.exp(log_penalty)
     penalty_diag = penalty * penalty_weights
     coeffs, eta, mu, _n_iter, _max_step, converged = _newton_loop_jax(
-        counts, occupancy, basis, penalty_diag, max_iter, tol
+        counts, occupancy, basis, penalty_diag, max_iter, tol, warm_coeffs
     )
     loglik = jnp.sum(counts * eta - mu, axis=0)
     pen = 0.5 * penalty * jnp.sum(penalty_weights[:, None] * coeffs**2, axis=0)
@@ -378,6 +396,9 @@ def select_penalty_by_reml_jax(
     basis_j = jnp.asarray(B, _FIT_DTYPE)
     d_j = jnp.asarray(d, _FIT_DTYPE)
     tol_eff = jnp.asarray(max(float(tol), _FIT_TOL_FLOOR), _FIT_DTYPE)
+    # Penalty-independent -- compute the warm start (incl. its lstsq SVD) once,
+    # not on every one of the ~18 objective evaluations the search makes.
+    warm = _warm_start_jax(counts_j, occ_j, basis_j)
 
     def objective(log_penalty: float) -> float:
         value = _reml_score_jax(
@@ -389,6 +410,7 @@ def select_penalty_by_reml_jax(
             int(penalty_rank),
             int(max_iter),
             tol_eff,
+            warm,
         )
         return float(value)
 

@@ -146,7 +146,11 @@ def test_jax_converges_float32(sparse_regime_env, simulate_place_fields):
     pytest.importorskip("jax")
     import jax.numpy as jnp
 
-    from neurospatial.encoding._glm_jax import _newton_fit_jax, _newton_loop_jax
+    from neurospatial.encoding._glm_jax import (
+        _newton_fit_jax,
+        _newton_loop_jax,
+        _warm_start_jax,
+    )
 
     env = sparse_regime_env
     centers = [(10.0, 10.0), (30.0, 30.0), (10.0, 30.0)]
@@ -177,8 +181,9 @@ def test_jax_converges_float32(sparse_regime_env, simulate_place_fields):
     oj = jnp.asarray(occ, jnp.float32)
     bj = jnp.asarray(basis.B, jnp.float32)
     pj = jnp.asarray(penalty_diag, jnp.float32)
+    warm = _warm_start_jax(cj, oj, bj)
     *_raw, n_raw, _s_raw, _c_raw = _newton_loop_jax(
-        cj, oj, bj, pj, _MAX_ITER, jnp.asarray(1e-10, jnp.float32)
+        cj, oj, bj, pj, _MAX_ITER, jnp.asarray(1e-10, jnp.float32), warm
     )
     assert int(n_raw) > n_at, (
         f"floor not load-bearing: floored n_iter={n_at} vs no-floor n_iter={int(n_raw)}"

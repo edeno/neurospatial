@@ -272,11 +272,21 @@ def fit_mrf_gam(
     # REML never selects a blow-up penalty. The (SVD) rank check runs only when it
     # can change behavior: the JAX path (to decide the fallback) or an explicit
     # penalty=0 (to warn) -- never on a NumPy fit at a nonzero penalty.
-    rank_deficient = (
-        penalty_rank > 0
-        and (using_jax or penalty == 0.0)
-        and bool(np.linalg.matrix_rank(B[occupancy > 0]) < r_eff)
-    )
+    # Fast paths avoid the O(n_exposed * r_eff^2) SVD in the common cases: the
+    # eigenbasis ``B`` has full column rank ``r_eff`` by construction, so when
+    # every live bin is exposed the exposed design is full-rank (no SVD needed);
+    # and fewer exposed bins than ``r_eff`` is rank-deficient outright (rank <=
+    # n_exposed < r_eff). Only a partially-exposed design with enough rows needs
+    # the SVD.
+    rank_deficient = False
+    if penalty_rank > 0 and (using_jax or penalty == 0.0):
+        exposed = occupancy > 0
+        n_exposed = int(exposed.sum())
+        if n_exposed < r_eff:
+            rank_deficient = True
+        elif n_exposed < n_live_bins:
+            rank_deficient = bool(np.linalg.matrix_rank(B[exposed]) < r_eff)
+        # else n_exposed == n_live_bins -> full column rank by construction.
     if rank_deficient:
         newton_fit = _newton_fit_numpy
         select_penalty = select_penalty_by_reml
