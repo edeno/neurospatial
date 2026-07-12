@@ -43,6 +43,7 @@ jax.config.update("jax_enable_x64", True)
 
 import jax.numpy as jnp  # noqa: E402  -- must follow the x64 toggle above
 from jax import lax  # noqa: E402
+from jax.scipy.linalg import cho_solve  # noqa: E402
 
 from ._glm import (  # noqa: E402
     _DESCENT_TOL,
@@ -249,7 +250,14 @@ def _newton_loop_jax(
         # line search keeps every accepted iterate.
         grad = basis.T @ (counts - mu) - penalty_diag[:, None] * coeffs
         hessian = _penalized_hessian_jax(basis, mu, penalty_diag)
-        newton_step = jnp.linalg.solve(hessian, grad.T[..., None])[..., 0].T
+        # Cholesky solve (float32 delta from the NumPy core's LU ``np.linalg.solve``):
+        # the penalized Hessian is SPD after ``penalty * d`` + jitter, so a Cholesky
+        # + triangular solves is ~2x the LU solve and numerically preferable. A
+        # non-PD Hessian (should not occur -- rank-deficient designs fall back to
+        # the float64 core) gives a NaN factor, which the step-halving ``worse``
+        # guard flags -> ``converged=False``; never a silent wrong result.
+        chol = jnp.linalg.cholesky(hessian)
+        newton_step = cho_solve((chol, True), grad.T[..., None])[..., 0].T
         new_coeffs, accepted_step, obj, line_search_ok = _step_halve_jax(
             coeffs, newton_step, basis, counts, occupancy, penalty_diag
         )
