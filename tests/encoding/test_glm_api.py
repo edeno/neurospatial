@@ -1,9 +1,9 @@
 """Public-API tests for ``method="glm"`` on ``compute_spatial_rate(s)``.
 
-Phase-3 of the MRF-GAM estimator wires the phase-2 penalized-Poisson fit into
-``compute_spatial_rate`` / ``compute_spatial_rates``: the unit-major <-> bin-major
-transpose, the full active-bin assembly, the GAM result fields, the method-param
-validation, and the degenerate-data dispatch.
+Covers how the penalized-Poisson GAM fit is wired into ``compute_spatial_rate`` /
+``compute_spatial_rates``: the unit-major <-> bin-major transpose, the full
+active-bin assembly, the GAM result fields, the method-param validation, and the
+degenerate-data dispatch.
 
 These tests exercise the public surface (not the fit internals, which live in
 ``test_glm_fit.py``): the headline finiteness contrast, the result-field shapes /
