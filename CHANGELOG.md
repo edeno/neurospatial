@@ -84,6 +84,49 @@ float64 and the public return contract is unchanged.
   (`"numpy"` / `"jax"` / `"auto"`); there is no new user flag. JAX stays an
   optional extra (Linux/macOS).
 
+### Added — `method="glm"`: per-neuron smoothing (`pooled=False`)
+
+`compute_spatial_rate(s)(method="glm")` gain a keyword-only `pooled` flag
+(default `True`, unchanged behavior). With `pooled=False` REML selects an
+**independent smoothing penalty `λ_k` per neuron** instead of one shared `λ`, so
+a sharp field is smoothed less and a broad one more. This is purely additive: the
+`pooled=True` default is byte-for-byte identical to before apart from one new
+scalar diagnostic (`reml_at_boundary`).
+
+- **Cost.** `pooled=False` runs the REML search **once per informative unit**
+  (~one REML per neuron), reusing the existing batched Newton fit per distinct
+  `λ`; there is no separate per-neuron fast path.
+- **Result fields become per-unit vectors.** On the automatic-REML path
+  (`penalty=None`, a penalized basis, ≥1 spiking unit) `penalty` /
+  `reml_objective` / `reml_at_boundary` widen to `(n_units,)` and a new
+  `penalty_selected_by_reml` `(n_units,)` bool mask records provenance. A
+  single-unit `compute_spatial_rate` call unwraps these back to scalars.
+  `summary_table()` surfaces them; indexing a population result slices them.
+- **Fixed penalty beats `pooled`.** Supplying `penalty=<float>` skips REML and
+  records one scalar `λ` regardless of `pooled`. `pooled` is likewise a no-op at
+  `penalty_rank == 0` (a shared-basis property, so `λ` stays a scalar `None`) and
+  when no unit spikes (the all-zero-spike degenerate path, with **no** pooled REML
+  run).
+- **Zero-spike units** (whose per-unit `λ` is statistically unidentified) take
+  the **pooled `λ` over the informative units** as a fallback, flagged
+  `penalty_selected_by_reml=False` with `reml_objective=nan` (a documented
+  sentinel); their field floors to the rate floor.
+- **Boundary diagnostic.** The new `reml_at_boundary` field (scalar for
+  `pooled=True`, `(n_units,)` for `pooled=False`, `None` when REML did not run)
+  flags a `λ` selected on a REML search bound: `λ` itself is weakly identified —
+  the optimum may lie beyond the interval — even though the fitted field is
+  stable. A single warning names the boundary side and the affected units; the
+  applied `λ` remains the finite bound value (the interval is never expanded).
+- **Validation.** `pooled` is a strict `bool` (rejects `"true"` / `1` / `0` /
+  arrays / `None`) and **glm-only** (`pooled=False` with a ratio method raises;
+  `pooled=True` with one is the harmless default).
+- **NWB.** The spatial-rates schema bumps `2.1 → 2.2`: `pooled` and a scalar
+  `reml_at_boundary` join the GAM metadata blob, and the per-unit
+  `penalty` / `reml_objective` / `reml_at_boundary` / `penalty_selected_by_reml`
+  vectors are persisted as table columns when present. A schema-`2.1` file with
+  no `pooled` key reads back **method-conditionally** — `pooled=True` for a glm
+  table, `pooled=None` for a ratio table.
+
 ### Changed — BREAKING: `smoothing_method` renamed to `method` (estimator axis)
 
 The smoothing/estimator keyword is now uniformly named `method` across every
