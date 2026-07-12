@@ -2390,6 +2390,15 @@ def _compute_glm_spatial_rates(
     rank : int or None, keyword-only
         Requested basis rank cap; ``None`` resolves to the module default. The
         effective rank is reported via ``MRFFit.rank`` after clamping.
+    pooled : bool, keyword-only, default True
+        Forwarded to ``fit_mrf_gam``: ``True`` shares one REML ``lambda``,
+        ``False`` selects an independent per-unit ``lambda`` (validated glm-only
+        upstream).
+    unit_ids : sequence or None, keyword-only, default None
+        Per-unit identity labels aligned to the rows of ``spike_counts``, passed
+        to ``fit_mrf_gam`` **only** to name the affected units in per-unit
+        (``pooled=False``) convergence / boundary warnings. ``None`` names them by
+        unit-axis index.
     resolved_backend : {"numpy", "jax"}, keyword-only
         The already-resolved backend (via ``get_backend_name``). Forwarded to
         ``fit_mrf_gam``, which routes the fit compute to the float32 JAX mirror

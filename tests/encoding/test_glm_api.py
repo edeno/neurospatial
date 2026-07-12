@@ -476,6 +476,48 @@ def test_result_carries_pooled(open_field_env: Environment) -> None:
     assert ratio[0].pooled is None
 
 
+def test_public_warning_forwards_unit_ids(
+    open_field_env: Environment, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """compute_spatial_rates forwards its resolved unit_ids into the fit, so a
+    per-unit warning names the caller's labels -- guarding the
+    ``unit_ids=resolved_unit_ids`` forwarding in the public orchestration (a
+    fit-level-only test would not catch its removal)."""
+    import neurospatial.encoding._glm_numpy as glmnp
+
+    env = open_field_env
+    times, positions, spike_times = _grid_session(
+        env, [(5.0, 5.0), (11.0, 11.0)], seed=17
+    )
+    # Append a silent (zero-spike) unit; its final fit runs on an all-zero column.
+    spike_times = [*spike_times, np.array([], dtype=float)]
+
+    real_fit = glmnp._newton_fit_numpy
+
+    def failing_fit(*args):
+        counts_arg = args[0]
+        coeffs, eta, mu, n_iter, max_step, converged = real_fit(*args)
+        if np.all(np.asarray(counts_arg) == 0):  # the silent unit's final fit
+            return coeffs, eta, mu, 99, max_step, False
+        return coeffs, eta, mu, n_iter, max_step, converged
+
+    monkeypatch.setattr(glmnp, "_newton_fit_numpy", failing_fit)
+
+    with pytest.warns(UserWarning) as rec:
+        compute_spatial_rates(
+            env,
+            spike_times,
+            times,
+            positions,
+            method="glm",
+            pooled=False,
+            unit_ids=["cell-A", "cell-B", "silent"],
+        )
+    msg = "\n".join(str(w.message) for w in rec)
+    assert "silent" in msg  # the label, not the bare index "2"
+    assert "unit index" not in msg
+
+
 def test_pooled_result_state_machine_invariant(open_field_env: Environment) -> None:
     """The result invariant couples the per-unit-lambda fields to the provenance
     mask + pooled, so an inconsistent glm result (which would crash NWB writing)

@@ -353,6 +353,21 @@ def test_per_unit_warning_names_unit_ids(open_field_env, simulate_flat_weak_sign
     assert "unit indices" in msg2
 
 
+def test_unit_ids_misalignment_rejected(open_field_env, simulate_place_fields):
+    """A misaligned diagnostic unit_ids (wrong length / not 1-D) raises a clear
+    ValueError up front, not a data-dependent IndexError inside a later warning."""
+    env = open_field_env
+    counts_full, occ_full = simulate_place_fields(
+        env, [(5.0, 5.0), (11.0, 11.0)], seed=9
+    )
+    basis = env._mrf_basis(occ_full, rank=15)
+    counts, occ = _restrict(counts_full, occ_full, basis)  # 2 units
+
+    for bad in (["only-one"], "scalar-id", ["a", "b", "c"]):
+        with pytest.raises(ValueError, match="unit_ids"):
+            fit_mrf_gam(basis, counts, occ, penalty=None, pooled=False, unit_ids=bad)
+
+
 def test_reml_boundary_none_when_reml_skipped(
     open_field_env, two_path_env, simulate_place_fields
 ):

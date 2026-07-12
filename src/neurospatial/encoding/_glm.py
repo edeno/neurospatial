@@ -231,13 +231,13 @@ def _warn_reml_boundary(side: str, who: str, *, stacklevel: int = 3) -> None:
     """Emit the one weakly-identified-lambda warning for a boundary REML optimum.
 
     ``side`` is ``"lower"`` / ``"upper"`` (or ``"lower/upper"`` when a per-unit
-    batch hits both); ``who`` names the affected fit (``"the pooled fit"`` or
-    ``"unit index/indices [...]"`` -- positional, since the bin-major fit does not
-    carry unit identity; the label-aligned per-unit ``reml_at_boundary`` on the
-    result maps these to the caller's ``unit_ids``). The applied ``lambda`` is the
-    finite value the search returned near the bound; the interval is never
-    expanded. Only weak identification of ``lambda`` is established -- the fitted
-    field is finite but its sensitivity to ``lambda`` is not measured here.
+    batch hits both); ``who`` names the affected fit -- ``"the pooled fit"``, or
+    ``"unit(s) [<labels>]"`` when the caller supplied ``unit_ids``, else the
+    positional ``"unit index/indices [...]"`` (see :func:`_format_affected_units`).
+    The applied ``lambda`` is the finite value the search returned near the bound;
+    the interval is never expanded. Only weak identification of ``lambda`` is
+    established -- the fitted field is finite but its sensitivity to ``lambda`` is
+    not measured here.
     """
     warnings.warn(
         f"MRF-GAM REML: the selected smoothing penalty lambda is near the {side} "
@@ -515,6 +515,16 @@ def fit_mrf_gam(
             f"bins; got {occupancy.shape}."
         )
     n_units = int(counts.shape[1])
+
+    # ``unit_ids`` (diagnostic-only) must align with the unit axis, else a later
+    # per-unit warning would index it out of bounds with a raw IndexError.
+    if unit_ids is not None:
+        ids_arr = np.asarray(unit_ids)
+        if ids_arr.ndim != 1 or ids_arr.shape[0] != n_units:
+            raise ValueError(
+                f"unit_ids must be a 1-D sequence aligned with the unit axis "
+                f"(length n_units={n_units}); got shape {ids_arr.shape}."
+            )
 
     # --- degenerate: no neurons (skip the fit) ---
     if n_units == 0:
