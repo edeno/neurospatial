@@ -7,8 +7,12 @@ This module provides functions for writing spatial analysis results
 Schema note
 -----------
 The estimator is stored under the metadata key ``"method"``
-(``SPATIAL_RATES_SCHEMA_VERSION`` ``"2.0"``). This is a clean break with no
-back-compatibility shim: tables written by earlier schema versions do not read.
+(``SPATIAL_RATES_SCHEMA_VERSION`` ``"2.1"``). Schema ``2.1`` additionally
+persists the ``method="glm"`` GAM diagnostics (``coefficients``, ``penalty``,
+``penalty_weights``, ``rank``, ``deviance``, ``converged``, ``n_iter``,
+``reml_objective``); ratio-method tables carry none of them and read back with
+those fields ``None``. This is a clean break with no back-compatibility shim:
+tables written by earlier schema versions do not read.
 """
 
 from __future__ import annotations
@@ -47,12 +51,18 @@ DEFAULT_SPATIAL_RATES_NAME: str = "spatial_rates"
 
 # Schema version for the spatial-rates DynamicTable metadata blob.
 # 2.0: estimator stored under the key "method"; a clean break -- older tables
-# (which keyed the estimator differently) do not read.
-SPATIAL_RATES_SCHEMA_VERSION: str = "2.0"
+#      (which keyed the estimator differently) do not read.
+# 2.1: adds the method="glm" GAM diagnostics (scalars + penalty_weights in the
+#      metadata blob; deviance + coefficients as per-unit table columns). Ratio
+#      tables are byte-identical to 2.0 apart from the version string.
+SPATIAL_RATES_SCHEMA_VERSION: str = "2.1"
 
 # Column names within the spatial-rates DynamicTable
 COL_UNIT_ID: str = "unit_id"
 COL_FIRING_RATE: str = "firing_rate"
+# Per-unit GAM (method="glm") columns; absent for ratio methods.
+COL_DEVIANCE: str = "deviance"
+COL_COEFFICIENTS: str = "coefficients"
 
 # Default processing module for analysis results
 DEFAULT_ANALYSIS_MODULE: str = "analysis"
@@ -463,6 +473,15 @@ def write_spatial_rates(
     and the environment's bin-center coordinates are stored once via the shared
     ``bin_centers`` dataset (deduplicated with any place fields).
 
+    For ``method="glm"`` results the GAM diagnostics are persisted alongside the
+    rates: the scalars ``penalty`` / ``rank`` / ``n_iter`` / ``converged`` /
+    ``reml_objective`` and the ``(rank,)`` ``penalty_weights`` vector go into the
+    JSON description blob (``penalty`` / ``reml_objective`` as JSON ``null`` when
+    ``None``), while ``deviance`` ``(n_units,)`` and ``coefficients`` (stored
+    transposed as ``(n_units, rank)`` per-unit rows) become extra table columns.
+    Ratio-method results carry none of these; they read back with the GAM fields
+    ``None``. ``bandwidth`` is stored nullable (``None`` for glm).
+
     The full :class:`~neurospatial.Environment` is **persisted** alongside the
     rates (via :func:`~neurospatial.io.nwb.write_environment` under the derived
     name ``f"{name}_environment"``), so it round-trips with its connectivity
@@ -502,12 +521,9 @@ def write_spatial_rates(
         ``overwrite=False``; if ``firing_rates.shape`` is not
         ``(len(unit_ids), env.n_bins)``; if ``occupancy.shape`` is not
         ``(env.n_bins,)``; if a ``unit_table`` column is named ``unit_id`` or
-        ``firing_rate`` (reserved); or if a companion add fails after a partial
-        write (the partial objects are rolled back first).
-    NotImplementedError
-        If ``result.method == "glm"`` -- the GAM diagnostics are not yet
-        persisted, so writing a glm result would silently drop them. NWB
-        persistence of the GAM fields is a later release.
+        ``firing_rate`` (reserved -- plus ``deviance`` / ``coefficients`` for a
+        glm result, whose GAM columns share the table); or if a companion add
+        fails after a partial write (the partial objects are rolled back first).
     ImportError
         If pynwb is not installed.
 
@@ -538,19 +554,7 @@ def write_spatial_rates(
 
     from neurospatial.io.nwb._environment import write_environment
 
-    # Reject glm results: this writer persists only the ratio-method metadata
-    # (method + bandwidth), not the GAM diagnostics (coefficients, penalty, rank,
-    # deviance, converged, n_iter, reml_objective). Writing a glm result here
-    # would silently drop all of that. Fail loudly until GAM-field persistence
-    # lands, rather than round-tripping a lossy record.
-    if result.method == "glm":
-        raise NotImplementedError(
-            "write_spatial_rates does not yet support method='glm' results: the "
-            "GAM diagnostics (coefficients, penalty, rank, deviance, converged, "
-            "n_iter, reml_objective) are not persisted, so writing would silently "
-            "drop them. NWB persistence of the GAM fields is a later release; for "
-            "now, recompute glm rates after loading rather than saving them."
-        )
+    is_glm = result.method == "glm"
 
     env = result.env
     # L1: defensively COPY the arrays (np.array, not a no-copy np.asarray) so the
@@ -579,19 +583,22 @@ def write_spatial_rates(
 
     # L3: `unit_id` / `firing_rate` are reserved for the table's own columns; a
     # unit_table column with either name would collide inside the DynamicTable.
-    # Raise a clear param-named error instead of a low-level hdmf error.
+    # For a glm result the per-unit GAM columns (`deviance` / `coefficients`) are
+    # reserved too, since they are written alongside. Raise a clear param-named
+    # error instead of a low-level hdmf error.
+    reserved_names: tuple[str, ...] = (COL_UNIT_ID, COL_FIRING_RATE)
+    if is_glm:
+        reserved_names = (*reserved_names, COL_DEVIANCE, COL_COEFFICIENTS)
     unit_table = result.unit_table
     if unit_table is not None:
         reserved_clash = [
-            str(c)
-            for c in unit_table.columns
-            if str(c) in (COL_UNIT_ID, COL_FIRING_RATE)
+            str(c) for c in unit_table.columns if str(c) in reserved_names
         ]
         if reserved_clash:
             raise ValueError(
                 f"unit_table has reserved column name(s) {reserved_clash}: "
-                f"'{COL_UNIT_ID}' and '{COL_FIRING_RATE}' are reserved for the "
-                f"spatial-rates table's own columns. Rename these unit_table columns."
+                f"{list(reserved_names)} are reserved for the spatial-rates "
+                f"table's own columns. Rename these unit_table columns."
             )
 
     analysis = _get_or_create_processing_module(
@@ -636,23 +643,58 @@ def write_spatial_rates(
             for col in unit_table.columns
         ]
 
-    description = json.dumps(
-        {
-            "schema_version": SPATIAL_RATES_SCHEMA_VERSION,
-            "method": str(result.method),
-            # Ratio results always carry a float bandwidth (glm -- the only method
-            # with ``bandwidth=None`` -- is rejected at preflight above). The
-            # None-guard keeps the writer type-safe and defensive without ever
-            # emitting a null for a legitimately-writable result.
-            "bandwidth": (
-                None if result.bandwidth is None else float(result.bandwidth)
+    meta_dict: dict[str, object] = {
+        "schema_version": SPATIAL_RATES_SCHEMA_VERSION,
+        "method": str(result.method),
+        # ``bandwidth`` is nullable: ``None`` for method="glm" (which has no
+        # bandwidth), a float for the ratio methods.
+        "bandwidth": (None if result.bandwidth is None else float(result.bandwidth)),
+        "n_bins": int(env.n_bins),
+        "n_units": n_units,
+        "unit_table_columns": unit_table_columns,
+        "occupancy_name": occupancy_name,
+    }
+
+    # GAM (method="glm") diagnostics: scalars + the (rank,) penalty_weights go
+    # into the JSON blob; the per-unit deviance and coefficients become table
+    # columns. penalty / reml_objective serialize as JSON null when None.
+    gam_columns: list[VectorData] = []
+    if is_glm:
+        rank = int(result.rank)  # type: ignore[arg-type]
+        penalty = result.penalty
+        reml_objective = result.reml_objective
+        meta_dict["gam"] = {
+            "penalty": (None if penalty is None else float(penalty)),
+            "rank": rank,
+            "n_iter": int(result.n_iter),  # type: ignore[arg-type]
+            "converged": bool(result.converged),
+            "reml_objective": (
+                None if reml_objective is None else float(reml_objective)
             ),
-            "n_bins": int(env.n_bins),
-            "n_units": n_units,
-            "unit_table_columns": unit_table_columns,
-            "occupancy_name": occupancy_name,
+            "penalty_weights": np.asarray(
+                result.penalty_weights, dtype=np.float64
+            ).tolist(),
         }
-    )
+        # coefficients (rank, n_units) -> per-unit rows (n_units, rank), matching
+        # the firing_rate per-unit-row layout; deviance (n_units,) as-is.
+        coefficients_rows = np.array(result.coefficients, dtype=np.float64).T
+        gam_columns = [
+            VectorData(
+                name=COL_DEVIANCE,
+                description="Per-unit unpenalized Poisson deviance (method='glm').",
+                data=np.array(result.deviance, dtype=np.float64),
+            ),
+            VectorData(
+                name=COL_COEFFICIENTS,
+                description=(
+                    f"Per-unit GAM coefficients (n_units, rank={rank}); "
+                    f"transpose back to (rank, n_units) on read (method='glm')."
+                ),
+                data=coefficients_rows,
+            ),
+        ]
+
+    description = json.dumps(meta_dict)
 
     table = DynamicTable(
         name=name,
@@ -672,6 +714,7 @@ def write_spatial_rates(
                 data=firing_rates,
             ),
             *extra_columns,
+            *gam_columns,
         ],
     )
 
@@ -882,6 +925,44 @@ def read_place_field(
             f"Environment used to compute these rates."
         )
 
+    # GAM (method="glm") diagnostics: reconstruct from the JSON blob + the
+    # per-unit columns, preserving shapes. Absent (ratio methods) -> all None.
+    # coefficients is stored transposed as (n_units, rank); transpose back to
+    # (rank, n_units). The reconstructed fields must satisfy the SpatialRatesResult
+    # None-iff-glm invariant (checked at construction below) -- a wrong shape or a
+    # missing field raises there, so a corrupt glm record fails loudly.
+    gam_fields: dict[str, object | None] = {
+        "coefficients": None,
+        "penalty": None,
+        "penalty_weights": None,
+        "rank": None,
+        "deviance": None,
+        "converged": None,
+        "n_iter": None,
+        "reml_objective": None,
+    }
+    if method == "glm":
+        gam = meta.get("gam")
+        if not isinstance(gam, dict):
+            raise ValueError(
+                f"Spatial rates '{name}' has method='glm' but no GAM metadata "
+                f"blob; the file may be corrupt or written by an older schema."
+            )
+        penalty = gam.get("penalty")
+        reml_objective = gam.get("reml_objective")
+        gam_fields = {
+            "coefficients": np.asarray(table[COL_COEFFICIENTS][:], dtype=np.float64).T,
+            "penalty": None if penalty is None else float(penalty),
+            "penalty_weights": np.asarray(gam["penalty_weights"], dtype=np.float64),
+            "rank": int(gam["rank"]),
+            "deviance": np.asarray(table[COL_DEVIANCE][:], dtype=np.float64),
+            "converged": bool(gam["converged"]),
+            "n_iter": int(gam["n_iter"]),
+            "reml_objective": (
+                None if reml_objective is None else float(reml_objective)
+            ),
+        }
+
     return SpatialRatesResult(
         firing_rates=firing_rates,
         occupancy=occupancy,
@@ -890,4 +971,5 @@ def read_place_field(
         bandwidth=bandwidth,
         unit_ids=unit_ids,
         unit_table=unit_table,
+        **gam_fields,  # type: ignore[arg-type]
     )

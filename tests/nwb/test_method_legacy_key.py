@@ -72,7 +72,7 @@ def test_nwb_writes_new_key_and_roundtrips(empty_nwb, sample_environment):
     table = empty_nwb.processing[DEFAULT_ANALYSIS_MODULE][DEFAULT_SPATIAL_RATES_NAME]
     meta = json.loads(table.description)
     assert "method" in meta and "smoothing_method" not in meta
-    assert meta["schema_version"] == "2.0"
+    assert meta["schema_version"] == "2.1"
 
     back = read_place_field(empty_nwb, env=env)
     assert back.method == "diffusion_kde"

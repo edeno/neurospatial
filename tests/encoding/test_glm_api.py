@@ -906,19 +906,20 @@ def test_summary_table_gains_gam_columns(open_field_env: Environment) -> None:
         assert col not in df_ratio.columns
 
 
-def test_glm_nwb_write_rejected(open_field_env: Environment) -> None:
-    """Writing a glm result to NWB is rejected (GAM-field persistence is later).
+def test_glm_nwb_write_roundtrips(open_field_env: Environment) -> None:
+    """A glm result writes to NWB and reads back with its GAM diagnostics.
 
-    Guards against silently dropping the GAM diagnostics: until NWB persistence
-    of the GAM fields lands, ``write_spatial_rates`` must reject a glm result
-    rather than write a lossy record (bandwidth null, every GAM field absent).
+    ``write_spatial_rates`` persists the GAM fields (coefficients, penalty,
+    penalty_weights, rank, deviance, converged, n_iter, reml_objective) and
+    ``read_place_field`` reconstructs them field-for-field, so the estimator
+    output survives a round-trip rather than being dropped.
     """
     pytest.importorskip("pynwb")
     from datetime import datetime, timezone
 
     from pynwb import NWBFile
 
-    from neurospatial.io.nwb._fields import write_spatial_rates
+    from neurospatial.io.nwb._fields import read_place_field, write_spatial_rates
 
     env = open_field_env
     centers = [(4.0, 4.0), (12.0, 12.0)]
@@ -930,5 +931,13 @@ def test_glm_nwb_write_rejected(open_field_env: Environment) -> None:
         identifier="t",
         session_start_time=datetime.now(timezone.utc),
     )
-    with pytest.raises((ValueError, NotImplementedError), match="glm"):
-        write_spatial_rates(nwb, glm, name="glm_rates")
+    write_spatial_rates(nwb, glm, name="glm_rates")
+    back = read_place_field(nwb, name="glm_rates", env=env)
+
+    assert back.method == "glm"
+    assert back.bandwidth is None
+    assert back.rank == glm.rank
+    np.testing.assert_allclose(
+        np.asarray(back.coefficients), np.asarray(glm.coefficients)
+    )
+    np.testing.assert_allclose(np.asarray(back.deviance), np.asarray(glm.deviance))
