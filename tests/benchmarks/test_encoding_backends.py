@@ -142,11 +142,28 @@ class TestBenchmarkRunner:
         assert result.n_neurons == 3
 
     def test_run_single_benchmark_glm_per_unit(
-        self, benchmark_module: ModuleType
+        self, benchmark_module: ModuleType, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The backend benchmark forwards the per-unit REML workload
-        (``pooled=False`` with automatic REML), so a regression cannot silently
-        benchmark shared REML instead."""
+        """The backend benchmark actually FORWARDS the per-unit REML workload to
+        ``compute_spatial_rates`` -- ``method="glm"``, ``penalty=None``,
+        ``pooled=False`` -- so a regression cannot silently benchmark shared REML.
+
+        Spies on ``compute_spatial_rates`` and inspects the call kwargs; merely
+        running would also pass if ``pooled`` were dropped.
+        """
+        import neurospatial.encoding.spatial as spatial_mod
+
+        real = spatial_mod.compute_spatial_rates
+        calls: list[dict] = []
+
+        def spy(*args, **kwargs):
+            calls.append(dict(kwargs))
+            return real(*args, **kwargs)
+
+        # run_single_benchmark imports compute_spatial_rates from this module at
+        # call time, so patching the source attribute is picked up.
+        monkeypatch.setattr(spatial_mod, "compute_spatial_rates", spy)
+
         data = benchmark_module.create_benchmark_data(
             n_neurons=3, n_samples=500, seed=44
         )
@@ -162,8 +179,13 @@ class TestBenchmarkRunner:
         )
 
         assert result.backend == "numpy"
-        assert result.elapsed_ms > 0
         assert result.n_neurons == 3
+        assert calls, "compute_spatial_rates was never called"
+        # Every invocation forwarded the per-unit REML workload.
+        for c in calls:
+            assert c.get("method") == "glm"
+            assert c.get("penalty") is None
+            assert c.get("pooled") is False
 
     @pytest.mark.skipif(
         not is_jax_available(),

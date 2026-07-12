@@ -382,14 +382,22 @@ def _check_gam_result_invariant(
                     f"{kind} per-unit penalty must be finite and > 0 (an applied "
                     f"smoothing lambda); got {penalty_vals}."
                 )
-            # A REML-selected unit carries a finite objective; a pooled-fallback
-            # unit carries the nan sentinel -- so ``selected`` is exactly the
-            # finite-objective mask.
-            if not np.array_equal(selected, np.isfinite(reml_vals)):
+            # A REML-selected unit carries a FINITE objective; a pooled-fallback
+            # unit carries the ``nan`` sentinel specifically (not ``inf``). Check
+            # the two partitions explicitly -- ``isfinite`` alone would let a
+            # non-finite ``inf`` masquerade as the fallback sentinel. ``atleast_1d``
+            # keeps the boolean-partition indexing valid on the singular scalar
+            # slice.
+            sel_1d = np.atleast_1d(selected)
+            reml_1d = np.atleast_1d(reml_vals)
+            if not (
+                np.all(np.isfinite(reml_1d[sel_1d]))
+                and np.all(np.isnan(reml_1d[~sel_1d]))
+            ):
                 raise ValueError(
-                    f"{kind} penalty_selected_by_reml must mark exactly the units "
-                    "with a finite reml_objective (REML-selected); fallback units "
-                    f"carry nan. Got selected={selected}, reml_objective={reml_vals}."
+                    f"{kind} reml_objective must be finite for REML-selected units "
+                    "and the nan sentinel for pooled-fallback units; got "
+                    f"selected={selected}, reml_objective={reml_vals}."
                 )
             # The per-unit vector path only exists with >= 1 informative unit
             # (population level). A singular slice may legitimately be a lone

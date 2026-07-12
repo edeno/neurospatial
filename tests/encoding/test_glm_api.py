@@ -585,9 +585,10 @@ def test_pooled_result_state_machine_invariant(open_field_env: Environment) -> N
 
     # --- semantic provenance coupling of the per-unit vectors -------------------
     both = np.array([False, True])
+    reml_msg = r"reml_objective must be finite|nan sentinel"
     # REML-selected unit (mask True) must carry a finite objective, not the nan
     # sentinel; and a fallback unit (mask False) must carry nan, not a finite one.
-    with pytest.raises(ValueError, match=r"penalty_selected_by_reml"):
+    with pytest.raises(ValueError, match=reml_msg):
         _make(
             penalty=np.array([0.5, 1.5]),
             reml_objective=np.array([-1.0, np.nan]),
@@ -595,7 +596,7 @@ def test_pooled_result_state_machine_invariant(open_field_env: Environment) -> N
             penalty_selected_by_reml=np.array([True, True]),  # unit 1 True but nan
             pooled=False,
         )
-    with pytest.raises(ValueError, match=r"penalty_selected_by_reml"):
+    with pytest.raises(ValueError, match=reml_msg):
         _make(
             penalty=np.array([0.5, 1.5]),
             reml_objective=np.array([-1.0, -2.0]),  # unit 1 finite but marked fallback
@@ -603,6 +604,17 @@ def test_pooled_result_state_machine_invariant(open_field_env: Environment) -> N
             penalty_selected_by_reml=np.array([True, False]),
             pooled=False,
         )
+    # A fallback unit must carry the nan sentinel SPECIFICALLY, not +/-inf (both
+    # non-finite, but inf is not the documented sentinel).
+    for bad_fallback_obj in (np.inf, -np.inf):
+        with pytest.raises(ValueError, match=reml_msg):
+            _make(
+                penalty=np.array([0.5, 1.5]),
+                reml_objective=np.array([-1.0, bad_fallback_obj]),
+                reml_at_boundary=both,
+                penalty_selected_by_reml=np.array([True, False]),
+                pooled=False,
+            )
     # Per-unit penalties must be finite and positive.
     for bad_penalty in (np.array([-0.5, 1.5]), np.array([np.nan, 1.5])):
         with pytest.raises(ValueError, match=r"finite and > 0"):
