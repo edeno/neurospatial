@@ -216,15 +216,20 @@ def _warn_reml_boundary(side: str, who: str, *, stacklevel: int = 3) -> None:
 
     ``side`` is ``"lower"`` / ``"upper"`` (or ``"lower/upper"`` when a per-unit
     batch hits both); ``who`` names the affected fit (``"the pooled fit"`` or
-    ``"unit(s) [...]"``). The applied ``lambda`` remains the finite bound value;
-    the search interval is never expanded.
+    ``"unit index/indices [...]"`` -- positional, since the bin-major fit does not
+    carry unit identity; the label-aligned per-unit ``reml_at_boundary`` on the
+    result maps these to the caller's ``unit_ids``). The applied ``lambda`` is the
+    finite value the search returned near the bound; the interval is never
+    expanded. Only weak identification of ``lambda`` is established -- the fitted
+    field is finite but its sensitivity to ``lambda`` is not measured here.
     """
     warnings.warn(
-        f"MRF-GAM REML: the selected smoothing penalty lambda is at the {side} "
+        f"MRF-GAM REML: the selected smoothing penalty lambda is near the {side} "
         f"search bound for {who}; lambda is weakly identified there (its optimum "
-        "may lie beyond the search interval) although the fitted field is stable. "
-        "The applied lambda is the finite bound value; the interval is not "
-        "expanded.",
+        "may lie at or beyond the bound). The applied lambda is the finite value "
+        "the search returned near the bound (the interval is not expanded); the "
+        "fitted field remains finite, but its sensitivity to lambda should be "
+        "checked.",
         UserWarning,
         stacklevel=stacklevel,
     )
@@ -347,19 +352,22 @@ def _fit_mrf_gam_per_unit(
     firing_rate = np.maximum(np.exp(eta), _RATE_FLOOR)
     deviance = _poisson_deviance(counts, occupancy, firing_rate)
 
-    # One aggregate nonconvergence warning naming the failed unit ids (batch-level,
-    # not one per unit).
+    # One aggregate nonconvergence warning naming the failed unit INDICES
+    # (batch-level, not one per unit). The bin-major fit is unit-agnostic, so it
+    # reports positions along the unit axis; the caller maps them to its unit_ids
+    # via the label-aligned per-unit diagnostics on the result.
     if not converged:
         failed_ids = np.flatnonzero(~per_unit_converged).tolist()
+        label = "index" if len(failed_ids) == 1 else "indices"
         warnings.warn(
-            f"MRF-GAM per-unit fit did not converge for unit(s) {failed_ids} "
+            f"MRF-GAM per-unit fit did not converge for unit {label} {failed_ids} "
             "(line-search failure, iteration cap, or out-of-domain data); consider "
             "reducing rank or supplying a fixed penalty.",
             UserWarning,
             stacklevel=2,
         )
 
-    # One boundary warning naming the affected unit ids + side(s). A boundary
+    # One boundary warning naming the affected unit INDICES + side(s). A boundary
     # lambda stays the finite applied penalty (never expanded or replaced).
     if boundary_per_unit.any():
         at_ids = np.flatnonzero(boundary_per_unit)
@@ -367,7 +375,8 @@ def _fit_mrf_gam_per_unit(
         lower, upper = _LOG_PENALTY_BOUNDS
         sides = np.where((log_lams - lower) <= (upper - log_lams), "lower", "upper")
         side_desc = "/".join(sorted(set(sides.tolist())))
-        _warn_reml_boundary(side_desc, f"unit(s) {at_ids.tolist()}", stacklevel=2)
+        label = "index" if at_ids.size == 1 else "indices"
+        _warn_reml_boundary(side_desc, f"unit {label} {at_ids.tolist()}", stacklevel=2)
 
     return MRFFit(
         coefficients=coeffs,

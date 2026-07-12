@@ -333,6 +333,65 @@ def _check_gam_result_invariant(
                     f"{kind} glm field {name!r} must be a scalar or a ({n_units},) "
                     f"vector; got shape {tuple(np.shape(value))}."
                 )
+        # State-machine coupling: the per-unit-lambda fields travel together, and
+        # NWB persistence keys "is this per-unit?" off the provenance mask alone.
+        # So the mask's presence must agree with the vector-ness of the other
+        # three (and with pooled=False) -- otherwise an inconsistent result (e.g.
+        # pooled=True with a vector penalty and no mask) constructs cleanly and
+        # only fails deep in the NWB writer. per-unit here = a per-unit-shaped
+        # slot: a ``(n_units,)`` vector on the plural class, a scalar on the
+        # singular slice.
+        mask = fields["penalty_selected_by_reml"]
+        per_unit_slots = ("penalty", "reml_objective", "reml_at_boundary")
+
+        def _is_per_unit_shaped(value: Any) -> bool:
+            if value is None:
+                return False
+            return np.ndim(value) == (0 if n_units is None else 1)
+
+        if mask is not None:
+            # Per-unit result: only under pooled=False, with all three per-unit
+            # slots populated and per-unit-shaped.
+            if fields["pooled"] is not False:
+                raise ValueError(
+                    f"{kind} carries penalty_selected_by_reml (a per-unit result) "
+                    f"but pooled={fields['pooled']!r}; per-unit lambda is only "
+                    "produced under pooled=False."
+                )
+            missing_vec = [
+                n for n in per_unit_slots if not _is_per_unit_shaped(fields[n])
+            ]
+            if missing_vec:
+                raise ValueError(
+                    f"{kind} carries penalty_selected_by_reml (a per-unit result) "
+                    f"but {missing_vec} are not per-unit values; penalty, "
+                    "reml_objective, and reml_at_boundary must all be per-unit "
+                    "when the provenance mask is present."
+                )
+        else:
+            # Non-per-unit result: none of the three may be a per-unit vector
+            # (this is exactly the state that crashes NWB writing).
+            stray_vec = [
+                n
+                for n in per_unit_slots
+                if fields[n] is not None and np.ndim(fields[n]) != 0
+            ]
+            if stray_vec:
+                raise ValueError(
+                    f"{kind} has vector {stray_vec} but no penalty_selected_by_reml "
+                    "mask; per-unit penalty / reml_objective / reml_at_boundary "
+                    "require the provenance mask (a per-unit pooled=False result). "
+                    "For a shared/fixed lambda these must be scalar or None."
+                )
+        # The boolean diagnostics must be boolean (a float boundary flag or an
+        # integer provenance mask would round-trip wrong through NWB).
+        for name in ("reml_at_boundary", "penalty_selected_by_reml"):
+            value = fields[name]
+            if value is not None and np.asarray(value).dtype != np.bool_:
+                raise ValueError(
+                    f"{kind} glm field {name!r} must be boolean; got dtype "
+                    f"{np.asarray(value).dtype}."
+                )
         # ``pooled`` is a concrete bool for every glm result (the only reliable
         # NWB source, since scalar cases are value-identical under both settings).
         # Checked last so a more fundamental shape/required error surfaces first.
@@ -494,8 +553,11 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
     n_iter: int | None = None
     reml_objective: float | None = None
     # Per-unit-lambda (``pooled=False``) diagnostics: the per-unit slice of the
-    # population fit (scalars here). ``None`` for ratio methods and for
-    # ``pooled=True`` glm results (where no per-unit vector was produced).
+    # population fit (scalars here). ``None`` for ratio methods. For glm:
+    # ``reml_at_boundary`` is a scalar bool when REML ran (both pooled settings)
+    # and ``None`` when it did not (fixed penalty / r==0 / no data);
+    # ``penalty_selected_by_reml`` is ``None`` except for a per-unit
+    # (``pooled=False``) slice; ``pooled`` is ``True`` / ``False`` for glm.
     reml_at_boundary: bool | None = None
     penalty_selected_by_reml: bool | None = None
     pooled: bool | None = None

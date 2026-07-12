@@ -191,7 +191,9 @@ def _force_gc() -> None:
 def _synchronize_result(result: object) -> None:
     """Wait for an asynchronously dispatched backend result, if necessary."""
     firing_rates = getattr(result, "firing_rates", result)
-    arrays = firing_rates.values() if isinstance(firing_rates, dict) else (firing_rates,)
+    arrays = (
+        firing_rates.values() if isinstance(firing_rates, dict) else (firing_rates,)
+    )
     for array in arrays:
         block_until_ready = getattr(array, "block_until_ready", None)
         if block_until_ready is not None:
@@ -208,6 +210,7 @@ def run_single_benchmark(
     bandwidth: float = 5.0,
     penalty: float | None = 1.0,
     rank: int = 60,
+    pooled: bool = True,
 ) -> EncodingBenchmarkResult:
     """Run a single benchmark.
 
@@ -232,6 +235,11 @@ def run_single_benchmark(
         methods.
     rank : int, default=60
         Requested glm basis rank. Ignored by ratio methods.
+    pooled : bool, default=True
+        glm smoothing pool: ``True`` selects one shared REML ``lambda``,
+        ``False`` an independent per-unit ``lambda`` (a REML search per informative
+        unit). Only meaningful with ``method="glm"`` and ``penalty=None`` (REML);
+        ignored otherwise.
 
     Returns
     -------
@@ -251,7 +259,7 @@ def run_single_benchmark(
 
         def benchmark_fn():
             estimator_kwargs = (
-                {"penalty": penalty, "rank": rank}
+                {"penalty": penalty, "rank": rank, "pooled": pooled}
                 if method == "glm"
                 else {"bandwidth": bandwidth}
             )
@@ -308,6 +316,7 @@ def run_encoding_benchmark(
     bandwidth: float = 5.0,
     penalty: float | None = 1.0,
     rank: int = 60,
+    pooled: bool = True,
 ) -> list[EncodingBenchmarkResult]:
     """Run full encoding benchmark suite.
 
@@ -368,6 +377,7 @@ def run_encoding_benchmark(
                         bandwidth=bandwidth,
                         penalty=penalty,
                         rank=rank,
+                        pooled=pooled,
                     )
                     results.append(result)
                     print(f"{result.elapsed_ms:.1f} ms")
@@ -548,6 +558,14 @@ Examples:
         default=60,
         help="Requested glm basis rank (default: 60)",
     )
+    parser.add_argument(
+        "--per-unit",
+        action="store_true",
+        help=(
+            "glm REML only: select an independent per-unit lambda (pooled=False, "
+            "a REML search per informative unit) instead of one shared lambda"
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -567,6 +585,8 @@ Examples:
     elif args.smoothing == "glm":
         print(f"Penalty: {'automatic REML' if args.reml else args.penalty}")
         print(f"Rank: {args.rank}")
+        if args.reml:
+            print(f"Pool: {'per-unit lambda' if args.per_unit else 'shared lambda'}")
 
     # Determine backends to test
     backends: list[Backend] = ["numpy"]
@@ -592,6 +612,7 @@ Examples:
         bandwidth=args.bandwidth,
         penalty=None if args.reml else args.penalty,
         rank=args.rank,
+        pooled=not args.per_unit,
     )
 
     # Print summary

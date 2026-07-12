@@ -476,6 +476,65 @@ def test_result_carries_pooled(open_field_env: Environment) -> None:
     assert ratio[0].pooled is None
 
 
+def test_pooled_result_state_machine_invariant(open_field_env: Environment) -> None:
+    """The result invariant couples the per-unit-lambda fields to the provenance
+    mask + pooled, so an inconsistent glm result (which would crash NWB writing)
+    is rejected at construction, not deep in the writer."""
+    from neurospatial.encoding.spatial import SpatialRatesResult
+
+    env = open_field_env
+    n = env.n_bins
+    rng = np.random.default_rng(0)
+
+    def _make(**overrides):
+        base = {
+            "firing_rates": rng.uniform(0.01, 10.0, (2, n)),
+            "occupancy": rng.uniform(0.0, 5.0, n),
+            "env": env,
+            "method": "glm",
+            "bandwidth": None,
+            "coefficients": rng.standard_normal((4, 2)),
+            "penalty_weights": rng.uniform(0.0, 2.0, 4),
+            "rank": 4,
+            "deviance": rng.uniform(0.0, 100.0, 2),
+            "converged": True,
+            "n_iter": 7,
+        }
+        base.update(overrides)
+        return SpatialRatesResult(**base)
+
+    # pooled=True with a per-unit vector but no provenance mask -> reject.
+    with pytest.raises(ValueError, match=r"provenance mask|per-unit"):
+        _make(
+            penalty=np.array([0.5, 1.5]),
+            reml_objective=np.array([-1.0, -2.0]),
+            reml_at_boundary=np.array([False, True]),
+            pooled=True,
+        )
+    # a provenance mask with pooled=True -> reject (per-unit only under False).
+    with pytest.raises(ValueError, match="pooled"):
+        _make(
+            penalty=np.array([0.5, 1.5]),
+            reml_objective=np.array([-1.0, -2.0]),
+            reml_at_boundary=np.array([False, True]),
+            penalty_selected_by_reml=np.array([True, False]),
+            pooled=True,
+        )
+    # a non-boolean boundary flag -> reject.
+    with pytest.raises(ValueError, match=r"boolean|bool"):
+        _make(penalty=1.0, reml_objective=-1.0, reml_at_boundary=0.5, pooled=True)
+
+    # The two legitimate states construct cleanly.
+    _make(penalty=1.0, reml_objective=-1.0, reml_at_boundary=True, pooled=True)
+    _make(
+        penalty=np.array([0.5, 1.5]),
+        reml_objective=np.array([-1.0, np.nan]),
+        reml_at_boundary=np.array([False, True]),
+        penalty_selected_by_reml=np.array([True, False]),
+        pooled=False,
+    )
+
+
 def test_value_domain(
     open_field_env: Environment, two_component_env: Environment
 ) -> None:
