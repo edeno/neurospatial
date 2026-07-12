@@ -506,11 +506,18 @@ def _jax_available() -> bool:
 def test_glm_backend_jax_return(open_field_env: Environment) -> None:
     """glm backend='jax' returns the SAME array-type as diffusion_kde backend='jax'.
 
-    The glm fit runs the NumPy core and the assembled rate array is converted to a
-    JAX array when the resolved backend is 'jax', matching the ratio path's return
-    contract. Values match the backend='numpy' glm result. Both the plural
-    (``compute_spatial_rates``) and singular (``compute_spatial_rate``) entry
-    points have their own conversion branch, so both are checked.
+    The glm fit runs the float32 JAX mirror and the assembled rate array is
+    converted to a JAX array when the resolved backend is 'jax', matching the
+    ratio path's return contract. Both the plural (``compute_spatial_rates``) and
+    singular (``compute_spatial_rate``) entry points have their own conversion
+    branch, so both are checked.
+
+    The array-**type** contract (below) is exact. The value check uses a
+    float32-appropriate tolerance: ``backend='jax'`` runs the float32 fit, so its
+    rate map matches the float64 ``backend='numpy'`` map to ~1e-3 (near-machine
+    float32 at a fixed lambda; a touch looser here because REML picks a slightly
+    different lambda near the flat objective minimum). Tight per-quantity parity
+    is pinned in ``test_glm_jax.py``.
     """
     env = open_field_env
     centers = [(4.0, 4.0), (12.0, 12.0)]
@@ -532,8 +539,8 @@ def test_glm_backend_jax_return(open_field_env: Environment) -> None:
     np.testing.assert_allclose(
         np.asarray(glm_jax.firing_rates),
         np.asarray(glm_numpy.firing_rates),
-        rtol=1e-4,
-        atol=1e-5,
+        rtol=2e-3,
+        atol=2e-3,
     )
 
     # --- singular (its own separate conversion branch) ---
@@ -550,8 +557,8 @@ def test_glm_backend_jax_return(open_field_env: Environment) -> None:
     np.testing.assert_allclose(
         np.asarray(glm_single_jax.firing_rate),
         np.asarray(glm_single_numpy.firing_rate),
-        rtol=1e-4,
-        atol=1e-5,
+        rtol=2e-3,
+        atol=2e-3,
     )
 
 

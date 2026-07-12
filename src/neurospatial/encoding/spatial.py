@@ -2430,7 +2430,15 @@ default="diffusion_kde"
         - ``"auto"``: Use JAX if available, otherwise NumPy.
 
         Note: Binning operations (spike counting, occupancy) always use NumPy.
-        Only the smoothing/rate computation uses the selected backend.
+        Only the smoothing/rate computation uses the selected backend. For
+        ``method="glm"``, a resolved ``jax`` backend runs the penalized-Poisson
+        fit + REML through an optional **float32** JAX mirror of the NumPy/SciPy
+        core (``backend="jax"`` requires the ``jax`` extra, like the ratio
+        methods; ``"auto"`` uses it when available and otherwise the NumPy core).
+        The float32 mirror matches the float64 core to ~1e-6 at a fixed penalty (a
+        touch looser under automatic REML, which picks a slightly different
+        ``lambda``) and is markedly faster on populations. The returned
+        diagnostics stay float64 either way.
     warn_on_drop : bool, default=True
         If ``True`` (the default), emit a ``UserWarning`` when a large
         fraction of spikes are silently dropped — either because they
@@ -2858,7 +2866,15 @@ default="diffusion_kde"
         - ``"auto"``: Use JAX if available, otherwise NumPy.
 
         Note: Binning operations (spike counting, occupancy) always use NumPy.
-        Only the smoothing/rate computation uses the selected backend.
+        Only the smoothing/rate computation uses the selected backend. For
+        ``method="glm"``, a resolved ``jax`` backend runs the penalized-Poisson
+        fit + REML through an optional **float32** JAX mirror of the NumPy/SciPy
+        core (``backend="jax"`` requires the ``jax`` extra, like the ratio
+        methods; ``"auto"`` uses it when available and otherwise the NumPy core).
+        The float32 mirror matches the float64 core to ~1e-6 at a fixed penalty (a
+        touch looser under automatic REML, which picks a slightly different
+        ``lambda``) and is markedly faster on populations. The returned
+        diagnostics stay float64 either way.
     warn_on_drop : bool, default=True
         If ``True`` (the default), emit a single ``UserWarning`` (per drop
         cause) when a large fraction of spikes are silently dropped across

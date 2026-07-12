@@ -275,6 +275,10 @@ ignore = [
     "N803",  # Allow B (penalty basis matrix) as argument - GAM notation
     "N806",  # Allow B, H (basis / Hessian matrices) - standard math notation
 ]
+"src/neurospatial/encoding/_glm_jax.py" = [
+    "N803",  # Allow B (penalty basis matrix) as argument - GAM notation
+    "N806",  # Allow B, H (basis / Hessian matrices) - standard math notation
+]
 
 # Package init files: Allow unused imports (re-exports)
 "__init__.py" = [

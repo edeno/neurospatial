@@ -139,9 +139,11 @@ def fit_mrf_gam(
         Stored on the result. Only ``pooled=True`` (a single shared lambda) is
         supported; ``pooled=False`` (per-unit lambda) raises ``NotImplementedError``.
     backend : str, keyword-only, default ``"numpy"``
-        Compute backend. Currently always runs the NumPy float64 core; ``"jax"``
-        falls back to it (the JAX accelerator is not yet wired). ``MRFFit``
-        arrays are always NumPy.
+        Compute backend. ``"jax"`` routes the fit compute (the batched Newton
+        fit and REML ``lambda`` selection) to the optional float32 JAX mirror
+        when JAX is installed, else falls back to the NumPy float64 core;
+        anything else runs the NumPy core. Either way the correctness reference
+        is the float64 core and ``MRFFit`` arrays are always NumPy float64.
 
     Returns
     -------
@@ -156,11 +158,26 @@ def fit_mrf_gam(
     NotImplementedError
         If ``pooled=False`` (per-unit lambda selection is not yet supported).
     """
+    from ._backend import is_jax_available
     from ._glm_numpy import (
         _newton_fit_numpy,
         _poisson_deviance,
         select_penalty_by_reml,
     )
+
+    # Backend-driven dispatch: route the fit compute (Newton fit + REML) to the
+    # optional float32 JAX mirror when backend="jax" and the extra is installed,
+    # else the NumPy float64 core. The mirror casts back to NumPy float64, so the
+    # deviance and MRFFit assembly below are backend-agnostic. There is no user
+    # flag -- backend arrives already resolved from the estimator layer.
+    if backend == "jax" and is_jax_available():
+        from ._glm_jax import _newton_fit_jax, select_penalty_by_reml_jax
+
+        newton_fit = _newton_fit_jax
+        select_penalty = select_penalty_by_reml_jax
+    else:
+        newton_fit = _newton_fit_numpy
+        select_penalty = select_penalty_by_reml
 
     if not pooled:
         # Per-unit lambda selection is not implemented: the fit only ever selects
@@ -254,7 +271,7 @@ def fit_mrf_gam(
         )
         applied_penalty = None if penalty is None else float(penalty)
     elif penalty is None:
-        applied_penalty, reml_objective = select_penalty_by_reml(
+        applied_penalty, reml_objective = select_penalty(
             counts, occupancy, B, d, penalty_rank, max_iter=_MAX_ITER, tol=_FIT_TOL
         )
     else:
@@ -265,25 +282,35 @@ def fit_mrf_gam(
     # means an UNPENALIZED fit: use penalty_diag = zeros_like(d), never None
     # (correct -- penalty_rank == 0 means every weight is a structural null).
     penalty_diag = np.zeros_like(d) if applied_penalty is None else applied_penalty * d
-    coeffs, eta, _mu, n_iter, max_step, converged = _newton_fit_numpy(
+
+    # A penalty=0 fit whose design is rank-deficient on the exposed (visited) bins
+    # has a singular Hessian, so the fill-mode coefficients are unidentifiable
+    # (warn). The float64 core stays bounded there, but a float32 (JAX) solve of
+    # the singular system is unreliable -- it can wander along the null space to a
+    # physically-impossible saturated rate while still reporting convergence -- so
+    # this degenerate fit runs on the float64 core regardless of backend. REML
+    # never selects penalty=0, so this only affects an explicit penalty=0.
+    rank_deficient = (
+        applied_penalty == 0.0
+        and penalty_rank > 0
+        and bool(np.linalg.matrix_rank(B[occupancy > 0]) < r_eff)
+    )
+    if rank_deficient:
+        warnings.warn(
+            "MRF-GAM fit: penalty=0 with a design rank-deficient on the "
+            "exposed (visited) bins; the fill-mode coefficients are not "
+            "identifiable. Increase penalty or reduce rank.",
+            UserWarning,
+            stacklevel=2,
+        )
+    final_newton_fit = _newton_fit_numpy if rank_deficient else newton_fit
+    coeffs, eta, _mu, n_iter, max_step, converged = final_newton_fit(
         counts, occupancy, B, penalty_diag, _MAX_ITER, _FIT_TOL
     )
 
     # Floored rate from the FINAL eta so the deviance describes what is reported.
     firing_rate = np.maximum(np.exp(eta), _RATE_FLOOR)  # (n_live_bins, n_units)
     deviance = _poisson_deviance(counts, occupancy, firing_rate)
-
-    # --- penalty=0 rank-deficient identifiability warning (fit still runs) ---
-    if applied_penalty == 0.0 and penalty_rank > 0:
-        exposed = occupancy > 0
-        if np.linalg.matrix_rank(B[exposed]) < r_eff:
-            warnings.warn(
-                "MRF-GAM fit: penalty=0 with a design rank-deficient on the "
-                "exposed (visited) bins; the fill-mode coefficients are not "
-                "identifiable. Increase penalty or reduce rank.",
-                UserWarning,
-                stacklevel=2,
-            )
 
     # --- nonconvergence warning, keyed on the FLAG (not n_iter == max_iter) ---
     if not converged:

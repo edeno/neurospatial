@@ -54,6 +54,28 @@ a standalone estimator.
   or an out-of-domain `penalty` / `rank`) raises the identical `ValueError` at
   the decoder boundary. The ratio decode path is unchanged.
 
+### Added — `method="glm"` optional float32 JAX acceleration
+
+`compute_spatial_rate(s)(method="glm", backend="jax")` now routes the
+penalized-Poisson fit + REML `λ` selection through an optional **float32 JAX
+mirror** of the NumPy/SciPy core (installed via the `jax` extra; the base install
+and `backend="numpy"` continue to run the float64 core). The float64 core remains
+the correctness reference: the JAX path is a faithful mirror — same box
+constraint `|B·γ| ≤ η_clip`, out-of-domain guard, and REML objective — cast back
+to NumPy float64 at the boundary, so `SpatialRatesResult` diagnostics stay
+float64 and the public return contract is unchanged.
+
+- **Parity.** At a fixed `penalty` the float32 fit matches the float64 core to
+  ~`1e-6` on the firing-rate map (relative L2 and relative error above a rate
+  threshold). Under automatic REML it is a touch looser (float32 selects a
+  slightly different `λ` near the broad objective minimum), still scientifically
+  identical.
+- **Speed.** Markedly faster on populations — on a 400-bin, 30-unit, rank-60
+  problem the warm JAX REML fit is ~40–60× faster than the NumPy path.
+- **No new API.** Dispatch is driven entirely by the existing `backend=` keyword
+  (`"numpy"` / `"jax"` / `"auto"`); there is no new user flag. JAX stays an
+  optional extra (Linux/macOS).
+
 ### Changed — BREAKING: `smoothing_method` renamed to `method` (estimator axis)
 
 The smoothing/estimator keyword is now uniformly named `method` across every
