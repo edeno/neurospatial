@@ -170,7 +170,8 @@ def fit_mrf_gam(
     # else the NumPy float64 core. The mirror casts back to NumPy float64, so the
     # deviance and MRFFit assembly below are backend-agnostic. There is no user
     # flag -- backend arrives already resolved from the estimator layer.
-    if backend == "jax" and is_jax_available():
+    using_jax = backend == "jax" and is_jax_available()
+    if using_jax:
         from ._glm_jax import _newton_fit_jax, select_penalty_by_reml_jax
 
         newton_fit = _newton_fit_jax
@@ -283,19 +284,27 @@ def fit_mrf_gam(
     # (correct -- penalty_rank == 0 means every weight is a structural null).
     penalty_diag = np.zeros_like(d) if applied_penalty is None else applied_penalty * d
 
-    # A penalty=0 fit whose design is rank-deficient on the exposed (visited) bins
-    # has a singular Hessian, so the fill-mode coefficients are unidentifiable
-    # (warn). The float64 core stays bounded there, but a float32 (JAX) solve of
-    # the singular system is unreliable -- it can wander along the null space to a
-    # physically-impossible saturated rate while still reporting convergence -- so
-    # this degenerate fit runs on the float64 core regardless of backend. REML
-    # never selects penalty=0, so this only affects an explicit penalty=0.
+    # A design that is rank-deficient on the exposed (visited) bins has a Hessian
+    # whose null directions are regularized only by ``penalty * d`` (0 on the
+    # intercept columns), so a small -- not only zero -- penalty leaves them
+    # (near-)singular. The float64 core stays bounded there, but a float32 (JAX)
+    # solve of a (near-)singular system is unreliable: it can wander the null space
+    # to a physically-impossible saturated rate while still reporting convergence
+    # (observed up to ~1e12 Hz for penalties through ~1e-6). So a rank-deficient
+    # fit runs on the float64 core regardless of backend. Full-rank designs are
+    # well-conditioned at any penalty (including 0), so they keep the fast JAX
+    # path; REML never selects a blow-up penalty. Compute the (SVD) rank check only
+    # when it can change behavior -- the JAX path (to decide the fallback) or a
+    # penalty=0 fit (to warn) -- never on the plain NumPy path.
     rank_deficient = (
-        applied_penalty == 0.0
-        and penalty_rank > 0
+        penalty_rank > 0
+        and (using_jax or applied_penalty == 0.0)
         and bool(np.linalg.matrix_rank(B[occupancy > 0]) < r_eff)
     )
-    if rank_deficient:
+    # penalty=0 on a rank-deficient design is additionally UNIDENTIFIABLE (the
+    # fill-mode coefficients are not pinned down at all) -- warn regardless of the
+    # numerically-stable float64 fallback.
+    if rank_deficient and applied_penalty == 0.0:
         warnings.warn(
             "MRF-GAM fit: penalty=0 with a design rank-deficient on the "
             "exposed (visited) bins; the fill-mode coefficients are not "

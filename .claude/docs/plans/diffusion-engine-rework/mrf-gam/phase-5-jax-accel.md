@@ -45,6 +45,35 @@ float32.
 | `test_backend_return_matches_ratio` | `compute_spatial_rates(method="glm", backend="jax")` returns the **same array-type convention** as `method="diffusion_kde", backend="jax"` (both JAX arrays, or both NumPy — whichever the ratio path does); `firing_rates.dtype` honors `dtype` (Finding 5). |
 | `test_reml_parity` | REML-selected λ agrees between paths within `_REML_XATOL`-consistent tolerance. |
 
+## Measured reality (post-implementation correction)
+
+The `~1e-6` parity and the "no-floor runs to `_MAX_ITER`" convergence claims above
+were pre-implementation estimates; measurement corrected them (metrics: relative
+L2 + relative error above a rate threshold — raw relative error at near-zero
+floored rates is meaningless). The shipped code, docstring, CHANGELOG, and tests
+reflect the corrected reality:
+
+- **Parity is `~1e-6` at a *fixed* λ** (isolating the Newton fit): rate relative
+  L2 `~7e-7`, JAX-float64 vs NumPy-float64 `~1e-14` (confirming a faithful
+  mirror). **Automatic REML is `~1e-3`**, dominated by float32 selecting a
+  slightly different λ near the flat REML minimum (scientifically identical). So
+  `test_jax_numpy_parity` runs at a fixed λ, and the phase-3 exact-match value
+  tolerance in `test_glm_backend_jax_return` (written when `backend="jax"` fell
+  back to the NumPy core) was relaxed to a float32-appropriate `~2e-3`.
+- **`_FIT_TOL_FLOOR` is a *performance* floor, not a converge/diverge switch.**
+  With monotone step-halving the float32 objective plateaus to bit-identical, so
+  `rel_decrease` hits ~0 and even `tol=1e-10` converges (just in more Newton
+  iterations, e.g. 22 vs 8); only `tol=0` runs to `_MAX_ITER`. So
+  `test_jax_converges_float32` asserts the robust claims (floored converges, and
+  floored `n_iter` < un-floored `n_iter`) rather than "no-floor runs to
+  `_MAX_ITER`".
+- **Numerical-stability fallback (added):** a design rank-deficient on the
+  exposed bins has a Hessian a float32 solve cannot handle at a small/zero
+  penalty (it can saturate to ~1e12 Hz while reporting convergence), so
+  `fit_mrf_gam` runs any rank-deficient fit on the float64 core regardless of
+  backend. Full-rank designs (the norm) keep the fast JAX path; REML never
+  selects a blow-up penalty.
+
 ## Fixtures
 
 - Reuse phase-2/3 `simulate_place_fields` (fixed seed) for parity. The pickled NumPy baseline is produced by the baseline-capture task (regenerated deterministically, not checked in unless large).
