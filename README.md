@@ -82,21 +82,26 @@ pip install -e ".[dev]"
 
 ### Tested Dependency Versions
 
-neurospatial v0.6.0 has been tested with the following dependency versions:
+neurospatial v0.8.0 has been tested with the following dependency versions:
 
 | Package | Tested Version |
 |---------|---------------|
-| Python | 3.13.5 |
+| Python | 3.13.13 |
 | numpy | 2.3.4 |
 | pandas | 2.3.3 |
 | matplotlib | 3.10.7 |
 | networkx | 3.5 |
 | scipy | 1.16.3 |
 | scikit-learn | 1.7.2 |
+| scikit-image | 0.25.2 |
 | shapely | 2.1.2 |
+| alphashape | 1.3.1 |
 | track-linearization | 2.4.0 |
+| tqdm | 4.67.1 |
 
-These versions represent the tested configuration. neurospatial likely works with a range of versions for each dependency, but these specific versions have full test coverage.
+These versions match the current locked development environment. The supported
+dependency ranges are defined in `pyproject.toml`, and CI exercises all supported
+Python versions plus dedicated optional-dependency jobs.
 
 ### Optional Dependencies
 
@@ -587,43 +592,29 @@ env.animate_fields(
 - **[CLAUDE.md](CLAUDE.md)**: Development guide for Claude Code users
 - **[GitHub Issues](https://github.com/edeno/neurospatial/issues)**: Bug reports and feature requests
 
-## Project Structure
+## Package Map
 
 ```text
-neurospatial/
-├── src/neurospatial/
-│   ├── environment/            # Main Environment class (modular package)
-│   │   ├── core.py            # Core dataclass with state and properties
-│   │   ├── factories.py       # Factory classmethods (from_samples, from_graph, etc.)
-│   │   ├── queries.py         # Spatial query methods
-│   │   ├── trajectory.py      # Trajectory analysis (occupancy, transitions)
-│   │   ├── transforms.py      # Rebin/subset operations
-│   │   ├── fields.py          # Spatial field operations (smooth, interpolate)
-│   │   ├── metrics.py         # Environment metrics and properties
-│   │   ├── serialization.py   # Save/load methods
-│   │   ├── regions.py         # Region operations
-│   │   ├── visualization.py   # Plotting methods (includes animate_fields)
-│   │   └── decorators.py      # check_fitted decorator
-│   ├── animation/              # Field animation
-│   │   ├── core.py            # Main dispatcher and subsample_frames utility
-│   │   ├── rendering.py       # Rendering utilities (colormap, RGB conversion)
-│   │   ├── _parallel.py       # Parallel frame rendering for video backend
-│   │   └── backends/          # Backend implementations
-│   │       ├── napari_backend.py   # GPU-accelerated interactive viewer
-│   │       ├── video_backend.py    # Parallel MP4/WebM export with ffmpeg
-│   │       ├── html_backend.py     # Standalone HTML player
-│   │       └── widget_backend.py   # Jupyter widget integration
-│   ├── composite.py            # CompositeEnvironment for multi-env merging
-│   ├── alignment.py            # Probability distribution transforms
-│   ├── transforms.py           # 2D affine transformations
-│   ├── layout/
-│   │   ├── base.py            # LayoutEngine protocol
-│   │   ├── factories.py       # Layout factory functions
-│   │   └── engines/           # Concrete layout implementations
-│   └── regions/
-│       ├── core.py            # Region and Regions classes
-│       └── serialization.py   # JSON I/O for regions
-└── tests/                      # Comprehensive test suite (1,185+ tests)
+src/neurospatial/
+├── environment/    # Environments, trajectories, fields, queries, and plots
+├── layout/         # Grid, hexagonal, graph, polygon, mask, and mesh layouts
+├── encoding/       # Place, grid, border, directional, view, and egocentric coding
+├── decoding/       # Bayesian decoding, summaries, trajectories, and assemblies
+├── behavior/       # Segmentation, navigation, decisions, rewards, and VTE
+├── events/         # Peri-event alignment, detection, intervals, and regressors
+├── stats/          # Circular statistics, shuffles, and surrogate data
+├── simulation/     # Mazes, trajectories, neural models, spikes, and validation
+├── io/             # Environment files plus NWB and pynapple interoperability
+├── animation/      # Napari, video, HTML, and Jupyter animation backends
+├── annotation/     # Interactive video and track-graph annotation
+├── ops/            # Graph-aware distance, smoothing, transforms, and visibility
+├── regions/        # Standalone region containers, operations, I/O, and plotting
+├── recording.py    # Session bundle and NWB session loader
+└── composite.py    # Multi-environment composition
+
+tests/                 # More than 9,000 automated tests across the package
+examples/              # 27 task-oriented, paired Python/Jupyter tutorials
+docs/                  # User guides, API reference, examples, and contributor docs
 ```
 
 ## Requirements
@@ -663,7 +654,7 @@ If you use neurospatial in your research, please cite:
   title = {neurospatial: Spatial environment discretization for neuroscience},
   year = {2026},
   url = {https://github.com/edeno/neurospatial},
-  version = {0.6.0}
+  version = {0.8.0}
 }
 ```
 
