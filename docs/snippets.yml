@@ -176,9 +176,9 @@ snippets:
   - id: quickstart_vte_session
     source: .claude/QUICKSTART.md
     kind: markdown
-    # Block 10: VTE (Vicarious Trial and Error) detection. compute_vte_session
+    # Block 11: VTE (Vicarious Trial and Error) detection. compute_vte_session
     # is env-first; this verifies the documented call against that API.
-    index: 10
+    index: 11
     setup: |
       import os
       os.environ["MPLBACKEND"] = "Agg"
@@ -209,10 +209,10 @@ snippets:
   - id: quickstart_ovc_classify_single
     source: .claude/QUICKSTART.md
     kind: markdown
-    # Block 16: classify OVCs from a single-neuron EgocentricRateResult. The
+    # Block 17: classify OVCs from a single-neuron EgocentricRateResult. The
     # singular methods (is_object_vector_cell/preferred_distance/.plot) live on
     # the single-neuron result, not the batch EgocentricRatesResult.
-    index: 16
+    index: 17
     setup: |
       import os
       os.environ["MPLBACKEND"] = "Agg"
@@ -237,10 +237,10 @@ snippets:
   - id: quickstart_view_classify
     source: .claude/QUICKSTART.md
     kind: markdown
-    # Block 21: classify spatial-view cells from single + batch results.
+    # Block 22: classify spatial-view cells from single + batch results.
     # ViewRateResult exposes peak_location(); ViewRatesResult exposes the
     # plural peak_locations().
-    index: 21
+    index: 22
     setup: |
       import os
       os.environ["MPLBACKEND"] = "Agg"
@@ -271,10 +271,10 @@ snippets:
   - id: quickstart_circular_basis_metrics
     source: .claude/QUICKSTART.md
     kind: markdown
-    # Block 29: circular-basis GLM tuning. circular_basis_metrics takes a single
+    # Block 30: circular-basis GLM tuning. circular_basis_metrics takes a single
     # cov_matrix argument (the 2x2 [sin, cos] covariance submatrix), not
     # separate var_sin/var_cos/cov_sin_cos kwargs.
-    index: 29
+    index: 30
     setup: |
       import os
       os.environ["MPLBACKEND"] = "Agg"
@@ -290,11 +290,11 @@ snippets:
   - id: quickstart_overlay_block
     source: .claude/QUICKSTART.md
     kind: markdown
-    # Block 25: trajectory/pose overlays. PositionOverlay uses `positions=`
+    # Block 26: trajectory/pose overlays. PositionOverlay uses `positions=`
     # (not `data=`) and BodypartOverlay takes a Skeleton (not a raw edge list).
     # animate_fields is stubbed headlessly; overlays are still converted against
     # the env so construction is exercised on the real public API.
-    index: 25
+    index: 26
     setup: |
       import os
       os.environ["MPLBACKEND"] = "Agg"
@@ -333,9 +333,9 @@ snippets:
   - id: quickstart_events_glm_regressors
     source: .claude/QUICKSTART.md
     kind: markdown
-    # Block 32: event-based GLM regressors. event_indicator/event_count_in_window
+    # Block 33: event-based GLM regressors. event_indicator/event_count_in_window
     # both take a keyword-only (start, end) window tuple.
-    index: 32
+    index: 33
     setup: |
       import numpy as np
 
