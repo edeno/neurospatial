@@ -252,9 +252,13 @@ def spatial_information(
     """
     # Check if JAX array and dispatch to JAX implementation
     if _is_jax_array(firing_rate) or _is_jax_array(occupancy):
+        import jax.numpy as jnp
+
         from neurospatial.encoding._core_jax import spatial_information_single
 
-        return spatial_information_single(firing_rate, occupancy, base=base)
+        return spatial_information_single(
+            jnp.asarray(firing_rate), jnp.asarray(occupancy), base=base
+        )
 
     # NumPy implementation — input validation here (boundary), kernel in _core_numpy.
     firing_rate_arr = np.asarray(firing_rate)
@@ -331,9 +335,13 @@ def batch_spatial_information(
     """
     # Check if JAX array and dispatch to JAX implementation
     if _is_jax_array(firing_rates) or _is_jax_array(occupancy):
+        import jax.numpy as jnp
+
         from neurospatial.encoding._core_jax import spatial_information_batch
 
-        return spatial_information_batch(firing_rates, occupancy, base=base)
+        return spatial_information_batch(
+            jnp.asarray(firing_rates), jnp.asarray(occupancy), base=base
+        )
 
     # NumPy implementation — input validation here, kernel in _core_numpy.
     firing_rates_arr = np.asarray(firing_rates)
@@ -435,9 +443,11 @@ def sparsity(
     """
     # Check if JAX array and dispatch to JAX implementation
     if _is_jax_array(firing_rate) or _is_jax_array(occupancy):
+        import jax.numpy as jnp
+
         from neurospatial.encoding._core_jax import sparsity_single
 
-        return sparsity_single(firing_rate, occupancy)
+        return sparsity_single(jnp.asarray(firing_rate), jnp.asarray(occupancy))
 
     # NumPy implementation — input validation here, kernel in _core_numpy.
     firing_rate_arr = np.asarray(firing_rate)
@@ -510,9 +520,11 @@ def batch_sparsity(
     """
     # Check if JAX array and dispatch to JAX implementation
     if _is_jax_array(firing_rates) or _is_jax_array(occupancy):
+        import jax.numpy as jnp
+
         from neurospatial.encoding._core_jax import sparsity_batch
 
-        return sparsity_batch(firing_rates, occupancy)
+        return sparsity_batch(jnp.asarray(firing_rates), jnp.asarray(occupancy))
 
     # NumPy implementation
     firing_rates = np.asarray(firing_rates)

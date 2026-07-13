@@ -1580,15 +1580,16 @@ def compute_egocentric_rate(
 
     # Convert occupancy to JAX if JAX backend is selected
     # (firing_rate is already JAX from smooth_rate_map)
+    occupancy_out: ArrayLike = occupancy
     if resolved_backend == "jax" and is_jax_available():
         import jax.numpy as jnp
 
-        occupancy = jnp.asarray(occupancy, dtype=jnp.float64)
+        occupancy_out = jnp.asarray(occupancy, dtype=jnp.float64)
 
     # Return result
     return EgocentricRateResult(
         firing_rate=firing_rate,
-        occupancy=occupancy,
+        occupancy=occupancy_out,
         env=polar_env,
         distance_range=distance_range,
         n_distance_bins=n_distance_bins,
@@ -1921,14 +1922,15 @@ def compute_egocentric_rates(
         firing_rates_result: ArrayLike = np.empty(
             (0, polar_env.n_bins), dtype=np.float64
         )
+        occupancy_result: ArrayLike = occupancy
         if resolved_backend == "jax" and is_jax_available():
             import jax.numpy as jnp
 
             firing_rates_result = jnp.asarray(firing_rates_result)
-            occupancy = jnp.asarray(occupancy, dtype=jnp.float64)
+            occupancy_result = jnp.asarray(occupancy, dtype=jnp.float64)
         return EgocentricRatesResult(
             firing_rates=firing_rates_result,
-            occupancy=occupancy,
+            occupancy=occupancy_result,
             env=polar_env,
             distance_range=distance_range,
             n_distance_bins=n_distance_bins,
@@ -1982,15 +1984,16 @@ def compute_egocentric_rates(
 
     # Convert occupancy to JAX if JAX backend is selected
     # (firing_rates is already JAX from smooth_rate_maps_batch)
+    occupancy_out: ArrayLike = occupancy
     if resolved_backend == "jax" and is_jax_available():
         import jax.numpy as jnp
 
-        occupancy = jnp.asarray(occupancy, dtype=jnp.float64)
+        occupancy_out = jnp.asarray(occupancy, dtype=jnp.float64)
 
     # Return result
     return EgocentricRatesResult(
         firing_rates=firing_rates,
-        occupancy=occupancy,
+        occupancy=occupancy_out,
         env=polar_env,
         distance_range=distance_range,
         n_distance_bins=n_distance_bins,

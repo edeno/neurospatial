@@ -1352,15 +1352,16 @@ def compute_view_rate(
 
     # Convert occupancy to JAX if JAX backend is selected
     # (firing_rate is already JAX from smooth_rate_map)
+    occupancy_out: ArrayLike = occupancy
     if resolved_backend == "jax" and is_jax_available():
         import jax.numpy as jnp
 
-        occupancy = jnp.asarray(occupancy, dtype=jnp.float64)
+        occupancy_out = jnp.asarray(occupancy, dtype=jnp.float64)
 
     # Return result
     return ViewRateResult(
         firing_rate=firing_rate,
-        occupancy=occupancy,
+        occupancy=occupancy_out,
         env=env,
         gaze_model=gaze_model,
         view_distance=view_distance,
@@ -1662,14 +1663,15 @@ def compute_view_rates(
             gaze_offsets=gaze_offsets,
         )
         firing_rates_result: ArrayLike = np.empty((0, env.n_bins), dtype=np.float64)
+        occupancy_result: ArrayLike = occupancy
         if resolved_backend == "jax" and is_jax_available():
             import jax.numpy as jnp
 
             firing_rates_result = jnp.asarray(firing_rates_result)
-            occupancy = jnp.asarray(occupancy, dtype=jnp.float64)
+            occupancy_result = jnp.asarray(occupancy, dtype=jnp.float64)
         return ViewRatesResult(
             firing_rates=firing_rates_result,
-            occupancy=occupancy,
+            occupancy=occupancy_result,
             env=env,
             gaze_model=gaze_model,
             view_distance=view_distance,
@@ -1706,15 +1708,16 @@ def compute_view_rates(
 
     # Convert occupancy to JAX if JAX backend is selected
     # (firing_rates is already JAX from smooth_rate_maps_batch)
+    occupancy_out: ArrayLike = occupancy
     if resolved_backend == "jax" and is_jax_available():
         import jax.numpy as jnp
 
-        occupancy = jnp.asarray(occupancy, dtype=jnp.float64)
+        occupancy_out = jnp.asarray(occupancy, dtype=jnp.float64)
 
     # Return result
     return ViewRatesResult(
         firing_rates=firing_rates,
-        occupancy=occupancy,
+        occupancy=occupancy_out,
         env=env,
         gaze_model=gaze_model,
         view_distance=view_distance,
