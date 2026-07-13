@@ -28,6 +28,13 @@ for a ratio method (where ``pooled`` is meaningless) -- and a missing
 ``reml_at_boundary`` / vector columns read back as ``None``. This is the
 clean break with no back-compatibility shim for the ``1.x`` layout: pre-0.9
 tables (which keyed the estimator as ``"smoothing_method"``) do not read.
+
+Forward compatibility is *not* guaranteed (the usual minor-bump direction): a
+pre-2.2 reader on a ``pooled=False`` (per-unit) 2.2 file shares the ``2.x`` major
+and reads it, but sees the blob's ``penalty`` / ``reml_objective`` JSON ``null``
+and ignores the unknown per-unit columns -- silently reconstructing a
+``penalty=None`` result and dropping the per-unit ``lambda`` data. Read a
+``pooled=False`` file with a >=2.2 reader.
 """
 
 from __future__ import annotations
@@ -586,6 +593,11 @@ def write_spatial_rates(
     from neurospatial.io.nwb._environment import write_environment
 
     is_glm = result.method == "glm"
+    # The per-unit-lambda columns exist only for a pooled=False per-unit result
+    # (keyed off the provenance mask, exactly as the writer decides below), so
+    # they are reserved only then -- a pooled=True/fixed-penalty glm write does
+    # not emit them and must not reject a unit_table column named e.g. "penalty".
+    is_per_unit = is_glm and result.penalty_selected_by_reml is not None
 
     env = result.env
     # L1: defensively COPY the arrays (np.array, not a no-copy np.asarray) so the
@@ -614,16 +626,17 @@ def write_spatial_rates(
 
     # L3: `unit_id` / `firing_rate` are reserved for the table's own columns; a
     # unit_table column with either name would collide inside the DynamicTable.
-    # For a glm result the per-unit GAM columns (`deviance` / `coefficients`, plus
-    # the per-unit-lambda `penalty` / `reml_objective` / `reml_at_boundary` /
-    # `penalty_selected_by_reml` columns written when pooled=False) are reserved
-    # too. Raise a clear param-named error instead of a low-level hdmf error.
+    # A glm result always writes `deviance` / `coefficients`, so those are always
+    # reserved; the per-unit-lambda columns (`penalty` / `reml_objective` /
+    # `reml_at_boundary` / `penalty_selected_by_reml`) are written -- and thus
+    # reserved -- only for a pooled=False per-unit result. Raise a clear
+    # param-named error instead of a low-level hdmf error.
     reserved_names: tuple[str, ...] = (COL_UNIT_ID, COL_FIRING_RATE)
     if is_glm:
+        reserved_names = (*reserved_names, COL_DEVIANCE, COL_COEFFICIENTS)
+    if is_per_unit:
         reserved_names = (
             *reserved_names,
-            COL_DEVIANCE,
-            COL_COEFFICIENTS,
             COL_PENALTY,
             COL_REML_OBJECTIVE,
             COL_REML_AT_BOUNDARY,
@@ -714,8 +727,9 @@ def write_spatial_rates(
     gam_columns: list[VectorData] = []
     if is_glm:
         rank = int(result.rank)  # type: ignore[arg-type]
-        # The per-unit vector path is exactly when the provenance mask exists.
-        per_unit = result.penalty_selected_by_reml is not None
+        # The per-unit vector path is exactly when the provenance mask exists
+        # (same discriminant as the reserved-name gate above).
+        per_unit = is_per_unit
         penalty = result.penalty
         reml_objective = result.reml_objective
         reml_at_boundary = result.reml_at_boundary
@@ -1110,7 +1124,27 @@ def read_place_field(
             "pooled": bool(gam.get("pooled", True)),
         }
         if per_unit:
-            # Per-unit-lambda vectors live in table columns (schema 2.2).
+            # Per-unit-lambda vectors live in table columns (schema 2.2). Verify
+            # they are all present first, so a truncated / externally-edited 2.2
+            # record fails with a clear schema-aware error (naming the table and
+            # the missing column) rather than a raw hdmf KeyError -- matching the
+            # missing-GAM-blob handling above.
+            missing_cols = [
+                c
+                for c in (
+                    COL_PENALTY,
+                    COL_REML_OBJECTIVE,
+                    COL_REML_AT_BOUNDARY,
+                    COL_PENALTY_SELECTED,
+                )
+                if c not in table.colnames
+            ]
+            if missing_cols:
+                raise ValueError(
+                    f"Spatial rates '{name}' is a per-unit glm record (per_unit=True) "
+                    f"but is missing the per-unit column(s) {missing_cols}; the file "
+                    "may be corrupt or truncated."
+                )
             gam_fields["penalty"] = np.asarray(table[COL_PENALTY][:], dtype=np.float64)
             gam_fields["reml_objective"] = np.asarray(
                 table[COL_REML_OBJECTIVE][:], dtype=np.float64

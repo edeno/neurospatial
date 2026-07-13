@@ -145,6 +145,13 @@ def test_pooled_false_per_unit_lambda(open_field_env, simulate_varied_smoothness
         lam_k = _pooled_lambda(counts[:, k : k + 1], occ, basis)
         assert penalty[k] == pytest.approx(lam_k, rel=1e-6)
 
+    # The physically meaningful ordering: a broader field tolerates (and REML
+    # selects) MORE smoothing than a sharp one. centers/sigmas are sharp(0),
+    # broad(1), medium(2), so lambda must order broad > medium > sharp. (This is
+    # the real statistical-recovery claim; var>0 alone would pass even if lambda
+    # were anti-correlated with field width.)
+    assert penalty[1] > penalty[2] > penalty[0]
+
     # A single shared lambda is one number, distinct from the per-unit spread.
     fit_pooled = fit_mrf_gam(basis, counts, occ, penalty=None, pooled=True)
     assert np.isscalar(fit_pooled.penalty) or isinstance(fit_pooled.penalty, float)
@@ -236,6 +243,40 @@ def test_pooled_false_zero_spike_fallback(open_field_env, simulate_place_fields)
     assert np.max(fr[:, zs]) == pytest.approx(_RATE_FLOOR, abs=1e-6)
 
 
+def test_pooled_false_multiple_zero_spike_share_fallback(
+    open_field_env, simulate_place_fields
+):
+    """>=2 zero-spike units all take the SAME fallback lambda (they batch into one
+    Newton fit via np.unique(lam_per_unit)); their fields floor and provenance is
+    False. Exercises the multi-column fallback group the single-silent-unit tests
+    never hit."""
+    env = open_field_env
+    counts_full, occ_full = simulate_place_fields(
+        env, [(5.0, 5.0), (11.0, 11.0)], seed=17
+    )
+    basis = env._mrf_basis(occ_full, rank=20)
+    counts, occ = _restrict(counts_full, occ_full, basis)
+    # Two silent units appended (indices 2 and 3).
+    counts = np.column_stack(
+        [counts, np.zeros((counts.shape[0], 2), dtype=counts.dtype)]
+    )
+    informative = np.array([True, True, False, False])
+
+    fit = fit_mrf_gam(basis, counts, occ, penalty=None, pooled=False)
+
+    penalty = np.asarray(fit.penalty)
+    selected = np.asarray(fit.penalty_selected_by_reml)
+    reml_obj = np.asarray(fit.reml_objective)
+    pooled_lam = _pooled_lambda(counts[:, informative], occ, basis)
+    # Both silent units share the identical pooled fallback lambda.
+    assert penalty[2] == penalty[3] == pytest.approx(pooled_lam, rel=1e-6)
+    assert not selected[2] and not selected[3]
+    assert np.isnan(reml_obj[2]) and np.isnan(reml_obj[3])
+    fr = _firing_rate(fit)
+    assert np.max(fr[:, 2]) == pytest.approx(_RATE_FLOOR, abs=1e-6)
+    assert np.max(fr[:, 3]) == pytest.approx(_RATE_FLOOR, abs=1e-6)
+
+
 def test_pooled_false_all_zero_spike(open_field_env):
     """No informative unit at all -> reuse the all-zero-spike degenerate path:
     scalar penalty=None, reml_objective=None, floor fields, NO pooled REML run."""
@@ -310,18 +351,33 @@ def test_reml_boundary_diagnostic_interior(open_field_env, simulate_place_fields
 
 def test_reml_boundary_diagnostic_per_unit(open_field_env, simulate_flat_weak_signal):
     """pooled=False on flat data: reml_at_boundary is a (n_units,) bool vector, all
-    at the boundary, with one warning."""
+    at the boundary, with EXACTLY ONE aggregate boundary warning (not one/unit)."""
     env = open_field_env
     counts_full, occ_full = simulate_flat_weak_signal(env, 3, seed=13)
     basis = env._mrf_basis(occ_full, rank=20)
     counts, occ = _restrict(counts_full, occ_full, basis)
 
-    with pytest.warns(UserWarning, match="upper"):
+    with pytest.warns(UserWarning) as rec:
         fit = fit_mrf_gam(basis, counts, occ, penalty=None, pooled=False)
     boundary = np.asarray(fit.reml_at_boundary)
     assert boundary.shape == (3,)
     assert boundary.dtype == np.bool_
     assert np.all(boundary)
+    # One aggregate warning naming the upper side + all units, not one per unit.
+    bnd_warnings = [w for w in rec if "search bound" in str(w.message)]
+    assert len(bnd_warnings) == 1
+    assert "upper" in str(bnd_warnings[0].message)
+
+
+def test_reml_boundary_side_lower(open_field_env, simulate_place_fields):
+    """`_reml_boundary_side` labels a small lambda 'lower' (under-smoothing) and a
+    large one 'upper' -- the lower branch is otherwise only hit by the flat-signal
+    upper case."""
+    from neurospatial.encoding._glm import _LOG_PENALTY_BOUNDS, _reml_boundary_side
+
+    lower, upper = _LOG_PENALTY_BOUNDS
+    assert _reml_boundary_side(float(np.exp(lower + 0.1))) == "lower"
+    assert _reml_boundary_side(float(np.exp(upper - 0.1))) == "upper"
 
 
 def test_per_unit_warning_names_unit_ids(open_field_env, simulate_flat_weak_signal):

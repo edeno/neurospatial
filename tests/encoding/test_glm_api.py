@@ -518,6 +518,79 @@ def test_public_warning_forwards_unit_ids(
     assert "unit index" not in msg
 
 
+def test_pooled_false_zero_spike_end_to_end(open_field_env: Environment) -> None:
+    """A real zero-spike unit flows through the public estimator into the
+    assembled SpatialRatesResult with the fallback provenance, and indexing the
+    fallback unit yields a valid singular slice (the lone-fallback branch of the
+    singular invariant). Closes the fit-level→result-assembly seam."""
+    env = open_field_env
+    times, positions, spike_times = _grid_session(
+        env, [(5.0, 5.0), (11.0, 11.0)], seed=18
+    )
+    # Third unit is genuinely silent (no spikes).
+    spike_times = [*spike_times, np.array([], dtype=float)]
+
+    result = compute_spatial_rates(
+        env,
+        spike_times,
+        times,
+        positions,
+        method="glm",
+        pooled=False,
+        unit_ids=["a", "b", "silent"],
+    )
+    penalty = np.asarray(result.penalty)
+    selected = np.asarray(result.penalty_selected_by_reml)
+    reml_obj = np.asarray(result.reml_objective)
+    assert penalty.shape == (3,) and np.all(np.isfinite(penalty))
+    assert bool(selected[0]) and bool(selected[1]) and not bool(selected[2])
+    assert np.isfinite(reml_obj[0]) and np.isnan(reml_obj[2])
+
+    # Indexing the fallback unit -> a valid singular slice (mask False scalar,
+    # reml_objective nan scalar) that survives SpatialRateResult.__post_init__.
+    silent = result[2]
+    assert silent.pooled is False
+    assert silent.penalty_selected_by_reml is False
+    assert np.isnan(silent.reml_objective)
+    assert np.isscalar(silent.penalty) or isinstance(silent.penalty, float)
+
+    # summary_table under pooled=False: per-unit penalty column + provenance mask.
+    df = result.summary_table()
+    assert "penalty_selected_by_reml" in df.columns
+    assert list(df["penalty_selected_by_reml"]) == [True, True, False]
+    np.testing.assert_allclose(df["penalty"].to_numpy(), penalty)
+
+
+def test_singular_result_rejects_vector_gam_field(
+    open_field_env: Environment,
+) -> None:
+    """The singular result class rejects a stray per-unit VECTOR field (its
+    __post_init__ runs the n_units=None invariant branch, distinct from plural)."""
+    from neurospatial.encoding.spatial import SpatialRateResult
+
+    env = open_field_env
+    n = env.n_bins
+    rng = np.random.default_rng(0)
+    with pytest.raises(ValueError, match=r"must be a scalar"):
+        SpatialRateResult(
+            firing_rate=rng.uniform(0.01, 10.0, n),
+            occupancy=rng.uniform(0.0, 5.0, n),
+            env=env,
+            method="glm",
+            bandwidth=None,
+            coefficients=rng.standard_normal(4),
+            penalty=np.array([0.5, 1.5]),  # a vector on a single-unit result
+            penalty_weights=rng.uniform(0.0, 2.0, 4),
+            rank=4,
+            deviance=1.0,
+            converged=True,
+            n_iter=5,
+            reml_objective=-1.0,
+            reml_at_boundary=False,
+            pooled=False,
+        )
+
+
 def test_pooled_result_state_machine_invariant(open_field_env: Environment) -> None:
     """The result invariant couples the per-unit-lambda fields to the provenance
     mask + pooled, so an inconsistent glm result (which would crash NWB writing)

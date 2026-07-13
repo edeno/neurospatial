@@ -318,16 +318,28 @@ def _fit_mrf_gam_per_unit(
     # Per-unit REML over the informative units. penalty_rank > 0 by the guard, so
     # every returned lambda is a real float (never the None REML-skip).
     for k in np.flatnonzero(informative):
-        lam_k, obj_k, bnd_k = select_penalty(
-            counts[:, k : k + 1],
-            occupancy,
-            B,
-            d,
-            penalty_rank,
-            constant_base=constant_base,
-            max_iter=_MAX_ITER,
-            tol=_FIT_TOL,
-        )
+        # Per-unit REML can raise (no finite objective for this unit alone, e.g. a
+        # unit whose exposed design is rank-deficient) -- unlike pooled, which
+        # pools information across units and may succeed on the same data. Attach
+        # the offending unit so the failure is actionable, the same way the
+        # per-unit warnings name their units.
+        try:
+            lam_k, obj_k, bnd_k = select_penalty(
+                counts[:, k : k + 1],
+                occupancy,
+                B,
+                d,
+                penalty_rank,
+                constant_base=constant_base,
+                max_iter=_MAX_ITER,
+                tol=_FIT_TOL,
+            )
+        except ValueError as exc:
+            raise ValueError(
+                f"MRF-GAM per-unit REML failed for "
+                f"{_format_affected_units([int(k)], unit_ids)}: {exc} Supply a "
+                "fixed penalty or use pooled=True (which pools across units)."
+            ) from exc
         lam_per_unit[k] = lam_k
         reml_obj_per_unit[k] = obj_k
         boundary_per_unit[k] = bool(bnd_k)
@@ -337,16 +349,22 @@ def _fit_mrf_gam_per_unit(
     # optimizer's arbitrary per-unit point), keep reml_objective = nan (sentinel)
     # and inherit that pooled search's boundary flag.
     if zero_spike.any():
-        pooled_lam, _pooled_obj, pooled_bnd = select_penalty(
-            counts[:, informative],
-            occupancy,
-            B,
-            d,
-            penalty_rank,
-            constant_base=constant_base,
-            max_iter=_MAX_ITER,
-            tol=_FIT_TOL,
-        )
+        try:
+            pooled_lam, _pooled_obj, pooled_bnd = select_penalty(
+                counts[:, informative],
+                occupancy,
+                B,
+                d,
+                penalty_rank,
+                constant_base=constant_base,
+                max_iter=_MAX_ITER,
+                tol=_FIT_TOL,
+            )
+        except ValueError as exc:
+            raise ValueError(
+                "MRF-GAM per-unit REML failed for the pooled fallback over the "
+                f"informative units (needed for zero-spike units): {exc}"
+            ) from exc
         lam_per_unit[zero_spike] = pooled_lam
         boundary_per_unit[zero_spike] = bool(pooled_bnd)
 
@@ -376,6 +394,9 @@ def _fit_mrf_gam_per_unit(
     # One aggregate nonconvergence warning naming the affected units (batch-level,
     # not one per unit). Names the caller's ``unit_ids`` when supplied, else the
     # unit-axis indices (the fit itself is unit-agnostic).
+    # These warnings originate one frame deeper than the pooled path (inside this
+    # helper, not fit_mrf_gam), so their stacklevels are the pooled path's + 1 to
+    # resolve to the same public caller frame.
     if not converged:
         failed_ids = np.flatnonzero(~per_unit_converged).tolist()
         warnings.warn(
@@ -384,7 +405,7 @@ def _fit_mrf_gam_per_unit(
             "iteration cap, or out-of-domain data); consider reducing rank or "
             "supplying a fixed penalty.",
             UserWarning,
-            stacklevel=2,
+            stacklevel=3,
         )
 
     # One boundary warning naming the affected units + side(s). A boundary lambda
@@ -396,7 +417,7 @@ def _fit_mrf_gam_per_unit(
         sides = np.where((log_lams - lower) <= (upper - log_lams), "lower", "upper")
         side_desc = "/".join(sorted(set(sides.tolist())))
         _warn_reml_boundary(
-            side_desc, _format_affected_units(at_ids.tolist(), unit_ids), stacklevel=2
+            side_desc, _format_affected_units(at_ids.tolist(), unit_ids), stacklevel=4
         )
 
     return MRFFit(

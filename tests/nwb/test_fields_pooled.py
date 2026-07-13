@@ -23,7 +23,9 @@ from neurospatial.io.nwb._fields import (
 )
 
 
-def _make_per_unit_glm_result(env, *, n_units: int = 3, rank: int = 5, seed: int = 0):
+def _make_per_unit_glm_result(
+    env, *, n_units: int = 3, rank: int = 5, seed: int = 0, unit_table=None
+):
     """A ``pooled=False`` glm result with per-unit vectors (one fallback unit).
 
     Unit ``n_units - 1`` is a zero-spike fallback: ``penalty_selected_by_reml``
@@ -54,11 +56,18 @@ def _make_per_unit_glm_result(env, *, n_units: int = 3, rank: int = 5, seed: int
         reml_at_boundary=boundary,
         penalty_selected_by_reml=selected,
         pooled=False,
+        unit_table=unit_table,
     )
 
 
 def _make_pooled_glm_result(
-    env, *, penalty=0.75, reml_objective=-12.3, reml_at_boundary=False, seed=0
+    env,
+    *,
+    penalty=0.75,
+    reml_objective=-12.3,
+    reml_at_boundary=False,
+    seed=0,
+    unit_table=None,
 ):
     """A ``pooled=True`` glm result (scalar diagnostics)."""
     from neurospatial.encoding.spatial import SpatialRatesResult
@@ -81,6 +90,7 @@ def _make_pooled_glm_result(
         reml_objective=reml_objective,
         reml_at_boundary=reml_at_boundary,
         pooled=True,
+        unit_table=unit_table,
     )
 
 
@@ -222,3 +232,48 @@ def test_pooled_survives_nwb_and_indexing(empty_nwb, sample_environment):
     back = read_place_field(empty_nwb, env=env)
     assert back.pooled is False
     assert back[0].pooled is False
+
+
+def test_pooled_true_write_allows_per_unit_column_name_in_unit_table(
+    empty_nwb, sample_environment
+):
+    """A pooled=True glm write does NOT reserve the per-unit-lambda column names
+    (they are only written for pooled=False), so a unit_table column literally
+    named 'penalty' is accepted -- while a pooled=False write still rejects it."""
+    import pandas as pd
+
+    from neurospatial.io.nwb import write_spatial_rates
+
+    env = sample_environment
+    # pooled=True: 'penalty' unit_table column is fine (no penalty column emitted).
+    ok = _make_pooled_glm_result(env, unit_table=pd.DataFrame({"penalty": [1, 2, 3]}))
+    write_spatial_rates(empty_nwb, ok, name="pooled_ok")
+
+    # pooled=False: 'penalty' IS a written column -> still reserved -> reject.
+    per_unit = _make_per_unit_glm_result(
+        env, n_units=3, rank=5, seed=3, unit_table=pd.DataFrame({"penalty": [1, 2, 3]})
+    )
+    with pytest.raises(ValueError, match="reserved"):
+        write_spatial_rates(empty_nwb, per_unit, name="pooled_false_clash")
+
+
+def test_truncated_per_unit_file_reads_with_clear_error(empty_nwb, sample_environment):
+    """A per_unit=True record missing a per-unit column reads with a schema-aware
+    ValueError naming the table + missing column, not a raw hdmf KeyError."""
+    from neurospatial.io.nwb import read_place_field, write_spatial_rates
+    from neurospatial.io.nwb._fields import (
+        DEFAULT_ANALYSIS_MODULE,
+        DEFAULT_SPATIAL_RATES_NAME,
+    )
+
+    env = sample_environment
+    # Write a pooled=True result (no per-unit columns), then lie in the blob that
+    # it is per_unit -- exactly a truncated / corrupt per-unit record.
+    write_spatial_rates(empty_nwb, _make_pooled_glm_result(env))
+    table = empty_nwb.processing[DEFAULT_ANALYSIS_MODULE][DEFAULT_SPATIAL_RATES_NAME]
+    meta = json.loads(table.description)
+    meta["gam"]["per_unit"] = True
+    table.fields["description"] = json.dumps(meta)
+
+    with pytest.raises(ValueError, match=r"per-unit column"):
+        read_place_field(empty_nwb, env=env)

@@ -208,8 +208,9 @@ class PlaceFieldsResult(ResultMixin):
 
 
 #: Required GAM diagnostics -- non-``None`` for ``method="glm"``, ``None`` for
-#: the ratio methods. ``penalty`` / ``reml_objective`` are excluded because they
-#: are legitimately ``None`` even for glm (fixed penalty, REML-skip, or no data).
+#: the ratio methods. ``penalty`` / ``reml_objective`` / ``reml_at_boundary`` /
+#: ``penalty_selected_by_reml`` are excluded because they are legitimately
+#: ``None`` even for glm (fixed penalty, REML-skip, no data, or ``pooled=True``).
 _GAM_REQUIRED_FIELDS = (
     "coefficients",
     "penalty_weights",
@@ -237,7 +238,7 @@ def _check_gam_result_invariant(
     kind : str
         Class name, for error messages.
     fields : dict
-        The result's ``method``, ``bandwidth``, and the eight GAM fields.
+        The result's ``method``, ``bandwidth``, and the eleven GAM fields.
     n_units : int or None, keyword-only
         Number of units (``firing_rates.shape[0]``) for the plural class, or
         ``None`` for the singular class (whose GAM fields are a per-unit slice).
@@ -433,6 +434,14 @@ def _check_gam_result_invariant(
                 f"{kind} has reml_at_boundary={fields['reml_at_boundary']!r} but "
                 "reml_objective=None; a boundary flag requires REML to have run "
                 "(so reml_objective must be populated)."
+            )
+        # Symmetrically, a REML objective only exists when a lambda was applied, so
+        # a set ``reml_objective`` requires a set ``penalty`` (both come from the
+        # same selection; None together on REML-skip / no-data).
+        if fields["reml_objective"] is not None and fields["penalty"] is None:
+            raise ValueError(
+                f"{kind} has reml_objective={fields['reml_objective']!r} but "
+                "penalty=None; a REML objective requires an applied penalty."
             )
         # The boolean diagnostics must be boolean (a float boundary flag or an
         # integer provenance mask would round-trip wrong through NWB).
@@ -1241,11 +1250,12 @@ class SpatialRatesResult(SpatialResultMixin):
         (``pooled=False``) it is a ``(n_units,)`` vector, ``nan`` for a zero-spike
         fallback unit.
     reml_at_boundary : bool or NDArray or None
-        Whether the selected ``λ`` is **near** a REML search bound (within
-        ``5·xatol`` of it): ``λ`` is weakly identified there (its optimum may lie
-        at or beyond the bound). The fitted field remains finite, but its
-        sensitivity to ``λ`` is not measured -- treat this as a flag to check that
-        sensitivity, not a stability guarantee. Scalar for the shared
+        Whether the selected ``log(λ)`` is **near** a (log-λ) REML search bound
+        (within ``5·xatol`` of it, in log-λ space): ``λ`` is weakly identified
+        there (its optimum may lie at or beyond the bound). The fitted field
+        remains finite, but its sensitivity to ``λ`` is not measured -- treat this
+        as a flag to check that sensitivity, not a stability guarantee. Scalar for
+        the shared
         (``pooled=True``) fit, a ``(n_units,)`` bool vector for the per-unit
         (``pooled=False``) fit, and ``None`` when REML did not run or for ratio
         methods.
@@ -2649,11 +2659,12 @@ default="diffusion_kde"
         ``penalty_selected_by_reml=False`` with ``reml_objective=nan``. A supplied
         fixed ``penalty`` beats ``pooled`` (REML is skipped and one scalar ``λ``
         is recorded); ``pooled`` is likewise a no-op at ``penalty_rank == 0`` (a
-        shared-basis property) or when no unit spikes. A boundary warning (which
-        names the affected ``unit_ids``) means the selected ``λ`` is near a search
-        bound -- ``λ`` itself is weakly identified; the fitted field is finite but
-        its sensitivity to ``λ`` should be checked. Passing ``pooled=False`` with a
-        ratio method raises ``ValueError``.
+        shared-basis property) or when no unit spikes. A boundary warning means
+        the selected ``λ`` is near a search bound -- ``λ`` itself is weakly
+        identified; the fitted field is finite but its sensitivity to ``λ`` should
+        be checked. Under ``pooled=False`` that warning names the affected
+        ``unit_ids``; the shared ``pooled=True`` warning refers to "the pooled
+        fit". Passing ``pooled=False`` with a ratio method raises ``ValueError``.
     speed : ndarray, shape (n_samples,), optional
         Precomputed instantaneous speed at each trajectory sample (physical
         units / second). Only used when ``min_speed`` is set. When
