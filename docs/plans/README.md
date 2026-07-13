@@ -8,6 +8,7 @@ Date labels are the first Git commit date for the original artifact, based on `g
 
 | Plan committed | Area | Plan | Tasks | Notes |
 | --- | --- | --- | --- | --- |
+| 2026-07-12 | Public API curation | [public-api-curation/PLAN.md](public-api-curation/PLAN.md) | [public-api-curation/TASKS.md](public-api-curation/TASKS.md) | Agent-executable, version-agnostic curation with an immediate UX-correction tranche, lightweight structural guards before contract-specific CI, loss-aware Pynapple/NWB interoperability, and population-scale validation for hundreds to low-thousands of neurons. |
 | 2026-05-08 | v0.4 UX cleanup | [v0.4-ux-cleanup/PLAN.md](v0.4-ux-cleanup/PLAN.md) | [v0.4-ux-cleanup/TASKS.md](v0.4-ux-cleanup/TASKS.md) | Repository-wide UX & interface consistency cleanup driven by [`docs/reviews/UX_REVIEW_2026-05-08.md`](../reviews/UX_REVIEW_2026-05-08.md). Eight milestones (M0 onboarding hotfixes → M7 v0.4.0 release). Hard-break release; no deprecation cycle. |
 | 2026-05-07 | Encoding cleanup | [encoding-cleanup/PLAN.md](encoding-cleanup/PLAN.md) | [encoding-cleanup/TASKS.md](encoding-cleanup/TASKS.md) | Post-review cleanup of the encoding refactor. Six milestones (M1 consistency → M6 legacy delegation), targeting ~−1500 LOC net. M0 wins already applied on `encoding-refactor-wip`. |
 | 2025-11-22 | Napari playback | [napari-playback/PLAN.md](napari-playback/PLAN.md) | [napari-playback/TASKS.md](napari-playback/TASKS.md) | Tasks committed 2025-11-03. Playback interface enhancement plan and task breakdown. |
