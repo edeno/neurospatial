@@ -26,7 +26,7 @@
 
 Each task is one commit (Conventional Commits; `fix(<scope>)`), with its regression test, docstring edits and `CHANGELOG.md` line in the same commit. **Proving a test fails before the fix:** write the regression test first and run it against the unmodified code (`uv run pytest <nodeid> -n 0`). Confirm it fails and record the failure (assertion, exception or timeout) in the commit body. Then implement the fix and run the test again to confirm it passes. Do not use `git stash` for this. A guard test that is *expected* to pass before the fix is labelled "guard" in the Validation slice.
 
-0. **Commit the external review.** Add `docs/reviews/REPOSITORY_AND_MATHEMATICAL_REVIEW_2026-10-01.md` as-is (`docs: add 2026-10-01 repository and mathematical review`). `mkdocs.yml:13` excludes `reviews/`, and lychee checks only the built site, so the file's absolute `file:///` links can't break CI. Do not edit it.
+0. **Commit the external review.** *(Done in `38552cae` before Phase 1 started; skip.)* Add `docs/reviews/REPOSITORY_AND_MATHEMATICAL_REVIEW_2026-10-01.md` as-is (`docs: add 2026-10-01 repository and mathematical review`). `mkdocs.yml:13` excludes `reviews/`, and lychee checks only the built site, so the file's absolute `file:///` links can't break CI. Do not edit it.
 
 1. **Run CI on this branch (`ci: run workflows on feat/researcher-first`).** This is the first code commit, so every later commit and PR in this plan gets CI. In each file below, add `- feat/researcher-first` under **both** the `push:` and the `pull_request:` `branches:` lists (each list currently holds only `- main`):
 
