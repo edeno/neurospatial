@@ -2222,7 +2222,8 @@ class SpatialRatesResult(SpatialResultMixin):
         ----------
         unit_ids : sequence of str or int, optional
             Identity labels for the index, one per unit. If ``None``, the
-            result's own :attr:`unit_ids` are used.
+            result's own :attr:`unit_ids` are used. A wrong length or a
+            repeated label raises ``ValueError``.
         include_classification : bool, default True
             Whether to include the ``cell_type`` column with classification
             labels from ``label_cell_types()``.
@@ -2301,12 +2302,16 @@ class SpatialRatesResult(SpatialResultMixin):
         if unit_ids is None:
             index_ids: list[str | int] = list(np.asarray(self.unit_ids))
         else:
+            from neurospatial._results import resolve_unit_ids
+
+            # Validate as an object array so mixed int/str labels are
+            # neither coerced to strings nor merged; keep them as given.
             index_ids = list(unit_ids)
-            if len(index_ids) != n_neurons:
-                raise ValueError(
-                    f"unit_ids has {len(index_ids)} elements but "
-                    f"result contains {n_neurons} units"
-                )
+            resolve_unit_ids(
+                np.asarray(index_ids, dtype=object),
+                n_neurons,
+                context="SpatialRatesResult.summary_table",
+            )
 
         # Compute peak locations
         peaks = self.peak_location()
@@ -3063,12 +3068,12 @@ def compute_spatial_rates(
         - List/tuple of 1D arrays: ``[spikes_0, spikes_1, ...]`` (canonical)
         - 2D array with NaN padding: shape ``(n_neurons, max_spikes)``
         - 1D array (single neuron): wrapped in list automatically
-        - A ``SpikeTrainsLike`` group (e.g. a pynapple-``TsGroup``-like object
-          iterating per-unit trains and carrying an ``.index`` of unit ids)
+        - A pynapple ``TsGroup`` (or a group exposing an ``.index`` of unit
+          labels): its index becomes the result's ``unit_ids``
 
-        All formats are coerced to per-neuron spike trains via ``as_spike_trains()``.
-        When a group carries unit ids and ``unit_ids`` is not passed, those ids
-        are threaded into the result's ``unit_ids``.
+        All formats are coerced to per-neuron spike trains via
+        ``as_spike_trains_with_ids()``. A ``unit_ids`` passed with a labelled
+        group must equal the group's index.
     times : ndarray, shape (n_samples,), or PositionLike
         Timestamps of trajectory samples in seconds. May instead be a single
         ``PositionLike`` object (exposing ``.t`` and ``.values``, e.g. a
@@ -3211,8 +3216,11 @@ default="diffusion_kde"
         Per-unit identity labels (integers or strings), one per neuron in
         the same order as ``spike_times``. Stored on the result's
         ``unit_ids`` field and stamped onto each child's ``unit_id`` when
-        indexing/iterating. Defaults to ``np.arange(n_neurons)``. A
-        wrong-length value raises ``ValueError``.
+        indexing/iterating. Defaults to the labels of a labelled
+        ``spike_times`` group, else ``np.arange(n_neurons)``. With a labelled
+        group, a ``unit_ids`` that differs from the group's index raises
+        ``ValueError`` (relabel the group itself instead). A wrong-length
+        value or a repeated label raises ``ValueError``.
 
     Returns
     -------
@@ -3408,14 +3416,15 @@ default="diffusion_kde"
     spike_times_list, extracted_unit_ids = as_spike_trains_with_ids(spike_times)
     n_neurons = len(spike_times_list)
 
-    # Resolve and validate per-unit identity labels (defaults to arange). An
-    # explicit `unit_ids=` always wins; otherwise the ids extracted from the
-    # spikes object are threaded through so identity is not silently dropped.
+    # Resolve and validate per-unit identity labels (defaults to arange). A
+    # labelled input keeps its own labels; a differing unit_ids= raises.
     from neurospatial._results import resolve_unit_ids
 
-    effective_unit_ids = unit_ids if unit_ids is not None else extracted_unit_ids
     resolved_unit_ids = resolve_unit_ids(
-        effective_unit_ids, n_neurons, context="compute_spatial_rates"
+        unit_ids,
+        n_neurons,
+        context="compute_spatial_rates",
+        input_ids=extracted_unit_ids,
     )
 
     # Boundary adapter: accept EITHER a PositionLike (e.g. a pynapple

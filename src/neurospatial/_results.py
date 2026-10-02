@@ -35,6 +35,7 @@ without forcing a single tabular shape onto every result.
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
@@ -51,22 +52,27 @@ def resolve_unit_ids(
     n_units: int,
     *,
     context: str = "",
+    input_ids: NDArray[Any] | Sequence[Any] | None = None,
 ) -> NDArray[Any]:
     """Resolve and validate per-unit identity labels.
 
-    Returns an ``ndarray`` of unit identity labels, defaulting to
-    ``np.arange(n_units)`` when ``unit_ids`` is ``None``. When labels are
-    provided, validates that exactly one label is supplied per unit.
+    Returns an ``ndarray`` of unit identity labels: ``unit_ids`` when given,
+    else the labels the spike input carries (``input_ids``), else
+    ``np.arange(n_units)``. Validates that there is exactly one label per unit
+    and that no label repeats.
 
     Parameters
     ----------
     unit_ids : ndarray or sequence or None
-        Per-unit identity labels. May be integers or strings. When ``None``,
-        defaults to ``np.arange(n_units)``.
+        Caller-supplied per-unit identity labels. May be integers or strings.
     n_units : int
         Number of units the labels must describe.
     context : str, optional
-        Caller name included in the error message on a length mismatch.
+        Caller name included in error messages.
+    input_ids : ndarray or sequence or None, optional
+        Labels carried by the spike input itself (for example a pynapple
+        ``TsGroup`` index). A labelled input names its own units, so when both
+        ``unit_ids`` and ``input_ids`` are given they must be identical.
 
     Returns
     -------
@@ -76,15 +82,30 @@ def resolve_unit_ids(
     Raises
     ------
     ValueError
-        If ``unit_ids`` is provided and is not 1-D, or if its length does not
-        equal ``n_units``.
+        If ``unit_ids`` and ``input_ids`` are both given and differ (in length,
+        order or type), if the resolved labels are not 1-D, if their length
+        does not equal ``n_units``, or if any label repeats.
     """
+    if unit_ids is not None and input_ids is not None:
+        given, carried = np.asarray(unit_ids), np.asarray(input_ids)
+        if given.shape != carried.shape or not np.array_equal(given, carried):
+            raise ValueError(
+                f"{context or 'This call'} got unit_ids={given.tolist()}, but the "
+                f"spike input is already labelled {carried.tolist()}.\n"
+                "Why: a labelled input names its own units; a different unit_ids "
+                "would attach another unit's label to each spike train.\n"
+                "Fix: drop unit_ids= to keep the input's labels, or relabel the "
+                "input itself before the call (pynapple: build the TsGroup with "
+                "the labels you want)."
+            )
+    from_input = unit_ids is None and input_ids is not None
+    unit_ids = unit_ids if unit_ids is not None else input_ids
     if unit_ids is None:
         return np.arange(n_units)
 
     resolved = np.asarray(unit_ids)
+    where = f" in {context}" if context else ""
     if resolved.ndim != 1:
-        where = f" in {context}" if context else ""
         raise ValueError(
             f"unit_ids must be 1-D{where}: got shape {resolved.shape}.\n"
             "  WHY: unit_ids labels one identity per unit (row).\n"
@@ -92,13 +113,29 @@ def resolve_unit_ids(
             "to default to np.arange(n_units)."
         )
     if resolved.shape[0] != n_units:
-        where = f" in {context}" if context else ""
         raise ValueError(
             f"unit_ids length mismatch{where}: got {resolved.shape[0]} "
             f"label(s) but there are {n_units} unit(s).\n"
             "  WHY: each unit must have exactly one identity label.\n"
             "  HOW: pass unit_ids with one entry per unit, or omit it to "
             "default to np.arange(n_units)."
+        )
+    # Count with a hash-based Counter: np.unique cannot sort a mixed int/str
+    # object array.
+    duplicated = [
+        label for label, count in Counter(resolved.tolist()).items() if count > 1
+    ]
+    if duplicated:
+        fix = (
+            "Fix: pass each unit once in the spike input (pynapple: check group.index)."
+            if from_input
+            else "Fix: pass one distinct label per unit, or omit unit_ids= to "
+            "number the units 0..n-1."
+        )
+        raise ValueError(
+            f"unit_ids must be unique{where}: label(s) {duplicated} are repeated.\n"
+            "Why: results index units by label, so a repeated label would name two "
+            f"spike trains.\n{fix}"
         )
     return resolved
 

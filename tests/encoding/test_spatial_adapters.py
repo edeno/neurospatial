@@ -192,16 +192,6 @@ def test_compute_spatial_rates_mapping_group_matches_arrays(
     np.testing.assert_array_equal(from_arrays.firing_rates, from_group.firing_rates)
 
 
-def test_compute_spatial_rates_explicit_unit_ids_win_over_group(session) -> None:
-    env, times, positions, spikes = session
-    group = _FakeTsGroup(spikes, index=np.array([11, 22, 33]))
-
-    result = compute_spatial_rates(
-        env, group, times, positions, bandwidth=5.0, unit_ids=np.array([1, 2, 3])
-    )
-    np.testing.assert_array_equal(result.unit_ids, np.array([1, 2, 3]))
-
-
 def test_compute_spatial_rates_array_default_ids_unchanged(session) -> None:
     env, times, positions, spikes = session
     result = compute_spatial_rates(env, spikes, times, positions, bandwidth=5.0)

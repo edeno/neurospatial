@@ -1004,7 +1004,8 @@ class ViewRatesResult(SpatialResultMixin):
         Raises
         ------
         ValueError
-            If unit_ids has a different length than the number of units.
+            If unit_ids has a different length than the number of units, or
+            repeats a label.
 
         Notes
         -----
@@ -1058,12 +1059,16 @@ class ViewRatesResult(SpatialResultMixin):
         if unit_ids is None:
             index_ids: list[str | int] = list(np.asarray(self.unit_ids))
         else:
+            from neurospatial._results import resolve_unit_ids
+
+            # Validate as an object array so mixed int/str labels are
+            # neither coerced to strings nor merged; keep them as given.
             index_ids = list(unit_ids)
-            if len(index_ids) != n_neurons:
-                raise ValueError(
-                    f"unit_ids has {len(index_ids)} elements but "
-                    f"result contains {n_neurons} units"
-                )
+            resolve_unit_ids(
+                np.asarray(index_ids, dtype=object),
+                n_neurons,
+                context="ViewRatesResult.summary_table",
+            )
 
         # Compute all metrics
         peak_locs = self.peak_locations()
@@ -1399,14 +1404,17 @@ def compute_view_rates(
     env : Environment
         The spatial environment defining the bin structure. Must be fitted
         (e.g., created via ``Environment.from_samples()``).
-    spike_times : sequence of arrays or 2D array
+    spike_times : sequence of arrays, 2D array, or pynapple TsGroup
         Spike times for each neuron. Accepted formats:
 
         - List/tuple of 1D arrays: ``[spikes_0, spikes_1, ...]`` (canonical)
         - 2D array with NaN padding: shape ``(n_neurons, max_spikes)``
         - 1D array (single neuron): wrapped in list automatically
+        - A pynapple ``TsGroup`` (or a group exposing an ``.index`` of unit
+          labels): its index becomes the result's ``unit_ids``
 
-        All formats are coerced to per-neuron spike trains via ``as_spike_trains()``.
+        All formats are coerced to per-neuron spike trains via
+        ``as_spike_trains_with_ids()``.
     times : ndarray, shape (n_samples,)
         Timestamps of trajectory samples in seconds.
     positions : ndarray, shape (n_samples, 2)
@@ -1457,8 +1465,11 @@ def compute_view_rates(
         Per-unit identity labels (integers or strings), one per neuron in
         the same order as ``spike_times``. Stored on the result's
         ``unit_ids`` field and stamped onto each child's ``unit_id`` when
-        indexing/iterating. Defaults to ``np.arange(n_neurons)``. A
-        wrong-length value raises ``ValueError``.
+        indexing/iterating. Defaults to the labels of a labelled
+        ``spike_times`` group, else ``np.arange(n_neurons)``. With a labelled
+        group, a ``unit_ids`` that differs from the group's index raises
+        ``ValueError`` (relabel the group itself instead). A wrong-length
+        value or a repeated label raises ``ValueError``.
 
     Returns
     -------
@@ -1585,7 +1596,7 @@ def compute_view_rates(
         _validate_smoothing_parameters,
         smooth_rate_maps_batch,
     )
-    from neurospatial.encoding._spikes import as_spike_trains
+    from neurospatial.encoding._spikes import as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
         validate_env_fitted,
         validate_spike_times,
@@ -1616,15 +1627,20 @@ def compute_view_rates(
             f"Must be one of {sorted(valid_gaze_models)}"
         )
 
-    # Normalize spike times to canonical list-of-arrays format
-    spike_times_list = as_spike_trains(spike_times)
+    # Normalize spike times to canonical list-of-arrays format, surfacing the
+    # unit labels a spike group (e.g. a pynapple TsGroup) carries.
+    spike_times_list, extracted_unit_ids = as_spike_trains_with_ids(spike_times)
     n_neurons = len(spike_times_list)
 
-    # Resolve and validate per-unit identity labels (defaults to arange).
+    # Resolve and validate per-unit identity labels (defaults to arange). A
+    # labelled input keeps its own labels; a differing unit_ids= raises.
     from neurospatial._results import resolve_unit_ids
 
     resolved_unit_ids = resolve_unit_ids(
-        unit_ids, n_neurons, context="compute_view_rates"
+        unit_ids,
+        n_neurons,
+        context="compute_view_rates",
+        input_ids=extracted_unit_ids,
     )
 
     # Convert inputs to arrays

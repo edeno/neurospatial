@@ -39,6 +39,23 @@
   labels. Otherwise trains are still paired by position, and a unit-count
   mismatch now raises a `ValueError` that says so (previously a Poisson
   likelihood shape error). A predict input that repeats a label raises.
+- `compute_directional_rates`, `compute_view_rates` and
+  `compute_egocentric_rates` mis-read a pynapple `TsGroup` (it was coerced as
+  one train, giving one unit labelled `0`). They now accept it like
+  `compute_spatial_rates`: one rate map per unit, with the group's index as
+  `unit_ids`.
+- **Behavior change:** passing `unit_ids=` together with a labelled `TsGroup`
+  silently replaced the group's labels, so in `compute_spatial_rates` a group
+  keyed `[10, 20]` with `unit_ids=[20, 10]` attached unit 10's spikes to label
+  20. All four population encoders now raise `ValueError` listing both label
+  sets unless `unit_ids` equals the group's index.
+- **Behavior change:** repeated `unit_ids` were accepted (for example
+  `compute_spatial_rates(..., unit_ids=[5, 5])`). Every place that takes
+  `unit_ids` now raises `ValueError` naming the repeated labels: the population
+  encoders, `population_peri_event_histogram`, the `BayesianDecoder`
+  constructor and `fit` (fitted labels) and `predict` input labels, and
+  population result constructors (including `summary_table(unit_ids=)`
+  relabelling). `SpikeTrains` already rejected them.
 
 ### Added — `method="glm"`: penalized-Poisson GAM estimator (spatial only)
 

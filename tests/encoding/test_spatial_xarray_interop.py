@@ -114,37 +114,33 @@ def test_spatial_rates_attrs(rates_result):
 
 
 def test_spatial_rates_duplicate_unit_ids_raise(rates_result):
-    """Duplicate unit_ids -> ValueError naming the offending labels."""
-    pytest.importorskip("xarray")
-
+    """Duplicate unit_ids are rejected when the result is built, so no result
+    can reach to_xarray with an ambiguous label."""
     rates = np.asarray(rates_result.firing_rates)
-    dup = SpatialRatesResult(
-        firing_rates=rates,
-        occupancy=rates_result.occupancy,
-        env=rates_result.env,
-        method="binned",
-        bandwidth=5.0,
-        unit_ids=np.array([7, 7, 9]),
-    )
-    with pytest.raises(ValueError, match="duplicated"):
-        dup.to_xarray()
+    with pytest.raises(ValueError, match=r"unique.*\[7\]"):
+        SpatialRatesResult(
+            firing_rates=rates,
+            occupancy=rates_result.occupancy,
+            env=rates_result.env,
+            method="binned",
+            bandwidth=5.0,
+            unit_ids=np.array([7, 7, 9]),
+        )
 
 
 def test_spatial_rates_mixed_type_duplicate_unit_ids_raise_value_error(rates_result):
-    """Mixed string/int unit_ids get the friendly duplicate-label error."""
-    pytest.importorskip("xarray")
-
+    """Mixed string/int unit_ids get the duplicate-label ValueError, not a
+    TypeError from sorting."""
     rates = np.asarray(rates_result.firing_rates)
-    dup = SpatialRatesResult(
-        firing_rates=rates,
-        occupancy=rates_result.occupancy,
-        env=rates_result.env,
-        method="binned",
-        bandwidth=5.0,
-        unit_ids=np.asarray([1, "a", 1], dtype=object),
-    )
-    with pytest.raises(ValueError, match=r"duplicated.*1"):
-        dup.to_xarray()
+    with pytest.raises(ValueError, match=r"unique.*\[1\]"):
+        SpatialRatesResult(
+            firing_rates=rates,
+            occupancy=rates_result.occupancy,
+            env=rates_result.env,
+            method="binned",
+            bandwidth=5.0,
+            unit_ids=np.asarray([1, "a", 1], dtype=object),
+        )
 
 
 def test_spatial_rates_string_unit_ids_select_by_label(rates_result):
@@ -334,3 +330,15 @@ def test_spatial_rates_to_xarray_without_xarray_raises(rates_result, monkeypatch
 
     with pytest.raises(ImportError, match="neurospatial\\[xarray\\]"):
         rates_result.to_xarray()
+
+
+def test_build_population_dataset_rejects_duplicate_unit_ids():
+    """The shared Dataset builder keeps its own guard for callers that bypass
+    the result constructors."""
+    pytest.importorskip("xarray")
+    from neurospatial._results import build_population_dataset
+
+    with pytest.raises(ValueError, match=r"duplicated.*1"):
+        build_population_dataset(
+            np.zeros((3, 4)), np.asarray([1, "a", 1], dtype=object)
+        )

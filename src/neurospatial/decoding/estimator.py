@@ -242,12 +242,12 @@ warn_on_drop
                     f"is {self.env.n_bins}; the encoding model's bin axis must "
                     f"match the environment it decodes over."
                 )
-            if models.shape[0] != len(self.unit_ids):
-                raise ValueError(
-                    f"encoding_models has {models.shape[0]} units but unit_ids "
-                    f"has length {len(self.unit_ids)}; there must be exactly one "
-                    f"unit_id per encoding model."
-                )
+            # One distinct label per encoding model: label pairing in predict
+            # relies on it. Runs for constructor labels and, via replace, for
+            # the labels fit captures.
+            from neurospatial._results import resolve_unit_ids
+
+            resolve_unit_ids(self.unit_ids, models.shape[0], context="BayesianDecoder")
 
     @property
     def is_fitted(self) -> bool:
@@ -421,28 +421,25 @@ warn_on_drop
         )
 
     def _align_to_fitted_units(
-        self, spike_times: SpikeTrainsLike
+        self, spike_times: SpikeTrainsLike, caller: str
     ) -> list[NDArray[np.float64]]:
         """Pair each spike train with its encoding model.
 
         By label when both ``fit`` and this input carried caller-supplied labels;
         otherwise by position, which requires one train per fitted unit.
         """
-        from collections import Counter
-
+        from neurospatial._results import resolve_unit_ids
         from neurospatial.encoding import as_spike_trains_with_ids
 
         trains, input_ids = as_spike_trains_with_ids(spike_times)
         n_models = self._check_fitted().shape[0]
         if input_ids is not None:
-            labels = np.asarray(input_ids).tolist()
-            duplicated = [u for u, count in Counter(labels).items() if count > 1]
-            if duplicated:
-                raise ValueError(
-                    f"The spike input repeats unit labels {duplicated}, so a label "
-                    "cannot name one spike train.\n"
-                    "Fix: pass each unit once (pynapple: check group.index)."
-                )
+            labels = resolve_unit_ids(
+                None,
+                len(trains),
+                input_ids=input_ids,
+                context=f"BayesianDecoder.{caller}",
+            ).tolist()
             if self.unit_ids is not None and not self._unit_ids_generated:
                 fitted = np.asarray(self.unit_ids).tolist()
                 row = {u: i for i, u in enumerate(labels)}
@@ -514,7 +511,7 @@ warn_on_drop
         encoding_models = self._check_fitted()
         return decode_session(
             self.env,
-            self._align_to_fitted_units(spike_times),
+            self._align_to_fitted_units(spike_times, "predict"),
             times,
             positions=None,
             dt=self.dt,
@@ -572,7 +569,7 @@ warn_on_drop
         encoding_models = self._check_fitted()
         return decode_session_summary(
             self.env,
-            self._align_to_fitted_units(spike_times),
+            self._align_to_fitted_units(spike_times, "predict_summary"),
             times,
             positions=None,
             dt=self.dt,

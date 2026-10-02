@@ -718,6 +718,27 @@ class TestUnitAlignment:
         with pytest.raises(ValueError, match=r"\[10\]"):
             decoder.predict(make_spike_group(spikes, ids), times)
 
+    def test_duplicate_fitted_labels_raise(self, sim, make_spike_group) -> None:
+        env, spikes, times, positions = sim
+        fitted = BayesianDecoder(env, dt=0.5).fit(spikes[:2], times, positions)
+        with pytest.raises(ValueError, match=r"unique.*\[10\]"):
+            BayesianDecoder(
+                env, dt=0.5, encoding_models=fitted.encoding_models, unit_ids=[10, 10]
+            )
+        with pytest.raises(ValueError, match=r"unique.*\[10\]"):
+            BayesianDecoder(env, dt=0.5).fit(
+                make_spike_group(spikes[:3], [10, 10, 12]), times, positions
+            )
+
+    def test_duplicate_input_error_names_the_method(
+        self, labelled_fit, make_spike_group
+    ) -> None:
+        decoder, spikes, times = labelled_fit
+        ids = _FIT_IDS.copy()
+        ids[1] = 10
+        with pytest.raises(ValueError, match=r"BayesianDecoder\.predict_summary"):
+            decoder.predict_summary(make_spike_group(spikes, ids), times)
+
     def test_predict_plain_arrays_stay_positional(self, sim) -> None:
         env, spikes, times, positions = sim
         decoder = BayesianDecoder(env, dt=0.5).fit(spikes, times, positions)
