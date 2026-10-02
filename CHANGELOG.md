@@ -79,6 +79,14 @@
   environment schema is now 1.1: it stores the exact bin sizes and graph grid
   edges, and writes each edge so its vector round-trips. Schema 1.0 files
   still read, with estimated bin sizes.
+- **Behavior change:** `DecodingResult` kept a reference to the caller's
+  posterior and cached `map_estimate` and the other derived properties, so
+  editing that array in place (or reassigning `result.posterior`) left the
+  cached values stale (for example a MAP of bin 0 while `posterior.argmax`
+  was bin 1). `DecodingResult` is now frozen, and its constructor stores
+  read-only copies of `posterior` and `times`. Use
+  `dataclasses.replace(result, posterior=new)` for a modified result.
+  `decode_position` hands over its freshly computed posterior without a copy.
 
 ### Added — `method="glm"`: penalized-Poisson GAM estimator (spatial only)
 

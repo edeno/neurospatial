@@ -744,8 +744,9 @@ def decode_position(
                 f"centers, one per row of spike_counts."
             )
 
-    # Return DecodingResult
-    return DecodingResult(posterior=posterior, env=env, times=times)
+    # The posterior was allocated above and nothing else references it, so the
+    # result takes it without a copy.
+    return DecodingResult._from_owned_posterior(posterior, env=env, times=times)
 
 
 def _validate_prior_shape(
