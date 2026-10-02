@@ -23,6 +23,7 @@ For agent invocation, **load only the slice you need**:
   - [phase-3b-time-windows-decoding-events.md](phase-3b-time-windows-decoding-events.md) — per-run decode time bins and event filtering by `epochs` and `spike_window` (requires 3a).
   - [phase-3c-time-windows-behavior.md](phase-3c-time-windows-behavior.md) — behavior and segmentation never span an invalid interval (requires 3a).
   - [phase-4-errors-docs.md](phase-4-errors-docs.md) — errors that teach, complete docstrings for the flagship functions, and examples executed in CI.
+  - **Checkpoint:** a researcher-workflow review must pass before Phase 5 starts ([overview → Rollout Strategy](overview.md#rollout-strategy)).
   - [phase-5-classification-ovc.md](phase-5-classification-ovc.md) — document the threshold classifiers' bias, add opt-in shuffle significance, and add an allocentric object-vector mode.
   - [phase-6-api-surface.md](phase-6-api-surface.md) — curated namespaces, one API snapshot test, consistent argument conventions, and a simulation-to-analysis path.
   - [phase-7-output-polish.md](phase-7-output-polish.md) — population summaries, `summary_table` parity between single and batch results, and `overwrite=False` for animation export.

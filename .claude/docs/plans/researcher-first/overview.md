@@ -85,6 +85,8 @@ These are on `main`, which is the base of this branch:
 - **Executable examples:** a CI test executes the README quick example, `docs/getting-started/quickstart.md`, CLAUDE.md patterns 1–9 (or their successors) and the flagship docstring examples, and all of them pass.
 - **Audit bugs:** every bug in the audit list has a regression test that fails on `main` and passes after the fix (phase validation slices).
 - **Gap correctness:** on a synthetic two-epoch recording with a 1000 s pause and a true rate of 5 Hz, every rate family reports 5 Hz ± 5%, and the decoder creates no time bins inside the pause (Phase 3).
+- **Researcher workflow (checkpoint after Phase 4):** each of the five journeys completes from public documentation alone, without reading source code.
+- **Expectation, not a target:** the public surface stays large (Phase 6 cuts about 427 exports to 418). The gains are coherence, discoverability and correct defaults, not a much smaller API. The analytical modules remain substantial.
 - **Lines of governance:** 0 lines of inventory or count-freeze tests; the API snapshot is one test file plus one text snapshot.
 
 ## Risks and Mitigations
@@ -108,6 +110,17 @@ There are nine PRs into `feat/researcher-first` (phases 1, 2, 3a, 3b, 3c, 4, 5, 
 - Phase 6 must follow Phase 4, because it relies on the executable-docs guard.
 
 No feature flags are used.
+
+**Researcher-workflow checkpoint after Phase 4** (before Phases 5–7 start). Executable examples prove that calls work; this checkpoint tests whether the design actually reduces researcher effort.
+- On the branch, re-run the `ux-review` and `design-review` workflows (`.claude/workflows/`). Use their journeys, working only from the public documentation:
+  1. load an NWB file or simulate a session;
+  2. select epochs;
+  3. compute rate maps for a population;
+  4. decode;
+  5. produce a summary table and a plot.
+- Compare against the October 2026 baseline: the UX review rated the experience CONFUSING, and all five design-review journeys were "painful".
+- Record each journey's call count and lines of code, and every place the agent had to read source code.
+- Findings become tasks in Phases 5–7, or a new phase, before those phases start. If the journeys are not clearly easier, stop and revisit the design before continuing.
 
 ## Open Questions
 

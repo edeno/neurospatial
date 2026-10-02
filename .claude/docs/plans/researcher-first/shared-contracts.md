@@ -92,6 +92,7 @@ The runs come from the gap, `epochs` and `spike_window` rules only, not from spe
 Every exception a user can trigger satisfies all of these:
 
 1. **The message names what, why and how.** `str(exc)` states what was wrong (with the offending value or shape), why it matters, and a concrete fix as a line beginning `Fix:` that shows the corrected call or argument. The model is `[E1006]` in `src/neurospatial/environment/core.py` (on `main`).
+   - **Exception for missing required arguments.** Python's own `TypeError` ("f() missing 1 required keyword-only argument: 'criterion'") is left as it is. It names the argument exactly, and type checkers and IDEs report it before the code runs. Required arguments are ordinary required parameters, never sentinels or `=None` defaults that raise.
    - **Exception for `KeyError` subclasses.** Python quotes `str(KeyError)` and escapes its newlines. So a `KeyError` subclass overrides `__str__` itself, and a bare `KeyError` carries its fix in the final sentence rather than on a separate `Fix:` line.
 2. **Errors use public types.**
    - `src/neurospatial/_exceptions.py` gains `class NeurospatialError(Exception)`, the base for all library-defined exceptions.

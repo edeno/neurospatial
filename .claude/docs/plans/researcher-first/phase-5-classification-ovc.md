@@ -293,7 +293,7 @@ All four free functions return `False` on any `ValueError`/`RuntimeError`, which
 
 ```text
 # Free predicates: raw arrays, one unit, both criteria
-is_place_cell(env, spike_times, times, positions, *, criterion=<required>, min_info=None,
+is_place_cell(env, spike_times, times, positions, *, criterion, min_info=None,
               alpha=None, n_shuffles=None, min_shift=None, rng=None, unit_id=None, <compute keywords>)
 is_head_direction_cell(spike_times, times, headings, *, criterion="threshold", min_mvl=None,
               alpha=0.05, n_shuffles=None, min_shift=None, rng=None, unit_id=None, <compute keywords>)
@@ -307,7 +307,7 @@ has_place_field(env, spike_times, times, positions, *, threshold=0.2, min_size=N
               max_mean_rate=10.0, detect_subfields=True, <compute keywords>)
 
 # Result methods and batch classify: threshold criteria only
-SpatialRateResult.is_place_cell(*, criterion=<required>, min_info=None)  # "spatial_info" only
+SpatialRateResult.is_place_cell(*, criterion, min_info=None)  # required; "spatial_info" only
 SpatialRateResult.has_place_field(*, threshold=0.2, min_size=None, max_mean_rate=10.0, detect_subfields=True)
 DirectionalRateResult.is_head_direction_cell(*, min_mvl=None, alpha=0.05)
 ObjectVectorRateResult.is_object_vector_cell(*, min_info=None)
@@ -317,31 +317,12 @@ SpatialRatesResult.label_cell_types(*, min_spatial_info=None, min_grid_score=Non
 ```
 
 - **`has_place_field`** is `main`'s `is_place_cell`, renamed in place: the same detector, keywords, defaults and Phase 3a time-window keywords. Its docstring summary says it detects a field and is **not** a cell-type verdict, and gives the measured false-positive rate (5.7). The method is renamed the same way (`spatial.py:1114`). `SpatialRatesResult.classify`'s `.. note::` (`:2156-2162`) now points to `has_place_field` for field detection. Its free form loses `main`'s `try/except → False`, as every predicate does (below).
-- **`is_place_cell` requires `criterion`.** A bare required keyword would make Python raise its own `TypeError`, which has no `Fix:` line. So the default is a sentinel whose repr states the requirement. This differs from the `=None` that Phase 4 (4.4) rejects, because the signature itself shows the argument is required:
+- **`is_place_cell` requires `criterion` as an ordinary required keyword-only argument**: `def is_place_cell(env, spike_times, times, positions, *, criterion: Literal["spatial_info", "shuffle"], ...)`. There is no sentinel and no default. A plain required keyword is what IDEs, type checkers and `help()` already understand: mypy and pyright flag a missing `criterion` before the code runs, and the signature reads `criterion` with no default. Calling without it gives Python's own message, `is_place_cell() missing 1 required keyword-only argument: 'criterion'`. That names the argument exactly, and the [error contract](shared-contracts.md#error-message-contract) exempts missing-argument `TypeError`s. The docstring's summary paragraph carries the guidance a custom message would have:
 
-  ```python
-  class _Required:
-      """Default for a keyword the caller must pass; its repr says so in help() and signatures."""
+  > `criterion` has no default because there is no default verdict. Use `"shuffle"` when the verdict must control false positives (slow), or `"spatial_info"` for a fast screen (biased upward at low spike counts). To ask whether the map has a field, use `has_place_field()`. Field detection flags spatially untuned 0.5 Hz Poisson units 20/20, so it is not a cell-type verdict.
 
-      __slots__ = ("choices",)
-
-      def __init__(self, choices: str) -> None:
-          self.choices = choices
-
-      def __repr__(self) -> str:
-          return f"<required: {self.choices}>"
-
-
-  _PLACE_CRITERION = _Required("'spatial_info' or 'shuffle'")
-  ```
-
-  `inspect.signature(is_place_cell)` then reads `criterion=<required: 'spatial_info' or 'shuffle'>`. That contains no memory address, so the API snapshot is stable (probe). When `criterion is _PLACE_CRITERION`, raise:
-
-  > TypeError: is_place_cell() needs criterion='spatial_info' or criterion='shuffle'.
-  > Why: there is no default verdict. Field detection flags spatially untuned 0.5 Hz Poisson units 20/20, so it lives in has_place_field(); spatial information against a fixed cutoff is fast but biased upward at low spike counts; the shuffle test controls false positives but is slow.
-  > Fix: is_place_cell(env, spike_times, times, positions, criterion='shuffle'), or criterion='spatial_info' for a fast screen, or has_place_field(...) to ask whether the map has a field.
-
-  The method raises the same `TypeError`, with its `Fix:` showing `result.is_place_cell(criterion='spatial_info')`. The method accepts only `"spatial_info"`. For `criterion="shuffle"` it raises `ValueError`: "a result does not keep the spike times it was computed from, so it cannot run a shuffle test. Fix: `is_place_cell(env, spike_times, times, positions, criterion='shuffle')` or `place_cell_significance(...)`."
+  An invalid value such as `criterion="threshold"` raises `ValueError`, following the error contract, listing both valid values and naming `has_place_field`.
+  The method has the same required keyword (`criterion: Literal["spatial_info"]`) and accepts only `"spatial_info"`. For `criterion="shuffle"` it raises `ValueError`: "a result does not keep the spike times it was computed from, so it cannot run a shuffle test. Fix: `is_place_cell(env, spike_times, times, positions, criterion='shuffle')` or `place_cell_significance(...)`."
 - **Agreement.** Each free predicate in threshold mode equals `compute_*_rate(...).<method>(...)`, and each method equals `classify()[i]` for every family. That now includes place (`criterion="spatial_info"` against `classify()`), because field detection is no longer an `is_place_cell` criterion.
 - **Keywords belong to one mode, and a keyword for the other mode raises** (free predicates only; the methods have no shuffle mode). Silently ignoring an argument would contradict the plan's guiding principle, so `None` means "not passed" and is resolved inside the function:
 
@@ -494,7 +475,7 @@ Delete the "How was 0.3 chosen? … (Hoydal et al., 2019)" justification at `ego
 | `…::test_free_and_population_shuffles_agree` | For each family, 3 units with `unit_ids=[10, 20, 30]`, `n_shuffles=50`, `rng=0`: `is_*_cell(train_i, criterion="shuffle", unit_id=ids[i], n_shuffles=50, rng=0) == (sig[ids[i]].p_value < 0.05)`, and the p-values are equal (`assert_array_equal`). The test also asserts `min \|null − observed\| > 1e-12`, so a 1e-15 batch-vs-single statistic difference (measured) cannot flip a tie unnoticed. Reordering the population to `[30, 10, 20]` leaves every unit's p-value unchanged. Probe on `main` (spatial, binned): p `[0.6078, 0.2745, 0.0588]` alone, in the population and reordered; margin `1.1e-3` |
 | `…::test_threshold_free_method_classify_agree` | `criterion="threshold"` (`"spatial_info"` for place): for every family and unit, the free predicate equals the method on `compute_*_rate(...)`, and the method equals `classify()[i]`. Place is no longer excluded |
 | `…::test_has_place_field_flags_noise` (guard) | 2-min noise fixture plus the allocentric field cell (seeds fixed): `has_place_field()` (free and method) equals golden values recorded from `main`'s `is_place_cell()` before the rename (noise: 20/20 `True`, as in Evidence; field cell: record its value). The behavior is unchanged; only the name is |
-| `…::test_is_place_cell_requires_criterion` | The free function and the method without `criterion` each raise `TypeError` whose message contains `'spatial_info'`, `'shuffle'`, `has_place_field` and a line starting `Fix:`. `str(inspect.signature(is_place_cell))` contains `criterion=<required: 'spatial_info' or 'shuffle'>`. `criterion="threshold"` raises `ValueError` listing both valid values |
+| `…::test_is_place_cell_requires_criterion` | The free function and the method without `criterion` each raise `TypeError` mentioning `'criterion'`. `inspect.signature(is_place_cell).parameters['criterion']` is `KEYWORD_ONLY` with `default is inspect.Parameter.empty`. `criterion="threshold"` raises `ValueError` listing `'spatial_info'` and `'shuffle'` and naming `has_place_field` |
 | `…::test_is_place_cell_spatial_info` | On the 2-min noise fixture: `[is_place_cell(env, tr, t, p, criterion="spatial_info") for tr in noise]` equals `compute_spatial_rates(env, noise, t, p).classify()` elementwise (Evidence: 15/20 at 2 min; record the observed count), and `rates[i].is_place_cell(criterion="spatial_info") == classify()[i]` |
 | `…::test_is_place_cell_shuffle_rejects_noise` | 5 of the 2-min noise units, `criterion="shuffle", n_shuffles=50, rng=0`: at most 2 of 5 flagged (under the null each unit is flagged with probability 2/51 ≈ 0.04, so P(≥ 3 of 5) < 0.001), while `has_place_field` flags 5/5. Not `slow`, so CI runs it |
 | `…::test_methods_have_no_shuffle` | `rates[0].is_place_cell(criterion="shuffle")` raises `ValueError` whose `Fix:` names `is_place_cell(env, spike_times, times, positions, criterion='shuffle')`. `rates.classify(criterion="shuffle")` raises `TypeError`, since there is no such keyword. No result class has a `shuffle_test` attribute |
