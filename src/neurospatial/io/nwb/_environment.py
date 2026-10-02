@@ -829,7 +829,7 @@ class _ReconstructedLayout:
             return np.ones(len(self.bin_centers))
 
         # Estimate from median nearest neighbor distance
-        _, distances = self._kdtree.query(self.bin_centers, k=KDTREE_NEIGHBORS)
+        distances, _ = self._kdtree.query(self.bin_centers, k=KDTREE_NEIGHBORS)
         median_spacing = float(np.median(distances[:, 1]))
         return np.full(
             len(self.bin_centers), median_spacing ** self.bin_centers.shape[1]

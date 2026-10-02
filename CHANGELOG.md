@@ -68,6 +68,10 @@
   unsmoothed results (`bandwidth=None`), so `Dataset.to_netcdf()` raised
   `TypeError`. The attribute is now omitted when no smoothing was applied, as
   for spatial results.
+- `read_environment` estimated the bin sizes of reloaded non-grid environments
+  (graph tracks, hexagonal, triangular mesh) from the nearest neighbour's
+  *index* instead of its distance: a Y-track with 2.94 cm² bins came back with
+  1640.25. The estimate now uses the median nearest-neighbour spacing.
 
 ### Added — `method="glm"`: penalized-Poisson GAM estimator (spatial only)
 

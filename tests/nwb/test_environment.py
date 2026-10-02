@@ -2069,3 +2069,21 @@ class TestCoordinateKindRoundTrip:
                 d["distance"] for _, _, d in loaded.connectivity.edges(data=True)
             )
             np.testing.assert_allclose(loaded_weights, orig_weights, rtol=1e-9)
+
+
+def test_reconstructed_layout_estimates_bin_size_from_spacing():
+    """Without stored measures, the KDTree fallback estimates each bin as
+    (median nearest-neighbour spacing) ** n_dims."""
+    import networkx as nx
+
+    from neurospatial.io.nwb._environment import _ReconstructedLayout
+
+    # Points on a line spaced 3 apart; indices grow much faster than spacing.
+    bin_centers = np.column_stack([np.arange(50) * 3.0, np.zeros(50)])
+    layout = _ReconstructedLayout(
+        bin_centers=bin_centers,
+        connectivity=nx.Graph(),
+        dimension_ranges=[(0.0, 147.0), (0.0, 0.0)],
+        layout_type="Graph",
+    )
+    np.testing.assert_allclose(layout.bin_sizes(), 9.0)
