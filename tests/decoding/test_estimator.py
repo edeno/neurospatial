@@ -746,3 +746,17 @@ class TestUnitAlignment:
             env, spikes, times, dt=0.5, encoding_models=decoder.encoding_models
         )
         assert_array_equal(decoder.predict(spikes, times).posterior, ref.posterior)
+
+    def test_unlabelled_spike_trains_fit_pairs_by_position(
+        self, sim, make_spike_group
+    ) -> None:
+        env, spikes, times, positions = sim
+        decoder = BayesianDecoder(env, dt=0.5).fit(
+            SpikeTrains(spikes[:3]), times, positions
+        )
+        assert decoder._unit_ids_generated is True
+        np.testing.assert_allclose(
+            decoder.predict(make_spike_group(spikes[:3], [3, 7, 9]), times).posterior,
+            decoder.predict(spikes[:3], times).posterior,
+            atol=1e-12,
+        )

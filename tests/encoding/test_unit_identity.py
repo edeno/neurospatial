@@ -359,3 +359,37 @@ def test_summary_table_relabel_rejects_duplicates(name, trajectory, spike_trains
     # Mixed int/str labels are kept as given, and "1" and 1 are distinct.
     assert result.summary_table(unit_ids=["a", 1]).index.tolist() == ["a", 1]
     assert result.summary_table(unit_ids=["1", 1]).index.tolist() == ["1", 1]
+
+
+@pytest.mark.parametrize("name", ALL)
+def test_unlabelled_spike_trains_carry_no_labels(name, trajectory, spike_trains):
+    """SpikeTrains built without unit_ids has generated labels, which an
+    explicit unit_ids= may replace; supplied labels are still protected."""
+    from neurospatial.encoding import SpikeTrains
+
+    env, times, positions, headings = trajectory
+    trains = spike_trains[:2]
+
+    named = _compute(
+        name, env, times, positions, headings, SpikeTrains(trains), unit_ids=[5, 6]
+    )
+    np.testing.assert_array_equal(named.unit_ids, [5, 6])
+
+    labelled = SpikeTrains(trains, unit_ids=[10, 20])
+    with pytest.raises(ValueError, match="already labelled"):
+        _compute(name, env, times, positions, headings, labelled, unit_ids=[20, 10])
+
+
+def test_spike_trains_records_generated_labels():
+    import dataclasses
+
+    import pandas as pd
+
+    from neurospatial.encoding import SpikeTrains
+
+    trains = [np.array([0.1]), np.array([0.2])]
+    generated = SpikeTrains(trains, unit_table=pd.DataFrame({"ok": [True, False]}))
+    assert generated._unit_ids_generated is True
+    assert generated.filter("ok")._unit_ids_generated is True
+    assert dataclasses.replace(generated)._unit_ids_generated is True
+    assert SpikeTrains(trains, unit_ids=[0, 1])._unit_ids_generated is False

@@ -565,6 +565,7 @@ class Session:
             trains=new_trains,
             unit_ids=self.spikes.unit_ids,
             unit_table=self.spikes.unit_table,
+            _unit_ids_generated=self.spikes._unit_ids_generated,
         )
 
         return dataclasses.replace(

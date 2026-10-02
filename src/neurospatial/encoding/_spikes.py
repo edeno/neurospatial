@@ -214,7 +214,9 @@ def as_spike_trains_with_ids(
         Per-unit spike-time arrays, exactly as :func:`as_spike_trains` produces.
     unit_ids : NDArray or None
         Unit ids extracted from the group's ``.index`` (one per train), or
-        ``None`` for a plain array / sequence input (which carries no ids).
+        ``None`` for a plain array / sequence input (which carries no ids) and
+        for a group whose labels were generated rather than supplied (an object
+        with ``_unit_ids_generated`` set, such as ``SpikeTrains(trains)``).
 
     Examples
     --------
@@ -247,5 +249,8 @@ def as_spike_trains_with_ids(
             # Iterate-yields-trains container (future ``SpikeTrains``, test
             # doubles): iteration yields the per-unit 1-D timestamp arrays.
             trains = [np.asarray(t, dtype=np.float64) for t in spike_times]
+        if getattr(spike_times, "_unit_ids_generated", False):
+            # Generated ``arange`` labels are not caller-supplied identity.
+            return trains, None
         return trains, unit_ids
     return as_spike_trains(spike_times), None
