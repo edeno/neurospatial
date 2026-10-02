@@ -871,6 +871,68 @@ class TestPopulationPeriEventHistogram:
         assert np.all(np.diff(rates) > 0)  # Should increase with unit index
 
 
+@pytest.fixture(scope="module")
+def labelled_psth_trains() -> list[NDArray[np.float64]]:
+    """Three uniform trains (500, 1000, 200 spikes over 100 s) for keys 3, 7, 9."""
+    rng = np.random.default_rng(0)
+    return [np.sort(rng.uniform(0, 100, n)) for n in (500, 1000, 200)]
+
+
+class TestPopulationPeriEventHistogramSpikeGroup:
+    """A labelled spike group (pynapple ``TsGroup``) is indexed, not iterated."""
+
+    EVENT_TIMES = np.arange(5.0, 91.0, 5.0)
+
+    def _psth(self, spike_trains, **kwargs):
+        from neurospatial.events.alignment import population_peri_event_histogram
+
+        return population_peri_event_histogram(
+            spike_trains, self.EVENT_TIMES, (-1.0, 1.0), bin_size=0.1, **kwargs
+        )
+
+    def test_population_psth_accepts_tsgroup(
+        self, labelled_psth_trains, make_spike_group
+    ):
+        group = make_spike_group(labelled_psth_trains, index=[3, 7, 9])
+
+        result = self._psth(group)
+
+        from_list = self._psth(labelled_psth_trains)
+        np.testing.assert_array_equal(result.unit_ids, [3, 7, 9])
+        np.testing.assert_array_equal(result.firing_rates, from_list.firing_rates)
+        np.testing.assert_allclose(
+            result.firing_rates.mean(axis=1), [73 / 18, 10.0, 75 / 36], rtol=1e-12
+        )
+
+    def test_population_psth_unit_ids_must_match_group(
+        self, labelled_psth_trains, make_spike_group
+    ):
+        group = make_spike_group(labelled_psth_trains, index=[3, 7, 9])
+
+        result = self._psth(group, unit_ids=[3, 7, 9])
+        np.testing.assert_array_equal(result.unit_ids, [3, 7, 9])
+
+        with pytest.raises(ValueError, match=r"\[9, 7, 3\].*\[3, 7, 9\]"):
+            self._psth(group, unit_ids=[9, 7, 3])
+
+    @pytest.mark.pynapple
+    def test_population_psth_accepts_real_tsgroup(self, labelled_psth_trains):
+        nap = pytest.importorskip("pynapple")
+        group = nap.TsGroup(
+            {
+                uid: nap.Ts(train)
+                for uid, train in zip((3, 7, 9), labelled_psth_trains, strict=True)
+            }
+        )
+
+        result = self._psth(group)
+
+        np.testing.assert_array_equal(result.unit_ids, [3, 7, 9])
+        np.testing.assert_array_equal(
+            result.firing_rates, self._psth(labelled_psth_trains).firing_rates
+        )
+
+
 class TestAlignEvents:
     """Tests for align_events() function."""
 

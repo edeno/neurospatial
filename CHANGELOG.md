@@ -123,6 +123,12 @@
   position series declared no unit (`unit=""`). It now emits a `UserWarning`
   naming the series and saying to pass `units=`, then still assumes `"cm"`.
   Passing `units=` skips the lookup and the warning.
+- **Behavior change:** `population_peri_event_histogram` raised
+  `AxisError: axis -1 is out of bounds` for a pynapple `TsGroup`, because it
+  iterated the group (which yields unit keys, not trains). It now accepts a
+  labelled group like the population encoders: one PSTH per unit, with the
+  group's index as `unit_ids`. A `unit_ids=` passed with a labelled group must
+  equal its index, or the call raises `ValueError` listing both.
 
 ### Added — `method="glm"`: penalized-Poisson GAM estimator (spatial only)
 
