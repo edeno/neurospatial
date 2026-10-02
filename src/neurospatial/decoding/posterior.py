@@ -172,6 +172,7 @@ def _normalize_block(
     axis: int,
     handle_degenerate: Literal["uniform", "nan", "raise"],
     out: NDArray[np.float64],
+    prior_support: NDArray[np.bool_] | None = None,
 ) -> None:
     """Normalize one time-block of log-likelihood in place into ``out``.
 
@@ -183,7 +184,10 @@ def _normalize_block(
 
     Degenerate-row handling matches the full-array path exactly: rows whose
     per-row max is non-finite (all ``-inf`` zero-rate rows, or rows containing
-    ``NaN``) are filled per ``handle_degenerate``.
+    ``NaN``) are filled per ``handle_degenerate``. With ``"uniform"``, a
+    ``prior_support`` mask (bins with positive prior, shape ``(n_bins,)`` or
+    matching ``ll_block``) restricts the uniform fill to supported bins; a row
+    with no supported bins becomes NaN.
     """
     ll_max = ll_block.max(axis=axis, keepdims=True)
 
@@ -219,9 +223,19 @@ def _normalize_block(
                 f"'nan'."
             )
         elif handle_degenerate == "uniform":
-            n_bins = ll_block.shape[axis]
-            uniform_prob = 1.0 / n_bins
-            out[degenerate_mask] = uniform_prob
+            if prior_support is None:
+                out[degenerate_mask] = 1.0 / ll_block.shape[axis]
+            else:
+                supported = np.broadcast_to(prior_support, ll_block.shape)[
+                    degenerate_mask
+                ]
+                n_supported = supported.sum(axis=-1, keepdims=True)
+                out[degenerate_mask] = np.divide(
+                    supported,
+                    n_supported,
+                    out=np.full(supported.shape, np.nan, dtype=out.dtype),
+                    where=n_supported > 0,
+                )
         elif handle_degenerate == "nan":
             out[degenerate_mask] = np.nan
 
@@ -254,7 +268,9 @@ def normalize_to_posterior(
 
         **Note**: Priors are treated as **probability distributions** (not
         unnormalized weights). They are normalized internally to sum to 1.0
-        along the position axis before applying.
+        along the position axis before applying. Exact zeros exclude bins
+        from the posterior (they get exactly zero probability); positive
+        probabilities are not floored.
     axis : int, default=-1
         Axis along which to normalize.
     handle_degenerate : {"uniform", "nan", "raise"}, default="uniform"
@@ -263,8 +279,10 @@ def normalize_to_posterior(
         encoding model) or if it contains a ``NaN`` (upstream corruption,
         e.g. a NaN firing rate leaking into the likelihood):
 
-        - "uniform": Return uniform distribution (1/n_bins per bin) for
-          every degenerate row. This masks NaN corruption the same as a
+        - "uniform": Return a uniform distribution for every degenerate row,
+          restricted to the bins with positive prior when a prior is given
+          (1/n_bins per bin otherwise). A row whose prior has no positive
+          bin becomes NaN. This masks NaN corruption the same as a
           zero-rate row; use "raise" if you need corruption to surface.
         - "nan": Return NaN for degenerate rows.
         - "raise": Raise ValueError if any row is degenerate. The message
@@ -306,7 +324,8 @@ def normalize_to_posterior(
         # Add log-prior to log-likelihood
         if prior is not None:
             prior = prior / prior.sum(axis=axis, keepdims=True)  # Normalize
-            log_prior = np.log(np.clip(prior, 1e-10, 1.0))
+            with np.errstate(divide="ignore"):
+                log_prior = np.log(prior)  # log(0) = -inf excludes the bin
             ll = log_likelihood + log_prior
         else:
             ll = log_likelihood
@@ -374,6 +393,7 @@ def normalize_to_posterior(
             f"only supports normalization along the last axis."
         )
     ll = log_likelihood.copy()
+    prior_support = None
 
     # Apply prior if provided
     if prior is not None:
@@ -412,9 +432,11 @@ def normalize_to_posterior(
             # Avoid division by zero
             prior_arr = np.where(prior_sum > 0, prior_arr / prior_sum, prior_arr)
 
-        # Clip prior to avoid log(0)
-        prior_clipped = np.clip(prior_arr, 1e-10, 1.0)
-        log_prior = np.log(prior_clipped)
+        # Keep exact zeros as -inf in log space. Flooring them would let a
+        # large enough likelihood select a bin the prior excludes.
+        prior_support = prior_arr > 0
+        with np.errstate(divide="ignore"):
+            log_prior = np.log(prior_arr)
 
         # Add log-prior to log-likelihood
         ll = ll + log_prior
@@ -441,7 +463,13 @@ def normalize_to_posterior(
 
     n_time = ll.shape[0]
     if time_chunk is None:
-        _normalize_block(ll, axis=axis, handle_degenerate=handle_degenerate, out=out)
+        _normalize_block(
+            ll,
+            axis=axis,
+            handle_degenerate=handle_degenerate,
+            out=out,
+            prior_support=prior_support,
+        )
     else:
         for start in range(0, n_time, time_chunk):
             stop = min(start + time_chunk, n_time)
@@ -450,6 +478,11 @@ def normalize_to_posterior(
                 axis=axis,
                 handle_degenerate=handle_degenerate,
                 out=out[start:stop],
+                prior_support=(
+                    prior_support[start:stop]
+                    if prior_support is not None and prior_support.ndim == 2
+                    else prior_support
+                ),
             )
 
     return cast("NDArray[np.float64]", out)
@@ -1649,11 +1682,10 @@ def _validate_inputs(
     #
     # - finite (NaN/Inf can't pass the < 0 check cleanly),
     # - non-negative (a probability mass cannot be negative),
-    # - has positive total mass (a zero-sum prior would otherwise be
-    #   silently rebuilt as a uniform prior by normalize_to_posterior's
-    #   1e-10 clip, which is the silent-wrong-result path the validator
-    #   exists to prevent). For time-varying priors, every row must
-    #   carry positive mass.
+    # - has positive total mass (a zero-sum prior excludes every bin, so
+    #   normalize_to_posterior would return an all-NaN posterior rather
+    #   than a decode). For time-varying priors, every row must carry
+    #   positive mass.
     if prior is not None:
         prior_arr = np.asarray(prior, dtype=np.float64)
         if not np.isfinite(prior_arr).all():

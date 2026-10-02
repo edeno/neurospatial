@@ -1451,13 +1451,11 @@ class TestPosteriorClosedForm:
         posterior = normalize_to_posterior(log_likelihood, prior=prior)
         np.testing.assert_allclose(posterior[0], prior, atol=1e-12)
 
-    def test_zero_prior_bin_is_negligible(self) -> None:
+    def test_zero_prior_bin_is_excluded(self) -> None:
         from neurospatial.decoding.likelihood import log_poisson_likelihood
         from neurospatial.decoding.posterior import normalize_to_posterior
 
-        # A zero-prior bin should carry essentially no posterior mass. Note:
-        # normalize_to_posterior clips priors to 1e-10 before taking the log
-        # (see its docstring), so the bin is ~1e-10, not exactly 0.
+        # A zero-prior bin carries exactly zero posterior mass.
         encoding_models = np.array([[5.0, 10.0, 8.0]])
         log_likelihood = log_poisson_likelihood(
             np.array([[2]], dtype=np.int64), encoding_models, 0.1
@@ -1465,8 +1463,78 @@ class TestPosteriorClosedForm:
         posterior = normalize_to_posterior(
             log_likelihood, prior=np.array([0.5, 0.5, 0.0])
         )
-        assert posterior[0, 2] < 1e-8
+        assert posterior[0, 2] == 0.0
         assert np.isclose(posterior[0].sum(), 1.0, atol=1e-12)
+
+
+class TestZeroPriorSupport:
+    """Exact prior zeros exclude bins; positive prior mass is never floored."""
+
+    @pytest.mark.parametrize("time_chunk", [None, 1])
+    @pytest.mark.parametrize("dtype", [np.float32, np.float64])
+    @pytest.mark.parametrize("prior_ndim", [1, 2])
+    def test_zero_prior_overrides_large_likelihood(
+        self, time_chunk: int | None, dtype: type, prior_ndim: int
+    ) -> None:
+        from neurospatial.decoding.posterior import normalize_to_posterior
+
+        log_likelihood = np.array([[0.0, 100.0], [0.0, 1000.0]])
+        prior = np.array([1.0, 0.0])
+        if prior_ndim == 2:
+            prior = np.tile(prior, (2, 1))
+        posterior = normalize_to_posterior(
+            log_likelihood, prior=prior, time_chunk=time_chunk, dtype=dtype
+        )
+        assert_array_equal(posterior, np.array([[1.0, 0.0], [1.0, 0.0]]))
+
+    def test_decode_position_respects_zero_prior(self) -> None:
+        from neurospatial.decoding import decode_position
+
+        env = Environment.from_grid_mask(
+            np.array([True, True]), grid_edges=(np.array([0.0, 1.0, 2.0]),)
+        )
+        result = decode_position(
+            env,
+            np.array([[10]], dtype=np.int64),
+            np.array([[1.0, 100.0]]),
+            0.1,
+            prior=np.array([1.0, 0.0]),
+        )
+        assert_array_equal(result.posterior, np.array([[1.0, 0.0]]))
+        assert_array_equal(result.map_position, env.bin_centers[[0]])
+
+    def test_small_positive_prior_not_floored(self) -> None:
+        from neurospatial.decoding.posterior import normalize_to_posterior
+
+        prior = np.array([1e-100, 1.0])
+        posterior = normalize_to_posterior(np.zeros((1, 2)), prior=prior)
+        assert_allclose(posterior[0], prior / prior.sum(), rtol=1e-12, atol=0)
+
+    @pytest.mark.parametrize("time_chunk", [None, 1])
+    def test_degenerate_uniform_respects_prior_support(
+        self, time_chunk: int | None
+    ) -> None:
+        from neurospatial.decoding.posterior import normalize_to_posterior
+
+        all_neg_inf = np.full((2, 3), -np.inf)
+        posterior = normalize_to_posterior(
+            all_neg_inf,
+            prior=np.array([1.0, 0.0, 3.0]),
+            handle_degenerate="uniform",
+            time_chunk=time_chunk,
+        )
+        assert_array_equal(posterior, np.array([[0.5, 0.0, 0.5]] * 2))
+
+        # Time-varying prior: each degenerate row uses its own support; a row
+        # with no supported bins has no uniform distribution to fall back to.
+        posterior = normalize_to_posterior(
+            all_neg_inf,
+            prior=np.array([[0.0, 2.0, 2.0], [0.0, 0.0, 0.0]]),
+            handle_degenerate="uniform",
+            time_chunk=time_chunk,
+        )
+        assert_array_equal(posterior[0], [0.0, 0.5, 0.5])
+        assert np.isnan(posterior[1]).all()
 
 
 class TestLongTrajectoryStability:

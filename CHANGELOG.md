@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `decode_position` (and every decoder built on `normalize_to_posterior`)
+  floored the prior at `1e-10`, so a bin with zero prior could still win the
+  posterior given a large enough likelihood (for example a MAP in an excluded
+  bin with posterior `0.999998`). Zero-prior bins now get exactly zero
+  posterior, small positive priors are no longer floored, and the
+  `handle_degenerate="uniform"` fallback spreads mass only over bins with
+  positive prior (NaN when the prior has none).
+
 ### Added — `method="glm"`: penalized-Poisson GAM estimator (spatial only)
 
 `compute_spatial_rate` and `compute_spatial_rates` gain a fourth estimator,
