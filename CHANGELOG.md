@@ -16,6 +16,11 @@
   on a clean 8 Hz sine the phase was off by ~1.56 rad at 2-5 kHz and all-NaN
   at 10 kHz and above. It now filters with second-order sections
   (`sosfiltfilt`); the phase error is below 0.01 rad at 2-30 kHz.
+- `circular_linear_correlation`, `circular_circular_correlation` and
+  `circular_basis_metrics` computed p-values as `1 - cdf`, which cancels to
+  exactly `0.0` for strong effects (below about `1e-16`). They now use survival
+  functions, so a strong effect reports its true tiny p-value (for example
+  `exp(-500)` for a perfect circular-linear correlation over 1000 samples).
 
 ### Added — `method="glm"`: penalized-Poisson GAM estimator (spatial only)
 
