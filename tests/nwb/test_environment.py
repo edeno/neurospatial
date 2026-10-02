@@ -2087,3 +2087,114 @@ def test_reconstructed_layout_estimates_bin_size_from_spacing():
         layout_type="Graph",
     )
     np.testing.assert_allclose(layout.bin_sizes(), 9.0)
+
+
+def _y_track_env():
+    """Y-shaped linearized track (from_graph, bin 3, edge spacing 10)."""
+    import networkx as nx
+
+    from neurospatial import Environment
+
+    graph = nx.Graph()
+    for node, pos in enumerate(
+        [(0.0, 0.0), (0.0, 100.0), (-50.0, 150.0), (50.0, 150.0)]
+    ):
+        graph.add_node(node, pos=pos)
+    for edge_id, (u, v) in enumerate([(0, 1), (1, 2), (1, 3)]):
+        distance = float(
+            np.linalg.norm(np.subtract(graph.nodes[v]["pos"], graph.nodes[u]["pos"]))
+        )
+        graph.add_edge(u, v, distance=distance, edge_id=edge_id)
+    return Environment.from_graph(
+        graph, edge_order=[(0, 1), (1, 2), (1, 3)], edge_spacing=10.0, bin_size=3.0
+    )
+
+
+def _roundtrip_through_file(env, path):
+    from pynwb import NWBHDF5IO
+
+    from neurospatial.io.nwb import read_environment, write_environment
+
+    with NWBHDF5IO(str(path), "w") as io:
+        nwbfile = _create_nwb_for_test()
+        write_environment(nwbfile, env)
+        io.write(nwbfile)
+    with NWBHDF5IO(str(path), "r") as io:
+        return read_environment(io.read())
+
+
+class TestGraphGeometryRoundTrip:
+    """Non-grid (graph) environments keep their geometry through NWB."""
+
+    def test_graph_env_roundtrip_preserves_geometry(self, tmp_path):
+        env = _y_track_env()
+        loaded = _roundtrip_through_file(env, tmp_path / "ytrack.nwb")
+
+        assert loaded.n_bins == env.n_bins
+        np.testing.assert_array_equal(loaded.bin_sizes, env.bin_sizes)
+        assert loaded.grid_edges is not None
+        np.testing.assert_array_equal(loaded.grid_edges[0], env.grid_edges[0])
+
+        flipped = [
+            (u, v)
+            for u, v, data in env.connectivity.edges(data=True)
+            if not np.allclose(
+                loaded.connectivity.edges[u, v]["vector"], data["vector"]
+            )
+        ]
+        assert flipped == []
+
+    def test_reads_schema_1_0_file(self, tmp_path, caplog):
+        """A 1.0 file (no bin_sizes column, no grid geometry) still reads, with
+        bin sizes estimated from bin spacing and no schema warning."""
+        import json
+        import logging
+
+        from hdmf.common import DynamicTable, VectorData
+        from pynwb import NWBHDF5IO
+        from scipy.spatial import KDTree
+
+        from neurospatial.io.nwb import read_environment, write_environment
+
+        env = _y_track_env()
+        current = _create_nwb_for_test()
+        write_environment(current, env)
+        table = current.scratch["spatial_environment"]
+
+        metadata = json.loads(table["metadata"][0])
+        metadata["schema_version"] = "1.0"
+        metadata.pop("grid_edges", None)
+        metadata.pop("grid_shape", None)
+        columns = []
+        for column in table.columns:
+            if column.name == "bin_sizes":
+                continue
+            data = column.data
+            if column.name == "metadata":
+                data = [json.dumps(metadata)] * len(data)
+            columns.append(
+                VectorData(name=column.name, data=data, description=column.description)
+            )
+        legacy = _create_nwb_for_test()
+        legacy.add_scratch(
+            DynamicTable(
+                name="spatial_environment",
+                description=table.description,
+                columns=columns,
+            )
+        )
+        path = tmp_path / "legacy.nwb"
+        with NWBHDF5IO(str(path), "w") as io:
+            io.write(legacy)
+
+        with (
+            caplog.at_level(logging.WARNING, logger="neurospatial"),
+            NWBHDF5IO(str(path), "r") as io,
+        ):
+            loaded = read_environment(io.read())
+
+        assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
+        spacing = np.median(
+            KDTree(env.bin_centers).query(env.bin_centers, k=2)[0][:, 1]
+        )
+        np.testing.assert_allclose(loaded.bin_sizes, spacing**2)

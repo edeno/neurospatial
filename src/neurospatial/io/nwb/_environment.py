@@ -49,6 +49,11 @@ class EnvironmentMetadata(TypedDict):
     is_linearized_track: bool
     has_grid_data: bool
     coordinate_kind: str
+    # Grid geometry of non-grid layouts that still carry grid edges (graph /
+    # linearized tracks); None when there are none. Absent in 1.0 files, so
+    # read with ``.get``.
+    grid_edges: list[list[float]] | None
+    grid_shape: list[int] | None
 
 
 class GridData(TypedDict, total=False):
@@ -73,8 +78,11 @@ class GridData(TypedDict, total=False):
 # Constants for NWB environment serialization
 # =============================================================================
 
-# Schema version for environment metadata format
-ENVIRONMENT_SCHEMA_VERSION: str = "1.0"
+# Schema version for environment metadata format. 1.1 adds the exact per-bin
+# measures (``bin_sizes`` column) and the grid geometry of non-grid layouts;
+# 1.0 files still read, with bin measures estimated from bin spacing.
+ENVIRONMENT_SCHEMA_VERSION: str = "1.1"
+_READABLE_SCHEMA_VERSIONS: frozenset[str] = frozenset({"1.0", "1.1"})
 
 # Default names and locations
 DEFAULT_ENVIRONMENT_NAME: str = "spatial_environment"
@@ -99,6 +107,7 @@ COL_REGIONS = "regions"
 COL_METADATA = "metadata"
 COL_GRID_DATA = "grid_data"
 COL_ACTIVE_MASK = "active_mask"
+COL_BIN_SIZES = "bin_sizes"
 
 
 def write_environment(
@@ -198,10 +207,26 @@ def write_environment(
         del nwbfile.scratch[name]
         logger.info("Overwriting existing environment '%s'", name)
 
-    # Extract edge list and weights from connectivity graph
+    # Extract edge list and weights from connectivity graph. The reader
+    # recomputes each edge's vector as pos_v - pos_u, so store an edge as (v, u)
+    # when its vector points from v to u. Edges whose vector matches neither
+    # direction (e.g. polar wrap-around edges) keep enumeration order.
     edges_list = list(env.connectivity.edges(data=True))
     if edges_list:
-        edges = np.array([[e[0], e[1]] for e in edges_list], dtype=np.int64)
+        centers = np.asarray(env.bin_centers, dtype=np.float64)
+        edge_pairs: list[list[int]] = []
+        for u, v, data in edges_list:
+            u, v = int(u), int(v)
+            vector = data.get("vector")
+            if vector is not None:
+                vector = np.asarray(vector, dtype=np.float64)
+                forward = centers[v] - centers[u]
+                if np.allclose(-forward, vector, atol=1e-9) and not np.allclose(
+                    forward, vector, atol=1e-9
+                ):
+                    u, v = v, u
+            edge_pairs.append([u, v])
+        edges = np.array(edge_pairs, dtype=np.int64)
         edge_weights = np.array(
             [e[2].get("distance", 1.0) for e in edges_list], dtype=np.float64
         )
@@ -226,6 +251,18 @@ def write_environment(
     # Extract grid data for grid-based layouts (needed for proper point_to_bin_index)
     grid_data = _extract_grid_data(env)
 
+    # Graph / linearized-track layouts carry grid edges but no active mask, so
+    # _extract_grid_data skips them and the reader uses the KDTree fallback.
+    # Store their grid geometry in the metadata so the fallback restores it.
+    fallback_grid_edges: list[list[float]] | None = None
+    fallback_grid_shape: list[int] | None = None
+    if grid_data is None and env.grid_edges:
+        fallback_grid_edges = [
+            np.asarray(edge, dtype=np.float64).tolist() for edge in env.grid_edges
+        ]
+        if env.grid_shape is not None:
+            fallback_grid_shape = [int(size) for size in env.grid_shape]
+
     # Serialize extra metadata (include array lengths for deserialization)
     # schema_version enables future migrations if format changes
     metadata = json.dumps(
@@ -243,6 +280,8 @@ def write_environment(
             "coordinate_kind": "polar"
             if getattr(env, "_POLAR", False)
             else "cartesian",
+            "grid_edges": fallback_grid_edges,
+            "grid_shape": fallback_grid_shape,
         }
     )
 
@@ -270,6 +309,11 @@ def write_environment(
 
     dim_ranges_padded = np.zeros((n_rows, 2), dtype=np.float64)
     dim_ranges_padded[:n_dims] = env.dimension_ranges
+
+    # Exact per-bin measures; the non-grid reader could otherwise only
+    # estimate them from bin spacing.
+    bin_sizes_padded = np.zeros(n_rows, dtype=np.float64)
+    bin_sizes_padded[: env.n_bins] = np.asarray(env.bin_sizes, dtype=np.float64)
 
     # String data - repeat to match n_rows
     regions_list = [regions_data] * n_rows
@@ -337,6 +381,11 @@ def write_environment(
                 name=COL_ACTIVE_MASK,
                 data=active_mask_padded,
                 description="Flattened active bin mask for grid-based layouts",
+            ),
+            VectorData(
+                name=COL_BIN_SIZES,
+                data=bin_sizes_padded,
+                description=f"Per-bin measures (bin sizes), actual length {env.n_bins}",
             ),
         ],
     )
@@ -484,8 +533,11 @@ def read_environment(
 
     For layouts without a rectangular grid (Graph, Hexagonal, TriangularMesh),
     a KDTree-based layout is used. This provides nearest-neighbor point mapping
-    over the stored bin centers and connectivity, but does not reconstruct the
-    original layout engine's bin geometry exactly.
+    over the stored bin centers and connectivity, and restores the stored
+    per-bin measures, edge vectors and (for graph tracks) 1-D grid edges. It
+    does not rebuild the original layout engine, so smoothing and binned rate
+    maps are not available on it. Files written before schema 1.1 have no
+    stored measures; their bin sizes are estimated from bin spacing.
 
     Examples
     --------
@@ -511,13 +563,13 @@ def read_environment(
 
     # Check schema version for forward compatibility
     schema_version = metadata.get("schema_version", ENVIRONMENT_SCHEMA_VERSION)
-    if schema_version != ENVIRONMENT_SCHEMA_VERSION:
+    if schema_version not in _READABLE_SCHEMA_VERSIONS:
         logger.warning(
-            "Environment '%s' has schema_version '%s', expected '%s'. "
+            "Environment '%s' has schema_version '%s', expected one of %s. "
             "Attempting to read with current schema.",
             name,
             schema_version,
-            ENVIRONMENT_SCHEMA_VERSION,
+            sorted(_READABLE_SCHEMA_VERSIONS),
         )
 
     n_bins = metadata["n_bins"]
@@ -537,6 +589,22 @@ def read_environment(
         scratch_data[COL_DIMENSION_RANGES][:n_dims], dtype=np.float64
     )
     dimension_ranges = [tuple(row) for row in dimension_ranges_raw]
+
+    # Exact per-bin measures and non-grid grid geometry (schema 1.1); absent in
+    # 1.0 files, where the fallback layout estimates bin measures.
+    bin_sizes = (
+        np.array(scratch_data[COL_BIN_SIZES][:n_bins], dtype=np.float64)
+        if COL_BIN_SIZES in scratch_data.colnames
+        else None
+    )
+    grid_edges_meta = metadata.get("grid_edges")
+    fallback_grid_edges = (
+        None
+        if grid_edges_meta is None
+        else tuple(np.asarray(edge, dtype=np.float64) for edge in grid_edges_meta)
+    )
+    grid_shape_meta = metadata.get("grid_shape")
+    fallback_grid_shape = None if grid_shape_meta is None else tuple(grid_shape_meta)
 
     # Parse regions JSON
     regions_json = scratch_data[COL_REGIONS][0]
@@ -580,6 +648,9 @@ def read_environment(
         n_dims=n_dims,
         is_linearized_track=is_linearized_track,
         is_polar=is_polar,
+        bin_sizes=bin_sizes,
+        fallback_grid_edges=fallback_grid_edges,
+        fallback_grid_shape=fallback_grid_shape,
     )
 
     # Set metadata. The write path stores DEFAULT_FRAME (empty string) when no
@@ -615,6 +686,9 @@ def _reconstruct_environment(
     n_dims: int,
     is_linearized_track: bool = False,
     is_polar: bool = False,
+    bin_sizes: NDArray[np.float64] | None = None,
+    fallback_grid_edges: tuple[NDArray[np.float64], ...] | None = None,
+    fallback_grid_shape: tuple[int, ...] | None = None,
 ) -> Environment:
     """
     Reconstruct Environment with appropriate layout type.
@@ -654,6 +728,14 @@ def _reconstruct_environment(
         ``EgocentricPolarEnvironment`` (the distinct polar type) instead of an
         ``Environment``. The stored connectivity carries the corrected
         physical polar edge distances.
+    bin_sizes : NDArray, shape (n_bins,), optional
+        Exact per-bin measures for the KDTree fallback layout. ``None`` (a 1.0
+        file) estimates them from bin spacing.
+    fallback_grid_edges : tuple of NDArray, optional
+        Grid edges of a non-grid layout (graph / linearized track), restored on
+        the fallback layout.
+    fallback_grid_shape : tuple of int, optional
+        Grid shape matching ``fallback_grid_edges``.
 
     Returns
     -------
@@ -724,6 +806,9 @@ def _reconstruct_environment(
         dimension_ranges=dimension_ranges,
         layout_type=layout_type,
         is_linearized_track=is_linearized_track,
+        bin_sizes=bin_sizes,
+        grid_edges=fallback_grid_edges,
+        grid_shape=fallback_grid_shape,
     )
 
     # Create Environment directly with the reconstructed layout
@@ -765,6 +850,9 @@ class _ReconstructedLayout:
         dimension_ranges: list[tuple[float, float]],
         layout_type: str,
         is_linearized_track: bool = False,
+        bin_sizes: NDArray[np.float64] | None = None,
+        grid_edges: tuple[NDArray[np.float64], ...] | None = None,
+        grid_shape: tuple[int, ...] | None = None,
     ) -> None:
         from scipy.spatial import KDTree
 
@@ -774,13 +862,16 @@ class _ReconstructedLayout:
         self._layout_type_tag = f"Reconstructed_{layout_type}"
         self._build_params_used = {"original_layout_type": layout_type}
         self._is_linearized_track = is_linearized_track
+        # Exact per-bin measures when the file stored them (schema 1.1).
+        self._bin_sizes = None if bin_sizes is None else np.asarray(bin_sizes)
 
         # Build KDTree for point mapping
         self._kdtree = KDTree(bin_centers) if len(bin_centers) > 0 else None
 
-        # Grid-related attributes (set to None for non-grid layouts)
-        self.grid_edges = None
-        self.grid_shape = None
+        # Graph / linearized-track layouts carry 1-D grid edges, restored here;
+        # other non-grid layouts have none. No active mask either way.
+        self.grid_edges = grid_edges
+        self.grid_shape = grid_shape
         self.active_mask = None
 
     @property
@@ -813,18 +904,19 @@ class _ReconstructedLayout:
 
     def bin_sizes(self) -> NDArray[np.float64]:
         """
-        Return estimated bin volumes from nearest neighbor spacing.
+        Return the per-bin measures (length, area or volume).
 
-        For reconstructed layouts, this computes an approximate "volume" per bin
-        as ``spacing ** n_dims``, where spacing is the median nearest-neighbor
-        distance. This is a volume estimate (e.g., area in 2D, length in 1D),
-        not a linear bin size.
+        Returns the exact measures stored in the file (schema 1.1). For a 1.0
+        file, estimates each bin as ``spacing ** n_dims``, where spacing is the
+        median nearest-neighbor distance between bin centers.
 
         Returns
         -------
         NDArray[np.float64], shape (n_bins,)
-            Estimated bin volume for each bin.
+            Stored or estimated measure for each bin.
         """
+        if self._bin_sizes is not None:
+            return self._bin_sizes
         if len(self.bin_centers) < 2 or self._kdtree is None:
             return np.ones(len(self.bin_centers))
 

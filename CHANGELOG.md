@@ -72,6 +72,13 @@
   (graph tracks, hexagonal, triangular mesh) from the nearest neighbour's
   *index* instead of its distance: a Y-track with 2.94 cm² bins came back with
   1640.25. The estimate now uses the median nearest-neighbour spacing.
+- Writing a non-grid environment (graph track, hexagonal, triangular mesh) to
+  NWB and reading it back lost its geometry: bin sizes were re-estimated
+  (2.94 became 8.68 on a Y-track), `grid_edges` came back `None`, and every
+  edge's direction `vector` was reversed (81 of 81 on the Y-track). The NWB
+  environment schema is now 1.1: it stores the exact bin sizes and graph grid
+  edges, and writes each edge so its vector round-trips. Schema 1.0 files
+  still read, with estimated bin sizes.
 
 ### Added — `method="glm"`: penalized-Poisson GAM estimator (spatial only)
 
