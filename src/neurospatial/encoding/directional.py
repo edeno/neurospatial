@@ -2326,8 +2326,8 @@ def plot_head_direction_tuning(
     """Plot head direction tuning curve with metrics overlay.
 
     Creates standard head direction tuning visualization with optional polar
-    or linear projection. Polar plots show 0° at the top (North) with
-    clockwise direction following neuroscience convention.
+    or linear projection. Polar plots draw angles as in the arena: 0 = East
+    (right), π/2 = North (up), counter-clockwise.
 
     Parameters
     ----------
@@ -2358,12 +2358,11 @@ def plot_head_direction_tuning(
     -----
     **Polar plot conventions**:
 
-    - 0° at top (North): Uses ``theta_zero_location='N'``
-    - Clockwise direction: Uses ``theta_direction=-1``
+    - Angles are drawn as in the arena, 0 = East (right), π/2 = North (up),
+      counter-clockwise, matching the heading convention of
+      ``heading_from_velocity``. A caller-supplied polar axis is reset to
+      this orientation.
     - Curve is closed (first point appended at end)
-
-    These conventions match standard neuroscience visualization where
-    0° = facing forward/north, 90° = facing right/east.
 
     Examples
     --------
@@ -2402,9 +2401,9 @@ def plot_head_direction_tuning(
     if polar:
         polar_ax = cast("PolarAxes", ax)
 
-        # Configure polar plot: 0° at top (North), clockwise direction
-        polar_ax.set_theta_zero_location("N")
-        polar_ax.set_theta_direction(-1)
+        # Draw angles as in the arena: 0 = East (right), counter-clockwise.
+        polar_ax.set_theta_zero_location("E")
+        polar_ax.set_theta_direction(1)
 
         # Plot tuning curve
         polar_ax.plot(centers_closed, rates_closed, color=color, linewidth=2, **kwargs)

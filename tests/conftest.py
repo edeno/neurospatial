@@ -32,6 +32,7 @@ Size Guidelines (approximate bin counts):
 import os
 from collections import UserDict
 from collections.abc import Callable, Sequence
+from typing import Any
 
 import networkx as nx
 import numpy as np
@@ -855,3 +856,19 @@ def make_spike_group() -> Callable[..., _FakeTsGroupMapping]:
     values expose ``.t``, with the labels on ``.index``.
     """
     return _FakeTsGroupMapping
+
+
+@pytest.fixture(scope="session")
+def polar_display_offset() -> Callable[..., NDArray[np.float64]]:
+    """Return ``offset(ax, theta, r)``: display (dx, dy) of a polar point.
+
+    The offset is measured from the plot origin ``(theta=0, r=0)``, so
+    ``dx > 0`` means drawn right of centre and ``dy > 0`` means drawn above it.
+    """
+
+    def offset(ax: Any, theta: float, r: float) -> NDArray[np.float64]:
+        return np.asarray(
+            ax.transData.transform((theta, r)) - ax.transData.transform((0.0, 0.0))
+        )
+
+    return offset

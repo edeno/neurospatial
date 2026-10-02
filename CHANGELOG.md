@@ -98,6 +98,14 @@
   along-track distance for `from_graph`, `maze`, `linear_track` and reloaded
   environments. Any `edge_id` on an input graph is ignored, and the caller's
   graph is not modified.
+- **Behavior change:** polar tuning plots were drawn mirrored relative to the
+  library's angle conventions. `plot_head_direction_tuning` and
+  `plot_circular_basis_tuning` drew 0 at the top and clockwise, so a
+  North-preferring (π/2) cell pointed East; they now draw angles as in the
+  arena, 0 = East (right), π/2 = North (up), counter-clockwise, and reset a
+  caller-supplied polar axis to that orientation. `plot_object_vector_tuning`
+  drew +π/2 (left of the animal) on the right; it keeps "ahead" at the top
+  and now draws left on the left.
 
 ### Added — `method="glm"`: penalized-Poisson GAM estimator (spatial only)
 

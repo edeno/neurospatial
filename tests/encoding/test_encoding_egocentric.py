@@ -2408,3 +2408,36 @@ class TestIsObjectVectorCellFreeFunction:
                 object_positions,
                 min_peak_rate=5.0,
             )
+
+
+def test_object_vector_plot_draws_left_on_left(polar_display_offset) -> None:
+    """A field at +π/2 (left of the animal) is drawn left of centre."""
+    plt = pytest.importorskip("matplotlib.pyplot")
+    from neurospatial import Environment
+    from neurospatial.encoding.egocentric import (
+        EgocentricRateResult,
+        plot_object_vector_tuning,
+    )
+
+    env = Environment.from_polar_egocentric(
+        (0.0, 50.0), (-np.pi, np.pi), 5.0, 2 * np.pi / 12
+    )
+    distance, angle = env.bin_centers[:, 0], env.bin_centers[:, 1]
+    firing_rate = 10.0 * np.exp(
+        2.0 * (np.cos(angle - np.pi / 2) - 1) - (distance - 25.0) ** 2 / (2 * 5.0**2)
+    )
+    result = EgocentricRateResult(
+        firing_rate=firing_rate,
+        occupancy=np.ones(env.n_bins),
+        env=env,
+        distance_range=(0.0, 50.0),
+        n_distance_bins=10,
+        n_direction_bins=12,
+    )
+
+    ax = plot_object_vector_tuning(result)
+    peak_theta, peak_r = ax.collections[-1].get_offsets()[0]
+    dx, _ = polar_display_offset(ax, peak_theta, peak_r)
+    assert peak_theta > 0  # the marker sits on the left (+angle) side of the data
+    assert dx < 0
+    plt.close("all")
