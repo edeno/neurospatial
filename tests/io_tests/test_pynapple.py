@@ -69,6 +69,34 @@ def test_to_pynapple_raises_clear_importerror_when_absent() -> None:
         to_pynapple(times, values)
 
 
+def test_to_pynapple_rejects_unsorted_times() -> None:
+    # pynapple sorts timestamps itself; validation must run (and fail) before
+    # pynapple is ever imported, so this needs no pynapple.
+    with pytest.raises(ValueError, match=r"indices 1 and 2") as excinfo:
+        to_pynapple(np.array([0.0, 2.0, 1.0]), np.array([10.0, 20.0, 30.0]))
+    assert "\nFix:" in str(excinfo.value)
+
+
+def test_to_pynapple_rejects_duplicate_times() -> None:
+    with pytest.raises(ValueError, match=r"indices 0 and 1"):
+        to_pynapple(np.array([1.0, 1.0, 2.0]), np.array([10.0, 20.0, 30.0]))
+
+
+@pytest.mark.parametrize("bad", [np.nan, np.inf])
+def test_to_pynapple_rejects_non_finite_times(bad: float) -> None:
+    with pytest.raises(ValueError, match="finite") as excinfo:
+        to_pynapple(np.array([0.0, bad, 2.0]), np.array([10.0, 20.0, 30.0]))
+    assert "\nFix:" in str(excinfo.value)
+
+
+def test_to_pynapple_rejects_wrong_column_count() -> None:
+    times = np.array([0.0, 1.0, 2.0])
+    values = np.zeros((3, 2))
+    with pytest.raises(ValueError, match=r"3 labels.*2 value columns") as excinfo:
+        to_pynapple(times, values, columns=["x", "y", "z"])
+    assert "\nFix:" in str(excinfo.value)
+
+
 # ---------------------------------------------------------------------------
 # Real pynapple flows (extra-gated)
 # ---------------------------------------------------------------------------

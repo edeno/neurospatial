@@ -56,6 +56,14 @@
   constructor and `fit` (fitted labels) and `predict` input labels, and
   population result constructors (including `summary_table(unit_ids=)`
   relabelling). `SpikeTrains` already rejected them.
+- **Behavior change:** `to_pynapple` passed unsorted timestamps to pynapple,
+  which sorts the times without reordering the values, so
+  `to_pynapple([0, 2, 1], [10, 20, 30])` returned `t=[0, 1, 2]`,
+  `d=[10, 20, 30]` (each value paired with another sample's time). It now
+  raises `ValueError` for unsorted, repeated or non-finite timestamps, naming
+  the first offending indices, and for a `columns` list whose length does not
+  match the value columns (pynapple silently renamed them `0, 1, ...`). These
+  checks run before pynapple is imported.
 
 ### Added — `method="glm"`: penalized-Poisson GAM estimator (spatial only)
 
