@@ -31,6 +31,7 @@ class TestRegionMembershipPerformance:
     of hoisting shapely_points() conversion outside the region loop.
     """
 
+    @pytest.mark.wallclock
     def test_region_membership_scales_with_regions(self):
         """Test that region_membership() time scales linearly (or better) with regions.
 
@@ -111,6 +112,7 @@ class TestRegionMembershipPerformance:
             f"  10 regions: {time_10_regions * 1000:6.2f} ms (ratio: {speedup_ratio_10:.2f}x)"
         )
 
+    @pytest.mark.wallclock
     def test_region_membership_absolute_performance(self):
         """Test absolute performance of region_membership().
 
@@ -151,6 +153,7 @@ class TestRegionMembershipPerformance:
 class TestEnvironmentCreationPerformance:
     """Benchmark environment creation performance."""
 
+    @pytest.mark.wallclock
     def test_large_environment_creation_time(self):
         """Test that large environments can be created in reasonable time.
 
@@ -181,6 +184,7 @@ class TestEnvironmentCreationPerformance:
 class TestSpatialQueryPerformance:
     """Benchmark spatial query performance (KDTree-based operations)."""
 
+    @pytest.mark.wallclock
     def test_kdtree_batch_query_performance(self):
         """Test KDTree batch query performance for map_points_to_bins().
 
@@ -220,6 +224,7 @@ class TestSpatialQueryPerformance:
 class TestGraphAlgorithmPerformance:
     """Benchmark graph algorithm performance."""
 
+    @pytest.mark.wallclock
     def test_shortest_path_large_graph(self):
         """Test shortest path computation on large graphs.
 
@@ -266,6 +271,7 @@ class TestGraphAlgorithmPerformance:
 class TestTrajectoryPerformance:
     """Benchmark trajectory analysis performance."""
 
+    @pytest.mark.wallclock
     def test_occupancy_large_trajectory(self):
         """Test occupancy computation with large trajectories.
 

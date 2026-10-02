@@ -125,9 +125,11 @@ jobs:
         run: |
           uv sync --extra dev
 
+      # Wall-clock bounds depend on the runner's hardware, so wallclock-marked
+      # tests run only locally.
       - name: Run slow tests
         run: |
-          uv run pytest -m "slow and not napari" -n 4
+          uv run pytest -m "slow and not napari and not wallclock" -n 4
         env:
           MPLBACKEND: Agg
 

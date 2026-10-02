@@ -413,6 +413,7 @@ def test_bfs_expansion_order_is_breadth_first():
 
 
 @pytest.mark.slow
+@pytest.mark.wallclock
 def test_connected_component_performance_scipy_vs_graph():
     """Benchmark scipy vs graph paths on large grid (Task 2.12)."""
     import time

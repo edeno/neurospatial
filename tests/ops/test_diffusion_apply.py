@@ -684,6 +684,7 @@ def test_jax_backend_return_type_and_grad():
 # Performance: apply-path vs the captured dense baseline
 # ---------------------------------------------------------------------------
 @pytest.mark.slow
+@pytest.mark.wallclock
 def test_perf_large_grid(baseline):
     """The matrix-free apply-path is dramatically faster and lower-memory than the
     baseline dense expm on a large grid, and scales to ~10k bins where the dense
