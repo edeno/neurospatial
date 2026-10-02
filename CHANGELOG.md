@@ -119,10 +119,11 @@
   names to the `Environment.units` registry, so pynwb's default `"meters"`
   becomes `"m"` (no unrecognized-units warning), and likewise `cm`, `mm` and
   `px`.
-- `environment_from_position` silently set `env.units = "cm"` when the
-  position series declared no unit (`unit=""`). It now emits a `UserWarning`
-  naming the series and saying to pass `units=`, then still assumes `"cm"`.
-  Passing `units=` skips the lookup and the warning.
+- **Behavior change:** `environment_from_position` silently set
+  `env.units = "cm"` when the position series declared no unit (`unit=""`).
+  It now emits a `UserWarning` naming the series and saying to pass `units=`,
+  then still assumes `"cm"`. Passing `units=` skips the lookup and the
+  warning.
 - **Behavior change:** `population_peri_event_histogram` raised
   `AxisError: axis -1 is out of bounds` for a pynapple `TsGroup`, because it
   iterated the group (which yields unit keys, not trains). It now accepts a
