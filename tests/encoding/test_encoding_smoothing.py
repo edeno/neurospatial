@@ -934,6 +934,42 @@ class TestDiffusionKdeUnresolvedFarField:
         )
         assert far.size == 0 or far.min() > 3 * bandwidth
 
+    @pytest.mark.parametrize("bandwidth", [5.0, 10.0, 20.0])
+    @pytest.mark.parametrize("backend", ["numpy", "jax"])
+    @pytest.mark.parametrize("batch", [False, True], ids=["single", "batch"])
+    def test_binned_far_field_rates_match_dense_kernel(
+        self, half_visited_arena, batch, backend, bandwidth
+    ):
+        if backend == "jax":
+            pytest.importorskip("jax")
+        env, spike_counts, occupancy = half_visited_arena
+        visited = occupancy > 0
+        raw_rate = np.where(visited, spike_counts / np.where(visited, occupancy, 1), 0)
+        average = env.compute_kernel(bandwidth, mode="average")
+        dense_rate = (average @ raw_rate) / (average @ visited.astype(float))
+
+        kwargs = {"method": "binned", "bandwidth": bandwidth, "backend": backend}
+        if batch:
+            rate = smooth_rate_maps_batch(
+                env, spike_counts[None, :], occupancy, **kwargs
+            )[0]
+        else:
+            rate = smooth_rate_map(env, spike_counts, occupancy, **kwargs)
+        rate = np.asarray(rate)
+
+        finite = np.isfinite(rate)
+        peak = dense_rate[finite].max()
+        assert_allclose(rate[finite], dense_rate[finite], rtol=0, atol=1e-4 * peak)
+        far = np.min(
+            np.linalg.norm(
+                env.bin_centers[~finite][:, None, :]
+                - env.bin_centers[visited][None, :, :],
+                axis=2,
+            ),
+            axis=1,
+        )
+        assert far.size == 0 or far.min() > 3 * bandwidth
+
 
 class TestEigenbasisCacheReuse:
     """Cross-neuron reuse is now automatic via the cached eigenbasis.

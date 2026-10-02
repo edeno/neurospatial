@@ -278,8 +278,8 @@ def smooth_rate_map(
     -------
     ArrayLike, shape (n_bins,)
         Smoothed firing rate in Hz (spikes/second). Bins with zero or
-        low occupancy are NaN, and so are ``diffusion_kde`` bins too far
-        from all occupancy for the smoothing to resolve (the
+        low occupancy are NaN, and so are ``diffusion_kde`` and ``binned``
+        bins too far from all occupancy for the smoothing to resolve (the
         smoothed denominator is within 1000 times the diffusion operator's
         numerical accuracy of zero, typically 4-7 bandwidths away). Returns
         ndarray for numpy backend, jax.Array for jax backend.
@@ -1111,16 +1111,12 @@ def _binned_gate(
     that need a non-negative result (the ``binned`` firing-rate wrappers) clip
     the output themselves.
 
-    **Far-field caveat.** Value-equality with the dense masked average holds only
-    where the dense denominator is comfortably above the truncation floor (well
-    within a bandwidth of valid input). For a bin **deep inside a supported
-    component but many bandwidths from any valid bin** (sparse coverage), both
-    ``num`` and ``den`` are truncation-noise-dominated, so the ratio can deviate
-    from the dense value by well more than ``tol`` (the dense operator extends the
-    matched-ratio constant across the whole component; the truncated one decays
-    toward zero). Such bins are finite and supported but should be treated as
-    extrapolation, not interpolation. Realistic dense coverage with scattered gaps
-    is unaffected (matches the dense average to ~1e-13).
+    **Far field.** Many bandwidths from any valid bin, both ``num`` and ``den``
+    approach the truncated apply's noise, and their ratio is noise (it reached
+    295,658 Hz from raw rates of at most 50 Hz). Bins whose smoothed weight is
+    below :func:`_resolution_floor` of the largest in their component are
+    therefore NaN (see :func:`_above_component_floor`); elsewhere the result
+    matches the dense masked average.
 
     Handles a 1-D ``(n_bins,)`` rate and a 2-D ``(n_neurons, n_bins)`` batch.
     """
@@ -1147,6 +1143,11 @@ def _binned_gate(
 
     n_components, labels = diffusion_component_labels(cast("EnvironmentProtocol", env))
     support = component_support_mask(labels, n_components, valid)
+    # Far from every valid bin both smoothed sums approach the apply's
+    # truncation noise; leave those bins NaN rather than report noise/noise.
+    support &= _above_component_floor(
+        labels, n_components, weights_smoothed, _resolution_floor(env, bandwidth)
+    )
     den = np.maximum(weights_smoothed, _DIFFUSE_DENOM_EPS)
     with np.errstate(divide="ignore", invalid="ignore"):
         return np.where(support, rate_smoothed / den, np.nan)

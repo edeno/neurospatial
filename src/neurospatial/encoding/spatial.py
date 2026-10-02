@@ -2599,7 +2599,7 @@ default="diffusion_kde"
           Respects environment boundaries (walls, obstacles). Uses diffusion
           kernel computed from environment graph. Bins too far from all
           occupancy for the smoothing to resolve (typically 4-7 bandwidths
-          away) are NaN.
+          away) are NaN; so are such bins for ``binned``.
         - **gaussian_kde**: Standard Euclidean KDE. Uses Gaussian kernel based
           on Euclidean distance between bin centers. Ignores boundaries (mass
           can "bleed through" walls).
@@ -2634,7 +2634,7 @@ default="diffusion_kde"
         ``0.0`` (no masking). Mutually exclusive with ``method="glm"``.
     fill_value : float | None, default=None
         (Ratio methods only.) Value used to replace NaN bins (masked/low-occupancy
-        bins produced by ``min_occupancy``, and ``diffusion_kde``
+        bins produced by ``min_occupancy``, and ``diffusion_kde`` / ``binned``
         bins beyond the smoothing's reach of any occupancy). When ``None`` (the
         default), NaN is preserved so existing callers see no behavior change.
         Pass ``fill_value=0.0`` for the recommended decoding golden path: a
@@ -3114,7 +3114,7 @@ default="diffusion_kde"
         with ``method="glm"``.
     fill_value : float | None, default=None
         (Ratio methods only.) Value used to replace NaN bins (masked/low-occupancy
-        bins produced by ``min_occupancy``, and ``diffusion_kde``
+        bins produced by ``min_occupancy``, and ``diffusion_kde`` / ``binned``
         bins beyond the smoothing's reach of any occupancy). When ``None`` (the
         default), NaN is preserved so existing callers see no behavior change.
         Pass ``fill_value=0.0`` for the recommended decoding golden path:

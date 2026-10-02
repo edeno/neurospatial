@@ -163,6 +163,13 @@
   environment now raises `ValueError` asking for `width=`. Likewise
   `validate_simulation`'s default `max_center_error` is 2 × the bin spacing
   (4 cm at 2 cm bins, previously 8 cm).
+- **Behavior change:** `method="binned"` with `bandwidth > 0` had the same
+  far-field problem: on a corridor visited only at x < 40 cm, with raw rates
+  of at most 50 Hz, it reported 295,658 Hz at x = 104 cm (bandwidth 10) and
+  237,467 Hz at x = 190 cm (bandwidth 20). Its smoothed rate is a ratio of
+  two diffused sums, and far from every visited bin both are noise. Those
+  bins are now NaN under the same rule as `diffusion_kde`; the remaining
+  rates match the exact dense average to within 1e-4 of the peak rate.
 
 ### Added — `method="glm"`: penalized-Poisson GAM estimator (spatial only)
 
