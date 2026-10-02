@@ -70,9 +70,16 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial.ops.diffusion import (
     _DIFFUSE_DENOM_EPS,
     component_support_mask,
+    diffusion_apply_rtol,
     diffusion_component_labels,
 )
 from neurospatial.ops.smoothing import _LARGE_KERNEL_THRESHOLD
+
+# A smoothed denominator is resolved when it exceeds this many times the
+# diffusion apply's noise floor (``diffusion_apply_rtol``) relative to the
+# largest value in its W-component. The ratio's error at a resolved bin is then
+# at most about 1/1000 = 0.1% of its value.
+_RESOLUTION_MARGIN = 1e3
 
 if TYPE_CHECKING:
     from neurospatial.environment._protocols import EnvironmentProtocol
@@ -271,8 +278,11 @@ def smooth_rate_map(
     -------
     ArrayLike, shape (n_bins,)
         Smoothed firing rate in Hz (spikes/second). Bins with zero or
-        low occupancy are NaN. Returns ndarray for numpy backend, jax.Array
-        for jax backend.
+        low occupancy are NaN, and so are ``diffusion_kde`` bins too far
+        from all occupancy for the smoothing to resolve (the
+        smoothed denominator is within 1000 times the diffusion operator's
+        numerical accuracy of zero, typically 4-7 bandwidths away). Returns
+        ndarray for numpy backend, jax.Array for jax backend.
 
     Raises
     ------
@@ -820,6 +830,108 @@ def _warn_if_fully_masked(occupancy: NDArray[np.float64], min_occupancy: float) 
         )
 
 
+def _resolution_floor(env: _BaseEnvironment, bandwidth: float) -> float:
+    """Fraction of its component maximum below which a smoothed value is noise.
+
+    ``_RESOLUTION_MARGIN`` times the relative accuracy of ``env.diffuse`` at
+    ``bandwidth`` (1e-3 for a truncated eigenbasis, 1e-10 for the full basis).
+    """
+    return _RESOLUTION_MARGIN * diffusion_apply_rtol(
+        cast("EnvironmentProtocol", env), bandwidth
+    )
+
+
+def _resolved_density_mask(
+    env: _BaseEnvironment,
+    occupancy: NDArray[np.float64],
+    occupancy_density: NDArray[np.float64],
+    bandwidth: float,
+) -> NDArray[np.bool_]:
+    """Bins whose smoothed occupancy density is resolved above the apply's noise.
+
+    ``env.diffuse`` reproduces the dense heat operator only to a relative
+    accuracy (``diffusion_apply_rtol``: the truncation tolerance, or float64
+    roundoff for the full basis). Far from all occupancy the smoothed spike and
+    occupancy densities both approach that noise, so their ratio is noise too
+    (it reached 20,000 Hz on a 50 Hz field). A bin is resolved when its
+    component holds raw occupancy and its smoothed occupancy density exceeds
+    :func:`_resolution_floor` times the largest density in its ``W``-component,
+    which keeps the ratio's error near 0.1% of the bin's rate or less.
+
+    Parameters
+    ----------
+    env : Environment
+        The environment whose ``diffuse`` produced ``occupancy_density``.
+    occupancy : NDArray[np.float64], shape (n_bins,)
+        Raw occupancy (seconds).
+    occupancy_density : NDArray[np.float64], shape (n_bins,)
+        Smoothed occupancy density.
+    bandwidth : float
+        The bandwidth passed to ``env.diffuse``.
+
+    Returns
+    -------
+    NDArray[np.bool_], shape (n_bins,)
+        True where the KDE ratio is numerically meaningful.
+    """
+    n_components, labels = diffusion_component_labels(cast("EnvironmentProtocol", env))
+    support = component_support_mask(labels, n_components, occupancy > 0)
+    resolved = _above_component_floor(
+        labels, n_components, occupancy_density, _resolution_floor(env, bandwidth)
+    )
+    return support & resolved
+
+
+def _above_component_floor(
+    labels: NDArray[np.int_],
+    n_components: int,
+    values: NDArray[np.float64],
+    floor: float,
+) -> NDArray[np.bool_]:
+    """``values > floor`` times the maximum of ``values`` in each bin's component.
+
+    Parameters
+    ----------
+    labels : NDArray[np.int_], shape (n_bins,)
+        Per-bin ``W``-component id.
+    n_components : int
+        Number of components.
+    values : NDArray[np.float64], shape (..., n_bins)
+        Smoothed weights; a leading batch axis is handled row by row.
+    floor : float
+        Relative floor (see :func:`_resolution_floor`).
+
+    Returns
+    -------
+    NDArray[np.bool_], shape (..., n_bins)
+        True where the value is resolved above the apply's noise.
+    """
+    values = np.asarray(values, dtype=np.float64)
+    flat = values.reshape(-1, values.shape[-1])  # (B, n_bins)
+    component_max = np.zeros((flat.shape[0], n_components))
+    np.maximum.at(component_max, (np.arange(flat.shape[0])[:, None], labels), flat)
+    return np.asarray(flat > floor * component_max[:, labels]).reshape(values.shape)
+
+
+def _resolved_density_mask_jax(
+    env: _BaseEnvironment, occupancy: Any, occupancy_density: Any, bandwidth: float
+) -> Any:
+    """JAX version of :func:`_resolved_density_mask` (traceable under ``jit``)."""
+    import jax
+    import jax.numpy as jnp
+
+    n_components, labels = diffusion_component_labels(cast("EnvironmentProtocol", env))
+    labels_j = jnp.asarray(labels)
+    has_occupancy = (
+        jax.ops.segment_max(occupancy, labels_j, num_segments=n_components) > 0.0
+    )
+    component_max = jax.ops.segment_max(
+        occupancy_density, labels_j, num_segments=n_components
+    )
+    floor = _resolution_floor(env, bandwidth) * component_max[labels_j]
+    return has_occupancy[labels_j] & (occupancy_density > floor)
+
+
 def _diffusion_kde(
     env: _BaseEnvironment,
     spike_counts: NDArray[np.float64],
@@ -838,18 +950,22 @@ def _diffusion_kde(
     -----
     The firing-rate denominator is the *smoothed* occupancy density, so a bin
     with zero raw occupancy but a well-defined denominator from neighboring
-    occupancy still gets a finite rate here. The ``min_occupancy`` cut is then
-    applied separately, on the *raw* occupancy in seconds (see
+    occupancy still gets a finite rate here. A bin whose smoothed occupancy
+    density is below the diffusion apply's resolution (see
+    :func:`_resolved_density_mask`) is NaN: far from all occupancy both
+    densities are truncation noise and their ratio is meaningless. The
+    ``min_occupancy`` cut is then applied separately, on the *raw* occupancy
+    in seconds (see
     :func:`_apply_min_occupancy_mask`), so it means the same thing across every
     smoothing method and matches the public
     ``result.occupancy < min_occupancy`` contract.
 
     ``env.diffuse`` is a pure linear operator (unlike the shipped clipped dense
-    kernel), so under truncation the smoothed occupancy density can carry a
-    tolerance-level negative lobe; the **magnitude gate** floors it
-    (``max(occupancy_density, 0)``) before the ``> 0`` divide guard, and the
-    output rate is clipped ``>= 0`` (decode nonnegativity, as the shipped
-    clipped-kernel path guaranteed).
+    kernel), so under truncation the smoothed densities carry tolerance-level
+    noise, including negative lobes; the **resolution gate** divides only where
+    the occupancy density is resolved above that noise, and the output rate is
+    clipped ``>= 0`` (decode nonnegativity, as the shipped clipped-kernel path
+    guaranteed).
     """
     spike_counts = np.asarray(spike_counts, dtype=np.float64)
     occupancy = np.asarray(occupancy, dtype=np.float64)
@@ -862,13 +978,13 @@ def _diffusion_kde(
     spike_density = smoothed[:, 0]
     occupancy_density = smoothed[:, 1]
 
-    # Magnitude gate: floor the (possibly tolerance-negative) denominator, then
-    # divide only where it is strictly positive (avoids 0/0 and negative-lobe
+    # Resolution gate: divide only where the denominator is resolved above the
+    # apply's truncation noise (avoids 0/0, negative-lobe and noise/noise
     # blowups). This gate is purely numerical -- it is NOT the min_occupancy cut.
-    occ_floor = np.maximum(occupancy_density, 0.0)
+    resolved = _resolved_density_mask(env, occupancy, occupancy_density, bandwidth)
     with np.errstate(divide="ignore", invalid="ignore"):
         firing_rate = np.where(
-            occ_floor > 0.0,
+            resolved,
             spike_density / occupancy_density,
             np.nan,
         )
@@ -1060,13 +1176,13 @@ def _diffusion_kde_batch(
     spike_density = smoothed[:, :n_neurons].T  # (n_neurons, n_bins)
     occupancy_density = smoothed[:, n_neurons]  # (n_bins,)
 
-    # Magnitude gate (numerical, not the min_occupancy cut) + nonneg clip, shared
-    # across neurons (see _diffusion_kde). occupancy broadcasts over the neuron
-    # axis in the raw-occupancy mask below.
-    occ_floor = np.maximum(occupancy_density, 0.0)
+    # Resolution gate (numerical, not the min_occupancy cut) + nonneg clip,
+    # shared across neurons (see _diffusion_kde). occupancy broadcasts over the
+    # neuron axis in the raw-occupancy mask below.
+    resolved = _resolved_density_mask(env, occupancy, occupancy_density, bandwidth)
     with np.errstate(divide="ignore", invalid="ignore"):
         firing_rates = np.where(
-            occ_floor > 0.0,
+            resolved,
             spike_density / occupancy_density,
             np.nan,
         )
@@ -1195,11 +1311,13 @@ def _smooth_rate_map_jax(
         )
         spike_density = smoothed[:, 0]
         occupancy_density = smoothed[:, 1]
-        # Magnitude gate (numerical divide guard, not the min_occupancy cut)
+        # Resolution gate (numerical divide guard, not the min_occupancy cut)
         # + nonneg clip (see _diffusion_kde).
-        occ_floor = jnp.maximum(occupancy_density, 0.0)
+        resolved = _resolved_density_mask_jax(
+            env, occupancy_j, occupancy_density, bandwidth
+        )
         firing_rate = jnp.where(
-            occ_floor > 0.0,
+            resolved,
             spike_density / occupancy_density,
             jnp.nan,
         )
@@ -1283,11 +1401,13 @@ def _smooth_rate_maps_batch_jax(
         )
         spike_density = smoothed[:, :n_neurons].T
         occupancy_density = smoothed[:, n_neurons]
-        # Magnitude gate (numerical divide guard, not the min_occupancy cut)
+        # Resolution gate (numerical divide guard, not the min_occupancy cut)
         # + nonneg clip (see _diffusion_kde).
-        occ_floor = jnp.maximum(occupancy_density, 0.0)
+        resolved = _resolved_density_mask_jax(
+            env, occupancy_j, occupancy_density, bandwidth
+        )
         firing_rates = jnp.where(
-            occ_floor > 0.0,
+            resolved,
             spike_density / occupancy_density,
             jnp.nan,
         )

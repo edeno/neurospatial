@@ -138,6 +138,19 @@
   `window_start` reports the clipped start. A trial left with fewer than 3
   samples before its entry is skipped, now with a `UserWarning` (it was
   skipped silently). `compute_vte_trial` is unchanged.
+- **Behavior change:** `method="diffusion_kde"` (the default for
+  `compute_spatial_rate(s)` and `smooth_rate_map(s)`) reported huge rates in
+  bins far from all occupancy: a simulated 50 Hz place cell in a 40 s open-field
+  session got 20,554 Hz in a corner the animal never approached, so the map's
+  peak (and anything using it) landed there. Far from occupancy both smoothed
+  densities fall to the diffusion operator's numerical accuracy (1e-6 of the
+  largest value when its eigenbasis is truncated, float64 roundoff otherwise),
+  and the ratio was noise over noise. Bins whose smoothed occupancy is within
+  1000 times that accuracy of zero, relative to the largest in their connected
+  component (typically 4-7 bandwidths from any occupancy), are now NaN, like
+  other unsupported bins (`fill_value=` replaces them). The remaining rates
+  match the exact dense kernel to within 1e-4 of the peak rate at bandwidths
+  5-20.
 
 ### Added — `method="glm"`: penalized-Poisson GAM estimator (spatial only)
 

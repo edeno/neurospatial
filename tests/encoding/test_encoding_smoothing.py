@@ -865,6 +865,76 @@ class TestMinOccupancy:
 # =============================================================================
 
 
+@pytest.fixture(scope="module")
+def half_visited_arena():
+    """A 200 x 10 cm corridor (2 cm bins) whose occupancy covers only x < 40.
+
+    Returns ``(env, spike_counts, occupancy)`` for one place field at (20, 5).
+    """
+    xx, yy = np.meshgrid(np.linspace(0, 200, 301), np.linspace(0, 10, 61))
+    env = Environment.from_samples(np.column_stack([xx.ravel(), yy.ravel()]), 2.0)
+    centers = env.bin_centers
+    occupancy = np.where(centers[:, 0] < 40, 0.1, 0.0)
+    expected_rate = 20 * np.exp(-np.sum((centers - [20, 5]) ** 2, 1) / (2 * 6.0**2))
+    spike_counts = (
+        np.random.default_rng(0).poisson(expected_rate * occupancy).astype(float)
+    )
+    return env, spike_counts, occupancy
+
+
+class TestDiffusionKdeUnresolvedFarField:
+    """Far from all occupancy the smoothed densities approach the diffusion
+    apply's truncation noise; their ratio there must not be reported.
+    """
+
+    @pytest.mark.parametrize("bandwidth", [5.0, 10.0, 20.0])
+    @pytest.mark.parametrize("backend", ["numpy", "jax"])
+    @pytest.mark.parametrize("batch", [False, True], ids=["single", "batch"])
+    def test_far_field_rates_match_dense_kernel(
+        self, half_visited_arena, batch, backend, bandwidth
+    ):
+        if backend == "jax":
+            pytest.importorskip("jax")
+        env, spike_counts, occupancy = half_visited_arena
+        dense = env.compute_kernel(bandwidth, mode="density") @ np.column_stack(
+            [spike_counts, occupancy]
+        )
+        dense_rate = dense[:, 0] / dense[:, 1]
+
+        if batch:
+            rate = smooth_rate_maps_batch(
+                env,
+                spike_counts[None, :],
+                occupancy,
+                method="diffusion_kde",
+                bandwidth=bandwidth,
+                backend=backend,
+            )[0]
+        else:
+            rate = smooth_rate_map(
+                env,
+                spike_counts,
+                occupancy,
+                method="diffusion_kde",
+                bandwidth=bandwidth,
+                backend=backend,
+            )
+        rate = np.asarray(rate)
+
+        finite = np.isfinite(rate)
+        peak = dense_rate[finite].max()
+        assert_allclose(rate[finite], dense_rate[finite], rtol=0, atol=1e-4 * peak)
+        # Bins are left out only far (> 3 bandwidths) from every occupied bin.
+        occupied = env.bin_centers[occupancy > 0]
+        far = np.min(
+            np.linalg.norm(
+                env.bin_centers[~finite][:, None, :] - occupied[None, :, :], axis=2
+            ),
+            axis=1,
+        )
+        assert far.size == 0 or far.min() > 3 * bandwidth
+
+
 class TestEigenbasisCacheReuse:
     """Cross-neuron reuse is now automatic via the cached eigenbasis.
 
