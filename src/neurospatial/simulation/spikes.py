@@ -315,7 +315,7 @@ def generate_population_spikes(
     ...     env, spike_trains[0], times, positions
     ... ).firing_rate  # doctest: +SKIP
     >>> true_center = place_cells[0].ground_truth["center"]  # doctest: +SKIP
-    >>> detected_center = env.bin_centers[np.argmax(rate_map)]  # doctest: +SKIP
+    >>> detected_center = env.bin_centers[np.nanargmax(rate_map)]  # doctest: +SKIP
 
     Generate spikes quietly (no progress bar):
 

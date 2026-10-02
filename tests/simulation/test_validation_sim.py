@@ -389,6 +389,33 @@ def test_default_center_error_threshold(simple_2d_env):
     assert threshold == 4.0
 
 
+def test_detected_center_ignores_unresolved_bins():
+    """The detected peak is taken over finite bins only.
+
+    The track extends far beyond the visited stretch, so the smoothed rate is
+    NaN there; a plain argmax would pick the first NaN bin as the peak.
+    """
+    from neurospatial import Environment
+
+    env = Environment.from_samples(np.linspace(0, 140, 281)[:, None], bin_size=10.0)
+    times = np.arange(0, 60, 0.01)
+    positions = (20 + 20 * np.sin(times))[:, None]  # visits [0, 40] only
+    near_bin_1 = np.abs(positions[:, 0] - env.bin_centers[1, 0]) < 2.0
+    spike_times = times[near_bin_1][::5]
+
+    result = validate_simulation(
+        env=env,
+        spike_trains=[spike_times],
+        positions=positions,
+        times=times,
+        ground_truth={
+            "cell_0": {"center": env.bin_centers[1], "width": 5.0, "max_rate": 10.0}
+        },
+    )
+
+    assert result["center_errors"][0] == 0.0
+
+
 class TestPlotSessionSummary:
     """Tests for plot_session_summary() function."""
 

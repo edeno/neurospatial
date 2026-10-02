@@ -258,8 +258,13 @@ def validate_simulation(
             dtype=np.float64,
         )
 
-        # Find detected center (peak of rate map)
-        peak_bin = int(np.argmax(detected_field))
+        # Find detected center (peak of rate map). Bins the smoothing cannot
+        # resolve are NaN; with no finite bin there is no peak to compare.
+        if not np.any(np.isfinite(detected_field)):
+            center_errors[i] = np.nan
+            correlations[i] = np.nan
+            continue
+        peak_bin = int(np.nanargmax(detected_field))
         detected_center = env.bin_centers[peak_bin]
 
         # Get ground truth center
