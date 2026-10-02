@@ -86,7 +86,7 @@ These are on `main`, which is the base of this branch:
 - **Audit bugs:** every bug in the audit list has a regression test that fails on `main` and passes after the fix (phase validation slices).
 - **Gap correctness:** on a synthetic two-epoch recording with a 1000 s pause and a true rate of 5 Hz, every rate family reports 5 Hz ± 5%, and the decoder creates no time bins inside the pause (Phase 3).
 - **Researcher workflow (checkpoint after Phase 4):** each of the five journeys completes from public documentation alone, without reading source code.
-- **Expectation, not a target:** the public surface stays large (Phase 6 cuts about 427 exports to 418). The gains are coherence, discoverability and correct defaults, not a much smaller API. The analytical modules remain substantial.
+- **Expectation, not a target:** the public surface stays large (Phase 6 takes about 427 exports on `main` to about 420). The gains are coherence, discoverability and correct defaults, not a much smaller API. The analytical modules remain substantial.
 - **Lines of governance:** 0 lines of inventory or count-freeze tests; the API snapshot is one test file plus one text snapshot.
 
 ## Risks and Mitigations
@@ -95,23 +95,26 @@ These are on `main`, which is the base of this branch:
 | --- | --- |
 | The default spike window (assumed to equal the position coverage) is wrong when ephys starts after tracking. | Phase 3: when ≥5 units are all silent for ≥60 s inside the analyzed window, warn and name `spike_window=`; the parameter is documented on every spike+position function. |
 | Porting fixes drags in archive infrastructure. | Phase 1 ports each fix as a minimal re-implementation against `main`'s code, with the archive commit as reference only. |
-| Executable-docs CI becomes slow or flaky. | Phase 4 uses small simulated fixtures (≤60 s of data). They are **not** marked `slow`, because no CI job runs `slow` tests (`pytest.ini` overrides `pyproject.toml`), so slow-marked docs tests would never be enforced. |
+| Executable-docs CI becomes slow or flaky. | Phase 4b uses small simulated fixtures (≤60 s of data). They stay in the default job: they are **not** marked `slow`, because docs guards must run on every PR. Phase 1 adds a separate `slow-tests` CI job for genuinely slow tests (`-m "slow and not napari"`), so a slow-marked test is still enforced on every PR. |
 | CI does not run on this branch: every workflow triggers only on `main`. | Phase 1's first code task adds `feat/researcher-first` to the workflow triggers, so every later PR gets CI. |
 | Namespace curation silently drops something a doc uses. | Phase 6 runs the executable-docs test from Phase 4 after curation; a missing name fails CI. |
 
 ## Rollout Strategy
 
-There are nine PRs into `feat/researcher-first` (phases 1, 2, 3a, 3b, 3c, 4, 5, 6 and 7), then one release. The ordering constraints:
+There are sixteen PRs into `feat/researcher-first`, then one release. Each phase file's header says what it **Requires**. The dependency graph:
 
-- Phase 1 must land first, because it enables CI on this branch.
-- Phase 2 can follow in any order after that.
-- 3b and 3c each require 3a, and are independent of each other.
-- All of Phase 3 must land before Phase 4, because Phase 4 executes examples that depend on the four-array calls working.
-- Phase 6 must follow Phase 4, because it relies on the executable-docs guard.
+- **1** first: it enables CI on this branch and fixes a test that otherwise hangs the suite.
+- **2a, 2b**: each requires 1. They are independent of each other.
+- **3a**: requires 1. 3a defines the interval helpers the rest of Phase 3 uses.
+- **3b, 3c, 3d**: each requires 3a. 3c also requires 2a, because both edit the PSTH code in `events/alignment.py`.
+- **3e**: requires 3d and 2b. 3d owns the new time-window keywords on `compute_pre_decision_metrics` and the VTE functions, and 3e only forwards them. 3e's `heading_from_velocity` change touches files 2b edits.
+- **4a**: requires all of Phases 2 and 3. It rewrites error sites that 2a and 2b touched. **4b** requires 4a, because 4b executes examples that depend on the four-array calls working.
+- **Checkpoint**: after 4b, before 5a (below).
+- **5a, then 5b; 6a, then 6b, then 6c; then 7.** 6a requires 5b, because the snapshot freezes the names 5a and 5b introduce. 7 requires 5b (threshold constants) and 6c.
 
 No feature flags are used.
 
-**Researcher-workflow checkpoint after Phase 4** (before Phases 5–7 start). Executable examples prove that calls work; this checkpoint tests whether the design actually reduces researcher effort.
+**Researcher-workflow checkpoint after Phase 4b** (before Phase 5a starts). Executable examples prove that calls work; this checkpoint tests whether the design actually reduces researcher effort.
 - On the branch, re-run the `ux-review` and `design-review` workflows (`.claude/workflows/`). Use their journeys, working only from the public documentation:
   1. load an NWB file or simulate a session;
   2. select epochs;
@@ -120,7 +123,7 @@ No feature flags are used.
   5. produce a summary table and a plot.
 - Compare against the October 2026 baseline: the UX review rated the experience CONFUSING, and all five design-review journeys were "painful".
 - Record each journey's call count and lines of code, and every place the agent had to read source code.
-- Findings become tasks in Phases 5–7, or a new phase, before those phases start. If the journeys are not clearly easier, stop and revisit the design before continuing.
+- Findings become tasks under a "Checkpoint additions" heading at the top of the relevant later phase files, or form a new phase, before those phases start. If the journeys are not clearly easier, stop and revisit the design before continuing.
 
 ## Open Questions
 
@@ -130,12 +133,25 @@ No feature flags are used.
 
 ## Estimated Effort
 
-- Phase 1: about 1–1.5k lines (mostly tests).
-- Phase 2: about 600 lines.
-- Phases 3a–3c: about 4–5k lines in total, across about 60 entry points.
-- Phase 4: about 1.5k lines, mostly docs.
-- Phase 5: about 800 lines.
-- Phase 6: about 1k lines changed and net deletions.
-- Phase 7: about 400 lines.
+Executor dry-runs measured the call sites and showed the original estimates were 2–3× low. The phases were split so that each one fits a single agent session and a reviewable PR.
+
+| Phase | Diff size |
+|---|---|
+| 1 | about 1.5k lines |
+| 2a | about 1k lines |
+| 2b | about 1.5k lines |
+| 3a | about 2k lines |
+| 3b | about 1.5–2k lines |
+| 3c | about 1.5k lines |
+| 3d | about 1.5k lines |
+| 3e | about 1k lines |
+| 4a | about 1.5k lines |
+| 4b | about 1.5k lines |
+| 5a | about 2k lines, mostly mechanical renames |
+| 5b | about 1.5k lines |
+| 6a | about 1.5k lines |
+| 6b | about 2–3k lines across about 100 files, mostly mechanical call-site updates |
+| 6c | about 1.5k lines |
+| 7 | about 600 lines |
 
 These are order-of-magnitude figures for diff sizing only.

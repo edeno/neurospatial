@@ -1,12 +1,16 @@
-# Phase 3b — Time windows: decoding and peri-event analysis
+# Phase 3c — Time windows: decoding and peri-event analysis
 
-[← back to PLAN.md](PLAN.md) · [overview](overview.md) · [shared contracts](shared-contracts.md#time-window-semantics) · [3a](phase-3a-time-windows-rates.md) · [3c](phase-3c-time-windows-behavior.md)
+**Requires:** Phases 3a and 2a (both edit the PSTH code in `events/alignment.py`).
 
-This is the second of three Phase 3 PRs (see the split table in [3a](phase-3a-time-windows-rates.md)). It needs 3a's `neurospatial/_intervals.py`, the extended `interval_valid_mask` and the encoder keywords. It does not depend on 3c.
+[← back to PLAN.md](PLAN.md) · [executing a phase](executing.md) · [overview](overview.md) · [shared contracts](shared-contracts.md#time-window-semantics) · [3a](phase-3a-time-windows-core.md)
+
+This is the third Phase 3 PR (the split is tabled in [3a](phase-3a-time-windows-core.md)). It needs 3a's `neurospatial/_intervals.py`, the extended `interval_valid_mask` and the spatial encoder keywords. It is independent of 3b, 3d and 3e.
+
+Follow [executing.md](executing.md) for branching, commits, CHANGELOG bullets, the definition of done and the PR.
 
 **Inputs to read first:**
 
-- [phase-3a-time-windows-rates.md](phase-3a-time-windows-rates.md), Tasks 1–2. This is the `_intervals` API that 3b uses: `resolve_time_windows`, `as_intervals`, `intervals_contain`, `run_time_bounds`, and `interval_valid_mask(times, *, max_gap, epochs, spike_window)` with no env.
+- **3a's merged code is the source of truth**, not the 3a plan text: [src/neurospatial/_intervals.py](../../../../src/neurospatial/_intervals.py) (`resolve_time_windows`, `as_intervals`, `intervals_contain`, `run_time_bounds`), and `interval_valid_mask(times, *, max_gap, epochs, spike_window)` in [src/neurospatial/environment/trajectory.py](../../../../src/neurospatial/environment/trajectory.py), which needs no env. `compute_spatial_rates` already takes `epochs`/`spike_window` and emits the population-silence warning.
 - [src/neurospatial/decoding/session.py:92](../../../../src/neurospatial/decoding/session.py#L92). `decode_session`.
   - [:368](../../../../src/neurospatial/decoding/session.py#L368) is `_build_encoding_model`. Its global decode grid is at lines 594–605: `n_time = floor((t_stop - t_start)/dt + 1e-9)`, then `edges` and `bin_centers` over the whole span, so the grid **invents bins inside recording gaps**.
   - [:610](../../../../src/neurospatial/decoding/session.py#L610) is `_encode_and_bin`, with a global `np.histogram` at 672–674.
@@ -15,9 +19,9 @@ This is the second of three Phase 3 PRs (see the split table in [3a](phase-3a-ti
 - [src/neurospatial/decoding/estimator.py:278](../../../../src/neurospatial/decoding/estimator.py#L278). This is `BayesianDecoder.fit`, with `epoch=` at :286. Its body slices the arrays with `behavior.restrict`/`restrict_spike_trains` at lines 353–371.
   - `predict` (:404) does not forward `self.max_gap`.
   - The other methods are `predict_summary` (:448) and `score` (:498).
-- [src/neurospatial/decoding/_result.py:219](../../../../src/neurospatial/decoding/_result.py#L219). `DecodingResult.plot` uses `imshow` with `extent=[times[0], times[-1]]` (lines 305–330), which assumes uniformly spaced bins.
+- [src/neurospatial/decoding/_result.py:26](../../../../src/neurospatial/decoding/_result.py#L26). `DecodingResult` (fields from :60; `summary` at :365 with a doctest printing `sorted(result.summary())` at :385; `to_xarray` attrs at :576). `DecodingResult.plot` (:219) uses `imshow` with `extent=[times[0], times[-1]]` (lines 305–330), which assumes uniformly spaced bins. `DecodingSummary` is at :734 (`summary` at :880, attrs at :1030).
 - [src/neurospatial/events/alignment.py:201](../../../../src/neurospatial/events/alignment.py#L201) is `peri_event_histogram` (`n_events = len(event_times)` at :300; the mean over events is at :325). [:343](../../../../src/neurospatial/events/alignment.py#L343) is `population_peri_event_histogram` (`n_events` at :456; the mean is at :493). Neither has a notion of epochs. Each normalizes by every event, even when the event's window runs into unrecorded time.
-- [src/neurospatial/events/_core.py:30](../../../../src/neurospatial/events/_core.py#L30) is `PeriEventResult` (fields at 77–84; `summary` at :138; `plot` at :187). [:208](../../../../src/neurospatial/events/_core.py#L208) is `PopulationPeriEventResult` (fields at 267–278; `__getitem__` builds a `PeriEventResult` at :351; `summary` at :492; `plot` builds one at :560).
+- [src/neurospatial/events/_core.py:30](../../../../src/neurospatial/events/_core.py#L30) is `PeriEventResult` (fields at 77–84; `summary` at :138, whose doctest prints `sorted(s)` at :162; `plot` at :187). [:208](../../../../src/neurospatial/events/_core.py#L208) is `PopulationPeriEventResult` (fields at 267–278; `__getitem__` builds a `PeriEventResult` at :351; `summary` at :492, whose doctest prints `sorted(result.summary())` at :518; `plot` builds one at :560).
 - Evidence (session scratchpad): `branch-triage.md` §A2. Its repro uses two epochs, `[0, 100)` and `[1100, 1200)`.
   - **Decoding:** 4,000 of 4,799 decode bins fall inside the unrecorded gap, all with a finite MAP.
   - **PETH:** windows that cross the gap are normalized as if fully observed. A flat 10 Hz rate reads as 0 Hz in the late bins.
@@ -27,10 +31,10 @@ This is the second of three Phase 3 PRs (see the split table in [3a](phase-3a-ti
   - `decoding/_result.py`: Phase 1 Task 12 made `DecodingResult` a frozen dataclass.
     - **Public constructor:** `__post_init__` always copies `posterior` and `times` into read-only arrays.
     - **Internal path:** `decode_position` builds its result through the private `_from_owned_posterior`, which keeps the posterior it just allocated without copying and copies only the small metadata arrays.
+    - **Phase 1's guard test** `tests/decoding/test_result.py::test_from_owned_posterior_covers_all_fields` asserts that `decode_position`'s `_from_owned_posterior` call passes **every** field except `posterior`. Adding a field without passing it there fails that test (Task 6).
     - **This phase:** Task 4's plot change does not touch this. Task 6 adds the `spike_window` field, which is copied on both paths, and the private `_evolve` method, so `decode_session` can attach metadata without a second posterior allocation.
   - `decoding/posterior.py`: Phase 1 Task 2 changed the prior handling. This phase does not edit it.
-  - `events/alignment.py`: Phase 2 Task 8 made `population_peri_event_histogram` normalize its input with `as_spike_trains_with_ids`.
-  - `CHANGELOG.md`: append after the Phase 1, 2 and 3a sections.
+  - `events/alignment.py`: Phase 2a (which precedes this PR in the PLAN order) made `population_peri_event_histogram` normalize its input with `as_spike_trains_with_ids`.
 
 **Contracts referenced:**
 
@@ -46,7 +50,7 @@ This is the second of three Phase 3 PRs (see the split table in [3a](phase-3a-ti
 
 ## Inventory (this PR's slice)
 
-| Function (file:line) | Category | Current gap behavior on `main` | Change in 3b |
+| Function (file:line) | Category | Current gap behavior on `main` | Change in 3c |
 | --- | --- | --- | --- |
 | `decode_session` session.py:92 | spike+position | encoding is gap-aware (`max_gap`); the **decode grid spans the whole recording**, so bins inside a pause get a posterior | add `epochs=None, spike_window=None`; per-run time bins |
 | `decode_session_summary` session.py:679 | spike+position | same as above | same; streamed counting uses per-run bins |
@@ -164,7 +168,7 @@ Counting full versus in 1000-bin blocks (scoping each train to `[left[start], ri
 
 - Update the `bin_spikes_in_time` docstring Notes, which currently say "the last bin is closed on the right". Replace that with: bins are half-open `[left, right)`, a trailing remainder shorter than `dt` is dropped, and a spike exactly at `t_stop` (or at any window stop) is not counted.
 - Update any test that relies on the right-closed edge. `tests/decoding/test_spike_binning.py` has the related edge-case test near :233–:245.
-- Add a CHANGELOG line.
+- Add a CHANGELOG bullet in the same commit.
 
 `bin_spikes_in_time(spike_trains, dt, t_start=None, t_stop=None, *, epochs=None, orient=...)`:
 
@@ -231,16 +235,17 @@ The decode grid uses only the gap, `epochs` and `spike_window` gates, as the [co
   - **Remove the `restrict`/`restrict_spike_trains` branch (lines 353–371).** Pass the normalized windows to `_build_encoding_model`.
   - Restricting through the mask drops the intervals that straddle an epoch boundary. Slicing used to concatenate the epochs, after which `max_gap` dropped the join.
   - Update the example at :342 to `epochs=(0.0, 60.0)`.
+  - Update the existing tests that call `fit(epoch=...)`: `tests/decoding/test_estimator.py:232` and `:282` become `epochs=`, and the error-provenance test at `:616` (an empty `epoch`) now checks the error for an `epochs` window that excludes every interval. The module docstring at `:13` names `fit(epoch=...)` too.
 - **`predict`, `predict_summary` and `score`.** Each gains keyword-only `epochs=None, spike_window=None` and forwards `max_gap=self.max_gap`; `predict` did not forward `max_gap` before. The docstrings state that `times` are the tracking timestamps: decode bins tile each run of `times` with gaps no longer than `max_gap`. To decode a span without tracking samples, pass `times=np.arange(t0, t1, dt)`.
 
 ### 4. `DecodingResult.plot` with non-contiguous bins
 
-In `_result.py` (lines 305–330), when `times` is set and the bins are non-contiguous (`np.any(np.diff(times) > 1.5 * np.min(np.diff(times)))`), plot the columns against the bin index. A time `extent` would visually compress each pause. Then:
+In `_result.py` (lines 305–330), when `times` is set and holds at least two bins, compute `d = np.diff(times)` and `breaks = np.flatnonzero(d > 1.5 * np.min(d))`. With fewer than two bins `d` is empty and `np.min` would raise, so a one-bin result is treated as contiguous. When `breaks` is non-empty, plot the columns against the bin index; a time `extent` would visually compress each pause. Then:
 
-- draw a dashed vertical line (`ax.axvline`) at each run break;
+- draw a dashed vertical line (`ax.axvline`) at `breaks + 0.5` (between the two bins of each run break);
 - set the x label to `"Time bin (dashed lines: recording gaps)"`.
 
-Contiguous results keep today's time `extent`, with no change.
+Contiguous results keep today's time `extent`, with no change. The result stores no `dt`, so a two-bin result that spans a gap cannot be told from a contiguous one; it is plotted against time. Say so in the `plot` docstring.
 
 ### 5. Peri-event histograms keep only fully observed windows
 
@@ -294,7 +299,7 @@ Changes to the result classes (`_core.py`):
 
 - **Fields.** `PeriEventResult` gains `n_events_dropped: int = 0`, after `unit_id`. `PopulationPeriEventResult` gains `n_events_dropped: int = field(default=0, compare=False)`, after `unit_table`.
 - **Builders.** `__getitem__` (:351) and `plot` (:560) pass the count through.
-- **Summaries.** Both `summary()` methods (:138, :492) report `n_events_dropped`.
+- **Summaries.** Both `summary()` methods (:138, :492) report `n_events_dropped`. Their doctests print the sorted keys (`_core.py:162` and `:518`); add `'n_events_dropped'` to both expected outputs. `tests/events/test_psth_terminal_verbs.py:106` asserts the exact population key set; add the key there too.
 - **Docstrings.** Update the Attributes docstrings.
 
 There is no warning on a partial drop. The count is on the result, and the contract forbids warning merely because gaps exist.
@@ -305,7 +310,7 @@ With both arguments `None` there is nothing to filter against. Spike-only analys
 
 Decoding is a spike + position analysis, so its results carry the same visible assumption as 3a's rate results ([time-window semantics, Defaults](shared-contracts.md#time-window-semantics)).
 
-- **Fields.** `DecodingResult` (`_result.py:25`, frozen since Phase 1) and `DecodingSummary` (`_result.py:733`, already frozen) each gain `spike_window: NDArray[np.float64] | None = field(default=None, kw_only=True, compare=False)`. `DecodingResult.__post_init__` passes a non-None `spike_window` through Phase 1's `_read_only_copy`. Phase 1's trusted `_from_owned_posterior` does the same: it copies `spike_window` and `times`, which are small, and never `posterior`.
+- **Fields.** `DecodingResult` (`_result.py:26`, frozen since Phase 1) and `DecodingSummary` (`_result.py:734`, already frozen) each gain `spike_window: NDArray[np.float64] | None = field(default=None, kw_only=True, compare=False)`. `DecodingResult.__post_init__` passes a non-None `spike_window` through Phase 1's `_read_only_copy`. Phase 1's trusted `_from_owned_posterior` does the same: it copies `spike_window` and `times`, which are small, and never `posterior`.
 - **Changing fields without copying the posterior.** The public `dataclasses.replace` re-runs `__post_init__`, so it copies the posterior. That is correct for callers, but it would add a second full posterior allocation inside the library. Add a private method that reuses the result's own posterior through the trusted path:
 
   ```python
@@ -321,13 +326,14 @@ Decoding is a spike + position analysis, so its results carry the same visible a
       fields.update(changes)
       return type(self)._from_owned_posterior(self.posterior, **fields)
   ```
+
 - **Property.** Each class gets a read-only property `spike_window_assumed -> bool`, which returns `self.spike_window is None`. Its docstring is 3a's text: an assumption, which the population-silence warning cannot verify.
 - **Who sets it.**
   - `decode_session` returns `decode_position(...)._evolve(spike_window=S)`. That is one posterior allocation for the whole call, made by `decode_position`. Do not use `dataclasses.replace` here, because it copies.
   - `decode_session_summary` passes `spike_window=S` to its `DecodingSummary(...)` (`session.py:961`).
   - `BayesianDecoder.predict`, `predict_summary` and `score` inherit this through those functions.
-  - `decode_position` and `decode_position_summary` take precomputed counts, which carry no spike-window information. They leave the default `None`, which reads as "assumed": nothing restricted the counts.
-- **`summary()` and `to_xarray()`.** Both classes' `summary()` (`_result.py:365, :880`) add `"spike_window_assumed"` and `"spike_window"` (`.tolist()` or `None`). Both `to_xarray()` `attrs` dicts (`:576`, `:1030`) add `spike_window_assumed` as `int` and, when it is not None, `spike_window` as a flat float64 array. This is 3a's encoding: NetCDF has no bool or None.
+  - `decode_position` and `decode_position_summary` take precomputed counts, which carry no spike-window information. Their result is "assumed": nothing restricted the counts. `decode_position` passes `spike_window=None` **explicitly** in its `_from_owned_posterior(...)` call, because Phase 1's `test_from_owned_posterior_covers_all_fields` requires that call to name every field except `posterior`; relying on the default fails it.
+- **`summary()` and `to_xarray()`.** Both classes' `summary()` (`_result.py:365, :880`) add `"spike_window_assumed"` and `"spike_window"` (`.tolist()` or `None`). Update the `DecodingResult.summary` doctest at `_result.py:385`, which prints the sorted keys. Both `to_xarray()` `attrs` dicts (`:576`, `:1030`) add `spike_window_assumed` as `int` and, when it is not None, `spike_window` as a flat float64 array. This is 3a's encoding: NetCDF has no bool or None.
 
 ### 7. Public docstrings for every touched public function (own task)
 
@@ -337,9 +343,9 @@ Decoding is a spike + position analysis, so its results carry the same visible a
 - **PETH `Returns`:** document `n_events_dropped`.
 - **`bin_spikes_in_time` Notes:** update the half-open note.
 
-### 8. CHANGELOG, README and user guide (own task)
+### 8. CHANGELOG check, README and user guide (own task)
 
-- **`CHANGELOG.md` `[Unreleased]`:** add the section "Changed — decoding and peri-event histograms respect recording gaps". It covers:
+- **`CHANGELOG.md` `[Unreleased]`:** each earlier commit added its own bullet ([executing.md](executing.md)). Check that the section "Changed — decoding and peri-event histograms respect recording gaps" covers:
   - the decode-bin fix (on the audit repro, 4,000 of 4,799 bins fell inside a pause);
   - `epochs`/`spike_window`;
   - the `BayesianDecoder.fit(epoch=)` → `epochs=` replacement;
@@ -352,13 +358,13 @@ Decoding is a spike + position analysis, so its results carry the same visible a
 
 ## Deliberately not in this phase
 
-- **The rate families and `_intervals.py`.** These are done in 3a. Do not re-edit them, except to call them.
-- **Behavior, segmentation, `add_positions`.** These belong to 3c.
+- **The spatial rate family, `_intervals.py` and `interval_valid_mask`.** These are done in 3a. Do not re-edit them, except to call them.
+- **The frame rate families** (3b); **segmentation and env sequence methods** (3d); **kinematics, `heading_from_velocity`, `add_positions`** (3e).
 - **`align_spikes_to_events`.** It returns one entry per input event with no normalization. Dropping events would change its length and index alignment. It stays a primitive. Callers who need observed-only events filter `event_times` first, or use the PETH functions.
-- **GLM event regressors (`time_to_nearest_event`, `event_count_in_window`, `event_indicator`).** They return one value per *sample* and drop no events. The contract's spike-only row ("keep the event iff its window ⊆ …") does not map onto them; the natural rule would mask samples whose window leaves the epochs. That changes return dtypes (`int64`/`bool` cannot hold NaN), so it needs a maintainer decision. It stays deferred and is listed in the overview's Open Questions, with this trigger: decide before Phase 4 documents the regressors.
+- **GLM event regressors (`time_to_nearest_event`, `event_count_in_window`, `event_indicator`).** They return one value per *sample* and drop no events. The contract's spike-only row ("keep the event iff its window ⊆ …") does not map onto them; the natural rule would mask samples whose window leaves the epochs. That changes return dtypes (`int64`/`bool` cannot hold NaN), so it needs a maintainer decision. It stays deferred and is listed in the overview's Open Questions, with this trigger: decide before Phase 4b documents the regressors.
 - **Replay-detection helpers** (`detect_trajectory_radon`, `fit_linear_trajectory`, `fit_isotonic_trajectory`) on windows that span a gap. They receive user-chosen posterior windows and are unchanged.
-- **The TsGroup handling bug in `population_peri_event_histogram`.** Phase 2 Task 8 fixed it (the function now normalizes its input with `as_spike_trains_with_ids`). Apply this phase's event filtering to those normalized trains.
-- **Argument reordering, or removing `Session`.** These belong to Phase 6.
+- **The TsGroup handling bug in `population_peri_event_histogram`.** Phase 2a fixed it (the function now normalizes its input with `as_spike_trains_with_ids`). Apply this phase's event filtering to those normalized trains.
+- **Argument reordering** (Phase 6b) **or removing `Session`** (Phase 6c).
 
 ## Validation slice
 
@@ -368,11 +374,11 @@ The fixtures come from 3a (`two_epoch_recording`, `continuous_recording`).
 | --- | --- |
 | `tests/decoding/test_decode_gaps.py::test_decode_session_has_no_bins_in_pause` | `decode_session(env, [spikes]*5 (offset per unit), times, positions, dt=0.025)` on the two-epoch fixture. `result.times.size == 7998` (3999 per run, since `floor(99.98/0.025) = 3999`). No center lies in `(99.98, 1100)`. `posterior.shape == (7998, env.n_bins)`. **Fails on `main`**, which has 47999 bins, about 40000 of them in the pause. |
 | `tests/decoding/test_decode_gaps.py::test_summary_matches_full_decode` | `decode_session_summary(..., time_chunk=1000)` gives `times` exactly equal to `decode_session(...).times`, and `map_bin` equal to `posterior.argmax(1)` (array-equal). The block size is chosen so that blocks straddle the run break. |
-| `tests/decoding/test_decode_gaps.py::test_spikes_in_pause_are_ignored` | Adding 500 spikes uniformly in `[200, 1000)` to every unit leaves the decode `posterior` array-equal, and the encoding models unchanged. |
+| `tests/decoding/test_decode_gaps.py::test_spikes_in_pause_are_ignored` | Adding 500 spikes uniformly in `[200, 1000)` to every unit leaves the `decode_session` `posterior` array-equal, and leaves `compute_spatial_rates(..., method="binned", fill_value=0.0).firing_rates` (the models `decode_session` builds internally; `DecodingResult` does not carry them) array-equal. |
 | `tests/decoding/test_decode_gaps.py::test_epochs_restrict_decode_bins` | `epochs=[(0., 100.)]` gives 3999 bins, all below 100. `spike_window=(1100., 1200.)` gives 3999 bins, all at or above 1100. |
 | `tests/decoding/test_decode_gaps.py::test_no_bin_fits_error` | `dt=200.0` raises a `ValueError` matching `"No decode time bin fits"`, with a line starting `"Fix:"`. |
 | `tests/decoding/test_decode_gaps.py::test_immobility_still_decoded` | With `min_speed` large enough to exclude every interval in the second epoch from encoding, decode bins still cover the second epoch (3999 bins at or above 1100). |
-| `tests/decoding/test_estimator.py::test_fit_epochs_matches_decode_session` | `BayesianDecoder(env).fit(spikes, t, p, epochs=[(0, 100)]).encoding_models` equals the encoding models from `decode_session(..., epochs=[(0, 100)])` (array-equal). `fit(..., epoch=...)` raises `TypeError`. |
+| `tests/decoding/test_estimator.py::test_fit_epochs_matches_compute_spatial_rates` | `BayesianDecoder(env, method="binned").fit(spikes, t, p, epochs=[(0, 100)]).encoding_models` array-equals `compute_spatial_rates(env, spikes, t, p, method="binned", bandwidth=None, min_occupancy=None, max_gap=0.5, fill_value=0.0, epochs=[(0, 100)]).firing_rates` (the decoder's own defaults, passed explicitly; `DecodingResult` has no encoding models to compare against). `fit(..., epoch=...)` raises `TypeError`. |
 | `tests/decoding/test_estimator.py::test_predict_forwards_max_gap_and_windows` | `BayesianDecoder(env, max_gap=2000.).fit(...).predict(spikes, times)` bridges the pause (one run: `floor(1199.98/0.025) = 47999` bins). With the default `max_gap` it gives 7998. `predict(..., epochs=[(1100, 1200)])` gives 3999. |
 | `tests/decoding/test_spike_binning.py::test_epochs_tile_each_window` | `bin_spikes_in_time([np.array([0.01, 1.5, 2.01])], dt=0.25, epochs=[(0, 1), (2, 3)])` gives 8 bins with centers `[0.125 … 0.875, 2.125 … 2.875]`. The spike at 1.5 is not counted, and the column sum is 2. Passing `epochs` together with `t_start` raises the "not both" error. |
 | `tests/decoding/test_spike_binning.py::test_time_bins_decimal_boundary` | `time_bins_in_windows([[0.1, 0.3]], 0.1)` gives `np.c_[left, right]` array-equal to `[[0.1, 0.2], [0.2, 0.3]]`, and a spike at `0.3` is not counted. The old helper gave a last right edge of `0.30000000000000004` and counted it. |
@@ -380,20 +386,29 @@ The fixtures come from 3a (`two_epoch_recording`, `continuous_recording`).
 | `tests/decoding/test_spike_binning.py::test_bins_never_exceed_window` | 2,000 seeded random whole-multiple windows (`t0 ∈ {0, 1e3, 1e6, 1e9}` plus `U(0, 10)`, `dt ∈ {1, 2, 10, 25, 100, 200, 300}` ms, 1–2000 bins). For each: `n_bins == n`, `left < right`, `right <= stop` for every bin, and a spike at `stop` is not counted. The probe found 0 failures in 20,000, against 3,404 for the old helper. |
 | `tests/decoding/test_spike_binning.py::test_time_bins_reject_insufficient_precision` | `[[1e9, 1e9 + 1e-6]]` with `dt=2e-7` raises `ValueError` whose message contains `Fix: subtract a time origin`. The previous allowance turned the same input into 7 bins, 2 of them with `right <= left`. |
 | `tests/decoding/test_spike_binning.py::test_time_bins_unix_epoch_timestamps` | `[[1.7e9, 1.7e9 + 10]]` with `dt=5e-4` gives 20000 bins and with `dt=2e-3` gives 5000, all with `right > left` and width ≥ 0.99·dt. Unix-epoch timestamps with millisecond bins keep working without an origin shift. |
-| `tests/decoding/test_session.py::test_decode_session_allocates_one_posterior` | Wrap `DecodingResult._from_owned_posterior` to record each `posterior` argument. After `decode_session(...)` on the two-epoch fixture, `result.posterior is` the array `decode_position` passed first, and `np.shares_memory` holds between them. So no second posterior was allocated, and `result.spike_window` equals the resolved windows. A guard asserts that `dataclasses.replace(result, spike_window=None)` *does* copy (`not np.shares_memory`), which documents why `_evolve` exists. |
+| `tests/decoding/test_decode_session.py::test_decode_session_allocates_one_posterior` | Wrap `DecodingResult._from_owned_posterior` to record each `posterior` argument. After `decode_session(...)` on the two-epoch fixture, `result.posterior is` the array `decode_position` passed first, and `np.shares_memory` holds between them. So no second posterior was allocated, and `result.spike_window` equals the resolved windows. A guard asserts that `dataclasses.replace(result, spike_window=None)` *does* copy (`not np.shares_memory`), which documents why `_evolve` exists. |
 | `tests/decoding/test_result.py::test_evolve_rejects_posterior_and_keeps_fields` | `r._evolve(posterior=x)` raises `ValueError`. `r._evolve(spike_window=w)` keeps every other field equal to `r`'s, and its `spike_window` is a read-only copy of `w`. |
 | `tests/decoding/test_spike_binning.py::test_partial_bin_dropped` | `[0, 1.05)` with `dt=0.25` gives 4 bins ending at 1.0. Spikes at `0.99`, `1.0` and `1.04` count 1 in total. |
 | `tests/decoding/test_spike_binning.py::test_chunked_counts_equal_full` | On the two-epoch runs with `dt=0.025` (7998 bins), five seeded trains of 4000 spikes give `count_spikes_in_time_bins` counts in 1000-bin blocks (trains scoped to `[left[start], right[stop-1])`) that array-equal the full call. |
-| `tests/decoding/test_decode_gaps.py::test_results_record_spike_window` | `decode_session(...)` with the default gives `spike_window is None`, `spike_window_assumed is True`, and the same values in `summary()`. With `spike_window=(1100., 1200.)` it gives `spike_window == [[1100., 1200.]]` and `spike_window_assumed is False`. `decode_session_summary` and `BayesianDecoder.predict` behave the same. With xarray installed (`test_xarray.yml`), `to_xarray().attrs["spike_window_assumed"]` is `1` or `0`, and `attrs["spike_window"]` is the flat `[1100., 1200.]`. |
+| `tests/decoding/test_decode_gaps.py::test_results_record_spike_window` | `decode_session(...)` with the default gives `spike_window is None`, `spike_window_assumed is True`, and the same values in `summary()`. With `spike_window=(1100., 1200.)` it gives `spike_window == [[1100., 1200.]]` and `spike_window_assumed is False`. `decode_session_summary` and `BayesianDecoder.predict` behave the same. |
+| `tests/decoding/test_xarray_interop.py::test_decode_spike_window_attrs` | Runs in the `test_xarray.yml` job, which runs only this file, `tests/encoding/test_spatial_xarray_interop.py` and `tests/decoding/test_result.py`; an xarray assertion in `test_decode_gaps.py` would be skipped in every CI job. For `DecodingResult` and `DecodingSummary`: `to_xarray().attrs["spike_window_assumed"]` is `1` by default and `0` with `spike_window=(1100., 1200.)`, and `attrs["spike_window"]` is the flat `[1100., 1200.]` (absent by default). Both round-trip through scipy-engine `to_netcdf`/`load_dataset`. |
 | `tests/decoding/test_spike_binning.py::test_bins_are_half_open` | A spike exactly at `t_stop` (when `t_stop` is a whole number of bins from `t_start`) is not counted. The test documents the change from the old right-closed last bin. |
-| `tests/decoding/test_result.py::test_plot_marks_recording_gaps` | `DecodingResult` with the two-run `times`: `ax.get_xlabel()` starts with `"Time bin"`, and exactly 1 dashed vertical line is drawn. A contiguous result keeps the `"Time (s)"` label. |
+| `tests/decoding/test_result.py::test_plot_marks_recording_gaps` | `DecodingResult` with the two-run `times` of `test_decode_session_has_no_bins_in_pause` (3999 bins per run): `ax.get_xlabel()` starts with `"Time bin"`, and exactly 1 dashed vertical line is drawn, at x = 3998.5. A contiguous result keeps the `"Time (s)"` label. A one-bin result (`times=[0.0125]`) plots without error and keeps the time label. |
 | `tests/events/test_peth_time_windows.py::test_drops_events_whose_window_leaves_epochs` | Events at `[10, 50, 99.5, 1100.2, 1150]` with `window=(-0.5, 1.0)` and `epochs=[(0,100),(1100,1200)]` give `n_events == 3` and `n_events_dropped == 2` (99.5 + 1.0 > 100; 1100.2 − 0.5 < 1100). With `spike_window=(0., 100.)` instead: `n_events == 2`, `n_events_dropped == 3`. The population function gives the same counts, and `result[0].n_events_dropped == 2`. |
 | `tests/events/test_peth_time_windows.py::test_flat_rate_recovered_at_recording_edges` | Spikes fire regularly at 10 Hz (period 0.1 s) only inside the two epochs. 200 events are placed uniformly (seed 0) in `[0, 1200)`, with `window=(-1, 1)` and `bin_size=0.1`. With `epochs=[(0,100),(1100,1200)]`, every PETH bin's `firing_rate` is `10.0 ± 1%`. Without `epochs` (the `main` behavior), the minimum bin rate is below 9.0 Hz. This documents why the argument exists. |
 | `tests/events/test_peth_time_windows.py::test_all_events_dropped_error` | `epochs=[(5000., 6000.)]` raises a `ValueError` containing `"peri-event"`, the event count, and `"Fix:"`. |
 | `tests/events/test_peth_time_windows.py::test_nan_event_still_raises` | `event_times=[np.nan, 10.]` with `epochs` set still raises the existing NaN error. It is not silently dropped. |
 | `tests/events/test_peth_time_windows.py::test_summary_reports_dropped` | `result.summary()["n_events_dropped"] == 2` for the first case above. |
 
-No test in this slice exceeds about 2 s. Mark any decode test over 5 s on CI `@pytest.mark.slow`.
+No test in this slice exceeds about 2 s. Mark any decode test over 5 s on CI `@pytest.mark.slow`; slow tests run with `uv run pytest -m "slow and not napari" -n 4`.
+
+**Existing tests and doctests this phase changes.** Fix each and list it in the PR description:
+
+- `tests/decoding/test_estimator.py:232`, `:282` and `:616` (`fit(epoch=...)`; Task 3).
+- `tests/decoding/test_spike_binning.py`: any case that relies on the right-closed last bin or the `+1e-9` bin count (Task 1). `test_bin_spikes_default_bounds_span_all_spikes` (near :214) documents `t_stop` defaulting to the last spike `+ dt`, so its counts should not change; re-run it.
+- Doctests printing sorted `summary()` keys: `decoding/_result.py:385` (Task 6), `events/_core.py:162` and `:518` (Task 5).
+- `tests/events/test_psth_terminal_verbs.py:106`, the exact population `summary()` key set (Task 5).
+- Phase 1's `tests/decoding/test_result.py::test_from_owned_posterior_covers_all_fields` must keep passing unchanged (Task 6).
 
 ## Fixtures
 
@@ -403,12 +418,13 @@ No test in this slice exceeds about 2 s. Mark any decode test over 5 s on CI `@p
 
 ## Review
 
-Before opening the PR for this phase, dispatch `code-reviewer` (or equivalent independent reviewer) against the diff. Confirm:
+Before opening the PR, dispatch `code-reviewer` (or an equivalent independent reviewer) against the diff; this is the review step of [executing.md → Definition of done](executing.md#definition-of-done). Confirm:
+
 - Every task in this phase is implemented as specified.
 - The "Deliberately not in this phase" list is honored — no scope creep into adjacent phases.
-- Validation slice tests pass; slow / integration tests are marked.
-- Tests aren't trivial — they exercise the asserted behavior, not tautologies (no `assert True`; no assertions that only verify the mock the test just configured). Shared setup is in fixtures, not copy-pasted across tests. (`testing-anti-patterns` covers the failure modes in detail.)
-- Docstrings, test names, and module names don't reference this plan or its milestones.
+- Validation slice tests pass; slow tests are marked.
+- Tests aren't trivial — they exercise the asserted behavior, not tautologies (no `assert True`; no assertions that only verify the mock the test just configured). Shared setup is in fixtures, not copy-pasted across tests (`testing-anti-patterns`).
+- Docstrings, test names and module names don't reference this plan or its milestones.
 - Old code paths flagged for removal in this phase are actually removed (no orphans left behind).
 - User-facing documentation listed as tasks is updated, not deferred.
 
@@ -416,4 +432,5 @@ Also confirm:
 
 - `grep -n "np.histogram" src/neurospatial/decoding/` returns nothing. Every decode and time-binning path uses `time_bins_in_windows` and `count_spikes_in_time_bins`.
 - The `epoch=` branch and the edge-drift guards are gone.
-- On gap-free data, `decode_session` gives `times` and `posterior` equal to `main`'s (`rtol=1e-12`), except when a spike lies exactly on the final edge (the documented half-open change). On gap-free data the bin count is unchanged wherever the old `+1e-9` and the new relative slack agree, which is every window in the sweep above except those whose quotient fell more than `1e-9` below a whole number. Run `scientific-code-change-audit` on the diff.
+- **Gap-free outputs unchanged.** Run `scientific-code-change-audit` on the diff. Capture goldens on this PR's base commit (`git worktree add ../ns-base $(git merge-base HEAD feat/researcher-first)`; run a capture script there that saves `decode_session(...)` `times` and `posterior` on `continuous_recording` to the scratchpad; `git worktree remove ../ns-base`). On the branch they match at `rtol=1e-12`, except when a spike lies exactly on the final edge (the documented half-open change). On gap-free data the bin count is unchanged wherever the old `+1e-9` and the new relative slack agree, which is every window in the sweep above except those whose quotient fell more than `1e-9` below a whole number.
+- The xarray tests run without a skip under `uv sync --all-extras`: `uv run pytest tests/decoding/test_xarray_interop.py tests/decoding/test_result.py -n 0`.

@@ -1,43 +1,37 @@
-# Phase 3a — Time windows: shared helpers and the four rate families
+# Phase 3a — Time windows: interval helpers, the shared mask, and spatial rates
 
-[← back to PLAN.md](PLAN.md) · [overview](overview.md) · [shared contracts](shared-contracts.md#time-window-semantics)
+**Requires:** Phase 1.
 
-Phase 3 implements the [time-window contract](shared-contracts.md#time-window-semantics) for every analysis family on `main`. It ships as **three PRs** because the inventory below covers about 60 public entry points across five subpackages. A single diff would be about 4–5k lines (code, docstrings and tests), which is too large to review. Each PR is self-contained and revertible:
+[← back to PLAN.md](PLAN.md) · [executing a phase](executing.md) · [overview](overview.md) · [shared contracts](shared-contracts.md#time-window-semantics)
 
-| PR | Scope | Depends on |
+Phase 3 implements the [time-window contract](shared-contracts.md#time-window-semantics) for every analysis family on `main`. It ships as **five PRs**, because the inventory below covers about 60 public entry points across five subpackages:
+
+| PR | Scope | Requires |
 | --- | --- | --- |
-| **3a (this file)** | `neurospatial/_intervals.py`, the `interval_valid_mask` extension, `env.occupancy(epochs=)`, one normalizer for `behavior.restrict`/`in_epochs`, and the four spike+position **rate** families (spatial, directional, view, egocentric) plus their predicates, with the population-silence warning | Phases 1–2 |
-| [3b](phase-3b-time-windows-decoding-events.md) | Decoding (per-run time bins, `BayesianDecoder`), `bin_spikes_in_time`, and the PETH functions | 3a |
-| [3c](phase-3c-time-windows-behavior.md) | Position-only behavior: segmentation, kinematics, `heading_from_velocity`, `env.bin_sequence`/`transitions`, `events.add_positions` | 3a |
+| **3a (this file)** | `neurospatial/_intervals.py`; the extended `interval_valid_mask` plus the shared helpers `start_allocated_occupancy`, `observed_interval_mask` and `observed_runs`; `env.occupancy(epochs=)`; one normalizer for `behavior.restrict`/`in_epochs`; the **spatial** rate family and its predicates; the population-silence warning helper; the `spike_window` field on every rate result | Phase 1 |
+| [3b](phase-3b-time-windows-frame-families.md) | One frame-binning kernel for the **directional, view and egocentric** rate families, their predicates and plural silence warnings | 3a |
+| [3c](phase-3c-time-windows-decoding-events.md) | Decoding (per-run time bins, `BayesianDecoder`), `bin_spikes_in_time`, and the PETH functions | 3a |
+| [3d](phase-3d-time-windows-segmentation.md) | Segmentation detectors, `extract_pre_decision_window`, and `env.bin_sequence`/`transitions` | 3a |
+| [3e](phase-3e-time-windows-kinematics.md) | Kinematics, `heading_from_velocity(positions, times)`, `events.add_positions` and their docs | 3a and 2b |
 
-3b and 3c are independent of each other.
+3b, 3c, 3d and 3e are independent of each other. Everything they share is created here, so none of them adds a module another one also adds.
+
+Follow [executing.md](executing.md) for branching, commits, CHANGELOG bullets, the definition of done and the PR.
 
 **Inputs to read first:**
 
 - [src/neurospatial/environment/trajectory.py:90](../../../../src/neurospatial/environment/trajectory.py#L90). This is `interval_valid_mask`, the gate this phase extends. Its body is at lines 158–187: the gap gate at 170–172, the speed gate at 174–177, and the bounds gate at 179–185. Today it requires both `positions` and `env`.
 - [src/neurospatial/environment/trajectory.py:197](../../../../src/neurospatial/environment/trajectory.py#L197). This is `Environment.occupancy`. The mask call is at lines 450–457, and the `"start"` allocation (`np.bincount` over `bin_indices[:-1][valid_mask]`) is at 464–475.
-- [src/neurospatial/encoding/_binning.py:175](../../../../src/neurospatial/encoding/_binning.py#L175). This is `_bin_spike_train_with_stats`, the spike kernel. The interval gate (`gate_active`, searchsorted, clip to `n-2`) is at lines 291–313; that is the alignment model the other families copy. It also holds:
+- [src/neurospatial/encoding/_binning.py:175](../../../../src/neurospatial/encoding/_binning.py#L175). This is `_bin_spike_train_with_stats`, the spike kernel. The interval gate (`gate_active`, searchsorted, clip to `n-2`) is at lines 291–313. It also holds:
   - `_resolve_interval_mask` at :339;
   - `_emit_all_excluded_intervals_warning` at :398;
   - `bin_spike_train` at :572;
   - `compute_occupancy` at :723 (which delegates to `env.occupancy` at 818–836);
   - `bin_spike_trains` at :841.
-- [src/neurospatial/encoding/spatial.py:2542](../../../../src/neurospatial/encoding/spatial.py#L2542) (`compute_spatial_rate`) and [:3026](../../../../src/neurospatial/encoding/spatial.py#L3026) (`compute_spatial_rates`). These are the only families with `max_gap` on `main`. Note how the mask is resolved for the warning (2896–2912) and then recomputed separately inside the spike and occupancy helpers (2915–2937).
-- [src/neurospatial/encoding/spatial.py:4009](../../../../src/neurospatial/encoding/spatial.py#L4009) (`_subset_spikes_by_time_mask`) and [:4111](../../../../src/neurospatial/encoding/spatial.py#L4111) (`compute_directional_place_fields`). This function slices the arrays per label and concatenates the pieces, which creates artificial joins between label segments.
-- [src/neurospatial/encoding/_directional_binning.py:44](../../../../src/neurospatial/encoding/_directional_binning.py#L44). This holds `compute_directional_occupancy` (occupancy at 177–197, with no gap gate), `_bin_spikes_with_precomputed_directional_bins` at :246, `bin_directional_spike_train` at :289, and `bin_directional_spike_trains` at :367.
-- [src/neurospatial/encoding/_view_binning.py:48](../../../../src/neurospatial/encoding/_view_binning.py#L48). This holds:
-  - `_precompute_view_bins`;
-  - `_bin_spikes_with_precomputed_view_bins` at :108;
-  - `compute_occupancy` at :169 (occupancy block at 295–323);
-  - `bin_view_spike_train` at :326;
-  - `bin_view_spike_trains` at :475 (occupancy at 596–603).
-
-  None of these has a gap gate.
-- [src/neurospatial/encoding/_egocentric_binning.py:375](../../../../src/neurospatial/encoding/_egocentric_binning.py#L375). This holds `compute_egocentric_occupancy` (occupancy at 518–531), `bin_egocentric_spike_train` at :534, and `bin_egocentric_spike_trains` at :700 (occupancy at 851–857; the per-neuron `_bin_single_neuron` closure follows it). None of these has a gap gate.
-- [src/neurospatial/encoding/directional.py:1629](../../../../src/neurospatial/encoding/directional.py#L1629), [:1866](../../../../src/neurospatial/encoding/directional.py#L1866) and [:2184](../../../../src/neurospatial/encoding/directional.py#L2184). These are `compute_directional_rate`, `compute_directional_rates` and `is_head_direction_cell`, which forwards at :2281.
-- [src/neurospatial/encoding/view.py:1097](../../../../src/neurospatial/encoding/view.py#L1097), [:1373](../../../../src/neurospatial/encoding/view.py#L1373) and [:1735](../../../../src/neurospatial/encoding/view.py#L1735). These are `compute_view_rate`, `compute_view_rates` and `is_spatial_view_cell`, which forwards at :1807.
-- [src/neurospatial/encoding/egocentric.py:1311](../../../../src/neurospatial/encoding/egocentric.py#L1311), [:1600](../../../../src/neurospatial/encoding/egocentric.py#L1600) and [:2141](../../../../src/neurospatial/encoding/egocentric.py#L2141). These are `compute_egocentric_rate`, `compute_egocentric_rates` and `is_object_vector_cell`, which forwards at :2230.
+- [src/neurospatial/encoding/spatial.py:2542](../../../../src/neurospatial/encoding/spatial.py#L2542) (`compute_spatial_rate`) and [:3026](../../../../src/neurospatial/encoding/spatial.py#L3026) (`compute_spatial_rates`). These are the only families with `max_gap` on `main`. Note how the mask is resolved for the warning (2896–2912) and then recomputed separately inside the spike and occupancy helpers (2915–2937). Their result constructors are at :2972 (GLM) and :3017 (singular), and at :3519 (GLM), :3569 (no neurons) and :3630 (plural).
+- [src/neurospatial/encoding/spatial.py:4009](../../../../src/neurospatial/encoding/spatial.py#L4009) (`_subset_spikes_by_time_mask`), [:3646](../../../../src/neurospatial/encoding/spatial.py#L3646) (`DirectionalPlaceFields`: four fields, `summary` at :3830, no `to_xarray`) and [:4111](../../../../src/neurospatial/encoding/spatial.py#L4111) (`compute_directional_place_fields`). That function slices the arrays per label and concatenates the pieces, which creates artificial joins between label segments.
 - [src/neurospatial/encoding/spatial.py:4450](../../../../src/neurospatial/encoding/spatial.py#L4450). This is `is_place_cell`, which forwards to `compute_spatial_rate` at :4524.
+- [src/neurospatial/encoding/_base.py:162](../../../../src/neurospatial/encoding/_base.py#L162). `SpatialResultMixin`, whose `summary` (:333) has a doctest printing `sorted(s)` at :363.
 - [src/neurospatial/behavior/epochs.py:84](../../../../src/neurospatial/behavior/epochs.py#L84). This is `_as_intervals`, a **second** interval normalizer with different semantics:
   - zero-width rows are allowed;
   - there is a parallel `(starts, ends)` form;
@@ -45,38 +39,28 @@ Phase 3 implements the [time-window contract](shared-contracts.md#time-window-se
   - rows are not merged.
 
   `in_epochs` (:243), `restrict` (:295) and `restrict_spike_trains` (:376) use it.
-- Evidence (session scratchpad, not in the repo): `branch-triage.md` §A2 and `catA/gap.py`. They report the following, using two epochs `[0, 100)` and `[1100, 1200)` s at 50 Hz with a true rate of 5 Hz:
-
-  | Family on `main` | Result |
-  | --- | --- |
-  | Directional | Occupancy totals 1200 s, the worst bin holds 1003 s, and the minimum rate is 0.019 Hz |
-  | View | The worst bin holds 1000 s |
-  | Egocentric | 0.024 Hz |
-  | Spatial | Already correct, at 4.97–5.00 Hz |
-
-- Archive reference only, never cherry-picked: `aad59e74` (directional), `a0ff995a` (view), `d373cc18` (egocentric). These commits are entangled with `TemporalSupport` and do not apply to `main`.
-- **Files earlier phases already changed** (line numbers above are from `da631a47`; re-locate by symbol):
-  - `encoding/directional.py`, `view.py` and `egocentric.py`: Phase 1 Task 7 routes spike-group input through `as_spike_trains_with_ids` in the three plural functions, Phase 1 Task 9 changed the directional `to_xarray` attrs, and Phase 2 Task 2 changed the polar plots. Keep the spike-group routing when adding the new keywords.
+- Evidence (session scratchpad, not in the repo): `branch-triage.md` §A2 and `catA/gap.py`. With two epochs `[0, 100)` and `[1100, 1200)` s at 50 Hz and a true rate of 5 Hz, the spatial family on `main` is already correct (4.97–5.00 Hz); the frame families are not (see 3b).
+- **Files Phase 1 already changed** (line numbers above are from `da631a47`; re-locate by symbol):
   - `tests/conftest.py`: Phase 1 added the `make_spike_group` fixture. Add this phase's fixtures alongside it.
-  - `CHANGELOG.md`: Phases 1 and 2 added `### Fixed` bullets under `[Unreleased]`. Add this phase's section after them.
+  - `encoding/spatial.py`: Phase 1 Task 7 made the plural encoders reject a `unit_ids=` that conflicts with a labelled input. Keep it.
 
 **Contracts referenced:**
 
-- [Time-window semantics](shared-contracts.md#time-window-semantics). This phase creates the single implementation point (`_intervals.py` and the extended `interval_valid_mask`). It also implements:
-  - the spike+position row for the rate families;
-  - the boundary rule for the per-sample (frame) counters: a spike exactly at `times[-1]` lies in no interval and is not counted;
+- [Time-window semantics](shared-contracts.md#time-window-semantics). This phase creates the single implementation point (`_intervals.py` and the extended `interval_valid_mask`). It also implements, for the spatial family:
+  - the spike+position row;
+  - the boundary rule for per-sample counters: a spike exactly at `times[-1]` lies in no interval and is not counted;
   - the visible spike-window assumption (`spike_window` and `spike_window_assumed` on every result);
   - the population-silence warning.
 
   Do not weaken any rule.
 - [Error-message contract](shared-contracts.md#error-message-contract). Every error from `as_intervals` states what, why, and a `Fix:` line. It reports every problem in both arguments at once.
-- [Input conventions](shared-contracts.md#input-conventions). The new keywords are keyword-only and follow `max_gap` in the order `max_gap, epochs, spike_window`. The directional raw form stays `(spike_times, times, headings, *, ...)`.
+- [Input conventions](shared-contracts.md#input-conventions). The new keywords are keyword-only and follow `max_gap` in the order `max_gap, epochs, spike_window`.
 
 **Designs referenced:** none. No `designs.md` exists for this plan; the algorithms are small enough to give in full below.
 
 ## Inventory (this PR's slice)
 
-On `main`, every one of these consumes `times` together with spikes and positions or headings. "Bridges gaps" means an interval with `dt > 0.5 s` is charged to one bin as occupancy and its spikes are counted.
+"Bridges gaps" means an interval with `dt > 0.5 s` is charged to one bin as occupancy and its spikes are counted.
 
 | Function (file:line) | Category | Current gap behavior on `main` | Change in 3a |
 | --- | --- | --- | --- |
@@ -84,32 +68,18 @@ On `main`, every one of these consumes `times` together with spikes and position
 | `compute_spatial_rates` spatial.py:3026 | spike+position (plural) | handled | same, plus the population-silence warning |
 | `is_place_cell` spatial.py:4450 | spike+position | inherits (default `max_gap`, not exposed) | add `max_gap=0.5, epochs=None, spike_window=None`; forward them |
 | `compute_directional_place_fields` spatial.py:4111 | spike+position | `max_gap` handled per label slice. Slicing joins label segments: a join shorter than 0.5 s is counted as occupancy, while the spikes between segments are excluded | add `max_gap, epochs, spike_window`; label subsets become **label epochs** passed as `epochs=` (removes `_subset_spikes_by_time_mask`) |
-| `compute_directional_rate` directional.py:1629 | spike+position (headings) | **bridges gaps** (no gate; NaN headings only) | add `max_gap=0.5, epochs=None, spike_window=None`; shared mask |
-| `compute_directional_rates` directional.py:1866 | spike+position (plural) | **bridges gaps** | same, plus silence warning |
-| `is_head_direction_cell` directional.py:2184 | spike+position | **bridges gaps** | add and forward the three keywords |
-| `compute_view_rate` view.py:1097 | spike+position | **bridges gaps** (gates only on view-bin validity) | add the three keywords; shared mask with `start_bin=view_bins` |
-| `compute_view_rates` view.py:1373 | spike+position (plural) | **bridges gaps** | same, plus silence warning |
-| `is_spatial_view_cell` view.py:1735 | spike+position | **bridges gaps** | add and forward |
-| `compute_egocentric_rate` egocentric.py:1311 | spike+position | **bridges gaps** (gates only on polar-bin validity) | add the three keywords; shared mask with `start_bin=polar_bins` |
-| `compute_egocentric_rates` egocentric.py:1600 | spike+position (plural) | **bridges gaps** | same, plus silence warning |
-| `is_object_vector_cell` egocentric.py:2141 | spike+position | **bridges gaps** | add and forward |
 | `Environment.occupancy` trajectory.py:197 | position-only | `max_gap` handled | add `epochs=None` |
 | `behavior.in_epochs` / `restrict` / `restrict_spike_trains` epochs.py:243/295/376 | epoch utilities | n/a | normalize through `_intervals.as_intervals` (the second normalizer is removed) |
 
-Phase 3 totals across 3a–3c, from reading the code on this branch:
+Phase 3 totals across 3a–3e, from reading the code on this branch:
 
-- **Spike+position: 19.** Thirteen are in 3a. Six are in 3b: `decode_session`, `decode_session_summary`, and `BayesianDecoder.fit`/`predict`/`predict_summary`/`score`.
+- **Spike+position: 19.** Four in 3a (the rows above). Nine in 3b: `compute_directional_rate(s)`, `is_head_direction_cell`, `compute_view_rate(s)`, `is_spatial_view_cell`, `compute_egocentric_rate(s)`, `is_object_vector_cell`. Six in 3c: `decode_session`, `decode_session_summary`, and `BayesianDecoder.fit`/`predict`/`predict_summary`/`score`.
 - **Spike-only: 7.**
-  - Three change in 3b: `peri_event_histogram`, `population_peri_event_histogram` and `bin_spikes_in_time`.
-  - Four are deferred, with a stated reason (see 3b and the overview's Open Questions): `align_spikes_to_events`, `time_to_nearest_event`, `event_count_in_window` and `event_indicator`.
+  - Three change in 3c: `peri_event_histogram`, `population_peri_event_histogram` and `bin_spikes_in_time`.
+  - Four are deferred, with a stated reason (see 3c and the overview's Open Questions): `align_spikes_to_events`, `time_to_nearest_event`, `event_count_in_window` and `event_indicator`.
 - **Position-only: 39.**
-  - One changes in 3a (`env.occupancy`) and 29 change in 3c.
-  - Nine need no change, with stated reasons (see 3c):
-    - five label mappers;
-    - `mean_square_displacement`;
-    - `time_efficiency`;
-    - `decision_region_entry_time`;
-    - `distance_to_reward`.
+  - One changes in 3a (`env.occupancy`). 29 change in 3d and 3e (the split is in each file's inventory).
+  - Nine need no change, with stated reasons (see 3d): five label mappers, `mean_square_displacement`, `time_efficiency`, `decision_region_entry_time`, `distance_to_reward`.
   - `trajectory_similarity` takes no `times`, so it is not counted.
 - **Not applicable: phase precession.** `phase_precession` and `has_phase_precession` (`encoding/phase_precession.py`) take per-spike `positions` and `phases` and no `times` array, so there is no interval to gate.
 
@@ -117,7 +87,7 @@ Phase 3 totals across 3a–3c, from reading the code on this branch:
 
 ### 1. `src/neurospatial/_intervals.py` (new, private)
 
-This module is the single parser and containment test for `epochs` and `spike_window`. It also provides two helpers that later PRs reuse: run extraction and interval intersection. Write it exactly as follows (formatting may change under ruff).
+This module is the single parser and containment test for `epochs` and `spike_window`. It also provides two helpers that later PRs reuse: run extraction and interval intersection. It imports nothing from `neurospatial`. Write it exactly as follows (formatting may change under ruff). 3b–3e treat this file, once merged, as the source of truth.
 
 ```python
 """Time-window normalization and containment tests.
@@ -292,15 +262,18 @@ def intervals_contain(
     -------
     ndarray of bool, shape (n,)
         ``True`` iff ``windows[j, 0] <= starts[i]`` and
-        ``stops[i] <= windows[j, 1]`` for a single row ``j``. NaN queries are
-        ``False``.
+        ``stops[i] <= windows[j, 1]`` for a single row ``j``. A query with a
+        NaN start or stop is ``False``.
     """
     starts = np.asarray(starts, dtype=np.float64)
     stops = np.asarray(stops, dtype=np.float64)
     if windows.shape[0] == 0:
         return np.zeros(starts.shape, dtype=bool)
     idx = np.searchsorted(windows[:, 0], starts, side="right") - 1
-    return (idx >= 0) & (stops <= windows[np.maximum(idx, 0), 1])
+    j = np.maximum(idx, 0)
+    # searchsorted places a NaN start after every row, so idx alone cannot
+    # reject it; the explicit start comparison is False for NaN.
+    return (idx >= 0) & (starts >= windows[j, 0]) & (stops <= windows[j, 1])
 
 
 def intersect_intervals(
@@ -362,7 +335,9 @@ def run_time_bounds(
 
 Check `run_sample_bounds`: for `mask=[T, T, F, T]`, the padded array is `[F, T, T, F, T, F]`, the edges are `[0, 2, 3, 4]`, and the rows are `[(0, 2), (3, 4)]`. That is samples 0–2 and samples 3–4. Correct.
 
-### 2. Extend `interval_valid_mask` (trajectory.py:90)
+**Why `intervals_contain` compares `starts` explicitly.** The contract's searchsorted recipe alone accepts a NaN start: `searchsorted` sorts NaN after every row, so `idx` is the last row and the query `[nan, 1)` against `[[0, 10], [20, 30]]` returned `True`. Probe (scratchpad `remed3/contain.py`): the recipe without the start comparison gave `True` for `[nan, 1)`; the version above gives `False`, and it agreed with a brute-force reference on 2,000 random window sets × 50 queries (10% NaN starts), 0 mismatches. For finite queries the extra comparison is always true, so it changes nothing else.
+
+### 2. Extend `interval_valid_mask` and add the shared run helpers (environment/trajectory.py)
 
 The changes, as specified by the contract's [single implementation point](shared-contracts.md#time-window-semantics):
 
@@ -412,7 +387,7 @@ def interval_valid_mask(
     return valid_mask
 ```
 
-Also add one module-level helper to trajectory.py. It is the single implementation of start-allocated occupancy, and `env.occupancy`, the spatial encoders and the frame-binned families all use it:
+Add three module-level helpers next to it. They live in `environment/trajectory.py`, not in `encoding/`: `env.occupancy` uses the first, and `environment` must not import from the higher-tier `encoding` package. 3b, 3d and 3e import them from here, so no later Phase 3 PR creates a shared module.
 
 ```python
 def start_allocated_occupancy(
@@ -446,6 +421,37 @@ def start_allocated_occupancy(
     bins = start_bin[:-1][interval_mask]
     weights = dt[interval_mask] if return_seconds else None
     return np.bincount(bins, weights=weights, minlength=n_bins)[:n_bins].astype(np.float64)
+
+
+def observed_interval_mask(
+    times: NDArray[np.float64], *, max_gap: float | None, epochs: Any
+) -> NDArray[np.bool_]:
+    """Per-interval validity for position-only analyses (gap and epochs gates).
+
+    ``epochs`` is the raw user argument; it is normalized here with
+    ``as_intervals(epochs, name="epochs")``.
+
+    Returns
+    -------
+    ndarray of bool, shape (n_samples - 1,)
+    """
+    from neurospatial._intervals import as_intervals
+
+    return interval_valid_mask(
+        np.asarray(times, dtype=np.float64),
+        max_gap=max_gap,
+        epochs=as_intervals(epochs, name="epochs"),
+    )
+
+
+def observed_runs(
+    times: NDArray[np.float64], *, max_gap: float | None, epochs: Any
+) -> list[slice]:
+    """One sample slice per maximal run of valid intervals, in time order."""
+    from neurospatial._intervals import run_sample_bounds
+
+    mask = observed_interval_mask(times, max_gap=max_gap, epochs=epochs)
+    return [slice(int(a), int(b) + 1) for a, b in run_sample_bounds(mask)]
 ```
 
 `Environment.occupancy` changes as follows:
@@ -473,7 +479,7 @@ In `encoding/_binning.py`:
 - **`bin_spike_train` (:572), `compute_occupancy` (:723) and `bin_spike_trains` (:841).**
   - Each keeps `speed`/`min_speed`/`max_gap` and adds `epochs=None, spike_window=None, interval_mask=None`.
   - When `interval_mask` is `None`, each calls `_resolve_interval_mask` once.
-  - `compute_occupancy` stops delegating to `env.occupancy` (818–836). It returns `start_allocated_occupancy(env.bin_at(positions), np.diff(times), interval_mask, env.n_bins)`.
+  - `compute_occupancy` stops delegating to `env.occupancy` (818–836). It returns `start_allocated_occupancy(env.bin_at(positions), np.diff(times), interval_mask, env.n_bins)`, imported from `neurospatial.environment.trajectory`.
   - `bin_spike_trains` resolves the mask once and uses it for both the occupancy and every per-neuron count. Its line-978 call already does this for the counts.
 - **`_emit_all_excluded_intervals_warning` (:398).**
   - It gains `epochs` and `spike_window`, and names `epochs` and/or `spike_window` among the active gates.
@@ -482,18 +488,18 @@ In `encoding/_binning.py`:
 
 In `compute_spatial_rate` (spatial.py:2542):
 
-- Add the keyword-only parameters `epochs=None, spike_window=None` after `max_gap`.
+- Add the keyword-only parameters `epochs=None, spike_window=None` directly after `max_gap`.
 - After `resolve_speed`, call `E, S = resolve_time_windows(epochs, spike_window)`.
 - Compute `interval_mask = _resolve_interval_mask(env, times, positions_2d, speed=..., min_speed=..., max_gap=..., epochs=E, spike_window=S)` **once**. It is no longer under `if warn_on_drop:`; only the warning call is.
-- Pass `interval_mask=` to both `bin_spike_train` and `compute_occupancy`.
+- Pass `interval_mask=` to both `bin_spike_train` and `compute_occupancy`, including the GLM path.
 
-`compute_spatial_rates` (spatial.py:3026) changes the same way. Its four helper calls are at 3474, 3484, 3549 and 3580, and all receive the same mask. Then emit the population-silence warning (Task 6).
+`compute_spatial_rates` (spatial.py:3026) changes the same way (keywords after `max_gap`). Its four helper calls are at 3474, 3484, 3549 and 3580, and all receive the same mask, **including the GLM branch (3474–3484) and the no-neuron branch (3549)**. Then emit the population-silence warning (Task 5).
 
-`is_place_cell` (spatial.py:4450) gains `max_gap=0.5, epochs=None, spike_window=None` and forwards them at :4524.
+`is_place_cell` (spatial.py:4450) gains `max_gap=0.5, epochs=None, spike_window=None`, placed after `bandwidth` and before `threshold`, and forwards them at :4524.
 
 `compute_directional_place_fields` (spatial.py:4111):
 
-- Add `max_gap=0.5, epochs=None, spike_window=None`.
+- Add `max_gap=0.5, epochs=None, spike_window=None` after `min_occupancy`.
 - Replace the per-label slicing (the loop body that calls `_subset_spikes_by_time_mask` and `positions[mask]`) with **label epochs**. Interval `k` carries the label of its start sample:
 
   ```python
@@ -513,76 +519,10 @@ In `compute_spatial_rate` (spatial.py:2542):
       )
   ```
 
-- **Remove `_subset_spikes_by_time_mask` (spatial.py:4009)** and its direct tests. That is the old code path; nothing else in `src/` uses it.
+- Update its Notes, which describe the old slice-and-concatenate steps.
+- **Remove `_subset_spikes_by_time_mask` (spatial.py:4009)** and its direct tests (11 references in `tests/encoding/test_directional_place_fields.py`). That is the old code path; nothing else in `src/` uses it.
 
-### 4. One frame-binning kernel for the directional, view and egocentric families
-
-All three families assign every sample a bin (`frame_bins`, with `-1` for invalid). Each charges interval `k` to `frame_bins[k]` and looks up spikes at the most recent frame. Today each family carries its own copy of this logic: 6 occupancy blocks and 4 spike-lookup helpers. Replace them all with one kernel in `encoding/_binning.py`, next to `start_allocated_occupancy`:
-
-```python
-def count_spikes_by_frame(
-    spike_times: NDArray[np.float64],
-    times: NDArray[np.float64],
-    frame_bins: NDArray[np.intp],
-    interval_mask: NDArray[np.bool_],
-    n_bins: int,
-) -> NDArray[np.float64]:
-    """Count spikes per bin from the most recent frame, gated by interval validity.
-
-    Interval ``k`` is the half-open ``[times[k], times[k+1])``. A spike at ``t``
-    lies in interval ``frame = searchsorted(times, t, "right") - 1``, takes that
-    frame's bin, and is kept iff the interval is valid and
-    ``frame_bins[frame] >= 0``. A spike before ``times[0]`` or at or after
-    ``times[-1]`` lies in no interval and is not counted. Interval validity is
-    the SAME mask used for the occupancy denominator
-    (``start_allocated_occupancy``), so numerator and denominator drop identical
-    intervals.
-
-    Returns
-    -------
-    ndarray, shape (n_bins,)
-    """
-    spikes = spike_times[(spike_times >= times[0]) & (spike_times < times[-1])]
-    frame = np.searchsorted(times, spikes, side="right") - 1  # <= n_samples - 2
-    bins = frame_bins[frame]
-    keep = interval_mask[frame] & (bins >= 0)
-    return np.bincount(bins[keep], minlength=n_bins).astype(np.float64)
-```
-
-Per family:
-
-- **Directional (`_directional_binning.py`).**
-  - Add `directional_frame_bins(headings, bin_size, *, angle_unit) -> (frame_bins, bin_centers)`. It is built from `_precompute_directional_bins` (:200) as follows:
-    - `np.digitize(wrapped, bin_edges) - 1` on finite headings;
-    - `>= n_bins → 0`;
-    - non-finite headings → `-1`.
-  - `compute_directional_occupancy` (:44) keeps its validation (lines 115–175) and gains keyword-only `max_gap, epochs, spike_window`. It then builds the mask and calls `start_allocated_occupancy(frame_bins, np.diff(times), mask, n_bins)`, where the mask is:
-
-    ```python
-    interval_valid_mask(times, start_bin=frame_bins, max_gap=max_gap,
-                        epochs=epochs, spike_window=spike_window)
-    ```
-
-  - `bin_directional_spike_train(s)` (:289, :367) gain the same keywords and call `count_spikes_by_frame`.
-  - **Remove `_bin_spikes_with_precomputed_directional_bins` (:246).** It is replaced by `count_spikes_by_frame`.
-  - The NaN-heading exclusion is preserved, because `-1` frames fail the bounds gate.
-- **View (`_view_binning.py`).**
-  - `compute_occupancy` (:169), `bin_view_spike_train` (:326) and `bin_view_spike_trains` (:475) gain `max_gap, epochs, spike_window`.
-  - After `_precompute_view_bins`, each builds `mask = interval_valid_mask(times, start_bin=view_bins, ...)` and uses `start_allocated_occupancy` together with `count_spikes_by_frame`.
-  - **Remove `_bin_spikes_with_precomputed_view_bins` (:108)** and the two hand-written occupancy blocks (295–323 and 596–603).
-- **Egocentric (`_egocentric_binning.py`).**
-  - `compute_egocentric_occupancy` (:375), `bin_egocentric_spike_train` (:534) and `bin_egocentric_spike_trains` (:700) change the same way, with `start_bin=bin_indices` (the polar bins).
-  - **Remove the inline occupancy blocks (518–531 and 851–857) and the `_bin_single_neuron` closure in `bin_egocentric_spike_trains`.**
-  - `n_jobs` keeps its meaning: the joblib map calls `count_spikes_by_frame` per neuron.
-
-Public functions:
-
-- `compute_directional_rate(s)`, `compute_view_rate(s)` and `compute_egocentric_rate(s)` gain the keyword-only parameters `max_gap: float | None = 0.5, epochs=None, spike_window=None`, placed after `bin_size`/`view_distance`/`n_direction_bins` respectively and before `method`.
-- Each calls `resolve_time_windows` once and threads the normalized arrays down.
-- The predicates `is_head_direction_cell`, `is_spatial_view_cell` and `is_object_vector_cell` gain the same three parameters and forward them (at :2281, :1807 and :2230).
-- In every family, a spike exactly at `times[-1]` is no longer counted (the contract's boundary rule). On `main` it is counted by the spatial and directional kernels (probe: `times = [0, 0.5, 1]`, spike at `1.0` → 1 count from `bin_spike_train` and from `bin_directional_spike_train`), and by the egocentric kernel without any gate. This snippet was probed: on 3000 frames with 5000 random spikes (none exactly at `times[-1]`) it matches the old `<=`/clip version exactly, and it differs only for a spike at `times[-1]`.
-
-### 5. One normalizer for `behavior.restrict` / `in_epochs` / `restrict_spike_trains`
+### 4. One normalizer for `behavior.restrict` / `in_epochs` / `restrict_spike_trains`
 
 `behavior/epochs.py` changes as follows:
 
@@ -590,7 +530,7 @@ Public functions:
 - `in_epochs`, `restrict` and `restrict_spike_trains` call `as_intervals(epochs, name="epochs")`.
 - `_mask_in_intervals` keeps its `closed=` point semantics, because these functions test *points*, not intervals.
 
-The documented consequences, all of which go in the CHANGELOG:
+The documented consequences, each a CHANGELOG bullet:
 
 - The parallel `(starts, ends)` two-array form is no longer accepted. Use an `(n, 2)` array or an `IntervalSet`. The "Ambiguous" error disappears, because `[[0, 5], [10, 15]]` now always means two rows.
 - Zero-width rows (`start == stop`) are rejected.
@@ -601,11 +541,11 @@ Update `tests/behavior/test_epochs.py` accordingly:
 - Delete the parallel-arrays and "Ambiguous" tests (around :52–:95).
 - Keep the `(n, 2)`, the IntervalSet, and the `closed=` tests.
 
-This is the only place the plan changes `restrict`'s behaviour. Phase 6 removes `restrict` from the root namespace (it stays in `behavior`) and deletes `Session`.
+This is the only place the plan changes `restrict`'s behavior. Phase 6a removes `restrict` from the root namespace (it stays in `behavior`); Phase 6c deletes `Session`.
 
-### 6. Population-silence warning (plural spike+position functions)
+### 5. Population-silence warning: the helper, and its spatial call
 
-Add `_warn_if_population_silent` to `encoding/_binning.py` next to the other warnings:
+Add `_warn_if_population_silent` to `encoding/_binning.py` next to the other warnings. 3b calls the same helper from the three frame-family plural functions.
 
 ```python
 _SILENCE_MIN_UNITS = 5
@@ -654,41 +594,38 @@ def _warn_if_population_silent(
     )
 ```
 
-Call it in `compute_spatial_rates`, `compute_directional_rates`, `compute_view_rates` and `compute_egocentric_rates`. Each call goes after the spike trains and times are validated, and **only when `spike_window is None`**: an explicit spike window means the caller has already stated when ephys was recording. The observed runs are:
+Call it in `compute_spatial_rates`, after the spike trains and times are validated, and **only when `spike_window is None`**: an explicit spike window means the caller has already stated when ephys was recording. The observed runs are:
 
 ```python
 run_time_bounds(times, interval_valid_mask(times, max_gap=max_gap, epochs=E))
 ```
 
-They exclude the speed and bounds gates, because a population silent while the animal sits still may also mean that ephys was off. The warning is a heuristic for that one common mistake: it never confirms that recording covered the analyzed time, and its absence is not evidence of coverage. Do not call it in the singular functions or the predicates (the contract scopes the warning to populations). The decoders inherit it through `compute_spatial_rates` (3b).
+They exclude the speed and bounds gates, because a population silent while the animal sits still may also mean that ephys was off. The warning is a heuristic for that one common mistake: it never confirms that recording covered the analyzed time, and its absence is not evidence of coverage. Do not call it in `compute_spatial_rate` or the predicates (the contract scopes the warning to populations). The decoders inherit it through `compute_spatial_rates` (3c).
 
-### 7. Results record the spike window
+### 6. Results record the spike window
 
 The default `spike_window=None` is an assumption, not a finding, so every result says which one applied ([time-window semantics, Defaults](shared-contracts.md#time-window-semantics)).
 
-- **Field.** Each of the eight rate result classes gains `spike_window: NDArray[np.float64] | None = field(default=None, kw_only=True, compare=False)`. The classes are `SpatialRateResult` and `SpatialRatesResult` (`spatial.py:500, :1188`), `DirectionalRateResult` and `DirectionalRatesResult` (`directional.py:134, :959`), `ViewRateResult` and `ViewRatesResult` (`view.py:109, :437`), and `EgocentricRateResult` and `EgocentricRatesResult` (`egocentric.py:108, :508`). The field holds the normalized `(n, 2)` rows actually applied (the `S` from `resolve_time_windows`), or `None`.
+- **Field, on all eight rate result classes.** `SpatialRateResult` and `SpatialRatesResult` (`spatial.py:500, :1188`), `DirectionalRateResult` and `DirectionalRatesResult` (`directional.py:134, :959`), `ViewRateResult` and `ViewRatesResult` (`view.py:109, :437`), and `EgocentricRateResult` and `EgocentricRatesResult` (`egocentric.py:108, :508`) each gain `spike_window: NDArray[np.float64] | None = field(default=None, kw_only=True, compare=False)`. It holds the normalized `(n, 2)` rows actually applied (the `S` from `resolve_time_windows`), or `None`.
+  - All eight are added here, not only the spatial two, because the property and `summary()` keys below live in the shared `SpatialResultMixin`. Until 3b threads `S` through the frame families, their results report `spike_window=None` and `spike_window_assumed=True`, which is accurate: no spike window is applied there yet.
 - **Property.** `SpatialResultMixin` (`_base.py:162`) gains a read-only property `spike_window_assumed -> bool`, which returns `self.spike_window is None`. A property rather than a second field means the two can never disagree. Its docstring: "True when no `spike_window` was passed, so spikes were assumed recorded wherever position was. The population-silence warning catches one common violation of this assumption; it cannot establish recording coverage."
-- **Who sets it.**
-  - Every `compute_*_rate(s)` passes `spike_window=S`. So do the predicates' internal compute calls and each per-label result of `compute_directional_place_fields`, which records the caller's `S`; label windows are `epochs`, not `spike_window`.
-  - `__getitem__`/`__iter__` on the four plural classes (`spatial.py:1430`, `directional.py:1155`, `view.py:637`, `egocentric.py:713`) pass it to the child.
-- **`summary()`.** `SpatialResultMixin.summary` (`_base.py:333`) adds `"spike_window_assumed"` (bool) and `"spike_window"` (`self.spike_window.tolist()`, or `None`).
-- **`to_xarray()` attrs.** The four plural `attrs` dicts (`spatial.py:1697`, `directional.py:1131`, `view.py:595`, `egocentric.py:670`) add two entries:
+- **`DirectionalPlaceFields` gets the same field, property and `summary()` keys.** It is a spike+position result, and the contract requires every such result to record `spike_window`. It inherits `ResultMixin`, not `SpatialResultMixin`, so add the property on the class itself. `compute_directional_place_fields` passes the caller's `S` (label windows are `epochs`, not `spike_window`). It has no `to_xarray`, so there are no attrs to add.
+- **Who sets it in this PR.** Every `SpatialRateResult(...)`/`SpatialRatesResult(...)` construction in `compute_spatial_rate(s)` passes `spike_window=S`: spatial.py:2972 (GLM), :3017, :3519 (GLM), :3569 (no neurons) and :3630. `is_place_cell` forwards `spike_window`, so its internal result records it. `SpatialRatesResult.__getitem__`/`__iter__` (`spatial.py:1430`; the child constructor at :1472) pass it to the child.
+- **`summary()`.** `SpatialResultMixin.summary` (`_base.py:333`) adds `"spike_window_assumed"` (bool) and `"spike_window"` (`self.spike_window.tolist()`, or `None`). Update its doctest at `_base.py:363`, which prints `sorted(s)`, to include the two new keys.
+- **`to_xarray()` attrs.** The `SpatialRatesResult` attrs dict (`spatial.py:1697`) adds two entries:
   - `attrs["spike_window_assumed"] = int(self.spike_window_assumed)`;
   - `attrs["spike_window"] = self.spike_window.ravel()` (flat `[start0, stop0, start1, stop1, ...]`), only when `spike_window` is not None.
 
-  NetCDF has no bool or None. A probe with the scipy engine showed a `bool` attr reading back as `int8(1)`, a `None` attr raising `TypeError`, and a flat float64 array round-tripping exactly. Phase 7 moves these dicts into one `_xarray_attrs()` per family, unchanged.
+  NetCDF has no bool or None. A probe with the scipy engine showed a `bool` attr reading back as `int8(1)`, a `None` attr raising `TypeError`, and a flat float64 array round-tripping exactly. 3b adds the same two entries to the three frame-family plural classes. Phase 7 moves these dicts into one `_xarray_attrs()` per family, unchanged.
 
-### 8. Public docstrings for every touched public function (own task)
+### 7. Public docstrings for every touched public function (own task)
 
 The functions:
 
 - `compute_spatial_rate`, `compute_spatial_rates`, `is_place_cell` and `compute_directional_place_fields`;
-- `compute_directional_rate`, `compute_directional_rates` and `is_head_direction_cell`;
-- `compute_view_rate`, `compute_view_rates` and `is_spatial_view_cell`;
-- `compute_egocentric_rate`, `compute_egocentric_rates` and `is_object_vector_cell`;
 - `Environment.occupancy`, `in_epochs`, `restrict` and `restrict_spike_trains`.
 
-Each gets NumPy-style `Parameters` entries for the new keywords. Use this text verbatim for all three (shorten only for position-only functions, which have no `spike_window`):
+Each gets NumPy-style `Parameters` entries for the new keywords. Use this text verbatim; 3b–3e reuse it from here. Position-only functions have no `spike_window`, so they use the first two entries only:
 
 ```text
 max_gap : float or None, default=0.5
@@ -710,34 +647,35 @@ spike_window : same forms as ``epochs``, or None
     assumed (``result.spike_window_assumed``).
 ```
 
-The plural functions also get a `Warns` entry for the population-silence warning. It must call the warning a heuristic: it fires only when at least 5 units are all silent for at least 60 s, so it cannot detect an outage for a single unit, or one shorter than 60 s, and its silence is not proof that recording coverage is correct. `Notes` gains one paragraph: "An interval is analyzed only if it passes the gap, speed and bounds checks and lies inside `epochs ∩ spike_window`. The same intervals are removed from the spike counts and the occupancy." Docstrings must not mention plans or phases.
+`compute_spatial_rates` also gets a `Warns` entry for the population-silence warning. It must call the warning a heuristic: it fires only when at least 5 units are all silent for at least 60 s, so it cannot detect an outage for a single unit, or one shorter than 60 s, and its silence is not proof that recording coverage is correct. `Notes` on the four spike+position functions gains one paragraph: "An interval is analyzed only if it passes the gap, speed and bounds checks and lies inside `epochs ∩ spike_window`. The same intervals are removed from the spike counts and the occupancy." Docstrings must not mention plans or phases.
 
-### 9. CHANGELOG, README and quickstart (own task)
+### 8. CHANGELOG check, README and quickstart (own task)
 
-- **`CHANGELOG.md` `[Unreleased]`.** Add one "Changed — recording gaps and time windows in rate maps" section. It lists:
-  - the bug fixed: directional, view and egocentric rates charged a recording pause to one bin (for example 0.02 Hz instead of 5 Hz);
-  - the new keywords;
+- **`CHANGELOG.md`.** Each earlier commit added its own bullet ([executing.md](executing.md)). Check that `[Unreleased]` has one "Changed — recording gaps and time windows in rate maps" section containing:
+  - the new keywords on the spatial family and `env.occupancy`;
   - the `max_gap=None` alignment fix;
-  - the label-epoch change in `compute_directional_place_fields`;
+  - the label-epoch change in `compute_directional_place_fields`, with its `spike_window` field;
   - the `restrict`/`in_epochs` form changes;
   - the population-silence warning;
   - `result.spike_window` and `result.spike_window_assumed` in `summary()` and `to_xarray().attrs`;
-  - **behavior change:** a spike exactly at the last position timestamp `times[-1]` is no longer counted by any rate family. On `main` the spatial and directional kernels counted it, gated by the last interval, and the egocentric kernel counted it ungated.
-- **`README.md`.** Directly after the "Your First Place Field" example (its closing paragraph ends just before `## Core Concepts`), add a subsection "### Recording gaps and time windows" of at most 12 lines, with a 4-line code block. It covers:
+  - **behavior change:** a spike exactly at the last position timestamp `times[-1]` is no longer counted by `compute_spatial_rate(s)`. On `main` the spatial kernel counted it, gated by the last interval.
+
+  3b adds the frame-family bullets to the same section.
+- **`README.md`.** In `## Quickstart`, after the `### Your First Place Field` example and its closing paragraph (the line directly before `## Core Concepts`), add a subsection "### Recording gaps and time windows" of at most 12 lines, with a 4-line code block. It covers:
   - Gaps longer than `max_gap=0.5` s are detected from `times` and excluded automatically.
   - `epochs=` restricts the analysis to chosen windows.
   - `spike_window=` covers ephys that started late or stopped early. Without it, spikes are *assumed* recorded whenever position was, and `result.spike_window_assumed` says so.
-  - An example `compute_spatial_rate(env, spike_times, times, positions, epochs=run_epochs, spike_window=(t_ephys_start, t_ephys_stop))`.
-- **`docs/getting-started/quickstart.md`.** Add the same paragraph, without the code block, as a fourth bold item at the end of "## What just happened", before `## Next steps`. Phase 4 executes both snippets, so they must run.
+  - An example `compute_spatial_rate(env, spike_times, times, positions, epochs=run_epochs, spike_window=(t_ephys_start, t_ephys_stop))`, with `run_epochs`, `t_ephys_start` and `t_ephys_stop` defined in the block so it runs.
+- **`docs/getting-started/quickstart.md`.** Add the same paragraph, without the code block, as a fourth bold item at the end of "## What just happened", before `## Next steps`. Phase 4b executes both snippets, so they must run; check them now with `uv run python scripts/test_doc_snippets.py`.
 
 ## Deliberately not in this phase
 
-- **Decoding, `bin_spikes_in_time`, PETH.** These belong to 3b, which needs the per-run time-bin helper and result-field changes. Do not touch `decoding/` or `events/`.
-- **Segmentation, behavior kinematics, `heading_from_velocity`, `env.bin_sequence`/`transitions`, `events.add_positions`.** These belong to 3c.
-- **New gating knobs** (for example `min_speed` for the view, directional or egocentric families). The contract adds only `epochs`/`spike_window` and reuses `max_gap`.
-- **Argument reordering or renaming** (for example the behavior `(times, positions)` order, or removing `Session`). Phase 6 owns that.
+- **The directional, view and egocentric rate families** (kernels, keywords, predicates, their silence-warning calls, setting their `spike_window`). These belong to 3b. This PR only adds the `spike_window` field to their result classes (Task 6).
+- **Decoding, `bin_spikes_in_time`, PETH.** These belong to 3c. Do not touch `decoding/` or `events/`.
+- **Segmentation, `env.bin_sequence`/`transitions`** (3d) and **behavior kinematics, `heading_from_velocity`, `events.add_positions`** (3e). This PR only adds the `observed_interval_mask`/`observed_runs` helpers they use.
+- **New gating knobs.** The contract adds only `epochs`/`spike_window` and reuses `max_gap`.
+- **Argument reordering or renaming** (for example the behavior `(times, positions)` order). Phase 6b owns that; Phase 6c removes `Session`.
 - **Inferring gaps from non-finite positions.** The contract's gap detector is `max_gap` on `times`. NaN positions keep today's per-family handling.
-- **Performance work.** The kernel replacement must not regress runtime; see the benchmark row in the validation slice.
 - **Phase precession.** Its API has no `times` (see inventory).
 
 ## Validation slice
@@ -746,35 +684,41 @@ The fixture `two_epoch_recording` is described under Fixtures. "Pooled rate" mea
 
 | Test | Asserts |
 | --- | --- |
-| `tests/test_intervals.py::test_as_intervals_accepted_forms` | `(0, 10)` → `[[0, 10]]`. `[[20, 30], [0, 10]]` → sorted. `[[0, 10], [10, 20]]` → `[[0, 20]]` (touching rows merge). `[[0, 10], [5, 15]]` → `[[0, 15]]`. `None` → `None`. |
-| `tests/test_intervals.py::test_as_intervals_duck_types_intervalset` | A plain class with `.start = np.array([20., 0.])` and `.end = np.array([30., 10.])` → `[[0, 10], [20, 30]]`. No pynapple import (assert `"pynapple" not in sys.modules` after the call, when it was absent before). |
-| `tests/test_intervals.py::test_as_intervals_real_intervalset` (`@pytest.mark.pynapple`) | `nap.IntervalSet(start=[0, 20], end=[10, 30])` gives the same rows. |
-| `tests/test_intervals.py::test_as_intervals_errors_follow_contract` | Parametrized over: shape `(3,)`; zero rows `np.empty((0, 2))`; `[[0, np.nan]]`; `[[5, 5]]`; an object with mismatched `.start`/`.end`. Each raises `ValueError` whose message names the argument, quotes the offending row or shape, and contains `"Why:"` and a line starting `"Fix:"`. |
-| `tests/test_intervals.py::test_as_intervals_reports_every_problem` | `[[1, 0], [np.nan, 1]]` → one error naming row 0 (`stop <= start`) and row 1 (`NaN`). `resolve_time_windows([[1, 0]], [[np.inf, 2]])` → one error naming both `epochs` and `spike_window`. |
-| `tests/test_intervals.py::test_intervals_contain` | Windows `[[0, 10], [20, 30]]` with queries `[0,10)`, `[5,10)`, `[9,11)`, `[10,20)`, `[-1,0)`, `[20,30)`, `[25,31)`, `[29.5,30)`, `[nan,1)` → `[T, T, F, F, F, T, F, T, F]`. |
-| `tests/test_intervals.py::test_intersect_intervals` | `[[0,10],[20,30]] ∩ [[5,25]]` → `[[5,10],[20,25]]`; disjoint inputs → shape `(0, 2)`. A property check on 200 random merged sets (seed 0) agrees with a brute-force point-sampling reference. |
-| `tests/test_intervals.py::test_run_bounds` | `run_sample_bounds([T,T,F,T])` → `[[0,2],[3,4]]`; all-False → shape `(0, 2)`. `run_time_bounds` returns matching times. |
+| `tests/test_interval_helpers.py::test_as_intervals_accepted_forms` | `(0, 10)` → `[[0, 10]]`. `[[20, 30], [0, 10]]` → sorted. `[[0, 10], [10, 20]]` → `[[0, 20]]` (touching rows merge). `[[0, 10], [5, 15]]` → `[[0, 15]]`. `None` → `None`. (The file is not named `test_intervals.py`, which `tests/events/` already uses.) |
+| `tests/test_interval_helpers.py::test_as_intervals_duck_types_intervalset` | A plain class with `.start = np.array([20., 0.])` and `.end = np.array([30., 10.])` → `[[0, 10], [20, 30]]`. No pynapple import (assert `"pynapple" not in sys.modules` after the call, when it was absent before). |
+| `tests/test_interval_helpers.py::test_as_intervals_real_intervalset` (`@pytest.mark.pynapple`) | `nap.IntervalSet(start=[0, 20], end=[10, 30])` gives the same rows. |
+| `tests/test_interval_helpers.py::test_as_intervals_errors_follow_contract` | Parametrized over: shape `(3,)`; zero rows `np.empty((0, 2))`; `[[0, np.nan]]`; `[[5, 5]]`; an object with mismatched `.start`/`.end`. Each raises `ValueError` whose message names the argument, quotes the offending row or shape, and contains `"Why:"` and a line starting `"Fix:"`. |
+| `tests/test_interval_helpers.py::test_as_intervals_reports_every_problem` | `[[1, 0], [np.nan, 1]]` → one error naming row 0 (`stop <= start`) and row 1 (`NaN`). `resolve_time_windows([[1, 0]], [[np.inf, 2]])` → one error naming both `epochs` and `spike_window`. |
+| `tests/test_interval_helpers.py::test_intervals_contain` | Windows `[[0, 10], [20, 30]]` with queries `[0,10)`, `[5,10)`, `[9,11)`, `[10,20)`, `[-1,0)`, `[20,30)`, `[25,31)`, `[29.5,30)`, `[nan,1)`, `[1,nan)` → `[T, T, F, F, F, T, F, T, F, F]`. Without the explicit start comparison the `[nan,1)` query returns `True` (probe). A property check on 200 random merged window sets (seed 0) agrees with a brute-force reference. |
+| `tests/test_interval_helpers.py::test_intersect_intervals` | `[[0,10],[20,30]] ∩ [[5,25]]` → `[[5,10],[20,25]]`; disjoint inputs → shape `(0, 2)`. A property check on 200 random merged sets (seed 0) agrees with a brute-force point-sampling reference. |
+| `tests/test_interval_helpers.py::test_run_bounds` | `run_sample_bounds([T,T,F,T])` → `[[0,2],[3,4]]`; all-False → shape `(0, 2)`. `run_time_bounds` returns matching times. |
 | `tests/environment/test_occupancy.py::test_occupancy_epochs_restricts_and_matches_slicing` | On a continuous 200 s, 50 Hz grid, `env.occupancy(t, p, epochs=[(0., 100.)])` equals `env.occupancy(t[t <= 100], p[t <= 100])` with `rtol=1e-12`. The sum is `100.0 ± 1e-9`. |
 | `tests/environment/test_interval_valid_mask_windows.py` | With `epochs=[(0,1)]` on `times=[0, .5, 1, 1.5]` → `[T, T, F]`. With `spike_window` alone the result is the same. With both `[(0,1)]` and `[(0.5,2)]` → `[F, T, F]`. `env=None` with `start_bin=[0,-1,0,0]` → `[T, F, T]`. With neither, only the gap gate applies. |
-| `tests/encoding/test_recording_gaps.py::test_rate_family_recovers_true_rate_across_pause` | Parametrized over spatial (binned), directional (`bandwidth=None`), view (`fixed_distance`, `view_distance=5`) and egocentric (`object (50,50)`, `distance_range=(0,100)`), each in singular and plural form. Asserts: pooled rate = `5.0 ± 5%` (true value 1000 spikes / 199.96 s = 5.001 Hz); total occupancy ≤ 199.96 s, and for directional/egocentric `== 199.96 ± 1e-6`; max per-bin occupancy < 10 s. **Fails on `main`** for directional (total 1200 s, worst bin ≈1003 s), view (worst bin ≈1000 s) and egocentric (pooled ≈0.8 Hz). Passes on `main` for spatial, as a regression guard. |
+| `tests/environment/test_interval_valid_mask_windows.py::test_observed_runs` | On `two_epoch_recording.times`, `observed_runs(t, max_gap=0.5, epochs=None)` is `[slice(0, 5000), slice(5000, 10000)]`. With `epochs=[(0., 50.)]` it is `[slice(0, 2501)]`. A sample with both neighbouring intervals longer than `max_gap` is in no slice. |
+| `tests/encoding/test_recording_gaps.py::test_spatial_recovers_true_rate_across_pause` | `compute_spatial_rate` and `compute_spatial_rates` (binned) on `two_epoch_recording`: pooled rate = `5.0 ± 5%` (true value 1000 spikes / 199.96 s = 5.001 Hz); total occupancy `== 199.96 ± 1e-6`; max per-bin occupancy < 10 s. Passes on `main`: a regression guard. 3b parametrizes the same test over the frame families. |
 | `tests/encoding/test_recording_gaps.py::test_spatial_all_methods_recover_rate` (`slow`) | `compute_spatial_rate` with `method ∈ {diffusion_kde, gaussian_kde, glm}` on the fixture: total occupancy `199.96 ± 1e-6`; `Σ rate·occ / Σ occ = 5 ± 10%` (smoothing redistributes mass). |
-| `tests/encoding/test_recording_gaps.py::test_predicates_forward_time_windows` | For each `is_*_cell`, a call with `epochs=[(0, 100)]` uses only the first epoch. Spy on the underlying `compute_*` (via `monkeypatch` wrapping, which records kwargs) and assert that `epochs`, `spike_window` and `max_gap` arrive unchanged. |
-| `tests/encoding/test_time_windows.py::test_epochs_equal_slicing` | Parametrized over the four families. On a continuous 200 s recording, `epochs=[(0., 100.)]` gives `firing_rate` and `occupancy` equal (`rtol=1e-12`, `equal_nan=True`) to slicing samples to `times <= 100` and spikes to `< 100`. Uses `method="binned"` and `"diffusion_kde"` for spatial. |
-| `tests/encoding/test_time_windows.py::test_spike_window_restores_true_rate` | Tracking covers `[0, 200)` s; 5 units fire regularly at 5 Hz only in `[100, 200)`, unit `u` offset by `0.04·u` s. For each plural family: with no `spike_window`, the pooled rate is `2.5 ± 5%` and a `UserWarning` matching `r"All 5 units are silent from 0\.0 s to 100\.\d s"` fires. With `spike_window=(100., 200.)`, the pooled rate is `5.0 ± 5%` and no warning fires (`warnings.simplefilter("error")`). |
-| `tests/encoding/test_time_windows.py::test_population_silence_thresholds` | No warning with: 5 units and a clean 200 s recording; 4 units and a 100 s silence; 5 units and a 59 s silence. A warning, exactly once, with 5 units and a 61 s silence in the middle of the recording. No warning when the silence spans an untracked pause: on `two_epoch_recording`, all 5 units are silent over `[70, 100)` and `[1100, 1131)` (61 s of tracked time in total, but only 30 s and 31 s within each run). No warning when `spike_window` is passed. |
+| `tests/encoding/test_recording_gaps.py::test_is_place_cell_forwards_time_windows` | `is_place_cell(..., epochs=[(0, 100)], spike_window=(0, 1200), max_gap=1.0)`: spy on `compute_spatial_rate` (via `monkeypatch` wrapping, which records kwargs) and assert that `epochs`, `spike_window` and `max_gap` arrive unchanged. |
+| `tests/encoding/test_time_windows.py::test_spatial_epochs_equal_slicing` | On `continuous_recording`, `epochs=[(0., 100.)]` gives `firing_rate` and `occupancy` equal (`rtol=1e-12`, `equal_nan=True`) to slicing samples to `times <= 100` and spikes to `< 100`. `method="binned"` and `"diffusion_kde"`. |
+| `tests/encoding/test_time_windows.py::test_spatial_spike_window_restores_true_rate` | Tracking covers `[0, 200)` s; 5 units fire regularly at 5 Hz only in `[100, 200)`, unit `u` offset by `0.04·u` s. `compute_spatial_rates` with no `spike_window`: the pooled rate is `2.5 ± 5%` and a `UserWarning` matching `r"All 5 units are silent from 0\.0 s to 100\.\d s"` fires. With `spike_window=(100., 200.)`: the pooled rate is `5.0 ± 5%` and no warning fires (`warnings.simplefilter("error")`). |
+| `tests/encoding/test_time_windows.py::test_population_silence_thresholds` | Via `compute_spatial_rates`. No warning with: 5 units and a clean 200 s recording; 4 units and a 100 s silence; 5 units and a 59 s silence. A warning, exactly once, with 5 units and a 61 s silence in the middle of the recording. No warning when the silence spans an untracked pause: on `two_epoch_recording`, all 5 units are silent over `[70, 100)` and `[1100, 1131)` (61 s of tracked time in total, but only 30 s and 31 s within each run). No warning when `spike_window` is passed. |
 | `tests/encoding/test_time_windows.py::test_epochs_and_spike_window_errors` | `compute_spatial_rate(..., epochs=[[5, 1]], spike_window="bad")` raises one `ValueError` that names both arguments. |
 | `tests/encoding/test_time_windows.py::test_all_excluded_warning_names_epochs` | `epochs=[(5000., 6000.)]`, which lies outside `times`, → the existing all-intervals-excluded warning, now naming `epochs`. |
-| `tests/encoding/test_directional_place_fields.py::test_label_epochs_do_not_join_segments` | Labels `A,A,other,A` with a 0.3 s `other` gap: occupancy for `A` equals the sum of the `A` intervals only. On `main`, slicing counted the joined 0.3 s interval toward `A`, so the old result is `+0.3 s`. |
-| `tests/encoding/test_interval_mask_alignment.py::test_spike_at_last_sample_not_counted` | Parametrized over `bin_spike_train` (spatial), `bin_directional_spike_train`, `bin_view_spike_train` and `bin_egocentric_spike_train`, plus `count_spikes_by_frame` directly. With `times = [0, 0.5, 1.0]` (intervals `[0, 0.5)` and `[0.5, 1.0)`) and spikes `[0.5, 1.0]`, the total count is 1: the spike at 0.5 is counted and the one at 1.0 is not. `main` counts 2 (probe: spatial and directional each count the 1.0 spike; old frame kernel `[0, 1, 1]`, new `[0, 1, 0]`). |
-| `tests/encoding/test_time_windows.py::test_results_record_spike_window` | Parametrized over the four families, singular and plural. By default, `result.spike_window is None`, `result.spike_window_assumed is True`, and `summary()` has `spike_window_assumed=True` and `spike_window=None`. With `spike_window=(100., 200.)`, `result.spike_window` array-equals `[[100., 200.]]`, `spike_window_assumed is False`, and `summary()["spike_window"] == [[100.0, 200.0]]`. `rates[0].spike_window` equals the parent's. Constructing a result directly gives `spike_window_assumed is True`. |
-| `tests/encoding/test_spatial_xarray_interop.py::test_spike_window_attrs_roundtrip` | Runs in the `test_xarray.yml` job. Plural spatial and directional with `spike_window=(100., 200.)`: `attrs["spike_window_assumed"] == 0` and `attrs["spike_window"]` equals `[100., 200.]`. With the default, `attrs["spike_window_assumed"] == 1` and there is no `spike_window` key. Both round-trip through scipy-engine `to_netcdf` and `load_dataset` with equal values. |
+| `tests/encoding/test_directional_place_fields.py::test_label_epochs_do_not_join_segments` | `times = np.arange(20) / 10`, positions `np.c_[np.linspace(1, 19, 20)]`, `env = Environment.from_samples(np.c_[np.linspace(0, 20, 41)], bin_size=2.0)`, labels `["A"]*10 + ["other"]*3 + ["A"]*7`, spikes `[0.05, 1.05, 1.55]`, `method="binned"`. `result.occupancy["A"].sum() == 1.6 ± 1e-12` (intervals 0–9 and 13–18). **Fails on `main`**, which gives `1.9` (probe): slicing joined samples 9 and 13 into one 0.4 s interval and counted it. `result.spike_window is None`, `result.spike_window_assumed is True`, and both are in `summary()`. |
+| `tests/encoding/test_interval_mask_alignment.py::test_spatial_spike_at_last_sample_not_counted` | `bin_spike_train` with `times = [0, 0.5, 1.0]` (intervals `[0, 0.5)` and `[0.5, 1.0)`) and spikes `[0.5, 1.0]`: the total count is 1, and the spike at 1.0 is counted in `n_time_dropped`. `main` counts 2 (probe). 3b adds the frame-family cases. |
 | `tests/encoding/test_interval_mask_alignment.py::test_max_gap_none_drops_out_of_bounds_spikes` | With `max_gap=None`, a spike inside an interval whose start sample is out of bounds is not counted, matching the occupancy. On `main` it was counted. |
+| `tests/encoding/test_time_windows.py::test_spatial_results_record_spike_window` | `compute_spatial_rate` and `compute_spatial_rates` (binned and `glm`, and the zero-unit plural call). By default, `result.spike_window is None`, `result.spike_window_assumed is True`, and `summary()` has `spike_window_assumed=True` and `spike_window=None`. With `spike_window=(100., 200.)`, `result.spike_window` array-equals `[[100., 200.]]`, `spike_window_assumed is False`, and `summary()["spike_window"] == [[100.0, 200.0]]`. `rates[0].spike_window` equals the parent's. Constructing any of the eight result classes directly gives `spike_window_assumed is True`. |
+| `tests/encoding/test_spatial_xarray_interop.py::test_spike_window_attrs_roundtrip` | Runs in the `test_xarray.yml` job (this file is one of its three). Plural spatial with `spike_window=(100., 200.)`: `attrs["spike_window_assumed"] == 0` and `attrs["spike_window"]` equals `[100., 200.]`. With the default, `attrs["spike_window_assumed"] == 1` and there is no `spike_window` key. Both round-trip through scipy-engine `to_netcdf` and `load_dataset` with equal values. |
 | `tests/behavior/test_epochs.py` (updated) | `(n, 2)`, IntervalSet, `closed=` semantics are unchanged. A parallel `(starts, ends)` input now reads as rows, or raises on a shape mismatch. A zero-width row raises the contract error. |
-| `tests/benchmarks/` (`benchmark`, existing marker) | `compute_view_rates`, `compute_egocentric_rates` and `compute_directional_rates` on 50 units × 60 s at 50 Hz are no slower than the baseline recorded before the change (record both numbers in the PR description). |
+
+**Existing tests this phase changes.** Fix each and list it in the PR description:
+
+- `tests/encoding/test_directional_place_fields.py`: the `_subset_spikes_by_time_mask` tests (11 references) are deleted with the helper.
+- `tests/behavior/test_epochs.py`: the parallel-arrays and "Ambiguous" tests.
+- Any spatial test that asserts a count for a spike exactly at `times[-1]`, or a `max_gap=None` count that includes an out-of-bounds-start interval. Each is a documented behavior change; update the expected value and cite the CHANGELOG bullet in the test.
 
 ## Fixtures
 
-Add these to `tests/conftest.py` (session scope) so that 3b and 3c reuse them. Build all timestamps as `np.arange(n) / fs` so that grid points such as 100.0 are exact.
+Add these to `tests/conftest.py` (session scope) so that 3b–3e reuse them. Build all timestamps as `np.arange(n) / fs` so that grid points such as 100.0 are exact.
 
 - **`two_epoch_recording`.** A frozen dataclass with:
   - `times = np.r_[np.arange(5000) / 50, 1100 + np.arange(5000) / 50]` (`[0, 100)` and `[1100, 1200)` s at 50 Hz);
@@ -789,16 +733,19 @@ Add these to `tests/conftest.py` (session scope) so that 3b and 3c reuse them. B
 
 ## Review
 
-Before opening the PR for this phase, dispatch `code-reviewer` (or equivalent independent reviewer) against the diff. Confirm:
+Before opening the PR, dispatch `code-reviewer` (or an equivalent independent reviewer) against the diff; this is the review step of [executing.md → Definition of done](executing.md#definition-of-done). Confirm:
+
 - Every task in this phase is implemented as specified.
 - The "Deliberately not in this phase" list is honored — no scope creep into adjacent phases.
-- Validation slice tests pass; slow / integration tests are marked.
-- Tests aren't trivial — they exercise the asserted behavior, not tautologies (no `assert True`; no assertions that only verify the mock the test just configured). Shared setup is in fixtures, not copy-pasted across tests. (`testing-anti-patterns` covers the failure modes in detail.)
-- Docstrings, test names, and module names don't reference this plan or its milestones.
+- Validation slice tests pass; slow tests are marked.
+- Tests aren't trivial — they exercise the asserted behavior, not tautologies (no `assert True`; no assertions that only verify the mock the test just configured). Shared setup is in fixtures, not copy-pasted across tests (`testing-anti-patterns`).
+- Docstrings, test names and module names don't reference this plan or its milestones.
 - Old code paths flagged for removal in this phase are actually removed (no orphans left behind).
 - User-facing documentation listed as tasks is updated, not deferred.
 
 Also confirm:
 
-- Every family obtains its mask from `interval_valid_mask` exactly once per call, and applies that one array to both the counts and the occupancy. `grep -n "np.diff(times)" src/neurospatial/encoding/_*binning.py` shows no hand-rolled occupancy accumulation.
-- `scientific-code-change-audit` has been run on the kernel replacement. Outputs on gap-free data must be unchanged: `rtol=1e-12` against `main` for all four families on `continuous_recording`, except the documented `max_gap=None` out-of-bounds alignment fix and a spike exactly at `times[-1]`. `continuous_recording` has none: its last spike is 199.9 s and `times[-1]` is 199.98 s.
+- `compute_spatial_rate(s)` obtain their mask from `interval_valid_mask` exactly once per call (including the GLM and no-neuron paths), and apply that one array to both the counts and the occupancy.
+- **Spatial outputs on gap-free data are unchanged.** Run `scientific-code-change-audit` on the kernel change. Capture goldens on this PR's base commit, not on `main`: `git worktree add ../ns-base $(git merge-base HEAD feat/researcher-first)`, run a capture script there that saves `firing_rate`/`occupancy` of `compute_spatial_rate(s)` (`binned`, `diffusion_kde`) on `continuous_recording` to an `.npz` in the scratchpad, then `git worktree remove ../ns-base`. On this branch, compare with `rtol=1e-12`. The only allowed differences are the documented `max_gap=None` out-of-bounds alignment fix and a spike exactly at `times[-1]`; `continuous_recording` has neither (its last spike is 199.9 s and `times[-1]` is 199.98 s).
+- `_subset_spikes_by_time_mask`, `behavior.epochs._as_intervals`, `_stack_start_end` and `_sequence_length` are gone (`git grep` finds no reference in `src/` or `tests/`).
+- The xarray test runs: `uv sync --all-extras` then `uv run pytest tests/encoding/test_spatial_xarray_interop.py -n 0` passes with no skip.
