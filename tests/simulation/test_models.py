@@ -65,13 +65,52 @@ class TestPlaceCellModel:
         min_dist = np.min(distances)
         assert min_dist < 1e-10  # Essentially zero
 
-    def test_default_width(self, simple_2d_env):
-        """Test that width defaults to 3 * bin_size."""
-        pc = PlaceCellModel(simple_2d_env, center=[50.0, 50.0])
+    @pytest.mark.parametrize("bin_size", [1.0, 2.0, 5.0])
+    def test_default_width_is_three_bin_spacings(self, bin_size):
+        """The default width is 3 bin spacings, a length (not 3 bin areas)."""
+        from neurospatial import Environment
 
-        # Default width should be 3 * mean(bin_sizes)
-        expected_width = 3.0 * np.mean(simple_2d_env.bin_sizes)  # Property, not method
-        assert abs(pc.width - expected_width) < 1e-10
+        grid = np.linspace(0, 100, 201)
+        xx, yy = np.meshgrid(grid, grid)
+        env = Environment.from_samples(
+            np.column_stack([xx.ravel(), yy.ravel()]), bin_size=bin_size
+        )
+
+        pc = PlaceCellModel(env, center=[50.0, 50.0])
+
+        spacing = np.diff(env.layout.grid_edges[0])[0]
+        np.testing.assert_allclose(pc.width, 3 * spacing, rtol=1e-12)
+        np.testing.assert_allclose(pc.width, 3 * bin_size, rtol=0.05)
+
+    def test_default_width_on_track_uses_bin_length(self):
+        """On a linearized track the spacing is the bin length along the track."""
+        from neurospatial import Environment
+
+        nodes = {
+            "bl": (0, 0),
+            "bm": (50, 0),
+            "br": (100, 0),
+            "al": (0, 50),
+            "am": (50, 50),
+            "ar": (100, 50),
+        }
+        env = Environment.maze("w", node_positions=nodes, bin_size=5.0)
+
+        pc = PlaceCellModel(env, center=[50.0, 0.0])
+
+        np.testing.assert_allclose(pc.width, 15.0, rtol=1e-9)
+
+    def test_default_width_single_bin_raises(self):
+        """A one-bin environment has no bin spacing to scale the width by."""
+        from neurospatial import Environment
+
+        env = Environment.from_grid_mask(
+            np.ones((1, 1), dtype=bool),
+            grid_edges=(np.array([0.0, 10.0]), np.array([0.0, 10.0])),
+        )
+
+        with pytest.raises(ValueError, match="Fix: pass width="):
+            PlaceCellModel(env, center=[5.0, 5.0])
 
     def test_peak_firing_at_center(self, simple_2d_env):
         """Test that firing rate peaks at field center."""

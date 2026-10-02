@@ -189,7 +189,9 @@ def simulate_session(
         **Place cell parameters** (cell_type='place' or 'mixed'):
 
         - max_rate : float - Peak firing rate in Hz (default: 20.0)
-        - width : float | NDArray - Field width in environment units (default: 3*bin_size)
+        - width : float | NDArray - Field width in environment units (default:
+          3 × bin spacing, the median distance between neighbouring bin centres;
+          equals ``bin_size`` on a regular grid)
         - baseline_rate : float - Baseline firing rate in Hz (default: 0.01)
         - metric : {'euclidean', 'geodesic'} - Distance computation method
         - condition : Callable - Optional conditional firing function

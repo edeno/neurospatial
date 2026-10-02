@@ -106,6 +106,9 @@ class TestValidateSimulation:
             cell_type="place",
             seed=42,
             show_progress=False,
+            # 12 cm fields: a 30 s walk crosses them (6 cm default fields fire
+            # 0, 0 and 1 spikes here).
+            width=12.0,
         )
 
         result = validate_simulation(session)
@@ -287,6 +290,9 @@ class TestValidateSimulation:
             cell_type="place",
             seed=42,
             show_progress=False,
+            # 12 cm fields: a 30 s walk crosses them (6 cm default fields fire
+            # 0, 0 and 1 spikes here).
+            width=12.0,
         )
 
         result = validate_simulation(session, show_plots=True)
@@ -361,6 +367,26 @@ class TestValidateSimulation:
                 times=session.times,
                 # Missing ground_truth
             )
+
+
+def test_default_center_error_threshold(simple_2d_env):
+    """The default max_center_error is 2 bin spacings (4 cm at 2 cm bins)."""
+    import re
+
+    session = simulate_session(
+        simple_2d_env,
+        duration=10.0,
+        n_cells=1,
+        cell_type="place",
+        seed=0,
+        show_progress=False,
+    )
+
+    summary = validate_simulation(session)["summary"]
+
+    center_section = summary.split("Field Correlations")[0]
+    threshold = float(re.search(r"Threshold: ([0-9.]+)", center_section).group(1))
+    assert threshold == 4.0
 
 
 class TestPlotSessionSummary:

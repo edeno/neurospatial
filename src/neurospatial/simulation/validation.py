@@ -56,7 +56,8 @@ def validate_simulation(
         Smoothing method for computing place fields (default: 'diffusion_kde').
     max_center_error : float | None, optional
         Maximum acceptable center error in environment units. If None, uses
-        2 * mean(bin_sizes) as threshold.
+        2 × bin spacing (median distance between neighbouring bin centres;
+        equals ``bin_size`` on a regular grid).
     min_correlation : float | None, optional
         Minimum acceptable correlation between detected and true fields.
         If None, uses 0.5 as threshold.
@@ -160,7 +161,9 @@ def validate_simulation(
 
     **Default Thresholds**:
 
-    - Center error: 2 * mean(bin_sizes) - accounts for discretization error
+    - Center error: 2 × bin spacing (median distance between neighbouring bin
+      centres; equals ``bin_size`` on a regular grid) - accounts for
+      discretization error
     - Correlation: 0.5 - reasonable lower bound for noisy place fields
 
     **Method Selection**:
@@ -215,9 +218,15 @@ def validate_simulation(
 
     # Set default thresholds
     if max_center_error is None:
-        # Use 2x mean bin size as threshold (accounts for discretization)
-        bin_sizes = env.bin_sizes
-        max_center_error = 2.0 * float(np.mean(bin_sizes))
+        # 2 bin spacings (accounts for discretization). ``env.bin_sizes`` is a
+        # per-bin volume, not a length.
+        from scipy.spatial import cKDTree
+
+        from neurospatial.ops.binning import _estimate_typical_bin_spacing
+
+        max_center_error = 2.0 * _estimate_typical_bin_spacing(
+            cKDTree(env.bin_centers), env.bin_centers
+        )
 
     if min_correlation is None:
         min_correlation = 0.5  # Reasonable threshold for noisy place fields

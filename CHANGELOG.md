@@ -151,6 +151,17 @@
   other unsupported bins (`fill_value=` replaces them). The remaining rates
   match the exact dense kernel to within 1e-4 of the peak rate at bandwidths
   5-20.
+- **Behavior change:** the simulators' default place-field width was
+  `3 * mean(env.bin_sizes)`, but `bin_sizes` holds per-bin volumes (areas in
+  2-D), so a 2-D grid with 2 cm bins got 12 cm fields and one with 5 cm bins
+  got 75 cm fields. `PlaceCellModel(width=None)`, and through it
+  `simulate_session`, `open_field_session`, `linear_track_session` and
+  `tmaze_alternation_session`, now default to 3 × the bin spacing (the median
+  distance between neighbouring bin centres; `bin_size` on a regular grid, the
+  bin length on a track): 6 cm at 2 cm bins, 15 cm at 5 cm bins. A one-bin
+  environment now raises `ValueError` asking for `width=`. Likewise
+  `validate_simulation`'s default `max_center_error` is 2 × the bin spacing
+  (4 cm at 2 cm bins, previously 8 cm).
 
 ### Added — `method="glm"`: penalized-Poisson GAM estimator (spatial only)
 
