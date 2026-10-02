@@ -416,6 +416,27 @@ def test_detected_center_ignores_unresolved_bins():
     assert result["center_errors"][0] == 0.0
 
 
+def test_default_center_error_threshold_on_hairpin(hairpin_track_env):
+    """On a track the default threshold is 2 bin lengths (10 cm at 5 cm bins)."""
+    import re
+
+    times = np.arange(0, 20, 0.01)
+    positions = np.column_stack([50 + 40 * np.sin(times), np.zeros_like(times)])
+    center = np.array([50.0, 0.0])
+    near_center = np.linalg.norm(positions - center, axis=1) < 3.0
+    result = validate_simulation(
+        env=hairpin_track_env,
+        spike_trains=[times[near_center][::5]],
+        positions=positions,
+        times=times,
+        ground_truth={"cell_0": {"center": center, "width": 15.0, "max_rate": 10.0}},
+    )
+
+    center_section = result["summary"].split("Field Correlations")[0]
+    threshold = float(re.search(r"Threshold: ([0-9.]+)", center_section).group(1))
+    assert threshold == 10.0
+
+
 class TestPlotSessionSummary:
     """Tests for plot_session_summary() function."""
 

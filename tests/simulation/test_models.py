@@ -100,6 +100,12 @@ class TestPlaceCellModel:
 
         np.testing.assert_allclose(pc.width, 15.0, rtol=1e-9)
 
+    def test_default_width_on_hairpin_follows_the_track(self, hairpin_track_env):
+        """Bins on the opposite arm are close in space, not along the track."""
+        pc = PlaceCellModel(hairpin_track_env, center=[50.0, 0.0])
+
+        np.testing.assert_allclose(pc.width, 15.0, rtol=1e-12)
+
     def test_default_width_single_bin_raises(self):
         """A one-bin environment has no bin spacing to scale the width by."""
         from neurospatial import Environment

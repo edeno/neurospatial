@@ -7,11 +7,10 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from scipy.spatial import cKDTree
 
 from neurospatial import Environment
 from neurospatial.encoding import compute_spatial_rate
-from neurospatial.ops.binning import _estimate_typical_bin_spacing
+from neurospatial.ops.binning import _typical_bin_spacing
 from neurospatial.simulation import (
     boundary_cell_session,
     grid_cell_session,
@@ -253,9 +252,7 @@ class TestPlaceFieldDetectionAccuracy:
         spike_trains = session.spike_trains
         ground_truth = session.ground_truth
         # Bin spacing (a length); env.bin_sizes holds bin areas in 2-D.
-        bin_size = _estimate_typical_bin_spacing(
-            cKDTree(env.bin_centers), env.bin_centers
-        )
+        bin_size = _typical_bin_spacing(env)
 
         true_centers = np.array(
             [ground_truth[f"cell_{i}"]["center"] for i in range(len(spike_trains))],

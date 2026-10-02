@@ -158,8 +158,9 @@
   got 75 cm fields. `PlaceCellModel(width=None)`, and through it
   `simulate_session`, `open_field_session`, `linear_track_session` and
   `tmaze_alternation_session`, now default to 3 × the bin spacing (the median
-  distance between neighbouring bin centres; `bin_size` on a regular grid, the
-  bin length on a track): 6 cm at 2 cm bins, 15 cm at 5 cm bins. A one-bin
+  bin length along a track, otherwise the median distance between neighbouring
+  bin centres, which is `bin_size` on a regular grid): 6 cm at 2 cm bins, 15 cm
+  at 5 cm bins. A one-bin
   environment now raises `ValueError` asking for `width=`. Likewise
   `validate_simulation`'s default `max_center_error` is 2 × the bin spacing
   (4 cm at 2 cm bins, previously 8 cm).

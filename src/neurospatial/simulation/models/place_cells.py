@@ -5,10 +5,9 @@ from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.spatial import cKDTree
 
 from neurospatial import Environment
-from neurospatial.ops.binning import _estimate_typical_bin_spacing
+from neurospatial.ops.binning import _typical_bin_spacing
 from neurospatial.ops.distance import distance_field
 
 
@@ -30,7 +29,8 @@ class PlaceCellModel:
         Place field width (standard deviation of Gaussian).
         Can be scalar (isotropic) or array (anisotropic per dimension).
         If None, defaults to 3 × bin spacing (median distance between
-        neighbouring bin centres; equals ``bin_size`` on a regular grid). With
+        neighbouring bin centres, or the median bin length on a track; equals
+        ``bin_size`` on a regular grid). With
         anisotropic bins this is set by the smaller spacing; pass an array
         ``width`` for a per-dimension default.
     max_rate : float, optional
@@ -205,11 +205,9 @@ class PlaceCellModel:
 
         # Set width
         if width is None:
-            # 3 bin spacings. ``env.bin_sizes`` is a per-bin volume (an area in
-            # 2-D), not a length, so use the neighbour spacing instead.
-            spacing = _estimate_typical_bin_spacing(
-                cKDTree(env.bin_centers), env.bin_centers
-            )
+            # 3 bin spacings. Off a track ``env.bin_sizes`` is a per-bin volume
+            # (an area in 2-D), not a length, so use the neighbour spacing.
+            spacing = _typical_bin_spacing(env)
             if not np.isfinite(spacing):
                 raise ValueError(
                     f"Cannot choose a default place-field width: the environment "
