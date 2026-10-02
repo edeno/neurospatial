@@ -106,6 +106,19 @@
   caller-supplied polar axis to that orientation. `plot_object_vector_tuning`
   drew +π/2 (left of the animal) on the right; it keeps "ahead" at the top
   and now draws left on the left.
+- **Behavior change:** `read_position`, `read_head_direction` and `read_pose`
+  returned an NWB series' *stored* values and ignored its `conversion` and
+  `offset`, which NWB defines as the map to `unit` (`data * conversion +
+  offset`). A pixel series stored 0-500 with `unit="meters"`,
+  `conversion=0.002`, `offset=0.1` came back as 0-500 instead of 0.1-1.1 m, and
+  `environment_from_position` built a 500 × 500 environment. The readers now
+  return values in the series' `unit` (head direction converts before the
+  degree-to-radian step), and `lazy=True` raises `ValueError` for a series
+  whose scaling is not the identity rather than returning unconverted handles.
+  The NWB overlays inherit the fix. `environment_from_position` maps NWB unit
+  names to the `Environment.units` registry, so pynwb's default `"meters"`
+  becomes `"m"` (no unrecognized-units warning), and likewise `cm`, `mm` and
+  `px`.
 
 ### Added — `method="glm"`: penalized-Poisson GAM estimator (spatial only)
 

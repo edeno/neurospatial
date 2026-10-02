@@ -25,6 +25,25 @@ if TYPE_CHECKING:
     from neurospatial.regions import Regions
 
 
+# NWB spells units out ("meters" is pynwb's default); map them to the
+# ``Environment.units`` registry values.
+_NWB_UNIT_ALIASES = {
+    "meter": "m",
+    "meters": "m",
+    "metre": "m",
+    "metres": "m",
+    "m": "m",
+    "centimeter": "cm",
+    "centimeters": "cm",
+    "cm": "cm",
+    "millimeter": "mm",
+    "millimeters": "mm",
+    "mm": "mm",
+    "pixel": "px",
+    "pixels": "px",
+    "px": "px",
+}
+
 # =============================================================================
 # Type definitions for JSON metadata structures
 # =============================================================================
@@ -1141,8 +1160,10 @@ def environment_from_position(
     position_name : str, optional
         Name of specific SpatialSeries within Position.
     units : str, optional
-        Spatial units for the environment. If None, auto-detected from
-        the SpatialSeries unit attribute.
+        Spatial units for the environment. If None, auto-detected from the
+        series ``unit``, with NWB long names mapped to ``m`` / ``cm`` / ``mm``
+        / ``px``. Positions are read in that unit (stored × ``conversion`` +
+        ``offset``), so ``bin_size`` is in it too.
     frame : str, optional
         Coordinate frame identifier for the environment.
     **kwargs
@@ -1235,7 +1256,8 @@ def _get_position_units(
     Returns
     -------
     str
-        The units from the SpatialSeries, or "cm" as fallback.
+        The units from the SpatialSeries, with NWB long names mapped to
+        ``m`` / ``cm`` / ``mm`` / ``px``, or "cm" as fallback.
 
     Notes
     -----
@@ -1268,4 +1290,7 @@ def _get_position_units(
     )
 
     # Return units (default to "cm" if not set)
-    return str(spatial_series.unit) if spatial_series.unit else "cm"
+    if not spatial_series.unit:
+        return "cm"
+    unit = str(spatial_series.unit)
+    return _NWB_UNIT_ALIASES.get(unit.strip().lower(), unit)

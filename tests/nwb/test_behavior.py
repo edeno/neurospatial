@@ -869,3 +869,54 @@ class TestReadPositionLengthCheck:
 
         with pytest.raises(ValueError, match="Length mismatch"):
             read_position(empty_nwb)
+
+
+class TestReadScaledSeries:
+    """Readers return values in the series' unit: stored * conversion + offset."""
+
+    def test_read_position_applies_conversion_and_offset(
+        self, make_scaled_position_nwb
+    ):
+        from neurospatial.io.nwb import read_position
+
+        positions, _ = read_position(make_scaled_position_nwb())
+
+        np.testing.assert_allclose(positions.min(axis=0), [0.1, 0.1], rtol=1e-12)
+        np.testing.assert_allclose(positions.max(axis=0), [1.1, 1.1], rtol=1e-12)
+
+    def test_read_position_lazy_refuses_scaled_series(self, make_scaled_position_nwb):
+        from neurospatial.io.nwb import read_position
+
+        with pytest.raises(ValueError, match=r"conversion=0\.002") as excinfo:
+            read_position(make_scaled_position_nwb(), lazy=True)
+        assert "Fix:" in str(excinfo.value)
+
+        nwbfile = make_scaled_position_nwb(conversion=1.0, offset=0.0)
+        positions, _ = read_position(nwbfile, lazy=True)
+        series = nwbfile.processing["behavior"]["Position"].spatial_series["position"]
+        assert positions is series.data
+
+    def test_read_head_direction_applies_conversion(self, empty_nwb):
+        from pynwb.behavior import CompassDirection, SpatialSeries
+
+        from neurospatial.io.nwb import read_head_direction
+
+        stored = np.array([0.0, 22.5, 45.0, 90.0])  # degrees / 2
+        compass = CompassDirection(name="CompassDirection")
+        compass.add_spatial_series(
+            SpatialSeries(
+                name="head_direction",
+                data=stored,
+                timestamps=np.arange(4) / 30.0,
+                reference_frame="0 = East, increasing counterclockwise",
+                unit="degrees",
+                conversion=2.0,
+            )
+        )
+        empty_nwb.create_processing_module(
+            name="behavior", description="Behavior data"
+        ).add(compass)
+
+        angles, _ = read_head_direction(empty_nwb)
+
+        np.testing.assert_allclose(angles, np.deg2rad(2 * stored), rtol=1e-12)

@@ -23,6 +23,8 @@ def _create_nwb_with_pose(
     edges: np.ndarray,
     n_samples: int = 10,
     n_dims: int = 2,
+    conversion: float = 1.0,
+    offset: float = 0.0,
 ):
     """
     Create NWB file with PoseEstimation using custom skeleton for testing.
@@ -41,6 +43,9 @@ def _create_nwb_with_pose(
         Number of time samples. Default is 10.
     n_dims : int, optional
         Number of spatial dimensions. Default is 2.
+    conversion, offset : float, optional
+        Scaling of every series: values in ``unit`` are
+        ``data * conversion + offset``. Default is the identity.
 
     Returns
     -------
@@ -70,6 +75,8 @@ def _create_nwb_with_pose(
             timestamps=timestamps,
             reference_frame="test",
             unit="cm",
+            conversion=conversion,
+            offset=offset,
         )
         for name in node_names
     ]
@@ -871,3 +878,35 @@ class TestReadPoseLengthCheck:
 
         with pytest.raises(ValueError, match="Length mismatch"):
             read_pose(nwbfile)
+
+
+class TestReadPoseScaled:
+    """Body-part coordinates are returned as stored * conversion + offset."""
+
+    @pytest.fixture
+    def scaled_pose_nwb(self, empty_nwb):
+        return _create_nwb_with_pose(
+            empty_nwb,
+            "skeleton",
+            ["nose", "tail"],
+            np.array([[0, 1]], np.uint8),
+            conversion=0.5,
+            offset=1.0,
+        )
+
+    def test_read_pose_applies_conversion_and_offset(self, scaled_pose_nwb):
+        from neurospatial.io.nwb import read_pose
+
+        bodyparts, _, _ = read_pose(scaled_pose_nwb)
+
+        pose = scaled_pose_nwb.processing["behavior"]["PoseEstimation"]
+        for name, series in pose.pose_estimation_series.items():
+            np.testing.assert_allclose(
+                bodyparts[name], series.data[:] * 0.5 + 1.0, rtol=1e-12
+            )
+
+    def test_read_pose_lazy_refuses_scaled_series(self, scaled_pose_nwb):
+        from neurospatial.io.nwb import read_pose
+
+        with pytest.raises(ValueError, match="Fix:"):
+            read_pose(scaled_pose_nwb, lazy=True)
