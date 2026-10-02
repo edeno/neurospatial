@@ -61,18 +61,15 @@ except ModuleNotFoundError:
 PolygonType = type[_shp.Polygon]
 
 
-def _add_edge_with_distance(graph: nx.Graph, u: Any, v: Any, edge_id: int) -> None:
-    """Add an edge to `graph` with `distance` (from node pos) and `edge_id`.
+def _add_edge_with_distance(graph: nx.Graph, u: Any, v: Any) -> None:
+    """Add an edge to `graph` with `distance` computed from node positions.
 
-    Only ``distance`` is consumed by neurospatial's linearization path
-    (``_get_graph_bins`` builds its own edge_id map from edge enumeration and
-    never reads the input ``edge_id``). The ``edge_id`` attribute is set for
-    interoperability/parity with ``track_linearization.make_track_graph`` but is
-    not required for ``to_linear()`` to work.
+    ``GraphLayout.build`` numbers ``edge_id`` by ``graph.edges()`` order; any
+    ``edge_id`` on the input graph is ignored.
     """
     p1 = np.asarray(graph.nodes[u]["pos"], dtype=float)
     p2 = np.asarray(graph.nodes[v]["pos"], dtype=float)
-    graph.add_edge(u, v, distance=float(np.linalg.norm(p2 - p1)), edge_id=edge_id)
+    graph.add_edge(u, v, distance=float(np.linalg.norm(p2 - p1)))
 
 
 def _assemble_maze_graph(
@@ -124,7 +121,6 @@ def _assemble_maze_graph(
         graph.add_node(label, pos=tuple(float(c) for c in pos))
 
     edge_order: list[tuple[Any, Any]] = []
-    edge_id = 0
 
     if kind == "plus":
         # Order contract: [center, arm1, arm2, arm3, arm4].
@@ -137,9 +133,8 @@ def _assemble_maze_graph(
             )
         center = labels[0]
         for arm in labels[1:]:
-            _add_edge_with_distance(graph, center, arm, edge_id)
+            _add_edge_with_distance(graph, center, arm)
             edge_order.append((center, arm))
-            edge_id += 1
 
     elif kind == "t":
         # Order contract: [stem_end, junction, arm_left, arm_right].
@@ -151,13 +146,11 @@ def _assemble_maze_graph(
                 f"Got {len(labels)}."
             )
         stem_end, junction, arm_left, arm_right = labels
-        _add_edge_with_distance(graph, stem_end, junction, edge_id)
+        _add_edge_with_distance(graph, stem_end, junction)
         edge_order.append((stem_end, junction))
-        edge_id += 1
         for arm in (arm_left, arm_right):
-            _add_edge_with_distance(graph, junction, arm, edge_id)
+            _add_edge_with_distance(graph, junction, arm)
             edge_order.append((junction, arm))
-            edge_id += 1
 
     elif kind == "w":
         # Order contract:
@@ -176,14 +169,12 @@ def _assemble_maze_graph(
         arms = labels[3:]
         # Horizontal connector along the base (base_left -> base_mid -> base_right).
         for left, right in itertools.pairwise(base):
-            _add_edge_with_distance(graph, left, right, edge_id)
+            _add_edge_with_distance(graph, left, right)
             edge_order.append((left, right))
-            edge_id += 1
         # Vertical arms: each base node up to the arm at the matching position.
         for base_node, arm_node in zip(base, arms, strict=True):
-            _add_edge_with_distance(graph, base_node, arm_node, edge_id)
+            _add_edge_with_distance(graph, base_node, arm_node)
             edge_order.append((base_node, arm_node))
-            edge_id += 1
 
     else:
         raise ValueError(f"Unknown maze kind {kind!r}")
@@ -737,7 +728,7 @@ class EnvironmentFactories:
             graph.add_node(i, pos=pos)
         edge_order: list[tuple[Any, Any]] = []
         for i in range(len(points) - 1):
-            _add_edge_with_distance(graph, i, i + 1, edge_id=i)
+            _add_edge_with_distance(graph, i, i + 1)
             edge_order.append((i, i + 1))
 
         total_length = sum(float(graph.edges[u, v]["distance"]) for u, v in edge_order)
@@ -916,20 +907,14 @@ class EnvironmentFactories:
             # Operate on a copy so the caller's graph is never mutated.
             graph = track_graph.copy()
             edge_order = list(graph.edges())
-            # Fill in `distance` from node positions where missing; this is the
-            # only edge attribute the neurospatial linearization path consumes
-            # (`_get_graph_bins` builds its own edge_id map from edge
-            # enumeration and never reads an input `edge_id`). We also set
-            # `edge_id` for interoperability/parity with
-            # ``track_linearization.make_track_graph``, but neurospatial's
-            # ``to_linear()`` does not consume it.
-            for assigned_id, (u, v) in enumerate(graph.edges()):
+            # Fill in `distance` from node positions where missing.
+            # `GraphLayout.build` numbers `edge_id` by `graph.edges()` order;
+            # any `edge_id` on the input graph is ignored.
+            for u, v in graph.edges():
                 if "distance" not in graph.edges[u, v]:
                     p1 = np.asarray(graph.nodes[u]["pos"], dtype=float)
                     p2 = np.asarray(graph.nodes[v]["pos"], dtype=float)
                     graph.edges[u, v]["distance"] = float(np.linalg.norm(p2 - p1))
-                if "edge_id" not in graph.edges[u, v]:
-                    graph.edges[u, v]["edge_id"] = assigned_id
         elif node_positions is not None:
             graph, edge_order = _assemble_maze_graph(kind_normalized, node_positions)
         else:
@@ -986,6 +971,8 @@ class EnvironmentFactories:
         graph : nx.Graph
             The NetworkX graph defining the track segments. Nodes are expected
             to have a 'pos' attribute for their N-D coordinates.
+            ``GraphLayout.build`` numbers ``edge_id`` by ``graph.edges()``
+            order; any ``edge_id`` on the input graph is ignored.
         edge_order : List[Tuple[Any, Any]]
             An ordered list of edge tuples (node1, node2) from `graph` that
             defines the 1D bin ordering.

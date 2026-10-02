@@ -2198,3 +2198,43 @@ class TestGraphGeometryRoundTrip:
             KDTree(env.bin_centers).query(env.bin_centers, k=2)[0][:, 1]
         )
         np.testing.assert_allclose(loaded.bin_sizes, spacing**2)
+
+
+def test_environment_from_position_uses_converted_meters(make_scaled_position_nwb):
+    """Positions are converted to meters, and NWB's "meters" becomes "m".
+
+    The converted extent is 1 m, so a cm-scale reading would give one bin.
+    """
+    import warnings
+
+    from neurospatial.io.nwb import environment_from_position
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        env = environment_from_position(make_scaled_position_nwb(), bin_size=0.05)
+
+    assert env.units == "m"
+    assert not [w for w in caught if "standard registry" in str(w.message)]
+    assert env.bin_centers.min() >= 0.1 - 0.05
+    assert env.bin_centers.max() <= 1.1 + 0.05
+
+
+def test_empty_unit_warns_and_assumes_cm(make_scaled_position_nwb):
+    """A series that declares no unit warns once, then assumes 'cm'."""
+    import warnings
+
+    from neurospatial.io.nwb import environment_from_position
+
+    nwbfile = make_scaled_position_nwb(unit="", conversion=1.0, offset=0.0)
+
+    with pytest.warns(UserWarning, match="declares no unit") as record:
+        env = environment_from_position(nwbfile, bin_size=50.0)
+    messages = [str(w.message) for w in record if "declares no unit" in str(w.message)]
+    assert len(messages) == 1
+    assert "Fix: pass units=" in messages[0]
+    assert env.units == "cm"
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        env = environment_from_position(nwbfile, bin_size=50.0, units="cm")
+    assert env.units == "cm"

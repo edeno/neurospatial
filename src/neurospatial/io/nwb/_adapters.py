@@ -78,6 +78,73 @@ def timestamps_from_series(series: Any) -> NDArray[np.float64]:
     return np.asarray(timestamps, dtype=np.float64)
 
 
+def scaling_from_series(series: Any) -> tuple[float, float]:
+    """
+    Return the ``(conversion, offset)`` mapping stored values to ``series.unit``.
+
+    NWB defines the value in ``unit`` as ``data * conversion + offset``.
+
+    Parameters
+    ----------
+    series : Any
+        A ``TimeSeries``-like object, optionally with ``conversion`` and
+        ``offset`` attributes.
+
+    Returns
+    -------
+    tuple of float
+        ``(conversion, offset)``; ``(1.0, 0.0)`` when the attributes are absent.
+    """
+    return float(getattr(series, "conversion", 1.0)), float(
+        getattr(series, "offset", 0.0)
+    )
+
+
+def data_from_series(series: Any) -> NDArray[np.float64]:
+    """
+    Materialize ``series.data`` in its declared unit.
+
+    Parameters
+    ----------
+    series : Any
+        A ``TimeSeries``-like object with ``data``.
+
+    Returns
+    -------
+    NDArray[np.float64]
+        ``data * conversion + offset`` as float64.
+    """
+    data = np.asarray(series.data[:], dtype=np.float64)
+    conversion, offset = scaling_from_series(series)
+    return data * conversion + offset if (conversion, offset) != (1.0, 0.0) else data
+
+
+def require_unscaled_for_lazy(series: Any, *, context: str) -> None:
+    """
+    Refuse a lazy handle whose stored values are not in ``series.unit``.
+
+    Parameters
+    ----------
+    series : Any
+        A ``TimeSeries``-like object.
+    context : str
+        Name of the calling reader, used in the error message.
+
+    Raises
+    ------
+    ValueError
+        If the series' ``conversion`` / ``offset`` are not the identity.
+    """
+    conversion, offset = scaling_from_series(series)
+    if (conversion, offset) != (1.0, 0.0):
+        raise ValueError(
+            f"{context}(lazy=True) would return the stored values of '{series.name}', "
+            f"but the series declares conversion={conversion} and offset={offset}, so "
+            f"stored values are not in '{series.unit}'.\n"
+            f"Fix: call {context}(..., lazy=False); values are converted on read."
+        )
+
+
 def timestamps_handle_from_series(series: Any) -> Any:
     """
     Return a lazy timestamps handle for a time series-like object.

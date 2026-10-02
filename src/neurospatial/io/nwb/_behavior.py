@@ -13,6 +13,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.io.nwb._adapters import (
+    data_from_series,
+    require_unscaled_for_lazy,
     timestamps_from_series,
     timestamps_handle_from_series,
     validate_handle_lengths,
@@ -54,17 +56,19 @@ def read_position(
         If None and multiple exist, uses first alphabetically with INFO log.
     lazy : bool, default False
         If ``False`` (default), positions and timestamps are fully materialized
-        into ``NDArray[np.float64]`` -- the historical, byte-for-byte-unchanged
-        behavior. If ``True``, the h5py-backed ``SpatialSeries.data`` handle (and
-        the timestamps handle) are returned **without** copying, so they
-        materialize only when sliced or ``np.asarray``-ed. Use this to keep large
-        recordings off-RAM.
+        into ``NDArray[np.float64]``. If ``True``, the h5py-backed
+        ``SpatialSeries.data`` handle (and the timestamps handle) are returned
+        **without** copying, so they materialize only when sliced or
+        ``np.asarray``-ed. Use this to keep large recordings off-RAM. Values are
+        in the series' ``unit``: stored × ``conversion`` + ``offset``;
+        ``lazy=True`` raises when that map is not the identity.
 
     Returns
     -------
     positions : NDArray[np.float64] or h5py.Dataset, shape (n_samples, n_dims)
-        Position coordinates. A materialized array when ``lazy=False``; a lazy
-        handle when ``lazy=True``.
+        Position coordinates in the series' ``unit``: stored × ``conversion``
+        + ``offset``. A materialized array when ``lazy=False``; a lazy handle
+        when ``lazy=True``.
     timestamps : NDArray[np.float64] or h5py.Dataset, shape (n_samples,)
         Timestamps in seconds. A materialized array when ``lazy=False``; a lazy
         handle when ``lazy=True`` and the series carries explicit timestamps (a
@@ -74,6 +78,9 @@ def read_position(
     ------
     KeyError
         If no Position container found, or if specified position_name not found.
+    ValueError
+        If ``lazy=True`` and the series declares a non-identity ``conversion``
+        or ``offset``.
     ImportError
         If pynwb is not installed.
 
@@ -122,6 +129,7 @@ def read_position(
     )
 
     if lazy:
+        require_unscaled_for_lazy(spatial_series, context="read_position")
         # Return the h5py-backed handles without copying; they materialize on
         # slice / np.asarray. Validate lengths using the handles' .shape[0]
         # (an h5py Dataset exposes .shape WITHOUT materializing values, so this
@@ -138,7 +146,7 @@ def read_position(
         return data_handle, timestamps_handle
 
     # Extract position data and timestamps
-    positions = np.asarray(spatial_series.data[:], dtype=np.float64)
+    positions = data_from_series(spatial_series)
     timestamps = _get_timestamps(spatial_series)
 
     from neurospatial._validation import validate_lengths
@@ -324,8 +332,9 @@ def read_head_direction(
         Head direction angles in radians, allocentric convention
         (0 = East, increasing counterclockwise; range as stored, typically
         (-pi, pi] from arctan2 or [0, 2*pi) from a wrapped angle series).
-        If the source SpatialSeries reports a degree unit, values are
-        converted to radians on read.
+        Stored values are first put in the series' ``unit`` (stored ×
+        ``conversion`` + ``offset``); if that unit is degrees, they are then
+        converted to radians.
     timestamps : NDArray[np.float64], shape (n_samples,)
         Timestamps in seconds.
 
@@ -361,7 +370,7 @@ def read_head_direction(
     # head direction as either a 1-D angle series or an (n, 2) unit-vector
     # series; handle both. Angles are returned in the allocentric convention
     # (0 = East, increasing counterclockwise).
-    raw = np.asarray(spatial_series.data[:], dtype=np.float64)
+    raw = data_from_series(spatial_series)
     timestamps = _get_timestamps(spatial_series)
 
     if raw.ndim == 2 and raw.shape[1] == 2:

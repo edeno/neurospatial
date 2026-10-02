@@ -56,7 +56,9 @@ def validate_simulation(
         Smoothing method for computing place fields (default: 'diffusion_kde').
     max_center_error : float | None, optional
         Maximum acceptable center error in environment units. If None, uses
-        2 * mean(bin_sizes) as threshold.
+        2 × bin spacing (median distance between neighbouring bin centres, or
+        the median bin length on a track; equals ``bin_size`` on a regular
+        grid).
     min_correlation : float | None, optional
         Minimum acceptable correlation between detected and true fields.
         If None, uses 0.5 as threshold.
@@ -160,7 +162,9 @@ def validate_simulation(
 
     **Default Thresholds**:
 
-    - Center error: 2 * mean(bin_sizes) - accounts for discretization error
+    - Center error: 2 × bin spacing (median distance between neighbouring bin
+      centres, or the median bin length on a track; equals ``bin_size`` on a
+      regular grid) - accounts for discretization error
     - Correlation: 0.5 - reasonable lower bound for noisy place fields
 
     **Method Selection**:
@@ -215,9 +219,11 @@ def validate_simulation(
 
     # Set default thresholds
     if max_center_error is None:
-        # Use 2x mean bin size as threshold (accounts for discretization)
-        bin_sizes = env.bin_sizes
-        max_center_error = 2.0 * float(np.mean(bin_sizes))
+        # 2 bin spacings (accounts for discretization). ``env.bin_sizes`` is a
+        # per-bin volume, not a length.
+        from neurospatial.ops.binning import _typical_bin_spacing
+
+        max_center_error = 2.0 * _typical_bin_spacing(env)
 
     if min_correlation is None:
         min_correlation = 0.5  # Reasonable threshold for noisy place fields
@@ -249,8 +255,13 @@ def validate_simulation(
             dtype=np.float64,
         )
 
-        # Find detected center (peak of rate map)
-        peak_bin = int(np.argmax(detected_field))
+        # Find detected center (peak of rate map). Bins the smoothing cannot
+        # resolve are NaN; with no finite bin there is no peak to compare.
+        if not np.any(np.isfinite(detected_field)):
+            center_errors[i] = np.nan
+            correlations[i] = np.nan
+            continue
+        peak_bin = int(np.nanargmax(detected_field))
         detected_center = env.bin_centers[peak_bin]
 
         # Get ground truth center

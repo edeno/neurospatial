@@ -274,6 +274,9 @@ firing_rate = result.firing_rate  # Access firing rate from result object
 # then masks exactly `result.occupancy < min_occupancy`. (Do not treat it as a
 # density -- an over-large value in seconds masks the whole map and now warns.)
 #
+# diffusion_kde and binned return NaN in bins too far from all occupancy for
+# the smoothing to resolve (typically 4-7 bandwidths away).
+#
 # fill_value default is None: masked/unreachable bins stay NaN (no behavior
 # change for existing callers). Pass fill_value=0.0 when feeding
 # decode_position() so the model is explicitly zero-rate there -- the documented

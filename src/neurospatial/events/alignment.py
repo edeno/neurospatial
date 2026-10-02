@@ -22,6 +22,8 @@ from neurospatial.events._core import PeriEventResult, PopulationPeriEventResult
 if TYPE_CHECKING:
     import pandas as pd
 
+    from neurospatial._typing import SpikeTrainsLike
+
 
 def _make_bin_edges(
     window: tuple[float, float], bin_size: float
@@ -341,7 +343,7 @@ def peri_event_histogram(
 
 
 def population_peri_event_histogram(
-    spike_trains: list[NDArray[np.float64]],
+    spike_trains: Sequence[NDArray[np.float64]] | SpikeTrainsLike,
     event_times: NDArray[np.float64],
     window: tuple[float, float],
     *,
@@ -356,9 +358,10 @@ def population_peri_event_histogram(
 
     Parameters
     ----------
-    spike_trains : list[NDArray[np.float64]]
-        List of spike time arrays, one per unit. Each array has shape
-        (n_spikes_for_unit,) in seconds.
+    spike_trains : sequence of NDArray[np.float64], or pynapple TsGroup
+        Spike times in seconds, one 1-D array of shape (n_spikes_for_unit,)
+        per unit, or a labelled spike group such as a pynapple ``TsGroup``.
+        A group's index becomes the result's ``unit_ids``.
     event_times : NDArray[np.float64], shape (n_events,)
         Event times (e.g., stimulus onset) in seconds.
     window : tuple[float, float]
@@ -368,8 +371,10 @@ def population_peri_event_histogram(
     unit_ids : ndarray or sequence, optional
         Per-unit identity labels (integers or strings), one per unit in the
         same order as ``spike_trains``. Stored on the result's ``unit_ids``
-        field. Defaults to ``np.arange(n_units)``. A wrong-length value
-        raises ``ValueError``.
+        field. Defaults to ``np.arange(n_units)``, or to the group's index for
+        a labelled group. A wrong-length or repeated value raises
+        ``ValueError``, and so does a value that differs from a labelled
+        group's index (relabel the group itself instead).
 
     Returns
     -------
@@ -417,8 +422,14 @@ def population_peri_event_histogram(
 
     >>> rates = result.firing_rates  # shape: (n_units, n_bins)
     """
+    # Extract trains by unit label from a spike group (iterating a TsGroup
+    # yields its keys, not its trains).
+    from neurospatial.encoding._spikes import as_spike_trains_with_ids
+
+    trains, extracted_ids = as_spike_trains_with_ids(spike_trains)
+
     # Validate spike_trains
-    if len(spike_trains) == 0:
+    if len(trains) == 0:
         raise ValueError(
             "spike_trains is empty.\n"
             "  WHY: Cannot compute population PSTH without any units.\n"
@@ -452,14 +463,18 @@ def population_peri_event_histogram(
             "  HOW: Provide at least one event time."
         )
 
-    n_units = len(spike_trains)
+    n_units = len(trains)
     n_events = len(event_times)
 
-    # Resolve and validate per-unit identity labels (defaults to arange).
+    # Resolve and validate per-unit identity labels (defaults to arange). A
+    # labelled input keeps its own labels; a differing unit_ids= raises.
     from neurospatial._results import resolve_unit_ids
 
     resolved_unit_ids = resolve_unit_ids(
-        unit_ids, n_units, context="population_peri_event_histogram"
+        unit_ids,
+        n_units,
+        context="population_peri_event_histogram",
+        input_ids=extracted_ids,
     )
 
     # Warn about single event
@@ -478,7 +493,7 @@ def population_peri_event_histogram(
     # Shape: (n_units, n_events, n_bins)
     all_histograms = np.zeros((n_units, n_events, n_bins), dtype=np.float64)
 
-    for unit_idx, spike_times in enumerate(spike_trains):
+    for unit_idx, spike_times in enumerate(trains):
         # Get aligned spikes for this unit
         aligned = align_spikes_to_events(spike_times, event_times, window)
 

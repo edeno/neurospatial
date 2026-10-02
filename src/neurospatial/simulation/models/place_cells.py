@@ -7,6 +7,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial import Environment
+from neurospatial.ops.binning import _typical_bin_spacing
 from neurospatial.ops.distance import distance_field
 
 
@@ -27,7 +28,11 @@ class PlaceCellModel:
     width : float | NDArray[np.float64], optional
         Place field width (standard deviation of Gaussian).
         Can be scalar (isotropic) or array (anisotropic per dimension).
-        If None, defaults to 3 * env.bin_size.
+        If None, defaults to 3 × bin spacing (median distance between
+        neighbouring bin centres, or the median bin length on a track; equals
+        ``bin_size`` on a regular grid). With
+        anisotropic bins this is set by the smaller spacing; pass an array
+        ``width`` for a per-dimension default.
     max_rate : float, optional
         Peak firing rate in Hz (default: 20.0).
     baseline_rate : float, optional
@@ -200,10 +205,17 @@ class PlaceCellModel:
 
         # Set width
         if width is None:
-            # Default to 3 * bin_size
-            # Use the mean bin_size if non-uniform bins
-            bin_sizes = env.bin_sizes  # Property, not method
-            self.width = 3.0 * np.mean(bin_sizes)
+            # 3 bin spacings. Off a track ``env.bin_sizes`` is a per-bin volume
+            # (an area in 2-D), not a length, so use the neighbour spacing.
+            spacing = _typical_bin_spacing(env)
+            if not np.isfinite(spacing):
+                raise ValueError(
+                    f"Cannot choose a default place-field width: the environment "
+                    f"has {env.n_bins} bin, so there is no bin spacing to scale "
+                    "the width by.\n"
+                    "Fix: pass width=<sigma in environment units>."
+                )
+            self.width: float | NDArray[np.float64] = 3.0 * spacing
         else:
             self.width = width
 

@@ -10,6 +10,7 @@ import pytest
 
 from neurospatial import Environment
 from neurospatial.encoding import compute_spatial_rate
+from neurospatial.ops.binning import _typical_bin_spacing
 from neurospatial.simulation import (
     boundary_cell_session,
     grid_cell_session,
@@ -235,20 +236,13 @@ class TestPlaceFieldDetectionAccuracy:
     """Tests for place field detection accuracy."""
 
     @pytest.mark.slow
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "the match tolerance 2 * mean(env.bin_sizes) uses a bin area as a "
-            "length, and the simulator's default field width has the same bug; "
-            "fixed in Phase 2a"
-        ),
-    )
     def test_place_field_detection_accuracy(self):
         """Detected place-field peaks recover the well-sampled true centers."""
-        # Use pre-configured session for reliable test
-        # Increased max_rate to 50 Hz allows shorter duration (3x faster)
+        # Use pre-configured session for reliable test. With the default
+        # 3-bin-spacing (6 cm) fields a 120 s walk crosses every field; at 40 s
+        # two of the five cells fire only once.
         session = open_field_session(
-            duration=40.0, n_place_cells=5, seed=42, max_rate=50.0
+            duration=120.0, n_place_cells=5, seed=42, max_rate=50.0
         )
 
         # Test that we can detect place fields from simulated data
@@ -257,7 +251,8 @@ class TestPlaceFieldDetectionAccuracy:
         times = session.times
         spike_trains = session.spike_trains
         ground_truth = session.ground_truth
-        bin_size = float(np.mean(env.bin_sizes))
+        # Bin spacing (a length); env.bin_sizes holds bin areas in 2-D.
+        bin_size = _typical_bin_spacing(env)
 
         true_centers = np.array(
             [ground_truth[f"cell_{i}"]["center"] for i in range(len(spike_trains))],
@@ -268,7 +263,6 @@ class TestPlaceFieldDetectionAccuracy:
         detected_fields = []
         for spike_times in spike_trains:
             # Threshold of 5 spikes ensures reliable detection
-            # With 40s duration and 50 Hz max_rate, detectable cells have >5 spikes
             if len(spike_times) > 5:
                 # Compute spatial firing-rate map
                 rate_map = compute_spatial_rate(
@@ -276,7 +270,7 @@ class TestPlaceFieldDetectionAccuracy:
                 ).firing_rate
 
                 # Find peak (detected center)
-                peak_bin = np.argmax(rate_map)
+                peak_bin = np.nanargmax(rate_map)
                 detected_center = env.bin_centers[peak_bin]
                 detected_fields.append(detected_center)
 
@@ -285,15 +279,11 @@ class TestPlaceFieldDetectionAccuracy:
         # Ground-truth recovery: for each true center, find the nearest detected
         # peak and count how many land within 2 bin sizes.
         #
-        # NOTE: the achievable match rate here is 2 of 5 in this fast 40 s
-        # session, not 5 of 5. Uniform coverage insets the field centers from
-        # the arena edge, but the inset-corner cells are still visited less by
-        # the short Ornstein-Uhlenbeck walk (one had only ~13 spikes), so their
-        # detected peaks are several bins off. Asserting >= 2 pins genuine
-        # recovery of the well-sampled cells -- a regression that broke
-        # detection would drop below 2 -- without flaking on the cells the short
-        # trajectory under-samples. (validate_simulation passes on a longer
-        # session; see test_validation_sim.)
+        # NOTE: 4 of 5 match in this 120 s session (errors 0, 2.0, 0, 0 and
+        # 4.47 cm); the least-visited cell's peak is just over 2 bins off.
+        # Asserting >= 2 pins genuine recovery of the well-sampled cells -- a
+        # regression that broke detection would drop below 2 -- without
+        # flaking on cells the short Ornstein-Uhlenbeck walk under-samples.
         match_tolerance = 2.0 * bin_size
         matched = 0
         for true_center in true_centers:

@@ -4247,3 +4247,40 @@ class TestIsHeadDirectionCellValidation:
             np.angle(np.exp(1j * (result.preferred_direction() - true_pref)))
         )
         assert circ_dist < np.radians(10)
+
+
+@pytest.mark.parametrize("caller_axis", [False, True], ids=["new axis", "caller axis"])
+def test_head_direction_plot_north_is_up(caller_axis, polar_display_offset) -> None:
+    """Head directions are drawn as in the arena: 0 = East, π/2 = North (up).
+
+    A caller-supplied polar axis configured North-up/clockwise is normalized.
+    """
+    plt = pytest.importorskip("matplotlib.pyplot")
+    from neurospatial.encoding.directional import (
+        DirectionalRateResult,
+        plot_head_direction_tuning,
+    )
+
+    bin_centers = np.linspace(0, 2 * np.pi, 60, endpoint=False)
+    result = DirectionalRateResult(
+        firing_rate=10.0 * np.exp(2.0 * (np.cos(bin_centers - np.pi / 2) - 1)),
+        occupancy=np.full(60, 0.5),
+        bin_centers=bin_centers,
+        bin_size=np.pi / 30,
+        bandwidth=None,
+    )
+    ax = None
+    if caller_axis:
+        _, ax = plt.subplots(subplot_kw={"projection": "polar"})
+        ax.set_theta_zero_location("N")
+        ax.set_theta_direction(-1)
+
+    ax = plot_head_direction_tuning(result, ax=ax)
+
+    north_dx, north_dy = polar_display_offset(ax, np.pi / 2, 5.0)
+    east_dx, east_dy = polar_display_offset(ax, 0.0, 5.0)
+    assert abs(north_dx) < 1e-6 * north_dy
+    assert north_dy > 0
+    assert abs(east_dy) < 1e-6 * east_dx
+    assert east_dx > 0
+    plt.close("all")

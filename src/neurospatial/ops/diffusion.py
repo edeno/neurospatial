@@ -66,6 +66,9 @@ __all__ = [
 _HEAT_KERNEL_RANK_TOL = 1e-6
 _HEAT_KERNEL_DENSE_FRACTION = 0.5
 _HEAT_KERNEL_RANK_START = 32
+# Relative accuracy of an untruncated (full-basis) apply: float64 roundoff in
+# the eigenbasis product, measured near 1e-14 of the largest output.
+_FULL_BASIS_APPLY_RTOL = 1e-13
 
 # MRF penalty-basis resolver constant (consumed by ``select_live_basis`` and the
 # ``Environment._mrf_basis`` glue). ``_DEFAULT_MAX_RANK`` is the requested-rank
@@ -1161,6 +1164,34 @@ def diffusion_component_labels(
     """
     _W, _volumes, n_components, labels = cast("Any", env)._diffusion_geometry
     return int(n_components), labels
+
+
+def diffusion_apply_rtol(env: EnvironmentProtocol, sigma: float) -> float:
+    """Relative accuracy of ``env.diffuse(fields, sigma)`` (its noise floor).
+
+    Errors of the apply are about this fraction of the largest output value:
+    ``_HEAT_KERNEL_RANK_TOL`` when the bandwidth's eigenbasis is truncated, and
+    float64 roundoff (``_FULL_BASIS_APPLY_RTOL``) when the full basis is used.
+    Values below this level are indistinguishable from zero.
+
+    Parameters
+    ----------
+    env : Environment
+        A fitted environment.
+    sigma : float
+        The bandwidth passed to ``env.diffuse``.
+
+    Returns
+    -------
+    float
+        The relative noise floor. A bandwidth that ``env.diffuse`` has not yet
+        resolved reports the truncation tolerance (the larger of the two).
+    """
+    holder = cast("Any", env)._diffusion_eigenbasis
+    rank = holder.get("resolved", {}).get((float(sigma), _HEAT_KERNEL_RANK_TOL))
+    if rank == "dense" or (isinstance(rank, int) and rank >= env.n_bins):
+        return _FULL_BASIS_APPLY_RTOL
+    return _HEAT_KERNEL_RANK_TOL
 
 
 def component_support_mask(

@@ -82,3 +82,24 @@ def sample_times():
         Time points at 100 Hz sampling rate (10 seconds total).
     """
     return np.linspace(0, 10, 1000)
+
+
+@pytest.fixture(scope="module")
+def hairpin_track_env():
+    """A hairpin track: two 100 cm arms 1 cm apart, joined at x = 100, 5 cm bins.
+
+    Bin centres on opposite arms are 1 cm apart in space but up to 200 cm
+    apart along the track.
+    """
+    import networkx as nx
+
+    graph = nx.Graph()
+    nodes = {"a": (0.0, 0.0), "b": (100.0, 0.0), "c": (100.0, 1.0), "d": (0.0, 1.0)}
+    for name, pos in nodes.items():
+        graph.add_node(name, pos=pos)
+    edge_order = [("a", "b"), ("b", "c"), ("c", "d")]
+    for u, v in edge_order:
+        graph.add_edge(
+            u, v, distance=float(np.linalg.norm(np.subtract(nodes[u], nodes[v])))
+        )
+    return Environment.from_graph(graph, edge_order, edge_spacing=0.0, bin_size=5.0)

@@ -25,6 +25,25 @@ if TYPE_CHECKING:
     from neurospatial.regions import Regions
 
 
+# NWB spells units out ("meters" is pynwb's default); map them to the
+# ``Environment.units`` registry values.
+_NWB_UNIT_ALIASES = {
+    "meter": "m",
+    "meters": "m",
+    "metre": "m",
+    "metres": "m",
+    "m": "m",
+    "centimeter": "cm",
+    "centimeters": "cm",
+    "cm": "cm",
+    "millimeter": "mm",
+    "millimeters": "mm",
+    "mm": "mm",
+    "pixel": "px",
+    "pixels": "px",
+    "px": "px",
+}
+
 # =============================================================================
 # Type definitions for JSON metadata structures
 # =============================================================================
@@ -1141,8 +1160,12 @@ def environment_from_position(
     position_name : str, optional
         Name of specific SpatialSeries within Position.
     units : str, optional
-        Spatial units for the environment. If None, auto-detected from
-        the SpatialSeries unit attribute.
+        Spatial units for the environment. If None, auto-detected from the
+        series ``unit``, with NWB long names mapped to ``m`` / ``cm`` / ``mm``
+        / ``px``. Positions are read in that unit (stored × ``conversion`` +
+        ``offset``), so ``bin_size`` is in it too. If the series declares no
+        unit, a ``UserWarning`` is emitted and ``"cm"`` is assumed; pass
+        ``units=`` to state the real unit.
     frame : str, optional
         Coordinate frame identifier for the environment.
     **kwargs
@@ -1235,20 +1258,18 @@ def _get_position_units(
     Returns
     -------
     str
-        The units from the SpatialSeries, or "cm" as fallback.
+        The units from the SpatialSeries, with NWB long names mapped to
+        ``m`` / ``cm`` / ``mm`` / ``px``, or "cm" as fallback.
+
+    Warns
+    -----
+    UserWarning
+        If the SpatialSeries declares no unit (``unit`` is None or empty).
 
     Notes
     -----
-    **Default fallback behavior:**
-
-    If the SpatialSeries does not have a ``unit`` attribute set (or it is None
-    or empty string), this function returns ``"cm"`` as a sensible default for
-    neuroscience tracking data.
-
-    This is a silent fallback - no warning is emitted. If you need to know
-    whether the units were auto-detected or defaulted, compare the returned
-    value against your expected units, or access the SpatialSeries directly
-    to check if ``unit`` is set.
+    **Default fallback behavior:** if the SpatialSeries declares no unit, this
+    function warns, then assumes ``"cm"``.
     """
     from pynwb.behavior import Position as PositionType
 
@@ -1267,5 +1288,17 @@ def _get_position_units(
         position_container, position_name, "SpatialSeries", "Position"
     )
 
-    # Return units (default to "cm" if not set)
-    return str(spatial_series.unit) if spatial_series.unit else "cm"
+    if not spatial_series.unit:
+        warnings.warn(
+            f"Position series '{spatial_series.name}' declares no unit "
+            f"(unit={spatial_series.unit!r}); assuming 'cm'. A wrong unit "
+            "mislabels every distance, speed and bin size derived from this "
+            "environment.\n"
+            "Fix: pass units='cm' (or 'm', 'mm', 'px') to "
+            "environment_from_position to state the real unit.",
+            UserWarning,
+            stacklevel=3,
+        )
+        return "cm"
+    unit = str(spatial_series.unit)
+    return _NWB_UNIT_ALIASES.get(unit.strip().lower(), unit)

@@ -284,3 +284,26 @@ def test_circular_variance_weights_validates(concentrated_angles):
     weights = np.ones(len(concentrated_angles) - 1)
     with pytest.raises(ValueError, match="Length mismatch"):
         circular_variance(concentrated_angles, weights=weights)
+
+
+@pytest.mark.parametrize("caller_axis", [False, True], ids=["new axis", "caller axis"])
+def test_circular_basis_plot_north_is_up(caller_axis, polar_display_offset):
+    """Angles follow the math convention: 0 = East (right), π/2 = North (up).
+
+    A caller-supplied polar axis configured North-up/clockwise is normalized.
+    """
+    ax = None
+    if caller_axis:
+        _, ax = plt.subplots(subplot_kw={"projection": "polar"})
+        ax.set_theta_zero_location("N")
+        ax.set_theta_direction(-1)
+
+    ax = plot_circular_basis_tuning(1.0, 0.0, ax=ax)
+
+    north_dx, north_dy = polar_display_offset(ax, np.pi / 2, 1.0)
+    east_dx, east_dy = polar_display_offset(ax, 0.0, 1.0)
+    assert abs(north_dx) < 1e-6 * north_dy
+    assert north_dy > 0
+    assert abs(east_dy) < 1e-6 * east_dx
+    assert east_dx > 0
+    plt.close("all")

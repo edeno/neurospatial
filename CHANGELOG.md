@@ -87,6 +87,90 @@
   read-only copies of `posterior` and `times`. Use
   `dataclasses.replace(result, posterior=new)` for a modified result.
   `decode_position` hands over its freshly computed posterior without a copy.
+- **Behavior change:** `to_linear` returned wrong positions on graph
+  environments whose `edge_order` differs from `graph.edges()` order, such as
+  `Environment.maze("w", ...)`: on a W maze with 50 cm segments, `(75, 0)` on
+  the base mapped to 175 instead of 75 and `(0, 40)` on the left arm to 114.03
+  instead of 140, and about 38% of on-track points disagreed with `bin_at`.
+  `track_linearization` looks a point's nearest segment up by its `edge_id`
+  attribute but finds it by its position in `graph.edges()`. Graph layouts now
+  linearize a copy numbered in `graph.edges()` order, so `to_linear` returns
+  along-track distance for `from_graph`, `maze`, `linear_track` and reloaded
+  environments. Any `edge_id` on an input graph is ignored, and the caller's
+  graph is not modified.
+- **Behavior change:** polar tuning plots were drawn mirrored relative to the
+  library's angle conventions. `plot_head_direction_tuning` and
+  `plot_circular_basis_tuning` drew 0 at the top and clockwise, so a
+  North-preferring (π/2) cell pointed East; they now draw angles as in the
+  arena, 0 = East (right), π/2 = North (up), counter-clockwise, and reset a
+  caller-supplied polar axis to that orientation. `plot_object_vector_tuning`
+  drew +π/2 (left of the animal) on the right; it keeps "ahead" at the top
+  and now draws left on the left.
+- **Behavior change:** `read_position`, `read_head_direction` and `read_pose`
+  returned an NWB series' *stored* values and ignored its `conversion` and
+  `offset`, which NWB defines as the map to `unit` (`data * conversion +
+  offset`). A pixel series stored 0-500 with `unit="meters"`,
+  `conversion=0.002`, `offset=0.1` came back as 0-500 instead of 0.1-1.1 m, and
+  `environment_from_position` built a 500 × 500 environment. The readers now
+  return values in the series' `unit` (head direction converts before the
+  degree-to-radian step), and `lazy=True` raises `ValueError` for a series
+  whose scaling is not the identity rather than returning unconverted handles.
+  The NWB overlays inherit the fix. `environment_from_position` maps NWB unit
+  names to the `Environment.units` registry, so pynwb's default `"meters"`
+  becomes `"m"` (no unrecognized-units warning), and likewise `cm`, `mm` and
+  `px`.
+- **Behavior change:** `environment_from_position` silently set
+  `env.units = "cm"` when the position series declared no unit (`unit=""`).
+  It now emits a `UserWarning` naming the series and saying to pass `units=`,
+  then still assumes `"cm"`. Passing `units=` skips the lookup and the
+  warning.
+- **Behavior change:** `population_peri_event_histogram` raised
+  `AxisError: axis -1 is out of bounds` for a pynapple `TsGroup`, because it
+  iterated the group (which yields unit keys, not trains). It now accepts a
+  labelled group like the population encoders: one PSTH per unit, with the
+  group's index as `unit_ids`. A `unit_ids=` passed with a labelled group must
+  equal its index, or the call raises `ValueError` listing both.
+- **Behavior change:** `compute_vte_session` cut each pre-decision window from
+  the whole session, so a window reached back past the trial start into the
+  inter-trial interval or the previous trial. A trial starting at 5.0 s that
+  entered the decision region at 5.267 s got the window `[4.267, 5.267]` and a
+  head sweep of 12.57 rad, all from movement before the trial; the trial's own
+  straight run has 0. Windows are now clipped at the trial start, and
+  `window_start` reports the clipped start. A trial left with fewer than 3
+  samples before its entry is skipped, now with a `UserWarning` (it was
+  skipped silently). `compute_vte_trial` is unchanged.
+- **Behavior change:** `method="diffusion_kde"` (the default for
+  `compute_spatial_rate(s)` and `smooth_rate_map(s)`) reported huge rates in
+  bins far from all occupancy: a simulated 50 Hz place cell in a 40 s open-field
+  session got 20,554 Hz in a corner the animal never approached, so the map's
+  peak (and anything using it) landed there. Far from occupancy both smoothed
+  densities fall to the diffusion operator's numerical accuracy (1e-6 of the
+  largest value when its eigenbasis is truncated, float64 roundoff otherwise),
+  and the ratio was noise over noise. Bins whose smoothed occupancy is within
+  1000 times that accuracy of zero, relative to the largest in their connected
+  component (typically 4-7 bandwidths from any occupancy), are now NaN, like
+  other unsupported bins (`fill_value=` replaces them). The remaining rates
+  match the exact dense kernel to within 1e-4 of the peak rate at bandwidths
+  5-20.
+- **Behavior change:** the simulators' default place-field width was
+  `3 * mean(env.bin_sizes)`, but `bin_sizes` holds per-bin volumes (areas in
+  2-D), so a 2-D grid with 2 cm bins got 12 cm fields and one with 5 cm bins
+  got 75 cm fields. `PlaceCellModel(width=None)`, and through it
+  `simulate_session`, `open_field_session`, `linear_track_session` and
+  `tmaze_alternation_session`, now default to 3 × the bin spacing (the median
+  bin length along a track, otherwise the median distance between neighbouring
+  bin centres, which is `bin_size` on a regular grid): 6 cm at 2 cm bins, 15 cm
+  at 5 cm bins. A one-bin
+  environment now raises `ValueError` asking for `width=`. Likewise
+  `validate_simulation`'s default `max_center_error` is 2 × the bin spacing
+  (4 cm at 2 cm bins, previously 8 cm).
+- **Behavior change:** `method="binned"` with `bandwidth > 0` had the same
+  far-field problem: on a corridor visited only at x < 40 cm, with raw rates
+  of at most 50 Hz, it reported 295,658 Hz at x = 104 cm (bandwidth 10) and
+  237,467 Hz at x = 190 cm (bandwidth 20). Its smoothed rate is a ratio of
+  two diffused sums, and far from every visited bin both are noise. Those
+  bins are now NaN under the same rule as `diffusion_kde`; the remaining
+  rates match the exact dense average to within 1e-4 of the peak rate.
 
 ### Added — `method="glm"`: penalized-Poisson GAM estimator (spatial only)
 

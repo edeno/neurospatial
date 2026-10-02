@@ -2336,7 +2336,8 @@ def plot_object_vector_tuning(
     # Configure polar plot
     if isinstance(ax, MPLPolarAxes):
         ax.set_theta_zero_location("N")  # 0 degrees at top (ahead)
-        ax.set_theta_direction(-1)  # Clockwise
+        # Counter-clockwise: +π/2 = left of the animal is drawn on the left.
+        ax.set_theta_direction(1)
 
     # Mark peak if requested
     if show_peak:

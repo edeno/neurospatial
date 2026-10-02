@@ -106,6 +106,9 @@ class TestValidateSimulation:
             cell_type="place",
             seed=42,
             show_progress=False,
+            # 12 cm fields: a 30 s walk crosses them (6 cm default fields fire
+            # 0, 0 and 1 spikes here).
+            width=12.0,
         )
 
         result = validate_simulation(session)
@@ -287,6 +290,9 @@ class TestValidateSimulation:
             cell_type="place",
             seed=42,
             show_progress=False,
+            # 12 cm fields: a 30 s walk crosses them (6 cm default fields fire
+            # 0, 0 and 1 spikes here).
+            width=12.0,
         )
 
         result = validate_simulation(session, show_plots=True)
@@ -361,6 +367,74 @@ class TestValidateSimulation:
                 times=session.times,
                 # Missing ground_truth
             )
+
+
+def test_default_center_error_threshold(simple_2d_env):
+    """The default max_center_error is 2 bin spacings (4 cm at 2 cm bins)."""
+    import re
+
+    session = simulate_session(
+        simple_2d_env,
+        duration=10.0,
+        n_cells=1,
+        cell_type="place",
+        seed=0,
+        show_progress=False,
+    )
+
+    summary = validate_simulation(session)["summary"]
+
+    center_section = summary.split("Field Correlations")[0]
+    threshold = float(re.search(r"Threshold: ([0-9.]+)", center_section).group(1))
+    assert threshold == 4.0
+
+
+def test_detected_center_ignores_unresolved_bins():
+    """The detected peak is taken over finite bins only.
+
+    The track extends far beyond the visited stretch, so the smoothed rate is
+    NaN there; a plain argmax would pick the first NaN bin as the peak.
+    """
+    from neurospatial import Environment
+
+    env = Environment.from_samples(np.linspace(0, 140, 281)[:, None], bin_size=10.0)
+    times = np.arange(0, 60, 0.01)
+    positions = (20 + 20 * np.sin(times))[:, None]  # visits [0, 40] only
+    near_bin_1 = np.abs(positions[:, 0] - env.bin_centers[1, 0]) < 2.0
+    spike_times = times[near_bin_1][::5]
+
+    result = validate_simulation(
+        env=env,
+        spike_trains=[spike_times],
+        positions=positions,
+        times=times,
+        ground_truth={
+            "cell_0": {"center": env.bin_centers[1], "width": 5.0, "max_rate": 10.0}
+        },
+    )
+
+    assert result["center_errors"][0] == 0.0
+
+
+def test_default_center_error_threshold_on_hairpin(hairpin_track_env):
+    """On a track the default threshold is 2 bin lengths (10 cm at 5 cm bins)."""
+    import re
+
+    times = np.arange(0, 20, 0.01)
+    positions = np.column_stack([50 + 40 * np.sin(times), np.zeros_like(times)])
+    center = np.array([50.0, 0.0])
+    near_center = np.linalg.norm(positions - center, axis=1) < 3.0
+    result = validate_simulation(
+        env=hairpin_track_env,
+        spike_trains=[times[near_center][::5]],
+        positions=positions,
+        times=times,
+        ground_truth={"cell_0": {"center": center, "width": 15.0, "max_rate": 10.0}},
+    )
+
+    center_section = result["summary"].split("Field Correlations")[0]
+    threshold = float(re.search(r"Threshold: ([0-9.]+)", center_section).group(1))
+    assert threshold == 10.0
 
 
 class TestPlotSessionSummary:

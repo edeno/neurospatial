@@ -87,6 +87,30 @@ def _estimate_typical_bin_spacing(
     return float(np.median(nn_dists[:, 1]))
 
 
+def _typical_bin_spacing(env: Environment) -> float:
+    """Typical distance between neighbouring bins, measured along the space.
+
+    On a linearized track this is the median bin length along the track
+    (``env.bin_sizes``): Euclidean nearest neighbours can lie on another arm
+    of the track. Otherwise it is the median nearest-neighbour distance
+    between bin centres, which equals ``bin_size`` on a regular grid.
+
+    Parameters
+    ----------
+    env : Environment
+        A fitted environment.
+
+    Returns
+    -------
+    float
+        The spacing; ``np.inf`` for a single-bin environment that is not a
+        track.
+    """
+    if env.is_linearized_track:
+        return float(np.median(env.bin_sizes))
+    return _estimate_typical_bin_spacing(cKDTree(env.bin_centers), env.bin_centers)
+
+
 def map_points_to_bins(
     points: NDArray[np.float64],
     env: Environment,

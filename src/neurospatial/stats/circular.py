@@ -1680,6 +1680,13 @@ def plot_circular_basis_tuning(
     circular_basis_metrics : Compute amplitude/phase from coefficients.
     circular_basis : Create design matrix for GLM.
 
+    Notes
+    -----
+    The polar projection draws angles as in the arena: 0 = East (right),
+    π/2 = North (up), counter-clockwise, the convention in which
+    ``circular_basis_metrics`` reports the preferred direction. A
+    caller-supplied polar axis is reset to this orientation.
+
     Examples
     --------
     **Head direction GLM tuning curve**:
@@ -1795,9 +1802,9 @@ def plot_circular_basis_tuning(
     if projection == "polar":
         polar_ax = cast("PolarAxes", ax)
 
-        # Configure polar plot: 0° at top (North), clockwise direction
-        polar_ax.set_theta_zero_location("N")
-        polar_ax.set_theta_direction(-1)
+        # Draw angles as in the arena: 0 = East (right), counter-clockwise.
+        polar_ax.set_theta_zero_location("E")
+        polar_ax.set_theta_direction(1)
 
         # Plot confidence band (behind curve)
         if show_ci and ci_lower_closed is not None and ci_upper_closed is not None:
