@@ -155,7 +155,7 @@ def theta_phase(
     >>> isinstance(result.slope, float)
     True
     """
-    from scipy.signal import butter, filtfilt, hilbert
+    from scipy.signal import butter, hilbert, sosfiltfilt
 
     from neurospatial._validation import validate_finite
 
@@ -165,7 +165,7 @@ def theta_phase(
             f"lfp must be a 1-D array of shape (n_samples,), got shape {lfp.shape}.\n"
             f"Fix: pass a single LFP channel, e.g. lfp[:, channel]."
         )
-    # Reject non-finite samples up front: a single NaN/Inf makes filtfilt
+    # Reject non-finite samples up front: a single NaN/Inf makes sosfiltfilt
     # return an all-NaN trace, silently producing all-NaN phases. validate_finite
     # also coerces to float64.
     lfp = validate_finite(lfp, name="lfp")
@@ -185,24 +185,26 @@ def theta_phase(
         )
 
     # Zero-phase band-pass so the extracted phase is not time-shifted.
-    # butter(..., btype="bandpass") with no output="sos" returns
-    # transfer-function (b, a) coefficients, NOT second-order sections.
-    b, a = butter(N=4, Wn=(low / nyquist, high / nyquist), btype="bandpass")
+    # Second-order sections stay numerically stable when theta is a narrow
+    # band relative to the sampling rate (e.g. 6-10 Hz at 30 kHz), where
+    # transfer-function (b, a) coefficients lose precision and blow up.
+    sos = butter(N=4, Wn=(low, high), btype="bandpass", fs=sampling_rate, output="sos")
 
-    # filtfilt's default padding is padlen = 3 * max(len(a), len(b)); it
-    # raises an opaque "padlen" error when len(lfp) <= padlen. Precheck so the
-    # caller gets a domain message stating the minimum length instead.
-    padlen = 3 * max(len(a), len(b))
+    # sosfiltfilt's default padding is padlen = 3 * (2 * n_sections + 1) (27
+    # for this 4-section filter); it raises an opaque "padlen" error when
+    # len(lfp) <= padlen. Precheck so the caller gets a domain message stating
+    # the minimum length instead.
+    padlen = 3 * (2 * len(sos) + 1)
     if len(lfp) <= padlen:
         raise ValueError(
             f"lfp is too short for the zero-phase theta filter: got "
             f"{len(lfp)} sample(s), but the 4th-order Butterworth band-pass "
-            f"requires more than {padlen} samples (filtfilt padlen = "
+            f"requires more than {padlen} samples (sosfiltfilt padlen = "
             f"{padlen}).\n"
             f"Fix: pass a longer LFP segment (at least {padlen + 1} samples)."
         )
 
-    filtered = filtfilt(b, a, lfp)
+    filtered = sosfiltfilt(sos, lfp, padlen=padlen)
 
     analytic = hilbert(filtered)
     # np.angle returns (-pi, pi]; wrap to [0, 2*pi) for the consumer convention.

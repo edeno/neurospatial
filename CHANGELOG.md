@@ -11,6 +11,11 @@
   posterior, small positive priors are no longer floored, and the
   `handle_degenerate="uniform"` fallback spreads mass only over bins with
   positive prior (NaN when the prior has none).
+- `theta_phase` used a transfer-function Butterworth band-pass that is
+  numerically unstable for a narrow theta band at typical LFP sampling rates:
+  on a clean 8 Hz sine the phase was off by ~1.56 rad at 2-5 kHz and all-NaN
+  at 10 kHz and above. It now filters with second-order sections
+  (`sosfiltfilt`); the phase error is below 0.01 rad at 2-30 kHz.
 
 ### Added — `method="glm"`: penalized-Poisson GAM estimator (spatial only)
 
