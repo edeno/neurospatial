@@ -23,6 +23,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
+from neurospatial.encoding import PlaceFieldsResult
 from neurospatial.encoding._metrics import sparsity, spatial_information
 from neurospatial.encoding.spatial import compute_spatial_rate, detect_place_fields
 from neurospatial.ops.binning import map_points_to_bins
@@ -45,7 +46,7 @@ def benchmark_data_small():
     rng = np.random.default_rng(42)
     positions = rng.uniform(0, 50, (1000, 2))
     times = np.linspace(0, 100, 1000)
-    spike_times = rng.uniform(0, 100, 50)
+    spike_times = np.sort(rng.uniform(0, 100, 50))
     return positions, times, spike_times
 
 
@@ -55,7 +56,7 @@ def benchmark_data_medium():
     rng = np.random.default_rng(42)
     positions = rng.uniform(0, 100, (5000, 2))
     times = np.linspace(0, 500, 5000)
-    spike_times = rng.uniform(0, 500, 200)
+    spike_times = np.sort(rng.uniform(0, 500, 200))
     return positions, times, spike_times
 
 
@@ -65,7 +66,7 @@ def benchmark_data_large():
     rng = np.random.default_rng(42)
     positions = rng.uniform(0, 200, (10000, 2))
     times = np.linspace(0, 1000, 10000)
-    spike_times = rng.uniform(0, 1000, 500)
+    spike_times = np.sort(rng.uniform(0, 1000, 500))
     return positions, times, spike_times
 
 
@@ -337,9 +338,9 @@ class TestMetricComputationPerformance:
         """Benchmark place field detection."""
         firing_rate, _ = firing_rate_and_occupancy
 
-        result = benchmark(detect_place_fields, firing_rate, medium_env)
+        result = benchmark(detect_place_fields, medium_env, firing_rate)
 
-        assert isinstance(result, list)
+        assert isinstance(result, PlaceFieldsResult)
 
 
 # =============================================================================

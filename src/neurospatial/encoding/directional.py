@@ -1112,8 +1112,8 @@ class DirectionalRatesResult(SpatialResultMixin):
             ``("unit_id", "bin")``), data var ``occupancy`` (seconds, dims
             ``("bin",)``), index coord ``unit_id`` = :attr:`unit_ids`,
             ``bin_center_angle`` coord (radians) on ``bin``, and ``attrs``
-            carrying ``units`` (``"radians"``), ``bandwidth``, and
-            ``software_version``.
+            carrying ``units`` (``"radians"``), ``software_version``, and
+            ``bandwidth`` when smoothing was applied.
 
         Raises
         ------
@@ -1130,9 +1130,12 @@ class DirectionalRatesResult(SpatialResultMixin):
         rates: NDArray[np.float64] = np.asarray(self.firing_rates)
         attrs: dict[str, Any] = {
             "units": "radians",
-            "bandwidth": self.bandwidth,
             "software_version": software_version(),
         }
+        # NetCDF attributes cannot hold None, and bandwidth is None when no
+        # smoothing was applied; omit it then (the rule spatial results use).
+        if self.bandwidth is not None:
+            attrs["bandwidth"] = self.bandwidth
         return build_population_dataset(
             rates,
             np.asarray(self.unit_ids),
@@ -1537,7 +1540,8 @@ class DirectionalRatesResult(SpatialResultMixin):
         Raises
         ------
         ValueError
-            If unit_ids has a different length than the number of units.
+            If unit_ids has a different length than the number of units, or
+            repeats a label.
 
         Notes
         -----
@@ -1598,12 +1602,16 @@ class DirectionalRatesResult(SpatialResultMixin):
         if unit_ids is None:
             index_ids: list[str | int] = list(np.asarray(self.unit_ids))
         else:
+            from neurospatial._results import resolve_unit_ids
+
+            # Validate as an object array so mixed int/str labels are
+            # neither coerced to strings nor merged; keep them as given.
             index_ids = list(unit_ids)
-            if len(index_ids) != n_neurons:
-                raise ValueError(
-                    f"unit_ids has {len(index_ids)} elements but "
-                    f"result contains {n_neurons} units"
-                )
+            resolve_unit_ids(
+                np.asarray(index_ids, dtype=object),
+                n_neurons,
+                context="DirectionalRatesResult.summary_table",
+            )
 
         # Compute all metrics
         pref_dirs = self.preferred_directions()
@@ -1896,14 +1904,17 @@ def compute_directional_rates(
 
     Parameters
     ----------
-    spike_times : sequence of arrays or 2D array
+    spike_times : sequence of arrays, 2D array, or pynapple TsGroup
         Spike times for each neuron. Accepted formats:
 
         - List/tuple of 1D arrays: ``[spikes_0, spikes_1, ...]`` (canonical)
         - 2D array with NaN padding: shape ``(n_neurons, max_spikes)``
         - 1D array (single neuron): wrapped in list automatically
+        - A pynapple ``TsGroup`` (or a group exposing an ``.index`` of unit
+          labels): its index becomes the result's ``unit_ids``
 
-        All formats are coerced to per-neuron spike trains via ``as_spike_trains()``.
+        All formats are coerced to per-neuron spike trains via
+        ``as_spike_trains_with_ids()``.
     times : ndarray, shape (n_samples,)
         Timestamps of head direction samples in seconds.
     headings : ndarray, shape (n_samples,)
@@ -1945,8 +1956,11 @@ def compute_directional_rates(
         Per-unit identity labels (integers or strings), one per neuron in
         the same order as ``spike_times``. Stored on the result's
         ``unit_ids`` field and stamped onto each child's ``unit_id`` when
-        indexing/iterating. Defaults to ``np.arange(n_neurons)``. A
-        wrong-length value raises ``ValueError``.
+        indexing/iterating. Defaults to the labels of a labelled
+        ``spike_times`` group, else ``np.arange(n_neurons)``. With a labelled
+        group, a ``unit_ids`` that differs from the group's index raises
+        ``ValueError`` (relabel the group itself instead). A wrong-length
+        value or a repeated label raises ``ValueError``.
 
     Returns
     -------
@@ -2019,7 +2033,7 @@ def compute_directional_rates(
         bin_directional_spike_train,
         compute_directional_occupancy,
     )
-    from neurospatial.encoding._spikes import as_spike_trains
+    from neurospatial.encoding._spikes import as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
         validate_spike_times,
         validate_trajectory,
@@ -2040,15 +2054,20 @@ def compute_directional_rates(
     if angle_unit not in ("rad", "deg"):
         raise ValueError(f"angle_unit must be 'rad' or 'deg', got '{angle_unit}'")
 
-    # Normalize spike times to canonical format
-    spike_times_list: list[NDArray[np.float64]] = as_spike_trains(spike_times)
+    # Normalize spike times to canonical list-of-arrays format, surfacing the
+    # unit labels a spike group (e.g. a pynapple TsGroup) carries.
+    spike_times_list, extracted_unit_ids = as_spike_trains_with_ids(spike_times)
     n_neurons = len(spike_times_list)
 
-    # Resolve and validate per-unit identity labels (defaults to arange).
+    # Resolve and validate per-unit identity labels (defaults to arange). A
+    # labelled input keeps its own labels; a differing unit_ids= raises.
     from neurospatial._results import resolve_unit_ids
 
     resolved_unit_ids = resolve_unit_ids(
-        unit_ids, n_neurons, context="compute_directional_rates"
+        unit_ids,
+        n_neurons,
+        context="compute_directional_rates",
+        input_ids=extracted_unit_ids,
     )
 
     # Convert inputs to arrays (1D required; validated below)

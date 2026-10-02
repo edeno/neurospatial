@@ -30,6 +30,8 @@ Size Guidelines (approximate bin counts):
 """
 
 import os
+from collections import UserDict
+from collections.abc import Callable, Sequence
 
 import networkx as nx
 import numpy as np
@@ -805,3 +807,51 @@ def medium_2d_env_with_diagonal() -> Environment:
         name="Medium2DEnvDiagonal",
         connect_diagonal_neighbors=True,
     )
+
+
+# =============================================================================
+# Spike-group (pynapple TsGroup) test double
+# =============================================================================
+
+
+class _FakeTs:
+    """Minimal pynapple ``Ts`` stand-in: exposes ``.t`` (spike timestamps)."""
+
+    def __init__(self, t: NDArray[np.float64]) -> None:
+        self.t = t
+
+
+class _FakeTsGroupMapping(UserDict):
+    """``UserDict``-based ``TsGroup`` double: iterating yields KEYS, not trains.
+
+    Models a real pynapple ``TsGroup``, which subclasses ``collections.UserDict``.
+    Iterating it yields the unit-id keys; ``group[uid]`` returns a ``Ts``-like
+    object with ``.t``; ``.index`` returns the keys. Extracting trains by
+    iterating (instead of indexing by id) silently yields the ids as 0-d arrays.
+    A repeated label in ``index`` keeps only its last train in the mapping, as
+    a dict would, while ``.index`` still reports every label.
+    """
+
+    def __init__(self, trains: Sequence[NDArray[np.float64]], index: Sequence) -> None:
+        index_arr = np.asarray(index)
+        super().__init__(
+            {
+                uid: _FakeTs(np.asarray(t, dtype=np.float64))
+                for uid, t in zip(index_arr.tolist(), trains, strict=True)
+            }
+        )
+        self._index = index_arr
+
+    @property
+    def index(self) -> NDArray:
+        return self._index
+
+
+@pytest.fixture(scope="session")
+def make_spike_group() -> Callable[..., _FakeTsGroupMapping]:
+    """Return a factory ``make_spike_group(trains, index)`` for a TsGroup double.
+
+    The double needs no pynapple: it is a ``UserDict`` keyed by unit label whose
+    values expose ``.t``, with the labels on ``.index``.
+    """
+    return _FakeTsGroupMapping

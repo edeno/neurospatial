@@ -614,3 +614,149 @@ def test_fit_epoch_too_small_names_bayesian_decoder(sim):
     empty_epoch = (float(times[0]) - 5.0, float(times[0]) - 1.0)  # selects 0 samples
     with pytest.raises(ValueError, match=r"BayesianDecoder\.fit"):
         BayesianDecoder(env, dt=0.5).fit(spikes, times, positions, epoch=empty_epoch)
+
+
+# ---------------------------------------------------------------------------
+# Pairing spike trains with encoding models (population identity)
+# ---------------------------------------------------------------------------
+
+_FIT_IDS = np.arange(10, 18)
+
+
+@pytest.fixture(scope="module")
+def labelled_fit(sim, make_spike_group):
+    """Decoder fitted on a labelled 8-unit group (ids 10..17), plus the sim."""
+    env, spikes, times, positions = sim
+    group = make_spike_group(spikes, _FIT_IDS)
+    decoder = BayesianDecoder(env, dt=0.5).fit(group, times, positions)
+    return decoder, spikes, times
+
+
+class TestUnitAlignment:
+    def test_predict_aligns_reordered_labels(
+        self, labelled_fit, make_spike_group
+    ) -> None:
+        decoder, spikes, times = labelled_fit
+        in_order = decoder.predict(make_spike_group(spikes, _FIT_IDS), times)
+        reversed_group = make_spike_group(spikes[::-1], _FIT_IDS[::-1])
+        reordered = decoder.predict(reversed_group, times)
+        np.testing.assert_allclose(reordered.posterior, in_order.posterior, atol=1e-12)
+
+    @pytest.mark.parametrize("call", ["predict", "predict_summary", "score"])
+    def test_predict_label_mismatch_lists_labels(
+        self, sim, labelled_fit, make_spike_group, call
+    ) -> None:
+        _, _, _, positions = sim
+        decoder, spikes, times = labelled_fit
+        shifted = make_spike_group(spikes, _FIT_IDS + 1)
+        args = (shifted, times, positions) if call == "score" else (shifted, times)
+        with pytest.raises(ValueError) as excinfo:
+            getattr(decoder, call)(*args)
+        message = str(excinfo.value)
+        assert "missing: [10]" in message
+        assert "unexpected: [18]" in message
+        assert "\nFix:" in message
+
+    def test_unlabelled_fit_pairs_labelled_input_by_position(
+        self, sim, make_spike_group
+    ) -> None:
+        env, spikes, times, positions = sim
+        decoder = BayesianDecoder(env, dt=0.5).fit(spikes[:3], times, positions)
+        from_list = decoder.predict(spikes[:3], times)
+        from_group = decoder.predict(make_spike_group(spikes[:3], [3, 7, 9]), times)
+        np.testing.assert_allclose(
+            from_group.posterior, from_list.posterior, atol=1e-12
+        )
+
+    def test_labelled_fit_pairs_plain_input_by_position(
+        self, labelled_fit, make_spike_group
+    ) -> None:
+        decoder, spikes, times = labelled_fit
+        from_group = decoder.predict(make_spike_group(spikes, _FIT_IDS), times)
+        from_list = decoder.predict(list(spikes), times)
+        np.testing.assert_allclose(
+            from_list.posterior, from_group.posterior, atol=1e-12
+        )
+
+    def test_constructor_labels_are_caller_supplied(
+        self, sim, make_spike_group
+    ) -> None:
+        env, spikes, times, positions = sim
+        a, b = spikes[0], spikes[1]
+        fitted = BayesianDecoder(env, dt=0.5).fit([a, b], times, positions)
+        assert fitted._unit_ids_generated is True
+        # Unlabelled fit: a labelled predict input is still paired by position.
+        np.testing.assert_allclose(
+            fitted.predict(make_spike_group([a, b], [3, 7]), times).posterior,
+            fitted.predict([a, b], times).posterior,
+            atol=1e-12,
+        )
+
+        decoder = BayesianDecoder(
+            env, dt=0.5, encoding_models=fitted.encoding_models, unit_ids=[10, 20]
+        )
+        assert decoder._unit_ids_generated is False
+        assert dataclasses.replace(decoder, dt=0.05)._unit_ids_generated is False
+        # Unit 20's spikes must meet unit 20's model whatever the input order.
+        in_order = decoder.predict(make_spike_group([a, b], [10, 20]), times)
+        swapped = decoder.predict(make_spike_group([b, a], [20, 10]), times)
+        np.testing.assert_allclose(swapped.posterior, in_order.posterior, atol=1e-12)
+
+    def test_positional_count_mismatch_raises(self, sim) -> None:
+        env, spikes, times, positions = sim
+        decoder = BayesianDecoder(env, dt=0.5).fit(spikes[:3], times, positions)
+        with pytest.raises(
+            ValueError, match=r"Got 2 spike trains .* 3 units"
+        ) as excinfo:
+            decoder.predict(spikes[:2], times)
+        assert "\nFix:" in str(excinfo.value)
+
+    def test_duplicate_input_labels_raise(self, labelled_fit, make_spike_group) -> None:
+        decoder, spikes, times = labelled_fit
+        ids = _FIT_IDS.copy()
+        ids[1] = 10
+        with pytest.raises(ValueError, match=r"\[10\]"):
+            decoder.predict(make_spike_group(spikes, ids), times)
+
+    def test_duplicate_fitted_labels_raise(self, sim, make_spike_group) -> None:
+        env, spikes, times, positions = sim
+        fitted = BayesianDecoder(env, dt=0.5).fit(spikes[:2], times, positions)
+        with pytest.raises(ValueError, match=r"unique.*\[10\]"):
+            BayesianDecoder(
+                env, dt=0.5, encoding_models=fitted.encoding_models, unit_ids=[10, 10]
+            )
+        with pytest.raises(ValueError, match=r"unique.*\[10\]"):
+            BayesianDecoder(env, dt=0.5).fit(
+                make_spike_group(spikes[:3], [10, 10, 12]), times, positions
+            )
+
+    def test_duplicate_input_error_names_the_method(
+        self, labelled_fit, make_spike_group
+    ) -> None:
+        decoder, spikes, times = labelled_fit
+        ids = _FIT_IDS.copy()
+        ids[1] = 10
+        with pytest.raises(ValueError, match=r"BayesianDecoder\.predict_summary"):
+            decoder.predict_summary(make_spike_group(spikes, ids), times)
+
+    def test_predict_plain_arrays_stay_positional(self, sim) -> None:
+        env, spikes, times, positions = sim
+        decoder = BayesianDecoder(env, dt=0.5).fit(spikes, times, positions)
+        ref = decode_session(
+            env, spikes, times, dt=0.5, encoding_models=decoder.encoding_models
+        )
+        assert_array_equal(decoder.predict(spikes, times).posterior, ref.posterior)
+
+    def test_unlabelled_spike_trains_fit_pairs_by_position(
+        self, sim, make_spike_group
+    ) -> None:
+        env, spikes, times, positions = sim
+        decoder = BayesianDecoder(env, dt=0.5).fit(
+            SpikeTrains(spikes[:3]), times, positions
+        )
+        assert decoder._unit_ids_generated is True
+        np.testing.assert_allclose(
+            decoder.predict(make_spike_group(spikes[:3], [3, 7, 9]), times).posterior,
+            decoder.predict(spikes[:3], times).posterior,
+            atol=1e-12,
+        )

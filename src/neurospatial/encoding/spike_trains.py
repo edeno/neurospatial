@@ -35,9 +35,8 @@ access keyed by unit id.
 
 from __future__ import annotations
 
-from collections import Counter
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -73,7 +72,10 @@ class SpikeTrains:
         non-1-D element raises :class:`ValueError`.
     unit_ids : ndarray or sequence, optional
         Identity label for each unit, one per train. Defaults to
-        ``np.arange(len(trains))``. Must be 1-D, length ``len(trains)``, and
+        ``np.arange(len(trains))``; such generated labels do not count as
+        labels when the container is passed to an encoder or decoder (an
+        explicit ``unit_ids=`` there may name the units, and decoding pairs
+        trains by position). Must be 1-D, length ``len(trains)``, and
         **unique** (label access and downstream selection require uniqueness);
         a length mismatch or duplicate labels raise :class:`ValueError`.
     unit_table : pandas.DataFrame or None, optional
@@ -110,6 +112,9 @@ class SpikeTrains:
     trains: Sequence[NDArray[np.float64]]
     unit_ids: NDArray[Any] | None = None
     unit_table: pd.DataFrame | None = None
+    # True only when ``unit_ids`` was omitted and ``arange`` labels were
+    # generated; such labels are not caller-supplied (see ``.index``).
+    _unit_ids_generated: bool = field(default=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         """Coerce trains, resolve/validate unit ids, and validate the table."""
@@ -129,24 +134,9 @@ class SpikeTrains:
         object.__setattr__(self, "trains", tuple(coerced))
 
         n_units = len(coerced)
+        if self.unit_ids is None:
+            object.__setattr__(self, "_unit_ids_generated", True)
         resolved = resolve_unit_ids(self.unit_ids, n_units, context="SpikeTrains")
-
-        # Uniqueness is required: label access (st[unit_id]) and downstream
-        # label-based selection are ambiguous with duplicate ids. Count with a
-        # hash-based Counter rather than np.unique: unit_ids may be a mixed
-        # int/str object array (e.g. [1, "a", 2]), which np.unique cannot sort
-        # (TypeError). Counter needs only hashability, not ordering.
-        counts = Counter(resolved.tolist())
-        duplicated = [label for label, count in counts.items() if count > 1]
-        if duplicated:
-            raise ValueError(
-                f"unit_ids must be unique in SpikeTrains: duplicated label(s) "
-                f"{duplicated}.\n"
-                "  WHY: label access st[unit_id] and downstream selection "
-                "require one row per label.\n"
-                "  HOW: pass distinct unit_ids, or omit them to default to "
-                "np.arange(n_units)."
-            )
         object.__setattr__(self, "unit_ids", resolved)
 
         validate_unit_table(self.unit_table, n_units, context="SpikeTrains")
@@ -282,5 +272,8 @@ class SpikeTrains:
         new_unit_ids = np.asarray(self.unit_ids)[positions]
         new_table = self.unit_table.iloc[positions].reset_index(drop=True)
         return SpikeTrains(
-            trains=new_trains, unit_ids=new_unit_ids, unit_table=new_table
+            trains=new_trains,
+            unit_ids=new_unit_ids,
+            unit_table=new_table,
+            _unit_ids_generated=self._unit_ids_generated,
         )

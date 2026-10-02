@@ -44,6 +44,7 @@ def small_benchmark_env():
 
 @pytest.mark.slow
 @pytest.mark.xdist_group(name="napari_gui")
+@pytest.mark.wallclock
 def test_napari_seek_performance_100k_frames(benchmark_env, tmp_path):
     """Benchmark Napari seek performance with 100K frames.
 
@@ -191,6 +192,7 @@ def test_parallel_rendering_scalability(small_benchmark_env, tmp_path):
 
 
 @pytest.mark.slow
+@pytest.mark.wallclock
 def test_html_generation_performance(benchmark_env, tmp_path):
     """Benchmark HTML generation speed.
 
@@ -348,6 +350,7 @@ def test_napari_chunked_cache_performance(benchmark_env, tmp_path):
 
 
 @pytest.mark.slow
+@pytest.mark.wallclock
 def test_subsample_frames_performance(tmp_path):
     """Benchmark subsample_frames with large memory-mapped arrays.
 

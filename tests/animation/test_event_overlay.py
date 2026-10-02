@@ -907,6 +907,7 @@ class TestEventOverlayPerformance:
         return MockEnv()
 
     @pytest.mark.slow
+    @pytest.mark.wallclock
     def test_high_event_count_performance(self, mock_env):
         """Test that 10,000+ events can be processed in reasonable time."""
         import time

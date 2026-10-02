@@ -593,7 +593,10 @@ def test_mesh_skew_guard_warns():
         _finite_volume_geometry(env_ok)
 
     # Skewed: a heavily sheared thin parallelogram -> elongated, obtuse triangles.
-    shear = 3.0
+    # The lattice's Delaunay diagonals are a platform-dependent tie-break; at
+    # shear 6 about 16% of interior edges are skewed on macOS and Linux alike,
+    # well clear of the 5% threshold (shear 3 straddled it: 5.7% vs 4.8%).
+    shear = 6.0
     base = [(-30, -8), (30, -8), (30, 8), (-30, 8)]
     sheared = [(x + shear * y, y) for (x, y) in base]
     env_skew = Environment.from_layout(

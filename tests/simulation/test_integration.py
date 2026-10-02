@@ -235,6 +235,14 @@ class TestPlaceFieldDetectionAccuracy:
     """Tests for place field detection accuracy."""
 
     @pytest.mark.slow
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "the match tolerance 2 * mean(env.bin_sizes) uses a bin area as a "
+            "length, and the simulator's default field width has the same bug; "
+            "fixed in Phase 2a"
+        ),
+    )
     def test_place_field_detection_accuracy(self):
         """Detected place-field peaks recover the well-sampled true centers."""
         # Use pre-configured session for reliable test

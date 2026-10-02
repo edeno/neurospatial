@@ -481,3 +481,151 @@ class TestToDataFrameMethod:
             assert f"map_dim_{i}" in df.columns
             assert f"mean_dim_{i}" in df.columns
         assert "map_x" not in df.columns
+
+
+# ---------------------------------------------------------------------------
+# DecodingResult owns its arrays
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def env_4bin():
+    """1-D environment with four unit-width bins."""
+    from neurospatial import Environment
+
+    return Environment.from_grid_mask(
+        np.ones(4, dtype=bool), grid_edges=(np.arange(5.0),)
+    )
+
+
+class TestResultOwnsData:
+    def test_result_isolated_from_caller_array(self, env_4bin):
+        from neurospatial.decoding import DecodingResult
+
+        src = np.array([[0.9, 0.1, 0.0, 0.0]])
+        times = np.array([0.5])
+        r = DecodingResult(posterior=src, env=env_4bin, times=times)
+        assert r.map_estimate.tolist() == [0]
+
+        src[0] = [0.1, 0.9, 0.0, 0.0]
+        times[0] = 99.0
+
+        np.testing.assert_array_equal(r.posterior[0], [0.9, 0.1, 0.0, 0.0])
+        assert r.map_estimate.tolist() == r.posterior.argmax(axis=1).tolist() == [0]
+        np.testing.assert_array_equal(r.times, [0.5])
+
+        # A read-only view of a writeable array is copied, not shared.
+        base = np.array([[0.9, 0.1, 0.0, 0.0]])
+        view = base.view()
+        view.flags.writeable = False
+        r_view = DecodingResult(posterior=view, env=env_4bin)
+        assert not np.shares_memory(r_view.posterior, base)
+
+    def test_result_fields_cannot_change(self, env_4bin):
+        import dataclasses
+
+        from neurospatial.decoding import DecodingResult
+
+        src = np.array([[0.9, 0.1, 0.0, 0.0]])
+        r = DecodingResult(posterior=src, env=env_4bin)
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            r.posterior = np.zeros((1, 4))
+        with pytest.raises(ValueError, match="read-only"):
+            r.posterior[0, 0] = 0.5
+        assert src.flags.writeable
+
+    def test_result_copies_owning_array_with_prior_view(self, env_4bin):
+        from neurospatial.decoding import DecodingResult
+
+        a = np.array([[0.9, 0.1, 0.0, 0.0]])
+        v = a[:]
+        a.flags.writeable = False
+        r = DecodingResult(posterior=a, env=env_4bin)
+        assert r.map_estimate.tolist() == [0]
+
+        v[0] = [0.1, 0.9, 0.0, 0.0]  # the earlier view still writes into `a`
+
+        np.testing.assert_array_equal(r.posterior[0], [0.9, 0.1, 0.0, 0.0])
+        assert r.map_estimate.tolist() == [0]
+
+    def test_replace_rebuilds_cache(self, env_4bin):
+        import dataclasses
+
+        from neurospatial.decoding import DecodingResult
+
+        r = DecodingResult(posterior=np.array([[0.9, 0.1, 0.0, 0.0]]), env=env_4bin)
+        assert r.map_estimate.tolist() == [0]
+        new = np.array([[0.0, 0.0, 1.0, 0.0]])
+        r2 = dataclasses.replace(r, posterior=new)
+        assert r2.map_estimate.tolist() == [2]
+        assert r.map_estimate.tolist() == [0]
+        assert not np.shares_memory(r2.posterior, new)
+
+
+@pytest.mark.parametrize("how", ["pickle", "deepcopy"])
+def test_copied_result_stays_read_only(env_4bin, how):
+    import copy
+    import pickle
+
+    from neurospatial.decoding import DecodingResult
+
+    r = DecodingResult(
+        posterior=np.array([[0.9, 0.1, 0.0, 0.0]]), env=env_4bin, times=np.array([0.5])
+    )
+    _ = r.map_estimate  # cached values travel with the copy
+    r2 = pickle.loads(pickle.dumps(r)) if how == "pickle" else copy.deepcopy(r)
+    assert r2.posterior.flags.writeable is False
+    assert r2.times.flags.writeable is False
+    np.testing.assert_array_equal(r2.posterior, r.posterior)
+
+
+@pytest.fixture
+def record_owned_posterior(monkeypatch):
+    """Record the arguments decode_position passes to the trusted constructor."""
+    from neurospatial.decoding import DecodingResult
+
+    calls: list[tuple[np.ndarray, dict]] = []
+    original = DecodingResult._from_owned_posterior.__func__
+
+    def recording(cls, posterior, **fields):
+        calls.append((posterior, fields))
+        return original(cls, posterior, **fields)
+
+    monkeypatch.setattr(DecodingResult, "_from_owned_posterior", classmethod(recording))
+    return calls
+
+
+def _decode_small(env, **kwargs):
+    from neurospatial.decoding import decode_position
+
+    rng = np.random.default_rng(0)
+    counts = rng.poisson(1.0, size=(20, 3)).astype(np.int64)
+    models = rng.uniform(1.0, 10.0, size=(3, env.n_bins))
+    return decode_position(
+        env, counts, models, 0.1, times=np.arange(20) * 0.1, **kwargs
+    )
+
+
+class TestDecodePositionOwnership:
+    @pytest.mark.parametrize(
+        "kwargs", [{}, {"time_chunk": 7}, {"dtype": np.float32}], ids=str
+    )
+    def test_decode_position_posterior_not_copied(
+        self, env_4bin, record_owned_posterior, kwargs
+    ):
+        result = _decode_small(env_4bin, **kwargs)
+        ((recorded, _),) = record_owned_posterior
+        assert result.posterior is recorded
+        assert recorded.flags.writeable is False
+
+    def test_from_owned_posterior_covers_all_fields(
+        self, env_4bin, record_owned_posterior
+    ):
+        import dataclasses
+
+        from neurospatial.decoding import DecodingResult
+
+        _decode_small(env_4bin)
+        ((_, fields),) = record_owned_posterior
+        expected = {f.name for f in dataclasses.fields(DecodingResult)} - {"posterior"}
+        assert set(fields) == expected

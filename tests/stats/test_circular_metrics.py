@@ -2119,3 +2119,36 @@ class TestCircularStatsAnalyticReference:
         r_random, p_random = circular_linear_correlation(angles_random, linear)
         assert r_random < 0.2
         assert p_random > 0.05
+
+
+class TestTailPValues:
+    """Tiny p-values are computed from survival functions, not 1 - cdf."""
+
+    @pytest.mark.parametrize("n", [100, 1000])
+    def test_circular_linear_pvalue_keeps_tail(self, n: int) -> None:
+        from neurospatial.stats.circular import circular_linear_correlation
+
+        rng = np.random.default_rng(0)
+        angles = rng.uniform(0, 2 * np.pi, n)
+        # A linear variable equal to cos(angle) gives r == 1, so the test
+        # statistic is n and the chi2(2) survival function is exp(-n / 2).
+        r, pval = circular_linear_correlation(angles, np.cos(angles))
+        assert r == pytest.approx(1.0, abs=1e-12)
+        assert pval == pytest.approx(np.exp(-n * r**2 / 2), rel=1e-12, abs=0.0)
+
+    def test_circular_circular_pvalue_positive(self) -> None:
+        from neurospatial.stats.circular import circular_circular_correlation
+
+        rng = np.random.default_rng(0)
+        x = rng.vonmises(0.0, 1.0, 2000)
+        y = x + rng.normal(0.0, 0.05, 2000)
+        _, pval = circular_circular_correlation(x, y)
+        assert 0.0 < pval < 1e-20
+
+    def test_wald_pvalue_keeps_tail(self) -> None:
+        from neurospatial.stats.circular import circular_basis_metrics
+
+        # Wald statistic beta' cov^-1 beta = 9 / 0.01 = 900; chi2(2) sf is
+        # exp(-900 / 2).
+        _, _, pval = circular_basis_metrics(3.0, 0.0, 0.01 * np.eye(2))
+        assert pval == pytest.approx(np.exp(-450), rel=1e-9, abs=0.0)

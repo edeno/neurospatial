@@ -2126,7 +2126,7 @@ class TestEgocentricRatesResultSummaryTable:
             n_direction_bins=12,
         )
 
-        with pytest.raises(ValueError, match=r"unit_ids has .* elements"):
+        with pytest.raises(ValueError, match="unit_ids length mismatch"):
             result.summary_table(unit_ids=["a", "b"])  # Only 2 but need 5
 
     def test_summary_table_preferred_distance_correctness(

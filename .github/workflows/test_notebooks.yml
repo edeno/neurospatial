@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - main
+      - feat/researcher-first
   pull_request:
     branches:
       - main
+      - feat/researcher-first
 
 # Runs two representative notebooks end-to-end to catch silent regressions
 # in the example surface that ``test_doc_snippets`` (which only exercises

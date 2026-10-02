@@ -2,6 +2,92 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `decode_position` (and every decoder built on `normalize_to_posterior`)
+  floored the prior at `1e-10`, so a bin with zero prior could still win the
+  posterior given a large enough likelihood (for example a MAP in an excluded
+  bin with posterior `0.999998`). Zero-prior bins now get exactly zero
+  posterior, small positive priors are no longer floored, and the
+  `handle_degenerate="uniform"` fallback spreads mass only over bins with
+  positive prior (NaN when the prior has none).
+- `theta_phase` used a transfer-function Butterworth band-pass that is
+  numerically unstable for a narrow theta band at typical LFP sampling rates:
+  on a clean 8 Hz sine the phase was off by ~1.56 rad at 2-5 kHz and all-NaN
+  at 10 kHz and above. It now filters with second-order sections
+  (`sosfiltfilt`); the phase error is below 0.01 rad at 2-30 kHz.
+- `circular_linear_correlation`, `circular_circular_correlation` and
+  `circular_basis_metrics` computed p-values as `1 - cdf`, which cancels to
+  exactly `0.0` for strong effects (below about `1e-16`). They now use survival
+  functions, so a strong effect reports its true tiny p-value (for example
+  `exp(-500)` for a perfect circular-linear correlation over 1000 samples).
+- `Environment.from_grid_mask` (and every `MaskedGridLayout`, including
+  `env.subset`) accepted nonuniform, decreasing, duplicate or non-finite
+  `grid_edges`, then reported wrong bin sizes (for example `[-1, -1]` or
+  `[0, 0]`) and used one width per axis for cell volumes and diffusion. It now
+  raises `ValueError` naming the axis unless the edges are finite, strictly
+  increasing and uniformly spaced (to within float rounding), and raises when
+  coordinates are so large that float64 cannot resolve the bin width, with a fix
+  to subtract an origin offset.
+- **Behavior change:** `BayesianDecoder.predict`, `predict_summary` and `score`
+  passed spike trains to the encoding models by position even when both the fit
+  and the predict input were labelled, so a reordered or different pynapple
+  `TsGroup` silently paired each unit's spikes with another unit's model. When
+  both the fit (a labelled group, or `unit_ids=` at construction) and the
+  predict input carry labels, trains are now matched by label in any order, and
+  a label mismatch raises `ValueError` listing the missing and unexpected
+  labels. Otherwise trains are still paired by position, and a unit-count
+  mismatch now raises a `ValueError` that says so (previously a Poisson
+  likelihood shape error). A predict input that repeats a label raises.
+- `compute_directional_rates`, `compute_view_rates` and
+  `compute_egocentric_rates` mis-read a pynapple `TsGroup` (it was coerced as
+  one train, giving one unit labelled `0`). They now accept it like
+  `compute_spatial_rates`: one rate map per unit, with the group's index as
+  `unit_ids`.
+- **Behavior change:** passing `unit_ids=` together with a labelled `TsGroup`
+  silently replaced the group's labels, so in `compute_spatial_rates` a group
+  keyed `[10, 20]` with `unit_ids=[20, 10]` attached unit 10's spikes to label
+  20. All four population encoders now raise `ValueError` listing both label
+  sets unless `unit_ids` equals the group's index.
+- **Behavior change:** repeated `unit_ids` were accepted (for example
+  `compute_spatial_rates(..., unit_ids=[5, 5])`). Every place that takes
+  `unit_ids` now raises `ValueError` naming the repeated labels: the population
+  encoders, `population_peri_event_histogram`, the `BayesianDecoder`
+  constructor and `fit` (fitted labels) and `predict` input labels, and
+  population result constructors (including `summary_table(unit_ids=)`
+  relabelling). `SpikeTrains` already rejected them.
+- **Behavior change:** `to_pynapple` passed unsorted timestamps to pynapple,
+  which sorts the times without reordering the values, so
+  `to_pynapple([0, 2, 1], [10, 20, 30])` returned `t=[0, 1, 2]`,
+  `d=[10, 20, 30]` (each value paired with another sample's time). It now
+  raises `ValueError` for unsorted, repeated or non-finite timestamps, naming
+  the first offending indices, and for a `columns` list whose length does not
+  match the value columns (pynapple silently renamed them `0, 1, ...`). These
+  checks run before pynapple is imported.
+- `DirectionalRatesResult.to_xarray()` wrote `attrs["bandwidth"] = None` for
+  unsmoothed results (`bandwidth=None`), so `Dataset.to_netcdf()` raised
+  `TypeError`. The attribute is now omitted when no smoothing was applied, as
+  for spatial results.
+- `read_environment` estimated the bin sizes of reloaded non-grid environments
+  (graph tracks, hexagonal, triangular mesh) from the nearest neighbour's
+  *index* instead of its distance: a Y-track with 2.94 cm² bins came back with
+  1640.25. The estimate now uses the median nearest-neighbour spacing.
+- Writing a non-grid environment (graph track, hexagonal, triangular mesh) to
+  NWB and reading it back lost its geometry: bin sizes were re-estimated
+  (2.94 became 8.68 on a Y-track), `grid_edges` came back `None`, and every
+  edge's direction `vector` was reversed (81 of 81 on the Y-track). The NWB
+  environment schema is now 1.1: it stores the exact bin sizes and graph grid
+  edges, and writes each edge so its vector round-trips. Schema 1.0 files
+  still read, with estimated bin sizes.
+- **Behavior change:** `DecodingResult` kept a reference to the caller's
+  posterior and cached `map_estimate` and the other derived properties, so
+  editing that array in place (or reassigning `result.posterior`) left the
+  cached values stale (for example a MAP of bin 0 while `posterior.argmax`
+  was bin 1). `DecodingResult` is now frozen, and its constructor stores
+  read-only copies of `posterior` and `times`. Use
+  `dataclasses.replace(result, posterior=new)` for a modified result.
+  `decode_position` hands over its freshly computed posterior without a copy.
+
 ### Added — `method="glm"`: penalized-Poisson GAM estimator (spatial only)
 
 `compute_spatial_rate` and `compute_spatial_rates` gain a fourth estimator,

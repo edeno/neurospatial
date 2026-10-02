@@ -22,7 +22,14 @@ if TYPE_CHECKING:
     from neurospatial.environment import Environment
 
 
-@dataclass(repr=False)
+def _read_only_copy(array: Any, dtype: Any = None) -> NDArray[Any]:
+    """Return a read-only copy that no caller-held view can alias."""
+    owned = np.array(array, dtype=dtype, copy=True)
+    owned.flags.writeable = False
+    return owned
+
+
+@dataclass(frozen=True, repr=False)
 class DecodingResult(ResultMixin):
     """Container for Bayesian decoding results.
 
@@ -76,9 +83,11 @@ class DecodingResult(ResultMixin):
 
     Notes
     -----
-    The class uses ``@dataclass`` (not frozen) to allow ``@cached_property``.
-    The class is effectively immutable since modifying ``posterior`` or ``env``
-    after construction would invalidate cached properties without clearing them.
+    The result is frozen, and ``posterior`` and ``times`` are read-only copies
+    that the result owns: the constructor always copies them, so later edits to
+    the arrays (or views of them) that the caller passed in cannot change the
+    result or leave its cached properties stale. To get a modified result, use
+    ``dataclasses.replace(result, posterior=new)``, which copies ``new``.
 
     Memory usage is dominated by the posterior array:
     ``n_time_bins * n_bins * 8 bytes`` (float64).
@@ -91,6 +100,38 @@ class DecodingResult(ResultMixin):
     posterior: NDArray[np.float64]
     env: Environment
     times: NDArray[np.float64] | None = None
+
+    def __post_init__(self) -> None:
+        """Take ownership of ``posterior`` and ``times`` as read-only copies."""
+        object.__setattr__(self, "posterior", _read_only_copy(self.posterior))
+        if self.times is not None:
+            object.__setattr__(self, "times", _read_only_copy(self.times, np.float64))
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore from pickle or deepcopy, keeping the arrays read-only."""
+        self.__dict__.update(state)
+        self.posterior.flags.writeable = False
+        if self.times is not None:
+            self.times.flags.writeable = False
+
+    @classmethod
+    def _from_owned_posterior(
+        cls, posterior: NDArray[Any], **fields: Any
+    ) -> DecodingResult:
+        """Build from a posterior this module just allocated (no aliases exist).
+
+        Internal use only: the caller guarantees no other reference to
+        ``posterior``, so it is marked read-only instead of copied. ``fields``
+        must name every other dataclass field.
+        """
+        posterior.flags.writeable = False
+        obj = cls.__new__(cls)
+        object.__setattr__(obj, "posterior", posterior)
+        for name, value in fields.items():
+            object.__setattr__(obj, name, value)
+        if obj.times is not None:
+            object.__setattr__(obj, "times", _read_only_copy(obj.times, np.float64))
+        return obj
 
     @property
     def n_time_bins(self) -> int:

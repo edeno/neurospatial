@@ -830,7 +830,7 @@ def circular_linear_correlation(
     # P-value from chi-squared distribution with 2 degrees of freedom
     # Test statistic: n * r^2 follows chi-squared(2) under null hypothesis
     chi2_stat = n * r_squared
-    pval = float(1.0 - chi2.cdf(chi2_stat, df=2))
+    pval = float(chi2.sf(chi2_stat, df=2))
 
     # Ensure p-value is in valid range
     pval = float(np.clip(pval, 0.0, 1.0))
@@ -1009,7 +1009,7 @@ def circular_circular_correlation(
 
     # Test statistic follows standard normal under null hypothesis
     ts = np.sqrt((n * l20 * l02) / l22) * rho
-    pval = float(2 * (1 - stats.norm.cdf(np.abs(ts))))
+    pval = float(2 * stats.norm.sf(np.abs(ts)))
 
     # Ensure p-value is in valid range
     pval = float(np.clip(pval, 0.0, 1.0))
@@ -1328,7 +1328,7 @@ def _wald_test_magnitude(
         return np.nan
 
     # P-value from chi-squared with 2 df
-    pval = float(1.0 - chi2.cdf(wald_stat, df=2))
+    pval = float(chi2.sf(wald_stat, df=2))
 
     return float(np.clip(pval, 0.0, 1.0))
 
