@@ -21,7 +21,7 @@ track or a masked open field, not just a rectangular grid.
 from __future__ import annotations
 
 import warnings
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
@@ -108,9 +108,15 @@ class BayesianDecoder:
         :meth:`score` raise until :meth:`fit` populates it. Set only via
         :meth:`fit`.
     unit_ids : NDArray or None, default=None
-        Identity label per encoding model (introspection only; the posterior
-        carries no unit axis). Populated by :meth:`fit` from the spike input
-        (``arange(n_neurons)`` when the input carries no ids).
+        Identity label per encoding model. Populated by :meth:`fit` from a
+        labelled spike input such as a pynapple ``TsGroup`` (its index), or
+        ``arange(n_neurons)`` when the input carries no labels. Labels passed
+        here directly, or captured by :meth:`fit` from a labelled input, are
+        used to pair spike trains with encoding models: when both they and the
+        spike input given to :meth:`predict` / :meth:`predict_summary` /
+        :meth:`score` are labelled, trains are matched to models by label. In
+        every other case (including the generated ``arange`` labels) trains are
+        paired by position, one per fitted unit, in fit order.
 
     Attributes
     ----------
@@ -173,6 +179,9 @@ warn_on_drop
     # Fitted state (private; ``None`` => unfitted). Set only via :meth:`fit`.
     encoding_models: NDArray[np.float64] | None = None
     unit_ids: NDArray[Any] | None = None
+    # True only when ``fit`` generated ``arange`` labels for an unlabelled
+    # input; such labels never drive label-based pairing.
+    _unit_ids_generated: bool = field(default=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         """Validate config domain and (if injected) fitted-state coupling.
@@ -299,7 +308,10 @@ warn_on_drop
         spike_times : SpikeTrainsLike
             Spike times for one or more units. Accepts the canonical array forms,
             a :class:`~neurospatial.encoding.SpikeTrains` container, or a pynapple
-            ``TsGroup``-like group (its ``unit_ids`` are captured).
+            ``TsGroup``-like group. A group's index becomes ``unit_ids`` and is
+            later used to match predict-time spike trains to these models by
+            label; an unlabelled input gets ``arange(n_units)``, and later inputs
+            are then paired by position.
         times : array-like, shape (n_frames,), or PositionLike
             Training timestamps (seconds), or a ``PositionLike`` object carrying
             both times and positions (then ``positions`` must be omitted).
@@ -348,7 +360,7 @@ warn_on_drop
 
         # Capture unit identity once, from the ORIGINAL spike input (temporal
         # restriction never changes which units exist, only their spike counts).
-        trains, unit_ids = as_spike_trains_with_ids(spike_times)
+        trains, extracted_ids = as_spike_trains_with_ids(spike_times)
 
         if epoch is not None:
             from neurospatial.behavior import restrict, restrict_spike_trains
@@ -396,10 +408,67 @@ warn_on_drop
             context="BayesianDecoder.fit",
         )[1]
 
-        if unit_ids is None:
-            unit_ids = np.arange(firing_rates.shape[0])
+        unit_ids = (
+            extracted_ids
+            if extracted_ids is not None
+            else np.arange(firing_rates.shape[0])
+        )
+        return replace(
+            self,
+            encoding_models=firing_rates,
+            unit_ids=unit_ids,
+            _unit_ids_generated=extracted_ids is None,
+        )
 
-        return replace(self, encoding_models=firing_rates, unit_ids=unit_ids)
+    def _align_to_fitted_units(
+        self, spike_times: SpikeTrainsLike
+    ) -> list[NDArray[np.float64]]:
+        """Pair each spike train with its encoding model.
+
+        By label when both ``fit`` and this input carried caller-supplied labels;
+        otherwise by position, which requires one train per fitted unit.
+        """
+        from collections import Counter
+
+        from neurospatial.encoding import as_spike_trains_with_ids
+
+        trains, input_ids = as_spike_trains_with_ids(spike_times)
+        n_models = self._check_fitted().shape[0]
+        if input_ids is not None:
+            labels = np.asarray(input_ids).tolist()
+            duplicated = [u for u, count in Counter(labels).items() if count > 1]
+            if duplicated:
+                raise ValueError(
+                    f"The spike input repeats unit labels {duplicated}, so a label "
+                    "cannot name one spike train.\n"
+                    "Fix: pass each unit once (pynapple: check group.index)."
+                )
+            if self.unit_ids is not None and not self._unit_ids_generated:
+                fitted = np.asarray(self.unit_ids).tolist()
+                row = {u: i for i, u in enumerate(labels)}
+                fitted_set = set(fitted)
+                missing = [u for u in fitted if u not in row]
+                unexpected = [u for u in labels if u not in fitted_set]
+                if missing or unexpected:
+                    raise ValueError(
+                        "Spike input unit labels do not match the decoder's fitted "
+                        f"unit_ids (missing: {missing}, unexpected: {unexpected}).\n"
+                        "Decoding would pair spike trains with the wrong encoding "
+                        "models.\n"
+                        "Fix: pass spikes for exactly the fitted units (pynapple: "
+                        "group[list(decoder.unit_ids)]), or refit on this input."
+                    )
+                return [trains[row[u]] for u in fitted]
+        if len(trains) != n_models:
+            raise ValueError(
+                f"Got {len(trains)} spike trains but the decoder was fitted with "
+                f"{n_models} units. Without caller-supplied labels on both the fit "
+                "and the predict input, trains are paired with encoding models by "
+                "position.\n"
+                "Fix: pass one spike train per fitted unit in the order used for "
+                "fit, or fit and predict with the same labelled TsGroup."
+            )
+        return trains
 
     def predict(
         self,
@@ -415,7 +484,11 @@ warn_on_drop
         Parameters
         ----------
         spike_times : SpikeTrainsLike
-            Spike times to decode. Same accepted forms as :meth:`fit`.
+            Spike times to decode. Same accepted forms as :meth:`fit`. When both
+            this input and the fit carried caller-supplied labels (a labelled
+            group, or ``unit_ids`` given at construction), trains are matched
+            to encoding models by label, in any order. Otherwise they are paired
+            by position: one train per fitted unit, in fit order.
         times : array-like, shape (n_frames,), or PositionLike
             Timestamps defining the decode window ``[min, max]``; a
             ``PositionLike`` is accepted (its positions are ignored for decode).
@@ -430,13 +503,18 @@ warn_on_drop
         ------
         RuntimeError
             If the decoder is unfitted.
+        ValueError
+            If the spike input repeats a unit label; if label matching applies
+            and the input's labels differ from ``unit_ids`` (the message lists
+            the missing and unexpected labels); or if trains are paired by
+            position and their number differs from the number of fitted units.
         """
         from neurospatial.decoding.session import decode_session
 
         encoding_models = self._check_fitted()
         return decode_session(
             self.env,
-            spike_times,
+            self._align_to_fitted_units(spike_times),
             times,
             positions=None,
             dt=self.dt,
@@ -462,7 +540,11 @@ warn_on_drop
         Parameters
         ----------
         spike_times : SpikeTrainsLike
-            Spike times to decode. Same accepted forms as :meth:`fit`.
+            Spike times to decode. Same accepted forms as :meth:`fit`. When both
+            this input and the fit carried caller-supplied labels (a labelled
+            group, or ``unit_ids`` given at construction), trains are matched
+            to encoding models by label, in any order. Otherwise they are paired
+            by position: one train per fitted unit, in fit order.
         times : array-like, shape (n_frames,), or PositionLike
             Timestamps defining the decode window.
         time_chunk : int, default=1024
@@ -479,13 +561,18 @@ warn_on_drop
         ------
         RuntimeError
             If the decoder is unfitted.
+        ValueError
+            If the spike input repeats a unit label; if label matching applies
+            and the input's labels differ from ``unit_ids`` (the message lists
+            the missing and unexpected labels); or if trains are paired by
+            position and their number differs from the number of fitted units.
         """
         from neurospatial.decoding.session import decode_session_summary
 
         encoding_models = self._check_fitted()
         return decode_session_summary(
             self.env,
-            spike_times,
+            self._align_to_fitted_units(spike_times),
             times,
             positions=None,
             dt=self.dt,
@@ -523,7 +610,11 @@ warn_on_drop
         Parameters
         ----------
         spike_times : SpikeTrainsLike
-            Spike times to decode. Same accepted forms as :meth:`fit`.
+            Spike times to decode. Same accepted forms as :meth:`fit`. When both
+            this input and the fit carried caller-supplied labels (a labelled
+            group, or ``unit_ids`` given at construction), trains are matched
+            to encoding models by label, in any order. Otherwise they are paired
+            by position: one train per fitted unit, in fit order.
         times : array-like, shape (n_frames,), or PositionLike
             Ground-truth timestamps (seconds), or a ``PositionLike`` carrying
             both times and positions (then ``positions`` must be omitted).
@@ -556,7 +647,8 @@ warn_on_drop
             **no** decode time bin was decodable (every posterior row was
             non-finite) -- likely a degenerate/empty encoding model from too few
             training samples, or a spikes/times unit mismatch (seconds vs
-            milliseconds).
+            milliseconds). Also raised when the spike input cannot be paired
+            with the fitted units (see :meth:`predict`).
         """
         from neurospatial._typing import as_times_positions
 

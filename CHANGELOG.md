@@ -29,6 +29,16 @@
   increasing and uniformly spaced (to within float rounding), and raises when
   coordinates are so large that float64 cannot resolve the bin width, with a fix
   to subtract an origin offset.
+- **Behavior change:** `BayesianDecoder.predict`, `predict_summary` and `score`
+  passed spike trains to the encoding models by position even when both the fit
+  and the predict input were labelled, so a reordered or different pynapple
+  `TsGroup` silently paired each unit's spikes with another unit's model. When
+  both the fit (a labelled group, or `unit_ids=` at construction) and the
+  predict input carry labels, trains are now matched by label in any order, and
+  a label mismatch raises `ValueError` listing the missing and unexpected
+  labels. Otherwise trains are still paired by position, and a unit-count
+  mismatch now raises a `ValueError` that says so (previously a Poisson
+  likelihood shape error). A predict input that repeats a label raises.
 
 ### Added — `method="glm"`: penalized-Poisson GAM estimator (spatial only)
 
