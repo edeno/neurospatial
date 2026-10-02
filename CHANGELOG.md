@@ -21,6 +21,14 @@
   exactly `0.0` for strong effects (below about `1e-16`). They now use survival
   functions, so a strong effect reports its true tiny p-value (for example
   `exp(-500)` for a perfect circular-linear correlation over 1000 samples).
+- `Environment.from_grid_mask` (and every `MaskedGridLayout`, including
+  `env.subset`) accepted nonuniform, decreasing, duplicate or non-finite
+  `grid_edges`, then reported wrong bin sizes (for example `[-1, -1]` or
+  `[0, 0]`) and used one width per axis for cell volumes and diffusion. It now
+  raises `ValueError` naming the axis unless the edges are finite, strictly
+  increasing and uniformly spaced (to within float rounding), and raises when
+  coordinates are so large that float64 cannot resolve the bin width, with a fix
+  to subtract an origin offset.
 
 ### Added — `method="glm"`: penalized-Poisson GAM estimator (spatial only)
 

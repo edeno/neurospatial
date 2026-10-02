@@ -134,10 +134,8 @@ class EnvironmentFields:
         explicit ``(n, n)`` matrix. For a smaller matrix, increase ``bin_size``.
 
         The physical-σ guarantee assumes uniform bin spacing per axis (the
-        standard grid, hex, polar-sector, graph, and mesh layouts). A custom
-        *nonuniform* Cartesian ``grid_edges`` inherits a uniform-cell
-        approximation for both the face measure and the cell volume, so it is
-        outside this guarantee (a tracked follow-up).
+        standard grid, hex, polar-sector, graph, and mesh layouts).
+        ``MaskedGridLayout.build`` rejects nonuniform ``grid_edges``.
 
         Examples
         --------

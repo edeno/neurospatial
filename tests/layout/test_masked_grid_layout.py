@@ -95,3 +95,88 @@ def test_masked_grid_rejects_non_array_mask():
     layout = MaskedGridLayout()
     with pytest.raises(TypeError):
         layout.build(active_mask=list_mask, grid_edges=grid_edges)
+
+
+@pytest.mark.parametrize(
+    "edges",
+    [
+        np.array([0.0, 1.0, 10.0]),  # nonuniform
+        np.array([0.0, 1.0, 2.001]),  # nonuniform by 0.1%
+        np.array([2.0, 1.0, 0.0]),  # decreasing
+        np.array([0.0, 0.0, 1.0]),  # duplicate edge
+        np.array([0.0, np.nan, 2.0]),
+        np.array([0.0, 1.0, np.inf]),
+        np.array([[0.0, 1.0, 2.0]]),  # 2-D
+        np.array([0.0]),  # a single edge defines no bin
+    ],
+    ids=[
+        "nonuniform",
+        "slightly-nonuniform",
+        "decreasing",
+        "duplicate",
+        "nan",
+        "inf",
+        "2d",
+        "one-edge",
+    ],
+)
+def test_rejects_invalid_edges(edges):
+    """Edges must be finite, 1-D, strictly increasing and uniformly spaced."""
+    layout = MaskedGridLayout()
+    with pytest.raises(ValueError, match=r"grid_edges\[0\]"):
+        layout.build(active_mask=np.ones(2, dtype=bool), grid_edges=(edges,))
+
+
+def test_rejects_unrepresentable_edges():
+    """Edges at 1e15 cannot resolve a unit bin width; the error says to offset."""
+    # float64 spacing at 1e15 is 0.125, so 1e15 + [0, 1, 3] has widths [1, 2].
+    edges = np.array([1e15, 1e15 + 1, 1e15 + 3])
+    layout = MaskedGridLayout()
+    with pytest.raises(ValueError, match=r"grid_edges\[0\]") as excinfo:
+        layout.build(active_mask=np.ones(2, dtype=bool), grid_edges=(edges,))
+    fix_line = next(
+        line for line in str(excinfo.value).splitlines() if line.startswith("Fix:")
+    )
+    assert "origin offset" in fix_line
+
+
+@pytest.mark.parametrize(
+    "offsets",
+    [
+        np.array([0.0, 0.01, 0.0201]),  # widths [0.01, 0.0101]
+        np.array([0.0, 0.01, 0.02 + 1e-8]),  # one width off by 1e-8
+    ],
+    ids=["one-percent", "1e-8"],
+)
+def test_rejects_nonuniform_at_large_offset(offsets):
+    """At a 1e7 offset the uniformity tolerance is ~8.45e-9, not looser."""
+    edges = 1e7 + offsets
+    layout = MaskedGridLayout()
+    with pytest.raises(ValueError, match="uniformly spaced"):
+        layout.build(active_mask=np.ones(2, dtype=bool), grid_edges=(edges,))
+
+
+@pytest.mark.parametrize(("offset", "bin_size"), [(1e7, 0.01), (1e9, 1.0)])
+def test_accepts_fine_bins_at_large_offsets(offset, bin_size):
+    """Rounded but uniform grids far from the origin still build and subset."""
+    from neurospatial import Environment
+
+    rng = np.random.default_rng(0)
+    positions = offset + rng.uniform(0, 45 * bin_size, (20_000, 2))
+    env = Environment.from_samples(positions, bin_size=bin_size)
+    keep = np.zeros(env.n_bins, dtype=bool)
+    keep[::2] = True
+
+    sub = env.subset(bins=keep)
+
+    assert isinstance(sub.layout, MaskedGridLayout)
+    assert sub.n_bins == keep.sum()
+
+
+def test_accepts_uniform_anisotropic_edges():
+    """Each axis needs one width, but the axes may differ."""
+    from neurospatial import Environment
+
+    edges = (np.linspace(0.0, 1.0, 11), np.linspace(0.0, 30.0, 11))
+    env = Environment.from_grid_mask(np.ones((10, 10), dtype=bool), grid_edges=edges)
+    np.testing.assert_allclose(env.bin_sizes, 0.3, rtol=1e-12)

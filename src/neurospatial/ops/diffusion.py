@@ -1290,9 +1290,7 @@ def _per_axis_bin_widths(env: EnvironmentProtocol) -> NDArray[np.float64]:
 
     Uses the first spacing per axis, matching ``_GridMixin.bin_sizes``' uniform
     cell assumption, so the face measure ``A`` and the mass ``M`` stay mutually
-    consistent. Custom nonuniform ``grid_edges`` therefore inherit this uniform
-    approximation and are outside the physical-sigma guarantee (a tracked
-    follow-up), rather than silently mixing a nonuniform ``M`` with a uniform ``A``.
+    consistent. ``MaskedGridLayout.build`` rejects nonuniform ``grid_edges``.
     """
     grid_edges = cast("Any", env.layout).grid_edges
     return np.array([float(np.diff(edges)[0]) for edges in grid_edges])

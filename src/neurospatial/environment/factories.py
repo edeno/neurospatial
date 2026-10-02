@@ -1210,7 +1210,9 @@ class EnvironmentFactories:
             A tuple where each element is a 1D NumPy array of bin edge positions
             for that dimension, in physical units (e.g., cm, meters). The edges
             define the boundaries of bins along each dimension. For example, edges
-            [0, 10, 20, 30] define three bins: [0-10], [10-20], [20-30].
+            [0, 10, 20, 30] define three bins: [0-10], [10-20], [20-30]. Edges
+            must be finite, strictly increasing, and uniformly spaced along each
+            axis; axes may differ.
         name : str, optional
             A name for the created environment. Defaults to "".
         connect_diagonal_neighbors : bool, optional
