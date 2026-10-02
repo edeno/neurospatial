@@ -129,6 +129,15 @@
   labelled group like the population encoders: one PSTH per unit, with the
   group's index as `unit_ids`. A `unit_ids=` passed with a labelled group must
   equal its index, or the call raises `ValueError` listing both.
+- **Behavior change:** `compute_vte_session` cut each pre-decision window from
+  the whole session, so a window reached back past the trial start into the
+  inter-trial interval or the previous trial. A trial starting at 5.0 s that
+  entered the decision region at 5.267 s got the window `[4.267, 5.267]` and a
+  head sweep of 12.57 rad, all from movement before the trial; the trial's own
+  straight run has 0. Windows are now clipped at the trial start, and
+  `window_start` reports the clipped start. A trial left with fewer than 3
+  samples before its entry is skipped, now with a `UserWarning` (it was
+  skipped silently). `compute_vte_trial` is unchanged.
 
 ### Added — `method="glm"`: penalized-Poisson GAM estimator (spatial only)
 

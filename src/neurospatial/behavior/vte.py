@@ -643,6 +643,8 @@ def compute_vte_session(
     window_duration : float, default=1.0
         Duration of pre-decision window in seconds.
         Typical values: 0.5-2.0s depending on maze size and task.
+        The window is clipped at the trial start; samples before
+        ``trial.start_time`` are never used.
     min_speed : float, default=5.0
         Minimum speed for valid heading (units/s).
     alpha : float, default=0.5
@@ -710,13 +712,23 @@ def compute_vte_session(
             )
             continue
 
-        # Extract pre-decision window
+        # Extract the pre-decision window from this trial's samples only, so
+        # it stops at the trial start.
         window_positions, window_times = extract_pre_decision_window(
-            positions, times, entry_time, window_duration
+            trial_positions, trial_times, entry_time, window_duration
         )
 
         if len(window_positions) < 3:
-            # Not enough samples for heading analysis - skip
+            # Not enough samples for heading analysis - skip, observably.
+            warnings.warn(
+                f"Skipping trial spanning [{trial.start_time:.3f}, "
+                f"{trial.end_time:.3f}] s: only {len(window_positions)} "
+                f"sample(s) between the trial start and its decision-region "
+                f"entry at {entry_time:.3f} s; heading analysis needs at "
+                "least 3.",
+                UserWarning,
+                stacklevel=2,
+            )
             continue
 
         # Compute head sweep magnitude
@@ -734,7 +746,9 @@ def compute_vte_session(
         raw_head_sweeps.append(head_sweep)
         raw_speeds.append(mean_spd)
         raw_min_speeds.append(min_spd)
-        trial_windows.append((entry_time - window_duration, entry_time))
+        trial_windows.append(
+            (max(entry_time - window_duration, trial.start_time), entry_time)
+        )
 
     # Convert to arrays
     head_sweeps_arr = np.array(raw_head_sweeps)
