@@ -24,7 +24,7 @@ It is mostly mechanical call-site updates across about 100 files. Regenerate the
 - [src/neurospatial/encoding/spatial.py:2542](../../../../src/neurospatial/encoding/spatial.py) — `compute_spatial_rate(env, spike_times, times: NDArray | PositionLike, positions=None)`, the dual form (adapter at :2874; same in `compute_spatial_rates` :3026), `decode_session(_summary)` (`decoding/session.py:92, :679`, adapter at :479-500) and `BayesianDecoder.fit`/`predict`/`predict_summary`/`score` (`decoding/estimator.py:278, :404, :448, :498`). There is no `fit_predict`.
 - **`decode_session` on `main`** (probed in this plan's remediation run): signature `decode_session(env, spike_times, times, positions=None, *, ..., encoding_models=None, ...)`. With neither `positions` nor `encoding_models`, it raises `ValueError: as_times_positions received a timestamp array but no positions …`. With `encoding_models=`, `positions` is never read: passing `positions` filled with 999 gave a posterior array-equal to omitting it. `BayesianDecoder.predict` and `predict_summary` reach the decode through this `encoding_models=` path with `positions=None` (`estimator.py:437, :486`).
 - **Files earlier phases already changed** (search by symbol):
-  - `decoding/estimator.py`: Phase 1 Task 6 (`_unit_ids_supplied`, `_align_to_fitted_units`) and Phase 3c (`epochs`/`spike_window` replace `epoch`; per-run decode bins).
+  - `decoding/estimator.py`: Phase 1 Task 6 (`_unit_ids_generated`, `_align_to_fitted_units`) and Phase 3c (`epochs`/`spike_window` replace `epoch`; per-run decode bins).
   - `decoding/session.py`: Phase 3c (per-run bins, `_evolve`, `spike_window` on results).
   - `events/alignment.py`: Phase 2a Task 6 (spike-group input to `population_peri_event_histogram`) and Phase 3c (event filtering). This phase renames the parameter only.
   - `behavior/vte.py`, `navigation.py`, `decisions.py`: Phase 2a Task 7 (VTE windows), Phase 2b Tasks 4 and 5 (stationary filters, `_velocity_heading_and_speed`), Phases 3d and 3e (`max_gap`/`epochs`, per-run kinematics). This phase reorders their arguments only.
@@ -48,12 +48,14 @@ def times_positions_problems(
     problems: list[str] = []
     if t.ndim != 1:
         problems.append(f"times must be 1-D (n_samples,), got shape {t.shape}.")
-    elif t.size > 1:
+    else:
+        # Finiteness applies to every 1-D timestamp array, including a single
+        # sample; only monotonicity needs two or more samples.
         finite = np.isfinite(t)
         if not finite.all():
             problems.append(f"times has {int((~finite).sum())} non-finite value(s), "
                             f"first at index {int(np.argmin(finite))}.")
-        else:
+        elif t.size > 1:
             down = np.flatnonzero(np.diff(t) < 0)
             if down.size:
                 k = int(down[0])
@@ -178,7 +180,7 @@ The archive branch is the reason this guard checks rules, not names. Its convent
 **6b.5 `BayesianDecoder.fit(spike_times, times, positions, *, unit_ids=None, …)`** ([Population identity](shared-contracts.md#input-conventions)).
 
 - The new keyword-only argument comes first among the keywords. Labels are never overridden, as in the encoders since Phase 1 Task 7. If the input is a labelled group and `unit_ids=` is also passed, they must be identical in the same order, or the call raises listing both. Otherwise whichever is present is used.
-- Resolve with `resolve_unit_ids(unit_ids, n_units, input_ids=extracted_ids, context="BayesianDecoder.fit")` and set Phase 1's `_unit_ids_supplied = unit_ids is not None or extracted_ids is not None`. A decoder fitted with `unit_ids=` then aligns a labelled predict input by label (Phase 1 Task 6).
+- Resolve with `resolve_unit_ids(unit_ids, n_units, input_ids=extracted_ids, context="BayesianDecoder.fit")` and set Phase 1's `_unit_ids_generated = unit_ids is None and extracted_ids is None`. A decoder fitted with `unit_ids=` then aligns a labelled predict input by label (Phase 1 Task 6).
 - **Duplicate labels** are rejected by `resolve_unit_ids` itself (Phase 1 Task 7), so `fit(unit_ids=[3, 3, 7])` raises with no code here. This phase does not add duplicate checks anywhere else.
 - Document the keyword and the pairing rule in `fit`.
 
@@ -187,9 +189,10 @@ The archive branch is the reason this guard checks rules, not names. Its convent
 - **Fields taken from `rates`:** `env`, `firing_rates` as the encoding models, `unit_ids`, and `spike_window`, which are carried for the record.
 - **NaN bins.** Non-finite rate bins are treated as zero-rate, exactly as `decode_position` already does: warn once and point to `fill_value=0.0`.
 - **Label alignment needs to know whether the labels were caller-supplied** ([Population identity](shared-contracts.md#input-conventions)).
-  - Add a private field `_unit_ids_supplied: bool = field(default=False, repr=False, compare=False, kw_only=True)` to `SpatialRatesResult`.
-  - The plural compute functions set it to `True` exactly when `resolve_unit_ids` received `unit_ids=` or labelled input (Phase 1 Task 7).
-  - `from_rates` copies it into the decoder's `_unit_ids_supplied`.
+  - Add the private init field `_unit_ids_generated: bool = field(default=False, repr=False, compare=False, kw_only=True)` to `SpatialRatesResult`, per [Population identity](shared-contracts.md#input-conventions).
+  - In `__post_init__`, *before* `unit_ids` is resolved (`spatial.py:1414`), set it to `True` when `self.unit_ids is None`. Use `object.__setattr__`, as that method already does for `unit_ids`. A caller who constructs `SpatialRatesResult(..., unit_ids=[10, 20])` directly therefore gets caller-supplied labels, and `replace` preserves the flag because it is an init field.
+  - The plural compute functions pass `unit_ids=None` to the result when the caller gave neither `unit_ids=` nor labelled input, rather than a pre-resolved `arange`. They pass the resolved labels otherwise.
+  - `from_rates` copies `rates._unit_ids_generated` into the decoder's `_unit_ids_generated`.
   - A rate map built from a plain list therefore pairs a labelled `TsGroup` by position, as `fit` does.
 - **Docstring:** an Examples section showing `rates = compute_spatial_rates(env, spikes, t, pos, epochs=train)` then `BayesianDecoder.from_rates(rates).predict(spikes, t, epochs=test)`.
 
@@ -231,6 +234,7 @@ The archive branch is the reason this guard checks rules, not names. Its convent
 | `…::test_fit_unit_ids_must_match_group_labels` | `fit(group_keyed_[10, 20], …, unit_ids=[20, 10])` raises `ValueError` whose message contains both `[20, 10]` and `[10, 20]` and a `Fix:` line. `unit_ids=[10, 20]` is accepted, with `unit_ids == [10, 20]`; a plain list with `unit_ids=[20, 10]` gives `[20, 10]`; `unit_ids=[3, 3, 7]` raises (via Phase 1's resolver) |
 | `…::test_from_rates_matches_fit` | On the two-epoch fixture, `BayesianDecoder.from_rates(compute_spatial_rates(env, spikes, t, pos, fill_value=0.0)).predict(spikes, t)` has a posterior `assert_allclose` (atol 1e-12) to `BayesianDecoder(env).fit(spikes, t, pos).predict(spikes, t)` with matching encoder parameters |
 | `…::test_from_rates_label_alignment` | Rates from a plain list: predict on a `TsGroup` keyed `3, 7, 9` pairs by position (equal to the list predict). Rates from a `TsGroup` keyed `[10, 11, 12]`: predict on the same group reordered `[12, 11, 10]` equals the in-order predict; keyed `[10, 11, 13]` raises `ValueError` listing missing `[12]` and unexpected `[13]` |
+| `…::test_from_rates_constructor_labels` | `SpatialRatesResult(firing_rates=..., env=env, ..., unit_ids=[10, 20])` built directly (not by a compute function). Then `BayesianDecoder.from_rates(r).predict(group keyed [20, 10])` pairs by label: unit 20's spikes meet unit 20's map, equal to predicting the group keyed `[10, 20]`. The same result built without `unit_ids` pairs by position. `rates[0]` and `replace(r, …)` keep the flag |
 | `…::test_from_rates_rejects_other_types` | `from_rates(directional_rates)` raises `TypeError` naming `compute_spatial_rates` |
 | `…::test_positions_required_where_used` | `list(inspect.signature(BayesianDecoder.predict).parameters)` is `["self", "spike_times", "times", "epochs", "spike_window"]`, and `predict_summary`'s is the same plus `time_chunk`. `fit`, `score`, `decode_session`, `decode_session_summary`, `compute_spatial_rate(s)` have a `positions` parameter with no default, and neither decode function has an `encoding_models` parameter. `decode_session(env, spikes, t)` raises `TypeError` naming `'positions'` |
 | `…::test_predict_matches_decode_session` | `BayesianDecoder(env, dt=…).fit(spikes, t, p).predict(spikes, t).posterior` equals `decode_session(env, spikes, t, p, dt=…).posterior` (array-equal), so the extraction of `_decode_with_models` changed nothing |

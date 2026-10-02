@@ -4,7 +4,7 @@
 
 [← back to PLAN.md](PLAN.md) · [executing a phase](executing.md) · [overview](overview.md) · [shared contracts](shared-contracts.md#time-window-semantics) · [3a](phase-3a-time-windows-core.md) · [3d](phase-3d-time-windows-segmentation.md)
 
-This is the fifth Phase 3 PR (the split is tabled in [3a](phase-3a-time-windows-core.md)). It makes every position-only **kinematic quantity** (velocity, speed, heading, turn angle, dwell) and `events.add_positions` respect recording gaps. It is independent of 3b, 3c and 3d. It requires Phase 2b because it changes the signature of `heading_from_velocity` and of Phase 2b's `_velocity_heading_and_speed`, in code Phase 2b rewrote.
+This is the fifth Phase 3 PR (the split is tabled in [3a](phase-3a-time-windows-core.md)). It makes every position-only **kinematic quantity** (velocity, speed, heading, turn angle, dwell) and `events.add_positions` respect recording gaps. It is independent of 3b and 3c. It requires 3d, because 3d adds the time-window keywords on `compute_pre_decision_metrics` and the VTE functions that this phase only forwards. It requires Phase 2b because it changes the signature of `heading_from_velocity` and of Phase 2b's `_velocity_heading_and_speed`, in code Phase 2b rewrote.
 
 Follow [executing.md](executing.md) for branching, commits, CHANGELOG bullets, the definition of done and the PR.
 

@@ -10,11 +10,11 @@ Phase 3 implements the [time-window contract](shared-contracts.md#time-window-se
 | --- | --- | --- |
 | **3a (this file)** | `neurospatial/_intervals.py`; the extended `interval_valid_mask` plus the shared helpers `start_allocated_occupancy`, `observed_interval_mask` and `observed_runs`; `env.occupancy(epochs=)`; one normalizer for `behavior.restrict`/`in_epochs`; the **spatial** rate family and its predicates; the population-silence warning helper; the `spike_window` field on every rate result | Phase 1 |
 | [3b](phase-3b-time-windows-frame-families.md) | One frame-binning kernel for the **directional, view and egocentric** rate families, their predicates and plural silence warnings | 3a |
-| [3c](phase-3c-time-windows-decoding-events.md) | Decoding (per-run time bins, `BayesianDecoder`), `bin_spikes_in_time`, and the PETH functions | 3a |
+| [3c](phase-3c-time-windows-decoding-events.md) | Decoding (per-run time bins, `BayesianDecoder`), `bin_spikes_in_time`, and the PETH functions | 3a and 2a |
 | [3d](phase-3d-time-windows-segmentation.md) | Segmentation detectors, `extract_pre_decision_window`, and `env.bin_sequence`/`transitions` | 3a |
-| [3e](phase-3e-time-windows-kinematics.md) | Kinematics, `heading_from_velocity(positions, times)`, `events.add_positions` and their docs | 3a and 2b |
+| [3e](phase-3e-time-windows-kinematics.md) | Kinematics, `heading_from_velocity(positions, times)`, `events.add_positions` and their docs | 3d and 2b (3d requires 3a) |
 
-3b, 3c, 3d and 3e are independent of each other. Everything they share is created here, so none of them adds a module another one also adds.
+3b, 3c and 3d are independent of each other. 3e follows 3d, because 3d adds the time-window keywords that 3e forwards. The full graph is in [overview → Rollout Strategy](overview.md#rollout-strategy). Everything the Phase 3 PRs share is created here, so none of them adds a module another one also adds.
 
 Follow [executing.md](executing.md) for branching, commits, CHANGELOG bullets, the definition of done and the PR.
 

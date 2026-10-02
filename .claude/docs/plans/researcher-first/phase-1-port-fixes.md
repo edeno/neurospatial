@@ -144,7 +144,7 @@ Commits, regression-test-first and the per-commit CHANGELOG bullet follow [execu
    Docstrings: `masked_grid.py:76-78` and `factories.py:1209-1213` gain "finite, strictly increasing, and uniformly spaced along each axis; axes may differ". Remove the "tracked follow-up" caveats at `environment/fields.py:136-140` and `ops/diffusion.py:1291-1295`, replacing them with "`MaskedGridLayout.build` rejects nonuniform `grid_edges`".
 
 6. **Decoder pairs spike trains with encoding models by the Population-identity rule (`estimator.py`).** The rule: align **by label only when both sides carry caller-supplied labels**. That means `fit` received a labelled group (its index becomes `unit_ids`) **and** the predict input is a labelled group. In every other case pair by position and require equal unit counts. The default `np.arange(n)` that `fit` stores for unlabelled input (`:399-402`) is **not** caller-supplied and never triggers label alignment.
-   - **Record where the labels came from.** The `@dataclass(frozen=True)` at `:40` gains, after `unit_ids` (`:175`), the private init field `_unit_ids_supplied: bool = field(default=False, repr=False, compare=False)` (import `field` from `dataclasses`). In `fit`, keep the extracted ids before the `arange` fallback and return `replace(self, encoding_models=firing_rates, unit_ids=unit_ids, _unit_ids_supplied=extracted_ids is not None)`. [Phase 6b](phase-6b-argument-conventions.md) adds `fit(unit_ids=)`, which sets the flag too.
+   - **Record where the labels came from.** The `@dataclass(frozen=True)` at `:40` gains, after `unit_ids` (`:175`), the private init field `_unit_ids_generated: bool = field(default=False, repr=False, compare=False)` (import `field` from `dataclasses`). It defaults to `False`, so labels passed to the public constructor (`BayesianDecoder(env, encoding_models=m, unit_ids=[10, 20])`) count as caller-supplied ([Population identity](shared-contracts.md#input-conventions)). In `fit`, keep the extracted ids before the `arange` fallback and return `replace(self, encoding_models=firing_rates, unit_ids=unit_ids, _unit_ids_generated=extracted_ids is None)`. [Phase 6b](phase-6b-argument-conventions.md) adds `fit(unit_ids=)`, which then sets `_unit_ids_generated=unit_ids is None and extracted_ids is None`.
    - **Align.** Add the method below and call it in `predict` (`:439`) and `predict_summary` (`:488`) in place of the raw `spike_times`. `score` inherits it through `predict`. This does **not** port 5ff803ba's exact-sequence rejection: a reordered labelled input is aligned, not rejected.
 
    ```python
@@ -169,7 +169,7 @@ Commits, regression-test-first and the per-commit CHANGELOG bullet follow [execu
                    "cannot name one spike train.\n"
                    "Fix: pass each unit once (pynapple: check group.index)."
                )
-           if self._unit_ids_supplied:
+           if self.unit_ids is not None and not self._unit_ids_generated:
                fitted = np.asarray(self.unit_ids).tolist()
                row = {u: i for i, u in enumerate(labels)}
                fitted_set = set(fitted)
@@ -350,6 +350,7 @@ Commits, regression-test-first and the per-commit CHANGELOG bullet follow [execu
 | `test_estimator.py::test_predict_label_mismatch_lists_labels` | predict ids `[11..18]` after fitting `[10..17]` → `ValueError` whose message contains `missing: [10]` and `unexpected: [18]`; same for `predict_summary` and `score` |
 | `test_estimator.py::test_unlabelled_fit_pairs_labelled_input_by_position` (guard) | fit on a plain list of 3 trains; predict on a spike-group double with keys `3, 7, 9` wrapping the same 3 trains → posterior equals the list-input predict (atol 1e-12). Default `arange` labels never trigger label alignment (verified on `main`: equal) |
 | `test_estimator.py::test_labelled_fit_pairs_plain_input_by_position` (guard) | fit on the group with ids `[10..17]`; predict on a plain list of the same 8 trains in index order → posterior equals the group predict |
+| `test_estimator.py::test_constructor_labels_are_caller_supplied` | `BayesianDecoder(env, encoding_models=m, unit_ids=[10, 20])` (no `fit`), then `predict` on a spike-group double keyed `[20, 10]`, equals `predict` on the group keyed `[10, 20]`: unit 20's spikes meet unit 20's model. `dataclasses.replace(decoder, dt=0.05)` keeps `_unit_ids_generated is False`. A decoder fitted on a plain list has `_unit_ids_generated is True` and pairs a group keyed `3, 7` by position |
 | `test_estimator.py::test_positional_count_mismatch_raises` | fit on 3 plain trains, predict on 2 → `ValueError` naming `2` and `3` with a `Fix:` line (before the fix: a deep "Neuron-count mismatch … Poisson likelihood" message with no fix) |
 | `test_estimator.py::test_duplicate_input_labels_raise` | predict on a group whose index is `[10, 10, 12, …]` → `ValueError` listing `[10]` |
 | `test_estimator.py::test_predict_plain_arrays_stay_positional` (guard) | list-of-arrays predict equals the pre-change result |

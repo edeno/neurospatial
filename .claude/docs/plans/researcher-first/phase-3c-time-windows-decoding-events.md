@@ -27,7 +27,7 @@ Follow [executing.md](executing.md) for branching, commits, CHANGELOG bullets, t
   - **PETH:** windows that cross the gap are normalized as if fully observed. A flat 10 Hz rate reads as 0 Hz in the late bins.
 - Archive reference only: `c95789c8` and `0d1a89f4` (decode grid), and `4505b564` (PETH). Do not cherry-pick them; they depend on `TemporalSupport`.
 - **Files earlier phases already changed** (line numbers above are from `da631a47`; re-locate by symbol):
-  - `decoding/estimator.py`: Phase 1 Task 6 added `_unit_ids_supplied` and `_align_to_fitted_units`, which `predict` and `predict_summary` call on their spike input. Keep that call when adding `epochs`/`spike_window`; it runs before decoding.
+  - `decoding/estimator.py`: Phase 1 Task 6 added `_unit_ids_generated` and `_align_to_fitted_units`, which `predict` and `predict_summary` call on their spike input. Keep that call when adding `epochs`/`spike_window`; it runs before decoding.
   - `decoding/_result.py`: Phase 1 Task 12 made `DecodingResult` a frozen dataclass.
     - **Public constructor:** `__post_init__` always copies `posterior` and `times` into read-only arrays.
     - **Internal path:** `decode_position` builds its result through the private `_from_owned_posterior`, which keeps the posterior it just allocated without copying and copies only the small metadata arrays.
