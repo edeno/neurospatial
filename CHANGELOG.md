@@ -87,6 +87,17 @@
   read-only copies of `posterior` and `times`. Use
   `dataclasses.replace(result, posterior=new)` for a modified result.
   `decode_position` hands over its freshly computed posterior without a copy.
+- **Behavior change:** `to_linear` returned wrong positions on graph
+  environments whose `edge_order` differs from `graph.edges()` order, such as
+  `Environment.maze("w", ...)`: on a W maze with 50 cm segments, `(75, 0)` on
+  the base mapped to 175 instead of 75 and `(0, 40)` on the left arm to 114.03
+  instead of 140, and about 38% of on-track points disagreed with `bin_at`.
+  `track_linearization` looks a point's nearest segment up by its `edge_id`
+  attribute but finds it by its position in `graph.edges()`. Graph layouts now
+  linearize a copy numbered in `graph.edges()` order, so `to_linear` returns
+  along-track distance for `from_graph`, `maze`, `linear_track` and reloaded
+  environments. Any `edge_id` on an input graph is ignored, and the caller's
+  graph is not modified.
 
 ### Added — `method="glm"`: penalized-Poisson GAM estimator (spatial only)
 
