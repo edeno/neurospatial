@@ -1112,8 +1112,8 @@ class DirectionalRatesResult(SpatialResultMixin):
             ``("unit_id", "bin")``), data var ``occupancy`` (seconds, dims
             ``("bin",)``), index coord ``unit_id`` = :attr:`unit_ids`,
             ``bin_center_angle`` coord (radians) on ``bin``, and ``attrs``
-            carrying ``units`` (``"radians"``), ``bandwidth``, and
-            ``software_version``.
+            carrying ``units`` (``"radians"``), ``software_version``, and
+            ``bandwidth`` when smoothing was applied.
 
         Raises
         ------
@@ -1130,9 +1130,12 @@ class DirectionalRatesResult(SpatialResultMixin):
         rates: NDArray[np.float64] = np.asarray(self.firing_rates)
         attrs: dict[str, Any] = {
             "units": "radians",
-            "bandwidth": self.bandwidth,
             "software_version": software_version(),
         }
+        # NetCDF attributes cannot hold None, and bandwidth is None when no
+        # smoothing was applied; omit it then (the rule spatial results use).
+        if self.bandwidth is not None:
+            attrs["bandwidth"] = self.bandwidth
         return build_population_dataset(
             rates,
             np.asarray(self.unit_ids),

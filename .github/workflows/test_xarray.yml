@@ -40,6 +40,7 @@ jobs:
         run: |
           uv run pytest -n 0 \
             tests/encoding/test_spatial_xarray_interop.py \
+            tests/encoding/test_directional_xarray_interop.py \
             tests/decoding/test_xarray_interop.py \
             tests/decoding/test_result.py \
             -q

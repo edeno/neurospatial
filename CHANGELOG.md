@@ -64,6 +64,10 @@
   the first offending indices, and for a `columns` list whose length does not
   match the value columns (pynapple silently renamed them `0, 1, ...`). These
   checks run before pynapple is imported.
+- `DirectionalRatesResult.to_xarray()` wrote `attrs["bandwidth"] = None` for
+  unsmoothed results (`bandwidth=None`), so `Dataset.to_netcdf()` raised
+  `TypeError`. The attribute is now omitted when no smoothing was applied, as
+  for spatial results.
 
 ### Added — `method="glm"`: penalized-Poisson GAM estimator (spatial only)
 
