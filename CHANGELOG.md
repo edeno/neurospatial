@@ -4,6 +4,15 @@
 
 ### Changed — behavior analyses respect recording gaps
 
+- All 16 segmentation and sequence entry points now expose keyword-only
+  `max_gap=0.5` and `epochs=None`: `detect_region_crossings`,
+  `detect_runs_between_regions`, `segment_by_velocity`, `detect_laps`,
+  `segment_trials`, `detect_goal_directed_runs`, `running_direction_labels`,
+  `detect_boundary_crossings`, `extract_pre_decision_window`,
+  `compute_pre_decision_metrics`, `compute_decision_analysis`,
+  `compute_vte_trial`, `compute_vte_session`, and `Environment.bin_sequence`,
+  `bin_sequence_with_runs`, `transitions`. Use `max_gap=None` to disable the
+  gap gate for intentionally coarse sampling; `epochs` still applies.
 - Pre-decision extraction, metrics, composite decision analysis and trial/session
   VTE accept `max_gap` and `epochs`. Pre-decision samples come only from the
   observed run containing the entry time; entries outside every run return an
