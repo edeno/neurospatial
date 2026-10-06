@@ -325,9 +325,16 @@ warn_on_drop
             Minimum speed threshold (position units / second). When set,
             low-speed samples are excluded from both the spike numerator and the
             occupancy denominator of the encoding model.
-        epochs, spike_window : optional
-            Analysis and acquisition windows, applied through the shared
-            interval mask on the original tracking samples and spike trains.
+        epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+            Restrict the analysis to these half-open [start, stop) windows (seconds,
+            same clock as ``times``). An interval counts only if it lies entirely
+            inside one window. ``None`` (default) means unrestricted.
+        spike_window : same forms as ``epochs``, or None
+            When the electrophysiology was recording. Intervals outside it are
+            excluded from occupancy (and their spikes are not counted). ``None``
+            (default) assumes spikes were recorded whenever position was; this is an
+            assumption, not something the function checks. Pass it when tracking
+            started before, or continued after, the spike recording.
 
         Returns
         -------
@@ -339,13 +346,19 @@ warn_on_drop
         Notes
         -----
         The default ``min_occupancy=None`` (resolving to ``0.0``, paired with the
-        ratio decode golden path's ``fill_value=0.0``) means a small ``epoch`` or
+        ratio decode golden path's ``fill_value=0.0``) means a small epoch or
         sparse training data can build a **degenerate low-coverage** encoding
         model *without erroring* -- most bins fall back to ``0.0`` Hz, so the fit
         "succeeds" but decodes poorly. For short epochs, raise ``min_occupancy``
         (ratio methods) or check the fitted model's spatial coverage before
         trusting a decode. ``method="glm"`` has no such knob -- occupancy enters
         as a log-offset, so every bin gets a finite rate.
+
+        When predicting with the fitted decoder, decode time bins are formed
+        separately within each run of samples whose
+        gaps are no longer than ``max_gap`` and that lie inside ``epochs`` and
+        ``spike_window``; no bin spans a pause, and spikes between runs are not
+        counted. ``result.times`` may therefore be non-contiguous.
 
         Examples
         --------
@@ -469,8 +482,23 @@ warn_on_drop
             to encoding models by label, in any order. Otherwise they are paired
             by position: one train per fitted unit, in fit order.
         times : array-like, shape (n_frames,), or PositionLike
-            Timestamps defining the decode window ``[min, max]``; a
-            ``PositionLike`` is accepted (its positions are ignored for decode).
+            Tracking timestamps (seconds). Decode bins tile each run whose
+            gaps are no longer than ``max_gap``. A ``PositionLike`` is accepted.
+            Its positions are ignored. To decode without tracking samples,
+            pass ``times=np.arange(t0, t1, dt)``.
+
+        epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+            Restrict the analysis to these half-open [start, stop) windows (seconds,
+            same clock as ``times``). An interval counts only if it lies entirely
+            inside one window. ``None`` (default) means unrestricted.
+        spike_window : same forms as ``epochs``, or None
+            When the electrophysiology was recording. Intervals outside it are
+            excluded from occupancy (and their spikes are not counted). ``None``
+            (default) assumes spikes were recorded whenever position was; this is an
+            assumption, not something the function checks. Pass it when tracking
+            started before, or continued after, the spike recording. The result
+            records the window applied (``result.spike_window``) and whether it was
+            assumed (``result.spike_window_assumed``).
 
         Returns
         -------
@@ -487,6 +515,13 @@ warn_on_drop
             and the input's labels differ from ``unit_ids`` (the message lists
             the missing and unexpected labels); or if trains are paired by
             position and their number differs from the number of fitted units.
+
+        Notes
+        -----
+        Decode time bins are formed separately within each run of samples whose
+        gaps are no longer than ``max_gap`` and that lie inside ``epochs`` and
+        ``spike_window``; no bin spans a pause, and spikes between runs are not
+        counted. ``result.times`` may therefore be non-contiguous.
         """
         from neurospatial.decoding.session import decode_session
 
@@ -530,10 +565,26 @@ warn_on_drop
             to encoding models by label, in any order. Otherwise they are paired
             by position: one train per fitted unit, in fit order.
         times : array-like, shape (n_frames,), or PositionLike
-            Timestamps defining the decode window.
+            Tracking timestamps (seconds). Decode bins tile each run whose
+            gaps are no longer than ``max_gap``. A ``PositionLike`` is accepted.
+            Its positions are ignored. To decode without tracking samples,
+            pass ``times=np.arange(t0, t1, dt)``.
         time_chunk : int, default=1024
             Streaming block size (number of time bins per block). Must be a
             positive integer.
+
+        epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+            Restrict the analysis to these half-open [start, stop) windows (seconds,
+            same clock as ``times``). An interval counts only if it lies entirely
+            inside one window. ``None`` (default) means unrestricted.
+        spike_window : same forms as ``epochs``, or None
+            When the electrophysiology was recording. Intervals outside it are
+            excluded from occupancy (and their spikes are not counted). ``None``
+            (default) assumes spikes were recorded whenever position was; this is an
+            assumption, not something the function checks. Pass it when tracking
+            started before, or continued after, the spike recording. The result
+            records the window applied (``result.spike_window``) and whether it was
+            assumed (``result.spike_window_assumed``).
 
         Returns
         -------
@@ -550,6 +601,13 @@ warn_on_drop
             and the input's labels differ from ``unit_ids`` (the message lists
             the missing and unexpected labels); or if trains are paired by
             position and their number differs from the number of fitted units.
+
+        Notes
+        -----
+        Decode time bins are formed separately within each run of samples whose
+        gaps are no longer than ``max_gap`` and that lie inside ``epochs`` and
+        ``spike_window``; no bin spans a pause, and spikes between runs are not
+        counted. ``result.times`` may therefore be non-contiguous.
         """
         from neurospatial.decoding.session import decode_session_summary
 
@@ -605,8 +663,9 @@ warn_on_drop
             to encoding models by label, in any order. Otherwise they are paired
             by position: one train per fitted unit, in fit order.
         times : array-like, shape (n_frames,), or PositionLike
-            Ground-truth timestamps (seconds), or a ``PositionLike`` carrying
-            both times and positions (then ``positions`` must be omitted).
+            Tracking timestamps (seconds). Decode bins tile each run whose
+            gaps are no longer than ``max_gap``. A ``PositionLike`` is accepted.
+            Its positions supply ground truth when ``positions`` is omitted.
         positions : NDArray[np.float64], shape (n_frames, n_dims), optional
             Ground-truth positions to score against. Omit only when ``times`` is
             a ``PositionLike``.
@@ -618,6 +677,19 @@ warn_on_drop
             error. ``"geodesic"`` uses the environment's connectivity graph
             (shortest-path along the track / masked field), the differentiator
             over straight-line euclidean error; ``"euclidean"`` is the default.
+
+        epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+            Restrict the analysis to these half-open [start, stop) windows (seconds,
+            same clock as ``times``). An interval counts only if it lies entirely
+            inside one window. ``None`` (default) means unrestricted.
+        spike_window : same forms as ``epochs``, or None
+            When the electrophysiology was recording. Intervals outside it are
+            excluded from occupancy (and their spikes are not counted). ``None``
+            (default) assumes spikes were recorded whenever position was; this is an
+            assumption, not something the function checks. Pass it when tracking
+            started before, or continued after, the spike recording. The result
+            records the window applied (``result.spike_window``) and whether it was
+            assumed (``result.spike_window_assumed``).
 
         Returns
         -------
@@ -638,6 +710,13 @@ warn_on_drop
             training samples, or a spikes/times unit mismatch (seconds vs
             milliseconds). Also raised when the spike input cannot be paired
             with the fitted units (see :meth:`predict`).
+
+        Notes
+        -----
+        Decode time bins are formed separately within each run of samples whose
+        gaps are no longer than ``max_gap`` and that lie inside ``epochs`` and
+        ``spike_window``; no bin spans a pause, and spikes between runs are not
+        counted. ``result.times`` may therefore be non-contiguous.
         """
         from neurospatial._typing import as_times_positions
 

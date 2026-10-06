@@ -177,6 +177,11 @@ def bin_spikes_in_time(
         train is empty), so the last spike always lands inside the final bin
         and a single-spike train produces a valid result. When passed
         explicitly, must be strictly greater than ``t_start``.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as the spike times). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+        Cannot be combined with ``t_start`` or ``t_stop``.
     orient : {"time_x_neuron", "neuron_x_time"}, optional
         Axis order of the returned ``counts`` matrix. ``"time_x_neuron"``
         (default) returns shape ``(n_time_bins, n_neurons)`` — the one convention
@@ -199,7 +204,8 @@ def bin_spikes_in_time(
     ValueError
         If ``dt`` is not finite or not strictly positive, if an explicitly
         passed ``t_stop`` is not strictly greater than ``t_start``, if the
-        span ``t_stop - t_start`` is smaller than a single bin ``dt``, or if
+        windows contain no whole bin, if ``epochs`` is combined with explicit
+        bounds, or if
         ``orient`` is not one of the allowed values.
 
     Notes

@@ -184,14 +184,22 @@ def decode_session(
         the occupancy denominator of the encoding model via one shared gate.
         When ``None`` (default) no speed filtering is applied (unchanged).
         Ignored when ``encoding_models`` is provided.
-    max_gap : float or None, optional
-        Maximum trajectory time gap (seconds), forwarded to the encoding step
-        (see :func:`~neurospatial.encoding.compute_spatial_rates`). Intervals
-        with ``dt > max_gap`` are dropped from BOTH the spike numerator and the
-        occupancy denominator of the encoding model. Default 0.5 (matches
-        ``compute_spatial_rates``); pass ``None`` to count all intervals
-        regardless of gap size (e.g. for intentionally-gappy data). Ignored
-        when ``encoding_models`` is provided.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals are excluded from encoding and decoding, including
+        when ``encoding_models`` is provided. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
     encoding_models : NDArray[np.float64], shape (n_neurons, n_bins) or None
         Pre-computed place-field firing-rate maps.  When provided, the
         encoding step (``compute_spatial_rates``) is skipped entirely and
@@ -253,6 +261,11 @@ def decode_session(
 
     Notes
     -----
+    Decode time bins are formed separately within each run of samples whose
+    gaps are no longer than ``max_gap`` and that lie inside ``epochs`` and
+    ``spike_window``; no bin spans a pause, and spikes between runs are not
+    counted. ``result.times`` may therefore be non-contiguous.
+
     **Orientation contract**:
     :func:`~neurospatial.decoding.bin_spikes_in_time` returns a count
     matrix of shape ``(n_time_bins, n_neurons)`` (default
@@ -702,7 +715,7 @@ def decode_session_summary(
     The encoding model (firing rates, shape ``(n_neurons, n_bins)``) is built
     once over the whole session (it is small). Then time is processed in blocks
     of ``time_chunk`` bins: each block bins ONLY that block's spikes (a
-    contiguous slice of the global time grid) and decodes + reduces it via the
+    slice of the observed-run time grid) and decodes + reduces it via the
     SAME shared inner-loop helper as
     :func:`~neurospatial.decoding.decode_position_summary`. Peak memory is
     therefore ``O(time_chunk * max(n_neurons, n_bins))`` plus the
@@ -718,12 +731,23 @@ min_occupancy, penalty, rank, speed, min_speed, max_gap, encoding_models, \
 warn_on_drop, dtype
         Same as :func:`decode_session` -- including ``method="glm"`` and its
         ``penalty`` / ``rank`` knobs, and the nullable ``bandwidth`` /
-        ``min_occupancy`` (``max_gap`` forwards to
-        :func:`~neurospatial.encoding.compute_spatial_rates`). ``dtype``
+        ``min_occupancy`` (``max_gap`` gates encoding and decoding). ``dtype``
         ("decode in this dtype") controls BOTH the encoding-model working set
         AND the streamed per-block posterior: ``np.float32`` halves both;
         default ``np.float64`` is byte-for-byte unchanged. Pass it via this
         explicit parameter, NOT via ``decode_kwargs``.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
     **decode_kwargs
         Forwarded to the per-block decode (same semantics as
         :func:`~neurospatial.decoding.decode_position_summary`): ``prior``,
@@ -747,6 +771,13 @@ warn_on_drop, dtype
         ``prior`` has a shape inconsistent with the decode (1-D must be
         ``(n_bins,)``, 2-D must be ``(n_time, n_bins)``); plus the same
         conditions as :func:`~neurospatial.decoding.decode_position`.
+
+    Notes
+    -----
+    Decode time bins are formed separately within each run of samples whose
+    gaps are no longer than ``max_gap`` and that lie inside ``epochs`` and
+    ``spike_window``; no bin spans a pause, and spikes between runs are not
+    counted. ``result.times`` may therefore be non-contiguous.
 
     See Also
     --------
