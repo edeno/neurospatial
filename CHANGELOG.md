@@ -4,6 +4,11 @@
 
 ### Changed — behavior analyses respect recording gaps
 
+- Pre-decision extraction, metrics, composite decision analysis and trial/session
+  VTE accept `max_gap` and `epochs`. Pre-decision samples come only from the
+  observed run containing the entry time; entries outside every run return an
+  empty window. The pause example retains five post-resumption samples instead
+  of ten spanning 1000.9 seconds. Session VTE still respects the trial start.
 - Runs, trials, velocity epochs, laps, goal-directed candidates and decision
   boundary crossings accept `max_gap` and `epochs` and analyze each observed
   run separately. The measured 98.5→1100 s run and 0→1100 s trial are no longer

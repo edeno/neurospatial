@@ -14,7 +14,13 @@ from neurospatial.behavior import (
     segment_by_velocity,
     segment_trials,
 )
-from neurospatial.behavior.decisions import detect_boundary_crossings
+from neurospatial.behavior.decisions import (
+    compute_decision_analysis,
+    compute_pre_decision_metrics,
+    detect_boundary_crossings,
+    extract_pre_decision_window,
+)
+from neurospatial.behavior.vte import compute_vte_session, compute_vte_trial
 
 
 def test_no_crossing_reported_across_pause(pause_track):
@@ -203,3 +209,106 @@ def test_segment_epochs_equal_slicing(continuous_pause_track, kind):
             assert a.success == b.success
         if hasattr(a, "bins"):
             np.testing.assert_array_equal(a.bins, b.bins)
+
+
+def test_pre_decision_window_stays_in_run(pause_track):
+    r = pause_track
+    positions, times = extract_pre_decision_window(
+        r.positions, r.times, entry_time=1100.5, window_duration=1001
+    )
+    np.testing.assert_array_equal(times, r.times[1000:1005])
+    np.testing.assert_array_equal(positions, r.positions[1000:1005])
+    metrics = compute_pre_decision_metrics(
+        r.positions, r.times, entry_time=1100.5, window_duration=1001
+    )
+    assert metrics.n_samples == 5
+    assert metrics.window_duration <= 0.5
+    assert metrics.mean_speed == 0
+
+
+@pytest.mark.parametrize("entry", [500.0, 1200.0])
+def test_entry_outside_observed_runs_has_empty_window(pause_track, entry):
+    r = pause_track
+    positions, times = extract_pre_decision_window(
+        r.positions, r.times, entry_time=entry, window_duration=1001
+    )
+    assert positions.shape == (0, 2)
+    assert times.shape == (0,)
+
+
+@pytest.mark.parametrize(
+    "function",
+    [extract_pre_decision_window, compute_pre_decision_metrics, compute_vte_trial],
+)
+def test_window_callers_forward_epochs(pause_track, function):
+    r = pause_track
+    result = function(
+        r.positions,
+        r.times,
+        entry_time=1100.5,
+        window_duration=1001,
+        epochs=(0, 100),
+    )
+    if function is extract_pre_decision_window:
+        assert result[1].size == 0
+    elif function is compute_pre_decision_metrics:
+        assert result.n_samples == 0
+    else:
+        assert result.mean_speed == 0
+        assert result.head_sweep_magnitude == 0
+
+
+def test_vte_trial_uses_only_entry_run(pause_track):
+    r = pause_track
+    result = compute_vte_trial(
+        r.positions, r.times, entry_time=1100.5, window_duration=1001
+    )
+    assert result.mean_speed == 0
+    assert result.min_speed == 0
+    assert result.head_sweep_magnitude == 0
+
+
+def test_vte_session_keeps_trial_clamp_and_observed_window(pause_track):
+    from neurospatial.behavior import Trial
+
+    r = pause_track
+    # Decision-region entry is 1100.5; the five preceding samples are stationary.
+    positions = r.positions.copy()
+    positions[1000:1005, 0] = 80
+    trial = Trial(99.5, 1109.9, "source", "target", True)
+    with pytest.warns(UserWarning, match="No variation"):
+        result = compute_vte_session(
+            r.env,
+            positions,
+            r.times,
+            decision_region="target",
+            trials=[trial],
+            window_duration=1001,
+        )
+    assert len(result.trial_results) == 1
+    assert result.trial_results[0].mean_speed == 0
+    assert result.trial_results[0].window_start >= trial.start_time
+
+
+def test_decision_analysis_forwards_windows(pause_track):
+    r = pause_track
+    result = compute_decision_analysis(
+        r.env,
+        r.positions,
+        r.times,
+        decision_region="target",
+        goal_regions=["source", "target"],
+        pre_window=1001,
+        epochs=(0, 100),
+    )
+    assert result.pre_decision.n_samples == 0
+    assert result.boundary.crossing_times == []
+
+
+def test_max_gap_none_preserves_requested_window(pause_track):
+    r = pause_track
+    _, times = extract_pre_decision_window(
+        r.positions, r.times, entry_time=1100.5, window_duration=1001, max_gap=None
+    )
+    assert times.size == 10
+    assert times[0] == 99.5

@@ -538,6 +538,8 @@ def compute_vte_trial(
     window_duration: float,
     *,
     min_speed: float = 5.0,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> VTETrialResult:
     """Compute VTE metrics for a single trial.
 
@@ -579,7 +581,12 @@ def compute_vte_trial(
 
     # Extract pre-decision window
     window_positions, window_times = extract_pre_decision_window(
-        positions, times, entry_time, window_duration
+        positions,
+        times,
+        entry_time,
+        window_duration,
+        max_gap=max_gap,
+        epochs=epochs,
     )
 
     window_start = entry_time - window_duration
@@ -625,6 +632,8 @@ def compute_vte_session(
     min_speed: float = 5.0,
     alpha: float = 0.5,
     vte_threshold: float = 0.5,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> VTESessionResult:
     """Compute VTE metrics for all trials in a session.
 
@@ -715,7 +724,12 @@ def compute_vte_session(
         # Extract the pre-decision window from this trial's samples only, so
         # it stops at the trial start.
         window_positions, window_times = extract_pre_decision_window(
-            trial_positions, trial_times, entry_time, window_duration
+            trial_positions,
+            trial_times,
+            entry_time,
+            window_duration,
+            max_gap=max_gap,
+            epochs=epochs,
         )
 
         if len(window_positions) < 3:

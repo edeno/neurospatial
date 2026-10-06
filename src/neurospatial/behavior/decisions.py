@@ -355,6 +355,9 @@ def extract_pre_decision_window(
     times: NDArray[np.float64],
     entry_time: float,
     window_duration: float,
+    *,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Extract trajectory segment before decision region entry.
 
@@ -390,14 +393,20 @@ def extract_pre_decision_window(
     """
     positions = np.asarray(positions)
     times = np.asarray(times)
-
-    window_start = entry_time - window_duration
-    window_start = max(window_start, times[0])  # Clamp to trajectory start
-
-    # Select samples in window (before entry)
-    mask = (times >= window_start) & (times < entry_time)
-
-    return positions[mask], times[mask]
+    if len(positions) != len(times):
+        raise ValueError(
+            f"positions and times must have same length; got "
+            f"{len(positions)} and {len(times)}.\n"
+            "Why: each trajectory sample needs its corresponding timestamp.\n"
+            "Fix: pass one timestamp per position sample on the same clock."
+        )
+    for run in observed_runs(times, max_gap=max_gap, epochs=epochs):
+        if times[run.start] <= entry_time <= times[run.stop - 1]:
+            run_times = times[run]
+            window_start = max(entry_time - window_duration, times[run.start])
+            keep = (run_times >= window_start) & (run_times < entry_time)
+            return positions[run][keep], run_times[keep]
+    return positions[:0], times[:0]
 
 
 def pre_decision_heading_stats(
@@ -529,6 +538,8 @@ def compute_pre_decision_metrics(
     window_duration: float,
     *,
     min_speed: float = 5.0,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> PreDecisionMetrics:
     """Compute all pre-decision window metrics.
 
@@ -560,7 +571,12 @@ def compute_pre_decision_metrics(
     """
     # Extract window
     window_pos, window_times = extract_pre_decision_window(
-        positions, times, entry_time, window_duration
+        positions,
+        times,
+        entry_time,
+        window_duration,
+        max_gap=max_gap,
+        epochs=epochs,
     )
 
     # Handle edge case of empty or too-short window
@@ -855,6 +871,8 @@ def compute_decision_analysis(
     goal_regions: list[str],
     pre_window: float = 1.0,
     min_speed: float = 5.0,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> DecisionAnalysisResult:
     """Compute complete decision analysis for a trajectory.
 
@@ -936,7 +954,13 @@ def compute_decision_analysis(
 
     # Compute pre-decision metrics
     pre_decision = compute_pre_decision_metrics(
-        positions, times, entry_time, pre_window, min_speed=min_speed
+        positions,
+        times,
+        entry_time,
+        pre_window,
+        min_speed=min_speed,
+        max_gap=max_gap,
+        epochs=epochs,
     )
 
     # Compute boundary metrics
@@ -957,7 +981,7 @@ def compute_decision_analysis(
     trajectory_labels = _safe_gather(voronoi_labels, position_bins, fill=-1)
     boundary_distances = distance_to_decision_boundary(env, position_bins, goal_bins)
     crossing_times, crossing_directions = detect_boundary_crossings(
-        position_bins, voronoi_labels, times
+        position_bins, voronoi_labels, times, max_gap=max_gap, epochs=epochs
     )
 
     boundary = DecisionBoundaryMetrics(
