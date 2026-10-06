@@ -805,46 +805,29 @@ class TestRateMapCoherenceProperties:
         st.integers(min_value=0, max_value=10000),
     )
     @settings(deadline=None)  # Use profile's max_examples
-    def test_smooth_field_high_coherence(self, n_positions: int, seed: int):
-        """Property: smooth Gaussian field produces high coherence."""
-        # Create environment
+    def test_smooth_field_high_coherence(self, n_bins: int, seed: int):
+        """A Gaussian smooth over several bins correlates with its neighbors."""
+        # A random tracking mask can be disconnected and too sparse for any
+        # positive coherence bound, even for a smooth underlying field. Use a
+        # complete grid so the neighbor-average premise holds; vary its size
+        # and the Gaussian center instead of randomizing missing bins.
+        side = int(np.sqrt(n_bins))
+        edges = (np.arange(side + 1, dtype=float) - side / 2) * 2.0
+        env = Environment.from_grid_mask(np.ones((side, side), bool), (edges, edges))
         rng = np.random.default_rng(seed)
-        positions = rng.standard_normal((n_positions, 2)) * 20
-
-        try:
-            env = Environment.from_samples(
-                positions, bin_size=2.0, connect_diagonal_neighbors=False
-            )
-        except (ValueError, RuntimeError):
-            pytest.skip("Could not create valid environment")
-
-        if env.n_bins < 10:
-            pytest.skip("Not enough bins for coherence test")
-
-        # Create smooth Gaussian field
-        firing_rate = np.zeros(env.n_bins, dtype=np.float64)
-        for i in range(env.n_bins):
-            dist = np.linalg.norm(env.bin_centers[i])
-            firing_rate[i] = 10.0 * np.exp(-(dist**2) / (2 * 5.0**2))
+        center = rng.uniform(-2.0, 2.0, 2)
+        squared_distance = np.sum((env.bin_centers - center) ** 2, axis=1)
+        firing_rate = 10.0 * np.exp(-squared_distance / (2 * 5.0**2))
 
         coherence = rate_map_coherence(firing_rate, env)
 
-        # Property: a smoothly varying field should be meaningfully positively
-        # correlated with its bin neighbors, i.e., not the ~0 coherence we'd
-        # see for white-noise firing. The exact lower bound is sensitive to
-        # the random environment topology Hypothesis generates: small or
-        # sparse envs can leave many bins with one or two neighbors only,
-        # which shrinks the Pearson correlation in the denominator. Empirical
-        # range observed across hundreds of seeds: roughly 0.35–0.85, with a
-        # long left tail near the floor. Pin > 0.3 as a "meaningfully
-        # positive after smoothing" bound — tight enough to fail on actual
-        # regressions (random fields would land near 0), loose enough not
-        # to trip on a single tail-of-distribution Hypothesis seed.
-        if not np.isnan(coherence):
-            assert coherence > 0.3, (
-                f"Smooth field coherence {coherence} should be > 0.3 "
-                "(meaningfully positive after smoothing)"
-            )
+        # On a complete grid, this smooth field must correlate positively
+        # with its neighboring-bin average. Keep the original lower bound.
+        assert np.isfinite(coherence)
+        assert coherence > 0.3, (
+            f"Smooth field coherence {coherence} should be > 0.3 "
+            "(meaningfully positive after smoothing)"
+        )
 
 
 class TestCrossMetricProperties:
