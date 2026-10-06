@@ -687,6 +687,9 @@ class EgocentricRatesResult(SpatialResultMixin):
             "env": env_fingerprint(self.env),
             "software_version": software_version(),
         }
+        attrs["spike_window_assumed"] = int(self.spike_window_assumed)
+        if self.spike_window is not None:
+            attrs["spike_window"] = self.spike_window.ravel()
         return build_population_dataset(
             rates,
             np.asarray(self.unit_ids),
@@ -766,6 +769,7 @@ class EgocentricRatesResult(SpatialResultMixin):
             n_distance_bins=self.n_distance_bins,
             n_direction_bins=self.n_direction_bins,
             unit_id=np.asarray(self.unit_ids)[idx].item(),
+            spike_window=self.spike_window,
         )
 
     def __iter__(self) -> Iterator[EgocentricRateResult]:
@@ -1622,6 +1626,7 @@ def compute_egocentric_rate(
         distance_range=distance_range,
         n_distance_bins=n_distance_bins,
         n_direction_bins=n_direction_bins,
+        spike_window=resolved_spike_window,
     )
 
 
@@ -1996,6 +2001,7 @@ def compute_egocentric_rates(
             n_distance_bins=n_distance_bins,
             n_direction_bins=n_direction_bins,
             unit_ids=resolved_unit_ids,
+            spike_window=resolved_spike_window,
         )
 
     # Bin spike trains by egocentric coordinates and compute occupancy.
@@ -2062,6 +2068,7 @@ def compute_egocentric_rates(
         n_distance_bins=n_distance_bins,
         n_direction_bins=n_direction_bins,
         unit_ids=resolved_unit_ids,
+        spike_window=resolved_spike_window,
     )
 
 

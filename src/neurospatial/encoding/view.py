@@ -614,6 +614,9 @@ class ViewRatesResult(SpatialResultMixin):
             "env": env_fingerprint(self.env),
             "software_version": software_version(),
         }
+        attrs["spike_window_assumed"] = int(self.spike_window_assumed)
+        if self.spike_window is not None:
+            attrs["spike_window"] = self.spike_window.ravel()
         return build_population_dataset(
             rates,
             np.asarray(self.unit_ids),
@@ -689,6 +692,7 @@ class ViewRatesResult(SpatialResultMixin):
             method=self.method,
             bandwidth=self.bandwidth,
             unit_id=np.asarray(self.unit_ids)[idx].item(),
+            spike_window=self.spike_window,
         )
 
     def __iter__(self) -> Iterator[ViewRateResult]:
@@ -1395,6 +1399,7 @@ def compute_view_rate(
         view_distance=view_distance,
         method=method,
         bandwidth=bandwidth,
+        spike_window=resolved_spike_window,
     )
 
 
@@ -1738,6 +1743,7 @@ def compute_view_rates(
             method=method,
             bandwidth=bandwidth,
             unit_ids=resolved_unit_ids,
+            spike_window=resolved_spike_window,
         )
 
     # Bin spike trains by viewed location and compute view occupancy
@@ -1787,6 +1793,7 @@ def compute_view_rates(
         method=method,
         bandwidth=bandwidth,
         unit_ids=resolved_unit_ids,
+        spike_window=resolved_spike_window,
     )
 
 

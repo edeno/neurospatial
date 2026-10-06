@@ -1147,6 +1147,9 @@ class DirectionalRatesResult(SpatialResultMixin):
             "units": "radians",
             "software_version": software_version(),
         }
+        attrs["spike_window_assumed"] = int(self.spike_window_assumed)
+        if self.spike_window is not None:
+            attrs["spike_window"] = self.spike_window.ravel()
         # NetCDF attributes cannot hold None, and bandwidth is None when no
         # smoothing was applied; omit it then (the rule spatial results use).
         if self.bandwidth is not None:
@@ -1212,6 +1215,7 @@ class DirectionalRatesResult(SpatialResultMixin):
             bandwidth=self.bandwidth,
             spike_counts=(None if counts is None else np.asarray(counts)[idx]),
             unit_id=np.asarray(self.unit_ids)[idx].item(),
+            spike_window=self.spike_window,
         )
 
     def __iter__(self) -> Iterator[DirectionalRateResult]:
@@ -1890,6 +1894,7 @@ def compute_directional_rate(
         bin_size=actual_bin_size_rad,
         bandwidth=bandwidth_rad,
         spike_counts=spike_counts,
+        spike_window=resolved_spike_window,
     )
 
 
@@ -2173,6 +2178,7 @@ def compute_directional_rates(
             bandwidth=bandwidth_rad,
             spike_counts=empty_counts,
             unit_ids=resolved_unit_ids,
+            spike_window=resolved_spike_window,
         )
 
     # Helper function to process a single neuron's spike train
@@ -2227,6 +2233,7 @@ def compute_directional_rates(
         bandwidth=bandwidth_rad,
         spike_counts=spike_counts_all,
         unit_ids=resolved_unit_ids,
+        spike_window=resolved_spike_window,
     )
 
 

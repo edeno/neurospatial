@@ -9,6 +9,46 @@ import pytest
 from neurospatial.encoding import compute_spatial_rate, compute_spatial_rates
 
 
+@pytest.mark.parametrize("kind", ["single", "plural", "empty"])
+@pytest.mark.parametrize("window", [None, (100.0, 200.0)])
+def test_results_record_spike_window(frame_family, continuous_recording, kind, window):
+    f, r = frame_family, continuous_recording
+    spikes = (
+        r.spike_times
+        if kind == "single"
+        else []
+        if kind == "empty"
+        else [r.spike_times]
+    )
+    result = (f.single if kind == "single" else f.plural)(
+        *f.args(r, spikes),
+        **f.defaults,
+        spike_window=window,
+    )
+    assert result.spike_window_assumed is (window is None)
+    assert result.summary()["spike_window_assumed"] is (window is None)
+    if window is None:
+        assert result.spike_window is None
+        assert result.summary()["spike_window"] is None
+    else:
+        np.testing.assert_array_equal(result.spike_window, [[100.0, 200.0]])
+        assert result.summary()["spike_window"] == [[100.0, 200.0]]
+    if kind == "plural":
+        for child in (result[0], next(iter(result))):
+            assert child.spike_window_assumed is result.spike_window_assumed
+            if window is not None:
+                np.testing.assert_array_equal(child.spike_window, result.spike_window)
+
+
+def test_zero_unit_occupancy_respects_windows(frame_family, two_epoch_recording):
+    f, r = frame_family, two_epoch_recording
+    options = {**f.defaults, "epochs": [(0, 100)], "spike_window": (0, 1200)}
+    empty = f.plural(*f.args(r, []), **options)
+    populated = f.plural(*f.args(r, [r.spike_times]), **options)
+    np.testing.assert_allclose(empty.occupancy, populated.occupancy, rtol=1e-12, atol=0)
+    assert 0 < empty.occupancy.sum() <= 99.98 + 1e-6
+
+
 def test_spike_window_restores_true_rate(frame_family, continuous_recording):
     f, r = frame_family, continuous_recording
     recorded = r.spike_times[r.spike_times >= 100]

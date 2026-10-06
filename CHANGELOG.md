@@ -4,6 +4,10 @@
 
 ### Changed — recording gaps and time windows in rate maps
 
+- Directional, view and egocentric encoders record the normalized
+  `spike_window` on singular, population and zero-unit results. Population
+  indexing/iteration preserves it, and xarray exports include the assumption
+  as an integer and explicit windows as a flat array for NetCDF round-trips.
 - `compute_directional_rates`, `compute_view_rates`, and
   `compute_egocentric_rates` share the population-silence heuristic: with no
   `spike_window`, at least five units silent for at least 60 seconds within
@@ -36,8 +40,8 @@
   normalized acquisition windows, preserving them when indexing a population
   and in direction-conditioned place fields. Spatial population xarray exports
   store the assumption as an integer and supplied windows as a flat array,
-  so both round-trip through NetCDF. Other rate families currently report
-  assumed coverage until their window keywords are available.
+  so both round-trip through NetCDF. Frame-family encoders now record their
+  acquisition windows as well.
 - `behavior.in_epochs`, `restrict`, and `restrict_spike_trains` share the
   same window parser as spatial analyses. Nested sequences always describe
   `(n, 2)` rows; parallel `(starts, ends)` arrays are no longer an input form.
