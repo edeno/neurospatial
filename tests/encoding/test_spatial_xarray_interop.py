@@ -23,6 +23,33 @@ from neurospatial.encoding.spatial import SpatialRatesResult
 from neurospatial.encoding.view import ViewRatesResult
 
 
+@pytest.mark.parametrize("window", [None, [(0.0, 10.0), (20.0, 30.0)]])
+def test_frame_family_spike_window_attrs_roundtrip(
+    frame_family, continuous_recording, tmp_path, window
+):
+    xr = pytest.importorskip("xarray")
+    f, r = frame_family, continuous_recording
+    result = f.plural(*f.args(r, [r.spike_times]), **f.defaults, spike_window=window)
+    ds = result.to_xarray()
+    assert ds.attrs["spike_window_assumed"] == int(window is None)
+    if window is None:
+        assert "spike_window" not in ds.attrs
+    else:
+        np.testing.assert_array_equal(
+            ds.attrs["spike_window"], np.asarray(window).ravel()
+        )
+    path = tmp_path / "frame_rates.nc"
+    ds.to_netcdf(path, engine="scipy")
+    loaded = xr.load_dataset(path, engine="scipy")
+    assert loaded.attrs["spike_window_assumed"] == int(window is None)
+    if window is None:
+        assert "spike_window" not in loaded.attrs
+    else:
+        np.testing.assert_array_equal(
+            loaded.attrs["spike_window"], np.asarray(window).ravel()
+        )
+
+
 @pytest.mark.parametrize("window", [None, np.array([[0.0, 10.0], [20.0, 30.0]])])
 def test_spike_window_attrs_roundtrip(rates_result, tmp_path, window):
     xr = pytest.importorskip("xarray")

@@ -32,7 +32,12 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.encoding._binning import count_spikes_by_frame
 from neurospatial.encoding._validation import validate_times as _validate_times
+from neurospatial.environment.trajectory import (
+    interval_valid_mask,
+    start_allocated_occupancy,
+)
 from neurospatial.ops.visibility import compute_viewed_location
 
 if TYPE_CHECKING:
@@ -105,67 +110,6 @@ def _precompute_view_bins(
     return view_bins
 
 
-def _bin_spikes_with_precomputed_view_bins(
-    spike_times: NDArray[np.float64],
-    times: NDArray[np.float64],
-    view_bins: NDArray[np.intp],
-    n_bins: int,
-) -> NDArray[np.float64]:
-    """Bin a single spike train using precomputed view bins.
-
-    Internal helper for efficient batch processing.
-
-    Parameters
-    ----------
-    spike_times : ndarray, shape (n_spikes,)
-        Times of spike events in seconds.
-    times : ndarray, shape (n_samples,)
-        Timestamps of trajectory samples in seconds.
-    view_bins : ndarray, shape (n_samples,), dtype=intp
-        Precomputed view bin indices (-1 for invalid views).
-    n_bins : int
-        Number of bins in the environment.
-
-    Returns
-    -------
-    spike_counts : ndarray, shape (n_bins,)
-        Number of spikes in each spatial bin based on viewed location.
-    """
-    n_samples = len(times)
-    spike_counts = np.zeros(n_bins, dtype=np.float64)
-
-    # Handle empty spike train
-    if len(spike_times) == 0:
-        return spike_counts
-
-    # Filter spikes to valid time range
-    t_min, t_max = times[0], times[-1]
-    valid_time_mask = (spike_times >= t_min) & (spike_times <= t_max)
-    spike_times_valid = spike_times[valid_time_mask]
-
-    if len(spike_times_valid) == 0:
-        return spike_counts
-
-    # Find nearest behavioral frame for each spike
-    spike_frame_idx = np.searchsorted(times, spike_times_valid, side="right") - 1
-    spike_frame_idx = np.clip(spike_frame_idx, 0, n_samples - 1)
-
-    # Get viewed bin at each spike time
-    spike_view_bins = view_bins[spike_frame_idx]
-
-    # Only count spikes where view was valid (inside environment)
-    valid_spike_views = spike_view_bins >= 0
-    valid_spike_view_bins = spike_view_bins[valid_spike_views]
-
-    if len(valid_spike_view_bins) == 0:
-        return spike_counts
-
-    # Count spikes per viewed bin
-    np.add.at(spike_counts, valid_spike_view_bins, 1.0)
-
-    return spike_counts
-
-
 def compute_occupancy(
     env: Environment,
     times: NDArray[np.float64],
@@ -175,6 +119,9 @@ def compute_occupancy(
     gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
     view_distance: float = 10.0,
     gaze_offsets: NDArray[np.float64] | None = None,
+    max_gap: float | None = 0.5,
+    epochs: NDArray[np.float64] | None = None,
+    spike_window: NDArray[np.float64] | None = None,
 ) -> NDArray[np.float64]:
     """Compute view occupancy (time spent viewing each bin).
 
@@ -204,6 +151,26 @@ def compute_occupancy(
     gaze_offsets : ndarray, shape (n_samples,), optional
         Offset from heading to gaze direction (e.g., from eye tracking).
         If None, gaze is aligned with heading.
+
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : ndarray of shape (n, 2), or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : ndarray of shape (n, 2), or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording.
+        The calling public encoder records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
+        Windows must already be normalized by ``resolve_time_windows``;
+        public encoders accept and normalize the other supported input forms.
 
     Returns
     -------
@@ -290,11 +257,6 @@ def compute_occupancy(
                 f"times length ({n_samples})"
             )
 
-    # Compute per-sample time deltas (n-1 intervals for n samples)
-    # Each interval[i] represents the time from sample[i] to sample[i+1]
-    dt = np.diff(times)
-
-    # Precompute view bins for all timepoints
     view_bins = _precompute_view_bins(
         env,
         positions,
@@ -303,24 +265,14 @@ def compute_occupancy(
         view_distance=view_distance,
         gaze_offsets=gaze_offsets,
     )
-
-    # Compute view occupancy (time spent viewing each bin)
-    # We have n_samples positions and n_samples-1 intervals.
-    # Each interval[i] is assigned to the bin at position[i] (start of interval).
-    # This matches Environment.occupancy() behavior (time_allocation='start').
-    occupancy = np.zeros(env.n_bins, dtype=np.float64)
-
-    # Only consider positions that start valid intervals (all except last)
-    # interval_bins[i] is the bin viewed during interval[i]
-    interval_bins = view_bins[:-1]  # Exclude last position (no following interval)
-    valid_interval_mask = interval_bins >= 0
-
-    # Accumulate time per bin
-    valid_bins = interval_bins[valid_interval_mask]
-    valid_dt = dt[valid_interval_mask]
-    np.add.at(occupancy, valid_bins, valid_dt)
-
-    return occupancy
+    mask = interval_valid_mask(
+        times,
+        start_bin=view_bins,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+    )
+    return start_allocated_occupancy(view_bins, np.diff(times), mask, env.n_bins)
 
 
 def bin_view_spike_train(
@@ -333,6 +285,9 @@ def bin_view_spike_train(
     gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
     view_distance: float = 10.0,
     gaze_offsets: NDArray[np.float64] | None = None,
+    max_gap: float | None = 0.5,
+    epochs: NDArray[np.float64] | None = None,
+    spike_window: NDArray[np.float64] | None = None,
 ) -> NDArray[np.float64]:
     """Bin spike train by viewed location.
 
@@ -358,6 +313,26 @@ def bin_view_spike_train(
         Distance for fixed_distance gaze model (environment units).
     gaze_offsets : ndarray, shape (n_samples,), optional
         Offset from heading to gaze direction.
+
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : ndarray of shape (n, 2), or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : ndarray of shape (n, 2), or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording.
+        The calling public encoder records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
+        Windows must already be normalized by ``resolve_time_windows``;
+        public encoders accept and normalize the other supported input forms.
 
     Returns
     -------
@@ -418,58 +393,22 @@ def bin_view_spike_train(
     # Validate times (minimum samples and monotonicity)
     _validate_times(times, context="view spike binning")
 
-    n_samples = len(times)
-    n_bins = env.n_bins
-    spike_counts = np.zeros(n_bins, dtype=np.float64)
-
-    # Handle empty spike train
-    if len(spike_times) == 0:
-        return spike_counts
-
-    # Filter spikes to valid time range
-    t_min, t_max = times.min(), times.max()
-    valid_time_mask = (spike_times >= t_min) & (spike_times <= t_max)
-    spike_times_valid = spike_times[valid_time_mask]
-
-    if len(spike_times_valid) == 0:
-        return spike_counts
-
-    # Compute viewed locations for all timepoints
-    viewed_locations = compute_viewed_location(
+    view_bins = _precompute_view_bins(
+        env,
         positions,
         headings,
-        method=gaze_model,
+        gaze_model=gaze_model,
         view_distance=view_distance,
         gaze_offsets=gaze_offsets,
-        env=env if gaze_model in ("ray_cast", "boundary") else None,
     )
-
-    # Map viewed locations to bins for all frames
-    view_bins = np.full(n_samples, -1, dtype=np.intp)
-    valid_view_mask = np.all(np.isfinite(viewed_locations), axis=1)
-    if np.any(valid_view_mask):
-        valid_viewed = viewed_locations[valid_view_mask]
-        valid_bins = env.bin_at(valid_viewed)
-        view_bins[valid_view_mask] = valid_bins
-
-    # Find nearest behavioral frame for each spike
-    spike_frame_idx = np.searchsorted(times, spike_times_valid, side="right") - 1
-    spike_frame_idx = np.clip(spike_frame_idx, 0, n_samples - 1)
-
-    # Get viewed bin at each spike time
-    spike_view_bins = view_bins[spike_frame_idx]
-
-    # Only count spikes where view was valid (inside environment)
-    valid_spike_views = spike_view_bins >= 0
-    valid_spike_view_bins = spike_view_bins[valid_spike_views]
-
-    if len(valid_spike_view_bins) == 0:
-        return spike_counts
-
-    # Count spikes per viewed bin
-    np.add.at(spike_counts, valid_spike_view_bins, 1.0)
-
-    return spike_counts
+    mask = interval_valid_mask(
+        times,
+        start_bin=view_bins,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+    )
+    return count_spikes_by_frame(spike_times, times, view_bins, mask, env.n_bins)
 
 
 def bin_view_spike_trains(
@@ -482,6 +421,9 @@ def bin_view_spike_trains(
     gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
     view_distance: float = 10.0,
     gaze_offsets: NDArray[np.float64] | None = None,
+    max_gap: float | None = 0.5,
+    epochs: NDArray[np.float64] | None = None,
+    spike_window: NDArray[np.float64] | None = None,
     n_jobs: int = 1,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Bin multiple spike trains by viewed location.
@@ -511,6 +453,25 @@ def bin_view_spike_trains(
         Distance for fixed_distance gaze model (environment units).
     gaze_offsets : ndarray, shape (n_samples,), optional
         Offset from heading to gaze direction.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : ndarray of shape (n, 2), or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : ndarray of shape (n, 2), or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording.
+        The calling public encoder records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
+        Windows must already be normalized by ``resolve_time_windows``;
+        public encoders accept and normalize the other supported input forms.
     n_jobs : int, default=1
         Number of parallel jobs for spike counting. Use -1 for all CPUs.
         1 means sequential processing (no parallelization overhead).
@@ -593,36 +554,27 @@ def bin_view_spike_trains(
         gaze_offsets=gaze_offsets,
     )
 
-    # Compute view occupancy from precomputed bins
-    dt = np.diff(times)
-    occupancy = np.zeros(env.n_bins, dtype=np.float64)
-    interval_bins = view_bins[:-1]  # Exclude last position (no following interval)
-    valid_interval_mask = interval_bins >= 0
-    valid_bins = interval_bins[valid_interval_mask]
-    valid_dt = dt[valid_interval_mask]
-    np.add.at(occupancy, valid_bins, valid_dt)
-
-    # Process neurons using precomputed view_bins
     n_bins = env.n_bins
-    if n_jobs == 1:
-        # Sequential processing
-        spike_counts = np.zeros((n_neurons, n_bins), dtype=np.float64)
-        for i, spikes in enumerate(spike_times_list):
-            spike_counts[i] = _bin_spikes_with_precomputed_view_bins(
-                spikes, times, view_bins, n_bins
-            )
-    else:
-        # Parallel processing with joblib
+    mask = interval_valid_mask(
+        times,
+        start_bin=view_bins,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+    )
+    occupancy = start_allocated_occupancy(view_bins, np.diff(times), mask, n_bins)
+    spike_counts = np.zeros((n_neurons, n_bins), dtype=np.float64)
+    if n_neurons and n_jobs != 1:
         from joblib import Parallel, delayed
 
-        def _process_neuron(spikes: NDArray[np.float64]) -> NDArray[np.float64]:
-            return _bin_spikes_with_precomputed_view_bins(
-                spikes, times, view_bins, n_bins
-            )
-
         results = Parallel(n_jobs=n_jobs)(
-            delayed(_process_neuron)(spikes) for spikes in spike_times_list
+            delayed(count_spikes_by_frame)(spikes, times, view_bins, mask, n_bins)
+            for spikes in spike_times_list
         )
-        spike_counts = np.array(results, dtype=np.float64)
-
+        spike_counts = np.asarray(results, dtype=np.float64)
+    else:
+        for i, spikes in enumerate(spike_times_list):
+            spike_counts[i] = count_spikes_by_frame(
+                spikes, times, view_bins, mask, n_bins
+            )
     return spike_counts, occupancy

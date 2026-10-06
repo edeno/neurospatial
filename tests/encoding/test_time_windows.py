@@ -1,11 +1,257 @@
 """Spatial spikes and occupancy use matching analysis and acquisition windows."""
 
+import warnings
 from dataclasses import replace
 
 import numpy as np
 import pytest
 
 from neurospatial.encoding import compute_spatial_rate, compute_spatial_rates
+
+
+@pytest.mark.pynapple
+def test_frame_windows_accept_intervalset(frame_family, continuous_recording):
+    nap = pytest.importorskip("pynapple")
+    f, r = frame_family, continuous_recording
+    result = f.single(
+        *f.args(r, r.spike_times),
+        **f.defaults,
+        epochs=nap.IntervalSet(start=[10.0], end=[50.0]),
+        spike_window=nap.IntervalSet(start=[20.0], end=[60.0]),
+    )
+    expected = f.single(*f.args(r, r.spike_times), **f.defaults, epochs=(20, 50))
+    np.testing.assert_array_equal(result.spike_window, [[20.0, 60.0]])
+    np.testing.assert_allclose(result.occupancy, expected.occupancy, rtol=1e-12, atol=0)
+    np.testing.assert_allclose(
+        result.firing_rate, expected.firing_rate, rtol=1e-12, atol=0, equal_nan=True
+    )
+
+
+@pytest.mark.parametrize("kind", ["single", "plural", "empty"])
+@pytest.mark.parametrize("window", [None, (100.0, 200.0)])
+def test_results_record_spike_window(frame_family, continuous_recording, kind, window):
+    f, r = frame_family, continuous_recording
+    spikes = (
+        r.spike_times
+        if kind == "single"
+        else []
+        if kind == "empty"
+        else [r.spike_times]
+    )
+    result = (f.single if kind == "single" else f.plural)(
+        *f.args(r, spikes),
+        **f.defaults,
+        spike_window=window,
+    )
+    assert result.spike_window_assumed is (window is None)
+    assert result.summary()["spike_window_assumed"] is (window is None)
+    if window is None:
+        assert result.spike_window is None
+        assert result.summary()["spike_window"] is None
+    else:
+        np.testing.assert_array_equal(result.spike_window, [[100.0, 200.0]])
+        assert result.summary()["spike_window"] == [[100.0, 200.0]]
+    if kind == "plural":
+        for child in (result[0], next(iter(result))):
+            assert child.spike_window_assumed is result.spike_window_assumed
+            if window is not None:
+                np.testing.assert_array_equal(child.spike_window, result.spike_window)
+
+
+def test_zero_unit_occupancy_respects_windows(frame_family, two_epoch_recording):
+    f, r = frame_family, two_epoch_recording
+    options = {**f.defaults, "epochs": [(0, 100)], "spike_window": (0, 1200)}
+    empty = f.plural(*f.args(r, []), **options)
+    populated = f.plural(*f.args(r, [r.spike_times]), **options)
+    np.testing.assert_allclose(empty.occupancy, populated.occupancy, rtol=1e-12, atol=0)
+    assert 0 < empty.occupancy.sum() <= 99.98 + 1e-6
+
+
+def test_spike_window_restores_true_rate(frame_family, continuous_recording):
+    f, r = frame_family, continuous_recording
+    if f.name == "view":
+        # Isolate acquisition coverage from time-varying out-of-bounds gaze.
+        r = replace(
+            r,
+            positions=np.tile([40.0, 40.0], (len(r.times), 1)),
+            headings=np.zeros_like(r.headings),
+        )
+    recorded = r.spike_times[r.spike_times >= 100]
+    spikes = [recorded + 0.04 * u for u in range(5)]
+    with pytest.warns(UserWarning, match="All 5 units are silent") as caught:
+        assumed = f.plural(*f.args(r, spikes), **f.defaults)
+    assert len(caught) == 1
+    assert caught[0].filename == __file__
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        explicit = f.plural(*f.args(r, spikes), **f.defaults, spike_window=(100, 200))
+    for result, expected in ((assumed, 2.5), (explicit, 5.0)):
+        pooled = (
+            np.nansum(result.firing_rates * result.occupancy, axis=1)
+            / result.occupancy.sum()
+        )
+        np.testing.assert_allclose(pooled, expected, rtol=0.05)
+
+
+@pytest.mark.parametrize("kind", ["single", "predicate"])
+def test_silence_warning_not_in_singular_or_predicates(
+    frame_family, continuous_recording, kind
+):
+    f, r = frame_family, continuous_recording
+    options = dict(f.defaults)
+    if kind == "predicate" and f.name == "egocentric":
+        options.pop("method")
+        options.pop("bandwidth")
+    spikes = r.spike_times[r.spike_times >= 100]
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        (f.single if kind == "single" else f.predicate)(*f.args(r, spikes), **options)
+
+
+def test_silence_warning_uses_tracking_runs_not_view_bounds(
+    frame_family, continuous_recording
+):
+    f, r = frame_family, continuous_recording
+    if f.name == "directional":
+        r = replace(r, headings=np.full_like(r.headings, np.nan))
+    elif f.name == "view":
+        r = replace(r, positions=np.full_like(r.positions, 1000.0))
+    else:
+        r = replace(r, positions=np.full_like(r.positions, 1000.0))
+    spikes = [r.spike_times[r.spike_times >= 100]] * 5
+    with pytest.warns(UserWarning, match="All 5 units are silent"):
+        f.plural(*f.args(r, spikes), **f.defaults)
+
+
+def test_frame_silence_warning_respects_epochs_and_recording_pauses(
+    frame_family, continuous_recording, two_epoch_recording
+):
+    f, r = frame_family, continuous_recording
+    recorded = r.spike_times[r.spike_times >= 100]
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = f.plural(*f.args(r, [recorded] * 5), **f.defaults, epochs=(100, 200))
+        assert 0 < result.occupancy.sum() <= 99.98 + 1e-6
+        r = two_epoch_recording
+        result = f.plural(*f.args(r, [r.spike_times] * 5), **f.defaults)
+        assert 0 < result.occupancy.sum() <= 199.96 + 1e-6
+
+
+@pytest.mark.parametrize("plural", [False, True])
+def test_epochs_equal_slicing(frame_family, continuous_recording, plural):
+    f, r = frame_family, continuous_recording
+    function = f.plural if plural else f.single
+    windowed = function(
+        *f.args(r, [r.spike_times] if plural else r.spike_times),
+        **f.defaults,
+        epochs=[(0.0, 100.0)],
+    )
+    keep = r.times <= 100
+    sliced = replace(
+        r, times=r.times[keep], positions=r.positions[keep], headings=r.headings[keep]
+    )
+    spikes = r.spike_times[r.spike_times < 100]
+    expected = function(*f.args(sliced, [spikes] if plural else spikes), **f.defaults)
+    np.testing.assert_allclose(
+        windowed.occupancy, expected.occupancy, rtol=1e-12, atol=0
+    )
+    np.testing.assert_allclose(
+        windowed.firing_rates if plural else windowed.firing_rate,
+        expected.firing_rates if plural else expected.firing_rate,
+        rtol=1e-12,
+        atol=0,
+        equal_nan=True,
+    )
+
+
+@pytest.mark.parametrize("n_units", [None, 0, 1, 3])
+def test_frame_analysis_mask_is_shared_once(
+    frame_family, continuous_recording, monkeypatch, n_units
+):
+    f, r = frame_family, continuous_recording
+    from neurospatial.environment import trajectory
+
+    original = trajectory.interval_valid_mask
+    seen = []
+    parser = f.module.resolve_time_windows
+    parsed = []
+
+    def track_parser(*args, **kwargs):
+        result = parser(*args, **kwargs)
+        parsed.append(result)
+        return result
+
+    def track(*args, **kwargs):
+        result = original(*args, **kwargs)
+        seen.append(result)
+        return result
+
+    monkeypatch.setattr(trajectory, "interval_valid_mask", track)
+    monkeypatch.setattr(f.binning, "interval_valid_mask", track, raising=False)
+    monkeypatch.setattr(f.module, "resolve_time_windows", track_parser)
+    result = (f.single if n_units is None else f.plural)(
+        *f.args(r, r.spike_times if n_units is None else [r.spike_times] * n_units),
+        **f.defaults,
+        epochs=(0, 100),
+    )
+    assert len(seen) == 1
+    assert len(parsed) == 1
+    assert np.any(seen[0][:5000])
+    assert not np.any(seen[0][5000:])
+    assert result.occupancy.sum() == pytest.approx(np.diff(r.times)[seen[0]].sum())
+    assert result.occupancy.sum() <= 100.0 + 1e-9
+
+
+def test_frame_window_errors_are_aggregated(frame_family, continuous_recording):
+    f, r = frame_family, continuous_recording
+    with pytest.raises(ValueError) as exc:
+        f.single(
+            *f.args(r, r.spike_times), **f.defaults, epochs=(2, 1), spike_window="bad"
+        )
+    for word in ("epochs", "spike_window", "Why:", "Fix:"):
+        assert word in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "epochs,spike_window",
+    [
+        ((2, 1), "bad"),
+        ((2, 1), None),
+        (None, "bad"),
+        ([], None),
+        (None, []),
+    ],
+)
+def test_predicates_report_invalid_windows(
+    frame_family, continuous_recording, epochs, spike_window, monkeypatch
+):
+    f, r = frame_family, continuous_recording
+    original = f.module.resolve_time_windows
+    calls = []
+
+    def track(*args, **kwargs):
+        calls.append(args)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(f.module, "resolve_time_windows", track)
+    options = dict(f.defaults)
+    if f.name == "egocentric":
+        options.pop("method")
+        options.pop("bandwidth")
+    with pytest.raises(ValueError) as caught:
+        f.predicate(
+            *f.args(r, r.spike_times),
+            **options,
+            epochs=epochs,
+            spike_window=spike_window,
+        )
+    assert len(calls) == 1
+    message = str(caught.value)
+    assert "Why:" in message and "Fix:" in message
+    if epochs is not None:
+        assert "epochs" in message
+    if spike_window is not None:
+        assert "spike_window" in message
 
 
 @pytest.fixture

@@ -6,7 +6,7 @@ counts and occupancy arrays for head direction cell analysis.
 The functions in this module handle:
 1. Circular binning of head directions into angular bins (0 to 2π)
 2. Occupancy computation from continuous head direction time series
-3. Spike counting by interpolating head direction at spike times
+3. Spike counting from the most recent frame, using shared interval validity
 4. Batch processing of multiple neurons with joblib parallelization
 
 Output shapes:
@@ -34,11 +34,47 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.encoding._binning import count_spikes_by_frame
+from neurospatial.environment.trajectory import (
+    interval_valid_mask,
+    start_allocated_occupancy,
+)
+
 __all__ = [
     "bin_directional_spike_train",
     "bin_directional_spike_trains",
     "compute_directional_occupancy",
 ]
+
+
+def _validate_directional_samples(
+    times: NDArray[np.float64], headings: NDArray[np.float64]
+) -> None:
+    """Validate aligned directional samples and positive sampling intervals."""
+    # Validate inputs
+    if len(headings) != len(times):
+        raise ValueError(
+            f"headings and times must have the same length. "
+            f"Got headings: {len(headings)}, times: {len(times)}.\n"
+            f"Fix: Ensure both arrays represent the same time series."
+        )
+
+    if len(times) < 3:
+        raise ValueError(
+            f"Need at least 3 samples to compute occupancy. "
+            f"Got {len(times)} samples.\n"
+            f"Fix: Provide more data points."
+        )
+
+    # Check strict monotonicity (no duplicates, no decreasing)
+    time_diffs = np.diff(times)
+    if np.any(time_diffs <= 0):
+        n_problems = np.sum(time_diffs <= 0)
+        raise ValueError(
+            f"times must be strictly monotonically increasing (no duplicates). "
+            f"Found {n_problems} non-increasing time steps.\n"
+            f"Fix: Remove duplicate timestamps or check for timestamp errors."
+        )
 
 
 def compute_directional_occupancy(
@@ -47,6 +83,9 @@ def compute_directional_occupancy(
     bin_size: float,
     *,
     angle_unit: Literal["rad", "deg"] = "rad",
+    max_gap: float | None = 0.5,
+    epochs: NDArray[np.float64] | None = None,
+    spike_window: NDArray[np.float64] | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Compute occupancy (time spent at each direction) and bin centers.
 
@@ -66,6 +105,26 @@ def compute_directional_occupancy(
         Unit of ``headings`` and ``bin_size``.
         - 'rad': headings in radians, bin_size in radians
         - 'deg': headings in degrees, bin_size in degrees
+
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : ndarray of shape (n, 2), or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : ndarray of shape (n, 2), or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording.
+        The calling public encoder records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
+        Windows must already be normalized by ``resolve_time_windows``;
+        public encoders accept and normalize the other supported input forms.
 
     Returns
     -------
@@ -111,113 +170,31 @@ def compute_directional_occupancy(
     >>> occupancy.shape[0] == 60  # 2π / (π/30) = 60 bins
     True
     """
-    # Validate angle_unit
-    if angle_unit not in ("rad", "deg"):
-        raise ValueError(f"angle_unit must be 'rad' or 'deg', got '{angle_unit}'")
-
-    # Convert inputs to arrays
     times = np.asarray(times, dtype=np.float64).ravel()
     headings = np.asarray(headings, dtype=np.float64).ravel()
-
-    # Validate inputs
-    if len(headings) != len(times):
-        raise ValueError(
-            f"headings and times must have the same length. "
-            f"Got headings: {len(headings)}, times: {len(times)}.\n"
-            f"Fix: Ensure both arrays represent the same time series."
-        )
-
-    if len(times) < 3:
-        raise ValueError(
-            f"Need at least 3 samples to compute occupancy. "
-            f"Got {len(times)} samples.\n"
-            f"Fix: Provide more data points."
-        )
-
-    # Check strict monotonicity (no duplicates, no decreasing)
-    time_diffs = np.diff(times)
-    if np.any(time_diffs <= 0):
-        n_problems = np.sum(time_diffs <= 0)
-        raise ValueError(
-            f"times must be strictly monotonically increasing (no duplicates). "
-            f"Found {n_problems} non-increasing time steps.\n"
-            f"Fix: Remove duplicate timestamps or check for timestamp errors."
-        )
-
-    # Validate bin_size
-    if bin_size <= 0:
-        raise ValueError(
-            f"bin_size must be positive, got {bin_size}.\n"
-            f"Fix: Use a positive bin size (e.g., np.pi/30 radians or 6 degrees)."
-        )
-
-    # Convert to radians if needed
-    if angle_unit == "deg":
-        headings_rad = np.radians(headings)
-        bin_size_rad = np.radians(bin_size)
-    else:
-        headings_rad = headings
-        bin_size_rad = bin_size
-
-    # Validate bin_size produces valid number of bins
-    n_bins = int(np.round(2 * np.pi / bin_size_rad))
-    if n_bins < 1:
-        raise ValueError(
-            f"bin_size is too large: {bin_size} ({angle_unit}). "
-            f"Results in {n_bins} bins (need at least 1).\n"
-            f"Fix: Use a smaller bin_size (max ~2π radians or 360 degrees)."
-        )
-    bin_edges = np.linspace(0, 2 * np.pi, n_bins + 1)
-    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-
-    # Wrap headings to [0, 2*pi). Non-finite headings stay non-finite
-    # (NaN % x == NaN, Inf % x == NaN), so we can detect and exclude them below.
-    headings_wrapped = headings_rad % (2 * np.pi)
-
-    # Compute occupancy using actual time deltas
-    # Each frame i contributes the time until frame i+1
-    # The last frame is excluded (we don't know how long the animal stayed there)
-    time_deltas = np.diff(times)
-    frame_headings = headings_wrapped[:-1]
-
-    # Exclude frames whose heading is non-finite (NaN/Inf). Folding these into
-    # bin 0 via digitize would inflate bin-0 occupancy.
-    finite = np.isfinite(frame_headings)
-
-    # Assign each finite frame (except last) to a bin.
-    frame_bins = np.digitize(frame_headings[finite], bin_edges) - 1
-    # Exact-2*pi edge wraps to bin 0 (legitimate); non-finite never reach here.
-    frame_bins[frame_bins >= n_bins] = 0
-
-    # Compute occupancy per bin using vectorized bincount
-    occupancy = np.bincount(
-        frame_bins, weights=time_deltas[finite], minlength=n_bins
-    ).astype(np.float64)
-
+    _validate_directional_samples(times, headings)
+    frame_bins, bin_centers = directional_frame_bins(
+        headings, bin_size, angle_unit=angle_unit
+    )
+    n_bins = len(bin_centers)
+    mask = interval_valid_mask(
+        times,
+        start_bin=frame_bins,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+    )
+    occupancy = start_allocated_occupancy(frame_bins, np.diff(times), mask, n_bins)
     return occupancy, bin_centers
 
 
-def _precompute_directional_bins(
+def directional_frame_bins(
     headings: NDArray[np.float64],
     bin_size: float,
     *,
     angle_unit: Literal["rad", "deg"] = "rad",
-) -> tuple[NDArray[np.float64], NDArray[np.float64], int]:
-    """Validate angle parameters and precompute per-frame headings + bin edges.
-
-    Internal helper that hoists population-level work out of the per-neuron
-    binning loop. Used by both ``bin_directional_spike_train`` (singular) and
-    ``bin_directional_spike_trains`` (batch).
-
-    Returns
-    -------
-    headings_wrapped : ndarray, shape (n_samples,)
-        Per-frame head direction in radians, wrapped to ``[0, 2π)``.
-    bin_edges : ndarray, shape (n_bins + 1,)
-        Angular bin edges in radians, spanning ``[0, 2π]``.
-    n_bins : int
-        Number of angular bins.
-    """
+) -> tuple[NDArray[np.intp], NDArray[np.float64]]:
+    """Map finite headings to circular bins; non-finite headings map to -1."""
     if angle_unit not in ("rad", "deg"):
         raise ValueError(f"angle_unit must be 'rad' or 'deg', got '{angle_unit}'")
 
@@ -238,52 +215,15 @@ def _precompute_directional_bins(
             f"Fix: Use a smaller bin_size (max ~2π radians or 360 degrees)."
         )
 
-    headings_wrapped = headings_rad % (2 * np.pi)
+    finite = np.isfinite(headings_rad)
+    wrapped = headings_rad[finite] % (2 * np.pi)
     bin_edges = np.linspace(0, 2 * np.pi, n_bins + 1)
-    return headings_wrapped, bin_edges, n_bins
-
-
-def _bin_spikes_with_precomputed_directional_bins(
-    spike_times: NDArray[np.float64],
-    times: NDArray[np.float64],
-    headings_wrapped: NDArray[np.float64],
-    bin_edges: NDArray[np.float64],
-    n_bins: int,
-) -> NDArray[np.float64]:
-    """Bin a single spike train using precomputed directional bins.
-
-    Internal helper. ``headings_wrapped`` and ``bin_edges`` are produced once
-    by ``_precompute_directional_bins`` and reused across neurons.
-    """
-    spike_counts = np.zeros(n_bins, dtype=np.float64)
-
-    if len(spike_times) == 0:
-        return spike_counts
-
-    valid_mask = (spike_times >= times[0]) & (spike_times <= times[-1])
-    valid_spike_times = spike_times[valid_mask]
-    if len(valid_spike_times) == 0:
-        return spike_counts
-
-    spike_indices = np.searchsorted(times, valid_spike_times, side="right") - 1
-    spike_indices = np.clip(spike_indices, 0, len(headings_wrapped) - 1)
-    spike_hd = headings_wrapped[spike_indices]
-
-    # Exclude spikes landing on a frame with a non-finite heading. These would
-    # be folded into bin 0 by the >= n_bins clamp below, mirroring the
-    # occupancy mask so the same frames are dropped from both arrays.
-    finite = np.isfinite(spike_hd)
-    spike_hd = spike_hd[finite]
-    if spike_hd.size == 0:
-        return spike_counts
-
-    # Nearest-neighbor (digitize) bin assignment — chosen over interpolation
-    # because head direction crosses 0/2π discontinuities, which would alias
-    # to the antipode under linear interp.
-    spike_bins = np.digitize(spike_hd, bin_edges) - 1
-    spike_bins[spike_bins >= n_bins] = 0
-
-    return np.bincount(spike_bins, minlength=n_bins).astype(np.float64)
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+    frame_bins = np.full(headings.shape, -1, dtype=np.intp)
+    bins = np.digitize(wrapped, bin_edges) - 1
+    bins[bins >= n_bins] = 0
+    frame_bins[finite] = bins
+    return frame_bins, bin_centers
 
 
 def bin_directional_spike_train(
@@ -293,6 +233,9 @@ def bin_directional_spike_train(
     bin_size: float,
     *,
     angle_unit: Literal["rad", "deg"] = "rad",
+    max_gap: float | None = 0.5,
+    epochs: NDArray[np.float64] | None = None,
+    spike_window: NDArray[np.float64] | None = None,
 ) -> NDArray[np.float64]:
     """Bin spike train into directional bins.
 
@@ -312,6 +255,26 @@ def bin_directional_spike_train(
         Width of angular bins. Units match ``angle_unit``.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of ``headings`` and ``bin_size``.
+
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : ndarray of shape (n, 2), or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : ndarray of shape (n, 2), or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording.
+        The calling public encoder records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
+        Windows must already be normalized by ``resolve_time_windows``;
+        public encoders accept and normalize the other supported input forms.
 
     Returns
     -------
@@ -354,14 +317,18 @@ def bin_directional_spike_train(
     spike_times = np.asarray(spike_times, dtype=np.float64).ravel()
     times = np.asarray(times, dtype=np.float64).ravel()
     headings = np.asarray(headings, dtype=np.float64).ravel()
-
-    headings_wrapped, bin_edges, n_bins = _precompute_directional_bins(
+    frame_bins, bin_centers = directional_frame_bins(
         headings, bin_size, angle_unit=angle_unit
     )
-
-    return _bin_spikes_with_precomputed_directional_bins(
-        spike_times, times, headings_wrapped, bin_edges, n_bins
+    n_bins = len(bin_centers)
+    mask = interval_valid_mask(
+        times,
+        start_bin=frame_bins,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
     )
+    return count_spikes_by_frame(spike_times, times, frame_bins, mask, n_bins)
 
 
 def bin_directional_spike_trains(
@@ -371,6 +338,9 @@ def bin_directional_spike_trains(
     bin_size: float,
     *,
     angle_unit: Literal["rad", "deg"] = "rad",
+    max_gap: float | None = 0.5,
+    epochs: NDArray[np.float64] | None = None,
+    spike_window: NDArray[np.float64] | None = None,
     n_jobs: int = 1,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
     """Bin multiple spike trains into directional bins.
@@ -394,6 +364,25 @@ def bin_directional_spike_trains(
         Width of angular bins. Units match ``angle_unit``.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of ``headings`` and ``bin_size``.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : ndarray of shape (n, 2), or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : ndarray of shape (n, 2), or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording.
+        The calling public encoder records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
+        Windows must already be normalized by ``resolve_time_windows``;
+        public encoders accept and normalize the other supported input forms.
     n_jobs : int, default=1
         Number of parallel jobs for spike counting. Use -1 for all CPUs.
         1 means sequential processing (no parallelization overhead).
@@ -442,45 +431,35 @@ def bin_directional_spike_trains(
     """
     from neurospatial.encoding._spikes import as_spike_trains
 
-    # Normalize spike times to canonical list-of-arrays format
     spike_times_list = as_spike_trains(spike_times)
     n_neurons = len(spike_times_list)
-
-    times = np.asarray(times, dtype=np.float64)
-    headings = np.asarray(headings, dtype=np.float64)
-
-    # Compute occupancy and bin centers once (shared across all neurons)
-    occupancy, bin_centers = compute_directional_occupancy(
-        times, headings, bin_size, angle_unit=angle_unit
-    )
-    # Hoist per-neuron validation and angle wrapping out of the loop.
-    headings_wrapped, bin_edges, n_bins = _precompute_directional_bins(
+    times = np.asarray(times, dtype=np.float64).ravel()
+    headings = np.asarray(headings, dtype=np.float64).ravel()
+    _validate_directional_samples(times, headings)
+    frame_bins, bin_centers = directional_frame_bins(
         headings, bin_size, angle_unit=angle_unit
     )
-
-    if n_jobs == 1:
-        spike_counts = np.zeros((n_neurons, n_bins), dtype=np.float64)
-        for i, spikes in enumerate(spike_times_list):
-            spike_counts[i] = _bin_spikes_with_precomputed_directional_bins(
-                np.asarray(spikes, dtype=np.float64).ravel(),
-                times,
-                headings_wrapped,
-                bin_edges,
-                n_bins,
-            )
-    else:
+    n_bins = len(bin_centers)
+    mask = interval_valid_mask(
+        times,
+        start_bin=frame_bins,
+        max_gap=max_gap,
+        epochs=epochs,
+        spike_window=spike_window,
+    )
+    occupancy = start_allocated_occupancy(frame_bins, np.diff(times), mask, n_bins)
+    spike_counts = np.zeros((n_neurons, n_bins), dtype=np.float64)
+    if n_neurons and n_jobs != 1:
         from joblib import Parallel, delayed
 
         results = Parallel(n_jobs=n_jobs)(
-            delayed(_bin_spikes_with_precomputed_directional_bins)(
-                np.asarray(spikes, dtype=np.float64).ravel(),
-                times,
-                headings_wrapped,
-                bin_edges,
-                n_bins,
-            )
+            delayed(count_spikes_by_frame)(spikes, times, frame_bins, mask, n_bins)
             for spikes in spike_times_list
         )
-        spike_counts = np.array(results, dtype=np.float64)
-
+        spike_counts = np.asarray(results, dtype=np.float64)
+    else:
+        for i, spikes in enumerate(spike_times_list):
+            spike_counts[i] = count_spikes_by_frame(
+                spikes, times, frame_bins, mask, n_bins
+            )
     return spike_counts, occupancy, bin_centers

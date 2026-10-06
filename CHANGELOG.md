@@ -4,6 +4,35 @@
 
 ### Changed — recording gaps and time windows in rate maps
 
+- The three frame-family cell predicates propagate invalid `epochs` and
+  `spike_window` diagnostics, including combined argument problems and
+  `Why:`/`Fix:` guidance, instead of silently classifying malformed inputs
+  as `False`. Each analysis still normalizes the windows once.
+- Directional, view and egocentric encoders record the normalized
+  `spike_window` on singular, population and zero-unit results. Population
+  indexing/iteration preserves it, and xarray exports include the assumption
+  as an integer and explicit windows as a flat array for NetCDF round-trips.
+- `compute_directional_rates`, `compute_view_rates`, and
+  `compute_egocentric_rates` share the population-silence heuristic: with no
+  `spike_window`, at least five units silent for at least 60 seconds within
+  a tracked run produce one warning. The scan respects gaps and epochs,
+  includes leading and trailing silence, and ignores invalid directional,
+  view or polar bins; silence is not proof of recording coverage.
+- `compute_directional_rate(s)`, `compute_view_rate(s)`,
+  `compute_egocentric_rate(s)`, `is_head_direction_cell`, `is_spatial_view_cell`,
+  and `is_object_vector_cell` accept keyword-only `max_gap`, `epochs`, and
+  `spike_window`. They parse windows once and apply one shared analysis mask
+  across units, including empty populations. Directional, view and egocentric
+  rates now recover a 5 Hz synthetic rate across a 1000-second recording pause
+  instead of charging the pause to a single bin. In an unsmoothed example,
+  pooled directional/egocentric rates rise from 0.833 Hz to 5.001 Hz and view
+  rates from 0.717 Hz to 4.916 Hz; no bin absorbs the 1000-second pause.
+- Directional, view and egocentric binning helpers use one interval mask for
+  both spike counts and occupancy. Their default `max_gap=0.5` excludes
+  recording pauses instead of charging them to one bin, and their normalized
+  `epochs` and `spike_window` keywords restrict the same intervals on both
+  sides. **Behavior change:** a spike at `times[-1]` is no longer counted;
+  the final sample starts no half-open interval.
 - Malformed numeric attributes on IntervalSet-like windows now report the
   window argument, conversion problem, `Why:` and `Fix:` together, without
   hiding invalid values in the other time-window argument.
@@ -17,8 +46,8 @@
   normalized acquisition windows, preserving them when indexing a population
   and in direction-conditioned place fields. Spatial population xarray exports
   store the assumption as an integer and supplied windows as a flat array,
-  so both round-trip through NetCDF. Other rate families currently report
-  assumed coverage until their window keywords are available.
+  so both round-trip through NetCDF. Frame-family encoders now record their
+  acquisition windows as well.
 - `behavior.in_epochs`, `restrict`, and `restrict_spike_trains` share the
   same window parser as spatial analyses. Nested sequences always describe
   `(n, 2)` rows; parallel `(starts, ends)` arrays are no longer an input form.

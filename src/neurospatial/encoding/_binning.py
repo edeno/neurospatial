@@ -261,6 +261,35 @@ def _bin_spike_train_with_stats(
     return spike_counts, n_time_dropped, n_bin_dropped, n_total, n_after_time
 
 
+def count_spikes_by_frame(
+    spike_times: NDArray[np.float64],
+    times: NDArray[np.float64],
+    frame_bins: NDArray[np.intp],
+    interval_mask: NDArray[np.bool_],
+    n_bins: int,
+) -> NDArray[np.float64]:
+    """Count spikes per bin from the most recent frame, gated by interval validity.
+
+    Interval ``k`` is the half-open ``[times[k], times[k+1])``. A spike at ``t``
+    lies in interval ``frame = searchsorted(times, t, "right") - 1``, takes that
+    frame's bin, and is kept iff the interval is valid and
+    ``frame_bins[frame] >= 0``. A spike before ``times[0]`` or at or after
+    ``times[-1]`` lies in no interval and is not counted. Interval validity is
+    the SAME mask used for the occupancy denominator
+    (``start_allocated_occupancy``), so numerator and denominator drop identical
+    intervals.
+
+    Returns
+    -------
+    ndarray, shape (n_bins,)
+    """
+    spikes = spike_times[(spike_times >= times[0]) & (spike_times < times[-1])]
+    frame = np.searchsorted(times, spikes, side="right") - 1
+    bins = frame_bins[frame]
+    keep = interval_mask[frame] & (bins >= 0)
+    return np.bincount(bins[keep], minlength=n_bins).astype(np.float64)
+
+
 def _resolve_interval_mask(
     env: Environment,
     times: NDArray[np.float64],

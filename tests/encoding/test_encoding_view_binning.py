@@ -1070,6 +1070,7 @@ class TestViewOccupancyNonUniformSampling:
             headings,
             gaze_model="fixed_distance",
             view_distance=10.0,
+            max_gap=None,  # Coarse sampling is incidental to this test.
         )
 
         # With 4 intervals of 1s each, total should be 4s (not 5s)
@@ -1128,6 +1129,7 @@ class TestTimesValidation:
             headings,
             gaze_model="fixed_distance",
             view_distance=10.0,
+            max_gap=None,  # Coarse sampling is incidental to this test.
         )
 
         # 3 intervals: 1s, 0s, 1s = 2s total

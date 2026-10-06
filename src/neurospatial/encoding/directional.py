@@ -60,7 +60,14 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
     from matplotlib.projections.polar import PolarAxes
 
+from neurospatial._intervals import resolve_time_windows, run_time_bounds
 from neurospatial.encoding._base import SpatialResultMixin
+from neurospatial.encoding._binning import (
+    _SILENCE_MIN_SECONDS,
+    _SILENCE_MIN_UNITS,
+    _warn_if_population_silent,
+)
+from neurospatial.environment.trajectory import interval_valid_mask
 
 __all__ = [
     # Result classes
@@ -1140,6 +1147,9 @@ class DirectionalRatesResult(SpatialResultMixin):
             "units": "radians",
             "software_version": software_version(),
         }
+        attrs["spike_window_assumed"] = int(self.spike_window_assumed)
+        if self.spike_window is not None:
+            attrs["spike_window"] = self.spike_window.ravel()
         # NetCDF attributes cannot hold None, and bandwidth is None when no
         # smoothing was applied; omit it then (the rule spatial results use).
         if self.bandwidth is not None:
@@ -1205,6 +1215,7 @@ class DirectionalRatesResult(SpatialResultMixin):
             bandwidth=self.bandwidth,
             spike_counts=(None if counts is None else np.asarray(counts)[idx]),
             unit_id=np.asarray(self.unit_ids)[idx].item(),
+            spike_window=self.spike_window,
         )
 
     def __iter__(self) -> Iterator[DirectionalRateResult]:
@@ -1650,6 +1661,9 @@ def compute_directional_rate(
     bin_size: float = np.pi / 30,
     bandwidth: float | None = None,
     angle_unit: Literal["rad", "deg"] = "rad",
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
 ) -> DirectionalRateResult:
     """Compute directional firing rate for one neuron.
@@ -1705,6 +1719,23 @@ def compute_directional_rate(
         - 'rad': angles in radians
         - 'deg': angles in degrees
 
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
     backend : {'numpy', 'jax', 'auto'}, default='numpy'
         Computation backend.
 
@@ -1735,6 +1766,10 @@ def compute_directional_rate(
 
     Notes
     -----
+    An interval is analyzed only if it passes the gap, speed and bounds
+    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    are removed from the spike counts and the occupancy.
+
     The function uses the binning layer (``_directional_binning.py``) to convert
     spike times to spike counts and compute occupancy, then optionally applies
     Gaussian smoothing.
@@ -1777,14 +1812,15 @@ def compute_directional_rate(
     ...     spike_times, times, headings_deg, bin_size=6.0, angle_unit="deg"
     ... )
     """
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+
     from neurospatial.encoding._backend import (
         SUPPORTED_BACKENDS,
         get_backend_name,
         is_jax_available,
     )
     from neurospatial.encoding._directional_binning import (
-        bin_directional_spike_train,
-        compute_directional_occupancy,
+        bin_directional_spike_trains,
     )
     from neurospatial.encoding._validation import (
         validate_spike_times,
@@ -1814,15 +1850,18 @@ def compute_directional_rate(
     validate_trajectory(times, headings=headings, context="compute_directional_rate")
     validate_spike_times(spike_times, context="compute_directional_rate")
 
-    # Compute occupancy and bin centers
-    occupancy, bin_centers = compute_directional_occupancy(
-        times, headings, bin_size, angle_unit=angle_unit
+    # Counts and occupancy share one frame mask, including a single unit.
+    counts_batch, occupancy, bin_centers = bin_directional_spike_trains(
+        [spike_times],
+        times,
+        headings,
+        bin_size,
+        angle_unit=angle_unit,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
     )
-
-    # Bin spike train
-    spike_counts = bin_directional_spike_train(
-        spike_times, times, headings, bin_size, angle_unit=angle_unit
-    )
+    spike_counts = counts_batch[0]
 
     # Compute actual bin_size from bin_centers (handles non-divisible bin_size)
     # The binning layer rounds n_bins = int(round(2π / bin_size)), so the actual
@@ -1876,6 +1915,7 @@ def compute_directional_rate(
         bin_size=actual_bin_size_rad,
         bandwidth=bandwidth_rad,
         spike_counts=spike_counts,
+        spike_window=resolved_spike_window,
     )
 
 
@@ -1887,6 +1927,9 @@ def compute_directional_rates(
     bin_size: float = np.pi / 30,
     bandwidth: float | None = None,
     angle_unit: Literal["rad", "deg"] = "rad",
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
     n_jobs: int = 1,
     backend: Literal["numpy", "jax", "auto"] = "numpy",
     unit_ids: NDArray[Any] | Sequence[Any] | None = None,
@@ -1951,6 +1994,23 @@ def compute_directional_rates(
         - 'rad': angles in radians
         - 'deg': angles in degrees
 
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
     n_jobs : int, default=1
         Number of parallel jobs for spike binning. Use -1 for all CPUs.
         1 means sequential processing (no parallelization overhead).
@@ -1989,8 +2049,21 @@ def compute_directional_rates(
     compute_directional_rate : Single-neuron version
     DirectionalRatesResult : Result class with batch methods
 
+    Warns
+    -----
+    UserWarning
+        When at least five units are all silent for at least 60 seconds of
+        continuously tracked time and ``spike_window`` was not supplied.
+        This is a heuristic for possible recording outages: it cannot detect
+        an outage for a single unit or one shorter than 60 seconds, and its
+        absence is not proof that recording coverage is correct.
+
     Notes
     -----
+    An interval is analyzed only if it passes the gap, speed and bounds
+    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    are removed from the spike counts and the occupancy.
+
     **Efficiency advantages over calling ``compute_directional_rate()`` in a loop**:
 
     1. Occupancy is computed once and shared across all neurons
@@ -2032,14 +2105,15 @@ def compute_directional_rates(
     ...     spike_times, times, headings_deg, bin_size=6.0, angle_unit="deg"
     ... )
     """
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+
     from neurospatial.encoding._backend import (
         SUPPORTED_BACKENDS,
         get_backend_name,
         is_jax_available,
     )
     from neurospatial.encoding._directional_binning import (
-        bin_directional_spike_train,
-        compute_directional_occupancy,
+        bin_directional_spike_trains,
     )
     from neurospatial.encoding._spikes import as_spike_trains_with_ids
     from neurospatial.encoding._validation import (
@@ -2086,9 +2160,30 @@ def compute_directional_rates(
     for i, st in enumerate(spike_times_list):
         validate_spike_times(st, context=f"compute_directional_rates (neuron {i})")
 
-    # Precompute shared quantities: occupancy and bin centers
-    occupancy, bin_centers = compute_directional_occupancy(
-        times, headings, bin_size, angle_unit=angle_unit
+    # Recording coverage uses tracked runs, independently of invalid frame bins.
+    if (
+        resolved_spike_window is None
+        and n_neurons >= _SILENCE_MIN_UNITS
+        and times[-1] - times[0] >= _SILENCE_MIN_SECONDS
+    ):
+        observed_mask = interval_valid_mask(
+            times, max_gap=max_gap, epochs=resolved_epochs
+        )
+        _warn_if_population_silent(
+            spike_times_list, run_time_bounds(times, observed_mask)
+        )
+
+    # Precompute frame bins and one shared mask for the whole population.
+    spike_counts_batch, occupancy, bin_centers = bin_directional_spike_trains(
+        spike_times_list,
+        times,
+        headings,
+        bin_size,
+        angle_unit=angle_unit,
+        n_jobs=n_jobs,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
     )
     n_bins = len(bin_centers)
 
@@ -2134,16 +2229,14 @@ def compute_directional_rates(
             bandwidth=bandwidth_rad,
             spike_counts=empty_counts,
             unit_ids=resolved_unit_ids,
+            spike_window=resolved_spike_window,
         )
 
     # Helper function to process a single neuron's spike train
     def _process_neuron(
-        neuron_spikes: NDArray[np.float64],
+        spike_counts: NDArray[np.float64],
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-        """Bin spike train and compute (firing_rate, spike_counts) for one neuron."""
-        spike_counts = bin_directional_spike_train(
-            neuron_spikes, times, headings, bin_size, angle_unit=angle_unit
-        )
+        """Compute (firing_rate, spike_counts) from shared-mask counts."""
 
         # Apply smoothing if requested
         if bandwidth_rad is not None:
@@ -2164,17 +2257,8 @@ def compute_directional_rates(
         # Return the unsmoothed counts for the Rayleigh test weights.
         return firing_rate, spike_counts
 
-    # Process neurons (sequential or parallel)
-    if n_jobs == 1 or n_neurons <= 1:
-        # Sequential processing
-        processed = [_process_neuron(spikes) for spikes in spike_times_list]
-    else:
-        # Parallel processing with joblib
-        from joblib import Parallel, delayed
-
-        processed = Parallel(n_jobs=n_jobs)(
-            delayed(_process_neuron)(spikes) for spikes in spike_times_list
-        )
+    # Spike counting already honors n_jobs in the shared binning path.
+    processed = [_process_neuron(counts) for counts in spike_counts_batch]
 
     firing_rates = np.array([rate for rate, _ in processed], dtype=np.float64)
     spike_counts_all: ArrayLike = np.array(
@@ -2200,6 +2284,7 @@ def compute_directional_rates(
         bandwidth=bandwidth_rad,
         spike_counts=spike_counts_all,
         unit_ids=resolved_unit_ids,
+        spike_window=resolved_spike_window,
     )
 
 
@@ -2216,6 +2301,9 @@ def is_head_direction_cell(
     bin_size: float = np.pi / 30,
     bandwidth: float | None = None,
     angle_unit: Literal["rad", "deg"] = "rad",
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
     min_mvl: float = 0.4,
     alpha: float = 0.05,
 ) -> bool:
@@ -2266,6 +2354,23 @@ def is_head_direction_cell(
         Gaussian smoothing bandwidth. Units match ``angle_unit``.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of headings and bin_size.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
     min_mvl : float, default=0.4
         Minimum mean vector length threshold.
     alpha : float, default=0.05
@@ -2275,6 +2380,18 @@ def is_head_direction_cell(
     -------
     bool
         True if neuron passes HD cell criteria.
+
+    Raises
+    ------
+    ValueError
+        If ``epochs`` or ``spike_window`` is malformed. The shared parser
+        reports all window problems together with an explanation and fix.
+
+    Notes
+    -----
+    An interval is analyzed only if it passes the gap, speed and bounds
+    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    are removed from the spike counts and the occupancy.
 
     Examples
     --------
@@ -2312,8 +2429,17 @@ def is_head_direction_cell(
             bin_size=bin_size,
             bandwidth=bandwidth,
             angle_unit=angle_unit,
+            max_gap=max_gap,
+            epochs=epochs,
+            spike_window=spike_window,
         )
-    except (ValueError, RuntimeError):
+    except ValueError as exc:
+        # Malformed windows are input errors, not negative classifications.
+        # Keep the shared normalizer's diagnostic and avoid parsing twice.
+        if str(exc).startswith("Invalid time window:"):
+            raise
+        return False
+    except RuntimeError:
         # Computation passed validation but produced no usable tuning
         # (e.g. no spikes in any visited bin) -> not an HD cell.
         return False

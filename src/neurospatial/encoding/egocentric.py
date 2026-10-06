@@ -79,7 +79,14 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial._intervals import resolve_time_windows, run_time_bounds
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
+from neurospatial.encoding._binning import (
+    _SILENCE_MIN_SECONDS,
+    _SILENCE_MIN_UNITS,
+    _warn_if_population_silent,
+)
+from neurospatial.environment.trajectory import interval_valid_mask
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -680,6 +687,9 @@ class EgocentricRatesResult(SpatialResultMixin):
             "env": env_fingerprint(self.env),
             "software_version": software_version(),
         }
+        attrs["spike_window_assumed"] = int(self.spike_window_assumed)
+        if self.spike_window is not None:
+            attrs["spike_window"] = self.spike_window.ravel()
         return build_population_dataset(
             rates,
             np.asarray(self.unit_ids),
@@ -759,6 +769,7 @@ class EgocentricRatesResult(SpatialResultMixin):
             n_distance_bins=self.n_distance_bins,
             n_direction_bins=self.n_direction_bins,
             unit_id=np.asarray(self.unit_ids)[idx].item(),
+            spike_window=self.spike_window,
         )
 
     def __iter__(self) -> Iterator[EgocentricRateResult]:
@@ -1333,6 +1344,9 @@ def compute_egocentric_rate(
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
     metric: Literal["euclidean", "geodesic"] = "euclidean",
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
@@ -1383,6 +1397,23 @@ def compute_egocentric_rate(
         - **geodesic**: Path distance respecting environment boundaries.
           Requires ``env`` parameter.
 
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
         Smoothing method to use:
 
@@ -1433,6 +1464,10 @@ def compute_egocentric_rate(
 
     Notes
     -----
+    An interval is analyzed only if it passes the gap, speed and bounds
+    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    are removed from the spike counts and the occupancy.
+
     The function uses the egocentric binning layer (``_egocentric_binning.py``)
     to convert spike times to spike counts based on distance and direction to
     the nearest object, then the smoothing layer (``_smoothing.py``) to compute
@@ -1494,6 +1529,8 @@ def compute_egocentric_rate(
     .. [1] Hoydal, O. A., et al. (2019). Object-vector coding in the medial
            entorhinal cortex. Nature, 568(7752), 400-404.
     """
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+
     from neurospatial.encoding._backend import (
         SUPPORTED_BACKENDS,
         get_backend_name,
@@ -1578,6 +1615,9 @@ def compute_egocentric_rate(
         metric=metric,
         env=env,
         n_jobs=1,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
     )
     spike_counts = spike_counts_batch[0]
 
@@ -1607,6 +1647,7 @@ def compute_egocentric_rate(
         distance_range=distance_range,
         n_distance_bins=n_distance_bins,
         n_direction_bins=n_direction_bins,
+        spike_window=resolved_spike_window,
     )
 
 
@@ -1622,6 +1663,9 @@ def compute_egocentric_rates(
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
     metric: Literal["euclidean", "geodesic"] = "euclidean",
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "binned",
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
@@ -1684,6 +1728,23 @@ def compute_egocentric_rates(
         - **geodesic**: Path distance respecting environment boundaries.
           Requires ``env`` parameter.
 
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="binned"
         Smoothing method to use:
 
@@ -1745,8 +1806,21 @@ def compute_egocentric_rates(
     EgocentricRatesResult : Result class with batch methods
     compute_spatial_rates : Standard spatial rates (by animal position)
 
+    Warns
+    -----
+    UserWarning
+        When at least five units are all silent for at least 60 seconds of
+        continuously tracked time and ``spike_window`` was not supplied.
+        This is a heuristic for possible recording outages: it cannot detect
+        an outage for a single unit or one shorter than 60 seconds, and its
+        absence is not proof that recording coverage is correct.
+
     Notes
     -----
+    An interval is analyzed only if it passes the gap, speed and bounds
+    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    are removed from the spike counts and the occupancy.
+
     **Efficiency advantages over calling ``compute_egocentric_rate(None)`` in a loop**:
 
     1. Egocentric coordinates (distance, bearing to nearest object) are
@@ -1838,6 +1912,8 @@ def compute_egocentric_rates(
     .. [1] Hoydal, O. A., et al. (2019). Object-vector coding in the medial
            entorhinal cortex. Nature, 568(7752), 400-404.
     """
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+
     from neurospatial.encoding._backend import (
         SUPPORTED_BACKENDS,
         get_backend_name,
@@ -1922,6 +1998,19 @@ def compute_egocentric_rates(
     for i, st in enumerate(spike_times_list):
         validate_spike_times(st, context=f"compute_egocentric_rates (neuron {i})")
 
+    # Recording coverage uses tracked runs, independently of invalid frame bins.
+    if (
+        resolved_spike_window is None
+        and n_neurons >= _SILENCE_MIN_UNITS
+        and times[-1] - times[0] >= _SILENCE_MIN_SECONDS
+    ):
+        observed_mask = interval_valid_mask(
+            times, max_gap=max_gap, epochs=resolved_epochs
+        )
+        _warn_if_population_silent(
+            spike_times_list, run_time_bounds(times, observed_mask)
+        )
+
     # Handle edge case: no neurons
     if n_neurons == 0:
         # Still need to compute occupancy for consistency
@@ -1942,6 +2031,9 @@ def compute_egocentric_rates(
             n_direction_bins=n_direction_bins,
             metric=metric,
             env=env,
+            max_gap=max_gap,
+            epochs=resolved_epochs,
+            spike_window=resolved_spike_window,
         )
         firing_rates_result: ArrayLike = np.empty(
             (0, polar_env.n_bins), dtype=np.float64
@@ -1960,6 +2052,7 @@ def compute_egocentric_rates(
             n_distance_bins=n_distance_bins,
             n_direction_bins=n_direction_bins,
             unit_ids=resolved_unit_ids,
+            spike_window=resolved_spike_window,
         )
 
     # Bin spike trains by egocentric coordinates and compute occupancy.
@@ -1977,6 +2070,9 @@ def compute_egocentric_rates(
         metric=metric,
         env=env,
         n_jobs=n_jobs,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
     )
 
     # Compute firing rates. The "binned" method uses the raw bin rate (no graph
@@ -2023,6 +2119,7 @@ def compute_egocentric_rates(
         n_distance_bins=n_distance_bins,
         n_direction_bins=n_direction_bins,
         unit_ids=resolved_unit_ids,
+        spike_window=resolved_spike_window,
     )
 
 
@@ -2174,6 +2271,9 @@ def is_object_vector_cell(
     n_distance_bins: int = 10,
     n_direction_bins: int = 12,
     metric: Literal["euclidean", "geodesic"] = "euclidean",
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
     min_info: float = 0.3,
 ) -> bool:
     """Quick check: Is this an object-vector cell?
@@ -2216,6 +2316,23 @@ def is_object_vector_cell(
         Number of direction bins (covers full circle).
     metric : {"euclidean", "geodesic"}, default="euclidean"
         Distance metric for computing distance to objects.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
     min_info : float, default=0.3
         Minimum egocentric spatial information threshold in bits/spike.
         Matches the default of
@@ -2226,6 +2343,18 @@ def is_object_vector_cell(
     bool
         True if the neuron's egocentric spatial information exceeds
         ``min_info``.
+
+    Raises
+    ------
+    ValueError
+        If ``epochs`` or ``spike_window`` is malformed. The shared parser
+        reports all window problems together with an explanation and fix.
+
+    Notes
+    -----
+    An interval is analyzed only if it passes the gap, speed and bounds
+    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    are removed from the spike counts and the occupancy.
 
     Examples
     --------
@@ -2262,8 +2391,17 @@ def is_object_vector_cell(
             n_distance_bins=n_distance_bins,
             n_direction_bins=n_direction_bins,
             metric=metric,
+            max_gap=max_gap,
+            epochs=epochs,
+            spike_window=spike_window,
         )
-    except (ValueError, RuntimeError):
+    except ValueError as exc:
+        # Malformed windows are input errors, not negative classifications.
+        # Keep the shared normalizer's diagnostic and avoid parsing twice.
+        if str(exc).startswith("Invalid time window:"):
+            raise
+        return False
+    except RuntimeError:
         return False
 
     return result.is_object_vector_cell(min_info=min_info)

@@ -84,7 +84,14 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial._intervals import resolve_time_windows, run_time_bounds
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
+from neurospatial.encoding._binning import (
+    _SILENCE_MIN_SECONDS,
+    _SILENCE_MIN_UNITS,
+    _warn_if_population_silent,
+)
+from neurospatial.environment.trajectory import interval_valid_mask
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -607,6 +614,9 @@ class ViewRatesResult(SpatialResultMixin):
             "env": env_fingerprint(self.env),
             "software_version": software_version(),
         }
+        attrs["spike_window_assumed"] = int(self.spike_window_assumed)
+        if self.spike_window is not None:
+            attrs["spike_window"] = self.spike_window.ravel()
         return build_population_dataset(
             rates,
             np.asarray(self.unit_ids),
@@ -682,6 +692,7 @@ class ViewRatesResult(SpatialResultMixin):
             method=self.method,
             bandwidth=self.bandwidth,
             unit_id=np.asarray(self.unit_ids)[idx].item(),
+            spike_window=self.spike_window,
         )
 
     def __iter__(self) -> Iterator[ViewRateResult]:
@@ -1117,6 +1128,9 @@ def compute_view_rate(
     gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
     view_distance: float = 10.0,
     gaze_offsets: NDArray[np.float64] | None = None,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
@@ -1166,6 +1180,23 @@ def compute_view_rate(
         If None (default), gaze is aligned with head direction.
         Use this for eye-tracking data in primate spatial view cell studies
         where gaze direction differs from head direction.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Smoothing method to use:
 
@@ -1214,6 +1245,10 @@ def compute_view_rate(
 
     Notes
     -----
+    An interval is analyzed only if it passes the gap, speed and bounds
+    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    are removed from the spike counts and the occupancy.
+
     The function uses the view binning layer (``_view_binning.py``) to convert
     spike times to spike counts based on *viewed* location, then the smoothing
     layer (``_smoothing.py``) to compute the smoothed firing rate.
@@ -1276,6 +1311,8 @@ def compute_view_rate(
     .. [1] Rolls, E. T., et al. (1997). Spatial view cells in the primate
            hippocampus. European Journal of Neuroscience, 9(8), 1789-1794.
     """
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+
     from neurospatial.encoding._backend import (
         SUPPORTED_BACKENDS,
         get_backend_name,
@@ -1348,6 +1385,9 @@ def compute_view_rate(
         view_distance=view_distance,
         gaze_offsets=gaze_offsets,
         n_jobs=1,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
     )
     spike_counts = spike_counts_batch[0]
 
@@ -1380,6 +1420,7 @@ def compute_view_rate(
         view_distance=view_distance,
         method=method,
         bandwidth=bandwidth,
+        spike_window=resolved_spike_window,
     )
 
 
@@ -1393,6 +1434,9 @@ def compute_view_rates(
     gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
     view_distance: float = 10.0,
     gaze_offsets: NDArray[np.float64] | None = None,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_occupancy: float = 0.0,
@@ -1454,6 +1498,23 @@ def compute_view_rates(
         If None (default), gaze is aligned with head direction.
         Use this for eye-tracking data in primate spatial view cell studies
         where gaze direction differs from head direction.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Smoothing method to use. See ``compute_view_rate()`` for details.
     bandwidth : float, default=5.0
@@ -1507,8 +1568,21 @@ def compute_view_rates(
     ViewRatesResult : Result class with batch methods
     compute_spatial_rates : Standard spatial rates (by animal position)
 
+    Warns
+    -----
+    UserWarning
+        When at least five units are all silent for at least 60 seconds of
+        continuously tracked time and ``spike_window`` was not supplied.
+        This is a heuristic for possible recording outages: it cannot detect
+        an outage for a single unit or one shorter than 60 seconds, and its
+        absence is not proof that recording coverage is correct.
+
     Notes
     -----
+    An interval is analyzed only if it passes the gap, speed and bounds
+    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    are removed from the spike counts and the occupancy.
+
     **Efficiency advantages over calling ``compute_view_rate()`` in a loop**:
 
     1. View occupancy is computed once and shared across all neurons
@@ -1595,6 +1669,8 @@ def compute_view_rates(
     .. [1] Rolls, E. T., et al. (1997). Spatial view cells in the primate
            hippocampus. European Journal of Neuroscience, 9(8), 1789-1794.
     """
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+
     from neurospatial.encoding._backend import (
         SUPPORTED_BACKENDS,
         get_backend_name,
@@ -1672,6 +1748,19 @@ def compute_view_rates(
                 f"times length ({n_samples})"
             )
 
+    # Recording coverage uses tracked runs, independently of invalid frame bins.
+    if (
+        resolved_spike_window is None
+        and n_neurons >= _SILENCE_MIN_UNITS
+        and times[-1] - times[0] >= _SILENCE_MIN_SECONDS
+    ):
+        observed_mask = interval_valid_mask(
+            times, max_gap=max_gap, epochs=resolved_epochs
+        )
+        _warn_if_population_silent(
+            spike_times_list, run_time_bounds(times, observed_mask)
+        )
+
     # Handle edge case: no neurons
     if n_neurons == 0:
         # Still need to compute occupancy for consistency
@@ -1685,6 +1774,9 @@ def compute_view_rates(
             gaze_model=gaze_model,
             view_distance=view_distance,
             gaze_offsets=gaze_offsets,
+            max_gap=max_gap,
+            epochs=resolved_epochs,
+            spike_window=resolved_spike_window,
         )
         firing_rates_result: ArrayLike = np.empty((0, env.n_bins), dtype=np.float64)
         occupancy_result: ArrayLike = occupancy
@@ -1702,6 +1794,7 @@ def compute_view_rates(
             method=method,
             bandwidth=bandwidth,
             unit_ids=resolved_unit_ids,
+            spike_window=resolved_spike_window,
         )
 
     # Bin spike trains by viewed location and compute view occupancy
@@ -1716,6 +1809,9 @@ def compute_view_rates(
         view_distance=view_distance,
         gaze_offsets=gaze_offsets,
         n_jobs=n_jobs,
+        max_gap=max_gap,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
     )
 
     # Apply batch smoothing to compute firing rates
@@ -1748,6 +1844,7 @@ def compute_view_rates(
         method=method,
         bandwidth=bandwidth,
         unit_ids=resolved_unit_ids,
+        spike_window=resolved_spike_window,
     )
 
 
@@ -1765,6 +1862,9 @@ def is_spatial_view_cell(
     *,
     gaze_model: Literal["fixed_distance", "ray_cast", "boundary"] = "fixed_distance",
     view_distance: float = 10.0,
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
     method: Literal["diffusion_kde", "gaussian_kde", "binned"] = "diffusion_kde",
     bandwidth: float = 5.0,
     min_info: float = 0.5,
@@ -1796,6 +1896,23 @@ def is_spatial_view_cell(
         Method for computing viewed location.
     view_distance : float, default=10.0
         Distance for fixed_distance gaze model.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
     method : {"diffusion_kde", "gaussian_kde", "binned"}, default="diffusion_kde"
         Rate map smoothing method.
     bandwidth : float, default=5.0
@@ -1807,6 +1924,18 @@ def is_spatial_view_cell(
     -------
     bool
         True if neuron passes spatial view cell criteria.
+
+    Raises
+    ------
+    ValueError
+        If ``epochs`` or ``spike_window`` is malformed. The shared parser
+        reports all window problems together with an explanation and fix.
+
+    Notes
+    -----
+    An interval is analyzed only if it passes the gap, speed and bounds
+    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    are removed from the spike counts and the occupancy.
 
     Examples
     --------
@@ -1838,7 +1967,16 @@ def is_spatial_view_cell(
             gaze_model=gaze_model,
             method=method,
             bandwidth=bandwidth,
+            max_gap=max_gap,
+            epochs=epochs,
+            spike_window=spike_window,
         )
         return result.is_spatial_view_cell(min_info=min_info)
-    except (ValueError, RuntimeError):
+    except ValueError as exc:
+        # Malformed windows are input errors, not negative classifications.
+        # Keep the shared normalizer's diagnostic and avoid parsing twice.
+        if str(exc).startswith("Invalid time window:"):
+            raise
+        return False
+    except RuntimeError:
         return False
