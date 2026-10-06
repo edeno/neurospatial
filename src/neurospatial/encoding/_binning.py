@@ -298,6 +298,10 @@ def _resolve_interval_mask(
     max_gap : float or None
         Maximum interval gap in seconds.
 
+    epochs, spike_window : ndarray, shape (n_windows, 2), or None
+        Normalized analysis and acquisition windows applied to each complete
+        trajectory interval.
+
     Returns
     -------
     ndarray of bool, shape (n_samples - 1,)
@@ -329,25 +333,10 @@ def _emit_all_excluded_intervals_warning(
 ) -> None:
     """Emit a UserWarning when the interval filter excludes ALL intervals.
 
-    The firing-rate map is ``spike_counts / occupancy`` per bin, and BOTH sides
-    are gated by the SAME per-interval validity mask
-    (:func:`~neurospatial.environment.trajectory.interval_valid_mask`). That
-    mask drops an interval for any of THREE reasons — a too-large time gap
-    (``dt > max_gap``), an out-of-bounds start sample (``start_bin < 0``), or a
-    too-low speed (``speed < min_speed``). If EVERY interval is dropped,
-    occupancy is all-zero and the rate map is all-NaN/zero with no other signal.
-
-    Before this guard only the ``min_speed`` case warned; ``max_gap`` (e.g. a
-    legitimately gappy session or a wrong-units ``max_gap``) and the
-    out-of-bounds-start rule emptied the map SILENTLY. This generalized guard
-    fires uniformly for all three gates whenever the resolved interval-valid
-    mask is entirely ``False``, naming whichever gate(s) are active so the user
-    knows what to check.
-
-    Detection uses the resolved interval-valid mask — the exact same mask
-    ``env.occupancy`` and the spike kernel apply — so it fires iff the rate map
-    is genuinely empty. It is a no-op (returns silently) when there is no mask
-    to check (fewer than two samples), or when at least one interval survives.
+    The shared interval mask gates both spike counts and occupancy.
+    Warn once when all intervals are excluded, naming the active gap, speed
+    and time-window checks and the out-of-bounds-start rule. An empty mask
+    (fewer than two samples) emits nothing.
 
     Parameters
     ----------
@@ -358,6 +347,8 @@ def _emit_all_excluded_intervals_warning(
         The active maximum-gap threshold (named in the message when set).
     min_speed : float or None
         The active speed threshold (named in the message when set).
+    epochs, spike_window : ndarray, shape (n_windows, 2), or None
+        Active normalized time windows, named in the message when supplied.
     stacklevel : int, optional
         ``warnings.warn`` stacklevel.
     """
@@ -559,6 +550,17 @@ def bin_spike_train(
         when the calling batch function will issue its own aggregate
         warning).
 
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict complete sampling intervals to these half-open windows in
+        seconds on the same clock as ``times``. None means unrestricted.
+    spike_window : same forms as epochs, or None
+        When electrophysiology was recording. Sampling intervals outside
+        these windows contribute neither spikes nor occupancy.
+    interval_mask : ndarray of bool, shape (n_samples - 1,), or None
+        Optional precomputed validity shared by counts and occupancy. When
+        supplied, it already includes all requested gates and windows, so
+        these helpers do not recalculate or renormalize them.
+
     Returns
     -------
     ndarray, shape (n_bins,)
@@ -695,6 +697,17 @@ def compute_occupancy(
         Maximum time gap in seconds (default
         0.5, matching ``env.occupancy``'s own default). ``None`` disables gap
         gating.
+
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict complete sampling intervals to these half-open windows in
+        seconds on the same clock as ``times``. None means unrestricted.
+    spike_window : same forms as epochs, or None
+        When electrophysiology was recording. Sampling intervals outside
+        these windows contribute neither spikes nor occupancy.
+    interval_mask : ndarray of bool, shape (n_samples - 1,), or None
+        Optional precomputed validity shared by counts and occupancy. When
+        supplied, it already includes all requested gates and windows, so
+        these helpers do not recalculate or renormalize them.
 
     Returns
     -------
@@ -834,6 +847,17 @@ def bin_spike_trains(
         aggregate statistics, so it fires exactly once even when
         ``n_jobs != 1`` (joblib worker warnings are commonly swallowed).
         Set to ``False`` to suppress all drop-related warnings.
+
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict complete sampling intervals to these half-open windows in
+        seconds on the same clock as ``times``. None means unrestricted.
+    spike_window : same forms as epochs, or None
+        When electrophysiology was recording. Sampling intervals outside
+        these windows contribute neither spikes nor occupancy.
+    interval_mask : ndarray of bool, shape (n_samples - 1,), or None
+        Optional precomputed validity shared by counts and occupancy. When
+        supplied, it already includes all requested gates and windows, so
+        these helpers do not recalculate or renormalize them.
 
     Returns
     -------

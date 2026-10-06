@@ -2710,25 +2710,23 @@ default="diffusion_kde"
         times[k])`` for ``k = 0 .. n-2``, with ``speed[n-1] = speed[n-2]`` (the
         last sample starts no occupancy interval). This Euclidean default is
         simple; for geodesic / track environments pass an explicit ``speed``.
-    max_gap : float | None, default=0.5
-        Maximum trajectory time gap in seconds. Intervals with
-        ``dt > max_gap`` (large tracking gaps) are excluded from BOTH the
-        spike numerator AND the occupancy denominator using ONE shared
-        per-interval mask, so the firing rate stays correct. This default
-        matches ``env.occupancy``'s own default, so occupancy behavior is
-        unchanged.
-
-        .. note::
-           **Behavior change (correctness fix).** Spikes occurring inside
-           intervals longer than ``max_gap`` (large tracking gaps) or inside
-           intervals whose start sample is out of bounds are now excluded from
-           spike counts, matching occupancy. Previously such spikes were
-           counted while their time was excluded from the denominator,
-           inflating the rate. This changes firing-rate maps for sessions
-           with large tracking gaps or out-of-bounds excursions. Pass
-           ``max_gap=None`` to disable gap gating on BOTH sides (restoring the
-           pre-fix, no-gap-gating behavior while keeping the two sides
-           aligned).
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
     backend : {"numpy", "jax", "auto"}, default="numpy"
         Computation backend for rate map smoothing:
 
@@ -2777,6 +2775,10 @@ default="diffusion_kde"
 
     Notes
     -----
+    An interval is analyzed only if it passes the gap, speed and bounds
+    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    are removed from the spike counts and the occupancy.
+
     The function uses the binning layer (``_binning.py``) to convert spike
     times to spike counts, then the smoothing layer (``_smoothing.py``) to
     compute the smoothed firing rate.
@@ -3186,22 +3188,23 @@ default="diffusion_kde"
         ``speed[k] = ||positions[k+1] - positions[k]||_2 / (times[k+1] -
         times[k])`` with ``speed[n-1] = speed[n-2]``; pass an explicit ``speed``
         for geodesic / linearized-track environments.
-    max_gap : float | None, default=0.5
-        Maximum trajectory time gap in seconds. Intervals with
-        ``dt > max_gap`` (large tracking gaps) are excluded from BOTH the
-        shared occupancy denominator AND every per-neuron spike numerator
-        using ONE shared per-interval mask. This default matches
-        ``env.occupancy``'s own default, so occupancy is unchanged.
-
-        .. note::
-           **Behavior change (correctness fix).** Spikes inside intervals
-           longer than ``max_gap`` or inside intervals whose start sample is
-           out of bounds are now excluded from spike counts, matching
-           occupancy. Previously such spikes were counted while their time was
-           excluded from the denominator, inflating the rate. This changes
-           rate maps for sessions with large tracking gaps / out-of-bounds
-           excursions. Pass ``max_gap=None`` to disable gap gating on BOTH
-           sides (pre-fix behavior, still aligned).
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
     n_jobs : int, default=1
         Number of parallel jobs for spike counting. Use -1 for all CPUs.
         1 means sequential processing (no parallelization overhead).
@@ -3265,6 +3268,15 @@ default="diffusion_kde"
         The result supports iteration: ``for single in result: ...``
         and indexing: ``single = result[0]``.
 
+    Warns
+    -----
+    UserWarning
+        When at least five units are all silent for at least 60 seconds of
+        continuously tracked time and ``spike_window`` was not supplied.
+        This is a heuristic for possible recording outages: it cannot detect
+        an outage for a single unit or one shorter than 60 seconds, and its
+        absence is not proof that recording coverage is correct.
+
     See Also
     --------
     compute_spatial_rate : Single-neuron version
@@ -3272,6 +3284,10 @@ default="diffusion_kde"
 
     Notes
     -----
+    An interval is analyzed only if it passes the gap, speed and bounds
+    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    are removed from the spike counts and the occupancy.
+
     **Efficiency advantages over calling ``compute_spatial_rate()`` in a loop**:
 
     1. Occupancy is computed once and shared across all neurons
@@ -4117,6 +4133,24 @@ def compute_directional_place_fields(
         Minimum occupancy threshold in seconds. Bins below this threshold are
         set to NaN.
 
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
+
     Returns
     -------
     DirectionalPlaceFields
@@ -4139,15 +4173,15 @@ def compute_directional_place_fields(
 
     Notes
     -----
-    The "other" label is reserved for timepoints that should be excluded from
-    analysis (e.g., inter-trial intervals, stationary periods). Any timepoints
-    with label "other" are ignored when computing fields.
+    An interval is analyzed only if it passes the gap, speed and bounds
+    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    are removed from the spike counts and the occupancy.
 
-    For each unique non-"other" label, this function:
-    1. Creates a boolean mask for timepoints with that label
-    2. Extracts the trajectory and spikes within those masked periods
-    3. Calls ``compute_spatial_rate`` on the subset
-    4. Stores the resulting field in the output mapping
+    Each interval carries the direction label of its start sample. Separate
+    runs of the same label become analysis epochs on the original trajectory,
+    so filtering never joins nonadjacent samples into artificial intervals.
+    The caller's epochs intersect the label windows; ``spike_window`` remains
+    the caller's acquisition coverage.
 
     Examples
     --------
@@ -4469,6 +4503,23 @@ def is_place_cell(
         Rate map smoothing method.
     bandwidth : float, default=5.0
         Smoothing bandwidth in environment units.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from occupancy and their spikes are not counted. ``None`` disables the
+        gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
+    spike_window : same forms as ``epochs``, or None
+        When the electrophysiology was recording. Intervals outside it are
+        excluded from occupancy (and their spikes are not counted). ``None``
+        (default) assumes spikes were recorded whenever position was; this is an
+        assumption, not something the function checks. Pass it when tracking
+        started before, or continued after, the spike recording. The result
+        records the window applied (``result.spike_window``) and whether it was
+        assumed (``result.spike_window_assumed``).
     threshold : float, default=0.2
         Fraction of peak rate for field boundary detection (0-1).
     min_size : int, optional
@@ -4484,6 +4535,12 @@ def is_place_cell(
     bool
         True if the neuron passes place-cell criteria (has >= 1 detected
         place field).
+
+    Notes
+    -----
+    An interval is analyzed only if it passes the gap, speed and bounds
+    checks and lies inside ``epochs ∩ spike_window``. The same intervals
+    are removed from the spike counts and the occupancy.
 
     Examples
     --------

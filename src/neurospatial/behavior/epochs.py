@@ -124,10 +124,13 @@ def in_epochs(
     ----------
     t : ndarray
         Timestamps to test (any shape; the mask has the same shape).
-    epochs : IntervalSet-like, tuple, list, or ndarray
-        Epochs in any form accepted by :func:`~neurospatial._intervals.as_intervals`
-        (``(start, end)`` scalars/arrays, an ``(n, 2)`` array, or a
-        duck-typed ``IntervalSet``). Empty epochs -> all-``False``.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Windows in seconds, on the same clock as the input timestamps. Rows
+        are sorted and overlapping or touching rows merge. ``None`` leaves
+        data unrestricted. Empty windows, non-finite endpoints, and rows with
+        ``stop <= start`` raise ``ValueError`` with a fix. Parallel starts/ends
+        arrays are not an input form; pass an ``(n, 2)`` array instead.
+        ``closed`` controls point membership in the normalized windows.
     closed : {"both", "left", "right", "neither"}, optional
         Which endpoints are inclusive. Default ``"both"`` (``start <= t <=
         end``), matching :mod:`neurospatial.behavior.segmentation` and pynapple.
@@ -191,8 +194,13 @@ def restrict(
         Reference time array.
     *arrays : ndarray
         Zero or more arrays aligned to ``times`` (first axis length ``n``).
-    epochs : IntervalSet-like, tuple, list, or ndarray
-        Epochs in any form accepted by :func:`~neurospatial._intervals.as_intervals`.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Windows in seconds, on the same clock as the input timestamps. Rows
+        are sorted and overlapping or touching rows merge. ``None`` leaves
+        data unrestricted. Empty windows, non-finite endpoints, and rows with
+        ``stop <= start`` raise ``ValueError`` with a fix. Parallel starts/ends
+        arrays are not an input form; pass an ``(n, 2)`` array instead.
+        ``closed`` controls point membership in the normalized windows.
     closed : {"both", "left", "right", "neither"}, optional
         Endpoint inclusivity, forwarded to :func:`in_epochs`. Default
         ``"both"``.
@@ -260,9 +268,13 @@ def restrict_spike_trains(
         Per-unit 1-D spike-time arrays. A
         :class:`~neurospatial.encoding.SpikeTrains` container is accepted --
         iterating it yields the per-unit train arrays.
-    epochs : IntervalSet-like, tuple, list, or ndarray
-        Epochs in any form accepted by :func:`~neurospatial._intervals.as_intervals`. Empty epochs ->
-        every returned train is empty (but present, preserving order/count).
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Windows in seconds, on the same clock as the input timestamps. Rows
+        are sorted and overlapping or touching rows merge. ``None`` leaves
+        data unrestricted. Empty windows, non-finite endpoints, and rows with
+        ``stop <= start`` raise ``ValueError`` with a fix. Parallel starts/ends
+        arrays are not an input form; pass an ``(n, 2)`` array instead.
+        ``closed`` controls point membership in the normalized windows.
     closed : {"both", "left", "right", "neither"}, optional
         Endpoint inclusivity, forwarded to :func:`in_epochs`. Default
         ``"both"``.

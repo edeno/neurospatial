@@ -308,10 +308,15 @@ class EnvironmentTrajectory:
         min_speed : float, optional
             Minimum speed threshold in physical units per second. Requires
             speed parameter. Samples with speed < min_speed are excluded.
-        max_gap : float, optional
-            Maximum time gap in seconds. Intervals with Δt > max_gap are
-            not counted toward occupancy. Default: 0.5 seconds. Set to None
-            to count all intervals regardless of gap size.
+        max_gap : float or None, default=0.5
+            Longest sampling interval (seconds) treated as continuous recording.
+            Longer intervals (dropped frames, pauses between sessions) are excluded
+            from occupancy and their spikes are not counted. ``None`` disables the
+            gap check.
+        epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+            Restrict the analysis to these half-open [start, stop) windows (seconds,
+            same clock as ``times``). An interval counts only if it lies entirely
+            inside one window. ``None`` (default) means unrestricted.
         bandwidth : float, optional
             If provided, apply diffusion kernel smoothing with this bandwidth
             (in physical units). Uses mode='transition' to preserve total mass.

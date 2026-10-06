@@ -356,7 +356,9 @@ class SpatialResultMixin(ResultMixin):
         dict
             Mapping with keys ``n_bins`` (int), ``peak_firing_rate`` (float,
             Hz), and ``total_occupancy`` (float, seconds). Batch results also
-            include ``n_neurons`` (int).
+            include ``n_neurons`` (int). ``spike_window`` is the normalized
+            acquisition-window list or None, and ``spike_window_assumed``
+            records whether coverage was assumed.
 
         Examples
         --------
