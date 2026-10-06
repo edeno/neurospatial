@@ -244,7 +244,7 @@ error = fitted.score(spike_times, times, positions,
                      metric="median_error", distance="euclidean")
 
 # Train/test split: fit on one epoch, evaluate on another.
-fitted = decoder.fit(spike_times, times, positions, epoch=(0.0, 60.0))
+fitted = decoder.fit(spike_times, times, positions, epochs=(0.0, 60.0))
 ```
 
 The functional `decode_session` remains the primary path — `predict` reproduces

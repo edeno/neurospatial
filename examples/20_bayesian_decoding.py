@@ -254,18 +254,23 @@ print(
 # %%
 # Plot the decoded posterior with the true trajectory overlaid.
 fig, ax = plt.subplots(figsize=(14, 5))
-n_show = 500
+n_show = min(500, result.n_time_bins)
 result.plot(ax=ax, show_map=True, colorbar=True)
+# Match the posterior's horizontal axis if recording gaps switch it to bin indices.
+plot_times = (
+    np.arange(result.n_time_bins)
+    if ax.get_xlabel().startswith("Time bin")
+    else result.times
+)
 ax.plot(
-    result.times[:n_show],
+    plot_times[:n_show],
     actual_track[:n_show, 0],
     color=COLORS["cyan"],
     linewidth=2,
     linestyle="--",
     label="Actual position",
 )
-ax.set_xlim(0, n_show * 0.1)
-ax.set_xlabel("Time (s)")
+ax.set_xlim(plot_times[0], plot_times[n_show - 1])
 ax.set_ylabel("Position (cm)")
 ax.set_title("decode_session: posterior, MAP (white), actual (cyan)", fontweight="bold")
 ax.legend(loc="upper right")
