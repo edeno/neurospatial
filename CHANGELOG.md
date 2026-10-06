@@ -4,6 +4,10 @@
 
 ### Changed — decoding and peri-event histograms respect recording gaps
 
+- Peri-event histograms share the decoding edge and count helpers: every bin
+  is half-open and stays inside its requested window. Spikes at the last
+  whole-bin edge are excluded, and large timestamp offsets use relative
+  rounding instead of an absolute `1e-9` epsilon.
 - Conflicting `epochs` and explicit bounds in `bin_spikes_in_time` report
   the argument conflict with separate `Why:` and `Fix:` lines.
 - Single-unit and population peri-event histograms accept `epochs` and

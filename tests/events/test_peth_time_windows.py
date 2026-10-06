@@ -104,3 +104,44 @@ def test_defaults_keep_all_events(event_recording):
     result = peri_event_histogram(spikes, events, (-0.5, 1))
     assert result.n_events == events.size
     assert result.n_events_dropped == 0
+
+
+@pytest.mark.parametrize("population", [False, True])
+@pytest.mark.parametrize(
+    "window,bin_size,spikes,expected",
+    [
+        ((0.1, 0.3), 0.1, [0.1, 0.2, 0.3], [1, 1]),
+        ((0.0, 1.05), 0.25, [0.99, 1.0, 1.04], [0, 0, 0, 1]),
+        ((1e9 + 0.1, 1e9 + 0.3), 0.1, [1e9 + 0.1, 1e9 + 0.3], [1, 0]),
+    ],
+)
+def test_peth_bins_are_half_open(population, window, bin_size, spikes, expected):
+    """Every whole bin excludes its right edge, including the last bin."""
+    # Duplicate events avoid the single-event warning without shifting boundaries.
+    function = population_peri_event_histogram if population else peri_event_histogram
+    spike_array = np.asarray(spikes)
+    result = function(
+        [spike_array] if population else spike_array,
+        np.array([0.0, 0.0]),
+        window,
+        bin_size=bin_size,
+    )
+    counts = result.histograms[0] if population else result.histogram
+    np.testing.assert_array_equal(counts, expected)
+    np.testing.assert_array_equal(result.sem, np.zeros_like(result.sem))
+    assert np.all(result.bin_centers < window[1])
+
+
+@pytest.mark.parametrize("population", [False, True])
+def test_no_whole_peth_bin_preserves_empty_result(population):
+    function = population_peri_event_histogram if population else peri_event_histogram
+    spikes = np.array([0.1])
+    result = function(
+        [spikes] if population else spikes,
+        np.array([0.0, 0.0]),
+        (0, 0.1),
+        bin_size=0.25,
+    )
+    counts = result.histograms[0] if population else result.histogram
+    assert counts.shape == (0,)
+    assert result.bin_centers.shape == (0,)

@@ -18,6 +18,10 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._intervals import intervals_contain, resolve_time_windows
+from neurospatial.decoding._binning import (
+    count_spikes_in_time_bins,
+    time_bins_in_windows,
+)
 from neurospatial.events._core import PeriEventResult, PopulationPeriEventResult
 
 if TYPE_CHECKING:
@@ -37,9 +41,9 @@ def _make_bin_edges(
     window[1]]``; otherwise the final bin would extend past ``window[1]``
     and silently absorb spikes that fall outside the requested window.
 
-    A spike at exactly ``window[1]`` that would have fallen in the dropped
-    partial bin is intentionally excluded; align it inside a full bin by
-    choosing ``bin_size`` to divide the window evenly if that spike matters.
+    Every bin is half-open: a spike at the final whole-bin edge or at the
+    window stop is excluded. Edges are clamped to the window stop using
+    timestamp-relative rounding rather than an absolute epsilon.
 
     Parameters
     ----------
@@ -56,16 +60,9 @@ def _make_bin_edges(
     bin_centers : NDArray[np.float64], shape (n_bins,)
         Centers of each full bin; all lie within ``[window[0], window[1]]``.
     """
-    window_duration = window[1] - window[0]
-    # floor (not ceil): keep only whole bins so the last edge does not
-    # overshoot window[1]. A small epsilon guards against floating-point
-    # error swallowing a bin edge that is mathematically exact (e.g.
-    # 2.0 / 0.1 evaluating to 19.9999...).
-    n_bins = int(np.floor(window_duration / bin_size + 1e-9))
-    n_bins = max(n_bins, 0)
-    bin_edges = window[0] + np.arange(n_bins + 1, dtype=np.float64) * bin_size
-    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-    return bin_edges, bin_centers
+    left, right = time_bins_in_windows(np.asarray([window], dtype=np.float64), bin_size)
+    edges = np.r_[left, right[-1]] if left.size else np.array([window[0]])
+    return edges, left + bin_size / 2
 
 
 def align_spikes_to_events(
@@ -296,6 +293,12 @@ def peri_event_histogram(
     UserWarning
         When computing PSTH with a single event (SEM is undefined).
 
+    Notes
+    -----
+    Every bin is half-open ``[left, right)`` and stays inside ``window``.
+    A trailing partial bin is dropped; spikes at the last whole-bin edge or
+    the window stop are not counted.
+
     See Also
     --------
     align_spikes_to_events : Get raw per-trial spike times.
@@ -373,8 +376,9 @@ def peri_event_histogram(
     histograms = np.zeros((n_events, n_bins), dtype=np.float64)
     for i, trial_spikes in enumerate(aligned):
         if len(trial_spikes) > 0:
-            counts, _ = np.histogram(trial_spikes, bins=bin_edges)
-            histograms[i] = counts
+            histograms[i] = count_spikes_in_time_bins(
+                [trial_spikes], bin_edges[:-1], bin_edges[1:]
+            )[:, 0]
 
     # Compute mean and SEM
     mean_histogram = histograms.mean(axis=0)
@@ -464,6 +468,12 @@ def population_peri_event_histogram(
         If spike_trains is empty, event_times is empty, window is inverted,
         bin_size is non-positive, time windows are invalid, or all events are
         dropped.
+
+    Notes
+    -----
+    Every bin is half-open ``[left, right)`` and stays inside ``window``.
+    A trailing partial bin is dropped; spikes at the last whole-bin edge or
+    the window stop are not counted.
 
     See Also
     --------
@@ -574,8 +584,9 @@ def population_peri_event_histogram(
         # Compute histogram for each event
         for event_idx, trial_spikes in enumerate(aligned):
             if len(trial_spikes) > 0:
-                counts, _ = np.histogram(trial_spikes, bins=bin_edges)
-                all_histograms[unit_idx, event_idx] = counts
+                all_histograms[unit_idx, event_idx] = count_spikes_in_time_bins(
+                    [trial_spikes], bin_edges[:-1], bin_edges[1:]
+                )[:, 0]
 
     # Compute per-unit mean and SEM across events
     # histograms shape: (n_units, n_bins)
