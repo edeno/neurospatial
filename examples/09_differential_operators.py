@@ -516,9 +516,7 @@ print(f"Flow field range: [{normalized_flow.min():.3f}, {normalized_flow.max():.
 # Compute divergence of goal-directed flow
 div_policy = divergence(env, normalized_flow)
 
-print(
-    f"Divergence at selected start bin: {div_policy[start_bin]:.3f}"
-)
+print(f"Divergence at selected start bin: {div_policy[start_bin]:.3f}")
 print(
     f"Divergence at goal bin: {div_policy[goal_bin]:.3f}  (should be negative - sink)"
 )
