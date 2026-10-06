@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- **Behavior change:** `instantaneous_goal_alignment` now returns NaN for
+  samples below `min_speed`, and `goal_bias` averages moving samples only.
+  On an east/stop/north path, all 30 stopped samples are excluded and
+  `goal_bias` is 0.5055 (formerly 0.5862 from interpolated stationary headings).
+  Fully stationary trajectories still return NaN without raising.
+
 - **Behavior change:** `heading_from_velocity` and `heading_from_body_orientation`
   interpolate missing or low-speed headings along the shorter arc, uniformly
   in angle. Near a 180° turn, filled headings formerly snapped toward the

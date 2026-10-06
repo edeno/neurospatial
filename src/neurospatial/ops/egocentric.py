@@ -652,6 +652,75 @@ def compute_egocentric_distance(
     return distances
 
 
+def _velocity_heading_and_speed(
+    positions: NDArray[np.float64], dt: float, *, bandwidth: float = 0.0
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Compute per-sample velocity heading and speed without interpolation.
+
+    Parameters
+    ----------
+    positions : ndarray, shape (n_samples, 2)
+        Position coordinates in environment units.
+    dt : float
+        Positive finite time step, seconds.
+    bandwidth : float, default=0.0
+        Gaussian smoothing sigma in samples, applied to velocity.
+
+    Returns
+    -------
+    heading, speed : ndarray, shape (n_samples,)
+        Heading in radians and speed in position units per second. Forward
+        differences are used, with the last interval's velocity repeated.
+    """
+    from neurospatial._validation import validate_finite
+
+    positions = np.asarray(positions, dtype=np.float64)
+
+    if not np.isfinite(dt) or dt <= 0:
+        raise ValueError(
+            f"Cannot compute heading: dt must be a positive, finite time step "
+            f"(got {dt!r}).\n\n"
+            f"WHAT: dt is the seconds between consecutive position samples\n"
+            f"WHY: velocity = diff(positions) / dt; dt <= 0 negates or NaNs the "
+            f"velocity, rotating every heading by pi (180 deg)\n\n"
+            f"HOW to fix:\n"
+            f"1. Pass dt = times[1] - times[0] from ASCENDING timestamps\n"
+            f"2. Sort your timestamps before differencing"
+        )
+
+    validate_finite(positions, name="positions")
+
+    if len(positions) < 2:
+        raise ValueError(
+            f"Cannot compute heading: insufficient trajectory data.\n\n"
+            f"WHAT: Need at least 2 position samples, got {len(positions)}\n"
+            f"WHY: Heading is computed from velocity (position change over time)\n\n"
+            f"HOW to fix:\n"
+            f"1. Check data filtering - may have removed too many frames\n"
+            f"2. Verify trajectory isn't empty after quality control\n"
+            f"3. For short events, use heading_from_body_orientation() instead"
+        )
+
+    # Compute velocity via finite differences
+    velocity = np.diff(positions, axis=0) / dt
+
+    # Pad velocity to match positions length
+    velocity = np.vstack([velocity, velocity[-1:]])
+
+    # Apply Gaussian smoothing if requested
+    if bandwidth > 0:
+        velocity[:, 0] = gaussian_filter1d(velocity[:, 0], bandwidth)
+        velocity[:, 1] = gaussian_filter1d(velocity[:, 1], bandwidth)
+
+    # Compute speed
+    speed = np.sqrt(velocity[:, 0] ** 2 + velocity[:, 1] ** 2)
+
+    # Compute heading
+    heading = np.arctan2(velocity[:, 1], velocity[:, 0])
+
+    return heading, speed
+
+
 def heading_from_velocity(
     positions: NDArray[np.float64],
     dt: float,
@@ -735,51 +804,8 @@ def heading_from_velocity(
     >>> np.allclose(headings[10:-10], np.pi / 2, atol=0.1)
     True
     """
-    from neurospatial._validation import validate_finite
-
     positions = np.asarray(positions, dtype=np.float64)
-
-    if not np.isfinite(dt) or dt <= 0:
-        raise ValueError(
-            f"Cannot compute heading: dt must be a positive, finite time step "
-            f"(got {dt!r}).\n\n"
-            f"WHAT: dt is the seconds between consecutive position samples\n"
-            f"WHY: velocity = diff(positions) / dt; dt <= 0 negates or NaNs the "
-            f"velocity, rotating every heading by pi (180 deg)\n\n"
-            f"HOW to fix:\n"
-            f"1. Pass dt = times[1] - times[0] from ASCENDING timestamps\n"
-            f"2. Sort your timestamps before differencing"
-        )
-
-    validate_finite(positions, name="positions")
-
-    if len(positions) < 2:
-        raise ValueError(
-            f"Cannot compute heading: insufficient trajectory data.\n\n"
-            f"WHAT: Need at least 2 position samples, got {len(positions)}\n"
-            f"WHY: Heading is computed from velocity (position change over time)\n\n"
-            f"HOW to fix:\n"
-            f"1. Check data filtering - may have removed too many frames\n"
-            f"2. Verify trajectory isn't empty after quality control\n"
-            f"3. For short events, use heading_from_body_orientation() instead"
-        )
-
-    # Compute velocity via finite differences
-    velocity = np.diff(positions, axis=0) / dt
-
-    # Pad velocity to match positions length
-    velocity = np.vstack([velocity, velocity[-1:]])
-
-    # Apply Gaussian smoothing if requested
-    if bandwidth > 0:
-        velocity[:, 0] = gaussian_filter1d(velocity[:, 0], bandwidth)
-        velocity[:, 1] = gaussian_filter1d(velocity[:, 1], bandwidth)
-
-    # Compute speed
-    speed = np.sqrt(velocity[:, 0] ** 2 + velocity[:, 1] ** 2)
-
-    # Compute heading
-    heading = np.arctan2(velocity[:, 1], velocity[:, 0])
+    heading, speed = _velocity_heading_and_speed(positions, dt, bandwidth=bandwidth)
 
     # Mask low-speed periods
     low_speed_mask = speed < min_speed
