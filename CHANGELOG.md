@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed — decoding and peri-event histograms respect recording gaps
+
+- `bin_spikes_in_time` accepts `epochs=` and tiles each normalized window
+  independently. Shared decoding helpers count only half-open bins and clamp
+  their edges to window stops. Final-edge spikes are no longer counted, and
+  floating-point rounding uses timestamp-relative slack instead of an absolute
+  `1e-9` epsilon (which lost a bin near `1e9` seconds). Partial trailing bins
+  are dropped, and unrepresentable bin widths raise with an origin-shift fix.
+
 ### Changed — recording gaps and time windows in rate maps
 
 - The three frame-family cell predicates propagate invalid `epochs` and
