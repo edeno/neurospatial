@@ -4,6 +4,12 @@
 
 ### Changed — recording gaps and time windows in rate maps
 
+- `compute_directional_rates`, `compute_view_rates`, and
+  `compute_egocentric_rates` share the population-silence heuristic: with no
+  `spike_window`, at least five units silent for at least 60 seconds within
+  a tracked run produce one warning. The scan respects gaps and epochs,
+  includes leading and trailing silence, and ignores invalid directional,
+  view or polar bins; silence is not proof of recording coverage.
 - `compute_directional_rate(s)`, `compute_view_rate(s)`,
   `compute_egocentric_rate(s)`, `is_head_direction_cell`, `is_spatial_view_cell`,
   and `is_object_vector_cell` accept keyword-only `max_gap`, `epochs`, and

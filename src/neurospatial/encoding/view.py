@@ -84,8 +84,14 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from neurospatial._intervals import resolve_time_windows
+from neurospatial._intervals import resolve_time_windows, run_time_bounds
 from neurospatial.encoding._base import SpatialResultMixin, _to_numpy
+from neurospatial.encoding._binning import (
+    _SILENCE_MIN_SECONDS,
+    _SILENCE_MIN_UNITS,
+    _warn_if_population_silent,
+)
+from neurospatial.environment.trajectory import interval_valid_mask
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -1685,6 +1691,19 @@ def compute_view_rates(
                 f"gaze_offsets length ({len(gaze_offsets)}) must match "
                 f"times length ({n_samples})"
             )
+
+    # Recording coverage uses tracked runs, independently of invalid frame bins.
+    if (
+        resolved_spike_window is None
+        and n_neurons >= _SILENCE_MIN_UNITS
+        and times[-1] - times[0] >= _SILENCE_MIN_SECONDS
+    ):
+        observed_mask = interval_valid_mask(
+            times, max_gap=max_gap, epochs=resolved_epochs
+        )
+        _warn_if_population_silent(
+            spike_times_list, run_time_bounds(times, observed_mask)
+        )
 
     # Handle edge case: no neurons
     if n_neurons == 0:

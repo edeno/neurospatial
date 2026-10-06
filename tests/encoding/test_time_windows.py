@@ -1,11 +1,75 @@
 """Spatial spikes and occupancy use matching analysis and acquisition windows."""
 
+import warnings
 from dataclasses import replace
 
 import numpy as np
 import pytest
 
 from neurospatial.encoding import compute_spatial_rate, compute_spatial_rates
+
+
+def test_spike_window_restores_true_rate(frame_family, continuous_recording):
+    f, r = frame_family, continuous_recording
+    recorded = r.spike_times[r.spike_times >= 100]
+    spikes = [recorded + 0.04 * u for u in range(5)]
+    with pytest.warns(UserWarning, match="All 5 units are silent") as caught:
+        assumed = f.plural(*f.args(r, spikes), **f.defaults)
+    assert len(caught) == 1
+    assert caught[0].filename == __file__
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        explicit = f.plural(*f.args(r, spikes), **f.defaults, spike_window=(100, 200))
+    for result, expected in ((assumed, 2.5), (explicit, 5.0)):
+        pooled = (
+            np.nansum(result.firing_rates * result.occupancy, axis=1)
+            / result.occupancy.sum()
+        )
+        np.testing.assert_allclose(pooled, expected, rtol=0.05)
+
+
+@pytest.mark.parametrize("kind", ["single", "predicate"])
+def test_silence_warning_not_in_singular_or_predicates(
+    frame_family, continuous_recording, kind
+):
+    f, r = frame_family, continuous_recording
+    options = dict(f.defaults)
+    if kind == "predicate" and f.name == "egocentric":
+        options.pop("method")
+        options.pop("bandwidth")
+    spikes = r.spike_times[r.spike_times >= 100]
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        (f.single if kind == "single" else f.predicate)(*f.args(r, spikes), **options)
+
+
+def test_silence_warning_uses_tracking_runs_not_view_bounds(
+    frame_family, continuous_recording
+):
+    f, r = frame_family, continuous_recording
+    if f.name == "directional":
+        r = replace(r, headings=np.full_like(r.headings, np.nan))
+    elif f.name == "view":
+        r = replace(r, positions=np.full_like(r.positions, 1000.0))
+    else:
+        r = replace(r, positions=np.full_like(r.positions, 1000.0))
+    spikes = [r.spike_times[r.spike_times >= 100]] * 5
+    with pytest.warns(UserWarning, match="All 5 units are silent"):
+        f.plural(*f.args(r, spikes), **f.defaults)
+
+
+def test_frame_silence_warning_respects_epochs_and_recording_pauses(
+    frame_family, continuous_recording, two_epoch_recording
+):
+    f, r = frame_family, continuous_recording
+    recorded = r.spike_times[r.spike_times >= 100]
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = f.plural(*f.args(r, [recorded] * 5), **f.defaults, epochs=(100, 200))
+        assert 0 < result.occupancy.sum() <= 99.98 + 1e-6
+        r = two_epoch_recording
+        result = f.plural(*f.args(r, [r.spike_times] * 5), **f.defaults)
+        assert 0 < result.occupancy.sum() <= 199.96 + 1e-6
 
 
 @pytest.mark.parametrize("plural", [False, True])

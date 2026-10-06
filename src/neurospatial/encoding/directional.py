@@ -60,8 +60,14 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
     from matplotlib.projections.polar import PolarAxes
 
-from neurospatial._intervals import resolve_time_windows
+from neurospatial._intervals import resolve_time_windows, run_time_bounds
 from neurospatial.encoding._base import SpatialResultMixin
+from neurospatial.encoding._binning import (
+    _SILENCE_MIN_SECONDS,
+    _SILENCE_MIN_UNITS,
+    _warn_if_population_silent,
+)
+from neurospatial.environment.trajectory import interval_valid_mask
 
 __all__ = [
     # Result classes
@@ -2097,6 +2103,19 @@ def compute_directional_rates(
     validate_trajectory(times, headings=headings, context="compute_directional_rates")
     for i, st in enumerate(spike_times_list):
         validate_spike_times(st, context=f"compute_directional_rates (neuron {i})")
+
+    # Recording coverage uses tracked runs, independently of invalid frame bins.
+    if (
+        resolved_spike_window is None
+        and n_neurons >= _SILENCE_MIN_UNITS
+        and times[-1] - times[0] >= _SILENCE_MIN_SECONDS
+    ):
+        observed_mask = interval_valid_mask(
+            times, max_gap=max_gap, epochs=resolved_epochs
+        )
+        _warn_if_population_silent(
+            spike_times_list, run_time_bounds(times, observed_mask)
+        )
 
     # Precompute frame bins and one shared mask for the whole population.
     spike_counts_batch, occupancy, bin_centers = bin_directional_spike_trains(
