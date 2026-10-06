@@ -3375,15 +3375,18 @@ default="diffusion_kde"
     >>> len(result2)
     2
     """
-    from neurospatial._intervals import resolve_time_windows
+    from neurospatial._intervals import resolve_time_windows, run_time_bounds
     from neurospatial.encoding._backend import (
         SUPPORTED_BACKENDS,
         get_backend_name,
         is_jax_available,
     )
     from neurospatial.encoding._binning import (
+        _SILENCE_MIN_SECONDS,
+        _SILENCE_MIN_UNITS,
         _emit_all_excluded_intervals_warning,
         _resolve_interval_mask,
+        _warn_if_population_silent,
         bin_spike_trains,
         resolve_speed,
     )
@@ -3397,6 +3400,7 @@ default="diffusion_kde"
         validate_spike_times,
         validate_trajectory,
     )
+    from neurospatial.environment.trajectory import interval_valid_mask
 
     validate_env_fitted(env, context="compute_spatial_rates")
 
@@ -3514,6 +3518,21 @@ default="diffusion_kde"
             epochs=resolved_epochs,
             spike_window=resolved_spike_window,
             stacklevel=2,
+        )
+
+    # Recording coverage is a separate concern from speed/bounds filtering.
+    # Short recordings or populations below the heuristic threshold cannot
+    # produce a silence warning, so they need no separate observed mask.
+    if (
+        resolved_spike_window is None
+        and n_neurons >= _SILENCE_MIN_UNITS
+        and times[-1] - times[0] >= _SILENCE_MIN_SECONDS
+    ):
+        observed_mask = interval_valid_mask(
+            times, max_gap=max_gap, epochs=resolved_epochs
+        )
+        _warn_if_population_silent(
+            spike_times_list, run_time_bounds(times, observed_mask)
         )
 
     # method="glm": fit the penalized-Poisson GAM (occupancy as a log-offset).

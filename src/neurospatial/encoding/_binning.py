@@ -400,6 +400,52 @@ def _emit_all_excluded_intervals_warning(
     )
 
 
+_SILENCE_MIN_UNITS = 5
+_SILENCE_MIN_SECONDS = 60.0
+
+
+def _warn_if_population_silent(
+    spike_trains: Sequence[NDArray[np.float64]],
+    observed_runs: NDArray[np.float64],
+    *,
+    stacklevel: int = 3,
+) -> None:
+    """Warn once if every unit is silent for >= 60 s of tracked time.
+
+    ``observed_runs`` are the maximal runs of intervals passing the max_gap and
+    epochs gates (``run_time_bounds``). A silent stretch is measured inside a
+    single run, from the run start to the first spike, between consecutive
+    spikes of the merged train, and from the last spike to the run end, so a
+    stretch never spans an untracked pause.
+    """
+    n_units = len(spike_trains)
+    if n_units < _SILENCE_MIN_UNITS or observed_runs.shape[0] == 0:
+        return
+    nonempty = [np.asarray(s, dtype=np.float64) for s in spike_trains if len(s)]
+    spikes = np.concatenate(nonempty) if nonempty else np.empty(0, dtype=np.float64)
+    run_idx = np.searchsorted(observed_runs[:, 0], spikes, side="right") - 1
+    inside = run_idx >= 0
+    inside[inside] = spikes[inside] < observed_runs[run_idx[inside], 1]
+    n_runs = observed_runs.shape[0]
+    marks = np.concatenate([observed_runs[:, 0], observed_runs[:, 1], spikes[inside]])
+    owner = np.concatenate([np.arange(n_runs), np.arange(n_runs), run_idx[inside]])
+    order = np.lexsort((marks, owner))  # by run, then time
+    marks, owner = marks[order], owner[order]
+    silence = np.where(owner[1:] == owner[:-1], np.diff(marks), -np.inf)
+    k = int(np.argmax(silence))
+    if silence[k] < _SILENCE_MIN_SECONDS:
+        return
+    a, b = float(marks[k]), float(marks[k + 1])
+    warnings.warn(
+        f"All {n_units} units are silent from {a:.1f} s to {b:.1f} s "
+        f"({b - a:.0f} s) while position is tracked. If the electrophysiology "
+        f"was not recording then, pass spike_window=(start, stop) so that time "
+        f"is excluded from occupancy.",
+        UserWarning,
+        stacklevel=stacklevel,
+    )
+
+
 def _emit_time_window_warning(
     n_time_dropped: int,
     n_total: int,

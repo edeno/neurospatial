@@ -4,6 +4,11 @@
 
 ### Changed — recording gaps and time windows in rate maps
 
+- `compute_spatial_rates` warns once when at least five units are all silent
+  for at least 60 seconds of continuously tracked time and no `spike_window`
+  was supplied. This recording-outage heuristic includes leading and trailing
+  silence and rest, but never combines silence across untracked pauses;
+  an explicit window suppresses it. Its absence does not prove coverage.
 - Every rate result exposes `spike_window` and the read-only
   `spike_window_assumed` flag in `summary()`. Spatial encoders record the
   normalized acquisition windows, preserving them when indexing a population
