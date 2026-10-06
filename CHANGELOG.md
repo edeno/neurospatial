@@ -4,6 +4,11 @@
 
 ### Changed — decoding and peri-event histograms respect recording gaps
 
+- `decode_session` and its streamed summary accept `epochs` and
+  `spike_window`, and form bins only within observed sample runs. No posterior
+  is invented inside a tracking pause. Decode bins retain immobility and
+  out-of-bounds periods; speed/bounds restrict encoding only. Full and streamed
+  paths use the same half-open edges and counters, including run breaks.
 - `bin_spikes_in_time` accepts `epochs=` and tiles each normalized window
   independently. Shared decoding helpers count only half-open bins and clamp
   their edges to window stops. Final-edge spikes are no longer counted, and

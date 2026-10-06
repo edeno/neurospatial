@@ -15,6 +15,9 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from neurospatial._intervals import resolve_time_windows
+from neurospatial.decoding._binning import count_spikes_in_time_bins
+
 # Warn when more than this fraction of spikes fall outside the decode window.
 # Always < 1.0, so the 100%-dropped case (frac == 1.0) always warns.
 _DROP_WARN_THRESHOLD = 0.5
@@ -104,6 +107,8 @@ def decode_session(
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
     encoding_models: NDArray[np.float64] | None = None,
     warn_on_drop: bool = True,
     dtype: type[np.float32] | type[np.float64] = np.float64,
@@ -329,6 +334,8 @@ def decode_session(
     ...     encoding_models=models,
     ... )
     """
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+
     from neurospatial.decoding.posterior import decode_position
 
     firing_rates, counts, centers = _encode_and_bin(
@@ -348,6 +355,8 @@ def decode_session(
         encoding_models=encoding_models,
         warn_on_drop=warn_on_drop,
         dtype=dtype,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
     )
 
     # --- Decode ---
@@ -380,6 +389,8 @@ def _build_encoding_model(
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
+    epochs: NDArray[np.float64] | None = None,
+    spike_window: NDArray[np.float64] | None = None,
     encoding_models: NDArray[np.float64] | None,
     warn_on_drop: bool,
     dtype: type[np.float32] | type[np.float64] = np.float64,
@@ -387,53 +398,24 @@ def _build_encoding_model(
 ) -> tuple[
     list[NDArray[np.float64]],
     NDArray[np.float64],
-    int,
     NDArray[np.float64],
     NDArray[np.float64],
 ]:
-    """Encode-only glue: build firing rates and the global decode time grid.
+    """Build encoding models and observed-run bin edges without counting spikes.
 
-    Does everything :func:`_encode_and_bin` does **except** building the full
-    ``(n_time, n_neurons)`` count matrix. It normalizes spike trains, validates
-    timestamps, builds (or accepts) the encoding models, emits the
-    units-footgun warning, and computes the global decode time grid
-    (``n_time``, the global bin ``edges``, and ``bin_centers``) using the SAME
-    grid math as :func:`~neurospatial.decoding.bin_spikes_in_time`. The
-    streaming summary path uses this to bin spikes block-by-block against the
-    GLOBAL edges (a contiguous edge slice per block, NOT recomputed per block),
-    so the dense count matrix is never materialized AND the per-block counts are
-    byte-for-byte identical to a single global histogram. (Recomputing edges as
-    ``block_t_start + k*dt`` per block would drift by float rounding and break
-    parity; slicing the precomputed global ``edges`` does not.)
-
-    The ``dtype`` knob controls the dtype of the returned ``firing_rates``
-    (the encoding-model working set): in the computed branch it is threaded
-    into :func:`~neurospatial.encoding.compute_spatial_rates` so the model is
-    built directly in that dtype (no promotion); in the passthrough branch the
-    supplied ``encoding_models`` array is cast to that dtype (so ``dtype`` is
-    authoritative end-to-end). Default ``np.float64`` keeps current behavior
-    byte-for-byte.
-
-    ``context`` names the caller in the up-front timestamp-validation error
-    (``validate_times``) so a too-few-samples failure points at the real entry
-    point. It defaults to ``"decode_session"`` (the message every existing
-    caller already produced); ``BayesianDecoder.fit`` passes its own name so an
-    epoch that selects too-few training samples names ``fit``, not the internal
-    ``decode_session``.
+    Encoding uses the shared gap, speed, bounds and window mask. Decode bins
+    use only gap and time-window gates, so rest and replay can be decoded.
+    Full and streamed counting slice the same edge arrays. The requested
+    dtype controls the model working set, and context names input errors.
 
     Returns
     -------
-    trains : list of NDArray[np.float64]
-        Normalized per-neuron spike-time arrays.
-    firing_rates : NDArray[np.float64], shape (n_neurons, n_bins)
-        Encoding-model firing-rate maps, in the requested ``dtype``.
-    n_time : int
-        Number of decode time bins on the global grid,
-        ``floor((t_stop - t_start) / dt + 1e-9)``.
-    edges : NDArray[np.float64], shape (n_time + 1,)
-        Global decode time-bin edges, ``t_start + dt * arange(n_time + 1)``.
-    bin_centers : NDArray[np.float64], shape (n_time,)
-        Global decode time-bin centers (left edge + ``dt / 2``).
+    trains : list of ndarray
+        Normalized per-unit spike times.
+    firing_rates : ndarray, shape (n_neurons, n_bins)
+        Encoding models in the requested dtype.
+    bin_left, bin_right : ndarray, shape (n_time_bins,)
+        Half-open edges tiled independently inside each observed run.
     """
     # Defer the `encoding` imports until call time: this keeps the decoding
     # package importable even if `encoding` were ever to import from `decoding`
@@ -520,7 +502,7 @@ def _build_encoding_model(
 
     # --- Build encoding models if not provided ---
     # The units-footgun matters because the time-binning counts via
-    # np.histogram(..., bins=edges), which silently drops spikes outside
+    # half-open time bins, which silently drops spikes outside
     # [t_start, t_stop]; a ms-vs-s mismatch → all-zero counts → a
     # plausible-but-wrong posterior. Exactly one of the two branches below
     # surfaces it (never both, so no duplicate warning):
@@ -568,6 +550,8 @@ def _build_encoding_model(
             max_gap=max_gap,
             warn_on_drop=warn_on_drop,
             dtype=dtype,
+            epochs=epochs,
+            spike_window=spike_window,
         )
         # compute_spatial_rates already stores the result in `dtype`; the cast
         # is a cheap no-op guard so the working set is honored end-to-end. The
@@ -590,21 +574,31 @@ def _build_encoding_model(
         if warn_on_drop:
             _warn_if_spikes_out_of_window(trains, t_start, t_stop)
 
-    # --- Global decode time grid ---
-    # Mirror bin_spikes_in_time exactly: n_bins = floor(span/dt + 1e-9), edges
-    # at t_start + k*dt, centers at left-edge + dt/2. Computing it here (rather
-    # than calling bin_spikes_in_time) lets the streaming path slice the grid
-    # into blocks whose per-block bin() calls land on exactly these edges.
-    n_time = int(np.floor((t_stop - t_start) / dt + 1e-9))
-    if n_time < 1:
-        raise ValueError(
-            f"Span t_stop - t_start ({t_stop - t_start}) is smaller than one "
-            f"bin dt ({dt}); no whole time bin fits."
-        )
-    edges = t_start + dt * np.arange(n_time + 1, dtype=np.float64)
-    bin_centers = edges[:-1] + dt / 2.0
+    from neurospatial._intervals import run_time_bounds
+    from neurospatial.decoding._binning import time_bins_in_windows
+    from neurospatial.environment.trajectory import interval_valid_mask
 
-    return trains, firing_rates, n_time, edges, bin_centers
+    # Decode bins exist only where the recording was observed: the gap, epochs and
+    # spike_window gates. The speed and out-of-bounds gates restrict only the
+    # ENCODING step, so periods of immobility (for example replay) are still
+    # decoded.
+    observed = interval_valid_mask(
+        times_arr, max_gap=max_gap, epochs=epochs, spike_window=spike_window
+    )
+    runs = run_time_bounds(times_arr, observed)
+    bin_left, bin_right = time_bins_in_windows(runs, dt)
+    if bin_left.size == 0:
+        longest = float(np.max(np.diff(runs, axis=1), initial=0.0))
+        raise ValueError(
+            f"No decode time bin fits: the {runs.shape[0]} observed recording "
+            f"run(s) are at most {longest:.3g} s long, shorter than dt={dt}. "
+            f"\nWhy: time bins are formed only inside runs of samples with gaps "
+            f"<= max_gap={max_gap} s that lie inside epochs and spike_window. "
+            f"\nFix: use a smaller dt, widen epochs/spike_window, or pass a larger "
+            f"max_gap (max_gap=None decodes across gaps)."
+        )
+
+    return trains, firing_rates, bin_left, bin_right
 
 
 def _encode_and_bin(
@@ -622,6 +616,8 @@ def _encode_and_bin(
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
+    epochs: NDArray[np.float64] | None = None,
+    spike_window: NDArray[np.float64] | None = None,
     encoding_models: NDArray[np.float64] | None,
     warn_on_drop: bool,
     dtype: type[np.float32] | type[np.float64] = np.float64,
@@ -645,7 +641,7 @@ def _encode_and_bin(
     centers : NDArray[np.float64], shape (n_time_bins,)
         Decode time-bin centers (seconds).
     """
-    trains, firing_rates, _n_time, edges, centers = _build_encoding_model(
+    trains, firing_rates, bin_left, bin_right = _build_encoding_model(
         env,
         spike_times,
         times,
@@ -662,17 +658,12 @@ def _encode_and_bin(
         encoding_models=encoding_models,
         warn_on_drop=warn_on_drop,
         dtype=dtype,
+        epochs=epochs,
+        spike_window=spike_window,
     )
 
-    # --- Bin spikes against the GLOBAL edges (orient="time_x_neuron") ---
-    # Histogram each train against the precomputed global `edges`, exactly as
-    # bin_spikes_in_time does internally. This yields the identical
-    # (n_time, n_neurons) count matrix as before (same edges, same right-closed
-    # last bin via np.histogram), with no behavior change for decode_session.
-    counts = np.stack([np.histogram(s, bins=edges)[0] for s in trains], axis=1).astype(
-        np.int64
-    )
-    # counts shape: (n_time_bins, n_neurons)  ← what decode_position expects
+    counts = count_spikes_in_time_bins(trains, bin_left, bin_right)
+    centers = bin_left + dt / 2.0
     return firing_rates, counts, centers
 
 
@@ -691,6 +682,8 @@ def decode_session_summary(
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = 0.5,
+    epochs: Any = None,
+    spike_window: Any = None,
     encoding_models: NDArray[np.float64] | None = None,
     warn_on_drop: bool = True,
     dtype: type[np.float32] | type[np.float64] = np.float64,
@@ -760,6 +753,8 @@ warn_on_drop, dtype
     decode_session : Full-posterior golden path.
     neurospatial.decoding.decode_position_summary : Array-first streamed decoder.
     """
+    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+
     from neurospatial.decoding._result import DecodingSummary
     from neurospatial.decoding.posterior import (
         _decode_and_reduce_block,
@@ -794,13 +789,12 @@ warn_on_drop, dtype
         )
     time_chunk = _validate_time_chunk(time_chunk, allow_none=False)
 
-    # --- Encode once + build the global decode time grid (no count matrix) ---
+    # --- Encode once + build the observed-run decode bins (no count matrix) ---
     (
         trains,
         firing_rates,
-        n_time,
-        edges,
-        bin_centers_time,
+        bin_left,
+        bin_right,
     ) = _build_encoding_model(
         env,
         spike_times,
@@ -818,7 +812,12 @@ warn_on_drop, dtype
         encoding_models=encoding_models,
         warn_on_drop=warn_on_drop,
         dtype=dtype,
+        epochs=resolved_epochs,
+        spike_window=resolved_spike_window,
     )
+
+    n_time = bin_left.size
+    bin_centers_time = bin_left + dt / 2.0
 
     # Validate the encoding model + resolve the non-finite mask ONCE (the same
     # front-half decode_position_summary runs). spike_counts is faked with a
@@ -828,7 +827,7 @@ warn_on_drop, dtype
     #
     # NOTE: the real per-block counts produced by the streamed binning below are
     # intentionally NOT routed through _validate_inputs. They come straight from
-    # np.histogram on float spike times, so they are non-negative int64 by
+    # count_spikes_in_time_bins on float spike times, so they are non-negative int64 by
     # construction (cannot be fractional, negative, or NaN) — the value checks
     # _validate_inputs performs are already guaranteed, so the exemption is
     # deliberate, not an oversight.
@@ -886,50 +885,11 @@ warn_on_drop, dtype
     block = time_chunk
     for start in range(0, n_time, block):
         stop = min(start + block, n_time)
-        is_last_block = stop == n_time
-
-        # Bin ONLY this block's spikes, against the GLOBAL edge slice
-        # edges[start : stop + 1]. Slicing the precomputed global edges (rather
-        # than recomputing block_t_start + k*dt) is what makes the per-block
-        # counts byte-for-byte identical to a single global histogram: the
-        # interior edges are the SAME float values, so each spike lands in the
-        # same bin either way.
-        lo = edges[start]
-        hi = edges[stop]
-        block_edges = edges[start : stop + 1]
-
-        # Avoid double-counting boundary spikes. np.histogram right-closes its
-        # LAST bin, so a spike exactly on an interior global edge `stop` would
-        # otherwise be counted in BOTH this block's last bin (right-closed) AND
-        # the next block's first (left-closed) bin. For every block except the
-        # final one, drop spikes sitting on the right edge by scoping to
-        # [lo, hi). The final block keeps the right edge closed (matching the
-        # global grid's right-closed final bin: a spike at edges[-1] counts).
-        if is_last_block:
-            block_trains = [s[(s >= lo) & (s <= hi)] for s in trains]
-        else:
-            block_trains = [s[(s >= lo) & (s < hi)] for s in trains]
-
-        counts_block = np.stack(
-            [np.histogram(s, bins=block_edges)[0] for s in block_trains], axis=1
-        ).astype(np.int64)  # (stop - start, n_neurons)
-
-        # Block alignment contract: the block has exactly `stop - start` bins
-        # and its centers equal the global centers slice (no off-by-one / gap /
-        # double-count at block boundaries). These guard a load-bearing
-        # correctness invariant, so raise unconditionally (do NOT use bare
-        # `assert`, which `python -O` strips).
-        if counts_block.shape != (stop - start, n_neurons):
-            raise RuntimeError(
-                f"block count shape {counts_block.shape} != expected "
-                f"{(stop - start, n_neurons)} for block [{start}, {stop})"
-            )
-        block_centers = block_edges[:-1] + dt / 2.0
-        if not np.array_equal(block_centers, bin_centers_time[start:stop]):
-            raise RuntimeError(
-                f"streamed block centers drifted from the global time grid for "
-                f"block [{start}, {stop}); block-boundary alignment is broken"
-            )
+        lo, hi = bin_left[start], bin_right[stop - 1]
+        block_trains = [s[(s >= lo) & (s < hi)] for s in trains]
+        counts_block = count_spikes_in_time_bins(
+            block_trains, bin_left[start:stop], bin_right[start:stop]
+        )
 
         block_prior = prior
         if prior_is_time_varying:
