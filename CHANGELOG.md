@@ -2,6 +2,44 @@
 
 ## [Unreleased]
 
+### Changed — behavior analyses respect recording gaps
+
+- All 16 segmentation and sequence entry points now expose keyword-only
+  `max_gap=0.5` and `epochs=None`: `detect_region_crossings`,
+  `detect_runs_between_regions`, `segment_by_velocity`, `detect_laps`,
+  `segment_trials`, `detect_goal_directed_runs`, `running_direction_labels`,
+  `detect_boundary_crossings`, `extract_pre_decision_window`,
+  `compute_pre_decision_metrics`, `compute_decision_analysis`,
+  `compute_vte_trial`, `compute_vte_session`, and `Environment.bin_sequence`,
+  `bin_sequence_with_runs`, `transitions`. Use `max_gap=None` to disable the
+  gap gate for intentionally coarse sampling; `epochs` still applies.
+- Pre-decision extraction, metrics, composite decision analysis and trial/session
+  VTE accept `max_gap` and `epochs`. Pre-decision samples come only from the
+  observed run containing the entry time; entries outside every run return an
+  empty window. The pause example retains five post-resumption samples instead
+  of ten spanning 1000.9 seconds. Session VTE still respects the trial start.
+- Runs, trials, velocity epochs, laps, goal-directed candidates and decision
+  boundary crossings accept `max_gap` and `epochs` and analyze each observed
+  run separately. The measured 98.5→1100 s run and 0→1100 s trial are no longer
+  marked successful across a pause, the 98.1→1100 s movement epoch is clipped,
+  and the 88.6→1108.6 s region lap and 599.95 s boundary crossing disappear.
+  Auto laps keep the first 10% of the whole input as their template. Running
+  direction labels forward the same windows and retain one label per sample.
+- `detect_region_crossings` accepts `max_gap` and `epochs`, and detects entries
+  and exits separately within observed runs. A first post-pause target sample
+  no longer invents an entry at 1100 s. Compatibility argument dispatch and
+  its deprecation warning run once per call; the contiguous detector keeps
+  its existing crossing timestamps and region-boundary handling.
+- `Environment.bin_sequence` and `bin_sequence_with_runs` accept `max_gap`
+  and `epochs`, drop samples that touch no observed interval (including
+  singleton inputs), and split same-bin runs and deduplication at recording
+  breaks. Original run indices and lengths stay aligned with the input.
+  Empirical `transitions` gates every intervening interval in a lagged pair;
+  the two-epoch fixture gives 9,998 one-step and 9,994 lag-three pairs. Raw
+  bin-only transitions retain their previous behavior without a time gate.
+- Empirical transitions return a zero CSR matrix when every pair is excluded
+  by gaps or epochs, including lagged pairs under the default adjacency filter.
+
 ### Changed — decoding and peri-event histograms respect recording gaps
 
 - Peri-event counts use original spike times against absolute event-shifted

@@ -1,4 +1,4 @@
-"""Tests for the v0.6 detect_region_crossings transitional arg-order (Task 1.4e).
+"""Tests for the transitional detect_region_crossings argument order.
 
 Target signature (0.6+): ``(position_bins, times, env, *, region_name, ...)``.
 Old signature (deprecated, removed in 0.7):
@@ -42,7 +42,12 @@ def test_new_order_is_warning_free() -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("error", DeprecationWarning)
         crossings = detect_region_crossings(
-            position_bins, times, env, region_name="goal", direction="both"
+            position_bins,
+            times,
+            env,
+            region_name="goal",
+            direction="both",
+            max_gap=None,
         )
     assert len(crossings) > 0
 
@@ -51,7 +56,7 @@ def test_old_positional_order_warns() -> None:
     env, position_bins, times = _make_env_and_trajectory()
     with pytest.warns(DeprecationWarning):
         crossings = detect_region_crossings(
-            position_bins, times, "goal", env, direction="both"
+            position_bins, times, "goal", env, direction="both", max_gap=None
         )
     assert len(crossings) > 0
 
@@ -62,12 +67,17 @@ def test_old_and_new_order_identical() -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("error", DeprecationWarning)
         new = detect_region_crossings(
-            position_bins, times, env, region_name="goal", direction="both"
+            position_bins,
+            times,
+            env,
+            region_name="goal",
+            direction="both",
+            max_gap=None,
         )
 
     with pytest.warns(DeprecationWarning):
         old = detect_region_crossings(
-            position_bins, times, "goal", env, direction="both"
+            position_bins, times, "goal", env, direction="both", max_gap=None
         )
 
     assert [(c.time, c.direction, c.bin_index) for c in old] == [

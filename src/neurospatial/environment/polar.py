@@ -31,7 +31,7 @@ delegates to :meth:`EgocentricPolarEnvironment.create`.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, ClassVar, Literal, NoReturn, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, NoReturn, cast
 
 import networkx as nx
 import numpy as np
@@ -372,6 +372,8 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
         *,
         dedup: bool = True,
         outside_value: int | None = -1,
+        max_gap: float | None = 0.5,
+        epochs: Any = None,
     ) -> NoReturn:
         """Unavailable on polar environments (see :meth:`_raise_cartesian_only`)."""
         self._raise_cartesian_only("bin_sequence")
@@ -382,6 +384,8 @@ class EgocentricPolarEnvironment(_BaseEnvironment):
         positions: NDArray[np.float64],
         *,
         outside_value: int | None = -1,
+        max_gap: float | None = 0.5,
+        epochs: Any = None,
     ) -> NoReturn:
         """Unavailable on polar environments (see :meth:`_raise_cartesian_only`)."""
         self._raise_cartesian_only("bin_sequence_with_runs")

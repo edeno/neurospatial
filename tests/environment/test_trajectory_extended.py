@@ -219,7 +219,7 @@ class TestBinSequence:
             ]
         )
 
-        bins = small_2d_env.bin_sequence(times, positions, dedup=False)
+        bins = small_2d_env.bin_sequence(times, positions, dedup=False, max_gap=None)
 
         assert_array_equal(bins, [0, 1, 1, 2])
 
@@ -236,7 +236,7 @@ class TestBinSequence:
             ]
         )
 
-        bins = small_2d_env.bin_sequence(times, positions, dedup=True)
+        bins = small_2d_env.bin_sequence(times, positions, dedup=True, max_gap=None)
 
         # Should collapse repeats: [0,0,0,1,1] -> [0,1]
         assert_array_equal(bins, [0, 1])
@@ -253,7 +253,7 @@ class TestBinSequence:
             ]
         )
 
-        bins = small_2d_env.bin_sequence(times, positions, dedup=False)
+        bins = small_2d_env.bin_sequence(times, positions, dedup=False, max_gap=None)
 
         # Outside position should be -1
         assert bins[1] == -1
@@ -271,7 +271,7 @@ class TestBinSequence:
         )
 
         bins = small_2d_env.bin_sequence(
-            times, positions, outside_value=None, dedup=False
+            times, positions, outside_value=None, dedup=False, max_gap=None
         )
 
         # Outside position dropped, no dedup: [0, _, 1, 1] -> [0, 1, 1]
@@ -294,7 +294,7 @@ class TestBinSequence:
             ]
         )
 
-        _bsr = small_2d_env.bin_sequence_with_runs(times, positions)
+        _bsr = small_2d_env.bin_sequence_with_runs(times, positions, max_gap=None)
         bins, starts, lengths = _bsr.bins, _bsr.run_starts, _bsr.run_lengths
 
         # Deduplicated bins: [0, 1, 2]
@@ -375,7 +375,7 @@ class TestBinSequence:
             ]
         )
 
-        _bsr = small_2d_env.bin_sequence_with_runs(times, positions)
+        _bsr = small_2d_env.bin_sequence_with_runs(times, positions, max_gap=None)
         bins, starts, lengths = _bsr.bins, _bsr.run_starts, _bsr.run_lengths
 
         # One entry per run (n_runs=2 here).
@@ -404,7 +404,7 @@ class TestTransitionMatrix:
             ]
         )
 
-        T = small_2d_env.transitions(times=times, positions=positions)
+        T = small_2d_env.transitions(times=times, positions=positions, max_gap=None)
 
         # Check sparse matrix properties
         assert T.shape == (small_2d_env.n_bins, small_2d_env.n_bins)

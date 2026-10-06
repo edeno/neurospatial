@@ -146,6 +146,8 @@ class EnvironmentProtocol(Protocol):
         *,
         dedup: bool = True,
         outside_value: int | None = -1,
+        max_gap: float | None = 0.5,
+        epochs: Any = None,
     ) -> NDArray[np.int32]:
         """Convert a trajectory to a sequence of bin indices."""
         ...
@@ -156,6 +158,8 @@ class EnvironmentProtocol(Protocol):
         positions: NDArray[np.float64],
         *,
         outside_value: int | None = -1,
+        max_gap: float | None = 0.5,
+        epochs: Any = None,
     ) -> BinSequenceWithRuns:
         """Convert a trajectory to a bin sequence plus per-run boundaries."""
         ...
@@ -289,6 +293,8 @@ class EnvironmentProtocol(Protocol):
         lag: int = 1,
         normalize: bool = True,
         allow_teleports: bool = False,
+        max_gap: float | None = 0.5,
+        epochs: Any = None,
     ) -> sparse.csr_matrix:
         """Compute empirical transition matrix from trajectory data."""
         ...

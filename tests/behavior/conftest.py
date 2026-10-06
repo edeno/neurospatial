@@ -7,11 +7,89 @@ arrays, and disconnected environment are not copy-pasted across modules.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 import pytest
-from shapely.geometry import Point
+from shapely.geometry import Point, box
 
 from neurospatial import Environment
+
+
+@dataclass(frozen=True)
+class SegmentationTrack:
+    """Trajectory and spatial context for recording-boundary regressions."""
+
+    times: np.ndarray
+    positions: np.ndarray
+    position_bins: np.ndarray
+    env: Environment
+
+
+def make_pause_track(*, continuous: bool = False) -> SegmentationTrack:
+    """A source departure before a pause, followed by stationary target samples."""
+    times = np.r_[np.arange(1000) / 10, 1100 + np.arange(100) / 10]
+    x = np.where(times < 100, 5 + 12.5 * np.maximum(times - 98, 0), 95)
+    if continuous:
+        times = np.arange(times.size) / 10
+    positions = np.c_[x, np.full(x.size, 5.0)]
+    xx, yy = np.meshgrid(np.arange(0, 101, 2), np.arange(0, 11, 2))
+    env = Environment.from_samples(np.c_[xx.ravel(), yy.ravel()], bin_size=2.0)
+    env.units = "cm"
+    env.regions.add("source", polygon=box(0, 0, 10, 10))
+    env.regions.add("target", polygon=box(90, 0, 100, 10))
+    return SegmentationTrack(times, positions, env.bin_at(positions), env)
+
+
+def make_lap_track(*, continuous: bool = False) -> SegmentationTrack:
+    """Two observed 100-second stretches of a 40-second square-ring lap."""
+    times = np.r_[np.arange(1000) / 10, 1100 + np.arange(1000) / 10]
+    phase = np.mod(np.r_[np.arange(1000) / 10, np.arange(1000) / 10] - 10, 40)
+    positions = np.empty((times.size, 2))
+    for edge in range(4):
+        on_edge = (phase >= edge * 10) & (phase < (edge + 1) * 10)
+        distance = phase[on_edge] - edge * 10
+        if edge == 0:
+            positions[on_edge] = np.c_[distance, np.zeros(distance.size)]
+        elif edge == 1:
+            positions[on_edge] = np.c_[np.full(distance.size, 10), distance]
+        elif edge == 2:
+            positions[on_edge] = np.c_[10 - distance, np.full(distance.size, 10)]
+        else:
+            positions[on_edge] = np.c_[np.zeros(distance.size), 10 - distance]
+    # The second stretch begins the same lap phase after the recording resumes.
+    if continuous:
+        times = np.arange(times.size) / 10
+    samples = np.r_[
+        np.c_[np.arange(11), np.zeros(11)],
+        np.c_[np.full(11, 10), np.arange(11)],
+        np.c_[np.arange(11), np.full(11, 10)],
+        np.c_[np.zeros(11), np.arange(11)],
+    ]
+    env = Environment.from_samples(samples, bin_size=1.0)
+    env.units = "cm"
+    env.regions.add("start", polygon=Point(0, 0).buffer(1.5))
+    return SegmentationTrack(times, positions, env.bin_at(positions), env)
+
+
+@pytest.fixture(scope="session")
+def pause_track() -> SegmentationTrack:
+    return make_pause_track()
+
+
+@pytest.fixture(scope="session")
+def lap_track() -> SegmentationTrack:
+    return make_lap_track()
+
+
+@pytest.fixture(scope="session")
+def continuous_pause_track() -> SegmentationTrack:
+    return make_pause_track(continuous=True)
+
+
+@pytest.fixture(scope="session")
+def continuous_lap_track() -> SegmentationTrack:
+    return make_lap_track(continuous=True)
 
 
 @pytest.fixture

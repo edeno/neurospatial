@@ -461,6 +461,7 @@ class TestDtGuards:
                 min_duration=0.0,
                 max_duration=100.0,
                 min_speed=1.0,
+                max_gap=None,
             )
 
     def test_approach_rate_duplicate_timestamp_raises(self):

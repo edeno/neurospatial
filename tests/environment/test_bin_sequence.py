@@ -26,7 +26,7 @@ class TestBinSequenceBasic:
         times = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0])
         positions = np.array([[1.0], [3.0], [3.5], [5.0], [6.5], [7.0]])
 
-        bins = env.bin_sequence(times, positions, dedup=False)
+        bins = env.bin_sequence(times, positions, dedup=False, max_gap=None)
 
         assert bins.shape == (6,)
         assert bins.dtype == np.int32
@@ -53,7 +53,7 @@ class TestBinSequenceBasic:
             ]
         )
 
-        bins = env.bin_sequence(times, positions, dedup=False)
+        bins = env.bin_sequence(times, positions, dedup=False, max_gap=None)
 
         # All three positions should map to different bins
         assert len(bins) == 3
@@ -86,8 +86,8 @@ class TestBinSequenceBasic:
 
         bins = env.bin_sequence(times, positions)
 
-        assert bins.shape == (1,)
-        assert bins[0] >= 0
+        # A singleton belongs to no observed interval and contributes no sequence.
+        assert bins.shape == (0,)
 
 
 class TestBinSequenceDeduplication:
@@ -115,8 +115,8 @@ class TestBinSequenceDeduplication:
             ]
         )
 
-        bins_no_dedup = env.bin_sequence(times, positions, dedup=False)
-        bins_dedup = env.bin_sequence(times, positions, dedup=True)
+        bins_no_dedup = env.bin_sequence(times, positions, dedup=False, max_gap=None)
+        bins_dedup = env.bin_sequence(times, positions, dedup=True, max_gap=None)
 
         # Without dedup: all 7 samples
         assert len(bins_no_dedup) == 7
@@ -151,7 +151,7 @@ class TestBinSequenceDeduplication:
         times = np.arange(10, dtype=float)
         positions = np.full((10, 1), 2.5)  # All in same bin
 
-        bins = env.bin_sequence(times, positions, dedup=False)
+        bins = env.bin_sequence(times, positions, dedup=False, max_gap=None)
 
         assert len(bins) == 10
         # All should be the same bin
@@ -185,7 +185,7 @@ class TestBinSequenceRuns:
             ]
         )
 
-        _bsr = env.bin_sequence_with_runs(times, positions)
+        _bsr = env.bin_sequence_with_runs(times, positions, max_gap=None)
         _bins, run_starts, _run_ends = (
             _bsr.bins,
             _bsr.run_starts,
@@ -229,7 +229,7 @@ class TestBinSequenceRuns:
             ]
         )
 
-        _bsr = env.bin_sequence_with_runs(times, positions)
+        _bsr = env.bin_sequence_with_runs(times, positions, max_gap=None)
         bins, run_starts, _run_ends = (
             _bsr.bins,
             _bsr.run_starts,
@@ -264,7 +264,7 @@ class TestBinSequenceRuns:
             ]
         )
 
-        _bsr = env.bin_sequence_with_runs(times, positions)
+        _bsr = env.bin_sequence_with_runs(times, positions, max_gap=None)
         _bins, run_starts, _run_ends = (
             _bsr.bins,
             _bsr.run_starts,
@@ -297,10 +297,9 @@ class TestBinSequenceRuns:
             _bsr.run_lengths,
         )
 
-        assert len(run_starts) == 1
-        assert len(run_lengths) == 1
-        assert run_starts[0] == 0
-        assert run_lengths[0] == 1
+        assert _bins.size == 0
+        assert run_starts.size == 0
+        assert run_lengths.size == 0
 
 
 class TestBinSequenceOutsideBehavior:
@@ -324,7 +323,7 @@ class TestBinSequenceOutsideBehavior:
             ]
         )
 
-        bins = env.bin_sequence(times, positions, dedup=False)
+        bins = env.bin_sequence(times, positions, dedup=False, max_gap=None)
 
         # Outside samples should be -1
         assert bins[1] == -1
@@ -352,7 +351,9 @@ class TestBinSequenceOutsideBehavior:
             ]
         )
 
-        bins = env.bin_sequence(times, positions, outside_value=None, dedup=False)
+        bins = env.bin_sequence(
+            times, positions, outside_value=None, dedup=False, max_gap=None
+        )
 
         # Should only have 3 samples (the inside ones)
         assert len(bins) == 3
@@ -380,7 +381,7 @@ class TestBinSequenceOutsideBehavior:
             ]
         )
 
-        _bsr = env.bin_sequence_with_runs(times, positions)
+        _bsr = env.bin_sequence_with_runs(times, positions, max_gap=None)
         _bins, run_starts, _run_ends = (
             _bsr.bins,
             _bsr.run_starts,
@@ -439,7 +440,7 @@ class TestBinSequenceValidation:
         positions = np.array([[2.5], [7.5]])
 
         # Should work fine - environment is fitted
-        bins = env.bin_sequence(times, positions)
+        bins = env.bin_sequence(times, positions, max_gap=None)
         assert len(bins) > 0
 
         # Note: We can't easily test unfitted environment without
@@ -474,7 +475,7 @@ class TestBinSequenceMultipleLayouts:
         times = np.arange(50, dtype=float)
         positions = rng.uniform(0, 20, (50, 2))
 
-        bins = env.bin_sequence(times, positions, dedup=False)
+        bins = env.bin_sequence(times, positions, dedup=False, max_gap=None)
 
         assert bins.shape == (50,)
         assert bins.dtype == np.int32

@@ -92,7 +92,9 @@ class TestTransitionsBasic:
         positions = np.array([[1.0, 1.0], [4.0, 1.0], [7.0, 1.0], [4.0, 4.0]])
 
         # Should automatically compute bin_sequence internally
-        T = env.transitions(times=times, positions=positions, normalize=False)
+        T = env.transitions(
+            times=times, positions=positions, normalize=False, max_gap=None
+        )
 
         assert scipy.sparse.issparse(T)
         assert T.shape == (env.n_bins, env.n_bins)

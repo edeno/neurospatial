@@ -85,6 +85,7 @@ class TestSegmentTrials:
             end_regions=["left", "right"],
             min_duration=5.0,
             max_duration=50.0,
+            max_gap=None,
         )
 
         # Should detect 3 trials
@@ -210,6 +211,7 @@ class TestSegmentTrials:
             end_regions=["goal"],
             min_duration=5.0,
             max_duration=50.0,
+            max_gap=None,
         )
 
         # Should detect successful trial
@@ -431,6 +433,7 @@ class TestSegmentTrials:
             end_regions=["goal"],
             min_duration=2.0,
             max_duration=50.0,
+            max_gap=None,
         )
 
         # Aborted trial 1 must be present as a failed trial, plus successful trial 2.
@@ -487,6 +490,7 @@ class TestSegmentTrials:
             end_regions=["goal"],
             min_duration=10.0,
             max_duration=50.0,
+            max_gap=None,
         )
 
         # Aborted trial too short to pass min_duration -> dropped.
@@ -539,6 +543,7 @@ class TestSegmentTrials:
             end_regions=["goal"],
             min_duration=2.0,
             max_duration=50.0,
+            max_gap=None,
         )
 
         assert len(trials) == 1
@@ -633,6 +638,7 @@ class TestSegmentTrials:
             end_regions=["goal"],
             min_duration=1.0,
             max_duration=50.0,
+            max_gap=None,
         )
 
         # Should handle multiple start entries gracefully
