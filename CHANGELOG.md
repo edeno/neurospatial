@@ -4,6 +4,8 @@
 
 ### Changed — behavior analyses respect recording gaps
 
+- Kinematic interval velocity masks unobserved intervals with NaN, preserving
+  interval alignment and position-units-per-second measurements.
 - All 16 segmentation and sequence entry points now expose keyword-only
   `max_gap=0.5` and `epochs=None`: `detect_region_crossings`,
   `detect_runs_between_regions`, `segment_by_velocity`, `detect_laps`,
