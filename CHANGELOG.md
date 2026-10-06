@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Changed — recording gaps and time windows in rate maps
+
+- `Environment.occupancy` accepts `epochs=` as half-open windows in seconds.
+  It excludes intervals that cross window boundaries for both start and
+  linear time allocation, interval counts, and smoothed occupancy.
+
 ### Fixed
 
 - **Behavior change:** `pre_decision_heading_stats` now excludes samples below
