@@ -102,6 +102,34 @@ def test_max_gap_none_preserves_unrestricted_sequence(two_epoch_recording):
     assert matrix.sum() == 9999
 
 
+@pytest.mark.parametrize("normalize", [False, True])
+@pytest.mark.parametrize(
+    "times, lag, epochs",
+    [
+        ([0.0, 1.0, 2.0], 1, None),
+        ([0.0, 0.1, 0.2], 1, (1.0, 2.0)),
+        ([0.0, 0.1, 5.0, 5.1], 2, None),
+    ],
+    ids=["all-gaps", "excluded-epochs", "all-lagged-pairs-cross-gap"],
+)
+def test_no_valid_transition_pairs_returns_zero_matrix(
+    small_2d_env, times, lag, epochs, normalize
+):
+    times = np.asarray(times)
+    positions = np.tile(small_2d_env.bin_centers[0], (len(times), 1))
+    # Same-bin pairs pass the default adjacency filter when time is unrestricted.
+    unrestricted = small_2d_env.transitions(
+        times=times, positions=positions, lag=lag, max_gap=None, normalize=False
+    )
+    assert unrestricted[0, 0] == len(times) - lag
+    matrix = small_2d_env.transitions(
+        times=times, positions=positions, lag=lag, epochs=epochs, normalize=normalize
+    )
+    assert matrix.format == "csr"
+    assert matrix.shape == (small_2d_env.n_bins, small_2d_env.n_bins)
+    assert matrix.nnz == 0
+
+
 @pytest.mark.parametrize(
     "name", ["bin_sequence", "bin_sequence_with_runs", "transitions"]
 )

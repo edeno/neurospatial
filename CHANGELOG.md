@@ -37,6 +37,8 @@
   Empirical `transitions` gates every intervening interval in a lagged pair;
   the two-epoch fixture gives 9,998 one-step and 9,994 lag-three pairs. Raw
   bin-only transitions retain their previous behavior without a time gate.
+- Empirical transitions return a zero CSR matrix when every pair is excluded
+  by gaps or epochs, including lagged pairs under the default adjacency filter.
 
 ### Changed — decoding and peri-event histograms respect recording gaps
 

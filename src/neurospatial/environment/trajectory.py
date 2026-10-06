@@ -1281,7 +1281,8 @@ class EnvironmentTrajectory:
                 [
                     (src, tgt) in adjacency_set
                     for src, tgt in zip(source_bins, target_bins, strict=True)
-                ]
+                ],
+                dtype=bool,
             )
 
             source_bins = source_bins[is_adjacent]
