@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- **Behavior change:** `heading_from_velocity` and `heading_from_body_orientation`
+  interpolate missing or low-speed headings along the shorter arc, uniformly
+  in angle. Near a 180° turn, filled headings formerly snapped toward the
+  endpoints (errors up to 0.785 rad) because interpolation followed the chord.
+  Antipodal turns follow the sign of the stored angle difference; unmasked
+  NaN headings no longer contaminate neighboring filled samples.
+
 - **Behavior change:** `heat_kernel_wavelet_basis` now uses the finite-volume
   diffusion generator, scaled by squared bin spacing. On uniform Cartesian
   grids its standard deviation is `sqrt(2 * scale)` bins at every bin size

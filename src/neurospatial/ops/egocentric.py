@@ -671,8 +671,8 @@ def heading_from_velocity(
     min_speed : float, default 0.0
         Minimum speed threshold in **the same units per second as
         ``positions``** (e.g. cm/s if positions are in cm). Samples
-        with speed below this are interpolated from surrounding valid
-        samples.
+        with speed below this are interpolated along the shorter arc,
+        linearly in angle between surrounding valid samples.
     bandwidth : float, default 0.0
         Gaussian smoothing sigma in samples. Applied to velocity before
         computing heading. Set to 0 to disable smoothing.
@@ -690,7 +690,7 @@ def heading_from_velocity(
         world-frame convention** (0 = East, π/2 = North, π = West,
         -π/2 = South), wrapped to ``[-π, π]`` per ``numpy.arctan2``
         (so westward motion returns +π, not -π). Samples below ``min_speed``
-        are circularly interpolated from surrounding valid samples.
+        are interpolated along the shorter arc from surrounding valid samples.
 
     Raises
     ------
@@ -821,9 +821,12 @@ def _interpolate_heading_circular(
     heading: NDArray[np.float64],
     mask: NDArray[np.bool_],
 ) -> NDArray[np.float64]:
-    """Interpolate heading values using circular (unit vector) interpolation.
+    """Interpolate masked headings along the shorter arc, linearly in angle.
 
-    This avoids discontinuities at the +/-pi boundary.
+    Unwrap consecutive finite anchors, interpolate angles, then wrap to
+    (-pi, pi]. For an exactly antipodal pair, the sign of the stored
+    difference chooses the turn. Samples beyond the anchors keep the nearest
+    valid heading. Unmasked non-finite values are not interpolation anchors.
 
     Parameters
     ----------
@@ -840,25 +843,14 @@ def _interpolate_heading_circular(
     if not np.any(mask):
         return heading
 
-    # Convert to unit vectors
-    cos_h = np.cos(heading)
-    sin_h = np.sin(heading)
-
-    # Get indices
-    valid_indices = np.where(~mask)[0]
-    invalid_indices = np.where(mask)[0]
-
-    if len(valid_indices) == 0:
+    valid = ~mask & np.isfinite(heading)
+    valid_idx = np.flatnonzero(valid)
+    if valid_idx.size == 0:
         return heading
-
-    # Interpolate unit vector components
-    cos_interp = np.interp(invalid_indices, valid_indices, cos_h[valid_indices])
-    sin_interp = np.interp(invalid_indices, valid_indices, sin_h[valid_indices])
-
-    # Convert back to angle
+    unwrapped = np.unwrap(heading[valid_idx])
+    filled = np.interp(np.flatnonzero(mask), valid_idx, unwrapped)
     result: NDArray[np.float64] = heading.copy()
-    result[mask] = np.arctan2(sin_interp, cos_interp)
-
+    result[mask] = np.pi - np.mod(np.pi - filled, 2.0 * np.pi)
     return result
 
 
@@ -879,7 +871,7 @@ def heading_from_body_orientation(
     -------
     NDArray, shape (n_time,)
         Heading in radians at each timepoint. NaN keypoints are
-        interpolated using circular interpolation.
+        interpolated along the shorter arc, linearly in angle.
 
     Raises
     ------
