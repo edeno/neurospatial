@@ -12,9 +12,14 @@ Spatial utilities:
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
+
+from neurospatial._intervals import as_intervals, run_time_bounds
+from neurospatial.environment.trajectory import observed_interval_mask
 
 
 def add_positions(
@@ -23,6 +28,8 @@ def add_positions(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     timestamp_column: str = "timestamp",
+    max_gap: float | None = 0.5,
+    epochs: Any = None,
 ) -> pd.DataFrame:
     """
     Add spatial coordinates to events by interpolating from trajectory.
@@ -153,6 +160,7 @@ def add_positions(
     # event table without tripping the >= 2 sample / finite / non-zero-span
     # guards below, which only matter when interpolation actually happens.
     if len(events) == 0:
+        as_intervals(epochs, name="epochs")
         result = events.copy()
         result["x"] = np.array([], dtype=np.float64)
         if n_dims >= 2:
@@ -197,7 +205,7 @@ def add_positions(
     sorted_positions = positions[sort_idx]
 
     # Interpolate positions at event times
-    # Use scipy.interpolate for extrapolation support
+    # Preserve linear interpolation only inside the tracked span.
     from scipy.interpolate import interp1d
 
     interpolated = np.empty((len(event_times), n_dims), dtype=np.float64)
@@ -206,9 +214,20 @@ def add_positions(
             sorted_times,
             sorted_positions[:, dim],
             kind="linear",
-            fill_value="extrapolate",
+            bounds_error=False,
+            fill_value=np.nan,
         )
         interpolated[:, dim] = interp_func(event_times)
+
+    runs = run_time_bounds(
+        sorted_times,
+        observed_interval_mask(sorted_times, max_gap=max_gap, epochs=epochs),
+    )
+    observed = np.zeros(len(event_times), dtype=bool)
+    if len(runs):
+        run_index = np.searchsorted(runs[:, 0], event_times, side="right") - 1
+        observed = (run_index >= 0) & (event_times <= runs[np.maximum(run_index, 0), 1])
+    interpolated[~observed, :] = np.nan
 
     # Handle NaN timestamps - propagate to positions
     nan_mask = np.isnan(event_times)

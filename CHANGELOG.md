@@ -4,6 +4,10 @@
 
 ### Changed — behavior analyses respect recording gaps
 
+- `events.add_positions` accepts `max_gap` and `epochs`, interpolating only
+  inside closed observed-run spans. Events in pauses, on isolated samples or
+  outside the tracked span now receive NaN coordinates; extrapolation ends.
+  Events exactly at either observed run endpoint retain that sample's position.
 - Kinematic interval velocity masks unobserved intervals with NaN, preserving
   interval alignment and position-units-per-second measurements.
 - All 16 segmentation and sequence entry points now expose keyword-only
