@@ -36,12 +36,13 @@ from neurospatial.environment.trajectory import interval_valid_mask
 SMOOTHING_METHODS = ["diffusion_kde", "gaussian_kde", "binned"]
 
 
-def test_spatial_spike_at_last_sample_not_counted(env_1d):
+@pytest.mark.parametrize("offset,step", [(0.0, 0.5), (0.1, 0.1), (1e9, 0.1)])
+def test_spatial_spike_at_last_sample_not_counted(env_1d, offset, step):
     from neurospatial.encoding._binning import _bin_spike_train_with_stats
 
-    times = np.array([0.0, 0.5, 1.0])
+    times = offset + np.arange(3) * step
     positions = np.full((3, 1), 20.0)
-    spikes = np.array([0.5, 1.0])
+    spikes = times[1:]
     mask = interval_valid_mask(times, positions, env_1d)
     counts, n_time_dropped, n_bin_dropped, n_total, n_after_time = (
         _bin_spike_train_with_stats(

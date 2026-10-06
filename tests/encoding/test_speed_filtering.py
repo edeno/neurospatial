@@ -698,14 +698,8 @@ def test_normal_session_does_not_warn_empty_map(
 # ==============================================================================
 
 
-def test_final_sample_gate_matches_last_occupancy_interval(env_1d) -> None:
-    """A spike exactly at times[-1] is gated by speed[n-2], like occupancy.
-
-    Uses a caller-supplied speed whose last two elements DIFFER: speed[n-2]
-    (the last occupancy interval) is above min_speed, while speed[n-1] is
-    below. Occupancy keeps the last interval; the t_max spike must be kept too
-    (gated by speed[n-2]), not dropped by the never-consulted speed[n-1].
-    """
+def test_final_sample_is_outside_sampling_intervals(env_1d) -> None:
+    """A spike at times[-1] is outside the half-open occupancy intervals."""
     # Dense slow ramp so each interval is under env.occupancy's default max_gap.
     x = np.linspace(10.0, 30.0, 11)
     positions = x.reshape(-1, 1)
@@ -713,19 +707,18 @@ def test_final_sample_gate_matches_last_occupancy_interval(env_1d) -> None:
     n = len(times)
     min_speed = 5.0
 
-    # Caller-supplied speed: last interval (n-2) HIGH (kept), final sample
-    # (n-1) LOW (must be ignored for gating the t_max spike).
+    # The last interval is valid even though the final sample has low speed.
     speed = np.full(n, 10.0)
     speed[n - 1] = 0.0  # would drop the t_max spike under the old n-1 clip
 
-    # A single spike landing exactly on the final timestamp.
-    spike_times = np.array([times[-1]])
+    # One spike just before the final timestamp, and one exactly on it.
+    spike_times = np.array([times[-1] - 0.05, times[-1]])
 
     counts = bin_spike_train(
         env_1d, spike_times, times, positions, speed=speed, min_speed=min_speed
     )
-    # Occupancy keeps the last interval (speed[n-2]=10 >= 5), so the spike must
-    # survive the gate (gated by speed[n-2], not the low speed[n-1]).
+    # CHANGELOG: final-timestamp spikes are time-dropped; the interior spike
+    # still uses the last interval's speed and is counted.
     assert counts.sum() == 1
 
     # Mirror: occupancy's last interval is non-empty (kept).

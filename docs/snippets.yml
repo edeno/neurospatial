@@ -32,10 +32,23 @@ snippets:
       os.environ["MPLBACKEND"] = "Agg"
     timeout: 120
 
-  - id: readme_common_use_cases_position_analysis
+  - id: readme_recording_gaps_and_time_windows
     source: README.md
     kind: markdown
     index: 2
+    setup: |
+      import numpy as np
+      from neurospatial import Environment
+      from neurospatial.encoding import compute_spatial_rate
+      times = np.arange(101) / 10
+      positions_t = np.c_[np.linspace(0, 10, 101), np.zeros(101)]
+      env = Environment.from_samples(positions_t, bin_size=2.0)
+      spike_times = np.arange(0.1, 10, 0.2)
+
+  - id: readme_common_use_cases_position_analysis
+    source: README.md
+    kind: markdown
+    index: 3
     setup: |
       import os
       os.environ["MPLBACKEND"] = "Agg"
@@ -43,11 +56,11 @@ snippets:
   - id: readme_simulation_quick_example
     source: README.md
     kind: markdown
-    # Block 6 in README.md is the "Simulation > Quick Example" block. It used
+    # Block 7 in README.md is the "Simulation > Quick Example" block. It used
     # to reference an undefined `arena_data` (M2 review finding); now defines
     # it inline. Worth covering in CI because this is the canonical
     # spike-generation -> compute_spatial_rate end-to-end demo.
-    index: 6
+    index: 7
     setup: |
       import os
       os.environ["MPLBACKEND"] = "Agg"
@@ -56,7 +69,7 @@ snippets:
   - id: readme_animation_napari_block
     source: README.md
     kind: markdown
-    index: 7
+    index: 8
     skip: |
       Animation snippet requires napari + GPU/X11 + ffmpeg; not appropriate
       for a CI smoke test. Animation behavior is exercised by notebooks
@@ -65,7 +78,7 @@ snippets:
   - id: readme_animation_large_dataset_block
     source: README.md
     kind: markdown
-    index: 8
+    index: 9
     skip: |
       Same as readme_animation_napari_block: requires napari/ffmpeg.
 

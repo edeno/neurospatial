@@ -242,6 +242,19 @@ decode pipeline and returns a `DecodingResult`. See
 [example 20](https://github.com/edeno/neurospatial/blob/main/examples/20_bayesian_decoding.ipynb)
 for the full Bayesian decoding tutorial.
 
+### Recording gaps and time windows
+
+Gaps longer than `max_gap=0.5` seconds are detected from `times` and excluded automatically.
+`epochs=` selects analysis windows; `spike_window=` covers ephys that started late or stopped early.
+Without `spike_window`, spikes are assumed recorded whenever position was; `result.spike_window_assumed` says so.
+
+```python
+run_epochs = [(float(times[0]), float(times[-1]))]
+t_ephys_start, t_ephys_stop = run_epochs[0]
+result = compute_spatial_rate(env, spike_times, times, positions_t,
+    epochs=run_epochs, spike_window=(t_ephys_start, t_ephys_stop))
+```
+
 ## Core Concepts
 
 ### Bins and Active Bins

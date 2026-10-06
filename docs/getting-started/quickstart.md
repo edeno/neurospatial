@@ -85,7 +85,7 @@ spikes + trajectory → firing-rate map you can measure and plot.**
 
 ## What just happened
 
-Three concepts carried that analysis. They are worth a minute now; the
+Four concepts carried that analysis. They are worth a minute now; the
 [Core Concepts](core-concepts.md) page goes deeper.
 
 **Environment.** `Environment.from_samples(...)` discretized the continuous
@@ -112,6 +112,12 @@ same graph powers geodesic distances and shortest paths:
 center_bin = env.bin_at([[50.0, 50.0]])[0]
 print("Neighbors of the center bin:", env.neighbors(center_bin))
 ```
+
+**Recording gaps and time windows.** Gaps longer than `max_gap=0.5` seconds
+are detected from `times` and excluded automatically. Use `epochs=` to select
+analysis windows and `spike_window=` when ephys started late or stopped early.
+Without it, spikes are assumed recorded whenever position was;
+`result.spike_window_assumed` makes that assumption visible.
 
 ## Next steps
 
