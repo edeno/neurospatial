@@ -47,6 +47,8 @@ class PeriEventResult(ResultMixin):
         event (SEM is undefined).
     n_events : int
         Number of events used in analysis.
+    n_events_dropped : int
+        Number of events excluded because their windows leave the recording.
     window : tuple[float, float]
         Time window (start, end) relative to event in seconds.
     bin_size : float
@@ -81,6 +83,7 @@ class PeriEventResult(ResultMixin):
     window: tuple[float, float]
     bin_size: float
     unit_id: int | str | None = None
+    n_events_dropped: int = 0
     firing_rate: NDArray[np.float64] = field(init=False)
 
     def __post_init__(self) -> None:
@@ -160,7 +163,7 @@ class PeriEventResult(ResultMixin):
         ... )
         >>> s = result.summary()
         >>> sorted(s)
-        ['baseline_rate', 'n_events', 'peak_latency', 'peak_rate', 'unit_id']
+        ['baseline_rate', 'n_events', 'n_events_dropped', 'peak_latency', 'peak_rate', 'unit_id']
         >>> round(s["peak_latency"], 3)
         0.0
         """
@@ -179,6 +182,7 @@ class PeriEventResult(ResultMixin):
         return {
             "unit_id": self.unit_id,
             "n_events": int(self.n_events),
+            "n_events_dropped": int(self.n_events_dropped),
             "peak_rate": peak_rate,
             "peak_latency": peak_latency,
             "baseline_rate": baseline_rate,
@@ -228,6 +232,8 @@ class PopulationPeriEventResult(ResultMixin):
         Number of events used in analysis.
     n_units : int
         Number of units in population.
+    n_events_dropped : int
+        Number of events excluded because their windows leave the recording.
     window : tuple[float, float]
         Time window (start, end) relative to event in seconds.
     bin_size : float
@@ -274,6 +280,7 @@ class PopulationPeriEventResult(ResultMixin):
     bin_size: float
     unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
+    n_events_dropped: int = field(default=0, compare=False)
     firing_rates: NDArray[np.float64] = field(init=False)
     mean_firing_rate: NDArray[np.float64] = field(init=False)
 
@@ -356,6 +363,7 @@ class PopulationPeriEventResult(ResultMixin):
             window=self.window,
             bin_size=self.bin_size,
             unit_id=unit_id,
+            n_events_dropped=self.n_events_dropped,
         )
 
     def __iter__(self) -> Iterator[PeriEventResult]:
@@ -516,7 +524,7 @@ class PopulationPeriEventResult(ResultMixin):
         ...     bin_size=0.5,
         ... )
         >>> sorted(result.summary())
-        ['mean_peak_rate', 'n_events', 'n_units', 'population_peak_latency']
+        ['mean_peak_rate', 'n_events', 'n_events_dropped', 'n_units', 'population_peak_latency']
         """
         mean_rate = np.asarray(self.mean_firing_rate)
         bin_centers = np.asarray(self.bin_centers)
@@ -534,6 +542,7 @@ class PopulationPeriEventResult(ResultMixin):
         return {
             "n_units": int(self.n_units),
             "n_events": int(self.n_events),
+            "n_events_dropped": int(self.n_events_dropped),
             "mean_peak_rate": mean_peak_rate,
             "population_peak_latency": pop_peak_latency,
         }
@@ -564,6 +573,7 @@ class PopulationPeriEventResult(ResultMixin):
             n_events=self.n_events,
             window=self.window,
             bin_size=self.bin_size,
+            n_events_dropped=self.n_events_dropped,
         )
         return plot_peri_event_histogram(mean_result, ax=ax, **kwargs)
 

@@ -4,6 +4,11 @@
 
 ### Changed — decoding and peri-event histograms respect recording gaps
 
+- Single-unit and population peri-event histograms accept `epochs` and
+  `spike_window`, keeping only events whose entire analysis window is observed.
+  Means and SEM use retained events, and results, child results, plots and
+  summaries carry `n_events_dropped`. With neither window supplied, all events
+  remain eligible; partial drops add no warning.
 - Full and streamed decoding results record `spike_window` and
   `spike_window_assumed`, including summaries and NetCDF-compatible xarray
   attributes. Attaching session metadata preserves the single posterior
