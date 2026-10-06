@@ -51,12 +51,11 @@ import numpy as np
 
 from neurospatial import Environment
 from neurospatial.encoding import (
-    FieldOfView,
     compute_spatial_rate,
     compute_view_rate,
-    compute_viewed_location,
 )
 from neurospatial.ops.egocentric import heading_from_velocity
+from neurospatial.ops.visibility import FieldOfView, compute_viewed_location
 from neurospatial.simulation import (
     PlaceCellModel,
     SpatialViewCellModel,
