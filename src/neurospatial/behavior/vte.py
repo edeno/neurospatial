@@ -336,12 +336,28 @@ def head_sweep_from_positions(
     min_speed : float, default=5.0
         Minimum speed for valid heading (units/s).
         Stationary periods are excluded.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
     float
         Sum of absolute heading changes (radians).
         Returns 0.0 if fewer than 2 valid heading samples.
+
+    Notes
+    -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
+    The result sums head-sweep magnitudes within runs, without connecting
+    the last heading of one recording to the first of another.
 
     Examples
     --------
@@ -580,7 +596,7 @@ def compute_vte_trial(
     Notes
     -----
     Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no segment spans a pause.
+    is analyzed as a separate recording; no velocity or heading spans a pause.
 
     The pre-decision samples are restricted to the run containing entry_time.
     Result window bounds describe the requested window; fewer samples
@@ -707,7 +723,7 @@ def compute_vte_session(
     Notes
     -----
     Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no segment spans a pause.
+    is analyzed as a separate recording; no velocity or heading spans a pause.
 
     Each pre-decision window uses only its trial samples and the run
     containing the decision-region entry. Result window bounds describe

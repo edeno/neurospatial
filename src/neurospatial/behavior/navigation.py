@@ -167,6 +167,7 @@ class PathEfficiencyResult(ResultMixin):
     ----------
     traveled_length : float
         Total path length traveled (sum of step lengths), in environment units.
+        NaN when an interval is unobserved in compute_path_efficiency().
     shortest_length : float
         Geodesic or Euclidean distance from start to goal, in environment units.
         Is ``inf`` when the goal is unreachable under the geodesic metric (the
@@ -175,13 +176,14 @@ class PathEfficiencyResult(ResultMixin):
         Ratio shortest_length / traveled_length. Range (0, 1].
         Value of 1.0 indicates optimal path taken.
         Returns NaN if traveled_length is 0, path has < 2 points, or
-        shortest_length is ``inf`` (unreachable goal).
+        shortest_length is ``inf`` (unreachable goal), or an interval is unobserved.
     time_efficiency : float or None
         Ratio T_optimal / T_actual if reference_speed provided, else None.
     angular_efficiency : float
         1 - mean(|delta_theta|) / pi. Range [0, 1].
         Value of 1.0 indicates heading directly toward goal at all times.
         Returns 1.0 for paths with < 3 positions (no turns possible).
+        NaN when an interval is unobserved in compute_path_efficiency().
     start_position : NDArray[np.float64]
         Start position coordinates, shape (n_dims,).
     goal_position : NDArray[np.float64]
@@ -1136,11 +1138,28 @@ def heading_direction_labels(
         Minimum speed threshold below which a sample is labeled "stationary".
         In the same spatial-units-per-second as ``positions``/``times`` (e.g.
         cm/s if positions are in cm). The 5.0 default assumes cm/s.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
     NDArray[np.object_], shape (n_samples,)
         Direction label for each timepoint.
+
+    Notes
+    -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
+    In trajectory mode, a sample with an invalid backward interval is
+    labeled "stationary", like the first sample. Precomputed speed/heading
+    inputs retain their existing behavior without a time gate.
 
     Examples
     --------
@@ -1601,14 +1620,32 @@ def compute_path_efficiency(
         Distance metric.
     reference_speed : float, optional
         Reference speed for time efficiency.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
     PathEfficiencyResult
-        All path efficiency metrics combined. When the goal is unreachable
+        All path efficiency metrics combined. An unobserved interval makes
+        traveled_length, efficiency and angular_efficiency NaN. When the goal is unreachable
         under ``metric="geodesic"`` (it lies on a disconnected component),
         ``shortest_length`` is ``inf`` and the derived ``efficiency`` and
         ``time_efficiency`` fields are ``nan`` (not ``0.0``).
+
+    Notes
+    -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
+    A path containing any unobserved interval is unknowable: traveled
+    length, path efficiency and angular efficiency are NaN. Shortest
+    length and wall-clock time efficiency retain their existing meanings.
 
     Examples
     --------
@@ -1764,12 +1801,29 @@ def instantaneous_goal_alignment(
         Goal position.
     min_speed : float, default=5.0
         Minimum speed threshold in environment units per second.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
     NDArray[np.float64], shape (n_samples,)
         Cosine of angle between velocity and goal direction.
-        Range [-1, 1]. NaN where speed < ``min_speed``.
+        Range [-1, 1]. NaN where speed < ``min_speed`` or no run is observed.
+
+    Notes
+    -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
+    Samples in no observed run and samples below ``min_speed`` have NaN
+    alignment. Each run's last sample repeats its previous interval's
+    heading, as at the end of a complete recording.
 
     Examples
     --------
@@ -1828,6 +1882,14 @@ def goal_bias(
     min_speed : float, default=5.0
         Speed threshold in position units per second. Samples slower than this
         are excluded from the mean.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -1837,6 +1899,9 @@ def goal_bias(
 
     Notes
     -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
     Interpretation:
     - > 0.5: Strong goal-directed navigation
     - 0 to 0.5: Weak goal-directed with some wandering
@@ -1886,13 +1951,21 @@ def approach_rate(
         Distance metric. Geodesic requires env parameter.
     env : Environment, optional
         Required when metric="geodesic".
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
     NDArray[np.float64], shape (n_samples,)
         Rate of distance change (d(distance)/dt) in units per second.
         Negative values indicate approaching the goal.
-        First value is NaN.
+        First value and samples with invalid backward intervals are NaN.
 
     Raises
     ------
@@ -1904,6 +1977,14 @@ def approach_rate(
         If times contains non-finite values or is not strictly increasing
         (duplicate or out-of-order timestamps would yield ``inf``/``nan``
         rates).
+
+    Notes
+    -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
+    The first sample and samples with an invalid backward interval have
+    NaN rates; no distance change is estimated across a pause.
 
     Examples
     --------
@@ -1985,6 +2066,14 @@ def compute_goal_directed_metrics(
         Minimum speed for valid heading (units/s).
     goal_radius : float, optional
         Radius for goal arrival detection.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -1995,6 +2084,14 @@ def compute_goal_directed_metrics(
     ------
     ValueError
         If positions and times have different lengths.
+
+    Notes
+    -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
+    Heading alignment and approach-rate averages use observed intervals.
+    Time-to-goal remains wall-clock time, which is known across a pause.
 
     Examples
     --------

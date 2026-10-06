@@ -52,6 +52,14 @@ def add_positions(
         mis-interpolate.
     timestamp_column : str, default="timestamp"
         Name of the column in events containing timestamps.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -74,13 +82,22 @@ def add_positions(
 
     Notes
     -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
+    Positions are available only within each run's closed sample span
+    ``[times[first], times[last]]``. Events exactly at either endpoint get
+    that observed sample's position. Events strictly inside a pause, at
+    isolated samples or outside all observed spans have NaN coordinates.
+    Positions are never extrapolated outside the tracked span.
+
     This function only adds coordinate columns (x, y, z). It does not add
     derived columns like ``bin_index`` or ``region``; map the added coordinates
     to bins yourself with ``env.bin_at(events[["x", "y"]].to_numpy())`` for
     spatial analysis.
 
     Interpolation uses linear interpolation between trajectory samples.
-    Events before or after the trajectory will be extrapolated.
+    Events before or after the trajectory have NaN coordinates.
 
     Events with NaN timestamps will have NaN positions.
 
@@ -97,7 +114,7 @@ def add_positions(
     >>> rewards = pd.DataFrame({"timestamp": [1.5, 3.5], "size": [1, 2]})
     >>> times = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
     >>> positions = np.array([[0, 0], [2, 2], [4, 4], [6, 6], [8, 8]])
-    >>> result = add_positions(rewards, times=times, positions=positions)
+    >>> result = add_positions(rewards, times=times, positions=positions, max_gap=None)
     >>> result[["x", "y"]].values
     array([[3., 3.],
            [7., 7.]])

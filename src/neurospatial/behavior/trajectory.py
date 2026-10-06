@@ -393,10 +393,9 @@ def compute_home_range(
         Sequence of bin indices representing the trajectory.
     times : NDArray[np.float64], shape (n_samples,), optional
         Timestamps (seconds) for each sample. When provided, occupancy is
-        time-weighted: each sample contributes its dwell time (the gap to the
-        next sample) rather than a unit count. This is more accurate for
-        non-uniformly sampled trajectories. The final sample is assigned the
-        median inter-sample interval (it has no successor). When ``None``
+        time-weighted: each sample contributes its observed interval dwell rather than a unit count. This is more accurate for
+        non-uniformly sampled trajectories. Each run's final sample is assigned
+        that run's median interval (it has no successor within the run). When ``None``
         (default), occupancy is the visit count per bin, which is correct only
         when sampling is uniform.
     percentile : float, default=95.0
@@ -404,6 +403,14 @@ def compute_home_range(
         - 50%: core area (most frequently used)
         - 95%: standard home range
         - 100%: all visited bins
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -412,6 +419,14 @@ def compute_home_range(
 
     Notes
     -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
+    When ``times`` is given, dwell comes only from valid intervals. Each
+    run's last sample receives that run's median interval duration; samples
+    in no run receive zero dwell. No observed dwell gives an empty home
+    range. With ``times=None``, counts are used and time gates are unused.
+
     The home range is computed by:
     1. Computing occupancy per bin (visit counts, or time-weighted dwell time
        when ``times`` is provided)
@@ -796,6 +811,14 @@ def compute_trajectory_curvature(
         to preserve rapid turns.
 
         Set to None for no smoothing.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -804,9 +827,18 @@ def compute_trajectory_curvature(
         - Positive values: counterclockwise turn (left in 2D top-down view)
         - Negative values: clockwise turn (right in 2D top-down view)
         - Zero: straight movement
+        - NaN: sample belongs to no observed run (when times is supplied)
 
     Notes
     -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
+    When ``times`` is given, turn angles, padding and smoothing are applied
+    per run. Samples in no run have NaN curvature. With ``times=None``,
+    ``max_gap`` and ``epochs`` are unused and the original untimed behavior
+    is retained.
+
     This function wraps `compute_turn_angles()` and adds:
     - Padding to match input length (n_samples)
     - Optional temporal smoothing
@@ -844,7 +876,7 @@ def compute_trajectory_curvature(
     >>> # Smooth for noisy tracking data
     >>> times = np.linspace(0, 10, 20)
     >>> curvature_smooth = compute_trajectory_curvature(
-    ...     positions, times, smooth_window=0.5
+    ...     positions, times, smooth_window=0.5, max_gap=None
     ... )
 
     See Also

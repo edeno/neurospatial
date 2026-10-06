@@ -443,6 +443,14 @@ def pre_decision_heading_stats(
     min_speed : float, default=5.0
         Minimum speed for valid heading (units/s).
         Stationary periods are excluded from statistics.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -457,6 +465,9 @@ def pre_decision_heading_stats(
 
     Notes
     -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
     Circular statistics are computed directly:
 
     - mean_resultant_length = sqrt(mean(cos(theta))^2 + mean(sin(theta))^2)
@@ -524,6 +535,14 @@ def pre_decision_speed_stats(
         Position coordinates.
     times : NDArray[np.float64], shape (n_samples,)
         Timestamps (seconds).
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -531,6 +550,14 @@ def pre_decision_speed_stats(
         Mean instantaneous speed (units/s).
     min_speed : float
         Minimum instantaneous speed (units/s).
+
+    Notes
+    -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
+    Only observed interval speeds enter the reductions. Both results are
+    NaN when no interval is valid, including empty or singleton inputs.
 
     Examples
     --------
@@ -602,7 +629,7 @@ def compute_pre_decision_metrics(
     Notes
     -----
     Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
-    is analyzed as a separate recording; no segment spans a pause.
+    is analyzed as a separate recording; no velocity or heading spans a pause.
 
     Only the pre-decision window in the run containing entry_time is
     analyzed; its duration excludes any preceding pause.

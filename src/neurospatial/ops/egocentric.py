@@ -771,8 +771,8 @@ def heading_from_velocity(
     ----------
     positions : NDArray, shape (n_time, 2)
         Animal positions over time, in environment units (e.g. cm).
-    dt : float
-        Time step between samples in seconds.
+    times : array-like, shape (n_time,)
+        Finite, strictly increasing timestamps in seconds, one per position.
     min_speed : float, default 0.0
         Minimum speed threshold in **the same units per second as
         ``positions``** (e.g. cm/s if positions are in cm). Samples
@@ -782,11 +782,19 @@ def heading_from_velocity(
         Gaussian smoothing sigma in samples. Applied to velocity before
         computing heading. Set to 0 to disable smoothing.
     allow_all_nan : bool, default False
-        Controls the degenerate case where **every** sample is below
+        Controls the degenerate case where **every observed** sample is below
         ``min_speed`` (heading undefined everywhere). ``False`` (the default)
         raises ``ValueError`` so the failure is loud; ``True`` returns an
         all-NaN array with a ``UserWarning`` instead, for batch pipelines that
         handle NaN explicitly.
+    max_gap : float or None, default=0.5
+        Longest sampling interval (seconds) treated as continuous recording.
+        Longer intervals (dropped frames, pauses between sessions) are excluded
+        from the analysis. ``None`` disables the gap check.
+    epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
+        Restrict the analysis to these half-open [start, stop) windows (seconds,
+        same clock as ``times``). An interval counts only if it lies entirely
+        inside one window. ``None`` (default) means unrestricted.
 
     Returns
     -------
@@ -801,20 +809,30 @@ def heading_from_velocity(
     ------
     ValueError
         If positions has fewer than 2 samples, contains non-finite values,
-        if dt is not a positive finite number, or if **every** sample is
+        if times is not 1-D, finite, strictly increasing and aligned, or if
+        every observed sample is
         below ``min_speed`` and ``allow_all_nan`` is ``False`` (the default).
 
     Warns
     -----
     UserWarning
-        If every sample is below ``min_speed`` and ``allow_all_nan=True``
+        If every observed sample is below ``min_speed`` and ``allow_all_nan=True``
         (an all-NaN heading array is returned).
 
     Notes
     -----
+    Each run of samples with gaps no longer than ``max_gap`` (inside ``epochs``)
+    is analyzed as a separate recording; no velocity or heading spans a pause.
+
+    Velocity uses each interval's actual elapsed time. Smoothing bandwidth
+    remains Gaussian sigma in samples and is applied separately per run.
+    Low-speed interpolation uses moving anchors from that run only. A run
+    with no moving anchors and samples touching no valid interval have NaN
+    headings. If no samples belong to any run, the result is all NaN.
+
     Heading is computed from the forward finite difference of position, which
     yields ``n_time - 1`` velocity samples for ``n_time`` positions. To return
-    an array aligned to ``positions`` (length ``n_time``), the last sample's
+    an array aligned to ``positions`` (length ``n_time``), each run's last sample's
     heading is forward-padded: ``heading[-1]`` is a copy of ``heading[-2]``
     rather than an independently measured value. For long trajectories this
     edge effect is negligible; for very short trajectories treat the final
@@ -829,14 +847,14 @@ def heading_from_velocity(
 
     >>> t = np.linspace(0, 10, 100)
     >>> positions = np.column_stack([t * 10, np.zeros_like(t)])
-    >>> headings = heading_from_velocity(positions, dt=t[1] - t[0])
+    >>> headings = heading_from_velocity(positions, t)
     >>> np.allclose(headings[10:-10], 0.0, atol=0.1)
     True
 
     Trajectory moving North:
 
     >>> positions = np.column_stack([np.zeros_like(t), t * 10])
-    >>> headings = heading_from_velocity(positions, dt=t[1] - t[0])
+    >>> headings = heading_from_velocity(positions, t)
     >>> np.allclose(headings[10:-10], np.pi / 2, atol=0.1)
     True
     """
